@@ -357,15 +357,22 @@ CAMPANHA 3 (✅ IMPLEMENTADA — P1)
 | L6 | **Depengine check sem logging** | Baixo | 🔄 pendente |
 | L7 | **ENV vars de configuração** | Baixo | 🔄 pendente |
 
-## Prioridade de implementação (atualizada — julho/2026 após refinamentos)
+## Prioridade de implementação (atualizada — julho/2026)
 
 ```
 CAMPANHA 3:  Schema validation (P1) — estrutural + semântica + CLI
 MÉDIA (debug): L2 (schema parse logging), L7 (env vars logging)
 BAIXA (debug):  L6 (depengine check logging)
-CAMPANHA 4:  CI/CD, autocomplete, man page, benchmarks (P2)
-```
-
+═══════════════════════════════════════════════════════════════════
+🔴 PRIORIDADE MÁXIMA
+CAMPANHA 4:  Novos adaptadores (P0)
+  ▸ pnpm         — BaseAdapter, 1 entry no Configs map
+  ▸ dnf5         — alias para fedora no managerNameToClan
+  ▸ conda        — adapter específico (check/install via conda)
+  ▸ asdf / mise  — universal version manager adapter
+  ▸ vscodium     — cópia do vscode com binary "codium"
+═══════════════════════════════════════════════════════════════════
+CAMPANHA 5:  CI/CD, autocomplete, man page, benchmarks (P2)
 ---
 
 # 📝 Notas de Implementação
@@ -380,4 +387,4 @@ CAMPANHA 4:  CI/CD, autocomplete, man page, benchmarks (P2)
 - **Manager aliases**: adapters para `apt`, `pacman`, `dnf`, `brew`, etc. são registrados automaticamente por `RegisterNativeManagerAliases()`.
 
 ---
-_Última atualização: 2026-07-09. Campanhas 0–3 ✅. Refactor 5/5 ✅. Próximo release: v0.2.0._
+_Última atualização: 2026-07-09. Campanhas 0–3 ✅. Refactor 5/5 ✅. Campanha 4 (novos adaptadores) 🔴 P0 pendente. Campanha 5 (CI/CD) P2 pendente. Próximo release: v0.2.0._
