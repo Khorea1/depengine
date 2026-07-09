@@ -1,0 +1,33 @@
+# Every method kind with all possible config keys
+[tools]
+a_native = { native = { pkg = "zsh" } }
+b_native_overrides = { native = { pkg = "fd", pkg_overrides = { arch = "fd-find", debian = "fd-find" } } }
+
+c_cargo = { cargo = { pkg = "bat" } }
+d_cargo_git = { cargo = { git = "https://github.com/sharkdp/bat" } }
+
+e_git = { git = { url = "https://github.com/user/repo.git", build = "make" } }
+f_git_nobuild = { git = { url = "https://github.com/user/repo2.git" } }
+
+g_http = { http = { url = "https://example.com/file.deb" } }
+h_http_checksum = { http = { url = "https://example.com/file.tar.gz", checksum = "sha256:abc123" } }
+i_http_extract = { http = { url = "https://example.com/archive.zip", extract_to = "/opt/app" } }
+j_http_full = { http = { url = "https://example.com/pkg.tar.xz", checksum = "sha256:def456", extract_to = "/usr/local" } }
+
+k_pip = { pip = { pkg = "requests" } }
+l_pipx = { pipx = { pkg = "poetry" } }
+m_uv = { uv = { pkg = "ruff" } }
+n_npm = { npm = { pkg = "typescript" } }
+o_yarn = { yarn = { pkg = "prettier" } }
+p_gem = { gem = { pkg = "jekyll" } }
+q_go = { go = { pkg = "github.com/user/tool" } }
+r_aur = { aur = { pkg = "yay" } }
+
+s_with_when = { when = { distro_family = "debian" }, apt = "vim" }
+t_multiple_when = { when = { distro_family = ["arch", "fedora"] }, pacman = "tmux" }
+
+u_postinstall = { requires = ["a_native"], postinstall = "echo done" }
+
+[v.postinstall]
+requires = ["a_native"]
+postinstall = "systemctl enable service"

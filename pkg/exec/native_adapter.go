@@ -37,8 +37,7 @@ func (a *NativeAdapter) detectClan(ctx context.Context, rn run.Runner) string {
 		if !ok {
 			continue
 		}
-		res := rn.Run(ctx, "which", mgr.Name)
-		if res.Err == nil && res.ExitCode == 0 {
+		if run.LookPath(ctx, rn, mgr.Name) {
 			a.clan = clan
 			return clan
 		}
@@ -157,11 +156,8 @@ type NativeByManagerAdapter struct {
 func (a *NativeByManagerAdapter) Kind() string { return a.managerName }
 
 func (a *NativeByManagerAdapter) Available(ctx context.Context, rn run.Runner) bool {
-	// Check if this manager binary exists in PATH.
-	res := rn.Run(ctx, "which", a.managerName)
-	return res.Err == nil && res.ExitCode == 0
+	return run.LookPath(ctx, rn, a.managerName)
 }
-
 func (a *NativeByManagerAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
 	clan := findClanByManager(a.managerName)
 	if clan == "" {

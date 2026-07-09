@@ -1,0 +1,17 @@
+# Empty configs and edge cases
+[tools]
+# A tool that parses but has no viable method at all
+orphan = {}
+
+# A tool with empty requires
+solo = { requires = [] }
+
+# Self-cycle via requires
+echo = { requires = ["echo"] }
+
+# Empty requires and no methods
+vacuum = { requires = [] }
+
+# Tool with only postinstall but no methods  
+# (this is weird but shouldn't crash)
+ghost.postinstall = "echo hello"

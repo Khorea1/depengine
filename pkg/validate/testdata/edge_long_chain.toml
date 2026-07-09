@@ -1,0 +1,12 @@
+# Long dependency chain: t0 → t1 → t2 → ... → t9
+[tools]
+t0 = { requires = ["t1"] }
+t1 = { requires = ["t2"] }
+t2 = { requires = ["t3"] }
+t3 = { requires = ["t4"] }
+t4 = { requires = ["t5"] }
+t5 = { requires = ["t6"] }
+t6 = { requires = ["t7"] }
+t7 = { requires = ["t8"] }
+t8 = { requires = ["t9"] }
+t9 = { requires = [] }

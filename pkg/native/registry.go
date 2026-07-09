@@ -22,6 +22,8 @@
 // main.go got a second path to the same fact.
 package native
 
+import "sort"
+
 // Manager describes one native package manager. All fields are data: no
 // code lives here.
 type Manager struct {
@@ -258,6 +260,19 @@ func KnownClans() []string {
 			out = append(out, clan)
 		}
 	}
+	return out
+}
+
+// AllClans returns every clan name — including placeholders like "windows"
+// that don't yet have a functioning native manager — so that when-clause
+// validation can check against the complete set of possible distro_family
+// values rather than only the subset that has a working adapter today.
+func AllClans() []string {
+	out := make([]string, 0, len(clanToManagerKey))
+	for clan := range clanToManagerKey {
+		out = append(out, clan)
+	}
+	sort.Strings(out)
 	return out
 }
 

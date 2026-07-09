@@ -54,11 +54,11 @@ func (a *BaseAdapter) Kind() string { return a.config.KindName }
 
 // Available checks whether the required binary exists in PATH.
 func (a *BaseAdapter) Available(ctx context.Context, rn run.Runner) bool {
-	if checkBinary(ctx, rn, a.config.Binary) {
+	if run.LookPath(ctx, rn, a.config.Binary) {
 		return true
 	}
 	if a.config.AvailableExtra != "" {
-		return checkBinary(ctx, rn, a.config.AvailableExtra)
+		return run.LookPath(ctx, rn, a.config.AvailableExtra)
 	}
 	return false
 }
@@ -98,8 +98,3 @@ func (a *BaseAdapter) buildCmd(tmpl []string, tool *schema.Tool, mc *schema.Meth
 	return exec.SubstitutePkg(tmpl, tool, mc)
 }
 
-// checkBinary runs `which {binary}` to test availability.
-func checkBinary(ctx context.Context, rn run.Runner, binary string) bool {
-	res := rn.Run(ctx, "which", binary)
-	return res.Err == nil && res.ExitCode == 0
-}

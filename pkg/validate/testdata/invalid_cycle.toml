@@ -1,0 +1,4 @@
+[tools]
+# a requires b, b requires a -> cycle
+a = { requires = ["b"] }
+b = { requires = ["a"] }

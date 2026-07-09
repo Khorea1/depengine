@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"depengine/pkg/native"
 	"depengine/pkg/run"
 	"depengine/pkg/schema"
+	"depengine/pkg/validate"
 )
 
 func main() {
@@ -118,6 +120,9 @@ func main() {
 		if report.Failed > 0 {
 			os.Exit(1)
 		}
+
+	case "validate":
+		runValidate(os.Args[2:])
 
 	case "check":
 		checkCmd.Parse(os.Args[2:])
@@ -226,6 +231,7 @@ func printUsage() {
 Uso:
   depengine install [flags]        Instala ferramentas do schema.toml
   depengine check <tool>           Verifica se uma ferramenta está instalada
+  depengine validate [flags]       Valida schema.toml e ambiente
   depengine version                Mostra a versão
   depengine help                   Mostra esta ajuda
 
@@ -239,6 +245,12 @@ Flags (install):
    --diagnose        Modo diagnóstico: DEBUG + dry-run + verbose
    --log-level <lvl> Nível de log: debug, info, warn, error
    --sort-by <campo> Ordena output: name, status, method
+
+Flags (validate):
+  --schema <path>   Caminho para schema.toml (default: schema.toml)
+  --check-env       Verifica disponibilidade de ferramentas no ambiente
+  --format <fmt>    Formato de saída: text (default) ou json
+  --strict          Trata warnings como erros (exit code 1)
 
 Exit codes:
   0   Sucesso (todas as ferramentas ok)
@@ -281,4 +293,95 @@ func initAdapters() {
 	exec.Register(git.NewGitAdapter())
 	// HTTP adapter.
 	exec.Register(httpdownload.NewHTTPAdapter())
+}
+
+func runValidate(args []string) {
+	validateCmd := flag.NewFlagSet("validate", flag.ExitOnError)
+	validateSchema := validateCmd.String("schema", "schema.toml", "path to schema.toml")
+	validateCheckEnv := validateCmd.Bool("check-env", false, "check system environment for required tools")
+	validateFormat := validateCmd.String("format", "text", "output format: text or json")
+	validateStrict := validateCmd.Bool("strict", false, "treat warnings as errors")
+	validateCmd.Parse(args)
+
+	ctx := context.Background()
+
+	// Parse the schema. Use an empty placeholder map so validation
+	// doesn't require detect_os.sh to be installed.
+	s, err := schema.ParseSchema(*validateSchema, map[string]string{})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
+	}
+
+	// Collect validation results.
+	knownKinds := exec.RegisteredKinds()
+	result := validate.ValidateSchema(s, knownKinds)
+
+	// Also run the basic schema.Validate checks and merge findings.
+	verr, warnings := schema.Validate(s, knownKinds)
+	if verr != nil {
+		result.Add(validate.ValidationError{
+			Code:    "E_UNKNOWN_METHOD",
+			Field:   "tools",
+			Message: verr.Error(),
+		})
+	}
+	for _, w := range warnings {
+		result.Add(validate.ValidationError{
+			Code:    "W_UNKNOWN_METHOD",
+			Field:   "tools",
+			Message: w,
+		})
+	}
+
+	// Optional environment check.
+	if *validateCheckEnv {
+		envResult := validate.CheckEnv(ctx, run.OSExecRunner{})
+		for _, ch := range envResult.Checks {
+			if !ch.Found {
+				result.Add(validate.ValidationError{
+					Code:    "W_ENV_MISSING",
+					Field:   "environment",
+					Message: ch.Message,
+				})
+			}
+		}
+	}
+
+	// Output.
+	if *validateFormat == "json" {
+		// Simple JSON output.
+		type jsonOutput struct {
+			Errors   []validate.ValidationError `json:"errors"`
+			Warnings []validate.ValidationError `json:"warnings"`
+		}
+		out := jsonOutput{
+			Errors:   result.Errors,
+			Warnings: result.Warnings,
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(out); err != nil {
+			fmt.Fprintf(os.Stderr, "error encoding JSON: %v\n", err)
+			os.Exit(3)
+		}
+	} else {
+		for _, e := range result.Errors {
+			fmt.Fprintf(os.Stderr, "error: %v\n", e)
+		}
+		for _, w := range result.Warnings {
+			fmt.Fprintf(os.Stderr, "warning: %v\n", w)
+		}
+		if len(result.Errors) == 0 && len(result.Warnings) == 0 {
+			fmt.Fprintf(os.Stderr, "✓ schema is valid\n")
+		}
+	}
+
+	exitCode := 0
+	if result.HasErrors() {
+		exitCode = 2
+	} else if *validateStrict && len(result.Warnings) > 0 {
+		exitCode = 1
+	}
+	os.Exit(exitCode)
 }

@@ -1,0 +1,2 @@
+[tools]
+zathura-pdf-mupdf = { requires = ["zathura", "nonexistent-tool"], pacman = "zathura-pdf-mupdf" }

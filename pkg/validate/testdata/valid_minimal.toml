@@ -1,0 +1,7 @@
+[defaults]
+manager = "native"
+method_order = ["native"]
+
+[tools]
+simple = ["zsh", "bat"]
+fd = { apt = "fd-find" }

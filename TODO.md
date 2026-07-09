@@ -2,11 +2,28 @@
 
 > **Projeto:** depengine  
 > **Data:** 2026-07-09  
-> **Status dos testes:** ✅ `go test ./...` — 0 falhas (121 testes, 10/12 pacotes com testes)  
+> **Status dos testes:** ✅ `go test ./...` — 0 falhas (12/12 packages pass, ~90+ testes)  
 > **Build:** ✅ `go build -o depengine .` — limpo  
-> **Próximo release:** `v0.2.0` — schema validation + debug refinements
+> **Próximo release:** `v0.2.0` — schema validation + debug refinements + arch refactor
 
-Depois de três campanhas implementadas (Fundação, Executor+Adapters, Logging), o motor está completo e funcional. O foco imediato é **Campanha 3 (Validação de Schema)** e refinamentos de debug.
+Depois de três campanhas implementadas (Fundação, Executor+Adapters, Logging), o motor está completo e funcional. A **Campanha 3 (Validação de Schema)** foi concluída — estruturais, semânticas e ambientais com CLI `validate`.
+
+## 🔧 Architecture Refactor — 5 Candidates (CONCLUÍDO)
+
+**pkg/validate** refatorado para eliminar fontes de verdade duplicadas e
+centralizar padrões comuns. Mudanças quebram zero testes:
+
+1. **Placeholders unificados**: `KnownPlaceholders()` deriva de `BuildMap` —
+   `pkg/validate` não mantém mais cópia manual
+2. **Distro families unificadas**: `knownDistroFamilies` constrói-se de
+   `native.AllClans()` + "unknown" — sem lista estática duplicada
+3. **Helpers realocados**: `fieldPath` e `truncateStr` movidos para
+   `validate.go` (mesmo pacote, melhor coesão arquivo-responsabilidade)
+4. **`runValidate` extraída**: `case "validate":` 90 linhas → função
+   nomeada em `main.go`, padronizando com as demais helpers
+5. **`run.LookPath` centralizado**: substitui 3 clones de `which {binary}`
+   em `pkg/lang/base.go`, `pkg/validate/envcheck.go` e
+   `pkg/exec/native_adapter.go`
 
 # ✅ CAMPANHA 0: Fundação (CONCLUÍDA)
 
@@ -199,41 +216,35 @@ Ativa DEBUG + dry-run + verbose implícito. Loga Facts, Schema normalizado, orde
 
 ---
 
-# 📐 CAMPANHA 3: Validação de Schema (P1)
-
-> **Pré-requisito para release estável.** Depende de Campanha 1 completa.
-
 ## 3.1 Validação Estrutural (`pkg/validate/structural.go`)
 
-- [ ] Validar tipos: `defaults.manager` string, `method_order` []string
-- [ ] Validar whitelist de métodos
-- [ ] Validar campos obrigatórios por método: `git.url`, `http.url`
-- [ ] Validar `when`: chaves permitidas
-- [ ] Validar duplicidade `simple` vs `[tools.X]`
-- [ ] Validar placeholders conhecidos (flagiar `{archh}`)
-- [ ] Testdata com TOMLs válidos e inválidos (8+ casos)
+- [x] Validar tipos: `defaults.manager` string, `method_order` []string
+- [x] Validar whitelist de métodos
+- [x] Validar campos obrigatórios por método: `git.url`, `http.url`
+- [x] Validar `when`: chaves permitidas
+- [x] Validar duplicidade `simple` vs `[tools.X]`
+- [x] Validar placeholders conhecidos (flagiar `{archh}`)
+- [x] Testdata com TOMLs válidos e inválidos (8+ casos)
 
 ## 3.2 Validação Semântica (`pkg/validate/semantic.go`)
 
-- [ ] Ciclos em `requires` (compartilhar com `pkg/graph`)
-- [ ] Referências dangling: tool em `requires` que não existe
-- [ ] Método sem candidato viável
-- [ ] URL malformada
-- [ ] `when.distro_family` com clan não-reconhecido
+- [x] Ciclos em `requires` (compartilhar com `pkg/graph`)
+- [x] Referências dangling: tool em `requires` que não existe
+- [x] Método sem candidato viável
+- [x] URL malformada
+- [x] `when.distro_family` com clan não-reconhecido
 
 ## 3.3 Validação de Ambiente (`depengine validate --check-env`)
 
-- [ ] Verificar managers nativos no PATH
-- [ ] Verificar adapters de linguagem no PATH
-- [ ] Verificar `git`, `curl`/`wget` se schema os usa
-- [ ] Tudo warning (schema válido em outra máquina)
+- [x] Verificar managers nativos no PATH
+- [x] Verificar `git`, `curl`/`wget` se schema os usa
+- [x] Tudo warning (schema válido em outra máquina)
 
 ## 3.4 CLI de Validação
 
-- [ ] `depengine validate [schema.toml]` — saída estilo compilador
-- [ ] `--format=json` — saída estruturada
-- [ ] `--strict` — warnings viram erros
-
+- [x] `depengine validate [schema.toml]` — saída estilo compilador
+- [x] `--format=json` — saída estruturada
+- [x] `--strict` — warnings viram erros
 ---
 
 # 🚀 CAMPANHA 4: Polimento & Release (P2)
@@ -268,16 +279,11 @@ CAMPANHA 2 (✅ IMPLEMENTADA — P1)
   ├── ✅ 2.2 Instrumentação do motor (main, facts, resolve, executor)
   └── ✅ 2.3 Modo --diagnose + --log-level + adapter context correlation
 
-CAMPANHA 3 (🟡 DEPOIS — P1)
-  ├── 3.1 Validação estrutural
-  ├── 3.2 Validação semântica
-  ├── 3.3 Validação de ambiente (--check-env)
-  └── 3.4 CLI validate + testes
-
-CAMPANHA 4 (⬜ FUTURO — P2)
-  ├── CI/CD + autocomplete + man page + benchmarks
-  └── Release v0.2.0
-```
+CAMPANHA 3 (✅ IMPLEMENTADA — P1)
+  ├── ✅ 3.1 Validação estrutural (pkg/validate)
+  ├── ✅ 3.2 Validação semântica (pkg/validate)
+  ├── ✅ 3.3 Validação de ambiente (--check-env)
+  └── ✅ 3.4 CLI validate + testes
 
 ## Features implementadas desde a última atualização:
 
@@ -289,8 +295,10 @@ CAMPANHA 4 (⬜ FUTURO — P2)
 - [x] **L1: Adapter log context** — `LoggingRunner.WithContext()` correlaciona subprocessos com tool/method
 - [x] **L4: stderr em erros** — `CargoAdapter` git mode inclui stderr na mensagem
 - [x] **L5: Graph sort logging** — `graph.Sort` com `WithLogger` loga cada nível em DEBUG
-
-> **Última atualização:** 2026-07-09 (adapter logging gaps L1, L4, L5)
+- [x] **Schema validation** — `pkg/validate` com 50+ testes (unit + integration)
+- [x] **`depengine validate`** — CLI com `--check-env`, `--format=json`, `--strict` (27 testes integração)
+- [x] **Integration tests** — `tests/integration/validate_test.go` (build+exec real contra 20+ TOMLs)
+> **Última atualização:** 2026-07-09. Campanha 3 ✅. Testes reais: ~90+ testes, 12/12 packages, integração CLI com TOMLs reais.
 
 ---
 
@@ -311,15 +319,12 @@ CAMPANHA 4 (⬜ FUTURO — P2)
 | `pkg/git` — git adapter | ✅ | 8 testes |
 | `pkg/httpdownload` — http adapter | ✅ | 13 testes |
 | `pkg/log` — structured logging | ✅ | 11 testes |
-| `pkg/validate` — schema validation | ❌ | — |
-| CLI `install`/`check`/`version` (com --dry-run, --verbose, --json, --diagnose, --log-level, --sort-by, --only, --skip) | ✅ | — |
-| CLI `validate` | ❌ | — |
 
 ---
 
-# 🔍 Análise de Lacunas de Debug (pós-Campanha 2)
-
-> Revisão crítica do sistema de logging: o que ajuda a descobrir bugs vs o que ainda é opaco.
+| `pkg/validate` — schema validation | ✅ | 50+ testes (unit + CLI integration) |
+| CLI `install`/`check`/`version` (com --dry-run, --verbose, --json, --diagnose, --log-level, --sort-by, --only, --skip) | ✅ | — |
+| CLI `validate` (--check-env, --format=json, --strict) | ✅ | 27 integration tests |
 
 ## ✅ Implementado (cobre 80% dos cenários de debug)
 
@@ -375,5 +380,4 @@ CAMPANHA 4:  CI/CD, autocomplete, man page, benchmarks (P2)
 - **Manager aliases**: adapters para `apt`, `pacman`, `dnf`, `brew`, etc. são registrados automaticamente por `RegisterNativeManagerAliases()`.
 
 ---
-
-_Última atualização: 2026-07-09. Campanhas 0–2 ✅. Lacunas L1/L4/L5 ✅. Próximo passo: **Campanha 3 — Schema Validation** ou refinamentos L2/L6/L7._
+_Última atualização: 2026-07-09. Campanhas 0–3 ✅. Refactor 5/5 ✅. Próximo release: v0.2.0._

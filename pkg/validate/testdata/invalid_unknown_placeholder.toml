@@ -1,0 +1,2 @@
+[tools]
+myapp = { http = { url = "https://example.com/{unknown_placeholder}/file.deb" } }

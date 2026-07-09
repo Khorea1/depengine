@@ -1,0 +1,10 @@
+# Schema with non-string types in method configs
+# TOML allows these types natively
+[tools]
+bad_git_build = { git = { url = "https://example.com/repo.git", build = 42 } }
+bad_http_checksum = { http = { url = "https://example.com/file.deb", checksum = ["sha256:abc"] } }
+bad_http_extract = { http = { url = "https://example.com/archive.zip", extract_to = false } }
+bad_git_url = { git = { url = ["not", "a", "string"] } }
+
+better_git = { git = { url = "https://example.com/repo.git", build = "make" } }
+better_http = { http = { url = "https://example.com/file.deb", checksum = "sha256:abc" } }

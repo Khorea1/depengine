@@ -1,0 +1,7 @@
+# SSH-style git URLs
+[tools]
+a = { git = { url = "git@github.com:user/repo.git" } }
+b = { git = { url = "ssh://git@github.com/user/repo.git" } }
+c = { git = { url = "git://example.com/repo.git" } }
+d = { git = { url = "https://github.com/user/repo.git" } }
+e = { git = { url = "file:///home/user/repo.git" } }

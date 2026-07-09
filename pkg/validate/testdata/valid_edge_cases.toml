@@ -1,0 +1,54 @@
+# Edge case: valid schema with all legitimate features combined
+[tools]
+simple = ["zsh", "bat", "fd", "htop"]
+
+[tools.neofetch]
+apt = "neofetch"
+pacman = "neofetch"
+brew = "neofetch"
+when = { distro_family = ["debian", "arch", "macos"] }
+
+[tools.starship]
+requires = ["neofetch"]
+postinstall = "starship init bash >> ~/.bashrc"
+cargo = "starship"
+npm = "starship"
+when = { distro_family = ["debian", "arch"] }
+
+# npm variant with macos: separate tool since TOML doesn't support
+# duplicate section keys with different when clauses
+[tools.starship_npm]
+requires = ["neofetch"]
+npm = "starship"
+when = { distro_family = "macos" }
+
+[tools.lazygit]
+requires = ["neofetch"]
+go = "github.com/jesseduffield/lazygit"
+git = { url = "https://github.com/jesseduffield/lazygit.git", build = "go install" }
+
+[tools.fastfetch.http]
+url = "https://github.com/fastfetch-cli/fastfetch/releases/download/2.0.0/fastfetch-linux-amd64.deb"
+checksum = "sha256:abc123def456"
+extract_to = "/tmp/fastfetch"
+
+[tools.ripgrep]
+cargo = "ripgrep"
+pip = "ripgrep"
+gem = "ripgrep"
+when = { distro_family = ["debian", "arch", "fedora"] }
+
+[tools.zoxide]
+requires = ["starship", "ripgrep"]
+cargo = "zoxide"
+postinstall = "echo 'eval \"$(zoxide init bash)\"' >> ~/.bashrc"
+
+[tools.bottom]
+cargo = "bottom"
+apt = "bottom"
+when = { distro_family = ["debian", "arch", "fedora", "suse"] }
+
+[tools.doggo]
+cargo = "doggo"
+pip = "doggo"
+apt = "doggo"

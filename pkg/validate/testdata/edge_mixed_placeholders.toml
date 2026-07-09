@@ -1,0 +1,13 @@
+# Mixed valid and invalid placeholders in the same string
+[tools]
+app1 = { http = { url = "https://example.com/{arch}/{unknownz}/v{latest}.deb" } }
+app2 = { http = { url = "https://{os}.example.com/{distro_family}/{pkg}-{bad_var}.tar.gz" } }
+app3 = { git = { url = "https://github.com/user/{id}-{kernel}-repo.git" } }
+
+[tools.app4]
+requires = ["{nonexistent_dep}"]
+postinstall = "echo {arch}-{os}-{made_up}"
+
+[tools.app5.git]
+url = "git@github.com:user/repo.git"
+build = "make {libc}-{init_system}"

@@ -1,0 +1,175 @@
+package validate
+
+import (
+	"fmt"
+
+	"depengine/pkg/schema"
+)
+
+// validateRequiredFields checks that method-kind-specific required fields
+// are present in each method candidate's Config blob.
+//
+// Each method kind has its own contract:
+//   - git:  url (string)
+//   - http: url (string)
+//   - cargo: when git sub-key present, the value must be a string URL
+//   - any:  build (string), extract_to (string), checksum (string)
+func validateRequiredFields(s *schema.Schema) *Result {
+	r := &Result{}
+
+	for toolName, tool := range s.Tools {
+		for i, mc := range tool.Methods {
+			switch mc.Kind {
+			case "git":
+				if v, ok := mc.Config["url"]; !ok || v == "" {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "url"),
+						Message: fmt.Sprintf("git method for tool %q requires a url field", toolName),
+					})
+				} else if _, isStr := v.(string); !isStr {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "url"),
+						Message: fmt.Sprintf("git method url must be a string, got %T", v),
+					})
+				}
+
+			case "http":
+				if v, ok := mc.Config["url"]; !ok || v == "" {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "url"),
+						Message: fmt.Sprintf("http method for tool %q requires a url field", toolName),
+					})
+				} else if _, isStr := v.(string); !isStr {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "url"),
+						Message: fmt.Sprintf("http method url must be a string, got %T", v),
+					})
+				}
+			}
+
+			// Check build field type if present (any method kind).
+			if v, ok := mc.Config["build"]; ok {
+				if _, isStr := v.(string); !isStr {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "build"),
+						Message: fmt.Sprintf("build must be a string, got %T", v),
+					})
+				}
+			}
+
+			// Check extract_to type if present.
+			if v, ok := mc.Config["extract_to"]; ok {
+				if _, isStr := v.(string); !isStr {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "extract_to"),
+						Message: fmt.Sprintf("extract_to must be a string, got %T", v),
+					})
+				}
+			}
+
+			// Check checksum type if present.
+			if v, ok := mc.Config["checksum"]; ok {
+				if _, isStr := v.(string); !isStr {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "checksum"),
+						Message: fmt.Sprintf("checksum must be a string, got %T", v),
+					})
+				}
+			}
+
+			// If cargo has a git sub-key, it must be a string URL.
+			if mc.Kind == "cargo" {
+				if v, ok := mc.Config["git"]; ok {
+					if _, isStr := v.(string); !isStr {
+						r.Add(ValidationError{
+							Code:    ErrRequiredField,
+							Field:   fieldPath(toolName, i, "git"),
+							Message: fmt.Sprintf("cargo git must be a string URL, got %T", v),
+						})
+					}
+				}
+			}
+		}
+	}
+	return r
+}
+
+// validateWhenDirectives checks that when clauses only use known keys.
+// Currently the only supported key is "distro_family".
+func validateWhenDirectives(s *schema.Schema) *Result {
+	r := &Result{}
+
+	for toolName, tool := range s.Tools {
+		for i, mc := range tool.Methods {
+			if mc.When == nil {
+				continue
+			}
+
+			// If When is non-nil but DistroFamily is empty, it means the
+			// when clause had keys the parser didn't recognize.
+			if len(mc.When.DistroFamily) == 0 {
+				r.Add(ValidationError{
+					Code:    WarnUnknownWhenKey,
+					Field:   fieldPath(toolName, i, "when"),
+					Message: fmt.Sprintf("tool %q has an empty when clause — possible unrecognized key(s)", toolName),
+				})
+			}
+		}
+	}
+
+	return r
+}
+
+// validatePlaceholders scans every string leaf in the schema (tool names,
+// method config values, postinstall, requires) and flags {name} tokens
+// that are not in the known set.
+func validatePlaceholders(s *schema.Schema) *Result {
+	r := &Result{}
+
+	for toolName, tool := range s.Tools {
+		// Check requires entries.
+		for _, dep := range tool.Requires {
+			scanPlaceholders(dep, fieldPath(toolName, -1, "requires"), r)
+		}
+
+		// Check postinstall.
+		if tool.PostInstall != "" {
+			scanPlaceholders(tool.PostInstall, fieldPath(toolName, -1, "postinstall"), r)
+		}
+
+		// Check method configs.
+		for i, mc := range tool.Methods {
+			for key, val := range mc.Config {
+				strVal, ok := val.(string)
+				if !ok || strVal == "" {
+					continue
+				}
+				scanPlaceholders(strVal, fieldPath(toolName, i, key), r)
+			}
+		}
+	}
+
+	return r
+}
+
+// scanPlaceholders extracts {name} tokens from s and flags unknown ones.
+func scanPlaceholders(s, field string, r *Result) {
+	matches := schema.PlaceholderRe.FindAllStringSubmatch(s, -1)
+	for _, m := range matches {
+		name := m[1] // captured group
+		if !knownPlaceholderLookup[name] {
+			r.Add(ValidationError{
+				Code:    WarnUnknownPlaceholder,
+				Field:   field,
+				Message: fmt.Sprintf("unknown placeholder {%s} in %q", name, truncateStr(s, 80)),
+			})
+		}
+	}
+}

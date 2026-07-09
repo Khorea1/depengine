@@ -2,11 +2,12 @@ package schema
 
 import (
 	"regexp"
+	"sort"
 
 	"depengine/pkg/engine"
 )
 
-// placeholderRe matches `{name}` tokens used throughout schema.toml string
+// PlaceholderRe matches `{name}` tokens used throughout schema.toml string
 // fields. Names are restricted to lowercase ascii letters, digits and
 // underscore so `{pkg}` (handled by native managers) and `{latest}` (handled
 // by the http/git adapters) keep working unchanged — those substitutions run
@@ -16,7 +17,7 @@ import (
 // Extensibility: any new key detect_os.sh emits in the future only needs to
 // be added to Facts (facts.go) and to BuildMap below — every schema string
 // field gets expanded for free, no parser change required.
-var placeholderRe = regexp.MustCompile(`\{([a-z][a-z0-9_]*)\}`)
+var PlaceholderRe = regexp.MustCompile(`\{([a-z][a-z0-9_]*)\}`)
 
 // Expand replaces every `{name}` placeholder in s with the corresponding value
 // from m. Unknown placeholders are left untouched by design: a typo like
@@ -26,10 +27,10 @@ var placeholderRe = regexp.MustCompile(`\{([a-z][a-z0-9_]*)\}`)
 //
 // Expand is pure and allocation-free when there is nothing to replace.
 func Expand(s string, m map[string]string) string {
-	if !placeholderRe.MatchString(s) {
+	if !PlaceholderRe.MatchString(s) {
 		return s
 	}
-	return placeholderRe.ReplaceAllStringFunc(s, func(tok string) string {
+	return PlaceholderRe.ReplaceAllStringFunc(s, func(tok string) string {
 		// tok includes the braces; strip them for the lookup
 		key := tok[1 : len(tok)-1]
 		if v, ok := m[key]; ok {
@@ -66,6 +67,25 @@ func BuildMap(f *engine.Facts, clan string) map[string]string {
 	m["is_container"] = boolStr(f.IsContainer)
 	m["is_android"] = boolStr(f.IsAndroid)
 	return m
+}
+
+// KnownPlaceholders returns every {name} token that may appear in schema.toml
+// without being flagged by validation. It derives the set from BuildMap (the
+// detect_os.sh Facts surface) plus the two adapter-owned tokens "pkg" and
+// "latest" that pass through Expand untouched.
+//
+// Deriving from BuildMap ensures that adding a new Fact field automatically
+// extends the known-placeholder set — the validate package never duplicates
+// this list.
+func KnownPlaceholders() []string {
+	m := BuildMap(&engine.Facts{}, "")
+	out := make([]string, 0, len(m)+2)
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	out = append(out, "pkg", "latest")
+	return out
 }
 
 // boolStr mirrors detect_os.sh's bool_str so JSON booleans expose a stable

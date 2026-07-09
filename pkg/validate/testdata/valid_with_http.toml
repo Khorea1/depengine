@@ -1,0 +1,5 @@
+[tools]
+myapp = { http = { url = "https://example.com/file.deb" } }
+[defaults]
+manager = "native"
+method_order = ["native"]

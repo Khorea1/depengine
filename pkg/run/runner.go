@@ -75,3 +75,14 @@ func (OSExecRunner) Run(ctx context.Context, name string, args ...string) Result
 		Err:      runErr,
 	}
 }
+
+// LookPath reports whether name is found on PATH via a `which` lookup
+// executed through rn. Returns true iff the lookup exits cleanly with
+// code 0 (the binary exists and is executable).
+//
+// Centralizing this lets adapters and validators share one binary-existence
+// contract rather than each cloning the `which {binary}` pattern.
+func LookPath(ctx context.Context, rn Runner, name string) bool {
+	res := rn.Run(ctx, "which", name)
+	return res.Err == nil && res.ExitCode == 0
+}

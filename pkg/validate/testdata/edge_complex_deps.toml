@@ -1,0 +1,12 @@
+# Diamond-shaped dependency graph:
+#   a → b → d
+#   a → c → d
+# Also: e requires b but d is missing entirely → dangling ref
+# Also: f has self-ref → cycle
+[tools]
+a = { requires = ["b", "c"] }
+b = { requires = ["d"] }
+c = { requires = ["d"] }
+d = { requires = ["e"] }
+e = { requires = ["nonexistent"] }
+f = { requires = ["f"] }

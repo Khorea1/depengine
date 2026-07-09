@@ -1,0 +1,4 @@
+# Empty when clause — recognized by the parser as having no condition
+[tools]
+# when with empty distro_family (no families listed)
+myapp = { when = { distro_family = [] }, apt = "myapp" }
