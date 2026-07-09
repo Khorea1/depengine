@@ -1,12 +1,10 @@
-# TODO.md — depengine
-
 > **Projeto:** depengine  
 > **Data:** 2026-07-09  
-> **Status dos testes:** ✅ `go test ./...` — 0 falhas (12/12 packages pass, ~90+ testes)  
+> **Status dos testes:** ✅ `go test ./...` — 0 falhas (12/12 packages pass)  
 > **Build:** ✅ `go build -o depengine .` — limpo  
-> **Próximo release:** `v0.2.0` — schema validation + debug refinements + arch refactor
+> **Próximo release:** `v0.2.0` — adapters expansion Campanha 4
 
-Depois de três campanhas implementadas (Fundação, Executor+Adapters, Logging), o motor está completo e funcional. A **Campanha 3 (Validação de Schema)** foi concluída — estruturais, semânticas e ambientais com CLI `validate`.
+Depois de quatro campanhas implementadas (Fundação, Executor+Adapters, Logging, Schema Validation), o motor está completo e funcional com **~23 métodos de instalação**. A **Campanha 4 (Adapter Expansions)** foi concluída — pnpm, dnf5, vscodium, conda, asdf/mise e bun.
 
 ## 🔧 Architecture Refactor — 5 Candidates (CONCLUÍDO)
 
@@ -247,7 +245,7 @@ Ativa DEBUG + dry-run + verbose implícito. Loga Facts, Schema normalizado, orde
 - [x] `--strict` — warnings viram erros
 ---
 
-# 🚀 CAMPANHA 4: Polimento & Release (P2)
+# 🚀 CAMPANHA 5: Polimento & Release (P2)
 
 - [ ] **CI/CD**: GitHub Actions compila para linux/amd64, linux/arm64, darwin/amd64, darwin/arm64
 - [ ] **Autocomplete** bash/zsh/fish para comandos e flags
@@ -285,6 +283,15 @@ CAMPANHA 3 (✅ IMPLEMENTADA — P1)
   ├── ✅ 3.3 Validação de ambiente (--check-env)
   └── ✅ 3.4 CLI validate + testes
 
+CAMPANHA 4 (✅ IMPLEMENTADA — P0)
+  ├── ✅ pnpm — BaseAdapter (npm-like)
+  ├── ✅ dnf5 — alias native fedora
+  ├── ✅ conda — adapter específico
+  ├── ✅ asdf/mise — universal version manager adapter
+  ├── ✅ vscodium — codium binary (vscode-like)
+  └── ✅ bun — fast JS runtime/package manager
+```
+
 ## Features implementadas desde a última atualização:
 
 - [x] **`--sort-by`** (name/status/method) no CLI `install`
@@ -298,7 +305,13 @@ CAMPANHA 3 (✅ IMPLEMENTADA — P1)
 - [x] **Schema validation** — `pkg/validate` com 50+ testes (unit + integration)
 - [x] **`depengine validate`** — CLI com `--check-env`, `--format=json`, `--strict` (27 testes integração)
 - [x] **Integration tests** — `tests/integration/validate_test.go` (build+exec real contra 20+ TOMLs)
-> **Última atualização:** 2026-07-09. Campanha 3 ✅. Testes reais: ~90+ testes, 12/12 packages, integração CLI com TOMLs reais.
+- [x] **pnpm adapter** — BaseAdapter para pnpm, AvailableExtra corepack
+- [x] **dnf5 alias** — managerNameToClan entry para Fedora 41+
+- [x] **vscodium adapter** — BaseAdapter para codium (vscode-like)
+- [x] **conda adapter** — adapter específico (conda install -y)
+- [x] **asdf/mise adapter** — universal version manager (asdf plugin-add, mise use -g)
+- [x] **bun adapter** — BaseAdapter para bun (bun add -g)
+> **Última atualização:** 2026-07-09. Campanha 4 ✅. Testes: 12/12 packages, schema valid.
 
 ---
 
@@ -315,7 +328,7 @@ CAMPANHA 3 (✅ IMPLEMENTADA — P1)
 | `pkg/exec` — executor central | ✅ | 17 testes |
 | `pkg/exec` — native adapter | ✅ | 5 testes |
 | `pkg/graph` — dependency resolver | ✅ | 7 testes |
-| `pkg/lang` — 17 adapter kinds | ✅ | 16 testes |
+| `pkg/lang` — 23 adapter kinds | ✅ | 16 testes |
 | `pkg/git` — git adapter | ✅ | 8 testes |
 | `pkg/httpdownload` — http adapter | ✅ | 13 testes |
 | `pkg/log` — structured logging | ✅ | 11 testes |
@@ -360,19 +373,19 @@ CAMPANHA 3 (✅ IMPLEMENTADA — P1)
 ## Prioridade de implementação (atualizada — julho/2026)
 
 ```
-CAMPANHA 3:  Schema validation (P1) — estrutural + semântica + CLI
-MÉDIA (debug): L2 (schema parse logging), L7 (env vars logging)
-BAIXA (debug):  L6 (depengine check logging)
-═══════════════════════════════════════════════════════════════════
-🔴 PRIORIDADE MÁXIMA
-CAMPANHA 4:  Novos adaptadores (P0)
+CAMPANHA 3:  Schema validation (P1) — estrutural + semântica + CLI             ✅
+CAMPANHA 4:  Novos adaptadores (P0)                                            ✅
   ▸ pnpm         — BaseAdapter, 1 entry no Configs map
   ▸ dnf5         — alias para fedora no managerNameToClan
   ▸ conda        — adapter específico (check/install via conda)
   ▸ asdf / mise  — universal version manager adapter
   ▸ vscodium     — cópia do vscode com binary "codium"
+  ▸ bun          — fast JS runtime/package manager (bun add -g)
 ═══════════════════════════════════════════════════════════════════
-CAMPANHA 5:  CI/CD, autocomplete, man page, benchmarks (P2)
+MÉDIA (debug): L2 (schema parse logging), L7 (env vars logging)
+BAIXA (debug):  L6 (depengine check logging)
+═══════════════════════════════════════════════════════════════════
+NEXT: Campanha 5  — CI/CD, autocomplete, man page, benchmarks (P2)
 ---
 
 # 📝 Notas de Implementação
@@ -387,4 +400,4 @@ CAMPANHA 5:  CI/CD, autocomplete, man page, benchmarks (P2)
 - **Manager aliases**: adapters para `apt`, `pacman`, `dnf`, `brew`, etc. são registrados automaticamente por `RegisterNativeManagerAliases()`.
 
 ---
-_Última atualização: 2026-07-09. Campanhas 0–3 ✅. Refactor 5/5 ✅. Campanha 4 (novos adaptadores) 🔴 P0 pendente. Campanha 5 (CI/CD) P2 pendente. Próximo release: v0.2.0._
+_Última atualização: 2026-07-09. Campanhas 0–4 ✅. Campanha 5 (CI/CD, autocomplete, man page) P2 pendente. Próximo release: v0.2.0._

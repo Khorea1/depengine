@@ -45,6 +45,19 @@ var Configs = map[string]BaseConfig{
 		CheckTmpl:   []string{"npm", "ls", "-g", "--depth=0", "{pkg}"},
 		InstallTmpl: []string{"npm", "install", "-g", "{pkg}"},
 	},
+	"pnpm": {
+		KindName:       "pnpm",
+		Binary:         "pnpm",
+		CheckTmpl:      []string{"pnpm", "ls", "-g", "--depth=0", "{pkg}"},
+		InstallTmpl:    []string{"pnpm", "add", "-g", "{pkg}"},
+		AvailableExtra: "corepack",
+	},
+	"bun": {
+		KindName:    "bun",
+		Binary:      "bun",
+		CheckTmpl:   []string{"sh", "-c", "bun pm ls -g | grep -q {pkg}"},
+		InstallTmpl: []string{"bun", "add", "-g", "{pkg}"},
+	},
 	"gem": {
 		KindName:    "gem",
 		Binary:      "gem",
@@ -88,6 +101,12 @@ var Configs = map[string]BaseConfig{
 		InstallTmpl:    []string{"code", "--install-extension", "{pkg}"},
 		AvailableExtra: "code-insiders",
 	},
+	"vscodium": {
+		KindName:       "vscodium",
+		Binary:         "codium",
+		CheckTmpl:      []string{"sh", "-c", "codium --list-extensions | grep -q {pkg}"},
+		InstallTmpl:    []string{"codium", "--install-extension", "{pkg}"},
+	},
 	"cask": {
 		KindName:    "cask",
 		Binary:      "brew",
@@ -128,4 +147,6 @@ func RegisterAll(aurHelper string) {
 	exec.Register(NewSteamCMDAdapter())
 	exec.Register(NewYarnBerryAdapter())
 	exec.Register(NewPacstallAdapter())
+	exec.Register(NewCondaAdapter())
+	exec.Register(NewAsdfAdapter())
 }
