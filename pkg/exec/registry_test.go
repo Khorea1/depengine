@@ -1,0 +1,84 @@
+package exec
+
+import (
+	"context"
+	"testing"
+
+	"depengine/pkg/run"
+	"depengine/pkg/schema"
+)
+
+// mockAdapter is a minimal adapter for testing the registry.
+type mockAdapter struct {
+	kindValue string
+}
+
+func (m *mockAdapter) Kind() string                               { return m.kindValue }
+func (m *mockAdapter) Available(context.Context, run.Runner) bool { return true }
+func (m *mockAdapter) Check(context.Context, run.Runner, *schema.Tool, *schema.MethodCandidate) bool {
+	return false
+}
+func (m *mockAdapter) Install(context.Context, run.Runner, *schema.Tool, *schema.MethodCandidate) error {
+	return nil
+}
+
+func TestRegisterAndLookup(t *testing.T) {
+	// Save and restore global registry.
+	saved := adapters
+	adapters = map[string]Adapter{}
+	defer func() { adapters = saved }()
+
+	m := &mockAdapter{kindValue: "test-kind"}
+	Register(m)
+
+	got := Lookup("test-kind")
+	if got == nil {
+		t.Fatal("Lookup returned nil for registered adapter")
+	}
+	if got.Kind() != "test-kind" {
+		t.Fatalf("Lookup returned kind %q, want %q", got.Kind(), "test-kind")
+	}
+
+	// Looking up an unregistered kind returns nil.
+	if unreg := Lookup("nope"); unreg != nil {
+		t.Fatalf("Lookup for unregistered kind should be nil, got %v", unreg)
+	}
+}
+
+func TestRegisterDuplicatePanics(t *testing.T) {
+	saved := adapters
+	adapters = map[string]Adapter{}
+	defer func() { adapters = saved }()
+
+	Register(&mockAdapter{kindValue: "dup"})
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic on duplicate register, got none")
+		}
+	}()
+
+	Register(&mockAdapter{kindValue: "dup"})
+}
+
+func TestRegisteredKinds(t *testing.T) {
+	saved := adapters
+	adapters = map[string]Adapter{}
+	defer func() { adapters = saved }()
+
+	Register(&mockAdapter{kindValue: "a"})
+	Register(&mockAdapter{kindValue: "b"})
+
+	kinds := RegisteredKinds()
+	if len(kinds) != 2 {
+		t.Fatalf("expected 2 kinds, got %d: %v", len(kinds), kinds)
+	}
+
+	seen := map[string]bool{}
+	for _, k := range kinds {
+		seen[k] = true
+	}
+	if !seen["a"] || !seen["b"] {
+		t.Fatalf("RegisteredKinds missing kinds: got %v", kinds)
+	}
+}

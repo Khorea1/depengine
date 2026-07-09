@@ -1,0 +1,36 @@
+services:
+  debian:
+    build:
+      context: ../..
+      dockerfile: tests/integration/Dockerfile.debian
+    volumes:
+      - ../../:/depengine
+    environment:
+      - DEPENGINE_NOSUDO=1
+
+  arch:
+    build:
+      context: ../..
+      dockerfile: tests/integration/Dockerfile.arch
+    volumes:
+      - ../../:/depengine
+    environment:
+      - DEPENGINE_NOSUDO=1
+
+  fedora:
+    build:
+      context: ../..
+      dockerfile: tests/integration/Dockerfile.fedora
+    volumes:
+      - ../../:/depengine
+    environment:
+      - DEPENGINE_NOSUDO=1
+
+  alpine:
+    build:
+      context: ../..
+      dockerfile: tests/integration/Dockerfile.alpine
+    volumes:
+      - ../../:/depengine
+    environment:
+      - DEPENGINE_NOSUDO=1

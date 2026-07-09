@@ -1,0 +1,114 @@
+// Package git provides an adapter for installing tools via git clone + build.
+//
+// The GitAdapter clones a repository (shallow by default), optionally runs
+// a build command, and optionally copies artifacts to extract_to.
+package git
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"depengine/pkg/exec"
+	"depengine/pkg/run"
+	"depengine/pkg/schema"
+)
+
+// GitAdapter implements exec.Adapter for git-based installations.
+type GitAdapter struct{}
+
+// NewGitAdapter creates a GitAdapter.
+func NewGitAdapter() *GitAdapter {
+	return &GitAdapter{}
+}
+
+func (a *GitAdapter) Kind() string { return "git" }
+
+// Available checks whether git is on PATH.
+func (a *GitAdapter) Available(ctx context.Context, rn run.Runner) bool {
+	res := rn.Run(ctx, "which", "git")
+	return res.Err == nil && res.ExitCode == 0
+}
+
+// Check verifies if the tool was already installed via git. Uses two
+// strategies:
+//  1. If extract_to is set and contains a .git dir, consider it installed.
+//  2. If binary is set and exists on PATH, consider it installed.
+func (a *GitAdapter) Check(ctx context.Context, rn run.Runner, _ *schema.Tool, mc *schema.MethodCandidate) bool {
+	if extractTo, ok := mc.Config["extract_to"].(string); ok && extractTo != "" {
+		res := rn.Run(ctx, "test", "-d", extractTo+"/.git")
+		if res.Err == nil && res.ExitCode == 0 {
+			return true
+		}
+	}
+	if binary, ok := mc.Config["binary"].(string); ok && binary != "" {
+		res := rn.Run(ctx, "which", binary)
+		if res.Err == nil && res.ExitCode == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// Install clones the repository, optionally builds, and optionally copies
+// artifacts to the configured extract_to directory.
+func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+	url, ok := mc.Config["url"].(string)
+	if !ok || url == "" {
+		return fmt.Errorf("git: no url configured for tool %q", tool.Name)
+	}
+
+	// Resolve {latest} — for v0.1, simplify to using default branch.
+	url = strings.ReplaceAll(url, "{latest}", "")
+
+	// Determine clone depth (default: shallow).
+	depth := "1"
+	if d, ok := mc.Config["depth"].(string); ok && d != "" {
+		depth = d
+	}
+
+	// Determine clone directory.
+	cloneDir := fmt.Sprintf("/tmp/depengine-git-%s", tool.Name)
+	if d, ok := mc.Config["extract_to"].(string); ok && d != "" {
+		cloneDir = d
+	}
+
+	// Build clone args.
+	cloneArgs := []string{"clone", "--depth", depth}
+	if branch, ok := mc.Config["branch"].(string); ok && branch != "" {
+		cloneArgs = append(cloneArgs, "--branch", branch)
+	}
+	cloneArgs = append(cloneArgs, url, cloneDir)
+
+	// Run git clone.
+	res := rn.Run(ctx, "git", cloneArgs...)
+	if res.Err != nil {
+		return fmt.Errorf("git: clone failed: %w", res.Err)
+	}
+	if res.ExitCode != 0 {
+		stderr := strings.TrimSpace(string(res.Stderr))
+		return fmt.Errorf("git: clone exited %d: %s", res.ExitCode, stderr)
+	}
+
+	// Run build step if configured.
+	if buildCmd, ok := mc.Config["build"].(string); ok && buildCmd != "" {
+		// Use shell to run the build command.
+		parts := strings.Fields(buildCmd)
+		if len(parts) == 0 {
+			return fmt.Errorf("git: empty build command for tool %q", tool.Name)
+		}
+		buildRes := rn.Run(ctx, parts[0], parts[1:]...)
+		if buildRes.Err != nil {
+			return fmt.Errorf("git: build failed: %w", buildRes.Err)
+		}
+		if buildRes.ExitCode != 0 {
+			stderr := strings.TrimSpace(string(buildRes.Stderr))
+			return fmt.Errorf("git: build exited %d: %s", buildRes.ExitCode, stderr)
+		}
+	}
+
+	return nil
+}
+
+// Ensure GitAdapter implements exec.Adapter at compile time.
+var _ exec.Adapter = (*GitAdapter)(nil)

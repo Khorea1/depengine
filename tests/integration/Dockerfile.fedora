@@ -1,0 +1,11 @@
+FROM fedora:latest
+
+RUN dnf install -y golang git curl ca-certificates && dnf clean all
+
+WORKDIR /depengine
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN go build -o /usr/local/bin/depengine .
+
+CMD ["depengine", "install", "--dry-run", "--verbose", "--schema", "tests/integration/test_schema.toml"]

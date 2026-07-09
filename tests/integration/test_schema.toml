@@ -1,0 +1,86 @@
+# Schema de teste para integração — cobre múltiplos métodos, fallback,
+# when, requires, e diferentes tipos de instalação.
+
+[defaults]
+manager = "native"
+method_order = ["native", "cargo", "go", "pip", "git", "http"]
+
+# ─────────────────────────────────────────────
+# Tools que existem em TODAS as distros (para testar nativo)
+# ─────────────────────────────────────────────
+
+  [tools.curl]
+  simple = true
+
+  [tools.git]
+  simple = true
+
+  [tools.zsh]
+  simple = true
+
+# ─────────────────────────────────────────────
+# Tools com fallback entre distros
+# ─────────────────────────────────────────────
+
+  [tools.fd]
+  # Em debian: fd-find. Em arch: fd. Native pega o correto.
+  apt = "fd-find"
+  pacman = "fd"
+  dnf = "fd-find"
+
+# ─────────────────────────────────────────────
+# Tools com when (só executa em distros específicas)
+# ─────────────────────────────────────────────
+
+  [tools.debian-only-tool]
+  native = "hello"
+  when = { distro_family = ["debian"] }
+
+# ─────────────────────────────────────────────
+# Dependências entre tools (requires)
+# ─────────────────────────────────────────────
+
+  [tools.tool-a]
+  requires = ["tool-b", "tool-c"]
+
+  [tools.tool-b]
+  requires = ["tool-c"]
+
+  [tools.tool-c]
+  simple = true
+
+# ─────────────────────────────────────────────
+# Tool via cargo (fallback quando nativo não tem)
+# ─────────────────────────────────────────────
+
+  [tools.lazygit]
+  cargo = { pkg = "lazygit" }
+
+# ─────────────────────────────────────────────
+# Tool via go install
+# ─────────────────────────────────────────────
+
+  [tools.fzf]
+  go = { pkg = "github.com/junegunn/fzf@latest", binary = "fzf" }
+
+# ─────────────────────────────────────────────
+# Tool via git clone
+# ─────────────────────────────────────────────
+
+  [tools.fff]
+  git = { url = "https://github.com/dylanaraps/fff.git", build = "make" }
+
+# ─────────────────────────────────────────────
+# Tool com postinstall
+# ─────────────────────────────────────────────
+
+  [tools.hello-world]
+  simple = true
+  postinstall = "echo 'hello from postinstall'"
+
+# ─────────────────────────────────────────────
+# Tool HTTP (apenas dry-run em testes CI)
+# ─────────────────────────────────────────────
+
+  [tools.shellcheck-http]
+  http = { url = "https://github.com/koalaman/shellcheck/releases/{latest}/shellcheck-{latest}.linux.{arch}.tar.xz", extract_to = "/usr/local/bin" }

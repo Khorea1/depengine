@@ -1,0 +1,148 @@
+# ==============================================================================
+# schema.toml — TEMPLATE / REFERÊNCIA
+# ==============================================================================
+# Este arquivo descreve como instalar dependências de forma distro-agnostic.
+# O motor externo (o programa que lê este arquivo) decide COMO instalar cada
+# tool, tentando os métodos declarados na ordem certa até um funcionar.
+#
+# REGRA DE OURO: tudo que está OMITIDO = comportamento padrão definido pelo
+# motor externo (ex: nome do pacote = nome da tool, se nada for dito).
+# ==============================================================================
+
+
+[defaults]
+# Manager usado quando uma tool não especifica nada (ver seção "simple" abaixo).
+# "native" = o gerenciador de pacotes nativo da distro do usuário
+# (apt, pacman, dnf, zypper, etc — o motor detecta sozinho).
+manager = "native"
+
+# Helper de AUR a usar quando algum método for "aur". Só relevante em Arch-based.
+aur_helper = "paru"
+
+# Quando uma tool declara MAIS DE UM método candidato (ex: cargo, go, aur, git),
+# esta lista define a ordem de tentativa. O motor para no primeiro que funcionar.
+method_order = ["native", "cargo", "go", "pipx", "uv", "pip",  "npm", "gem", "yarn", "yarn-berry", "composer", "apm", "vscode", "flatpak", "snap", "cask", "mas", "sdkman", "steamcmd", "pacstall", "aur", "git", "http"]
+
+
+# ==============================================================================
+# [tools] — TODAS as dependências vivem aqui dentro
+# ==============================================================================
+[tools]
+
+# ------------------------------------------------------------------------
+# CASO 1 — Tool "simples": nome do pacote é igual em toda distro relevante.
+# Não precisa de tabela nenhuma, só listar o nome. Usa `defaults.manager`.
+# ------------------------------------------------------------------------
+simple = ["zsh", "zathura", "w3m", "rofi", "mpv", "kitty", "bat", "lsd"]
+
+
+# ------------------------------------------------------------------------
+# CASO 2 — Nome do pacote muda conforme o manager nativo.
+# Formato: inline table com `<manager> = "nome-do-pacote-nesse-manager"`.
+# Managers não listados aqui usam o próprio nome da tool como fallback.
+# ------------------------------------------------------------------------
+fd   = { apt = "fd-find" }                                   # nos demais, "fd"
+nvim = { pacman = "neovim", apt = "neovim", brew = "neovim" }
+hypr = { pacman = "hyprland" }
+
+
+# ------------------------------------------------------------------------
+# CASO 3 — Manager de linguagem (pip, pipx, uv, go, cargo, npm, gem...).
+# O valor é o nome do pacote/módulo NESSE ecossistema — pode ser diferente
+# do nome do binário final.
+# ------------------------------------------------------------------------
+organize = { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }
+fzf      = { go = "github.com/junegunn/fzf" }
+lf       = { go = "github.com/gokcehan/lf" }
+
+
+# ------------------------------------------------------------------------
+# CASO 4 — cargo/go instalando direto de um repositório git (não do
+# crates.io/pkg.go.dev oficial). Sub-chave `git` dentro do manager.
+# ------------------------------------------------------------------------
+matugen    = { cargo = { git = "https://github.com/InioX/matugen" } }
+aichat-ng = { cargo = { git = "https://github.com/sigoden/aichat" } }
+
+
+# ------------------------------------------------------------------------
+# CASO 5 — Método "git": clona o repo e roda um comando de build manual.
+# Campos:
+#   url   = repositório a clonar
+#   build = comando executado dentro do repo clonado (sempre esse nome,
+#           nunca "install" — evita ambiguidade de nomenclatura)
+# ------------------------------------------------------------------------
+ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install" } }
+fasd = { git = { url = "https://github.com/clvv/fasd",        build = "PREFIX=$HOME/.local make install" } }
+
+
+# ------------------------------------------------------------------------
+# CASO 6 — Método "http": baixa um artefato pronto (deb, zip, binário...).
+# Campos:
+#   url      = link de download. Suporta placeholder {latest} (resolvido
+#              pelo motor para a versão mais recente do release).
+#   checksum = "sha256:auto" pede ao motor para calcular/validar sozinho;
+#              também aceita um hash fixo, ex "sha256:abcd123..."
+# ------------------------------------------------------------------------
+fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb", checksum = "sha256:auto" } }
+
+
+# ------------------------------------------------------------------------
+# CASO 7 — Dependência entre tools e override simultâneo de pacote.
+# `requires` é um campo de NÍVEL DE TOOL (não do método): vale não importa
+# qual método acabe sendo usado para instalar essa tool.
+# ------------------------------------------------------------------------
+zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
+
+
+# ------------------------------------------------------------------------
+# CASO 8 — Caso complexo: múltiplos métodos concorrentes + condição de
+# distro + hook pós-instalação. Aqui NÃO dá para inlinar (ficaria ilegível
+# ou o TOML não permite quebra de linha dentro de inline table), então
+# promovemos para bloco completo com sub-tabelas.
+#
+# Regras deste formato:
+#   - [tools.NOME]            → campos de nível de tool: `requires`,
+#                                `postinstall` (roda depois que QUALQUER
+#                                método tiver sucesso).
+#   - [tools.NOME.metodo]     → um bloco por método candidato. O motor
+#                                tenta na ordem em que aparecem no arquivo
+#                                (ou por `method_order`, se nenhuma ordem
+#                                explícita for dada).
+#   - `when`                  → condição de aplicabilidade DENTRO do
+#                                método (nunca um nível de aninhamento
+#                                próprio, nunca vira nome de "manager").
+#                                Se a condição não bate, o motor pula esse
+#                                método e vai para o próximo.
+# ------------------------------------------------------------------------
+[tools.DepartureMono]
+postinstall = "fc-cache -fv"
+
+  [tools.DepartureMono.aur]
+  pkg  = "otf-departure-mono-nerd"
+  when = { distro_family = ["arch"] }
+
+  [tools.DepartureMono.http]
+  url        = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/DepartureMono.zip"
+  extract_to = "~/.local/share/fonts/DepartureMono"
+
+
+# ==============================================================================
+# CHECKLIST — qual formato usar para uma tool nova?
+# ==============================================================================
+# 1. Nome do pacote é sempre o mesmo, sem condições especiais?
+#       → adiciona na lista `simple`.
+#
+# 2. Só muda o nome do pacote entre managers (nativo e/ou linguagem),
+#    sem `when`, sem múltiplos métodos concorrentes, cabe numa linha?
+#       → inline table: `nome = { manager = "pacote", ... }`
+#
+# 3. Precisa de `when`, tem mais de um método candidato, ou a linha
+#    inline ficaria enorme/ilegível?
+#       → bloco completo: [tools.NOME] + [tools.NOME.metodo]
+#
+# Campos que SEMPRE ficam no nível da tool (fora do método):
+#   requires, postinstall
+#
+# Campos que SEMPRE ficam dentro do método:
+#   when, url, build, checksum, extract_to, pkg, git
+# ==============================================================================

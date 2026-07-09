@@ -1,0 +1,26 @@
+# Binaries
+depengine
+depengine.exe
+*.test
+*.out
+
+# Build tools
+vendor/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+/tmp/test_*.toml
