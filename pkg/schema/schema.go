@@ -10,6 +10,7 @@ import (
 	"depengine/pkg/native"
 
 	"github.com/pelletier/go-toml/v2"
+	"depengine/pkg/log"
 )
 
 // Schema is the fully-normalized in-memory form of schema.toml after parsing.
@@ -47,10 +48,14 @@ type Tool struct {
 // optional applicability guard (today only distro_family). Config holds the
 // method-specific fields verbatim (pkg, url, build, checksum, extract_to,
 // git, ...) — strings here are subject to placeholder expansion.
+// Err is non-nil when parseMethod encountered a value it could not process;
+// callers should surface this with other diagnostics rather than silently
+// dropping the method.
 type MethodCandidate struct {
 	Kind   string
 	When   *Condition
 	Config map[string]any
+	Err    error
 }
 
 // Condition is the parsed form of `when = { ... }`. Today only
@@ -147,6 +152,8 @@ func extractDefaults(raw any) Defaults {
 		for _, item := range v {
 			if s, ok := item.(string); ok {
 				order = append(order, s)
+			} else {
+				log.Default.Debug("extractDefaults: ignoring non-string method_order item", "value", item)
 			}
 		}
 		if len(order) > 0 {
@@ -299,11 +306,11 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	for _, k := range nonNativeKeys {
 		mc, err := parseMethod(k, valMap[k])
 		if err != nil {
-			// Inline errors here only happen on malformed values — we store
-			// a minimal error method so the caller sees ALL diagnostics.
+			// Attach the parse error to the method so callers can surface it.
 			methods = append(methods, &MethodCandidate{
 				Kind:   k,
 				Config: map[string]any{},
+				Err:    err,
 			})
 			continue
 		}
@@ -319,15 +326,27 @@ func parseCondition(raw any) *Condition {
 		return nil
 	}
 	cond := &Condition{}
-	if df, ok := rm["distro_family"].([]any); ok {
-		cond.DistroFamily = anySliceToStrings(df)
+	var invalidKeys []string
+	for k, v := range rm {
+		switch k {
+		case "distro_family":
+			if df, ok := v.([]any); ok {
+				cond.DistroFamily = anySliceToStrings(df)
+			}
+		default:
+			invalidKeys = append(invalidKeys, k)
+		}
+	}
+	if len(invalidKeys) > 0 {
+		// Logged at debug level — unknown keys in `when` are not an error
+		// (they may be from future schema versions).
+		log.Default.Debug("parseCondition: ignoring unknown keys", "keys", invalidKeys)
 	}
 	if len(cond.DistroFamily) == 0 {
 		return nil
 	}
 	return cond
 }
-
 func orderByMethodOrder(methods []*MethodCandidate, order []string) []*MethodCandidate {
 	prio := map[string]int{}
 	for i, k := range order {
@@ -426,11 +445,13 @@ func Validate(s *Schema, knownKinds []string) (error, []string) {
 			continue
 		}
 		if knownCount == 0 {
-			// All kinds unknown — hard error: tool is unreachable.
-			hardErrors = append(hardErrors, fmt.Sprintf(
-				"unknown method kind %q for tool %q (no adapter is registered; hint: register the adapter in initAdapters or fix the typo)",
-				unknownKinds[0], toolName,
-			))
+			// All kinds unknown — hard error: tool is unreachable. List all.
+			for _, uk := range unknownKinds {
+				hardErrors = append(hardErrors, fmt.Sprintf(
+					"unknown method kind %q for tool %q (no adapter is registered; hint: register the adapter in initAdapters or fix the typo)",
+					uk, toolName,
+				))
+			}
 		} else {
 			// At least one known fallback — warn for each unknown kind.
 			for _, uk := range unknownKinds {
@@ -441,6 +462,7 @@ func Validate(s *Schema, knownKinds []string) (error, []string) {
 			}
 		}
 	}
+
 
 	if len(hardErrors) > 0 {
 		return &ParseSchemaError{Err: errors.New(strings.Join(hardErrors, "\n"))}, warnings
