@@ -236,13 +236,12 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 
 	for _, method := range methods {
 		attempt := MethodAttempt{Kind: method.Kind}
-		baseAttrs := []any{"tool", tool.Name, "method", method.Kind}
 
 		if method.When != nil && len(method.When.DistroFamily) > 0 {
 			if !engine.MatchesDistroFamily(ex.clan, method.When.DistroFamily) {
 				attempt.Status = "skip_when"
 				result.Methods = append(result.Methods, attempt)
-				ex.logDebug("tool", append(baseAttrs, "status", "skip_when", "requires", fmt.Sprintf("%v", method.When.DistroFamily))...)
+				ex.logDebug("tool", "tool", tool.Name, "method", method.Kind, "status", "skip_when", "requires", fmt.Sprintf("%v", method.When.DistroFamily))
 				continue
 			}
 		}
@@ -252,7 +251,7 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 			attempt.Status = "skip_unavailable"
 			attempt.Error = fmt.Sprintf("no adapter for %q", method.Kind)
 			result.Methods = append(result.Methods, attempt)
-			ex.logDebug("tool", append(baseAttrs, "status", "skip_no_adapter")...)
+			ex.logDebug("tool", "tool", tool.Name, "method", method.Kind, "status", "skip_no_adapter")
 			continue
 		}
 
@@ -260,7 +259,7 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 			attempt.Status = "skip_unavailable"
 			attempt.Error = fmt.Sprintf("adapter %q not available", method.Kind)
 			result.Methods = append(result.Methods, attempt)
-			ex.logDebug("tool", append(baseAttrs, "status", "skip_unavailable")...)
+			ex.logDebug("tool", "tool", tool.Name, "method", method.Kind, "status", "skip_unavailable")
 			continue
 		}
 
@@ -269,7 +268,7 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 			result.Method = method.Kind
 			attempt.Status = "skip_already"
 			result.Methods = append(result.Methods, attempt)
-			ex.logDebug("tool", append(baseAttrs, "status", "already_installed")...)
+			ex.logDebug("tool", "tool", tool.Name, "method", method.Kind, "status", "already_installed")
 			result.Duration = time.Since(toolStart).String()
 			return result
 		}
@@ -279,12 +278,12 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 			result.Method = method.Kind
 			attempt.Status = "success"
 			result.Methods = append(result.Methods, attempt)
-			ex.logDebug("tool", append(baseAttrs, "status", "would_install")...)
+			ex.logDebug("tool", "tool", tool.Name, "method", method.Kind, "status", "would_install")
 			result.Duration = time.Since(toolStart).String()
 			return result
 		}
 
-		ex.logDebug("tool", append(baseAttrs, "status", "installing")...)
+		ex.logDebug("tool", "tool", tool.Name, "method", method.Kind, "status", "installing")
 		runner := ex.rn
 		if lr, ok := runner.(*run.LoggingRunner); ok {
 			runner = lr.WithContext(run.Context{Tool: tool.Name, Method: method.Kind})
@@ -298,7 +297,7 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 			result.Method = method.Kind
 			attempt.Status = "success"
 			result.Methods = append(result.Methods, attempt)
-			ex.logDebug("tool", append(baseAttrs, "status", "installed")...)
+			ex.logDebug("tool", "tool", tool.Name, "method", method.Kind, "status", "installed")
 			if tool.PostInstall != "" {
 				ex.runPostinstall(methodCtx, tool)
 			}
@@ -309,7 +308,7 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 		attempt.Status = "failed"
 		attempt.Error = err.Error()
 		result.Methods = append(result.Methods, attempt)
-		ex.logWarn("tool", append(baseAttrs, "status", "failed", "error", err.Error())...)
+		ex.logWarn("tool", "tool", tool.Name, "method", method.Kind, "status", "failed", "error", err.Error())
 	}
 
 	result.Status = StatusSkippedUnavailable
@@ -347,26 +346,16 @@ func (ex *Executor) runPostinstall(ctx context.Context, tool *schema.Tool) {
 	}
 }
 
-// logDebug emits a structured DEBUG log if the executor has a logger set.
-func (ex *Executor) logDebug(msg string, attrs ...any) {
+// log emits a structured log entry at the given level, if a logger is set.
+func (ex *Executor) log(level slog.Level, msg string, attrs ...any) {
 	if ex.logger != nil {
-		ex.logger.Debug(msg, attrs...)
+		ex.logger.Log(context.Background(), level, msg, attrs...)
 	}
 }
 
-// logInfo emits a structured INFO log if the executor has a logger set.
-func (ex *Executor) logInfo(msg string, attrs ...any) {
-	if ex.logger != nil {
-		ex.logger.Info(msg, attrs...)
-	}
-}
-
-// logWarn emits a structured WARN log if the executor has a logger set.
-func (ex *Executor) logWarn(msg string, attrs ...any) {
-	if ex.logger != nil {
-		ex.logger.Warn(msg, attrs...)
-	}
-}
+func (ex *Executor) logDebug(msg string, attrs ...any) { ex.log(slog.LevelDebug, msg, attrs...) }
+func (ex *Executor) logInfo(msg string, attrs ...any)  { ex.log(slog.LevelInfo, msg, attrs...) }
+func (ex *Executor) logWarn(msg string, attrs ...any)  { ex.log(slog.LevelWarn, msg, attrs...) }
 
 // outputf formats user-facing output (status lines, sync messages, etc.).
 func (ex *Executor) outputf(format string, args ...any) {
