@@ -69,7 +69,11 @@ func (a *BaseAdapter) Available(ctx context.Context, rn run.Runner) bool {
 }
 
 // Check runs the check command template. Exit 0 means installed.
+// Returns false immediately if the adapter's binary is not available.
 func (a *BaseAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
+	if !a.Available(ctx, rn) {
+		return false
+	}
 	cmd := a.buildCmd(a.config.CheckTmpl, tool, mc)
 	if cmd == nil {
 		return false
@@ -79,7 +83,11 @@ func (a *BaseAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Too
 }
 
 // Install runs the install command template.
+// Returns an error immediately if the adapter's binary is not available.
 func (a *BaseAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+	if !a.Available(ctx, rn) {
+		return fmt.Errorf("%s: binary %q not available on PATH", a.config.KindName, a.config.Binary)
+	}
 	cmd := a.buildCmd(a.config.InstallTmpl, tool, mc)
 	if cmd == nil {
 		return fmt.Errorf("%s: no install command", a.config.KindName)
