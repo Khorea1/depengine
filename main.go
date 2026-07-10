@@ -26,6 +26,29 @@ func main() {
 	// Register all adapters before any command runs.
 	initAdapters()
 
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(0)
+	}
+
+	switch os.Args[1] {
+	case "install":
+		runInstall(os.Args[2:])
+	case "validate":
+		runValidate(os.Args[2:])
+	case "check":
+		runCheck(os.Args[2:])
+	case "version":
+		fmt.Println("depengine v0.1.0")
+		fmt.Println("Motor distro-agnostic de instalação de dependências")
+	case "help", "-h", "--help":
+		printUsage()
+	default:
+		showNativeCommands(os.Args[1])
+	}
+}
+
+func runInstall(args []string) {
 	installCmd := flag.NewFlagSet("install", flag.ExitOnError)
 	installSchema := installCmd.String("schema", "schema.toml", "path to schema.toml")
 	installDryRun := installCmd.Bool("dry-run", false, "show what would be installed")
@@ -37,137 +60,116 @@ func main() {
 	installLogLevel := installCmd.String("log-level", "", "log level: debug, info, warn, error")
 	installSortBy := installCmd.String("sort-by", "", "sort output by: name, status, method")
 
-	checkCmd := flag.NewFlagSet("check", flag.ExitOnError)
-	checkSchema := checkCmd.String("schema", "schema.toml", "path to schema.toml")
-
-	if len(os.Args) < 2 {
-		printUsage()
-		os.Exit(0)
-	}
+	installCmd.Parse(args)
 
 	// Create root logger. trace_id propagates from env automatically via
 	// pkg/log init(); explicit --log-level overrides the default.
 	lg := log.Default
 
-	switch os.Args[1] {
-	case "install":
-		installCmd.Parse(os.Args[2:])
+	// --diagnose implies --dry-run + verbose + DEBUG level.
+	if *installDiagnose {
+		*installDryRun = true
+		*installVerbose = true
+		lg = log.New(os.Stderr, slog.LevelDebug)
+	}
+	if *installLogLevel != "" {
+		lg = log.New(os.Stderr, log.LevelFromString(*installLogLevel))
+	}
 
-		// --diagnose implies --dry-run + verbose + DEBUG level.
-		if *installDiagnose {
-			*installDryRun = true
-			*installVerbose = true
-			lg = log.New(os.Stderr, slog.LevelDebug)
-		}
-		if *installLogLevel != "" {
-			lg = log.New(os.Stderr, log.LevelFromString(*installLogLevel))
-		}
+	ctx := context.Background()
 
-		ctx := context.Background()
-
-		if *installSortBy != "" {
-			if _, ok := exec.ParseSortField(*installSortBy); !ok {
-				lg.Error("invalid --sort-by value", "value", *installSortBy, "valid", "name, status, method")
-				os.Exit(2)
-			}
-		}
-
-		s, clan, facts, err := loadSchema(*installSchema)
-		if err != nil {
-			lg.Error("load schema", "error", err)
-			os.Exit(exitCodeForError(err))
-		}
-
-		fmt.Fprintf(os.Stderr, "depengine install: distro=%s clan=%s arch=%s tools=%d\n",
-			facts.DistroID, clan, facts.TargetArch, len(s.Tools))
-
-		ex := exec.New()
-		exec.WithAdapters(
-			git.NewGitAdapter(),
-			httpdownload.NewHTTPAdapter(),
-			exec.NewNativeAdapter(clan),
-		)(ex)
-		exec.WithLogger(lg)(ex)
-		exec.WithRunner(run.NewLoggingRunner(run.OSExecRunner{}, lg))(ex)
-		if *installDryRun {
-			exec.WithDryRun()(ex)
-		}
-		if *installSortBy != "" {
-			exec.WithSortBy(exec.SortField(*installSortBy))(ex)
-		}
-
-		s.Tools = filterTools(s.Tools, *installOnly, *installSkip)
-
-		if *installDiagnose {
-			lg.Debug("facts", "facts", facts)
-			lg.Debug("schema", "tools", len(s.Tools))
-		}
-
-		report, err := ex.Execute(ctx, s, clan)
-		if err != nil {
-			lg.Error("execute failed", "error", err)
+	if *installSortBy != "" {
+		if _, ok := exec.ParseSortField(*installSortBy); !ok {
+			lg.Error("invalid --sort-by value", "value", *installSortBy, "valid", "name, status, method")
 			os.Exit(2)
 		}
-
-		if *installJSON {
-			fmt.Println(report.JSON())
-		} else if *installVerbose || *installDryRun {
-			fmt.Fprint(os.Stderr, report.Detail())
-		} else {
-			fmt.Fprintln(os.Stderr, report.Summary())
-		}
-
-		if report.Failed > 0 {
-			os.Exit(1)
-		}
-
-	case "validate":
-		runValidate(os.Args[2:])
-
-	case "check":
-		checkCmd.Parse(os.Args[2:])
-		args := checkCmd.Args()
-		if len(args) < 1 {
-			lg.Error("usage: depengine check <tool>")
-			os.Exit(1)
-		}
-		toolName := args[0]
-
-		s, _, _, err := loadSchema(*checkSchema)
-		if err != nil {
-			lg.Error("load schema", "error", err)
-			os.Exit(exitCodeForError(err))
-		}
-
-		tool, ok := s.Tools[toolName]
-		if !ok {
-			lg.Error("tool not found", "tool", toolName)
-			os.Exit(1)
-		}
-
-		for _, method := range tool.Methods {
-			adapter := exec.Lookup(method.Kind)
-			if adapter == nil {
-				continue
-			}
-			if adapter.Check(context.Background(), run.OSExecRunner{}, tool, method) {
-				fmt.Printf("✓ %s is installed (via %s)\n", toolName, method.Kind)
-				os.Exit(0)
-			}
-		}
-		fmt.Printf("✗ %s is not installed\n", toolName)
-		os.Exit(1)
-
-	case "version":
-		fmt.Println("depengine v0.1.0")
-		fmt.Println("Motor distro-agnostic de instalação de dependências")
-
-	case "help", "-h", "--help":
-		printUsage()
-
-	default:
-		showNativeCommands(os.Args[1])
 	}
+
+	s, clan, facts, err := loadSchema(*installSchema)
+	if err != nil {
+		lg.Error("load schema", "error", err)
+		os.Exit(exitCodeForError(err))
+	}
+
+	fmt.Fprintf(os.Stderr, "depengine install: distro=%s clan=%s arch=%s tools=%d\n",
+		facts.DistroID, clan, facts.TargetArch, len(s.Tools))
+
+	ex := exec.New()
+	exec.WithAdapters(
+		git.NewGitAdapter(),
+		httpdownload.NewHTTPAdapter(),
+		exec.NewNativeAdapter(clan),
+	)(ex)
+	exec.WithLogger(lg)(ex)
+	exec.WithRunner(run.NewLoggingRunner(run.OSExecRunner{}, lg))(ex)
+	if *installDryRun {
+		exec.WithDryRun()(ex)
+	}
+	if *installSortBy != "" {
+		exec.WithSortBy(exec.SortField(*installSortBy))(ex)
+	}
+
+	s.Tools = filterTools(s.Tools, *installOnly, *installSkip)
+
+	if *installDiagnose {
+		lg.Debug("facts", "facts", facts)
+		lg.Debug("schema", "tools", len(s.Tools))
+	}
+
+	report, err := ex.Execute(ctx, s, clan)
+	if err != nil {
+		lg.Error("execute failed", "error", err)
+		os.Exit(2)
+	}
+
+	if *installJSON {
+		fmt.Println(report.JSON())
+	} else if *installVerbose || *installDryRun {
+		fmt.Fprint(os.Stderr, report.Detail())
+	} else {
+		fmt.Fprintln(os.Stderr, report.Summary())
+	}
+
+	if report.Failed > 0 {
+		os.Exit(1)
+	}
+}
+
+func runCheck(args []string) {
+	checkCmd := flag.NewFlagSet("check", flag.ExitOnError)
+	checkSchema := checkCmd.String("schema", "schema.toml", "path to schema.toml")
+	checkCmd.Parse(args)
+	remain := checkCmd.Args()
+	if len(remain) < 1 {
+		log.Default.Error("usage: depengine check <tool>")
+		os.Exit(1)
+	}
+	toolName := remain[0]
+
+	s, _, _, err := loadSchema(*checkSchema)
+	if err != nil {
+		log.Default.Error("load schema", "error", err)
+		os.Exit(exitCodeForError(err))
+	}
+
+	tool, ok := s.Tools[toolName]
+	if !ok {
+		log.Default.Error("tool not found", "tool", toolName)
+		os.Exit(1)
+	}
+
+	for _, method := range tool.Methods {
+		adapter := exec.Lookup(method.Kind)
+		if adapter == nil {
+			continue
+		}
+		if adapter.Check(context.Background(), run.OSExecRunner{}, tool, method) {
+			fmt.Printf("✓ %s is installed (via %s)\n", toolName, method.Kind)
+			os.Exit(0)
+		}
+	}
+	fmt.Printf("✗ %s is not installed\n", toolName)
+	os.Exit(1)
 }
 
 // loadSchema is the shared bootstrap for install/check: gather facts,
