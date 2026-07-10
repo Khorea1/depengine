@@ -142,3 +142,32 @@ func TestExpandAllWalksNestedMapsAndSlices(t *testing.T) {
 		t.Fatalf("list int changed: %v", list[2])
 	}
 }
+
+// TestExpandAllMutatesInput reproduces the bug: ExpandAll destructively
+// mutates the input map/slice in-place. After calling ExpandAll, the
+// original input should remain unchanged. This test MUST FAIL with
+// current code, proving the mutation leak.
+func TestExpandAllMutatesInput(t *testing.T) {
+	t.Parallel()
+	m := map[string]string{"arch": "x86_64", "os": "linux"}
+
+	input := map[string]any{
+		"url": "https://example.com/{arch}/{os}/file.tar.gz",
+		"nested": map[string]any{
+			"name": "tool-{arch}",
+		},
+	}
+
+	// Deep copy the original to compare later.
+	originalURL := input["url"]
+	originalNestedName := input["nested"].(map[string]any)["name"]
+
+	_ = ExpandAll(input, m)
+
+	if input["url"] != originalURL {
+		t.Fatal("BUG REPRODUCED: ExpandAll mutated top-level url in place")
+	}
+	if input["nested"].(map[string]any)["name"] != originalNestedName {
+		t.Fatal("BUG REPRODUCED: ExpandAll mutated nested value in place")
+	}
+}

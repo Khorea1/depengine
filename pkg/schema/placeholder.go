@@ -113,15 +113,17 @@ func ExpandAll(v any, m map[string]string) any {
 	case string:
 		return Expand(t, m)
 	case map[string]any:
+		out := make(map[string]any, len(t))
 		for k, val := range t {
-			t[k] = ExpandAll(val, m)
+			out[k] = ExpandAll(val, m)
 		}
-		return t
+		return out
 	case []any:
+		out := make([]any, len(t))
 		for i, val := range t {
-			t[i] = ExpandAll(val, m)
+			out[i] = ExpandAll(val, m)
 		}
-		return t
+		return out
 	default:
 		return v
 	}

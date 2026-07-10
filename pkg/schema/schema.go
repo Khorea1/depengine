@@ -108,7 +108,14 @@ func ParseSchema(path string, m map[string]string) (*Schema, error) {
 	// leaves are returned unchanged by ExpandAll, so booleans/ints survive.
 	raw = ExpandAll(raw, m).(map[string]any)
 
+	// Re-extract rawTools from expanded raw since ExpandAll creates a new map.
+	rawTools, _ = raw["tools"].(map[string]any)
+	if rawTools == nil {
+		rawTools = map[string]any{}
+	}
+
 	defaults := extractDefaults(raw["defaults"])
+
 	tools, err := normalizeTools(rawTools, defaults)
 	if err != nil {
 		return nil, &ParseSchemaError{Err: err}
@@ -116,7 +123,6 @@ func ParseSchema(path string, m map[string]string) (*Schema, error) {
 
 	return &Schema{Defaults: defaults, Tools: tools}, nil
 }
-
 func extractDefaults(raw any) Defaults {
 	d := Defaults{
 		Manager:     "native",
