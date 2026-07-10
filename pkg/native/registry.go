@@ -42,6 +42,11 @@ type Manager struct {
 
 	// CheckCmd uses "{pkg}" as well; exit code 0 means already installed.
 	CheckCmd []string
+
+	// RemoveCmd uses "{pkg}" as a placeholder for the package name.
+	// Empty means the manager has no standard remove command and the
+	// engine will fall back to manual-removal instructions.
+	RemoveCmd []string
 }
 
 // managers maps a manager key (NOT directly a clan — see package doc) to
@@ -55,24 +60,28 @@ var managers = map[string]Manager{
 		SyncCmd:      []string{"apt-get", "update"},
 		InstallCmd:   []string{"apt-get", "install", "-y", "{pkg}"},
 		CheckCmd:     []string{"dpkg", "-s", "{pkg}"},
+		RemoveCmd:    []string{"apt-get", "remove", "-y", "{pkg}"},
 	},
 	"arch": {
 		Name:         "pacman",
 		SudoRequired: true,
 		InstallCmd:   []string{"pacman", "-S", "--noconfirm", "--needed", "{pkg}"},
 		CheckCmd:     []string{"pacman", "-Qi", "{pkg}"},
+		RemoveCmd:    []string{"pacman", "-R", "--noconfirm", "{pkg}"},
 	},
 	"fedora": {
 		Name:         "dnf",
 		SudoRequired: true,
 		InstallCmd:   []string{"dnf", "install", "-y", "{pkg}"},
 		CheckCmd:     []string{"rpm", "-q", "{pkg}"},
+		RemoveCmd:    []string{"dnf", "remove", "-y", "{pkg}"},
 	},
 	"suse": {
 		Name:         "zypper",
 		SudoRequired: true,
 		InstallCmd:   []string{"zypper", "--non-interactive", "install", "{pkg}"},
 		CheckCmd:     []string{"rpm", "-q", "{pkg}"},
+		RemoveCmd:    []string{"zypper", "--non-interactive", "remove", "{pkg}"},
 	},
 	"alpine": {
 		Name:         "apk",
@@ -81,62 +90,69 @@ var managers = map[string]Manager{
 		SyncCmd:      []string{"apk", "update"},
 		InstallCmd:   []string{"apk", "add", "{pkg}"},
 		CheckCmd:     []string{"apk", "info", "-e", "{pkg}"},
+		RemoveCmd:    []string{"apk", "del", "{pkg}"},
 	},
 	"void": {
 		Name:         "xbps",
 		SudoRequired: true,
 		InstallCmd:   []string{"xbps-install", "-Sy", "{pkg}"},
 		CheckCmd:     []string{"xbps-query", "{pkg}"},
+		RemoveCmd:    []string{"xbps-remove", "-y", "{pkg}"},
 	},
 	"gentoo": {
 		Name:         "emerge",
 		SudoRequired: true,
 		InstallCmd:   []string{"emerge", "--quiet", "{pkg}"},
 		CheckCmd:     []string{"equery", "list", "{pkg}"},
+		RemoveCmd:    []string{"emerge", "--unmerge", "{pkg}"},
 	},
 	"macos": {
 		Name:         "brew",
-		SudoRequired: false, // brew refuses to run as root
+		SudoRequired: false,
 		InstallCmd:   []string{"brew", "install", "{pkg}"},
 		CheckCmd:     []string{"brew", "list", "{pkg}"},
+		RemoveCmd:    []string{"brew", "uninstall", "{pkg}"},
 	},
 	"termux": {
 		Name:         "pkg",
-		SudoRequired: false, // Termux has no sudo/root by default
+		SudoRequired: false,
 		NeedsSync:    true,
 		SyncCmd:      []string{"pkg", "update", "-y"},
 		InstallCmd:   []string{"pkg", "install", "-y", "{pkg}"},
-		CheckCmd:     []string{"dpkg", "-s", "{pkg}"}, // pkg wraps apt/dpkg underneath
+		CheckCmd:     []string{"dpkg", "-s", "{pkg}"},
+		RemoveCmd:    []string{"pkg", "uninstall", "-y", "{pkg}"},
 	},
 	"freebsd": {
 		Name:         "pkg",
 		SudoRequired: true,
 		InstallCmd:   []string{"pkg", "install", "-y", "{pkg}"},
 		CheckCmd:     []string{"pkg", "info", "-e", "{pkg}"},
+		RemoveCmd:    []string{"pkg", "delete", "-y", "{pkg}"},
 	},
 	"openbsd": {
 		Name:         "pkg_add",
 		SudoRequired: true,
 		InstallCmd:   []string{"pkg_add", "{pkg}"},
 		CheckCmd:     []string{"pkg_info", "-e", "{pkg}"},
+		RemoveCmd:    []string{"pkg_delete", "{pkg}"},
 	},
 	"netbsd": {
 		Name:         "pkgin",
 		SudoRequired: true,
 		InstallCmd:   []string{"pkgin", "-y", "install", "{pkg}"},
 		CheckCmd:     []string{"pkg_info", "-e", "{pkg}"},
+		RemoveCmd:    []string{"pkgin", "-y", "remove", "{pkg}"},
 	},
 	// Windows managers.
 	// winget is built into Windows 10 1709+ and Windows 11.
 	// choco/scoop are third-party; they use native adapter aliases or exec.Adapter-s.
 	"windows-winget": {
 		Name:         "winget",
-		SudoRequired: false, // winget runs as user
+		SudoRequired: false,
 		InstallCmd:   []string{"winget", "install", "--id", "{pkg}"},
 		CheckCmd:     []string{"winget", "list", "--id", "{pkg}"},
+		RemoveCmd:    []string{"winget", "uninstall", "--id", "{pkg}"},
 	},
-
-	// Linux Mint uses apt but with mint-specific metadata.
 	"mint": {
 		Name:         "apt",
 		SudoRequired: true,
@@ -144,6 +160,7 @@ var managers = map[string]Manager{
 		SyncCmd:      []string{"apt-get", "update"},
 		InstallCmd:   []string{"apt-get", "install", "-y", "{pkg}"},
 		CheckCmd:     []string{"dpkg", "-s", "{pkg}"},
+		RemoveCmd:    []string{"apt-get", "remove", "-y", "{pkg}"},
 	},
 
 	// opkg — embedded Linux package manager (OpenWrt, LEDE, etc).
@@ -152,6 +169,7 @@ var managers = map[string]Manager{
 		SudoRequired: true,
 		InstallCmd:   []string{"opkg", "install", "{pkg}"},
 		CheckCmd:     []string{"opkg", "status", "{pkg}"},
+		RemoveCmd:    []string{"opkg", "remove", "{pkg}"},
 	},
 }
 

@@ -23,6 +23,16 @@ func BuildCheckCmd(clan, pkg string) []string {
 	return substitutePkg(nm.CheckCmd, pkg)
 }
 
+// BuildRemoveCmd substitutes "{pkg}" in the remove command. Returns nil if
+// the clan has no known native manager or no remove command.
+func BuildRemoveCmd(clan, pkg string) []string {
+	nm, ok := Lookup(clan)
+	if !ok {
+		return nil
+	}
+	return withSudo(substitutePkg(nm.RemoveCmd, pkg), nm.SudoRequired)
+}
+
 // BuildSyncCmd returns the index-sync command, if the manager requires one.
 // The engine runs this at most once per execution, never per package.
 func BuildSyncCmd(clan string) []string {

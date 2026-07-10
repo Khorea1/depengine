@@ -113,6 +113,49 @@ func TestBaseAdapterInstallFailure(t *testing.T) {
 	}
 }
 
+func TestBaseAdapterRemoveSuccess(t *testing.T) {
+	fr := &run.FakeRunner{ExitCode: 0}
+	adapter := NewBaseAdapter(BaseConfig{
+		KindName:    "test-remove",
+		Binary:      "sh",
+		RemoveTmpl: []string{"echo", "remove", "{pkg}"},
+	})
+	tl, mc := tool("test-tool", "test-pkg")
+
+	err := adapter.Remove(context.Background(), fr, tl, mc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBaseAdapterRemoveNoCommand(t *testing.T) {
+	adapter := NewBaseAdapter(BaseConfig{
+		KindName: "test-remove-empty",
+		Binary:   "sh",
+	})
+	tl, mc := tool("test-tool", "test-pkg")
+
+	err := adapter.Remove(context.Background(), &run.FakeRunner{}, tl, mc)
+	if err == nil {
+		t.Fatal("expected error when no remove command, got nil")
+	}
+}
+
+func TestBaseAdapterRemoveFailure(t *testing.T) {
+	fr := &run.FakeRunner{ExitCode: 1, Stderr: "error: not installed"}
+	adapter := NewBaseAdapter(BaseConfig{
+		KindName:    "test-remove-fail",
+		Binary:      "sh",
+		RemoveTmpl: []string{"false"},
+	})
+	tl, mc := tool("test-tool", "test-pkg")
+
+	err := adapter.Remove(context.Background(), fr, tl, mc)
+	if err == nil {
+		t.Fatal("expected error on non-zero exit, got nil")
+	}
+}
+
 func TestAURAdapterAvailable(t *testing.T) {
 	// We can't assume paru/yay exists, so use FakeRunner.
 	fr := &run.FakeRunner{ExitCode: 0}

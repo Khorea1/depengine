@@ -57,6 +57,27 @@ type Adapter interface {
 	Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error
 }
 
+// Remover is an optional interface that adapters can implement to support
+// automated uninstallation. The executor's `remove` command checks for this
+// interface and calls Remove when available. When an adapter does not implement
+// Remover, the executor falls back to a manual-removal instruction.
+type Remover interface {
+	Adapter
+	Remove(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error
+	// CanRemove reports whether this adapter actually supports removal.
+	// Adapters may implement Remover but have no remove template configured.
+	CanRemove() bool
+}
+
+func CanRemove(adapter Adapter) bool {
+	r, ok := adapter.(Remover)
+	if !ok {
+		return false
+	}
+	return r.CanRemove()
+}
+
+
 // SubstitutePkg replaces "{pkg}" in cmd with the package name from
 // mc.Config["pkg"], falling back to tool.Name. Shared by all adapters.
 func SubstitutePkg(cmd []string, tool *schema.Tool, mc *schema.MethodCandidate) []string {

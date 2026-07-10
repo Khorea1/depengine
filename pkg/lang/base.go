@@ -35,6 +35,11 @@ type BaseConfig struct {
 	// "{pkg}" is replaced with the package name.
 	InstallTmpl []string
 
+	// RemoveTmpl is the command template for uninstalling.
+	// "{pkg}" is replaced with the package name. When empty, the
+	// adapter does not support automated removal.
+	RemoveTmpl []string
+
 	// AvailableExtra, if set, is tried as the Available binary when
 	// Binary is not found (e.g. "pip3" when "pip" is missing).
 	AvailableExtra string
@@ -90,6 +95,27 @@ func (a *BaseAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 	return nil
 }
 
+func (a *BaseAdapter) CanRemove() bool {
+	return len(a.config.RemoveTmpl) > 0
+}
+
+// Remove runs the remove command template. Returns nil on success.
+func (a *BaseAdapter) Remove(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+	cmd := a.buildCmd(a.config.RemoveTmpl, tool, mc)
+	if cmd == nil {
+		return fmt.Errorf("%s: no remove command", a.config.KindName)
+	}
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	if res.Err != nil {
+		return fmt.Errorf("%s: remove failed: %w", a.config.KindName, res.Err)
+	}
+	if res.ExitCode != 0 {
+		stderr := strings.TrimSpace(string(res.Stderr))
+		return fmt.Errorf("%s: remove exited %d: %s", a.config.KindName, res.ExitCode, stderr)
+	}
+	return nil
+}
+
 // buildCmd substitutes {pkg} in the template and returns the command.
 func (a *BaseAdapter) buildCmd(tmpl []string, tool *schema.Tool, mc *schema.MethodCandidate) []string {
 	if len(tmpl) == 0 {
@@ -98,3 +124,6 @@ func (a *BaseAdapter) buildCmd(tmpl []string, tool *schema.Tool, mc *schema.Meth
 	return exec.SubstitutePkg(tmpl, tool, mc)
 }
 
+
+// Compile-time interface checks.
+var _ exec.Remover = (*BaseAdapter)(nil)

@@ -211,3 +211,47 @@ func TestFindClanByManagerResolvesBinaryNameVariants(t *testing.T) {
 		}
 	})
 }
+
+func TestNativeAdapterRemove(t *testing.T) {
+	mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+	tool := &schema.Tool{Name: "git"}
+
+	t.Run("runs remove command after detection", func(t *testing.T) {
+		fr := &run.FakeRunner{ExitCode: 0}
+		adapter := NewNativeAdapter("")
+		adapter.detectClan(context.Background(), fr)
+		fr.Calls = nil
+		fr.ExitCode = 0
+
+		if err := adapter.Remove(context.Background(), fr, tool, mc); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if len(fr.Calls) == 0 {
+			t.Fatal("expected at least one command call")
+		}
+		// The remove command should contain the package name.
+		removeFound := false
+		for _, c := range fr.Calls {
+			for _, arg := range c.Args {
+				if arg == "git" {
+					removeFound = true
+					break
+				}
+			}
+		}
+		if !removeFound {
+			t.Fatalf("expected remove command to contain package name 'git', got calls: %v", fr.Calls)
+		}
+	})
+
+	t.Run("error on no manager detected", func(t *testing.T) {
+		fr := &run.FakeRunner{ExitCode: 1}
+		adapter := NewNativeAdapter("")
+
+		err := adapter.Remove(context.Background(), fr, tool, mc)
+		if err == nil {
+			t.Fatal("expected error when no manager detected")
+		}
+	})
+}

@@ -13,6 +13,7 @@ import (
 	"depengine/pkg/graph"
 	"depengine/pkg/run"
 	"depengine/pkg/schema"
+	"depengine/pkg/state"
 )
 
 // Executor orchestrates the installation of all tools in a schema.
@@ -27,6 +28,10 @@ type Executor struct {
 	adapters      map[string]Adapter // per-instance adapter registry
 	logger        *slog.Logger       // structured logger; nil = no structured output
 	outWriter     io.Writer          // user-facing formatted output; defaults to os.Stderr
+
+	// schema info for state tracking
+	schemaPath       string
+	schemaModTime    time.Time
 }
 
 // Option configures the executor.
@@ -104,6 +109,16 @@ func WithAdapters(adapters ...Adapter) Option {
 				e.adapters[a.Kind()] = a
 			}
 		}
+	}
+}
+
+// WithSchemaInfo sets the schema file path and modification time for state
+// tracking. When set, the executor will write a state file after successful
+// installation.
+func WithSchemaInfo(path string, modTime time.Time) Option {
+	return func(e *Executor) {
+		e.schemaPath = path
+		e.schemaModTime = modTime
 	}
 }
 
@@ -219,9 +234,47 @@ func (ex *Executor) Execute(ctx context.Context, s *schema.Schema, clan string) 
 	if ex.logger != nil && ex.logger.Enabled(ctx, slog.LevelDebug) {
 		ex.logDebug("executor", "phase", "report", "json", report.JSON())
 	}
+
+	// Write state file after successful install execution.
+	if ex.schemaPath != "" {
+		st := &state.State{
+			Version:          1,
+			SchemaPath:       ex.schemaPath,
+			SchemaModifiedAt: ex.schemaModTime.UTC().Format(time.RFC3339),
+			Tools:            make(map[string]state.ToolState, len(report.Tools)),
+		}
+
+		for _, tr := range report.Tools {
+			if tr.Status != StatusInstalled && tr.Status != StatusAlready {
+				continue
+			}
+			tool, ok := s.Tools[tr.Tool]
+			if !ok {
+				continue
+			}
+			st.Tools[tr.Tool] = state.ToolState{
+				Method:          tr.Method,
+				AdapterKind:     tr.Method,
+				InstalledAt:     time.Now().UTC().Format(time.RFC3339),
+				PostinstallDone: tr.PostinstallDone,
+				DefinitionHash:  state.DefinitionHash(tool),
+				Config:          tr.Config,
+			}
+		}
+
+		lock, err := state.Lock()
+		if err != nil {
+			ex.logWarn("state lock failed", "error", err)
+		} else {
+			if err := state.Save(st); err != nil {
+				ex.logWarn("state save failed", "error", err)
+			}
+			lock.Close()
+		}
+	}
+
 	return report, nil
 }
-
 func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResult {
 	toolStart := time.Now()
 	result := ToolResult{Tool: tool.Name}
@@ -265,9 +318,8 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 
 		if adapter.Check(ctx, ex.rn, tool, method) {
 			result.Status = StatusAlready
-			result.Method = method.Kind
-			attempt.Status = "skip_already"
-			result.Methods = append(result.Methods, attempt)
+		result.Method = method.Kind
+		result.Config = method.Config
 			ex.logDebug("tool", "tool", tool.Name, "method", method.Kind, "status", "already_installed")
 			result.Duration = time.Since(toolStart).String()
 			return result
@@ -295,11 +347,11 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 		if err == nil {
 			result.Status = StatusInstalled
 			result.Method = method.Kind
-			attempt.Status = "success"
-			result.Methods = append(result.Methods, attempt)
+			result.Config = method.Config
 			ex.logDebug("tool", "tool", tool.Name, "method", method.Kind, "status", "installed")
 			if tool.PostInstall != "" {
 				ex.runPostinstall(methodCtx, tool)
+				result.PostinstallDone = true
 			}
 			result.Duration = time.Since(toolStart).String()
 			return result

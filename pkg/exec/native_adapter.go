@@ -97,6 +97,33 @@ func (a *NativeAdapter) Install(ctx context.Context, rn run.Runner, _ *schema.To
 	return nil
 }
 
+// Remove uninstalls a package via the native package manager.
+func (a *NativeAdapter) Remove(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+	clan := a.detectClan(ctx, rn)
+	if clan == "" {
+		return fmt.Errorf("no native manager detected")
+	}
+	pkgName := pkgFromConfig(mc, clan)
+	if pkgName == "" {
+		pkgName = tool.Name
+	}
+	cmd := native.BuildRemoveCmd(clan, pkgName)
+	if cmd == nil {
+		return fmt.Errorf("no remove command for clan %q", clan)
+	}
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	if res.Err != nil {
+		return fmt.Errorf("remove command failed: %w", res.Err)
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("remove exited %d: %s", res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	return nil
+}
+
+func (a *NativeAdapter) CanRemove() bool { return true }
+
+
 // pkgFromConfig extracts the package name from a MethodCandidate's Config.
 // When clan is non-empty and the MC has pkg_overrides, it checks for a
 // clan-specific override first (e.g. apt→"fd-find" on debian). Falls back
@@ -199,6 +226,17 @@ func (a *NativeByManagerAdapter) Install(ctx context.Context, rn run.Runner, too
 	return nil
 }
 
+func (a *NativeByManagerAdapter) Remove(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+	clan := findClanByManager(a.managerName)
+	if clan == "" {
+		return fmt.Errorf("native(%s): no clan found for manager", a.managerName)
+	}
+	nativeAdapter := NewNativeAdapter(clan)
+	return nativeAdapter.Remove(ctx, rn, tool, mc)
+}
+
+func (a *NativeByManagerAdapter) CanRemove() bool { return true }
+
 // findClanByManager searches for the clan that manages packages via the
 // given binary name (e.g. "apt" → "debian", "emerge" → "gentoo").
 // It checks the explicit managerNameToClan reverse map first (handles
@@ -219,3 +257,7 @@ func findClanByManager(name string) string {
 	}
 	return ""
 }
+
+// Compile-time interface checks.
+var _ Remover = (*NativeAdapter)(nil)
+var _ Remover = (*NativeByManagerAdapter)(nil)

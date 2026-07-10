@@ -13,18 +13,21 @@ var Configs = map[string]BaseConfig{
 		Binary:      "cargo",
 		CheckTmpl:   []string{"cargo", "install", "--list"},
 		InstallTmpl: []string{"cargo", "install", "{pkg}"},
+		RemoveTmpl:  []string{"cargo", "uninstall", "{pkg}"},
 	},
 	"go": {
 		KindName:    "go",
 		Binary:      "go",
 		CheckTmpl:   []string{"which", "{pkg}"},
 		InstallTmpl: []string{"go", "install", "{pkg}@latest"},
+		RemoveTmpl:  []string{"go", "clean", "-i", "{pkg}"},
 	},
 	"pip": {
 		KindName:       "pip",
 		Binary:         "pip",
 		CheckTmpl:      []string{"pip", "show", "{pkg}"},
 		InstallTmpl:    []string{"pip", "install", "{pkg}"},
+		RemoveTmpl:     []string{"pip", "uninstall", "-y", "{pkg}"},
 		AvailableExtra: "pip3",
 	},
 	"pipx": {
@@ -32,6 +35,7 @@ var Configs = map[string]BaseConfig{
 		Binary:      "pipx",
 		CheckTmpl:   []string{"pipx", "list"},
 		InstallTmpl: []string{"pipx", "install", "{pkg}"},
+		RemoveTmpl:  []string{"pipx", "uninstall", "{pkg}"},
 	},
 	"uv": {
 		KindName:    "uv",
@@ -44,6 +48,7 @@ var Configs = map[string]BaseConfig{
 		Binary:      "npm",
 		CheckTmpl:   []string{"npm", "ls", "-g", "--depth=0", "{pkg}"},
 		InstallTmpl: []string{"npm", "install", "-g", "{pkg}"},
+		RemoveTmpl:  []string{"npm", "uninstall", "-g", "{pkg}"},
 	},
 	"pnpm": {
 		KindName:       "pnpm",
@@ -87,6 +92,7 @@ var Configs = map[string]BaseConfig{
 		Binary:      "flatpak",
 		CheckTmpl:   []string{"flatpak", "info", "{pkg}"},
 		InstallTmpl: []string{"flatpak", "install", "-y", "flathub", "{pkg}"},
+		RemoveTmpl:  []string{"flatpak", "uninstall", "-y", "{pkg}"},
 	},
 	"snap": {
 		KindName:    "snap",

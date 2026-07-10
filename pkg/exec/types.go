@@ -42,6 +42,12 @@ type ToolResult struct {
 	Error    string          // populated only if StatusFailed
 	Methods  []MethodAttempt // history of attempts (for --verbose)
 	Duration string          // human-readable duration (e.g. "3.2s"), set by executor
+
+	// PostinstallDone is true if a postinstall script was successfully run.
+	PostinstallDone bool
+
+	// Config stores the method's configuration (e.g., pkg override).
+	Config map[string]any
 }
 
 // MethodAttempt records one method attempt for a tool.

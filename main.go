@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
+	"time"
 	"strings"
 
 	"depengine/pkg/engine"
@@ -19,18 +21,16 @@ import (
 	"depengine/pkg/native"
 	"depengine/pkg/run"
 	"depengine/pkg/schema"
+	"depengine/pkg/state"
 	"depengine/pkg/validate"
 )
 
 func main() {
-	// Register all adapters before any command runs.
 	initAdapters()
-
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(0)
 	}
-
 	switch os.Args[1] {
 	case "install":
 		runInstall(os.Args[2:])
@@ -38,6 +38,10 @@ func main() {
 		runValidate(os.Args[2:])
 	case "check":
 		runCheck(os.Args[2:])
+	case "status":
+		runStatus(os.Args[2:])
+	case "remove":
+		runRemove(os.Args[2:])
 	case "version":
 		fmt.Println("depengine v0.1.0")
 		fmt.Println("Motor distro-agnostic de instalação de dependências")
@@ -94,12 +98,20 @@ func runInstall(args []string) {
 	fmt.Fprintf(os.Stderr, "depengine install: distro=%s clan=%s arch=%s tools=%d\n",
 		facts.DistroID, clan, facts.TargetArch, len(s.Tools))
 
+	// Stat schema file for state tracking.
+	schemaFile, err := os.Stat(*installSchema)
+	if err != nil {
+		lg.Error("stat schema", "error", err)
+		os.Exit(exitCodeForError(err))
+	}
+
 	ex := exec.New()
 	exec.WithAdapters(
 		git.NewGitAdapter(),
 		httpdownload.NewHTTPAdapter(),
 		exec.NewNativeAdapter(clan),
 	)(ex)
+	exec.WithSchemaInfo(*installSchema, schemaFile.ModTime())(ex)
 	exec.WithLogger(lg)(ex)
 	exec.WithRunner(run.NewLoggingRunner(run.OSExecRunner{}, lg))(ex)
 	if *installDryRun {
@@ -172,6 +184,197 @@ func runCheck(args []string) {
 	os.Exit(1)
 }
 
+// runStatus shows the installation status of tools by comparing the state
+// file against the schema. It reports installed, missing, and outdated tools.
+func runStatus(args []string) {
+	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
+	statusSchema := statusCmd.String("schema", "", "override schema path")
+	statusJSON := statusCmd.Bool("json", false, "JSON output")
+	statusOrphans := statusCmd.Bool("orphans", false, "show only orphaned tools")
+	statusCmd.Parse(args)
+
+	lock, err := state.Lock()
+	if err != nil {
+		log.Default.Error("state lock", "error", err)
+		os.Exit(3)
+	}
+	defer lock.Close()
+
+	st, err := state.Load()
+	if err != nil {
+		log.Default.Error("load state", "error", err)
+		os.Exit(3)
+	}
+
+	schemaPath := st.SchemaPath
+	if *statusSchema != "" {
+		schemaPath = *statusSchema
+	}
+
+	// Load schema for comparison if available.
+	var s *schema.Schema
+	if schemaPath != "" {
+		var err error
+		s, _, _, err = loadSchema(schemaPath)
+		if err != nil {
+			log.Default.Warn("load schema for comparison", "error", err)
+			s = nil
+		}
+	}
+
+	type toolStatus struct {
+		Name    string `json:"name"`
+		Status  string `json:"status"`
+		Method  string `json:"method,omitempty"`
+		Updated string `json:"updated,omitempty"`
+	}
+
+	var tools []toolStatus
+
+	// Build a set of tools known in the state.
+	for name, ts := range st.Tools {
+		status := "installed"
+		if s != nil {
+			if _, inSchema := s.Tools[name]; !inSchema {
+				status = "orphaned"
+			}
+		}
+		if *statusOrphans && status != "orphaned" {
+			continue
+		}
+		tools = append(tools, toolStatus{
+			Name:    name,
+			Status:  status,
+			Method:  ts.Method,
+			Updated: ts.InstalledAt,
+		})
+	}
+
+	// Add tools from schema that are missing from state.
+	if s != nil && !*statusOrphans {
+		for name := range s.Tools {
+			if _, inState := st.Tools[name]; !inState {
+				tools = append(tools, toolStatus{
+					Name:   name,
+					Status: "missing",
+				})
+			}
+		}
+	}
+
+	sort.Slice(tools, func(i, j int) bool {
+		return tools[i].Name < tools[j].Name
+	})
+
+	if *statusJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(tools); err != nil {
+			log.Default.Error("json output", "error", err)
+			os.Exit(3)
+		}
+		return
+	}
+
+	if len(tools) == 0 {
+		if *statusOrphans {
+			fmt.Println("No orphaned tools.")
+		} else {
+			fmt.Println("No tools in state. Run 'depengine install' first.")
+		}
+		return
+	}
+
+	// Table output.
+	fmt.Printf("%-30s %-12s %-10s  %s\n", "Tool", "Status", "Method", "Installed At")
+	fmt.Println(strings.Repeat("-", 70))
+	for _, t := range tools {
+		fmt.Printf("%-30s %-12s %-10s  %s\n", t.Name, t.Status, t.Method, t.Updated)
+	}
+}
+
+// runRemove removes a tool using the adapter that installed it.
+func runRemove(args []string) {
+	removeCmd := flag.NewFlagSet("remove", flag.ExitOnError)
+	removeAll := removeCmd.Bool("all", false, "remove all tools")
+	removeDryRun := removeCmd.Bool("dry-run", false, "show what would be removed")
+	removeCmd.Parse(args)
+
+	lock, err := state.Lock()
+	if err != nil {
+		log.Default.Error("state lock", "error", err)
+		os.Exit(3)
+	}
+	defer lock.Close()
+
+	st, err := state.Load()
+	if err != nil {
+		log.Default.Error("load state", "error", err)
+		os.Exit(3)
+	}
+
+	removeTool := func(toolName string) {
+		toolState, ok := st.Tools[toolName]
+		if !ok {
+			log.Default.Error("tool not found in state", "tool", toolName)
+			return
+		}
+
+		adapter := exec.Lookup(toolState.Method)
+		if adapter == nil {
+			log.Default.Warn("adapter not found for method", "tool", toolName, "method", toolState.Method)
+			log.Default.Warn("manual remove required", "tool", toolName)
+			delete(st.Tools, toolName)
+			return
+		}
+
+		if !exec.CanRemove(adapter) {
+			log.Default.Warn("manual remove required", "tool", toolName, "method", toolState.Method)
+			delete(st.Tools, toolName)
+			return
+		}
+
+		remover := adapter.(exec.Remover)
+		mc := &schema.MethodCandidate{
+			Kind:   toolState.Method,
+			Config: toolState.Config,
+		}
+		tool := &schema.Tool{Name: toolName}
+
+		if *removeDryRun {
+			log.Default.Info("would remove", "tool", toolName, "method", toolState.Method)
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if err := remover.Remove(ctx, run.OSExecRunner{}, tool, mc); err != nil {
+			log.Default.Error("remove failed", "tool", toolName, "error", err)
+			return
+		}
+
+		log.Default.Info("removed", "tool", toolName, "method", toolState.Method)
+		delete(st.Tools, toolName)
+	}
+
+	if *removeAll {
+		for toolName := range st.Tools {
+			removeTool(toolName)
+		}
+	} else {
+		if len(removeCmd.Args()) != 1 {
+			log.Default.Error("usage: depengine remove <tool>")
+			os.Exit(1)
+		}
+		removeTool(removeCmd.Arg(0))
+	}
+
+	if err := state.Save(st); err != nil {
+		log.Default.Error("failed to update state", "error", err)
+		os.Exit(3)
+	}
+}
+
 // loadSchema is the shared bootstrap for install/check: gather facts,
 // resolve clan, build placeholder map, parse schema. Returns an error
 // suitable for exitCodeForError.
@@ -233,6 +436,8 @@ func printUsage() {
 Uso:
   depengine install [flags]        Instala ferramentas do schema.toml
   depengine check <tool>           Verifica se uma ferramenta está instalada
+  depengine status [flags]         Mostra status das ferramentas instaladas
+  depengine remove <tool>          Remove uma ferramenta instalada
   depengine validate [flags]       Valida schema.toml e ambiente
   depengine version                Mostra a versão
   depengine help                   Mostra esta ajuda
@@ -254,13 +459,21 @@ Flags (validate):
   --format <fmt>    Formato de saída: text (default) ou json
   --strict          Trata warnings como erros (exit code 1)
 
+Flags (status):
+  --schema <path>   Caminho para schema.toml (default: do state)
+  --json            Saída em JSON
+  --orphans         Mostra apenas ferramentas orfas
+
+Flags (remove):
+  --all             Remove todas as ferramentas
+  --dry-run         Mostra o que seria removido sem executar
+
 Exit codes:
   0   Sucesso (todas as ferramentas ok)
   1   Alguma ferramenta falhou
   2   Erro de schema
-  3   Erro de runtime (detect_os.sh não encontrado, etc.)`)
+  3   Erro de runtime (detect_os.sh nao encontrado, etc.)`)
 }
-
 func showNativeCommands(pkgName string) {
 	facts, err := engine.GatherFacts(run.OSExecRunner{})
 	if err != nil {

@@ -1,0 +1,90 @@
+// Package state manages the depengine state file — a JSON record of every
+// tool that has been installed (or already was present) through the engine.
+// It lives at ~/.local/state/depengine/state.json and is accessed with
+// file-level locking to prevent concurrent-install races.
+package state
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+// State is the on-disk schema for the depengine state file.
+type State struct {
+	Version          int                  `json:"version"`
+	SchemaPath       string               `json:"schema_path"`
+	SchemaModifiedAt string               `json:"schema_modified_at"`
+	Tools            map[string]ToolState `json:"tools"`
+}
+
+// ToolState records one installed tool.
+type ToolState struct {
+	// Method is the method name used for installation (e.g. "native", "cargo").
+	Method string `json:"method"`
+	// AdapterKind is the adapter kind that performed the install.
+	AdapterKind string `json:"adapter_kind"`
+	// InstalledAt is the RFC3339 timestamp of when the tool was installed.
+	InstalledAt string `json:"installed_at"`
+	// PostinstallDone is true if a postinstall script was successfully run.
+	PostinstallDone bool              `json:"postinstall_done"`
+	// DefinitionHash is the SHA256 of the tool's schema definition at install time.
+	DefinitionHash string             `json:"definition_hash"`
+	Config         map[string]any     `json:"config"`
+}
+
+// DefaultPath returns the platform-appropriate state file path.
+// Uses XDG_STATE_HOME when set, falling back to ~/.local/state/depengine/state.json.
+func DefaultPath() string {
+	xdgState := os.Getenv("XDG_STATE_HOME")
+	if xdgState == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "~"
+		}
+		xdgState = filepath.Join(home, ".local", "state")
+	}
+	return filepath.Join(xdgState, "depengine", "state.json")
+}
+
+// Load reads the state file from DefaultPath. If the file does not exist,
+// it returns an empty-but-valid State ready for first use.
+func Load() (*State, error) {
+	path := DefaultPath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &State{
+				Version: 1,
+				Tools:   make(map[string]ToolState),
+			}, nil
+		}
+		return nil, fmt.Errorf("read state: %w", err)
+	}
+	var s State
+	if err := json.Unmarshal(data, &s); err != nil {
+		return nil, fmt.Errorf("parse state: %w", err)
+	}
+	if s.Tools == nil {
+		s.Tools = make(map[string]ToolState)
+	}
+	return &s, nil
+}
+
+// Save writes the state to DefaultPath, creating parent directories as needed.
+func Save(s *State) error {
+	path := DefaultPath()
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create state dir: %w", err)
+	}
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal state: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("write state: %w", err)
+	}
+	return nil
+}
