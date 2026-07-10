@@ -294,7 +294,25 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 		return result
 	}
 
+	// toolTimeout wraps the entire tool execution across all method attempts.
+	toolCtx := ctx
+	if ex.toolTimeout > 0 {
+		var cancel context.CancelFunc
+		toolCtx, cancel = context.WithTimeout(ctx, ex.toolTimeout)
+		defer cancel()
+	}
+
 	for _, method := range methods {
+		select {
+		case <-toolCtx.Done():
+			result.Status = StatusFailed
+			result.Error = fmt.Sprintf("tool timeout (%v) exceeded", ex.toolTimeout)
+			ex.logWarn("tool", "tool", tool.Name, "status", "timeout", "duration", ex.toolTimeout)
+			result.Duration = time.Since(toolStart).String()
+			return result
+		default:
+		}
+
 		attempt := MethodAttempt{Kind: method.Kind}
 
 		if method.When != nil && len(method.When.DistroFamily) > 0 {
@@ -325,8 +343,8 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 
 		if adapter.Check(ctx, ex.rn, tool, method) {
 			result.Status = StatusAlready
-		result.Method = method.Kind
-		result.Config = method.Config
+			result.Method = method.Kind
+			result.Config = method.Config
 			ex.logDebug("tool", "tool", tool.Name, "method", method.Kind, "status", "already_installed")
 			result.Duration = time.Since(toolStart).String()
 			return result
@@ -347,9 +365,11 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 		if lr, ok := runner.(*run.LoggingRunner); ok {
 			runner = lr.WithContext(run.Context{Tool: tool.Name, Method: method.Kind})
 		}
-		methodCtx, cancel := context.WithTimeout(ctx, ex.methodTimeout)
+
+		// method-timeout applies to each individual attempt.
+		methodCtx, methodCancel := context.WithTimeout(toolCtx, ex.methodTimeout)
 		err := adapter.Install(methodCtx, runner, tool, method)
-		cancel()
+		methodCancel()
 
 		if err == nil {
 			result.Status = StatusInstalled
@@ -357,7 +377,11 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 			result.Config = method.Config
 			ex.logDebug("tool", "tool", tool.Name, "method", method.Kind, "status", "installed")
 			if tool.PostInstall != "" {
-				ex.runPostinstall(methodCtx, tool)
+				// Postinstall gets a fresh timeout from the tool-level context,
+				// not the cancelled method context.
+				postCtx, postCancel := context.WithTimeout(toolCtx, ex.methodTimeout)
+				ex.runPostinstall(postCtx, tool)
+				postCancel()
 				result.PostinstallDone = true
 			}
 			result.Duration = time.Since(toolStart).String()
