@@ -1,0 +1,51 @@
+# .goreleaser.yaml
+# CI/CD configuration for depengine
+
+version: 2
+
+project_name: depengine
+
+builds:
+  - id: depengine
+    main: ./main.go
+    binary: depengine
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: depengine-archives
+    name_template: "depengine_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - none*
+
+checksum:
+  name_template: "depengine_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+
+release:
+  github:
+    owner: depengine
+    name: depengine
+  draft: true
+  prerelease: auto
+  name_template: "depengine {{.Version}}"
