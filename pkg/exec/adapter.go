@@ -77,7 +77,6 @@ func CanRemove(adapter Adapter) bool {
 	return r.CanRemove()
 }
 
-
 // SubstitutePkg replaces "{pkg}" in cmd with the package name from
 // mc.Config["pkg"], falling back to tool.Name. Shared by all adapters.
 func SubstitutePkg(cmd []string, tool *schema.Tool, mc *schema.MethodCandidate) []string {

@@ -235,46 +235,53 @@ func (ex *Executor) Execute(ctx context.Context, s *schema.Schema, clan string) 
 		ex.logDebug("executor", "phase", "report", "json", report.JSON())
 	}
 
-	// Write state file after successful install execution.
-	if ex.schemaPath != "" {
-		st := &state.State{
-			Version:          1,
-			SchemaPath:       ex.schemaPath,
-			SchemaModifiedAt: ex.schemaModTime.UTC().Format(time.RFC3339),
-			Tools:            make(map[string]state.ToolState, len(report.Tools)),
-		}
-
-		for _, tr := range report.Tools {
-			if tr.Status != StatusInstalled && tr.Status != StatusAlready {
-				continue
-			}
-			tool, ok := s.Tools[tr.Tool]
-			if !ok {
-				continue
-			}
-			st.Tools[tr.Tool] = state.ToolState{
-				Method:          tr.Method,
-				AdapterKind:     tr.Method,
-				InstalledAt:     time.Now().UTC().Format(time.RFC3339),
-				PostinstallDone: tr.PostinstallDone,
-				DefinitionHash:  state.DefinitionHash(tool),
-				Config:          tr.Config,
-			}
-		}
-
-		lock, err := state.Lock()
-		if err != nil {
-			ex.logWarn("state lock failed", "error", err)
-		} else {
-			if err := state.Save(st); err != nil {
-				ex.logWarn("state save failed", "error", err)
-			}
-			lock.Close()
-		}
-	}
+	ex.writeState(s, report)
 
 	return report, nil
 }
+
+// writeState persists the installation state file after a successful run.
+func (ex *Executor) writeState(s *schema.Schema, report *ExecReport) {
+	if ex.schemaPath == "" {
+		return
+	}
+	st := &state.State{
+		Version:          1,
+		SchemaPath:       ex.schemaPath,
+		SchemaModifiedAt: ex.schemaModTime.UTC().Format(time.RFC3339),
+		Tools:            make(map[string]state.ToolState, len(report.Tools)),
+	}
+
+	for _, tr := range report.Tools {
+		if tr.Status != StatusInstalled && tr.Status != StatusAlready {
+			continue
+		}
+		tool, ok := s.Tools[tr.Tool]
+		if !ok {
+			continue
+		}
+		st.Tools[tr.Tool] = state.ToolState{
+			Method:          tr.Method,
+			AdapterKind:     tr.Method,
+			InstalledAt:     time.Now().UTC().Format(time.RFC3339),
+			PostinstallDone: tr.PostinstallDone,
+			DefinitionHash:  state.DefinitionHash(tool),
+			Config:          tr.Config,
+		}
+	}
+
+	lock, err := state.Lock()
+	if err != nil {
+		ex.logWarn("state lock failed", "error", err)
+		return
+	}
+	defer lock.Close()
+
+	if err := state.Save(st); err != nil {
+		ex.logWarn("state save failed", "error", err)
+	}
+ }
+
 func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResult {
 	toolStart := time.Now()
 	result := ToolResult{Tool: tool.Name}

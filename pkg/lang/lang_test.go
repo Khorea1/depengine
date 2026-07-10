@@ -113,6 +113,27 @@ func TestBaseAdapterInstallFailure(t *testing.T) {
 	}
 }
 
+
+func TestBaseAdapterCanRemoveFalseWhenEmpty(t *testing.T) {
+	adapter := NewBaseAdapter(BaseConfig{
+		KindName: "test-no-remove",
+		Binary:   "sh",
+	})
+	if adapter.CanRemove() {
+		t.Fatal("CanRemove should be false when RemoveTmpl is empty")
+	}
+}
+
+func TestBaseAdapterCanRemoveTrueWhenSet(t *testing.T) {
+	adapter := NewBaseAdapter(BaseConfig{
+		KindName:    "test-has-remove",
+		Binary:      "sh",
+		RemoveTmpl: []string{"echo", "remove", "{pkg}"},
+	})
+	if !adapter.CanRemove() {
+		t.Fatal("CanRemove should be true when RemoveTmpl is set")
+	}
+}
 func TestBaseAdapterRemoveSuccess(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 0}
 	adapter := NewBaseAdapter(BaseConfig{

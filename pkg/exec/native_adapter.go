@@ -75,26 +75,7 @@ func (a *NativeAdapter) Install(ctx context.Context, rn run.Runner, _ *schema.To
 	if clan == "" {
 		return fmt.Errorf("native: no native manager found")
 	}
-
-	pkg := pkgFromConfig(mc, clan)
-	if pkg == "" {
-		return fmt.Errorf("native: no package name for tool")
-	}
-
-	cmd := native.BuildInstallCmd(clan, pkg)
-	if cmd == nil {
-		return fmt.Errorf("native: no install command for clan %q", clan)
-	}
-
-	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil {
-		return fmt.Errorf("native: install failed: %w", res.Err)
-	}
-	if res.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res.Stderr))
-		return fmt.Errorf("native: install exited %d: %s", res.ExitCode, stderr)
-	}
-	return nil
+	return runNativeInstall(ctx, rn, "native", clan, mc)
 }
 
 // Remove uninstalls a package via the native package manager.
@@ -144,6 +125,28 @@ func pkgFromConfig(mc *schema.MethodCandidate, clan string) string {
 	return ""
 }
 
+// runNativeInstall runs the install command for a native package manager.
+// Shared by NativeAdapter and NativeByManagerAdapter.
+func runNativeInstall(ctx context.Context, rn run.Runner, prefix, clan string, mc *schema.MethodCandidate) error {
+	pkg := pkgFromConfig(mc, clan)
+	if pkg == "" {
+		return fmt.Errorf("%s: no package name", prefix)
+	}
+	cmd := native.BuildInstallCmd(clan, pkg)
+	if cmd == nil {
+		return fmt.Errorf("%s: no install command for clan %q", prefix, clan)
+	}
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	if res.Err != nil {
+		return fmt.Errorf("%s: install failed: %w", prefix, res.Err)
+	}
+	if res.ExitCode != 0 {
+		stderr := strings.TrimSpace(string(res.Stderr))
+		return fmt.Errorf("%s: install exited %d: %s", prefix, res.ExitCode, stderr)
+	}
+	return nil
+}
+
 // RegisterNativeManagerAliases registers aliases for each known native
 // manager binary name (apt, pacman, dnf, brew, …). This allows schema
 // entries that use the manager name directly (e.g. `apt = "fd-find"`) to
@@ -185,6 +188,7 @@ func (a *NativeByManagerAdapter) Kind() string { return a.managerName }
 func (a *NativeByManagerAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	return run.LookPath(ctx, rn, a.managerName)
 }
+
 func (a *NativeByManagerAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
 	clan := findClanByManager(a.managerName)
 	if clan == "" {
@@ -207,23 +211,7 @@ func (a *NativeByManagerAdapter) Install(ctx context.Context, rn run.Runner, too
 	if clan == "" {
 		return fmt.Errorf("native(%s): no clan found for manager", a.managerName)
 	}
-	pkg := pkgFromConfig(mc, clan)
-	if pkg == "" {
-		return fmt.Errorf("native(%s): no package name", a.managerName)
-	}
-	cmd := native.BuildInstallCmd(clan, pkg)
-	if cmd == nil {
-		return fmt.Errorf("native(%s): no install command for clan %q", a.managerName, clan)
-	}
-	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil {
-		return fmt.Errorf("native(%s): install failed: %w", a.managerName, res.Err)
-	}
-	if res.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res.Stderr))
-		return fmt.Errorf("native(%s): install exited %d: %s", a.managerName, res.ExitCode, stderr)
-	}
-	return nil
+	return runNativeInstall(ctx, rn, fmt.Sprintf("native(%s)", a.managerName), clan, mc)
 }
 
 func (a *NativeByManagerAdapter) Remove(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {

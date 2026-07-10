@@ -255,3 +255,31 @@ func TestNativeAdapterRemove(t *testing.T) {
 		}
 	})
 }
+
+func TestNativeByManagerAdapterImplementsRemover(t *testing.T) {
+	a := &NativeByManagerAdapter{managerName: "apt"}
+	if !CanRemove(a) {
+		t.Fatal("NativeByManagerAdapter should implement Remover")
+	}
+	if !a.CanRemove() {
+		t.Fatal("NativeByManagerAdapter.CanRemove should return true")
+	}
+}
+
+func TestNativeByManagerAdapterRemoveDelegates(t *testing.T) {
+	fr := &run.FakeRunner{ExitCode: 0}
+	a := &NativeByManagerAdapter{managerName: "sh", rn: fr}
+	mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+	tool := &schema.Tool{Name: "git"}
+
+	// Remove should not panic or return error — it delegates to NativeAdapter.Remove
+	// which uses findClanByManager. Since "sh" isn't a real manager, it will fail
+	// at clan resolution, but shouldn't panic or leave resources dangling.
+	err := a.Remove(context.Background(), fr, tool, mc)
+	if err == nil {
+		t.Fatal("expected error for unknown manager 'sh'")
+	}
+	if err.Error() != "native(sh): no clan found for manager" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

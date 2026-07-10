@@ -53,6 +53,7 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 				InstalledAt:     "2024-01-01T00:00:00Z",
 				PostinstallDone: true,
 				DefinitionHash:  "abc123",
+				Config:          map[string]any{"pkg": "nvim-stable"},
 			},
 		},
 	}
@@ -94,6 +95,12 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	}
 	if !tool.PostinstallDone {
 		t.Fatal("PostinstallDone should be true")
+	}
+	if tool.Config == nil {
+		t.Fatal("Config should not be nil after round-trip")
+	}
+	if pkg, ok := tool.Config["pkg"].(string); !ok || pkg != "nvim-stable" {
+		t.Fatalf("Config['pkg']: got %v, want 'nvim-stable'", tool.Config["pkg"])
 	}
 }
 
