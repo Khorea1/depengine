@@ -1,0 +1,8 @@
+# Minimal benchmark schema: 1 tool, single native method.
+# Used by BenchmarkParseSchema to measure baseline parsing overhead.
+
+[defaults]
+manager = "native"
+
+[tools]
+simple = ["bat"]

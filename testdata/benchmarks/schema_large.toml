@@ -1,0 +1,316 @@
+# Large benchmark schema: ~50 tools with 5 methods each.
+# Complex dependency chains, requires, when conditions, placeholders.
+
+[defaults]
+manager = "native"
+method_order = ["native", "cargo", "go", "pip", "pipx", "uv", "aur", "git", "http"]
+
+[tools]
+simple = [
+  "tool00", "tool01", "tool02", "tool03", "tool04",
+  "tool05", "tool06", "tool07", "tool08", "tool09",
+]
+
+  [tools.tool10]
+  postinstall = "echo tool10 installed on {distro_family} with {arch}"
+  pacman = "tool10-pacman"
+  cargo = { pkg = "tool10-cargo", when = { distro_family = ["arch", "debian"] } }
+  go = "tool10-go"
+  pip = { pkg = "tool10-pip", when = { distro_family = ["arch", "debian"] } }
+  git = { url = "https://github.com/user/tool10.git", branch = "v10.3" }
+
+  [tools.tool11]
+  requires = ["tool10"]
+  apt = "tool11-apt"
+  go = "tool11-go"
+  pip = { pkg = "tool11-pip", when = { distro_family = ["fedora", "suse"] } }
+  git = { url = "https://github.com/user/tool11.git", branch = "v11.2" }
+  http = { url = "https://releases.example.com/tool11-v11.{arch}.tar.gz", checksum = "sha256:def1103" }
+
+  [tools.tool12]
+  dnf = "tool12-dnf"
+  pip = { pkg = "tool12-pip", when = { distro_family = ["arch", "debian"] } }
+  git = { url = "https://github.com/user/tool12.git", branch = "v12.1" }
+  http = { url = "https://releases.example.com/tool12-v12.{arch}.tar.gz", checksum = "sha256:abc1202" }
+  cargo = "tool12-cargo"
+
+  [tools.tool13]
+  requires = ["tool12", "tool11"]
+  brew = "tool13-brew"
+  git = { url = "https://github.com/user/tool13.git", branch = "v13.0" }
+  http = { url = "https://releases.example.com/tool13-v13.{arch}.tar.gz", checksum = "sha256:def1301" }
+  cargo = "tool13-cargo"
+  go = { pkg = "tool13-go", when = { distro_family = ["fedora", "suse"] } }
+
+  [tools.tool14]
+  pacman = "tool14-pacman"
+  http = { url = "https://releases.example.com/tool14-v14.{arch}.tar.gz", checksum = "sha256:abc1400" }
+  cargo = "tool14-cargo"
+  go = { pkg = "tool14-go", when = { distro_family = ["arch", "debian"] } }
+  pip = "tool14-pip"
+
+  [tools.tool15]
+  requires = ["tool14", "tool13", "tool12"]
+  apt = "tool15-apt"
+  cargo = "tool15-cargo"
+  go = { pkg = "tool15-go", when = { distro_family = ["fedora", "suse"] } }
+  pip = "tool15-pip"
+  git = { url = "https://github.com/user/tool15.git", branch = "v15.3" }
+
+  [tools.tool16]
+  dnf = "tool16-dnf"
+  go = { pkg = "tool16-go", when = { distro_family = ["arch", "debian"] } }
+  pip = "tool16-pip"
+  git = { url = "https://github.com/user/tool16.git", branch = "v16.2" }
+  http = { url = "https://releases.example.com/tool16-v16.{arch}.tar.gz", checksum = "sha256:abc1603" }
+
+  [tools.tool17]
+  requires = ["tool16", "tool15"]
+  brew = "tool17-brew"
+  pip = "tool17-pip"
+  git = { url = "https://github.com/user/tool17.git", branch = "v17.1" }
+  http = { url = "https://releases.example.com/tool17-v17.{arch}.tar.gz", checksum = "sha256:def1702" }
+  cargo = { pkg = "tool17-cargo", when = { distro_family = ["fedora", "suse"] } }
+
+  [tools.tool18]
+  pacman = "tool18-pacman"
+  git = { url = "https://github.com/user/tool18.git", branch = "v18.0" }
+  http = { url = "https://releases.example.com/tool18-v18.{arch}.tar.gz", checksum = "sha256:abc1801" }
+  cargo = { pkg = "tool18-cargo", when = { distro_family = ["arch", "debian"] } }
+  go = "tool18-go"
+
+  [tools.tool19]
+  requires = ["tool18", "tool17"]
+  apt = "tool19-apt"
+  http = { url = "https://releases.example.com/tool19-v19.{arch}.tar.gz", checksum = "sha256:def1900" }
+  cargo = { pkg = "tool19-cargo", when = { distro_family = ["fedora", "suse"] } }
+  go = "tool19-go"
+  pip = { pkg = "tool19-pip", when = { distro_family = ["fedora", "suse"] } }
+
+  [tools.tool20]
+  postinstall = "echo tool20 installed on {distro_family} with {arch}"
+  dnf = "tool20-dnf"
+  cargo = { pkg = "tool20-cargo", when = { distro_family = ["arch", "debian"] } }
+  go = "tool20-go"
+  pip = { pkg = "tool20-pip", when = { distro_family = ["arch", "debian"] } }
+  git = { url = "https://github.com/user/tool20.git", branch = "v20.3" }
+
+  [tools.tool21]
+  requires = ["tool20"]
+  brew = "tool21-brew"
+  go = "tool21-go"
+  pip = { pkg = "tool21-pip", when = { distro_family = ["fedora", "suse"] } }
+  git = { url = "https://github.com/user/tool21.git", branch = "v21.2" }
+  http = { url = "https://releases.example.com/tool21-v21.{arch}.tar.gz", checksum = "sha256:def2103" }
+
+  [tools.tool22]
+  apt = "tool22-apt"
+  pip = { pkg = "tool22-pip", when = { distro_family = ["arch", "debian"] } }
+  git = { url = "https://github.com/user/tool22.git", branch = "v22.1" }
+  http = { url = "https://releases.example.com/tool22-v22.{arch}.tar.gz", checksum = "sha256:abc2202" }
+  cargo = "tool22-cargo"
+
+  [tools.tool23]
+  requires = ["tool22", "tool21"]
+  dnf = "tool23-dnf"
+  git = { url = "https://github.com/user/tool23.git", branch = "v23.0" }
+  http = { url = "https://releases.example.com/tool23-v23.{arch}.tar.gz", checksum = "sha256:def2301" }
+  cargo = "tool23-cargo"
+  go = { pkg = "tool23-go", when = { distro_family = ["fedora", "suse"] } }
+
+  [tools.tool24]
+  pacman = "tool24-pacman"
+  http = { url = "https://releases.example.com/tool24-v24.{arch}.tar.gz", checksum = "sha256:abc2400" }
+  cargo = "tool24-cargo"
+  go = { pkg = "tool24-go", when = { distro_family = ["arch", "debian"] } }
+  pip = "tool24-pip"
+
+  [tools.tool25]
+  requires = ["tool24", "tool23"]
+  brew = "tool25-brew"
+  cargo = "tool25-cargo"
+  go = { pkg = "tool25-go", when = { distro_family = ["fedora", "suse"] } }
+  pip = "tool25-pip"
+  git = { url = "https://github.com/user/tool25.git", branch = "v25.3" }
+
+  [tools.tool26]
+  apt = "tool26-apt"
+  go = { pkg = "tool26-go", when = { distro_family = ["arch", "debian"] } }
+  pip = "tool26-pip"
+  git = { url = "https://github.com/user/tool26.git", branch = "v26.2" }
+  http = { url = "https://releases.example.com/tool26-v26.{arch}.tar.gz", checksum = "sha256:abc2603" }
+
+  [tools.tool27]
+  requires = ["tool26", "tool25"]
+  dnf = "tool27-dnf"
+  pip = "tool27-pip"
+  git = { url = "https://github.com/user/tool27.git", branch = "v27.1" }
+  http = { url = "https://releases.example.com/tool27-v27.{arch}.tar.gz", checksum = "sha256:def2702" }
+  cargo = { pkg = "tool27-cargo", when = { distro_family = ["fedora", "suse"] } }
+
+  [tools.tool28]
+  pacman = "tool28-pacman"
+  git = { url = "https://github.com/user/tool28.git", branch = "v28.0" }
+  http = { url = "https://releases.example.com/tool28-v28.{arch}.tar.gz", checksum = "sha256:abc2801" }
+  cargo = { pkg = "tool28-cargo", when = { distro_family = ["arch", "debian"] } }
+  go = "tool28-go"
+
+  [tools.tool29]
+  requires = ["tool28", "tool27"]
+  brew = "tool29-brew"
+  http = { url = "https://releases.example.com/tool29-v29.{arch}.tar.gz", checksum = "sha256:def2900" }
+  cargo = { pkg = "tool29-cargo", when = { distro_family = ["fedora", "suse"] } }
+  go = "tool29-go"
+  pip = { pkg = "tool29-pip", when = { distro_family = ["fedora", "suse"] } }
+
+  [tools.tool30]
+  postinstall = "echo tool30 installed on {distro_family} with {arch}"
+  apt = "tool30-apt"
+  cargo = { pkg = "tool30-cargo", when = { distro_family = ["arch", "debian"] } }
+  go = "tool30-go"
+  pip = { pkg = "tool30-pip", when = { distro_family = ["arch", "debian"] } }
+  git = { url = "https://github.com/user/tool30.git", branch = "v30.3" }
+
+  [tools.tool31]
+  requires = ["tool30", "tool29"]
+  dnf = "tool31-dnf"
+  go = "tool31-go"
+  pip = { pkg = "tool31-pip", when = { distro_family = ["fedora", "suse"] } }
+  git = { url = "https://github.com/user/tool31.git", branch = "v31.2" }
+  http = { url = "https://releases.example.com/tool31-v31.{arch}.tar.gz", checksum = "sha256:def3103" }
+
+  [tools.tool32]
+  pacman = "tool32-pacman"
+  pip = { pkg = "tool32-pip", when = { distro_family = ["arch", "debian"] } }
+  git = { url = "https://github.com/user/tool32.git", branch = "v32.1" }
+  http = { url = "https://releases.example.com/tool32-v32.{arch}.tar.gz", checksum = "sha256:abc3202" }
+  cargo = "tool32-cargo"
+
+  [tools.tool33]
+  requires = ["tool32", "tool31"]
+  brew = "tool33-brew"
+  git = { url = "https://github.com/user/tool33.git", branch = "v33.0" }
+  http = { url = "https://releases.example.com/tool33-v33.{arch}.tar.gz", checksum = "sha256:def3301" }
+  cargo = "tool33-cargo"
+  go = { pkg = "tool33-go", when = { distro_family = ["fedora", "suse"] } }
+
+  [tools.tool34]
+  apt = "tool34-apt"
+  http = { url = "https://releases.example.com/tool34-v34.{arch}.tar.gz", checksum = "sha256:abc3400" }
+  cargo = "tool34-cargo"
+  go = { pkg = "tool34-go", when = { distro_family = ["arch", "debian"] } }
+  pip = "tool34-pip"
+
+  [tools.tool35]
+  requires = ["tool34", "tool33"]
+  dnf = "tool35-dnf"
+  cargo = "tool35-cargo"
+  go = { pkg = "tool35-go", when = { distro_family = ["fedora", "suse"] } }
+  pip = "tool35-pip"
+  git = { url = "https://github.com/user/tool35.git", branch = "v35.3" }
+
+  [tools.tool36]
+  pacman = "tool36-pacman"
+  go = { pkg = "tool36-go", when = { distro_family = ["arch", "debian"] } }
+  pip = "tool36-pip"
+  git = { url = "https://github.com/user/tool36.git", branch = "v36.2" }
+  http = { url = "https://releases.example.com/tool36-v36.{arch}.tar.gz", checksum = "sha256:abc3603" }
+
+  [tools.tool37]
+  requires = ["tool36", "tool35"]
+  brew = "tool37-brew"
+  pip = "tool37-pip"
+  git = { url = "https://github.com/user/tool37.git", branch = "v37.1" }
+  http = { url = "https://releases.example.com/tool37-v37.{arch}.tar.gz", checksum = "sha256:def3702" }
+  cargo = { pkg = "tool37-cargo", when = { distro_family = ["fedora", "suse"] } }
+
+  [tools.tool38]
+  apt = "tool38-apt"
+  git = { url = "https://github.com/user/tool38.git", branch = "v38.0" }
+  http = { url = "https://releases.example.com/tool38-v38.{arch}.tar.gz", checksum = "sha256:abc3801" }
+  cargo = { pkg = "tool38-cargo", when = { distro_family = ["arch", "debian"] } }
+  go = "tool38-go"
+
+  [tools.tool39]
+  requires = ["tool38", "tool37"]
+  dnf = "tool39-dnf"
+  http = { url = "https://releases.example.com/tool39-v39.{arch}.tar.gz", checksum = "sha256:def3900" }
+  cargo = { pkg = "tool39-cargo", when = { distro_family = ["fedora", "suse"] } }
+  go = "tool39-go"
+  pip = { pkg = "tool39-pip", when = { distro_family = ["fedora", "suse"] } }
+
+  [tools.tool40]
+  postinstall = "echo tool40 installed on {distro_family} with {arch}"
+  pacman = "tool40-pacman"
+  cargo = { pkg = "tool40-cargo", when = { distro_family = ["arch", "debian"] } }
+  go = "tool40-go"
+  pip = { pkg = "tool40-pip", when = { distro_family = ["arch", "debian"] } }
+  git = { url = "https://github.com/user/tool40.git", branch = "v40.3" }
+
+  [tools.tool41]
+  requires = ["tool40", "tool39"]
+  brew = "tool41-brew"
+  go = "tool41-go"
+  pip = { pkg = "tool41-pip", when = { distro_family = ["fedora", "suse"] } }
+  git = { url = "https://github.com/user/tool41.git", branch = "v41.2" }
+  http = { url = "https://releases.example.com/tool41-v41.{arch}.tar.gz", checksum = "sha256:def4103" }
+
+  [tools.tool42]
+  apt = "tool42-apt"
+  pip = { pkg = "tool42-pip", when = { distro_family = ["arch", "debian"] } }
+  git = { url = "https://github.com/user/tool42.git", branch = "v42.1" }
+  http = { url = "https://releases.example.com/tool42-v42.{arch}.tar.gz", checksum = "sha256:abc4202" }
+  cargo = "tool42-cargo"
+
+  [tools.tool43]
+  requires = ["tool42", "tool41"]
+  dnf = "tool43-dnf"
+  git = { url = "https://github.com/user/tool43.git", branch = "v43.0" }
+  http = { url = "https://releases.example.com/tool43-v43.{arch}.tar.gz", checksum = "sha256:def4301" }
+  cargo = "tool43-cargo"
+  go = { pkg = "tool43-go", when = { distro_family = ["fedora", "suse"] } }
+
+  [tools.tool44]
+  pacman = "tool44-pacman"
+  http = { url = "https://releases.example.com/tool44-v44.{arch}.tar.gz", checksum = "sha256:abc4400" }
+  cargo = "tool44-cargo"
+  go = { pkg = "tool44-go", when = { distro_family = ["arch", "debian"] } }
+  pip = "tool44-pip"
+
+  [tools.tool45]
+  requires = ["tool44", "tool43"]
+  brew = "tool45-brew"
+  cargo = "tool45-cargo"
+  go = { pkg = "tool45-go", when = { distro_family = ["fedora", "suse"] } }
+  pip = "tool45-pip"
+  git = { url = "https://github.com/user/tool45.git", branch = "v45.3" }
+
+  [tools.tool46]
+  apt = "tool46-apt"
+  go = { pkg = "tool46-go", when = { distro_family = ["arch", "debian"] } }
+  pip = "tool46-pip"
+  git = { url = "https://github.com/user/tool46.git", branch = "v46.2" }
+  http = { url = "https://releases.example.com/tool46-v46.{arch}.tar.gz", checksum = "sha256:abc4603" }
+
+  [tools.tool47]
+  requires = ["tool46", "tool45"]
+  dnf = "tool47-dnf"
+  pip = "tool47-pip"
+  git = { url = "https://github.com/user/tool47.git", branch = "v47.1" }
+  http = { url = "https://releases.example.com/tool47-v47.{arch}.tar.gz", checksum = "sha256:def4702" }
+  cargo = { pkg = "tool47-cargo", when = { distro_family = ["fedora", "suse"] } }
+
+  [tools.tool48]
+  pacman = "tool48-pacman"
+  git = { url = "https://github.com/user/tool48.git", branch = "v48.0" }
+  http = { url = "https://releases.example.com/tool48-v48.{arch}.tar.gz", checksum = "sha256:abc4801" }
+  cargo = { pkg = "tool48-cargo", when = { distro_family = ["arch", "debian"] } }
+  go = "tool48-go"
+
+  [tools.tool49]
+  requires = ["tool48", "tool47"]
+  apt = "tool49-apt"
+  http = { url = "https://releases.example.com/tool49-v49.{arch}.tar.gz", checksum = "sha256:def4900" }
+  cargo = { pkg = "tool49-cargo", when = { distro_family = ["fedora", "suse"] } }
+  go = "tool49-go"
+  pip = { pkg = "tool49-pip", when = { distro_family = ["fedora", "suse"] } }

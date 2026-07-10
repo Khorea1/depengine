@@ -1,0 +1,43 @@
+# Medium benchmark schema: ~10 tools with 3 methods each.
+# Mix of native overrides, language methods, requires, when conditions.
+
+[defaults]
+manager = "native"
+method_order = ["native", "cargo", "go", "aur", "git", "http"]
+
+[tools]
+  [tools.neovim]
+  requires = ["neovim"]
+  postinstall = "echo {name} installed on {distro_family}"
+  pacman = "neovim"
+  cargo = {pkg = "github.com/user/neovim", when = { distro_family = ["arch", "fedora"] }}
+  pip = {pkg = "neovim-tool", when = { distro_family = ["debian", "suse"] }}
+
+git = { apt = "git", go = "github.com/inst/git", pip = "git-pkg", requires = ["neovim"] }
+  [tools.ripgrep]
+  dnf = "ripgrep"
+  pip = {pkg = "github.com/user/ripgrep", when = { distro_family = ["arch", "fedora"] }}
+  http = {url = "https://releases.example.com/ripgrep-{arch}-{os}.tar.gz", checksum = "sha256:abc123"}
+
+fd = { brew = "fd", git = "github.com/inst/fd", http = "fd-pkg" }
+  [tools.fzf]
+  postinstall = "echo {name} installed on {distro_family}"
+  pacman = "fzf"
+  http = {pkg = "github.com/user/fzf", when = { distro_family = ["arch", "fedora"] }}
+  go = {pkg = "fzf-tool", when = { distro_family = ["debian", "suse"] }}
+
+zsh = { apt = "zsh", cargo = "github.com/inst/zsh", go = "zsh-pkg" }
+  [tools.tmux]
+  requires = ["neovim"]
+  dnf = "tmux"
+  go = {pkg = "github.com/user/tmux", when = { distro_family = ["arch", "fedora"] }}
+  git = {pkg = "tmux-tool", when = { distro_family = ["debian", "suse"] }}
+
+htop = { brew = "htop", pip = "github.com/inst/htop", git = "htop-pkg", requires = ["neovim"] }
+  [tools.bat]
+  postinstall = "echo {name} installed on {distro_family}"
+  pacman = "bat"
+  git = {pkg = "github.com/user/bat", when = { distro_family = ["arch", "fedora"] }}
+  cargo = {pkg = "bat-tool", when = { distro_family = ["debian", "suse"] }}
+
+eza = { apt = "eza", http = { url = "https://releases.example.com/eza-{arch}.tar.gz", checksum = "sha256:def456" }, cargo = "github.com/user/eza" }
