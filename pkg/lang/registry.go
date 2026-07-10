@@ -60,7 +60,7 @@ var Configs = map[string]BaseConfig{
 	"bun": {
 		KindName:    "bun",
 		Binary:      "bun",
-		CheckTmpl:   []string{"sh", "-c", "bun pm ls -g | grep -q {pkg}"},
+		CheckTmpl:   []string{"sh", "-c", "bun pm ls -g | grep -qF {pkg}"},
 		InstallTmpl: []string{"bun", "add", "-g", "{pkg}"},
 	},
 	"gem": {
@@ -72,7 +72,7 @@ var Configs = map[string]BaseConfig{
 	"yarn": {
 		KindName:    "yarn",
 		Binary:      "yarn",
-		CheckTmpl:   []string{"sh", "-c", "yarn global list --depth=0 | grep -q {pkg}"},
+		CheckTmpl:   []string{"sh", "-c", "yarn global list --depth=0 | grep -qF {pkg}"},
 		InstallTmpl: []string{"yarn", "global", "add", "{pkg}"},
 	},
 	"composer": {
@@ -84,7 +84,7 @@ var Configs = map[string]BaseConfig{
 	"apm": {
 		KindName:    "apm",
 		Binary:      "apm",
-		CheckTmpl:   []string{"sh", "-c", "apm list --installed --bare | grep -q {pkg}"},
+		CheckTmpl:   []string{"sh", "-c", "apm list --installed --bare | grep -qF {pkg}"},
 		InstallTmpl: []string{"apm", "install", "{pkg}"},
 	},
 	"flatpak": {
@@ -103,14 +103,14 @@ var Configs = map[string]BaseConfig{
 	"vscode": {
 		KindName:       "vscode",
 		Binary:         "code",
-		CheckTmpl:      []string{"sh", "-c", "code --list-extensions | grep -q {pkg}"},
+		CheckTmpl:      []string{"sh", "-c", "code --list-extensions | grep -qF {pkg}"},
 		InstallTmpl:    []string{"code", "--install-extension", "{pkg}"},
 		AvailableExtra: "code-insiders",
 	},
 	"vscodium": {
 		KindName:       "vscodium",
 		Binary:         "codium",
-		CheckTmpl:      []string{"sh", "-c", "codium --list-extensions | grep -q {pkg}"},
+		CheckTmpl:      []string{"sh", "-c", "codium --list-extensions | grep -qF {pkg}"},
 		InstallTmpl:    []string{"codium", "--install-extension", "{pkg}"},
 	},
 	"cask": {
@@ -122,7 +122,7 @@ var Configs = map[string]BaseConfig{
 	"mas": {
 		KindName:    "mas",
 		Binary:      "mas",
-		CheckTmpl:   []string{"sh", "-c", "mas list | grep -q {pkg}"},
+		CheckTmpl:   []string{"sh", "-c", "mas list | grep -qF {pkg}"},
 		InstallTmpl: []string{"mas", "install", "{pkg}"},
 	},
 }
