@@ -384,6 +384,15 @@ func runRemove(args []string) {
 // resolve clan, build placeholder map, parse schema. Returns an error
 // suitable for exitCodeForError.
 func loadSchema(path string) (*schema.Schema, string, *engine.Facts, error) {
+	// If path is a directory, look for schema.toml inside it.
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	if info.IsDir() {
+		path = filepath.Join(path, "schema.toml")
+	}
+
 	facts, err := engine.GatherFacts(run.OSExecRunner{})
 	if err != nil {
 		return nil, "", nil, err
