@@ -1,0 +1,16 @@
+# Dockerfile for Arch Linux
+FROM archlinux:latest
+
+RUN pacman -Sy --noconfirm \
+    curl \
+    git \
+    && pacman -Scc --noconfirm
+
+# Install Go (for building depengine if needed)
+# RUN pacman -S --noconfirm go
+
+# WORKDIR /app
+# COPY . .
+# RUN go build -o depengine .
+
+# CMD ["./depengine"]

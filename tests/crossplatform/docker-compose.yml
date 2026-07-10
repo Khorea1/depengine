@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  debian:
+    build:
+      context: .
+      dockerfile: Dockerfile.debian
+    container_name: depengine-test-debian
+    volumes: ["./:/app"]
+    working_dir: /app
+    command: ["./tests/crossplatform/test.sh"]
+    environment:
+      - DEPENGINE_SCHEMA=tests/crossplatform/schema.toml
+      - DEPENGINE_BIN=./depengine
+      - DEPENGINE_PLATFORM=linux
+      - DEPENGINE_DISTRO=debian
+
+  arch:
+    build:
+      context: .
+      dockerfile: Dockerfile.arch
+    container_name: depengine-test-arch
+    volumes: ["./:/app"]
+    working_dir: /app
+    command: ["./tests/crossplatform/test.sh"]
+    environment:
+      - DEPENGINE_SCHEMA=tests/crossplatform/schema.toml
+      - DEPENGINE_BIN=./depengine
+      - DEPENGINE_PLATFORM=linux
+      - DEPENGINE_DISTRO=arch
+
+  fedora:
+    build:
+      context: .
+      dockerfile: Dockerfile.fedora
+    container_name: depengine-test-fedora
+    volumes: ["./:/app"]
+    working_dir: /app
+    command: ["./tests/crossplatform/test.sh"]
+    environment:
+      - DEPENGINE_SCHEMA=tests/crossplatform/schema.toml
+      - DEPENGINE_BIN=./depengine
+      - DEPENGINE_PLATFORM=linux
+      - DEPENGINE_DISTRO=fedora
+
+  alpine:
+    build:
+      context: .
+      dockerfile: Dockerfile.alpine
+    container_name: depengine-test-alpine
+    volumes: ["./:/app"]
+    working_dir: /app
+    command: ["./tests/crossplatform/test.sh"]
+    environment:
+      - DEPENGINE_SCHEMA=tests/crossplatform/schema.toml
+      - DEPENGINE_BIN=./depengine
+      - DEPENGINE_PLATFORM=linux
+      - DEPENGINE_DISTRO=alpine

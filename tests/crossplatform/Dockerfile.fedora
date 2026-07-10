@@ -1,0 +1,16 @@
+# Dockerfile for Fedora
+FROM fedora:latest
+
+RUN dnf update -y && dnf install -y \
+    curl \
+    git \
+    && dnf clean all
+
+# Install Go (for building depengine if needed)
+# RUN dnf install -y golang
+
+# WORKDIR /app
+# COPY . .
+# RUN go build -o depengine .
+
+# CMD ["./depengine"]

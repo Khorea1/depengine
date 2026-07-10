@@ -1,0 +1,19 @@
+# Dockerfile for Debian
+FROM debian:latest
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Go (for building depengine if needed, though we'll likely copy it in)
+# RUN curl -fsSL https://golang.org/dl/go1.21.5.linux-amd64.tar.gz | tar -C /usr/local -xzf -
+# ENV PATH=$PATH:/usr/local/go/bin
+
+# WORKDIR /app
+# COPY . .
+# RUN go build -o depengine .
+
+# For now, we'll assume depengine binary is copied in or available at runtime
+# CMD ["./depengine"]

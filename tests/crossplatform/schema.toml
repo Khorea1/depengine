@@ -1,0 +1,64 @@
+# ==============================================================================
+# schema.toml — Test schema for cross-platform testing
+# ==============================================================================
+
+[defaults]
+manager = "native"
+method_order = ["native", "git", "http", "npm", "cargo", "go", "pip", "pipx", "brew", "apt", "pacman", "dnf", "apk", "paru", "flatpak", "snap"]
+
+[tools]
+# Simple tools, name is package name
+simple = ["zsh", "git", "curl", "jq", "ripgrep"]
+
+# Tools with specific package names or managers
+zathura = { pacman = "zathura", apt = "zathura-core", brew = "zathura" }
+neovim = { pacman = "neovim", apt = "neovim", brew = "neovim" }
+
+# Language-specific tools
+http-server = { npm = "http-server" } # Example for npm
+exa = { rust = "exa" } # Assuming rust is a valid adapter, if not use cargo or git
+starship = { "shell.zsh" = "starship", "shell.bash" = "starship", "shell.fish" = "starship" } # Example for shell integration
+
+# Tools using git method
+# NOTE: Replace with actual git repos that can be installed via git clone and a build command
+# Using placeholder repos for now.
+ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install" } }
+fasd = { git = { url = "https://github.com/clvv/fasd", build = "PREFIX=$HOME/.local make install" } }
+
+# Tool using http method
+fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb", checksum = "sha256:auto" } } # Placeholder URL, adjust as needed
+
+# Tool requiring native package manager (e.g., for system-level dependencies)
+neofetch = { apt = "neofetch", pacman = "neofetch", dnf = "neofetch", apk = "neofetch", brew = "neofetch" }
+
+# Tool with postinstall hook
+[tools.my-custom-tool]
+postinstall = "echo 'Custom post-install script ran!'"
+
+  [tools.my-custom-tool.native]
+  # Example: this tool might be installed via a custom script or binary
+  # For testing purposes, we'll just use a placeholder that does nothing or a simple command.
+  # In a real scenario, this would point to a build/install command or a specific package name.
+  # For now, let's assume it requires a placeholder native package.
+  pkg = "my-custom-tool-native-placeholder"
+
+# Tool with different methods and conditions
+[tools.example-tool]
+requires = ["zsh"]
+
+  [tools.example-tool.apt]
+  pkg = "example-tool-debian"
+  when = { distro = "debian" }
+
+  [tools.example-tool.pacman]
+  pkg = "example-tool-arch"
+  when = { distro = "arch" }
+
+  [tools.example-tool.fedora]
+  pkg = "example-tool-fedora"
+  when = { distro = "fedora" }
+
+  [tools.example-tool.http]
+  url = "https://example.com/tool/{latest}/example-tool-{arch}.tar.gz"
+  checksum = "sha256:auto"
+  when = { platform = "linux" }

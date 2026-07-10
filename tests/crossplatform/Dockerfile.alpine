@@ -1,0 +1,16 @@
+# Dockerfile for Alpine Linux
+FROM alpine:latest
+
+RUN apk update && apk add \
+    curl \
+    git \
+    ca-certificates
+
+# Install Go (for building depengine if needed)
+# RUN apk add go
+
+# WORKDIR /app
+# COPY . .
+# RUN go build -o depengine .
+
+# CMD ["./depengine"]
