@@ -33,14 +33,14 @@ var Configs = map[string]BaseConfig{
 	"pipx": {
 		KindName:    "pipx",
 		Binary:      "pipx",
-		CheckTmpl:   []string{"pipx", "list"},
+		CheckTmpl:   []string{"sh", "-c", "pipx list --short 2>/dev/null | grep -qF '{pkg}'"},
 		InstallTmpl: []string{"pipx", "install", "{pkg}"},
 		RemoveTmpl:  []string{"pipx", "uninstall", "{pkg}"},
 	},
 	"uv": {
 		KindName:    "uv",
 		Binary:      "uv",
-		CheckTmpl:   []string{"uv", "tool", "list"},
+		CheckTmpl:   []string{"sh", "-c", "uv tool list 2>/dev/null | grep -qF '{pkg}'"},
 		InstallTmpl: []string{"uv", "tool", "install", "{pkg}"},
 	},
 	"npm": {

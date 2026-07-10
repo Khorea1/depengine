@@ -228,3 +228,46 @@ func TestPkgNameFallback(t *testing.T) {
 		t.Fatalf("pkgName fallback = %q, want %q", got, "mytool")
 	}
 }
+
+// TestPipxCheckReturnsFalseForUninstalled verifies the fix: pipx Check now
+// uses `pipx list --short | grep -qF {pkg}` so it correctly returns false
+// when the specific package is not installed.
+func TestPipxCheckReturnsFalseForUninstalled(t *testing.T) {
+	t.Parallel()
+	// Simulate pipx list --short showing packages but grep -qF finding nothing.
+	fr := &run.FakeRunner{Stdout: "some-other-pkg\n", ExitCode: 1}
+
+	adapter := NewBaseAdapter(BaseConfig{
+		KindName:    "pipx",
+		Binary:      "pipx",
+		CheckTmpl:   []string{"sh", "-c", "pipx list --short 2>/dev/null | grep -qF '{pkg}'"},
+		InstallTmpl: []string{"pipx", "install", "{pkg}"},
+	})
+
+	tool := &schema.Tool{Name: "nonexistent-pkg"}
+	mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "nonexistent-pkg"}}
+
+	if adapter.Check(context.Background(), fr, tool, mc) {
+		t.Fatal("pipx Check should return false for uninstalled package")
+	}
+}
+
+// TestUvCheckReturnsFalseForUninstalled verifies the uv Check fix.
+func TestUvCheckReturnsFalseForUninstalled(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{Stdout: "some-tool\n", ExitCode: 1}
+
+	adapter := NewBaseAdapter(BaseConfig{
+		KindName:    "uv",
+		Binary:      "uv",
+		CheckTmpl:   []string{"sh", "-c", "uv tool list 2>/dev/null | grep -qF '{pkg}'"},
+		InstallTmpl: []string{"uv", "tool", "install", "{pkg}"},
+	})
+
+	tool := &schema.Tool{Name: "nonexistent-uv-tool"}
+	mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "nonexistent-uv-tool"}}
+
+	if adapter.Check(context.Background(), fr, tool, mc) {
+		t.Fatal("uv Check should return false for uninstalled tool")
+	}
+}
