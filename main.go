@@ -1,5 +1,6 @@
 package main
 
+
 import (
 	"context"
 	"encoding/json"
@@ -9,8 +10,9 @@ import (
 	"log/slog"
 	"os"
 	"sort"
-	"time"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"depengine/pkg/engine"
 	"depengine/pkg/exec"
@@ -24,6 +26,7 @@ import (
 	"depengine/pkg/state"
 	"depengine/pkg/validate"
 )
+var version = "dev"
 
 func main() {
 	initAdapters()
@@ -43,10 +46,12 @@ func main() {
 	case "remove":
 		runRemove(os.Args[2:])
 	case "version":
-		fmt.Println("depengine v0.1.0")
+		fmt.Println("depengine " + version)
 		fmt.Println("Motor distro-agnostic de instalação de dependências")
 	case "help", "-h", "--help":
 		printUsage()
+	case "completion":
+		runCompletion(os.Args[2:])
 	default:
 		showNativeCommands(os.Args[1])
 	}
@@ -439,6 +444,7 @@ Uso:
   depengine status [flags]         Mostra status das ferramentas instaladas
   depengine remove <tool>          Remove uma ferramenta instalada
   depengine validate [flags]       Valida schema.toml e ambiente
+  depengine completion <shell>     Gera script de autocomplete (bash|zsh|fish)
   depengine version                Mostra a versão
   depengine help                   Mostra esta ajuda
 
@@ -449,9 +455,9 @@ Flags (install):
   --json            Saída em JSON
   --only <tool>     Instala apenas uma ferramenta
   --skip <tools>    Pula ferramentas (separadas por vírgula)
-   --diagnose        Modo diagnóstico: DEBUG + dry-run + verbose
-   --log-level <lvl> Nível de log: debug, info, warn, error
-   --sort-by <campo> Ordena output: name, status, method
+  --diagnose        Modo diagnóstico: DEBUG + dry-run + verbose
+  --log-level <lvl> Nível de log: debug, info, warn, error
+  --sort-by <campo> Ordena output: name, status, method
 
 Flags (validate):
   --schema <path>   Caminho para schema.toml (default: schema.toml)
@@ -467,6 +473,9 @@ Flags (status):
 Flags (remove):
   --all             Remove todas as ferramentas
   --dry-run         Mostra o que seria removido sem executar
+
+Flags (completion):
+  <shell>           Nome do shell: bash, zsh, fish
 
 Exit codes:
   0   Sucesso (todas as ferramentas ok)
@@ -599,4 +608,18 @@ func runValidate(args []string) {
 		exitCode = 1
 	}
 	os.Exit(exitCode)
+}
+
+func runCompletion(args []string) {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: depengine completion bash|zsh|fish")
+		os.Exit(2)
+	}
+	scriptPath := filepath.Join("scripts", "depengine-completion."+args[0])
+	data, err := os.ReadFile(scriptPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error reading completion script for %s: %v\n", args[0], err)
+		os.Exit(2)
+	}
+	fmt.Print(string(data))
 }
