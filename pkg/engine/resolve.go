@@ -75,6 +75,10 @@ var likeTokenPriority = []struct {
 // main.go. Returns "unknown" if nothing matches; the engine then skips to
 // the next entry in method_order (cargo/go/pip/...) rather than blocking.
 func ResolveFamily(f *Facts) string {
+	if f == nil {
+		log.Default.Debug("resolve family: nil facts")
+		return "unknown"
+	}
 	id := strings.ToLower(strings.TrimSpace(f.DistroID))
 
 	if fam, ok := idToFamily[id]; ok {

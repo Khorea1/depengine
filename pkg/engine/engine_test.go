@@ -220,3 +220,25 @@ func TestTimeoutCtxExpires(t *testing.T) {
 		t.Fatal("expected ctx to be Done by now")
 	}
 }
+
+// TestResolveFamilyNilFactsPanic reproduces the bug: ResolveFamily
+// dereferences f.DistroID without a nil check, causing a nil pointer
+// panic when called with a nil *Facts. This test MUST FAIL with panic
+// on current code.
+func TestResolveFamilyNilFactsPanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("BUG REPRODUCED: ResolveFamily panicked on nil *Facts: %v", r)
+		}
+	}()
+
+	// Calling ResolveFamily with nil *Facts should not panic.
+	_ = ResolveFamily(nil)
+}
+
+// TestMatchesDistroFamilyNilSlice handles edge case of nil allowed list.
+func TestMatchesDistroFamilyNilSlice(t *testing.T) {
+	if MatchesDistroFamily("arch", nil) {
+		t.Fatal("MatchesDistroFamily should return false for nil allowed list")
+	}
+}
