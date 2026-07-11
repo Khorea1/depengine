@@ -7,6 +7,7 @@ package state
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -87,4 +88,53 @@ func Save(s *State) error {
 		return fmt.Errorf("write state: %w", err)
 	}
 	return nil
+}
+
+// LockedState is a State handle that proves the file lock was acquired.
+// Callers receive this from LoadLocked and must call Close when done.
+type LockedState struct {
+	state *State
+	lock  io.Closer
+}
+
+// State exposes the underlying State for read access.
+func (ls *LockedState) State() *State {
+	return ls.state
+}
+
+// Save persists the state to disk. Must only be called while the lock is held.
+func (ls *LockedState) Save() error {
+	return Save(ls.state)
+}
+
+// Close releases the lock. Must be called (typically via defer).
+func (ls *LockedState) Close() error {
+	return ls.lock.Close()
+}
+
+// LoadLocked acquires the state lock and loads the state file.
+// The caller must call Close on the returned LockedState to release the lock.
+func LoadLocked() (*LockedState, error) {
+	lk, err := lock()
+	if err != nil {
+		return nil, err
+	}
+	st, err := Load()
+	if err != nil {
+		lk.Close()
+		return nil, err
+	}
+	return &LockedState{state: st, lock: lk}, nil
+}
+
+// SaveLocked acquires the lock, saves the state, and releases the lock.
+// Use this when you have a state to save without loading existing state
+// (e.g., after a fresh install run). For read-modify-write, use LoadLocked instead.
+func SaveLocked(st *State) error {
+	lk, err := lock()
+	if err != nil {
+		return err
+	}
+	defer lk.Close()
+	return Save(st)
 }

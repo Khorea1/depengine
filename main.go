@@ -163,10 +163,20 @@ func runCheck(args []string) {
 	}
 	toolName := remain[0]
 
-	s, _, _, err := loadSchema(*checkSchema)
+	s, err := schema.ParseSchemaNoFacts(*checkSchema)
 	if err != nil {
 		log.Default.Error("load schema", "error", err)
 		os.Exit(exitCodeForError(err))
+	}
+
+	// Validate schema — warn on non-fatal issues, error on broken tools.
+	if verr, warnings := schema.Validate(s, exec.RegisteredKinds()); verr != nil {
+		log.Default.Error("schema validation", "error", verr)
+		os.Exit(exitCodeForError(verr))
+	} else if len(warnings) > 0 {
+		for _, w := range warnings {
+			log.Default.Warn(w)
+		}
 	}
 
 	tool, ok := s.Tools[toolName]
@@ -198,18 +208,14 @@ func runStatus(args []string) {
 	statusOrphans := statusCmd.Bool("orphans", false, "show only orphaned tools")
 	statusCmd.Parse(args)
 
-	lock, err := state.Lock()
+	ls, err := state.LoadLocked()
 	if err != nil {
 		log.Default.Error("state lock", "error", err)
 		os.Exit(3)
 	}
-	defer lock.Close()
+	defer ls.Close()
 
-	st, err := state.Load()
-	if err != nil {
-		log.Default.Error("load state", "error", err)
-		os.Exit(3)
-	}
+	st := ls.State()
 
 	schemaPath := st.SchemaPath
 	if *statusSchema != "" {
@@ -305,18 +311,14 @@ func runRemove(args []string) {
 	removeDryRun := removeCmd.Bool("dry-run", false, "show what would be removed")
 	removeCmd.Parse(args)
 
-	lock, err := state.Lock()
+	ls, err := state.LoadLocked()
 	if err != nil {
 		log.Default.Error("state lock", "error", err)
 		os.Exit(3)
 	}
-	defer lock.Close()
+	defer ls.Close()
 
-	st, err := state.Load()
-	if err != nil {
-		log.Default.Error("load state", "error", err)
-		os.Exit(3)
-	}
+	st := ls.State()
 
 	removeTool := func(toolName string) {
 		toolState, ok := st.Tools[toolName]
@@ -374,7 +376,7 @@ func runRemove(args []string) {
 		removeTool(removeCmd.Arg(0))
 	}
 
-	if err := state.Save(st); err != nil {
+	if err := ls.Save(); err != nil {
 		log.Default.Error("failed to update state", "error", err)
 		os.Exit(3)
 	}

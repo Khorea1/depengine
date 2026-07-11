@@ -128,6 +128,34 @@ func ParseSchema(path string, m map[string]string) (*Schema, error) {
 
 	return &Schema{Defaults: defaults, Tools: tools}, nil
 }
+
+// ParseSchemaNoFacts loads and normalizes a schema.toml without gathering
+// distro facts. Placeholders are left unexpanded (passed an empty map).
+// Use this for read-only operations (check, validate) that don't need
+// the ~50-100ms overhead of running detect_os.sh.
+func ParseSchemaNoFacts(path string) (*Schema, error) {
+	rawBytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil, &ParseSchemaError{Err: fmt.Errorf("lendo schema %s: %w", path, err)}
+	}
+
+	var raw map[string]any
+	if err := toml.Unmarshal(rawBytes, &raw); err != nil {
+		return nil, &ParseSchemaError{Err: fmt.Errorf("parse TOML %s: %w", path, err)}
+	}
+	// Expand with empty map — no placeholders will be substituted.
+	raw = ExpandAll(raw, map[string]string{}).(map[string]any)
+	rawTools, _ := raw["tools"].(map[string]any)
+	if rawTools == nil {
+		rawTools = map[string]any{}
+	}
+	defaults := extractDefaults(raw["defaults"])
+	tools, err := normalizeTools(rawTools, defaults)
+	if err != nil {
+		return nil, &ParseSchemaError{Err: err}
+	}
+	return &Schema{Defaults: defaults, Tools: tools}, nil
+}
 func extractDefaults(raw any) Defaults {
 	d := Defaults{
 		Manager:     "native",

@@ -266,14 +266,7 @@ func (ex *Executor) writeState(ctx context.Context, s *schema.Schema, report *Ex
 		}
 	}
 
-	lock, err := state.Lock()
-	if err != nil {
-		ex.logWarn(ctx, "state lock failed", "error", err)
-		return
-	}
-	defer lock.Close()
-
-	if err := state.Save(st); err != nil {
+	if err := state.SaveLocked(st); err != nil {
 		ex.logWarn(ctx, "state save failed", "error", err)
 	}
 }

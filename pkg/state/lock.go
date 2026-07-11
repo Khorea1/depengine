@@ -19,11 +19,11 @@ func (l *fileLock) Close() error {
 	return l.f.Close()
 }
 
-// Lock acquires an exclusive file lock on state.json.lock, creating the
+// lock acquires an exclusive file lock on state.json.lock, creating the
 // lock file and parent directories as needed. Returns an io.Closer that
 // releases the lock. The lock is advisory (flock), so concurrent processes
-// that do not call Lock may still read/write the state file.
-func Lock() (io.Closer, error) {
+// that do not call lock may still read/write the state file.
+func lock() (io.Closer, error) {
 	path := DefaultPath() + ".lock"
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {

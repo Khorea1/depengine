@@ -209,15 +209,15 @@ func TestLockAcquireAndRelease(t *testing.T) {
 	td := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", td)
 
-	closer, err := Lock()
+	closer, err := lock()
 	if err != nil {
-		t.Fatalf("Lock(): %v", err)
+		t.Fatalf("lock(): %v", err)
 	}
 
 	// Lock should be held — try to acquire again from another goroutine.
 	got := make(chan error, 1)
 	go func() {
-		_, err := Lock()
+		_, err := lock()
 		got <- err
 	}()
 
@@ -227,6 +227,6 @@ func TestLockAcquireAndRelease(t *testing.T) {
 	}
 
 	if err := <-got; err != nil {
-		t.Fatalf("Lock() after release: %v", err)
+		t.Fatalf("lock() after release: %v", err)
 	}
 }
