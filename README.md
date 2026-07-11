@@ -164,14 +164,14 @@ Verifica se uma tool específica está instalada na máquina.
 
 ---
 
-## Métodos de instalação suportados (23)
+## Métodos de instalação suportados (28)
 
 | Categoria | Métodos |
 |-----------|---------|
 | **Nativo** | `native` (auto-detecta apt/pacman/dnf/brew/...) + aliases por manager |
-| **Linguagem** | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
-| **Desktop** | `flatpak`, `snap`, `vscode`, `cask` (macOS), `mas` (Mac App Store) |
-| **Especializados** | `sdkman`, `steamcmd`, `pacstall`, `aur` (com helper configurável) |
+| **Linguagem** | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `pnpm`, `bun`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
+| **Desktop** | `flatpak`, `snap`, `vscode`, `vscodium`, `cask` (macOS), `mas` (Mac App Store) |
+| **Especializados** | `sdkman`, `steamcmd`, `pacstall`, `conda`, `asdf`, `aur` (com helper configurável) |
 | **Outros** | `git` (clone + build), `http` (download + extração + checksum) |
 
 Managers nativos detectados automaticamente (15 distros):
@@ -192,7 +192,7 @@ schema.toml
     │
     ▼
 pkg/schema.ParseSchema()
-    │  aclama 3 formas de declaração em Tool + MethodCandidate
+    │  aceita 3 formas de declaração em Tool + MethodCandidate
     │  expande placeholders ({arch}, {distro_family}, {os}…)
     ▼
 pkg/exec.Executor.Execute()
