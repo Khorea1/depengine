@@ -32,8 +32,7 @@ func (a *SDKManAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	if _, err := os.Stat(sdk); err == nil {
 		return true
 	}
-	res := rn.Run(ctx, "which", "sdk")
-	return res.Err == nil && res.ExitCode == 0
+	return run.LookPath(ctx, rn, "sdk")
 }
 
 func (a *SDKManAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {

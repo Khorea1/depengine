@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"depengine/pkg/exec"
 	"depengine/pkg/run"
 	"depengine/pkg/schema"
 )
@@ -211,21 +212,23 @@ func TestAURAdapterCheckInstall(t *testing.T) {
 	}
 }
 
-func TestPkgNameFromConfig(t *testing.T) {
+func TestSubstitutePkgFromConfig(t *testing.T) {
 	tl := &schema.Tool{Name: "mytool"}
 	mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "mycustompkg"}}
 
-	if got := pkgName(tl, mc); got != "mycustompkg" {
-		t.Fatalf("pkgName = %q, want %q", got, "mycustompkg")
+	got := exec.SubstitutePkg([]string{"{pkg}"}, tl, mc)
+	if len(got) == 0 || got[0] != "mycustompkg" {
+		t.Fatalf("SubstitutePkg = %v, want %q", got, "mycustompkg")
 	}
 }
 
-func TestPkgNameFallback(t *testing.T) {
+func TestSubstitutePkgFallback(t *testing.T) {
 	tl := &schema.Tool{Name: "mytool"}
 	mc := &schema.MethodCandidate{Config: map[string]any{}}
 
-	if got := pkgName(tl, mc); got != "mytool" {
-		t.Fatalf("pkgName fallback = %q, want %q", got, "mytool")
+	got := exec.SubstitutePkg([]string{"{pkg}"}, tl, mc)
+	if len(got) == 0 || got[0] != "mytool" {
+		t.Fatalf("SubstitutePkg fallback = %v, want %q", got, "mytool")
 	}
 }
 

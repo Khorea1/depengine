@@ -24,20 +24,25 @@ func NewAURAdapter(helper string) *AURAdapter {
 func (a *AURAdapter) Kind() string { return "aur" }
 
 func (a *AURAdapter) Available(ctx context.Context, rn run.Runner) bool {
-	res := rn.Run(ctx, "which", a.helper)
-	return res.Err == nil && res.ExitCode == 0
+	return run.LookPath(ctx, rn, a.helper)
 }
 
 func (a *AURAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
-	pkg := pkgName(tool, mc)
-	cmd := []string{a.helper, "-Qi", pkg}
+	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
+	if len(pkg) == 0 || pkg[0] == "" {
+		return false
+	}
+	cmd := []string{a.helper, "-Qi", pkg[0]}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return res.Err == nil && res.ExitCode == 0
 }
 
 func (a *AURAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
-	pkg := pkgName(tool, mc)
-	cmd := []string{a.helper, "-S", "--noconfirm", pkg}
+	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
+	if len(pkg) == 0 || pkg[0] == "" {
+		return fmt.Errorf("aur: no package name")
+	}
+	cmd := []string{a.helper, "-S", "--noconfirm", pkg[0]}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	if res.Err != nil {
 		return fmt.Errorf("aur: install failed: %w", res.Err)
@@ -49,14 +54,6 @@ func (a *AURAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.To
 	return nil
 }
 
-// pkgName extracts the package name, using either mc.Config["pkg"] or the
-// tool's own name as fallback.
-func pkgName(tool *schema.Tool, mc *schema.MethodCandidate) string {
-	if p, ok := mc.Config["pkg"].(string); ok && p != "" {
-		return p
-	}
-	return tool.Name
-}
 
 // Ensure AURAdapter implements exec.Adapter at compile time.
 var _ exec.Adapter = (*AURAdapter)(nil)

@@ -22,8 +22,7 @@ func NewPacstallAdapter() *PacstallAdapter {
 func (a *PacstallAdapter) Kind() string { return "pacstall" }
 
 func (a *PacstallAdapter) Available(ctx context.Context, rn run.Runner) bool {
-	res := rn.Run(ctx, "which", "pacstall")
-	return res.Err == nil && res.ExitCode == 0
+	return run.LookPath(ctx, rn, "pacstall")
 }
 
 func (a *PacstallAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {

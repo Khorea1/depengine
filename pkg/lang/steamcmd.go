@@ -24,8 +24,7 @@ func NewSteamCMDAdapter() *SteamCMDAdapter {
 func (a *SteamCMDAdapter) Kind() string { return "steamcmd" }
 
 func (a *SteamCMDAdapter) Available(ctx context.Context, rn run.Runner) bool {
-	res := rn.Run(ctx, "which", "steamcmd")
-	return res.Err == nil && res.ExitCode == 0
+	return run.LookPath(ctx, rn, "steamcmd")
 }
 
 func (a *SteamCMDAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {

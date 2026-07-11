@@ -26,8 +26,7 @@ func (a *GitAdapter) Kind() string { return "git" }
 
 // Available checks whether git is on PATH.
 func (a *GitAdapter) Available(ctx context.Context, rn run.Runner) bool {
-	res := rn.Run(ctx, "which", "git")
-	return res.Err == nil && res.ExitCode == 0
+	return run.LookPath(ctx, rn, "git")
 }
 
 // Check verifies if the tool was already installed via git. Uses two
