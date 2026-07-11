@@ -11,19 +11,7 @@ import (
 // all log output for assertion in tests. Use NewTestLogger to create one.
 type TestCapture struct {
 	*slog.Logger
-	buf *captureBuffer
-}
-
-// captureBuffer is a bytes.Buffer wrapper for slog handler output in tests.
-// Concurrency safety is provided by slog's handler, which serializes writes
-// to the underlying io.Writer internally.
-type captureBuffer struct {
-	bytes.Buffer
-}
-
-// Write implements io.Writer with shared buffer access.
-func (b *captureBuffer) Write(p []byte) (int, error) {
-	return b.Buffer.Write(p)
+	buf *bytes.Buffer
 }
 
 // NewTestLogger creates a TestCapture that records all log output at
@@ -37,7 +25,7 @@ func (b *captureBuffer) Write(p []byte) (int, error) {
 //	cap.AssertContains("installed via native")
 func NewTestLogger(t *testing.T) *TestCapture {
 	t.Helper()
-	buf := &captureBuffer{}
+	buf := &bytes.Buffer{}
 	logger := New(buf, slog.LevelDebug)
 	return &TestCapture{Logger: logger, buf: buf}
 }
