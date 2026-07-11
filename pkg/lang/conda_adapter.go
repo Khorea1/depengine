@@ -26,7 +26,7 @@ func (a *CondaAdapter) Available(ctx context.Context, rn run.Runner) bool {
 
 func (a *CondaAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
-	if len(pkg) == 0 {
+	if len(pkg) == 0 || pkg[0] == "" {
 		return false
 	}
 	res := rn.Run(ctx, "conda", "list", pkg[0])
@@ -35,7 +35,7 @@ func (a *CondaAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.To
 
 func (a *CondaAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
-	if len(pkg) == 0 {
+	if len(pkg) == 0 || pkg[0] == "" {
 		return fmt.Errorf("conda: no package name")
 	}
 	res := rn.Run(ctx, "conda", "install", "-y", pkg[0])

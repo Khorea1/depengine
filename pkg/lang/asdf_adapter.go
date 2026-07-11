@@ -26,7 +26,7 @@ func (a *AsdfAdapter) Available(ctx context.Context, rn run.Runner) bool {
 
 func (a *AsdfAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
-	if len(pkg) == 0 {
+	if len(pkg) == 0 || pkg[0] == "" {
 		return false
 	}
 	for _, cmd := range []string{"asdf", "mise"} {
@@ -42,7 +42,7 @@ func (a *AsdfAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Too
 
 func (a *AsdfAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
-	if len(pkg) == 0 {
+	if len(pkg) == 0 || pkg[0] == "" {
 		return fmt.Errorf("asdf: no package name")
 	}
 	for _, cmd := range []string{"asdf", "mise"} {
