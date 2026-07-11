@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"sort"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -55,7 +55,9 @@ func main() {
 	case "completion":
 		runCompletion(os.Args[2:])
 	default:
-		showNativeCommands(os.Args[1])
+		fmt.Fprintf(os.Stderr, "erro: comando desconhecido %q\n", os.Args[1])
+		printUsage()
+		os.Exit(1)
 	}
 }
 
@@ -210,7 +212,7 @@ func runStatus(args []string) {
 	statusOrphans := statusCmd.Bool("orphans", false, "show only orphaned tools")
 	statusCmd.Parse(args)
 
-	ls, err := state.LoadLocked()
+	ls, err := state.LoadShared()
 	if err != nil {
 		log.Default.Error("state lock", "error", err)
 		os.Exit(3)
@@ -322,23 +324,23 @@ func runRemove(args []string) {
 
 	st := ls.State()
 
-	removeTool := func(toolName string) {
+	removeTool := func(toolName string) bool {
 		toolState, ok := st.Tools[toolName]
 		if !ok {
 			log.Default.Error("tool not found in state", "tool", toolName)
-			return
+			return false
 		}
 
 		adapter := exec.Lookup(toolState.Method)
 		if adapter == nil {
 			log.Default.Warn("adapter not found for method", "tool", toolName, "method", toolState.Method)
 			log.Default.Warn("manual remove required", "tool", toolName)
-			return
+			return false
 		}
 
 		if !exec.CanRemove(adapter) {
 			log.Default.Warn("manual remove required", "tool", toolName, "method", toolState.Method)
-			return
+			return false
 		}
 
 		remover := adapter.(exec.Remover)
@@ -350,35 +352,45 @@ func runRemove(args []string) {
 
 		if *removeDryRun {
 			log.Default.Info("would remove", "tool", toolName, "method", toolState.Method)
-			return
+			return true
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 		if err := remover.Remove(ctx, run.OSExecRunner{}, tool, mc); err != nil {
 			log.Default.Error("remove failed", "tool", toolName, "error", err)
-			return
+			return false
 		}
 
 		log.Default.Info("removed", "tool", toolName, "method", toolState.Method)
 		delete(st.Tools, toolName)
+		return true
 	}
 
+	hadFailure := false
 	if *removeAll {
 		for toolName := range st.Tools {
-			removeTool(toolName)
+			if !removeTool(toolName) {
+				hadFailure = true
+			}
 		}
 	} else {
 		if len(removeCmd.Args()) != 1 {
 			log.Default.Error("usage: depengine remove <tool>")
 			os.Exit(1)
 		}
-		removeTool(removeCmd.Arg(0))
+		if !removeTool(removeCmd.Arg(0)) {
+			hadFailure = true
+		}
 	}
 
 	if err := ls.Save(); err != nil {
 		log.Default.Error("failed to update state", "error", err)
 		os.Exit(3)
+	}
+
+	if hadFailure {
+		os.Exit(1)
 	}
 }
 
@@ -478,6 +490,29 @@ func filterTools(tools map[string]*schema.Tool, only, skip string) map[string]*s
 		}
 		filtered[name] = tool
 	}
+
+	// If --only was used, add transitive Requires closure so graph.Sort
+	// does not fail with "requires X, which is not in schema".
+	if only != "" {
+		queue := []string{only}
+		visited := map[string]bool{only: true}
+		for len(queue) > 0 {
+			name := queue[0]
+			queue = queue[1:]
+			if t, ok := tools[name]; ok {
+				for _, req := range t.Requires {
+					if !visited[req] {
+						visited[req] = true
+						if _, exists := filtered[req]; !exists {
+							filtered[req] = tools[req]
+						}
+						queue = append(queue, req)
+					}
+				}
+			}
+		}
+	}
+
 	return filtered
 }
 
