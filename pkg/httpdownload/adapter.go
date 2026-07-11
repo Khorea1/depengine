@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"depengine/pkg/exec"
 	"depengine/pkg/run"
@@ -79,10 +81,9 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 	if err := dl.Download(ctx, resolvedURL, tmpFile); err != nil {
 		return fmt.Errorf("http: download %s: %w", tool.Name, err)
 	}
-
 	// Verify checksum if configured.
 	if checksum, ok := mc.Config["checksum"].(string); ok && checksum != "" {
-		if err := a.verifyChecksum(ctx, rn, tmpFile, checksum); err != nil {
+		if err := a.verifyChecksum(ctx, rn, tmpFile, resolvedURL, checksum); err != nil {
 			return fmt.Errorf("http: checksum: %w", err)
 		}
 	}
@@ -101,15 +102,45 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 	return nil
 }
 
-// verifyChecksum resolves sha256:auto by downloading a .sha256 file, or
-// compares directly against a provided hash.
-func (a *HTTPAdapter) verifyChecksum(ctx context.Context, rn run.Runner, filePath, checksum string) error {
+// verifyChecksum resolves checksum verification. When "sha256:auto" is used,
+// it downloads the companion .sha256 file (appending .sha256 to the URL),
+// parses it, and verifies the downloaded file's hash.
+func (a *HTTPAdapter) verifyChecksum(ctx context.Context, rn run.Runner, filePath, url, checksum string) error {
 	const autoPrefix = "sha256:auto"
-	if checksum == autoPrefix {
-		// Download companion .sha256 file.
-		// The checksum file is usually at <url>.sha256 or <url>.sha256sum.
-		// For v0.1, we skip auto-resolution and treat it as no verification.
-		return nil
+	if strings.HasPrefix(checksum, autoPrefix) {
+		// Try to download the companion .sha256 file.
+		shaURL := url + ".sha256"
+		tmpDir, err := os.MkdirTemp("", "depengine-checksum-*")
+		if err != nil {
+			return fmt.Errorf("auto-checksum: temp dir: %w", err)
+		}
+		defer os.RemoveAll(tmpDir)
+		shaFile := tmpDir + "/checksum.sha256"
+
+		dl := SelectDownloader(ctx, rn)
+		if err := dl.Download(ctx, shaURL, shaFile); err != nil {
+			return fmt.Errorf("sha256:auto: downloading %s: %w", shaURL, err)
+		}
+
+		f, err := os.Open(shaFile)
+		if err != nil {
+			return fmt.Errorf("sha256:auto: open: %w", err)
+		}
+		defer f.Close()
+
+		checksums, err := ParseChecksumFile(f)
+		if err != nil {
+			return fmt.Errorf("sha256:auto: parse: %w", err)
+		}
+
+		// Determine the expected filename from the downloaded file path.
+		wantName := filepath.Base(filePath)
+		expectedHash, ok := checksums[wantName]
+		if !ok {
+			return fmt.Errorf("sha256:auto: no checksum found for %q in %s", wantName, shaURL)
+		}
+
+		return VerifyChecksum(filePath, "sha256:"+expectedHash)
 	}
 	return VerifyChecksum(filePath, checksum)
 }
