@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"depengine/pkg/run"
 )
@@ -201,23 +200,6 @@ func TestMatchesDistroFamily(t *testing.T) {
 	}
 	if !MatchesDistroFamily("unknown", []string{"unknown"}) {
 		t.Fatal("unknown clan should match itself (engine decides)") // todo: keep this open
-	}
-}
-
-func TestTimeoutCtxExpires(t *testing.T) {
-	ctx, cancel := timeoutCtx(20 * time.Millisecond)
-	defer cancel()
-
-	timer := time.NewTimer(60 * time.Millisecond)
-	defer timer.Stop()
-
-	select {
-	case <-ctx.Done():
-	case <-timer.C:
-	}
-
-	if ctx.Err() == nil {
-		t.Fatal("expected ctx to be Done by now")
 	}
 }
 

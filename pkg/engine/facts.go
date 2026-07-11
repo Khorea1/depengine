@@ -1,12 +1,14 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"depengine/pkg/log"
 	"depengine/pkg/run"
@@ -76,7 +78,7 @@ func GatherFacts(r run.Runner) (*Facts, error) {
 		return nil, err
 	}
 
-	ctx, cancel := timeoutCtx(10 * timeoutUnit)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	res := r.Run(ctx, script, "--json", "--no-prompt")
