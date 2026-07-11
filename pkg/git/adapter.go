@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"depengine/pkg/exec"
+	"depengine/pkg/ghrelease"
 	"depengine/pkg/run"
 	"depengine/pkg/schema"
 )
@@ -57,8 +58,12 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.To
 		return fmt.Errorf("git: no url configured for tool %q", tool.Name)
 	}
 
-	// Resolve {latest} — for v0.1, simplify to using default branch.
-	url = strings.ReplaceAll(url, "{latest}", "")
+	// Resolve {latest} to the latest GitHub release tag.
+	resolvedURL, err := ghrelease.ResolveLatest(ctx, url)
+	if err != nil {
+		return fmt.Errorf("git: resolve latest: %w", err)
+	}
+	url = resolvedURL
 
 	// Determine clone depth (default: shallow).
 	depth := "1"
@@ -91,12 +96,10 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.To
 
 	// Run build step if configured.
 	if buildCmd, ok := mc.Config["build"].(string); ok && buildCmd != "" {
-		// Use shell to run the build command.
-		parts := strings.Fields(buildCmd)
-		if len(parts) == 0 {
-			return fmt.Errorf("git: empty build command for tool %q", tool.Name)
-		}
-		buildRes := rn.Run(ctx, parts[0], parts[1:]...)
+		// Run via shell to support shell syntax (&&, ||, env vars, etc.)
+		// and ensure execution in the clone directory (shell-quoted for safety).
+		fullCmd := fmt.Sprintf("cd %q && %s", cloneDir, buildCmd)
+		buildRes := rn.Run(ctx, "sh", "-c", fullCmd)
 		if buildRes.Err != nil {
 			return fmt.Errorf("git: build failed: %w", buildRes.Err)
 		}
