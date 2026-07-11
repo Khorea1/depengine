@@ -49,7 +49,6 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 		Tools: map[string]ToolState{
 			"nvim": {
 				Method:          "native",
-				AdapterKind:     "native",
 				InstalledAt:     "2024-01-01T00:00:00Z",
 				PostinstallDone: true,
 				DefinitionHash:  "abc123",

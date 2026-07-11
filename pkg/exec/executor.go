@@ -237,15 +237,29 @@ func (ex *Executor) Execute(ctx context.Context, s *schema.Schema, clan string) 
 	return report, nil
 }
 // writeState persists the installation state file after a successful run.
+// It loads existing state and merges in the current run's results, preserving
+// tools installed by other schemas or earlier runs.
 func (ex *Executor) writeState(ctx context.Context, s *schema.Schema, report *ExecReport) {
 	if ex.schemaPath == "" {
 		return
 	}
-	st := &state.State{
-		Version:          1,
-		SchemaPath:       ex.schemaPath,
-		SchemaModifiedAt: ex.schemaModTime.UTC().Format(time.RFC3339),
-		Tools:            make(map[string]state.ToolState, len(report.Tools)),
+
+	// Load existing state under exclusive lock to prevent TOCTOU races.
+	ls, err := state.LoadLocked()
+	if err != nil {
+		ex.logWarn(ctx, "state lock failed", "error", err)
+		return
+	}
+	defer ls.Close()
+
+	st := ls.State()
+	st.SchemaPath = ex.schemaPath
+	st.SchemaModifiedAt = ex.schemaModTime.UTC().Format(time.RFC3339)
+	if st.Version == 0 {
+		st.Version = 1
+	}
+	if st.Tools == nil {
+		st.Tools = make(map[string]state.ToolState, len(report.Tools))
 	}
 
 	for _, tr := range report.Tools {
@@ -258,7 +272,6 @@ func (ex *Executor) writeState(ctx context.Context, s *schema.Schema, report *Ex
 		}
 		st.Tools[tr.Tool] = state.ToolState{
 			Method:          tr.Method,
-			AdapterKind:     tr.Method,
 			InstalledAt:     time.Now().UTC().Format(time.RFC3339),
 			PostinstallDone: tr.PostinstallDone,
 			DefinitionHash:  state.DefinitionHash(tool),
@@ -266,7 +279,7 @@ func (ex *Executor) writeState(ctx context.Context, s *schema.Schema, report *Ex
 		}
 	}
 
-	if err := state.SaveLocked(st); err != nil {
+	if err := ls.Save(); err != nil {
 		ex.logWarn(ctx, "state save failed", "error", err)
 	}
 }

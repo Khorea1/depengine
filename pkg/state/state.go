@@ -24,15 +24,13 @@ type State struct {
 type ToolState struct {
 	// Method is the method name used for installation (e.g. "native", "cargo").
 	Method string `json:"method"`
-	// AdapterKind is the adapter kind that performed the install.
-	AdapterKind string `json:"adapter_kind"`
 	// InstalledAt is the RFC3339 timestamp of when the tool was installed.
 	InstalledAt string `json:"installed_at"`
 	// PostinstallDone is true if a postinstall script was successfully run.
-	PostinstallDone bool              `json:"postinstall_done"`
+	PostinstallDone bool          `json:"postinstall_done"`
 	// DefinitionHash is the SHA256 of the tool's schema definition at install time.
-	DefinitionHash string             `json:"definition_hash"`
-	Config         map[string]any     `json:"config"`
+	DefinitionHash string         `json:"definition_hash"`
+	Config         map[string]any `json:"config"`
 }
 
 // DefaultPath returns the platform-appropriate state file path.

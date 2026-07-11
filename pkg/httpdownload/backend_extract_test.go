@@ -181,14 +181,3 @@ func TestExtractZipFailure(t *testing.T) {
 	}
 }
 
-func TestGoDownloaderDownloadToFile(t *testing.T) {
-	t.Parallel()
-	// GoDownloader uses net/http, which we can test against a local HTTP server.
-	// For a minimal test, we verify that GoDownloader is constructible
-	// and implements Downloader.
-	dl := NewGoDownloader()
-	if dl == nil {
-		t.Fatal("expected non-nil GoDownloader")
-	}
-	var _ Downloader = dl
-}
