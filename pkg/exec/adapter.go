@@ -71,10 +71,7 @@ type Remover interface {
 
 func CanRemove(adapter Adapter) bool {
 	r, ok := adapter.(Remover)
-	if !ok {
-		return false
-	}
-	return r.CanRemove()
+	return ok && r.CanRemove()
 }
 
 // SubstitutePkg replaces "{pkg}" in cmd with the package name from
