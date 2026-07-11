@@ -125,6 +125,23 @@ func LoadLocked() (*LockedState, error) {
 	return &LockedState{state: st, lock: lk}, nil
 }
 
+// LoadShared acquires a shared (read) lock and loads the state file.
+// Use this for read-only operations (status, check) to avoid blocking
+// concurrent install/remove. The caller must call Close on the returned
+// LockedState to release the lock.
+func LoadShared() (*LockedState, error) {
+	lk, err := lockShared()
+	if err != nil {
+		return nil, err
+	}
+	st, err := Load()
+	if err != nil {
+		lk.Close()
+		return nil, err
+	}
+	return &LockedState{state: st, lock: lk}, nil
+}
+
 // SaveLocked acquires the lock, saves the state, and releases the lock.
 // Use this when you have a state to save without loading existing state
 // (e.g., after a fresh install run). For read-modify-write, use LoadLocked instead.

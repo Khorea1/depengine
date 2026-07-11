@@ -48,3 +48,31 @@ func lock() (io.Closer, error) {
 
 	return &fileLock{f: f}, nil
 }
+
+// lockShared acquires a shared (read) file lock on state.json.lock.
+// Multiple processes may hold a shared lock simultaneously; an exclusive
+// lock (lock) blocks until all shared locks are released.
+func lockShared() (io.Closer, error) {
+	path := DefaultPath() + ".lock"
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, fmt.Errorf("create lock dir: %w", err)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("open lock file: %w", err)
+	}
+
+	for {
+		if err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH); err != nil {
+			if err == syscall.EINTR {
+				continue
+			}
+			_ = f.Close()
+			return nil, fmt.Errorf("acquire shared lock: %w", err)
+		}
+		break
+	}
+
+	return &fileLock{f: f}, nil
+}

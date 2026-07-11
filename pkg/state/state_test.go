@@ -229,3 +229,66 @@ func TestLockAcquireAndRelease(t *testing.T) {
 		t.Fatalf("lock() after release: %v", err)
 	}
 }
+
+func TestLockSharedAcquireAndRelease(t *testing.T) {
+	td := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", td)
+
+	closer, err := lockShared()
+	if err != nil {
+		t.Fatalf("lockShared(): %v", err)
+	}
+
+	// While shared lock is held, another shared lock should succeed.
+	got := make(chan error, 1)
+	go func() {
+		c2, err := lockShared()
+		if err == nil {
+			c2.Close() // release immediately so the exclusive test below isn't blocked
+		}
+		got <- err
+	}()
+
+	if err := <-got; err != nil {
+		t.Fatalf("lockShared() while shared held: %v", err)
+	}
+
+	// Exclusive lock should block while shared is held.
+	got2 := make(chan error, 1)
+	go func() {
+		_, err := lock()
+		got2 <- err
+	}()
+
+	// Release shared lock.
+	if err := closer.Close(); err != nil {
+		t.Fatalf("Close(): %v", err)
+	}
+
+	if err := <-got2; err != nil {
+		t.Fatalf("lock() after shared release: %v", err)
+	}
+}
+
+func TestLoadSharedReadOnly(t *testing.T) {
+	td := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", td)
+
+	// First, save something with exclusive lock.
+	initial := &State{Version: 1, Tools: map[string]ToolState{"test": {Method: "native"}}}
+	if err := SaveLocked(initial); err != nil {
+		t.Fatalf("SaveLocked(): %v", err)
+	}
+
+	// Read with shared lock.
+	ls, err := LoadShared()
+	if err != nil {
+		t.Fatalf("LoadShared(): %v", err)
+	}
+	defer ls.Close()
+
+	st := ls.State()
+	if _, ok := st.Tools["test"]; !ok {
+		t.Fatal("LoadShared() did not load existing state")
+	}
+}
