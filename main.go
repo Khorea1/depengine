@@ -43,6 +43,8 @@ func main() {
 		runCheck(os.Args[2:])
 	case "status":
 		runStatus(os.Args[2:])
+	case "forget":
+		runForget(os.Args[2:])
 	case "remove":
 		runRemove(os.Args[2:])
 	case "version":
@@ -331,13 +333,11 @@ func runRemove(args []string) {
 		if adapter == nil {
 			log.Default.Warn("adapter not found for method", "tool", toolName, "method", toolState.Method)
 			log.Default.Warn("manual remove required", "tool", toolName)
-			delete(st.Tools, toolName)
 			return
 		}
 
 		if !exec.CanRemove(adapter) {
 			log.Default.Warn("manual remove required", "tool", toolName, "method", toolState.Method)
-			delete(st.Tools, toolName)
 			return
 		}
 
@@ -380,6 +380,41 @@ func runRemove(args []string) {
 		log.Default.Error("failed to update state", "error", err)
 		os.Exit(3)
 	}
+}
+
+// runForget removes a tool from state without attempting system removal.
+func runForget(args []string) {
+	forgetCmd := flag.NewFlagSet("forget", flag.ExitOnError)
+	forgetCmd.Parse(args)
+
+	if len(forgetCmd.Args()) != 1 {
+		log.Default.Error("usage: depengine forget <tool>")
+		os.Exit(1)
+	}
+
+	toolName := forgetCmd.Arg(0)
+	ls, err := state.LoadLocked()
+	if err != nil {
+		log.Default.Error("state lock", "error", err)
+		os.Exit(3)
+	}
+	defer ls.Close()
+
+	st := ls.State()
+
+	if _, ok := st.Tools[toolName]; !ok {
+		log.Default.Error("tool not found in state", "tool", toolName)
+		os.Exit(1)
+	}
+
+	delete(st.Tools, toolName)
+
+	if err := ls.Save(); err != nil {
+		log.Default.Error("save state", "error", err)
+		os.Exit(3)
+	}
+
+	log.Default.Info("forgotten", "tool", toolName)
 }
 
 // loadSchema is the shared bootstrap for install/check: gather facts,
@@ -454,6 +489,7 @@ Uso:
   depengine check <tool>           Verifica se uma ferramenta está instalada
   depengine status [flags]         Mostra status das ferramentas instaladas
   depengine remove <tool>          Remove uma ferramenta instalada
+  depengine forget <tool>         Remove do state sem desinstalar
   depengine validate [flags]       Valida schema.toml e ambiente
   depengine completion <shell>     Gera script de autocomplete (bash|zsh|fish)
   depengine version                Mostra a versão

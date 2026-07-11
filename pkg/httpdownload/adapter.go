@@ -93,9 +93,14 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 	if e, ok := mc.Config["extract_to"].(string); ok && e != "" {
 		extractTo = e
 	}
+	// Check sudo policy for dpkg installs.
+	sudoRequired := true
+	if v, ok := mc.Config["sudo_required"].(bool); ok {
+		sudoRequired = v
+	}
 
 	// Extract or copy.
-	if err := Extract(ctx, tmpFile, extractTo, ext, rn); err != nil {
+	if err := Extract(ctx, tmpFile, extractTo, ext, rn, sudoRequired); err != nil {
 		return fmt.Errorf("http: extract: %w", err)
 	}
 

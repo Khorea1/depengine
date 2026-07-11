@@ -14,7 +14,7 @@ import (
 // Delegates to external tools (tar, unzip, dpkg) for v0.1 to avoid
 // adding Go archive-library dependencies. Go stdlib archive support
 // may replace this in a future version.
-func Extract(ctx context.Context, src, dest, ext string, rn run.Runner) error {
+func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequired bool) error {
 	// Ensure destination exists.
 	if err := os.MkdirAll(dest, 0o755); err != nil {
 		return fmt.Errorf("extract: mkdir %s: %w", dest, err)
@@ -32,7 +32,7 @@ func Extract(ctx context.Context, src, dest, ext string, rn run.Runner) error {
 	case ".zip":
 		return extractZip(ctx, src, dest, rn)
 	case ".deb":
-		return installDeb(ctx, src, rn)
+		return installDeb(ctx, src, rn, sudoRequired)
 	default:
 		// Treat as a plain binary — copy and chmod.
 		return copyBinary(src, dest)
@@ -62,8 +62,12 @@ func extractZip(ctx context.Context, src, dest string, rn run.Runner) error {
 	return nil
 }
 
-func installDeb(ctx context.Context, src string, rn run.Runner) error {
-	res := rn.Run(ctx, "sudo", "dpkg", "-i", src)
+func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired bool) error {
+	cmd := []string{"dpkg", "-i", src}
+	if sudoRequired && os.Geteuid() != 0 {
+		cmd = append([]string{"sudo"}, cmd...)
+	}
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	if res.Err != nil {
 		return fmt.Errorf("dpkg: %w", res.Err)
 	}

@@ -203,10 +203,8 @@ func TestMatchesDistroFamily(t *testing.T) {
 	}
 }
 
-// TestResolveFamilyNilFactsPanic reproduces the bug: ResolveFamily
-// dereferences f.DistroID without a nil check, causing a nil pointer
-// panic when called with a nil *Facts. This test MUST FAIL with panic
-// on current code.
+// TestResolveFamilyNilFacts ensures ResolveFamily returns "unknown" on nil *Facts.
+// This is a regression test for a bug that was fixed.
 func TestResolveFamilyNilFactsPanic(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {

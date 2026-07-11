@@ -57,11 +57,11 @@ func (a *AsdfAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 			if res.Err != nil {
 				return fmt.Errorf("asdf: plugin-add failed: %w", res.Err)
 			}
-			if res.ExitCode != 0 && !strings.Contains(string(res.Stderr), "already added") {
+			if res.ExitCode != 0 && res.ExitCode != 2 {
 				stderr := strings.TrimSpace(string(res.Stderr))
 				return fmt.Errorf("asdf: plugin-add exited %d: %s", res.ExitCode, stderr)
 			}
-			// exit 2 with "already added" means the plugin exists — continue.
+			// exit 2 means the plugin already exists — continue.
 		}
 
 		if res := rn.Run(ctx, cmd, "install", pkg[0]); res.Err != nil {

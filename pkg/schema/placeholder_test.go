@@ -143,10 +143,8 @@ func TestExpandAllWalksNestedMapsAndSlices(t *testing.T) {
 	}
 }
 
-// TestExpandAllMutatesInput reproduces the bug: ExpandAll destructively
-// mutates the input map/slice in-place. After calling ExpandAll, the
-// original input should remain unchanged. This test MUST FAIL with
-// current code, proving the mutation leak.
+// TestExpandAllDoesNotMutateInput ensures ExpandAll does not mutate the input map/slice.
+// This is a regression test for a bug that was fixed.
 func TestExpandAllMutatesInput(t *testing.T) {
 	t.Parallel()
 	m := map[string]string{"arch": "x86_64", "os": "linux"}

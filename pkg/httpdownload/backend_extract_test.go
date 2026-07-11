@@ -75,7 +75,7 @@ func TestExtractTarViaRunner(t *testing.T) {
 	t.Parallel()
 	fr := &run.FakeRunner{ExitCode: 0}
 
-	if err := Extract(context.Background(), "/tmp/src.tar.gz", "/tmp/dest", ".tar.gz", fr); err != nil {
+	if err := Extract(context.Background(), "/tmp/src.tar.gz", "/tmp/dest", ".tar.gz", fr, true); err != nil {
 		t.Fatalf("unexpected Extract error: %v", err)
 	}
 	if len(fr.Calls) != 1 {
@@ -91,7 +91,7 @@ func TestExtractZipViaRunner(t *testing.T) {
 	t.Parallel()
 	fr := &run.FakeRunner{ExitCode: 0}
 
-	if err := Extract(context.Background(), "/tmp/src.zip", "/tmp/dest", ".zip", fr); err != nil {
+	if err := Extract(context.Background(), "/tmp/src.zip", "/tmp/dest", ".zip", fr, true); err != nil {
 		t.Fatalf("unexpected Extract error: %v", err)
 	}
 	if len(fr.Calls) != 1 {
@@ -122,7 +122,7 @@ func TestExtractArchiveTypes(t *testing.T) {
 			fr := &run.FakeRunner{ExitCode: 0}
 
 			src := "/tmp/src" + tt.ext
-			if err := Extract(context.Background(), src, "/tmp/dest", tt.ext, fr); err != nil {
+			if err := Extract(context.Background(), src, "/tmp/dest", tt.ext, fr, true); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if len(fr.Calls) != 1 {
@@ -149,7 +149,7 @@ func TestExtractCopyBinary(t *testing.T) {
 	}
 
 	// copyBinary is called when ext doesn't match any archive format.
-	if err := Extract(context.Background(), src, destDir, ".exe", nil); err != nil {
+	if err := Extract(context.Background(), src, destDir, ".exe", nil, true); err != nil {
 		t.Fatalf("unexpected Extract error: %v", err)
 	}
 
@@ -167,7 +167,7 @@ func TestExtractTarFailure(t *testing.T) {
 	t.Parallel()
 	fr := &run.FakeRunner{ExitCode: 1, Stderr: "tar: command not found"}
 
-	if err := Extract(context.Background(), "/tmp/src.tar.gz", "/tmp/dest", ".tar.gz", fr); err == nil {
+	if err := Extract(context.Background(), "/tmp/src.tar.gz", "/tmp/dest", ".tar.gz", fr, true); err == nil {
 		t.Fatal("expected Extract error, got nil")
 	}
 }
@@ -176,7 +176,7 @@ func TestExtractZipFailure(t *testing.T) {
 	t.Parallel()
 	fr := &run.FakeRunner{ExitCode: 1, Stderr: "unzip: not found"}
 
-	if err := Extract(context.Background(), "/tmp/src.zip", "/tmp/dest", ".zip", fr); err == nil {
+	if err := Extract(context.Background(), "/tmp/src.zip", "/tmp/dest", ".zip", fr, true); err == nil {
 		t.Fatal("expected Extract error, got nil")
 	}
 }
