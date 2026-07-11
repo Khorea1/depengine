@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"depengine/pkg/exec"
+	"depengine/pkg/graph"
 	"depengine/pkg/run"
 	"depengine/pkg/schema"
 )
@@ -141,56 +142,11 @@ func WithPostInstall(s *schema.Schema, toolName, script string) *schema.Schema {
 	}
 	return s
 }
-
 // MustSort is a test helper that calls graph.Sort and panics on error.
 func MustSort(tools map[string]*schema.Tool) [][]string {
-	levels, err := graphSort(tools)
+	levels, err := graph.Sort(tools)
 	if err != nil {
 		panic(fmt.Sprintf("graph.Sort: %v", err))
 	}
 	return levels
-}
-
-// graphSort is a shim imported here so exectest doesn't force its callers
-// to depend on pkg/graph. Tests that need cycle-specific behavior (e.g.,
-// CycleError assertions) should import pkg/graph directly.
-func graphSort(tools map[string]*schema.Tool) ([][]string, error) {
-	return sortFunc(tools)
-}
-
-// sortFunc exists as a package-level var so tests can stub dependency
-// sorting (e.g., return a fixed order). Reassign in test setup.
-var sortFunc = func(tools map[string]*schema.Tool) ([][]string, error) {
-	inDegree := map[string]int{}
-	children := map[string][]string{}
-	for name, t := range tools {
-		inDegree[name] = len(t.Requires)
-		for _, dep := range t.Requires {
-			children[dep] = append(children[dep], name)
-		}
-	}
-	var levels [][]string
-	remaining := map[string]bool{}
-	for name := range tools {
-		remaining[name] = true
-	}
-	for len(remaining) > 0 {
-		var level []string
-		for name := range remaining {
-			if inDegree[name] == 0 {
-				level = append(level, name)
-			}
-		}
-		if len(level) == 0 {
-			return nil, fmt.Errorf("graph cycle detected")
-		}
-		for _, name := range level {
-			delete(remaining, name)
-			for _, child := range children[name] {
-				inDegree[child]--
-			}
-		}
-		levels = append(levels, level)
-	}
-	return levels, nil
 }
