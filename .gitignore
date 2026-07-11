@@ -24,3 +24,8 @@ Thumbs.db
 
 # Testing
 /tmp/test_*.toml
+
+# Meta-development (agent configs, scratchpads, skills)
+AGENTS.md
+TODO.md
+.omp/
