@@ -90,9 +90,9 @@ func WithContext(l *slog.Logger, lc LogContext) *slog.Logger {
 	return l.With(args...)
 }
 
-// Default is the package-level logger writing to stderr at WARN level.
+// Default is the package-level logger writing to stderr at INFO level.
 // It picks up DEPENGINE_TRACE_ID from the environment automatically.
-var Default = New(os.Stderr, slog.LevelWarn)
+var Default = New(os.Stderr, slog.LevelInfo)
 
 func init() {
 	if id := os.Getenv("DEPENGINE_TRACE_ID"); id != "" {

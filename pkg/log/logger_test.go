@@ -100,9 +100,9 @@ func TestWithContextEmptyFieldsOmitted(t *testing.T) {
 	if !strings.Contains(output, "trace-xyz") {
 		t.Fatalf("expected trace_id in output, got: %s", output)
 	}
-	// Tool with empty value should not appear.
-	if strings.Contains(output, "tool=") && !strings.Contains(output, "tool=zsh") {
-		// There might be a "tool=" in another context; just check no empty tool value.
+	// Empty fields should be omitted from output.
+	if strings.Contains(output, "tool=") {
+		t.Errorf("empty Tool field should not appear in output, got: %s", output)
 	}
 }
 
