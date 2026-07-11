@@ -1,10 +1,11 @@
 > **Projeto:** depengine  
-> **Data:** 2026-07-09  
-> **Status dos testes:** ✅ `go test ./...` — 0 falhas (12/12 packages pass)  
+> **Data:** 2026-07-10  
+> **Status dos testes:** ✅ `go test ./...` — 0 falhas (13/13 packages pass, 353 testes)  
 > **Build:** ✅ `go build -o depengine .` — limpo  
-> **Próximo release:** `v0.2.0` — adapters expansion Campanha 4
+> **Vet:** ✅ `go vet ./...` — limpo  
+> **Próximo release:** `v0.2.0` — Campanha 5 (Polimento & Release)
 
-Depois de quatro campanhas implementadas (Fundação, Executor+Adapters, Logging, Schema Validation), o motor está completo e funcional com **~23 métodos de instalação**. A **Campanha 4 (Adapter Expansions)** foi concluída — pnpm, dnf5, vscodium, conda, asdf/mise e bun.
+Depois de quatro campanhas implementadas (Fundação, Executor+Adapters, Logging, Schema Validation) e a **expansão pós-Campanha-4** (lifecycle state tracking + Remover interface + CLI status/remove), o motor está completo e funcional com **~23 métodos de instalação** e **353 testes automatizados**.
 
 ## 🔧 Architecture Refactor — 5 Candidates (CONCLUÍDO)
 
@@ -257,6 +258,40 @@ Ativa DEBUG + dry-run + verbose implícito. Loga Facts, Schema normalizado, orde
 
 ---
 
+# 📋 Análise de Maturidade — Campanha 5 (Polimento & Release)
+
+**Status:** ✅ Projeto maduro para Campanha 5. Ciclo de vida core completo.
+
+## Itens entregues que fecham o ciclo
+
+| Domínio | O que foi implementado |
+|---------|----------------------|
+| **Instalação** | Executor com fallback, when, requires, postinstall, timeout, dry-run |
+| **Check** | `depengine check <tool>` — verifica se ferramenta está instalada |
+| **Status** | `depengine status` — compara schema vs state file |
+| **Remoção** | `depengine remove <tool>` — via Remover interface |
+| **Validação** | `depengine validate` — estrutural + semântica + ambiente |
+| **Logging** | slog estruturado, --log-level, --diagnose, LoggingRunner |
+| **State tracking** | XDG state file + flock + definition hash |
+| **Adaptadores** | ~23 kinds (native, cargo, go, pip, npm, git, http, …) |
+| **Testes** | 353 testes, 13/13 packages, 29 integration tests (Docker) |
+
+## O que falta para v0.2.0 (Campanha 5)
+
+| Item | Prioridade | Esforço estimado |
+|------|-----------|-----------------|
+| **CI/CD** — GitHub Actions (linux/amd64, linux/arm64, darwin/amd64, darwin/arm64) | P2 | ⭐⭐ |
+| **Autocomplete** — bash/zsh/fish para comandos e flags | P2 | ⭐⭐ |
+| **Man page / `--help` detalhado** | P2 | ⭐⭐ |
+| **Cheatsheet** para schema.toml | P2 | ⭐ |
+| **Benchmarks** — parse 200 linhas < 100ms | P2 | ⭐ |
+| **Cross-platform tests** em containers Docker | P2 | ⭐⭐ |
+| **Dotfiles integration** — `depengine install ~/.dotfiles/schema.toml` | P2 | ⭐ |
+
+> **Veredito:** O motor está maduro. As features restantes são **polimento e release engineering**, não funcionalidade core. Pode-se começar a Campanha 5 imediatamente — o trabalho é paralelizável (CI/CD, autocomplete, docs podem rodar em paralelo).
+
+---
+
 # 🗺️ Roadmap Visual
 
 ```
@@ -292,52 +327,56 @@ CAMPANHA 4 (✅ IMPLEMENTADA — P0)
   └── ✅ bun — fast JS runtime/package manager
 ```
 
+PÓS-CAMPANHA 4: Lifecycle State Tracking (✅ IMPLEMENTADA)
+  ├── ✅ `pkg/state` — state file XDG + flock locking + definition hash
+  ├── ✅ `exec.Remover` — interface opcional (Remove + CanRemove)
+  ├── ✅ `depengine status` — compara tools do schema contra state file
+  ├── ✅ `depengine remove <tool>` — desinstala via adapter
+  ├── ✅ NativeByManagerAdapter + BaseAdapter com suporte Remover
+  └── ✅ CLI refactoring: runInstall/runCheck/runStatus/runRemove extraídos
+
 ## Features implementadas desde a última atualização:
 
-- [x] **`--sort-by`** (name/status/method) no CLI `install`
-- [x] **ToolResult.Duration** — duração individual por tool
-- [x] **NativeByManagerAdapter** — aliases de managers nativos como métodos
-- [x] **Synced output API** — `WithOutput(io.Writer)` + `WithLogger(*slog.Logger)`
-- [x] **pkg_overrides** — suporte a package name por clan no NativeAdapter
-- [x] **L1: Adapter log context** — `LoggingRunner.WithContext()` correlaciona subprocessos com tool/method
-- [x] **L4: stderr em erros** — `CargoAdapter` git mode inclui stderr na mensagem
-- [x] **L5: Graph sort logging** — `graph.Sort` com `WithLogger` loga cada nível em DEBUG
-- [x] **Schema validation** — `pkg/validate` com 50+ testes (unit + integration)
-- [x] **`depengine validate`** — CLI com `--check-env`, `--format=json`, `--strict` (27 testes integração)
-- [x] **Integration tests** — `tests/integration/validate_test.go` (build+exec real contra 20+ TOMLs)
-- [x] **pnpm adapter** — BaseAdapter para pnpm, AvailableExtra corepack
-- [x] **dnf5 alias** — managerNameToClan entry para Fedora 41+
-- [x] **vscodium adapter** — BaseAdapter para codium (vscode-like)
-- [x] **conda adapter** — adapter específico (conda install -y)
-- [x] **asdf/mise adapter** — universal version manager (asdf plugin-add, mise use -g)
-- [x] **bun adapter** — BaseAdapter para bun (bun add -g)
-> **Última atualização:** 2026-07-09. Campanha 4 ✅. Testes: 12/12 packages, schema valid.
+- [x] **Lifecycle State Tracking** — `pkg/state` com XDG state file, flock locking, hash de definição
+- [x] **Remover interface** — `exec.Remover` (opcional) com `Remove()` + `CanRemove()`
+- [x] **`depengine status`** — exibe status de instalação de todas as tools do schema
+- [x] **`depengine remove <tool>`** — desinstala ferramenta via adapter que a instalou
+- [x] **NativeByManagerAdapter suporta Remover** — delega para `apt remove`, `pacman -R`, etc.
+- [x] **Native adapter simplificado** — lógica de install/check separada, stderr em erros
+- [x] **CLI refactoring** — `runInstall`, `runCheck`, `runStatus`, `runRemove` extraídos de `main()`
+- [x] **Log helpers consolidados** — método `log()` único no executor
+- [x] **Design doc** — `docs/plans/designs/lifecycle-state-tracking.md`
+> **Última atualização:** 2026-07-10. Campanhas 0–4 ✅ + Lifecycle State Tracking ✅. Testes: 13/13 packages, 353 tests, pass.
 
 ---
 
 # 📊 Status Atual Detalhado
 
+
 | Componente | Status | Testes |
-|-----------|--------|--------|
-| `pkg/run` — subprocess seam | ✅ | 8 testes (4 runner + 4 logging) |
-| `pkg/engine` — facts + resolve | ✅ | 7 testes |
-| `pkg/native` — native managers (15 distros) | ✅ | 5 testes |
+|-|--------|--------|
+| `pkg/run` — subprocess seam | ✅ | 8 testes |
+| `pkg/engine` — facts + resolve | ✅ | 25 testes |
+| `pkg/native` — native managers (15 distros) | ✅ | 37 testes |
 | `pkg/schema` — parser TOML | ✅ | 12 testes |
 | `pkg/schema` — placeholders | ✅ | 9 testes |
-| `pkg/exec` — adapter interface + registry | ✅ | 3 testes |
-| `pkg/exec` — executor central | ✅ | 17 testes |
-| `pkg/exec` — native adapter | ✅ | 5 testes |
+| `pkg/exec` — adapter interface + registry + Remover | ✅ | 5 testes |
+| `pkg/exec` — executor central | ✅ | 25 testes |
+| `pkg/exec` — native adapter | ✅ | 14 testes |
+| `pkg/exec` — NativeByManager adapter | ✅ | 10 testes |
 | `pkg/graph` — dependency resolver | ✅ | 7 testes |
-| `pkg/lang` — 23 adapter kinds | ✅ | 16 testes |
+| `pkg/lang` — 23 adapter kinds | ✅ | 40 testes |
 | `pkg/git` — git adapter | ✅ | 8 testes |
-| `pkg/httpdownload` — http adapter | ✅ | 13 testes |
-| `pkg/log` — structured logging | ✅ | 11 testes |
+| `pkg/httpdownload` — http adapter | ✅ | 21 testes |
+| `pkg/log` — structured logging | ✅ | 22 testes |
+| `pkg/state` — lifecycle state tracking | ✅ | 9 testes |
+| `pkg/validate` — schema validation | ✅ | 72 testes |
+| CLI `install`/`check`/`version`/`status`/`remove` | ✅ | — |
+| CLI `validate` (--check-env, --format=json, --strict) | ✅ | 29 integration tests |
+| **Total** | **13 packages** | **353 testes** |
 
 ---
 
-| `pkg/validate` — schema validation | ✅ | 50+ testes (unit + CLI integration) |
-| CLI `install`/`check`/`version` (com --dry-run, --verbose, --json, --diagnose, --log-level, --sort-by, --only, --skip) | ✅ | — |
-| CLI `validate` (--check-env, --format=json, --strict) | ✅ | 27 integration tests |
 
 ## ✅ Implementado (cobre 80% dos cenários de debug)
 
@@ -373,19 +412,15 @@ CAMPANHA 4 (✅ IMPLEMENTADA — P0)
 ## Prioridade de implementação (atualizada — julho/2026)
 
 ```
-CAMPANHA 3:  Schema validation (P1) — estrutural + semântica + CLI             ✅
-CAMPANHA 4:  Novos adaptadores (P0)                                            ✅
-  ▸ pnpm         — BaseAdapter, 1 entry no Configs map
-  ▸ dnf5         — alias para fedora no managerNameToClan
-  ▸ conda        — adapter específico (check/install via conda)
-  ▸ asdf / mise  — universal version manager adapter
-  ▸ vscodium     — cópia do vscode com binary "codium"
-  ▸ bun          — fast JS runtime/package manager (bun add -g)
-═══════════════════════════════════════════════════════════════════
-MÉDIA (debug): L2 (schema parse logging), L7 (env vars logging)
-BAIXA (debug):  L6 (depengine check logging)
-═══════════════════════════════════════════════════════════════════
-NEXT: Campanha 5  — CI/CD, autocomplete, man page, benchmarks (P2)
+CAMPANHA 3:  Schema validation (P1) — estrutural + semântica + CLI                          ✅
+CAMPANHA 4:  Novos adaptadores (P0)                                                         ✅
+  ▸ pnpm, dnf5, conda, asdf/mise, vscodium, bun
+PÓS-CAMPANHA 4: Lifecycle State Tracking (P0) — pkg/state + Remover + status/remove CLI      ✅
+══════════════════════════════════════════════════════════════════════════════════════════════
+BAIXA (debug): L2 (schema parse logging), L6 (depengine check logging), L7 (env vars)
+══════════════════════════════════════════════════════════════════════════════════════════════
+NEXT: Campanha 5 — Polimento & Release (P2)
+```
 ---
 
 # 📝 Notas de Implementação
@@ -398,6 +433,8 @@ NEXT: Campanha 5  — CI/CD, autocomplete, man page, benchmarks (P2)
 - **Registry global**: adapters se registram com `exec.Register()` em `init()`. O executor é desacoplado dos pacotes de adapter.
 - **Native auto-detect**: `NativeAdapter` detecta o clan dinamicamente via `which {manager}` — sem necessidade de configurar clan manualmente.
 - **Manager aliases**: adapters para `apt`, `pacman`, `dnf`, `brew`, etc. são registrados automaticamente por `RegisterNativeManagerAliases()`.
+- **State tracking**: `pkg/state` persiste em `~/.local/state/depengine/state.json` (XDG). Lock via flock. Hash SHA256 da definição da tool para detectar mudanças no schema entre instalações.
+- **Remover interface**: `exec.Remover` é opcional — adapters que não implementam `Remove()` geram instrução de remoção manual. `NativeByManagerAdapter` e `BaseAdapter` suportam remoção nativa.
 
 ---
-_Última atualização: 2026-07-09. Campanhas 0–4 ✅. Campanha 5 (CI/CD, autocomplete, man page) P2 pendente. Próximo release: v0.2.0._
+_Última atualização: 2026-07-10. Campanhas 0–4 ✅ + Lifecycle State Tracking ✅. 13/13 packages, 353 testes, 0 falhas. Próximo release: v0.2.0 — Campanha 5 (CI/CD, autocomplete, man page, benchmarks)._
