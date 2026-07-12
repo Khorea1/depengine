@@ -28,6 +28,7 @@ depengine install --only nvim --verbose    # one tool, detailed output
 depengine install --dry-run --sort-by name # preview sorted by name
 depengine install --diagnose               # DEBUG + dry-run + verbose
 depengine install --json --skip "bat,lsd"  # JSON output, skip tools
+depengine install --jobs 4                 # install with 4 concurrent workers
 
 depengine validate                         # validate schema.toml
 depengine validate --check-env --format json # validate + environment check

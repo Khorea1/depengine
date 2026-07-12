@@ -506,3 +506,63 @@ func TestExecutorReportFormatting(t *testing.T) {
 		t.Fatalf("JSON should contain summary field: %s", json)
 	}
 }
+
+func TestExecutorParallelExecution(t *testing.T) {
+	installCh := make(chan string, 3)
+
+	mock := &testMockAdapter{
+		kindValue: "native",
+		availableFunc: func() bool { return true },
+		checkFunc:     func(string) bool { return false },
+		installFunc: func(name string) error {
+			installCh <- name
+			return nil
+		},
+	}
+
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithAdapters(mock)(ex)
+	WithMaxJobs(3)(ex)
+
+	s := mockSchema("a", "b", "c")
+	report, err := ex.Execute(context.Background(), s, "arch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Success != 3 {
+		t.Fatalf("expected 3 successes, got %d", report.Success)
+	}
+	close(installCh)
+
+	var installed []string
+	for name := range installCh {
+		installed = append(installed, name)
+	}
+	if len(installed) != 3 {
+		t.Fatalf("expected 3 installs, got %d: %v", len(installed), installed)
+	}
+}
+
+func TestExecutorParallelSequentialDefault(t *testing.T) {
+	// WithMaxJobs(1) produces the same sequential behavior as the default.
+	mock := &testMockAdapter{
+		kindValue: "native",
+		availableFunc: func() bool { return true },
+		checkFunc:     func(string) bool { return false },
+	}
+
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithAdapters(mock)(ex)
+	WithMaxJobs(1)(ex)
+
+	s := mockSchema("a", "b", "c")
+	report, err := ex.Execute(context.Background(), s, "arch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Success != 3 {
+		t.Fatalf("expected 3 successes, got %d", report.Success)
+	}
+}

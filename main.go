@@ -81,6 +81,7 @@ func runInstall(args []string) {
 	installDiagnose := installCmd.Bool("diagnose", false, "diagnostic mode: DEBUG + dry-run + verbose")
 	installLogLevel := installCmd.String("log-level", "", "log level: debug, info, warn, error")
 	installSortBy := installCmd.String("sort-by", "", "sort output by: name, status, method")
+	installJobs := installCmd.Int("jobs", 1, "max concurrent installations (default 1 = sequential)")
 	installCmd.Parse(args)
 
 	// Create root logger. trace_id propagates from env automatically via
@@ -137,6 +138,11 @@ func runInstall(args []string) {
 	if *installSortBy != "" {
 		exec.WithSortBy(exec.SortField(*installSortBy))(ex)
 	}
+	if *installJobs > 1 {
+		exec.WithMaxJobs(*installJobs)(ex)
+	}
+
+
 	// --- Lockfile ---
 	lockPath := lock.DefaultPath(*installSchema)
 	lk, _ := lock.Load(lockPath)
@@ -760,6 +766,7 @@ Flags (install):
   --diagnose        Modo diagnóstico: DEBUG + dry-run + verbose
   --log-level <lvl> Nível de log: debug, info, warn, error
   --sort-by <campo> Ordena output: name, status, method
+  --jobs <n>        Número máximo de instalações concorrentes (default: 1)
 
 Flags (update):
   --schema <path>   Caminho para schema.toml (default: schema.toml)

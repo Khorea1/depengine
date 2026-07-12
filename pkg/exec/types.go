@@ -1,6 +1,10 @@
 package exec
 
-import "time"
+import (
+	"sync"
+	"time"
+)
+
 
 // SortField controls the sort order of tools in the output report.
 type SortField string
@@ -59,6 +63,8 @@ type MethodAttempt struct {
 
 // ExecReport is the complete execution summary produced by the executor.
 type ExecReport struct {
+	mu sync.Mutex // protects concurrent access during parallel execution
+
 	Tools    []ToolResult
 	Success  int
 	Failed   int

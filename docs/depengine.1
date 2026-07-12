@@ -91,6 +91,10 @@ Log level: \fBdebug\fR, \fBinfo\fR, \fBwarn\fR, or \fBerror\fR.
 .BR \-\-diagnose
 Diagnostic mode: implies \fB--dry-run\fR, \fB--verbose\fR, and
 \fBdebug\fR log level.
+.TP
+.BR \-\-jobs " <n>"
+Maximum concurrent installations within a topological level. Default: 1
+(sequential).
 .SS "validate flags"
 .TP
 .BR \-\-schema " <path>"
