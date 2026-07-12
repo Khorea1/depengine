@@ -9,7 +9,7 @@
 
 ## ✅ O que está feito (resumo)
 
-11 campanhas concluídas — motor completo e polido. + 16 issues identificados em revisão de código.
+12 campanhas concluídas — motor completo e polido. + 16 issues identificados em revisão de código.
 
 | Campanha | Escopo |
 |----------|--------|
@@ -26,6 +26,7 @@
 | **9 — Perfis** | `--profile`, campo `Tags` no schema.Tool, filtro `filteredByTags`, renderização no `graph` |
 | **10 — Rollback** | `depengine undo`, `state.SaveSnapshot/LoadSnapshot/ListSnapshots`, snapshot antes de cada install, remoção via Remover |
 | **11 — SBOM** | `depengine sbom --format=cyclonedx|spdx`, `pkg/sbom/export.go` com CycloneDX 1.5 e SPDX 2.3, PURL, version extraction |
+| **12 — i18n** | `pkg/i18n` com locale detection (LANG/LC_MESSAGES), traduções EN/PT embutidas via `//go:embed`, split do `printUsage()` em PT/EN, man page bilingue |
 
 ---
 
@@ -59,11 +60,13 @@ abertas em paralelo.
 
 ### 📄 CLI / Documentação
 
-| # | Issue | Arquivo | Severidade |
-|---|-------|---------|------------|
-| **C1** | `depengine graph` não aparece no bloco "Uso:" do `printUsage()` (mas está implementado e tem seção de flags). | `main.go` (printUsage) | 🟡 Médio |
-| **C2** | `--profile` flag do `install` não aparece no help inline (`printUsage()`), embora exista no man page e no código. | `main.go` (printUsage) | 🟡 Médio |
-| **C3** | Seção "Flags (validate):" do `printUsage()` está vazia — deveria listar `--schema`, `--check-env`, `--format`, `--strict`. | `main.go` (printUsage) | 🟡 Médio |
+| # | Issue | Arquivo | Severidade | Status |
+|---|-------|---------|------------|--------|
+| **C1** | `depengine graph` não aparece no bloco "Uso:" — adicionado | `main.go` (printUsage) | 🟡 Médio | ✅ |
+| **C2** | `--profile` flag do `install` não aparecia no help inline — adicionado | `main.go` (printUsage) | 🟡 Médio | ✅ |
+| **C3** | Seção "Flags (validate):" vazia — preenchida com `--schema`, `--check-env`, `--format`, `--strict` | `main.go` (printUsage) | 🟡 Médio | ✅ |
+
+**3/3 implementados.** Help inline completo para todos os comandos e flags.
 
 ### 🧹 Qualidade / Manutenção
 
@@ -177,4 +180,4 @@ Se fosse escolher só **3** para priorizar agora:
 2. **Cachê de downloads** (⭐⭐⭐) — compartilhar downloads HTTP entre instalações para evitar baixar o mesmo .deb/.AppImage duas vezes
 3. **Hooks (pre/post-install)** (⭐⭐⭐) — scripts que rodam em eventos do ciclo de vida, equivalentes aos hook scripts do apt/pacman
 
-_Última atualização: 2026-07-12 (após item 11 + revisão de código com 16 issues). Base: 16 packages com testes, 0 falhas._
+_Última atualização: 2026-07-12 (após item 12 — i18n + C1-C3). Base: 16 packages com testes, 0 falhas._

@@ -27,6 +27,7 @@ import (
 	"depengine/pkg/sbom"
 	"depengine/pkg/state"
 	"depengine/pkg/validate"
+	"depengine/pkg/i18n"
 )
 var version = "dev"
 
@@ -953,7 +954,17 @@ func filterTools(tools map[string]*schema.Tool, only, skip, profile string) map[
 	return filtered
 }
 func printUsage() {
-	fmt.Println(`depengine - Motor distro-agnostic de instalação de dependências
+	locale := i18n.GetLocale()
+	switch locale {
+	case "en":
+		printUsageEN()
+	default:
+		printUsagePT()
+	}
+}
+
+func printUsagePT() {
+	fmt.Print(`depengine - Motor distro-agnóstico de instalação de dependências
 
 Uso:
   depengine install [flags]        Instala ferramentas do schema.toml
@@ -963,54 +974,139 @@ Uso:
   depengine status [flags]         Mostra status das ferramentas instaladas
   depengine remove <tool>          Remove uma ferramenta instalada
   depengine forget <tool>         Remove do state sem desinstalar
+  depengine graph [flags]         Mostra o grafo de dependências
   depengine validate [flags]       Valida schema.toml e ambiente
-  depengine completion <shell>     Gera script de autocomplete (bash|zsh|fish)
   depengine sbom [flags]           Exporta SBOM (CycloneDX/SPDX) do estado atual
+  depengine completion <shell>      Gera script de autocomplete (bash|zsh|fish)
   depengine version                Mostra a versão
   depengine help                   Mostra esta ajuda
   depengine undo [flags]          Reverte o último install (restaura snapshot anterior)
 
+Flags globais:
+  --log-level <nível>    Nível de log: debug, info, warn, error (default: info)
+  --diagnose             Saída detalhada para depuração
+
 Flags (install):
-  --schema <path>   Caminho para schema.toml (default: schema.toml)
-  --dry-run         Mostra o que seria instalado sem executar
-  --verbose, -v     Log detalhado
-  --json            Saída em JSON
-  --only <tool>     Instala apenas uma ferramenta
-  --skip <tools>    Pula ferramentas (separadas por vírgula)
-  --jobs <n>        Número máximo de instalações concorrentes (default: 1)
-  --allow-arbitrary-code  Suprime avisos de segurança para scripts build (execução arbitrária)
-  --frozen-lockfile Falha se schema.lock não existir (CI)
-  --diagnose        Modo diagnóstico: DEBUG + dry-run + verbose
-  --log-level <lvl> Nível de log: debug, info, warn, error
-  --sort-by <campo> Ordena output: name, status, method
+  --only <nome>          Instala apenas a ferramenta especificada (e dependências)
+  --skip <nomes>         Pula ferramentas (separadas por vírgula)
+  --profile <tag>        Filtra ferramentas por tag (minimal, desktop, server)
+  --jobs <n>             Máximo de instalações concorrentes (default: 1)
+  --allow-arbitrary-code  Suprime avisos de segurança para scripts build
+  --frozen-lockfile      Falha se schema.lock estiver ausente ou desatualizado
+  --dry-run              Mostra o que seria instalado sem executar
+  --sort-by <tipo>       Ordena saída: tool, method, status (default: tool)
 
 Flags (update):
-  --schema <path>   Caminho para schema.toml (default: schema.toml)
-  -v                Mostra detalhes das versões resolvidas
+  --schema <caminho>     Caminho para schema.toml (default: schema.toml)
+  --only <nome>          Atualiza apenas a ferramenta especificada
+  --skip <nomes>         Pula ferramentas (separadas por vírgula)
+  --dry-run              Mostra o que seria atualizado sem salvar
 
-Flags (validate):
+Flags (check):
+  --schema <caminho>     Caminho para schema.toml (default: schema.toml)
+
+Flags (status):
+  --schema <caminho>     Caminho para schema.toml (default: schema.toml)
+  --orphans              Mostra apenas ferramentas não rastreadas no schema
 
 Flags (graph):
-  --schema <path>   Caminho para schema.toml (default: schema.toml)
-  --format <fmt>    Formato: mermaid, dot, text (default: text)
-  --only <tool>     Mostra apenas uma ferramenta
-  --skip <tools>    Pula ferramentas (separadas por vírgula)
+  --schema <caminho>     Caminho para schema.toml (default: schema.toml)
+  --format mermaid|dot|text  Formato de saída (default: text)
+  --only <nome>          Mostra apenas a ferramenta especificada e suas dependências
+  --skip <nomes>         Pula ferramentas (separadas por vírgula)
+  --profile <tag>        Filtra ferramentas por tag
 
-Flags (completion):
-  <shell>           Nome do shell: bash, zsh, fish
+Flags (validate):
+  --schema <caminho>     Caminho para schema.toml (default: schema.toml)
+  --check-env            Verifica ambiente (comandos necessários para cada adapter)
+  --format plain|json    Formato de saída (default: plain)
+  --strict               Falha em warnings, não apenas erros
 
 Flags (undo):
-  --list                    Lista snapshots disponíveis
-  --snapshot <caminho>      Restaura snapshot específico (opcional: usa o mais recente)
+  --list                 Lista snapshots disponíveis
+  --snapshot <caminho>   Restaura um snapshot específico em vez do mais recente
 
 Flags (sbom):
-  --format cyclonedx|spdx    Formato de saída (default: cyclonedx)
+  --format cyclonedx|spdx  Formato de saída (default: cyclonedx)
 
-Exit codes:
+Códigos de saída:
   0   Sucesso (todas as ferramentas ok)
   1   Alguma ferramenta falhou
-  2   Erro de schema
-  3   Erro de runtime (detect_os.sh nao encontrado, etc.)`)
+  2   Erro de uso (flag inválida, argumento faltando)
+  3   Erro de runtime (detect_os.sh não encontrado, etc.)`)
+}
+
+func printUsageEN() {
+	fmt.Print(`depengine — tool manager
+
+Usage:
+  depengine install [flags]        Install tools from schema.toml
+  depengine update [flags]         Resolve versions and create/update schema.lock
+  depengine check <tool>           Check if a tool is installed
+  depengine why <tool>             Show why each method would be used/skipped
+  depengine status [flags]         Show installed tool status
+  depengine remove <tool>          Remove an installed tool
+  depengine forget <tool>          Remove from state without uninstalling
+  depengine graph [flags]          Show dependency graph
+  depengine validate [flags]       Validate schema.toml and environment
+  depengine sbom [flags]           Export SBOM (CycloneDX/SPDX) from state
+  depengine undo [flags]           Revert the last install (restore previous snapshot)
+  depengine completion <shell>     Generate autocomplete script (bash|zsh|fish)
+  depengine version                Show version
+  depengine help                   Show this help
+
+Global flags:
+  --log-level <level>      Log level: debug, info, warn, error (default: info)
+  --diagnose               Verbose output for debugging
+
+Flags (install):
+  --only <name>            Install only the specified tool (and dependencies)
+  --skip <names>           Skip tools (comma-separated)
+  --profile <tag>          Filter tools by tag (minimal, desktop, server)
+  --jobs <n>               Max concurrent installations (default: 1)
+  --allow-arbitrary-code   Suppress security warnings for build scripts
+  --frozen-lockfile        Fail if schema.lock is missing or outdated
+  --dry-run                Show what would be installed without installing
+  --sort-by <type>         Sort output: tool, method, status (default: tool)
+
+Flags (update):
+  --schema <path>          Path to schema.toml (default: schema.toml)
+  --only <name>            Update only the specified tool
+  --skip <names>           Skip tools (comma-separated)
+  --dry-run                Show what would be updated without saving
+
+Flags (check):
+  --schema <path>          Path to schema.toml (default: schema.toml)
+
+Flags (status):
+  --schema <path>          Path to schema.toml (default: schema.toml)
+  --orphans                Show only tools not tracked in schema
+
+Flags (graph):
+  --schema <path>          Path to schema.toml (default: schema.toml)
+  --format mermaid|dot|text  Output format (default: text)
+  --only <name>            Show only the specified tool and its dependencies
+  --skip <names>           Skip tools (comma-separated)
+  --profile <tag>          Filter tools by tag
+
+Flags (validate):
+  --schema <path>          Path to schema.toml (default: schema.toml)
+  --check-env              Check environment (commands required by each adapter)
+  --format plain|json      Output format (default: plain)
+  --strict                 Fail on warnings, not just errors
+
+Flags (undo):
+  --list                   List available snapshots
+  --snapshot <path>        Restore a specific snapshot instead of the latest
+
+Flags (sbom):
+  --format cyclonedx|spdx  Output format (default: cyclonedx)
+
+Exit codes:
+  0   Success (all tools OK)
+  1   Some tool failed
+  2   Usage error (invalid flag, missing argument)
+  3   Runtime error (detect_os.sh not found, etc.)`)
 }
 
 func initAdapters() {
