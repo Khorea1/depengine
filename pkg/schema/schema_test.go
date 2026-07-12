@@ -415,3 +415,92 @@ func TestValidateAcceptsAllKnown(t *testing.T) {
 		t.Fatalf("expected no warnings, got: %v", warnings)
 	}
 }
+
+func FuzzParseSchema(f *testing.F) {
+	seeds := []string{
+		"[tools]\nzsh = \"zsh\"\nfd = { apt = \"fd-find\" }",
+		"[defaults]\nmanager = \"native\"\n[tools]\nsimple = [\"a\",\"b\"]",
+		"[tools]\nbad = { git = { url = \"https://example.com\" } }",
+		"[tools]\n[tools.x]\nrequires = [\"y\"]\n[tools.y]\nrequires = [\"x\"]",
+		"",
+		"[tools]\nstrange = { apt = 42 }",
+		"[tools]\nnested = { cargo = { git = \"https://example.com\" }, git = { url = \"https://ex.com\" } }",
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+	m := map[string]string{"arch": "x86_64", "os": "linux", "id": "test"}
+	f.Fuzz(func(t *testing.T, content string) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "schema.toml")
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Skip("write:", err)
+		}
+		// Should never panic. Parse errors are valid behavior.
+		_, _ = ParseSchema(path, m)
+	})
+}
+
+func TestParseSchemaToolWithTagsInBlock(t *testing.T) {
+	p := writeSchema(t, `
+[defaults]
+manager = "native"
+
+[tools.myapp]
+tags = ["desktop", "server"]
+manager = "native"
+pkg = "myapp"`)
+	s, err := ParseSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	tool, ok := s.Tools["myapp"]
+	if !ok {
+		t.Fatal("expected tool myapp")
+	}
+	if len(tool.Tags) != 2 || tool.Tags[0] != "desktop" || tool.Tags[1] != "server" {
+		t.Fatalf("expected tags [desktop server], got %v", tool.Tags)
+	}
+}
+
+func TestParseSchemaToolWithTagsInInline(t *testing.T) {
+	p := writeSchema(t, `
+[defaults]
+manager = "native"
+
+[tools]
+mycli = { tags = ["minimal"], manager = "native", pkg = "mycli" }`)
+	s, err := ParseSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	tool, ok := s.Tools["mycli"]
+	if !ok {
+		t.Fatal("expected tool mycli")
+	}
+	if len(tool.Tags) != 1 || tool.Tags[0] != "minimal" {
+		t.Fatalf("expected tags [minimal], got %v", tool.Tags)
+	}
+}
+
+func TestParseSchemaSimpleToolNoTags(t *testing.T) {
+	p := writeSchema(t, `
+[defaults]
+manager = "native"
+
+[tools]
+simple = ["zsh", "bat"]`)
+	s, err := ParseSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	for _, name := range []string{"zsh", "bat"} {
+		tool, ok := s.Tools[name]
+		if !ok {
+			t.Fatalf("expected tool %s", name)
+		}
+		if len(tool.Tags) != 0 {
+			t.Fatalf("simple tool %s should have no tags, got %v", name, tool.Tags)
+		}
+	}
+}

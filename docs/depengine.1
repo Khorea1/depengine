@@ -42,6 +42,10 @@ outdated tools.
 Removes a tool using the adapter that originally installed it. Use
 .B --all
 to remove every tracked tool.
+.TP.TP
+.B forget " <tool>"
+Removes a tool from the state file without touching the system. Useful
+when a tool was removed manually or the state is out of sync.
 .TP
 .B version
 Prints the version and a short description.
@@ -51,6 +55,18 @@ Prints the shell completion script for the given shell. Source the
 output in your shell rc file (e.g.
 .BR "source <(depengine completion bash)" )
 to enable tab completion.
+.TP
+.B undo " [flags]"
+Reverts the last
+.B install
+by restoring the previous state snapshot and removing tools that were
+added since that snapshot.
+.TP
+.B graph " [flags]"
+Outputs the dependency graph in one of three formats: Mermaid (flowchart),
+DOT (Graphviz), or text (level groups). Use
+.B \-\-only
+to focus on a single tool and its transitive dependencies.
 .SH OPTIONS
 .SS "install flags"
 .TP
@@ -72,6 +88,10 @@ Install only the specified tool.
 .BR \-\-skip " <tools>"
 Skip specific tools (comma-separated list).
 .TP
+.BR \-\-profile " <tag>"
+Only install tools that have the given tag or no tags (e.g. \fB--profile=desktop\fR).
+Useful for targeting different machine profiles from a single schema file.
+.TP
 .BR \-\-sort\-by " <field>"
 Sort output by: \fBname\fR, \fBstatus\fR, or \fBmethod\fR.
 .TP
@@ -81,6 +101,13 @@ Log level: \fBdebug\fR, \fBinfo\fR, \fBwarn\fR, or \fBerror\fR.
 .BR \-\-diagnose
 Diagnostic mode: implies \fB--dry-run\fR, \fB--verbose\fR, and
 \fBdebug\fR log level.
+.TP
+.BR \-\-jobs " <n>"
+Maximum concurrent installations within a topological level. Default: 1
+(sequential).
+.TP
+.BR \-\-allow-arbitrary-code
+Suppress security warnings for build scripts (arbitrary code execution).
 .SS "validate flags"
 .TP
 .BR \-\-schema " <path>"
@@ -115,6 +142,29 @@ Show what would be removed without executing.
 .BR \-\-schema " <path>"
 Path to the schema file (used for environment detection). Default:
 \fBschema.toml\fR.
+.SS "graph flags"
+.TP
+.BR \-\-schema " <path>"
+.TP
+.BR \-\-format " <fmt>"
+Output format: \fBmermaid\fR, \fBdot\fR, or \fBtext\fR (default).
+.TP
+.BR \-\-only " <tool>"
+Show only the subgraph for the specified tool and its transitive
+dependencies.
+.TP
+.BR \-\-skip " <tools>"
+Skip specific tools (comma-separated list).
+.TP
+.BR \-\-profile " <tag>"
+Show only tools with the given tag (e.g. \fB--profile=server\fR).
+.SS "undo flags"
+.TP
+.BR \-\-list
+List available snapshots with timestamps and tool counts.
+.TP
+.BR \-\-snapshot " <path>"
+Restore a specific snapshot file instead of the most recent one.
 .SH EXAMPLES
 .SS "Build and validate"
 .EX
@@ -140,6 +190,10 @@ go build -o depengine .
 .SS "Diagnose: DEBUG + dry-run + verbose"
 .EX
 ./depengine install --diagnose
+.EE
+.SS "Install with profile (desktop-only)"
+.EX
+./depengine install --profile=desktop
 .EE
 .SS "Check if a tool is installed"
 .EX
@@ -167,7 +221,13 @@ source <(depengine completion zsh)
 # Fish
 depengine completion fish | source
 .EE
-.SH ENVIRONMENT
+.SS "Show dependency graph"
+.EX
+./depengine graph
+./depengine graph --format=mermaid
+./depengine graph --format=dot --only=tool_name
+./depengine graph --profile=desktop
+.EE
 .TP
 .B DEPENGINE_DETECT_SCRIPT
 Path to the

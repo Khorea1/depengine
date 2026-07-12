@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"depengine/pkg/engine"
@@ -28,12 +29,13 @@ type Executor struct {
 	adapters      map[string]Adapter // per-instance adapter registry
 	logger        *slog.Logger       // structured logger; nil = no structured output
 	outWriter     io.Writer          // user-facing formatted output; defaults to os.Stderr
+	maxJobs       int                // max concurrent tools; 0 or 1 = sequential (default)
+	allowArbitraryCode bool          // if false, warn about dangerous methods (build scripts, etc.)
 
 	// schema info for state tracking
 	schemaPath       string
 	schemaModTime    time.Time
 }
-
 // Option configures the executor.
 type Option func(*Executor)
 
@@ -72,6 +74,24 @@ func WithDryRun() Option {
 func WithSortBy(field SortField) Option {
 	return func(e *Executor) {
 		e.sortBy = field
+	}
+}
+
+// WithMaxJobs sets the maximum number of concurrent tool installations
+// within a topological level. Values of 0 or 1 mean sequential (default).
+func WithMaxJobs(n int) Option {
+	return func(e *Executor) {
+		if n > 1 {
+			e.maxJobs = n
+		}
+	}
+}
+
+// WithAllowArbitraryCode suppresses security warnings about dangerous methods
+// (build scripts, arbitrary shell execution, etc.).
+func WithAllowArbitraryCode() Option {
+	return func(e *Executor) {
+		e.allowArbitraryCode = true
 	}
 }
 
@@ -121,12 +141,12 @@ func WithSchemaInfo(path string, modTime time.Time) Option {
 		e.schemaModTime = modTime
 	}
 }
-
 func New() *Executor {
 	return &Executor{
 		rn:            run.OSExecRunner{},
 		toolTimeout:   5 * time.Minute,
 		methodTimeout: 2 * time.Minute,
+		maxJobs:       1,
 		adapters:      make(map[string]Adapter),
 		outWriter:     os.Stderr,
 	}
@@ -182,38 +202,32 @@ func (ex *Executor) Execute(ctx context.Context, s *schema.Schema, clan string) 
 	}
 
 	for _, level := range levels {
-		for _, toolName := range level {
-			tool, ok := s.Tools[toolName]
-			if !ok {
-				continue
+		if ex.maxJobs <= 1 {
+			// Sequential: exact same behavior as before.
+			for _, toolName := range level {
+				tool, ok := s.Tools[toolName]
+				if !ok {
+					continue
+				}
+				result := ex.executeTool(ctx, tool)
+				ex.recordToolResult(&result, report)
+				switch result.Status {
+				case StatusInstalled:
+					ex.logDebug(ctx, "tool", "tool", toolName, "method", result.Method, "status", "installed", "duration", result.Duration)
+				case StatusAlready:
+					ex.logDebug(ctx, "tool", "tool", toolName, "method", result.Method, "status", "already", "duration", result.Duration)
+				case StatusSkippedWhen:
+					ex.logDebug(ctx, "tool", "tool", toolName, "status", "skipped_when")
+				case StatusSkippedUnavailable:
+					ex.logDebug(ctx, "tool", "tool", toolName, "status", "skipped_unavailable")
+				case StatusWouldInstall:
+					ex.logDebug(ctx, "tool", "tool", toolName, "method", result.Method, "status", "would_install")
+				case StatusFailed:
+					ex.logWarn(ctx, "tool", "tool", toolName, "status", "failed", "error", result.Error, "duration", result.Duration)
+				}
 			}
-			result := ex.executeTool(ctx, tool)
-			report.Tools = append(report.Tools, result)
-			switch result.Status {
-			case StatusInstalled:
-				report.Success++
-				ex.outputf("  ✓ %s: installed via %s\n", toolName, result.Method)
-				ex.logDebug(ctx, "tool", "tool", toolName, "method", result.Method, "status", "installed", "duration", result.Duration)
-			case StatusAlready:
-				report.Already++
-				ex.outputf("  ✓ %s: already installed (%s)\n", toolName, result.Method)
-				ex.logDebug(ctx, "tool", "tool", toolName, "method", result.Method, "status", "already", "duration", result.Duration)
-			case StatusSkippedWhen:
-				report.Skipped++
-				ex.outputf("  – %s: skipped (when condition)\n", toolName)
-				ex.logDebug(ctx, "tool", "tool", toolName, "status", "skipped_when")
-			case StatusSkippedUnavailable:
-				report.Skipped++
-				ex.outputf("  – %s: skipped (no method available)\n", toolName)
-				ex.logDebug(ctx, "tool", "tool", toolName, "status", "skipped_unavailable")
-			case StatusWouldInstall:
-				ex.outputf("  → %s: would install via %s (dry-run)\n", toolName, result.Method)
-				ex.logDebug(ctx, "tool", "tool", toolName, "method", result.Method, "status", "would_install")
-			case StatusFailed:
-				report.Failed++
-				ex.outputf("  ✗ %s: failed (%s)\n", toolName, result.Error)
-				ex.logWarn(ctx, "tool", "tool", toolName, "status", "failed", "error", result.Error, "duration", result.Duration)
-			}
+		} else {
+			ex.executeLevelParallel(ctx, s, level, report)
 		}
 	}
 
@@ -284,6 +298,22 @@ func (ex *Executor) writeState(ctx context.Context, s *schema.Schema, report *Ex
 	}
 }
 
+
+// hasDangerousMethod checks whether any of the tool's methods have config
+// keys that trigger arbitrary code execution (build scripts, etc.).
+func (ex *Executor) hasDangerousMethod(tool *schema.Tool) bool {
+	for _, m := range tool.Methods {
+		for _, key := range []string{"build", "build_cmd", "build_command"} {
+			if v, ok := m.Config[key]; ok {
+				if s, ok := v.(string); ok && s != "" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResult {
 	toolStart := time.Now()
 	result := ToolResult{Tool: tool.Name}
@@ -294,6 +324,12 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 		ex.logDebug(ctx, "tool", "tool", tool.Name, "status", "no_methods")
 		result.Duration = time.Since(toolStart).String()
 		return result
+	}
+
+	// Security warning for tools with dangerous methods (build scripts, etc.).
+	if !ex.allowArbitraryCode && ex.hasDangerousMethod(tool) {
+		ex.outputf("  ⚠  %s: uses build scripts (arbitrary code execution). Use --allow-arbitrary-code to suppress this warning.\n", tool.Name)
+		ex.logWarn(ctx, "security", "tool", tool.Name, "warning", "tool uses build scripts (arbitrary code execution)")
 	}
 
 	// toolTimeout wraps the entire tool execution across all method attempts.
@@ -410,6 +446,133 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 	}
 	result.Duration = time.Since(toolStart).String()
 	return result
+}
+
+// recordToolResult records a tool execution result into the report and emits
+// user-facing status output. It is safe for concurrent calls (report is
+// protected by a mutex).
+func (ex *Executor) recordToolResult(result *ToolResult, report *ExecReport) {
+	report.mu.Lock()
+	defer report.mu.Unlock()
+	report.Tools = append(report.Tools, *result)
+	switch result.Status {
+	case StatusInstalled:
+		report.Success++
+		ex.outputf("  ✓ %s: installed via %s\n", result.Tool, result.Method)
+	case StatusAlready:
+		report.Already++
+		ex.outputf("  ✓ %s: already installed (%s)\n", result.Tool, result.Method)
+	case StatusSkippedWhen:
+		report.Skipped++
+		ex.outputf("  – %s: skipped (when condition)\n", result.Tool)
+	case StatusSkippedUnavailable:
+		report.Skipped++
+		ex.outputf("  – %s: skipped (no method available)\n", result.Tool)
+	case StatusWouldInstall:
+		ex.outputf("  → %s: would install via %s (dry-run)\n", result.Tool, result.Method)
+	case StatusFailed:
+		report.Failed++
+		ex.outputf("  ✗ %s: failed (%s)\n", result.Tool, result.Error)
+	}
+}
+
+// executeLevelParallel runs all tools in a topological level concurrently,
+// limiting concurrency to ex.maxJobs. Results are collected thread-safely
+// via recordToolResult.
+func (ex *Executor) executeLevelParallel(ctx context.Context, s *schema.Schema, level []string, report *ExecReport) {
+	toolCh := make(chan string, len(level))
+	resultCh := make(chan ToolResult, len(level))
+
+	// Seed the tool channel.
+	for _, name := range level {
+		toolCh <- name
+	}
+	close(toolCh)
+
+	// Worker pool: at most maxJobs workers, but cap at level size.
+	var wg sync.WaitGroup
+	numWorkers := ex.maxJobs
+	if numWorkers > len(level) {
+		numWorkers = len(level)
+	}
+
+	for range numWorkers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for toolName := range toolCh {
+				tool, ok := s.Tools[toolName]
+				if !ok {
+					continue
+				}
+				result := ex.executeTool(ctx, tool)
+				resultCh <- result
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(resultCh)
+
+	// Collect results (order within level doesn't matter).
+	for result := range resultCh {
+		ex.recordToolResult(&result, report)
+	}
+}
+
+// ExplainTool evaluates all methods for a single tool WITHOUT installing.
+// For each method it reports the status and reason: skip_when (when condition
+// didn't match), skip_unavailable (no adapter or binary not on PATH),
+// already_installed (Check passed), or would_install (ready to install).
+// This is the engine behind `depengine why <tool>`.
+func (ex *Executor) ExplainTool(ctx context.Context, tool *schema.Tool, clan string) []MethodAttempt {
+	methods := tool.Methods
+	attempts := make([]MethodAttempt, 0, len(methods))
+
+	for _, method := range methods {
+		attempt := MethodAttempt{Kind: method.Kind}
+
+		// Check when condition.
+		if method.When != nil && len(method.When.DistroFamily) > 0 {
+			if !engine.MatchesDistroFamily(clan, method.When.DistroFamily) {
+				attempt.Status = "skip_when"
+				attempt.Error = fmt.Sprintf("distro_family mismatch: need %v, have %s", method.When.DistroFamily, clan)
+				attempts = append(attempts, attempt)
+				continue
+			}
+		}
+
+		// Look up adapter for this method kind.
+		adapter := ex.lookupAdapter(method.Kind)
+		if adapter == nil {
+			attempt.Status = "skip_unavailable"
+			attempt.Error = fmt.Sprintf("no adapter registered for kind %q", method.Kind)
+			attempts = append(attempts, attempt)
+			continue
+		}
+
+		// Check if the adapter is available on this system.
+		if !adapter.Available(ctx, ex.rn) {
+			attempt.Status = "skip_unavailable"
+			attempt.Error = fmt.Sprintf("adapter %q not available (binary not on PATH)", method.Kind)
+			attempts = append(attempts, attempt)
+			continue
+		}
+
+		// Check if the tool is already installed via this method.
+		if adapter.Check(ctx, ex.rn, tool, method) {
+			attempt.Status = "already_installed"
+			attempt.Error = "check passed — tool appears to be installed"
+			attempts = append(attempts, attempt)
+			continue
+		}
+
+		// Method is ready and would be attempted.
+		attempt.Status = "would_install"
+		attempts = append(attempts, attempt)
+	}
+
+	return attempts
 }
 func (ex *Executor) runPostinstall(ctx context.Context, tool *schema.Tool) {
 	ex.outputf("    postinstall: %s\n", tool.PostInstall)

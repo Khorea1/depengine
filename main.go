@@ -19,8 +19,10 @@ import (
 	"depengine/pkg/git"
 	"depengine/pkg/httpdownload"
 	"depengine/pkg/lang"
+	"depengine/pkg/lock"
 	"depengine/pkg/log"
 	"depengine/pkg/native"
+	"depengine/pkg/graph"
 	"depengine/pkg/run"
 	"depengine/pkg/schema"
 	"depengine/pkg/state"
@@ -37,16 +39,24 @@ func main() {
 	switch os.Args[1] {
 	case "install":
 		runInstall(os.Args[2:])
+	case "update":
+		runUpdate(os.Args[2:])
 	case "validate":
 		runValidate(os.Args[2:])
 	case "check":
 		runCheck(os.Args[2:])
+	case "graph":
+		runGraph(os.Args[2:])
 	case "status":
 		runStatus(os.Args[2:])
 	case "forget":
 		runForget(os.Args[2:])
 	case "remove":
 		runRemove(os.Args[2:])
+	case "why":
+		runWhy(os.Args[2:])
+	case "undo":
+		runUndo(os.Args[2:])
 	case "version":
 		fmt.Println("depengine " + version)
 		fmt.Println("Motor distro-agnostic de instalação de dependências")
@@ -69,10 +79,13 @@ func runInstall(args []string) {
 	installJSON := installCmd.Bool("json", false, "JSON output")
 	installOnly := installCmd.String("only", "", "only install specific tool")
 	installSkip := installCmd.String("skip", "", "skip specific tools (comma-separated)")
+	installProfile := installCmd.String("profile", "", "only install tools with matching tag (e.g. minimal,desktop,server)")
+	installFrozen := installCmd.Bool("frozen-lockfile", false, "fail if schema.lock does not exist or needs update")
 	installDiagnose := installCmd.Bool("diagnose", false, "diagnostic mode: DEBUG + dry-run + verbose")
 	installLogLevel := installCmd.String("log-level", "", "log level: debug, info, warn, error")
 	installSortBy := installCmd.String("sort-by", "", "sort output by: name, status, method")
-
+	installJobs := installCmd.Int("jobs", 1, "max concurrent installations (default 1 = sequential)")
+	installAllowArbitrary := installCmd.Bool("allow-arbitrary-code", false, "suppress security warnings for build scripts / arbitrary code")
 	installCmd.Parse(args)
 
 	// Create root logger. trace_id propagates from env automatically via
@@ -129,13 +142,44 @@ func runInstall(args []string) {
 	if *installSortBy != "" {
 		exec.WithSortBy(exec.SortField(*installSortBy))(ex)
 	}
+	if *installJobs > 1 {
+		exec.WithMaxJobs(*installJobs)(ex)
+	}
+	if *installAllowArbitrary {
+		exec.WithAllowArbitraryCode()(ex)
+	}
 
-	s.Tools = filterTools(s.Tools, *installOnly, *installSkip)
+
+	// --- Lockfile ---
+	lockPath := lock.DefaultPath(*installSchema)
+	lk, _ := lock.Load(lockPath)
+	if *installFrozen && lk == nil {
+		lg.Error("--frozen-lockfile requires schema.lock — run 'depengine update' first")
+		os.Exit(2)
+	}
+	if lk != nil {
+		lock.Apply(s, lk)
+		if *installDiagnose {
+			lg.Debug("lock applied", "pinned", len(lk.Tools))
+		}
+	}
+	// --- end Lockfile ---
+
+
+	s.Tools = filterTools(s.Tools, *installOnly, *installSkip, *installProfile)
+
+	// Snapshot state before install (best-effort).
+	if !*installDryRun {
+		if _, err := state.SaveSnapshot(); err != nil {
+			lg.Warn("could not save pre-install snapshot", "error", err)
+		}
+	}
 
 	if *installDiagnose {
 		lg.Debug("facts", "facts", facts)
 		lg.Debug("schema", "tools", len(s.Tools))
 	}
+
 
 	report, err := ex.Execute(ctx, s, clan)
 	if err != nil {
@@ -154,7 +198,79 @@ func runInstall(args []string) {
 	if report.Failed > 0 {
 		os.Exit(1)
 	}
+
+	// Save/update lock on successful install (not in dry-run mode).
+	if !*installDryRun {
+		if newLock, err := lock.ResolveAll(ctx, s); err != nil {
+			lg.Warn("resolve lock", "error", err)
+		} else if newLock != nil {
+			// Merge with existing lock: keep existing pins for tools that
+			// weren't re-resolved (e.g. native-only tools that don't use {latest}).
+			if lk != nil {
+				for k, v := range lk.Tools {
+					if _, exists := newLock.Tools[k]; !exists {
+						newLock.Tools[k] = v
+					}
+				}
+			}
+			if err := lock.Save(lockPath, newLock); err != nil {
+				lg.Warn("save lock", "error", err)
+			} else if *installDiagnose {
+				lg.Debug("lock saved", "path", lockPath, "pinned", len(newLock.Tools))
+			}
+		}
+	}
 }
+
+
+func runUpdate(args []string) {
+	updateCmd := flag.NewFlagSet("update", flag.ExitOnError)
+	updateSchema := updateCmd.String("schema", "schema.toml", "path to schema.toml")
+	updateProfile := updateCmd.String("profile", "", "only resolve & pin tools with matching tag")
+	updateVerbose := updateCmd.Bool("v", false, "detailed output")
+	updateCmd.Parse(args)
+
+	ctx := context.Background()
+	lg := log.Default
+
+	s, clan, facts, err := loadSchema(*updateSchema)
+	if err != nil {
+		lg.Error("load schema", "error", err)
+		os.Exit(exitCodeForError(err))
+	}
+
+	fmt.Fprintf(os.Stderr, "depengine update: distro=%s clan=%s arch=%s tools=%d\n",
+		facts.DistroID, clan, facts.TargetArch, len(s.Tools))
+
+	s.Tools = filterTools(s.Tools, "", "", *updateProfile)
+
+	fmt.Fprint(os.Stderr, "Resolving latest versions... ")
+	newLock, err := lock.ResolveAll(ctx, s)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "FAIL")
+		lg.Error("resolve lock", "error", err)
+		os.Exit(1)
+	}
+
+	lockPath := lock.DefaultPath(*updateSchema)
+	if err := lock.Save(lockPath, newLock); err != nil {
+		fmt.Fprintln(os.Stderr, "FAIL")
+		lg.Error("save lock", "error", err)
+		os.Exit(1)
+	}
+
+	pinned := len(newLock.Tools)
+	fmt.Fprintf(os.Stderr, "done (%d pinned)\n", pinned)
+
+	if *updateVerbose {
+		for key, pin := range newLock.Tools {
+			fmt.Fprintf(os.Stderr, "  %s → %s\n", key, pin.Latest)
+		}
+	}
+
+	fmt.Fprintln(os.Stderr, "Run 'depengine install' to use the updated lock.")
+}
+
 
 func runCheck(args []string) {
 	checkCmd := flag.NewFlagSet("check", flag.ExitOnError)
@@ -201,6 +317,131 @@ func runCheck(args []string) {
 	}
 	fmt.Printf("✗ %s is not installed\n", toolName)
 	os.Exit(1)
+}
+
+// runGraph outputs the dependency graph in the requested format.
+func runGraph(args []string) {
+	graphCmd := flag.NewFlagSet("graph", flag.ExitOnError)
+	graphSchema := graphCmd.String("schema", "schema.toml", "path to schema.toml")
+	graphFormat := graphCmd.String("format", "text", "output format: mermaid, dot, text")
+	graphProfile := graphCmd.String("profile", "", "only show tools with matching tag")
+	graphOnly := graphCmd.String("only", "", "only show subgraph for specific tool")
+	graphSkip := graphCmd.String("skip", "", "skip specific tools (comma-separated)")
+	graphCmd.Parse(args)
+
+	// Validate format before loading schema.
+	switch *graphFormat {
+	case "mermaid", "dot", "text":
+	default:
+		fmt.Fprintf(os.Stderr, "error: unknown format %q (valid: mermaid, dot, text)\n", *graphFormat)
+		os.Exit(2)
+	}
+
+	s, err := schema.ParseSchemaNoFacts(*graphSchema)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(exitCodeForError(err))
+	}
+	fmt.Fprintf(os.Stderr, "depengine graph: tools=%d\n", len(s.Tools))
+	s.Tools = filterTools(s.Tools, *graphOnly, *graphSkip, *graphProfile)
+
+	if len(s.Tools) == 0 {
+		fmt.Fprintln(os.Stderr, "no tools matching filters")
+		os.Exit(0)
+	}
+
+	levels, err := graph.Sort(s.Tools)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
+	}
+
+	switch *graphFormat {
+	case "mermaid":
+		fmt.Print(graph.RenderMermaid(levels, s.Tools))
+	case "dot":
+		fmt.Print(graph.RenderDOT(levels, s.Tools))
+	case "text":
+		fmt.Print(graph.RenderText(levels, s.Tools))
+	}
+}
+
+// runWhy shows why a tool would be installed via each candidate method,
+// without actually installing anything. Useful for debugging complex schemas.
+func runWhy(args []string) {
+	whyCmd := flag.NewFlagSet("why", flag.ExitOnError)
+	whySchema := whyCmd.String("schema", "schema.toml", "path to schema.toml")
+	whyJSON := whyCmd.Bool("json", false, "JSON output")
+	whyCmd.Parse(args)
+	remain := whyCmd.Args()
+	if len(remain) < 1 {
+		log.Default.Error("usage: depengine why <tool>")
+		os.Exit(1)
+	}
+	toolName := remain[0]
+
+	s, clan, facts, err := loadSchema(*whySchema)
+	if err != nil {
+		log.Default.Error("load schema", "error", err)
+		os.Exit(exitCodeForError(err))
+	}
+
+	if verr, warnings := schema.Validate(s, exec.RegisteredKinds()); verr != nil {
+		log.Default.Error("schema validation", "error", verr)
+		os.Exit(exitCodeForError(verr))
+	} else if len(warnings) > 0 {
+		for _, w := range warnings {
+			log.Default.Warn(w)
+		}
+	}
+
+	tool, ok := s.Tools[toolName]
+	if !ok {
+		log.Default.Error("tool not found in schema", "tool", toolName)
+		os.Exit(1)
+	}
+	_ = facts
+
+	ex := exec.New()
+	exec.WithRunner(run.OSExecRunner{})(ex)
+	attempts := ex.ExplainTool(context.Background(), tool, clan)
+	if *whyJSON {
+		type jsonAttempt struct {
+			Kind   string `json:"kind"`
+			Status string `json:"status"`
+			Reason string `json:"reason,omitempty"`
+		}
+		out := make([]jsonAttempt, 0, len(attempts))
+		for _, a := range attempts {
+			out = append(out, jsonAttempt{Kind: a.Kind, Status: a.Status, Reason: a.Error})
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		enc.Encode(out)
+		return
+	}
+
+	fmt.Printf("Why %s? (%d methods)\n", toolName, len(tool.Methods))
+	for _, a := range attempts {
+		statusSymbol := "?"
+		switch a.Status {
+		case "would_install":
+			statusSymbol = "✓"
+		case "already_installed":
+			statusSymbol = "✓"
+		case "skip_when":
+			statusSymbol = "–"
+		case "skip_unavailable":
+			statusSymbol = "✗"
+		default:
+			statusSymbol = "?"
+		}
+		reason := a.Error
+		if reason == "" {
+			reason = "ready to install"
+		}
+		fmt.Printf("  %s %s — %s\n", statusSymbol, a.Kind, reason)
+	}
 }
 
 // runStatus shows the installation status of tools by comparing the state
@@ -429,6 +670,142 @@ func runForget(args []string) {
 	log.Default.Info("forgotten", "tool", toolName)
 }
 
+func runUndo(args []string) {
+	undoCmd := flag.NewFlagSet("undo", flag.ExitOnError)
+	undoList := undoCmd.Bool("list", false, "list available snapshots")
+	undoSpecific := undoCmd.String("snapshot", "", "revert to specific snapshot file path")
+	undoCmd.Parse(args)
+
+	if *undoList {
+		snapshots, err := state.ListSnapshots()
+		if err != nil {
+			log.Default.Error("list snapshots", "error", err)
+			os.Exit(3)
+		}
+		if len(snapshots) == 0 {
+			fmt.Println("Nenhum snapshot encontrado.")
+			return
+		}
+		fmt.Println("Snapshots disponíveis:")
+		for _, s := range snapshots {
+			ts := s.Timestamp.Format("2006-01-02 15:04:05")
+			fmt.Printf("  %s  %s  (%d ferramentas)\n", ts, filepath.Base(s.Path), s.ToolCount)
+		}
+		return
+	}
+
+	// Determine which snapshot to restore.
+	var snapPath string
+	if *undoSpecific != "" {
+		snapPath = *undoSpecific
+	} else {
+		snapshots, err := state.ListSnapshots()
+		if err != nil {
+			log.Default.Error("list snapshots", "error", err)
+			os.Exit(3)
+		}
+		if len(snapshots) == 0 {
+			log.Default.Error("nenhum snapshot disponível para undo")
+			os.Exit(1)
+		}
+		snapPath = snapshots[0].Path // most recent
+	}
+
+	// Load snapshot state.
+	snapState, err := state.LoadSnapshot(snapPath)
+	if err != nil {
+		log.Default.Error("load snapshot", "error", err)
+		os.Exit(3)
+	}
+
+	// Load current state under exclusive lock.
+	ls, err := state.LoadLocked()
+	if err != nil {
+		log.Default.Error("state lock", "error", err)
+		os.Exit(3)
+	}
+	defer ls.Close()
+
+	curState := ls.State()
+
+	// Find tools in current state but not in snapshot (these were added).
+	var toRemove []string
+	for name := range curState.Tools {
+		if _, ok := snapState.Tools[name]; !ok {
+			toRemove = append(toRemove, name)
+		}
+	}
+
+	if len(toRemove) == 0 {
+		log.Default.Info("nothing to undo (no tools were added since snapshot)")
+
+		// Still restore the snapshot state (in case of config changes).
+		curState.Tools = snapState.Tools
+		curState.SchemaPath = snapState.SchemaPath
+		curState.SchemaModifiedAt = snapState.SchemaModifiedAt
+		if err := ls.Save(); err != nil {
+			log.Default.Error("save state after undo", "error", err)
+			os.Exit(3)
+		}
+		return
+	}
+
+	// Remove each tool that was added.
+	hadFailure := false
+	for _, name := range toRemove {
+		toolState := curState.Tools[name]
+
+		log.Default.Info("removing tool added after snapshot", "tool", name, "method", toolState.Method)
+
+		adapter := exec.Lookup(toolState.Method)
+		if adapter == nil {
+			log.Default.Warn("adapter not found — manual removal may be needed", "tool", name, "method", toolState.Method)
+			hadFailure = true
+			continue
+		}
+
+		if !exec.CanRemove(adapter) {
+			log.Default.Warn("adapter does not support automated removal — manual removal needed", "tool", name, "method", toolState.Method)
+			hadFailure = true
+			continue
+		}
+
+		remover := adapter.(exec.Remover)
+		mc := &schema.MethodCandidate{
+			Kind:   toolState.Method,
+			Config: toolState.Config,
+		}
+		tool := &schema.Tool{Name: name}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		if err := remover.Remove(ctx, run.OSExecRunner{}, tool, mc); err != nil {
+			log.Default.Error("remove failed during undo", "tool", name, "error", err)
+			hadFailure = true
+			cancel()
+			continue
+		}
+		cancel()
+
+		log.Default.Info("removed during undo", "tool", name)
+	}
+
+	// Restore snapshot as current state (overwrites remaining state).
+	curState.Tools = snapState.Tools
+	curState.SchemaPath = snapState.SchemaPath
+	curState.SchemaModifiedAt = snapState.SchemaModifiedAt
+
+	if err := ls.Save(); err != nil {
+		log.Default.Error("save state after undo", "error", err)
+		os.Exit(3)
+	}
+
+	log.Default.Info("undo concluído", "tools_removed", len(toRemove))
+
+	if hadFailure {
+		os.Exit(1)
+	}
+}
+
 // loadSchema is the shared bootstrap for install/check: gather facts,
 // resolve clan, build placeholder map, parse schema. Returns an error
 // suitable for exitCodeForError.
@@ -469,11 +846,34 @@ func exitCodeForError(err error) int {
 	}
 	return 3 // runtime error (detect_os.sh not found, etc.)
 }
+// filteredByTags applies profile filtering: if profile is non-empty,
+// only include tools that have no tags (universal) OR have the
+// specified profile tag in their Tags slice.
+func filteredByTags(tools map[string]*schema.Tool, profile string) map[string]*schema.Tool {
+	if profile == "" {
+		return tools
+	}
+	result := make(map[string]*schema.Tool, len(tools))
+	for name, tool := range tools {
+		if len(tool.Tags) == 0 {
+			// Tools without tags are always included.
+			result[name] = tool
+			continue
+		}
+		for _, tag := range tool.Tags {
+			if strings.EqualFold(tag, profile) {
+				result[name] = tool
+				break
+			}
+		}
+	}
+	return result
+}
 
-// filterTools applies --only and --skip filters to the tool map.
-// Both filters are processed; the result is the intersection of both.
-func filterTools(tools map[string]*schema.Tool, only, skip string) map[string]*schema.Tool {
-	if only == "" && skip == "" {
+// filterTools applies --only, --skip, and --profile filters to the tool map.
+// All filters are processed; the result is the intersection of all.
+func filterTools(tools map[string]*schema.Tool, only, skip, profile string) map[string]*schema.Tool {
+	if only == "" && skip == "" && profile == "" {
 		return tools
 	}
 	skipSet := make(map[string]bool)
@@ -500,12 +900,10 @@ func filterTools(tools map[string]*schema.Tool, only, skip string) map[string]*s
 			name := queue[0]
 			queue = queue[1:]
 			if t, ok := tools[name]; ok {
+				filtered[name] = t
 				for _, req := range t.Requires {
 					if !visited[req] {
 						visited[req] = true
-						if _, exists := filtered[req]; !exists {
-							filtered[req] = tools[req]
-						}
 						queue = append(queue, req)
 					}
 				}
@@ -513,22 +911,27 @@ func filterTools(tools map[string]*schema.Tool, only, skip string) map[string]*s
 		}
 	}
 
+	filtered = filteredByTags(filtered, profile)
+
 	return filtered
 }
-
 func printUsage() {
 	fmt.Println(`depengine - Motor distro-agnostic de instalação de dependências
 
 Uso:
   depengine install [flags]        Instala ferramentas do schema.toml
+  depengine update [flags]         Resolve versões e cria/atualiza schema.lock
   depengine check <tool>           Verifica se uma ferramenta está instalada
+  depengine why <tool>             Mostra por que cada método seria usado/pulado
   depengine status [flags]         Mostra status das ferramentas instaladas
   depengine remove <tool>          Remove uma ferramenta instalada
   depengine forget <tool>         Remove do state sem desinstalar
   depengine validate [flags]       Valida schema.toml e ambiente
   depengine completion <shell>     Gera script de autocomplete (bash|zsh|fish)
+  depengine graph [flags]         Mostra grafo de dependências
   depengine version                Mostra a versão
   depengine help                   Mostra esta ajuda
+  depengine undo [flags]          Reverte o último install (restaura snapshot anterior)
 
 Flags (install):
   --schema <path>   Caminho para schema.toml (default: schema.toml)
@@ -537,27 +940,31 @@ Flags (install):
   --json            Saída em JSON
   --only <tool>     Instala apenas uma ferramenta
   --skip <tools>    Pula ferramentas (separadas por vírgula)
+  --jobs <n>        Número máximo de instalações concorrentes (default: 1)
+  --allow-arbitrary-code  Suprime avisos de segurança para scripts build (execução arbitrária)
+  --frozen-lockfile Falha se schema.lock não existir (CI)
   --diagnose        Modo diagnóstico: DEBUG + dry-run + verbose
   --log-level <lvl> Nível de log: debug, info, warn, error
   --sort-by <campo> Ordena output: name, status, method
 
-Flags (validate):
+Flags (update):
   --schema <path>   Caminho para schema.toml (default: schema.toml)
-  --check-env       Verifica disponibilidade de ferramentas no ambiente
-  --format <fmt>    Formato de saída: text (default) ou json
-  --strict          Trata warnings como erros (exit code 1)
+  -v                Mostra detalhes das versões resolvidas
 
-Flags (status):
-  --schema <path>   Caminho para schema.toml (default: do state)
-  --json            Saída em JSON
-  --orphans         Mostra apenas ferramentas orfas
+Flags (validate):
 
-Flags (remove):
-  --all             Remove todas as ferramentas
-  --dry-run         Mostra o que seria removido sem executar
+Flags (graph):
+  --schema <path>   Caminho para schema.toml (default: schema.toml)
+  --format <fmt>    Formato: mermaid, dot, text (default: text)
+  --only <tool>     Mostra apenas uma ferramenta
+  --skip <tools>    Pula ferramentas (separadas por vírgula)
 
 Flags (completion):
   <shell>           Nome do shell: bash, zsh, fish
+
+Flags (undo):
+  --list                    Lista snapshots disponíveis
+  --snapshot <caminho>      Restaura snapshot específico (opcional: usa o mais recente)
 
 Exit codes:
   0   Sucesso (todas as ferramentas ok)
@@ -697,11 +1104,24 @@ func runCompletion(args []string) {
 		fmt.Fprintln(os.Stderr, "usage: depengine completion bash|zsh|fish")
 		os.Exit(2)
 	}
-	scriptPath := filepath.Join("scripts", "depengine-completion."+args[0])
-	data, err := os.ReadFile(scriptPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error reading completion script for %s: %v\n", args[0], err)
-		os.Exit(2)
+	shell := args[0]
+
+	// Try alongside the binary first (shipped together like detect_os.sh).
+	if exe, err := os.Executable(); err == nil {
+		candidate := filepath.Join(filepath.Dir(exe), "scripts", "depengine-completion."+shell)
+		if data, err := os.ReadFile(candidate); err == nil {
+			fmt.Print(string(data))
+			return
+		}
 	}
-	fmt.Print(string(data))
+
+	// Fallback: CWD-relative path (development mode).
+	scriptPath := filepath.Join("scripts", "depengine-completion."+shell)
+	if data, err := os.ReadFile(scriptPath); err == nil {
+		fmt.Print(string(data))
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "error: completion script not found for %s\n", shell)
+	os.Exit(2)
 }

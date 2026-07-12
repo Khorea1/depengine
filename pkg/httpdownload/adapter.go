@@ -113,6 +113,8 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 func (a *HTTPAdapter) verifyChecksum(ctx context.Context, rn run.Runner, filePath, url, checksum string) error {
 	const autoPrefix = "sha256:auto"
 	if strings.HasPrefix(checksum, autoPrefix) {
+		// Warn about TOFU — the checksum is downloaded from the same server as the file.
+		fmt.Fprintf(os.Stderr, "  ⚠  sha256:auto: checksum is fetched from the same server as the download (TOFU). Consider pinning the explicit hash after first download.\n")
 		// Try to download the companion .sha256 file.
 		shaURL := url + ".sha256"
 		tmpDir, err := os.MkdirTemp("", "depengine-checksum-*")

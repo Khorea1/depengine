@@ -27,5 +27,6 @@ Thumbs.db
 
 # Meta-development (agent configs, scratchpads, skills)
 AGENTS.md
+RULES.md
 TODO.md
 .omp/

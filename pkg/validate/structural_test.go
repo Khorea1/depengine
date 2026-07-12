@@ -637,11 +637,21 @@ func TestValidateFromFile_MixedPlaceholders(t *testing.T) {
 func TestValidateFromFile_EdgeSSH(t *testing.T) {
 	s := parseTestdata(t, "edge_ssh_git_url.toml")
 	r := validateMalformedURLs(s)
-	if r.HasErrors() {
-		// git@github.com:user/repo.git is NOT a valid go url.Parse URL
-		// because it lacks a scheme. This might be flagged or not.
-		// Let's check what happens and log it.
-		t.Logf("SSH URL errors: %v", r.Errors)
+
+	// git@github.com:user/repo.git (tool a) lacks a scheme and IS flagged.
+	// file:/// (tool e) is flagged. ssh://, git://, https:// (b,c,d) pass.
+	gotA := false
+	for _, err := range r.Errors {
+		if strings.Contains(err.Field, "tools.a") {
+			gotA = true
+		} else if strings.Contains(err.Field, "tools.e") {
+			continue // expected
+		} else {
+			t.Errorf("unexpected error for %s: %v", err.Field, err)
+		}
+	}
+	if !gotA {
+		t.Error("expected tools.a (git@host:path) to be flagged as malformed URL")
 	}
 }
 
@@ -649,7 +659,7 @@ func TestValidateFromFile_InvalidBadTypes(t *testing.T) {
 	s := parseTestdata(t, "invalid_bad_types.toml")
 	r := validateRequiredFields(s)
 	if len(r.Errors) == 0 {
-		t.Log("no type errors found — TOML parser may have rejected some")
+		t.Errorf("expected type errors for invalid_bad_types.toml, got none — TOML parser may have rejected them silently")
 	} else {
 		t.Logf("type errors found: %v", r.Errors)
 	}
