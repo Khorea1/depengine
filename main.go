@@ -119,6 +119,9 @@ func runInstall(args []string) {
 		lg.Error("load schema", "error", err)
 		os.Exit(exitCodeForError(err))
 	}
+	if helper := s.Defaults.AurHelper; helper != "" {
+		lang.ReconfigureAUR(helper)
+	}
 
 	fmt.Fprintf(os.Stderr, "depengine install: distro=%s clan=%s arch=%s tools=%d\n",
 		facts.DistroID, clan, facts.TargetArch, len(s.Tools))
@@ -240,6 +243,9 @@ func runUpdate(args []string) {
 	if err != nil {
 		lg.Error("load schema", "error", err)
 		os.Exit(exitCodeForError(err))
+	}
+	if helper := s.Defaults.AurHelper; helper != "" {
+		lang.ReconfigureAUR(helper)
 	}
 
 	fmt.Fprintf(os.Stderr, "depengine update: distro=%s clan=%s arch=%s tools=%d\n",
@@ -388,6 +394,9 @@ func runWhy(args []string) {
 		log.Default.Error("load schema", "error", err)
 		os.Exit(exitCodeForError(err))
 	}
+	if helper := s.Defaults.AurHelper; helper != "" {
+		lang.ReconfigureAUR(helper)
+	}
 
 	if verr, warnings := schema.Validate(s, exec.RegisteredKinds()); verr != nil {
 		log.Default.Error("schema validation", "error", verr)
@@ -474,7 +483,7 @@ func runStatus(args []string) {
 	var s *schema.Schema
 	if schemaPath != "" {
 		var err error
-		s, _, _, err = loadSchema(schemaPath)
+		s, err = schema.ParseSchemaNoFacts(schemaPath)
 		if err != nil {
 			log.Default.Warn("load schema for comparison", "error", err)
 			s = nil
@@ -500,6 +509,15 @@ func runStatus(args []string) {
 		}
 		if *statusOrphans && status != "orphaned" {
 			continue
+		}
+		// Check definition hash: if the schema definition changed since install, mark as outdated.
+		// Skip if DefinitionHash is empty (state from before this feature was added).
+		if status == "installed" && s != nil && !*statusOrphans && ts.DefinitionHash != "" {
+			if stTool, inSchema := s.Tools[name]; inSchema {
+				if state.DefinitionHash(stTool) != ts.DefinitionHash {
+					status = "outdated"
+				}
+			}
 		}
 		tools = append(tools, toolStatus{
 			Name:    name,
