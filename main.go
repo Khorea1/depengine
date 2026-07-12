@@ -21,7 +21,6 @@ import (
 	"depengine/pkg/lang"
 	"depengine/pkg/lock"
 	"depengine/pkg/log"
-	"depengine/pkg/native"
 	"depengine/pkg/graph"
 	"depengine/pkg/run"
 	"depengine/pkg/schema"
@@ -424,7 +423,7 @@ func runWhy(args []string) {
 		return
 	}
 
-	fmt.Printf("Why %s? (%d methods)\n", toolName, len(tool.Methods))
+	fmt.Printf("Por que %s? (%d métodos)\n", toolName, len(tool.Methods))
 	for _, a := range attempts {
 		statusSymbol := "?"
 		switch a.Status {
@@ -441,7 +440,7 @@ func runWhy(args []string) {
 		}
 		reason := a.Error
 		if reason == "" {
-			reason = "ready to install"
+		reason = "pronto para instalar"
 		}
 		fmt.Printf("  %s %s — %s\n", statusSymbol, a.Kind, reason)
 	}
@@ -537,15 +536,15 @@ func runStatus(args []string) {
 
 	if len(tools) == 0 {
 		if *statusOrphans {
-			fmt.Println("No orphaned tools.")
+		fmt.Println("Nenhuma ferramenta órfã.")
 		} else {
-			fmt.Println("No tools in state. Run 'depengine install' first.")
+		fmt.Println("Nenhuma ferramenta no estado. Execute 'depengine install' primeiro.")
 		}
 		return
 	}
 
 	// Table output.
-	fmt.Printf("%-30s %-12s %-10s  %s\n", "Tool", "Status", "Method", "Installed At")
+	fmt.Printf("%-30s %-12s %-10s  %s\n", "Ferramenta", "Status", "Método", "Instalada em")
 	fmt.Println(strings.Repeat("-", 70))
 	for _, t := range tools {
 		fmt.Printf("%-30s %-12s %-10s  %s\n", t.Name, t.Status, t.Method, t.Updated)
@@ -1012,24 +1011,6 @@ Exit codes:
   1   Alguma ferramenta falhou
   2   Erro de schema
   3   Erro de runtime (detect_os.sh nao encontrado, etc.)`)
-}
-func showNativeCommands(pkgName string) {
-	facts, err := engine.GatherFacts(run.OSExecRunner{})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "erro: %v\n", err)
-		os.Exit(3)
-	}
-	clan := engine.ResolveFamily(facts)
-	fmt.Printf("Facts: distro=%s, clan=%s\n", facts.DistroID, clan)
-
-	mgr, ok := native.Lookup(clan)
-	if !ok {
-		fmt.Printf("Nenhum native manager conhecido para %q.\n", clan)
-		return
-	}
-	fmt.Printf("Native manager: %s\n", mgr.Name)
-	fmt.Printf("  check:   %s\n", strings.Join(native.BuildCheckCmd(clan, pkgName), " "))
-	fmt.Printf("  install: %s\n", strings.Join(native.BuildInstallCmd(clan, pkgName), " "))
 }
 
 func initAdapters() {

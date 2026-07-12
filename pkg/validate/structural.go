@@ -14,6 +14,13 @@ import (
 //   - http: url (string)
 //   - cargo: when git sub-key present, the value must be a string URL
 //   - any:  build (string), extract_to (string), checksum (string)
+
+// commonStringKeys are config keys used by various adapters that must be
+// strings. If present, their value must be of type string.
+var commonStringKeys = []string{
+	"pkg", "cask", "app", "source", "repo", "formula",
+	"package", "bin", "command", "extra_args",
+}
 func validateRequiredFields(s *schema.Schema) *Result {
 	r := &Result{}
 
@@ -92,6 +99,21 @@ func validateRequiredFields(s *schema.Schema) *Result {
 							Code:    ErrRequiredField,
 							Field:   fieldPath(toolName, i, "git"),
 							Message: fmt.Sprintf("cargo git must be a string URL, got %T", v),
+						})
+					}
+				}
+			}
+
+			// Validate common string config keys for type correctness.
+			// These keys are used by various adapters and must be strings
+			// when present.
+			for _, key := range commonStringKeys {
+				if v, ok := mc.Config[key]; ok {
+					if _, isStr := v.(string); !isStr {
+						r.Add(ValidationError{
+							Code:    ErrRequiredField,
+							Field:   fieldPath(toolName, i, key),
+							Message: fmt.Sprintf("%s must be a string, got %T", key, v),
 						})
 					}
 				}

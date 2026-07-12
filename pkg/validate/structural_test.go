@@ -207,6 +207,81 @@ func TestValidateRequiredFields_MultipleMethods(t *testing.T) {
 	}
 }
 
+func TestValidateRequiredFields_CommonStringKeys_Invalid(t *testing.T) {
+	s := &schema.Schema{
+		Tools: map[string]*schema.Tool{
+			"test": tool("test", []*schema.MethodCandidate{
+				mc("native", nil, map[string]any{"pkg": 42}),
+			}, nil),
+		},
+	}
+	r := validateRequiredFields(s)
+	if !r.HasErrors() {
+		t.Fatal("expected error for non-string pkg")
+	}
+	if len(r.Errors) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(r.Errors), r.Errors)
+	}
+	if !strings.Contains(r.Errors[0].Message, "pkg must be a string") {
+		t.Errorf("unexpected message: %s", r.Errors[0].Message)
+	}
+}
+
+func TestValidateRequiredFields_CommonStringKeys_Valid(t *testing.T) {
+	s := &schema.Schema{
+		Tools: map[string]*schema.Tool{
+			"test": tool("test", []*schema.MethodCandidate{
+				mc("native", nil, map[string]any{
+					"pkg":        "bat",
+					"cask":       "alfred",
+					"app":        "1password",
+					"source":     "aur",
+					"repo":       "core",
+					"formula":    "neovim",
+					"package":    "fd-find",
+					"bin":        "/usr/local/bin/fd",
+					"command":    "bat",
+					"extra_args": "--color=always",
+				}),
+			}, nil),
+		},
+	}
+	r := validateRequiredFields(s)
+	if r.HasErrors() {
+		t.Errorf("expected no errors for valid string keys, got: %v", r.Errors)
+	}
+}
+
+func TestValidateRequiredFields_CommonStringKeys_MultipleWrongTypes(t *testing.T) {
+	s := &schema.Schema{
+		Tools: map[string]*schema.Tool{
+			"test": tool("test", []*schema.MethodCandidate{
+				mc("native", nil, map[string]any{
+					"pkg":     true, // wrong type
+					"command": 42,   // wrong type
+				}),
+			}, nil),
+		},
+	}
+	r := validateRequiredFields(s)
+	if !r.HasErrors() {
+		t.Fatal("expected errors for non-string config values")
+	}
+	if len(r.Errors) != 2 {
+		t.Fatalf("expected 2 errors, got %d: %v", len(r.Errors), r.Errors)
+	}
+	var msgs []string
+	for _, e := range r.Errors {
+		msgs = append(msgs, e.Message)
+	}
+	if !strings.Contains(msgs[0], "pkg must be a string") && !strings.Contains(msgs[1], "pkg must be a string") {
+		t.Error("missing pkg type error")
+	}
+	if !strings.Contains(msgs[0], "command must be a string") && !strings.Contains(msgs[1], "command must be a string") {
+		t.Error("missing command type error")
+	}
+}
+
 // ---------- Structural: when directives ----------
 
 func TestValidateWhenDirectives_Valid(t *testing.T) {
