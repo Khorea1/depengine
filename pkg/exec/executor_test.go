@@ -566,3 +566,106 @@ func TestExecutorParallelSequentialDefault(t *testing.T) {
 		t.Fatalf("expected 3 successes, got %d", report.Success)
 	}
 }
+
+func TestExecutorPreInstallSuccess(t *testing.T) {
+	mock := &testMockAdapter{
+		kindValue:     "native",
+		availableFunc: func() bool { return true },
+		checkFunc:     func(string) bool { return false },
+		installFunc:   func(string) error { return nil },
+	}
+
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithAdapters(mock)(ex)
+
+	s := mockSchema("tool1")
+	s.Tools["tool1"].PreInstall = "echo preparing"
+
+	report, err := ex.Execute(context.Background(), s, "arch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Success != 1 {
+		t.Fatalf("expected 1 success, got %d", report.Success)
+	}
+	if report.Tools[0].PreinstallDone != true {
+		t.Fatal("expected PreinstallDone to be true")
+	}
+}
+
+func TestExecutorPreInstallFailure(t *testing.T) {
+	mock := &testMockAdapter{
+		kindValue:     "native",
+		availableFunc: func() bool { return true },
+		checkFunc:     func(string) bool { return false },
+		installFunc:   func(string) error { return nil },
+	}
+
+	ex := New()
+	// Pre-install fails with exit code 1.
+	WithRunner(&run.FakeRunner{ExitCode: 1})(ex)
+	WithAdapters(mock)(ex)
+
+	s := mockSchema("tool1")
+	s.Tools["tool1"].PreInstall = "echo preparing"
+
+	report, err := ex.Execute(context.Background(), s, "arch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Success != 0 {
+		t.Fatalf("expected 0 success (pre-install failed), got %d", report.Success)
+	}
+	if report.Failed != 1 {
+		t.Fatalf("expected 1 failed, got %d", report.Failed)
+	}
+	if report.Tools[0].PreinstallDone != false {
+		t.Fatal("expected PreinstallDone to be false")
+	}
+}
+
+func TestExecutorPreAndPostInstall(t *testing.T) {
+	mock := &testMockAdapter{
+		kindValue:     "native",
+		availableFunc: func() bool { return true },
+		checkFunc:     func(string) bool { return false },
+		installFunc:   func(string) error { return nil },
+	}
+
+	fake := &run.FakeRunner{ExitCode: 0}
+	ex := New()
+	WithRunner(fake)(ex)
+	WithAdapters(mock)(ex)
+
+	s := mockSchema("tool1")
+	s.Tools["tool1"].PreInstall = "echo pre"
+	s.Tools["tool1"].PostInstall = "echo post"
+
+	report, err := ex.Execute(context.Background(), s, "arch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Success != 1 {
+		t.Fatalf("expected 1 success, got %d", report.Success)
+	}
+	if !report.Tools[0].PreinstallDone {
+		t.Fatal("expected PreinstallDone to be true")
+	}
+	if !report.Tools[0].PostinstallDone {
+		t.Fatal("expected PostinstallDone to be true")
+	}
+
+	// Verify the runner was called: pre-install first, then install (not recorded by FakeRunner
+	// since adapters use their own runner), then post-install.
+	if len(fake.Calls) < 2 {
+		t.Fatalf("expected at least 2 FakeRunner calls (pre + post), got %d", len(fake.Calls))
+	}
+	if fake.Calls[0].Name != "echo" || fake.Calls[0].Args[0] != "pre" {
+		t.Fatalf("expected first call 'echo pre', got %v", fake.Calls[0])
+	}
+	last := fake.Calls[len(fake.Calls)-1]
+	if last.Name != "echo" || last.Args[0] != "post" {
+		t.Fatalf("expected last call 'echo post', got %v", last)
+	}
+}

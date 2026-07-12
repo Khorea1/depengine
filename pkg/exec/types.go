@@ -46,6 +46,8 @@ type ToolResult struct {
 	Error    string          // populated only if StatusFailed
 	Methods  []MethodAttempt // history of attempts (for --verbose)
 	Duration string          // human-readable duration (e.g. "3.2s"), set by executor
+	// PreinstallDone is true if a pre-install script was successfully run.
+	PreinstallDone bool
 
 	// PostinstallDone is true if a postinstall script was successfully run.
 	PostinstallDone bool

@@ -324,6 +324,30 @@ func (ex *Executor) hasDangerousMethod(tool *schema.Tool) bool {
 func (ex *Executor) hasDangerousPostInstall(tool *schema.Tool) bool {
 	return tool.PostInstall != ""
 }
+func (ex *Executor) hasDangerousPreInstall(tool *schema.Tool) bool {
+	return tool.PreInstall != ""
+}
+func (ex *Executor) runPreinstall(ctx context.Context, tool *schema.Tool) error {
+	ex.outputf("    pre-install: %s\n", tool.PreInstall)
+	ex.logDebug(ctx, "preinstall", "tool", tool.Name, "cmd", tool.PreInstall)
+	parts := strings.Fields(tool.PreInstall)
+	if len(parts) == 0 {
+		return nil
+	}
+	res := ex.rn.Run(ctx, parts[0], parts[1:]...)
+	if res.Err != nil {
+		ex.outputf("    ⚠  pre-install: %s (aborting)\n", res.Err.Error())
+		ex.logWarn(ctx, "preinstall", "tool", tool.Name, "error", res.Err.Error())
+		return res.Err
+	}
+	if res.ExitCode != 0 {
+		err := fmt.Errorf("pre-install exit %d", res.ExitCode)
+		ex.outputf("    ⚠  pre-install: exit %d (aborting)\n", res.ExitCode)
+		ex.logWarn(ctx, "preinstall", "tool", tool.Name, "exit_code", res.ExitCode)
+		return err
+	}
+	return nil
+}
 func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResult {
 	toolStart := time.Now()
 	result := ToolResult{Tool: tool.Name}
@@ -344,6 +368,10 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 		ex.outputf("  ⚠  %s: has a post-install hook (arbitrary code execution). Use --allow-arbitrary-code to suppress this warning.\n", tool.Name)
 		ex.logWarn(ctx, "security", "tool", tool.Name, "warning", "tool has a post-install hook (arbitrary code execution)")
 	}
+	if !ex.allowArbitraryCode && ex.hasDangerousPreInstall(tool) {
+		ex.outputf("  ⚠  %s: has a pre-install hook (arbitrary code execution). Use --allow-arbitrary-code to suppress this warning.\n", tool.Name)
+		ex.logWarn(ctx, "security", "tool", tool.Name, "warning", "tool has a pre-install hook (arbitrary code execution)")
+	}
 
 	// toolTimeout wraps the entire tool execution across all method attempts.
 	toolCtx := ctx
@@ -351,6 +379,21 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 		var cancel context.CancelFunc
 		toolCtx, cancel = context.WithTimeout(ctx, ex.toolTimeout)
 		defer cancel()
+	}
+
+	// Pre-install hook: runs before any install attempt. Failure aborts the tool.
+	if tool.PreInstall != "" {
+		preCtx, preCancel := context.WithTimeout(toolCtx, ex.methodTimeout)
+		if err := ex.runPreinstall(preCtx, tool); err != nil {
+			preCancel()
+			result.Status = StatusFailed
+			result.Error = fmt.Sprintf("pre-install: %v", err)
+			result.Duration = time.Since(toolStart).String()
+			ex.logWarn(ctx, "preinstall", "tool", tool.Name, "error", err.Error())
+			return result
+		}
+		preCancel()
+		result.PreinstallDone = true
 	}
 
 	for _, method := range methods {

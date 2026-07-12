@@ -37,8 +37,9 @@ type Defaults struct {
 // or full block.
 type Tool struct {
 	Name        string
+	PreInstall  string   // shell command run before install; failure aborts install
+	PostInstall string   // shell command run after successful install
 	Requires    []string
-	PostInstall string
 	Methods     []*MethodCandidate
 	IsSimple    bool
 	Tags        []string  // profile tags for --profile filtering (e.g. "desktop", "server")
@@ -231,6 +232,9 @@ func normalizeTools(rawTools map[string]any, defaults Defaults) (map[string]*Too
 		if r, ok := valMap["requires"].([]any); ok {
 			tool.Requires = anySliceToStrings(r)
 		}
+		if pi, ok := valMap["pre_install"].(string); ok {
+			tool.PreInstall = pi
+		}
 		if pi, ok := valMap["postinstall"].(string); ok {
 			tool.PostInstall = pi
 		}
@@ -302,7 +306,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	nativeOverrides := map[string]any{}
 	var nonNativeKeys []string
 
-	for _, k := range sortedKeys(valMap, "requires", "postinstall", "tags") {
+	for _, k := range sortedKeys(valMap, "requires", "pre_install", "postinstall", "tags") {
 		if _, isStr := valMap[k].(string); isStr && native.IsNativeManagerName(k) {
 			nativeOverrides[k] = valMap[k]
 		} else {
