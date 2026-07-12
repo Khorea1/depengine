@@ -83,6 +83,7 @@ func runInstall(args []string) {
 	installLogLevel := installCmd.String("log-level", "", "log level: debug, info, warn, error")
 	installSortBy := installCmd.String("sort-by", "", "sort output by: name, status, method")
 	installJobs := installCmd.Int("jobs", 1, "max concurrent installations (default 1 = sequential)")
+	installAllowArbitrary := installCmd.Bool("allow-arbitrary-code", false, "suppress security warnings for build scripts / arbitrary code")
 	installCmd.Parse(args)
 
 	// Create root logger. trace_id propagates from env automatically via
@@ -141,6 +142,9 @@ func runInstall(args []string) {
 	}
 	if *installJobs > 1 {
 		exec.WithMaxJobs(*installJobs)(ex)
+	}
+	if *installAllowArbitrary {
+		exec.WithAllowArbitraryCode()(ex)
 	}
 
 
@@ -792,11 +796,12 @@ Flags (install):
   --json            Saída em JSON
   --only <tool>     Instala apenas uma ferramenta
   --skip <tools>    Pula ferramentas (separadas por vírgula)
+  --jobs <n>        Número máximo de instalações concorrentes (default: 1)
+  --allow-arbitrary-code  Suprime avisos de segurança para scripts build (execução arbitrária)
   --frozen-lockfile Falha se schema.lock não existir (CI)
   --diagnose        Modo diagnóstico: DEBUG + dry-run + verbose
   --log-level <lvl> Nível de log: debug, info, warn, error
   --sort-by <campo> Ordena output: name, status, method
-  --jobs <n>        Número máximo de instalações concorrentes (default: 1)
 
 Flags (update):
   --schema <path>   Caminho para schema.toml (default: schema.toml)

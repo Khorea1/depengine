@@ -30,6 +30,7 @@ type Executor struct {
 	logger        *slog.Logger       // structured logger; nil = no structured output
 	outWriter     io.Writer          // user-facing formatted output; defaults to os.Stderr
 	maxJobs       int                // max concurrent tools; 0 or 1 = sequential (default)
+	allowArbitraryCode bool          // if false, warn about dangerous methods (build scripts, etc.)
 
 	// schema info for state tracking
 	schemaPath       string
@@ -83,6 +84,14 @@ func WithMaxJobs(n int) Option {
 		if n > 1 {
 			e.maxJobs = n
 		}
+	}
+}
+
+// WithAllowArbitraryCode suppresses security warnings about dangerous methods
+// (build scripts, arbitrary shell execution, etc.).
+func WithAllowArbitraryCode() Option {
+	return func(e *Executor) {
+		e.allowArbitraryCode = true
 	}
 }
 
@@ -289,6 +298,22 @@ func (ex *Executor) writeState(ctx context.Context, s *schema.Schema, report *Ex
 	}
 }
 
+
+// hasDangerousMethod checks whether any of the tool's methods have config
+// keys that trigger arbitrary code execution (build scripts, etc.).
+func (ex *Executor) hasDangerousMethod(tool *schema.Tool) bool {
+	for _, m := range tool.Methods {
+		for _, key := range []string{"build", "build_cmd", "build_command"} {
+			if v, ok := m.Config[key]; ok {
+				if s, ok := v.(string); ok && s != "" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResult {
 	toolStart := time.Now()
 	result := ToolResult{Tool: tool.Name}
@@ -299,6 +324,12 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 		ex.logDebug(ctx, "tool", "tool", tool.Name, "status", "no_methods")
 		result.Duration = time.Since(toolStart).String()
 		return result
+	}
+
+	// Security warning for tools with dangerous methods (build scripts, etc.).
+	if !ex.allowArbitraryCode && ex.hasDangerousMethod(tool) {
+		ex.outputf("  ⚠  %s: uses build scripts (arbitrary code execution). Use --allow-arbitrary-code to suppress this warning.\n", tool.Name)
+		ex.logWarn(ctx, "security", "tool", tool.Name, "warning", "tool uses build scripts (arbitrary code execution)")
 	}
 
 	// toolTimeout wraps the entire tool execution across all method attempts.
