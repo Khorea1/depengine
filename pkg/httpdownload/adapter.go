@@ -25,12 +25,9 @@ func NewHTTPAdapter() *HTTPAdapter {
 
 func (a *HTTPAdapter) Kind() string { return "http" }
 
-// Available checks for curl or wget, falling back to Go net/http
-// (always available in Go binaries).
+// Available returns true — Go net/http is always available; curl/wget
+// are detected lazily on actual download.
 func (a *HTTPAdapter) Available(ctx context.Context, rn run.Runner) bool {
-	// Go net/http is always available; curl/wget are nice-to-have.
-	// We consider HTTP always available since Go stdlib is built-in.
-	_ = SelectDownloader(ctx, rn) // warm up selection
 	return true
 }
 

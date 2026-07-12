@@ -37,3 +37,11 @@ func RegisteredKinds() []string {
 	}
 	return out
 }
+
+// Replace inserts or replaces an adapter in the global registry.
+// Unlike Register, it does not panic if the kind is already registered —
+// it overwrites the existing entry silently. Use for runtime reconfiguration
+// (e.g. swapping the AUR adapter's helper binary).
+func Replace(a Adapter) {
+	adapters[a.Kind()] = a
+}
