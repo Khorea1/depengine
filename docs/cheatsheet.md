@@ -51,11 +51,15 @@ depengine graph                          # show dependency levels as text
 depengine undo                          # revert last install (undo)
 depengine undo --list                   # show available snapshots
 depengine undo --snapshot <path>        # revert to specific snapshot
-depengine graph --format=mermaid         # render as Mermaid flowchart
-depengine graph --profile=desktop         # filter by tag
-depengine sbom                      # export CycloneDX SBOM
-depengine sbom --format=spdx        # export SPDX SBOM
- 
+  depengine graph --format=mermaid         # render as Mermaid flowchart
+  depengine graph --profile=desktop         # filter by tag
+  depengine sbom                      # export CycloneDX SBOM
+  depengine sbom --format=spdx        # export SPDX SBOM
+  depengine diff                      # compare current state with another file
+  depengine diff --json               # JSON output
+  depengine diff state1.json state2.json # compare two files directly
+  depengine diff --other other.json   # compare current state with other.json
+
 ```
 
 ---
@@ -617,6 +621,24 @@ nvim = { pacman = "neovim" }
 
 | Variable | Effect |
 |----------|--------|
+
+## depengine diff
+
+Compare two state files and show differences.
+
+```sh
+depengine diff                        # compare current state with --other file
+depengine diff --json                 # output as JSON
+depengine diff state1.json state2.json # compare two files directly
+depengine diff --other other.json     # compare current state with other.json
+```
+
+Flags:
+
+| Flag | Effect |
+|------|--------|
+| `--json` | Output differences as JSON |
+| `--other <path>` | Path to other state file (used when no arguments) |
 | `DEPENGINE_DETECT_SCRIPT` | Path to `detect_os.sh` (default: alongside binary in `scripts/`, then on `PATH`) |
 | `DEPENGINE_TRACE_ID` | Trace ID propagated to subprocesses for correlated logging |
 | `DEPENGINE_LOG_JSON` | Set to `1` for JSON logger output |

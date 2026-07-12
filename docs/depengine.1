@@ -75,6 +75,13 @@ Outputs the dependency graph in one of three formats: Mermaid (flowchart),
 DOT (Graphviz), or text (level groups). Use
 .B \-\-only
 to focus on a single tool and its transitive dependencies.
+.TP
+.B diff " [flags] [file1] [file2]"
+Compares depengine state files between machines or arbitrary paths.
+If no files are given, compares the current state with the file specified by
+.BR \-\-other .
+If one file is given, compares the current state with that file.
+If two files are given, compares the two files directly.
 .SH OPTIONS
 .SS "install flags"
 .TP
@@ -177,6 +184,13 @@ Restore a specific snapshot file instead of the most recent one.
 .TP
 .BR \-\-format " <fmt>"
 Output format: \fBcyclonedx\fR (default) or \fBspdx\fR.
+.SS "diff flags"
+.TP
+.BR \-\-json
+Output differences as JSON.
+.TP
+.BR \-\-other " <path>"
+Path to the other state file to compare (used when no arguments are provided).
 .SH EXAMPLES
 .SS "Build and validate"
 .EX
@@ -244,6 +258,20 @@ depengine completion fish | source
 .EX
 ./depengine sbom
 ./depengine sbom --format=spdx
+.EE
+.SS "Compare state files (diff)"
+.EX
+# Compare current state with --other file
+./depengine diff --other machine2.json
+
+# Compare current state with file
+./depengine diff machine2.json
+
+# Compare two files directly
+./depengine diff state1.json state2.json
+
+# Output as JSON
+./depengine diff --json machine2.json
 .EE
 .TP
 .B DEPENGINE_DETECT_SCRIPT

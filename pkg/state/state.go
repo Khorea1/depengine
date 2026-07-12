@@ -1,3 +1,5 @@
+// LoadFrom reads a state file from an arbitrary path (not DefaultPath).
+// If the file does not exist, it returns an empty-but-valid State ready for first use.
 // Package state manages the depengine state file — a JSON record of every
 // tool that has been installed (or already was present) through the engine.
 // It lives at ~/.local/state/depengine/state.json and is accessed with
@@ -152,4 +154,27 @@ func SaveLocked(st *State) error {
 	}
 	defer lk.Close()
 	return Save(st)
+}
+
+// LoadFrom reads a state file from an arbitrary path (not DefaultPath).
+// If the file does not exist, it returns an empty-but-valid State ready for first use.
+func LoadFrom(path string) (*State, error) {
+    data, err := os.ReadFile(path)
+    if err != nil {
+        if os.IsNotExist(err) {
+            return &State{
+                Version: 1,
+                Tools:   make(map[string]ToolState),
+            }, nil
+        }
+        return nil, fmt.Errorf("read state: %w", err)
+    }
+    var s State
+    if err := json.Unmarshal(data, &s); err != nil {
+        return nil, fmt.Errorf("parse state: %w", err)
+    }
+    if s.Tools == nil {
+        s.Tools = make(map[string]ToolState)
+    }
+    return &s, nil
 }

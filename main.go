@@ -60,9 +60,11 @@ func main() {
 		runUndo(os.Args[2:])
 	case "sbom":
 		runSBOM(os.Args[2:])
-	case "version":
-		fmt.Println("depengine " + version)
-		fmt.Println("Motor distro-agnostic de instalação de dependências")
+	case "diff":
+		runDiff(os.Args[2:])
+    case "version":
+        fmt.Println("depengine " + version)
+        fmt.Println("Motor distro-agnostic de instalação de dependências")
 	case "help", "-h", "--help":
 		printUsage()
 	case "completion":
@@ -861,6 +863,142 @@ func runSBOM(args []string) {
 
 	fmt.Println(string(data))
 }
+// runDiff compares two state files and outputs the differences.
+// Accepts 0-2 arguments:
+//   - 0 args: compare current state (state.LoadShared) with a file from --other flag
+//   - 1 arg:  compare current state with the file at the given path
+//   - 2 args: compare the two files directly (no current state)
+func runDiff(args []string) {
+    diffCmd := flag.NewFlagSet("diff", flag.ExitOnError)
+    diffOther := diffCmd.String("other", "", "path to other state file (used when no args)")
+    diffJSON := diffCmd.Bool("json", false, "output as JSON")
+    diffCmd.Parse(args)
+
+    var aPath, bPath string
+    var aState, bState *state.State
+    var err error
+
+    // Determine which files to compare.
+    switch diffCmd.NArg() {
+    case 0:
+        // Compare current state with --other file.
+        if *diffOther == "" {
+            fmt.Fprintf(os.Stderr, "error: --other is required when no arguments are given\n")
+            os.Exit(2)
+        }
+        aPath = state.DefaultPath()
+        bPath = *diffOther
+        ls, err := state.LoadShared()
+        if err != nil {
+            log.Default.Error("load current state", "error", err)
+            os.Exit(3)
+        }
+        defer ls.Close()
+        aState = ls.State()
+        bState, err = state.LoadFrom(bPath)
+        if err != nil {
+            log.Default.Error("load other state", "path", bPath, "error", err)
+            os.Exit(3)
+        }
+    case 1:
+        // Compare current state with the given file.
+        aPath = state.DefaultPath()
+        bPath = diffCmd.Arg(0)
+        ls, err := state.LoadShared()
+        if err != nil {
+            log.Default.Error("load current state", "error", err)
+            os.Exit(3)
+        }
+        defer ls.Close()
+        aState = ls.State()
+        bState, err = state.LoadFrom(bPath)
+        if err != nil {
+            log.Default.Error("load other state", "path", bPath, "error", err)
+            os.Exit(3)
+        }
+    case 2:
+        // Compare the two given files directly.
+        aPath = diffCmd.Arg(0)
+        bPath = diffCmd.Arg(1)
+        aState, err = state.LoadFrom(aPath)
+        if err != nil {
+            log.Default.Error("load first state", "path", aPath, "error", err)
+            os.Exit(3)
+        }
+        bState, err = state.LoadFrom(bPath)
+        if err != nil {
+            log.Default.Error("load second state", "path", bPath, "error", err)
+            os.Exit(3)
+        }
+    default:
+        fmt.Fprintf(os.Stderr, "usage: depengine diff [--json] [--other <path>] [<file1> [<file2>]]\n")
+        os.Exit(2)
+    }
+
+    // Compute the diff.
+    items := state.Diff(aState, bState)
+    if len(items) == 0 {
+        if *diffJSON {
+            fmt.Println("[]")
+        } else {
+            fmt.Println("Nenhuma diferença encontrada.")
+        }
+        return
+    }
+
+    // Output.
+    if *diffJSON {
+        enc := json.NewEncoder(os.Stdout)
+        enc.SetIndent("", "  ")
+        if err := enc.Encode(items); err != nil {
+            log.Default.Error("encode JSON", "error", err)
+            os.Exit(3)
+        }
+    } else {
+        var onlyA, onlyB, diffCount int
+        for _, item := range items {
+            switch item.Side {
+            case "only_a":
+                onlyA++
+            case "only_b":
+                onlyB++
+            case "different":
+                diffCount++
+            }
+        }
+
+        if onlyA > 0 {
+            fmt.Println("=== Somente no atual ===")
+            for _, item := range items {
+                if item.Side == "only_a" {
+                    fmt.Printf("  %s (%s, instalado %s)\n", item.Name, item.MethodA, item.InstalledAtA)
+                }
+            }
+        }
+
+        if onlyB > 0 {
+            fmt.Println("=== Somente no outro ===")
+            for _, item := range items {
+                if item.Side == "only_b" {
+                    fmt.Printf("  %s (%s, instalado %s)\n", item.Name, item.MethodB, item.InstalledAtB)
+                }
+            }
+        }
+
+        if diffCount > 0 {
+            fmt.Println("=== Definição diferente ===")
+            for _, item := range items {
+                if item.Side == "different" {
+                    fmt.Printf("  %s\n", item.Name)
+                    fmt.Printf("    atual: %s (hash: %s)\n", item.MethodA, item.HashA)
+                    fmt.Printf("    outro:  %s (hash: %s)\n", item.MethodB, item.HashB)
+                }
+            }
+        }
+
+        fmt.Printf("\n%d ferramentas diferem.\n", len(items))
+    }
+}
 
 // loadSchema is the shared bootstrap for install/check: gather facts,
 // resolve clan, build placeholder map, parse schema. Returns an error
@@ -995,6 +1133,7 @@ Uso:
   depengine graph [flags]         Mostra o grafo de dependências
   depengine validate [flags]       Valida schema.toml e ambiente
   depengine sbom [flags]           Exporta SBOM (CycloneDX/SPDX) do estado atual
+  depengine diff [flags] [f1] [f2] Compara arquivos de estado entre máquinas
   depengine completion <shell>      Gera script de autocomplete (bash|zsh|fish)
   depengine version                Mostra a versão
   depengine help                   Mostra esta ajuda
@@ -1047,6 +1186,9 @@ Flags (undo):
 Flags (sbom):
   --format cyclonedx|spdx  Formato de saída (default: cyclonedx)
 
+Flags (diff):
+  --json                 Saída formatada em JSON
+  --other <caminho>      Caminho do arquivo a comparar (usado quando sem argumentos)
 Códigos de saída:
   0   Sucesso (todas as ferramentas ok)
   1   Alguma ferramenta falhou
