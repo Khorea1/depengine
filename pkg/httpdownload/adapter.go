@@ -3,11 +3,13 @@ package httpdownload
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"depengine/pkg/downloadcache"
 	"depengine/pkg/exec"
 	"depengine/pkg/run"
 	"depengine/pkg/schema"
@@ -64,7 +66,7 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 		return fmt.Errorf("http: resolve latest: %w", err)
 	}
 
-	// Determine file extension and destination.
+	// Determine file extension.
 	ext := fileExtension(resolvedURL)
 	tmpDir, err := os.MkdirTemp("", "depengine-http-*")
 	if err != nil {
@@ -73,9 +75,6 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 	defer os.RemoveAll(tmpDir)
 
 	// Determine the actual filename from the download URL.
-	// The companion .sha256 file lists checksums by original asset name
-	// (e.g. "fastfetch-linux-amd64.deb"), so we must use that name instead
-	// of a generic placeholder.
 	fileName := "download" + ext
 	if parsedURL, err := url.Parse(resolvedURL); err == nil && parsedURL.Path != "" {
 		if base := filepath.Base(parsedURL.Path); base != "" && base != "." && base != "/" {
@@ -87,16 +86,59 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 	}
 	tmpFile := tmpDir + "/" + fileName
 
-	// Select download backend and download.
-	dl := SelectDownloader(ctx, rn)
-	if err := dl.Download(ctx, resolvedURL, tmpFile); err != nil {
-		return fmt.Errorf("http: download %s: %w", tool.Name, err)
+	// --- Download cache ---
+	// Check if the file is already cached by its resolved URL.
+	cachedPath := downloadcache.Lookup(resolvedURL)
+	fromCache := false
+
+	if cachedPath != "" {
+		// Copy the cached file to the temp location.
+		if err := copyLocalFile(cachedPath, tmpFile); err != nil {
+			// Cache read error is non-fatal — fall through to download.
+			cachedPath = ""
+		} else {
+			fromCache = true
+		}
 	}
+
+	if !fromCache {
+		// Download from remote.
+		dl := SelectDownloader(ctx, rn)
+		if err := dl.Download(ctx, resolvedURL, tmpFile); err != nil {
+			return fmt.Errorf("http: download %s: %w", tool.Name, err)
+		}
+	}
+
 	// Verify checksum if configured.
 	if checksum, ok := mc.Config["checksum"].(string); ok && checksum != "" {
 		if err := a.verifyChecksum(ctx, rn, tmpFile, urlRaw, checksum); err != nil {
-			return fmt.Errorf("http: checksum: %w", err)
+			// If we used a cached file and checksum fails, re-download fresh.
+			if fromCache {
+				fmt.Fprintf(os.Stderr, "  ⚠  cached copy failed checksum, re-downloading %s\n", tool.Name)
+				downloadcache.Remove(resolvedURL)
+				dl := SelectDownloader(ctx, rn)
+				if err2 := dl.Download(ctx, resolvedURL, tmpFile); err2 != nil {
+					return fmt.Errorf("http: download %s (re-download): %w", tool.Name, err2)
+				}
+				// Retry checksum verification on fresh download.
+				if err2 := a.verifyChecksum(ctx, rn, tmpFile, urlRaw, checksum); err2 != nil {
+					return fmt.Errorf("http: checksum: %w", err2)
+				}
+			} else {
+				return fmt.Errorf("http: checksum: %w", err)
+			}
 		}
+	}
+
+	// Store in cache if we downloaded fresh (or update cache with verified file).
+	if !fromCache {
+		if _, err := downloadcache.Store(resolvedURL, tmpFile); err != nil {
+			// Cache write failure is non-fatal; the install continues.
+			fmt.Fprintf(os.Stderr, "  ⚠  cache write failed: %v\n", err)
+		}
+	} else {
+		// When coming from cache, the file is already in the cache at cachedPath.
+		// tmpFile is a copy; we need to keep tmpFile for extraction below.
 	}
 
 	// Determine extract destination.
@@ -165,3 +207,29 @@ func (a *HTTPAdapter) verifyChecksum(ctx context.Context, rn run.Runner, filePat
 
 // Ensure HTTPAdapter implements exec.Adapter.
 var _ exec.Adapter = (*HTTPAdapter)(nil)
+
+// copyLocalFile copies a file from src to dst, preserving permissions.
+// Used by the download cache to materialize cached files into temp locations.
+func copyLocalFile(src, dst string) error {
+	s, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open cached file: %w", err)
+	}
+	defer s.Close()
+
+	fi, err := s.Stat()
+	if err != nil {
+		return fmt.Errorf("stat cached file: %w", err)
+	}
+
+	d, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, fi.Mode().Perm())
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	defer d.Close()
+
+	if _, err := io.Copy(d, s); err != nil {
+		return fmt.Errorf("copy from cache: %w", err)
+	}
+	return d.Close()
+}
