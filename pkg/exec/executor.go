@@ -1,11 +1,11 @@
 package exec
-
 import (
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -303,6 +303,7 @@ func (ex *Executor) writeState(ctx context.Context, s *schema.Schema, report *Ex
 // keys that trigger arbitrary code execution (build scripts, etc.).
 func (ex *Executor) hasDangerousMethod(tool *schema.Tool) bool {
 	for _, m := range tool.Methods {
+		// Existing check for build keys in config.
 		for _, key := range []string{"build", "build_cmd", "build_command"} {
 			if v, ok := m.Config[key]; ok {
 				if s, ok := v.(string); ok && s != "" {
@@ -310,10 +311,19 @@ func (ex *Executor) hasDangerousMethod(tool *schema.Tool) bool {
 				}
 			}
 		}
+		// Known arbitrary-code method kinds: AUR PKGBUILDs and Pacstall .deb scripts.
+		for _, dangerousKind := range []string{"aur", "pacstall"} {
+			if m.Kind == dangerousKind {
+				return true
+			}
+		}
 	}
 	return false
 }
 
+func (ex *Executor) hasDangerousPostInstall(tool *schema.Tool) bool {
+	return tool.PostInstall != ""
+}
 func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResult {
 	toolStart := time.Now()
 	result := ToolResult{Tool: tool.Name}
@@ -325,11 +335,14 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 		result.Duration = time.Since(toolStart).String()
 		return result
 	}
-
-	// Security warning for tools with dangerous methods (build scripts, etc.).
+	// Security warning for tools with dangerous methods (build scripts, AUR/Pacstall, etc.).
 	if !ex.allowArbitraryCode && ex.hasDangerousMethod(tool) {
-		ex.outputf("  ⚠  %s: uses build scripts (arbitrary code execution). Use --allow-arbitrary-code to suppress this warning.\n", tool.Name)
-		ex.logWarn(ctx, "security", "tool", tool.Name, "warning", "tool uses build scripts (arbitrary code execution)")
+		ex.outputf("  ⚠  %s: may execute arbitrary code (build scripts, AUR/Pacstall packages). Use --allow-arbitrary-code to suppress this warning.\n", tool.Name)
+		ex.logWarn(ctx, "security", "tool", tool.Name, "warning", "tool may execute arbitrary code (build scripts, AUR/Pacstall packages)")
+	}
+	if !ex.allowArbitraryCode && ex.hasDangerousPostInstall(tool) {
+		ex.outputf("  ⚠  %s: has a post-install hook (arbitrary code execution). Use --allow-arbitrary-code to suppress this warning.\n", tool.Name)
+		ex.logWarn(ctx, "security", "tool", tool.Name, "warning", "tool has a post-install hook (arbitrary code execution)")
 	}
 
 	// toolTimeout wraps the entire tool execution across all method attempts.
@@ -514,9 +527,17 @@ func (ex *Executor) executeLevelParallel(ctx context.Context, s *schema.Schema, 
 	wg.Wait()
 	close(resultCh)
 
-	// Collect results (order within level doesn't matter).
+	// Collect results into a slice, then sort by tool name for deterministic
+	// output across executions with --jobs > 1.
+	results := make([]ToolResult, 0, len(level))
 	for result := range resultCh {
-		ex.recordToolResult(&result, report)
+		results = append(results, result)
+	}
+	sort.SliceStable(results, func(i, j int) bool {
+		return results[i].Tool < results[j].Tool
+	})
+	for i := range results {
+		ex.recordToolResult(&results[i], report)
 	}
 }
 
