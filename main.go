@@ -55,6 +55,8 @@ func main() {
 		runRemove(os.Args[2:])
 	case "why":
 		runWhy(os.Args[2:])
+	case "undo":
+		runUndo(os.Args[2:])
 	case "version":
 		fmt.Println("depengine " + version)
 		fmt.Println("Motor distro-agnostic de instalação de dependências")
@@ -166,6 +168,13 @@ func runInstall(args []string) {
 
 	s.Tools = filterTools(s.Tools, *installOnly, *installSkip, *installProfile)
 
+	// Snapshot state before install (best-effort).
+	if !*installDryRun {
+		if _, err := state.SaveSnapshot(); err != nil {
+			lg.Warn("could not save pre-install snapshot", "error", err)
+		}
+	}
+
 	if *installDiagnose {
 		lg.Debug("facts", "facts", facts)
 		lg.Debug("schema", "tools", len(s.Tools))
@@ -234,6 +243,7 @@ func runUpdate(args []string) {
 		facts.DistroID, clan, facts.TargetArch, len(s.Tools))
 
 	s.Tools = filterTools(s.Tools, "", "", *updateProfile)
+
 	fmt.Fprint(os.Stderr, "Resolving latest versions... ")
 	newLock, err := lock.ResolveAll(ctx, s)
 	if err != nil {
@@ -332,7 +342,6 @@ func runGraph(args []string) {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(exitCodeForError(err))
 	}
-
 	fmt.Fprintf(os.Stderr, "depengine graph: tools=%d\n", len(s.Tools))
 	s.Tools = filterTools(s.Tools, *graphOnly, *graphSkip, *graphProfile)
 
@@ -661,6 +670,142 @@ func runForget(args []string) {
 	log.Default.Info("forgotten", "tool", toolName)
 }
 
+func runUndo(args []string) {
+	undoCmd := flag.NewFlagSet("undo", flag.ExitOnError)
+	undoList := undoCmd.Bool("list", false, "list available snapshots")
+	undoSpecific := undoCmd.String("snapshot", "", "revert to specific snapshot file path")
+	undoCmd.Parse(args)
+
+	if *undoList {
+		snapshots, err := state.ListSnapshots()
+		if err != nil {
+			log.Default.Error("list snapshots", "error", err)
+			os.Exit(3)
+		}
+		if len(snapshots) == 0 {
+			fmt.Println("Nenhum snapshot encontrado.")
+			return
+		}
+		fmt.Println("Snapshots disponíveis:")
+		for _, s := range snapshots {
+			ts := s.Timestamp.Format("2006-01-02 15:04:05")
+			fmt.Printf("  %s  %s  (%d ferramentas)\n", ts, filepath.Base(s.Path), s.ToolCount)
+		}
+		return
+	}
+
+	// Determine which snapshot to restore.
+	var snapPath string
+	if *undoSpecific != "" {
+		snapPath = *undoSpecific
+	} else {
+		snapshots, err := state.ListSnapshots()
+		if err != nil {
+			log.Default.Error("list snapshots", "error", err)
+			os.Exit(3)
+		}
+		if len(snapshots) == 0 {
+			log.Default.Error("nenhum snapshot disponível para undo")
+			os.Exit(1)
+		}
+		snapPath = snapshots[0].Path // most recent
+	}
+
+	// Load snapshot state.
+	snapState, err := state.LoadSnapshot(snapPath)
+	if err != nil {
+		log.Default.Error("load snapshot", "error", err)
+		os.Exit(3)
+	}
+
+	// Load current state under exclusive lock.
+	ls, err := state.LoadLocked()
+	if err != nil {
+		log.Default.Error("state lock", "error", err)
+		os.Exit(3)
+	}
+	defer ls.Close()
+
+	curState := ls.State()
+
+	// Find tools in current state but not in snapshot (these were added).
+	var toRemove []string
+	for name := range curState.Tools {
+		if _, ok := snapState.Tools[name]; !ok {
+			toRemove = append(toRemove, name)
+		}
+	}
+
+	if len(toRemove) == 0 {
+		log.Default.Info("nothing to undo (no tools were added since snapshot)")
+
+		// Still restore the snapshot state (in case of config changes).
+		curState.Tools = snapState.Tools
+		curState.SchemaPath = snapState.SchemaPath
+		curState.SchemaModifiedAt = snapState.SchemaModifiedAt
+		if err := ls.Save(); err != nil {
+			log.Default.Error("save state after undo", "error", err)
+			os.Exit(3)
+		}
+		return
+	}
+
+	// Remove each tool that was added.
+	hadFailure := false
+	for _, name := range toRemove {
+		toolState := curState.Tools[name]
+
+		log.Default.Info("removing tool added after snapshot", "tool", name, "method", toolState.Method)
+
+		adapter := exec.Lookup(toolState.Method)
+		if adapter == nil {
+			log.Default.Warn("adapter not found — manual removal may be needed", "tool", name, "method", toolState.Method)
+			hadFailure = true
+			continue
+		}
+
+		if !exec.CanRemove(adapter) {
+			log.Default.Warn("adapter does not support automated removal — manual removal needed", "tool", name, "method", toolState.Method)
+			hadFailure = true
+			continue
+		}
+
+		remover := adapter.(exec.Remover)
+		mc := &schema.MethodCandidate{
+			Kind:   toolState.Method,
+			Config: toolState.Config,
+		}
+		tool := &schema.Tool{Name: name}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		if err := remover.Remove(ctx, run.OSExecRunner{}, tool, mc); err != nil {
+			log.Default.Error("remove failed during undo", "tool", name, "error", err)
+			hadFailure = true
+			cancel()
+			continue
+		}
+		cancel()
+
+		log.Default.Info("removed during undo", "tool", name)
+	}
+
+	// Restore snapshot as current state (overwrites remaining state).
+	curState.Tools = snapState.Tools
+	curState.SchemaPath = snapState.SchemaPath
+	curState.SchemaModifiedAt = snapState.SchemaModifiedAt
+
+	if err := ls.Save(); err != nil {
+		log.Default.Error("save state after undo", "error", err)
+		os.Exit(3)
+	}
+
+	log.Default.Info("undo concluído", "tools_removed", len(toRemove))
+
+	if hadFailure {
+		os.Exit(1)
+	}
+}
+
 // loadSchema is the shared bootstrap for install/check: gather facts,
 // resolve clan, build placeholder map, parse schema. Returns an error
 // suitable for exitCodeForError.
@@ -725,9 +870,8 @@ func filteredByTags(tools map[string]*schema.Tool, profile string) map[string]*s
 	return result
 }
 
-
-// filterTools applies --only and --skip filters to the tool map.
-// Both filters are processed; the result is the intersection of both.
+// filterTools applies --only, --skip, and --profile filters to the tool map.
+// All filters are processed; the result is the intersection of all.
 func filterTools(tools map[string]*schema.Tool, only, skip, profile string) map[string]*schema.Tool {
 	if only == "" && skip == "" && profile == "" {
 		return tools
@@ -771,7 +915,6 @@ func filterTools(tools map[string]*schema.Tool, only, skip, profile string) map[
 
 	return filtered
 }
-
 func printUsage() {
 	fmt.Println(`depengine - Motor distro-agnostic de instalação de dependências
 
@@ -788,6 +931,7 @@ Uso:
   depengine graph [flags]         Mostra grafo de dependências
   depengine version                Mostra a versão
   depengine help                   Mostra esta ajuda
+  depengine undo [flags]          Reverte o último install (restaura snapshot anterior)
 
 Flags (install):
   --schema <path>   Caminho para schema.toml (default: schema.toml)
@@ -817,6 +961,10 @@ Flags (graph):
 
 Flags (completion):
   <shell>           Nome do shell: bash, zsh, fish
+
+Flags (undo):
+  --list                    Lista snapshots disponíveis
+  --snapshot <caminho>      Restaura snapshot específico (opcional: usa o mais recente)
 
 Exit codes:
   0   Sucesso (todas as ferramentas ok)

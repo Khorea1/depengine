@@ -56,6 +56,12 @@ output in your shell rc file (e.g.
 .BR "source <(depengine completion bash)" )
 to enable tab completion.
 .TP
+.B undo " [flags]"
+Reverts the last
+.B install
+by restoring the previous state snapshot and removing tools that were
+added since that snapshot.
+.TP
 .B graph " [flags]"
 Outputs the dependency graph in one of three formats: Mermaid (flowchart),
 DOT (Graphviz), or text (level groups). Use
@@ -82,6 +88,10 @@ Install only the specified tool.
 .BR \-\-skip " <tools>"
 Skip specific tools (comma-separated list).
 .TP
+.BR \-\-profile " <tag>"
+Only install tools that have the given tag or no tags (e.g. \fB--profile=desktop\fR).
+Useful for targeting different machine profiles from a single schema file.
+.TP
 .BR \-\-sort\-by " <field>"
 Sort output by: \fBname\fR, \fBstatus\fR, or \fBmethod\fR.
 .TP
@@ -95,6 +105,9 @@ Diagnostic mode: implies \fB--dry-run\fR, \fB--verbose\fR, and
 .BR \-\-jobs " <n>"
 Maximum concurrent installations within a topological level. Default: 1
 (sequential).
+.TP
+.BR \-\-allow-arbitrary-code
+Suppress security warnings for build scripts (arbitrary code execution).
 .SS "validate flags"
 .TP
 .BR \-\-schema " <path>"
@@ -132,7 +145,6 @@ Path to the schema file (used for environment detection). Default:
 .SS "graph flags"
 .TP
 .BR \-\-schema " <path>"
-Path to the schema file. Default: \fBschema.toml\fR.
 .TP
 .BR \-\-format " <fmt>"
 Output format: \fBmermaid\fR, \fBdot\fR, or \fBtext\fR (default).
@@ -143,6 +155,16 @@ dependencies.
 .TP
 .BR \-\-skip " <tools>"
 Skip specific tools (comma-separated list).
+.TP
+.BR \-\-profile " <tag>"
+Show only tools with the given tag (e.g. \fB--profile=server\fR).
+.SS "undo flags"
+.TP
+.BR \-\-list
+List available snapshots with timestamps and tool counts.
+.TP
+.BR \-\-snapshot " <path>"
+Restore a specific snapshot file instead of the most recent one.
 .SH EXAMPLES
 .SS "Build and validate"
 .EX
@@ -168,6 +190,10 @@ go build -o depengine .
 .SS "Diagnose: DEBUG + dry-run + verbose"
 .EX
 ./depengine install --diagnose
+.EE
+.SS "Install with profile (desktop-only)"
+.EX
+./depengine install --profile=desktop
 .EE
 .SS "Check if a tool is installed"
 .EX
@@ -200,8 +226,8 @@ depengine completion fish | source
 ./depengine graph
 ./depengine graph --format=mermaid
 ./depengine graph --format=dot --only=tool_name
+./depengine graph --profile=desktop
 .EE
-.SH ENVIRONMENT
 .TP
 .B DEPENGINE_DETECT_SCRIPT
 Path to the

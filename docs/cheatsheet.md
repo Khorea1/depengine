@@ -29,6 +29,8 @@ depengine install --dry-run --sort-by name # preview sorted by name
 depengine install --diagnose               # DEBUG + dry-run + verbose
 depengine install --json --skip "bat,lsd"  # JSON output, skip tools
 depengine install --jobs 4                 # install with 4 concurrent workers
+depengine install --allow-arbitrary-code  # suppress build-script security warnings
+depengine install --profile=desktop        # only tools tagged "desktop"
 
 depengine validate                         # validate schema.toml
 depengine validate --check-env --format json # validate + environment check
@@ -44,9 +46,12 @@ depengine remove --all --dry-run           # preview removing everything
 depengine version
 depengine completion bash | zsh | fish
 depengine graph                          # show dependency levels as text
+
+depengine undo                          # revert last install (undo)
+depengine undo --list                   # show available snapshots
+depengine undo --snapshot <path>        # revert to specific snapshot
 depengine graph --format=mermaid         # render as Mermaid flowchart
-depengine graph --format=dot             # render as Graphviz DOT
-depengine graph --only=tool_name         # focus on one tool's subgraph
+depengine graph --profile=desktop         # filter by tag
  
 ```
 
@@ -155,12 +160,11 @@ postinstall = "fc-cache -fv"
 ## Tool-Level Fields
 
 These live at the `[tools.NAME]` level — they apply regardless of which method ends up being used.
-
 | Field | Type | Description |
 |-------|------|-------------|
 | `requires` | `[string]` | List of tool names that must be installed first. Enforces topological ordering. |
 | `postinstall` | `string` | Shell command run once after any method succeeds for this tool. |
-
+| `tags` | `[string]` | Profile tags for `--profile` filtering (e.g. `["desktop", "server"]`). Tools without tags are always included. |
 ---
 
 ## Method Fields
