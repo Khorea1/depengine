@@ -22,6 +22,7 @@ import (
 	"depengine/pkg/lock"
 	"depengine/pkg/log"
 	"depengine/pkg/native"
+	"depengine/pkg/graph"
 	"depengine/pkg/run"
 	"depengine/pkg/schema"
 	"depengine/pkg/state"
@@ -44,6 +45,8 @@ func main() {
 		runValidate(os.Args[2:])
 	case "check":
 		runCheck(os.Args[2:])
+	case "graph":
+		runGraph(os.Args[2:])
 	case "status":
 		runStatus(os.Args[2:])
 	case "forget":
@@ -291,6 +294,53 @@ func runCheck(args []string) {
 	}
 	fmt.Printf("✗ %s is not installed\n", toolName)
 	os.Exit(1)
+}
+
+// runGraph outputs the dependency graph in the requested format.
+func runGraph(args []string) {
+	graphCmd := flag.NewFlagSet("graph", flag.ExitOnError)
+	graphSchema := graphCmd.String("schema", "schema.toml", "path to schema.toml")
+	graphFormat := graphCmd.String("format", "text", "output format: mermaid, dot, text")
+	graphOnly := graphCmd.String("only", "", "only show subgraph for specific tool")
+	graphSkip := graphCmd.String("skip", "", "skip specific tools (comma-separated)")
+	graphCmd.Parse(args)
+
+	// Validate format before loading schema.
+	switch *graphFormat {
+	case "mermaid", "dot", "text":
+	default:
+		fmt.Fprintf(os.Stderr, "error: unknown format %q (valid: mermaid, dot, text)\n", *graphFormat)
+		os.Exit(2)
+	}
+
+	s, err := schema.ParseSchemaNoFacts(*graphSchema)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(exitCodeForError(err))
+	}
+
+	fmt.Fprintf(os.Stderr, "depengine graph: tools=%d\n", len(s.Tools))
+	s.Tools = filterTools(s.Tools, *graphOnly, *graphSkip)
+
+	if len(s.Tools) == 0 {
+		fmt.Fprintln(os.Stderr, "no tools matching filters")
+		os.Exit(0)
+	}
+
+	levels, err := graph.Sort(s.Tools)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
+	}
+
+	switch *graphFormat {
+	case "mermaid":
+		fmt.Print(graph.RenderMermaid(levels, s.Tools))
+	case "dot":
+		fmt.Print(graph.RenderDOT(levels, s.Tools))
+	case "text":
+		fmt.Print(graph.RenderText(levels))
+	}
 }
 
 // runWhy shows why a tool would be installed via each candidate method,
@@ -695,6 +745,7 @@ Uso:
   depengine forget <tool>         Remove do state sem desinstalar
   depengine validate [flags]       Valida schema.toml e ambiente
   depengine completion <shell>     Gera script de autocomplete (bash|zsh|fish)
+  depengine graph [flags]         Mostra grafo de dependências
   depengine version                Mostra a versão
   depengine help                   Mostra esta ajuda
 
@@ -715,6 +766,12 @@ Flags (update):
   -v                Mostra detalhes das versões resolvidas
 
 Flags (validate):
+
+Flags (graph):
+  --schema <path>   Caminho para schema.toml (default: schema.toml)
+  --format <fmt>    Formato: mermaid, dot, text (default: text)
+  --only <tool>     Mostra apenas uma ferramenta
+  --skip <tools>    Pula ferramentas (separadas por vírgula)
 
 Flags (completion):
   <shell>           Nome do shell: bash, zsh, fish

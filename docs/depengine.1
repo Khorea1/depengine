@@ -55,6 +55,12 @@ Prints the shell completion script for the given shell. Source the
 output in your shell rc file (e.g.
 .BR "source <(depengine completion bash)" )
 to enable tab completion.
+.TP
+.B graph " [flags]"
+Outputs the dependency graph in one of three formats: Mermaid (flowchart),
+DOT (Graphviz), or text (level groups). Use
+.B \-\-only
+to focus on a single tool and its transitive dependencies.
 .SH OPTIONS
 .SS "install flags"
 .TP
@@ -119,6 +125,20 @@ Show what would be removed without executing.
 .BR \-\-schema " <path>"
 Path to the schema file (used for environment detection). Default:
 \fBschema.toml\fR.
+.SS "graph flags"
+.TP
+.BR \-\-schema " <path>"
+Path to the schema file. Default: \fBschema.toml\fR.
+.TP
+.BR \-\-format " <fmt>"
+Output format: \fBmermaid\fR, \fBdot\fR, or \fBtext\fR (default).
+.TP
+.BR \-\-only " <tool>"
+Show only the subgraph for the specified tool and its transitive
+dependencies.
+.TP
+.BR \-\-skip " <tools>"
+Skip specific tools (comma-separated list).
 .SH EXAMPLES
 .SS "Build and validate"
 .EX
@@ -170,6 +190,12 @@ source <(depengine completion zsh)
 
 # Fish
 depengine completion fish | source
+.EE
+.SS "Show dependency graph"
+.EX
+./depengine graph
+./depengine graph --format=mermaid
+./depengine graph --format=dot --only=tool_name
 .EE
 .SH ENVIRONMENT
 .TP

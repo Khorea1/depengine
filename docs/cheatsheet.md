@@ -42,6 +42,11 @@ depengine remove --all --dry-run           # preview removing everything
 
 depengine version
 depengine completion bash | zsh | fish
+depengine graph                          # show dependency levels as text
+depengine graph --format=mermaid         # render as Mermaid flowchart
+depengine graph --format=dot             # render as Graphviz DOT
+depengine graph --only=tool_name         # focus on one tool's subgraph
+ 
 ```
 
 ---
