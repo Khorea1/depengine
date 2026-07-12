@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -168,4 +169,50 @@ func TestExpandAllMutatesInput(t *testing.T) {
 	if input["nested"].(map[string]any)["name"] != originalNestedName {
 		t.Fatal("BUG REPRODUCED: ExpandAll mutated nested value in place")
 	}
+}
+
+func FuzzExpand(f *testing.F) {
+	seeds := []string{
+		"https://github.com/foo/bar/releases/download/{latest}/foo.tar.gz",
+		"{id}-{version}.tar.gz",
+		"apt-get install {pkg}",
+		"",
+		"no placeholders here",
+		"{unknown}",
+		"nested {outer_{inner}}",
+		"{{double}}",
+		"{}",
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+	m := map[string]string{
+		"id":      "test",
+		"version": "1.0",
+		"arch":    "x86_64",
+	}
+	f.Fuzz(func(t *testing.T, input string) {
+		Expand(input, m)
+	})
+}
+
+func FuzzExpandAll(f *testing.F) {
+	seeds := []string{
+		`{"url":"https://{arch}/{os}/file.tar.gz"}`,
+		`{"nested":{"deep":"a-{arch}-b"},"list":["{arch}","{os}"]}`,
+		`{"plain":"hello","num":42,"flag":true}`,
+		`{}`,
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+	m := map[string]string{"arch": "x86_64", "os": "linux"}
+	f.Fuzz(func(t *testing.T, raw string) {
+		// Parse as generic JSON to get any valid structure.
+		var v any
+		if err := json.Unmarshal([]byte(raw), &v); err != nil {
+			return // skip invalid JSON, not what we're fuzzing
+		}
+		ExpandAll(v, m)
+	})
 }

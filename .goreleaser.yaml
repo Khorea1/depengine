@@ -23,9 +23,6 @@ builds:
 archives:
   - id: depengine-archives
     name_template: "depengine_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format_overrides:
-      - goos: windows
-        formats: [zip]
     files:
       - none*
 

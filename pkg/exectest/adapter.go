@@ -5,6 +5,7 @@ package exectest
 import (
 	"context"
 	"fmt"
+	"testing"
 
 	"depengine/pkg/exec"
 	"depengine/pkg/graph"
@@ -149,4 +150,75 @@ func MustSort(tools map[string]*schema.Tool) [][]string {
 		panic(fmt.Sprintf("graph.Sort: %v", err))
 	}
 	return levels
+}
+
+// TestAdapterConformance verifies that an adapter satisfies the basic
+// invariants of the exec.Adapter interface. Every adapter package should
+// call this from its own test:
+//
+//	func TestConformance(t *testing.T) {
+//	    exectest.TestAdapterConformance(t, myadapter.New())
+//	}
+func TestAdapterConformance(t *testing.T, a exec.Adapter) {
+	t.Helper()
+
+	t.Run("Kind_stable", func(t *testing.T) {
+		k1 := a.Kind()
+		if k1 == "" {
+			t.Error("Kind() must not return empty string")
+		}
+		k2 := a.Kind()
+		if k1 != k2 {
+			t.Errorf("Kind() changed between calls: %q -> %q", k1, k2)
+		}
+	})
+
+	t.Run("Available_not_nil_runner", func(t *testing.T) {
+		ctx := context.Background()
+		fr := &run.FakeRunner{}
+		// Should never panic regardless of environment.
+		_ = a.Available(ctx, fr)
+	})
+
+	t.Run("Check_no_panic", func(t *testing.T) {
+		ctx := context.Background()
+		fr := &run.FakeRunner{}
+		tool := &schema.Tool{Name: "nonexistent-conformance-check"}
+		mc := &schema.MethodCandidate{Kind: a.Kind(), Config: map[string]any{}}
+		// Check must never panic with an unknown tool and empty config.
+		_ = a.Check(ctx, fr, tool, mc)
+	})
+
+	t.Run("Install_empty_config_returns_error", func(t *testing.T) {
+		ctx := context.Background()
+		tool := &schema.Tool{Name: "nonexistent-conformance-install"}
+		mc := &schema.MethodCandidate{Kind: a.Kind(), Config: map[string]any{}}
+		err := a.Install(ctx, &run.FakeRunner{}, tool, mc)
+		if err == nil {
+			t.Error("Install with empty config should return an error")
+		}
+	})
+
+	t.Run("Install_nil_runner_returns_error", func(t *testing.T) {
+		ctx := context.Background()
+		tool := &schema.Tool{Name: "nonexistent-conformance-install-nil"}
+		mc := &schema.MethodCandidate{Kind: a.Kind(), Config: map[string]any{}}
+		err := a.Install(ctx, nil, tool, mc)
+		if err == nil {
+			t.Error("Install with nil runner should return an error")
+		}
+	})
+
+	t.Run("RegisteredKinds_contains_kind", func(t *testing.T) {
+		found := false
+		for _, k := range exec.RegisteredKinds() {
+			if k == a.Kind() {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Logf("Kind %q not in exec.RegisteredKinds() — may need exec.Register() call", a.Kind())
+		}
+	})
 }

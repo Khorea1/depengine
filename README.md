@@ -117,6 +117,34 @@ postinstall = "fc-cache -fv"
 > fora do método. Campos específicos do método (`when`, `url`, `build`,
 > `checksum`, `extract_to`, `pkg`, `git`) ficam dentro do método.
 
+
+---
+
+## Editor Support
+
+O projeto publica um [JSON Schema](schema/depengine.schema.json) que descreve a estrutura do `schema.toml`.
+Editores com extensão TOML (ex: [taplo](https://taplo.tamasfe.dev/) para VSCode) usam isso para:
+
+- **Autocomplete** de campos (`url:`, `build:`, `checksum:`, `when:`, etc.)
+- **Validação inline** de tipos e campos obrigatórios
+- **Hover docs** com descrição de cada campo
+
+Para ativar no VSCode com a extensão TOML (taplo), crie na raiz do projeto um `.vscode/settings.json`:
+
+```json
+{
+  "taplo.schema.enabled": true,
+  "taplo.schema.url": "https://raw.githubusercontent.com/depengine/depengine/main/schema/depengine.schema.json"
+}
+```
+
+Ou, se preferir o schema local:
+```json
+{
+  "taplo.schema.enabled": true,
+  "taplo.schema.url": "./schema/depengine.schema.json"
+}
+```
 ---
 
 ## CLI — comandos e flags
@@ -192,7 +220,7 @@ schema.toml
     │
     ▼
 pkg/schema.ParseSchema()
-    │  aclama 3 formas de declaração em Tool + MethodCandidate
+    │  aceita 3 formas de declaração em Tool + MethodCandidate
     │  expande placeholders ({arch}, {distro_family}, {os}…)
     ▼
 pkg/exec.Executor.Execute()

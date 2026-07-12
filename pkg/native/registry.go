@@ -7,7 +7,7 @@
 //   - A "clan" is what ResolveFamily returns and what schema clauses
 //     `when = { distro_family = [...] }` compare against. It is a
 //     distro-clan predicate: "debian", "arch", "fedora", "suse"...
-//     Clans evolve slowly — they describe whichugh roots distros descend
+//     Clans evolve slowly — they describe which roots distros descend
 //     from.
 //
 //   - A "manager key" is what the manager map is indexed by. Today it
@@ -268,8 +268,7 @@ func ManagerNames() []string {
 }
 
 // KnownClans returns every clan that maps to a functioning native manager (a
-// clan in clanToManagerKey whose key also exists in the managers map, unlike
-// e.g. "windows" which is only in clanToManagerKey as a future placeholder).
+// clan in clanToManagerKey whose key also exists in the managers map).
 // Used by schema validation to warn on unreachable `when.distro_family`
 // values (TODO §3.2).
 func KnownClans() []string {
@@ -282,10 +281,11 @@ func KnownClans() []string {
 	return out
 }
 
-// AllClans returns every clan name — including placeholders like "windows"
-// that don't yet have a functioning native manager — so that when-clause
-// validation can check against the complete set of possible distro_family
-// values rather than only the subset that has a working adapter today.
+// AllClans returns every clan name — including clans that may not have a
+// functioning native manager (like "windows" with winget, or purely historical
+// entries) — so that when-clause validation can check against the complete set
+// of possible distro_family values rather than only the subset that has a
+// working adapter today.
 func AllClans() []string {
 	out := make([]string, 0, len(clanToManagerKey))
 	for clan := range clanToManagerKey {

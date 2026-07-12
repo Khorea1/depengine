@@ -1,0 +1,8 @@
+version = 1
+
+[tools]
+[tools.'DepartureMono/http']
+latest = 'https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/DepartureMono.zip'
+
+[tools.'fastfetch/http']
+latest = 'https://github.com/fastfetch-cli/fastfetch/releases/download/2.66.0/fastfetch-linux-amd64.deb'

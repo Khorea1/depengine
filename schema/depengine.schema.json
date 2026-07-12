@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/depengine/depengine/main/schema/depengine.schema.json",
+  "title": "depengine schema.toml",
+  "description": "JSON Schema for depengine schema.toml — validates structure, method kinds, and required fields for distro-agnostic dependency installation files.",
+  "type": "object",
+  "properties": {
+    "defaults": {
+      "type": "object",
+      "title": "Default configuration",
+      "properties": {
+        "manager": {
+          "type": "string",
+          "default": "native",
+          "description": "Default package manager when a tool declares nothing. 'native' = the system package manager (apt, pacman, dnf…)."
+        },
+        "aur_helper": {
+          "type": "string",
+          "default": "paru",
+          "description": "AUR helper to use when any method is 'aur'. Only relevant on Arch-based distros."
+        },
+        "method_order": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Order in which methods are tried when a tool declares multiple candidates. The engine stops at the first one that works."
+        }
+      }
+    },
+    "tools": {
+      "type": "object",
+      "title": "Tool declarations",
+      "description": "Every key under [tools] is either the special 'simple' list or a tool declaration.",
+      "properties": {
+        "simple": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of simple tool names whose native package name equals the tool name. Uses the default manager."
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/toolDeclaration"
+      }
+    }
+  },
+  "definitions": {
+    "toolDeclaration": {
+      "oneOf": [
+        { "$ref": "#/definitions/stringTool" },
+        { "$ref": "#/definitions/inlineTool" }
+      ]
+    },
+    "stringTool": {
+      "type": "string",
+      "description": "Tool whose native package name equals the tool name. Shorthand for { native = \"<tool-name>\" }."
+    },
+    "inlineTool": {
+      "type": "object",
+      "title": "Tool declaration (inline or full block)",
+      "description": "A tool declared as an inline table ({ apt = \"fd-find\" }) or a full block ([tools.X] + [tools.X.method]).",
+      "properties": {
+        "requires": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tool-level dependency. These tools must be installed first, regardless of which method succeeds."
+        },
+        "postinstall": {
+          "type": "string",
+          "description": "Shell command to run AFTER the tool is successfully installed. Runs regardless of which method succeeded."
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/methodValue"
+      }
+    },
+    "methodValue": {
+      "oneOf": [
+        { "type": "string", "description": "Package/module name for this method. Shorthand for { pkg = \"<name>\" }." },
+        { "$ref": "#/definitions/methodObject" }
+      ]
+    },
+    "methodObject": {
+      "type": "object",
+      "title": "Method configuration",
+      "description": "Configuration for one installation method. Can include method-specific fields plus an optional 'when' condition.",
+      "properties": {
+        "pkg": {
+          "type": "string",
+          "description": "Package/module/binary name to install via this method."
+        },
+        "when": { "$ref": "#/definitions/whenCondition" },
+        "git": {
+          "type": "string",
+          "description": "Git repository URL (for cargo install --git, go install, etc.)."
+        },
+        "url": {
+          "type": "string",
+          "description": "Download URL. Supports {latest} placeholder for GitHub release tags."
+        },
+        "build": {
+          "type": "string",
+          "description": "Build command executed inside the cloned repository (run via shell). Used by git adapter."
+        },
+        "checksum": {
+          "type": "string",
+          "description": "Checksum for verification. \"sha256:auto\" = calculate on first download (TOFU). \"sha256:<hex>\" = pinned verification."
+        },
+        "extract_to": {
+          "type": "string",
+          "description": "Directory to extract/install artifacts into."
+        },
+        "branch": {
+          "type": "string",
+          "description": "Git branch to clone (git adapter)."
+        },
+        "depth": {
+          "type": "string",
+          "description": "Git clone depth (git adapter). Default \"1\" (shallow). \"0\" = full history."
+        },
+        "binary": {
+          "type": "string",
+          "description": "Binary name to check for. Used by git adapter's Check() to verify installation."
+        }
+      }
+    },
+    "whenCondition": {
+      "type": "object",
+      "title": "When condition",
+      "description": "Condition that gates a method's applicability. If the condition doesn't match, the engine skips this method and tries the next one.",
+      "properties": {
+        "distro_family": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of distro families where this method applies (e.g. [\"arch\"], [\"debian\", \"ubuntu\"])."
+        }
+      }
+    }
+  }
+}

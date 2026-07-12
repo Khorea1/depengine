@@ -58,7 +58,3 @@ func withSudo(cmd []string, sudoRequired bool) []string {
 	return append([]string{"sudo"}, cmd...)
 }
 
-// TODO(próxima etapa): adapters de cargo, go, pip, pipx, uv, git e http —
-// esses não têm "família de distro", tratam-se por linguagem/ferramenta
-// e não entram neste pacote. Cada um vira pkg/<nome> com a mesma forma:
-// Lookup(<clan-equivalente>) + BuildXxxCmd. A executor decide a ordem.

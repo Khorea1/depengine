@@ -19,6 +19,7 @@ import (
 	"depengine/pkg/git"
 	"depengine/pkg/httpdownload"
 	"depengine/pkg/lang"
+	"depengine/pkg/lock"
 	"depengine/pkg/log"
 	"depengine/pkg/native"
 	"depengine/pkg/run"
@@ -37,6 +38,8 @@ func main() {
 	switch os.Args[1] {
 	case "install":
 		runInstall(os.Args[2:])
+	case "update":
+		runUpdate(os.Args[2:])
 	case "validate":
 		runValidate(os.Args[2:])
 	case "check":
@@ -47,6 +50,8 @@ func main() {
 		runForget(os.Args[2:])
 	case "remove":
 		runRemove(os.Args[2:])
+	case "why":
+		runWhy(os.Args[2:])
 	case "version":
 		fmt.Println("depengine " + version)
 		fmt.Println("Motor distro-agnostic de instalação de dependências")
@@ -69,10 +74,10 @@ func runInstall(args []string) {
 	installJSON := installCmd.Bool("json", false, "JSON output")
 	installOnly := installCmd.String("only", "", "only install specific tool")
 	installSkip := installCmd.String("skip", "", "skip specific tools (comma-separated)")
+	installFrozen := installCmd.Bool("frozen-lockfile", false, "fail if schema.lock does not exist or needs update")
 	installDiagnose := installCmd.Bool("diagnose", false, "diagnostic mode: DEBUG + dry-run + verbose")
 	installLogLevel := installCmd.String("log-level", "", "log level: debug, info, warn, error")
 	installSortBy := installCmd.String("sort-by", "", "sort output by: name, status, method")
-
 	installCmd.Parse(args)
 
 	// Create root logger. trace_id propagates from env automatically via
@@ -129,6 +134,21 @@ func runInstall(args []string) {
 	if *installSortBy != "" {
 		exec.WithSortBy(exec.SortField(*installSortBy))(ex)
 	}
+	// --- Lockfile ---
+	lockPath := lock.DefaultPath(*installSchema)
+	lk, _ := lock.Load(lockPath)
+	if *installFrozen && lk == nil {
+		lg.Error("--frozen-lockfile requires schema.lock — run 'depengine update' first")
+		os.Exit(2)
+	}
+	if lk != nil {
+		lock.Apply(s, lk)
+		if *installDiagnose {
+			lg.Debug("lock applied", "pinned", len(lk.Tools))
+		}
+	}
+	// --- end Lockfile ---
+
 
 	s.Tools = filterTools(s.Tools, *installOnly, *installSkip)
 
@@ -136,6 +156,7 @@ func runInstall(args []string) {
 		lg.Debug("facts", "facts", facts)
 		lg.Debug("schema", "tools", len(s.Tools))
 	}
+
 
 	report, err := ex.Execute(ctx, s, clan)
 	if err != nil {
@@ -154,7 +175,76 @@ func runInstall(args []string) {
 	if report.Failed > 0 {
 		os.Exit(1)
 	}
+
+	// Save/update lock on successful install (not in dry-run mode).
+	if !*installDryRun {
+		if newLock, err := lock.ResolveAll(ctx, s); err != nil {
+			lg.Warn("resolve lock", "error", err)
+		} else if newLock != nil {
+			// Merge with existing lock: keep existing pins for tools that
+			// weren't re-resolved (e.g. native-only tools that don't use {latest}).
+			if lk != nil {
+				for k, v := range lk.Tools {
+					if _, exists := newLock.Tools[k]; !exists {
+						newLock.Tools[k] = v
+					}
+				}
+			}
+			if err := lock.Save(lockPath, newLock); err != nil {
+				lg.Warn("save lock", "error", err)
+			} else if *installDiagnose {
+				lg.Debug("lock saved", "path", lockPath, "pinned", len(newLock.Tools))
+			}
+		}
+	}
 }
+
+
+func runUpdate(args []string) {
+	updateCmd := flag.NewFlagSet("update", flag.ExitOnError)
+	updateSchema := updateCmd.String("schema", "schema.toml", "path to schema.toml")
+	updateVerbose := updateCmd.Bool("v", false, "detailed output")
+	updateCmd.Parse(args)
+
+	ctx := context.Background()
+	lg := log.Default
+
+	s, clan, facts, err := loadSchema(*updateSchema)
+	if err != nil {
+		lg.Error("load schema", "error", err)
+		os.Exit(exitCodeForError(err))
+	}
+
+	fmt.Fprintf(os.Stderr, "depengine update: distro=%s clan=%s arch=%s tools=%d\n",
+		facts.DistroID, clan, facts.TargetArch, len(s.Tools))
+
+	fmt.Fprint(os.Stderr, "Resolving latest versions... ")
+	newLock, err := lock.ResolveAll(ctx, s)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "FAIL")
+		lg.Error("resolve lock", "error", err)
+		os.Exit(1)
+	}
+
+	lockPath := lock.DefaultPath(*updateSchema)
+	if err := lock.Save(lockPath, newLock); err != nil {
+		fmt.Fprintln(os.Stderr, "FAIL")
+		lg.Error("save lock", "error", err)
+		os.Exit(1)
+	}
+
+	pinned := len(newLock.Tools)
+	fmt.Fprintf(os.Stderr, "done (%d pinned)\n", pinned)
+
+	if *updateVerbose {
+		for key, pin := range newLock.Tools {
+			fmt.Fprintf(os.Stderr, "  %s → %s\n", key, pin.Latest)
+		}
+	}
+
+	fmt.Fprintln(os.Stderr, "Run 'depengine install' to use the updated lock.")
+}
+
 
 func runCheck(args []string) {
 	checkCmd := flag.NewFlagSet("check", flag.ExitOnError)
@@ -201,6 +291,84 @@ func runCheck(args []string) {
 	}
 	fmt.Printf("✗ %s is not installed\n", toolName)
 	os.Exit(1)
+}
+
+// runWhy shows why a tool would be installed via each candidate method,
+// without actually installing anything. Useful for debugging complex schemas.
+func runWhy(args []string) {
+	whyCmd := flag.NewFlagSet("why", flag.ExitOnError)
+	whySchema := whyCmd.String("schema", "schema.toml", "path to schema.toml")
+	whyJSON := whyCmd.Bool("json", false, "JSON output")
+	whyCmd.Parse(args)
+	remain := whyCmd.Args()
+	if len(remain) < 1 {
+		log.Default.Error("usage: depengine why <tool>")
+		os.Exit(1)
+	}
+	toolName := remain[0]
+
+	s, clan, facts, err := loadSchema(*whySchema)
+	if err != nil {
+		log.Default.Error("load schema", "error", err)
+		os.Exit(exitCodeForError(err))
+	}
+
+	if verr, warnings := schema.Validate(s, exec.RegisteredKinds()); verr != nil {
+		log.Default.Error("schema validation", "error", verr)
+		os.Exit(exitCodeForError(verr))
+	} else if len(warnings) > 0 {
+		for _, w := range warnings {
+			log.Default.Warn(w)
+		}
+	}
+
+	tool, ok := s.Tools[toolName]
+	if !ok {
+		log.Default.Error("tool not found in schema", "tool", toolName)
+		os.Exit(1)
+	}
+	_ = facts
+
+	ex := exec.New()
+	exec.WithRunner(run.OSExecRunner{})(ex)
+	attempts := ex.ExplainTool(context.Background(), tool, clan)
+	if *whyJSON {
+		type jsonAttempt struct {
+			Kind   string `json:"kind"`
+			Status string `json:"status"`
+			Reason string `json:"reason,omitempty"`
+		}
+		out := make([]jsonAttempt, 0, len(attempts))
+		for _, a := range attempts {
+			out = append(out, jsonAttempt{Kind: a.Kind, Status: a.Status, Reason: a.Error})
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		enc.Encode(out)
+		return
+	}
+
+	fmt.Printf("Why %s? (%d methods)\n", toolName, len(tool.Methods))
+	for _, a := range attempts {
+		statusSymbol := "?"
+		switch a.Status {
+		case "would_install":
+			statusSymbol = "✓"
+		case "already_installed":
+			statusSymbol = "✓"
+		case "skip_when":
+			statusSymbol = "–"
+		case "skip_unavailable":
+			statusSymbol = "✗"
+		default:
+			statusSymbol = "?"
+		}
+		reason := a.Error
+		if reason == "" {
+			reason = "ready to install"
+		}
+		fmt.Printf("  %s %s — %s\n", statusSymbol, a.Kind, reason)
+	}
 }
 
 // runStatus shows the installation status of tools by comparing the state
@@ -500,12 +668,10 @@ func filterTools(tools map[string]*schema.Tool, only, skip string) map[string]*s
 			name := queue[0]
 			queue = queue[1:]
 			if t, ok := tools[name]; ok {
+				filtered[name] = t
 				for _, req := range t.Requires {
 					if !visited[req] {
 						visited[req] = true
-						if _, exists := filtered[req]; !exists {
-							filtered[req] = tools[req]
-						}
 						queue = append(queue, req)
 					}
 				}
@@ -521,7 +687,9 @@ func printUsage() {
 
 Uso:
   depengine install [flags]        Instala ferramentas do schema.toml
+  depengine update [flags]         Resolve versões e cria/atualiza schema.lock
   depengine check <tool>           Verifica se uma ferramenta está instalada
+  depengine why <tool>             Mostra por que cada método seria usado/pulado
   depengine status [flags]         Mostra status das ferramentas instaladas
   depengine remove <tool>          Remove uma ferramenta instalada
   depengine forget <tool>         Remove do state sem desinstalar
@@ -537,24 +705,16 @@ Flags (install):
   --json            Saída em JSON
   --only <tool>     Instala apenas uma ferramenta
   --skip <tools>    Pula ferramentas (separadas por vírgula)
+  --frozen-lockfile Falha se schema.lock não existir (CI)
   --diagnose        Modo diagnóstico: DEBUG + dry-run + verbose
   --log-level <lvl> Nível de log: debug, info, warn, error
   --sort-by <campo> Ordena output: name, status, method
 
-Flags (validate):
+Flags (update):
   --schema <path>   Caminho para schema.toml (default: schema.toml)
-  --check-env       Verifica disponibilidade de ferramentas no ambiente
-  --format <fmt>    Formato de saída: text (default) ou json
-  --strict          Trata warnings como erros (exit code 1)
+  -v                Mostra detalhes das versões resolvidas
 
-Flags (status):
-  --schema <path>   Caminho para schema.toml (default: do state)
-  --json            Saída em JSON
-  --orphans         Mostra apenas ferramentas orfas
-
-Flags (remove):
-  --all             Remove todas as ferramentas
-  --dry-run         Mostra o que seria removido sem executar
+Flags (validate):
 
 Flags (completion):
   <shell>           Nome do shell: bash, zsh, fish
@@ -697,11 +857,24 @@ func runCompletion(args []string) {
 		fmt.Fprintln(os.Stderr, "usage: depengine completion bash|zsh|fish")
 		os.Exit(2)
 	}
-	scriptPath := filepath.Join("scripts", "depengine-completion."+args[0])
-	data, err := os.ReadFile(scriptPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error reading completion script for %s: %v\n", args[0], err)
-		os.Exit(2)
+	shell := args[0]
+
+	// Try alongside the binary first (shipped together like detect_os.sh).
+	if exe, err := os.Executable(); err == nil {
+		candidate := filepath.Join(filepath.Dir(exe), "scripts", "depengine-completion."+shell)
+		if data, err := os.ReadFile(candidate); err == nil {
+			fmt.Print(string(data))
+			return
+		}
 	}
-	fmt.Print(string(data))
+
+	// Fallback: CWD-relative path (development mode).
+	scriptPath := filepath.Join("scripts", "depengine-completion."+shell)
+	if data, err := os.ReadFile(scriptPath); err == nil {
+		fmt.Print(string(data))
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "error: completion script not found for %s\n", shell)
+	os.Exit(2)
 }

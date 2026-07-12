@@ -415,3 +415,28 @@ func TestValidateAcceptsAllKnown(t *testing.T) {
 		t.Fatalf("expected no warnings, got: %v", warnings)
 	}
 }
+
+func FuzzParseSchema(f *testing.F) {
+	seeds := []string{
+		"[tools]\nzsh = \"zsh\"\nfd = { apt = \"fd-find\" }",
+		"[defaults]\nmanager = \"native\"\n[tools]\nsimple = [\"a\",\"b\"]",
+		"[tools]\nbad = { git = { url = \"https://example.com\" } }",
+		"[tools]\n[tools.x]\nrequires = [\"y\"]\n[tools.y]\nrequires = [\"x\"]",
+		"",
+		"[tools]\nstrange = { apt = 42 }",
+		"[tools]\nnested = { cargo = { git = \"https://example.com\" }, git = { url = \"https://ex.com\" } }",
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+	m := map[string]string{"arch": "x86_64", "os": "linux", "id": "test"}
+	f.Fuzz(func(t *testing.T, content string) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "schema.toml")
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Skip("write:", err)
+		}
+		// Should never panic. Parse errors are valid behavior.
+		_, _ = ParseSchema(path, m)
+	})
+}
