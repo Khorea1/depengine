@@ -29,6 +29,7 @@ depengine install --dry-run --sort-by name # preview sorted by name
 depengine install --diagnose               # DEBUG + dry-run + verbose
 depengine install --json --skip "bat,lsd"  # JSON output, skip tools
 depengine install --jobs 4                 # install with 4 concurrent workers
+> **Warning:** Running multiple native package manager installs concurrently (e.g. `apt-get install -y`, `pacman -S`) may cause lock contention or corruption. Prefer `--jobs=1` when installing many native tools.
 depengine install --allow-arbitrary-code  # suppress build-script security warnings
 depengine install --profile=desktop        # only tools tagged "desktop"
 

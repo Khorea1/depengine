@@ -113,6 +113,10 @@ Diagnostic mode: implies \fB--dry-run\fR, \fB--verbose\fR, and
 .BR \-\-jobs " <n>"
 Maximum concurrent installations within a topological level. Default: 1
 (sequential).
+.IP
+Warning: Running multiple native package manager installs concurrently may
+cause lock contention or corruption. Prefer \fB--jobs=1\fR when installing
+many native tools.
 .TP
 .BR \-\-allow-arbitrary-code
 Suppress security warnings for build scripts (arbitrary code execution).
