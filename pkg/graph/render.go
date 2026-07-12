@@ -58,12 +58,18 @@ func RenderDOT(levels [][]string, tools map[string]*schema.Tool) string {
 //	level 2: tool_a
 //
 // Tools within each level are sorted alphabetically.
-func RenderText(levels [][]string) string {
+// When tools map is provided and a tool has tags, they are shown in parentheses.
+func RenderText(levels [][]string, tools map[string]*schema.Tool) string {
 	var b strings.Builder
 	for i, level := range levels {
 		sorted := make([]string, len(level))
 		copy(sorted, level)
 		sort.Strings(sorted)
+		for j, name := range sorted {
+			if t, ok := tools[name]; ok && len(t.Tags) > 0 {
+				sorted[j] = name + " (" + strings.Join(t.Tags, ",") + ")"
+			}
+		}
 		fmt.Fprintf(&b, "level %d: %s\n", i, strings.Join(sorted, ", "))
 	}
 	return b.String()

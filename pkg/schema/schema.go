@@ -41,6 +41,7 @@ type Tool struct {
 	PostInstall string
 	Methods     []*MethodCandidate
 	IsSimple    bool
+	Tags        []string  // profile tags for --profile filtering (e.g. "desktop", "server")
 }
 
 // MethodCandidate is one way to install the parent Tool. Kind is the
@@ -233,6 +234,9 @@ func normalizeTools(rawTools map[string]any, defaults Defaults) (map[string]*Too
 		if pi, ok := valMap["postinstall"].(string); ok {
 			tool.PostInstall = pi
 		}
+		if t, ok := valMap["tags"].([]any); ok {
+			tool.Tags = anySliceToStrings(t)
+		}
 
 		methods := buildMethods(name, valMap)
 		tool.Methods = orderByMethodOrder(methods, defaults.MethodOrder)
@@ -298,7 +302,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	nativeOverrides := map[string]any{}
 	var nonNativeKeys []string
 
-	for _, k := range sortedKeys(valMap, "requires", "postinstall") {
+	for _, k := range sortedKeys(valMap, "requires", "postinstall", "tags") {
 		if _, isStr := valMap[k].(string); isStr && native.IsNativeManagerName(k) {
 			nativeOverrides[k] = valMap[k]
 		} else {

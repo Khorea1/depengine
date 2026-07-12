@@ -54,8 +54,9 @@ func TestRenderDOT(t *testing.T) {
 
 func TestRenderText(t *testing.T) {
 	levels := [][]string{{"c"}, {"b"}, {"a"}}
+	tools := map[string]*schema.Tool{}
 
-	got := RenderText(levels)
+	got := RenderText(levels, tools)
 
 	if !strings.Contains(got, "level 0: c\n") {
 		t.Errorf("RenderText missing 'level 0: c\\n':\n%s", got)
@@ -72,18 +73,18 @@ func TestRenderTextSortsLevels(t *testing.T) {
 	// Tools within a level must be sorted alphabetically.
 	levels := [][]string{{"z", "a", "m"}}
 	want := "level 0: a, m, z\n"
-	got := RenderText(levels)
+	got := RenderText(levels, map[string]*schema.Tool{})
 	if got != want {
 		t.Errorf("RenderText should sort tools within level:\ngot:  %q\nwant: %q", got, want)
 	}
 }
 
 func TestRenderTextEmpty(t *testing.T) {
-	got := RenderText(nil)
+	got := RenderText(nil, nil)
 	if got != "" {
 		t.Errorf("RenderText(nil) should be empty, got: %q", got)
 	}
-	got = RenderText([][]string{})
+	got = RenderText([][]string{}, map[string]*schema.Tool{})
 	if got != "" {
 		t.Errorf("RenderText([][]string{}) should be empty, got: %q", got)
 	}
@@ -130,8 +131,8 @@ func TestRenderDeterministic(t *testing.T) {
 		t.Errorf("RenderDOT not deterministic:\n%s\nvs\n%s", d1, d2)
 	}
 
-	t1 := RenderText(levels)
-	t2 := RenderText(levels)
+	t1 := RenderText(levels, tools)
+	t2 := RenderText(levels, tools)
 	if t1 != t2 {
 		t.Errorf("RenderText not deterministic:\n%s\nvs\n%s", t1, t2)
 	}

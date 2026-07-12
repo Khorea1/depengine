@@ -77,6 +77,7 @@ func runInstall(args []string) {
 	installJSON := installCmd.Bool("json", false, "JSON output")
 	installOnly := installCmd.String("only", "", "only install specific tool")
 	installSkip := installCmd.String("skip", "", "skip specific tools (comma-separated)")
+	installProfile := installCmd.String("profile", "", "only install tools with matching tag (e.g. minimal,desktop,server)")
 	installFrozen := installCmd.Bool("frozen-lockfile", false, "fail if schema.lock does not exist or needs update")
 	installDiagnose := installCmd.Bool("diagnose", false, "diagnostic mode: DEBUG + dry-run + verbose")
 	installLogLevel := installCmd.String("log-level", "", "log level: debug, info, warn, error")
@@ -159,7 +160,7 @@ func runInstall(args []string) {
 	// --- end Lockfile ---
 
 
-	s.Tools = filterTools(s.Tools, *installOnly, *installSkip)
+	s.Tools = filterTools(s.Tools, *installOnly, *installSkip, *installProfile)
 
 	if *installDiagnose {
 		lg.Debug("facts", "facts", facts)
@@ -212,6 +213,7 @@ func runInstall(args []string) {
 func runUpdate(args []string) {
 	updateCmd := flag.NewFlagSet("update", flag.ExitOnError)
 	updateSchema := updateCmd.String("schema", "schema.toml", "path to schema.toml")
+	updateProfile := updateCmd.String("profile", "", "only resolve & pin tools with matching tag")
 	updateVerbose := updateCmd.Bool("v", false, "detailed output")
 	updateCmd.Parse(args)
 
@@ -227,6 +229,7 @@ func runUpdate(args []string) {
 	fmt.Fprintf(os.Stderr, "depengine update: distro=%s clan=%s arch=%s tools=%d\n",
 		facts.DistroID, clan, facts.TargetArch, len(s.Tools))
 
+	s.Tools = filterTools(s.Tools, "", "", *updateProfile)
 	fmt.Fprint(os.Stderr, "Resolving latest versions... ")
 	newLock, err := lock.ResolveAll(ctx, s)
 	if err != nil {
@@ -307,6 +310,7 @@ func runGraph(args []string) {
 	graphCmd := flag.NewFlagSet("graph", flag.ExitOnError)
 	graphSchema := graphCmd.String("schema", "schema.toml", "path to schema.toml")
 	graphFormat := graphCmd.String("format", "text", "output format: mermaid, dot, text")
+	graphProfile := graphCmd.String("profile", "", "only show tools with matching tag")
 	graphOnly := graphCmd.String("only", "", "only show subgraph for specific tool")
 	graphSkip := graphCmd.String("skip", "", "skip specific tools (comma-separated)")
 	graphCmd.Parse(args)
@@ -326,7 +330,7 @@ func runGraph(args []string) {
 	}
 
 	fmt.Fprintf(os.Stderr, "depengine graph: tools=%d\n", len(s.Tools))
-	s.Tools = filterTools(s.Tools, *graphOnly, *graphSkip)
+	s.Tools = filterTools(s.Tools, *graphOnly, *graphSkip, *graphProfile)
 
 	if len(s.Tools) == 0 {
 		fmt.Fprintln(os.Stderr, "no tools matching filters")
@@ -345,7 +349,7 @@ func runGraph(args []string) {
 	case "dot":
 		fmt.Print(graph.RenderDOT(levels, s.Tools))
 	case "text":
-		fmt.Print(graph.RenderText(levels))
+		fmt.Print(graph.RenderText(levels, s.Tools))
 	}
 }
 
@@ -693,11 +697,35 @@ func exitCodeForError(err error) int {
 	}
 	return 3 // runtime error (detect_os.sh not found, etc.)
 }
+// filteredByTags applies profile filtering: if profile is non-empty,
+// only include tools that have no tags (universal) OR have the
+// specified profile tag in their Tags slice.
+func filteredByTags(tools map[string]*schema.Tool, profile string) map[string]*schema.Tool {
+	if profile == "" {
+		return tools
+	}
+	result := make(map[string]*schema.Tool, len(tools))
+	for name, tool := range tools {
+		if len(tool.Tags) == 0 {
+			// Tools without tags are always included.
+			result[name] = tool
+			continue
+		}
+		for _, tag := range tool.Tags {
+			if strings.EqualFold(tag, profile) {
+				result[name] = tool
+				break
+			}
+		}
+	}
+	return result
+}
+
 
 // filterTools applies --only and --skip filters to the tool map.
 // Both filters are processed; the result is the intersection of both.
-func filterTools(tools map[string]*schema.Tool, only, skip string) map[string]*schema.Tool {
-	if only == "" && skip == "" {
+func filterTools(tools map[string]*schema.Tool, only, skip, profile string) map[string]*schema.Tool {
+	if only == "" && skip == "" && profile == "" {
 		return tools
 	}
 	skipSet := make(map[string]bool)
@@ -734,6 +762,8 @@ func filterTools(tools map[string]*schema.Tool, only, skip string) map[string]*s
 			}
 		}
 	}
+
+	filtered = filteredByTags(filtered, profile)
 
 	return filtered
 }
