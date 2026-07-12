@@ -3,6 +3,7 @@ package httpdownload
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,7 +75,20 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 	}
 	defer os.RemoveAll(tmpDir)
 
-	tmpFile := tmpDir + "/download" + ext
+	// Determine the actual filename from the download URL.
+	// The companion .sha256 file lists checksums by original asset name
+	// (e.g. "fastfetch-linux-amd64.deb"), so we must use that name instead
+	// of a generic placeholder.
+	fileName := "download" + ext
+	if parsedURL, err := url.Parse(resolvedURL); err == nil && parsedURL.Path != "" {
+		if base := filepath.Base(parsedURL.Path); base != "" && base != "." && base != "/" {
+			if filepath.Ext(base) == "" {
+				base += ext
+			}
+			fileName = base
+		}
+	}
+	tmpFile := tmpDir + "/" + fileName
 
 	// Select download backend and download.
 	dl := SelectDownloader(ctx, rn)
@@ -83,7 +97,7 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 	}
 	// Verify checksum if configured.
 	if checksum, ok := mc.Config["checksum"].(string); ok && checksum != "" {
-		if err := a.verifyChecksum(ctx, rn, tmpFile, resolvedURL, checksum); err != nil {
+		if err := a.verifyChecksum(ctx, rn, tmpFile, urlRaw, checksum); err != nil {
 			return fmt.Errorf("http: checksum: %w", err)
 		}
 	}

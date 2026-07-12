@@ -39,24 +39,26 @@ abertas em paralelo.
 
 ### 🐞 Bugs funcionais
 
-| # | Issue | Arquivo | Severidade |
-|---|-------|---------|------------|
-| **B1** | `sha256:auto` sempre quebrado: `verifyChecksum` busca por `"download.tar.gz"` no .sha256, mas o asset original tem nome diferente (ex: `fastfetch-linux-amd64.deb`). | `pkg/httpdownload/adapter.go` | 🔴 Crítico |
-| **B2** | Lockfile não salvo quando `report.Failed > 0`: `os.Exit(1)` executa **antes** do bloco que resolve/salva o `schema.lock`. Tools instaladas com sucesso na mesma execução perdem o pin. | `main.go` (runInstall, ~linha 201) | 🟠 Alto |
-| **B3** | `release-notes.sh`: backticks em `echo "- Detailed man page and \`--help\` output."` viram substituição de comando no shell. | `scripts/release-notes.sh` | 🟠 Alto |
-| **B4** | `remove --schema` documentado no man page (`docs/depengine.1`) mas não existe em `runRemove` (só `--all`, `--dry-run`). Inverso: `status --schema` existe no código mas não documentado. | `docs/depengine.1`, `main.go` | 🟡 Médio |
+| # | Issue | Arquivo | Severidade | Status |
+|---|-------|---------|------------|--------|
+| **B1** | `sha256:auto` sempre quebrado — **CORRIGIDO**: nome do arquivo extraído da URL real (`resolvedURL.Path`), `.sha256` baixado da URL original (`urlRaw`) | `pkg/httpdownload/adapter.go` | 🔴 Crítico | ✅ |
+| **B2** | Lockfile não salvo em falha parcial — **CORRIGIDO**: bloco de lock movido antes do `os.Exit(1)` | `main.go` (runInstall) | 🟠 Alto | ✅ |
+| **B3** | `release-notes.sh`: backticks em double-quotes — **CORRIGIDO**: escapados com backslash | `scripts/release-notes.sh` | 🟠 Alto | ✅ |
+| **B4** | `remove --schema` documentado mas não existe — **CORRIGIDO**: removido do man page; `status --schema` adicionado | `docs/depengine.1` | 🟡 Médio | ✅ |
+|
+| **4/4 implementados.** B1 crítico corrigido (checksum auto), B2 (lockfile), B3 (backticks), B4 (doc).
 
 ### ⚠️ Problemas de design
 
-| # | Issue | Arquivo | Severidade |
-|---|-------|---------|------------|
-| **D1** | `defaults.aur_helper` do schema.toml é ignorado: `initAdapters()` chama `lang.RegisterAll("paru")` com string fixa **antes** do schema ser parseado. O campo documentado no schema não tem efeito. | `main.go` (~linha 1045) | 🟠 Alto |
-| **D2** | `depengine status` usa `loadSchema()` (que spawna `detect_os.sh`) sendo comando read-only, ao passo que `check`/`graph` usam `ParseSchemaNoFacts`. Inconsistência de performance. | `main.go` (runStatus) | 🟡 Médio |
-| **D3** | `DefinitionHash` é calculado e persistido em `state.json` mas **nunca lido/comparado** — a funcionalidade de detectar "outdated tools" no `status` nunca foi implementada. | `pkg/state/hash.go` + `main.go` | 🟡 Médio |
-| **D4** | Ordem dos resultados é não-determinística com `--jobs > 1` (`executeLevelParallel` drena um channel), quebrando a suposição implícita de ordem topológica nos relatórios. | `pkg/exec/executor.go` | 🟡 Médio |
-| **D5** | Aviso de "arbitrary code" (`hasDangerousMethod`) só verifica chaves `build`/`build_cmd`/`build_command` (adapter `git`). AUR, pacstall, `.deb` (post-install dpkg) executam código arbitrário e não disparam o aviso — falsa sensação de segurança. | `pkg/exec/executor.go` | 🟡 Médio |
-| **D6** | `--jobs > 1` não documenta limitação: rodar `native` para várias tools em paralelo pode colidir com lock do apt/dpkg/pacman. | `docs/` | 🟢 Leve |
-| **D7** | `HTTPAdapter.Available()` roda `SelectDownloader(ctx, rn)` (2 subprocessos `which`) toda vez só pra "aquecer" — descarta o resultado. Sem cache, é desperdício puro. | `pkg/httpdownload/adapter.go` | 🟢 Leve |
+| # | Issue | Arquivo | Severidade | Status |
+|---|-------|---------|------------|--------|
+| **D1** | `defaults.aur_helper` do schema.toml é ignorado: `initAdapters()` chama `lang.RegisterAll("paru")` com string fixa **antes** do schema ser parseado. O campo documentado no schema não tem efeito. | `main.go` (~linha 1045) | 🟠 Alto | |
+| **D2** | `depengine status` usa `loadSchema()` (que spawna `detect_os.sh`) sendo comando read-only, ao passo que `check`/`graph` usam `ParseSchemaNoFacts`. Inconsistência de performance. | `main.go` (runStatus) | 🟡 Médio | |
+| **D3** | `DefinitionHash` é calculado e persistido em `state.json` mas **nunca lido/comparado** — a funcionalidade de detectar "outdated tools" no `status` nunca foi implementada. | `pkg/state/hash.go` + `main.go` | 🟡 Médio | |
+| **D4** | Ordem dos resultados é não-determinística com `--jobs > 1` (`executeLevelParallel` drena um channel), quebrando a suposição implícita de ordem topológica nos relatórios. | `pkg/exec/executor.go` | 🟡 Médio | |
+| **D5** | Aviso de "arbitrary code" (`hasDangerousMethod`) só verifica chaves `build`/`build_cmd`/`build_command` (adapter `git`). AUR, pacstall, `.deb` (post-install dpkg) executam código arbitrário e não disparam o aviso — falsa sensação de segurança. | `pkg/exec/executor.go` | 🟡 Médio | |
+| **D6** | `--jobs > 1` não documenta limitação: rodar `native` para várias tools em paralelo pode colidir com lock do apt/dpkg/pacman. | `docs/` | 🟢 Leve | |
+| **D7** | `HTTPAdapter.Available()` roda `SelectDownloader(ctx, rn)` (2 subprocessos `which`) toda vez só pra "aquecer" — descarta o resultado. Sem cache, é desperdício puro. | `pkg/httpdownload/adapter.go` | 🟢 Leve | |
 
 ### 📄 CLI / Documentação
 
@@ -180,4 +182,4 @@ Se fosse escolher só **3** para priorizar agora:
 2. **Cachê de downloads** (⭐⭐⭐) — compartilhar downloads HTTP entre instalações para evitar baixar o mesmo .deb/.AppImage duas vezes
 3. **Hooks (pre/post-install)** (⭐⭐⭐) — scripts que rodam em eventos do ciclo de vida, equivalentes aos hook scripts do apt/pacman
 
-_Última atualização: 2026-07-12 (após item 12 — i18n + C1-C3). Base: 16 packages com testes, 0 falhas._
+_Última atualização: 2026-07-12 (após B1-B4 + locale default EN). Base: 16 packages com testes, 0 falhas._

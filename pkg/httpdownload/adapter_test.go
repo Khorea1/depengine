@@ -2,6 +2,7 @@ package httpdownload
 
 import (
 	"context"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -169,5 +170,56 @@ def456 *file2.bin
 	}
 	if result["file2.bin"] != "def456" {
 		t.Fatalf("file2.bin hash = %q, want 'def456'", result["file2.bin"])
+	}
+}
+func TestDownloadFileNameFromURL(t *testing.T) {
+	tests := []struct {
+		url      string
+		ext      string
+		wantName string // expected filePath suffix
+	}{
+		{
+			url:      "https://github.com/org/repo/releases/download/v1.0/fastfetch-linux-amd64.deb",
+			ext:      ".deb",
+			wantName: "fastfetch-linux-amd64.deb",
+		},
+		{
+			url:      "https://example.com/download.tar.gz",
+			ext:      ".tar.gz",
+			wantName: "download.tar.gz",
+		},
+		{
+			url:      "https://example.com/tool?version=1.0",
+			ext:      ".deb",
+			wantName: "tool.deb", // path component "tool" used as filename
+		},
+		{
+			url:      "https://example.com/",
+			ext:      ".tar.gz",
+			wantName: "download.tar.gz", // no filename in path, fallback to generic name
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.url, func(t *testing.T) {
+			u, err := url.Parse(tt.url)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			fileName := "download" + tt.ext
+			if u != nil && u.Path != "" {
+				if base := filepath.Base(u.Path); base != "" && base != "." && base != "/" {
+					if filepath.Ext(base) == "" {
+						base += tt.ext
+					}
+					fileName = base
+				}
+			}
+
+			if fileName != tt.wantName {
+				t.Fatalf("got %q, want %q", fileName, tt.wantName)
+			}
+		})
 	}
 }

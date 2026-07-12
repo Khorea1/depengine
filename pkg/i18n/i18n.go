@@ -9,7 +9,7 @@ import (
 )
 
 // GetLocale returns the user's preferred language code.
-// Returns "pt" (Portuguese) as the default fallback.
+// Returns "en" (English) as the default fallback.
 // Currently supported: "pt", "en".
 func GetLocale() string {
 	for _, env := range []string{"LC_ALL", "LC_MESSAGES", "LANG"} {
@@ -24,5 +24,5 @@ func GetLocale() string {
 			}
 		}
 	}
-	return "pt"
+	return "en"
 }

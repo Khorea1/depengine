@@ -198,11 +198,7 @@ func runInstall(args []string) {
 		fmt.Fprintln(os.Stderr, report.Summary())
 	}
 
-	if report.Failed > 0 {
-		os.Exit(1)
-	}
-
-	// Save/update lock on successful install (not in dry-run mode).
+	// Save/update lock even on partial failure to pin resolved versions.
 	if !*installDryRun {
 		if newLock, err := lock.ResolveAll(ctx, s); err != nil {
 			lg.Warn("resolve lock", "error", err)
@@ -222,6 +218,10 @@ func runInstall(args []string) {
 				lg.Debug("lock saved", "path", lockPath, "pinned", len(newLock.Tools))
 			}
 		}
+	}
+
+	if report.Failed > 0 {
+		os.Exit(1)
 	}
 }
 

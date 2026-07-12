@@ -5,12 +5,12 @@ import (
 )
 
 func TestGetLocaleDefault(t *testing.T) {
-	// No env vars set → should default to "pt"
+	// No env vars set → should default to "en"
 	for _, env := range []string{"LC_ALL", "LC_MESSAGES", "LANG"} {
 		t.Setenv(env, "")
 	}
-	if got := GetLocale(); got != "pt" {
-		t.Fatalf("expected pt, got %s", got)
+	if got := GetLocale(); got != "en" {
+		t.Fatalf("expected en, got %s", got)
 	}
 }
 
@@ -39,7 +39,14 @@ func TestGetLocaleLCAll(t *testing.T) {
 
 func TestGetLocaleUnsupported(t *testing.T) {
 	t.Setenv("LANG", "fr_FR.UTF-8")
+	if got := GetLocale(); got != "en" {
+		t.Fatalf("expected en (fallback), got %s", got)
+	}
+}
+
+func TestGetLocalePTSet(t *testing.T) {
+	t.Setenv("LANG", "pt_BR.UTF-8")
 	if got := GetLocale(); got != "pt" {
-		t.Fatalf("expected pt (fallback), got %s", got)
+		t.Fatalf("expected pt, got %s", got)
 	}
 }
