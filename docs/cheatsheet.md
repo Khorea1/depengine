@@ -52,6 +52,8 @@ depengine undo --list                   # show available snapshots
 depengine undo --snapshot <path>        # revert to specific snapshot
 depengine graph --format=mermaid         # render as Mermaid flowchart
 depengine graph --profile=desktop         # filter by tag
+depengine sbom                      # export CycloneDX SBOM
+depengine sbom --format=spdx        # export SPDX SBOM
  
 ```
 

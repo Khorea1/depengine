@@ -25,6 +25,7 @@ import (
 	"depengine/pkg/graph"
 	"depengine/pkg/run"
 	"depengine/pkg/schema"
+	"depengine/pkg/sbom"
 	"depengine/pkg/state"
 	"depengine/pkg/validate"
 )
@@ -57,6 +58,8 @@ func main() {
 		runWhy(os.Args[2:])
 	case "undo":
 		runUndo(os.Args[2:])
+	case "sbom":
+		runSBOM(os.Args[2:])
 	case "version":
 		fmt.Println("depengine " + version)
 		fmt.Println("Motor distro-agnostic de instalação de dependências")
@@ -806,6 +809,41 @@ func runUndo(args []string) {
 	}
 }
 
+func runSBOM(args []string) {
+	sbomCmd := flag.NewFlagSet("sbom", flag.ExitOnError)
+	sbomFormat := sbomCmd.String("format", "cyclonedx", "output format: cyclonedx or spdx")
+	sbomCmd.Parse(args)
+
+	// Load state with shared lock (read-only).
+	ls, err := state.LoadShared()
+	if err != nil {
+		log.Default.Error("load state", "error", err)
+		os.Exit(3)
+	}
+	defer ls.Close()
+
+	st := ls.State()
+
+	var data []byte
+	switch *sbomFormat {
+	case "cyclonedx", "cyclonedx-json":
+		data, err = sbom.ExportCycloneDX(st)
+	case "spdx", "spdx-json":
+		data, err = sbom.ExportSPDX(st)
+	default:
+		log.Default.Error("unsupported format", "format", *sbomFormat)
+		fmt.Fprintf(os.Stderr, "Formatos suportados: cyclonedx, spdx\n")
+		os.Exit(2)
+	}
+
+	if err != nil {
+		log.Default.Error("generate sbom", "error", err)
+		os.Exit(3)
+	}
+
+	fmt.Println(string(data))
+}
+
 // loadSchema is the shared bootstrap for install/check: gather facts,
 // resolve clan, build placeholder map, parse schema. Returns an error
 // suitable for exitCodeForError.
@@ -928,7 +966,7 @@ Uso:
   depengine forget <tool>         Remove do state sem desinstalar
   depengine validate [flags]       Valida schema.toml e ambiente
   depengine completion <shell>     Gera script de autocomplete (bash|zsh|fish)
-  depengine graph [flags]         Mostra grafo de dependências
+  depengine sbom [flags]           Exporta SBOM (CycloneDX/SPDX) do estado atual
   depengine version                Mostra a versão
   depengine help                   Mostra esta ajuda
   depengine undo [flags]          Reverte o último install (restaura snapshot anterior)
@@ -965,6 +1003,9 @@ Flags (completion):
 Flags (undo):
   --list                    Lista snapshots disponíveis
   --snapshot <caminho>      Restaura snapshot específico (opcional: usa o mais recente)
+
+Flags (sbom):
+  --format cyclonedx|spdx    Formato de saída (default: cyclonedx)
 
 Exit codes:
   0   Sucesso (todas as ferramentas ok)
