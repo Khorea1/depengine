@@ -3,6 +3,7 @@ package lang
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"depengine/pkg/exec"
 	"depengine/pkg/run"
@@ -50,11 +51,27 @@ func (a *AsdfAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 		}
 
 		if cmd == "asdf" {
-			// Check if plugin already exists before trying to add it.
-			plugRes := rn.Run(ctx, cmd, "plugin", "list", pkg[0])
-			if plugRes.Err != nil || plugRes.ExitCode != 0 {
-				// Plugin not found — try to add it.
-				_ = rn.Run(ctx, cmd, "plugin-add", pkg[0])
+			// Check if plugin already exists — `asdf plugin list` lists all plugins.
+			plugRes := rn.Run(ctx, cmd, "plugin", "list")
+			if plugRes.Err == nil && plugRes.ExitCode == 0 {
+				plugins := strings.Split(strings.TrimSpace(string(plugRes.Stdout)), "\n")
+				found := false
+				for _, p := range plugins {
+					if strings.TrimSpace(p) == pkg[0] {
+						found = true
+						break
+					}
+				}
+				if !found {
+					if res := rn.Run(ctx, cmd, "plugin-add", pkg[0]); res.Err != nil {
+						return fmt.Errorf("asdf: plugin-add failed for %s: %w", pkg[0], res.Err)
+					}
+				}
+			} else {
+				// `asdf plugin list` failed — try plugin-add directly.
+				if res := rn.Run(ctx, cmd, "plugin-add", pkg[0]); res.Err != nil {
+					return fmt.Errorf("asdf: plugin-add failed for %s: %w", pkg[0], res.Err)
+				}
 			}
 		}
 

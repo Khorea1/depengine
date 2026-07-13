@@ -86,19 +86,24 @@ func TestAsdfAdapterInstall(t *testing.T) {
 	}
 
 	got := fr.Calls
-	if len(got) < 4 {
-		t.Fatalf("expected at least 4 calls, got %d", len(got))
+	if len(got) < 5 {
+		t.Fatalf("expected at least 5 calls, got %d", len(got))
 	}
-	// Call order: which asdf, plugin list nodejs (exists), install, global
-	// plugin-add is skipped when plugin list succeeds.
+	// Call order: which asdf, plugin list (empty → plugin-add), install, global
 	if got[0].Name != "which" || got[0].Args[0] != "asdf" {
 		t.Errorf("expected first call 'which asdf', got %v", got[0])
 	}
-	if got[1].Name != "asdf" || got[1].Args[0] != "plugin" {
-		t.Errorf("expected 'asdf plugin list nodejs', got %v", got[1])
+	if got[1].Name != "asdf" || len(got[1].Args) < 2 || got[1].Args[0] != "plugin" || got[1].Args[1] != "list" {
+		t.Errorf("expected 'asdf plugin list', got %v", got[1])
 	}
-	if got[2].Name != "asdf" || got[2].Args[0] != "install" {
-		t.Errorf("expected 'asdf install', got %v", got[2])
+	if got[2].Name != "asdf" || got[2].Args[0] != "plugin-add" {
+		t.Errorf("expected 'asdf plugin-add nodejs', got %v", got[2])
+	}
+	if got[3].Name != "asdf" || got[3].Args[0] != "install" {
+		t.Errorf("expected 'asdf install', got %v", got[3])
+	}
+	if got[4].Name != "asdf" || got[4].Args[0] != "global" {
+		t.Errorf("expected 'asdf global nodejs latest', got %v", got[4])
 	}
 }
 
