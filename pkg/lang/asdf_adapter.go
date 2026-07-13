@@ -32,7 +32,7 @@ func (a *AsdfAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Too
 	for _, cmd := range []string{"asdf", "mise"} {
 		if run.LookPath(ctx, rn, cmd) {
 			res := rn.Run(ctx, cmd, "list", pkg[0])
-			if res.Err == nil && res.ExitCode == 0 && strings.Contains(string(res.Stdout), pkg[0]) {
+			if res.Err == nil && res.ExitCode == 0 && hasWord(string(res.Stdout), pkg[0]) {
 				return true
 			}
 		}

@@ -30,7 +30,7 @@ func (a *CondaAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.To
 		return false
 	}
 	res := rn.Run(ctx, "conda", "list", pkg[0])
-	return res.Err == nil && res.ExitCode == 0 && strings.Contains(string(res.Stdout), pkg[0])
+	return res.Err == nil && res.ExitCode == 0 && hasWord(string(res.Stdout), pkg[0])
 }
 
 func (a *CondaAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {

@@ -13,6 +13,7 @@ import (
 	"depengine/pkg/engine"
 	"depengine/pkg/graph"
 	"depengine/pkg/run"
+	"depengine/pkg/native"
 	"depengine/pkg/schema"
 	"depengine/pkg/state"
 )
@@ -165,22 +166,44 @@ func (ex *Executor) lookupAdapter(kind string) Adapter {
 }
 
 // Execute runs all tools in the schema in dependency order.
+// needsNativeSync reports whether the schema contains any tool with a native
+// method for the given clan. If no tool uses native, index sync is skipped.
+func needsNativeSync(s *schema.Schema, clan string) bool {
+	if s == nil {
+		return false
+	}
+	for _, tool := range s.Tools {
+		for _, mc := range tool.Methods {
+			if mc.Kind == "native" || mc.Kind == clan {
+				return true
+			}
+			// Also check native manager aliases (apt, dnf, pacman, etc.).
+			if nm, ok := native.ManagerNameToClan(mc.Kind); ok && nm == clan {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (ex *Executor) Execute(ctx context.Context, s *schema.Schema, clan string) (*ExecReport, error) {
 	start := time.Now()
 	report := &ExecReport{}
 	ex.clan = clan
 
 	ex.logDebug(ctx, "executor", "phase", "init", "clan", clan, "tools", len(s.Tools))
-
-	syncMgr := NewSyncManager(ex.rn, clan)
-	if syncMgr.NeedsSync() {
-		ex.outputf("  syncing package index...\n")
-		ex.logInfo(ctx, "sync", "status", "syncing")
-		if err := syncMgr.Sync(ctx); err != nil {
-			ex.outputf("  ⚠  sync warning: %v (continuing)\n", err)
-			ex.logWarn(ctx, "sync", "status", "warning", "error", err)
-		} else {
-			ex.logInfo(ctx, "sync", "status", "done")
+	// Only sync native package index if at least one tool uses a native method.
+	if needsNativeSync(s, clan) {
+		syncMgr := NewSyncManager(ex.rn, clan)
+		if syncMgr.NeedsSync() {
+			ex.outputf("  syncing package index...\n")
+			ex.logInfo(ctx, "sync", "status", "syncing")
+			if err := syncMgr.Sync(ctx); err != nil {
+				ex.outputf("  ⚠  sync warning: %v (continuing)\n", err)
+				ex.logWarn(ctx, "sync", "status", "warning", "error", err)
+			} else {
+				ex.logDebug(ctx, "sync", "status", "done")
+			}
 		}
 	}
 
@@ -303,18 +326,12 @@ func (ex *Executor) writeState(ctx context.Context, s *schema.Schema, report *Ex
 // keys that trigger arbitrary code execution (build scripts, etc.).
 func (ex *Executor) hasDangerousMethod(tool *schema.Tool) bool {
 	for _, m := range tool.Methods {
-		// Existing check for build keys in config.
+		// Build script config keys are user-supplied and may execute arbitrary code.
 		for _, key := range []string{"build", "build_cmd", "build_command"} {
 			if v, ok := m.Config[key]; ok {
 				if s, ok := v.(string); ok && s != "" {
 					return true
 				}
-			}
-		}
-		// Known arbitrary-code method kinds: AUR PKGBUILDs and Pacstall .deb scripts.
-		for _, dangerousKind := range []string{"aur", "pacstall"} {
-			if m.Kind == dangerousKind {
-				return true
 			}
 		}
 	}
@@ -359,10 +376,10 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 		result.Duration = time.Since(toolStart).String()
 		return result
 	}
-	// Security warning for tools with dangerous methods (build scripts, AUR/Pacstall, etc.).
+	// Security warning for tools with build script config keys (build, build_cmd, build_command).
 	if !ex.allowArbitraryCode && ex.hasDangerousMethod(tool) {
-		ex.outputf("  ⚠  %s: may execute arbitrary code (build scripts, AUR/Pacstall packages). Use --allow-arbitrary-code to suppress this warning.\n", tool.Name)
-		ex.logWarn(ctx, "security", "tool", tool.Name, "warning", "tool may execute arbitrary code (build scripts, AUR/Pacstall packages)")
+		ex.outputf("  ⚠  %s: config includes build scripts that may execute arbitrary code. Use --allow-arbitrary-code to suppress this warning.\n", tool.Name)
+		ex.logWarn(ctx, "security", "tool", tool.Name, "warning", "tool has build scripts that may execute arbitrary code")
 	}
 	if !ex.allowArbitraryCode && ex.hasDangerousPostInstall(tool) {
 		ex.outputf("  ⚠  %s: has a post-install hook (arbitrary code execution). Use --allow-arbitrary-code to suppress this warning.\n", tool.Name)

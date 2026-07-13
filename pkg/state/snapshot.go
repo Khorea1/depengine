@@ -49,6 +49,12 @@ func SaveSnapshot() (*SnapshotInfo, error) {
 		return nil, fmt.Errorf("write snapshot: %w", err)
 	}
 
+	// Prune old snapshots: keep at most 10, remove those older than 30 days.
+	if err := PruneSnapshots(10, 30*24*time.Hour); err != nil {
+		// Non-fatal; warn but don't fail the save.
+		fmt.Fprintf(os.Stderr, "warning: prune snapshots: %v\n", err)
+	}
+
 	// Count tools for the info.
 	var s State
 	_ = json.Unmarshal(data, &s)
@@ -132,4 +138,68 @@ func LoadSnapshot(path string) (*State, error) {
 		s.Tools = make(map[string]ToolState)
 	}
 	return &s, nil
+}
+
+// DefaultMaxSnapshots is the default maximum number of snapshots to retain.
+const DefaultMaxSnapshots = 10
+
+// DefaultSnapshotMaxAge is the default maximum age for retained snapshots.
+const DefaultSnapshotMaxAge = 30 * 24 * time.Hour
+
+// PruneSnapshots removes old snapshots according to the retention policy:
+// keep at most maxCount snapshots, and remove any older than maxAge.
+// Errors are returned for readdir or stat failures but the best-effort
+// cleanup continues across individual file removal errors.
+func PruneSnapshots(maxCount int, maxAge time.Duration) error {
+	snapshots, err := ListSnapshots()
+	if err != nil {
+		return fmt.Errorf("list: %w", err)
+	}
+	if len(snapshots) == 0 {
+		return nil
+	}
+
+	cutoff := time.Now().Add(-maxAge)
+	remove := make(map[string]bool)
+
+	// Mark snapshots older than maxAge for removal.
+	for _, s := range snapshots {
+		if s.Timestamp.Before(cutoff) {
+			remove[s.Path] = true
+		}
+	}
+
+	// Keep the most recent maxCount snapshots (after removing age-based ones).
+	retained := 0
+	for _, s := range snapshots {
+		if remove[s.Path] {
+			continue
+		}
+		retained++
+	}
+
+	// If we still exceed maxCount, remove the oldest of the retained set.
+	if retained > maxCount {
+		excess := retained - maxCount
+		for _, s := range snapshots {
+			if excess <= 0 {
+				break
+			}
+			if !remove[s.Path] {
+				remove[s.Path] = true
+				excess--
+			}
+		}
+	}
+
+	// Execute removals.
+	var firstErr error
+	for path := range remove {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("remove %s: %w", path, err)
+			}
+		}
+	}
+	return firstErr
 }

@@ -202,6 +202,8 @@ func (a *NativeByManagerAdapter) Check(ctx context.Context, rn run.Runner, tool 
 	if cmd == nil {
 		return false
 	}
+	// Use the actual manager binary name (e.g. "dnf5" instead of "dnf").
+	cmd = replaceManagerBinary(cmd, a.managerName, clan)
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return res.Err == nil && res.ExitCode == 0
 }
@@ -211,7 +213,25 @@ func (a *NativeByManagerAdapter) Install(ctx context.Context, rn run.Runner, too
 	if clan == "" {
 		return fmt.Errorf("native(%s): no clan found for manager", a.managerName)
 	}
-	return runNativeInstall(ctx, rn, fmt.Sprintf("native(%s)", a.managerName), clan, mc)
+	pkg := pkgFromConfig(mc, clan)
+	if pkg == "" {
+		return fmt.Errorf("native(%s): no package name", a.managerName)
+	}
+	cmd := native.BuildInstallCmd(clan, pkg)
+	if cmd == nil {
+		return fmt.Errorf("native(%s): no install command for clan %q", a.managerName, clan)
+	}
+	// Use the actual manager binary name (e.g. "dnf5" instead of "dnf").
+	cmd = replaceManagerBinary(cmd, a.managerName, clan)
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	if res.Err != nil {
+		return fmt.Errorf("native(%s): install failed: %w", a.managerName, res.Err)
+	}
+	if res.ExitCode != 0 {
+		stderr := strings.TrimSpace(string(res.Stderr))
+		return fmt.Errorf("native(%s): install exited %d: %s", a.managerName, res.ExitCode, stderr)
+	}
+	return nil
 }
 
 func (a *NativeByManagerAdapter) Remove(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
@@ -249,3 +269,30 @@ func findClanByManager(name string) string {
 // Compile-time interface checks.
 var _ Remover = (*NativeAdapter)(nil)
 var _ Remover = (*NativeByManagerAdapter)(nil)
+
+// replaceManagerBinary replaces the binary name in a native manager command
+// with the actual binary name (e.g. "dnf5" instead of "dnf"). This handles
+// the case where a manager kind (e.g. "dnf5") maps to a clan whose default
+// binary is different. It skips the "sudo" prefix if present.
+func replaceManagerBinary(cmd []string, managerName, clan string) []string {
+	if len(cmd) == 0 {
+		return cmd
+	}
+	nm, ok := native.Lookup(clan)
+	if !ok {
+		return cmd
+	}
+	// If the manager name matches the clan's default binary, no change needed.
+	if managerName == nm.Name {
+		return cmd
+	}
+	// Replace the binary (first arg after "sudo" if present, otherwise first arg).
+	start := 0
+	if cmd[0] == "sudo" {
+		start = 1
+	}
+	if start < len(cmd) {
+		cmd[start] = managerName
+	}
+	return cmd
+}
