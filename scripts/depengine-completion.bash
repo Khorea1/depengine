@@ -7,8 +7,7 @@ _depengine() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    cmds="install check status remove version validate help completion"
-    flags="--dry-run --verbose --json --diagnose --log-level --sort-by --only --skip --check-env --format --strict --schema"
+    cmds="install check status remove version validate help completion undo sbom graph diff update why forget"
     dynamic_flags=(
         "--log-level:error:warn:info:debug"
         "--sort-by:name:status:method"

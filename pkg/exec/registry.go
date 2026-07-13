@@ -1,15 +1,23 @@
 package exec
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 // Global adapter registry. Adapters register themselves in init().
 // The executor looks up adapters by kind at runtime.
-var adapters = map[string]Adapter{}
+var (
+	adapters   = map[string]Adapter{}
+	adaptersMu sync.RWMutex
+)
 
 // Register inserts an adapter into the global registry. Panics if a
 // different adapter with the same Kind is already registered (fail-fast
 // on conflict at init time, never a runtime error).
 func Register(a Adapter) {
+	adaptersMu.Lock()
+	defer adaptersMu.Unlock()
 	if existing, ok := adapters[a.Kind()]; ok {
 		panic(fmt.Sprintf(
 			"exec: adapter %q already registered by %T", a.Kind(), existing,
@@ -25,12 +33,16 @@ func Register(a Adapter) {
 //	    ad.Install(...)
 //	}
 func Lookup(kind string) Adapter {
+	adaptersMu.RLock()
+	defer adaptersMu.RUnlock()
 	return adapters[kind]
 }
 
 // RegisteredKinds returns the names of all registered adapters (for
 // debug logging and schema validation).
 func RegisteredKinds() []string {
+	adaptersMu.RLock()
+	defer adaptersMu.RUnlock()
 	out := make([]string, 0, len(adapters))
 	for k := range adapters {
 		out = append(out, k)
@@ -43,5 +55,7 @@ func RegisteredKinds() []string {
 // it overwrites the existing entry silently. Use for runtime reconfiguration
 // (e.g. swapping the AUR adapter's helper binary).
 func Replace(a Adapter) {
+	adaptersMu.Lock()
+	defer adaptersMu.Unlock()
 	adapters[a.Kind()] = a
 }

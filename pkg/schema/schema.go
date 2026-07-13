@@ -409,9 +409,15 @@ func orderByMethodOrder(methods []*MethodCandidate, order []string) []*MethodCan
 
 func anySliceToStrings(in []any) []string {
 	out := make([]string, 0, len(in))
-	for _, v := range in {
+	for i, v := range in {
 		if s, ok := v.(string); ok {
 			out = append(out, s)
+		} else {
+			log.Default.Warn("anySliceToStrings: discarding non-string element",
+				"index", i,
+				"type", fmt.Sprintf("%T", v),
+				"value", v,
+			)
 		}
 	}
 	return out
@@ -465,9 +471,16 @@ func Validate(s *Schema, knownKinds []string) (error, []string) {
 			))
 		}
 	}
-
 	// Check each tool's method candidates.
 	for toolName, tool := range s.Tools {
+		// Zero-method tools are unreachable regardless of known kinds.
+		if len(tool.Methods) == 0 {
+			hardErrors = append(hardErrors, fmt.Sprintf(
+				"tool %q has no methods declared — no adapter can install it",
+				toolName,
+			))
+			continue
+		}
 		var unknownKinds []string
 		knownCount := 0
 		for _, mc := range tool.Methods {

@@ -126,3 +126,59 @@ func TestDiffSortedByName(t *testing.T) {
 			items[0].Name, items[1].Name, items[2].Name)
 	}
 }
+
+func TestDiffBothNil(t *testing.T) {
+	items := Diff(nil, nil)
+	if len(items) != 0 {
+		t.Fatalf("expected empty diff for nil inputs, got %d items", len(items))
+	}
+}
+
+func TestDiffNilStateA(t *testing.T) {
+	b := &State{Tools: map[string]ToolState{
+		"bat": {Method: "cargo", DefinitionHash: "bbb"},
+	}}
+	items := Diff(nil, b)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].Side != "only_b" {
+		t.Fatalf("expected only_b, got %s", items[0].Side)
+	}
+}
+
+func TestDiffNilStateB(t *testing.T) {
+	a := &State{Tools: map[string]ToolState{
+		"nvim": {Method: "native", DefinitionHash: "aaa"},
+	}}
+	items := Diff(a, nil)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].Side != "only_a" {
+		t.Fatalf("expected only_a, got %s", items[0].Side)
+	}
+}
+
+func TestDiffNilToolsMap(t *testing.T) {
+	a := &State{}
+	b := &State{}
+	items := Diff(a, b)
+	if len(items) != 0 {
+		t.Fatalf("expected empty diff for nil Tools maps, got %d items", len(items))
+	}
+}
+
+func TestDiffOneNilToolsMap(t *testing.T) {
+	a := &State{}
+	b := &State{Tools: map[string]ToolState{
+		"bat": {Method: "cargo", DefinitionHash: "bbb"},
+	}}
+	items := Diff(a, b)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].Side != "only_b" {
+		t.Fatalf("expected only_b, got %s", items[0].Side)
+	}
+}

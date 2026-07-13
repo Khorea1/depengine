@@ -3,7 +3,6 @@ package httpdownload
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -211,25 +210,5 @@ var _ exec.Adapter = (*HTTPAdapter)(nil)
 // copyLocalFile copies a file from src to dst, preserving permissions.
 // Used by the download cache to materialize cached files into temp locations.
 func copyLocalFile(src, dst string) error {
-	s, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("open cached file: %w", err)
-	}
-	defer s.Close()
-
-	fi, err := s.Stat()
-	if err != nil {
-		return fmt.Errorf("stat cached file: %w", err)
-	}
-
-	d, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, fi.Mode().Perm())
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	defer d.Close()
-
-	if _, err := io.Copy(d, s); err != nil {
-		return fmt.Errorf("copy from cache: %w", err)
-	}
-	return d.Close()
+	return downloadcache.CopyFile(src, dst)
 }

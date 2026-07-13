@@ -102,8 +102,9 @@ func (d *WgetDownloader) Download(ctx context.Context, url, dest string) error {
 }
 
 // SelectDownloader returns the best available download backend.
-// Go net/http is preferred (always available in Go binaries); curl
-// and wget are fallbacks for edge cases.
+// curl is tried first (handles redirects, SSL, and progress display well);
+// wget is the first fallback; Go net/http is the universal fallback
+// (always available in Go binaries).
 func SelectDownloader(ctx context.Context, rn run.Runner) Downloader {
 	// Try curl first (handles redirects, SSL, etc. well).
 	if res := rn.Run(ctx, "which", "curl"); res.Err == nil && res.ExitCode == 0 {
@@ -121,7 +122,7 @@ func SelectDownloader(ctx context.Context, rn run.Runner) Downloader {
 func fileExtension(url string) string {
 	url = strings.Split(url, "?")[0] // strip query params
 	url = strings.Split(url, "#")[0] // strip fragment
-	for _, ext := range []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tgz", ".zip", ".deb", ".tar"} {
+	for _, ext := range []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tgz", ".zip", ".deb", ".tar"} {
 		if strings.HasSuffix(url, ext) {
 			return ext
 		}

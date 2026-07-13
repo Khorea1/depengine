@@ -1,12 +1,12 @@
 # Long dependency chain: t0 → t1 → t2 → ... → t9
 [tools]
-t0 = { requires = ["t1"] }
-t1 = { requires = ["t2"] }
-t2 = { requires = ["t3"] }
-t3 = { requires = ["t4"] }
-t4 = { requires = ["t5"] }
-t5 = { requires = ["t6"] }
-t6 = { requires = ["t7"] }
-t7 = { requires = ["t8"] }
-t8 = { requires = ["t9"] }
-t9 = { requires = [] }
+t0 = { requires = ["t1"], apt = "t0-pkg" }
+t1 = { requires = ["t2"], apt = "t1-pkg" }
+t2 = { requires = ["t3"], apt = "t2-pkg" }
+t3 = { requires = ["t4"], apt = "t3-pkg" }
+t4 = { requires = ["t5"], apt = "t4-pkg" }
+t5 = { requires = ["t6"], apt = "t5-pkg" }
+t6 = { requires = ["t7"], apt = "t6-pkg" }
+t7 = { requires = ["t8"], apt = "t7-pkg" }
+t8 = { requires = ["t9"], apt = "t8-pkg" }
+t9 = { requires = [], apt = "t9-pkg" }

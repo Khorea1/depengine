@@ -15,6 +15,13 @@ _depengine() {
         validate
         help
         completion
+        undo
+        sbom
+        graph
+        diff
+        update
+        why
+        forget
     )
     local flags=(
         "--dry-run"

@@ -4,7 +4,7 @@
 function _depengine_completions
     set --local cur "$argv[1]"
     set --local prev "$argv[2]"
-    set --local cmds "install check status remove version validate help completion"
+    set --local cmds "install check status remove version validate help completion undo sbom graph diff update why forget"
     set --local flags "--dry-run --verbose --json --diagnose --log-level --sort-by --only --skip --check-env --format --strict --schema"
     set --local dynamic_flags=(
         "--log-level:error:warn:info:debug"

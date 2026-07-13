@@ -14,7 +14,7 @@ Complete reference for `schema.toml`, installation methods, and placeholders.
 - [`method_order`](#method-order)
 - [`requires`](#requires)
 - [`postinstall`](#postinstall)
-- [Supported Methods (26)](#supported-methods-26)
+- [Supported Methods (28)](#supported-methods-28)
   - [native](#native) | [cargo](#cargo) | [go](#go) | [pip](#pip) | [pipx](#pipx) | [uv](#uv) | [npm](#npm) | [pnpm](#pnpm) | [bun](#bun) | [gem](#gem) | [yarn](#yarn) | [yarn-berry](#yarn-berry) | [composer](#composer) | [apm](#apm) | [vscode](#vscode) | [vscodium](#vscodium) | [flatpak](#flatpak) | [snap](#snap) | [cask](#cask) | [mas](#mas) | [sdkman](#sdkman) | [steamcmd](#steamcmd) | [pacstall](#pacstall) | [aur](#aur) | [conda](#conda) | [asdf](#asdf) | [git](#git) | [http](#http)
 - [Placeholders](#placeholders)
 
@@ -206,7 +206,7 @@ when = { distro_family = ["arch"] }
 |-----|-------|---------|
 | `distro_family` | `[string]` | Only attempt this method on the listed distro families. |
 
-Resolved families (12 clans): `debian`, `mint`, `arch`, `fedora`, `suse`,
+Resolved families (15 clans): `debian`, `mint`, `arch`, `fedora`, `suse`,
 `alpine`, `void`, `gentoo`, `macos`, `termux`, `freebsd`, `openbsd`,
 `netbsd`, `windows`, `opkg`.
 
@@ -277,7 +277,7 @@ postinstall = "echo installed on {os}/{arch}"
 
 ---
 
-## Supported Methods (26)
+## Supported Methods (28)
 
 | Category | Methods |
 |----------|---------|

@@ -42,7 +42,7 @@ func DefaultPath() string {
 	if xdgState == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			home = "~"
+			home = "/tmp"
 		}
 		xdgState = filepath.Join(home, ".local", "state")
 	}

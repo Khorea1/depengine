@@ -68,7 +68,12 @@
         "postinstall": {
           "type": "string",
           "description": "Shell command to run AFTER the tool is successfully installed. Runs regardless of which method succeeded."
-        }
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Profile tags for --profile filtering. Tools without tags are always included."
+        },
       },
       "additionalProperties": {
         "$ref": "#/definitions/methodValue"
@@ -115,7 +120,11 @@
           "description": "Git branch to clone (git adapter)."
         },
         "depth": {
-          "type": "string",
+          "oneOf": [
+            { "type": "integer", "minimum": 0, "description": "Git clone depth (0 = full history)." },
+            { "type": "string", "pattern": "^[0-9]+$", "description": "Git clone depth as string." }
+          ],
+          "default": "1",
           "description": "Git clone depth (git adapter). Default \"1\" (shallow). \"0\" = full history."
         },
         "binary": {

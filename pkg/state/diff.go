@@ -20,18 +20,34 @@ type DiffItem struct {
 func Diff(a, b *State) []DiffItem {
 	var items []DiffItem
 
+	// Handle nil inputs.
+	if a == nil && b == nil {
+		return items
+	}
+
 	// Collect all tool names from both states.
 	names := make(map[string]struct{})
-	for name := range a.Tools {
-		names[name] = struct{}{}
+	if a != nil && a.Tools != nil {
+		for name := range a.Tools {
+			names[name] = struct{}{}
+		}
 	}
-	for name := range b.Tools {
-		names[name] = struct{}{}
+	if b != nil && b.Tools != nil {
+		for name := range b.Tools {
+			names[name] = struct{}{}
+		}
 	}
 
 	for name := range names {
-		ta, okA := a.Tools[name]
-		tb, okB := b.Tools[name]
+		var ta, tb ToolState
+		okA := false
+		okB := false
+		if a != nil && a.Tools != nil {
+			ta, okA = a.Tools[name]
+		}
+		if b != nil && b.Tools != nil {
+			tb, okB = b.Tools[name]
+		}
 		switch {
 		case okA && !okB:
 			items = append(items, DiffItem{

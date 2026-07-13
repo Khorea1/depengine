@@ -75,7 +75,7 @@ func Store(url, src string) (string, error) {
 	}
 
 	// Cross-device or other failure — fall back to copy.
-	if err := copyFile(src, dst); err != nil {
+	if err := CopyFile(src, dst); err != nil {
 		return "", fmt.Errorf("downloadcache: store: %w", err)
 	}
 	os.Remove(src) // best-effort cleanup
@@ -116,8 +116,8 @@ func Clear() (int, error) {
 	return count, nil
 }
 
-// copyFile copies a file from src to dst, preserving permissions.
-func copyFile(src, dst string) error {
+// CopyFile copies a file from src to dst, preserving permissions.
+func CopyFile(src, dst string) error {
 	s, err := os.Open(src)
 	if err != nil {
 		return fmt.Errorf("open source: %w", err)

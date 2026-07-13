@@ -27,6 +27,8 @@ func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequ
 		return extractTar(ctx, src, dest, "xjf", rn)
 	case ".tar.xz":
 		return extractTar(ctx, src, dest, "xJf", rn)
+	case ".tar.zst":
+		return extractTar(ctx, src, dest, "--zstd -xf", rn)
 	case ".tar":
 		return extractTar(ctx, src, dest, "xf", rn)
 	case ".zip":

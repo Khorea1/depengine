@@ -23,11 +23,11 @@ p_gem = { gem = { pkg = "jekyll" } }
 q_go = { go = { pkg = "github.com/user/tool" } }
 r_aur = { aur = { pkg = "yay" } }
 
-s_with_when = { when = { distro_family = "debian" }, apt = "vim" }
-t_multiple_when = { when = { distro_family = ["arch", "fedora"] }, pacman = "tmux" }
+s_with_when = { when = { distro_family = ["debian"] }, apt = "vim" }
 
-u_postinstall = { requires = ["a_native"], postinstall = "echo done" }
+u_postinstall = { requires = ["a_native"], postinstall = "echo done", apt = "neovim" }
 
 [v.postinstall]
 requires = ["a_native"]
 postinstall = "systemctl enable service"
+native = { pkg = "nginx" }

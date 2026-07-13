@@ -92,6 +92,8 @@ var managers = map[string]Manager{
 		CheckCmd:     []string{"apk", "info", "-e", "{pkg}"},
 		RemoveCmd:    []string{"apk", "del", "{pkg}"},
 	},
+	// void uses xbps-install -Sy (sync + install in one command).
+	// NeedsSync is false because -Sy handles the sync inline.
 	"void": {
 		Name:         "xbps",
 		SudoRequired: true,

@@ -46,7 +46,7 @@ func locateDetectScript() (string, error) {
 		if _, err := os.Stat(p); err == nil {
 			return p, nil
 		}
-		return "", fmt.Errorf("DEPENGINE_DETECT_SCRIPT aponta pra %q, mas o arquivo não existe", p)
+		return "", fmt.Errorf("DEPENGINE_DETECT_SCRIPT points to %q but the file does not exist", p)
 	}
 
 	if exe, err := os.Executable(); err == nil {
@@ -60,7 +60,7 @@ func locateDetectScript() (string, error) {
 		return p, nil
 	}
 
-	return "", fmt.Errorf("não encontrei detect_os.sh (tente exportar DEPENGINE_DETECT_SCRIPT=/caminho/pro/script)")
+	return "", fmt.Errorf("detect_os.sh not found (try setting DEPENGINE_DETECT_SCRIPT=/path/to/script)")
 }
 
 // GatherFacts runs the fetcher via the injected Runner and returns the
@@ -86,10 +86,10 @@ func GatherFacts(r run.Runner) (*Facts, error) {
 	var facts Facts
 	if jsonErr := json.Unmarshal(res.Stdout, &facts); jsonErr != nil {
 		if res.Err != nil {
-			return nil, fmt.Errorf("detect_os.sh falhou (exit %d): %s",
+			return nil, fmt.Errorf("detect_os.sh failed (exit %d): %s",
 				res.ExitCode, strings.TrimSpace(string(res.Stderr)))
 		}
-		return nil, fmt.Errorf("saída do detect_os.sh não é JSON válido: %w\nsaída bruta: %s",
+		return nil, fmt.Errorf("detect_os.sh output is not valid JSON: %w\nraw output: %s",
 			jsonErr, string(res.Stdout))
 	}
 

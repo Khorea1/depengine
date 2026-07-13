@@ -11,15 +11,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 )
 
 // GitHub URL patterns for release/tag resolution.
 var (
 	githubRepoRe = regexp.MustCompile(`^https?://github\.com/([^/]+)/([^/]+)`)
 	cache        = sync.Map{}
+
+	// httpClient is an HTTP client with a 30s timeout used for GitHub API calls.
+	httpClient = &http.Client{Timeout: 30 * time.Second}
 )
 
 // release represents a GitHub release API response.
@@ -33,6 +38,10 @@ type release struct {
 //
 // For non-GitHub URLs, {latest} is replaced with the literal string "latest"
 // as a best-effort fallback (some hosting services accept this as a version).
+//
+// Authentication: If GITHUB_TOKEN or GH_TOKEN environment variable is set, it
+// is used as a Bearer token in the Authorization header. This raises the
+// unauthenticated rate limit from 60 to 5,000 requests per hour.
 func ResolveLatest(ctx context.Context, urlStr string) (string, error) {
 	if !strings.Contains(urlStr, "{latest}") {
 		return urlStr, nil
@@ -62,7 +71,12 @@ func ResolveLatest(ctx context.Context, urlStr string) (string, error) {
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "depengine/0.1")
 
-	resp, err := http.DefaultClient.Do(req)
+	// Add GitHub token if available to raise rate limit from 60 to 5000 req/h.
+	if token := githubToken(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return urlStr, fmt.Errorf("resolve latest: http: %w", err)
 	}
@@ -82,6 +96,15 @@ func ResolveLatest(ctx context.Context, urlStr string) (string, error) {
 
 	cache.Store(cacheKey, rel.TagName)
 	return strings.ReplaceAll(urlStr, "{latest}", rel.TagName), nil
+}
+
+// githubToken returns a GitHub personal access token from environment.
+// Checks GITHUB_TOKEN first, then GH_TOKEN (common aliases used by gh CLI and CI).
+func githubToken() string {
+	if t := os.Getenv("GITHUB_TOKEN"); t != "" {
+		return t
+	}
+	return os.Getenv("GH_TOKEN")
 }
 
 // IsGitHubURL checks whether a URL points to a GitHub repository.

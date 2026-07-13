@@ -95,6 +95,12 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.To
 	}
 
 	// Run build step if configured.
+	// Security: buildCmd is intentionally passed raw to sh -c to support shell
+	// syntax (&&, ||, pipes, env vars). This is a trusted schema-authorized
+	// operation; hasDangerousMethod() already flags "build" config keys with a
+	// TOFU security warning unless --allow-arbitrary-code is set. The cloneDir
+	// is shell-quoted via %q to prevent directory-name injection.
+	// The %q format on cloneDir provides shell-safe quoting.
 	if buildCmd, ok := mc.Config["build"].(string); ok && buildCmd != "" {
 		// Run via shell to support shell syntax (&&, ||, env vars, etc.)
 		// and ensure execution in the clone directory (shell-quoted for safety).
