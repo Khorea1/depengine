@@ -1,5 +1,3 @@
-// LoadFrom reads a state file from an arbitrary path (not DefaultPath).
-// If the file does not exist, it returns an empty-but-valid State ready for first use.
 // Package state manages the depengine state file — a JSON record of every
 // tool that has been installed (or already was present) through the engine.
 // It lives at ~/.local/state/depengine/state.json and is accessed with

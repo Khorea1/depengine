@@ -12,19 +12,74 @@ builds:
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64
+      - "386"
+    ignore:
+      - goos: darwin
+        goarch: "386"
+      - goos: windows
+        goarch: "386"
     env:
       - CGO_ENABLED=0
     ldflags:
       - -s -w -X main.version={{.Version}}
 
+nfpms:
+  - id: depengine-nfpms
+    package_name: depengine
+    file_name_template: "depengine_{{ .Version }}_{{ .Arch }}"
+    vendor: depengine
+    homepage: https://github.com/depengine/depengine
+    maintainer: depengine team
+    description: Distro-agnostic dependency installer
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - archlinux
+    bindir: /usr/bin
+    files:
+      scripts/detect_os.sh: /usr/lib/depengine/detect_os.sh
+      docs/depengine.1: /usr/share/man/man1/depengine.1
+      completions/depengine.bash: /usr/share/bash-completion/completions/depengine
+      completions/depengine.zsh: /usr/share/zsh/site-functions/_depengine
+      completions/depengine.fish: /usr/share/fish/vendor_completions.d/depengine.fish
+
+brews:
+  - name: depengine
+    homepage: https://github.com/depengine/depengine
+    description: Distro-agnostic dependency installer
+    license: MIT
+    repository:
+      owner: depengine
+      name: homebrew-tap
+    commit_author:
+      name: depengine-bot
+      email: bot@depengine.dev
+    install: |
+      bin.install "depengine"
+      lib.install "scripts/detect_os.sh" => "depengine/detect_os.sh"
+      man1.install "docs/depengine.1"
+      bash_completion.install "completions/depengine.bash"
+      zsh_completion.install "completions/depengine.zsh"
+      fish_completion.install "completions/depengine.fish"
+
+wings:
+  - id: depengine-wings
+    name_template: "depengine_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
 archives:
   - id: depengine-archives
     name_template: "depengine_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
-      - none*
+      - scripts/detect_os.sh
+      - docs/depengine.1
+      - completions/*
+      - README.md
+      - LICENSE
 
 checksum:
   name_template: "depengine_{{ .Version }}_checksums.txt"

@@ -404,7 +404,7 @@ func TestValidatePlaceholders_KnownTokens(t *testing.T) {
 
 func TestValidateSchema_ValidMinimal(t *testing.T) {
 	s := parseTestdata(t, "valid_minimal.toml")
-	r := ValidateSchema(s, nil)
+	r := ValidateSchema(s)
 	if r.HasErrors() || len(r.Warnings) > 0 {
 		t.Errorf("expected clean validation, got %d errors, %d warnings: %v",
 			len(r.Errors), len(r.Warnings), r.All())
@@ -413,7 +413,7 @@ func TestValidateSchema_ValidMinimal(t *testing.T) {
 
 func TestValidateSchema_ValidFull(t *testing.T) {
 	s := parseTestdata(t, "valid_full.toml")
-	r := ValidateSchema(s, []string{"native", "cargo", "go", "pip", "git", "http"})
+	r := ValidateSchema(s)
 	if r.HasErrors() {
 		t.Errorf("expected no errors, got: %v", r.Errors)
 	}
@@ -483,7 +483,7 @@ func TestParseEdgeAllMethods(t *testing.T) {
 
 func TestValidateAllMethods_NoErrors(t *testing.T) {
 	s := parseTestdata(t, "edge_all_methods.toml")
-	r := ValidateSchema(s, []string{"native", "cargo", "pip", "pipx", "uv", "npm", "yarn", "gem", "go", "aur", "git", "http"})
+	r := ValidateSchema(s)
 	if r.HasErrors() {
 		t.Errorf("expected no errors in edge_all_methods, got %d: %v", len(r.Errors), r.Errors)
 	}
@@ -501,7 +501,7 @@ func TestValidateAllMethods_NoErrors(t *testing.T) {
 func TestValidateMultipleErrors_CountAndTypes(t *testing.T) {
 	// invalid_multiple_errors.toml has many errors — verify they're all found.
 	s := parseTestdata(t, "invalid_multiple_errors.toml")
-	r := ValidateSchema(s, []string{"native", "cargo", "pip", "git", "http"})
+	r := ValidateSchema(s)
 
 	if len(r.Errors) == 0 {
 		t.Fatal("expected errors in invalid_multiple_errors, got none")
@@ -531,7 +531,7 @@ func TestValidateMultipleErrors_CountAndTypes(t *testing.T) {
 
 func TestValidateEmptyConfig_Orphan(t *testing.T) {
 	s := parseTestdata(t, "invalid_empty_config.toml")
-	r := ValidateSchema(s, []string{"native"})
+	r := ValidateSchema(s)
 	// "orphan = {}" has no method — ParseSchema should have handled it.
 	// It might create a native method or fail to parse. Let's check.
 	if len(r.Errors)+len(r.Warnings) > 0 {
@@ -690,8 +690,7 @@ func TestValidateWhenDirectives_NoTools(t *testing.T) {
 
 func TestValidateFromFile_ValidEdgeCases(t *testing.T) {
 	s := parseTestdata(t, "valid_edge_cases.toml")
-	knownKinds := []string{"native", "cargo", "pip", "brew", "go", "git", "http", "gem", "npm"}
-	r := ValidateSchema(s, knownKinds)
+	r := ValidateSchema(s)
 	if r.HasErrors() {
 		t.Errorf("expected no errors in valid_edge_cases, got %d: %v", len(r.Errors), r.Errors)
 	}
@@ -699,7 +698,7 @@ func TestValidateFromFile_ValidEdgeCases(t *testing.T) {
 
 func TestValidateFromFile_MixedPlaceholders(t *testing.T) {
 	s := parseTestdata(t, "edge_mixed_placeholders.toml")
-	r := ValidateSchema(s, []string{"git", "http"})
+	r := ValidateSchema(s)
 	// Should have at least some placeholder warnings.
 	if len(r.Warnings) == 0 {
 		t.Fatal("expected warnings for unknown placeholders")

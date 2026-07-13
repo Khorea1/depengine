@@ -3,6 +3,7 @@ package lang
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"depengine/pkg/exec"
@@ -39,7 +40,11 @@ func (a *PacstallAdapter) Install(ctx context.Context, rn run.Runner, tool *sche
 	if len(pkg) == 0 {
 		return fmt.Errorf("pacstall: no package name")
 	}
-	cmd := []string{"sudo", "pacstall", "-I", pkg[0]}
+	pacstall := "pacstall"
+	if os.Geteuid() != 0 {
+		pacstall = "sudo pacstall"
+	}
+	cmd := append(strings.Fields(pacstall), "-I", pkg[0])
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	if res.Err != nil {
 		return fmt.Errorf("pacstall: install failed: %w", res.Err)

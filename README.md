@@ -38,12 +38,23 @@ go build -o depengine .
 # Instalar todas as dependências do schema
 ./depengine install
 
-# Verificar se uma ferramenta específica está instalada
-./depengine check nvim
-
+./depengine check nvim                   # verifica se uma tool está instalada
 # JSON estruturado (para scripts ou grepping)
 ./depengine validate --format=json
 ./depengine install --json
+
+# Status e remoção
+./depengine status                         # lista o que está instalado
+./depengine status nvim                     # status de uma tool específica
+./depengine remove nvim                     # remove uma tool
+./depengine clean                           # limpa snapshots antigos
+
+# Resolver placeholders {latest} do schema
+./depengine update                          # atualiza schema.lock
+
+# Exportar SBOM
+./depengine export --format cyclonedx       # CycloneDX 1.5 ou SPDX 2.3
+./depengine export --format spdx > bom.json
 ```
 
 ---
@@ -165,6 +176,7 @@ Instala todas as tools do schema, respeitando `method_order`, `when`,
 | `--sort-by` | — | Ordena output: `name`, `status`, `method` |
 | `--log-level` | `info` | Nível de log: `debug`, `info`, `warn`, `error` |
 | `--diagnose` | `false` | Modo diagnóstico: DEBUG + dry-run + verbose |
+| `--profile` | — | Filtra tools por tag (ex: `desktop`, `server`) |
 
 ### `depengine validate [flags]`
 
@@ -181,6 +193,41 @@ Valida o schema e opcionalmente o ambiente.
 
 Verifica se uma tool específica está instalada na máquina.
 
+### `depengine status [tool]`
+
+Mostra o estado de instalação de todas as tools ou de uma específica.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--format` | `text` | Formato: `text` ou `json` |
+
+### `depengine remove <tool>`
+
+Remove uma tool instalada pelo depengine. Apenas tools com suporte a
+remoção no adapter (nativas, cargo, pip, etc.) são removidas.
+
+### `depengine update [flags]`
+
+Atualiza o schema.lock resolvendo placeholders `{latest}` via GitHub API.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--schema` | `schema.toml` | Caminho para o schema |
+| `--lock` | `schema.lock` | Caminho para o lockfile |
+
+### `depengine export [flags]`
+
+Exporta SBOM (Software Bill of Materials) no formato CycloneDX 1.5 ou SPDX 2.3.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--format` | `cyclonedx` | Formato: `cyclonedx` ou `spdx` |
+
+### `depengine clean [flags]`
+
+Remove snapshots antigos do estado, mantendo os 10 mais recentes
+(ou conforme política de retenção).
+
 ### Exit codes
 
 | Código | Significado |
@@ -191,8 +238,7 @@ Verifica se uma tool específica está instalada na máquina.
 | `3` | Erro de runtime (`detect_os.sh` não encontrado, etc.) |
 
 ---
-
-## Métodos de instalação suportados (23)
+## Métodos de instalação suportados (28)
 
 | Categoria | Métodos |
 |-----------|---------|
@@ -202,7 +248,7 @@ Verifica se uma tool específica está instalada na máquina.
 | **Especializados** | `sdkman`, `steamcmd`, `pacstall`, `aur` (com helper configurável) |
 | **Outros** | `git` (clone + build), `http` (download + extração + checksum) |
 
-Managers nativos detectados automaticamente (15 distros):
+Managers nativos detectados automaticamente (15 distros, ~27 managers):
 
 ```
 debian  → apt        fedora → dnf      suse   → zypper    arch     → pacman
@@ -286,7 +332,7 @@ Placeholders desconhecidos são flagados pela validação (`depengine validate`)
 ## Desenvolvimento
 
 ```sh
-go test ./...                    # 12 packages, 90+ testes
+go test ./...                    # 18 packages, 100+ testes
 go vet ./...                     # análise estática
 go build -o depengine .          # build
 ./depengine validate --schema schema.toml --check-env --format=json

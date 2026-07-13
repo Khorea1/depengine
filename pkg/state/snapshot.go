@@ -45,7 +45,7 @@ func SaveSnapshot() (*SnapshotInfo, error) {
 		}
 	}
 
-	if err := os.WriteFile(dst, data, 0644); err != nil {
+	if err := os.WriteFile(dst, data, 0600); err != nil {
 		return nil, fmt.Errorf("write snapshot: %w", err)
 	}
 

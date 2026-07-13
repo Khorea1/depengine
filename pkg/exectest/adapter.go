@@ -218,7 +218,7 @@ func TestAdapterConformance(t *testing.T, a exec.Adapter) {
 			}
 		}
 		if !found {
-			t.Logf("Kind %q not in exec.RegisteredKinds() — may need exec.Register() call", a.Kind())
+			t.Errorf("Kind %q not in exec.RegisteredKinds() — may need exec.Register() call", a.Kind())
 		}
 	})
 }

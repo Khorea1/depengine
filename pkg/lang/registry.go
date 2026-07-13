@@ -20,7 +20,7 @@ var Configs = map[string]BaseConfig{
 		Binary:      "go",
 		CheckTmpl:   []string{"which", "{pkg}"},
 		InstallTmpl: []string{"go", "install", "{pkg}@latest"},
-		RemoveTmpl:  []string{"go", "clean", "-i", "{pkg}"},
+		RemoveTmpl:  []string{"go", "clean", "{pkg}"},
 	},
 	"pip": {
 		KindName:       "pip",

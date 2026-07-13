@@ -105,18 +105,12 @@ func ParseSchema(path string, m map[string]string) (*Schema, error) {
 		return nil, &ParseSchemaError{Err: fmt.Errorf("parse TOML %s: %w", path, err)}
 	}
 
-	// Expand the [defaults] block first so method_order etc. can use
-	// placeholders too (rare but consistent).
-	rawTools, _ := raw["tools"].(map[string]any)
-	if rawTools == nil {
-		rawTools = map[string]any{}
-	}
 	// Expand placeholders across the entire raw tree in one pass. Non-string
 	// leaves are returned unchanged by ExpandAll, so booleans/ints survive.
 	raw = ExpandAll(raw, m).(map[string]any)
 
 	// Re-extract rawTools from expanded raw since ExpandAll creates a new map.
-	rawTools, _ = raw["tools"].(map[string]any)
+	rawTools, _ := raw["tools"].(map[string]any)
 	if rawTools == nil {
 		rawTools = map[string]any{}
 	}
@@ -238,10 +232,14 @@ func normalizeTools(rawTools map[string]any, defaults Defaults) (map[string]*Too
 		if r, ok := valMap["requires"].([]any); ok {
 			tool.Requires = anySliceToStrings(r)
 		}
-		if pi, ok := valMap["pre_install"].(string); ok {
+		if pi, ok := valMap["preinstall"].(string); ok {
+			tool.PreInstall = pi
+		} else if pi, ok := valMap["pre_install"].(string); ok {
 			tool.PreInstall = pi
 		}
-		if pi, ok := valMap["postinstall"].(string); ok {
+		if pi, ok := valMap["post_install"].(string); ok {
+			tool.PostInstall = pi
+		} else if pi, ok := valMap["postinstall"].(string); ok {
 			tool.PostInstall = pi
 		}
 		if t, ok := valMap["tags"].([]any); ok {
@@ -477,8 +475,14 @@ func Validate(s *Schema, knownKinds []string) (error, []string) {
 			))
 		}
 	}
-	// Check each tool's method candidates.
-	for toolName, tool := range s.Tools {
+	// Check each tool's method candidates. Sort tool names for deterministic output.
+	names := make([]string, 0, len(s.Tools))
+	for name := range s.Tools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, toolName := range names {
+		tool := s.Tools[toolName]
 		// Zero-method tools are unreachable regardless of known kinds.
 		if len(tool.Methods) == 0 {
 			hardErrors = append(hardErrors, fmt.Sprintf(

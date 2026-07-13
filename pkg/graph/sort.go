@@ -9,6 +9,7 @@ package graph
 import (
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 
 	"depengine/pkg/schema"
@@ -77,6 +78,9 @@ func Sort(tools map[string]*schema.Tool, opts ...SortOption) ([][]string, error)
 				level = append(level, name)
 			}
 		}
+
+		// Sort level for deterministic output.
+		sort.Strings(level)
 		if len(level) == 0 {
 			// Remaining tools all have inDegree > 0 → cycle.
 			cycle := extractCycle(remaining, children)

@@ -3,7 +3,6 @@ package lang
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"depengine/pkg/exec"
 	"depengine/pkg/run"
@@ -50,18 +49,13 @@ func (a *AsdfAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 			continue
 		}
 
-		// asdf: plugin-add, install, global
-		// mise: install, use -g
 		if cmd == "asdf" {
-			res := rn.Run(ctx, cmd, "plugin-add", pkg[0])
-			if res.Err != nil {
-				return fmt.Errorf("asdf: plugin-add failed: %w", res.Err)
+			// Check if plugin already exists before trying to add it.
+			plugRes := rn.Run(ctx, cmd, "plugin", "list", pkg[0])
+			if plugRes.Err != nil || plugRes.ExitCode != 0 {
+				// Plugin not found — try to add it.
+				_ = rn.Run(ctx, cmd, "plugin-add", pkg[0])
 			}
-			if res.ExitCode != 0 && res.ExitCode != 2 {
-				stderr := strings.TrimSpace(string(res.Stderr))
-				return fmt.Errorf("asdf: plugin-add exited %d: %s", res.ExitCode, stderr)
-			}
-			// exit 2 means the plugin already exists — continue.
 		}
 
 		if res := rn.Run(ctx, cmd, "install", pkg[0]); res.Err != nil {

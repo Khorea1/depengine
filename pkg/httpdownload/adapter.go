@@ -24,6 +24,10 @@ func NewHTTPAdapter() *HTTPAdapter {
 	return &HTTPAdapter{}
 }
 
+func init() {
+	exec.Register(NewHTTPAdapter())
+}
+
 func (a *HTTPAdapter) Kind() string { return "http" }
 
 // Available returns true — Go net/http is always available; curl/wget

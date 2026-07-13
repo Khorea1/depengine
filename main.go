@@ -1284,10 +1284,6 @@ func initAdapters() {
 
 	// Language adapters.
 	lang.RegisterAll("paru")
-	// Git adapter.
-	exec.Register(git.NewGitAdapter())
-	// HTTP adapter.
-	exec.Register(httpdownload.NewHTTPAdapter())
 }
 
 func runValidate(args []string) {
@@ -1310,7 +1306,8 @@ func runValidate(args []string) {
 
 	// Collect validation results.
 	knownKinds := exec.RegisteredKinds()
-	result := validate.ValidateSchema(s, knownKinds)
+
+	result := validate.ValidateSchema(s)
 
 	// Also run the basic schema.Validate checks and merge findings.
 	verr, warnings := schema.Validate(s, knownKinds)

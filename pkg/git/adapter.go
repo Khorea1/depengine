@@ -25,6 +25,10 @@ func NewGitAdapter() *GitAdapter {
 	return &GitAdapter{}
 }
 
+func init() {
+	exec.Register(NewGitAdapter())
+}
+
 func (a *GitAdapter) Kind() string { return "git" }
 
 // Available checks whether git is on PATH.
@@ -140,6 +144,15 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.To
 
 	return nil
 }
+// Remove is not supported for git-based installations — the adapter clones
+// content rather than installing a system-managed package.
+func (a *GitAdapter) Remove(_ context.Context, _ run.Runner, _ *schema.Tool, _ *schema.MethodCandidate) error {
+	return fmt.Errorf("git: remove not supported — installed via clone")
+}
+
+// CanRemove returns false: git adapter does not support removal.
+func (a *GitAdapter) CanRemove() bool { return false }
 
 // Ensure GitAdapter implements exec.Adapter at compile time.
 var _ exec.Adapter = (*GitAdapter)(nil)
+var _ exec.Remover = (*GitAdapter)(nil)

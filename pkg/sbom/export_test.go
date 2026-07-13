@@ -2,7 +2,9 @@ package sbom
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
+	"time"
 
 	"depengine/pkg/state"
 )
@@ -198,8 +200,30 @@ func TestCycloneDXDeterministic(t *testing.T) {
 		t.Fatalf("ExportCycloneDX: %v", err)
 	}
 
-	if string(data1) != string(data2) {
-		t.Fatal("CycloneDX output is not deterministic")
+	// Compare only the components (schema-versioned), not the timestamp.
+	var bom1, bom2 map[string]any
+	json.Unmarshal(data1, &bom1)
+	json.Unmarshal(data2, &bom2)
+	delete(bom1, "metadata")
+	delete(bom2, "metadata")
+	if !reflect.DeepEqual(bom1, bom2) {
+		t.Fatal("CycloneDX output (sans metadata) is not deterministic")
+	}
+	// Verify both timestamps are valid RFC3339.
+	for _, d := range [][]byte{data1, data2} {
+		var b map[string]any
+		json.Unmarshal(d, &b)
+		meta, ok := b["metadata"].(map[string]any)
+		if !ok {
+			t.Fatal("missing metadata")
+		}
+		ts, ok := meta["timestamp"].(string)
+		if !ok {
+			t.Fatal("missing timestamp")
+		}
+		if _, err := time.Parse(time.RFC3339, ts); err != nil {
+			t.Errorf("invalid timestamp %q: %v", ts, err)
+		}
 	}
 }
 
@@ -222,7 +246,30 @@ func TestSPDXDeterministic(t *testing.T) {
 		t.Fatalf("ExportSPDX: %v", err)
 	}
 
-	if string(data1) != string(data2) {
-		t.Fatal("SPDX output is not deterministic")
+	// Compare only packages, not creationInfo (which has timestamp).
+	var doc1, doc2 map[string]any
+	json.Unmarshal(data1, &doc1)
+	json.Unmarshal(data2, &doc2)
+	delete(doc1, "creationInfo")
+	delete(doc2, "creationInfo")
+	if !reflect.DeepEqual(doc1, doc2) {
+		t.Fatal("SPDX output (sans creationInfo) is not deterministic")
+	}
+	// Verify creationInfo has valid timestamps.
+	for _, d := range [][]byte{data1, data2} {
+		var doc map[string]any
+		json.Unmarshal(d, &doc)
+		ci, ok := doc["creationInfo"].(map[string]any)
+		if !ok {
+			t.Fatal("missing creationInfo")
+		}
+		created, ok := ci["created"].(string)
+		if !ok {
+			t.Fatal("missing created timestamp")
+		}
+		if _, err := time.Parse(time.RFC3339, created); err != nil {
+			t.Errorf("invalid created timestamp %q: %v", created, err)
+		}
 	}
 }
+

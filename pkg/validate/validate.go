@@ -132,7 +132,7 @@ func truncateStr(s string, n int) string {
 // ValidateSchema runs structural and semantic validation on a parsed schema.
 // It does NOT duplicate the method-kind checks already performed by
 // schema.Validate — callers should call both independently.
-func ValidateSchema(s *schema.Schema, knownKinds []string) *Result {
+func ValidateSchema(s *schema.Schema) *Result {
 	r := &Result{}
 
 	// Structural checks.
