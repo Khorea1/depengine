@@ -136,8 +136,11 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 			fmt.Fprintf(os.Stderr, "  ⚠  cache write failed: %v\n", err)
 		}
 	} else {
-		// When coming from cache, the file is already in the cache at cachedPath.
-		// tmpFile is a copy; we need to keep tmpFile for extraction below.
+		// Cache invalidation: we removed the old entry and re-downloaded.
+		// Restock the cache with the freshly verified file.
+		if _, err := downloadcache.Store(resolvedURL, tmpFile); err != nil {
+			fmt.Fprintf(os.Stderr, "  ⚠  cache write failed: %v\n", err)
+		}
 	}
 
 	// Determine extract destination.

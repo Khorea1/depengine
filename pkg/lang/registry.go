@@ -11,7 +11,7 @@ var Configs = map[string]BaseConfig{
 	"cargo": {
 		KindName:    "cargo",
 		Binary:      "cargo",
-		CheckTmpl:   []string{"cargo", "install", "--list"},
+		CheckTmpl:   []string{"sh", "-c", "cargo install --list | grep -qF '^{pkg} '"},
 		InstallTmpl: []string{"cargo", "install", "{pkg}"},
 		RemoveTmpl:  []string{"cargo", "uninstall", "{pkg}"},
 	},
@@ -66,7 +66,7 @@ var Configs = map[string]BaseConfig{
 	"gem": {
 		KindName:    "gem",
 		Binary:      "gem",
-		CheckTmpl:   []string{"gem", "list", "{pkg}"},
+		CheckTmpl:   []string{"sh", "-c", "gem list '{pkg}' | grep -qF '{pkg}'"},
 		InstallTmpl: []string{"gem", "install", "{pkg}"},
 	},
 	"yarn": {

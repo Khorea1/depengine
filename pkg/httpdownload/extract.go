@@ -22,15 +22,15 @@ func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequ
 
 	switch ext {
 	case ".tar.gz", ".tgz":
-		return extractTar(ctx, src, dest, "xzf", rn)
+		return extractTar(ctx, src, dest, []string{"xzf"}, rn)
 	case ".tar.bz2":
-		return extractTar(ctx, src, dest, "xjf", rn)
+		return extractTar(ctx, src, dest, []string{"xjf"}, rn)
 	case ".tar.xz":
-		return extractTar(ctx, src, dest, "xJf", rn)
+		return extractTar(ctx, src, dest, []string{"xJf"}, rn)
 	case ".tar.zst":
-		return extractTar(ctx, src, dest, "--zstd -xf", rn)
+		return extractTar(ctx, src, dest, []string{"--zstd", "-xf"}, rn)
 	case ".tar":
-		return extractTar(ctx, src, dest, "xf", rn)
+		return extractTar(ctx, src, dest, []string{"xf"}, rn)
 	case ".zip":
 		return extractZip(ctx, src, dest, rn)
 	case ".deb":
@@ -41,8 +41,9 @@ func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequ
 	}
 }
 
-func extractTar(ctx context.Context, src, dest, flags string, rn run.Runner) error {
-	res := rn.Run(ctx, "tar", flags, src, "-C", dest)
+func extractTar(ctx context.Context, src, dest string, flags []string, rn run.Runner) error {
+	args := append(flags, src, "-C", dest)
+	res := rn.Run(ctx, "tar", args...)
 	if res.Err != nil {
 		return fmt.Errorf("tar: %w", res.Err)
 	}
@@ -65,20 +66,42 @@ func extractZip(ctx context.Context, src, dest string, rn run.Runner) error {
 }
 
 func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired bool) error {
-	cmd := []string{"dpkg", "-i", src}
-	if sudoRequired && os.Geteuid() != 0 {
-		cmd = append([]string{"sudo"}, cmd...)
+	runCmd := func(args ...string) run.Result {
+		if sudoRequired && os.Geteuid() != 0 {
+			args = append([]string{"sudo"}, args...)
+		}
+		return rn.Run(ctx, args[0], args[1:]...)
 	}
-	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil {
-		return fmt.Errorf("dpkg: %w", res.Err)
+
+	// Try dpkg -i directly.
+	res := runCmd("dpkg", "-i", src)
+	if res.Err == nil && res.ExitCode == 0 {
+		return nil
 	}
-	if res.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res.Stderr))
-		return fmt.Errorf("dpkg: exited %d: %s", res.ExitCode, stderr)
+
+	// dpkg -i may fail due to missing dependencies. Run apt-get install -f
+	// to fix them, then try dpkg -i again.
+	fixRes := runCmd("apt-get", "install", "-f", "-y")
+	if fixRes.Err != nil || fixRes.ExitCode != 0 {
+		stderr := strings.TrimSpace(string(fixRes.Stderr))
+		if res.Err != nil {
+			return fmt.Errorf("dpkg: %w (apt-get -f install also failed: %s)", res.Err, stderr)
+		}
+		return fmt.Errorf("dpkg: exited %d (apt-get -f install also failed: exit %d: %s)", res.ExitCode, fixRes.ExitCode, stderr)
+	}
+
+	// Retry dpkg -i after fixing deps.
+	res2 := runCmd("dpkg", "-i", src)
+	if res2.Err != nil {
+		return fmt.Errorf("dpkg (after apt-get -f install): %w", res2.Err)
+	}
+	if res2.ExitCode != 0 {
+		stderr := strings.TrimSpace(string(res2.Stderr))
+		return fmt.Errorf("dpkg (after apt-get -f install): exited %d: %s", res2.ExitCode, stderr)
 	}
 	return nil
 }
+
 
 func copyBinary(src, destDir string) error {
 	dest := filepath.Join(destDir, filepath.Base(src))

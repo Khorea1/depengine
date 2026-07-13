@@ -128,7 +128,7 @@ run_cmd_safe() {
     _rcs_pid=$!
     _rcs_elapsed=0
     while kill -0 "$_rcs_pid" 2>/dev/null; do
-        if [ "$_rcs_elapsed" -ge "$_rcs_timeout" ]; then
+        if [ "$_rcs_elapsed" -ge "$((_rcs_timeout * 10))" ]; then
             kill -TERM "$_rcs_pid" 2>/dev/null
             sleep 0.5
             kill -KILL "$_rcs_pid" 2>/dev/null

@@ -13,7 +13,7 @@ fi
 
 RELEASE_TAG=$1
 
-echo "# Release Notes for $RELEASE_TAG\n\n## Summary\n\nThis is the initial release of depengine (v0.2.0). This release includes:"
+printf "# Release Notes for %s\n\n## Summary\n\nThis is the initial release of depengine (v0.2.0). This release includes:\n" "$RELEASE_TAG"
 echo "- Cross-platform build and release automation."
 echo "- Bash, Zsh, and Fish shell autocompletion."
 echo "- Detailed man page and \`--help\` output."
@@ -22,4 +22,4 @@ echo "- Performance benchmarks."
 echo "- Cross-platform testing in Docker."
 echo "- Dotfiles integration."
 
-echo "\n## Details\n\n(Detailed changes will be populated based on git history in a real release process.)"
+printf "\n## Details\n\n(Detailed changes will be populated based on git history in a real release process.)\n"

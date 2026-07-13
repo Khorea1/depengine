@@ -5,7 +5,7 @@
 // Centralizing subprocess execution lets us inject timeouts, structured
 // logging, and a per-child DEPENGINE_TRACE_ID env in one place, and lets
 // tests substitute a fake Runner instead of touching the real process
-// table (see TODO §3.5 — "mock de exec.Command").
+// table.
 package run
 
 import (

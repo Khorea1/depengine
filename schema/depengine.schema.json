@@ -73,7 +73,7 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Profile tags for --profile filtering. Tools without tags are always included."
-        },
+        }
       },
       "additionalProperties": {
         "$ref": "#/definitions/methodValue"

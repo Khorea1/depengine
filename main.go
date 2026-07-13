@@ -70,7 +70,7 @@ func main() {
 	case "completion":
 		runCompletion(os.Args[2:])
 	default:
-		fmt.Fprintf(os.Stderr, "erro: comando desconhecido %q\n", os.Args[1])
+		fmt.Fprintf(os.Stderr, "error: unknown command %q\n", os.Args[1])
 		printUsage()
 		os.Exit(1)
 	}
@@ -435,7 +435,7 @@ func runWhy(args []string) {
 		return
 	}
 
-	fmt.Printf("Por que %s? (%d métodos)\n", toolName, len(tool.Methods))
+	fmt.Printf("Why %s? (%d methods)\n", toolName, len(tool.Methods))
 	for _, a := range attempts {
 		statusSymbol := "?"
 		switch a.Status {
@@ -1087,12 +1087,16 @@ func filterTools(tools map[string]*schema.Tool, only, skip, profile string) map[
 
 	// If --only was used, add transitive Requires closure so graph.Sort
 	// does not fail with "requires X, which is not in schema".
+	// skipSet is respected: skipped tools are never pulled back in.
 	if only != "" {
 		queue := []string{only}
 		visited := map[string]bool{only: true}
 		for len(queue) > 0 {
 			name := queue[0]
 			queue = queue[1:]
+			if skipSet[name] {
+				continue
+			}
 			if t, ok := tools[name]; ok {
 				filtered[name] = t
 				for _, req := range t.Requires {

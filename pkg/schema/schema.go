@@ -162,7 +162,13 @@ func extractDefaults(raw any) Defaults {
 	d := Defaults{
 		Manager:     "native",
 		AurHelper:   "paru",
-		MethodOrder: []string{"native", "cargo", "go", "pip", "pipx", "uv", "aur", "git", "http"},
+		MethodOrder: []string{
+			"native", "cargo", "go", "pip", "pipx", "uv",
+			"npm", "pnpm", "bun", "gem", "yarn",
+			"aur", "flatpak", "snap", "cask", "mas",
+			"sdkman", "conda", "asdf", "git", "http",
+			"vscode", "vscodium", "pacstall", "apm", "composer", "steamcmd",
+		},
 	}
 	if raw == nil {
 		return d

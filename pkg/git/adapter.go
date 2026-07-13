@@ -7,6 +7,8 @@ package git
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"depengine/pkg/exec"
@@ -71,10 +73,19 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.To
 		depth = d
 	}
 
-	// Determine clone directory.
-	cloneDir := fmt.Sprintf("/tmp/depengine-git-%s", tool.Name)
+	// Determine clone directory — use MkdirTemp for auto-cleanup.
+	var cloneDir string
 	if d, ok := mc.Config["extract_to"].(string); ok && d != "" {
 		cloneDir = d
+		if err := os.MkdirAll(cloneDir, 0o755); err != nil {
+			return fmt.Errorf("git: mkdir extract_to %s: %w", cloneDir, err)
+		}
+	} else {
+		cloneDir, err = os.MkdirTemp("", "depengine-git-"+tool.Name+"-*")
+		if err != nil {
+			return fmt.Errorf("git: temp dir: %w", err)
+		}
+		defer os.RemoveAll(cloneDir)
 	}
 
 	// Build clone args.
@@ -95,15 +106,10 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.To
 	}
 
 	// Run build step if configured.
-	// Security: buildCmd is intentionally passed raw to sh -c to support shell
-	// syntax (&&, ||, pipes, env vars). This is a trusted schema-authorized
-	// operation; hasDangerousMethod() already flags "build" config keys with a
-	// TOFU security warning unless --allow-arbitrary-code is set. The cloneDir
-	// is shell-quoted via %q to prevent directory-name injection.
-	// The %q format on cloneDir provides shell-safe quoting.
 	if buildCmd, ok := mc.Config["build"].(string); ok && buildCmd != "" {
-		// Run via shell to support shell syntax (&&, ||, env vars, etc.)
-		// and ensure execution in the clone directory (shell-quoted for safety).
+		// Security: buildCmd is passed raw to sh -c to support shell syntax.
+		// hasDangerousMethod() already flags "build" config keys with a TOFU
+		// security warning unless --allow-arbitrary-code is set.
 		fullCmd := fmt.Sprintf("cd %q && %s", cloneDir, buildCmd)
 		buildRes := rn.Run(ctx, "sh", "-c", fullCmd)
 		if buildRes.Err != nil {
@@ -112,6 +118,23 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.To
 		if buildRes.ExitCode != 0 {
 			stderr := strings.TrimSpace(string(buildRes.Stderr))
 			return fmt.Errorf("git: build exited %d: %s", buildRes.ExitCode, stderr)
+		}
+	}
+
+	// If extract_to is set, copy artifacts from clone dir to extract destination.
+	if extractTo, ok := mc.Config["extract_to"].(string); ok && extractTo != "" {
+		artifact, ok2 := mc.Config["artifact"].(string)
+		if !ok2 || artifact == "" {
+			artifact = "/"
+		}
+		src := filepath.Join(cloneDir, artifact)
+		if err := os.MkdirAll(extractTo, 0o755); err != nil {
+			return fmt.Errorf("git: mkdir %s: %w", extractTo, err)
+		}
+		cpCmd := fmt.Sprintf("cp -r %q/. %q", src, extractTo)
+		cpRes := rn.Run(ctx, "sh", "-c", cpCmd)
+		if cpRes.Err != nil || cpRes.ExitCode != 0 {
+			return fmt.Errorf("git: copy artifacts: %w", cpRes.Err)
 		}
 	}
 

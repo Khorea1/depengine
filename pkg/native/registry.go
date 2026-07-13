@@ -190,7 +190,7 @@ var managers = map[string]Manager{
 var managerNameToClan = map[string]string{
 	// Disambiguate managers with the same binary name across clans.
 	"apt":     "debian", // debian and mint both use "apt"; debian is the primary
-	"emerge":  "gentoo", // Manager.Name changed from "portage" to "emerge"
+	"emerge":  "gentoo", // gentoo package manager
 	"portage": "gentoo", // backward compat for schema entries using "portage"
 	"yum":     "fedora", // yum is a symlink to dnf on modern systems
 	"dnf5":   "fedora", // dnf5 is the new default in Fedora 41+
@@ -271,8 +271,7 @@ func ManagerNames() []string {
 
 // KnownClans returns every clan that maps to a functioning native manager (a
 // clan in clanToManagerKey whose key also exists in the managers map).
-// Used by schema validation to warn on unreachable `when.distro_family`
-// values (TODO §3.2).
+// Used by schema validation to warn on unreachable when.distro_family.
 func KnownClans() []string {
 	out := make([]string, 0, len(clanToManagerKey))
 	for clan := range clanToManagerKey {
