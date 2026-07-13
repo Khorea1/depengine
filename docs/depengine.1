@@ -16,6 +16,11 @@ order (native, cargo, go, pip, git, http, ...) until one succeeds,
 respecting per-distro conditions, inter-tool dependencies, and
 post-installation hooks. The binary is static with no runtime
 dependencies on the target machine.
+.PP
+Checksums resolved via \fB:auto\fR are pinned in \fBschema.lock\fR
+for reproducibility. Supported algorithms: SHA-256, SHA-512, SHA-1, MD5.
+GPG signature verification is supported via \fBsignature_url\fR
+and \fBsigning_key\fR.
 .SH COMMANDS
 .TP
 .B install " [flags]"
@@ -42,6 +47,7 @@ outdated tools.
 Removes a tool using the adapter that originally installed it. Use
 .B --all
 to remove every tracked tool.
+.TP
 .B forget " <tool>"
 Removes a tool from the state file without touching the system. Useful
 when a tool was removed manually or the state is out of sync.
@@ -64,6 +70,10 @@ added since that snapshot.
 .B sbom " [flags]"
 Exports the current depengine state as a Software Bill of Materials (SBOM)
 in CycloneDX 1.5 or SPDX 2.3 JSON format. Each installed tool becomes a
+component/package in the BOM. Use
+.B \-\-format spdx
+to switch to SPDX output. Useful for integration with vulnerability scanners
+such as grype or trivy.
 .TP
 .B update " [flags]"
 Updates all tools from locked schema versions (git refs, http URLs
@@ -265,8 +275,6 @@ source <(depengine completion bash)
 
 # Zsh
 source <(depengine completion zsh)
-script. O padrão é: primeiro procura na pasta \fBscripts/\fR junto ao
-binário, depois no \fBPATH\fR.
 .SS "Show dependency graph"
 .EX
 ./depengine graph

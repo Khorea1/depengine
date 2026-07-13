@@ -77,14 +77,17 @@ fasd = { git = { url = "https://github.com/clvv/fasd",        build = "PREFIX=$H
 
 # ------------------------------------------------------------------------
 # CASO 6 — Método "http": baixa um artefato pronto (deb, zip, binário...).
-# Campos:
-#   url      = link de download. Suporta placeholder {latest} (resolvido
-#              pelo motor para a versão mais recente do release).
-#   checksum = "sha256:auto" pede ao motor para calcular/validar sozinho;
-#              também aceita um hash fixo, ex "sha256:abcd123..."
-# ------------------------------------------------------------------------
+# O campo checksum aceita vários algoritmos e formatos:
+#   sha256:<hex>        → SHA-256 fixo (recomendado)
+#   sha256:auto         → resolução automática do hash
+#   md5:<hex>, sha1:<hex>, sha512:<hex> → outros algoritmos
+#   checksum_url        → URL explícita do arquivo de checksums
+#   checksum_file_format → "sha256sum" (padrão), "bsd", ou "raw"
+#   signature_url       → verificação GPG da assinatura do checksum
 fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb", checksum = "sha256:auto" } }
 
+# Exemplo com SHA-512 e checksum_url explícito:
+"tool-example" = { http = { url = "https://example.com/tool-{latest}.tar.gz", checksum = "sha512:auto", checksum_url = "https://example.com/SHA512SUMS" } }
 
 # ------------------------------------------------------------------------
 # CASO 7 — Dependência entre tools e override simultâneo de pacote.
@@ -144,5 +147,6 @@ postinstall = "fc-cache -fv"
 #   requires, postinstall
 #
 # Campos que SEMPRE ficam dentro do método:
-#   when, url, build, checksum, extract_to, pkg, git
+#   when, url, build, checksum, checksum_url, checksum_file_format,
+#   signature_url, signing_key, extract_to, pkg, git
 # ==============================================================================

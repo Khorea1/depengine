@@ -51,14 +51,14 @@ depengine graph                          # show dependency levels as text
 depengine undo                          # revert last install (undo)
 depengine undo --list                   # show available snapshots
 depengine undo --snapshot <path>        # revert to specific snapshot
-  depengine graph --format=mermaid         # render as Mermaid flowchart
-  depengine graph --profile=desktop         # filter by tag
-  depengine sbom                      # export CycloneDX SBOM
-  depengine sbom --format=spdx        # export SPDX SBOM
-  depengine diff                      # compare current state with another file
-  depengine diff --json               # JSON output
-  depengine diff state1.json state2.json # compare two files directly
-  depengine diff --other other.json   # compare current state with other.json
+depengine graph --format=mermaid         # render as Mermaid flowchart
+depengine graph --profile=desktop         # filter by tag
+depengine sbom                      # export CycloneDX SBOM
+depengine sbom --format=spdx        # export SPDX SBOM
+depengine diff                      # compare current state with another file
+depengine diff --json               # JSON output
+depengine diff state1.json state2.json # compare two files directly
+depengine diff --other other.json   # compare current state with other.json
 
 ```
 
@@ -184,7 +184,11 @@ These live inside each method block (`[tools.NAME.method]` or in their inline ta
 | `pkg` | most | Package name for this manager. Defaults to the tool name. |
 | `url` | `git`, `http` | Download/repo URL. |
 | `build` | `git` | Shell command executed in the cloned repo directory. |
-| `checksum` | `http` | SHA-256 checksum: `"sha256:<hex>"` fixed hash or `"sha256:auto"`. |
+| `checksum` | `http` | SHA-256 checksum: `"sha256:<hex>"`, `"md5:<hex>"`, `"sha1:<hex>"`, `"sha512:<hex>"`, or `"<algo>:auto"`. |
+| `checksum_url` | `http` | Explicit URL for the checksum file (overrides auto URL patterns when `checksum` is `:auto`). |
+| `checksum_file_format` | `http` | Format of the checksum file: `"sha256sum"` (default), `"bsd"` (BSD-style), or `"raw"` (file content is the hash). |
+| `signature_url` | `http` | URL to GPG detached signature (`.asc`/`.sig`) for verifying the checksum file. |
+| `signing_key` | `http` | GPG key URL or fingerprint for signature verification. |
 | `extract_to` | `http`, `git` | Destination directory for archive extraction. Default: `/usr/local/bin`. |
 | `git` | `cargo` | Sub-key: Git repo URL for `cargo` install instead of crates.io. |
 
@@ -536,22 +540,32 @@ fasd = { git = { url = "https://github.com/clvv/fasd", build = "PREFIX=$HOME/.lo
 ```
 
 ### http
-
-Downloads a ready-made artifact (deb, zip, binary), verifies checksum, and
-extracts.
-
 | Field | Required | Description |
 |-------|----------|-------------|
 | `url` | yes | Download URL. Supports `{latest}` (resolved via GitHub API). |
-| `checksum` | no | `"sha256:<hex>"` fixed hash or `"sha256:auto"`. |
+| `checksum` | no | `"sha256:<hex>"`, `"md5:<hex>"`, `"sha1:<hex>"`, `"sha512:<hex>"`, or `"<algo>:auto"`. |
+| `checksum_url` | no | Explicit URL for checksum file (overrides auto patterns). |
+| `checksum_file_format` | no | Format: `"sha256sum"`, `"bsd"`, or `"raw"`. Auto-detected when omitted. |
+| `signature_url` | no | GPG detached signature URL for checksum file verification. |
+| `signing_key` | no | GPG key URL or fingerprint. |
 | `extract_to` | no | Extraction destination. Default: `/usr/local/bin`. |
-
-```toml
-fastfetch = { http = {
-  url      = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb",
-  checksum = "sha256:auto"
-} }
-```
+|-------|----------|-------------|
+|```toml
+|# Fixed hash
+|fastfetch = { http = {
+|  url      = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb",
+|  checksum = "sha256:abcd1234..."
+|} }
+|
+|# Auto-resolve with explicit checksum URL and GPG verification
+|tool = { http = {
+|  url           = "https://example.com/tool-{latest}.tar.gz",
+|  checksum      = "sha256:auto",
+|  checksum_url  = "https://example.com/SHA256SUMS",
+|  signature_url = "https://example.com/SHA256SUMS.asc",
+|  signing_key   = "https://example.com/pubkey.asc"
+|} }
+|```
 
 Archive type is auto-detected from the URL extension: `.tar.gz`, `.tgz`,
 `.zip`, `.deb`, `.bin`, or bare binary.
@@ -621,24 +635,6 @@ nvim = { pacman = "neovim" }
 
 | Variable | Effect |
 |----------|--------|
-
-## depengine diff
-
-Compare two state files and show differences.
-
-```sh
-depengine diff                        # compare current state with --other file
-depengine diff --json                 # output as JSON
-depengine diff state1.json state2.json # compare two files directly
-depengine diff --other other.json     # compare current state with other.json
-```
-
-Flags:
-
-| Flag | Effect |
-|------|--------|
-| `--json` | Output differences as JSON |
-| `--other <path>` | Path to other state file (used when no arguments) |
 | `DEPENGINE_DETECT_SCRIPT` | Path to `detect_os.sh` (default: alongside binary in `scripts/`, then on `PATH`) |
 | `DEPENGINE_TRACE_ID` | Trace ID propagated to subprocesses for correlated logging |
 | `DEPENGINE_LOG_JSON` | Set to `1` for JSON logger output |
