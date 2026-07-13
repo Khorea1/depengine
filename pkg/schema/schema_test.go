@@ -209,8 +209,8 @@ organize = { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool"
 	if methods[0].Config["pkg"] != "organize" {
 		t.Fatalf("injected native pkg should be tool name, got %v", methods[0].Config["pkg"])
 	}
-	if methods[1].Kind != "pip" || methods[2].Kind != "pipx" || methods[3].Kind != "uv" {
-		t.Fatalf("expected kinds native/pip/pipx/uv, got %s/%s/%s/%s",
+	if methods[1].Kind != "pipx" || methods[2].Kind != "uv" || methods[3].Kind != "pip" {
+		t.Fatalf("expected kinds native/pipx/uv/pip, got %s/%s/%s/%s",
 			methods[0].Kind, methods[1].Kind, methods[2].Kind, methods[3].Kind)
 	}
 }

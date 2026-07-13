@@ -29,6 +29,13 @@ func DefinitionHash(tool *schema.Tool) string {
 	h.Write([]byte(tool.PostInstall))
 	h.Write([]byte{0})
 
+	// Include Tags.
+	for _, tag := range tool.Tags {
+		h.Write([]byte(tag))
+		h.Write([]byte{0})
+	}
+	h.Write([]byte{0})
+
 	// Collect all method entries, assigning an intra-kind ordinal so that
 	// duplicate kinds are distinguishable without making the hash depend
 	// on declaration order for non-duplicate entries.

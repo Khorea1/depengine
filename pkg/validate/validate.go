@@ -22,11 +22,14 @@ const (
 	ErrDanglingRef   ErrorCode = "E_DANGLING_REF"
 	ErrCycle         ErrorCode = "E_CYCLE"
 	ErrMalformedURL  ErrorCode = "E_MALFORMED_URL"
+	ErrInvalidValue    ErrorCode = "E_INVALID_VALUE"
+	ErrInvalidChecksum ErrorCode = "E_INVALID_CHECKSUM"
 
 	// Warnings (soft — schema may still work).
 	WarnUnknownPlaceholder  ErrorCode = "W_UNKNOWN_PLACEHOLDER"
 	WarnUnknownWhenKey      ErrorCode = "W_UNKNOWN_WHEN_KEY"
 	WarnUnknownDistroFamily ErrorCode = "W_UNKNOWN_DISTRO_FAMILY"
+	WarnAutoChecksum    ErrorCode = "W_AUTO_CHECKSUM"
 )
 
 // ValidationError represents a single validation finding.

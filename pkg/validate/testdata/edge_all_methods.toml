@@ -10,9 +10,9 @@ e_git = { git = { url = "https://github.com/user/repo.git", build = "make" } }
 f_git_nobuild = { git = { url = "https://github.com/user/repo2.git" } }
 
 g_http = { http = { url = "https://example.com/file.deb" } }
-h_http_checksum = { http = { url = "https://example.com/file.tar.gz", checksum = "sha256:abc123" } }
+h_http_checksum = { http = { url = "https://example.com/file.tar.gz", checksum = "sha256:6ca13d52ca70c883e0f0bb101e425a89e8624de51db2d2392593af6a84118090" } }
 i_http_extract = { http = { url = "https://example.com/archive.zip", extract_to = "/opt/app" } }
-j_http_full = { http = { url = "https://example.com/pkg.tar.xz", checksum = "sha256:def456", extract_to = "/usr/local" } }
+j_http_full = { http = { url = "https://example.com/pkg.tar.xz", checksum = "sha256:8f61ad5cfa0c471c8cbf810ea285cb1e5f9c2c5e5e5e4f58a3229667703e1587", extract_to = "/usr/local" } }
 
 k_pip = { pip = { pkg = "requests" } }
 l_pipx = { pipx = { pkg = "poetry" } }

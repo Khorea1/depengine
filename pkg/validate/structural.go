@@ -2,6 +2,7 @@ package validate
 
 import (
 	"fmt"
+	"strings"
 
 	"depengine/pkg/schema"
 )
@@ -20,6 +21,7 @@ import (
 var commonStringKeys = []string{
 	"pkg", "cask", "app", "source", "repo", "formula",
 	"package", "bin", "command", "extra_args",
+	"checksum_url", "checksum_file_format", "signature_url", "signing_key",
 }
 func validateRequiredFields(s *schema.Schema) *Result {
 	r := &Result{}
@@ -88,6 +90,67 @@ func validateRequiredFields(s *schema.Schema) *Result {
 						Field:   fieldPath(toolName, i, "checksum"),
 						Message: fmt.Sprintf("checksum must be a string, got %T", v),
 					})
+				}
+			}
+
+			// Validate checksum content for http methods.
+			if mc.Kind == "http" {
+				if v, ok := mc.Config["checksum"]; ok {
+					if s, isStr := v.(string); isStr && s != "" {
+						if strings.HasSuffix(s, ":auto") {
+							r.Add(ValidationError{
+								Code:    WarnAutoChecksum,
+								Field:   fieldPath(toolName, i, "checksum"),
+								Message: fmt.Sprintf("checksum %q uses :auto — TOFU (Trust On First Use) applies, hash is NOT verified", s),
+							})
+						} else {
+							matched := false
+							for _, algo := range []struct {
+								prefix string
+								length int
+							}{
+								{"sha256:", 64},
+								{"sha512:", 128},
+								{"sha1:", 40},
+								{"md5:", 32},
+							} {
+								if strings.HasPrefix(s, algo.prefix) {
+									hexPart := s[len(algo.prefix):]
+									if len(hexPart) != algo.length || !isHexString(hexPart) {
+										r.Add(ValidationError{
+											Code:    ErrInvalidChecksum,
+											Field:   fieldPath(toolName, i, "checksum"),
+											Message: fmt.Sprintf("checksum %q has invalid format: expected %d hex characters after %s", s, algo.length, algo.prefix),
+										})
+									}
+									matched = true
+									break
+								}
+							}
+							if !matched {
+								r.Add(ValidationError{
+									Code:    ErrInvalidValue,
+									Field:   fieldPath(toolName, i, "checksum"),
+									Message: fmt.Sprintf("checksum %q does not use a recognized prefix (sha256:, sha512:, sha1:, md5:)", s),
+								})
+							}
+						}
+					}
+				}
+
+				// Validate checksum_file_format if present.
+				if v, ok := mc.Config["checksum_file_format"]; ok {
+					if s, isStr := v.(string); isStr && s != "" {
+						switch s {
+						case "sha256sum", "bsd", "raw":
+						default:
+							r.Add(ValidationError{
+								Code:    ErrInvalidValue,
+								Field:   fieldPath(toolName, i, "checksum_file_format"),
+								Message: fmt.Sprintf("checksum_file_format must be one of \"sha256sum\", \"bsd\", or \"raw\", got %q", s),
+							})
+						}
+					}
 				}
 			}
 
@@ -194,4 +257,18 @@ func scanPlaceholders(s, field string, r *Result) {
 			})
 		}
 	}
+}
+
+// isHexString reports whether every byte in s is a valid hexadecimal digit.
+func isHexString(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
 }

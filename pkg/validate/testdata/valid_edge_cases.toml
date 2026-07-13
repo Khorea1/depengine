@@ -29,7 +29,7 @@ git = { url = "https://github.com/jesseduffield/lazygit.git", build = "go instal
 
 [tools.fastfetch.http]
 url = "https://github.com/fastfetch-cli/fastfetch/releases/download/2.0.0/fastfetch-linux-amd64.deb"
-checksum = "sha256:abc123def456"
+checksum = "sha256:e861b2eab679927cfa36fe256e9deb1969b0468ad0744d61064f9d188333aec6"
 extract_to = "/tmp/fastfetch"
 
 [tools.ripgrep]

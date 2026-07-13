@@ -611,7 +611,7 @@ func TestValidateRequiredFields_NestedStructs(t *testing.T) {
 				}),
 				mc("http", nil, map[string]any{
 					"url":        "https://example.com/file.tar.gz",
-					"checksum":   "sha256:abc123",
+					"checksum":   "sha256:6ca13d52ca70c883e0f0bb101e425a89e8624de51db2d2392593af6a84118090",
 					"extract_to": "/opt/app",
 				}),
 				mc("cargo", nil, map[string]any{
