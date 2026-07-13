@@ -278,6 +278,7 @@ func (ex *Executor) Execute(ctx context.Context, s *schema.Schema, clan string) 
 // tools installed by other schemas or earlier runs.
 func (ex *Executor) writeState(ctx context.Context, s *schema.Schema, report *ExecReport) {
 	if ex.schemaPath == "" {
+		ex.logWarn(ctx, "state not persisted: no schema path configured (install may not be trackable)")
 		return
 	}
 
