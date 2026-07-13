@@ -78,19 +78,11 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.To
 	}
 
 	// Determine clone directory — use MkdirTemp for auto-cleanup.
-	var cloneDir string
-	if d, ok := mc.Config["extract_to"].(string); ok && d != "" {
-		cloneDir = d
-		if err := os.MkdirAll(cloneDir, 0o755); err != nil {
-			return fmt.Errorf("git: mkdir extract_to %s: %w", cloneDir, err)
-		}
-	} else {
-		cloneDir, err = os.MkdirTemp("", "depengine-git-"+tool.Name+"-*")
-		if err != nil {
-			return fmt.Errorf("git: temp dir: %w", err)
-		}
-		defer os.RemoveAll(cloneDir)
+	cloneDir, err := os.MkdirTemp("", "depengine-git-"+tool.Name+"-*")
+	if err != nil {
+		return fmt.Errorf("git: temp dir: %w", err)
 	}
+	defer os.RemoveAll(cloneDir)
 
 	// Build clone args.
 	cloneArgs := []string{"clone", "--depth", depth}
