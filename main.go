@@ -160,7 +160,10 @@ func runInstall(args []string) {
 
 	// --- Lockfile ---
 	lockPath := lock.DefaultPath(*installSchema)
-	lk, _ := lock.Load(lockPath)
+	lk, err := lock.Load(lockPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: lockfile %q is corrupted, continuing without lock: %v\n", lockPath, err)
+	}
 	if *installFrozen && lk == nil {
 		lg.Error("--frozen-lockfile requires schema.lock — run 'depengine update' first")
 		os.Exit(2)
@@ -297,21 +300,12 @@ func runCheck(args []string) {
 	}
 	toolName := remain[0]
 
-	s, err := schema.ParseSchemaNoFacts(*checkSchema)
+	s, clan, _, err := loadSchema(*checkSchema)
 	if err != nil {
 		log.Default.Error("load schema", "error", err)
 		os.Exit(exitCodeForError(err))
 	}
 
-	// Validate schema — warn on non-fatal issues, error on broken tools.
-	if verr, warnings := schema.Validate(s, exec.RegisteredKinds()); verr != nil {
-		log.Default.Error("schema validation", "error", verr)
-		os.Exit(exitCodeForError(verr))
-	} else if len(warnings) > 0 {
-		for _, w := range warnings {
-			log.Default.Warn(w)
-		}
-	}
 
 	tool, ok := s.Tools[toolName]
 	if !ok {
@@ -320,8 +314,16 @@ func runCheck(args []string) {
 	}
 
 	for _, method := range tool.Methods {
+		if method.When != nil && len(method.When.DistroFamily) > 0 {
+			if !engine.MatchesDistroFamily(clan, method.When.DistroFamily) {
+				continue
+			}
+		}
 		adapter := exec.Lookup(method.Kind)
 		if adapter == nil {
+			continue
+		}
+		if !adapter.Available(context.Background(), run.OSExecRunner{}) {
 			continue
 		}
 		if adapter.Check(context.Background(), run.OSExecRunner{}, tool, method) {
@@ -394,10 +396,16 @@ func runWhy(args []string) {
 	}
 	toolName := remain[0]
 
-	s, clan, facts, err := loadSchema(*whySchema)
+	s, err := schema.ParseSchemaNoFacts(*whySchema)
 	if err != nil {
-		log.Default.Error("load schema", "error", err)
-		os.Exit(exitCodeForError(err))
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+	// Gather facts just for clan resolution (needed by ExplainTool for when conditions).
+	facts, factsErr := engine.GatherFacts(run.OSExecRunner{})
+	clan := ""
+	if factsErr == nil {
+		clan = engine.ResolveFamily(facts)
 	}
 	if helper := s.Defaults.AurHelper; helper != "" {
 		lang.ReconfigureAUR(helper)
@@ -417,7 +425,6 @@ func runWhy(args []string) {
 		log.Default.Error("tool not found in schema", "tool", toolName)
 		os.Exit(1)
 	}
-	_ = facts
 
 	ex := exec.New()
 	exec.WithRunner(run.OSExecRunner{})(ex)
@@ -483,6 +490,13 @@ func runStatus(args []string) {
 	if *statusSchema != "" {
 		schemaPath = *statusSchema
 	}
+	if schemaPath == "" {
+		if len(st.Tools) == 0 {
+			fmt.Fprintln(os.Stderr, "No tools in state (nothing installed yet). Use --schema to compare against a schema.")
+			return
+		}
+	}
+
 
 	// Load schema for comparison if available.
 	var s *schema.Schema
