@@ -82,3 +82,40 @@ func TestRegisteredKinds(t *testing.T) {
 		t.Fatalf("RegisteredKinds missing kinds: got %v", kinds)
 	}
 }
+
+func TestReplace(t *testing.T) {
+	saved := adapters
+	adapters = map[string]Adapter{}
+	defer func() { adapters = saved }()
+
+	original := &mockAdapter{kindValue: "repl"}
+	Register(original)
+
+	if got := Lookup("repl"); got == nil {
+		t.Fatal("Lookup returned nil after Register")
+	}
+
+	// Replace with a new adapter of the same kind (should not panic).
+	replacement := &mockAdapter{kindValue: "repl"}
+	Replace(replacement)
+
+	got := Lookup("repl")
+	if got == nil {
+		t.Fatal("Lookup returned nil after Replace")
+	}
+	// Register with the same kind would panic, proving Replace didn't panic.
+}
+
+func TestReplaceOnUnregisteredKind(t *testing.T) {
+	saved := adapters
+	adapters = map[string]Adapter{}
+	defer func() { adapters = saved }()
+
+	// Replace on a kind that was never registered should work (silent insert).
+	a := &mockAdapter{kindValue: "new-kind"}
+	Replace(a)
+
+	if got := Lookup("new-kind"); got == nil {
+		t.Fatal("Replace should insert when kind is not yet registered")
+	}
+}

@@ -204,6 +204,71 @@ func TestDefinitionHashSortOrderIndependent(t *testing.T) {
 	}
 }
 
+func TestDefinitionHashIncludesRequires(t *testing.T) {
+	base := &schema.Tool{
+		Name: "test",
+		Methods: []*schema.MethodCandidate{
+			{Kind: "native", Config: map[string]any{"pkg": "test"}},
+		},
+	}
+	withRequires := &schema.Tool{
+		Name: "test",
+		Requires: []string{"other-tool"},
+		Methods: []*schema.MethodCandidate{
+			{Kind: "native", Config: map[string]any{"pkg": "test"}},
+		},
+	}
+
+	h1 := DefinitionHash(base)
+	h2 := DefinitionHash(withRequires)
+	if h1 == h2 {
+		t.Fatal("DefinitionHash should differ when Requires is added")
+	}
+}
+
+func TestDefinitionHashIncludesPostInstall(t *testing.T) {
+	base := &schema.Tool{
+		Name: "test",
+		Methods: []*schema.MethodCandidate{
+			{Kind: "native", Config: map[string]any{"pkg": "test"}},
+		},
+	}
+	withPost := &schema.Tool{
+		Name: "test",
+		PostInstall: "fc-cache -fv",
+		Methods: []*schema.MethodCandidate{
+			{Kind: "native", Config: map[string]any{"pkg": "test"}},
+		},
+	}
+
+	h1 := DefinitionHash(base)
+	h2 := DefinitionHash(withPost)
+	if h1 == h2 {
+		t.Fatal("DefinitionHash should differ when PostInstall is added")
+	}
+}
+
+func TestDefinitionHashIncludesWhenCondition(t *testing.T) {
+	base := &schema.Tool{
+		Name: "test",
+		Methods: []*schema.MethodCandidate{
+			{Kind: "native", Config: map[string]any{"pkg": "test"}},
+		},
+	}
+	withWhen := &schema.Tool{
+		Name: "test",
+		Methods: []*schema.MethodCandidate{
+			{Kind: "native", Config: map[string]any{"pkg": "test"}, When: &schema.Condition{DistroFamily: []string{"arch"}}},
+		},
+	}
+
+	h1 := DefinitionHash(base)
+	h2 := DefinitionHash(withWhen)
+	if h1 == h2 {
+		t.Fatal("DefinitionHash should differ when When condition is added")
+	}
+}
+
 func TestLockAcquireAndRelease(t *testing.T) {
 	td := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", td)
@@ -290,5 +355,130 @@ func TestLoadSharedReadOnly(t *testing.T) {
 	st := ls.State()
 	if _, ok := st.Tools["test"]; !ok {
 		t.Fatal("LoadShared() did not load existing state")
+	}
+}
+
+func TestLoadFromCustomPath(t *testing.T) {
+	td := t.TempDir()
+	path := filepath.Join(td, "custom-state.json")
+
+	// Load from non-existent file returns empty state.
+	s, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom on missing file: %v", err)
+	}
+	if s.Version != 1 {
+		t.Fatalf("expected Version=1, got %d", s.Version)
+	}
+	if len(s.Tools) != 0 {
+		t.Fatalf("expected empty Tools, got %d entries", len(s.Tools))
+	}
+
+	// Write state via regular Save and load from custom path.
+	s.Tools["foo"] = ToolState{Method: "cargo", Config: map[string]any{"pkg": "foo"}}
+	if err := Save(s); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// LoadFrom should still read the default path (not the custom one).
+	s2, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom after save: %v", err)
+	}
+	// The state saved to DefaultPath, not LoadFrom's path.
+	if len(s2.Tools) != 0 {
+		t.Fatalf("LoadFrom should not see DefaultPath state: got %d entries", len(s2.Tools))
+	}
+
+	// Write to the custom path directly.
+	data := `{"version":1,"tools":{"bar":{"method":"native","config":{"pkg":"bar"}}}}`
+	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+		t.Fatal(err)
+	}
+	s3, err := LoadFrom(path)
+	if err != nil {
+		t.Fatalf("LoadFrom after write: %v", err)
+	}
+	if s3.Version != 1 {
+		t.Fatalf("expected Version=1, got %d", s3.Version)
+	}
+	ts, ok := s3.Tools["bar"]
+	if !ok {
+		t.Fatal("expected tool 'bar' in loaded state")
+	}
+	if ts.Method != "native" {
+		t.Fatalf("expected method 'native', got %q", ts.Method)
+	}
+}
+
+func TestLoadLockedExclusive(t *testing.T) {
+	td := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", td)
+
+	ls, err := LoadLocked()
+	if err != nil {
+		t.Fatalf("LoadLocked(): %v", err)
+	}
+
+	st := ls.State()
+	if st.Version != 1 {
+		t.Fatalf("expected Version=1, got %d", st.Version)
+	}
+
+	// Add a tool and save while locked.
+	st.Tools["test"] = ToolState{Method: "native"}
+	if err := ls.Save(); err != nil {
+		t.Fatalf("LockedState.Save(): %v", err)
+	}
+
+	if err := ls.Close(); err != nil {
+		t.Fatalf("LockedState.Close(): %v", err)
+	}
+
+	// Verify it was persisted.
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load(): %v", err)
+	}
+	if _, ok := loaded.Tools["test"]; !ok {
+		t.Fatal("tool 'test' not found after LoadLocked round-trip")
+	}
+}
+
+func TestSaveLocked(t *testing.T) {
+	td := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", td)
+
+	st := &State{
+		Version: 1,
+		Tools: map[string]ToolState{
+			"foo": {Method: "native"},
+		},
+	}
+
+	if err := SaveLocked(st); err != nil {
+		t.Fatalf("SaveLocked(): %v", err)
+	}
+
+	// Verify file exists at DefaultPath.
+	path := DefaultPath()
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Fatalf("state file not created at %s", path)
+	}
+
+	// Load it back via Load().
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load(): %v", err)
+	}
+	if loaded.Version != 1 {
+		t.Fatalf("Version: got %d, want 1", loaded.Version)
+	}
+	ts, ok := loaded.Tools["foo"]
+	if !ok {
+		t.Fatal("tool 'foo' not found after SaveLocked")
+	}
+	if ts.Method != "native" {
+		t.Fatalf("Method: got %q, want %q", ts.Method, "native")
 	}
 }

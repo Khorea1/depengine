@@ -2,8 +2,28 @@ package ghrelease
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"testing"
 )
+
+// redirectTripper is an http.RoundTripper that rewrites requests to a test
+// server while preserving the original URL path and headers. Used to mock
+// the GitHub API in tests without changing the production code path.
+type redirectTripper struct {
+	testURL string
+}
+
+func (r *redirectTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	u, err := url.Parse(r.testURL)
+	if err != nil {
+		return nil, err
+	}
+	req.URL.Scheme = u.Scheme
+	req.URL.Host = u.Host
+	return http.DefaultTransport.RoundTrip(req)
+}
 
 func TestResolveLatestNoPlaceholder(t *testing.T) {
 	url := "https://github.com/user/repo/releases/download/v1.0/file.tar.gz"
@@ -47,5 +67,53 @@ func TestIsGitHubURL(t *testing.T) {
 	}
 	if IsGitHubURL("https://gitlab.com/user/repo") {
 		t.Fatal("should not be GitHub URL")
+	}
+}
+
+func TestResolveLatestWithHTTPMock(t *testing.T) {
+	origClient := httpClient
+	t.Cleanup(func() { httpClient = origClient })
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"tag_name": "v1.2.3"}`))
+	}))
+	t.Cleanup(ts.Close)
+
+	httpClient = &http.Client{
+		Transport: &redirectTripper{testURL: ts.URL},
+	}
+
+	url := "https://github.com/mock-owner/mock-repo/releases/download/{latest}/file.tar.gz"
+	got, err := ResolveLatest(context.Background(), url)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := "https://github.com/mock-owner/mock-repo/releases/download/v1.2.3/file.tar.gz"
+	if got != expected {
+		t.Fatalf("ResolveLatest = %q, want %q", got, expected)
+	}
+}
+
+func TestLookupReleaseHTTPError(t *testing.T) {
+	origClient := httpClient
+	t.Cleanup(func() { httpClient = origClient })
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(ts.Close)
+
+	httpClient = &http.Client{
+		Transport: &redirectTripper{testURL: ts.URL},
+	}
+
+	url := "https://github.com/error-owner/error-repo/releases/download/{latest}/file.tar.gz"
+	_, err := ResolveLatest(context.Background(), url)
+	if err == nil {
+		t.Fatal("expected error from 500 response, got nil")
 	}
 }

@@ -3,11 +3,16 @@ package exec
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"depengine/pkg/run"
 	"depengine/pkg/schema"
+	"depengine/pkg/state"
 )
 
 type testMockAdapter struct {
@@ -35,6 +40,37 @@ func (m *testMockAdapter) Install(ctx context.Context, rn run.Runner, tool *sche
 		return m.installFunc(tool.Name)
 	}
 	return nil
+}
+
+// blockingMockAdapter is an adapter whose Install blocks until the context is
+// cancelled or a value is sent on block. Used to test timeout behavior.
+type blockingMockAdapter struct {
+	kindValue     string
+	availableFunc func() bool
+	checkFunc     func(string) bool
+	block         chan struct{}
+}
+
+func (m *blockingMockAdapter) Kind() string { return m.kindValue }
+func (m *blockingMockAdapter) Available(ctx context.Context, rn run.Runner) bool {
+	if m.availableFunc != nil {
+		return m.availableFunc()
+	}
+	return true
+}
+func (m *blockingMockAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
+	if m.checkFunc != nil {
+		return m.checkFunc(tool.Name)
+	}
+	return false
+}
+func (m *blockingMockAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+	select {
+	case <-m.block:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 type installError struct{ msg string }
@@ -625,7 +661,123 @@ func TestExecutorPreInstallFailure(t *testing.T) {
 	}
 }
 
+
+func TestHasDangerousMethod(t *testing.T) {
+	ex := &Executor{}
+	tool := &schema.Tool{Name: "test"}
+
+	// No methods → not dangerous.
+	if ex.hasDangerousMethod(tool) {
+		t.Error("tool with no methods should not be dangerous")
+	}
+
+	// Method with build config key → dangerous.
+	tool.Methods = []*schema.MethodCandidate{
+		{Config: map[string]any{"build": "make"}},
+	}
+	if !ex.hasDangerousMethod(tool) {
+		t.Error("tool with build config should be dangerous")
+	}
+
+	// Method with build_cmd → dangerous.
+	tool.Methods = []*schema.MethodCandidate{
+		{Config: map[string]any{"build_cmd": "ninja"}},
+	}
+	if !ex.hasDangerousMethod(tool) {
+		t.Error("tool with build_cmd should be dangerous")
+	}
+
+	// Method with build_command → dangerous.
+	tool.Methods = []*schema.MethodCandidate{
+		{Config: map[string]any{"build_command": "cmake --build"}},
+	}
+	if !ex.hasDangerousMethod(tool) {
+		t.Error("tool with build_command should be dangerous")
+	}
+
+	// Method with non-string build value → not dangerous.
+	tool.Methods = []*schema.MethodCandidate{
+		{Config: map[string]any{"build": true}},
+	}
+	if ex.hasDangerousMethod(tool) {
+		t.Error("tool with non-string build should not be dangerous")
+	}
+
+	// Method with empty string build value → not dangerous.
+	tool.Methods = []*schema.MethodCandidate{
+		{Config: map[string]any{"build": ""}},
+	}
+	if ex.hasDangerousMethod(tool) {
+		t.Error("tool with empty build should not be dangerous")
+	}
+
+	// AUR/Pacstall methods are NOT flagged (explicit user choice).
+	tool.Methods = []*schema.MethodCandidate{
+		{Kind: "aur", Config: map[string]any{"pkg": "foo"}},
+	}
+	if ex.hasDangerousMethod(tool) {
+		t.Error("AUR method should not be flagged as dangerous")
+	}
+}
+
+func TestHasDangerousPostInstall(t *testing.T) {
+	ex := &Executor{}
+	tool := &schema.Tool{Name: "test"}
+
+	if ex.hasDangerousPostInstall(tool) {
+		t.Error("tool without PostInstall should not be dangerous")
+	}
+
+	tool.PostInstall = "fc-cache -fv"
+	if !ex.hasDangerousPostInstall(tool) {
+		t.Error("tool with PostInstall should be dangerous")
+	}
+}
+
+func TestHasDangerousPreInstall(t *testing.T) {
+	ex := &Executor{}
+	tool := &schema.Tool{Name: "test"}
+
+	if ex.hasDangerousPreInstall(tool) {
+		t.Error("tool without PreInstall should not be dangerous")
+	}
+
+	tool.PreInstall = "apt update"
+	if !ex.hasDangerousPreInstall(tool) {
+		t.Error("tool with PreInstall should be dangerous")
+	}
+}
+
+func TestLookupAdapter(t *testing.T) {
+	// Save and restore global registry.
+	saved := adapters
+	adapters = map[string]Adapter{}
+	defer func() { adapters = saved }()
+
+	mock := &testMockAdapter{
+		kindValue:     "test-adapter",
+		availableFunc: func() bool { return true },
+	}
+	Register(mock)
+
+	ex := New()
+
+	// Look up a registered adapter.
+	got := ex.lookupAdapter("test-adapter")
+	if got == nil {
+		t.Fatal("lookupAdapter returned nil for registered adapter")
+	}
+	if got.Kind() != "test-adapter" {
+		t.Fatalf("lookupAdapter returned kind %q, want %q", got.Kind(), "test-adapter")
+	}
+
+	// Look up an unregistered kind returns nil.
+	if unreg := ex.lookupAdapter("nope"); unreg != nil {
+		t.Fatalf("lookupAdapter for unregistered kind should be nil, got %v", unreg)
+	}
+}
 func TestExecutorPreAndPostInstall(t *testing.T) {
+
 	mock := &testMockAdapter{
 		kindValue:     "native",
 		availableFunc: func() bool { return true },
@@ -667,5 +819,130 @@ func TestExecutorPreAndPostInstall(t *testing.T) {
 	last := fake.Calls[len(fake.Calls)-1]
 	if last.Name != "echo" || last.Args[0] != "post" {
 		t.Fatalf("expected last call 'echo post', got %v", last)
+	}
+}
+
+func TestWriteState(t *testing.T) {
+	// Use a temp dir so state locking/writing is isolated.
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", dir)
+
+	mock := &testMockAdapter{
+		kindValue:     "native",
+		availableFunc: func() bool { return true },
+		checkFunc:     func(string) bool { return false },
+		installFunc:   func(string) error { return nil },
+	}
+
+	fake := &run.FakeRunner{ExitCode: 0}
+	ex := New()
+	WithRunner(fake)(ex)
+	WithAdapters(mock)(ex)
+	WithSchemaInfo("/test/schema.yaml", time.Now())(ex)
+
+	s := mockSchema("tool1")
+	report, err := ex.Execute(context.Background(), s, "arch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Success != 1 {
+		t.Fatalf("expected 1 success, got %d", report.Success)
+	}
+
+	// Execute already calls writeState — verify the state file exists.
+	statePath := filepath.Join(dir, "depengine", "state.json")
+	if _, err := os.Stat(statePath); os.IsNotExist(err) {
+		t.Fatal("state file was not written by writeState")
+	}
+
+	// Verify the state content is well-formed.
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("failed to read state file: %v", err)
+	}
+	var st state.State
+	if err := json.Unmarshal(data, &st); err != nil {
+		t.Fatalf("failed to parse state file: %v", err)
+	}
+	if st.Version != 1 {
+		t.Errorf("expected state version 1, got %d", st.Version)
+	}
+	if st.SchemaPath != "/test/schema.yaml" {
+		t.Errorf("expected schema path /test/schema.yaml, got %s", st.SchemaPath)
+	}
+	ts, ok := st.Tools["tool1"]
+	if !ok {
+		t.Fatal("tool1 not found in state tools")
+	}
+	if ts.Method != "native" {
+		t.Errorf("expected method native, got %s", ts.Method)
+	}
+}
+
+func TestExplainTool(t *testing.T) {
+	ex := New()
+
+	tests := []struct {
+		status string
+		want   []string // substrings the output must contain
+	}{
+		{status: "installed", want: []string{"git", "✓", "installed"}},
+		{status: "already", want: []string{"git", "✓", "already"}},
+		{status: "skipped_when", want: []string{"git", "–", "skipped", "when"}},
+		{status: "skipped_unavailable", want: []string{"git", "–", "skipped", "no method"}},
+		{status: "would_install", want: []string{"git", "→", "would install"}},
+		{status: "failed", want: []string{"git", "✗", "failed"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.status, func(t *testing.T) {
+			out := ex.explainTool("git", tt.status)
+			for _, want := range tt.want {
+				if !strings.Contains(out, want) {
+					t.Errorf("explainTool(%q, %q) = %q, want substring %q", "git", tt.status, out, want)
+				}
+			}
+		})
+	}
+}
+
+func TestToolTimeout(t *testing.T) {
+	blocking := &blockingMockAdapter{
+		kindValue: "blocker",
+		block:     make(chan struct{}),
+	}
+	blocking.availableFunc = func() bool { return true }
+	blocking.checkFunc = func(string) bool { return false }
+
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithAdapters(blocking)(ex)
+	WithToolTimeout(10 * time.Millisecond)(ex)
+	WithMethodTimeout(5 * time.Millisecond)(ex)
+
+	s := &schema.Schema{
+		Defaults: schema.Defaults{Manager: "native", MethodOrder: []string{"blocker"}},
+		Tools: map[string]*schema.Tool{
+			"tool1": {
+				Name: "tool1",
+				Methods: []*schema.MethodCandidate{
+					{Kind: "blocker", Config: map[string]any{"pkg": "tool1"}},
+				},
+			},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), s, "arch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(report.Tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(report.Tools))
+	}
+	if report.Tools[0].Status != StatusFailed {
+		t.Fatalf("expected tool to fail due to timeout, got status %v", report.Tools[0].Status)
+	}
+	if report.Tools[0].Error == "" {
+		t.Fatal("expected non-empty error message on timeout")
 	}
 }

@@ -521,6 +521,28 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 	return result
 }
 
+// explainTool formats a tool's execution status for user-facing output.
+// The status parameter is a human-readable string: "installed", "already",
+// "skipped_when", "skipped_unavailable", "would_install", or "failed".
+func (ex *Executor) explainTool(toolName, status string) string {
+	switch status {
+	case "installed":
+		return fmt.Sprintf("  ✓ %s: installed\n", toolName)
+	case "already":
+		return fmt.Sprintf("  ✓ %s: already installed\n", toolName)
+	case "skipped_when":
+		return fmt.Sprintf("  – %s: skipped (when condition)\n", toolName)
+	case "skipped_unavailable":
+		return fmt.Sprintf("  – %s: skipped (no method available)\n", toolName)
+	case "would_install":
+		return fmt.Sprintf("  → %s: would install\n", toolName)
+	case "failed":
+		return fmt.Sprintf("  ✗ %s: failed\n", toolName)
+	default:
+		return fmt.Sprintf("  ? %s: %s\n", toolName, status)
+	}
+}
+
 // recordToolResult records a tool execution result into the report and emits
 // user-facing status output. It is safe for concurrent calls (report is
 // protected by a mutex).

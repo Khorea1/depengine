@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"depengine/pkg/run"
@@ -282,4 +283,163 @@ func TestNativeByManagerAdapterRemoveDelegates(t *testing.T) {
 	if err.Error() != "native(sh): no clan found for manager" {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+func TestNativeByManagerAdapterCheck(t *testing.T) {
+	t.Run("installed", func(t *testing.T) {
+		fr := &run.FakeRunner{ExitCode: 0}
+		a := &NativeByManagerAdapter{managerName: "apt"}
+		mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+		tool := &schema.Tool{Name: "git"}
+
+		got := a.Check(context.Background(), fr, tool, mc)
+		if !got {
+			t.Fatal("expected true for installed package")
+		}
+		if len(fr.Calls) != 1 {
+			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
+		}
+		if fr.Calls[0].Name != "dpkg" {
+			t.Fatalf("expected 'dpkg', got %q", fr.Calls[0].Name)
+		}
+		wantArgs := []string{"-s", "git"}
+		if len(fr.Calls[0].Args) != len(wantArgs) {
+			t.Fatalf("expected args %v, got %v", wantArgs, fr.Calls[0].Args)
+		}
+		for i, arg := range wantArgs {
+			if fr.Calls[0].Args[i] != arg {
+				t.Fatalf("arg %d: expected %q, got %q", i, arg, fr.Calls[0].Args[i])
+			}
+		}
+	})
+
+	t.Run("not installed", func(t *testing.T) {
+		fr := &run.FakeRunner{ExitCode: 1}
+		a := &NativeByManagerAdapter{managerName: "apt"}
+		mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+		tool := &schema.Tool{Name: "git"}
+
+		got := a.Check(context.Background(), fr, tool, mc)
+		if got {
+			t.Fatal("expected false for uninstalled package")
+		}
+		if len(fr.Calls) != 1 {
+			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
+		}
+	})
+
+	t.Run("empty pkg returns false", func(t *testing.T) {
+		fr := &run.FakeRunner{}
+		a := &NativeByManagerAdapter{managerName: "apt"}
+		mc := &schema.MethodCandidate{Config: map[string]any{}}
+		tool := &schema.Tool{Name: "git"}
+
+		got := a.Check(context.Background(), fr, tool, mc)
+		if got {
+			t.Fatal("expected false when pkg is empty")
+		}
+		if len(fr.Calls) != 0 {
+			t.Fatalf("expected 0 calls when pkg is empty, got %d", len(fr.Calls))
+		}
+	})
+
+	t.Run("unknown manager returns false", func(t *testing.T) {
+		fr := &run.FakeRunner{}
+		a := &NativeByManagerAdapter{managerName: "nonexistent"}
+		mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+		tool := &schema.Tool{Name: "git"}
+
+		got := a.Check(context.Background(), fr, tool, mc)
+		if got {
+			t.Fatal("expected false for unknown manager")
+		}
+		if len(fr.Calls) != 0 {
+			t.Fatalf("expected 0 calls, got %d", len(fr.Calls))
+		}
+	})
+}
+
+func TestNativeByManagerAdapterInstall(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		fr := &run.FakeRunner{ExitCode: 0}
+		a := &NativeByManagerAdapter{managerName: "apt"}
+		mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+		tool := &schema.Tool{Name: "git"}
+
+		err := a.Install(context.Background(), fr, tool, mc)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(fr.Calls) != 1 {
+			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
+		}
+		// apt uses clan "debian" which has Name "apt" and sudo=true.
+		// InstallCmd = ["apt-get", "install", "-y", "{pkg}"] → with sudo → ["sudo", "apt-get", "install", "-y", "git"]
+		// replaceManagerBinary sees managerName "apt" == nm.Name "apt", so no change.
+		if fr.Calls[0].Name != "sudo" {
+			t.Fatalf("expected 'sudo', got %q", fr.Calls[0].Name)
+		}
+		wantArgs := []string{"apt-get", "install", "-y", "git"}
+		if len(fr.Calls[0].Args) != len(wantArgs) {
+			t.Fatalf("expected args %v, got %v", wantArgs, fr.Calls[0].Args)
+		}
+		for i, arg := range wantArgs {
+			if fr.Calls[0].Args[i] != arg {
+				t.Fatalf("arg %d: expected %q, got %q", i, arg, fr.Calls[0].Args[i])
+			}
+		}
+	})
+
+	t.Run("runner error", func(t *testing.T) {
+		fr := &run.FakeRunner{Err: fmt.Errorf("test error")}
+		a := &NativeByManagerAdapter{managerName: "apt"}
+		mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+		tool := &schema.Tool{Name: "git"}
+
+		err := a.Install(context.Background(), fr, tool, mc)
+		if err == nil {
+			t.Fatal("expected error from runner failure")
+		}
+	})
+
+	t.Run("non-zero exit", func(t *testing.T) {
+		fr := &run.FakeRunner{ExitCode: 1, Stderr: "permission denied"}
+		a := &NativeByManagerAdapter{managerName: "apt"}
+		mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+		tool := &schema.Tool{Name: "git"}
+
+		err := a.Install(context.Background(), fr, tool, mc)
+		if err == nil {
+			t.Fatal("expected error for non-zero exit")
+		}
+	})
+
+	t.Run("empty pkg returns error", func(t *testing.T) {
+		fr := &run.FakeRunner{}
+		a := &NativeByManagerAdapter{managerName: "apt"}
+		mc := &schema.MethodCandidate{Config: map[string]any{}}
+		tool := &schema.Tool{Name: "git"}
+
+		err := a.Install(context.Background(), fr, tool, mc)
+		if err == nil {
+			t.Fatal("expected error when pkg is empty")
+		}
+		if len(fr.Calls) != 0 {
+			t.Fatalf("expected 0 calls when pkg is empty, got %d", len(fr.Calls))
+		}
+	})
+
+	t.Run("unknown manager returns error", func(t *testing.T) {
+		fr := &run.FakeRunner{}
+		a := &NativeByManagerAdapter{managerName: "nonexistent"}
+		mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+		tool := &schema.Tool{Name: "git"}
+
+		err := a.Install(context.Background(), fr, tool, mc)
+		if err == nil {
+			t.Fatal("expected error for unknown manager")
+		}
+		if len(fr.Calls) != 0 {
+			t.Fatalf("expected 0 calls, got %d", len(fr.Calls))
+		}
+	})
 }
