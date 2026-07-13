@@ -276,6 +276,9 @@ func runUpdate(args []string) {
 	if *updateVerbose {
 		for key, pin := range newLock.Tools {
 			fmt.Fprintf(os.Stderr, "  %s → %s\n", key, pin.Latest)
+			if pin.Checksum != "" {
+				fmt.Fprintf(os.Stderr, "    checksum: %s\n", pin.Checksum)
+			}
 		}
 	}
 
@@ -1364,7 +1367,7 @@ func runValidate(args []string) {
 		for _, w := range result.Warnings {
 			fmt.Fprintf(os.Stderr, "warning: %v\n", w)
 		}
-		if len(result.Errors) == 0 && len(result.Warnings) == 0 {
+		if len(result.Errors) == 0 {
 			fmt.Fprintf(os.Stderr, "✓ schema is valid\n")
 		}
 	}

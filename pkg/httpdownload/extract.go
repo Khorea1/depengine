@@ -22,17 +22,17 @@ func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequ
 
 	switch ext {
 	case ".tar.gz", ".tgz":
-		return extractTar(ctx, src, dest, []string{"xzf"}, rn)
+		return extractTar(ctx, src, dest, []string{"xzf"}, rn, sudoRequired)
 	case ".tar.bz2":
-		return extractTar(ctx, src, dest, []string{"xjf"}, rn)
+		return extractTar(ctx, src, dest, []string{"xjf"}, rn, sudoRequired)
 	case ".tar.xz":
-		return extractTar(ctx, src, dest, []string{"xJf"}, rn)
+		return extractTar(ctx, src, dest, []string{"xJf"}, rn, sudoRequired)
 	case ".tar.zst":
-		return extractTar(ctx, src, dest, []string{"--zstd", "-xf"}, rn)
+		return extractTar(ctx, src, dest, []string{"--zstd", "-xf"}, rn, sudoRequired)
 	case ".tar":
-		return extractTar(ctx, src, dest, []string{"xf"}, rn)
+		return extractTar(ctx, src, dest, []string{"xf"}, rn, sudoRequired)
 	case ".zip":
-		return extractZip(ctx, src, dest, rn)
+		return extractZip(ctx, src, dest, rn, sudoRequired)
 	case ".deb":
 		return installDeb(ctx, src, rn, sudoRequired)
 	default:
@@ -41,26 +41,47 @@ func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequ
 	}
 }
 
-func extractTar(ctx context.Context, src, dest string, flags []string, rn run.Runner) error {
+func extractTar(ctx context.Context, src, dest string, flags []string, rn run.Runner, sudoRequired bool) error {
 	args := append(flags, src, "-C", dest)
-	res := rn.Run(ctx, "tar", args...)
-	if res.Err != nil {
-		return fmt.Errorf("tar: %w", res.Err)
-	}
-	if res.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res.Stderr))
-		return fmt.Errorf("tar: exited %d: %s", res.ExitCode, stderr)
+	if sudoRequired && os.Geteuid() != 0 {
+		res := rn.Run(ctx, "sudo", append([]string{"tar"}, args...)...)
+		if res.Err != nil {
+			return fmt.Errorf("tar: %w", res.Err)
+		}
+		if res.ExitCode != 0 {
+			stderr := strings.TrimSpace(string(res.Stderr))
+			return fmt.Errorf("tar: exited %d: %s", res.ExitCode, stderr)
+		}
+	} else {
+		res := rn.Run(ctx, "tar", args...)
+		if res.Err != nil {
+			return fmt.Errorf("tar: %w", res.Err)
+		}
+		if res.ExitCode != 0 {
+			stderr := strings.TrimSpace(string(res.Stderr))
+			return fmt.Errorf("tar: exited %d: %s", res.ExitCode, stderr)
+		}
 	}
 	return nil
 }
 
-func extractZip(ctx context.Context, src, dest string, rn run.Runner) error {
-	res := rn.Run(ctx, "unzip", "-o", src, "-d", dest)
-	if res.Err != nil {
-		return fmt.Errorf("unzip: %w", res.Err)
-	}
-	if res.ExitCode != 0 {
-		return fmt.Errorf("unzip: exited %d", res.ExitCode)
+func extractZip(ctx context.Context, src, dest string, rn run.Runner, sudoRequired bool) error {
+	if sudoRequired && os.Geteuid() != 0 {
+		res := rn.Run(ctx, "sudo", "unzip", "-o", src, "-d", dest)
+		if res.Err != nil {
+			return fmt.Errorf("unzip: %w", res.Err)
+		}
+		if res.ExitCode != 0 {
+			return fmt.Errorf("unzip: exited %d", res.ExitCode)
+		}
+	} else {
+		res := rn.Run(ctx, "unzip", "-o", src, "-d", dest)
+		if res.Err != nil {
+			return fmt.Errorf("unzip: %w", res.Err)
+		}
+		if res.ExitCode != 0 {
+			return fmt.Errorf("unzip: exited %d", res.ExitCode)
+		}
 	}
 	return nil
 }

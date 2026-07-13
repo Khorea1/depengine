@@ -114,7 +114,7 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 
 	// Verify checksum if configured.
 	if checksum, ok := mc.Config["checksum"].(string); ok && checksum != "" {
-		if err := a.verifyChecksum(ctx, rn, tmpFile, urlRaw, checksum); err != nil {
+		if err := a.verifyChecksum(ctx, rn, tmpFile, urlRaw, checksum, mc.Config); err != nil {
 			// If we used a cached file and checksum fails, re-download fresh.
 			if fromCache {
 				fmt.Fprintf(os.Stderr, "  ⚠  cached copy failed checksum, re-downloading %s\n", tool.Name)
@@ -124,7 +124,7 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 					return fmt.Errorf("http: download %s (re-download): %w", tool.Name, err2)
 				}
 				// Retry checksum verification on fresh download.
-				if err2 := a.verifyChecksum(ctx, rn, tmpFile, urlRaw, checksum); err2 != nil {
+				if err2 := a.verifyChecksum(ctx, rn, tmpFile, urlRaw, checksum, mc.Config); err2 != nil {
 					return fmt.Errorf("http: checksum: %w", err2)
 				}
 			} else {
@@ -166,49 +166,175 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 	return nil
 }
 
-// verifyChecksum resolves checksum verification. When "sha256:auto" is used,
-// it downloads the companion .sha256 file (appending .sha256 to the URL),
-// parses it, and verifies the downloaded file's hash.
-func (a *HTTPAdapter) verifyChecksum(ctx context.Context, rn run.Runner, filePath, url, checksum string) error {
-	const autoPrefix = "sha256:auto"
-	if strings.HasPrefix(checksum, autoPrefix) {
-		// Warn about TOFU — the checksum is downloaded from the same server as the file.
-		fmt.Fprintf(os.Stderr, "  ⚠  sha256:auto: checksum is fetched from the same server as the download (TOFU). Consider pinning the explicit hash after first download.\n")
-		// Try to download the companion .sha256 file.
-		shaURL := url + ".sha256"
-		tmpDir, err := os.MkdirTemp("", "depengine-checksum-*")
-		if err != nil {
-			return fmt.Errorf("auto-checksum: temp dir: %w", err)
-		}
-		defer os.RemoveAll(tmpDir)
-		shaFile := tmpDir + "/checksum.sha256"
+// checksumConfig holds parsed checksum-related configuration.
+type checksumConfig struct {
+	algorithm string // "sha256", "md5", "sha1", "sha512"
+	url       string // explicit checksum URL from checksum_url config
+	format    string // "sha256sum", "bsd", or "raw" from checksum_file_format config
+}
 
-		dl := SelectDownloader(ctx, rn)
-		if err := dl.Download(ctx, shaURL, shaFile); err != nil {
-			return fmt.Errorf("sha256:auto: downloading %s: %w", shaURL, err)
-		}
-
-		f, err := os.Open(shaFile)
-		if err != nil {
-			return fmt.Errorf("sha256:auto: open: %w", err)
-		}
-		defer f.Close()
-
-		checksums, err := ParseChecksumFile(f)
-		if err != nil {
-			return fmt.Errorf("sha256:auto: parse: %w", err)
-		}
-
-		// Determine the expected filename from the downloaded file path.
-		wantName := filepath.Base(filePath)
-		expectedHash, ok := checksums[wantName]
-		if !ok {
-			return fmt.Errorf("sha256:auto: no checksum found for %q in %s", wantName, shaURL)
-		}
-
-		return VerifyChecksum(filePath, "sha256:"+expectedHash)
+// extractChecksumConfig extracts checksum-related config from a checksum string
+// and method config.
+func extractChecksumConfig(checksum string, config map[string]any) *checksumConfig {
+	_, algorithm, err := parseChecksumPrefix(checksum)
+	if err != nil {
+		return nil
 	}
+
+	cc := &checksumConfig{algorithm: algorithm}
+	if v, ok := config["checksum_url"].(string); ok {
+		cc.url = v
+	}
+	if v, ok := config["checksum_file_format"].(string); ok {
+		cc.format = v
+	}
+	return cc
+}
+
+// detectAlgorithmFromURL detects the checksum algorithm from a checksum URL
+// filename. Returns empty string if no algorithm can be determined.
+func detectAlgorithmFromURL(checksumURL string) string {
+	base := strings.ToUpper(filepath.Base(checksumURL))
+	switch {
+	case strings.Contains(base, "SHA256"):
+		return "sha256"
+	case strings.Contains(base, "SHA512"):
+		return "sha512"
+	case strings.Contains(base, "SHA1"):
+		return "sha1"
+	case strings.Contains(base, "MD5"):
+		return "md5"
+	}
+	return ""
+}
+
+// verifyChecksum resolves checksum verification. When the checksum string
+// ends with ":auto", it tries to resolve the hash from a companion checksum
+// file using config-driven URL and format options.
+func (a *HTTPAdapter) verifyChecksum(ctx context.Context, rn run.Runner, filePath, downloadURL, checksum string, config map[string]any) error {
+	// Handle :auto suffix — resolve checksum from a companion file.
+	if strings.HasSuffix(checksum, ":auto") {
+		cc := extractChecksumConfig(checksum, config)
+		if cc == nil {
+			return fmt.Errorf("http: checksum: invalid checksum format: %q", checksum)
+		}
+		return a.resolveAutoChecksum(ctx, rn, filePath, downloadURL, cc, config)
+	}
+
+	// Plain checksum — verify directly.
 	return VerifyChecksum(filePath, checksum)
+}
+
+// resolveAutoChecksum handles :auto checksum resolution by trying to fetch
+// a companion checksum file and extracting the expected hash.
+func (a *HTTPAdapter) resolveAutoChecksum(ctx context.Context, rn run.Runner, filePath, downloadURL string, cc *checksumConfig, config map[string]any) error {
+	fmt.Fprintf(os.Stderr, "  ⚠  %s:auto: checksum fetched from server (TOFU). Use checksum_url for a separate source, or pin the hash in schema.lock after verifying.\n", cc.algorithm)
+
+	parsedURL, err := url.Parse(downloadURL)
+	if err != nil {
+		return fmt.Errorf("%s:auto: invalid download URL %q: %w", cc.algorithm, downloadURL, err)
+	}
+	wantName := filepath.Base(parsedURL.Path)
+	if wantName == "" || wantName == "." || wantName == "/" {
+		return fmt.Errorf("%s:auto: cannot determine filename from URL %q", cc.algorithm, downloadURL)
+	}
+
+	// Build the list of checksum URLs to try.
+	var checksumURLs []string
+	if cc.url != "" {
+		checksumURLs = []string{cc.url}
+	} else {
+		// Try companion URL patterns.
+		dir := ""
+		if idx := strings.LastIndex(parsedURL.Path, "/"); idx >= 0 {
+			dir = parsedURL.Path[:idx]
+		}
+		baseURL := parsedURL.Scheme + "://" + parsedURL.Host
+		algoUpper := strings.ToUpper(cc.algorithm)
+		checksumURLs = []string{
+			downloadURL + "." + cc.algorithm,
+			baseURL + dir + "/" + algoUpper + "SUMS",
+			baseURL + dir + "/checksums.txt",
+		}
+	}
+
+	var lastErr error
+	for _, checksumURL := range checksumURLs {
+		resolvedHash, err := a.fetchChecksumFromURL(ctx, rn, checksumURL, wantName, cc, config)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		// Store resolved checksum in config so the lockfile mechanism
+		// can capture the pinned hash later.
+		if _, ok := config["_checksum_resolved"]; !ok {
+			config["_checksum_resolved"] = cc.algorithm + ":" + resolvedHash
+		}
+		return VerifyChecksum(filePath, cc.algorithm+":"+resolvedHash)
+	}
+	return fmt.Errorf("%s:auto: could not resolve checksum: %w", cc.algorithm, lastErr)
+}
+
+// fetchChecksumFromURL downloads a checksum file from the given URL and
+// extracts the hash for the wanted filename.
+func (a *HTTPAdapter) fetchChecksumFromURL(ctx context.Context, rn run.Runner, checksumURL, wantName string, cc *checksumConfig, config map[string]any) (string, error) {
+	tmpDir, err := os.MkdirTemp("", "depengine-checksum-*")
+	if err != nil {
+		return "", fmt.Errorf("temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	checksumFile := tmpDir + "/checksum"
+	dl := SelectDownloader(ctx, rn)
+	if err := dl.Download(ctx, checksumURL, checksumFile); err != nil {
+		return "", fmt.Errorf("downloading %s: %w", checksumURL, err)
+	}
+
+	// --- GPG signature verification of checksum file ---
+	if sigURL, ok := config["signature_url"].(string); ok && sigURL != "" {
+		signingKey, _ := config["signing_key"].(string)
+		sigFile := tmpDir + "/checksum.sig"
+		if err := dl.Download(ctx, sigURL, sigFile); err != nil {
+			return "", fmt.Errorf("downloading signature %s: %w", sigURL, err)
+		}
+		if err := GPGVerify(ctx, rn, checksumFile, sigFile, signingKey); err != nil {
+			return "", fmt.Errorf("gpg: %w", err)
+		}
+	}
+
+	// If format is "raw", the entire file content is the hash.
+	if cc.format == "raw" {
+		data, err := os.ReadFile(checksumFile)
+		if err != nil {
+			return "", fmt.Errorf("reading %s: %w", checksumURL, err)
+		}
+		return strings.TrimSpace(string(data)), nil
+	}
+
+	f, err := os.Open(checksumFile)
+	if err != nil {
+		return "", fmt.Errorf("open: %w", err)
+	}
+	defer f.Close()
+
+	var checksums map[string]string
+	switch cc.format {
+	case "bsd":
+		checksums, err = ParseChecksumFileBSDExtended(f)
+	case "sha256sum":
+		checksums, err = ParseChecksumFile(f)
+	default:
+		checksums, err = ParseChecksumFileAuto(f)
+	}
+	if err != nil {
+		return "", fmt.Errorf("parsing %s: %w", checksumURL, err)
+	}
+
+	hash, ok := checksums[wantName]
+	if !ok {
+		return "", fmt.Errorf("no checksum for %q in %s", wantName, checksumURL)
+	}
+	return hash, nil
 }
 
 // Ensure HTTPAdapter implements exec.Adapter.

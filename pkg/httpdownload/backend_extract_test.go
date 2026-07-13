@@ -75,7 +75,7 @@ func TestExtractTarViaRunner(t *testing.T) {
 	t.Parallel()
 	fr := &run.FakeRunner{ExitCode: 0}
 
-	if err := Extract(context.Background(), "/tmp/src.tar.gz", "/tmp/dest", ".tar.gz", fr, true); err != nil {
+	if err := Extract(context.Background(), "/tmp/src.tar.gz", "/tmp/dest", ".tar.gz", fr, false); err != nil {
 		t.Fatalf("unexpected Extract error: %v", err)
 	}
 	if len(fr.Calls) != 1 {
@@ -91,7 +91,7 @@ func TestExtractZipViaRunner(t *testing.T) {
 	t.Parallel()
 	fr := &run.FakeRunner{ExitCode: 0}
 
-	if err := Extract(context.Background(), "/tmp/src.zip", "/tmp/dest", ".zip", fr, true); err != nil {
+	if err := Extract(context.Background(), "/tmp/src.zip", "/tmp/dest", ".zip", fr, false); err != nil {
 		t.Fatalf("unexpected Extract error: %v", err)
 	}
 	if len(fr.Calls) != 1 {
@@ -122,7 +122,7 @@ func TestExtractArchiveTypes(t *testing.T) {
 			fr := &run.FakeRunner{ExitCode: 0}
 
 			src := "/tmp/src" + tt.ext
-			if err := Extract(context.Background(), src, "/tmp/dest", tt.ext, fr, true); err != nil {
+			if err := Extract(context.Background(), src, "/tmp/dest", tt.ext, fr, false); err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if len(fr.Calls) != 1 {
@@ -180,4 +180,3 @@ func TestExtractZipFailure(t *testing.T) {
 		t.Fatal("expected Extract error, got nil")
 	}
 }
-

@@ -35,11 +35,12 @@ type Lock struct {
 	Tools   map[string]ToolPin `toml:"tools"`
 }
 
-// ToolPin captures resolved values for one tool's {latest} placeholder.
-// The key in Lock.Tools is "<toolName>/<methodKind>" so that the same tool
-// with both git and http methods can pin each independently.
+// ToolPin captures resolved values for one tool's {latest} placeholder and/or
+// checksum. The key in Lock.Tools is "<toolName>/<methodKind>" so that the same
+// tool with both git and http methods can pin each independently.
 type ToolPin struct {
-	Latest string `toml:"latest,omitempty"`
+	Latest   string `toml:"latest,omitempty"`
+	Checksum string `toml:"checksum,omitempty"` // pinned concrete checksum (e.g. "sha256:abc123...")
 }
 
 // DefaultPath returns the default schema.lock path alongside schema.toml.
@@ -98,21 +99,30 @@ func ResolveAll(ctx context.Context, s *schema.Schema) (*Lock, error) {
 
 	for name, tool := range s.Tools {
 		for _, method := range tool.Methods {
-			if method.Kind != "git" && method.Kind != "http" {
-				continue
-			}
-			urlRaw, ok := method.Config["url"].(string)
-			if !ok || !strings.Contains(urlRaw, "{latest}") {
-				continue
-			}
-
-			resolved, err := ghrelease.ResolveLatest(ctx, urlRaw)
-			if err != nil {
-				return nil, fmt.Errorf("lock: resolve %s/%s: %w", name, method.Kind, err)
-			}
-
 			key := toolKey(name, method.Kind)
-			l.Tools[key] = ToolPin{Latest: resolved}
+			pin := ToolPin{}
+
+			// Resolve {latest} in URL fields (git and http methods only).
+			if method.Kind == "git" || method.Kind == "http" {
+				if urlRaw, ok := method.Config["url"].(string); ok && strings.Contains(urlRaw, "{latest}") {
+					resolved, err := ghrelease.ResolveLatest(ctx, urlRaw)
+					if err != nil {
+						return nil, fmt.Errorf("lock: resolve %s/%s: %w", name, method.Kind, err)
+					}
+					pin.Latest = resolved
+				}
+			}
+
+			// Capture concrete checksum (prefer adapter-resolved hash over manual pin).
+			if checksum, ok := method.Config["_checksum_resolved"].(string); ok && checksum != "" {
+				pin.Checksum = checksum
+			} else if checksum, ok := method.Config["checksum"].(string); ok && checksum != "" && !strings.HasSuffix(checksum, ":auto") {
+				pin.Checksum = checksum
+			}
+
+			if pin.Latest != "" || pin.Checksum != "" {
+				l.Tools[key] = pin
+			}
 		}
 	}
 
@@ -120,8 +130,10 @@ func ResolveAll(ctx context.Context, s *schema.Schema) (*Lock, error) {
 }
 
 // Apply substitutes pinned values from the lock into the schema's method
-// Config maps. When a method has a pin, its entire "url" field is replaced with
-// the pinned URL. Methods not present in the lock are left untouched.
+// Config maps. When a method has a pin with a Latest, its "url" field is
+// replaced with the pinned URL. When a pin has a Checksum, any "checksum"
+// field containing ":auto" is replaced with the concrete hash. Methods not
+// present in the lock are left untouched.
 func Apply(s *schema.Schema, l *Lock) {
 	if l == nil {
 		return
@@ -130,11 +142,22 @@ func Apply(s *schema.Schema, l *Lock) {
 		for _, method := range tool.Methods {
 			key := toolKey(name, method.Kind)
 			pin, ok := l.Tools[key]
-			if !ok || pin.Latest == "" {
+			if !ok {
 				continue
 			}
-			if _, ok := method.Config["url"]; ok {
-				method.Config["url"] = pin.Latest
+
+			// Substitute {latest} in URL.
+			if pin.Latest != "" {
+				if _, ok := method.Config["url"]; ok {
+					method.Config["url"] = pin.Latest
+				}
+			}
+
+			// Apply pinned checksum — replace :auto with concrete hash.
+			if pin.Checksum != "" {
+				if v, ok := method.Config["checksum"].(string); ok && strings.HasSuffix(v, ":auto") {
+					method.Config["checksum"] = pin.Checksum
+				}
 			}
 		}
 	}

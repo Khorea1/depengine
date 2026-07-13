@@ -34,6 +34,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 			"ctpv/git":    {Latest: "v1.0.0"},
 			"ff/http":     {Latest: "v2.1.0"},
 			"other/git":   {Latest: "v0.5.0"},
+			"tool/http":   {Latest: "v3.0.0", Checksum: "sha256:abc123"},
 		},
 	}
 
@@ -55,6 +56,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if got.Tools["ff/http"].Latest != "v2.1.0" {
 		t.Errorf("ff/http.Latest = %q, want v2.1.0", got.Tools["ff/http"].Latest)
 	}
+	if got.Tools["tool/http"].Checksum != "sha256:abc123" {
+		t.Errorf("tool/http.Checksum = %q, want sha256:abc123", got.Tools["tool/http"].Checksum)
+	}
 }
 
 func TestLoadMissingFileIsNil(t *testing.T) {
@@ -71,7 +75,7 @@ func TestLoadMissingFileIsNil(t *testing.T) {
 }
 
 func TestResolveAllNoLatest(t *testing.T) {
-	// Schema with no {latest} URLs — should return empty lock.
+	// Schema with no {latest} URLs — captures concrete checksums only.
 	s := &schema.Schema{
 		Tools: map[string]*schema.Tool{
 			"zsh": {
@@ -86,6 +90,18 @@ func TestResolveAllNoLatest(t *testing.T) {
 					{Kind: "git", Config: map[string]any{"url": "https://github.com/user/repo.git"}},
 				},
 			},
+			"tool-with-checksum": {
+				Name: "tool-with-checksum",
+				Methods: []*schema.MethodCandidate{
+					{
+						Kind: "http",
+						Config: map[string]any{
+							"url":      "https://example.com/tool.tar.gz",
+							"checksum": "sha256:def456",
+						},
+					},
+				},
+			},
 		},
 	}
 
@@ -96,8 +112,21 @@ func TestResolveAllNoLatest(t *testing.T) {
 	if l == nil || l.Version != 1 {
 		t.Fatalf("expected valid lock, got %+v", l)
 	}
-	if len(l.Tools) != 0 {
-		t.Errorf("expected 0 pinned tools, got %d", len(l.Tools))
+
+	// No {latest} URLs, but tool-with-checksum has a concrete checksum.
+	if got := len(l.Tools); got != 1 {
+		t.Errorf("expected 1 pinned tool (checksum), got %d", got)
+	}
+
+	pin, ok := l.Tools["tool-with-checksum/http"]
+	if !ok {
+		t.Fatal("expected tool-with-checksum/http to have a pin")
+	}
+	if pin.Checksum != "sha256:def456" {
+		t.Errorf("tool-with-checksum/http.Checksum = %q, want sha256:def456", pin.Checksum)
+	}
+	if pin.Latest != "" {
+		t.Errorf("expected no Latest, got %q", pin.Latest)
 	}
 }
 
@@ -110,7 +139,8 @@ func TestApplyPinsURLs(t *testing.T) {
 					{
 						Kind: "http",
 						Config: map[string]any{
-							"url": "https://github.com/user/fastfetch/releases/download/{latest}/ff.deb",
+							"url":      "https://github.com/user/fastfetch/releases/download/{latest}/ff.deb",
+							"checksum": "sha256:auto",
 						},
 					},
 				},
@@ -121,7 +151,7 @@ func TestApplyPinsURLs(t *testing.T) {
 	l := &Lock{
 		Version: 1,
 		Tools: map[string]ToolPin{
-			"ff/http": {Latest: "https://github.com/user/fastfetch/releases/download/v3.0.0/ff.deb"},
+			"ff/http": {Latest: "https://github.com/user/fastfetch/releases/download/v3.0.0/ff.deb", Checksum: "sha256:abc123"},
 		},
 	}
 
@@ -132,6 +162,11 @@ func TestApplyPinsURLs(t *testing.T) {
 	want := "https://github.com/user/fastfetch/releases/download/v3.0.0/ff.deb"
 	if got != want {
 		t.Fatalf("Apply URL = %q, want %q", got, want)
+	}
+	gotChecksum := mc.Config["checksum"].(string)
+	wantChecksum := "sha256:abc123"
+	if gotChecksum != wantChecksum {
+		t.Fatalf("Apply checksum = %q, want %q", gotChecksum, wantChecksum)
 	}
 }
 
@@ -164,6 +199,47 @@ func TestApplySkipsMethodsWithoutLockEntry(t *testing.T) {
 	}
 }
 
+func TestApplyChecksumOnlyPin(t *testing.T) {
+	// Lock has a checksum pin but no Latest — only checksum should be applied.
+	s := &schema.Schema{
+		Tools: map[string]*schema.Tool{
+			"tool": {
+				Name: "tool",
+				Methods: []*schema.MethodCandidate{
+					{
+						Kind: "http",
+						Config: map[string]any{
+							"url":      "https://example.com/tool.tar.gz",
+							"checksum": "sha256:auto",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	l := &Lock{
+		Version: 1,
+		Tools: map[string]ToolPin{
+			"tool/http": {Checksum: "sha256:f00bar"},
+		},
+	}
+
+	Apply(s, l)
+
+	mc := s.Tools["tool"].Methods[0]
+	// URL should be unchanged.
+	gotURL := mc.Config["url"].(string)
+	if gotURL != "https://example.com/tool.tar.gz" {
+		t.Fatalf("URL was modified: %q", gotURL)
+	}
+	// Checksum should be pinned.
+	gotChecksum := mc.Config["checksum"].(string)
+	if gotChecksum != "sha256:f00bar" {
+		t.Fatalf("Apply checksum = %q, want sha256:f00bar", gotChecksum)
+	}
+}
+
 func TestSaveLoadFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "subdir", "schema.lock")
@@ -185,6 +261,108 @@ func TestSaveLoadFile(t *testing.T) {
 	}
 	if !bytes.Contains(data, []byte("v1.0.0")) {
 		t.Errorf("TOML should contain pinned version, got:\n%s", data)
+	}
+}
+
+func TestResolveAllCapturesChecksumResolved(t *testing.T) {
+	s := &schema.Schema{
+		Tools: map[string]*schema.Tool{
+			"tool": {
+				Name: "tool",
+				Methods: []*schema.MethodCandidate{
+					{
+						Kind: "http",
+						Config: map[string]any{
+							"url":                 "https://example.com/tool.tar.gz",
+							"checksum":            "sha256:auto",
+							"_checksum_resolved":  "sha256:resolved123",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	l, err := ResolveAll(context.Background(), s)
+	if err != nil {
+		t.Fatalf("ResolveAll: %v", err)
+	}
+	if l == nil {
+		t.Fatal("expected non-nil lock")
+	}
+
+	pin, ok := l.Tools["tool/http"]
+	if !ok {
+		t.Fatal("expected tool/http to have a pin")
+	}
+	// Should prefer _checksum_resolved over checksum.
+	if pin.Checksum != "sha256:resolved123" {
+		t.Errorf("Checksum = %q, want sha256:resolved123", pin.Checksum)
+	}
+}
+
+func TestResolveAllSkipsAutoChecksum(t *testing.T) {
+	s := &schema.Schema{
+		Tools: map[string]*schema.Tool{
+			"tool": {
+				Name: "tool",
+				Methods: []*schema.MethodCandidate{
+					{
+						Kind: "http",
+						Config: map[string]any{
+							"url":      "https://example.com/tool.tar.gz",
+							"checksum": "sha256:auto",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	l, err := ResolveAll(context.Background(), s)
+	if err != nil {
+		t.Fatalf("ResolveAll: %v", err)
+	}
+
+	// :auto checksums should NOT be captured as pins.
+	if _, ok := l.Tools["tool/http"]; ok {
+		t.Error("tool/http should not have a pin when checksum is :auto")
+	}
+}
+
+func TestChecksumPinRoundTrip(t *testing.T) {
+	// Start with :auto checksum, apply a lock with concrete checksum,
+	// verify the schema now holds the concrete hash.
+	s := &schema.Schema{
+		Tools: map[string]*schema.Tool{
+			"tool": {
+				Name: "tool",
+				Methods: []*schema.MethodCandidate{
+					{
+						Kind: "http",
+						Config: map[string]any{
+							"url":      "https://example.com/tool.tar.gz",
+							"checksum": "sha256:auto",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	l := &Lock{
+		Version: 1,
+		Tools: map[string]ToolPin{
+			"tool/http": {Checksum: "sha256:pinned789"},
+		},
+	}
+
+	Apply(s, l)
+
+	mc := s.Tools["tool"].Methods[0]
+	got := mc.Config["checksum"].(string)
+	if got != "sha256:pinned789" {
+		t.Fatalf("checksum = %q, want sha256:pinned789", got)
 	}
 }
 
