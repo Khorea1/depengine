@@ -113,8 +113,8 @@ func TestSteamCMDCheckWithEmptyInstallDir(t *testing.T) {
 		}
 		fr := &run.FakeRunner{ExitCode: 0}
 		got := adapter.Check(context.Background(), fr, tool, mcWithDir)
-		if !got {
-			t.Fatal("Check should return true when dir exists (/tmp)")
+		if got {
+			t.Fatal("Check should return false (always checks for updates)")
 		}
 	})
 }

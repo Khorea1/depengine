@@ -28,16 +28,7 @@ func (a *SteamCMDAdapter) Available(ctx context.Context, rn run.Runner) bool {
 }
 
 func (a *SteamCMDAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
-	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
-	if len(pkg) == 0 {
-		return false
-	}
-	installDir := installDirFromConfig(mc, pkg[0])
-	if installDir == "" {
-		return false
-	}
-	_, err := os.Stat(installDir)
-	return err == nil
+	return false
 }
 
 func (a *SteamCMDAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
