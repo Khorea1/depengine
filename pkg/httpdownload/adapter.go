@@ -114,7 +114,7 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 
 	// Verify checksum if configured.
 	if checksum, ok := mc.Config["checksum"].(string); ok && checksum != "" {
-		if err := a.verifyChecksum(ctx, rn, tmpFile, urlRaw, checksum, mc.Config); err != nil {
+		if err := a.verifyChecksum(ctx, rn, tmpFile, resolvedURL, checksum, mc.Config); err != nil {
 			// If we used a cached file and checksum fails, re-download fresh.
 			if fromCache {
 				fmt.Fprintf(os.Stderr, "  ⚠  cached copy failed checksum, re-downloading %s\n", tool.Name)
@@ -124,7 +124,7 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 					return fmt.Errorf("http: download %s (re-download): %w", tool.Name, err2)
 				}
 				// Retry checksum verification on fresh download.
-				if err2 := a.verifyChecksum(ctx, rn, tmpFile, urlRaw, checksum, mc.Config); err2 != nil {
+				if err2 := a.verifyChecksum(ctx, rn, tmpFile, resolvedURL, checksum, mc.Config); err2 != nil {
 					return fmt.Errorf("http: checksum: %w", err2)
 				}
 			} else {
