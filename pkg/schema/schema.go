@@ -232,9 +232,9 @@ func normalizeTools(rawTools map[string]any, defaults Defaults) (map[string]*Too
 		if r, ok := valMap["requires"].([]any); ok {
 			tool.Requires = anySliceToStrings(r)
 		}
-		if pi, ok := valMap["preinstall"].(string); ok {
+		if pi, ok := valMap["pre_install"].(string); ok {
 			tool.PreInstall = pi
-		} else if pi, ok := valMap["pre_install"].(string); ok {
+		} else if pi, ok := valMap["preinstall"].(string); ok {
 			tool.PreInstall = pi
 		}
 		if pi, ok := valMap["post_install"].(string); ok {
@@ -310,7 +310,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	nativeOverrides := map[string]any{}
 	var nonNativeKeys []string
 
-	for _, k := range sortedKeys(valMap, "requires", "pre_install", "postinstall", "tags") {
+	for _, k := range sortedKeys(valMap, "requires", "pre_install", "post_install", "tags") {
 		if _, isStr := valMap[k].(string); isStr && native.IsNativeManagerName(k) {
 			nativeOverrides[k] = valMap[k]
 		} else {

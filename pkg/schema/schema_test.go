@@ -101,7 +101,7 @@ func TestParseSchemaExpandsPlaceholdersInPostinstallAndBuild(t *testing.T) {
 manager = "native"
 
 [tools.DepartureMono]
-postinstall = "echo installed on {os}/{arch} via {init_system}"
+post_install = "echo installed on {os}/{arch} via {init_system}"
 
   [tools.DepartureMono.git]
   url   = "https://github.com/x/{os}/{arch}.git"
