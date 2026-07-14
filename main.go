@@ -76,6 +76,51 @@ func main() {
 	}
 }
 
+
+// loadLockfile loads the lockfile, applies it to the schema, and returns it.
+// Returns nil if no lockfile exists or it's corrupted (logs a warning).
+// Exits with code 2 if --frozen-lockfile is set and no lock exists.
+func loadLockfile(schemaPath string, s *schema.Schema, frozen bool, lg *slog.Logger) *lock.Lock {
+	lockPath := lock.DefaultPath(schemaPath)
+	lk, err := lock.Load(lockPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: lockfile %q is corrupted, continuing without lock: %v\n", lockPath, err)
+	}
+	if frozen && lk == nil {
+		lg.Error("--frozen-lockfile requires schema.lock — run 'depengine update' first")
+		os.Exit(2)
+	}
+	if lk != nil {
+		lock.Apply(s, lk)
+	}
+	return lk
+}
+
+// saveLockfile resolves version pins, merges with any existing lock, and persists.
+func saveLockfile(ctx context.Context, s *schema.Schema, lockPath string, oldLock *lock.Lock, lg *slog.Logger, diagnose bool) {
+	newLock, err := lock.ResolveAll(ctx, s)
+	if err != nil {
+		lg.Warn("resolve lock", "error", err)
+		return
+	}
+	if newLock == nil {
+		return
+	}
+	if oldLock != nil {
+		for k, v := range oldLock.Tools {
+			if _, exists := newLock.Tools[k]; !exists {
+				newLock.Tools[k] = v
+			}
+		}
+	}
+	if err := lock.Save(lockPath, newLock); err != nil {
+		lg.Warn("save lock", "error", err)
+		return
+	}
+	if diagnose {
+		lg.Debug("lock saved", "path", lockPath, "pinned", len(newLock.Tools))
+	}
+}
 func runInstall(args []string) {
 	installCmd := flag.NewFlagSet("install", flag.ExitOnError)
 	installSchema := installCmd.String("schema", "schema.toml", "path to schema.toml")
@@ -158,23 +203,8 @@ func runInstall(args []string) {
 	}
 
 
-	// --- Lockfile ---
 	lockPath := lock.DefaultPath(*installSchema)
-	lk, err := lock.Load(lockPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: lockfile %q is corrupted, continuing without lock: %v\n", lockPath, err)
-	}
-	if *installFrozen && lk == nil {
-		lg.Error("--frozen-lockfile requires schema.lock — run 'depengine update' first")
-		os.Exit(2)
-	}
-	if lk != nil {
-		lock.Apply(s, lk)
-		if *installDiagnose {
-			lg.Debug("lock applied", "pinned", len(lk.Tools))
-		}
-	}
-	// --- end Lockfile ---
+	lk := loadLockfile(*installSchema, s, *installFrozen, lg)
 
 
 	s.Tools = filterTools(s.Tools, *installOnly, *installSkip, *installProfile)
@@ -208,24 +238,7 @@ func runInstall(args []string) {
 
 	// Save/update lock even on partial failure to pin resolved versions.
 	if !*installDryRun {
-		if newLock, err := lock.ResolveAll(ctx, s); err != nil {
-			lg.Warn("resolve lock", "error", err)
-		} else if newLock != nil {
-			// Merge with existing lock: keep existing pins for tools that
-			// weren't re-resolved (e.g. native-only tools that don't use {latest}).
-			if lk != nil {
-				for k, v := range lk.Tools {
-					if _, exists := newLock.Tools[k]; !exists {
-						newLock.Tools[k] = v
-					}
-				}
-			}
-			if err := lock.Save(lockPath, newLock); err != nil {
-				lg.Warn("save lock", "error", err)
-			} else if *installDiagnose {
-				lg.Debug("lock saved", "path", lockPath, "pinned", len(newLock.Tools))
-			}
-		}
+		saveLockfile(ctx, s, lockPath, lk, lg, *installDiagnose)
 	}
 
 	if report.Failed > 0 {
