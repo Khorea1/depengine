@@ -97,7 +97,7 @@ func (e *ParseSchemaError) Unwrap() error { return e.Err }
 func ParseSchema(path string, m map[string]string) (*Schema, error) {
 	rawBytes, err := os.ReadFile(path)
 	if err != nil {
-		return nil, &ParseSchemaError{Err: fmt.Errorf("lendo schema %s: %w", path, err)}
+		return nil, &ParseSchemaError{Err: fmt.Errorf("reading schema %s: %w", path, err)}
 	}
 
 	var raw map[string]any
@@ -109,7 +109,7 @@ func ParseSchema(path string, m map[string]string) (*Schema, error) {
 	// leaves are returned unchanged by ExpandAll, so booleans/ints survive.
 	raw = ExpandAll(raw, m).(map[string]any)
 
-	// Re-extract rawTools from expanded raw since ExpandAll creates a new map.
+	// Extract rawTools from expanded raw (ExpandAll returns a new map).
 	rawTools, _ := raw["tools"].(map[string]any)
 	if rawTools == nil {
 		rawTools = map[string]any{}
@@ -132,7 +132,7 @@ func ParseSchema(path string, m map[string]string) (*Schema, error) {
 func ParseSchemaNoFacts(path string) (*Schema, error) {
 	rawBytes, err := os.ReadFile(path)
 	if err != nil {
-		return nil, &ParseSchemaError{Err: fmt.Errorf("lendo schema %s: %w", path, err)}
+		return nil, &ParseSchemaError{Err: fmt.Errorf("reading schema %s: %w", path, err)}
 	}
 
 	var raw map[string]any
