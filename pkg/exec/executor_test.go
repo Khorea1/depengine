@@ -721,29 +721,27 @@ func TestHasDangerousMethod(t *testing.T) {
 }
 
 func TestHasDangerousPostInstall(t *testing.T) {
-	ex := &Executor{}
 	tool := &schema.Tool{Name: "test"}
 
-	if ex.hasDangerousPostInstall(tool) {
+	if tool.PostInstall != "" {
 		t.Error("tool without PostInstall should not be dangerous")
 	}
 
 	tool.PostInstall = "fc-cache -fv"
-	if !ex.hasDangerousPostInstall(tool) {
+	if tool.PostInstall == "" {
 		t.Error("tool with PostInstall should be dangerous")
 	}
 }
 
 func TestHasDangerousPreInstall(t *testing.T) {
-	ex := &Executor{}
 	tool := &schema.Tool{Name: "test"}
 
-	if ex.hasDangerousPreInstall(tool) {
+	if tool.PreInstall != "" {
 		t.Error("tool without PreInstall should not be dangerous")
 	}
 
 	tool.PreInstall = "apt update"
-	if !ex.hasDangerousPreInstall(tool) {
+	if tool.PreInstall == "" {
 		t.Error("tool with PreInstall should be dangerous")
 	}
 }

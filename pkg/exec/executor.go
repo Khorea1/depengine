@@ -339,12 +339,6 @@ func (ex *Executor) hasDangerousMethod(tool *schema.Tool) bool {
 	return false
 }
 
-func (ex *Executor) hasDangerousPostInstall(tool *schema.Tool) bool {
-	return tool.PostInstall != ""
-}
-func (ex *Executor) hasDangerousPreInstall(tool *schema.Tool) bool {
-	return tool.PreInstall != ""
-}
 func (ex *Executor) runPreinstall(ctx context.Context, tool *schema.Tool) error {
 	ex.outputf("    pre-install: %s\n", tool.PreInstall)
 	ex.logDebug(ctx, "preinstall", "tool", tool.Name, "cmd", tool.PreInstall)
@@ -377,18 +371,21 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 		result.Duration = time.Since(toolStart).String()
 		return result
 	}
-	// Security warning for tools with build script config keys (build, build_cmd, build_command).
-	if !ex.allowArbitraryCode && ex.hasDangerousMethod(tool) {
-		ex.outputf("  ⚠  %s: config includes build scripts that may execute arbitrary code. Use --allow-arbitrary-code to suppress this warning.\n", tool.Name)
-		ex.logWarn(ctx, "security", "tool", tool.Name, "warning", "tool has build scripts that may execute arbitrary code")
+	// Security warnings for tools with arbitrary code execution surfaces.
+	type dangerCheck struct {
+		has    func(*schema.Tool) bool
+		detail string
 	}
-	if !ex.allowArbitraryCode && ex.hasDangerousPostInstall(tool) {
-		ex.outputf("  ⚠  %s: has a post-install hook (arbitrary code execution). Use --allow-arbitrary-code to suppress this warning.\n", tool.Name)
-		ex.logWarn(ctx, "security", "tool", tool.Name, "warning", "tool has a post-install hook (arbitrary code execution)")
+	checks := []dangerCheck{
+		{ex.hasDangerousMethod, "config includes build scripts that may execute arbitrary code"},
+		{func(t *schema.Tool) bool { return t.PostInstall != "" }, "has a post-install hook (arbitrary code execution)"},
+		{func(t *schema.Tool) bool { return t.PreInstall != "" }, "has a pre-install hook (arbitrary code execution)"},
 	}
-	if !ex.allowArbitraryCode && ex.hasDangerousPreInstall(tool) {
-		ex.outputf("  ⚠  %s: has a pre-install hook (arbitrary code execution). Use --allow-arbitrary-code to suppress this warning.\n", tool.Name)
-		ex.logWarn(ctx, "security", "tool", tool.Name, "warning", "tool has a pre-install hook (arbitrary code execution)")
+	for _, c := range checks {
+		if !ex.allowArbitraryCode && c.has(tool) {
+			ex.outputf("  ⚠  %s: %s. Use --allow-arbitrary-code to suppress this warning.\n", tool.Name, c.detail)
+			ex.logWarn(ctx, "security", "tool", tool.Name, "warning", c.detail)
+		}
 	}
 
 	// toolTimeout wraps the entire tool execution across all method attempts.
