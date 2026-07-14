@@ -908,46 +908,17 @@ func runDiff(args []string) {
     var aState, bState *state.State
     var err error
 
-    // Determine which files to compare.
+    // Determine which files to compare and load state.
     switch diffCmd.NArg() {
     case 0:
-        // Compare current state with --other file.
         if *diffOther == "" {
             fmt.Fprintf(os.Stderr, "error: --other is required when no arguments are given\n")
             os.Exit(2)
         }
-        aPath = state.DefaultPath()
         bPath = *diffOther
-        ls, err := state.LoadShared()
-        if err != nil {
-            log.Default.Error("load current state", "error", err)
-            os.Exit(3)
-        }
-        defer ls.Close()
-        aState = ls.State()
-        bState, err = state.LoadFrom(bPath)
-        if err != nil {
-            log.Default.Error("load other state", "path", bPath, "error", err)
-            os.Exit(3)
-        }
     case 1:
-        // Compare current state with the given file.
-        aPath = state.DefaultPath()
         bPath = diffCmd.Arg(0)
-        ls, err := state.LoadShared()
-        if err != nil {
-            log.Default.Error("load current state", "error", err)
-            os.Exit(3)
-        }
-        defer ls.Close()
-        aState = ls.State()
-        bState, err = state.LoadFrom(bPath)
-        if err != nil {
-            log.Default.Error("load other state", "path", bPath, "error", err)
-            os.Exit(3)
-        }
     case 2:
-        // Compare the two given files directly.
         aPath = diffCmd.Arg(0)
         bPath = diffCmd.Arg(1)
         aState, err = state.LoadFrom(aPath)
@@ -963,6 +934,23 @@ func runDiff(args []string) {
     default:
         fmt.Fprintf(os.Stderr, "usage: depengine diff [--json] [--other <path>] [<file1> [<file2>]]\n")
         os.Exit(2)
+    }
+
+    // Cases 0 and 1: compare current state with bPath.
+    if diffCmd.NArg() != 2 {
+        aPath = state.DefaultPath()
+        ls, err := state.LoadShared()
+        if err != nil {
+            log.Default.Error("load current state", "error", err)
+            os.Exit(3)
+        }
+        defer ls.Close()
+        aState = ls.State()
+        bState, err = state.LoadFrom(bPath)
+        if err != nil {
+            log.Default.Error("load other state", "path", bPath, "error", err)
+            os.Exit(3)
+        }
     }
 
     // Compute the diff.
