@@ -371,6 +371,7 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 		result.Duration = time.Since(toolStart).String()
 		return result
 	}
+
 	// Security warnings for tools with arbitrary code execution surfaces.
 	type dangerCheck struct {
 		has    func(*schema.Tool) bool
@@ -411,14 +412,22 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 		result.PreinstallDone = true
 	}
 
-	for _, method := range methods {
+	ex.tryMethods(toolCtx, tool, &result, toolStart)
+	return result
+}
+
+// tryMethods iterates through all methods of a tool, trying each in order.
+// It modifies result in place — on success the result is terminal; on
+// exhaustion of all methods it falls through to the failover status.
+func (ex *Executor) tryMethods(toolCtx context.Context, tool *schema.Tool, result *ToolResult, toolStart time.Time) {
+	for _, method := range tool.Methods {
 		select {
 		case <-toolCtx.Done():
 			result.Status = StatusFailed
 			result.Error = fmt.Sprintf("tool timeout (%v) exceeded", ex.toolTimeout)
 			ex.logWarn(toolCtx, "tool", "tool", tool.Name, "status", "timeout", "duration", ex.toolTimeout)
 			result.Duration = time.Since(toolStart).String()
-			return result
+			return
 		default:
 		}
 
@@ -428,7 +437,7 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 			if !engine.MatchesDistroFamily(ex.clan, method.When.DistroFamily) {
 				attempt.Status = "skip_when"
 				result.Methods = append(result.Methods, attempt)
-				ex.logDebug(ctx, "tool", "tool", tool.Name, "method", method.Kind, "status", "skip_when", "requires", fmt.Sprintf("%v", method.When.DistroFamily))
+				ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "skip_when", "requires", fmt.Sprintf("%v", method.When.DistroFamily))
 				continue
 			}
 		}
@@ -438,25 +447,25 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 			attempt.Status = "skip_unavailable"
 			attempt.Error = fmt.Sprintf("no adapter for %q", method.Kind)
 			result.Methods = append(result.Methods, attempt)
-			ex.logDebug(ctx, "tool", "tool", tool.Name, "method", method.Kind, "status", "skip_no_adapter")
+			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "skip_no_adapter")
 			continue
 		}
 
-		if !adapter.Available(ctx, ex.rn) {
+		if !adapter.Available(toolCtx, ex.rn) {
 			attempt.Status = "skip_unavailable"
 			attempt.Error = fmt.Sprintf("adapter %q not available", method.Kind)
 			result.Methods = append(result.Methods, attempt)
-			ex.logDebug(ctx, "tool", "tool", tool.Name, "method", method.Kind, "status", "skip_unavailable")
+			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "skip_unavailable")
 			continue
 		}
 
-		if adapter.Check(ctx, ex.rn, tool, method) {
+		if adapter.Check(toolCtx, ex.rn, tool, method) {
 			result.Status = StatusAlready
 			result.Method = method.Kind
 			result.Config = method.Config
-			ex.logDebug(ctx, "tool", "tool", tool.Name, "method", method.Kind, "status", "already_installed")
+			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "already_installed")
 			result.Duration = time.Since(toolStart).String()
-			return result
+			return
 		}
 
 		if ex.dryRun {
@@ -464,12 +473,12 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 			result.Method = method.Kind
 			attempt.Status = "success"
 			result.Methods = append(result.Methods, attempt)
-			ex.logDebug(ctx, "tool", "tool", tool.Name, "method", method.Kind, "status", "would_install")
+			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "would_install")
 			result.Duration = time.Since(toolStart).String()
-			return result
+			return
 		}
 
-		ex.logDebug(ctx, "tool", "tool", tool.Name, "method", method.Kind, "status", "installing")
+		ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "installing")
 		runner := ex.rn
 		if lr, ok := runner.(*run.LoggingRunner); ok {
 			runner = lr.WithContext(run.Context{Tool: tool.Name, Method: method.Kind})
@@ -484,7 +493,7 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 			result.Status = StatusInstalled
 			result.Method = method.Kind
 			result.Config = method.Config
-			ex.logDebug(ctx, "tool", "tool", tool.Name, "method", method.Kind, "status", "installed")
+			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "installed")
 			if tool.PostInstall != "" {
 				// Postinstall gets a fresh timeout from the tool-level context,
 				// not the cancelled method context.
@@ -494,15 +503,16 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 				result.PostinstallDone = true
 			}
 			result.Duration = time.Since(toolStart).String()
-			return result
+			return
 		}
 
 		attempt.Status = "failed"
 		attempt.Error = err.Error()
 		result.Methods = append(result.Methods, attempt)
-		ex.logWarn(ctx, "tool", "tool", tool.Name, "method", method.Kind, "status", "failed", "error", err.Error())
+		ex.logWarn(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "failed", "error", err.Error())
 	}
 
+	// All methods exhausted — determine terminal status.
 	result.Status = StatusSkippedUnavailable
 	for _, m := range result.Methods {
 		if m.Status == "failed" {
@@ -516,7 +526,6 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 		result.Method = last.Kind
 	}
 	result.Duration = time.Since(toolStart).String()
-	return result
 }
 
 // explainTool formats a tool's execution status for user-facing output.
