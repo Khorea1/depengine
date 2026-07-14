@@ -1,0 +1,75 @@
+package main
+
+import (
+	"fmt"
+
+	"depengine/pkg/i18n"
+)
+
+func printUsage() {
+	locale := i18n.GetLocale()
+	switch locale {
+	case "en":
+		printUsageEN()
+	default:
+		printUsagePT()
+	}
+}
+
+func printUsagePT() {
+	fmt.Print(`depengine - Motor distro-agnóstico de instalação de dependências
+
+Uso:
+  depengine <comando> [flags]
+
+Comandos:
+  install   Instalar ferramentas do schema.toml
+  update    Resolver {latest} e travar versões no schema.lock
+  validate  Validar schema.toml e ambiente
+  check     Verificar se ferramentas já estão instaladas (alias para status --json)
+  status    Mostrar estado das ferramentas em relação ao schema
+  remove    Remover ferramentas do sistema
+  forget    Esquecer ferramentas do estado (sem desinstalar)
+  undo      Reverter instalação via snapshot
+  why       Explicar por que um método foi escolhido
+  graph     Mostrar grafo de dependências
+  sbom      Exportar SBOM (CycloneDX ou SPDX)
+  diff      Comparar estado entre máquinas
+  completion Gerar script de autocomplete
+
+Flags globais:
+  --version, -v   Mostrar versão
+  --help, -h      Mostrar ajuda
+
+Use "depengine <comando> --help" para flags específicas.
+`)
+}
+
+func printUsageEN() {
+	fmt.Print(`depengine — tool manager
+
+Usage:
+  depengine <command> [flags]
+
+Commands:
+  install   Install tools from schema.toml
+  update    Resolve {latest} and pin versions in schema.lock
+  validate  Validate schema.toml and environment
+  check     Check if tools are already installed (alias for status --json)
+  status    Show tool status vs schema
+  remove    Remove tools from the system
+  forget    Forget tools from state (without uninstalling)
+  undo      Revert installation via snapshot
+  why       Explain why a method was selected
+  graph     Show dependency graph
+  sbom      Export SBOM (CycloneDX or SPDX)
+  diff      Compare state between machines
+  completion Generate autocomplete script
+
+Global flags:
+  --version, -v   Show version
+  --help, -h      Show help
+
+Use "depengine <command> --help" for command-specific flags.
+`)
+}
