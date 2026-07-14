@@ -318,28 +318,16 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 		}
 	}
 
-	if len(nativeOverrides) > 0 {
+	// Always inject a native method when there are any relevant keys.
+	// With overrides if native manager names are present, plain otherwise.
+	if len(nativeOverrides) > 0 || len(nonNativeKeys) > 0 {
+		cfg := map[string]any{"pkg": name}
+		if len(nativeOverrides) > 0 {
+			cfg["pkg_overrides"] = nativeOverrides
+		}
 		methods = append(methods, &MethodCandidate{
-			Kind: "native",
-			Config: map[string]any{
-				"pkg":           name,
-				"pkg_overrides": nativeOverrides,
-			},
-		})
-	}
-
-	// When a tool declares non-native methods (go, cargo, pip, etc.) without
-	// any native manager overrides, inject a native method using the tool
-	// name as the default package name. This respects method_order (where
-	// "native" comes first) even when the schema only specifies language
-	// installers. If the tool isn't in the native repo, the check command
-	// fails and execution falls through to the declared methods.
-	if len(nativeOverrides) == 0 && len(nonNativeKeys) > 0 {
-		methods = append(methods, &MethodCandidate{
-			Kind: "native",
-			Config: map[string]any{
-				"pkg": name,
-			},
+			Kind:   "native",
+			Config: cfg,
 		})
 	}
 
