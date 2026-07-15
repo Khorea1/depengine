@@ -138,5 +138,5 @@ func CopyFile(src, dst string) error {
 	if _, err := io.Copy(d, s); err != nil {
 		return fmt.Errorf("copy: %w", err)
 	}
-	return d.Close()
+	return nil
 }
