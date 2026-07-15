@@ -498,9 +498,10 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *schema.Tool, resul
 				// Postinstall gets a fresh timeout from the tool-level context,
 				// not the cancelled method context.
 				postCtx, postCancel := context.WithTimeout(toolCtx, ex.methodTimeout)
-				ex.runPostinstall(postCtx, tool)
+				if err := ex.runPostinstall(postCtx, tool); err == nil {
+					result.PostinstallDone = true
+				}
 				postCancel()
-				result.PostinstallDone = true
 			}
 			result.Duration = time.Since(toolStart).String()
 			return
@@ -684,23 +685,27 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *schema.Tool, clan str
 
 	return attempts
 }
-func (ex *Executor) runPostinstall(ctx context.Context, tool *schema.Tool) {
+func (ex *Executor) runPostinstall(ctx context.Context, tool *schema.Tool) error {
 	ex.outputf("    postinstall: %s\n", tool.PostInstall)
 	ex.logDebug(ctx, "postinstall", "tool", tool.Name, "cmd", tool.PostInstall)
 	parts := strings.Fields(tool.PostInstall)
 	if len(parts) == 0 {
-		return
+		return nil
 	}
 	res := ex.rn.Run(ctx, parts[0], parts[1:]...)
 	if res.Err != nil {
 		ex.outputf("    ⚠  postinstall: %s (continuing)\n", res.Err.Error())
 		ex.logWarn(ctx, "postinstall", "tool", tool.Name, "error", res.Err.Error())
-	} else if res.ExitCode != 0 {
+		return res.Err
+	}
+	if res.ExitCode != 0 {
+		err := fmt.Errorf("postinstall exited %d", res.ExitCode)
 		ex.outputf("    ⚠  postinstall: exit %d (continuing)\n", res.ExitCode)
 		ex.logWarn(ctx, "postinstall", "tool", tool.Name, "exit_code", res.ExitCode)
-	} else {
-		ex.logDebug(ctx, "postinstall", "tool", tool.Name, "status", "done")
+		return err
 	}
+	ex.logDebug(ctx, "postinstall", "tool", tool.Name, "status", "done")
+	return nil
 }
 
 // log emits a structured log entry at the given level, if a logger is set.
