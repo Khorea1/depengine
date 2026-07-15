@@ -178,6 +178,7 @@ Show what would be removed without executing.
 .SS "graph flags"
 .TP
 .BR \-\-schema " <path>"
+Caminho para o arquivo de schema. Padrão: \fBschema.toml\fR.
 .TP
 .BR \-\-format " <fmt>"
 Output format: \fBmermaid\fR, \fBdot\fR, or \fBtext\fR (default).
@@ -305,8 +306,9 @@ source <(depengine completion zsh)
 .B DEPENGINE_DETECT_SCRIPT
 Caminho para o script
 .B detect_os.sh
-. O padrão é: primeiro procura na pasta \fBscripts/\fR junto ao
+O padrão é: primeiro procura na pasta \fBscripts/\fR junto ao
 binário, depois no \fBPATH\fR.
+.TP
 .B DEPENGINE_TRACE_ID
 Trace ID propagated to subprocesses for correlated logging.
 .TP

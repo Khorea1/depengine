@@ -47,14 +47,13 @@ go build -o depengine .
 ./depengine status                         # lista o que está instalado
 ./depengine status nvim                     # status de uma tool específica
 ./depengine remove nvim                     # remove uma tool
-./depengine clean                           # limpa snapshots antigos
 
 # Resolver placeholders {latest} do schema
 ./depengine update                          # atualiza schema.lock
 
 # Exportar SBOM
-./depengine export --format cyclonedx       # CycloneDX 1.5 ou SPDX 2.3
-./depengine export --format spdx > bom.json
+./depengine sbom --format cyclonedx       # CycloneDX 1.5 ou SPDX 2.3
+./depengine sbom --format spdx > bom.json
 ```
 
 ---
@@ -176,7 +175,10 @@ Instala todas as tools do schema, respeitando `method_order`, `when`,
 | `--sort-by` | — | Ordena output: `name`, `status`, `method` |
 | `--log-level` | `info` | Nível de log: `debug`, `info`, `warn`, `error` |
 | `--diagnose` | `false` | Modo diagnóstico: DEBUG + dry-run + verbose |
-| `--profile` | — | Filtra tools por tag (ex: `desktop`, `server`) |
+| `--profile <tag>` | — | Filtra tools por tag (ex: `desktop`, `server`) |
+| `--jobs <n>` | `1` | Máximo de instalações simultâneas |
+| `--allow-arbitrary-code` | `false` | Suprime avisos de segurança para scripts de build |
+| `--frozen-lockfile` | `false` | Aborta se o lockfile não existir |
 
 ### `depengine validate [flags]`
 
@@ -200,6 +202,7 @@ Mostra o estado de instalação de todas as tools ou de uma específica.
 | Flag | Default | Descrição |
 |------|---------|-----------|
 | `--format` | `text` | Formato: `text` ou `json` |
+| `--orphans` | `false` | Mostra apenas tools instaladas que não estão no schema |
 
 ### `depengine remove <tool>`
 
@@ -214,8 +217,52 @@ Atualiza o schema.lock resolvendo placeholders `{latest}` via GitHub API.
 |------|---------|-----------|
 | `--schema` | `schema.toml` | Caminho para o schema |
 | `--lock` | `schema.lock` | Caminho para o lockfile |
+|
+### `depengine graph [flags]`
 
-### `depengine export [flags]`
+Mostra o grafo de dependência como texto, Mermaid ou DOT.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--format` | `text` | Formato: `text`, `mermaid` ou `dot` |
+| `--only <tool>` | — | Mostra apenas o subgrafo de uma tool específica |
+
+### `depengine why <tool>`
+
+Explica como uma tool seria instalada, método por método.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--json` | `false` | Saída em JSON |
+
+### `depengine forget <tool>`
+
+Remove uma tool do estado sem tocar no sistema.
+
+### `depengine undo [flags]`
+
+Reverte a última instalação.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--list` | `false` | Lista snapshots disponíveis |
+| `--snapshot <path>` | — | Reverte para um snapshot específico |
+
+### `depengine diff [flags]`
+
+Compara dois arquivos de estado.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--other <path>` | — | Segundo arquivo de estado (usado quando não há args) |
+
+### `depengine completion <shell>`
+
+Gera script de completação para o shell.
+Shells: `bash`, `zsh`, `fish`.
+
+
+### `depengine sbom [flags]`
 
 Exporta SBOM (Software Bill of Materials) no formato CycloneDX 1.5 ou SPDX 2.3.
 
@@ -223,10 +270,6 @@ Exporta SBOM (Software Bill of Materials) no formato CycloneDX 1.5 ou SPDX 2.3.
 |------|---------|-----------|
 | `--format` | `cyclonedx` | Formato: `cyclonedx` ou `spdx` |
 
-### `depengine clean [flags]`
-
-Remove snapshots antigos do estado, mantendo os 10 mais recentes
-(ou conforme política de retenção).
 
 ### Exit codes
 
@@ -243,9 +286,9 @@ Remove snapshots antigos do estado, mantendo os 10 mais recentes
 | Categoria | Métodos |
 |-----------|---------|
 | **Nativo** | `native` (auto-detecta apt/pacman/dnf/brew/...) + aliases por manager |
-| **Linguagem** | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
-| **Desktop** | `flatpak`, `snap`, `vscode`, `cask` (macOS), `mas` (Mac App Store) |
-| **Especializados** | `sdkman`, `steamcmd`, `pacstall`, `aur` (com helper configurável) |
+| **Linguagem** | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `pnpm`, `bun`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
+| **Desktop** | `flatpak`, `snap`, `vscode`, `vscodium`, `cask` (macOS), `mas` (Mac App Store) |
+| **Especializados** | `sdkman`, `steamcmd`, `pacstall`, `aur` (com helper configurável), `conda`, `asdf` |
 | **Outros** | `git` (clone + build), `http` (download + extração + checksum) |
 
 Managers nativos detectados automaticamente (15 distros, ~27 managers):
@@ -287,11 +330,11 @@ pkg/exec.Executor.Execute()
 | Pacote | Responsabilidade |
 |--------|------------------|
 | `pkg/run` | Interface `Runner` — seam único para subprocessos. Produção: `OSExecRunner`. Testes: `FakeRunner`. |
-| `pkg/engine` | Invoca `detect_os.sh`, faz parse do JSON → `Facts`, resolve clan via `ResolveFamily` (12 clans) |
+| `pkg/engine` | Invoca `detect_os.sh`, faz parse do JSON → `Facts`, resolve clan via `ResolveFamily` (15 clans) |
 | `pkg/native` | Registro declarativo de 15 distros. Manager lookup, build de comandos de instalação |
 | `pkg/schema` | Parser TOML (3 formas de declaração) + expansão de placeholders + validação de kinds |
 | `pkg/exec` | Executor central + interface `Adapter` + registro + sync manager + reports |
-| `pkg/lang` | 19 adapters de linguagem/ecossistema (BaseAdapter genérico + especializados) |
+| `pkg/lang` | 25 adapters de linguagem/ecossistema (BaseAdapter genérico + especializados) |
 | `pkg/git` | GitAdapter: clone shallow + build |
 | `pkg/httpdownload` | HTTPAdapter: download + extração + checksum SHA256 + resolução de `{latest}` |
 | `pkg/graph` | Ordenação topológica (Kahn) com detecção de ciclos |
