@@ -2,12 +2,14 @@ package run
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
 // FakeRunner records every call and returns canned output for assertions.
 // It is used across multiple packages' tests.
 type FakeRunner struct {
+	mu         sync.Mutex
 	Calls    []FakeCall
 	Stdout   string
 	Stderr   string
@@ -24,7 +26,9 @@ type FakeCall struct {
 }
 
 func (f *FakeRunner) Run(ctx context.Context, name string, args ...string) Result {
+	f.mu.Lock()
 	f.Calls = append(f.Calls, FakeCall{Name: name, Args: append([]string(nil), args...)})
+	f.mu.Unlock()
 
 	if f.Delay > 0 {
 		select {

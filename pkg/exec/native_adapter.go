@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"depengine/pkg/native"
 	"depengine/pkg/run"
@@ -17,9 +18,9 @@ import (
 // Sync is NOT handled here — the executor's SyncManager runs index
 // synchronization once per session before any tool is installed.
 type NativeAdapter struct {
-	clan string // detected on first Available() call
+	clan   string     // detected on first Available() call
+	once   sync.Once  // ensures detectClan runs exactly once
 }
-
 // NewNativeAdapter creates an adapter. Clan is detected automatically.
 func NewNativeAdapter(clan string) *NativeAdapter {
 	return &NativeAdapter{clan: clan}
@@ -29,20 +30,18 @@ func (a *NativeAdapter) Kind() string { return "native" }
 
 // detectClan probes known native managers to find one that exists in PATH.
 func (a *NativeAdapter) detectClan(ctx context.Context, rn run.Runner) string {
-	if a.clan != "" {
-		return a.clan
-	}
-	for _, clan := range native.KnownClans() {
-		mgr, ok := native.Lookup(clan)
-		if !ok {
-			continue
+	a.once.Do(func() {
+		for _, clan := range native.KnownClans() {
+			mgr, ok := native.Lookup(clan)
+			if !ok {
+				continue
+			}
+			if run.LookPath(ctx, rn, mgr.Name) {
+				a.clan = clan
+			}
 		}
-		if run.LookPath(ctx, rn, mgr.Name) {
-			a.clan = clan
-			return clan
-		}
-	}
-	return ""
+	})
+	return a.clan
 }
 
 // Available probes each known native manager binary until one is found.
