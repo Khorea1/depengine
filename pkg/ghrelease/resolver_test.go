@@ -71,9 +71,6 @@ func TestIsGitHubURL(t *testing.T) {
 }
 
 func TestResolveLatestWithHTTPMock(t *testing.T) {
-	origClient := httpClient
-	t.Cleanup(func() { httpClient = origClient })
-
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", r.Method)
@@ -83,9 +80,17 @@ func TestResolveLatestWithHTTPMock(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
+	httpClientMu.Lock()
+	origClient := httpClient
 	httpClient = &http.Client{
 		Transport: &redirectTripper{testURL: ts.URL},
 	}
+	httpClientMu.Unlock()
+	t.Cleanup(func() {
+		httpClientMu.Lock()
+		httpClient = origClient
+		httpClientMu.Unlock()
+	})
 
 	url := "https://github.com/mock-owner/mock-repo/releases/download/{latest}/file.tar.gz"
 	got, err := ResolveLatest(context.Background(), url)
@@ -99,17 +104,22 @@ func TestResolveLatestWithHTTPMock(t *testing.T) {
 }
 
 func TestLookupReleaseHTTPError(t *testing.T) {
-	origClient := httpClient
-	t.Cleanup(func() { httpClient = origClient })
-
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	t.Cleanup(ts.Close)
 
+	httpClientMu.Lock()
+	origClient := httpClient
 	httpClient = &http.Client{
 		Transport: &redirectTripper{testURL: ts.URL},
 	}
+	httpClientMu.Unlock()
+	t.Cleanup(func() {
+		httpClientMu.Lock()
+		httpClient = origClient
+		httpClientMu.Unlock()
+	})
 
 	url := "https://github.com/error-owner/error-repo/releases/download/{latest}/file.tar.gz"
 	_, err := ResolveLatest(context.Background(), url)

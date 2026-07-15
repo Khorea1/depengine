@@ -14,6 +14,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"os/exec"
 	"sync"
 	"time"
 )
@@ -24,7 +25,8 @@ var (
 	cache        = sync.Map{}
 
 	// httpClient is an HTTP client with a 30s timeout used for GitHub API calls.
-	httpClient = &http.Client{Timeout: 30 * time.Second}
+	httpClient   = &http.Client{Timeout: 30 * time.Second}
+	httpClientMu sync.RWMutex
 )
 
 // release represents a GitHub release API response.
@@ -72,11 +74,16 @@ func ResolveLatest(ctx context.Context, urlStr string) (string, error) {
 	req.Header.Set("User-Agent", "depengine/0.1")
 
 	// Add GitHub token if available to raise rate limit from 60 to 5000 req/h.
-	if token := githubToken(); token != "" {
+	if token := githubToken(ctx); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := func() (*http.Response, error) {
+		httpClientMu.RLock()
+		client := httpClient
+		httpClientMu.RUnlock()
+		return client.Do(req)
+	}()
 	if err != nil {
 		return urlStr, fmt.Errorf("resolve latest: http: %w", err)
 	}
@@ -100,11 +107,43 @@ func ResolveLatest(ctx context.Context, urlStr string) (string, error) {
 
 // githubToken returns a GitHub personal access token from environment.
 // Checks GITHUB_TOKEN first, then GH_TOKEN (common aliases used by gh CLI and CI).
-func githubToken() string {
+// Falls back to `gh auth token` if the GitHub CLI is authenticated.
+func githubToken(ctx context.Context) string {
 	if t := os.Getenv("GITHUB_TOKEN"); t != "" {
 		return t
 	}
-	return os.Getenv("GH_TOKEN")
+	if t := os.Getenv("GH_TOKEN"); t != "" {
+		return t
+	}
+	return ghCLIToken(ctx)
+}
+
+var (
+	ghTokenOnce  sync.Once
+	ghTokenValue string
+)
+
+// ghCLIToken runs `gh auth token` to retrieve the GitHub CLI's authenticated
+// token. The result is cached so the subprocess runs at most once per process
+// lifecycle.
+func ghCLIToken(ctx context.Context) string {
+	ghTokenOnce.Do(func() {
+		cmd := exec.CommandContext(ctx, "gh", "auth", "token")
+		out, err := cmd.Output()
+		if err != nil {
+			ghTokenValue = ""
+			return
+		}
+		ghTokenValue = strings.TrimSpace(string(out))
+	})
+	return ghTokenValue
+}
+
+// ResetGhTokenCache resets the cached gh CLI token result. Intended for
+// use in tests that manipulate the gh authentication state.
+func ResetGhTokenCache() {
+	ghTokenOnce = sync.Once{}
+	ghTokenValue = ""
 }
 
 // IsGitHubURL checks whether a URL points to a GitHub repository.
