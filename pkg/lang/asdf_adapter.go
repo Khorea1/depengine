@@ -63,13 +63,16 @@ func (a *AsdfAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 					}
 				}
 				if !found {
-					if res := rn.Run(ctx, cmd, "plugin-add", pkg[0]); res.Err != nil {
+					// plugin-add exit code 2 means "plugin already exists" — continue.
+					res := rn.Run(ctx, cmd, "plugin-add", pkg[0])
+					if res.Err != nil && res.ExitCode != 2 {
 						return fmt.Errorf("asdf: plugin-add failed for %s: %w", pkg[0], res.Err)
 					}
 				}
 			} else {
 				// `asdf plugin list` failed — try plugin-add directly.
-				if res := rn.Run(ctx, cmd, "plugin-add", pkg[0]); res.Err != nil {
+				res := rn.Run(ctx, cmd, "plugin-add", pkg[0])
+				if res.Err != nil && res.ExitCode != 2 {
 					return fmt.Errorf("asdf: plugin-add failed for %s: %w", pkg[0], res.Err)
 				}
 			}
