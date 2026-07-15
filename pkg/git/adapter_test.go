@@ -2,9 +2,12 @@ package git
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"depengine/pkg/exec"
 	"depengine/pkg/run"
 	"depengine/pkg/schema"
 )
@@ -224,19 +227,33 @@ func TestGitAdapterInstallResolvesLatestNonGitHub(t *testing.T) {
 		t.Fatalf("expected 'git clone', got %q %v", call.Name, call.Args)
 	}
 
-	// Find the URL in clone args and verify {latest} was resolved to "latest".
+	// Verify {latest} was resolved to the tag "latest" and passed as --branch.
+	var foundBranch bool
+	for i, arg := range call.Args {
+		if arg == "--branch" && i+1 < len(call.Args) {
+			if call.Args[i+1] != "latest" {
+				t.Fatalf("expected --branch 'latest', got %q", call.Args[i+1])
+			}
+			foundBranch = true
+		}
+	}
+	if !foundBranch {
+		t.Fatal("expected --branch argument in clone args")
+	}
+
+	// Verify the clone URL does not contain {latest}.
+	urlFound := false
 	for _, arg := range call.Args {
 		if strings.Contains(arg, "gitlab.com") {
 			if strings.Contains(arg, "{latest}") {
 				t.Fatalf("URL still contains unresolved {latest}: %q", arg)
 			}
-			if !strings.Contains(arg, "/latest/") {
-				t.Fatalf("URL should contain '/latest/', got: %q", arg)
-			}
-			return
+			urlFound = true
 		}
 	}
-	t.Fatal("no URL argument found in clone args")
+	if !urlFound {
+		t.Fatal("no URL argument found in clone args")
+	}
 }
 
 func TestGitAdapterInstallPreservesURLWithoutLatest(t *testing.T) {
@@ -268,5 +285,233 @@ func TestGitAdapterInstallPreservesURLWithoutLatest(t *testing.T) {
 	}
 	if !urlFound {
 		t.Fatalf("expected original URL in clone args, got %v", call.Args)
+	}
+}
+
+func TestGitAdapterCanRemove(t *testing.T) {
+	adapter := NewGitAdapter()
+	if !exec.CanRemove(adapter) {
+		t.Fatal("GitAdapter should implement Remover and CanRemove should return true")
+	}
+}
+
+func TestGitAdapterRemoveWithoutExtractTo(t *testing.T) {
+	fr := &run.FakeRunner{}
+	adapter := NewGitAdapter()
+	tool := &schema.Tool{Name: "mytool"}
+	mc := &schema.MethodCandidate{
+		Config: map[string]any{},
+	}
+
+	err := adapter.Remove(context.Background(), fr, tool, mc)
+	if err == nil {
+		t.Fatal("expected error removing without extract_to")
+	}
+	if !strings.Contains(err.Error(), "remove not supported without extract_to") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestGitAdapterRemoveSharedDirWithBinary(t *testing.T) {
+	fr := &run.FakeRunner{}
+	adapter := NewGitAdapter()
+	tool := &schema.Tool{Name: "mytool"}
+
+	// Setup temporary shared-like directory
+	tempDir := t.TempDir()
+	sharedDir := filepath.Join(tempDir, "bin")
+	if err := os.MkdirAll(sharedDir, 0o755); err != nil {
+		t.Fatalf("failed to create temp bin dir: %v", err)
+	}
+
+	binaryName := "mytool"
+	binaryPath := filepath.Join(sharedDir, binaryName)
+	if err := os.WriteFile(binaryPath, []byte("binary data"), 0o755); err != nil {
+		t.Fatalf("failed to write dummy binary: %v", err)
+	}
+
+	mc := &schema.MethodCandidate{
+		Config: map[string]any{
+			"extract_to": sharedDir,
+			"binary":     binaryName,
+		},
+	}
+
+	err := adapter.Remove(context.Background(), fr, tool, mc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The binary should be deleted
+	if _, err := os.Stat(binaryPath); !os.IsNotExist(err) {
+		t.Fatal("binary file should have been deleted")
+	}
+
+	// The shared directory should NOT be deleted
+	if _, err := os.Stat(sharedDir); os.IsNotExist(err) {
+		t.Fatal("shared directory itself should NOT have been deleted")
+	}
+}
+
+func TestGitAdapterRemoveSharedDirWithoutBinary(t *testing.T) {
+	fr := &run.FakeRunner{}
+	adapter := NewGitAdapter()
+	tool := &schema.Tool{Name: "mytool"}
+
+	tempDir := t.TempDir()
+	sharedDir := filepath.Join(tempDir, "bin")
+	if err := os.MkdirAll(sharedDir, 0o755); err != nil {
+		t.Fatalf("failed to create temp bin dir: %v", err)
+	}
+
+	mc := &schema.MethodCandidate{
+		Config: map[string]any{
+			"extract_to": sharedDir,
+		},
+	}
+
+	err := adapter.Remove(context.Background(), fr, tool, mc)
+	if err == nil {
+		t.Fatal("expected error removing shared dir without binary")
+	}
+	if !strings.Contains(err.Error(), "shared directory and binary is not configured") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestGitAdapterRemovePrivateDir(t *testing.T) {
+	fr := &run.FakeRunner{}
+	adapter := NewGitAdapter()
+	tool := &schema.Tool{Name: "mytool"}
+
+	tempDir := t.TempDir()
+	privateDir := filepath.Join(tempDir, "mytool-private-dir")
+	if err := os.MkdirAll(privateDir, 0o755); err != nil {
+		t.Fatalf("failed to create private dir: %v", err)
+	}
+
+	binaryPath := filepath.Join(privateDir, "mytool")
+	if err := os.WriteFile(binaryPath, []byte("data"), 0o755); err != nil {
+		t.Fatalf("failed to write dummy file: %v", err)
+	}
+
+	mc := &schema.MethodCandidate{
+		Config: map[string]any{
+			"extract_to": privateDir,
+		},
+	}
+
+	err := adapter.Remove(context.Background(), fr, tool, mc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The entire directory should be deleted
+	if _, err := os.Stat(privateDir); !os.IsNotExist(err) {
+		t.Fatal("private directory should have been deleted")
+	}
+}
+
+func TestIsSharedDir(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		// Root and current directory are always shared.
+		{"/", true},
+		{".", true},
+		// Common shared directories.
+		{"/bin", true},
+		{"/usr/bin", true},
+		{"/usr/local/bin", true},
+		{"/sbin", true},
+		{"/usr/sbin", true},
+		{"/usr/local/sbin", true},
+		{"/opt", true},
+		{"/usr", true},
+		{"/usr/local", true},
+		{"/lib", true},
+		{"/usr/lib", true},
+		{"/usr/local/lib", true},
+		// Windows shared directories.
+		{"C:\\Windows", true},
+		{"C:\\Program Files", true},
+		{"C:\\Program Files (x86)", true},
+		// Directories ending in /bin or /sbin.
+		{"/some/other/bin", true},
+		{"/custom/sbin", true},
+		{"/any/path/to/bin", true},
+		// Non-shared directories.
+		{"/home/user", false},
+		{"/tmp", false},
+		{"/var/lib", false},
+		{"/usr/local/foo", false},
+		// Cleaned versions should also match.
+		{"/../", true},              // Cleaned to "/"
+		{"/usr/../bin", true},       // Cleaned to "/bin"
+	}
+	for _, tt := range tests {
+		got := isSharedDir(tt.path)
+		if got != tt.want {
+			t.Errorf("isSharedDir(%q) = %v, want %v", tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestGitAdapterInstallResolvesLatestTagInBranch(t *testing.T) {
+	fr := &run.FakeRunner{ExitCode: 0}
+	adapter := NewGitAdapter()
+	tool := &schema.Tool{Name: "mytool"}
+	mc := &schema.MethodCandidate{
+		Config: map[string]any{
+			// GitHub-archive-style URL where {latest} is embedded in the path.
+			"url": "https://example.com/repo/archive/refs/tags/{latest}.tar.gz",
+		},
+	}
+
+	err := adapter.Install(context.Background(), fr, tool, mc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(fr.Calls) < 1 {
+		t.Fatal("expected at least 1 call to git")
+	}
+	call := fr.Calls[0]
+	if call.Name != "git" || call.Args[0] != "clone" {
+		t.Fatalf("expected 'git clone', got %q %v", call.Name, call.Args)
+	}
+
+	// Verify --branch contains just the tag, not the full URL.
+	var branchTag string
+	for i, arg := range call.Args {
+		if arg == "--branch" && i+1 < len(call.Args) {
+			branchTag = call.Args[i+1]
+			break
+		}
+	}
+	if branchTag == "" {
+		t.Fatal("expected --branch argument in clone args")
+	}
+	if strings.Contains(branchTag, "example.com") || strings.Contains(branchTag, "/") {
+		t.Fatalf("--branch should contain only the resolved tag, not a URL, got %q", branchTag)
+	}
+	if branchTag != "latest" {
+		t.Fatalf("expected --branch 'latest', got %q", branchTag)
+	}
+
+	// Verify the clone URL is the base URL without {latest}.
+	var cloneURL string
+	for _, arg := range call.Args {
+		if strings.Contains(arg, "example.com") {
+			cloneURL = arg
+			break
+		}
+	}
+	if cloneURL == "" {
+		t.Fatal("expected clone URL in args")
+	}
+	if strings.Contains(cloneURL, "{latest}") {
+		t.Fatalf("clone URL should not contain {latest}: %q", cloneURL)
 	}
 }
