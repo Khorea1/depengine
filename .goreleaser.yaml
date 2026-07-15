@@ -44,9 +44,9 @@ nfpms:
     files:
       scripts/detect_os.sh: /usr/lib/depengine/detect_os.sh
       docs/depengine.1: /usr/share/man/man1/depengine.1
-      completions/depengine.bash: /usr/share/bash-completion/completions/depengine
-      completions/depengine.zsh: /usr/share/zsh/site-functions/_depengine
-      completions/depengine.fish: /usr/share/fish/vendor_completions.d/depengine.fish
+      scripts/depengine-completion.bash: /usr/share/bash-completion/completions/depengine
+      scripts/depengine-completion.zsh: /usr/share/zsh/site-functions/_depengine
+      scripts/depengine-completion.fish: /usr/share/fish/vendor_completions.d/depengine.fish
 
 brews:
   - name: depengine
@@ -63,9 +63,9 @@ brews:
       bin.install "depengine"
       lib.install "scripts/detect_os.sh" => "depengine/detect_os.sh"
       man1.install "docs/depengine.1"
-      bash_completion.install "completions/depengine.bash"
-      zsh_completion.install "completions/depengine.zsh"
-      fish_completion.install "completions/depengine.fish"
+      bash_completion.install "scripts/depengine-completion.bash"
+      zsh_completion.install "scripts/depengine-completion.zsh"
+      fish_completion.install "scripts/depengine-completion.fish"
 
 wings:
   - id: depengine-wings
@@ -77,7 +77,7 @@ archives:
     files:
       - scripts/detect_os.sh
       - docs/depengine.1
-      - completions/*
+      - scripts/depengine-completion.*
       - README.md
       - LICENSE
 
