@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -99,10 +100,17 @@ func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired boo
 	if res.Err == nil && res.ExitCode == 0 {
 		return nil
 	}
-
 	// dpkg -i may fail due to missing dependencies. Run apt-get install -f
 	// to fix them, then try dpkg -i again.
-	fixRes := runCmd("apt-get", "install", "-f", "-y")
+	// Check which apt variant is available (apt-get preferred, apt fallback).
+	aptCmd := "apt-get"
+	if _, err := exec.LookPath("apt-get"); err != nil {
+		if _, err2 := exec.LookPath("apt"); err2 != nil {
+			return fmt.Errorf("neither apt-get nor apt found to fix dependencies")
+		}
+		aptCmd = "apt"
+	}
+	fixRes := runCmd(aptCmd, "install", "-f", "-y")
 	if fixRes.Err != nil || fixRes.ExitCode != 0 {
 		stderr := strings.TrimSpace(string(fixRes.Stderr))
 		if res.Err != nil {
