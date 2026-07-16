@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"depengine/pkg/run"
 )
@@ -23,7 +24,7 @@ type GoDownloader struct {
 
 // NewGoDownloader creates a downloader using Go's net/http.
 func NewGoDownloader() *GoDownloader {
-	return &GoDownloader{client: &http.Client{}}
+	return &GoDownloader{client: &http.Client{Timeout: 30 * time.Second}}
 }
 
 func (d *GoDownloader) Download(ctx context.Context, url, dest string) error {

@@ -14,11 +14,13 @@ import (
 // GPGVerify verifies a GPG detached signature on a checksum file.
 // Returns nil if verification succeeds or GPG is not available (with warning).
 // Returns error if signature verification fails.
+// GPGVerify verifies a GPG detached signature on a checksum file.
+// Returns nil if verification succeeds. Returns error if gpg is not
+// available or signature verification fails.
 func GPGVerify(ctx context.Context, rn run.Runner, checksumFile, signatureFile, signingKey string) error {
 	// Check if gpg is available on the system.
 	if _, err := exec.LookPath("gpg"); err != nil {
-		fmt.Fprintf(os.Stderr, "  ⚠  gpg not found, skipping signature verification\n")
-		return nil
+		return fmt.Errorf("gpg: not found in PATH, cannot verify signature")
 	}
 
 	// Import signing key if provided as a URL.
