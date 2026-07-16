@@ -23,7 +23,15 @@ func NewPacstallAdapter() *PacstallAdapter {
 func (a *PacstallAdapter) Kind() string { return "pacstall" }
 
 func (a *PacstallAdapter) Available(ctx context.Context, rn run.Runner) bool {
-	return run.LookPath(ctx, rn, "pacstall")
+	if !run.LookPath(ctx, rn, "pacstall") {
+		return false
+	}
+	// Install uses sudo when not running as root; verify it's available too.
+	// (This doesn't check passwordless sudo — just that the binary exists.)
+	if !isElevated() {
+		return run.LookPath(ctx, rn, "sudo")
+	}
+	return true
 }
 
 func (a *PacstallAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
@@ -40,11 +48,15 @@ func (a *PacstallAdapter) Install(ctx context.Context, rn run.Runner, tool *sche
 	if len(pkg) == 0 {
 		return fmt.Errorf("pacstall: no package name")
 	}
-	pacstall := "pacstall"
-	if os.Geteuid() != 0 {
-		pacstall = "sudo pacstall"
+
+	// Use sudo if not running as root. The caller should ensure the
+	// user has passwordless sudo for pacstall or a cached credential.
+	var cmd []string
+	if isElevated() {
+		cmd = []string{"pacstall", "-I", pkg[0]}
+	} else {
+		cmd = []string{"sudo", "pacstall", "-I", pkg[0]}
 	}
-	cmd := append(strings.Fields(pacstall), "-I", pkg[0])
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	if res.Err != nil {
 		return fmt.Errorf("pacstall: install failed: %w", res.Err)
@@ -57,3 +69,10 @@ func (a *PacstallAdapter) Install(ctx context.Context, rn run.Runner, tool *sche
 }
 
 var _ exec.Adapter = (*PacstallAdapter)(nil)
+
+// isElevated reports whether the current process is running with
+// root privileges (EUID 0). This is not testable via Runner, so it's
+// kept as a minimal wrapper for easy replacement in tests.
+var isElevated = func() bool {
+	return os.Geteuid() == 0
+}

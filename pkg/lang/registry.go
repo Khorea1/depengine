@@ -11,7 +11,7 @@ var Configs = map[string]BaseConfig{
 	"cargo": {
 		KindName:    "cargo",
 		Binary:      "cargo",
-		CheckTmpl:   []string{"sh", "-c", "cargo install --list | grep -qF '^{pkg} '"},
+		CheckTmpl:   []string{"sh", "-c", `cargo install --list | grep -qF -- "$1"`, "sh", "{pkg}"},
 		InstallTmpl: []string{"cargo", "install", "{pkg}"},
 		RemoveTmpl:  []string{"cargo", "uninstall", "{pkg}"},
 	},
@@ -33,14 +33,14 @@ var Configs = map[string]BaseConfig{
 	"pipx": {
 		KindName:    "pipx",
 		Binary:      "pipx",
-		CheckTmpl:   []string{"sh", "-c", "pipx list --short 2>/dev/null | grep -qF '{pkg}'"},
+		CheckTmpl:   []string{"sh", "-c", `pipx list --short 2>/dev/null | grep -qF -- "$1"`, "sh", "{pkg}"},
 		InstallTmpl: []string{"pipx", "install", "{pkg}"},
 		RemoveTmpl:  []string{"pipx", "uninstall", "{pkg}"},
 	},
 	"uv": {
 		KindName:    "uv",
 		Binary:      "uv",
-		CheckTmpl:   []string{"sh", "-c", "uv tool list 2>/dev/null | grep -qF '{pkg}'"},
+		CheckTmpl:   []string{"sh", "-c", `uv tool list 2>/dev/null | grep -qF -- "$1"`, "sh", "{pkg}"},
 		InstallTmpl: []string{"uv", "tool", "install", "{pkg}"},
 	},
 	"npm": {
@@ -60,19 +60,19 @@ var Configs = map[string]BaseConfig{
 	"bun": {
 		KindName:    "bun",
 		Binary:      "bun",
-		CheckTmpl:   []string{"sh", "-c", "bun pm ls -g | grep -qF '{pkg}'"},
+		CheckTmpl:   []string{"sh", "-c", `bun pm ls -g | grep -qF -- "$1"`, "sh", "{pkg}"},
 		InstallTmpl: []string{"bun", "add", "-g", "{pkg}"},
 	},
 	"gem": {
 		KindName:    "gem",
 		Binary:      "gem",
-		CheckTmpl:   []string{"sh", "-c", "gem list '{pkg}' | grep -qF '{pkg}'"},
+		CheckTmpl:   []string{"sh", "-c", `gem list "$1" | grep -qF -- "$1"`, "sh", "{pkg}"},
 		InstallTmpl: []string{"gem", "install", "{pkg}"},
 	},
 	"yarn": {
 		KindName:    "yarn",
 		Binary:      "yarn",
-		CheckTmpl:   []string{"sh", "-c", "yarn global list --depth=0 | grep -qF '{pkg}'"},
+		CheckTmpl:   []string{"sh", "-c", `yarn global list --depth=0 | grep -qF -- "$1"`, "sh", "{pkg}"},
 		InstallTmpl: []string{"yarn", "global", "add", "{pkg}"},
 	},
 	"composer": {
@@ -84,7 +84,7 @@ var Configs = map[string]BaseConfig{
 	"apm": {
 		KindName:    "apm",
 		Binary:      "apm",
-		CheckTmpl:   []string{"sh", "-c", "apm list --installed --bare | grep -qF '{pkg}'"},
+		CheckTmpl:   []string{"sh", "-c", `apm list --installed --bare | grep -qF -- "$1"`, "sh", "{pkg}"},
 		InstallTmpl: []string{"apm", "install", "{pkg}"},
 	},
 	"flatpak": {
@@ -103,14 +103,14 @@ var Configs = map[string]BaseConfig{
 	"vscode": {
 		KindName:       "vscode",
 		Binary:         "code",
-		CheckTmpl:      []string{"sh", "-c", "code --list-extensions | grep -qF '{pkg}'"},
+		CheckTmpl:      []string{"sh", "-c", `code --list-extensions | grep -qF -- "$1"`, "sh", "{pkg}"},
 		InstallTmpl:    []string{"code", "--install-extension", "{pkg}"},
 		AvailableExtra: "code-insiders",
 	},
 	"vscodium": {
 		KindName:       "vscodium",
 		Binary:         "codium",
-		CheckTmpl:      []string{"sh", "-c", "codium --list-extensions | grep -qF '{pkg}'"},
+		CheckTmpl:      []string{"sh", "-c", `codium --list-extensions | grep -qF -- "$1"`, "sh", "{pkg}"},
 		InstallTmpl:    []string{"codium", "--install-extension", "{pkg}"},
 	},
 	"cask": {
@@ -122,7 +122,7 @@ var Configs = map[string]BaseConfig{
 	"mas": {
 		KindName:    "mas",
 		Binary:      "mas",
-		CheckTmpl:   []string{"sh", "-c", "mas list | grep -qF '{pkg}'"},
+		CheckTmpl:   []string{"sh", "-c", `mas list | grep -qF -- "$1"`, "sh", "{pkg}"},
 		InstallTmpl: []string{"mas", "install", "{pkg}"},
 	},
 }
@@ -134,13 +134,17 @@ func RegisterAll(aurHelper string) {
 	// cargo has special git-repo support.
 	exec.Register(NewCargoAdapter())
 
-	// go, pip, pipx, uv use the generic BaseAdapter pattern.
+	// go has special Check (falls back to tool.Name for binary name).
+	exec.Register(NewGoAdapter())
+
+	// The rest use the generic BaseAdapter pattern.
 	for name, cfg := range Configs {
-		if name == "cargo" {
-			continue // already registered above
+		if name == "cargo" || name == "go" {
+			continue // registered above
 		}
 		exec.Register(NewBaseAdapter(cfg))
 	}
+
 
 	// AUR uses a configurable helper binary.
 	exec.Register(NewAURAdapter(aurHelper))
