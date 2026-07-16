@@ -85,6 +85,7 @@ func runUndo(args []string) {
 		curState.SchemaModifiedAt = snapState.SchemaModifiedAt
 		if err := ls.Save(); err != nil {
 			log.Default.Error("save state after undo", "error", err)
+			ls.Close()
 			os.Exit(3)
 		}
 		return
@@ -130,6 +131,7 @@ func runUndo(args []string) {
 
 	if hadFailure {
 		log.Default.Error("undo: some removals failed, state not saved — manual cleanup may be needed")
+		ls.Close()
 		os.Exit(1)
 	}
 
@@ -139,6 +141,7 @@ func runUndo(args []string) {
 
 	if err := ls.Save(); err != nil {
 		log.Default.Error("save state after undo", "error", err)
+		ls.Close()
 		os.Exit(3)
 	}
 

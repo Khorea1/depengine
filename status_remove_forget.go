@@ -200,6 +200,7 @@ func runRemove(args []string) {
 	} else {
 		if len(removeCmd.Args()) != 1 {
 			log.Default.Error("usage: depengine remove <tool>")
+			ls.Close()
 			os.Exit(1)
 		}
 		if !removeTool(removeCmd.Arg(0)) {
@@ -209,10 +210,12 @@ func runRemove(args []string) {
 
 	if err := ls.Save(); err != nil {
 		log.Default.Error("failed to update state", "error", err)
+		ls.Close()
 		os.Exit(3)
 	}
 
 	if hadFailure {
+		ls.Close()
 		os.Exit(1)
 	}
 }
@@ -234,18 +237,17 @@ func runForget(args []string) {
 		os.Exit(3)
 	}
 	defer ls.Close()
-
 	st := ls.State()
-
 	if _, ok := st.Tools[toolName]; !ok {
 		log.Default.Error("tool not found in state", "tool", toolName)
+		ls.Close()
 		os.Exit(1)
 	}
 
 	delete(st.Tools, toolName)
-
 	if err := ls.Save(); err != nil {
 		log.Default.Error("save state", "error", err)
+		ls.Close()
 		os.Exit(3)
 	}
 
