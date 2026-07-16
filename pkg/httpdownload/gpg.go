@@ -11,6 +11,10 @@ import (
 	"depengine/pkg/run"
 )
 
+// DefaultKeyServer is the GPG keyserver used to receive signing keys by fingerprint.
+// Override this for air-gapped environments or custom keyservers.
+var DefaultKeyServer = "keyserver.ubuntu.com"
+
 // GPGVerify verifies a GPG detached signature on a checksum file.
 // Returns nil if verification succeeds. Returns error if gpg is not
 // available or signature verification fails.
@@ -41,7 +45,7 @@ func GPGVerify(ctx context.Context, rn run.Runner, checksumFile, signatureFile, 
 			}
 		} else {
 			// Treat as a key fingerprint — import from keyserver.
-			res := rn.Run(ctx, "gpg", "--batch", "--keyserver", "keyserver.ubuntu.com", "--recv-keys", signingKey)
+			res := rn.Run(ctx, "gpg", "--batch", "--keyserver", DefaultKeyServer, "--recv-keys", signingKey)
 			if res.Err != nil || res.ExitCode != 0 {
 				return fmt.Errorf("gpg: failed to import key %s: %v\n%s", signingKey, res.Err, strings.TrimSpace(string(res.Stderr)))
 			}
