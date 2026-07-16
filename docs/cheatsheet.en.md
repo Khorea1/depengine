@@ -180,9 +180,16 @@ These live inside each method block (`[tools.NAME.method]` or in their inline ta
 | `pkg` | most | Package name for this manager. Defaults to the tool name. |
 | `url` | `git`, `http` | Download/repo URL. |
 | `build` | `git` | Shell command executed in the cloned repo directory. |
-| `checksum` | `http` | SHA-256 checksum: `"sha256:<hex>"` fixed hash or `"sha256:auto"`. |
+| `checksum` | `http` | SHA-256 checksum: `"sha256:<hex>"`, `"md5:<hex>"`, `"sha1:<hex>"`, `"sha512:<hex>"`, or `"<algo>:auto"`. |
+| `checksum_url` | `http` | Explicit URL for the checksum file (overrides auto URL patterns when `checksum` is `:auto`). |
+| `checksum_file_format` | `http` | Format of the checksum file: `"sha256sum"` (default), `"bsd"` (BSD-style), or `"raw"` (file content is the hash). |
+| `signature_url` | `http` | URL to GPG detached signature (`.asc`/`.sig`) for verifying the checksum file. |
+| `signing_key` | `http` | GPG key URL or fingerprint for signature verification. |
 | `extract_to` | `http`, `git` | Destination directory for archive extraction. Default: `/usr/local/bin`. |
 | `git` | `cargo` | Sub-key: Git repo URL for `cargo` install instead of crates.io. |
+| `branch` | `git` | Git branch or tag to clone. |
+| `depth` | `git` | Clone depth — `"1"` for shallow (default), `"0"` for full history. |
+| `binary` | `git` | Binary name for check/remove. |
 
 ---
 
@@ -524,7 +531,10 @@ Clones a repository and runs a build command.
 |-------|----------|-------------|
 | `url` | yes | Git repository URL. |
 | `build` | no | Shell command executed in the cloned directory. |
-| `extract_to` | no | Optional artifact copy destination. |
+| `extract_to` | no | Directory to copy build artifacts into. |
+| `branch` | no | Git branch or tag to clone (default: repository default branch). |
+| `depth` | no | Clone depth — `"1"` for shallow (default), `"0"` for full history. Accepted as integer or string. |
+| `binary` | no | Binary name for check/remove. When set, `Check()` looks for this binary in PATH. Required for removal from shared directories. |
 
 ```toml
 ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install" } }
