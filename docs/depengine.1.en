@@ -279,6 +279,7 @@ depengine completion fish | source
 ./depengine sbom
 ./depengine sbom --format=spdx
 .EE
+.SH ENVIRONMENT
 .TP
 .B DEPENGINE_DETECT_SCRIPT
 Path to the
