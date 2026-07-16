@@ -340,13 +340,14 @@ func (ex *Executor) hasDangerousMethod(tool *schema.Tool) bool {
 }
 
 func (ex *Executor) runPreinstall(ctx context.Context, tool *schema.Tool) error {
-	ex.outputf("    pre-install: %s\n", tool.PreInstall)
-	ex.logDebug(ctx, "preinstall", "tool", tool.Name, "cmd", tool.PreInstall)
-	parts := strings.Fields(tool.PreInstall)
-	if len(parts) == 0 {
+	cmd := strings.TrimSpace(tool.PreInstall)
+	if cmd == "" {
 		return nil
 	}
-	res := ex.rn.Run(ctx, parts[0], parts[1:]...)
+	ex.outputf("    pre-install: %s\n", cmd)
+	ex.logDebug(ctx, "preinstall", "tool", tool.Name, "cmd", cmd)
+	// Run through sh -c to support shell syntax (pipes, redirections, quotes).
+	res := ex.rn.Run(ctx, "sh", "-c", cmd)
 	if res.Err != nil {
 		ex.outputf("    ⚠  pre-install: %s (aborting)\n", res.Err.Error())
 		ex.logWarn(ctx, "preinstall", "tool", tool.Name, "error", res.Err.Error())
@@ -686,13 +687,14 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *schema.Tool, clan str
 	return attempts
 }
 func (ex *Executor) runPostinstall(ctx context.Context, tool *schema.Tool) error {
-	ex.outputf("    postinstall: %s\n", tool.PostInstall)
-	ex.logDebug(ctx, "postinstall", "tool", tool.Name, "cmd", tool.PostInstall)
-	parts := strings.Fields(tool.PostInstall)
-	if len(parts) == 0 {
+	cmd := strings.TrimSpace(tool.PostInstall)
+	if cmd == "" {
 		return nil
 	}
-	res := ex.rn.Run(ctx, parts[0], parts[1:]...)
+	ex.outputf("    postinstall: %s\n", cmd)
+	ex.logDebug(ctx, "postinstall", "tool", tool.Name, "cmd", cmd)
+	// Run through sh -c to support shell syntax (pipes, redirections, quotes).
+	res := ex.rn.Run(ctx, "sh", "-c", cmd)
 	if res.Err != nil {
 		ex.outputf("    ⚠  postinstall: %s (continuing)\n", res.Err.Error())
 		ex.logWarn(ctx, "postinstall", "tool", tool.Name, "error", res.Err.Error())

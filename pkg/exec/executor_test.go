@@ -811,12 +811,12 @@ func TestExecutorPreAndPostInstall(t *testing.T) {
 	if len(fake.Calls) < 2 {
 		t.Fatalf("expected at least 2 FakeRunner calls (pre + post), got %d", len(fake.Calls))
 	}
-	if fake.Calls[0].Name != "echo" || fake.Calls[0].Args[0] != "pre" {
-		t.Fatalf("expected first call 'echo pre', got %v", fake.Calls[0])
+	if fake.Calls[0].Name != "sh" || len(fake.Calls[0].Args) < 2 || fake.Calls[0].Args[1] != "echo pre" {
+		t.Fatalf("expected first call 'sh -c echo pre', got %v", fake.Calls[0])
 	}
 	last := fake.Calls[len(fake.Calls)-1]
-	if last.Name != "echo" || last.Args[0] != "post" {
-		t.Fatalf("expected last call 'echo post', got %v", last)
+	if last.Name != "sh" || len(last.Args) < 2 || last.Args[1] != "echo post" {
+		t.Fatalf("expected last call 'sh -c echo post', got %v", last)
 	}
 }
 

@@ -38,6 +38,7 @@ func (a *NativeAdapter) detectClan(ctx context.Context, rn run.Runner) string {
 			}
 			if run.LookPath(ctx, rn, mgr.Name) {
 				a.clan = clan
+				break
 			}
 		}
 	})
