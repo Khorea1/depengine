@@ -133,7 +133,22 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 		}
 	}
 
-	// Store in cache if we downloaded fresh (or update cache with verified file).
+	// Extract the downloaded file before caching — Store uses os.Rename and
+	// moves tmpFile away, so extraction must happen first.
+	extractTo := "/usr/local/bin" // default
+	if e, ok := mc.Config["extract_to"].(string); ok && e != "" {
+		extractTo = e
+	}
+	// Check sudo policy for dpkg installs.
+	sudoRequired := true
+	if v, ok := mc.Config["sudo_required"].(bool); ok {
+		sudoRequired = v
+	}
+	if err := Extract(ctx, tmpFile, extractTo, ext, rn, sudoRequired); err != nil {
+		return fmt.Errorf("http: extract: %w", err)
+	}
+
+	// Store in cache after extraction (Store may move tmpFile via os.Rename).
 	if !fromCache {
 		if _, err := downloadcache.Store(resolvedURL, tmpFile); err != nil {
 			// Cache write failure is non-fatal; the install continues.
@@ -145,22 +160,6 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 		if _, err := downloadcache.Store(resolvedURL, tmpFile); err != nil {
 			fmt.Fprintf(os.Stderr, "  ⚠  cache write failed: %v\n", err)
 		}
-	}
-
-	// Determine extract destination.
-	extractTo := "/usr/local/bin" // default
-	if e, ok := mc.Config["extract_to"].(string); ok && e != "" {
-		extractTo = e
-	}
-	// Check sudo policy for dpkg installs.
-	sudoRequired := true
-	if v, ok := mc.Config["sudo_required"].(bool); ok {
-		sudoRequired = v
-	}
-
-	// Extract or copy.
-	if err := Extract(ctx, tmpFile, extractTo, ext, rn, sudoRequired); err != nil {
-		return fmt.Errorf("http: extract: %w", err)
 	}
 
 	return nil
