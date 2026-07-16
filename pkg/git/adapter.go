@@ -92,9 +92,15 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.To
 	}
 
 	// Determine clone depth (default: shallow).
+	// The schema accepts both integer (0 for full history) and string ("1") values.
 	depth := "1"
-	if d, ok := mc.Config["depth"].(string); ok && d != "" {
-		depth = d
+	switch d := mc.Config["depth"].(type) {
+	case string:
+		if d != "" {
+			depth = d
+		}
+	case int64:
+		depth = fmt.Sprintf("%d", d)
 	}
 
 	// Determine clone directory — use MkdirTemp for auto-cleanup.
@@ -217,7 +223,10 @@ func (a *GitAdapter) Remove(ctx context.Context, rn run.Runner, tool *schema.Too
 	return nil
 }
 
-// CanRemove returns true since GitAdapter supports removal when extract_to is configured.
+// CanRemove returns true — the adapter can remove installations that were done
+// with an extract_to path. Per-method validation (e.g. extract_to is required)
+// happens inside Remove() and returns an error if the method config doesn't
+// support automated removal.
 func (a *GitAdapter) CanRemove() bool { return true }
 
 // Ensure GitAdapter implements exec.Adapter at compile time.
