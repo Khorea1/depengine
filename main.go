@@ -41,7 +41,7 @@ func main() {
 		runSBOM(os.Args[2:])
 	case "diff":
 		runDiff(os.Args[2:])
-	case "version":
+	case "version", "-v", "--version":
 		fmt.Println("depengine " + version)
 		fmt.Println("Motor distro-agnostic de instalação de dependências")
 	case "help", "-h", "--help":
