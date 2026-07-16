@@ -91,6 +91,12 @@ func runUndo(args []string) {
 		return
 	}
 
+	// Capture original state before removal, so failed tools can be preserved.
+	originalTools := make(map[string]state.ToolState, len(curState.Tools))
+	for k, v := range curState.Tools {
+		originalTools[k] = v
+	}
+	succeeded := make(map[string]bool)
 	hadFailure := false
 	for _, name := range toRemove {
 		toolState := curState.Tools[name]
@@ -127,12 +133,26 @@ func runUndo(args []string) {
 		cancel()
 
 		log.Default.Info("removed during undo", "tool", name)
+		succeeded[name] = true
 	}
 	if hadFailure {
 		log.Default.Error("undo: some removals failed — saving partial state")
 	}
 
-	curState.Tools = snapState.Tools
+	if hadFailure {
+		// Preserve snapshot tools and re-add tools that failed removal.
+		curState.Tools = make(map[string]state.ToolState, len(snapState.Tools)+len(toRemove))
+		for k, v := range snapState.Tools {
+			curState.Tools[k] = v
+		}
+		for _, name := range toRemove {
+			if !succeeded[name] {
+				curState.Tools[name] = originalTools[name]
+			}
+		}
+	} else {
+		curState.Tools = snapState.Tools
+	}
 	curState.SchemaPath = snapState.SchemaPath
 	curState.SchemaModifiedAt = snapState.SchemaModifiedAt
 
