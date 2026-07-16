@@ -120,7 +120,10 @@ func runWhy(args []string) {
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		enc.Encode(out)
+		if err := enc.Encode(out); err != nil {
+			log.Default.Error("JSON encode", "error", err)
+			os.Exit(3)
+		}
 		return
 	}
 
