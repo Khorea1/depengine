@@ -71,7 +71,7 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.To
 	}
 
 	origURL := url
-	resolvedURL, err := ghrelease.ResolveLatest(ctx, url)
+	resolvedURL, err := ghrelease.ResolveLatest(ctx, url, rn)
 	if err != nil {
 		return fmt.Errorf("git: resolve latest: %w", err)
 	}

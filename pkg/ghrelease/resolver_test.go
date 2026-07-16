@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"depengine/pkg/run"
 )
 
 // redirectTripper is an http.RoundTripper that rewrites requests to a test
@@ -27,7 +29,7 @@ func (r *redirectTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func TestResolveLatestNoPlaceholder(t *testing.T) {
 	url := "https://github.com/user/repo/releases/download/v1.0/file.tar.gz"
-	got, err := ResolveLatest(context.Background(), url)
+	got, err := ResolveLatest(context.Background(), url, run.OSExecRunner{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -38,7 +40,7 @@ func TestResolveLatestNoPlaceholder(t *testing.T) {
 
 func TestResolveLatestNonGitHub(t *testing.T) {
 	url := "https://gitlab.com/user/repo/-/releases/{latest}/file.tar.gz"
-	got, err := ResolveLatest(context.Background(), url)
+	got, err := ResolveLatest(context.Background(), url, run.OSExecRunner{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -49,7 +51,7 @@ func TestResolveLatestNonGitHub(t *testing.T) {
 }
 
 func TestResolveLatestEmptyURL(t *testing.T) {
-	got, err := ResolveLatest(context.Background(), "")
+	got, err := ResolveLatest(context.Background(), "", run.OSExecRunner{})
 	if err != nil {
 		t.Fatalf("unexpected error on empty URL: %v", err)
 	}
@@ -93,7 +95,7 @@ func TestResolveLatestWithHTTPMock(t *testing.T) {
 	})
 
 	url := "https://github.com/mock-owner/mock-repo/releases/download/{latest}/file.tar.gz"
-	got, err := ResolveLatest(context.Background(), url)
+	got, err := ResolveLatest(context.Background(), url, run.OSExecRunner{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -122,7 +124,7 @@ func TestLookupReleaseHTTPError(t *testing.T) {
 	})
 
 	url := "https://github.com/error-owner/error-repo/releases/download/{latest}/file.tar.gz"
-	_, err := ResolveLatest(context.Background(), url)
+	_, err := ResolveLatest(context.Background(), url, run.OSExecRunner{})
 	if err == nil {
 		t.Fatal("expected error from 500 response, got nil")
 	}

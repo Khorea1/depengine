@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"depengine/pkg/ghrelease"
+	"depengine/pkg/run"
 	"depengine/pkg/schema"
 
 	"github.com/pelletier/go-toml/v2"
@@ -125,7 +126,7 @@ func ResolveAll(ctx context.Context, s *schema.Schema) (*Lock, error) {
 			// Resolve {latest} in URL fields (git and http methods only).
 			if method.Kind == "git" || method.Kind == "http" {
 				if urlRaw, ok := method.Config["url"].(string); ok && strings.Contains(urlRaw, "{latest}") {
-					resolved, err := ghrelease.ResolveLatest(ctx, urlRaw)
+					resolved, err := ghrelease.ResolveLatest(ctx, urlRaw, run.OSExecRunner{})
 					if err != nil {
 						return nil, fmt.Errorf("lock: resolve %s/%s: %w", name, method.Kind, err)
 					}

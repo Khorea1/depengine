@@ -14,9 +14,10 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"os/exec"
 	"sync"
 	"time"
+
+	"depengine/pkg/run"
 )
 
 // GitHub URL patterns for release/tag resolution.
@@ -43,8 +44,7 @@ type release struct {
 //
 // Authentication: If GITHUB_TOKEN or GH_TOKEN environment variable is set, it
 // is used as a Bearer token in the Authorization header. This raises the
-// unauthenticated rate limit from 60 to 5,000 requests per hour.
-func ResolveLatest(ctx context.Context, urlStr string) (string, error) {
+func ResolveLatest(ctx context.Context, urlStr string, rn run.Runner) (string, error) {
 	if !strings.Contains(urlStr, "{latest}") {
 		return urlStr, nil
 	}
@@ -74,7 +74,7 @@ func ResolveLatest(ctx context.Context, urlStr string) (string, error) {
 	req.Header.Set("User-Agent", "depengine/0.1")
 
 	// Add GitHub token if available to raise rate limit from 60 to 5000 req/h.
-	if token := githubToken(ctx); token != "" {
+	if token := githubToken(ctx, rn); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
@@ -108,14 +108,14 @@ func ResolveLatest(ctx context.Context, urlStr string) (string, error) {
 // githubToken returns a GitHub personal access token from environment.
 // Checks GITHUB_TOKEN first, then GH_TOKEN (common aliases used by gh CLI and CI).
 // Falls back to `gh auth token` if the GitHub CLI is authenticated.
-func githubToken(ctx context.Context) string {
+func githubToken(ctx context.Context, rn run.Runner) string {
 	if t := os.Getenv("GITHUB_TOKEN"); t != "" {
 		return t
 	}
 	if t := os.Getenv("GH_TOKEN"); t != "" {
 		return t
 	}
-	return ghCLIToken(ctx)
+	return ghCLIToken(ctx, rn)
 }
 
 var (
@@ -126,15 +126,14 @@ var (
 // ghCLIToken runs `gh auth token` to retrieve the GitHub CLI's authenticated
 // token. The result is cached so the subprocess runs at most once per process
 // lifecycle.
-func ghCLIToken(ctx context.Context) string {
+func ghCLIToken(ctx context.Context, rn run.Runner) string {
 	ghTokenOnce.Do(func() {
-		cmd := exec.CommandContext(ctx, "gh", "auth", "token")
-		out, err := cmd.Output()
-		if err != nil {
+		res := rn.Run(ctx, "gh", "auth", "token")
+		if res.Err != nil || res.ExitCode != 0 {
 			ghTokenValue = ""
 			return
 		}
-		ghTokenValue = strings.TrimSpace(string(out))
+		ghTokenValue = strings.TrimSpace(string(res.Stdout))
 	})
 	return ghTokenValue
 }

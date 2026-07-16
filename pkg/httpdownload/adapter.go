@@ -64,7 +64,7 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 	}
 
 	// Resolve {latest} in URL.
-	resolvedURL, err := ResolveLatest(ctx, urlRaw)
+	resolvedURL, err := ResolveLatest(ctx, urlRaw, rn)
 	if err != nil {
 		return fmt.Errorf("http: resolve latest: %w", err)
 	}
