@@ -28,6 +28,9 @@ func NewCargoAdapter() *CargoAdapter {
 func (a *CargoAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
 	if gitURL, ok := mc.Config["git"].(string); ok && gitURL != "" {
 		cmd := []string{"cargo", "install", "--git", gitURL}
+		if pkg, ok := mc.Config["pkg"].(string); ok && pkg != "" {
+			cmd = append(cmd, pkg)
+		}
 		res := rn.Run(ctx, cmd[0], cmd[1:]...)
 		if res.Err != nil {
 			return fmt.Errorf("cargo --git: install failed: %w", res.Err)
