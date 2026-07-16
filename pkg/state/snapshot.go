@@ -179,12 +179,11 @@ func PruneSnapshots(maxCount int, maxAge time.Duration) error {
 	}
 
 	// If we still exceed maxCount, remove the oldest of the retained set.
+	// snapshots is newest-first, so iterate in reverse to find oldest first.
 	if retained > maxCount {
 		excess := retained - maxCount
-		for _, s := range snapshots {
-			if excess <= 0 {
-				break
-			}
+		for i := len(snapshots) - 1; i >= 0 && excess > 0; i-- {
+			s := snapshots[i]
 			if !remove[s.Path] {
 				remove[s.Path] = true
 				excess--

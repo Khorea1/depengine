@@ -3,8 +3,10 @@ package state
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+	"fmt"
+	"hash"
 	"sort"
+	"strings"
 
 	"depengine/pkg/schema"
 )
@@ -66,17 +68,55 @@ func DefinitionHash(tool *schema.Tool) string {
 		return entries[i].idx < entries[j].idx
 	})
 
-	enc := json.NewEncoder(h)
 	for _, e := range entries {
-		_ = enc.Encode(e.kind)
-		_ = enc.Encode(e.idx)
-		_ = enc.Encode(e.config)
+		_, _ = h.Write([]byte(e.kind))
+		h.Write([]byte{0})
+		_, _ = h.Write([]byte(fmt.Sprintf("%d", e.idx)))
+		h.Write([]byte{0})
+		writeMapCanonical(h, e.config)
 		if e.when != nil {
-			_ = enc.Encode(e.when.DistroFamily)
-		} else {
-			_ = enc.Encode(nil)
+			_, _ = h.Write([]byte(strings.Join(e.when.DistroFamily, "\x00")))
 		}
+		h.Write([]byte{0})
 	}
 
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+
+// writeMapCanonical writes a deterministic hash of a map[string]any by
+// sorting keys lexicographically and recursing into nested maps and slices.
+func writeMapCanonical(h hash.Hash, m map[string]any) {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		_, _ = h.Write([]byte(k))
+		h.Write([]byte{0})
+		writeValueCanonical(h, m[k])
+		h.Write([]byte{0})
+	}
+}
+func writeValueCanonical(h hash.Hash, v any) {
+	switch val := v.(type) {
+	case nil:
+		_, _ = h.Write([]byte("nil"))
+	case string:
+		_, _ = h.Write([]byte(val))
+	case bool:
+		_, _ = h.Write([]byte(fmt.Sprintf("%t", val)))
+	case float64:
+		_, _ = h.Write([]byte(fmt.Sprintf("%v", val)))
+	case map[string]any:
+		writeMapCanonical(h, val)
+	case []any:
+		for _, elem := range val {
+			writeValueCanonical(h, elem)
+			h.Write([]byte{0})
+		}
+	default:
+		_, _ = h.Write([]byte(fmt.Sprintf("%v", val)))
+	}
 }

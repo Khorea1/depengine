@@ -71,7 +71,8 @@ func Load() (*State, error) {
 	return &s, nil
 }
 
-// Save writes the state to DefaultPath, creating parent directories as needed.
+// Save writes the state to DefaultPath atomically: write to a temp file,
+// fsync, then rename. This prevents corruption if the process crashes mid-write.
 func Save(s *State) error {
 	path := DefaultPath()
 	dir := filepath.Dir(path)
@@ -82,9 +83,32 @@ func Save(s *State) error {
 	if err != nil {
 		return fmt.Errorf("marshal state: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		return fmt.Errorf("write state: %w", err)
+
+	// Write to a temp file in the same directory (ensures same-filesystem rename).
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+		return fmt.Errorf("write state tmp: %w", err)
 	}
+
+	// Sync the temp file before renaming.
+	f, err := os.Open(tmpPath)
+	if err != nil {
+		return fmt.Errorf("open tmp for sync: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("sync state tmp: %w", err)
+	}
+	_ = f.Close()
+
+	// Atomic rename — on Unix this is a single metadata operation; the target
+	// path is never left in a partially-written state.
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("rename state: %w", err)
+	}
+
 	return nil
 }
 
