@@ -128,11 +128,8 @@ func runUndo(args []string) {
 
 		log.Default.Info("removed during undo", "tool", name)
 	}
-
 	if hadFailure {
-		log.Default.Error("undo: some removals failed, state not saved — manual cleanup may be needed")
-		ls.Close()
-		os.Exit(1)
+		log.Default.Error("undo: some removals failed — saving partial state")
 	}
 
 	curState.Tools = snapState.Tools
@@ -143,6 +140,12 @@ func runUndo(args []string) {
 		log.Default.Error("save state after undo", "error", err)
 		ls.Close()
 		os.Exit(3)
+	}
+
+	if hadFailure {
+		log.Default.Error("undo: some removals failed, manual cleanup may be needed")
+		ls.Close()
+		os.Exit(1)
 	}
 
 	log.Default.Info("undo concluído", "tools_removed", len(toRemove))

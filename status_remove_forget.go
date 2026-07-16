@@ -41,7 +41,7 @@ func runStatus(args []string) {
 	}
 	if schemaPath == "" {
 		if len(st.Tools) == 0 {
-			fmt.Fprintln(os.Stderr, "No tools in state (nothing installed yet). Use --schema to compare against a schema.")
+			fmt.Fprintln(os.Stderr, "Nenhuma ferramenta no estado (nada instalado ainda). Use --schema para comparar com um schema.")
 			return
 		}
 	}
