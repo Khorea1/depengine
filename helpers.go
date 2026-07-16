@@ -105,6 +105,11 @@ func filterTools(tools map[string]*schema.Tool, only, skip, profile string) map[
 			name := queue[0]
 			queue = queue[1:]
 			if skipSet[name] {
+				// The skipped tool is a required dependency of --only; still add it
+				// to filtered so graph.Sort doesn't reject the partial graph.
+				if t, ok := tools[name]; ok {
+					filtered[name] = t
+				}
 				continue
 			}
 			if t, ok := tools[name]; ok {
