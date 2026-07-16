@@ -10,6 +10,7 @@ import (
 	"depengine/pkg/lang"
 	"depengine/pkg/lock"
 	"depengine/pkg/log"
+	"depengine/pkg/run"
 	"depengine/pkg/sbom"
 	"depengine/pkg/state"
 )
@@ -39,7 +40,7 @@ func runUpdate(args []string) {
 	s.Tools = filterTools(s.Tools, "", "", *updateProfile)
 
 	fmt.Fprint(os.Stderr, "Resolving latest versions... ")
-	newLock, err := lock.ResolveAll(ctx, s)
+	newLock, err := lock.ResolveAll(ctx, s, run.OSExecRunner{})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "FAIL")
 		lg.Error("resolve lock", "error", err)

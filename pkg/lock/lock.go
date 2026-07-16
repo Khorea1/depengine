@@ -112,7 +112,7 @@ func toolKey(toolName, methodKind string) string {
 // ResolveAll scans every tool method in the schema for {latest} in URL fields,
 // resolves them via the GitHub releases API, and returns a Lock with the pinned
 // values. Empty lock (no tools needing resolution) is still valid.
-func ResolveAll(ctx context.Context, s *schema.Schema) (*Lock, error) {
+func ResolveAll(ctx context.Context, s *schema.Schema, rn run.Runner) (*Lock, error) {
 	l := &Lock{
 		Version: 1,
 		Tools:   make(map[string]ToolPin),
@@ -126,7 +126,7 @@ func ResolveAll(ctx context.Context, s *schema.Schema) (*Lock, error) {
 			// Resolve {latest} in URL fields (git and http methods only).
 			if method.Kind == "git" || method.Kind == "http" {
 				if urlRaw, ok := method.Config["url"].(string); ok && strings.Contains(urlRaw, "{latest}") {
-					resolved, err := ghrelease.ResolveLatest(ctx, urlRaw, run.OSExecRunner{})
+				resolved, err := ghrelease.ResolveLatest(ctx, urlRaw, rn)
 					if err != nil {
 						return nil, fmt.Errorf("lock: resolve %s/%s: %w", name, method.Kind, err)
 					}

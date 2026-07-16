@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"depengine/pkg/run"
 	"depengine/pkg/schema"
 )
 
@@ -105,7 +106,7 @@ func TestResolveAllNoLatest(t *testing.T) {
 		},
 	}
 
-	l, err := ResolveAll(context.Background(), s)
+	l, err := ResolveAll(context.Background(), s, run.OSExecRunner{})
 	if err != nil {
 		t.Fatalf("ResolveAll: %v", err)
 	}
@@ -283,7 +284,7 @@ func TestResolveAllCapturesChecksumResolved(t *testing.T) {
 		},
 	}
 
-	l, err := ResolveAll(context.Background(), s)
+	l, err := ResolveAll(context.Background(), s, run.OSExecRunner{})
 	if err != nil {
 		t.Fatalf("ResolveAll: %v", err)
 	}
@@ -319,7 +320,7 @@ func TestResolveAllSkipsAutoChecksum(t *testing.T) {
 		},
 	}
 
-	l, err := ResolveAll(context.Background(), s)
+	l, err := ResolveAll(context.Background(), s, run.OSExecRunner{})
 	if err != nil {
 		t.Fatalf("ResolveAll: %v", err)
 	}

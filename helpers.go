@@ -148,7 +148,7 @@ func loadLockfile(schemaPath string, s *schema.Schema, frozen bool, lg *slog.Log
 
 // saveLockfile resolves version pins, merges with any existing lock, and persists.
 func saveLockfile(ctx context.Context, s *schema.Schema, lockPath string, oldLock *lock.Lock, lg *slog.Logger, diagnose bool) {
-	newLock, err := lock.ResolveAll(ctx, s)
+	newLock, err := lock.ResolveAll(ctx, s, run.OSExecRunner{})
 	if err != nil {
 		lg.Warn("resolve lock", "error", err)
 		return
