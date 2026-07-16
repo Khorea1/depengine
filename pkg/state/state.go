@@ -109,6 +109,16 @@ func Save(s *State) error {
 		return fmt.Errorf("rename state: %w", err)
 	}
 
+	// Sync the directory to ensure the rename is persisted on disk.
+	dirF, err := os.Open(dir)
+	if err != nil {
+		return fmt.Errorf("open state dir for sync: %w", err)
+	}
+	defer dirF.Close()
+	if err := dirF.Sync(); err != nil {
+		return fmt.Errorf("sync state dir: %w", err)
+	}
+
 	return nil
 }
 

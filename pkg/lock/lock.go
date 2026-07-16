@@ -72,14 +72,34 @@ func Save(path string, l *Lock) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("lock: mkdir: %w", err)
 	}
-	f, err := os.Create(path)
+
+	// Write to a temp file in the same directory (ensures same-filesystem rename).
+	tmpPath := path + ".tmp"
+	f, err := os.Create(tmpPath)
 	if err != nil {
-		return fmt.Errorf("lock: create %s: %w", path, err)
+		return fmt.Errorf("lock: create tmp: %w", err)
 	}
-	defer f.Close()
 	if err := toml.NewEncoder(f).Encode(l); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("lock: encode: %w", err)
 	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("lock: sync tmp: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("lock: close tmp: %w", err)
+	}
+
+	// Atomic rename — the target is never left in a partially-written state.
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("lock: rename: %w", err)
+	}
+
 	return nil
 }
 
