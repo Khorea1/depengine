@@ -269,7 +269,9 @@ func (ex *Executor) Execute(ctx context.Context, s *schema.Schema, clan string) 
 		ex.logDebug(ctx, "executor", "phase", "report", "json", report.JSON())
 	}
 
-	ex.writeState(ctx, s, report)
+	if !ex.dryRun {
+		ex.writeState(ctx, s, report)
+	}
 
 	return report, nil
 }
@@ -383,11 +385,20 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 		{func(t *schema.Tool) bool { return t.PostInstall != "" }, "has a post-install hook (arbitrary code execution)"},
 		{func(t *schema.Tool) bool { return t.PreInstall != "" }, "has a pre-install hook (arbitrary code execution)"},
 	}
+	hasDanger := false
 	for _, c := range checks {
 		if !ex.allowArbitraryCode && c.has(tool) {
+			hasDanger = true
 			ex.outputf("  ⚠  %s: %s. Use --allow-arbitrary-code to suppress this warning.\n", tool.Name, c.detail)
 			ex.logWarn(ctx, "security", "tool", tool.Name, "warning", c.detail)
 		}
+	}
+	if hasDanger && !ex.allowArbitraryCode {
+		result.Status = StatusSkippedUnavailable
+		result.Error = "requires --allow-arbitrary-code (tool has arbitrary code execution capability)"
+		result.Duration = time.Since(toolStart).String()
+		ex.logDebug(ctx, "tool", "tool", tool.Name, "status", "blocked_dangerous")
+		return result
 	}
 
 	// toolTimeout wraps the entire tool execution across all method attempts.

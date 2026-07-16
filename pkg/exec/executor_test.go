@@ -291,6 +291,7 @@ func TestExecutorPostInstall(t *testing.T) {
 	}
 
 	ex := New()
+	WithAllowArbitraryCode()(ex)
 	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
 	WithAdapters(mock)(ex)
 
@@ -612,6 +613,7 @@ func TestExecutorPreInstallSuccess(t *testing.T) {
 	}
 
 	ex := New()
+	WithAllowArbitraryCode()(ex)
 	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
 	WithAdapters(mock)(ex)
 
@@ -639,6 +641,7 @@ func TestExecutorPreInstallFailure(t *testing.T) {
 	}
 
 	ex := New()
+	WithAllowArbitraryCode()(ex)
 	// Pre-install fails with exit code 1.
 	WithRunner(&run.FakeRunner{ExitCode: 1})(ex)
 	WithAdapters(mock)(ex)
@@ -658,6 +661,37 @@ func TestExecutorPreInstallFailure(t *testing.T) {
 	}
 	if report.Tools[0].PreinstallDone != false {
 		t.Fatal("expected PreinstallDone to be false")
+	}
+}
+
+func TestExecutorBlocksDangerous(t *testing.T) {
+	mock := &testMockAdapter{
+		kindValue:     "native",
+		availableFunc: func() bool { return true },
+		checkFunc:     func(string) bool { return false },
+		installFunc:   func(string) error { return nil },
+	}
+
+	ex := New()
+	// No WithAllowArbitraryCode — should be blocked.
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithAdapters(mock)(ex)
+
+	s := mockSchema("tool1")
+	s.Tools["tool1"].PostInstall = "echo dangerous"
+
+	report, err := ex.Execute(context.Background(), s, "arch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Success != 0 {
+		t.Fatalf("expected 0 success (blocked by dangerous check), got %d", report.Success)
+	}
+	if len(report.Tools) != 1 {
+		t.Fatalf("expected 1 tool result, got %d", len(report.Tools))
+	}
+	if report.Tools[0].Status != StatusSkippedUnavailable {
+		t.Fatalf("expected StatusSkippedUnavailable, got %v", report.Tools[0].Status)
 	}
 }
 
@@ -720,31 +754,6 @@ func TestHasDangerousMethod(t *testing.T) {
 	}
 }
 
-func TestHasDangerousPostInstall(t *testing.T) {
-	tool := &schema.Tool{Name: "test"}
-
-	if tool.PostInstall != "" {
-		t.Error("tool without PostInstall should not be dangerous")
-	}
-
-	tool.PostInstall = "fc-cache -fv"
-	if tool.PostInstall == "" {
-		t.Error("tool with PostInstall should be dangerous")
-	}
-}
-
-func TestHasDangerousPreInstall(t *testing.T) {
-	tool := &schema.Tool{Name: "test"}
-
-	if tool.PreInstall != "" {
-		t.Error("tool without PreInstall should not be dangerous")
-	}
-
-	tool.PreInstall = "apt update"
-	if tool.PreInstall == "" {
-		t.Error("tool with PreInstall should be dangerous")
-	}
-}
 
 func TestLookupAdapter(t *testing.T) {
 	// Save and restore global registry.
@@ -785,6 +794,7 @@ func TestExecutorPreAndPostInstall(t *testing.T) {
 
 	fake := &run.FakeRunner{ExitCode: 0}
 	ex := New()
+	WithAllowArbitraryCode()(ex)
 	WithRunner(fake)(ex)
 	WithAdapters(mock)(ex)
 
