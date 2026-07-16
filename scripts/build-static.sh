@@ -21,9 +21,9 @@ GOARCH_LIST="amd64 arm64"
 for goos in $GOOS_LIST; do
   for goarch in $GOARCH_LIST; do
     echo "Building for $goos/$goarch..."
-		FILENAME="depengine-${VERSION#v}-${goos}-${goarch}"
+    FILENAME="depengine-${VERSION#v}-${goos}-${goarch}"
 
-    CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -ldflags "-s -w -X main.version=$VERSION" -o dist/$FILENAME . "$@"
+    CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch go build -ldflags "-s -w -X main.version=$VERSION" -o "dist/$FILENAME" .
     if [ $? -ne 0 ]; then
       echo "Build failed for $goos/$goarch"
       exit 1
