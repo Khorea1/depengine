@@ -13,6 +13,14 @@ func runCompletion(args []string) {
 	}
 	shell := args[0]
 
+	// Whitelist: only known shells to prevent path traversal.
+	switch shell {
+	case "bash", "zsh", "fish":
+	default:
+		fmt.Fprintf(os.Stderr, "error: unsupported shell %q (supported: bash, zsh, fish)\n", shell)
+		os.Exit(2)
+	}
+
 	if exe, err := os.Executable(); err == nil {
 		candidate := filepath.Join(filepath.Dir(exe), "scripts", "depengine-completion."+shell)
 		if data, err := os.ReadFile(candidate); err == nil {
