@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -134,7 +133,7 @@ func loadLockfile(schemaPath string, s *schema.Schema, frozen bool, lg *slog.Log
 	lockPath := lock.DefaultPath(schemaPath)
 	lk, err := lock.Load(lockPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: lockfile %q is corrupted, continuing without lock: %v\n", lockPath, err)
+		lg.Warn("lockfile corrupted, continuing without lock", "path", lockPath, "error", err)
 	}
 	if frozen && lk == nil {
 		lg.Error("--frozen-lockfile requires schema.lock — run 'depengine update' first")
