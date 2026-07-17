@@ -90,25 +90,42 @@ lf       = { go  = "github.com/gokcehan/lf" }
 matugen = { cargo = { git = "https://github.com/InioX/matugen" } }
 ```
 
-### Forma 5 — Git: clona repo + build manual
+### Forma 5 — Pre-install hook (antes de qualquer método)
+
+```toml
+[tools.myenv]
+pre_install = "curl -fsSL https://setup.example.com | sh"
+
+  [tools.myenv.native]
+  pkg = "my-env"
+```
+
+> O hook `pre_install` executa antes do primeiro método — se falhar, a tool é abortada.
+> Use com `--allow-arbitrary-code` (aviso de segurança exibido por padrão).
+
+### Forma 6 — Git: clona repo + build manual
 
 ```toml
 ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install" } }
 ```
 
-### Forma 6 — HTTP: baixa artefato (deb, zip, binário)
+### Forma 7 — HTTP: baixa artefato (deb, zip, binário)
 
 ```toml
 fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb", checksum = "sha256:auto" } }
 ```
 
-### Forma 7 — Dependência entre tools
+> O campo `checksum` aceita hash literal (`sha256:...`) ou `:auto` (resolução automática).
+> Use `checksum_url` para fonte separada, `sudo_required = false` se não precisar de root,
+> e `signing_key`/`signature_url` para verificação GPG.
+
+### Forma 8 — Dependência entre tools
 
 ```toml
 zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
 ```
 
-### Forma 8 — Caso complexo: múltiplos métodos + condição de distro
+### Forma 9 — Caso complexo: múltiplos métodos + condição de distro
 
 ```toml
 [tools.DepartureMono]
@@ -123,7 +140,7 @@ postinstall = "fc-cache -fv"
   extract_to = "~/.local/share/fonts/DepartureMono"
 ```
 
-> **Regra de ouro:** Campos de nível de tool (`requires`, `postinstall`) ficam
+> **Regra de ouro:** Campos de nível de tool (`requires`, `postinstall`, `pre_install`) ficam
 > fora do método. Campos específicos do método (`when`, `url`, `build`,
 > `checksum`, `extract_to`, `pkg`, `git`) ficam dentro do método.
 
@@ -217,7 +234,11 @@ Atualiza o schema.lock resolvendo placeholders `{latest}` via GitHub API.
 |------|---------|-----------|
 | `--schema` | `schema.toml` | Caminho para o schema |
 | `--lock` | `schema.lock` | Caminho para o lockfile |
-|
+| `--profile <tag>` | — | Filtra tools por tag (ex: `desktop`, `server`) |
+| `--frozen-lockfile` | `false` | Aborta se schema.lock não existir |
+| `--dry-run` | `false` | Mostra o que seria atualizado sem escrever |
+|-v                    | false    | Saída detalhada                          |
+
 ### `depengine graph [flags]`
 
 Mostra o grafo de dependência como texto, Mermaid ou DOT.
@@ -225,7 +246,9 @@ Mostra o grafo de dependência como texto, Mermaid ou DOT.
 | Flag | Default | Descrição |
 |------|---------|-----------|
 | `--format` | `text` | Formato: `text`, `mermaid` ou `dot` |
-| `--only <tool>` | — | Mostra apenas o subgrafo de uma tool específica |
+| `--only <tool>` | — | Mostra apenas o subgrafo de uma tool |
+| `--skip <tools>` | — | Pula tools do grafo (separadas por vírgula) |
+| `--profile <tag>` | — | Filtra tools por tag |
 
 ### `depengine why <tool>`
 
