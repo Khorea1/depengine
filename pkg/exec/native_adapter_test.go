@@ -257,6 +257,47 @@ func TestNativeAdapterRemove(t *testing.T) {
 	})
 }
 
+func TestNativeByManagerAdapterAvailable(t *testing.T) {
+	t.Run("manager found on PATH", func(t *testing.T) {
+		fr := &run.FakeRunner{ExitCode: 0}
+		a := &NativeByManagerAdapter{managerName: "apt"}
+
+		got := a.Available(context.Background(), fr)
+		if !got {
+			t.Fatal("expected true when manager is on PATH")
+		}
+		if len(fr.Calls) != 1 {
+			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
+		}
+		if fr.Calls[0].Name != "which" {
+			t.Fatalf("expected 'which', got %q", fr.Calls[0].Name)
+		}
+	})
+
+	t.Run("manager not found on PATH", func(t *testing.T) {
+		fr := &run.FakeRunner{ExitCode: 1}
+		a := &NativeByManagerAdapter{managerName: "nonexistent-mgr"}
+
+		got := a.Available(context.Background(), fr)
+		if got {
+			t.Fatal("expected false when manager is not on PATH")
+		}
+		if len(fr.Calls) != 1 {
+			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
+		}
+	})
+
+	t.Run("runner error returns false", func(t *testing.T) {
+		fr := &run.FakeRunner{Err: fmt.Errorf("exec error")}
+		a := &NativeByManagerAdapter{managerName: "apt"}
+
+		got := a.Available(context.Background(), fr)
+		if got {
+			t.Fatal("expected false when runner errors")
+		}
+	})
+}
+
 func TestNativeByManagerAdapterImplementsRemover(t *testing.T) {
 	a := &NativeByManagerAdapter{managerName: "apt"}
 	if !CanRemove(a) {
