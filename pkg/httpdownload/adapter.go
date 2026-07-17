@@ -10,6 +10,7 @@ import (
 
 	"depengine/pkg/downloadcache"
 	"depengine/pkg/exec"
+	"depengine/pkg/log"
 	"depengine/pkg/run"
 	"depengine/pkg/schema"
 )
@@ -117,7 +118,7 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 		if err := a.verifyChecksum(ctx, rn, tmpFile, resolvedURL, checksum, mc.Config); err != nil {
 			// If we used a cached file and checksum fails, re-download fresh.
 			if fromCache {
-				fmt.Fprintf(os.Stderr, "  ⚠  cached copy failed checksum, re-downloading %s\n", tool.Name)
+				log.Default.Warn("cached copy failed checksum, re-downloading", "tool", tool.Name)
 				downloadcache.Remove(resolvedURL)
 				dl := SelectDownloader(ctx, rn)
 				if err2 := dl.Download(ctx, resolvedURL, tmpFile); err2 != nil {
@@ -152,13 +153,13 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 	if !fromCache {
 		if _, err := downloadcache.Store(resolvedURL, tmpFile); err != nil {
 			// Cache write failure is non-fatal; the install continues.
-			fmt.Fprintf(os.Stderr, "  ⚠  cache write failed: %v\n", err)
+			log.Default.Warn("cache write failed", "error", err, "url", resolvedURL)
 		}
 	} else {
 		// Cache invalidation: we removed the old entry and re-downloaded.
 		// Restock the cache with the freshly verified file.
 		if _, err := downloadcache.Store(resolvedURL, tmpFile); err != nil {
-			fmt.Fprintf(os.Stderr, "  ⚠  cache write failed: %v\n", err)
+			log.Default.Warn("cache write failed", "error", err, "url", resolvedURL)
 		}
 	}
 
@@ -227,7 +228,7 @@ func (a *HTTPAdapter) verifyChecksum(ctx context.Context, rn run.Runner, filePat
 // resolveAutoChecksum handles :auto checksum resolution by trying to fetch
 // a companion checksum file and extracting the expected hash.
 func (a *HTTPAdapter) resolveAutoChecksum(ctx context.Context, rn run.Runner, filePath, downloadURL string, cc *checksumConfig, config map[string]any) error {
-	fmt.Fprintf(os.Stderr, "  ⚠  %s:auto: checksum fetched from server (TOFU). Use checksum_url for a separate source, or pin the hash in schema.lock after verifying.\n", cc.algorithm)
+	log.Default.Warn("checksum fetched from server (TOFU)", "algorithm", cc.algorithm, "hint", "use checksum_url for a separate source, or pin the hash in schema.lock")
 
 	parsedURL, err := url.Parse(downloadURL)
 	if err != nil {

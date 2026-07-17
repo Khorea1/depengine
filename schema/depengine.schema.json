@@ -65,6 +65,10 @@
           "items": { "type": "string" },
           "description": "Tool-level dependency. These tools must be installed first, regardless of which method succeeds."
         },
+        "pre_install": {
+          "type": "string",
+          "description": "Shell command to run BEFORE the tool is installed. Failure aborts the install. Also accepted as 'preinstall'."
+        },
         "postinstall": {
           "type": "string",
           "description": "Shell command to run AFTER the tool is successfully installed. Runs regardless of which method succeeded."
@@ -111,6 +115,23 @@
           "type": "string",
           "description": "Checksum for verification. \"sha256:auto\" = calculate on first download (TOFU). \"sha256:<hex>\" = pinned verification."
         },
+        "checksum_url": {
+          "type": "string",
+          "description": "Explicit URL for the checksum file. Overrides auto URL patterns when checksum is :auto."
+        },
+        "checksum_file_format": {
+          "type": "string",
+          "enum": ["sha256sum", "bsd", "raw"],
+          "description": "Format of the checksum file: 'sha256sum' (default), 'bsd' (BSD-style), or 'raw' (file content is the hash)."
+        },
+        "signature_url": {
+          "type": "string",
+          "description": "URL to GPG detached signature (.asc/.sig) for verifying the checksum file."
+        },
+        "signing_key": {
+          "type": "string",
+          "description": "GPG key URL or fingerprint for signature verification."
+        },
         "extract_to": {
           "type": "string",
           "description": "Directory to extract/install artifacts into."
@@ -124,8 +145,8 @@
             { "type": "integer", "minimum": 0, "description": "Git clone depth (0 = full history)." },
             { "type": "string", "pattern": "^[0-9]+$", "description": "Git clone depth as string." }
           ],
-          "default": "1",
-          "description": "Git clone depth (git adapter). Default \"1\" (shallow). \"0\" = full history."
+          "default": 1,
+          "description": "Git clone depth (git adapter). Default 1 (shallow). 0 = full history."
         },
         "binary": {
           "type": "string",

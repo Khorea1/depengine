@@ -18,7 +18,10 @@ import (
 func runUpdate(args []string) {
 	updateCmd := flag.NewFlagSet("update", flag.ExitOnError)
 	updateSchema := updateCmd.String("schema", "schema.toml", "path to schema.toml")
+	updateLock := updateCmd.String("lock", "", "path to schema.lock (default: alongside schema.toml)")
 	updateProfile := updateCmd.String("profile", "", "only resolve & pin tools with matching tag")
+	updateFrozen := updateCmd.Bool("frozen-lockfile", false, "abort if schema.lock does not exist")
+	updateDryRun := updateCmd.Bool("dry-run", false, "show what would be updated without writing lock")
 	updateVerbose := updateCmd.Bool("v", false, "detailed output")
 	updateCmd.Parse(args)
 
@@ -47,11 +50,24 @@ func runUpdate(args []string) {
 		os.Exit(1)
 	}
 
-	lockPath := lock.DefaultPath(*updateSchema)
-	if err := lock.Save(lockPath, newLock); err != nil {
-		fmt.Fprintln(os.Stderr, "FAIL")
-		lg.Error("save lock", "error", err)
-		os.Exit(1)
+	lockPath := *updateLock
+	if lockPath == "" {
+		lockPath = lock.DefaultPath(*updateSchema)
+	}
+	if *updateFrozen {
+		if _, err := os.Stat(lockPath); err != nil {
+			lg.Error("frozen-lockfile: lockfile not found", "path", lockPath)
+			os.Exit(1)
+		}
+	}
+	if *updateDryRun {
+		fmt.Fprintf(os.Stderr, "dry-run: %d pins would be written to %s\n", len(newLock.Tools), lockPath)
+	} else {
+		if err := lock.Save(lockPath, newLock); err != nil {
+			fmt.Fprintln(os.Stderr, "FAIL")
+			lg.Error("save lock", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	pinned := len(newLock.Tools)
@@ -162,7 +178,7 @@ func runDiff(args []string) {
 		if *diffJSON {
 			fmt.Println("[]")
 		} else {
-			fmt.Println("Nenhuma diferença encontrada.")
+			fmt.Println("No differences found.")
 		}
 		return
 	}
@@ -188,34 +204,34 @@ func runDiff(args []string) {
 		}
 
 		if onlyA > 0 {
-			fmt.Println("=== Somente no atual ===")
+			fmt.Println("=== Only in current ===")
 			for _, item := range items {
 				if item.Side == "only_a" {
-					fmt.Printf("  %s (%s, instalado %s)\n", item.Name, item.MethodA, item.InstalledAtA)
+					fmt.Printf("  %s (%s, installed %s)\n", item.Name, item.MethodA, item.InstalledAtA)
 				}
 			}
 		}
 
 		if onlyB > 0 {
-			fmt.Println("=== Somente no outro ===")
+			fmt.Println("=== Only in other ===")
 			for _, item := range items {
 				if item.Side == "only_b" {
-					fmt.Printf("  %s (%s, instalado %s)\n", item.Name, item.MethodB, item.InstalledAtB)
+					fmt.Printf("  %s (%s, installed %s)\n", item.Name, item.MethodB, item.InstalledAtB)
 				}
 			}
 		}
 
 		if diffCount > 0 {
-			fmt.Println("=== Definição diferente ===")
+			fmt.Println("=== Definition changed ===")
 			for _, item := range items {
 				if item.Side == "different" {
 					fmt.Printf("  %s\n", item.Name)
-					fmt.Printf("    atual: %s (hash: %s)\n", item.MethodA, item.HashA)
-					fmt.Printf("    outro: %s (hash: %s)\n", item.MethodB, item.HashB)
+					fmt.Printf("    current: %s (hash: %s)\n", item.MethodA, item.HashA)
+					fmt.Printf("    other: %s (hash: %s)\n", item.MethodB, item.HashB)
 				}
 			}
 		}
 
-		fmt.Printf("\n%d ferramentas diferem.\n", len(items))
+		fmt.Printf("\n%d tools differ.\n", len(items))
 	}
 }

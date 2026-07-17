@@ -28,13 +28,13 @@ func runUndo(args []string) {
 			os.Exit(3)
 		}
 		if len(snapshots) == 0 {
-			fmt.Println("Nenhum snapshot encontrado.")
+			fmt.Println("No snapshots available.")
 			return
 		}
-		fmt.Println("Snapshots disponíveis:")
+		fmt.Println("Available snapshots:")
 		for _, s := range snapshots {
 			ts := s.Timestamp.Format("2006-01-02 15:04:05")
-			fmt.Printf("  %s  %s  (%d ferramentas)\n", ts, filepath.Base(s.Path), s.ToolCount)
+			fmt.Printf("  %s  %s  (%d tools)\n", ts, filepath.Base(s.Path), s.ToolCount)
 		}
 		return
 	}
@@ -49,7 +49,7 @@ func runUndo(args []string) {
 			os.Exit(3)
 		}
 		if len(snapshots) == 0 {
-			log.Default.Error("nenhum snapshot disponível para undo")
+			log.Default.Error("no snapshot available for undo")
 			os.Exit(1)
 		}
 		snapPath = snapshots[0].Path
@@ -168,6 +168,6 @@ func runUndo(args []string) {
 		os.Exit(1)
 	}
 
-	log.Default.Info("undo concluído", "tools_removed", len(toRemove))
+	log.Default.Info("undo complete", "tools_removed", len(toRemove))
 
 }

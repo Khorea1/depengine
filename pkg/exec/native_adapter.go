@@ -18,9 +18,10 @@ import (
 // Sync is NOT handled here — the executor's SyncManager runs index
 // synchronization once per session before any tool is installed.
 type NativeAdapter struct {
-	clan   string     // detected on first Available() call
-	once   sync.Once  // ensures detectClan runs exactly once
+	clan string    // detected on first Available() call
+	once sync.Once // ensures detectClan runs exactly once
 }
+
 // NewNativeAdapter creates an adapter. Clan is detected automatically.
 func NewNativeAdapter(clan string) *NativeAdapter {
 	return &NativeAdapter{clan: clan}
@@ -103,7 +104,6 @@ func (a *NativeAdapter) Remove(ctx context.Context, rn run.Runner, tool *schema.
 }
 
 func (a *NativeAdapter) CanRemove() bool { return true }
-
 
 // pkgFromConfig extracts the package name from a MethodCandidate's Config.
 // When clan is non-empty and the MC has pkg_overrides, it checks for a

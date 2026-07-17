@@ -193,7 +193,7 @@ var managerNameToClan = map[string]string{
 	"emerge":  "gentoo", // gentoo package manager
 	"portage": "gentoo", // backward compat for schema entries using "portage"
 	"yum":     "fedora", // yum is a symlink to dnf on modern systems
-	"dnf5":   "fedora", // dnf5 is the new default in Fedora 41+
+	"dnf5":    "fedora", // dnf5 is the new default in Fedora 41+
 }
 
 // ManagerNameToClan returns the clan for a given manager binary name. This

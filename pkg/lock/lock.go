@@ -126,7 +126,7 @@ func ResolveAll(ctx context.Context, s *schema.Schema, rn run.Runner) (*Lock, er
 			// Resolve {latest} in URL fields (git and http methods only).
 			if method.Kind == "git" || method.Kind == "http" {
 				if urlRaw, ok := method.Config["url"].(string); ok && strings.Contains(urlRaw, "{latest}") {
-				resolved, err := ghrelease.ResolveLatest(ctx, urlRaw, rn)
+					resolved, err := ghrelease.ResolveLatest(ctx, urlRaw, rn)
 					if err != nil {
 						return nil, fmt.Errorf("lock: resolve %s/%s: %w", name, method.Kind, err)
 					}

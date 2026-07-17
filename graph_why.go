@@ -144,7 +144,7 @@ func runWhy(args []string) {
 		}
 		reason := a.Error
 		if reason == "" {
-			reason = "pronto para instalar"
+			reason = "ready to install"
 		}
 		fmt.Printf("  %s %s — %s\n", statusSymbol, a.Kind, reason)
 	}

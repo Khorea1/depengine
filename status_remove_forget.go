@@ -22,7 +22,8 @@ import (
 func runStatus(args []string) {
 	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
 	statusSchema := statusCmd.String("schema", "", "override schema path")
-	statusJSON := statusCmd.Bool("json", false, "JSON output")
+	statusFormat := statusCmd.String("format", "text", "output format: text or json")
+	statusJSON := statusCmd.Bool("json", false, "JSON output (shorthand for --format=json)")
 	statusOrphans := statusCmd.Bool("orphans", false, "show only orphaned tools")
 	statusCmd.Parse(args)
 
@@ -41,7 +42,7 @@ func runStatus(args []string) {
 	}
 	if schemaPath == "" {
 		if len(st.Tools) == 0 {
-			fmt.Fprintln(os.Stderr, "Nenhuma ferramenta no estado (nada instalado ainda). Use --schema para comparar com um schema.")
+			fmt.Fprintln(os.Stderr, "No tools in state (nothing installed yet). Use --schema to compare against a schema.")
 			return
 		}
 	}
@@ -105,7 +106,7 @@ func runStatus(args []string) {
 		return tools[i].Name < tools[j].Name
 	})
 
-	if *statusJSON {
+	if *statusFormat == "json" || *statusJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(tools); err != nil {
@@ -117,14 +118,14 @@ func runStatus(args []string) {
 
 	if len(tools) == 0 {
 		if *statusOrphans {
-			fmt.Println("Nenhuma ferramenta órfã.")
+			fmt.Println("No orphan tools.")
 		} else {
-			fmt.Println("Nenhuma ferramenta no estado. Execute 'depengine install' primeiro.")
+			fmt.Println("No tools in state. Run 'depengine install' first.")
 		}
 		return
 	}
 
-	fmt.Printf("%-30s %-12s %-10s  %s\n", "Ferramenta", "Status", "Método", "Instalada em")
+	fmt.Printf("%-30s %-12s %-10s  %s\n", "Tool", "Status", "Method", "Installed At")
 	fmt.Println(strings.Repeat("-", 70))
 	for _, t := range tools {
 		fmt.Printf("%-30s %-12s %-10s  %s\n", t.Name, t.Status, t.Method, t.Updated)

@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"depengine/pkg/log"
 )
 
 // SnapshotInfo holds metadata about a saved snapshot.
@@ -48,11 +50,10 @@ func SaveSnapshot() (*SnapshotInfo, error) {
 	if err := os.WriteFile(dst, data, 0600); err != nil {
 		return nil, fmt.Errorf("write snapshot: %w", err)
 	}
-
 	// Prune old snapshots: keep at most 10, remove those older than 30 days.
 	if err := PruneSnapshots(10, 30*24*time.Hour); err != nil {
 		// Non-fatal; warn but don't fail the save.
-		fmt.Fprintf(os.Stderr, "warning: prune snapshots: %v\n", err)
+		log.Default.Warn("prune snapshots", "error", err)
 	}
 
 	// Count tools for the info.

@@ -30,7 +30,7 @@ func init() {
 }
 
 // shellQuote wraps s in single quotes, escaping any embedded single quotes
-// with the standard POSIX '\'' sequence. Inside single quotes every character
+// with the standard POSIX '\” sequence. Inside single quotes every character
 // is literal, so the result is safe for use in sh -c strings.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
@@ -170,6 +170,7 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.To
 
 	return nil
 }
+
 // isSharedDir checks if a directory path is a common shared system directory.
 // We avoid deleting these directories completely during uninstallation.
 func isSharedDir(path string) bool {

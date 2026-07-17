@@ -82,7 +82,11 @@ func (OSExecRunner) Run(ctx context.Context, name string, args ...string) Result
 //
 // Centralizing this lets adapters and validators share one binary-existence
 // contract rather than each cloning the `which {binary}` pattern.
+// If rn is nil, a default OSExecRunner is used.
 func LookPath(ctx context.Context, rn Runner, name string) bool {
+	if rn == nil {
+		rn = OSExecRunner{}
+	}
 	res := rn.Run(ctx, "which", name)
 	return res.Err == nil && res.ExitCode == 0
 }

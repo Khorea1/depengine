@@ -212,7 +212,7 @@ func TestDefinitionHashIncludesRequires(t *testing.T) {
 		},
 	}
 	withRequires := &schema.Tool{
-		Name: "test",
+		Name:     "test",
 		Requires: []string{"other-tool"},
 		Methods: []*schema.MethodCandidate{
 			{Kind: "native", Config: map[string]any{"pkg": "test"}},
@@ -234,7 +234,7 @@ func TestDefinitionHashIncludesPostInstall(t *testing.T) {
 		},
 	}
 	withPost := &schema.Tool{
-		Name: "test",
+		Name:        "test",
 		PostInstall: "fc-cache -fv",
 		Methods: []*schema.MethodCandidate{
 			{Kind: "native", Config: map[string]any{"pkg": "test"}},

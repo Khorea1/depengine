@@ -447,8 +447,8 @@ func TestIsSharedDir(t *testing.T) {
 		{"/var/lib", false},
 		{"/usr/local/foo", false},
 		// Cleaned versions should also match.
-		{"/../", true},              // Cleaned to "/"
-		{"/usr/../bin", true},       // Cleaned to "/bin"
+		{"/../", true},        // Cleaned to "/"
+		{"/usr/../bin", true}, // Cleaned to "/bin"
 	}
 	for _, tt := range tests {
 		got := isSharedDir(tt.path)

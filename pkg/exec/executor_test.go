@@ -548,7 +548,7 @@ func TestExecutorParallelExecution(t *testing.T) {
 	installCh := make(chan string, 3)
 
 	mock := &testMockAdapter{
-		kindValue: "native",
+		kindValue:     "native",
 		availableFunc: func() bool { return true },
 		checkFunc:     func(string) bool { return false },
 		installFunc: func(name string) error {
@@ -584,7 +584,7 @@ func TestExecutorParallelExecution(t *testing.T) {
 func TestExecutorParallelSequentialDefault(t *testing.T) {
 	// WithMaxJobs(1) produces the same sequential behavior as the default.
 	mock := &testMockAdapter{
-		kindValue: "native",
+		kindValue:     "native",
 		availableFunc: func() bool { return true },
 		checkFunc:     func(string) bool { return false },
 	}
@@ -695,7 +695,6 @@ func TestExecutorBlocksDangerous(t *testing.T) {
 	}
 }
 
-
 func TestHasDangerousMethod(t *testing.T) {
 	ex := &Executor{}
 	tool := &schema.Tool{Name: "test"}
@@ -753,7 +752,6 @@ func TestHasDangerousMethod(t *testing.T) {
 		t.Error("AUR method should not be flagged as dangerous")
 	}
 }
-
 
 func TestLookupAdapter(t *testing.T) {
 	// Save and restore global registry.

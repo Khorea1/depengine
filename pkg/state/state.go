@@ -27,7 +27,7 @@ type ToolState struct {
 	// InstalledAt is the RFC3339 timestamp of when the tool was installed.
 	InstalledAt string `json:"installed_at"`
 	// PostinstallDone is true if a postinstall script was successfully run.
-	PostinstallDone bool          `json:"postinstall_done"`
+	PostinstallDone bool `json:"postinstall_done"`
 	// DefinitionHash is the SHA256 of the tool's schema definition at install time.
 	DefinitionHash string         `json:"definition_hash"`
 	Config         map[string]any `json:"config"`
@@ -47,28 +47,17 @@ func DefaultPath() string {
 	return filepath.Join(xdgState, "depengine", "state.json")
 }
 
-// Load reads the state file from DefaultPath. If the file does not exist,
-// it returns an empty-but-valid State ready for first use.
+// Load reads the state file from DefaultPath. Delegates to LoadFrom,
+// then initialises Version to 1 if this is a fresh state (no file existed).
 func Load() (*State, error) {
-	path := DefaultPath()
-	data, err := os.ReadFile(path)
+	s, err := LoadFrom(DefaultPath())
 	if err != nil {
-		if os.IsNotExist(err) {
-			return &State{
-				Version: 1,
-				Tools:   make(map[string]ToolState),
-			}, nil
-		}
-		return nil, fmt.Errorf("read state: %w", err)
+		return nil, err
 	}
-	var s State
-	if err := json.Unmarshal(data, &s); err != nil {
-		return nil, fmt.Errorf("parse state: %w", err)
+	if s.Version == 0 {
+		s.Version = 1
 	}
-	if s.Tools == nil {
-		s.Tools = make(map[string]ToolState)
-	}
-	return &s, nil
+	return s, nil
 }
 
 // Save writes the state to DefaultPath atomically: write to a temp file,
@@ -191,22 +180,22 @@ func SaveLocked(st *State) error {
 // LoadFrom reads a state file from an arbitrary path (not DefaultPath).
 // If the file does not exist, it returns an empty-but-valid State ready for first use.
 func LoadFrom(path string) (*State, error) {
-    data, err := os.ReadFile(path)
-    if err != nil {
-        if os.IsNotExist(err) {
-            return &State{
-                Version: 1,
-                Tools:   make(map[string]ToolState),
-            }, nil
-        }
-        return nil, fmt.Errorf("read state: %w", err)
-    }
-    var s State
-    if err := json.Unmarshal(data, &s); err != nil {
-        return nil, fmt.Errorf("parse state: %w", err)
-    }
-    if s.Tools == nil {
-        s.Tools = make(map[string]ToolState)
-    }
-    return &s, nil
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &State{
+				Version: 1,
+				Tools:   make(map[string]ToolState),
+			}, nil
+		}
+		return nil, fmt.Errorf("read state: %w", err)
+	}
+	var s State
+	if err := json.Unmarshal(data, &s); err != nil {
+		return nil, fmt.Errorf("parse state: %w", err)
+	}
+	if s.Tools == nil {
+		s.Tools = make(map[string]ToolState)
+	}
+	return &s, nil
 }

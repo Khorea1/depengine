@@ -1,4 +1,5 @@
 package exec
+
 import (
 	"context"
 	"fmt"
@@ -12,8 +13,8 @@ import (
 
 	"depengine/pkg/engine"
 	"depengine/pkg/graph"
-	"depengine/pkg/run"
 	"depengine/pkg/native"
+	"depengine/pkg/run"
 	"depengine/pkg/schema"
 	"depengine/pkg/state"
 )
@@ -21,22 +22,23 @@ import (
 // Executor orchestrates the installation of all tools in a schema.
 // Use New() to create, then configure with Option funcs.
 type Executor struct {
-	clan          string
-	rn            run.Runner
-	toolTimeout   time.Duration
-	methodTimeout time.Duration
-	dryRun        bool
-	sortBy        SortField
-	adapters      map[string]Adapter // per-instance adapter registry
-	logger        *slog.Logger       // structured logger; nil = no structured output
-	outWriter     io.Writer          // user-facing formatted output; defaults to os.Stderr
-	maxJobs       int                // max concurrent tools; 0 or 1 = sequential (default)
-	allowArbitraryCode bool          // if false, warn about dangerous methods (build scripts, etc.)
+	clan               string
+	rn                 run.Runner
+	toolTimeout        time.Duration
+	methodTimeout      time.Duration
+	dryRun             bool
+	sortBy             SortField
+	adapters           map[string]Adapter // per-instance adapter registry
+	logger             *slog.Logger       // structured logger; nil = no structured output
+	outWriter          io.Writer          // user-facing formatted output; defaults to os.Stderr
+	maxJobs            int                // max concurrent tools; 0 or 1 = sequential (default)
+	allowArbitraryCode bool               // if false, warn about dangerous methods (build scripts, etc.)
 
 	// schema info for state tracking
-	schemaPath       string
-	schemaModTime    time.Time
+	schemaPath    string
+	schemaModTime time.Time
 }
+
 // Option configures the executor.
 type Option func(*Executor)
 
@@ -275,6 +277,7 @@ func (ex *Executor) Execute(ctx context.Context, s *schema.Schema, clan string) 
 
 	return report, nil
 }
+
 // writeState persists the installation state file after a successful run.
 // It loads existing state and merges in the current run's results, preserving
 // tools installed by other schemas or earlier runs.
@@ -323,7 +326,6 @@ func (ex *Executor) writeState(ctx context.Context, s *schema.Schema, report *Ex
 		ex.logWarn(ctx, "state save failed", "error", err)
 	}
 }
-
 
 // hasDangerousMethod checks whether any of the tool's methods have config
 // keys that trigger arbitrary code execution (build scripts, etc.).
@@ -730,9 +732,15 @@ func (ex *Executor) log(ctx context.Context, level slog.Level, msg string, attrs
 	}
 }
 
-func (ex *Executor) logDebug(ctx context.Context, msg string, attrs ...any) { ex.log(ctx, slog.LevelDebug, msg, attrs...) }
-func (ex *Executor) logInfo(ctx context.Context, msg string, attrs ...any)  { ex.log(ctx, slog.LevelInfo, msg, attrs...) }
-func (ex *Executor) logWarn(ctx context.Context, msg string, attrs ...any)  { ex.log(ctx, slog.LevelWarn, msg, attrs...) }
+func (ex *Executor) logDebug(ctx context.Context, msg string, attrs ...any) {
+	ex.log(ctx, slog.LevelDebug, msg, attrs...)
+}
+func (ex *Executor) logInfo(ctx context.Context, msg string, attrs ...any) {
+	ex.log(ctx, slog.LevelInfo, msg, attrs...)
+}
+func (ex *Executor) logWarn(ctx context.Context, msg string, attrs ...any) {
+	ex.log(ctx, slog.LevelWarn, msg, attrs...)
+}
 
 // outputf formats user-facing output (status lines, sync messages, etc.).
 func (ex *Executor) outputf(format string, args ...any) {

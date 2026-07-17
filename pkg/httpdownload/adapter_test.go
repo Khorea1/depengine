@@ -411,13 +411,13 @@ func TestParseChecksumFileAuto_BSD(t *testing.T) {
 }
 func TestExtractChecksumConfig(t *testing.T) {
 	tests := []struct {
-		name      string
-		checksum  string
-		config    map[string]any
-		wantAlgo  string
-		wantURL   string
-		wantFmt   string
-		wantNil   bool
+		name     string
+		checksum string
+		config   map[string]any
+		wantAlgo string
+		wantURL  string
+		wantFmt  string
+		wantNil  bool
 	}{
 		{
 			name:     "sha256_with_url_and_format",

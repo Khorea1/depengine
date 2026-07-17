@@ -9,8 +9,8 @@ import (
 
 	"depengine/pkg/native"
 
-	"github.com/pelletier/go-toml/v2"
 	"depengine/pkg/log"
+	"github.com/pelletier/go-toml/v2"
 )
 
 // Schema is the fully-normalized in-memory form of schema.toml after parsing.
@@ -37,12 +37,12 @@ type Defaults struct {
 // or full block.
 type Tool struct {
 	Name        string
-	PreInstall  string   // shell command run before install; failure aborts install
-	PostInstall string   // shell command run after successful install
+	PreInstall  string // shell command run before install; failure aborts install
+	PostInstall string // shell command run after successful install
 	Requires    []string
 	Methods     []*MethodCandidate
 	IsSimple    bool
-	Tags        []string  // profile tags for --profile filtering (e.g. "desktop", "server")
+	Tags        []string // profile tags for --profile filtering (e.g. "desktop", "server")
 }
 
 // MethodCandidate is one way to install the parent Tool. Kind is the
@@ -154,8 +154,8 @@ func ParseSchemaNoFacts(path string) (*Schema, error) {
 }
 func extractDefaults(raw any) Defaults {
 	d := Defaults{
-		Manager:     "native",
-		AurHelper:   "paru",
+		Manager:   "native",
+		AurHelper: "paru",
 		MethodOrder: []string{
 			"native", "cargo", "go", "pipx", "uv", "pip",
 			"npm", "pnpm", "bun", "gem", "yarn", "yarn-berry",
@@ -272,7 +272,7 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 			mc.Config[k] = v
 		}
 	default:
-		return nil, fmt.Errorf("valor de método inválido: %T", val)
+		return nil, fmt.Errorf("invalid method value type: %T", val)
 	}
 	return mc, nil
 }
@@ -310,7 +310,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	nativeOverrides := map[string]any{}
 	var nonNativeKeys []string
 
-	for _, k := range sortedKeys(valMap, "requires", "pre_install", "post_install", "tags") {
+	for _, k := range sortedKeys(valMap, "requires", "pre_install", "preinstall", "post_install", "postinstall", "tags") {
 		if _, isStr := valMap[k].(string); isStr && native.IsNativeManagerName(k) {
 			nativeOverrides[k] = valMap[k]
 		} else {
@@ -509,7 +509,6 @@ func Validate(s *Schema, knownKinds []string) (error, []string) {
 			}
 		}
 	}
-
 
 	if len(hardErrors) > 0 {
 		return &ParseSchemaError{Err: errors.New(strings.Join(hardErrors, "\n"))}, warnings

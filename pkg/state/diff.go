@@ -14,40 +14,42 @@ type DiffItem struct {
 	InstalledAtB string `json:"installed_at_b,omitempty"`
 }
 
+// stateTools returns the Tools map of s, or nil when s is nil.
+func stateTools(s *State) map[string]ToolState {
+	if s == nil {
+		return nil
+	}
+	return s.Tools
+}
+
+// collectNames returns every tool name present in any of the given states.
+func collectNames(states ...*State) map[string]struct{} {
+	names := make(map[string]struct{})
+	for _, s := range states {
+		tools := stateTools(s)
+		for name := range tools {
+			names[name] = struct{}{}
+		}
+	}
+	return names
+}
+
 // Diff compares two State values and returns a sorted list of differences.
 // Tools present in both states with the same DefinitionHash are omitted
 // (they match). The result is sorted by tool name.
 func Diff(a, b *State) []DiffItem {
 	var items []DiffItem
 
-	// Handle nil inputs.
 	if a == nil && b == nil {
 		return items
 	}
 
-	// Collect all tool names from both states.
-	names := make(map[string]struct{})
-	if a != nil && a.Tools != nil {
-		for name := range a.Tools {
-			names[name] = struct{}{}
-		}
-	}
-	if b != nil && b.Tools != nil {
-		for name := range b.Tools {
-			names[name] = struct{}{}
-		}
-	}
+	names := collectNames(a, b)
 
 	for name := range names {
-		var ta, tb ToolState
-		okA := false
-		okB := false
-		if a != nil && a.Tools != nil {
-			ta, okA = a.Tools[name]
-		}
-		if b != nil && b.Tools != nil {
-			tb, okB = b.Tools[name]
-		}
+		ta, okA := stateTools(a)[name]
+		tb, okB := stateTools(b)[name]
+
 		switch {
 		case okA && !okB:
 			items = append(items, DiffItem{
@@ -66,7 +68,6 @@ func Diff(a, b *State) []DiffItem {
 				InstalledAtB: tb.InstalledAt,
 			})
 		default:
-			// In both — compare hashes.
 			if ta.DefinitionHash != tb.DefinitionHash {
 				items = append(items, DiffItem{
 					Name:         name,

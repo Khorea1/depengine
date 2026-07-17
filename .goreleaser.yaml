@@ -61,7 +61,7 @@ brews:
       email: bot@depengine.dev
     install: |
       bin.install "depengine"
-      lib.install "scripts/detect_os.sh" => "depengine/detect_os.sh"
+      (lib/"depengine").install "scripts/detect_os.sh"
       man1.install "docs/depengine.1"
       bash_completion.install "scripts/depengine-completion.bash"
       zsh_completion.install "scripts/depengine-completion.zsh"
