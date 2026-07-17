@@ -132,7 +132,6 @@ func (a *BaseAdapter) buildCmd(tmpl []string, tool *schema.Tool, mc *schema.Meth
 	return exec.SubstitutePkg(tmpl, tool, mc)
 }
 
-
 // Compile-time interface checks.
 var _ exec.Remover = (*BaseAdapter)(nil)
 

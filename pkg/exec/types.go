@@ -5,7 +5,6 @@ import (
 	"time"
 )
 
-
 // SortField controls the sort order of tools in the output report.
 type SortField string
 

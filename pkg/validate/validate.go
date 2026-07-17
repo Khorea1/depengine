@@ -18,10 +18,10 @@ type ErrorCode string
 
 const (
 	// Errors (hard — schema is unusable).
-	ErrRequiredField ErrorCode = "E_REQUIRED_FIELD"
-	ErrDanglingRef   ErrorCode = "E_DANGLING_REF"
-	ErrCycle         ErrorCode = "E_CYCLE"
-	ErrMalformedURL  ErrorCode = "E_MALFORMED_URL"
+	ErrRequiredField   ErrorCode = "E_REQUIRED_FIELD"
+	ErrDanglingRef     ErrorCode = "E_DANGLING_REF"
+	ErrCycle           ErrorCode = "E_CYCLE"
+	ErrMalformedURL    ErrorCode = "E_MALFORMED_URL"
 	ErrInvalidValue    ErrorCode = "E_INVALID_VALUE"
 	ErrInvalidChecksum ErrorCode = "E_INVALID_CHECKSUM"
 
@@ -29,7 +29,7 @@ const (
 	WarnUnknownPlaceholder  ErrorCode = "W_UNKNOWN_PLACEHOLDER"
 	WarnUnknownWhenKey      ErrorCode = "W_UNKNOWN_WHEN_KEY"
 	WarnUnknownDistroFamily ErrorCode = "W_UNKNOWN_DISTRO_FAMILY"
-	WarnAutoChecksum    ErrorCode = "W_AUTO_CHECKSUM"
+	WarnAutoChecksum        ErrorCode = "W_AUTO_CHECKSUM"
 )
 
 // ValidationError represents a single validation finding.
@@ -130,7 +130,6 @@ func truncateStr(s string, n int) string {
 	}
 	return s[:n-3] + "..."
 }
-
 
 // ValidateSchema runs structural and semantic validation on a parsed schema.
 // It does NOT duplicate the method-kind checks already performed by

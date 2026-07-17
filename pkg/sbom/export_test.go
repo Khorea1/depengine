@@ -272,4 +272,3 @@ func TestSPDXDeterministic(t *testing.T) {
 		}
 	}
 }
-

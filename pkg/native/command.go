@@ -57,4 +57,3 @@ func withSudo(cmd []string, sudoRequired bool) []string {
 	}
 	return append([]string{"sudo"}, cmd...)
 }
-

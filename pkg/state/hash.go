@@ -83,7 +83,6 @@ func DefinitionHash(tool *schema.Tool) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-
 // writeMapCanonical writes a deterministic hash of a map[string]any by
 // sorting keys lexicographically and recursing into nested maps and slices.
 func writeMapCanonical(h hash.Hash, m map[string]any) {

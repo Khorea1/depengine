@@ -9,7 +9,7 @@ import (
 // FakeRunner records every call and returns canned output for assertions.
 // It is used across multiple packages' tests.
 type FakeRunner struct {
-	mu         sync.Mutex
+	mu       sync.Mutex
 	Calls    []FakeCall
 	Stdout   string
 	Stderr   string

@@ -143,6 +143,7 @@ func WithPostInstall(s *schema.Schema, toolName, script string) *schema.Schema {
 	}
 	return s
 }
+
 // MustSort is a test helper that calls graph.Sort and panics on error.
 func MustSort(tools map[string]*schema.Tool) [][]string {
 	levels, err := graph.Sort(tools)

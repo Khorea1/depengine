@@ -114,7 +114,6 @@ func TestBaseAdapterInstallFailure(t *testing.T) {
 	}
 }
 
-
 func TestBaseAdapterCanRemoveFalseWhenEmpty(t *testing.T) {
 	adapter := NewBaseAdapter(BaseConfig{
 		KindName: "test-no-remove",
@@ -127,8 +126,8 @@ func TestBaseAdapterCanRemoveFalseWhenEmpty(t *testing.T) {
 
 func TestBaseAdapterCanRemoveTrueWhenSet(t *testing.T) {
 	adapter := NewBaseAdapter(BaseConfig{
-		KindName:    "test-has-remove",
-		Binary:      "sh",
+		KindName:   "test-has-remove",
+		Binary:     "sh",
 		RemoveTmpl: []string{"echo", "remove", "{pkg}"},
 	})
 	if !adapter.CanRemove() {
@@ -138,8 +137,8 @@ func TestBaseAdapterCanRemoveTrueWhenSet(t *testing.T) {
 func TestBaseAdapterRemoveSuccess(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 0}
 	adapter := NewBaseAdapter(BaseConfig{
-		KindName:    "test-remove",
-		Binary:      "sh",
+		KindName:   "test-remove",
+		Binary:     "sh",
 		RemoveTmpl: []string{"echo", "remove", "{pkg}"},
 	})
 	tl, mc := tool("test-tool", "test-pkg")
@@ -166,8 +165,8 @@ func TestBaseAdapterRemoveNoCommand(t *testing.T) {
 func TestBaseAdapterRemoveFailure(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 1, Stderr: "error: not installed"}
 	adapter := NewBaseAdapter(BaseConfig{
-		KindName:    "test-remove-fail",
-		Binary:      "sh",
+		KindName:   "test-remove-fail",
+		Binary:     "sh",
 		RemoveTmpl: []string{"false"},
 	})
 	tl, mc := tool("test-tool", "test-pkg")

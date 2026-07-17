@@ -43,7 +43,7 @@ func TestValidateDanglingReferences_MultipleDeps(t *testing.T) {
 	s := &schema.Schema{
 		Tools: map[string]*schema.Tool{
 			"a": tool("a", nil, []string{"b", "c"}), // both missing
-			"b": tool("b", nil, nil),                 // defined
+			"b": tool("b", nil, nil),                // defined
 		},
 	}
 	r := validateDanglingReferences(s)

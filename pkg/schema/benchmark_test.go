@@ -7,8 +7,6 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-
-
 var testdataPrefix = "../../testdata/benchmarks/"
 
 // knownKinds returns the list of registered adapter kinds for validation.
@@ -22,10 +20,10 @@ func BenchmarkParseSchema(b *testing.B) {
 	benchmarks := []struct {
 		name string
 		path string
-	} {
+	}{
 		{"Minimal", testdataPrefix + "schema_minimal.toml"},
-		{"Medium",  testdataPrefix + "schema_medium.toml"},
-		{"Large",   testdataPrefix + "schema_large.toml"},
+		{"Medium", testdataPrefix + "schema_medium.toml"},
+		{"Large", testdataPrefix + "schema_large.toml"},
 	}
 
 	for _, bm := range benchmarks {
@@ -47,10 +45,10 @@ func BenchmarkPlaceholderExpansion(b *testing.B) {
 	benchmarks := []struct {
 		name string
 		path string
-	} {
+	}{
 		{"Minimal", testdataPrefix + "schema_minimal.toml"},
-		{"Medium",  testdataPrefix + "schema_medium.toml"},
-		{"Large",   testdataPrefix + "schema_large.toml"},
+		{"Medium", testdataPrefix + "schema_medium.toml"},
+		{"Large", testdataPrefix + "schema_large.toml"},
 	}
 
 	for _, bm := range benchmarks {
@@ -79,10 +77,10 @@ func BenchmarkValidation(b *testing.B) {
 	benchmarks := []struct {
 		name string
 		path string
-	} {
+	}{
 		{"Minimal", testdataPrefix + "schema_minimal.toml"},
-		{"Medium",  testdataPrefix + "schema_medium.toml"},
-		{"Large",   testdataPrefix + "schema_large.toml"},
+		{"Medium", testdataPrefix + "schema_medium.toml"},
+		{"Large", testdataPrefix + "schema_large.toml"},
 	}
 
 	// Parse schemas once

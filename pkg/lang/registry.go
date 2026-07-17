@@ -108,10 +108,10 @@ var Configs = map[string]BaseConfig{
 		AvailableExtra: "code-insiders",
 	},
 	"vscodium": {
-		KindName:       "vscodium",
-		Binary:         "codium",
-		CheckTmpl:      []string{"sh", "-c", `codium --list-extensions | grep -qF -- "$1"`, "sh", "{pkg}"},
-		InstallTmpl:    []string{"codium", "--install-extension", "{pkg}"},
+		KindName:    "vscodium",
+		Binary:      "codium",
+		CheckTmpl:   []string{"sh", "-c", `codium --list-extensions | grep -qF -- "$1"`, "sh", "{pkg}"},
+		InstallTmpl: []string{"codium", "--install-extension", "{pkg}"},
 	},
 	"cask": {
 		KindName:    "cask",
@@ -144,7 +144,6 @@ func RegisterAll(aurHelper string) {
 		}
 		exec.Register(NewBaseAdapter(cfg))
 	}
-
 
 	// AUR uses a configurable helper binary.
 	exec.Register(NewAURAdapter(aurHelper))

@@ -84,14 +84,14 @@ func TestDiffDifferentHash(t *testing.T) {
 
 func TestDiffMixed(t *testing.T) {
 	a := &State{Tools: map[string]ToolState{
-		"alpha": {Method: "native", DefinitionHash: "h1"},       // only_a
-		"gamma": {Method: "cargo", DefinitionHash: "same"},      // match
-		"delta": {Method: "native", DefinitionHash: "d1"},        // different
+		"alpha": {Method: "native", DefinitionHash: "h1"},  // only_a
+		"gamma": {Method: "cargo", DefinitionHash: "same"}, // match
+		"delta": {Method: "native", DefinitionHash: "d1"},  // different
 	}}
 	b := &State{Tools: map[string]ToolState{
-		"beta":  {Method: "pipx", DefinitionHash: "h2"},          // only_b
-		"gamma": {Method: "cargo", DefinitionHash: "same"},      // match
-		"delta": {Method: "go", DefinitionHash: "d2"},            // different
+		"beta":  {Method: "pipx", DefinitionHash: "h2"},    // only_b
+		"gamma": {Method: "cargo", DefinitionHash: "same"}, // match
+		"delta": {Method: "go", DefinitionHash: "d2"},      // different
 	}}
 	items := Diff(a, b)
 	if len(items) != 3 {
@@ -112,9 +112,9 @@ func TestDiffMixed(t *testing.T) {
 
 func TestDiffSortedByName(t *testing.T) {
 	a := &State{Tools: map[string]ToolState{
-		"zlib": {Method: "native", DefinitionHash: "z"},
+		"zlib":  {Method: "native", DefinitionHash: "z"},
 		"alpha": {Method: "native", DefinitionHash: "a"},
-		"mid":  {Method: "native", DefinitionHash: "m"},
+		"mid":   {Method: "native", DefinitionHash: "m"},
 	}}
 	b := &State{Tools: map[string]ToolState{}}
 	items := Diff(a, b)

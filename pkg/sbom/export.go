@@ -16,10 +16,10 @@ import (
 
 // CycloneDXBOM represents a minimal CycloneDX 1.5 bill-of-materials document.
 type CycloneDXBOM struct {
-	BOMFormat   string              `json:"bomFormat"`
-	SpecVersion string              `json:"specVersion"`
-	Version     int                 `json:"version"`
-	Metadata    CycloneDXMetadata   `json:"metadata"`
+	BOMFormat   string               `json:"bomFormat"`
+	SpecVersion string               `json:"specVersion"`
+	Version     int                  `json:"version"`
+	Metadata    CycloneDXMetadata    `json:"metadata"`
 	Components  []CycloneDXComponent `json:"components"`
 }
 
@@ -157,11 +157,11 @@ func extractVersion(config map[string]any) string {
 
 // SPDXDocument represents a minimal SPDX 2.3 document.
 type SPDXDocument struct {
-	SPDXVersion  string       `json:"spdxVersion"`
-	DataLicense  string       `json:"dataLicense"`
-	SPDXID       string       `json:"SPDXID"`
-	Name         string       `json:"name"`
-	CreationInfo SPDXCreation `json:"creationInfo"`
+	SPDXVersion  string        `json:"spdxVersion"`
+	DataLicense  string        `json:"dataLicense"`
+	SPDXID       string        `json:"SPDXID"`
+	Name         string        `json:"name"`
+	CreationInfo SPDXCreation  `json:"creationInfo"`
 	Packages     []SPDXPackage `json:"packages"`
 }
 

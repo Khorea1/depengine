@@ -23,6 +23,7 @@ var commonStringKeys = []string{
 	"package", "bin", "command", "extra_args",
 	"checksum_url", "checksum_file_format", "signature_url", "signing_key",
 }
+
 func validateRequiredFields(s *schema.Schema) *Result {
 	r := &Result{}
 

@@ -131,7 +131,6 @@ func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired boo
 	return nil
 }
 
-
 func copyBinary(src, destDir string) error {
 	dest := filepath.Join(destDir, filepath.Base(src))
 	input, err := os.ReadFile(src)

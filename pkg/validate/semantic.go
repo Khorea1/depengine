@@ -125,4 +125,3 @@ func knownDistroFamilyList() string {
 	sort.Strings(families)
 	return strings.Join(families, ", ")
 }
-

@@ -54,6 +54,5 @@ func (a *AURAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.To
 	return nil
 }
 
-
 // Ensure AURAdapter implements exec.Adapter at compile time.
 var _ exec.Adapter = (*AURAdapter)(nil)

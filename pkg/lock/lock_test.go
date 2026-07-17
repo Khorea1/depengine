@@ -32,10 +32,10 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	l := &Lock{
 		Version: 1,
 		Tools: map[string]ToolPin{
-			"ctpv/git":    {Latest: "v1.0.0"},
-			"ff/http":     {Latest: "v2.1.0"},
-			"other/git":   {Latest: "v0.5.0"},
-			"tool/http":   {Latest: "v3.0.0", Checksum: "sha256:abc123"},
+			"ctpv/git":  {Latest: "v1.0.0"},
+			"ff/http":   {Latest: "v2.1.0"},
+			"other/git": {Latest: "v0.5.0"},
+			"tool/http": {Latest: "v3.0.0", Checksum: "sha256:abc123"},
 		},
 	}
 
@@ -274,9 +274,9 @@ func TestResolveAllCapturesChecksumResolved(t *testing.T) {
 					{
 						Kind: "http",
 						Config: map[string]any{
-							"url":                 "https://example.com/tool.tar.gz",
-							"checksum":            "sha256:auto",
-							"_checksum_resolved":  "sha256:resolved123",
+							"url":                "https://example.com/tool.tar.gz",
+							"checksum":           "sha256:auto",
+							"_checksum_resolved": "sha256:resolved123",
 						},
 					},
 				},
@@ -366,4 +366,3 @@ func TestChecksumPinRoundTrip(t *testing.T) {
 		t.Fatalf("checksum = %q, want sha256:pinned789", got)
 	}
 }
-
