@@ -7,6 +7,9 @@ depengine.exe
 # Build tools
 vendor/
 
+# Build output
+dist/
+
 # Environment
 .env
 .env.local
