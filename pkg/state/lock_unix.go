@@ -21,11 +21,19 @@ func (l *fileLock) Close() error {
 	return l.f.Close()
 }
 
-// lock acquires an exclusive file lock on state.json.lock, creating the
-// lock file and parent directories as needed. Returns an io.Closer that
-// releases the lock. The lock is advisory (flock), so concurrent processes
-// that do not call lock may still read/write the state file.
+// lock acquires an exclusive file lock on state.json.lock.
 func lock() (io.Closer, error) {
+	return lockWithMode(syscall.LOCK_EX, "acquire lock")
+}
+
+// lockShared acquires a shared (read) file lock on state.json.lock.
+func lockShared() (io.Closer, error) {
+	return lockWithMode(syscall.LOCK_SH, "acquire shared lock")
+}
+
+// lockWithMode is the shared implementation for lock and lockShared.
+// mode is syscall.LOCK_EX or syscall.LOCK_SH; desc is used in error messages.
+func lockWithMode(mode int, desc string) (io.Closer, error) {
 	path := DefaultPath() + ".lock"
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -38,40 +46,12 @@ func lock() (io.Closer, error) {
 
 	// Retry on EINTR — flock can be interrupted by signals on some systems.
 	for {
-		if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		if err := syscall.Flock(int(f.Fd()), mode); err != nil {
 			if err == syscall.EINTR {
 				continue
 			}
 			_ = f.Close()
-			return nil, fmt.Errorf("acquire lock: %w", err)
-		}
-		break
-	}
-
-	return &fileLock{f: f}, nil
-}
-
-// lockShared acquires a shared (read) file lock on state.json.lock.
-// Multiple processes may hold a shared lock simultaneously; an exclusive
-// lock (lock) blocks until all shared locks are released.
-func lockShared() (io.Closer, error) {
-	path := DefaultPath() + ".lock"
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("create lock dir: %w", err)
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("open lock file: %w", err)
-	}
-
-	for {
-		if err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH); err != nil {
-			if err == syscall.EINTR {
-				continue
-			}
-			_ = f.Close()
-			return nil, fmt.Errorf("acquire shared lock: %w", err)
+			return nil, fmt.Errorf("%s: %w", desc, err)
 		}
 		break
 	}
