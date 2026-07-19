@@ -885,32 +885,35 @@ func TestWriteState(t *testing.T) {
 	}
 }
 
-func TestExplainTool(t *testing.T) {
-	ex := New()
-
+func TestFormatToolResult(t *testing.T) {
 	tests := []struct {
-		status string
+		name   string
+		status StatusEnum
+		method string
+		errMsg string
 		want   []string // substrings the output must contain
 	}{
-		{status: "installed", want: []string{"git", "✓", "installed"}},
-		{status: "already", want: []string{"git", "✓", "already"}},
-		{status: "skipped_when", want: []string{"git", "–", "skipped", "when"}},
-		{status: "skipped_unavailable", want: []string{"git", "–", "skipped", "no method"}},
-		{status: "would_install", want: []string{"git", "→", "would install"}},
-		{status: "failed", want: []string{"git", "✗", "failed"}},
+		{name: "installed", status: StatusInstalled, method: "cargo", want: []string{"✓", "installed via cargo"}},
+		{name: "already", status: StatusAlready, method: "native", want: []string{"✓", "already installed (native)"}},
+		{name: "skipped_when", status: StatusSkippedWhen, want: []string{"–", "skipped", "when condition"}},
+		{name: "skipped_unavailable", status: StatusSkippedUnavailable, want: []string{"–", "skipped", "no method available"}},
+		{name: "would_install", status: StatusWouldInstall, method: "pip", want: []string{"→", "would install via pip (dry-run)"}},
+		{name: "failed", status: StatusFailed, errMsg: "exit 1", want: []string{"✗", "failed (exit 1)"}},
+		{name: "unknown_status", status: StatusEnum(99), want: []string{"?", "99"}},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.status, func(t *testing.T) {
-			out := ex.explainTool("git", tt.status)
+		t.Run(tt.name, func(t *testing.T) {
+			out := formatToolResult("git", tt.status, tt.method, tt.errMsg)
 			for _, want := range tt.want {
 				if !strings.Contains(out, want) {
-					t.Errorf("explainTool(%q, %q) = %q, want substring %q", "git", tt.status, out, want)
+					t.Errorf("formatToolResult(%q, %v, %q, %q) = %q, want substring %q", "git", tt.status, tt.method, tt.errMsg, out, want)
 				}
 			}
 		})
 	}
 }
+
 
 func TestToolTimeout(t *testing.T) {
 	blocking := &blockingMockAdapter{

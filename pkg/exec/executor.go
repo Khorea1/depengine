@@ -545,27 +545,28 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *schema.Tool, resul
 	result.Duration = time.Since(toolStart).String()
 }
 
-// explainTool formats a tool's execution status for user-facing output.
-// The status parameter is a human-readable string: "installed", "already",
-// "skipped_when", "skipped_unavailable", "would_install", or "failed".
-func (ex *Executor) explainTool(toolName, status string) string {
+// formatToolResult generates a user-facing status line for a tool execution
+// result. It is a package-level function (no Executor dependency) so it can be
+// tested independently of the full executor pipeline.
+func formatToolResult(tool string, status StatusEnum, method, errMsg string) string {
 	switch status {
-	case "installed":
-		return fmt.Sprintf("  ✓ %s: installed\n", toolName)
-	case "already":
-		return fmt.Sprintf("  ✓ %s: already installed\n", toolName)
-	case "skipped_when":
-		return fmt.Sprintf("  – %s: skipped (when condition)\n", toolName)
-	case "skipped_unavailable":
-		return fmt.Sprintf("  – %s: skipped (no method available)\n", toolName)
-	case "would_install":
-		return fmt.Sprintf("  → %s: would install\n", toolName)
-	case "failed":
-		return fmt.Sprintf("  ✗ %s: failed\n", toolName)
+	case StatusInstalled:
+		return fmt.Sprintf("  ✓ %s: installed via %s\n", tool, method)
+	case StatusAlready:
+		return fmt.Sprintf("  ✓ %s: already installed (%s)\n", tool, method)
+	case StatusSkippedWhen:
+		return fmt.Sprintf("  – %s: skipped (when condition)\n", tool)
+	case StatusSkippedUnavailable:
+		return fmt.Sprintf("  – %s: skipped (no method available)\n", tool)
+	case StatusWouldInstall:
+		return fmt.Sprintf("  → %s: would install via %s (dry-run)\n", tool, method)
+	case StatusFailed:
+		return fmt.Sprintf("  ✗ %s: failed (%s)\n", tool, errMsg)
 	default:
-		return fmt.Sprintf("  ? %s: %s\n", toolName, status)
+		return fmt.Sprintf("  ? %s: %v\n", tool, status)
 	}
 }
+
 
 // recordToolResult records a tool execution result into the report and emits
 // user-facing status output. It is safe for concurrent calls (report is
@@ -577,23 +578,18 @@ func (ex *Executor) recordToolResult(result *ToolResult, report *ExecReport) {
 	switch result.Status {
 	case StatusInstalled:
 		report.Success++
-		ex.outputf("  ✓ %s: installed via %s\n", result.Tool, result.Method)
 	case StatusAlready:
 		report.Already++
-		ex.outputf("  ✓ %s: already installed (%s)\n", result.Tool, result.Method)
 	case StatusSkippedWhen:
 		report.Skipped++
-		ex.outputf("  – %s: skipped (when condition)\n", result.Tool)
 	case StatusSkippedUnavailable:
 		report.Skipped++
-		ex.outputf("  – %s: skipped (no method available)\n", result.Tool)
-	case StatusWouldInstall:
-		ex.outputf("  → %s: would install via %s (dry-run)\n", result.Tool, result.Method)
 	case StatusFailed:
 		report.Failed++
-		ex.outputf("  ✗ %s: failed (%s)\n", result.Tool, result.Error)
 	}
+	ex.outputf("%s", formatToolResult(result.Tool, result.Status, result.Method, result.Error))
 }
+
 
 // executeLevelParallel runs all tools in a topological level concurrently,
 // limiting concurrency to ex.maxJobs. Results are collected thread-safely
