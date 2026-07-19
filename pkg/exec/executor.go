@@ -235,21 +235,7 @@ func (ex *Executor) Execute(ctx context.Context, s *schema.Schema, clan string) 
 					continue
 				}
 				result := ex.executeTool(ctx, tool)
-				ex.recordToolResult(&result, report)
-				switch result.Status {
-				case StatusInstalled:
-					ex.logDebug(ctx, "tool", "tool", toolName, "method", result.Method, "status", "installed", "duration", result.Duration)
-				case StatusAlready:
-					ex.logDebug(ctx, "tool", "tool", toolName, "method", result.Method, "status", "already", "duration", result.Duration)
-				case StatusSkippedWhen:
-					ex.logDebug(ctx, "tool", "tool", toolName, "status", "skipped_when")
-				case StatusSkippedUnavailable:
-					ex.logDebug(ctx, "tool", "tool", toolName, "status", "skipped_unavailable")
-				case StatusWouldInstall:
-					ex.logDebug(ctx, "tool", "tool", toolName, "method", result.Method, "status", "would_install")
-				case StatusFailed:
-					ex.logWarn(ctx, "tool", "tool", toolName, "status", "failed", "error", result.Error, "duration", result.Duration)
-				}
+				ex.recordToolResult(ctx, &result, report)
 			}
 		} else {
 			ex.executeLevelParallel(ctx, s, level, report)
@@ -567,29 +553,35 @@ func formatToolResult(tool string, status StatusEnum, method, errMsg string) str
 	}
 }
 
-
 // recordToolResult records a tool execution result into the report and emits
-// user-facing status output. It is safe for concurrent calls (report is
-// protected by a mutex).
-func (ex *Executor) recordToolResult(result *ToolResult, report *ExecReport) {
+// user-facing status output and debug-level logs. It is safe for concurrent
+// calls (report is protected by a mutex).
+func (ex *Executor) recordToolResult(ctx context.Context, result *ToolResult, report *ExecReport) {
 	report.mu.Lock()
 	defer report.mu.Unlock()
 	report.Tools = append(report.Tools, *result)
 	switch result.Status {
 	case StatusInstalled:
 		report.Success++
+		ex.logDebug(ctx, "tool", "tool", result.Tool, "method", result.Method, "status", "installed", "duration", result.Duration)
 	case StatusAlready:
 		report.Already++
+		ex.logDebug(ctx, "tool", "tool", result.Tool, "method", result.Method, "status", "already", "duration", result.Duration)
 	case StatusSkippedWhen:
 		report.Skipped++
+		ex.logDebug(ctx, "tool", "tool", result.Tool, "status", "skipped_when")
 	case StatusSkippedUnavailable:
 		report.Skipped++
+		ex.logDebug(ctx, "tool", "tool", result.Tool, "status", "skipped_unavailable")
 	case StatusFailed:
 		report.Failed++
+		ex.logWarn(ctx, "tool", "tool", result.Tool, "status", "failed", "error", result.Error, "duration", result.Duration)
+	case StatusWouldInstall:
+		// WouldInstall isn't counted in report totals, just logged.
+		ex.logDebug(ctx, "tool", "tool", result.Tool, "method", result.Method, "status", "would_install")
 	}
 	ex.outputf("%s", formatToolResult(result.Tool, result.Status, result.Method, result.Error))
 }
-
 
 // executeLevelParallel runs all tools in a topological level concurrently,
 // limiting concurrency to ex.maxJobs. Results are collected thread-safely
@@ -639,7 +631,7 @@ func (ex *Executor) executeLevelParallel(ctx context.Context, s *schema.Schema, 
 		return results[i].Tool < results[j].Tool
 	})
 	for i := range results {
-		ex.recordToolResult(&results[i], report)
+		ex.recordToolResult(ctx, &results[i], report)
 	}
 }
 
