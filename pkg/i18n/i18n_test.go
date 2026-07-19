@@ -73,3 +73,35 @@ func TestGetLocaleLANGUAGEFallbackThroughOtherVars(t *testing.T) {
 		t.Fatalf("expected pt (fallback through LC_MESSAGES), got %s", got)
 	}
 }
+
+func TestGetLocaleLANGCPOSIX(t *testing.T) {
+	t.Setenv("LANG", "C")
+	if got := GetLocale(); got != "en" {
+		t.Fatalf("expected en for LANG=C, got %s", got)
+	}
+}
+
+func TestGetLocaleLCALLCoverridesWithC(t *testing.T) {
+	t.Setenv("LC_ALL", "C")
+	t.Setenv("LANG", "pt_BR.UTF-8") // should be overridden by LC_ALL=C
+	if got := GetLocale(); got != "en" {
+		t.Fatalf("expected en (LC_ALL=C overrides), got %s", got)
+	}
+}
+
+func TestGetLocaleLCALLPOSIX(t *testing.T) {
+	t.Setenv("LC_ALL", "POSIX")
+	t.Setenv("LC_MESSAGES", "pt_BR.UTF-8")
+	if got := GetLocale(); got != "en" {
+		t.Fatalf("expected en (LC_ALL=POSIX overrides), got %s", got)
+	}
+}
+
+func TestGetLocaleLANGUAGEC(t *testing.T) {
+	t.Setenv("LANGUAGE", "C")
+	t.Setenv("LC_ALL", "pt_BR.UTF-8")
+	// LANGUAGE has highest priority for message language per GNU gettext
+	if got := GetLocale(); got != "en" {
+		t.Fatalf("expected en (LANGUAGE=C), got %s", got)
+	}
+}

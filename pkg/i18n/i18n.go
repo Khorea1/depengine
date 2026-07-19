@@ -24,7 +24,7 @@ func GetLocale() string {
 			switch lang {
 			case "pt":
 				return "pt"
-			case "en":
+			case "en", "C", "POSIX":
 				return "en"
 			}
 		}
