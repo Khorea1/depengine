@@ -133,11 +133,20 @@ func runStatus(args []string) {
 }
 
 // runRemove removes a tool using the adapter that installed it.
+// Supports --all, --dry-run, --schema, and --only flags.
 func runRemove(args []string) {
 	removeCmd := flag.NewFlagSet("remove", flag.ExitOnError)
 	removeAll := removeCmd.Bool("all", false, "remove all tools")
 	removeDryRun := removeCmd.Bool("dry-run", false, "show what would be removed")
+	removeSchema := removeCmd.String("schema", "", "path to schema.toml (optional, for validation)")
+	removeOnly := removeCmd.String("only", "", "only remove specific tool (alternative to positional arg)")
 	removeCmd.Parse(args)
+
+	// Validate mutually exclusive flags.
+	if *removeAll && *removeOnly != "" {
+		log.Default.Error("cannot use both --all and --only")
+		os.Exit(2)
+	}
 
 	ls, err := state.LoadLocked()
 	if err != nil {
@@ -148,10 +157,28 @@ func runRemove(args []string) {
 
 	st := ls.State()
 
+	// Optionally load schema for validation.
+	var schemaTools map[string]*schema.Tool
+	if *removeSchema != "" {
+		s, _, _, err := loadSchema(*removeSchema)
+		if err != nil {
+			log.Default.Error("load schema", "error", err)
+			os.Exit(2)
+		}
+		schemaTools = s.Tools
+	}
+
 	removeTool := func(toolName string) bool {
+		// If schema is loaded, validate tool exists (warn but continue).
+		if schemaTools != nil {
+			if _, ok := schemaTools[toolName]; !ok {
+				log.Default.Warn("tool not found in schema, removing from state anyway", "tool", toolName)
+			}
+		}
+
 		toolState, ok := st.Tools[toolName]
 		if !ok {
-			log.Default.Error("tool not found in state", "tool", toolName)
+			log.Default.Warn("tool not installed, nothing to remove", "tool", toolName)
 			return false
 		}
 
@@ -192,21 +219,27 @@ func runRemove(args []string) {
 	}
 
 	hadFailure := false
+
 	if *removeAll {
 		for toolName := range st.Tools {
 			if !removeTool(toolName) {
 				hadFailure = true
 			}
 		}
-	} else {
-		if len(removeCmd.Args()) != 1 {
-			log.Default.Error("usage: depengine remove <tool>")
-			ls.Close()
-			os.Exit(1)
-		}
-		if !removeTool(removeCmd.Arg(0)) {
+	} else if *removeOnly != "" {
+		if !removeTool(*removeOnly) {
 			hadFailure = true
 		}
+	} else if len(removeCmd.Args()) > 0 {
+		for _, toolName := range removeCmd.Args() {
+			if !removeTool(toolName) {
+				hadFailure = true
+			}
+		}
+	} else {
+		log.Default.Error("usage: depengine remove [--all | --only=<tool> | <tool>...] [--schema=<path>]")
+		ls.Close()
+		os.Exit(1)
 	}
 
 	if err := ls.Save(); err != nil {
