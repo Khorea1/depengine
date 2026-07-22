@@ -7,6 +7,8 @@ depengine.exe
 # Build tools
 vendor/
 
+# Schema / manifest
+depengine.toml
 # Build output
 dist/
 

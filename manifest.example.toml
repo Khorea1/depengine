@@ -1,0 +1,53 @@
+# ==============================================================================
+# manifest.toml — CONHECIMENTO PESSOAL DE INSTALAÇÃO
+# ==============================================================================
+# Este arquivo vive em $XDG_CONFIG_HOME/depengine/manifest.toml e complementa
+# o schema.toml do projeto com conhecimento de "como instalar" cada pacote
+# no seu sistema.
+#
+# REGRA: o schema diz O QUE você quer (intenção); o manifesto diz COMO instalar
+# (conhecimento específico do seu ambiente). Field-level do schema sempre
+# vence sobre o manifesto.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# [packages] — conhecimento de instalação
+# ------------------------------------------------------------------------------
+# Mesma gramática do schema.toml: `simple = [...]`, inline tables, blocos.
+# A diferença: aqui só entra conhecimento NÃO-TRIVIAL (nome de pacote difere
+# por distro, ou usa métodos não-nativos). Ferramentas cujo nome é o mesmo
+# em todo lugar NÃO precisam estar aqui.
+#
+# Para usar este arquivo como base, copie para ~/.config/depengine/manifest.toml
+# e ajuste os métodos ao seu ambiente.
+# ==============================================================================
+[packages]
+
+# --- Override de nome de pacote por manager nativo ---
+nvim = { pacman = "neovim", apt = "neovim", brew = "neovim" }
+fd   = { apt = "fd-find" }
+go   = { pacman = "go", apt = "golang-go" }
+
+# --- Métodos não-nativos ---
+organize = { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }
+fzf      = { go = "github.com/junegunn/fzf" }
+lf       = { go = "github.com/gokcehan/lf" }
+
+# --- Instalação via git ---
+ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install" } }
+fasd = { git = { url = "https://github.com/clvv/fasd",        build = "PREFIX=$HOME/.local make install" } }
+
+# --- Instalação via http (release binary) ---
+fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb", checksum = "sha256:auto" } }
+
+# --- Bloco completo com when (condicional por distro) ---
+[packages.DepartureMono]
+postinstall = "fc-cache -fv"
+
+  [packages.DepartureMono.aur]
+  pkg  = "otf-departure-mono-nerd"
+  when = { distro_family = ["arch"] }
+
+  [packages.DepartureMono.http]
+  url        = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/DepartureMono.zip"
+  extract_to = "~/.local/share/fonts/DepartureMono"
