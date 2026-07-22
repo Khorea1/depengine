@@ -23,6 +23,7 @@ func runStatus(args []string) {
 	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
 	statusSchema := statusCmd.String("schema", "", "override schema path")
 	statusManifest := statusCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
+	statusNoManifest := statusCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
 	statusFormat := statusCmd.String("format", "text", "output format: text or json")
 	statusJSON := statusCmd.Bool("json", false, "JSON output (shorthand for --format=json)")
 	statusOrphans := statusCmd.Bool("orphans", false, "show only orphaned tools")
@@ -58,9 +59,10 @@ func runStatus(args []string) {
 		}
 
 		if s != nil {
+			noManifest := *statusNoManifest
 			manifestPath := *statusManifest
 			manifestAuto := false
-			if manifestPath == "" {
+			if !noManifest && manifestPath == "" {
 				manifestPath = schema.DefaultManifestPath()
 				if manifestPath != "" {
 					manifestAuto = true

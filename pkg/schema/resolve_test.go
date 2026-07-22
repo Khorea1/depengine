@@ -449,8 +449,8 @@ nvim = { pacman = "neovim" }
 		t.Fatalf("expected requires=[zsh] from schema, got %v", nvim.Requires)
 	}
 }
-
 func TestResolveSchema_DoesNotMutateOriginal(t *testing.T) {
+	// Test 1: Single native method (existing test).
 	schemaPath := writeSchemaInline(t, `
 [defaults]
 manager = "native"
@@ -488,6 +488,45 @@ nvim = { pacman = "neovim" }
 		t.Fatal("original and resolved share config map")
 	}
 	_ = origMethods
+
+	// Test 2: Schema has native + non-native methods, manifest only modifies native.
+	// This exercises the `default` branch of mergeMethods where sm was appended
+	// without deep copy.
+	schemaPath2 := writeSchemaInline(t, `
+[defaults]
+manager = "native"
+
+[tools]
+nvim = { pacman = "neovim", cargo = "neovim-cargo" }
+`)
+	manifestPath2 := writeManifest(t, `
+[packages]
+nvim = { pacman = "neovim" }
+`)
+
+	s2, err := ParseSchemaNoFacts(schemaPath2)
+	if err != nil {
+		t.Fatalf("ParseSchemaNoFacts: %v", err)
+	}
+	mt2, err := ParseManifest(manifestPath2)
+	if err != nil {
+		t.Fatalf("ParseManifest: %v", err)
+	}
+
+	resolved2, _ := ResolveSchema(s2, mt2)
+
+	// Native method (index 0) should not share pointer.
+	if s2.Tools["nvim"].Methods[0] == resolved2.Tools["nvim"].Methods[0] {
+		t.Fatal("original and resolved share native method pointer")
+	}
+	// Cargo method (index 1) should not share pointer.
+	if s2.Tools["nvim"].Methods[1] == resolved2.Tools["nvim"].Methods[1] {
+		t.Fatal("original and resolved share non-native method pointer")
+	}
+	// Config maps should not be the same map.
+	if &s2.Tools["nvim"].Methods[1].Config == &resolved2.Tools["nvim"].Methods[1].Config {
+		t.Fatal("original and resolved share non-native config map")
+	}
 }
 
 func TestResolveSchema_OrderByMethodOrder(t *testing.T) {

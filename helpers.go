@@ -87,36 +87,7 @@ func loadSchemaWithManifest(schemaPath, manifestPath string) (*schema.Schema, st
 }
 
 
-// resolveManifestPath returns the manifest path to use and whether it was
-// auto-discovered. If flagValue is non-empty it is used directly. If empty,
-// DefaultManifestPath() is tried. A non-empty flagValue that was explicitly
-// set to "" (via --manifest "") returns ("", false) — the caller must check
-// the explicitEmpty flag from flag.Visit to enforce that.
-//
-// intended usage:
-//
-//	flagSet.String("manifest", "", ...)
-//	flagSet.Parse(args)
-//	explicitEmpty := false
-//	flagSet.Visit(func(f *flag.Flag) {
-//	    if f.Name == "manifest" && f.Value.String() == "" {
-//	        explicitEmpty = true
-//	    }
-//	})
-//	manifestPath, autoDisc := resolveManifestPath(*manifestFlag, explicitEmpty)
-func resolveManifestPath(flagValue string, explicitEmpty bool) (manifestPath string, autoDiscovered bool) {
-	if explicitEmpty {
-		return "", false
-	}
-	if flagValue != "" {
-		return flagValue, false
-	}
-	mp := schema.DefaultManifestPath()
-	if mp != "" {
-		return mp, true
-	}
-	return "", false
-}
+
 
 func exitCodeForError(err error) int {
 	var schemaErr *schema.ParseSchemaError

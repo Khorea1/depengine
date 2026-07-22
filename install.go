@@ -22,6 +22,7 @@ func runInstall(args []string) {
 	installCmd := flag.NewFlagSet("install", flag.ExitOnError)
 	installSchema := installCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
 	installManifest := installCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
+	installNoManifest := installCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
 	installDryRun := installCmd.Bool("dry-run", false, "show what would be installed")
 	installVerbose := installCmd.Bool("verbose", false, "detailed output")
 	installJSON := installCmd.Bool("json", false, "JSON output")
@@ -34,6 +35,8 @@ func runInstall(args []string) {
 	installSortBy := installCmd.String("sort-by", "", "sort output by: name, status, method")
 	installJobs := installCmd.Int("jobs", 1, "max concurrent installations (default 1 = sequential)")
 	installAllowArbitrary := installCmd.Bool("allow-arbitrary-code", false, "suppress security warnings for build scripts / arbitrary code")
+	installCmd.Parse(args)
+
 
 	lg := log.Default
 
@@ -55,9 +58,10 @@ func runInstall(args []string) {
 		}
 	}
 
+	noManifest := *installNoManifest
 	manifestPath := *installManifest
 	manifestAuto := false
-	if manifestPath == "" {
+	if !noManifest && manifestPath == "" {
 		manifestPath = schema.DefaultManifestPath()
 		if manifestPath != "" {
 			manifestAuto = true

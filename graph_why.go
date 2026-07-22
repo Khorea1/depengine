@@ -20,6 +20,7 @@ func runGraph(args []string) {
 	graphCmd := flag.NewFlagSet("graph", flag.ExitOnError)
 	graphSchema := graphCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
 	graphManifest := graphCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
+	graphNoManifest := graphCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
 	graphFormat := graphCmd.String("format", "text", "output format: mermaid, dot, text")
 	graphProfile := graphCmd.String("profile", "", "only show tools with matching tag")
 	graphOnly := graphCmd.String("only", "", "only show subgraph for specific tool")
@@ -39,9 +40,10 @@ func runGraph(args []string) {
 		os.Exit(exitCodeForError(err))
 	}
 
+	noManifest := *graphNoManifest
 	manifestPath := *graphManifest
 	manifestAuto := false
-	if manifestPath == "" {
+	if !noManifest && manifestPath == "" {
 		manifestPath = schema.DefaultManifestPath()
 		if manifestPath != "" {
 			manifestAuto = true
@@ -91,6 +93,7 @@ func runWhy(args []string) {
 	whyCmd := flag.NewFlagSet("why", flag.ExitOnError)
 	whySchema := whyCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
 	whyManifest := whyCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
+	whyNoManifest := whyCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
 	whyJSON := whyCmd.Bool("json", false, "JSON output")
 	whyCmd.Parse(args)
 	remain := whyCmd.Args()
@@ -106,9 +109,10 @@ func runWhy(args []string) {
 		os.Exit(1)
 	}
 
+	noManifest := *whyNoManifest
 	manifestPath := *whyManifest
 	manifestAuto := false
-	if manifestPath == "" {
+	if !noManifest && manifestPath == "" {
 		manifestPath = schema.DefaultManifestPath()
 		if manifestPath != "" {
 			manifestAuto = true

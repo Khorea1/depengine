@@ -19,6 +19,7 @@ func runValidate(args []string) {
 	validateCmd := flag.NewFlagSet("validate", flag.ExitOnError)
 	validateSchema := validateCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
 	validateManifest := validateCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
+	validateNoManifest := validateCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
 	validateCheckEnv := validateCmd.Bool("check-env", false, "check system environment for required tools")
 	validateFormat := validateCmd.String("format", "text", "output format: text or json")
 	validateStrict := validateCmd.Bool("strict", false, "treat warnings as errors")
@@ -32,9 +33,10 @@ func runValidate(args []string) {
 		os.Exit(2)
 	}
 
+	noManifest := *validateNoManifest
 	manifestPath := *validateManifest
 	manifestAuto := false
-	if manifestPath == "" {
+	if !noManifest && manifestPath == "" {
 		manifestPath = schema.DefaultManifestPath()
 		if manifestPath != "" {
 			manifestAuto = true
@@ -127,6 +129,7 @@ func runCheck(args []string) {
 	checkCmd := flag.NewFlagSet("check", flag.ExitOnError)
 	checkSchema := checkCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
 	checkManifest := checkCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
+	checkNoManifest := checkCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
 	checkCmd.Parse(args)
 	remain := checkCmd.Args()
 	if len(remain) < 1 {
@@ -135,9 +138,10 @@ func runCheck(args []string) {
 	}
 	toolName := remain[0]
 
+	noManifest := *checkNoManifest
 	manifestPath := *checkManifest
 	manifestAuto := false
-	if manifestPath == "" {
+	if !noManifest && manifestPath == "" {
 		manifestPath = schema.DefaultManifestPath()
 		if manifestPath != "" {
 			manifestAuto = true

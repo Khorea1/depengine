@@ -42,7 +42,7 @@ fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/release
 
 # --- Bloco completo com when (condicional por distro) ---
 [packages.DepartureMono]
-postinstall = "fc-cache -fv"
+# postinstall goes in schema.toml, not here — manifest only encodes installation knowledge.
 
   [packages.DepartureMono.aur]
   pkg  = "otf-departure-mono-nerd"

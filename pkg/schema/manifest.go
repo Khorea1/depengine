@@ -193,13 +193,13 @@ func mergeMethods(name string, st, mt *Tool, methodOrder []string) []*MethodCand
 		case "native":
 			mm, inManifest := manifestByKind["native"]
 			if !inManifest {
-				out = append(out, sm)
+				out = append(out, deepCopyMethod(sm))
 				continue
 			}
 			out = append(out, mergeNativeMethods(st, sm, mm))
 		default:
 			// Non-native: schema method wins as-is.
-			out = append(out, sm)
+			out = append(out, deepCopyMethod(sm))
 		}
 	}
 
