@@ -12,12 +12,14 @@ import (
 	"depengine/pkg/log"
 	"depengine/pkg/run"
 	"depengine/pkg/sbom"
+	"depengine/pkg/schema"
 	"depengine/pkg/state"
 )
 
 func runUpdate(args []string) {
 	updateCmd := flag.NewFlagSet("update", flag.ExitOnError)
-	updateSchema := updateCmd.String("schema", "schema.toml", "path to schema.toml")
+	updateSchema := updateCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
+	updateManifest := updateCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	updateLock := updateCmd.String("lock", "", "path to schema.lock (default: alongside schema.toml)")
 	updateProfile := updateCmd.String("profile", "", "only resolve & pin tools with matching tag")
 	updateFrozen := updateCmd.Bool("frozen-lockfile", false, "abort if schema.lock does not exist")
@@ -28,10 +30,22 @@ func runUpdate(args []string) {
 	ctx := context.Background()
 	lg := log.Default
 
-	s, clan, facts, err := loadSchema(*updateSchema)
+	manifestPath := *updateManifest
+	manifestAuto := false
+	if manifestPath == "" {
+		manifestPath = schema.DefaultManifestPath()
+		if manifestPath != "" {
+			manifestAuto = true
+		}
+	}
+
+	s, clan, facts, manifestCount, err := loadSchemaWithManifest(*updateSchema, manifestPath)
 	if err != nil {
-		lg.Error("load schema", "error", err)
+		log.Default.Error("load schema", "error", err)
 		os.Exit(exitCodeForError(err))
+	}
+	if manifestAuto && manifestCount > 0 {
+		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
 	}
 	if helper := s.Defaults.AurHelper; helper != "" {
 		lang.ReconfigureAUR(helper)

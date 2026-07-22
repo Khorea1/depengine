@@ -22,6 +22,7 @@ import (
 func runStatus(args []string) {
 	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
 	statusSchema := statusCmd.String("schema", "", "override schema path")
+	statusManifest := statusCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	statusFormat := statusCmd.String("format", "text", "output format: text or json")
 	statusJSON := statusCmd.Bool("json", false, "JSON output (shorthand for --format=json)")
 	statusOrphans := statusCmd.Bool("orphans", false, "show only orphaned tools")
@@ -54,6 +55,29 @@ func runStatus(args []string) {
 		if err != nil {
 			log.Default.Warn("load schema for comparison", "error", err)
 			s = nil
+		}
+
+		if s != nil {
+			manifestPath := *statusManifest
+			manifestAuto := false
+			if manifestPath == "" {
+				manifestPath = schema.DefaultManifestPath()
+				if manifestPath != "" {
+					manifestAuto = true
+				}
+			}
+			if manifestPath != "" {
+				manifestTools, merr := schema.ParseManifest(manifestPath)
+				if merr != nil {
+					log.Default.Warn("load manifest", "error", merr)
+				} else if manifestTools != nil {
+					var count int
+					s, count = schema.ResolveSchema(s, manifestTools)
+					if manifestAuto && count > 0 {
+						fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
+					}
+				}
+			}
 		}
 	}
 

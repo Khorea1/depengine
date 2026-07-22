@@ -17,7 +17,8 @@ import (
 
 func runValidate(args []string) {
 	validateCmd := flag.NewFlagSet("validate", flag.ExitOnError)
-	validateSchema := validateCmd.String("schema", "schema.toml", "path to schema.toml")
+	validateSchema := validateCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
+	validateManifest := validateCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	validateCheckEnv := validateCmd.Bool("check-env", false, "check system environment for required tools")
 	validateFormat := validateCmd.String("format", "text", "output format: text or json")
 	validateStrict := validateCmd.Bool("strict", false, "treat warnings as errors")
@@ -29,6 +30,29 @@ func runValidate(args []string) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
+	}
+
+	manifestPath := *validateManifest
+	manifestAuto := false
+	if manifestPath == "" {
+		manifestPath = schema.DefaultManifestPath()
+		if manifestPath != "" {
+			manifestAuto = true
+		}
+	}
+	if manifestPath != "" {
+		manifestTools, merr := schema.ParseManifest(manifestPath)
+		if merr != nil {
+			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", merr)
+			os.Exit(2)
+		}
+		if manifestTools != nil {
+			var count int
+			s, count = schema.ResolveSchema(s, manifestTools)
+			if manifestAuto && count > 0 {
+				fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
+			}
+		}
 	}
 
 	knownKinds := exec.RegisteredKinds()
@@ -101,7 +125,8 @@ func runValidate(args []string) {
 
 func runCheck(args []string) {
 	checkCmd := flag.NewFlagSet("check", flag.ExitOnError)
-	checkSchema := checkCmd.String("schema", "schema.toml", "path to schema.toml")
+	checkSchema := checkCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
+	checkManifest := checkCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	checkCmd.Parse(args)
 	remain := checkCmd.Args()
 	if len(remain) < 1 {
@@ -110,10 +135,22 @@ func runCheck(args []string) {
 	}
 	toolName := remain[0]
 
-	s, clan, _, err := loadSchema(*checkSchema)
+	manifestPath := *checkManifest
+	manifestAuto := false
+	if manifestPath == "" {
+		manifestPath = schema.DefaultManifestPath()
+		if manifestPath != "" {
+			manifestAuto = true
+		}
+	}
+
+	s, clan, _, manifestCount, err := loadSchemaWithManifest(*checkSchema, manifestPath)
 	if err != nil {
 		log.Default.Error("load schema", "error", err)
 		os.Exit(exitCodeForError(err))
+	}
+	if manifestAuto && manifestCount > 0 {
+		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
 	}
 
 	tool, ok := s.Tools[toolName]

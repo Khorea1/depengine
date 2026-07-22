@@ -16,10 +16,10 @@ import (
 	"depengine/pkg/schema"
 )
 
-// runGraph outputs the dependency graph in the requested format.
 func runGraph(args []string) {
 	graphCmd := flag.NewFlagSet("graph", flag.ExitOnError)
-	graphSchema := graphCmd.String("schema", "schema.toml", "path to schema.toml")
+	graphSchema := graphCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
+	graphManifest := graphCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	graphFormat := graphCmd.String("format", "text", "output format: mermaid, dot, text")
 	graphProfile := graphCmd.String("profile", "", "only show tools with matching tag")
 	graphOnly := graphCmd.String("only", "", "only show subgraph for specific tool")
@@ -37,6 +37,29 @@ func runGraph(args []string) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(exitCodeForError(err))
+	}
+
+	manifestPath := *graphManifest
+	manifestAuto := false
+	if manifestPath == "" {
+		manifestPath = schema.DefaultManifestPath()
+		if manifestPath != "" {
+			manifestAuto = true
+		}
+	}
+	if manifestPath != "" {
+		manifestTools, merr := schema.ParseManifest(manifestPath)
+		if merr != nil {
+			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", merr)
+			os.Exit(2)
+		}
+		if manifestTools != nil {
+			var count int
+			s, count = schema.ResolveSchema(s, manifestTools)
+			if manifestAuto && count > 0 {
+				fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
+			}
+		}
 	}
 	fmt.Fprintf(os.Stderr, "depengine graph: tools=%d\n", len(s.Tools))
 	s.Tools = filterTools(s.Tools, *graphOnly, *graphSkip, *graphProfile)
@@ -66,7 +89,8 @@ func runGraph(args []string) {
 // without actually installing anything. Useful for debugging complex schemas.
 func runWhy(args []string) {
 	whyCmd := flag.NewFlagSet("why", flag.ExitOnError)
-	whySchema := whyCmd.String("schema", "schema.toml", "path to schema.toml")
+	whySchema := whyCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
+	whyManifest := whyCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	whyJSON := whyCmd.Bool("json", false, "JSON output")
 	whyCmd.Parse(args)
 	remain := whyCmd.Args()
@@ -80,6 +104,29 @@ func runWhy(args []string) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
+	}
+
+	manifestPath := *whyManifest
+	manifestAuto := false
+	if manifestPath == "" {
+		manifestPath = schema.DefaultManifestPath()
+		if manifestPath != "" {
+			manifestAuto = true
+		}
+	}
+	if manifestPath != "" {
+		manifestTools, merr := schema.ParseManifest(manifestPath)
+		if merr != nil {
+			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", merr)
+			os.Exit(2)
+		}
+		if manifestTools != nil {
+			var count int
+			s, count = schema.ResolveSchema(s, manifestTools)
+			if manifestAuto && count > 0 {
+				fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
+			}
+		}
 	}
 	facts, factsErr := engine.GatherFacts(run.OSExecRunner{})
 	clan := ""

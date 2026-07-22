@@ -16,6 +16,18 @@ import (
 	"depengine/pkg/schema"
 )
 
+// defaultSchemaPath returns the default schema file path, trying common names.
+// If none exist, returns "schema.toml" so the caller gets the original error.
+func defaultSchemaPath() string {
+	candidates := []string{"depengine.toml", "schema.toml", "depends.toml"}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return "depengine.toml"
+}
+
 // loadSchema reads and validates a schema.toml from path, gathering OS facts.
 // Returns the parsed Schema, clan name, Facts, or an error for exitCodeForError.
 func loadSchema(path string) (*schema.Schema, string, *engine.Facts, error) {
@@ -24,7 +36,7 @@ func loadSchema(path string) (*schema.Schema, string, *engine.Facts, error) {
 		return nil, "", nil, err
 	}
 	if info.IsDir() {
-		path = filepath.Join(path, "schema.toml")
+		path = filepath.Join(path, "depengine.toml")
 	}
 
 	facts, err := engine.GatherFacts(run.OSExecRunner{})
@@ -46,7 +58,66 @@ func loadSchema(path string) (*schema.Schema, string, *engine.Facts, error) {
 	return s, clan, facts, nil
 }
 
-// exitCodeForError maps common bootstrap errors to exit codes.
+// loadSchemaWithManifest reads and resolves a schema, merging methods from
+// the personal manifest at manifestPath. If manifestPath is empty, calls
+// loadSchema directly. Returns the resolved schema, clan, facts, number of
+// manifest tools that contributed (0 when no manifest), and any error.
+// On manifest parse errors the function returns the error (caller decides exit).
+func loadSchemaWithManifest(schemaPath, manifestPath string) (*schema.Schema, string, *engine.Facts, int, error) {
+	s, clan, facts, err := loadSchema(schemaPath)
+	if err != nil {
+		return nil, "", nil, 0, err
+	}
+	if manifestPath == "" {
+		return s, clan, facts, 0, nil
+	}
+
+	manifestTools, merr := schema.ParseManifest(manifestPath)
+	if merr != nil {
+		return nil, "", nil, 0, merr
+	}
+
+	count := 0
+	if manifestTools != nil {
+		var resolved *schema.Schema
+		resolved, count = schema.ResolveSchema(s, manifestTools)
+		s = resolved
+	}
+	return s, clan, facts, count, nil
+}
+
+
+// resolveManifestPath returns the manifest path to use and whether it was
+// auto-discovered. If flagValue is non-empty it is used directly. If empty,
+// DefaultManifestPath() is tried. A non-empty flagValue that was explicitly
+// set to "" (via --manifest "") returns ("", false) — the caller must check
+// the explicitEmpty flag from flag.Visit to enforce that.
+//
+// intended usage:
+//
+//	flagSet.String("manifest", "", ...)
+//	flagSet.Parse(args)
+//	explicitEmpty := false
+//	flagSet.Visit(func(f *flag.Flag) {
+//	    if f.Name == "manifest" && f.Value.String() == "" {
+//	        explicitEmpty = true
+//	    }
+//	})
+//	manifestPath, autoDisc := resolveManifestPath(*manifestFlag, explicitEmpty)
+func resolveManifestPath(flagValue string, explicitEmpty bool) (manifestPath string, autoDiscovered bool) {
+	if explicitEmpty {
+		return "", false
+	}
+	if flagValue != "" {
+		return flagValue, false
+	}
+	mp := schema.DefaultManifestPath()
+	if mp != "" {
+		return mp, true
+	}
+	return "", false
+}
+
 func exitCodeForError(err error) int {
 	var schemaErr *schema.ParseSchemaError
 	if errors.As(err, &schemaErr) {

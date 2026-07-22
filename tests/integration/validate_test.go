@@ -57,9 +57,9 @@ func validatePath(name string) string {
 	return filepath.Join(findModuleRoot(), "pkg", "validate", "testdata", name)
 }
 
-// schemaPath returns the project's schema.toml.
+// schemaPath returns the project's schema.example.toml.
 func schemaPath() string {
-	return filepath.Join(findModuleRoot(), "schema.toml")
+	return filepath.Join(findModuleRoot(), "schema.example.toml")
 }
 
 // runDepengine executes depengine with args, returns output + exit code.
