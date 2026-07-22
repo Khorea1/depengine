@@ -35,6 +35,7 @@ const (
 	StatusSkippedUnavailable                   // skipped because no adapter was available
 	StatusFailed                               // all methods failed
 	StatusWouldInstall                         // dry-run: would install
+	StatusVirtual                              // tool that serves as a dependency group only (no methods)
 )
 
 // ToolResult is the outcome for ONE tool after execution.
@@ -58,7 +59,7 @@ type ToolResult struct {
 // MethodAttempt records one method attempt for a tool.
 type MethodAttempt struct {
 	Kind   string
-	Status string // "skip_when" | "skip_unavailable" | "skip_already" | "success" | "failed"
+	Status string // "skip_when" | "skip_unavailable" | "skip_already" | "success" | "failed" | "virtual"
 	Error  string // populated only if failed
 }
 

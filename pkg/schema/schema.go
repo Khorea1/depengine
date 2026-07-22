@@ -231,6 +231,9 @@ func normalizeTools(rawTools map[string]any, defaults Defaults) (map[string]*Too
 
 		if r, ok := valMap["requires"].([]any); ok {
 			tool.Requires = anySliceToStrings(r)
+			if len(tool.Requires) == 0 {
+				tool.Requires = nil
+			}
 		}
 		if pi, ok := valMap["pre_install"].(string); ok {
 			tool.PreInstall = pi
@@ -309,8 +312,19 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	var methods []*MethodCandidate
 	nativeOverrides := map[string]any{}
 	var nonNativeKeys []string
+	var nativeBlockConfig map[string]any
 
 	for _, k := range sortedKeys(valMap, "requires", "pre_install", "preinstall", "post_install", "postinstall", "tags") {
+		if k == "native" {
+			if m, ok := valMap[k].(map[string]any); ok {
+				nativeBlockConfig = m
+				continue
+			}
+			if s, ok := valMap[k].(string); ok {
+				nativeBlockConfig = map[string]any{"pkg": s}
+				continue
+			}
+		}
 		if _, isStr := valMap[k].(string); isStr && native.IsNativeManagerName(k) {
 			nativeOverrides[k] = valMap[k]
 		} else {
@@ -320,10 +334,15 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 
 	// Always inject a native method when there are any relevant keys.
 	// With overrides if native manager names are present, plain otherwise.
-	if len(nativeOverrides) > 0 || len(nonNativeKeys) > 0 {
+	if len(nativeOverrides) > 0 || len(nonNativeKeys) > 0 || nativeBlockConfig != nil {
 		cfg := map[string]any{"pkg": name}
 		if len(nativeOverrides) > 0 {
 			cfg["pkg_overrides"] = nativeOverrides
+		}
+		if nativeBlockConfig != nil {
+			for k, v := range nativeBlockConfig {
+				cfg[k] = v
+			}
 		}
 		methods = append(methods, &MethodCandidate{
 			Kind:   "native",
@@ -463,6 +482,12 @@ func Validate(s *Schema, knownKinds []string) (error, []string) {
 			))
 		}
 	}
+
+	// Build set from method_order for Part B check.
+	orderSet := make(map[string]struct{}, len(s.Defaults.MethodOrder))
+	for _, k := range s.Defaults.MethodOrder {
+		orderSet[k] = struct{}{}
+	}
 	// Check each tool's method candidates. Sort tool names for deterministic output.
 	names := make([]string, 0, len(s.Tools))
 	for name := range s.Tools {
@@ -471,14 +496,12 @@ func Validate(s *Schema, knownKinds []string) (error, []string) {
 	sort.Strings(names)
 	for _, toolName := range names {
 		tool := s.Tools[toolName]
-		// Zero-method tools are unreachable regardless of known kinds.
+
+		// Zero-method tools are valid (dependency groups — StatusVirtual). Skip method validation.
 		if len(tool.Methods) == 0 {
-			hardErrors = append(hardErrors, fmt.Sprintf(
-				"tool %q has no methods declared — no adapter can install it",
-				toolName,
-			))
 			continue
 		}
+
 		var unknownKinds []string
 		knownCount := 0
 		for _, mc := range tool.Methods {
@@ -488,23 +511,48 @@ func Validate(s *Schema, knownKinds []string) (error, []string) {
 				knownCount++
 			}
 		}
-		if len(unknownKinds) == 0 {
-			continue
-		}
-		if knownCount == 0 {
-			// All kinds unknown — hard error: tool is unreachable. List all.
-			for _, uk := range unknownKinds {
-				hardErrors = append(hardErrors, fmt.Sprintf(
-					"unknown method kind %q for tool %q (no adapter is registered; hint: register the adapter in initAdapters or fix the typo)",
-					uk, toolName,
-				))
+		if len(unknownKinds) > 0 {
+			if knownCount == 0 {
+				// All kinds unknown — hard error: tool is unreachable. List all.
+				for _, uk := range unknownKinds {
+					hardErrors = append(hardErrors, fmt.Sprintf(
+						"unknown method kind %q for tool %q (no adapter is registered; hint: register the adapter in initAdapters or fix the typo)",
+						uk, toolName,
+					))
+				}
+			} else {
+				// At least one known fallback — warn for each unknown kind.
+				for _, uk := range unknownKinds {
+					warnings = append(warnings, fmt.Sprintf(
+						"warning: tool %q declares unknown method kind %q (will be skipped at runtime; keeps known fallbacks)",
+						toolName, uk,
+					))
+				}
 			}
-		} else {
-			// At least one known fallback — warn for each unknown kind.
-			for _, uk := range unknownKinds {
+		}
+
+		// Part C: warn if tool name matches a known method kind.
+		if _, ok := set[toolName]; ok {
+			warnings = append(warnings, fmt.Sprintf(
+				"tool %q has the same name as method kind %q — ensure this is intentional",
+				toolName, toolName,
+			))
+		}
+
+		// Part B: warn if some method kinds are absent from method_order.
+		var inOrder, notInOrder []string
+		for _, mc := range tool.Methods {
+			if _, ok := orderSet[mc.Kind]; ok {
+				inOrder = append(inOrder, mc.Kind)
+			} else {
+				notInOrder = append(notInOrder, mc.Kind)
+			}
+		}
+		if len(inOrder) > 0 && len(notInOrder) > 0 {
+			for _, kind := range notInOrder {
 				warnings = append(warnings, fmt.Sprintf(
-					"warning: tool %q declares unknown method kind %q (will be skipped at runtime; keeps known fallbacks)",
-					toolName, uk,
+					"tool %q has method %q which is not in method_order — it will be tried after all ordered methods",
+					toolName, kind,
 				))
 			}
 		}

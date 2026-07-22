@@ -88,6 +88,10 @@ func extractZip(ctx context.Context, src, dest string, rn run.Runner, sudoRequir
 }
 
 func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired bool) error {
+	// Guard: dpkg must exist on the system.
+	if _, err := exec.LookPath("dpkg"); err != nil {
+		return fmt.Errorf("cannot install .deb package: dpkg not found (this system is not Debian-based; consider adding a native method fallback)")
+	}
 	runCmd := func(args ...string) run.Result {
 		if sudoRequired && os.Geteuid() != 0 {
 			args = append([]string{"sudo"}, args...)

@@ -49,6 +49,8 @@ func statusPriority(s StatusEnum) int {
 		return 4
 	case StatusSkippedUnavailable:
 		return 5
+	case StatusVirtual:
+		return 99
 	default:
 		return 6
 	}
@@ -91,6 +93,8 @@ func statusLabel(s StatusEnum) string {
 		return "failed"
 	case StatusWouldInstall:
 		return "would install"
+	case StatusVirtual:
+		return "virtual"
 	default:
 		return "unknown"
 	}

@@ -37,30 +37,54 @@ type Facts struct {
 }
 
 // locateDetectScript decides where to invoke detect_os.sh, in order:
-//  1. the DEPENGINE_DETECT_SCRIPT env var (explicit override)
-//  2. a "scripts/detect_os.sh" alongside the engine binary itself
+//  1. embedded content → write to a temp file, return its path
+//  2. the DEPENGINE_DETECT_SCRIPT env var (explicit override)
+//  3. a "scripts/detect_os.sh" alongside the engine binary itself
 //     (this is how the project ships: binary + scripts/ together)
-//  3. "detect_os.sh" on the PATH, for those who installed it loose
-func locateDetectScript() (string, error) {
-	if p := os.Getenv("DEPENGINE_DETECT_SCRIPT"); p != "" {
-		if _, err := os.Stat(p); err == nil {
-			return p, nil
+//  4. "detect_os.sh" on the PATH, for those who installed it loose
+//
+// The second return value, clean, is true when the returned path is a
+// temp file that the caller should remove after use.
+func locateDetectScript() (string, bool, error) {
+	// 1. Embedded content (always available at compile time).
+	if len(detectScriptContent) > 0 {
+		f, err := os.CreateTemp("", "detect_os.sh.*")
+		if err == nil {
+			path := f.Name()
+			if _, err := f.Write(detectScriptContent); err == nil {
+				if err := f.Chmod(0o755); err == nil {
+					f.Close()
+					return path, true, nil
+				}
+			}
+			f.Close()
+			os.Remove(path)
 		}
-		return "", fmt.Errorf("DEPENGINE_DETECT_SCRIPT points to %q but the file does not exist", p)
+		// Fall through if anything goes wrong with the temp file.
 	}
 
+	// 2. DEPENGINE_DETECT_SCRIPT env var.
+	if p := os.Getenv("DEPENGINE_DETECT_SCRIPT"); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return p, false, nil
+		}
+		return "", false, fmt.Errorf("DEPENGINE_DETECT_SCRIPT points to %q but the file does not exist", p)
+	}
+
+	// 3. scripts/detect_os.sh alongside the binary.
 	if exe, err := os.Executable(); err == nil {
 		candidate := filepath.Join(filepath.Dir(exe), "scripts", "detect_os.sh")
 		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
+			return candidate, false, nil
 		}
 	}
 
+	// 4. detect_os.sh on PATH.
 	if p, err := exec.LookPath("detect_os.sh"); err == nil {
-		return p, nil
+		return p, false, nil
 	}
 
-	return "", fmt.Errorf("detect_os.sh not found (try setting DEPENGINE_DETECT_SCRIPT=/path/to/script)")
+	return "", false, fmt.Errorf("detect_os.sh not found (try setting DEPENGINE_DETECT_SCRIPT=/path/to/script)")
 }
 
 // GatherFacts runs the fetcher via the injected Runner and returns the
@@ -73,9 +97,12 @@ func locateDetectScript() (string, error) {
 // fail when we cannot parse the stdout; then we prefer the script's own
 // stderr as the actionable message.
 func GatherFacts(r run.Runner) (*Facts, error) {
-	script, err := locateDetectScript()
+	script, clean, err := locateDetectScript()
 	if err != nil {
 		return nil, err
+	}
+	if clean {
+		defer os.Remove(script)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

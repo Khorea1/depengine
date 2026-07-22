@@ -356,9 +356,8 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 	result := ToolResult{Tool: tool.Name}
 	methods := tool.Methods
 	if len(methods) == 0 {
-		result.Status = StatusSkippedUnavailable
-		result.Error = "no methods declared"
-		ex.logDebug(ctx, "tool", "tool", tool.Name, "status", "no_methods")
+		result.Status = StatusVirtual
+		ex.logDebug(ctx, "tool", "tool", tool.Name, "status", "virtual")
 		result.Duration = time.Since(toolStart).String()
 		return result
 	}
@@ -546,6 +545,8 @@ func formatToolResult(tool string, status StatusEnum, method, errMsg string) str
 		return fmt.Sprintf("  – %s: skipped (no method available)\n", tool)
 	case StatusWouldInstall:
 		return fmt.Sprintf("  → %s: would install via %s (dry-run)\n", tool, method)
+	case StatusVirtual:
+		return fmt.Sprintf("  • %s: dependency group\n", tool)
 	case StatusFailed:
 		return fmt.Sprintf("  ✗ %s: failed (%s)\n", tool, errMsg)
 	default:
@@ -579,6 +580,9 @@ func (ex *Executor) recordToolResult(ctx context.Context, result *ToolResult, re
 	case StatusWouldInstall:
 		// WouldInstall isn't counted in report totals, just logged.
 		ex.logDebug(ctx, "tool", "tool", result.Tool, "method", result.Method, "status", "would_install")
+	case StatusVirtual:
+		// Virtual isn't counted in report totals, just logged.
+		ex.logDebug(ctx, "tool", "tool", result.Tool, "status", "virtual")
 	}
 	ex.outputf("%s", formatToolResult(result.Tool, result.Status, result.Method, result.Error))
 }
@@ -639,9 +643,13 @@ func (ex *Executor) executeLevelParallel(ctx context.Context, s *schema.Schema, 
 // For each method it reports the status and reason: skip_when (when condition
 // didn't match), skip_unavailable (no adapter or binary not on PATH),
 // already_installed (Check passed), or would_install (ready to install).
+
 // This is the engine behind `depengine why <tool>`.
 func (ex *Executor) ExplainTool(ctx context.Context, tool *schema.Tool, clan string) []MethodAttempt {
 	methods := tool.Methods
+	if len(methods) == 0 {
+		return []MethodAttempt{{Kind: "", Status: "virtual", Error: "dependency group (no methods declared)"}}
+	}
 	attempts := make([]MethodAttempt, 0, len(methods))
 
 	for _, method := range methods {

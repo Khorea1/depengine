@@ -133,21 +133,20 @@ func TestGatherFactsFailsOnUnparseableJSON(t *testing.T) {
 	}
 }
 
-func TestGatherFactsSurfacesFauxBinaryNotFound(t *testing.T) {
-	// Simulate "detect_os.sh not on PATH" by pointing PATH at a directory
-	// that doesn't exist, then clear DEPENGINE_DETECT_SCRIPT so
-	// locateDetectScript falls through to its exec.LookPath call.
-	// The alongside-binary branch is naturally defeated under `go test`
-	// because os.Executable() points at a temp build dir without scripts/.
-	t.Setenv("PATH", "/nonexistent")
+func TestGatherFactsSucceedsWithEmbeddedScript(t *testing.T) {
+	// The embedded detect_os.sh is always available at compile time, so
+	// locateDetectScript returns a temp-file copy. Verify that GatherFacts
+	// succeeds when the fake runner returns valid JSON.
 	t.Setenv("DEPENGINE_DETECT_SCRIPT", "")
+	t.Setenv("PATH", "/nonexistent")
 
-	_, err := GatherFacts(&fakeRunner{})
-	if err == nil {
-		t.Fatalf("expected error when detect_os.sh is missing, got nil")
+	fr := &fakeRunner{stdout: detectionJSON}
+	facts, err := GatherFacts(fr)
+	if err != nil {
+		t.Fatalf("GatherFacts with embedded script failed: %v", err)
 	}
-	if !strings.Contains(err.Error(), "detect_os.sh") {
-		t.Fatalf("error should name detect_os.sh, got: %v", err)
+	if facts == nil {
+		t.Fatal("GatherFacts returned nil facts")
 	}
 }
 
