@@ -55,20 +55,50 @@ func ResolveLatest(ctx context.Context, urlStr string, rn run.Runner) (string, e
 		return strings.ReplaceAll(urlStr, "{latest}", "latest"), nil
 	}
 
-	owner, repo := matches[1], matches[2]
+	tag, err := fetchLatestTag(ctx, matches[1], matches[2], rn)
+	if err != nil {
+		return urlStr, err
+	}
+	return strings.ReplaceAll(urlStr, "{latest}", tag), nil
+}
+
+// ResolveLatestTag resolves the bare version tag that `{latest}` would
+// expand to in urlStr, WITHOUT baking it into a URL. For non-GitHub URLs it
+// returns the same literal fallback ("latest") that ResolveLatest substitutes,
+// so callers can treat the return value uniformly as "the placeholder value".
+//
+// This exists for pkg/lock: schema.lock pins a resolved *version*, not a
+// fully-resolved URL. Storing just the tag means that if the URL template in
+// schema.toml later changes (a corrected asset filename, a new architecture
+// suffix, etc.) between `depengine update` runs, `depengine install` still
+// applies the pinned version to the CURRENT template on next use, instead of
+// silently re-extracting a stale, fully-baked URL that no longer matches
+// what schema.toml declares. It mirrors how Cargo.lock/package-lock.json pin
+// versions rather than resolved download URLs.
+func ResolveLatestTag(ctx context.Context, urlStr string, rn run.Runner) (string, error) {
+	matches := githubRepoRe.FindStringSubmatch(urlStr)
+	if len(matches) < 3 {
+		return "latest", nil
+	}
+	return fetchLatestTag(ctx, matches[1], matches[2], rn)
+}
+
+// fetchLatestTag calls GitHub's releases API for owner/repo and returns the
+// latest release's tag name, using the shared in-memory cache so the same
+// repo is only fetched once per process lifecycle.
+func fetchLatestTag(ctx context.Context, owner, repo string, rn run.Runner) (string, error) {
 	cacheKey := owner + "/" + repo
 
 	// Check cache.
 	if v, ok := cache.Load(cacheKey); ok {
-		tag := v.(string)
-		return strings.ReplaceAll(urlStr, "{latest}", tag), nil
+		return v.(string), nil
 	}
 
 	// Fetch latest release from GitHub API.
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
-		return urlStr, fmt.Errorf("resolve latest: request: %w", err)
+		return "", fmt.Errorf("resolve latest: request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "depengine/0.1")
@@ -85,24 +115,24 @@ func ResolveLatest(ctx context.Context, urlStr string, rn run.Runner) (string, e
 		return client.Do(req)
 	}()
 	if err != nil {
-		return urlStr, fmt.Errorf("resolve latest: http: %w", err)
+		return "", fmt.Errorf("resolve latest: http: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return urlStr, fmt.Errorf("resolve latest: GitHub API returned %s", resp.Status)
+		return "", fmt.Errorf("resolve latest: GitHub API returned %s", resp.Status)
 	}
 
 	var rel release
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-		return urlStr, fmt.Errorf("resolve latest: decode: %w", err)
+		return "", fmt.Errorf("resolve latest: decode: %w", err)
 	}
 	if rel.TagName == "" {
-		return urlStr, fmt.Errorf("resolve latest: empty tag_name from GitHub")
+		return "", fmt.Errorf("resolve latest: empty tag_name from GitHub")
 	}
 
 	cache.Store(cacheKey, rel.TagName)
-	return strings.ReplaceAll(urlStr, "{latest}", rel.TagName), nil
+	return rel.TagName, nil
 }
 
 // githubToken returns a GitHub personal access token from environment.

@@ -164,7 +164,7 @@ func TestApplyPinsURLs(t *testing.T) {
 	l := &Lock{
 		Version: 1,
 		Tools: map[string]ToolPin{
-			"ff/http": {Latest: "https://github.com/user/fastfetch/releases/download/v3.0.0/ff.deb", Checksum: "sha256:abc123"},
+			"ff/http": {Latest: "v3.0.0", Checksum: "sha256:abc123"},
 		},
 	}
 
@@ -376,5 +376,50 @@ func TestChecksumPinRoundTrip(t *testing.T) {
 	got := mc.Config["checksum"].(string)
 	if got != "sha256:pinned789" {
 		t.Fatalf("checksum = %q, want sha256:pinned789", got)
+	}
+}
+
+// TestApplySurvivesURLTemplateChange is the regression test for the bug this
+// change fixes: previously Apply overwrote "url" wholesale with the fully
+// resolved URL captured at `depengine update` time. If the schema.toml URL
+// template was edited afterwards (fixed asset name, new arch suffix, etc.)
+// WITHOUT re-running `depengine update`, that edit was silently discarded on
+// the next `depengine install` — the stale, fully-baked URL from the lock
+// won every time. Pinning only the bare tag and substituting it into
+// whatever template is currently in the schema fixes this: the version stays
+// reproducible, but template edits take effect immediately.
+func TestApplySurvivesURLTemplateChange(t *testing.T) {
+	// Lock was written when the schema pointed at "ff-linux.deb".
+	l := &Lock{
+		Version: 1,
+		Tools: map[string]ToolPin{
+			"ff/http": {Latest: "v3.0.0"},
+		},
+	}
+
+	// schema.toml has SINCE been edited to a corrected asset name.
+	s := &schema.Schema{
+		Tools: map[string]*schema.Tool{
+			"ff": {
+				Name: "ff",
+				Methods: []*schema.MethodCandidate{
+					{
+						Kind: "http",
+						Config: map[string]any{
+							"url": "https://github.com/user/fastfetch/releases/download/{latest}/ff-linux-amd64.deb",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	Apply(s, l)
+
+	mc := s.Tools["ff"].Methods[0]
+	got := mc.Config["url"].(string)
+	want := "https://github.com/user/fastfetch/releases/download/v3.0.0/ff-linux-amd64.deb"
+	if got != want {
+		t.Fatalf("Apply URL = %q, want %q (template edit should be preserved, version should stay pinned)", got, want)
 	}
 }

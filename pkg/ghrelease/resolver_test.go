@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"depengine/pkg/run"
@@ -127,5 +128,58 @@ func TestLookupReleaseHTTPError(t *testing.T) {
 	_, err := ResolveLatest(context.Background(), url, run.OSExecRunner{})
 	if err == nil {
 		t.Fatal("expected error from 500 response, got nil")
+	}
+}
+
+func TestResolveLatestTagNonGitHub(t *testing.T) {
+	url := "https://gitlab.com/user/repo/-/releases/{latest}/file.tar.gz"
+	got, err := ResolveLatestTag(context.Background(), url, run.OSExecRunner{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "latest" {
+		t.Fatalf("ResolveLatestTag = %q, want %q (fallback matches ResolveLatest's)", got, "latest")
+	}
+}
+
+func TestResolveLatestTagWithHTTPMock(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"tag_name": "v9.9.9"}`))
+	}))
+	t.Cleanup(ts.Close)
+
+	httpClientMu.Lock()
+	origClient := httpClient
+	httpClient = &http.Client{
+		Transport: &redirectTripper{testURL: ts.URL},
+	}
+	httpClientMu.Unlock()
+	t.Cleanup(func() {
+		httpClientMu.Lock()
+		httpClient = origClient
+		httpClientMu.Unlock()
+	})
+
+	// Distinct owner/repo from other tests so the shared cache can't mask a
+	// broken implementation with a stale hit.
+	url := "https://github.com/tag-owner/tag-repo/releases/download/{latest}/file.tar.gz"
+	got, err := ResolveLatestTag(context.Background(), url, run.OSExecRunner{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "v9.9.9" {
+		t.Fatalf("ResolveLatestTag = %q, want bare tag %q (not a resolved URL)", got, "v9.9.9")
+	}
+
+	// The same tag, applied by the caller, must reproduce what ResolveLatest
+	// would have returned directly — this is the invariant pkg/lock relies on.
+	viaResolveLatest, err := ResolveLatest(context.Background(), url, run.OSExecRunner{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	viaTagSubstitution := strings.ReplaceAll(url, "{latest}", got)
+	if viaTagSubstitution != viaResolveLatest {
+		t.Fatalf("manual substitution with ResolveLatestTag's result = %q, want %q (should match ResolveLatest)", viaTagSubstitution, viaResolveLatest)
 	}
 }

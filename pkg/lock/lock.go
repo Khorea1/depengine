@@ -131,13 +131,15 @@ func ResolveAll(ctx context.Context, s *schema.Schema, rn run.Runner) (*Lock, er
 			pin := ToolPin{}
 
 			// Resolve {latest} in URL fields (git and http methods only).
+			// Pin the bare version tag, not a fully-baked URL — see the
+			// ToolPin.Latest doc comment for why.
 			if method.Kind == "git" || method.Kind == "http" {
 				if urlRaw, ok := method.Config["url"].(string); ok && strings.Contains(urlRaw, "{latest}") {
-					resolved, err := ghrelease.ResolveLatest(ctx, urlRaw, rn)
+					tag, err := ghrelease.ResolveLatestTag(ctx, urlRaw, rn)
 					if err != nil {
 						return nil, fmt.Errorf("lock: resolve %s/%s: %w", name, method.Kind, err)
 					}
-					pin.Latest = resolved
+					pin.Latest = tag
 				}
 			}
 
@@ -158,10 +160,13 @@ func ResolveAll(ctx context.Context, s *schema.Schema, rn run.Runner) (*Lock, er
 }
 
 // Apply substitutes pinned values from the lock into the schema's method
-// Config maps. When a method has a pin with a Latest, its "url" field is
-// replaced with the pinned URL. When a pin has a Checksum, any "checksum"
-// field containing ":auto" is replaced with the concrete hash. Methods not
-// present in the lock are left untouched.
+// Config maps. When a method has a pin with a Latest, every "{latest}"
+// occurrence in its current "url" field is replaced with the pinned tag
+// (the URL template itself always comes from the schema being applied to,
+// so a template edited since the lock was last updated still takes effect).
+// When a pin has a Checksum, any "checksum" field containing ":auto" is
+// replaced with the concrete hash. Methods not present in the lock, or whose
+// current url no longer contains "{latest}", are left untouched.
 func Apply(s *schema.Schema, l *Lock) {
 	if l == nil {
 		return
@@ -174,10 +179,11 @@ func Apply(s *schema.Schema, l *Lock) {
 				continue
 			}
 
-			// Substitute {latest} in URL.
+			// Substitute {latest} in the current URL template with the
+			// pinned version tag.
 			if pin.Latest != "" {
-				if _, ok := method.Config["url"]; ok {
-					method.Config["url"] = pin.Latest
+				if urlRaw, ok := method.Config["url"].(string); ok && strings.Contains(urlRaw, "{latest}") {
+					method.Config["url"] = strings.ReplaceAll(urlRaw, "{latest}", pin.Latest)
 				}
 			}
 
