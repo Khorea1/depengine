@@ -31,6 +31,15 @@ type Defaults struct {
 	MethodOrder []string
 }
 
+
+// DefaultBuckets mapeia nomes de ecossistema para lista de method kinds.
+// Usado em normalizeTools quando uma chave não é method kind conhecido nem
+// nome de manager nativo. Buckets evitam repetir o mesmo conjunto de métodos
+// para cada ferramenta de um mesmo ecossistema.
+var DefaultBuckets = map[string][]string{
+	"python": {"pip", "pipx", "uv"},
+	"node":   {"npm", "pnpm", "bun"},
+}
 // Tool is one entry under [tools]. IsSimple distinguishes names that came
 // straight from the `simple = [...]` list (single native candidate whose
 // pkg equals the tool's own name) from anything declared via inline table
@@ -249,6 +258,21 @@ func normalizeTools(rawTools map[string]any, defaults Defaults) (map[string]*Too
 			tool.Tags = anySliceToStrings(t)
 		}
 
+		// Expande chaves que são nomes de bucket para os method kinds correspondentes.
+		// Ex: `ruff = { python = true }` → `ruff = { pipx = true, uv = true }`
+		for k, v := range valMap {
+			if methods, ok := DefaultBuckets[k]; ok {
+				if bv, ok := v.(bool); ok && bv {
+					for _, m := range methods {
+						if _, exists := valMap[m]; !exists {
+							valMap[m] = true
+						}
+					}
+					delete(valMap, k)
+				}
+			}
+		}
+
 		methods := buildMethods(name, valMap)
 		tool.Methods = orderByMethodOrder(methods, defaults.MethodOrder)
 		tools[name] = tool
@@ -263,6 +287,13 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 	case string:
 		// inline scalar: `apt = "fd-find"` → pkg
 		mc.Config["pkg"] = t
+	case bool:
+		if t {
+			// true → usa tool.Name como pkg (SubstitutePkg fallback)
+			mc.Config["pkg"] = ""
+		} else {
+			return nil, fmt.Errorf("invalid method value: false (use true or a package name)")
+		}
 	case map[string]any:
 		// `when` is hoisted out; everything else stays in Config.
 		if rawWhen, ok := t["when"]; ok {

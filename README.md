@@ -84,6 +84,11 @@ fzf      = { go  = "github.com/junegunn/fzf" }
 lf       = { go  = "github.com/gokcehan/lf" }
 ```
 
+> Quando `pkg == tool_name`, use `true` em vez de repetir o nome:
+> `ruff = { python = true }` ≡ `ruff = { pipx = "ruff", uv = "ruff" }`.
+> Buckets (`python`, `node`) expandem para todos os métodos do ecossistema
+> de uma vez (ver Forma 10).
+
 ### Forma 4 — cargo/go com git sub-key (não do repositório oficial)
 
 ```toml
@@ -144,6 +149,36 @@ postinstall = "fc-cache -fv"
 > fora do método. Campos específicos do método (`when`, `url`, `build`,
 > `checksum`, `extract_to`, `pkg`, `git`) ficam dentro do método.
 
+
+### Forma 10 — `true` e buckets de ecossistema
+
+Quando o nome do pacote é igual ao nome da tool (~80% dos casos Python/Node),
+use `true` em vez de repetir. Buckets expandem para todos os métodos do
+ecossistema de uma vez.
+
+**Buckets built-in:**
+
+| Bucket | Expansão | Uso típico |
+|--------|----------|------------|
+| `python = true` | `{ pip = true, pipx = true, uv = true }` | Ferramentas Python (ruff, httpie, poetry) |
+| `node = true` | `{ npm = true, pnpm = true, bun = true }` | Ferramentas Node (prettier, eslint, tsx) |
+
+```toml
+ruff = { python = true }        # ≡ { pipx = "ruff", uv = "ruff" }
+prettier = { node = true }      # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
+httpie = { python = true }      # pip + pipx + uv (pkg=httpie em todos)
+```
+
+> Cada `true` usa o nome da tool como pkg via SubstitutePkg.
+> Métodos explícitos NÃO são sobrescritos pelo bucket:
+> `organize = { pip = "organize-tool", python = true }` mantém `pip` como
+> `"organize-tool"` e expande apenas `pipx`/`uv`.
+>
+> Buckets só aceitam `true`. `python = false` ou `python = "foo"` não expandem
+> (o motor trata como método desconhecido → erro em `validate`).
+>
+> `all = true` **não existe** — impreciso demais, risco de instalar pacote
+> errado de ecossistema diferente.
 
 ---
 

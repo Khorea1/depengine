@@ -173,3 +173,21 @@ requires = []
 #   when, url, build, checksum, checksum_url, checksum_file_format,
 #   signature_url, signing_key, extract_to, pkg, git
 # ==============================================================================
+
+# ------------------------------------------------------------------------
+# CASO 10 — Buckets de ecossistema: python, node.
+# Quando pkg == tool_name (~80% dos casos Python/Node), use `true`
+# em vez de repetir o nome. Buckets expandem para todos os methods
+# do ecossistema de uma vez.
+#
+#   python = true  ≡  { pip = true, pipx = true, uv = true }
+#   node   = true  ≡  { npm = true, pnpm = true, bun = true }
+#
+# Cada `true` usa o nome da tool como pkg (SubstitutePkg fallback).
+# ------------------------------------------------------------------------
+ruff = { python = true }        # ≡ { pipx = "ruff", uv = "ruff" }
+prettier = { node = true }      # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
+httpie = { python = true }      # pip + pipx + uv (pkg=httpie em todos)
+
+# Pode misturar bucket com método explícito: o explícito NÃO é sobrescrito.
+organize = { pip = "organize-tool", python = true }  # pip não é sobrescrito

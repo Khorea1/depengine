@@ -23,6 +23,18 @@ func TestDefaultPath(t *testing.T) {
 	if got2 != want2 {
 		t.Fatalf("DefaultPath = %q, want %q", got2, want2)
 	}
+
+	got3 := DefaultPath("depends.toml")
+	want3 := "depends.lock"
+	if got3 != want3 {
+		t.Fatalf("DefaultPath(depends.toml) = %q, want %q", got3, want3)
+	}
+
+	got4 := DefaultPath("/tmp/foo.yaml")
+	want4 := "/tmp/foo.lock"
+	if got4 != want4 {
+		t.Fatalf("DefaultPath(/tmp/foo.yaml) = %q, want %q", got4, want4)
+	}
 }
 
 func TestSaveLoadRoundTrip(t *testing.T) {

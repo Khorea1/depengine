@@ -178,7 +178,7 @@ func loadLockfile(schemaPath string, s *schema.Schema, frozen bool, lg *slog.Log
 		lg.Warn("lockfile corrupted, continuing without lock", "path", lockPath, "error", err)
 	}
 	if frozen && lk == nil {
-		lg.Error("--frozen-lockfile requires schema.lock — run 'depengine update' first")
+		lg.Error("--frozen-lockfile requires lockfile — run 'depengine update' first", "path", lockPath)
 		os.Exit(2)
 	}
 	if lk != nil {

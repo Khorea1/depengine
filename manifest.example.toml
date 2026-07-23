@@ -8,41 +8,253 @@
 # REGRA: o schema diz O QUE você quer (intenção); o manifesto diz COMO instalar
 # (conhecimento específico do seu ambiente). Field-level do schema sempre
 # vence sobre o manifesto.
+#
+# USO: copie para ~/.config/depengine/manifest.toml e edite os métodos conforme
+# seu ambiente. Remova ou comente linhas de ferramentas que não usa.
 # ==============================================================================
 
-# ------------------------------------------------------------------------------
+# ==============================================================================
 # [packages] — conhecimento de instalação
-# ------------------------------------------------------------------------------
+# ==============================================================================
 # Mesma gramática do schema.toml: `simple = [...]`, inline tables, blocos.
 # A diferença: aqui só entra conhecimento NÃO-TRIVIAL (nome de pacote difere
 # por distro, ou usa métodos não-nativos). Ferramentas cujo nome é o mesmo
 # em todo lugar NÃO precisam estar aqui.
 #
-# Para usar este arquivo como base, copie para ~/.config/depengine/manifest.toml
-# e ajuste os métodos ao seu ambiente.
+# ATRIBUTOS DISPONÍVEIS POR MÉTODO:
+#
+#   git:   url, build, branch, depth, binary, checksum, signature_url
+#   http:  url, checksum, checksum_url, checksum_file_format, signature_url,
+#          signing_key, extract_to, binary
+#   native/aur/cargo/go/pip/pipx/uv/npm/bun/pnpm/gem:
+#          pkg, git (para cargo/go install --git), when
+#
+#   Tool-level: requires, pre_install (ou preinstall), postinstall, tags
+#   Condicional: when = { distro_family = [...] }
 # ==============================================================================
 [packages]
 
-# --- Override de nome de pacote por manager nativo ---
-nvim = { pacman = "neovim", apt = "neovim", brew = "neovim" }
-fd   = { apt = "fd-find" }
-go   = { pacman = "go", apt = "golang-go" }
+# ==============================================================================
+# SEÇÃO 1 — Métodos nativos + linguagem combinados
+# ==============================================================================
+# Cada tool aparece UMA ÚNICA VEZ. Métodos nativos (pacman, apt, brew) e de
+# linguagem (cargo, go, pipx, npm…) convivem na mesma inline table — o motor
+# tenta um por vez seguindo method_order.
+#
+# Quando o nome do binário difere do pacote no manager nativo, declaramos
+# o override; nos managers não declarados, o nome da tool é usado como fallback.
+# ==============================================================================
 
-# --- Métodos não-nativos ---
-organize = { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }
-fzf      = { go = "github.com/junegunn/fzf" }
-lf       = { go = "github.com/gokcehan/lf" }
+# --- nativos + multiecosystemo ---
+nvim      = { pacman = "neovim",             apt = "neovim",                brew = "neovim" }
+fd        = { apt = "fd-find",               cargo = "fd-find" }
+go        = { pacman = "go",                 apt = "golang-go" }
+rg        = { pacman = "ripgrep",            apt = "ripgrep" }
+btop      = { pacman = "btop",               apt = "btop" }
+eza       = { pacman = "eza",                apt = "eza" }
+delta     = { pacman = "git-delta",          apt = "git-delta",             brew = "git-delta",     cargo = "git-delta" }
+tealdeer  = { pacman = "tealdeer",           apt = "tealdeer",                                           cargo = "tealdeer" }
+helix     = { pacman = "helix",              apt = "helix",                                              cargo = "helix" }
+zellij    = { pacman = "zellij",             apt = "zellij",                                             cargo = "zellij" }
+sesh      = { pacman = "sesh",               apt = "sesh" }
+yazi      = { pacman = "yazi",               apt = "yazi" }
+dust      = { pacman = "dust",               apt = "du-dust",                                           cargo = "du-dust" }
+procs     = { pacman = "procs",              apt = "procs",                                             cargo = "procs" }
+doggo     = { pacman = "doggo",              apt = "doggo" }
+hx        = { pacman = "helix",              apt = "helix" }      # alias para helix
+lazygit   = { pacman = "lazygit",            brew = "lazygit",                                          go = "github.com/jesseduffield/lazygit" }
 
-# --- Instalação via git ---
+# --- pip / pipx / uv (Python) — com bucket ``python = true`` ---
+# Quando pkg == tool_name, não precisa repetir: ``ruff = { python = true }``
+# expande para ``{ pip = true, pipx = true, uv = true }``.
+organize      = { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }   # organize-tool ≠ organize
+httpie        = { python = true }
+poetry        = { python = true }
+ruff          = { python = true }
+uv            = { python = true }
+shell-gpt     = { python = true }
+youtube-dl    = { python = true }
+yt-dlp        = { python = true }
+tldr          = { python = true }
+mitmproxy     = { python = true }
+ansible       = { python = true }
+ansible-lint  = { python = true }
+pre-commit    = { python = true }
+cookiecutter  = { python = true }
+
+# --- go install ---
+fzf           = { go = "github.com/junegunn/fzf" }
+lf            = { go = "github.com/gokcehan/lf" }
+lazydocker    = { go = "github.com/jesseduffield/lazydocker" }
+jj            = { go = "github.com/josharian/jj" }              # interactive git log
+micro         = { go = "github.com/zyedidia/micro/v2" }
+cheat         = { go = "github.com/cheat/cheat/cmd/cheat" }
+syncthing     = { go = "github.com/syncthing/syncthing" }
+restic        = { go = "github.com/restic/restic/cmd/restic" }
+hugo          = { go = "github.com/gohugoio/hugo" }
+termscp       = { go = "github.com/veeso/termscp" }
+gotop         = { go = "github.com/xxxserxxx/gotop/v4" }
+croc          = { go = "github.com/schollz/croc" }
+
+# --- cargo (Rust) ---
+starship      = { cargo = "starship" }
+bat           = { cargo = "bat" }
+sd            = { cargo = "sd" }
+lsd           = { cargo = "lsd" }
+bottom        = { cargo = "bottom" }
+bandwhich     = { cargo = "bandwhich" }
+cargo-binstall = { cargo = "cargo-binstall" }
+cargo-update  = { cargo = "cargo-update" }
+cargo-audit   = { cargo = "cargo-audit" }
+mcfly         = { cargo = "mcfly" }
+atuin         = { cargo = "atuin" }
+ripgrep-all   = { cargo = "ripgrep_all" }
+xh            = { cargo = "xh" }
+bacon         = { cargo = "bacon" }           # code review tool
+kanata        = { cargo = "kanata" }
+hyperfine     = { cargo = "hyperfine" }
+dog           = { cargo = "dog" }
+warp          = { cargo = "warp" }
+grex          = { cargo = "grex" }
+difftastic    = { cargo = "difftastic" }
+just          = { cargo = "just",             pacman = "just",               apt = "just" }
+fnm           = { cargo = "fnm" }
+zoxide        = { cargo = "zoxide",           pacman = "zoxide",             apt = "zoxide" }
+wasm-pack     = { cargo = "wasm-pack" }
+tailspin      = { cargo = "tailspin" }
+tokei         = { cargo = "tokei" }
+onefetch      = { cargo = "onefetch" }
+pastel        = { cargo = "pastel" }
+hexyl         = { cargo = "hexyl" }
+ouch          = { cargo = "ouch" }
+fclones       = { cargo = "fclones" }
+
+# --- cargo install --git (diretamente de repositório, não do crates.io) ---
+aichat        = { cargo = { git = "https://github.com/sigoden/aichat" } }
+matugen       = { cargo = { git = "https://github.com/InioX/matugen" } }
+nh            = { cargo = { git = "https://github.com/not-an-aardvark/nh" } }   # node --run helper
+
+# --- npm / pnpm / bun (Node.js) — com bucket ``node = true`` ---
+# ``node = true`` expande para ``{ npm = true, pnpm = true, bun = true }``.
+# Método explícito antes do bucket não é sobrescrito.
+neovim        = { node = true }
+markdownlint  = { npm = "markdownlint-cli" }       # markdownlint-cli ≠ markdownlint
+prettier      = { node = true }
+eslint        = { node = true }
+typescript    = { node = true }
+tsx           = { node = true }
+oxlint        = { node = true }
+bun           = { node = true }
+
+# --- gem (Ruby) ---
+jekyll        = { gem = "jekyll" }
+rails         = { gem = "rails" }
+sass          = { gem = "sass" }
+
+# --- conda / flatpak / snap ---
+jupyter       = { conda = "jupyter" }
+obsidian      = { flatpak = "md.obsidian.Obsidian",  snap = "obsidian" }
+spotify       = { flatpak = "com.spotify.Client",    snap = "spotify" }
+slack         = { flatpak = "com.slack.Slack" }
+
+# ==============================================================================
+# SEÇÃO 2 — Instalação via git (clonar + build manual)
+# ==============================================================================
+# O motor clona o repositório e executa `build` dentro dele.
+# Atributos: url (obrigatório), build, branch, depth (padrão 1), binary, checksum
+# ==============================================================================
+
 ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install" } }
-fasd = { git = { url = "https://github.com/clvv/fasd",        build = "PREFIX=$HOME/.local make install" } }
+fasd = { git = { url = "https://github.com/clvv/fasd",          build = "PREFIX=$HOME/.local make install" } }
 
-# --- Instalação via http (release binary) ---
-fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb", checksum = "sha256:auto" } }
+# Com branch específica e clone completo (depth = 0)
+neovim-git = { git = { url = "https://github.com/neovim/neovim", branch = "master", depth = 0, build = "make CMAKE_BUILD_TYPE=Release && sudo make install" } }
 
-# --- Bloco completo com when (condicional por distro) ---
+# Com binary field (verifica se ~/.local/bin/lf existe após build)
+lf-source   = { git = { url = "https://github.com/gokcehan/lf",  build = "go build -o $HOME/.local/bin/lf", binary = "lf" } }
+
+# Apenas clone (plugin manager)
+tpm         = { git = { url = "https://github.com/tmux-plugins/tpm", depth = 1 } }
+
+# ==============================================================================
+# SEÇÃO 3 — Instalação via http (release binary / deb / archive)
+# ==============================================================================
+# Baixa um artefato pronto. Suporta {latest} placeholder,
+# checksum, checksum_url, signature_url, extract_to.
+# ==============================================================================
+
+
+[packages.fastfetch]
+  [packages.fastfetch.http]
+  url      = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb"
+  checksum = "sha256:auto"
+
+
+# Com checksum_url explícito e formato sha256sum
+[packages.lazygit-bin]
+  [packages.lazygit-bin.http]
+  url                  = "https://github.com/jesseduffield/lazygit/releases/download/{latest}/lazygit_{latest}_Linux_x86_64.tar.gz"
+  checksum             = "sha256:auto"
+  checksum_url         = "https://github.com/jesseduffield/lazygit/releases/download/{latest}/checksums.txt"
+  checksum_file_format = "sha256sum"
+  extract_to           = "~/.local/bin"
+
+
+# Assinatura GPG + extração de binário único
+[packages.age]
+  [packages.age.http]
+  url           = "https://github.com/FiloSottile/age/releases/download/v1.2.0/age-v1.2.0-linux-amd64.tar.gz"
+  checksum      = "sha256:auto"
+  signature_url = "https://github.com/FiloSottile/age/releases/download/v1.2.0/age-v1.2.0-linux-amd64.tar.gz.asc"
+  signing_key   = "https://github.com/FiloSottile/age.keys"
+  extract_to    = "~/.local/bin"
+
+
+# Binário extraído com binary field
+[packages.gh]
+  [packages.gh.http]
+  url        = "https://github.com/cli/cli/releases/download/{latest}/gh_{latest}_linux_amd64.tar.gz"
+  checksum   = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "gh"
+
+
+# Fontes em zip com extração direta para diretório de fonts
+[packages.JetBrainsMono]
+  [packages.JetBrainsMono.http]
+  url        = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/JetBrainsMono.zip"
+  checksum   = "sha256:auto"
+  extract_to = "~/.local/share/fonts/JetBrainsMono"
+
+
+[packages.FiraCode]
+  [packages.FiraCode.http]
+  url        = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/FiraCode.zip"
+  checksum   = "sha256:auto"
+  extract_to = "~/.local/share/fonts/FiraCode"
+
+
+# Arquivo .deb direto
+[packages.slack-deb]
+  [packages.slack-deb.http]
+  url      = "https://downloads.slack-edge.com/desktop-releases/linux/{latest}/slack-desktop-{latest}-amd64.deb"
+  checksum = "sha256:auto"
+
+# ==============================================================================
+# SEÇÃO 4 — Bloco completo com método condicional + hooks
+# ==============================================================================
+# Use o formato de bloco quando uma ferramenta precisa de:
+#   - Múltiplos métodos concorrentes com diferentes condições
+#   - Hooks pre_install / postinstall
+#   - Tags para profile filtering
+#   - requires (dependências entre tools)
+# ==============================================================================
+
+# --- DepartureMono Nerd Font: AUR no Arch, HTTP nos demais ---
 [packages.DepartureMono]
-# postinstall goes in schema.toml, not here — manifest only encodes installation knowledge.
+tags = ["fonts"]
+# postinstall roda após QUALQUER método ter sucesso
+postinstall = "fc-cache -fv"
 
   [packages.DepartureMono.aur]
   pkg  = "otf-departure-mono-nerd"
@@ -50,4 +262,183 @@ fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/release
 
   [packages.DepartureMono.http]
   url        = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/DepartureMono.zip"
+  checksum   = "sha256:auto"
   extract_to = "~/.local/share/fonts/DepartureMono"
+
+
+# --- wezterm: AUR → AppImage → compilação manual (fallback) ---
+[packages.wezterm]
+tags = ["terminal"]
+
+  [packages.wezterm.aur]
+  pkg  = "wezterm"
+  when = { distro_family = ["arch"] }
+
+  [packages.wezterm.http]
+  url        = "https://github.com/wez/wezterm/releases/download/{latest}/WezTerm-{latest}-Ubuntu20.04.AppImage"
+  checksum   = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "wezterm"
+
+  [packages.wezterm.git]
+  url   = "https://github.com/wez/wezterm"
+  depth = 1
+  build = "cargo build --release && cp target/release/wezterm ~/.local/bin/"
+
+
+# --- ripgrep-all (rga): cargo → http (fallback) ---
+[packages.rga]
+requires = ["ripgrep"]
+tags     = ["search"]
+
+  [packages.rga.cargo]
+  pkg = "ripgrep_all"
+
+  [packages.rga.http]
+  url      = "https://github.com/phiresky/ripgrep-all/releases/download/{latest}/ripgrep_all-v{latest}-x86_64-unknown-linux-musl.tar.gz"
+  checksum = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "rga"
+
+
+# --- Docker: nativo → script get.docker.com (fallback) ---
+[packages.docker]
+tags = ["containers"]
+
+  [packages.docker.native]
+  pkg  = "docker"
+  when = { distro_family = ["arch", "debian", "ubuntu", "fedora"] }
+
+  [packages.docker.http]
+  url    = "https://get.docker.com"
+  build  = "sh get-docker.sh"
+
+
+# --- Lua Language Server: AUR → binário pré-compilado ---
+[packages.lua-language-server]
+tags = ["lsp", "dev"]
+
+  [packages.lua-language-server.aur]
+  pkg  = "lua-language-server"
+  when = { distro_family = ["arch"] }
+
+  [packages.lua-language-server.http]
+  url      = "https://github.com/LuaLS/lua-language-server/releases/download/{latest}/lua-language-server-{latest}-linux-x64.tar.gz"
+  checksum = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "lua-language-server"
+
+
+# --- mise: cargo → curl|sh (fallback) com hook pre_install ---
+[packages.mise]
+tags = ["dev", "runtimes"]
+pre_install  = "which curl >/dev/null || (apt-get update && apt-get install -y curl)"
+postinstall  = "mise help >/dev/null"
+
+  [packages.mise.cargo]
+  pkg = "mise"
+
+  [packages.mise.http]
+  url    = "https://mise.run"
+  build  = "sh mise.sh"
+
+
+# --- shellcheck: native → cargo → binário pré-compilado ---
+[packages.shellcheck]
+tags = ["lint", "dev"]
+
+  [packages.shellcheck.native]
+  pkg  = "shellcheck"
+  when = { distro_family = ["arch", "debian", "ubuntu", "fedora"] }
+
+  [packages.shellcheck.cargo]
+  pkg = "shellcheck"
+
+  [packages.shellcheck.http]
+  url      = "https://github.com/koalaman/shellcheck/releases/download/{latest}/shellcheck-{latest}.linux.x86_64.tar.xz"
+  checksum = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "shellcheck"
+
+
+# --- shfmt: native → go → http ---
+[packages.shfmt]
+tags = ["lint", "dev"]
+
+  [packages.shfmt.native]
+  pkg  = "shfmt"
+  when = { distro_family = ["arch", "debian", "ubuntu", "fedora"] }
+
+  [packages.shfmt.go]
+  pkg = "mvdan.cc/sh/v3/cmd/shfmt"
+
+  [packages.shfmt.http]
+  url      = "https://github.com/mvdan/sh/releases/download/{latest}/shfmt_{latest}_linux_amd64"
+  checksum = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "shfmt"
+
+
+# --- hadolint (Dockerfile linter): native → http ---
+[packages.hadolint]
+tags = ["lint", "containers"]
+
+  [packages.hadolint.native]
+  pkg  = "hadolint"
+  when = { distro_family = ["arch"] }
+
+  [packages.hadolint.http]
+  url      = "https://github.com/hadolint/hadolint/releases/download/{latest}/hadolint-Linux-x86_64"
+  checksum = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "hadolint"
+
+
+# ==============================================================================
+# SEÇÃO 5 — Ferramentas com distribuição exclusiva (AUR / conda / etc.)
+# ==============================================================================
+# O motor pula métodos cujo when não bate o ambiente atual.
+# ==============================================================================
+
+[packages.paru]
+tags = ["aur-helper"]
+
+  [packages.paru.aur]
+  pkg  = "paru"
+  when = { distro_family = ["arch"] }
+
+  [packages.paru.git]
+  url   = "https://github.com/Morganamilo/paru"
+  build = "makepkg -si"
+  when  = { distro_family = ["arch"] }
+
+
+[packages.yay]
+tags = ["aur-helper"]
+
+  [packages.yay.aur]
+  pkg  = "yay-bin"
+  when = { distro_family = ["arch"] }
+
+
+# ==============================================================================
+# CHECKLIST — qual formato usar para um novo pacote no manifesto?
+# ==============================================================================
+# 1. Só muda o nome do pacote entre managers nativos?
+#       → inline table: `nome = { pacman = "...", apt = "...", brew = "..." }`
+#
+# 2. Usa manager de linguagem (cargo, go, pipx, npm...) sem condição?
+#       → inline table: `nome = { cargo = "nome-do-crate" }`
+#
+# 3. Precisa de when, hooks (pre_install/postinstall), tags, requires,
+#    ou múltiplos métodos concorrentes?
+#       → bloco completo: [packages.NOME] + [packages.NOME.metodo]
+#
+# Campos que SEMPRE ficam no nível do pacote (fora do método):
+#   requires, pre_install, postinstall, tags
+#
+# Campos que SEMPRE ficam dentro do método:
+#   when, pkg, url, build, branch, depth, checksum, checksum_url,
+#   checksum_file_format, signature_url, signing_key, extract_to,
+#   binary, git
+# ==============================================================================

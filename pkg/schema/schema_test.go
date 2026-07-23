@@ -479,3 +479,267 @@ simple = ["zsh", "bat"]`)
 		}
 	}
 }
+
+
+func TestParseMethodBool_TrueReturnsEmptyPkg(t *testing.T) {
+	mc, err := parseMethod("pipx", true)
+	if err != nil {
+		t.Fatalf("parseMethod(pipx, true): %v", err)
+	}
+	if mc.Kind != "pipx" {
+		t.Fatalf("expected kind pipx, got %s", mc.Kind)
+	}
+	pkg, ok := mc.Config["pkg"].(string)
+	if !ok {
+		t.Fatalf("Config[pkg] is not a string: %T", mc.Config["pkg"])
+	}
+	if pkg != "" {
+		t.Fatalf("expected empty pkg (SubstitutePkg fallback), got %q", pkg)
+	}
+}
+
+func TestParseMethodBool_FalseReturnsError(t *testing.T) {
+	_, err := parseMethod("pipx", false)
+	if err == nil {
+		t.Fatal("expected error for false, got nil")
+	}
+	if !strings.Contains(err.Error(), "false") {
+		t.Fatalf("error should mention false, got: %v", err)
+	}
+}
+
+func TestParseMethodBool_StringStillWorks(t *testing.T) {
+	mc, err := parseMethod("pipx", "ruff")
+	if err != nil {
+		t.Fatalf("parseMethod(pipx, ruff): %v", err)
+	}
+	pkg, ok := mc.Config["pkg"].(string)
+	if !ok {
+		t.Fatalf("Config[pkg] is not a string: %T", mc.Config["pkg"])
+	}
+	if pkg != "ruff" {
+		t.Fatalf("expected pkg ruff, got %q", pkg)
+	}
+}
+
+func TestParseSchemaToolWithBoolMethods(t *testing.T) {
+	p := writeSchema(t, `
+[defaults]
+manager = "native"
+
+[tools]
+ruff = { pipx = true, uv = true }`)
+	s, err := ParseSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	tool, ok := s.Tools["ruff"]
+	if !ok {
+		t.Fatal("expected tool ruff")
+	}
+	// Should have native (auto-injected) + pipx + uv = 3 methods
+	if len(tool.Methods) != 3 {
+		t.Fatalf("expected 3 methods (native, pipx, uv), got %d", len(tool.Methods))
+	}
+	gotPipx := false
+	gotUv := false
+	gotNative := false
+	for _, m := range tool.Methods {
+		switch m.Kind {
+		case "pipx":
+			gotPipx = true
+			if m.Err != nil {
+				t.Fatalf("pipx method has error: %v", m.Err)
+			}
+		case "uv":
+			gotUv = true
+		case "native":
+			gotNative = true
+		}
+	}
+	if !gotPipx {
+		t.Fatal("missing pipx method")
+	}
+	if !gotUv {
+		t.Fatal("missing uv method")
+	}
+	if !gotNative {
+		t.Fatal("missing native method")
+	}
+}
+
+func TestBucketExpansion_Python(t *testing.T) {
+	p := writeSchema(t, `
+[defaults]
+manager = "native"
+
+[tools]
+ruff = { python = true }`)
+	s, err := ParseSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	tool, ok := s.Tools["ruff"]
+	if !ok {
+		t.Fatal("expected tool ruff")
+	}
+	// python → pip + pipx + uv + native (auto-injected) = 4 methods
+	if len(tool.Methods) != 4 {
+		t.Fatalf("expected 4 methods (native, pip, pipx, uv), got %d: %v", len(tool.Methods), methodKinds(tool.Methods))
+	}
+	kinds := methodKindSet(tool.Methods)
+	for _, want := range []string{"native", "pip", "pipx", "uv"} {
+		if !kinds[want] {
+			t.Fatalf("missing method %q in %v", want, methodKinds(tool.Methods))
+		}
+	}
+}
+
+func TestBucketExpansion_Node(t *testing.T) {
+	p := writeSchema(t, `
+[defaults]
+manager = "native"
+
+[tools]
+prettier = { node = true }`)
+	s, err := ParseSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	tool, ok := s.Tools["prettier"]
+	if !ok {
+		t.Fatal("expected tool prettier")
+	}
+	// node → npm + pnpm + bun + native (auto-injected) = 4 methods
+	if len(tool.Methods) != 4 {
+		t.Fatalf("expected 4 methods (native, npm, pnpm, bun), got %d: %v", len(tool.Methods), methodKinds(tool.Methods))
+	}
+	kinds := methodKindSet(tool.Methods)
+	for _, want := range []string{"native", "npm", "pnpm", "bun"} {
+		if !kinds[want] {
+			t.Fatalf("missing method %q in %v", want, methodKinds(tool.Methods))
+		}
+	}
+}
+
+func TestBucketExpansion_ExplicitMethodNotOverwritten(t *testing.T) {
+	p := writeSchema(t, `
+[defaults]
+manager = "native"
+
+[tools]
+ruff = { pip = "organize-tool", python = true }`)
+	s, err := ParseSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	tool, ok := s.Tools["ruff"]
+	if !ok {
+		t.Fatal("expected tool ruff")
+	}
+	// python → pipx + uv (pip already exists and is NOT overwritten)
+	// Should have: native, pip (with pkg=organize-tool), pipx, uv = 4 methods
+	if len(tool.Methods) != 4 {
+		t.Fatalf("expected 4 methods (native, pip, pipx, uv), got %d: %v", len(tool.Methods), methodKinds(tool.Methods))
+	}
+	// Verify pip pkg is "organize-tool", not overridden
+	for _, m := range tool.Methods {
+		if m.Kind == "pip" {
+			if pkg, ok := m.Config["pkg"].(string); !ok || pkg != "organize-tool" {
+				t.Fatalf("pip method pkg should be 'organize-tool' (not overwritten), got %q", pkg)
+			}
+		}
+	}
+	kinds := methodKindSet(tool.Methods)
+	for _, want := range []string{"native", "pip", "pipx", "uv"} {
+		if !kinds[want] {
+			t.Fatalf("missing method %q in %v", want, methodKinds(tool.Methods))
+		}
+	}
+}
+
+
+func TestBucketExpansion_BucketWithStringValNotExpanded(t *testing.T) {
+	// When bucket value is not bool(true), the key stays in valMap and
+	// buildMethods will handle it (as an unknown method kind → error).
+	// This should parse without panic/crash; validation catches unknown kinds.
+	p := writeSchema(t, `
+[defaults]
+manager = "native"
+
+[tools]
+ruff = { python = "some-string" }`)
+	s, err := ParseSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	tool, ok := s.Tools["ruff"]
+	if !ok {
+		t.Fatal("expected tool ruff")
+	}
+	// "python" key stays in valMap since value is string, not bool true.
+	// buildMethods creates a method with Kind="python" (no parse error, but
+	// Validate will flag it as unknown kind).
+	var found bool
+	for _, m := range tool.Methods {
+		if m.Kind == "python" {
+			found = true
+			if m.Err != nil {
+				t.Fatalf("string value does not cause parse error, got: %v", m.Err)
+			}
+			if pkg, ok := m.Config["pkg"].(string); !ok || pkg != "some-string" {
+				t.Fatalf("expected pkg 'some-string', got %q", pkg)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected python method to remain (not expanded) for non-bool value")
+	}
+}
+
+func TestBucketExpansion_BucketWithFalseNotExpanded(t *testing.T) {
+	// false keeps the key in valMap; buildMethods will try to parse it and get an error.
+	p := writeSchema(t, `
+[defaults]
+manager = "native"
+
+[tools]
+ruff = { python = false }`)
+	s, err := ParseSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	tool, ok := s.Tools["ruff"]
+	if !ok {
+		t.Fatal("expected tool ruff")
+	}
+	var found bool
+	for _, m := range tool.Methods {
+		if m.Kind == "python" {
+			found = true
+			if m.Err == nil {
+				t.Fatal("expected error on python method with false")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected python method to remain (not expanded) for false value")
+	}
+}
+
+// helpers for test assertions
+func methodKinds(methods []*MethodCandidate) []string {
+	kinds := make([]string, len(methods))
+	for i, m := range methods {
+		kinds[i] = m.Kind
+	}
+	return kinds
+}
+
+func methodKindSet(methods []*MethodCandidate) map[string]bool {
+	set := make(map[string]bool, len(methods))
+	for _, m := range methods {
+		set[m.Kind] = true
+	}
+	return set
+}

@@ -44,11 +44,18 @@ type ToolPin struct {
 	Checksum string `toml:"checksum,omitempty"` // pinned concrete checksum (e.g. "sha256:abc123...")
 }
 
-// DefaultPath returns the default schema.lock path alongside schema.toml.
-// If path points to a file, it returns <dir>/schema.lock.
+// DefaultPath returns the default lockfile path derived from the schema path.
+// The lockfile name mirrors the schema file with a .lock extension:
+//   schema.toml   → schema.lock
+//   depends.toml  → depends.lock
+//   depengine.toml → depengine.lock
 func DefaultPath(schemaPath string) string {
 	dir := filepath.Dir(schemaPath)
-	return filepath.Join(dir, "schema.lock")
+	base := filepath.Base(schemaPath)
+	if ext := filepath.Ext(base); ext != "" {
+		base = base[:len(base)-len(ext)]
+	}
+	return filepath.Join(dir, base+".lock")
 }
 
 // Load reads a lock file. A missing file is NOT an error — returns nil, nil.
