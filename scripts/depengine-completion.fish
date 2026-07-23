@@ -1,20 +1,7 @@
-
 # fish completion for depengine
 
 function _depengine_completions
     set --local cmds install check status remove version validate help completion undo sbom graph diff update why forget
-
-    # Commands and their flags
-    set --local install_flags "--schema --dry-run --verbose --json --only --skip --sort-by --log-level --diagnose --jobs --profile --allow-arbitrary-code --frozen-lockfile"
-    set --local validate_flags "--schema --check-env --format --strict"
-    set --local status_flags "--schema --json --orphans --format"
-    set --local remove_flags "--schema --all --dry-run"
-    set --local update_flags "--schema --profile --frozen-lockfile --dry-run --lock"
-    set --local why_flags "--json --format"
-    set --local graph_flags "--schema --format --only --skip --profile"
-    set --local undo_flags "--list --snapshot"
-    set --local sbom_flags "--format"
-    set --local diff_flags "--json --other"
 
     set --local cmd (commandline -opc)
     set --local cmd_count (count $cmd)
@@ -33,26 +20,29 @@ function _depengine_completions
     # Dynamic flag values
     switch "$prev"
         case --log-level
-            echo -e "error\nwarn\ninfo\ndebug"
+            echo -e "debug\tDepuração\ninfo\tInformação\nwarn\tAvisos\nerror\tErros"
             return
         case --sort-by
-            echo -e "name\nstatus\nmethod"
+            echo -e "name\tNome\nstatus\tEstado\nmethod\tMétodo"
             return
         case --format
             switch "$subcmd"
                 case graph
-                    echo -e "mermaid\ndot\ntext"
+                    echo -e "mermaid\tMermaid\ndot\tDOT\ntext\tTexto"
                 case sbom
-                    echo -e "cyclonedx\nspdx"
+                    echo -e "cyclonedx\tCycloneDX\nspdx\tSPDX"
                 case '*'
-                    echo -e "text\njson"
+                    echo -e "text\tTexto\njson\tJSON"
             end
             return
         case --jobs
             echo -e "1\n2\n4\n8"
             return
         case completion
-            echo -e "bash\nzsh\nfish"
+            echo -e "bash\tBash\nzsh\tZsh\nfish\tFish"
+            return
+        case --schema --snapshot --lock --other
+            # File path completion — fish handles _files native suggestions
             return
     end
 
@@ -69,27 +59,58 @@ function _depengine_completions
     # Suggest flags for current command
     switch "$subcmd"
         case install
-            echo $install_flags | string split " "
+            echo -e "--schema\tCaminho para o schema"
+            echo -e "--dry-run\tSimulação sem alterações"
+            echo -e "--verbose\tSaída detalhada por tool"
+            echo -e "--json\tSaída em JSON"
+            echo -e "--only\tInstalar apenas uma tool específica"
+            echo -e "--skip\tPular tools (separadas por vírgula)"
+            echo -e "--sort-by\tOrdenar output: name, status, method"
+            echo -e "--log-level\tNível de log: debug, info, warn, error"
+            echo -e "--diagnose\tModo diagnóstico (DEBUG + dry-run + verbose)"
+            echo -e "--jobs\tNúmero de instalações simultâneas"
+            echo -e "--profile\tFiltrar tools por tag (ex: desktop, server)"
+            echo -e "--allow-arbitrary-code\tPermitir scripts de build arbitrários"
+            echo -e "--frozen-lockfile\tAbortar se schema.lock não existir"
         case validate
-            echo $validate_flags | string split " "
+            echo -e "--schema\tCaminho para o schema"
+            echo -e "--check-env\tVerificar se tools necessárias estão no PATH"
+            echo -e "--format\tFormato de saída: text, json"
+            echo -e "--strict\tTratar warnings como erros (exit code 1)"
         case status
-            echo $status_flags | string split " "
+            echo -e "--schema\tCaminho para o schema"
+            echo -e "--json\tSaída em JSON"
+            echo -e "--orphans\tMostrar apenas tools não-schema instaladas"
+            echo -e "--format\tFormato de saída: text, json"
         case remove
-            echo $remove_flags | string split " "
+            echo -e "--schema\tCaminho para o schema"
+            echo -e "--all\tRemover todas as tools"
+            echo -e "--dry-run\tSimulação sem remover"
         case update
-            echo $update_flags | string split " "
-        case why
-            echo $why_flags | string split " "
+            echo -e "--schema\tCaminho para o schema"
+            echo -e "--profile\tFiltrar tools por tag"
+            echo -e "--frozen-lockfile\tAbortar se schema.lock não existir"
+            echo -e "--dry-run\tSimulação sem escrever lockfile"
+            echo -e "--lock\tCaminho para o lockfile"
         case graph
-            echo $graph_flags | string split " "
+            echo -e "--schema\tCaminho para o schema"
+            echo -e "--format\tFormato: text, mermaid, dot"
+            echo -e "--only\tSubgrafo de uma tool específica"
+            echo -e "--skip\tPular tools do grafo"
+            echo -e "--profile\tFiltrar tools por tag"
+        case why
+            echo -e "--json\tSaída em JSON"
+            echo -e "--format\tFormato de saída: text, json"
         case undo
-            echo $undo_flags | string split " "
+            echo -e "--list\tListar snapshots disponíveis"
+            echo -e "--snapshot\tReverter para um snapshot específico"
         case sbom
-            echo $sbom_flags | string split " "
+            echo -e "--format\tFormato: cyclonedx, spdx"
         case diff
-            echo $diff_flags | string split " "
+            echo -e "--json\tSaída em JSON"
+            echo -e "--other\tSegundo arquivo de estado para comparar"
         case completion
-            echo -e "bash\nzsh\nfish"
+            echo -e "bash\tBash\nzsh\tZsh\nfish\tFish"
     end
 end
 

@@ -1,4 +1,3 @@
-
 # bash completion for depengine
 
 _depengine_has() {
@@ -16,21 +15,6 @@ _depengine() {
 
     local cmds="install check status remove version validate help completion undo sbom graph diff update why forget"
 
-    # Map each command to its flags
-    local install_flags="--schema --dry-run --verbose --json --only --skip --sort-by --log-level --diagnose --jobs --profile --allow-arbitrary-code --frozen-lockfile"
-    local validate_flags="--schema --check-env --format --strict"
-    local status_flags="--schema --json --orphans --format"
-    local remove_flags="--schema --all --dry-run"
-    local update_flags="--schema --profile --frozen-lockfile --dry-run --lock"
-    local why_flags="--json --format"
-    local graph_flags="--schema --format --only --skip --profile"
-    local undo_flags="--list --snapshot"
-    local sbom_flags="--format"
-    local diff_flags="--json --other"
-    local check_flags=""
-    local forget_flags=""
-    local completion_flags=""
-
     # Dynamic flag values (--flag:values...)
     local log_levels="error warn info debug"
     local sort_by="name status method"
@@ -38,7 +22,6 @@ _depengine() {
     local graph_formats="mermaid dot text"
     local sbom_formats="cyclonedx spdx"
     local completion_shells="bash zsh fish"
-    local profile_values=""
 
     if [[ $cword -eq 1 ]]; then
         COMPREPLY=($(compgen -W "$cmds" -- "$cur"))
@@ -50,6 +33,11 @@ _depengine() {
 
     # Dynamic value completion for flags that take arguments
     case "$prev_arg" in
+        --schema|--snapshot|--lock|--other)
+            # File path completion
+            COMPREPLY=($(compgen -f -- "$cur"))
+            return
+            ;;
         --log-level)
             COMPREPLY=($(compgen -W "$log_levels" -- "$cur"))
             return
@@ -60,57 +48,125 @@ _depengine() {
             ;;
         --format)
             case "$cmd" in
-                graph)    COMPREPLY=($(compgen -W "$graph_formats" -- "$cur")) ;;
-                sbom)     COMPREPLY=($(compgen -W "$sbom_formats" -- "$cur")) ;;
-                validate|diff|why|status)
-                          COMPREPLY=($(compgen -W "$formats" -- "$cur")) ;;
-                *)        COMPREPLY=($(compgen -W "$formats $graph_formats $sbom_formats" -- "$cur")) ;;
+                graph) COMPREPLY=($(compgen -W "$graph_formats" -- "$cur")) ;;
+                sbom)  COMPREPLY=($(compgen -W "$sbom_formats" -- "$cur")) ;;
+                *)     COMPREPLY=($(compgen -W "$formats" -- "$cur")) ;;
             esac
-            return
-            ;;
-        --schema|--lock|--snapshot|--other)
-            # File path completion
-            COMPREPLY=($(compgen -f -- "$cur"))
-            return
-            ;;
-        --only|--skip)
-            # Tool name completion from schema.toml (basic: suggest any word)
-            COMPREPLY=($(compgen -W "$(depengine validate --format=json 2>/dev/null | grep -oP '"tool":\s*"\K[^"]+' 2>/dev/null || echo '')" -- "$cur"))
-            return
-            ;;
-        --profile)
-            COMPREPLY=($(compgen -W "$profile_values" -- "$cur"))
             return
             ;;
         --jobs)
             COMPREPLY=($(compgen -W "1 2 4 8" -- "$cur"))
             return
             ;;
+        completion)
+            COMPREPLY=($(compgen -W "$completion_shells" -- "$cur"))
+            return
+            ;;
     esac
 
-    # Get flags for current command
-    local cmd_flags=""
+    # Get flags for current command (with descriptions)
+    local -a flag_descs
     case "$cmd" in
-        install)   cmd_flags="$install_flags" ;;
-        validate)  cmd_flags="$validate_flags" ;;
-        status)    cmd_flags="$status_flags" ;;
-        remove)    cmd_flags="$remove_flags" ;;
-        update)    cmd_flags="$update_flags" ;;
-        why)       cmd_flags="$why_flags" ;;
-        graph)     cmd_flags="$graph_flags" ;;
-        undo)      cmd_flags="$undo_flags" ;;
-        sbom)      cmd_flags="$sbom_flags" ;;
-        diff)      cmd_flags="$diff_flags" ;;
-        check)     cmd_flags="$check_flags" ;;
-        forget)    cmd_flags="$forget_flags" ;;
-        completion) cmd_flags="$completion_flags" ;;
-        help)      cmd_flags="" ;;
-        version)   cmd_flags="" ;;
+        install)
+            flag_descs=(
+                "--schema	Caminho para o schema"
+                "--dry-run	Simulação sem alterações"
+                "--verbose	Saída detalhada por tool"
+                "--json	Saída em JSON"
+                "--only	Instalar apenas uma tool específica"
+                "--skip	Pular tools (separadas por vírgula)"
+                "--sort-by	Ordenar output: name, status, method"
+                "--log-level	Nível de log: debug, info, warn, error"
+                "--diagnose	Modo diagnóstico (DEBUG + dry-run + verbose)"
+                "--jobs	Número de instalações simultâneas"
+                "--profile	Filtrar tools por tag (ex: desktop, server)"
+                "--allow-arbitrary-code	Permitir scripts de build arbitrários"
+                "--frozen-lockfile	Abortar se schema.lock não existir"
+            )
+            ;;
+        validate)
+            flag_descs=(
+                "--schema	Caminho para o schema"
+                "--check-env	Verificar se tools necessárias estão no PATH"
+                "--format	Formato de saída: text, json"
+                "--strict	Tratar warnings como erros (exit code 1)"
+            )
+            ;;
+        status)
+            flag_descs=(
+                "--schema	Caminho para o schema"
+                "--json	Saída em JSON"
+                "--orphans	Mostrar apenas tools não-schema instaladas"
+                "--format	Formato de saída: text, json"
+            )
+            ;;
+        remove)
+            flag_descs=(
+                "--schema	Caminho para o schema"
+                "--all	Remover todas as tools"
+                "--dry-run	Simulação sem remover"
+            )
+            ;;
+        update)
+            flag_descs=(
+                "--schema	Caminho para o schema"
+                "--profile	Filtrar tools por tag"
+                "--frozen-lockfile	Abortar se schema.lock não existir"
+                "--dry-run	Simulação sem escrever lockfile"
+                "--lock	Caminho para o lockfile"
+            )
+            ;;
+        graph)
+            flag_descs=(
+                "--schema	Caminho para o schema"
+                "--format	Formato: text, mermaid, dot"
+                "--only	Subgrafo de uma tool específica"
+                "--skip	Pular tools do grafo"
+                "--profile	Filtrar tools por tag"
+            )
+            ;;
+        why)
+            flag_descs=(
+                "--json	Saída em JSON"
+                "--format	Formato de saída: text, json"
+            )
+            ;;
+        undo)
+            flag_descs=(
+                "--list	Listar snapshots disponíveis"
+                "--snapshot	Reverter para um snapshot específico"
+            )
+            ;;
+        sbom)
+            flag_descs=(
+                "--format	Formato: cyclonedx, spdx"
+            )
+            ;;
+        diff)
+            flag_descs=(
+                "--json	Saída em JSON"
+                "--other	Segundo arquivo de estado para comparar"
+            )
+            ;;
     esac
 
-    # If we're completing a flag value, we handled it above
+    # Complete flags or values for current command
     if [[ "$cur" == -* ]]; then
-        COMPREPLY=($(compgen -W "$cmd_flags" -- "$cur"))
+        # Build flag list with descriptions (tab-separated for compatible terminals)
+        local flags_txt=""
+        local desc_txt=""
+        local flag
+        local desc
+        local IFS=$'\t'
+        for entry in "${flag_descs[@]}"; do
+            flag="${entry%%$'\t'*}"
+            desc="${entry#*$'\t'}"
+            [[ -z "$flags_txt" ]] || flags_txt+=" "
+            # For COMPREPLY, emit flag + description; bash-completion shows
+            # descriptions in terminals that support them
+            flags_txt+="$flag"
+        done
+        COMPREPLY=($(compgen -W "$flags_txt" -- "$cur"))
         return
     fi
 

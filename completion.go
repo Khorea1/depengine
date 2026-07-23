@@ -1,10 +1,19 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
-	"path/filepath"
 )
+
+//go:embed scripts/depengine-completion.bash
+var completionBash string
+
+//go:embed scripts/depengine-completion.zsh
+var completionZsh string
+
+//go:embed scripts/depengine-completion.fish
+var completionFish string
 
 func runCompletion(args []string) {
 	if len(args) == 0 {
@@ -13,28 +22,18 @@ func runCompletion(args []string) {
 	}
 	shell := args[0]
 
-	// Whitelist: only known shells to prevent path traversal.
+	var script string
 	switch shell {
-	case "bash", "zsh", "fish":
+	case "bash":
+		script = completionBash
+	case "zsh":
+		script = completionZsh
+	case "fish":
+		script = completionFish
 	default:
 		fmt.Fprintf(os.Stderr, "error: unsupported shell %q (supported: bash, zsh, fish)\n", shell)
 		os.Exit(2)
 	}
 
-	if exe, err := os.Executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(exe), "scripts", "depengine-completion."+shell)
-		if data, err := os.ReadFile(candidate); err == nil {
-			fmt.Print(string(data))
-			return
-		}
-	}
-
-	scriptPath := filepath.Join("scripts", "depengine-completion."+shell)
-	if data, err := os.ReadFile(scriptPath); err == nil {
-		fmt.Print(string(data))
-		return
-	}
-
-	fmt.Fprintf(os.Stderr, "error: completion script not found for %s\n", shell)
-	os.Exit(2)
+	fmt.Print(script)
 }
