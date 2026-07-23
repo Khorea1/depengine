@@ -166,7 +166,7 @@ func extractDefaults(raw any) Defaults {
 		Manager:   "native",
 		AurHelper: "paru",
 		MethodOrder: []string{
-			"native", "cargo", "go", "pipx", "uv", "pip",
+			"native", "scoop", "choco", "cargo", "go", "pipx", "uv", "pip",
 			"npm", "pnpm", "bun", "gem", "yarn", "yarn-berry",
 			"composer", "apm", "vscode", "vscodium", "flatpak",
 			"snap", "cask", "mas", "sdkman", "steamcmd",

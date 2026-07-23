@@ -13,7 +13,7 @@ import (
 
 // DefaultKeyServer is the GPG keyserver used to receive signing keys by fingerprint.
 // Override this for air-gapped environments or custom keyservers.
-var DefaultKeyServer = "keyserver.ubuntu.com"
+var DefaultKeyServer = "keys.openpgp.org"
 
 // GPGVerify verifies a GPG detached signature on a checksum file.
 // Returns nil if verification succeeds. Returns error if gpg is not

@@ -16,6 +16,7 @@
   <img src="https://img.shields.io/badge/go-1.26-blue" alt="Go 1.26">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Platform">
   <img src="https://img.shields.io/badge/static%20binary-%E2%9C%93-brightgreen" alt="Static binary">
+  <img src="https://img.shields.io/badge/windows-limited-yellow" alt="Windows">
 </p>
 
 ---
@@ -83,6 +84,10 @@ go build -o depengine .
 ./depengine sbom --format cyclonedx        # CycloneDX 1.5
 ./depengine sbom --format spdx > bom.json  # SPDX 2.3
 ```
+> **Note:** Windows builds are provided but **not fully supported** — file locking
+> and state management are not implemented on Windows. Linux and macOS are the
+> primary targets.
+
 
 ---
 
