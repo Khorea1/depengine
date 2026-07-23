@@ -39,13 +39,19 @@ func main() {
 		runUndo(os.Args[2:])
 	case "sbom":
 		runSBOM(os.Args[2:])
+	case "init":
+		runInit(os.Args[2:])
 	case "diff":
 		runDiff(os.Args[2:])
 	case "version", "-v", "--version":
 		fmt.Println("depengine " + version)
 		fmt.Println("Motor distro-agnostic de instalação de dependências")
 	case "help", "-h", "--help":
-		printUsage()
+		if len(os.Args) > 2 && os.Args[2] == "--man" {
+			printManPage()
+		} else {
+			printUsage()
+		}
 	case "completion":
 		runCompletion(os.Args[2:])
 	default:

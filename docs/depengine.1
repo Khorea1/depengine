@@ -30,6 +30,15 @@ Installs all tools from the schema, respecting
 .BR requires ,
 and topological ordering. See OPTIONS below for flags.
 .TP
+.B init " [flags]"
+Initializes a new depengine project by creating a minimal
+.B depengine.toml
+or
+.B schema.toml
+scaffold in the current directory. Use
+.B \-\-schema
+to specify a custom path.
+.TP
 .B validate " [flags]"
 Validates the schema structure and optionally the system environment.
 Reports unknown methods, unknown placeholders, and missing tools.
