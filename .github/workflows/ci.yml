@@ -7,15 +7,15 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.x.x
       with:
         fetch-depth: 0 # Fetch all history so git describe works
 
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.x.x
       with:
         go-version: '1.26'
 
@@ -23,18 +23,32 @@ jobs:
       run: go mod download
 
     - name: Run tests
-      run: go test ./...
+      run: go test -race ./...
 
     - name: Run static analysis (vet)
       run: go vet ./...
+    - name: Run govulncheck
+      run: |
+        go install golang.org/x/vuln/cmd/govulncheck@latest
+        govulncheck ./...
+
+    - name: Run fuzz tests (short)
+      run: go test -fuzz=FuzzParseSchema -fuzztime=15s -run=^$ ./pkg/schema/
+
+    - name: Derive version
+      id: version
+      run: |
+        if VERSION=$(git describe --tags --always --dirty 2>/dev/null); then
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+        else
+          echo "VERSION=dev-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        fi
 
     - name: Build static binary
       run: scripts/build-static.sh
-      env:
-        VERSION: v0.1.0 # Placeholder for now, release workflow injects correct version
 
     - name: Upload build artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.x.x
       with:
         name: depengine-binary
         path: depengine
