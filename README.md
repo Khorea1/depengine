@@ -1,82 +1,110 @@
-# depengine
+[![🇧🇷](https://img.shields.io/badge/lang-pt--br-green)](README-pt.md)
+[![🇺🇸](https://img.shields.io/badge/lang-en--us-blue)](README.md)
 
-**Motor distro-agnostic de instalação de dependências** guiado por `schema.toml`.
+<h1 align="center">depengine</h1>
 
-Você descreve *o quê* instalar num arquivo declarativo; o motor decide *como*
-instalar testando métodos na ordem certa (nativo, cargo, go, pip, git, http...)
-até um funcionar, respeitando condições por distro, dependências entre tools, e
-hooks pós-instalação.
+<p align="center">
+  <b>Distro-agnostic dependency installer</b><br>
+  Declare <i>what</i> to install — the engine figures out <i>how</i>.
+</p>
 
-Escrito em Go — binário estático único, sem runtime dependency na máquina alvo.
+<p align="center">
+  <a href="https://github.com/depengine/depengine/actions"><img src="https://github.com/depengine/depengine/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://pkg.go.dev/github.com/depengine/depengine"><img src="https://pkg.go.dev/badge/github.com/depengine/depengine" alt="Go Reference"></a>
+  <a href="https://goreportcard.com/report/github.com/depengine/depengine"><img src="https://goreportcard.com/badge/github.com/depengine/depengine" alt="Go Report Card"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue" alt="License"></a>
+  <img src="https://img.shields.io/badge/go-1.26-blue" alt="Go 1.26">
+  <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Platform">
+  <img src="https://img.shields.io/badge/static%20binary-%E2%9C%93-brightgreen" alt="Static binary">
+</p>
+
+---
+
+Write a `schema.toml` listing your tools. depengine tests every available
+method — native package manager, cargo, go, pip, git, http, flatpak, and more —
+until one succeeds. No runtime dependencies: single static Go binary.
 
 ```sh
-# Uma vez:
-go build -o depengine .
+# Validate your schema
+depengine validate --schema schema.toml
 
-# Usar:
-depengine install                     # instala tudo do schema.toml
-depengine validate --schema foo.toml  # valida schema + ambiente
-depengine check nvim                  # verifica se uma tool está instalada
+# Install everything
+depengine install
+
+# Check status
+depengine status
 ```
 
 ---
 
 ## Quick start
 
+```mermaid
+flowchart LR
+    A[Write schema.toml] --> B[depengine validate]
+    B --> C[depengine update]
+    C --> D[depengine install]
+    D --> E[depengine status]
+    E --> F[depengine check &#9989;]
+```
+
 ```sh
 # Build
 go build -o depengine .
 
-# Validar o schema de referência (vem com o projeto)
+# Validate the reference schema
 ./depengine validate
 # → ✓ schema is valid
 
-# Validar com checagem de ambiente (tools no PATH)
+# Validate with environment checks (tools on PATH)
 ./depengine validate --check-env
-# → warnings para tools ausentes (normais em dev)
+# → warnings for missing tools (expected in dev)
 
-# Instalar todas as dependências do schema
+# Install everything from schema
 ./depengine install
 
-./depengine check nvim                   # verifica se uma tool está instalada
-# JSON estruturado (para scripts ou grepping)
+# Quick check
+./depengine check nvim
+# → Installed
+
+# Structured output for scripts
 ./depengine validate --format=json
 ./depengine install --json
 
-# Status e remoção
-./depengine status                         # lista o que está instalado
-./depengine status nvim                     # status de uma tool específica
-./depengine remove nvim                     # remove uma tool
+# Status and removal
+./depengine status                         # list installed
+./depengine status nvim                    # specific tool
+./depengine remove nvim                    # uninstall
 
-# Resolver placeholders {latest} do schema
-./depengine update                          # atualiza schema.lock
+# Resolve {latest} placeholders
+./depengine update                         # writes schema.lock
 
-# Exportar SBOM
-./depengine sbom --format cyclonedx       # CycloneDX 1.5 ou SPDX 2.3
-./depengine sbom --format spdx > bom.json
+# Export SBOM
+./depengine sbom --format cyclonedx        # CycloneDX 1.5
+./depengine sbom --format spdx > bom.json  # SPDX 2.3
 ```
 
 ---
 
-## Schema.toml — o coração declarativo
+## schema.toml — the declarative heart
 
-O schema descreve **tools** (dependências) e **métodos** (como instalá-las).
-O motor tenta os métodos na ordem de `method_order` até um funcionar.
+A schema describes **tools** (dependencies) and **methods** (how to install).
+The engine tries methods in `method_order` until one works.
 
-### Forma 1 — Tool simples (nome = pacote em toda distro)
+### Form 1 — Simple tool (name = package across all distros)
 
 ```toml
 simple = ["zsh", "bat", "kitty", "mpv"]
 ```
 
-### Forma 2 — Nome do pacote muda por manager nativo
+### Form 2 — Package name varies per native manager
 
 ```toml
-fd   = { apt = "fd-find" }                # "fd" nos demais
+fd   = { apt = "fd-find" }                 # "fd" on all others
 nvim = { pacman = "neovim", apt = "neovim" }
 ```
 
-### Forma 3 — Manager de linguagem
+### Form 3 — Language ecosystem managers
 
 ```toml
 organize = { pip = "organize-tool", pipx = "organize-tool" }
@@ -84,18 +112,18 @@ fzf      = { go  = "github.com/junegunn/fzf" }
 lf       = { go  = "github.com/gokcehan/lf" }
 ```
 
-> Quando `pkg == tool_name`, use `true` em vez de repetir o nome:
+> When `pkg == tool_name`, use `true` instead of repeating:
 > `ruff = { python = true }` ≡ `ruff = { pipx = "ruff", uv = "ruff" }`.
-> Buckets (`python`, `node`) expandem para todos os métodos do ecossistema
-> de uma vez (ver Forma 10).
+> Buckets (`python`, `node`) expand to all methods in that ecosystem at once
+> (see Form 10 below).
 
-### Forma 4 — cargo/go com git sub-key (não do repositório oficial)
+### Form 4 — cargo/go with custom git source (not the official repo)
 
 ```toml
 matugen = { cargo = { git = "https://github.com/InioX/matugen" } }
 ```
 
-### Forma 5 — Pre-install hook (antes de qualquer método)
+### Form 5 — Pre-install hook (before any method)
 
 ```toml
 [tools.myenv]
@@ -105,32 +133,35 @@ pre_install = "curl -fsSL https://setup.example.com | sh"
   pkg = "my-env"
 ```
 
-> O hook `pre_install` executa antes do primeiro método — se falhar, a tool é abortada.
-> Use com `--allow-arbitrary-code` (aviso de segurança exibido por padrão).
+> `pre_install` runs before the first method — if it fails, the tool is aborted.
+> Requires `--allow-arbitrary-code` (security warning shown by default).
 
-### Forma 6 — Git: clona repo + build manual
+### Form 6 — Git: clone + manual build
 
 ```toml
 ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install" } }
 ```
 
-### Forma 7 — HTTP: baixa artefato (deb, zip, binário)
+### Form 7 — HTTP: download artifact (deb, zip, binary)
 
 ```toml
-fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb", checksum = "sha256:auto" } }
+fastfetch = { http = {
+  url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb",
+  checksum = "sha256:auto"
+} }
 ```
 
-> O campo `checksum` aceita hash literal (`sha256:...`) ou `:auto` (resolução automática).
-> Use `checksum_url` para fonte separada, `sudo_required = false` se não precisar de root,
-> e `signing_key`/`signature_url` para verificação GPG.
+> `checksum` accepts a literal hash (`sha256:...`) or `:auto` (automatic resolution).
+> Use `checksum_url` for a separate source, `sudo_required = false` if root isn't needed,
+> and `signing_key`/`signature_url` for GPG verification.
 
-### Forma 8 — Dependência entre tools
+### Form 8 — Tool-to-tool dependency
 
 ```toml
 zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
 ```
 
-### Forma 9 — Caso complexo: múltiplos métodos + condição de distro
+### Form 9 — Complex case: multiple methods + distro condition
 
 ```toml
 [tools.DepartureMono]
@@ -145,53 +176,51 @@ postinstall = "fc-cache -fv"
   extract_to = "~/.local/share/fonts/DepartureMono"
 ```
 
-> **Regra de ouro:** Campos de nível de tool (`requires`, `postinstall`, `pre_install`) ficam
-> fora do método. Campos específicos do método (`when`, `url`, `build`,
-> `checksum`, `extract_to`, `pkg`, `git`) ficam dentro do método.
+> **Golden rule:** Tool-level fields (`requires`, `postinstall`, `pre_install`) go
+> _outside_ the method block. Method-specific fields (`when`, `url`, `build`,
+> `checksum`, `extract_to`, `pkg`, `git`) go _inside_.
 
+### Form 10 — `true` shorthand and ecosystem buckets
 
-### Forma 10 — `true` e buckets de ecossistema
+When the package name equals the tool name (~80% of Python/Node cases),
+use `true` instead of repeating. Buckets expand to all methods in the ecosystem.
 
-Quando o nome do pacote é igual ao nome da tool (~80% dos casos Python/Node),
-use `true` em vez de repetir. Buckets expandem para todos os métodos do
-ecossistema de uma vez.
+**Built-in buckets:**
 
-**Buckets built-in:**
-
-| Bucket | Expansão | Uso típico |
-|--------|----------|------------|
-| `python = true` | `{ pip = true, pipx = true, uv = true }` | Ferramentas Python (ruff, httpie, poetry) |
-| `node = true` | `{ npm = true, pnpm = true, bun = true }` | Ferramentas Node (prettier, eslint, tsx) |
+| Bucket | Expansion | Typical use |
+|--------|-----------|-------------|
+| `python = true` | `{ pip = true, pipx = true, uv = true }` | Python tools (ruff, httpie, poetry) |
+| `node = true` | `{ npm = true, pnpm = true, bun = true }` | Node tools (prettier, eslint, tsx) |
 
 ```toml
 ruff = { python = true }        # ≡ { pipx = "ruff", uv = "ruff" }
 prettier = { node = true }      # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
-httpie = { python = true }      # pip + pipx + uv (pkg=httpie em todos)
+httpie = { python = true }      # pip + pipx + uv (pkg=httpie on all)
 ```
 
-> Cada `true` usa o nome da tool como pkg via SubstitutePkg.
-> Métodos explícitos NÃO são sobrescritos pelo bucket:
-> `organize = { pip = "organize-tool", python = true }` mantém `pip` como
-> `"organize-tool"` e expande apenas `pipx`/`uv`.
+> Each `true` uses the tool name as pkg via SubstitutePkg.
+> Explicit methods are NOT overridden by the bucket:
+> `organize = { pip = "organize-tool", python = true }` keeps `pip` as
+> `"organize-tool"` and only expands `pipx`/`uv`.
 >
-> Buckets só aceitam `true`. `python = false` ou `python = "foo"` não expandem
-> (o motor trata como método desconhecido → erro em `validate`).
+> Buckets only accept `true`. `python = false` or `python = "foo"` won't expand
+> (the engine treats it as an unknown method → error on `validate`).
 >
-> `all = true` **não existe** — impreciso demais, risco de instalar pacote
-> errado de ecossistema diferente.
+> `all = true` **does not exist** — too imprecise, risks installing the wrong
+> package from a different ecosystem.
 
 ---
 
-## Editor Support
+## Editor support
 
-O projeto publica um [JSON Schema](schema/depengine.schema.json) que descreve a estrutura do `schema.toml`.
-Editores com extensão TOML (ex: [taplo](https://taplo.tamasfe.dev/) para VSCode) usam isso para:
+A [JSON Schema](schema/depengine.schema.json) describes the `schema.toml` structure.
+Editors with TOML extensions (e.g. [taplo](https://taplo.tamasfe.dev/) for VSCode) use it for:
 
-- **Autocomplete** de campos (`url:`, `build:`, `checksum:`, `when:`, etc.)
-- **Validação inline** de tipos e campos obrigatórios
-- **Hover docs** com descrição de cada campo
+- **Autocomplete** of fields (`url:`, `build:`, `checksum:`, `when:`, etc.)
+- **Inline validation** of types and required fields
+- **Hover docs** with field descriptions
 
-Para ativar no VSCode com a extensão TOML (taplo), crie na raiz do projeto um `.vscode/settings.json`:
+Enable it in `.vscode/settings.json`:
 
 ```json
 {
@@ -200,156 +229,155 @@ Para ativar no VSCode com a extensão TOML (taplo), crie na raiz do projeto um `
 }
 ```
 
-Ou, se preferir o schema local:
+Or use the local schema:
+
 ```json
 {
   "taplo.schema.enabled": true,
   "taplo.schema.url": "./schema/depengine.schema.json"
 }
 ```
+
 ---
 
-## CLI — comandos e flags
+## CLI reference
 
 ### `depengine install [flags]`
 
-Instala todas as tools do schema, respeitando `method_order`, `when`,
-`requires` e ordem topológica.
+Installs all tools from the schema, respecting `method_order`, `when`,
+`requires`, and topological ordering.
 
-| Flag | Default | Descrição |
-|------|---------|-----------|
-| `--schema` | `schema.toml` | Caminho para o schema |
-| `--dry-run` | `false` | Mostra o que seria instalado sem executar |
-| `--verbose` | `false` | Saída detalhada por tool |
-| `--json` | `false` | Saída em JSON |
-| `--only <tool>` | — | Instala apenas uma tool específica |
-| `--skip <tools>` | — | Pula tools (separadas por vírgula) |
-| `--sort-by` | — | Ordena output: `name`, `status`, `method` |
-| `--log-level` | `info` | Nível de log: `debug`, `info`, `warn`, `error` |
-| `--diagnose` | `false` | Modo diagnóstico: DEBUG + dry-run + verbose |
-| `--profile <tag>` | — | Filtra tools por tag (ex: `desktop`, `server`) |
-| `--jobs <n>` | `1` | Máximo de instalações simultâneas |
-| `--allow-arbitrary-code` | `false` | Suprime avisos de segurança para scripts de build |
-| `--frozen-lockfile` | `false` | Aborta se o lockfile não existir |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--schema` | `schema.toml` | Path to schema file |
+| `--dry-run` | `false` | Show what would be installed |
+| `--verbose` | `false` | Detailed output per tool |
+| `--json` | `false` | JSON output |
+| `--only <tool>` | — | Install a single tool |
+| `--skip <tools>` | — | Skip comma-separated tools |
+| `--sort-by` | — | Sort output: `name`, `status`, `method` |
+| `--log-level` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `--diagnose` | `false` | Diagnostic mode: DEBUG + dry-run + verbose |
+| `--profile <tag>` | — | Filter tools by tag (e.g. `desktop`, `server`) |
+| `--jobs <n>` | `1` | Max concurrent installations |
+| `--allow-arbitrary-code` | `false` | Suppress build script security warnings |
+| `--frozen-lockfile` | `false` | Abort if lockfile doesn't exist |
 
 ### `depengine validate [flags]`
 
-Valida o schema e opcionalmente o ambiente.
+Validates the schema and optionally the environment.
 
-| Flag | Default | Descrição |
-|------|---------|-----------|
-| `--schema` | `schema.toml` | Caminho para o schema |
-| `--check-env` | `false` | Verifica se as tools necessárias estão no PATH |
-| `--format` | `text` | Formato de saída: `text` ou `json` |
-| `--strict` | `false` | Warnings viram erros (exit code 1) |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--schema` | `schema.toml` | Path to schema |
+| `--check-env` | `false` | Check required tools are on PATH |
+| `--format` | `text` | Output format: `text` or `json` |
+| `--strict` | `false` | Warnings become errors (exit code 1) |
 
 ### `depengine check <tool>`
 
-Verifica se uma tool específica está instalada na máquina.
+Checks whether a specific tool is installed.
 
 ### `depengine status [tool]`
 
-Mostra o estado de instalação de todas as tools ou de uma específica.
+Shows installation state of all tools or a specific one.
 
-| Flag | Default | Descrição |
-|------|---------|-----------|
-| `--format` | `text` | Formato: `text` ou `json` |
-| `--orphans` | `false` | Mostra apenas tools instaladas que não estão no schema |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--format` | `text` | Format: `text` or `json` |
+| `--orphans` | `false` | Show only installed tools not in schema |
 
 ### `depengine remove <tool>`
 
-Remove uma tool instalada pelo depengine. Apenas tools com suporte a
-remoção no adapter (nativas, cargo, pip, etc.) são removidas.
+Removes a tool installed by depengine (native, cargo, pip, etc.).
 
 ### `depengine update [flags]`
 
-Atualiza o schema.lock resolvendo placeholders `{latest}` via GitHub API.
+Updates `schema.lock` by resolving `{latest}` via GitHub API.
 
-| Flag | Default | Descrição |
-|------|---------|-----------|
-| `--schema` | `schema.toml` | Caminho para o schema |
-| `--lock` | `schema.lock` | Caminho para o lockfile |
-| `--profile <tag>` | — | Filtra tools por tag (ex: `desktop`, `server`) |
-| `--frozen-lockfile` | `false` | Aborta se schema.lock não existir |
-| `--dry-run` | `false` | Mostra o que seria atualizado sem escrever |
-|-v                    | false    | Saída detalhada                          |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--schema` | `schema.toml` | Path to schema |
+| `--lock` | `schema.lock` | Path to lockfile |
+| `--profile <tag>` | — | Filter tools by tag |
+| `--frozen-lockfile` | `false` | Abort if schema.lock doesn't exist |
+| `--dry-run` | `false` | Show what would be updated |
+| `-v` | `false` | Verbose output |
 
 ### `depengine graph [flags]`
 
-Mostra o grafo de dependência como texto, Mermaid ou DOT.
+Shows the dependency graph as text, Mermaid, or DOT.
 
-| Flag | Default | Descrição |
-|------|---------|-----------|
-| `--format` | `text` | Formato: `text`, `mermaid` ou `dot` |
-| `--only <tool>` | — | Mostra apenas o subgrafo de uma tool |
-| `--skip <tools>` | — | Pula tools do grafo (separadas por vírgula) |
-| `--profile <tag>` | — | Filtra tools por tag |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--format` | `text` | Format: `text`, `mermaid` or `dot` |
+| `--only <tool>` | — | Subgraph for one tool |
+| `--skip <tools>` | — | Comma-separated tools to skip |
+| `--profile <tag>` | — | Filter by tag |
 
 ### `depengine why <tool>`
 
-Explica como uma tool seria instalada, método por método.
+Explains how a tool would be installed, method by method.
 
-| Flag | Default | Descrição |
-|------|---------|-----------|
-| `--json` | `false` | Saída em JSON |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--json` | `false` | JSON output |
 
 ### `depengine forget <tool>`
 
-Remove uma tool do estado sem tocar no sistema.
+Removes a tool from state without touching the system.
 
 ### `depengine undo [flags]`
 
-Reverte a última instalação.
+Reverts the last installation.
 
-| Flag | Default | Descrição |
-|------|---------|-----------|
-| `--list` | `false` | Lista snapshots disponíveis |
-| `--snapshot <path>` | — | Reverte para um snapshot específico |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--list` | `false` | List available snapshots |
+| `--snapshot <path>` | — | Revert to a specific snapshot |
 
 ### `depengine diff [flags]`
 
-Compara dois arquivos de estado.
+Compares two state files.
 
-| Flag | Default | Descrição |
-|------|---------|-----------|
-| `--other <path>` | — | Segundo arquivo de estado (usado quando não há args) |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--other <path>` | — | Second state file |
 
 ### `depengine completion <shell>`
 
-Gera script de completação para o shell.
-Shells: `bash`, `zsh`, `fish`.
-
+Generates shell completion scripts. Shells: `bash`, `zsh`, `fish`.
 
 ### `depengine sbom [flags]`
 
-Exporta SBOM (Software Bill of Materials) no formato CycloneDX 1.5 ou SPDX 2.3.
+Exports an SBOM in CycloneDX 1.5 or SPDX 2.3 format.
 
-| Flag | Default | Descrição |
-|------|---------|-----------|
-| `--format` | `cyclonedx` | Formato: `cyclonedx` ou `spdx` |
-
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--format` | `cyclonedx` | Format: `cyclonedx` or `spdx` |
 
 ### Exit codes
 
-| Código | Significado |
-|--------|-------------|
-| `0` | Sucesso |
-| `1` | Alguma ferramenta falhou / strict mode com warnings |
-| `2` | Erro de schema (TOML inválido, validação) |
-| `3` | Erro de runtime (`detect_os.sh` não encontrado, etc.) |
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Tool failure / strict mode warnings |
+| `2` | Schema error (invalid TOML, validation) |
+| `3` | Runtime error (`detect_os.sh` not found, etc.) |
 
 ---
-## Métodos de instalação suportados (28)
 
-| Categoria | Métodos |
-|-----------|---------|
-| **Nativo** | `native` (auto-detecta apt/pacman/dnf/brew/...) + aliases por manager |
-| **Linguagem** | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `pnpm`, `bun`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
+## Supported installation methods (28)
+
+| Category | Methods |
+|----------|---------|
+| **Native** | `native` (auto-detects apt/pacman/dnf/brew/...) + per-manager aliases |
+| **Language** | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `pnpm`, `bun`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
 | **Desktop** | `flatpak`, `snap`, `vscode`, `vscodium`, `cask` (macOS), `mas` (Mac App Store) |
-| **Especializados** | `sdkman`, `steamcmd`, `pacstall`, `aur` (com helper configurável), `conda`, `asdf` |
-| **Outros** | `git` (clone + build), `http` (download + extração + checksum) |
+| **Specialized** | `sdkman`, `steamcmd`, `pacstall`, `aur` (configurable helper), `conda`, `asdf` |
+| **Other** | `git` (clone + build), `http` (download + extract + checksum) |
 
-Managers nativos detectados automaticamente (15 distros, ~27 managers):
+Auto-detected native managers (15 distro families, ~27 managers):
 
 ```
 debian  → apt        fedora → dnf      suse   → zypper    arch     → pacman
@@ -360,52 +388,88 @@ mint    → apt        opkg   → opkg
 
 ---
 
-## Como funciona (arquitetura)
+## Architecture
 
+```mermaid
+flowchart TB
+    subgraph Input
+        SCHEMA[schema.toml]
+        LOCK[schema.lock]
+    end
+
+    subgraph Engine
+        PARSER[pkg/schema.ParseSchema]
+        GRAPH[pkg/graph\nTopological sort]
+        EXEC[pkg/exec.Executor]
+    end
+
+    subgraph Adapters
+        NATIVE[pkg/native\n15 distro families]
+        LANG[pkg/lang\n25 language adapters]
+        GIT[pkg/git\nClone + build]
+        HTTP[pkg/httpdownload\nDownload + checksum]
+    end
+
+    subgraph Output
+        STATE[State file]
+        REPORT[Install report]
+        SBOM[SBOM\nCycloneDX / SPDX]
+    end
+
+    SCHEMA --> PARSER
+    LOCK --> PARSER
+    PARSER --> GRAPH
+    GRAPH --> EXEC
+    EXEC --> NATIVE
+    EXEC --> LANG
+    EXEC --> GIT
+    EXEC --> HTTP
+    NATIVE --> STATE
+    LANG --> STATE
+    GIT --> STATE
+    HTTP --> STATE
+    STATE --> REPORT
+    STATE --> SBOM
 ```
-schema.toml
-    │
-    ▼
-pkg/schema.ParseSchema()
-    │  aceita 3 formas de declaração em Tool + MethodCandidate
-    │  expande placeholders ({arch}, {distro_family}, {os}…)
-    ▼
-pkg/exec.Executor.Execute()
-    │
-    ├─ 1. Resolve ordem topológica (pkg/graph)
-    ├─ 2. Para cada tool:
-    │      └─ Para cada método (em method_order):
-    │           ├─ when bate?                   → não → PULA
-    │           ├─ adapter.Available()?         → não → PULA
-    │           ├─ adapter.Check() installed?   → sim → PULA (já instalado)
-    │           └─ adapter.Install()            → ok → ✅ SUCESSO
-    ├─ 3. Executa postinstall se algum método sucedeu
-    └─ 4. Report (sucessos / falhas / pulados)
+
+### Package layers
+
+| Package | Responsibility |
+|---------|----------------|
+| `pkg/run` | `Runner` interface — seam for subprocess. Production: `OSExecRunner`. Tests: `FakeRunner`. |
+| `pkg/engine` | Invokes `detect_os.sh`, parses JSON → `Facts`, resolves clan via `ResolveFamily` (15 clans) |
+| `pkg/native` | Declarative registry of 15 distros. Manager lookup, install command building |
+| `pkg/schema` | TOML parser (3 declaration forms) + placeholder expansion + kind validation |
+| `pkg/exec` | Central executor + `Adapter` interface + registry + sync manager + reports |
+| `pkg/lang` | 25 language/ecosystem adapters (generic `BaseAdapter` + specialized) |
+| `pkg/git` | GitAdapter: shallow clone + build |
+| `pkg/httpdownload` | HTTPAdapter: download + extraction + SHA256 + `{latest}` resolution |
+| `pkg/graph` | Topological sort (Kahn) with cycle detection |
+| `pkg/log` | Structured logger via `log/slog` with trace ID, DEBUG–ERROR levels |
+| `pkg/validate` | Structural + semantic + environmental validation |
+
+### Installation flow
+
+```mermaid
+flowchart LR
+    A[For each tool\nin topological order] --> B[For each method\nin method_order]
+    B --> C{when matches?}
+    C -->|no| B
+    C -->|yes| D{Adapter\nAvailable?}
+    D -->|no| B
+    D -->|yes| E{Already\ninstalled?}
+    E -->|yes| B
+    E -->|no| F[Install]
+    F --> G[Report]
 ```
-
-**Camadas:**
-
-| Pacote | Responsabilidade |
-|--------|------------------|
-| `pkg/run` | Interface `Runner` — seam único para subprocessos. Produção: `OSExecRunner`. Testes: `FakeRunner`. |
-| `pkg/engine` | Invoca `detect_os.sh`, faz parse do JSON → `Facts`, resolve clan via `ResolveFamily` (15 clans) |
-| `pkg/native` | Registro declarativo de 15 distros. Manager lookup, build de comandos de instalação |
-| `pkg/schema` | Parser TOML (3 formas de declaração) + expansão de placeholders + validação de kinds |
-| `pkg/exec` | Executor central + interface `Adapter` + registro + sync manager + reports |
-| `pkg/lang` | 25 adapters de linguagem/ecossistema (BaseAdapter genérico + especializados) |
-| `pkg/git` | GitAdapter: clone shallow + build |
-| `pkg/httpdownload` | HTTPAdapter: download + extração + checksum SHA256 + resolução de `{latest}` |
-| `pkg/graph` | Ordenação topológica (Kahn) com detecção de ciclos |
-| `pkg/log` | Logger estruturado via `log/slog` com trace ID, níveis DEBUG–ERROR |
-| `pkg/validate` | Validação estrutural + semântica + ambiental (CLI `validate`) |
 
 ---
 
 ## Placeholders
 
-O schema suporta placeholders que são resolvidos antes da instalação:
+The schema supports placeholders resolved before installation:
 
-| Placeholder | Origem | Exemplo |
+| Placeholder | Source | Example |
 |-------------|--------|---------|
 | `{arch}` | `detect_os.sh` | `x86_64`, `aarch64` |
 | `{os}` | `detect_os.sh` | `linux`, `darwin` |
@@ -413,42 +477,42 @@ O schema suporta placeholders que são resolvidos antes da instalação:
 | `{kernel}` | `detect_os.sh` | `5.15.0` |
 | `{libc}` | `detect_os.sh` | `glibc`, `musl` |
 | `{init_system}` | `detect_os.sh` | `systemd`, `openrc` |
-| `{pkg}` | Substituído pelo adapter no momento da instalação | nome do pacote |
-| `{latest}` | Resolvido via GitHub API (adapters git/http) | `v1.2.3` |
+| `{pkg}` | Substituted by adapter at install time | package name |
+| `{latest}` | Resolved via GitHub API (git/http adapters) | `v1.2.3` |
 
-Placeholders desconhecidos são flagados pela validação (`depengine validate`).
+Unknown placeholders are flagged by validation (`depengine validate`).
 
 ---
 
-## Variáveis de ambiente
+## Environment variables
 
-| Variável | Efeito |
+| Variable | Effect |
 |----------|--------|
-| `DEPENGINE_DETECT_SCRIPT` | Caminho para `detect_os.sh` (default: ao lado do binário) |
-| `DEPENGINE_TRACE_ID` | ID de rastreamento propagatedo a subprocessos |
-| `DEPENGINE_LOG_JSON` | `=1` ativa saída JSON do logger |
+| `DEPENGINE_DETECT_SCRIPT` | Path to `detect_os.sh` (default: next to the binary) |
+| `DEPENGINE_TRACE_ID` | Trace ID propagated to subprocesses |
+| `DEPENGINE_LOG_JSON` | `=1` enables JSON log output |
 
 ---
 
-## Desenvolvimento
+## Development
 
 ```sh
-go test ./...                    # 18 packages, 100+ testes
-go vet ./...                     # análise estática
+go test ./...                    # 18 packages, 100+ tests
+go vet ./...                     # static analysis
 go build -o depengine .          # build
 ./depengine validate --schema schema.toml --check-env --format=json
 ```
 
-### Testes de integração (Docker)
+### Integration tests (Docker)
 
 ```sh
 cd tests/integration
 docker compose up --build
-# Testa install/validate em Debian, Arch, Fedora e Alpine
+# Tests install/validate on Debian, Arch, Fedora, and Alpine
 ```
 
 ---
 
-## Licença
+## License
 
-MIT
+[GNU General Public License v3 or later](LICENSE)

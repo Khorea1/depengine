@@ -35,7 +35,7 @@ nfpms:
     homepage: https://github.com/depengine/depengine
     maintainer: depengine team
     description: Distro-agnostic dependency installer
-    license: MIT
+    license: GPL-3.0-or-later
     formats:
       - deb
       - rpm
@@ -52,7 +52,7 @@ brews:
   - name: depengine
     homepage: https://github.com/depengine/depengine
     description: Distro-agnostic dependency installer
-    license: MIT
+    license: GPL-3.0-or-later
     repository:
       owner: depengine
       name: homebrew-tap
