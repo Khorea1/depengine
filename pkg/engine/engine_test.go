@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -130,6 +132,35 @@ func TestGatherFactsFailsOnUnparseableJSON(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("error should mention stderr 'boom', got: %v", err)
+	}
+}
+
+func TestGatherFactsFallsBackOnExecutionFailure(t *testing.T) {
+	fr := &fakeRunner{
+		stdout:   "",
+		stderr:   "exec format error",
+		exitCode: 0,
+		err:      fmt.Errorf("exec format error"),
+	}
+	// Point at a valid-but-empty file so locateDetectScript returns a path.
+	tmp := tmpFile(t, "")
+	t.Setenv("DEPENGINE_DETECT_SCRIPT", tmp)
+
+	facts, err := GatherFacts(fr)
+	if err != nil {
+		t.Fatalf("expected fallback success, got error: %v", err)
+	}
+	if facts.OS != runtime.GOOS {
+		t.Fatalf("OS = %q, want %q", facts.OS, runtime.GOOS)
+	}
+	if facts.TargetArch != runtime.GOARCH {
+		t.Fatalf("TargetArch = %q, want %q", facts.TargetArch, runtime.GOARCH)
+	}
+	if facts.DetectionMethod != "go-builtin" {
+		t.Fatalf("DetectionMethod = %q, want go-builtin", facts.DetectionMethod)
+	}
+	if facts.Confidence != "low" {
+		t.Fatalf("Confidence = %q, want low", facts.Confidence)
 	}
 }
 

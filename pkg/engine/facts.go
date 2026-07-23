@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -87,6 +88,28 @@ func locateDetectScript() (string, bool, error) {
 	return "", false, fmt.Errorf("detect_os.sh not found (try setting DEPENGINE_DETECT_SCRIPT=/path/to/script)")
 }
 
+// gatherFactsGo builds a minimal Facts from Go runtime info.
+// Used as fallback when detect_os.sh cannot execute (e.g. on Windows).
+func gatherFactsGo() *Facts {
+	tf := "unknown"
+	switch runtime.GOOS {
+	case "windows":
+		tf = "windows"
+	case "linux", "darwin":
+		tf = "unix"
+	}
+	return &Facts{
+		OS:              runtime.GOOS,
+		TargetFamily:    tf,
+		TargetArch:      runtime.GOARCH,
+		Kernel:          runtime.GOOS,
+		DetectionMethod: "go-builtin",
+		Confidence:      "low",
+		DistroID:        "",
+		DistroName:      "",
+	}
+}
+
 // GatherFacts runs the fetcher via the injected Runner and returns the
 // decoded Facts. It no longer computes the clan here — that's a pure
 // function (ResolveFamily) the caller invokes once and reuses, which also
@@ -99,7 +122,8 @@ func locateDetectScript() (string, bool, error) {
 func GatherFacts(r run.Runner) (*Facts, error) {
 	script, clean, err := locateDetectScript()
 	if err != nil {
-		return nil, err
+		log.Default.Warn("OS detection script not available, using Go runtime fallback", "error", err)
+		return gatherFactsGo(), nil
 	}
 	if clean {
 		defer os.Remove(script)
@@ -112,6 +136,12 @@ func GatherFacts(r run.Runner) (*Facts, error) {
 
 	var facts Facts
 	if jsonErr := json.Unmarshal(res.Stdout, &facts); jsonErr != nil {
+		if len(res.Stdout) == 0 && res.Err != nil {
+			// Script couldn't start (no shell, .sh not executable on Windows, etc.)
+			log.Default.Warn("OS detection script failed, using Go runtime fallback",
+				"error", res.Err, "stderr", string(res.Stderr))
+			return gatherFactsGo(), nil
+		}
 		if res.Err != nil {
 			return nil, fmt.Errorf("detect_os.sh failed (exit %d): %s",
 				res.ExitCode, strings.TrimSpace(string(res.Stderr)))
