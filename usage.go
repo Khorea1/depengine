@@ -23,6 +23,7 @@ Uso:
   depengine <comando> [flags]
 
 Comandos:
+  init      Inicializar schema.toml para um projeto
   install   Instalar ferramentas do schema.toml
   update    Resolver {latest} e travar versões no schema.lock
   validate  Validar schema.toml e ambiente
@@ -52,6 +53,7 @@ Usage:
   depengine <command> [flags]
 
 Commands:
+  init      Initialize a schema.toml for a new project
   install   Install tools from schema.toml
   update    Resolve {latest} and pin versions in schema.lock
   validate  Validate schema.toml and environment
