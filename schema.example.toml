@@ -118,23 +118,110 @@ zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
 #                                método e vai para o próximo.
 # ------------------------------------------------------------------------
 
+# ==============================================================================
+# CASO 9 — `when` com múltiplas dimensões de plataforma.
+# O campo `when` aceita várias condições simultâneas (AND entre campos,
+# OR dentro de cada lista). Métodos cuja condição não bate são pulados
+# silenciosamente — o motor tenta o próximo método na ordem.
+#
+# Dimensões disponíveis:
+#   distro_family → clã resolvido (arch, debian, fedora, alpine, ...)
+#   distro_id     → ID exato da distro (ubuntu, arch, fedora, ...)
+#   arch          → arquitetura (x86_64, aarch64, armv7l, ...)
+#   os            → sistema operacional (linux, darwin, windows, ...)
+#   kernel        → versão do kernel (uname -r)
+#   libc          → biblioteca C (glibc, musl, ...) — correspondência por prefixo
+#   init_system   → sistema de init (systemd, openrc, runit, ...)
+#   is_wsl        → true/false (ambiente WSL)
+#   is_container  → true/false (ambiente container)
+# ==============================================================================
+
+# --- Binário diferente conforme libc (glibc vs musl) ---
+[tools.restic]
+  # glibc build (Linux desktop typical)
+  [tools.restic.http]
+  url = "https://github.com/restic/restic/releases/download/{latest}/restic_{latest}_linux_{arch}.bz2"
+  when = { arch = ["x86_64", "aarch64"], os = ["linux"], libc = ["glibc"] }
+
+  # musl build (Alpine Linux, containers)
+  [tools.restic.http-musl]
+  url = "https://github.com/restic/restic/releases/download/{latest}/restic_{latest}_linux_{arch}_musl.bz2"
+  when = { arch = ["x86_64", "aarch64"], os = ["linux"], libc = ["musl"] }
+
+
+# --- WSL vs nativo Linux ---
+[tools.podman]
+  [tools.podman.native]
+  when = { is_wsl = false }
+
+  [tools.podman.http]
+  url = "https://github.com/containers/podman/releases/download/{latest}/podman-wsl-{arch}.zip"
+  when = { is_wsl = true }
+
+
+# --- Container-aware: binário estático dentro de container, nativo fora ---
+[tools.neovim]
+  [tools.neovim.native]
+  when = { is_container = false }
+
+  [tools.neovim.http]
+  url = "https://github.com/neovim/neovim/releases/download/stable/nvim-linux-{arch}.tar.gz"
+  extract_to = "~/.local/bin"
+  when = { is_container = true, arch = ["x86_64", "aarch64"] }
+
+
+# --- Kernel-specific DKMS package ---
+[tools.v4l2loopback]
+  [tools.v4l2loopback.aur]
+  pkg = "v4l2loopback-dkms"
+  when = { distro_family = ["arch"], kernel = ["6.7", "6.8", "6.9"] }
+
+
+# --- macOS vs Linux: plataforma completamente diferente ---
+[tools.skhd]
+  [tools.skhd.brew]
+  pkg = "koekeishiya/formulae/skhd"
+  when = { os = ["darwin"] }
+
+[tools.bspwm]
+  [tools.bspwm.native]
+  when = { os = ["linux"], distro_family = ["arch", "debian", "fedora"] }
+
+
+# --- Distro ID exato (não clã) para distros com pacotes específicos ---
+[tools.ulauncher]
+  [tools.ulauncher.aur]
+  pkg = "ulauncher"
+  when = { distro_id = ["arch"] }
+
+  [tools.ulauncher.apt]
+  pkg = "ulauncher"
+  when = { distro_id = ["ubuntu", "debian"] }
+
 # ------------------------------------------------------------------------
 # CASO 10 — Buckets de ecossistema: python, node.
 # Quando pkg == tool_name (~80% dos casos Python/Node), use `true`
 # em vez de repetir o nome. Buckets expandem para todos os methods
 # do ecossistema de uma vez.
 #
-#   python = true  ≡  { pip = true, pipx = true, uv = true }
-#   node   = true  ≡  { npm = true, pnpm = true, bun = true }
+#   python = true        ≡  { pip = true, pipx = true, uv = true }
+#   node   = true        ≡  { npm = true, pnpm = true, bun = true }
+#   python = "pkgname"   ≡  { pip = "pkgname", pipx = "pkgname", uv = "pkgname" }
+#
+# Três formatos de valor:
+#   true           → cada método usa tool.Name como pkg
+#   "string"       → cada método recebe a string como pkg
+#   { pkg, when }  → cada método recebe um clone do mapa
 #
 # Cada `true` usa o nome da tool como pkg (SubstitutePkg fallback).
 # ------------------------------------------------------------------------
-ruff = { python = true }        # ≡ { pipx = "ruff", uv = "ruff" }
-prettier = { node = true }      # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
-httpie = { python = true }      # pip + pipx + uv (pkg=httpie em todos)
+ruff = { python = true }               # ≡ { pipx = "ruff", uv = "ruff" }
+prettier = { node = true }             # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
+organize = { python = "organize-tool" } # ≡ { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }
+httpie = { python = true }             # pip + pipx + uv (pkg=httpie em todos)
 
 # Pode misturar bucket com método explícito: o explícito NÃO é sobrescrito.
-# (exemplo: organize = { pip = "organize-tool", python = true })
+# organize = { pip = "organize-tool", python = true } mantém pip explícito.
 [tools.DepartureMono]
 postinstall = "fc-cache -fv"
 
@@ -182,6 +269,9 @@ requires = []
 #
 # 3. Precisa de `when`, tem mais de um método candidato, ou a linha
 #    inline ficaria enorme/ilegível?
+#
+# 4. Precisa de condições multiplataforma (arch + libc + os + is_container)?
+#       → use `when` com múltiplos campos: `when = { arch = [...], os = [...], libc = [...] }`
 #       → bloco completo: [tools.NOME] + [tools.NOME.metodo]
 #
 # Campos que SEMPRE ficam no nível da tool (fora do método):

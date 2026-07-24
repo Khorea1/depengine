@@ -12,19 +12,17 @@
         "manager": {
           "type": "string",
           "default": "native",
-          "description": "Default package manager when a tool declares nothing. 'native' = the system package manager (apt, pacman, dnf…)."
+          "description": "Default manager when a tool doesn't specify anything."
         },
         "aur_helper": {
           "type": "string",
           "default": "paru",
-          "description": "AUR helper to use when any method is 'aur'. Only relevant on Arch-based distros."
+          "description": "AUR helper to use for aur method. Only relevant on Arch-based distros."
         },
         "method_order": {
           "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "Order in which methods are tried when a tool declares multiple candidates. The engine stops at the first one that works."
+          "items": { "type": "string" },
+          "description": "Order in which methods are tried when a tool declares multiple candidates. Stops at the first that succeeds."
         }
       }
     },
@@ -36,7 +34,7 @@
         "simple": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "List of simple tool names whose native package name equals the tool name. Uses the default manager."
+          "description": "List of simple tool names. These tools use the default manager (native) and the package name equals the tool name."
         }
       },
       "additionalProperties": {
@@ -63,20 +61,30 @@
         "requires": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Tool-level dependency. These tools must be installed first, regardless of which method succeeds."
+          "description": "List of tool names this tool depends on (installed first)."
         },
         "pre_install": {
           "type": "string",
-          "description": "Shell command to run BEFORE the tool is installed. Failure aborts the install. Also accepted as 'preinstall'."
+          "description": "Pre-install hook that runs before any method is attempted. Runs via shell."
         },
         "postinstall": {
           "type": "string",
-          "description": "Shell command to run AFTER the tool is successfully installed. Runs regardless of which method succeeded."
+          "description": "Post-install command that runs after any method succeeds (e.g. fc-cache, systemctl daemon-reload)."
         },
         "tags": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Profile tags for --profile filtering. Tools without tags are always included."
+          "description": "Tags for profile filtering (e.g. desktop, server, fonts)."
+        },
+        "method_prefer": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Methods to try first, before the defaults. Example: ['cargo'] tries cargo before native."
+        },
+        "method_only": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Exhaustive list — only these methods are tried, in this order. Global method_order is ignored."
         }
       },
       "additionalProperties": {
@@ -151,20 +159,64 @@
         "binary": {
           "type": "string",
           "description": "Binary name to check for. Used by git adapter's Check() to verify installation."
+        },
+        "sudo_required": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the http method requires sudo for extraction/installation. Set to false when the tool is extracted to a user-writable path (e.g. ~/.local/bin)."
         }
       }
     },
     "whenCondition": {
       "type": "object",
-      "title": "When condition",
-      "description": "Condition that gates a method's applicability. If the condition doesn't match, the engine skips this method and tries the next one.",
+      "title": "When condition — platform applicability gate",
+      "description": "Condition that gates a method's applicability. The engine evaluates every non-empty field against system facts (AND semantics — all must match). If the condition doesn't match, this method is skipped and the next one is tried.\n\nEach field accepts a list of values (OR semantics — any single match suffices). Comparison is case-insensitive. Libc uses prefix matching (e.g. \"glibc\" matches \"glibc 2.35\").",
       "properties": {
         "distro_family": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "List of distro families where this method applies (e.g. [\"arch\"], [\"debian\", \"ubuntu\"])."
+          "description": "Match on resolved distro family (clan). Values: debian, arch, fedora, alpine, gentoo, void, suse, macos, freebsd, openbsd, netbsd, termux, android, nixos, solus, slackware, mageia, openmandriva, or unknown.\n\nExample: [\"arch\"] matches Arch Linux, EndeavourOS, Manjaro, CachyOS."
+        },
+        "distro_id": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Match on exact distro ID (from /etc/os-release ID=). Case-insensitive. Example: [\"ubuntu\", \"debian\"] matches exactly those distros, not Mint or Pop!_OS."
+        },
+        "arch": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Match on target architecture (output of uname -m). Example: [\"x86_64\", \"aarch64\"] matches both AMD64 and ARM64 systems."
+        },
+        "os": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Match on operating system name (lowercase uname -s). Common values: linux, darwin, windows, freebsd, openbsd, netbsd. Example: [\"linux\"] matches any Linux."
+        },
+        "kernel": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Match on full kernel version string (uname -r). Exact match, case-insensitive. Example: [\"6.7.0-arch\", \"6.8.0\"] for kernel-specific packages."
+        },
+        "libc": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Match on C standard library. Uses prefix matching — \"glibc\" matches \"glibc 2.35\". Values the detector emits: glibc, musl, uclibc, freebsd-libc. Example: [\"musl\"] matches Alpine Linux."
+        },
+        "init_system": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Match on init system. Values: systemd, openrc, runit, sysvinit. Example: [\"systemd\"] matches distros using systemd."
+        },
+        "is_wsl": {
+          "type": "boolean",
+          "description": "Match on WSL (Windows Subsystem for Linux) environment. Set to true to restrict to WSL, false to exclude WSL. Omit to ignore."
+        },
+        "is_container": {
+          "type": "boolean",
+          "description": "Match on container environment. Set to true to restrict to containers (Docker, Podman, LXC), false to exclude. Omit to ignore."
         }
-      }
+      },
+      "additionalProperties": false
     }
   }
 }

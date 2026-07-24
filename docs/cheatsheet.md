@@ -65,6 +65,26 @@ depengine diff --other other.json   # compare current state with other.json
 
 ---
 
+## Schema vs Manifest
+
+Two files work together:
+
+| File | Location | Purpose | Shared? |
+|------|----------|---------|---------|
+| `schema.toml` | Project root | **What** to install — the shared dependency list | Yes, commit to git |
+| `manifest.toml` | `~/.config/depengine/manifest.toml` | **How** to install — personal package name overrides | No, per-machine |
+
+**Merge rules** (when both define the same tool):
+1. Tool-level fields (`requires`, `pre_install`, `postinstall`, `tags`): always from schema.
+2. Native method `pkg`: schema wins, **except** when the tool is in `simple = [...]` (auto-injected pkg = tool name) — manifest's pkg overrides.
+3. Native `pkg_overrides` (per-manager names): merged — schema keys take priority, manifest fills in missing managers.
+4. Non-native methods: if both define the same kind, schema wins; if only manifest has it, it's added.
+5. Tools only in manifest are **ignored** — manifest only *augments* schema, never adds new tools.
+6. Final method order follows `schema.toml`'s `method_order`.
+
+> Most users never need a manifest. Start with just `schema.toml`.
+
+---
 ## Schema Structure
 
 ```toml
@@ -163,6 +183,41 @@ postinstall = "fc-cache -fv"
   extract_to = "~/.local/share/fonts/DepartureMono"
 ```
 
+### Forma 6 — Bucket de ecossistema (atalho python/node)
+
+Quando o nome do pacote é igual ao nome da tool (~80% dos casos Python/Node),
+use uma chave **bucket** em vez de repetir o mesmo nome para cada método.
+Buckets expandem para todos os métodos daquele ecossistema de uma vez.
+
+**Buckets built-in:**
+
+| Bucket | Expansão | Uso típico |
+|--------|----------|------------|
+| `python = true` | `{ pip = true, pipx = true, uv = true }` | Ferramentas Python (ruff, httpie, poetry) |
+| `node = true` | `{ npm = true, pnpm = true, bun = true }` | Ferramentas Node (prettier, eslint, tsx) |
+
+O valor do bucket aceita três formatos:
+
+| Valor | Efeito | Exemplo |
+|-------|--------|---------|
+| `true` | Cada método usa o nome da tool como `pkg` | `ruff = { python = true }` |
+| `"string"` | Cada método recebe a string como `pkg` | `organize = { python = "organize-tool" }` |
+| `{ pkg = …, when = … }` | Cada método recebe um clone do mapa | `organize = { python = { pkg = "organize-tool", when = { distro_family = ["arch"] } } }` |
+
+```toml
+ruff = { python = true }               # ≡ { pipx = "ruff", uv = "ruff" }
+prettier = { node = true }             # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
+organize = { python = "organize-tool" } # ≡ { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }
+httpie = { python = true }             # pip + pipx + uv (pkg=httpie em todos)
+```
+
+> Métodos explícitos NÃO são sobrescritos pelo bucket:
+> `organize = { pip = "organize-tool", python = true }` mantém `pip` como
+> `"organize-tool"` e expande apenas `pipx`/`uv`.
+>
+> `python = false` não expande (o motor trata `python` como método
+> desconhecido → erro em `validate`).
+
 ---
 
 ## Tool-Level Fields
@@ -247,6 +302,21 @@ flowchart TD
 
 Override the order by listing only the methods you want, in the order you want
 them tried.
+
+---
+## Per-tool Method Control
+
+Override method order for a single tool:
+
+```toml
+myapp  = { method_prefer = ["cargo"], cargo = true }
+legacy = { method_only = ["aur", "git"], aur = { pkg = "legacy" } }
+```
+
+- **`method_prefer`**: prepends methods before global `method_order`. Unlisted methods still tried as fallbacks.
+- **`method_only`**: exact list of methods. Global `method_order` ignored for this tool.
+- **`method_order`** (deprecated): old name for `method_prefer`.
+- Tool-level fields (same level as `requires`, `tags`, `postinstall`).
 
 ---
 

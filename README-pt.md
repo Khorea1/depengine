@@ -39,38 +39,57 @@ depengine status
 
 ---
 
-## Quick start
+## Quick start — fluxo de compartilhamento
+
+depengine funciona como um `requirements.txt` ou `package.json` para ferramentas
+de sistema. Escreva um `depengine.toml`, compartilhe no git, e todos têm as
+mesmas ferramentas.
 
 ```mermaid
 flowchart LR
-    A[Escrever schema.toml] --> B[depengine validate]
-    B --> C[depengine update]
-    C --> D[depengine install]
-    D --> E[depengine status]
-    E --> F[depengine check &#9989;]
+    A[Escrever depengine.toml] --> B[depengine install]
+    B --> C[depengine status ✓]
+    D[git clone] --> E[depengine install]
 ```
 
 ```sh
-# Build
-go build -o depengine .
+# --- AUTOR DO PROJETO: define o que instalar ---
+depengine init --add "zsh,bat,nvim,ruff"
+# → ✓ depengine.toml created with 4 tools
 
-# Validar o schema de referência
+# Validar o schema
 ./depengine validate
 # → ✓ schema is valid
 
-# Validar com checagem de ambiente (tools no PATH)
-./depengine validate --check-env
-# → warnings para tools ausentes (normais em dev)
-
-# Instalar todas as dependências
+# Instalar tudo (auto-resolve {latest} se não houver lockfile)
 ./depengine install
+# → 4 installed, 0 failed
 
+# Verificar ferramentas individuais
 ./depengine check nvim
 # → Installed
+
+# Commit o schema e lock para outros reproduzirem:
+#   git add depengine.toml schema.lock && git commit
+
+
+# --- OUTRO DEV: clona e instala ---
+git clone <projeto>
+cd <projeto>
+depengine install
+# → mesmas ferramentas, mesmas versões
+
+
+# --- AVANÇADO: travar versões explicitamente (opcional) ---
+./depengine update
+# → escreve schema.lock com versões fixadas
+./depengine install --frozen-lockfile
+# → só instala versões fixadas
 
 # Saída JSON para scripts
 ./depengine validate --format=json
 ./depengine install --json
+
 
 # Status e remoção
 ./depengine status                         # lista instalados
@@ -91,6 +110,27 @@ go build -o depengine .
 
 ---
 
+## schema.toml vs manifest.toml
+
+Dois arquivos trabalham juntos:
+
+| Arquivo | Localização | Propósito | Compartilhado? |
+|---------|-------------|-----------|----------------|
+| `schema.toml` | Raiz do projeto | **O que** instalar — lista de dependências compartilhada | Sim, commit no git |
+| `manifest.toml` | `~/.config/depengine/manifest.toml` | **Como** instalar — sobrescritas pessoais de nome de pacote | Não, por máquina |
+
+### Regras de merge (quando ambos definem a mesma ferramenta)
+
+1. **Campos de nível de tool** (`requires`, `pre_install`, `postinstall`, `tags`): sempre do schema.
+2. **Native method `pkg`**: schema vence, **exceto** quando o schema tem a tool em `simple = [...]` (pkg auto-injetado = nome da tool) — nesse caso, o pkg do manifest sobrescreve.
+3. **Native `pkg_overrides`** (nomes por gerenciador como `apt = "fd-find"`): mesclado — chaves do schema têm prioridade, manifest preenche gerenciadores faltantes.
+4. **Métodos não-nativos** (cargo, go, pip, …): se ambos definem o mesmo tipo, schema vence. Se só o manifest tem aquele tipo, é adicionado.
+5. **Ferramentas só no manifest** são **ignoradas** — o manifest apenas *aumenta* tools do schema, nunca adiciona novas.
+6. A ordem final dos métodos segue `method_order` do `schema.toml`.
+
+> A maioria dos usuários nunca precisa de um manifest. Comece só com `schema.toml`. Adicione um manifest apenas quando o nome do pacote diferir na sua distro (ex.: `apt install fd-find` vs `pacman -S fd`).
+
+---
 ## Schema.toml — o coração declarativo
 
 O schema descreve **tools** (dependências) e **métodos** (como instalá-las).
@@ -120,7 +160,7 @@ lf       = { go  = "github.com/gokcehan/lf" }
 > Quando `pkg == tool_name`, use `true` em vez de repetir o nome:
 > `ruff = { python = true }` ≡ `ruff = { pipx = "ruff", uv = "ruff" }`.
 > Buckets (`python`, `node`) expandem para todos os métodos do ecossistema
-> de uma vez (ver Forma 10).
+> de uma vez (veja Forma 11).
 
 ### Forma 4 — cargo/go com git sub-key (não do repositório oficial)
 
@@ -185,7 +225,112 @@ postinstall = "fc-cache -fv"
 > fora do método. Campos específicos do método (`when`, `url`, `build`,
 > `checksum`, `extract_to`, `pkg`, `git`) ficam dentro do método.
 
-### Forma 10 — `true` e buckets de ecossistema
+
+---
+
+### Forma 10 — Condições de plataforma (`when`) — múltiplas dimensões
+
+O `when` de um método pode especificar **múltiplas dimensões de plataforma**.
+O motor avalia todos os campos preenchidos contra os fatos detectados do sistema
+(semântica **AND**: todos os campos precisam bater). Dentro de cada campo,
+qualquer valor basta (**OR**).
+
+Isso permite restringir um método a arquitetura, libc, SO, kernel, init system,
+WSL/container, ID de distro ou família de distro — em qualquer combinação.
+
+**Campos disponíveis:**
+
+| Campo | Tipo | Comparação | Valores de `detect_os.sh` |
+|-------|------|------------|---------------------------|
+| `distro_family` | `string[]` | Exata (case-insensitive) | `arch`, `debian`, `fedora`, `alpine`, `gentoo`, `macos`, `freebsd`, … |
+| `distro_id` | `string[]` | Exata (case-insensitive) | `ubuntu`, `arch`, `fedora`, `debian`, `alpine`, … |
+| `arch` | `string[]` | Exata (case-insensitive) | `x86_64`, `aarch64`, `armv7l`, … |
+| `os` | `string[]` | Exata (case-insensitive) | `linux`, `darwin`, `windows`, `freebsd`, `openbsd`, `netbsd` |
+| `kernel` | `string[]` | Exata (case-insensitive) | `6.7.0-arch`, `5.15.0-generic`, … |
+| `libc` | `string[]` | **Prefixo** | `glibc` bate em `glibc 2.35`; `musl` para Alpine |
+| `init_system` | `string[]` | Exata (case-insensitive) | `systemd`, `openrc`, `runit`, `sysvinit` |
+| `is_wsl` | `bool` | Três estados (true/false/omitir) | Detectado via `/proc/version` ou `WSL_DISTRO_NAME` |
+| `is_container` | `bool` | Três estados (true/false/omitir) | Detectado via `.dockerenv`, cgroup, etc. |
+
+**Semântica:**
+
+1. **AND entre campos** — se você especificar `arch` + `libc` + `os`, todos precisam bater.
+2. **OR dentro de cada campo** — `arch: ["x86_64", "aarch64"]` satisfaz com qualquer um.
+3. **Campos vazios são ignorados** — uma condição só com `arch` não liga pra libc.
+4. **`when` nulo / ausente sempre bate** — métodos sem `when` são sempre tentados.
+5. **`distro_family`** é o *clã* resolvido (ex: Ubuntu → `debian`), não o ID bruto.
+   Use `distro_id` para correspondência exata de distribuição.
+
+**Exemplos reais:**
+
+```toml
+# AUR só no Arch, fallback HTTP nos demais
+[tools.DepartureMono]
+postinstall = "fc-cache -fv"
+
+  [tools.DepartureMono.aur]
+  pkg  = "otf-departure-mono-nerd"
+  when = { distro_family = ["arch"] }
+
+  [tools.DepartureMono.http]
+  url        = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/DepartureMono.zip"
+  extract_to = "~/.local/share/fonts/DepartureMono"
+```
+
+```toml
+# Binário diferente por arquitetura + libc
+[tools.restic]
+  [tools.restic.http]
+  url = "https://github.com/restic/restic/releases/download/{latest}/restic_{latest}_linux_{arch}.bz2"
+  when = { arch = ["x86_64", "aarch64"], os = ["linux"], libc = ["glibc"] }
+
+  [tools.restic.http-musl]
+  url = "https://github.com/restic/restic/releases/download/{latest}/restic_{latest}_linux_{arch}_musl.bz2"
+  when = { arch = ["x86_64", "aarch64"], os = ["linux"], libc = ["musl"] }
+```
+
+```toml
+# Instalação específica para WSL
+[tools.podman]
+  [tools.podman.native]
+  when = { is_wsl = false }
+
+  [tools.podman.http]
+  url = "https://github.com/containers/podman/releases/download/{latest}/podman-wsl-{arch}.zip"
+  when = { is_wsl = true }
+```
+
+```toml
+# Ciente de container: pula nativo em container, usa binário estático
+[tools.neovim]
+  [tools.neovim.native]
+  when = { is_container = false }
+
+  [tools.neovim.http]
+  url = "https://github.com/neovim/neovim/releases/download/stable/nvim-linux-{arch}.tar.gz"
+  extract_to = "~/.local/bin"
+  when = { is_container = true, arch = ["x86_64", "aarch64"] }
+```
+
+```toml
+# Pacote DKMS específico para kernel
+[tools.v4l2loopback]
+  [tools.v4l2loopback.aur]
+  pkg = "v4l2loopback-dkms"
+  when = { distro_family = ["arch"], kernel = ["6.7", "6.8", "6.9"] }
+```
+
+> **Dica:** Use `depengine why <ferramenta>` para ver qual método se aplica na
+> sua máquina atual e por que outros são pulados (`skip_when`).
+
+O sistema de condições corresponde aos **fatos do sistema detectados em runtime**
+pelo `detect_os.sh`. Todos os campos espelham exatamente a saída JSON dele.
+Os fatos são coletados uma vez por execução de `depengine install` e
+cacheados no `Executor`.
+
+---
+
+### Forma 11 — `true` e buckets de ecossistema
 
 Quando o nome do pacote é igual ao nome da tool (~80% dos casos Python/Node),
 use `true` em vez de repetir. Buckets expandem para todos os métodos do
@@ -209,14 +354,45 @@ httpie = { python = true }      # pip + pipx + uv (pkg=httpie em todos)
 > `organize = { pip = "organize-tool", python = true }` mantém `pip` como
 > `"organize-tool"` e expande apenas `pipx`/`uv`.
 >
-> Buckets só aceitam `true`. `python = false` ou `python = "foo"` não expandem
-> (o motor trata como método desconhecido → erro em `validate`).
+> Buckets também aceitam uma **string com nome do pacote** ou um **mapa de
+> configuração**, expandindo para todos os métodos do ecossistema com aquele
+> valor:
+>
+> ```toml
+> organize = { python = "organize-tool" }
+> # ≡ { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }
+>
+> # Com configuração extra compartilhada entre todos os métodos expandidos:
+> organize = { python = { pkg = "organize-tool", when = { distro_family = ["arch"] } } }
+> ```
+>
+> `python = false` não expande (o motor trata `python` como método desconhecido
+> → erro em `validate`).
 >
 > `all = true` **não existe** — impreciso demais, risco de instalar pacote
 > errado de ecossistema diferente.
 
 ---
 
+### Controle de método por ferramenta
+
+Sobrescreva a ordem de métodos para uma ferramenta específica com `method_prefer` (prefixo) ou
+`method_only` (lista exaustiva):
+
+```toml
+# Tenta cargo primeiro, depois a ordem padrão:
+myapp = { method_prefer = ["cargo"], cargo = true }
+
+# Só usa estes métodos, nesta ordem — sem fallback:
+legacy = { method_only = ["aur", "git"], aur = { pkg = "legacy" }, git = { url = "..." } }
+```
+
+- **`method_prefer`**: insere os métodos listados antes do `method_order` global. Métodos não listados ainda são tentados como fallback.
+- **`method_only`**: restringe a ferramenta exatamente a estes métodos, nesta ordem. O `method_order` global é ignorado para esta ferramenta.
+- **`method_order`** (depreciado): nome antigo para `method_prefer`. Ainda funciona, mas emite um aviso.
+- Estes campos ficam no nível da ferramenta (mesmo nível que `requires`, `tags`, `postinstall`), não dentro de um bloco de método.
+
+---
 ## Editor Support
 
 O projeto publica um [JSON Schema](schema/depengine.schema.json) que descreve a estrutura do `schema.toml`.
@@ -247,6 +423,23 @@ Ou, se preferir o schema local:
 ---
 
 ## CLI — comandos e flags
+
+### `depengine init [flags]`
+
+Cria um novo `depengine.toml` (ou caminho personalizado). Falha se o arquivo já existir.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--schema <path>` | `depengine.toml` | Caminho para escrever o schema |
+| `--add <tools>` | — | Nomes de ferramentas separados por vírgula para pré-popular (ex: `--add "zsh,bat,nvim"`) |
+
+```sh
+depengine init                          # cria depengine.toml com template
+depengine init --add "zsh,bat,nvim"     # cria com 3 ferramentas simples
+depengine init --schema tools.toml --add "ruff,prettier"
+```
+
+Após init, compartilhe o arquivo com seu time.
 
 ### `depengine install [flags]`
 

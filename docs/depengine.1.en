@@ -220,6 +220,129 @@ Abort if no lockfile exists (prevents resolving {latest} from network).
 .TP
 .BR \-\-dry\-run
 Show what would be updated without executing.
+.SS "schema-level per-tool method control"
+.TP
+.B method_prefer
+List of methods to try first, before the defaults.
+Example: \fBmethod_prefer = ["cargo"]\fR tries cargo before native.
+.TP
+.B method_only
+Exhaustive list of methods — only these are tried, in this order.
+Global method_order is ignored for this tool.
+.TP
+.B method_order
+Deprecated. Synonym for \fBmethod_prefer\fR.
+
+.SS "when condition (platform gate by method)"
+.PP
+The \fBwhen\fR field inside a method declaration restricts which platforms
+that method applies to. The condition is evaluated against facts detected
+by \fBdetect_os.sh\fR at runtime. Semantics: AND across fields, OR within
+each list. Empty fields are ignored. Absent \fBwhen\fR = always try.
+.PP
+Available fields:
+.TP
+.B distro_family
+List of distro families (resolved clans). Example: \fB["arch"]\fR matches
+Arch, EndeavourOS, Manjaro, CachyOS. Common values: arch, debian, fedora,
+alpine, gentoo, void, suse, macos, freebsd, openbsd, netbsd, termux, android.
+.TP
+.B distro_id
+List of exact distro IDs (case-insensitive). Example: \fB["ubuntu",
+"debian"]\fR matches exactly those, not Mint or Pop!_OS.
+.TP
+.B arch
+List of architectures (\fBuname -m\fR). Example: \fB["x86_64", "aarch64"]\fR.
+.TP
+.B os
+List of operating systems (lowercase \fBuname -s\fR). Example:
+\fB["linux"]\fR, \fB["darwin"]\fR, \fB["freebsd"]\fR.
+.TP
+.B kernel
+List of kernel versions (\fBuname -r\fR). Exact match (case-insensitive).
+Example: \fB["6.7.0-arch", "6.8.0"]\fR.
+.TP
+.B libc
+List of C libraries. Uses \fBprefix\fR matching: \fB["glibc"]\fR matches
+"glibc 2.35". Values: glibc, musl, uclibc, freebsd-libc.
+.TP
+.B init_system
+List of init systems. Values: systemd, openrc, runit, sysvinit.
+.TP
+.B is_wsl
+Three-state boolean: \fBtrue\fR (WSL only), \fBfalse\fR (non-WSL only),
+omitted (ignored). Detected via /proc/version or WSL_DISTRO_NAME.
+.TP
+.B is_container
+Three-state boolean: \fBtrue\fR (container only), \fBfalse\fR (non-container
+only), omitted (ignored). Detected via /.dockerenv, cgroup, etc.
+.PP
+Examples:
+.EX
+# AUR only on Arch, HTTP elsewhere
+[tools.DepartureMono]
+  [tools.DepartureMono.aur]
+  pkg  = "otf-departure-mono-nerd"
+  when = { distro_family = ["arch"] }
+
+  [tools.DepartureMono.http]
+  url = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/DepartureMono.zip"
+
+# Different binary per libc (glibc vs musl/Alpine)
+[tools.restic]
+  [tools.restic.http]
+  url = "https://github.com/restic/restic/releases/download/{latest}/restic_{latest}_linux_{arch}.bz2"
+  when = { arch = ["x86_64","aarch64"], os = ["linux"], libc = ["glibc"] }
+
+  [tools.restic.http-musl]
+  url = "https://github.com/restic/restic/releases/download/{latest}/restic_{latest}_linux_{arch}_musl.bz2"
+  when = { arch = ["x86_64","aarch64"], os = ["linux"], libc = ["musl"] }
+
+# Skip native in containers
+[tools.neovim]
+  [tools.neovim.native]
+  when = { is_container = false }
+
+  [tools.neovim.http]
+  url = "https://github.com/neovim/neovim/releases/download/stable/nvim-linux-{arch}.tar.gz"
+  when = { is_container = true }
+.EE
+.PP
+Tip: run \fBdepengine why <tool>\fR to see why a method was
+skipped (\fBskip_when\fR) or would be attempted.
+
+.SS "ecosystem buckets (python/node shorthand)"
+.PP
+Buckets expand to all methods in that ecosystem at once, avoiding repetition
+across \fBpip\fR, \fBpipx\fR and \fBuv\fR (python) or \fBnpm\fR, \fBpnpm\fR
+and \fBbun\fR (node).
+.TP
+.B python
+Expands to \fBpip\fR, \fBpipx\fR and \fBuv\fR.
+.TP
+.B node
+Expands to \fBnpm\fR, \fBpnpm\fR and \fBbun\fR.
+.PP
+Bucket values accept three shapes:
+.br
+\fBtrue\fR \— each method uses the tool name as \fBpkg\fR.
+.br
+\fB"string"\fR \— each method gets the string as \fBpkg\fR.
+.br
+\fB{ pkg = ..., when = ... }\fR \— each method gets a clone of the config map.
+.PP
+Examples:
+.EX
+ruff = { python = true }               # ≡ { pipx = "ruff", uv = "ruff" }
+organize = { python = "organize-tool" } # ≡ pip/pipx/uv with pkg="organize-tool"
+prettier = { node = true }             # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
+.EE
+.PP
+Explicit methods are NOT overridden by the bucket:
+\fBorganize = { pip = "organize-tool", python = true }\fR keeps
+\fBpip = "organize-tool"\fR and only expands \fBpipx\fR/\fBuv\fR.
+Use \fBpython = false\fR to disable expansion.
+
 .SH EXAMPLES
 .SS "Build and validate"
 .EX

@@ -275,6 +275,129 @@ Caminho para o manifest pessoal.
 .TP
 .BR \-\-no\-manifest"
 Desabilita o manifest pessoal.
+.SS "flags do schema (tool-level method control)"
+.TP
+.B method_prefer
+Lista de métodos para tentar primeiro, antes dos defaults.
+Exemplo: \fBmethod_prefer = ["cargo"]\fR tenta cargo antes do nativo.
+.TP
+.B method_only
+Lista exaustiva de métodos — apenas estes são tentados, nesta ordem.
+Global method_order é ignorado para esta ferramenta.
+.TP
+.B method_order
+Depreciado. Sinônimo de \fBmethod_prefer\fR.
+
+.SS "condição when (filtro de plataforma por método)"
+.PP
+O campo \fBwhen\fR dentro de um método define em quais sistemas aquele método
+é aplicável. A condição é avaliada contra os fatos detectados pelo
+\fBdetect_os.sh\fR em runtime. Semântica: AND entre campos, OR dentro de
+cada lista. Campos vazios são ignorados. \fBwhen\fR ausente = sempre tenta.
+.PP
+Campos disponíveis:
+.TP
+.B distro_family
+Lista de famílias de distro (clãs resolvidos). Exemplo: \fB["arch"]\fR bate em
+Arch, EndeavourOS, Manjaro, CachyOS. Valores comuns: arch, debian, fedora,
+alpine, gentoo, void, suse, macos, freebsd, openbsd, netbsd, termux, android.
+.TP
+.B distro_id
+Lista de IDs exatos de distro (case-insensitive). Exemplo: \fB["ubuntu",
+"debian"]\fR bate exatamente nessas, não em Mint ou Pop!_OS.
+.TP
+.B arch
+Lista de arquiteturas (\fBuname -m\fR). Exemplo: \fB["x86_64", "aarch64"]\fR.
+.TP
+.B os
+Lista de sistemas operacionais (\fBuname -s\fR minúsculo). Exemplo:
+\fB["linux"]\fR, \fB["darwin"]\fR, \fB["freebsd"]\fR.
+.TP
+.B kernel
+Lista de versões de kernel (\fBuname -r\fR). Correspondência exata
+(case-insensitive). Exemplo: \fB["6.7.0-arch", "6.8.0"]\fR.
+.TP
+.B libc
+Lista de bibliotecas C. Usa correspondência por \fBprefixo\fR: \fB["glibc"]\fR
+bate em "glibc 2.35". Valores: glibc, musl, uclibc, freebsd-libc.
+.TP
+.B init_system
+Lista de sistemas de init. Valores: systemd, openrc, runit, sysvinit.
+.TP
+.B is_wsl
+Booleano de três estados: \fBtrue\fR (só WSL), \fBfalse\fR (só não-WSL),
+omitido (ignora). Detectado via /proc/version ou WSL_DISTRO_NAME.
+.TP
+.B is_container
+Booleano de três estados: \fBtrue\fR (só container), \fBfalse\fR (só
+não-container), omitido (ignora). Detectado via /.dockerenv, cgroup etc.
+.PP
+Exemplos:
+.EX
+# AUR só no Arch, HTTP nos demais
+[tools.DepartureMono]
+  [tools.DepartureMono.aur]
+  pkg  = "otf-departure-mono-nerd"
+  when = { distro_family = ["arch"] }
+
+  [tools.DepartureMono.http]
+  url = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/DepartureMono.zip"
+
+# Binário diferente por libc (glibc vs musl/Alpine)
+[tools.restic]
+  [tools.restic.http]
+  url = "https://github.com/restic/restic/releases/download/{latest}/restic_{latest}_linux_{arch}.bz2"
+  when = { arch = ["x86_64","aarch64"], os = ["linux"], libc = ["glibc"] }
+
+  [tools.restic.http-musl]
+  url = "https://github.com/restic/restic/releases/download/{latest}/restic_{latest}_linux_{arch}_musl.bz2"
+  when = { arch = ["x86_64","aarch64"], os = ["linux"], libc = ["musl"] }
+
+# Pula nativo em container
+[tools.neovim]
+  [tools.neovim.native]
+  when = { is_container = false }
+
+  [tools.neovim.http]
+  url = "https://github.com/neovim/neovim/releases/download/stable/nvim-linux-{arch}.tar.gz"
+  when = { is_container = true }
+.EE
+.PP
+Dica: use \fBdepengine why <ferramenta>\fR para ver por que um método
+foi pulado (\fBskip_when\fR) ou seria tentado.
+
+.SS "buckets de ecossistema (atalho python/node)"
+.PP
+Buckets expandem para todos os métodos daquele ecossistema de uma vez,
+evitando repetir o mesmo nome para \fBpip\fR, \fBpipx\fR e \fBuv\fR (python)
+ou \fBnpm\fR, \fBpnpm\fR e \fBbun\fR (node).
+.TP
+.B python
+Expande para \fBpip\fR, \fBpipx\fR e \fBuv\fR.
+.TP
+.B node
+Expande para \fBnpm\fR, \fBpnpm\fR e \fBbun\fR.
+.PP
+O valor do bucket aceita três formatos:
+.br
+\fBtrue\fR \— cada método usa o nome da tool como \fBpkg\fR.
+.br
+\fB"string"\fR \— cada método recebe a string como \fBpkg\fR.
+.br
+\fB{ pkg = ..., when = ... }\fR \— cada método recebe um clone do mapa.
+.PP
+Exemplos:
+.EX
+ruff = { python = true }               # ≡ { pipx = "ruff", uv = "ruff" }
+organize = { python = "organize-tool" } # ≡ pip/pipx/uv com pkg="organize-tool"
+prettier = { node = true }             # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
+.EE
+.PP
+Métodos explícitos não são sobrescritos pelo bucket:
+\fBorganize = { pip = "organize-tool", python = true }\fR mantém
+\fBpip = "organize-tool"\fR e expande apenas \fBpipx\fR/\fBuv\fR.
+Use \fBpython = false\fR para desabilitar a expansão.
+
 .SH EXEMPLOS
 .SS "Build e validação"
 .EX
