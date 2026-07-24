@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"depengine/pkg/lang"
 	"depengine/pkg/lock"
@@ -58,10 +59,10 @@ func runUpdate(args []string) {
 
 	s.Tools = filterTools(s.Tools, "", "", *updateProfile)
 
-	fmt.Fprint(os.Stderr, "Resolving latest versions... ")
+	done := spinner(ctx, "Resolving latest versions")
 	newLock, err := lock.ResolveAll(ctx, s, run.OSExecRunner{})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "FAIL")
+		done("FAIL")
 		lg.Error("resolve lock", "error", err)
 		os.Exit(1)
 	}
@@ -87,7 +88,7 @@ func runUpdate(args []string) {
 	}
 
 	pinned := len(newLock.Tools)
-	fmt.Fprintf(os.Stderr, "done (%d pinned)\n", pinned)
+	done(fmt.Sprintf("done (%d pinned)", pinned))
 
 	if *updateVerbose {
 		for key, pin := range newLock.Tools {
@@ -194,7 +195,7 @@ func runDiff(args []string) {
 		if *diffJSON {
 			fmt.Println("[]")
 		} else {
-			fmt.Println("No differences found.")
+			fmt.Fprintln(os.Stderr, "No differences found.")
 		}
 		return
 	}
@@ -220,34 +221,74 @@ func runDiff(args []string) {
 		}
 
 		if onlyA > 0 {
-			fmt.Println("=== Only in current ===")
+			fmt.Fprintln(os.Stderr, "=== Only in current ===")
 			for _, item := range items {
 				if item.Side == "only_a" {
-					fmt.Printf("  %s (%s, installed %s)\n", item.Name, item.MethodA, item.InstalledAtA)
+					fmt.Fprintf(os.Stderr, "  %s (%s, installed %s)\n", item.Name, item.MethodA, item.InstalledAtA)
 				}
 			}
 		}
 
 		if onlyB > 0 {
-			fmt.Println("=== Only in other ===")
+			fmt.Fprintln(os.Stderr, "=== Only in other ===")
 			for _, item := range items {
 				if item.Side == "only_b" {
-					fmt.Printf("  %s (%s, installed %s)\n", item.Name, item.MethodB, item.InstalledAtB)
+					fmt.Fprintf(os.Stderr, "  %s (%s, installed %s)\n", item.Name, item.MethodB, item.InstalledAtB)
 				}
 			}
 		}
 
 		if diffCount > 0 {
-			fmt.Println("=== Definition changed ===")
+			fmt.Fprintln(os.Stderr, "=== Definition changed ===")
 			for _, item := range items {
 				if item.Side == "different" {
-					fmt.Printf("  %s\n", item.Name)
-					fmt.Printf("    current: %s (hash: %s)\n", item.MethodA, item.HashA)
-					fmt.Printf("    other: %s (hash: %s)\n", item.MethodB, item.HashB)
+					fmt.Fprintf(os.Stderr, "  %s\n", item.Name)
+					fmt.Fprintf(os.Stderr, "    current: %s (hash: %s)\n", item.MethodA, item.HashA)
+					fmt.Fprintf(os.Stderr, "    other: %s (hash: %s)\n", item.MethodB, item.HashB)
 				}
 			}
 		}
 
-		fmt.Printf("\n%d tools differ.\n", len(items))
+		fmt.Fprintf(os.Stderr, "\n%d tools differ.\n", len(items))
+	}
+}
+
+// isTerminal reports whether the given file is connected to a terminal.
+func isTerminal(f *os.File) bool {
+	fi, _ := f.Stat()
+	return fi != nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+// spinner runs a simple terminal spinner. It returns a done function that
+// the caller must call with the final status text (e.g. "done (42 pinned)").
+// When stderr is not a terminal, no spinner is shown and done simply prints
+// the message + status.
+func spinner(ctx context.Context, msg string) func(status string) {
+	if !isTerminal(os.Stderr) {
+		fmt.Fprint(os.Stderr, msg+" ")
+		return func(status string) {
+			fmt.Fprintf(os.Stderr, "%s\n", status)
+		}
+	}
+	chars := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	stop := make(chan struct{})
+	go func() {
+		i := 0
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ctx.Done():
+				return
+			default:
+				fmt.Fprintf(os.Stderr, "\r%s %s ", msg, chars[i%len(chars)])
+				i++
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+	}()
+	return func(status string) {
+		close(stop)
+		fmt.Fprintf(os.Stderr, "\r%s %s\n", msg, status)
 	}
 }

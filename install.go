@@ -35,15 +35,27 @@ func runInstall(args []string) {
 	installSortBy := installCmd.String("sort-by", "", "sort output by: name, status, method")
 	installJobs := installCmd.Int("jobs", 1, "max concurrent installations (default 1 = sequential)")
 	installAllowArbitrary := installCmd.Bool("allow-arbitrary-code", false, "suppress security warnings for build scripts / arbitrary code")
+	installQuiet := installCmd.Bool("quiet", false, "suppress per-tool status lines; show only final summary")
 	installCmd.Parse(args)
 
 
 	lg := log.Default
 
 	if *installDiagnose {
-		*installDryRun = true
-		*installVerbose = true
-		lg = log.New(os.Stderr, slog.LevelDebug)
+		// Only override flags the user didn't explicitly set.
+		saw := make(map[string]bool)
+		installCmd.Visit(func(f *flag.Flag) {
+			saw[f.Name] = true
+		})
+		if !saw["dry-run"] {
+			*installDryRun = true
+		}
+		if !saw["verbose"] {
+			*installVerbose = true
+		}
+		if !saw["log-level"] {
+			lg = log.New(os.Stderr, slog.LevelDebug)
+		}
 	}
 	if *installLogLevel != "" {
 		lg = log.New(os.Stderr, log.LevelFromString(*installLogLevel))
@@ -89,7 +101,11 @@ func runInstall(args []string) {
 		os.Exit(exitCodeForError(err))
 	}
 
+	if *installVerbose {
+		fmt.Fprintln(os.Stderr, "depengine: --verbose is deprecated; output is now verbose by default. Use --quiet for the old summary-only behavior.")
+	}
 	ex := exec.New()
+	exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
 	exec.WithAdapters(
 		git.NewGitAdapter(),
 		httpdownload.NewHTTPAdapter(),
@@ -109,6 +125,9 @@ func runInstall(args []string) {
 	}
 	if *installAllowArbitrary {
 		exec.WithAllowArbitraryCode()(ex)
+	}
+	if *installQuiet {
+		exec.WithQuiet()(ex)
 	}
 
 	lockPath := lock.DefaultPath(*installSchema)

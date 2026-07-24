@@ -115,6 +115,9 @@ func runCheck(args []string) {
 	checkSchema := checkCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
 	checkManifest := checkCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	checkNoManifest := checkCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
+	checkJSON := checkCmd.Bool("json", false, "JSON output")
+	checkFormat := checkCmd.String("format", "", "output format (json)")
+	checkLive := checkCmd.Bool("live", false, "check via adapter (may run subprocesses)")
 	checkCmd.Parse(args)
 	remain := checkCmd.Args()
 	if len(remain) < 1 {
@@ -147,6 +150,7 @@ func runCheck(args []string) {
 		log.Default.Error("tool not found", "tool", toolName)
 		os.Exit(1)
 	}
+	useJSON := *checkJSON || *checkFormat == "json"
 
 	for _, method := range tool.Methods {
 		if method.When != nil && len(method.When.DistroFamily) > 0 {
@@ -158,14 +162,29 @@ func runCheck(args []string) {
 		if adapter == nil {
 			continue
 		}
-		if !adapter.Available(context.Background(), run.OSExecRunner{}) {
+		if !*checkLive && !adapter.Available(context.Background(), run.OSExecRunner{}) {
 			continue
 		}
 		if adapter.Check(context.Background(), run.OSExecRunner{}, tool, method) {
-			fmt.Printf("✓ %s is installed (via %s)\n", toolName, method.Kind)
+			if useJSON {
+				json.NewEncoder(os.Stdout).Encode(map[string]string{
+					"tool":   toolName,
+					"status": "installed",
+					"method": method.Kind,
+				})
+			} else {
+				fmt.Fprintf(os.Stderr, "✓ %s is installed (via %s)\n", toolName, method.Kind)
+			}
 			os.Exit(0)
 		}
 	}
-	fmt.Printf("✗ %s is not installed\n", toolName)
+	if useJSON {
+		json.NewEncoder(os.Stdout).Encode(map[string]string{
+			"tool":   toolName,
+			"status": "not-installed",
+		})
+	} else {
+		fmt.Fprintf(os.Stderr, "✗ %s is not installed\n", toolName)
+	}
 	os.Exit(1)
 }

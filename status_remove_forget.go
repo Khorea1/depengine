@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"bufio"
 
 	"depengine/pkg/exec"
 	"depengine/pkg/log"
@@ -28,6 +29,12 @@ func runStatus(args []string) {
 	statusJSON := statusCmd.Bool("json", false, "JSON output (shorthand for --format=json)")
 	statusOrphans := statusCmd.Bool("orphans", false, "show only orphaned tools")
 	statusCmd.Parse(args)
+	if *statusJSON {
+		if *statusFormat == "text" {
+			*statusFormat = "json"
+		}
+		fmt.Fprintln(os.Stderr, "depengine: --json is deprecated; use --format=json instead")
+	}
 
 	ls, err := state.LoadShared()
 	if err != nil {
@@ -144,17 +151,17 @@ func runStatus(args []string) {
 
 	if len(tools) == 0 {
 		if *statusOrphans {
-			fmt.Println("No orphan tools.")
+		fmt.Fprintln(os.Stderr, "No orphan tools.")
 		} else {
-			fmt.Println("No tools in state. Run 'depengine install' first.")
+		fmt.Fprintln(os.Stderr, "No tools in state. Run 'depengine install' first.")
 		}
 		return
 	}
 
-	fmt.Printf("%-30s %-12s %-10s  %s\n", "Tool", "Status", "Method", "Installed At")
-	fmt.Println(strings.Repeat("-", 70))
+	fmt.Fprintf(os.Stderr, "%-30s %-12s %-10s  %s\n", "Tool", "Status", "Method", "Installed At")
+	fmt.Fprintln(os.Stderr, strings.Repeat("-", 70))
 	for _, t := range tools {
-		fmt.Printf("%-30s %-12s %-10s  %s\n", t.Name, t.Status, t.Method, t.Updated)
+		fmt.Fprintf(os.Stderr, "%-30s %-12s %-10s  %s\n", t.Name, t.Status, t.Method, t.Updated)
 	}
 }
 
@@ -166,6 +173,7 @@ func runRemove(args []string) {
 	removeDryRun := removeCmd.Bool("dry-run", false, "show what would be removed")
 	removeSchema := removeCmd.String("schema", "", "path to schema.toml (optional, for validation)")
 	removeOnly := removeCmd.String("only", "", "only remove specific tool (alternative to positional arg)")
+	removeForce := removeCmd.Bool("force", false, "skip confirmation when removing all tools")
 	removeCmd.Parse(args)
 
 	// Validate mutually exclusive flags.
@@ -244,6 +252,20 @@ func runRemove(args []string) {
 		return true
 	}
 
+	if *removeAll && !*removeForce {
+		if !isInteractive() {
+			log.Default.Error("stdin is not a terminal; use --force to confirm, or run in an interactive terminal")
+			os.Exit(2)
+		}
+		fmt.Fprint(os.Stderr, "WARNING: This will remove ALL installed tools tracked by depengine.\nAre you sure? [y/N] ")
+		input, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		input = strings.TrimSpace(strings.ToLower(input))
+		if input != "y" && input != "yes" {
+			fmt.Fprintln(os.Stderr, "Aborted.")
+			os.Exit(0)
+		}
+	}
+
 	hadFailure := false
 
 	if *removeAll {
@@ -312,4 +334,9 @@ func runForget(args []string) {
 	}
 
 	log.Default.Info("forgotten", "tool", toolName)
+}
+
+func isInteractive() bool {
+	fi, _ := os.Stdin.Stat()
+	return fi != nil && fi.Mode()&os.ModeCharDevice != 0
 }

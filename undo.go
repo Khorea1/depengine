@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"path/filepath"
 	"time"
 
@@ -14,6 +15,52 @@ import (
 	"depengine/pkg/schema"
 	"depengine/pkg/state"
 )
+
+func relativeTime(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		m := int(d.Minutes())
+		if m == 1 {
+			return "1 minute ago"
+		}
+		return fmt.Sprintf("%d minutes ago", m)
+	case d < 24*time.Hour:
+		h := int(d.Hours())
+		if h == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", h)
+	case d < 48*time.Hour:
+		return "yesterday"
+	case d < 7*24*time.Hour:
+		days := int(d.Hours() / 24)
+		if days == 1 {
+			return "1 day ago"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	case d < 30*24*time.Hour:
+		weeks := int(d.Hours() / (24 * 7))
+		if weeks == 1 {
+			return "1 week ago"
+		}
+		return fmt.Sprintf("%d weeks ago", weeks)
+	case d < 365*24*time.Hour:
+		months := int(d.Hours() / (24 * 30))
+		if months == 1 {
+			return "1 month ago"
+		}
+		return fmt.Sprintf("%d months ago", months)
+	default:
+		years := int(d.Hours() / (24 * 365))
+		if years == 1 {
+			return "1 year ago"
+		}
+		return fmt.Sprintf("%d years ago", years)
+	}
+}
 
 func runUndo(args []string) {
 	undoCmd := flag.NewFlagSet("undo", flag.ExitOnError)
@@ -28,20 +75,37 @@ func runUndo(args []string) {
 			os.Exit(3)
 		}
 		if len(snapshots) == 0 {
-			fmt.Println("No snapshots available.")
+			fmt.Fprintln(os.Stderr, "No snapshots available.")
 			return
 		}
-		fmt.Println("Available snapshots:")
-		for _, s := range snapshots {
+		fmt.Fprintln(os.Stderr, "Available snapshots:")
+		for i, s := range snapshots {
+			idx := i + 1
+			rel := relativeTime(s.Timestamp)
 			ts := s.Timestamp.Format("2006-01-02 15:04:05")
-			fmt.Printf("  %s  %s  (%d tools)\n", ts, filepath.Base(s.Path), s.ToolCount)
+			fmt.Fprintf(os.Stderr, "  %d.  %-20s  %s  %s  (%d tools)\n", idx, rel, ts, filepath.Base(s.Path), s.ToolCount)
 		}
 		return
 	}
 
 	var snapPath string
 	if *undoSpecific != "" {
-		snapPath = *undoSpecific
+		if n, err := strconv.Atoi(*undoSpecific); err == nil {
+			// Treat as index (1-based)
+			snapshots, listErr := state.ListSnapshots()
+			if listErr != nil {
+				log.Default.Error("list snapshots", "error", listErr)
+				os.Exit(3)
+			}
+			if n < 1 || n > len(snapshots) {
+				log.Default.Error("invalid snapshot index", "index", n, "max", len(snapshots))
+				os.Exit(2)
+			}
+			snapPath = snapshots[n-1].Path
+		} else {
+			// Treat as file path (backward compat)
+			snapPath = *undoSpecific
+		}
 	} else {
 		snapshots, err := state.ListSnapshots()
 		if err != nil {
