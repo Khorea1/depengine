@@ -52,10 +52,14 @@ func main() {
 			fmt.Println("Distro-agnostic dependency installer")
 		}
 	case "help", "-h", "--help":
-		if len(os.Args) > 2 && os.Args[2] == "--man" {
-			printManPage()
+		if len(os.Args) == 2 || (len(os.Args) > 2 && os.Args[2] == "--man") {
+			if len(os.Args) > 2 && os.Args[2] == "--man" {
+				printManPage()
+			} else {
+				printUsage()
+			}
 		} else {
-			printUsage()
+			printCommandHelp(os.Args[2])
 		}
 	case "completion":
 		runCompletion(os.Args[2:])

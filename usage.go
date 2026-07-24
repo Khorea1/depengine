@@ -67,7 +67,6 @@ Commands:
   sbom      Export SBOM (CycloneDX or SPDX)
   diff      Compare state between machines
   completion Generate autocomplete script
-
 Global flags:
   --version, -v   Show version
   --help, -h      Show help

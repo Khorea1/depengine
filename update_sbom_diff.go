@@ -18,6 +18,7 @@ import (
 )
 
 func runUpdate(args []string) {
+	// flags maintained in help.go:printCommandHelp
 	updateCmd := flag.NewFlagSet("update", flag.ExitOnError)
 	updateSchema := updateCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
 	updateManifest := updateCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
@@ -103,6 +104,7 @@ func runUpdate(args []string) {
 }
 
 func runSBOM(args []string) {
+	// flags maintained in help.go:printCommandHelp
 	sbomCmd := flag.NewFlagSet("sbom", flag.ExitOnError)
 	sbomFormat := sbomCmd.String("format", "cyclonedx", "output format: cyclonedx or spdx")
 	sbomCmd.Parse(args)
@@ -138,6 +140,7 @@ func runSBOM(args []string) {
 
 // runDiff compares two state files and outputs the differences.
 func runDiff(args []string) {
+	// flags maintained in help.go:printCommandHelp
 	diffCmd := flag.NewFlagSet("diff", flag.ExitOnError)
 	diffOther := diffCmd.String("other", "", "path to other state file (used when no args)")
 	diffJSON := diffCmd.Bool("json", false, "output as JSON")

@@ -16,6 +16,7 @@ import (
 )
 
 func runValidate(args []string) {
+	// flags maintained in help.go:printCommandHelp
 	validateCmd := flag.NewFlagSet("validate", flag.ExitOnError)
 	validateSchema := validateCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
 	validateManifest := validateCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
@@ -110,6 +111,7 @@ func runValidate(args []string) {
 	os.Exit(exitCode)
 }
 
+	// flags maintained in help.go:printCommandHelp
 func runCheck(args []string) {
 	checkCmd := flag.NewFlagSet("check", flag.ExitOnError)
 	checkSchema := checkCmd.String("schema", defaultSchemaPath(), "path to schema.toml")

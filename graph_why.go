@@ -17,6 +17,7 @@ import (
 )
 
 func runGraph(args []string) {
+	// flags maintained in help.go:printCommandHelp
 	graphCmd := flag.NewFlagSet("graph", flag.ExitOnError)
 	graphSchema := graphCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
 	graphManifest := graphCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
@@ -90,6 +91,7 @@ func runGraph(args []string) {
 // runWhy shows why a tool would be installed via each candidate method,
 // without actually installing anything. Useful for debugging complex schemas.
 func runWhy(args []string) {
+	// flags maintained in help.go:printCommandHelp
 	whyCmd := flag.NewFlagSet("why", flag.ExitOnError)
 	whySchema := whyCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
 	whyManifest := whyCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
@@ -158,6 +160,7 @@ func runWhy(args []string) {
 
 	ex := exec.New()
 	exec.WithRunner(run.OSExecRunner{})(ex)
+	exec.WithFacts(facts)(ex)
 	attempts := ex.ExplainTool(context.Background(), tool, clan)
 	if *whyJSON {
 		type jsonAttempt struct {

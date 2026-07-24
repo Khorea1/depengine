@@ -21,6 +21,7 @@ import (
 // runStatus shows the installation status of tools by comparing the state
 // file against the schema. It reports installed, missing, and outdated tools.
 func runStatus(args []string) {
+	// flags maintained in help.go:printCommandHelp
 	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
 	statusSchema := statusCmd.String("schema", "", "override schema path")
 	statusManifest := statusCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
@@ -168,6 +169,7 @@ func runStatus(args []string) {
 // runRemove removes a tool using the adapter that installed it.
 // Supports --all, --dry-run, --schema, and --only flags.
 func runRemove(args []string) {
+	// flags maintained in help.go:printCommandHelp
 	removeCmd := flag.NewFlagSet("remove", flag.ExitOnError)
 	removeAll := removeCmd.Bool("all", false, "remove all tools")
 	removeDryRun := removeCmd.Bool("dry-run", false, "show what would be removed")
@@ -304,6 +306,7 @@ func runRemove(args []string) {
 
 // runForget removes a tool from state without attempting system removal.
 func runForget(args []string) {
+	// flags maintained in help.go:printCommandHelp
 	forgetCmd := flag.NewFlagSet("forget", flag.ExitOnError)
 	forgetCmd.Parse(args)
 

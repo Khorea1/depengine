@@ -62,6 +62,7 @@ func relativeTime(t time.Time) string {
 	}
 }
 
+	// flags maintained in help.go:printCommandHelp
 func runUndo(args []string) {
 	undoCmd := flag.NewFlagSet("undo", flag.ExitOnError)
 	undoList := undoCmd.Bool("list", false, "list available snapshots")

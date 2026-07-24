@@ -19,6 +19,7 @@ import (
 )
 
 func runInstall(args []string) {
+	// flags maintained in help.go:printCommandHelp
 	installCmd := flag.NewFlagSet("install", flag.ExitOnError)
 	installSchema := installCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
 	installManifest := installCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
@@ -82,6 +83,11 @@ func runInstall(args []string) {
 
 	s, clan, facts, manifestCount, err := loadSchemaWithManifest(*installSchema, manifestPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "error: %s not found\n", *installSchema)
+			fmt.Fprintf(os.Stderr, "Run 'depengine init' to create one, or point --schema to an existing file.\n")
+			os.Exit(1)
+		}
 		lg.Error("load schema", "error", err)
 		os.Exit(exitCodeForError(err))
 	}
@@ -114,6 +120,8 @@ func runInstall(args []string) {
 	exec.WithSchemaInfo(*installSchema, schemaFile.ModTime())(ex)
 	exec.WithLogger(lg)(ex)
 	exec.WithRunner(run.NewLoggingRunner(run.OSExecRunner{}, lg))(ex)
+
+	exec.WithFacts(facts)(ex)
 	if *installDryRun {
 		exec.WithDryRun()(ex)
 	}
@@ -130,9 +138,24 @@ func runInstall(args []string) {
 		exec.WithQuiet()(ex)
 	}
 
+
 	lockPath := lock.DefaultPath(*installSchema)
 	lk := loadLockfile(*installSchema, s, *installFrozen, lg)
 
+	// Auto-resolve {latest} if no lockfile exists — makes first install work
+	// like npm/pip: no explicit 'depengine update' needed.
+	if lk == nil && !*installFrozen {
+		if hasLatestPlaceholders(s) {
+			lg.Info("no lockfile found — resolving latest versions")
+			newLock, err := lock.ResolveAll(ctx, s, run.OSExecRunner{})
+			if err != nil {
+				lg.Warn("could not auto-resolve latest", "error", err, "hint", "run 'depengine update' manually")
+			} else if newLock != nil {
+				lock.Apply(s, newLock)
+				lk = newLock
+			}
+		}
+	}
 	s.Tools = filterTools(s.Tools, *installOnly, *installSkip, *installProfile)
 
 	if !*installDryRun {
@@ -162,6 +185,12 @@ func runInstall(args []string) {
 
 	if !*installDryRun {
 		saveLockfile(ctx, s, lockPath, lk, lg, *installDiagnose)
+	}
+
+	// After successful install, guide the user to share.
+	if report.Failed == 0 && report.Success > 0 && !*installDryRun {
+		fmt.Fprintln(os.Stderr, "Share schema.toml in git so others can reproduce your tools:")
+		fmt.Fprintln(os.Stderr, "  git add schema.toml schema.lock && git commit")
 	}
 
 	if report.Failed > 0 {

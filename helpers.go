@@ -20,13 +20,13 @@ import (
 // defaultSchemaPath returns the default schema file path, trying common names.
 // If none exist, returns "schema.toml" so the caller gets the original error.
 func defaultSchemaPath() string {
-	candidates := []string{"depengine.toml", "schema.toml", "depends.toml"}
+	candidates := []string{"schema.toml", "depengine.toml", "depends.toml"}
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {
 			return c
 		}
 	}
-	return "depengine.toml"
+	return "schema.toml"
 }
 
 // loadSchema reads and validates a schema.toml from path, gathering OS facts.
@@ -37,7 +37,7 @@ func loadSchema(path string) (*schema.Schema, string, *engine.Facts, error) {
 		return nil, "", nil, err
 	}
 	if info.IsDir() {
-		path = filepath.Join(path, "depengine.toml")
+		path = filepath.Join(path, "schema.toml")
 	}
 
 	facts, err := engine.GatherFacts(run.OSExecRunner{})
@@ -215,4 +215,18 @@ func saveLockfile(ctx context.Context, s *schema.Schema, lockPath string, oldLoc
 	if diagnose {
 		lg.Debug("lock saved", "path", lockPath, "pinned", len(newLock.Tools))
 	}
+}
+
+// hasLatestPlaceholders checks whether any tool method in the schema uses
+// a {latest} placeholder in its URL. Used by install to decide whether
+// auto-resolution is needed when no lockfile exists.
+func hasLatestPlaceholders(s *schema.Schema) bool {
+	for _, tool := range s.Tools {
+		for _, method := range tool.Methods {
+			if url, ok := method.Config["url"].(string); ok && strings.Contains(url, "{latest}") {
+				return true
+			}
+		}
+	}
+	return false
 }
