@@ -9,6 +9,7 @@ vendor/
 
 # Schema / manifest
 depengine.toml
+schema.toml
 # Build output
 dist/
 
