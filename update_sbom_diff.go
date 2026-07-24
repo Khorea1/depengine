@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"depengine/pkg/lang"
+	"depengine/pkg/ecosystem"
 	"depengine/pkg/lock"
 	"depengine/pkg/log"
 	"depengine/pkg/run"
@@ -52,7 +52,7 @@ func runUpdate(args []string) {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
 	}
 	if helper := s.Defaults.AurHelper; helper != "" {
-		lang.ReconfigureAUR(helper)
+		ecosystem.ReconfigureAUR(helper)
 	}
 
 	fmt.Fprintf(os.Stderr, "depengine update: distro=%s clan=%s arch=%s tools=%d\n",

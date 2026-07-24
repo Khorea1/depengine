@@ -5,7 +5,7 @@
 // The BaseAdapter struct implements exec.Adapter generically; each concrete
 // adapter is just a BaseConfig + registration. See the registry.go file
 // for the mapping of method names to adapters.
-package lang
+package ecosystem
 
 import (
 	"context"

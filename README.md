@@ -633,7 +633,7 @@ flowchart TB
 
     subgraph Adapters
         NATIVE[pkg/native\n15 distro families]
-        LANG[pkg/lang\n25 language adapters]
+        ECOSYSTEM[pkg/ecosystem\n25 ecosystem adapters]
         GIT[pkg/git\nClone + build]
         HTTP[pkg/httpdownload\nDownload + checksum]
     end
@@ -669,7 +669,7 @@ flowchart TB
 | `pkg/native` | Declarative registry of 15 distros. Manager lookup, install command building |
 | `pkg/schema` | TOML parser (3 declaration forms) + placeholder expansion + kind validation |
 | `pkg/exec` | Central executor + `Adapter` interface + registry + sync manager + reports |
-| `pkg/lang` | 25 language/ecosystem adapters (generic `BaseAdapter` + specialized) |
+| `pkg/ecosystem` | 25 ecosystem adapters (generic `BaseAdapter` + specialized) |
 | `pkg/git` | GitAdapter: shallow clone + build |
 | `pkg/httpdownload` | HTTPAdapter: download + extraction + SHA256 + `{latest}` resolution |
 | `pkg/graph` | Topological sort (Kahn) with cycle detection |

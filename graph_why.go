@@ -10,7 +10,7 @@ import (
 	"depengine/pkg/engine"
 	"depengine/pkg/exec"
 	"depengine/pkg/graph"
-	"depengine/pkg/lang"
+	"depengine/pkg/ecosystem"
 	"depengine/pkg/log"
 	"depengine/pkg/run"
 	"depengine/pkg/schema"
@@ -140,7 +140,7 @@ func runWhy(args []string) {
 		clan = engine.ResolveFamily(facts)
 	}
 	if helper := s.Defaults.AurHelper; helper != "" {
-		lang.ReconfigureAUR(helper)
+		ecosystem.ReconfigureAUR(helper)
 	}
 
 	if warnings, verr := schema.Validate(s, exec.RegisteredKinds()); verr != nil {

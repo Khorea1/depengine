@@ -6,7 +6,7 @@ import (
 
 	"depengine/pkg/exec"
 	"depengine/pkg/i18n"
-	"depengine/pkg/lang"
+	"depengine/pkg/ecosystem"
 )
 
 var version = "dev"
@@ -73,5 +73,5 @@ func main() {
 func initAdapters() {
 	exec.Register(exec.NewNativeAdapter(""))
 	exec.RegisterNativeManagerAliases()
-	lang.RegisterAll("paru")
+	ecosystem.RegisterAll("paru")
 }

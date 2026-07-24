@@ -1,4 +1,4 @@
-package lang
+package ecosystem
 
 import (
 	"depengine/pkg/exec"

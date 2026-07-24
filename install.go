@@ -10,7 +10,7 @@ import (
 	"depengine/pkg/exec"
 	"depengine/pkg/git"
 	"depengine/pkg/httpdownload"
-	"depengine/pkg/lang"
+	"depengine/pkg/ecosystem"
 	"depengine/pkg/lock"
 	"depengine/pkg/log"
 	"depengine/pkg/run"
@@ -95,7 +95,7 @@ func runInstall(args []string) {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
 	}
 	if helper := s.Defaults.AurHelper; helper != "" {
-		lang.ReconfigureAUR(helper)
+		ecosystem.ReconfigureAUR(helper)
 	}
 
 	fmt.Fprintf(os.Stderr, "depengine install: distro=%s clan=%s arch=%s tools=%d\n",
