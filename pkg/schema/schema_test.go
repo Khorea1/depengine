@@ -3,8 +3,11 @@ package schema
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+
+	"depengine/pkg/engine"
 )
 
 // writeSchema writes a temp schema.toml next to the test, returning its path.
@@ -920,4 +923,537 @@ func methodKindSet(methods []*MethodCandidate) map[string]bool {
 		set[m.Kind] = true
 	}
 	return set
+}
+
+
+func TestConditionMatches(t *testing.T) {
+	// Build a baseline Facts that would match a debian system.
+	facts := &engine.Facts{
+		DistroID:     "ubuntu",
+		DistroIDLike: "debian",
+		TargetArch:   "x86_64",
+		OS:           "linux",
+		Kernel:       "6.7.0-generic",
+		Libc:         "glibc 2.35",
+		InitSystem:   "systemd",
+		IsWSL:        false,
+		IsContainer:  false,
+	}
+
+	// nil condition always matches
+	var nilCond *Condition
+	if !nilCond.Match(facts) {
+		t.Error("nil condition should always match")
+	}
+
+	// empty (zero) condition always matches
+	empty := &Condition{}
+	if !empty.Match(facts) {
+		t.Error("empty condition should always match")
+	}
+
+	// DistroFamily match
+	c := &Condition{DistroFamily: []string{"debian"}}
+	if !c.Match(facts) {
+		t.Error("ubuntu is debian family, should match")
+	}
+	c2 := &Condition{DistroFamily: []string{"arch"}}
+	if c2.Match(facts) {
+		t.Error("ubuntu is not arch family, should not match")
+	}
+
+	// DistroID match (case-insensitive)
+	c3 := &Condition{DistroID: []string{"Ubuntu"}}
+	if !c3.Match(facts) {
+		t.Error("DistroID Ubuntu should match (case-insensitive)")
+	}
+	c4 := &Condition{DistroID: []string{"debian"}}
+	if c4.Match(facts) {
+		t.Error("DistroID debian should not match ubuntu")
+	}
+
+	// Arch match
+	c5 := &Condition{Arch: []string{"x86_64", "aarch64"}}
+	if !c5.Match(facts) {
+		t.Error("x86_64 should match")
+	}
+	c6 := &Condition{Arch: []string{"aarch64"}}
+	if c6.Match(facts) {
+		t.Error("aarch64 should not match x86_64")
+	}
+
+	// OS match
+	c7 := &Condition{OS: []string{"linux"}}
+	if !c7.Match(facts) {
+		t.Error("linux OS should match")
+	}
+	c8 := &Condition{OS: []string{"windows"}}
+	if c8.Match(facts) {
+		t.Error("windows OS should not match linux")
+	}
+
+	// Kernel match
+	c9 := &Condition{Kernel: []string{"6.7.0-generic"}}
+	if !c9.Match(facts) {
+		t.Error("kernel should match exactly")
+	}
+
+	// Libc prefix match
+	c10 := &Condition{Libc: []string{"glibc"}}
+	if !c10.Match(facts) {
+		t.Error("libc 'glibc' should prefix-match 'glibc 2.35'")
+	}
+	c11 := &Condition{Libc: []string{"musl"}}
+	if c11.Match(facts) {
+		t.Error("libc 'musl' should not match 'glibc 2.35'")
+	}
+
+	// InitSystem match
+	c12 := &Condition{InitSystem: []string{"systemd"}}
+	if !c12.Match(facts) {
+		t.Error("init_system systemd should match")
+	}
+
+	// Three-state bools: IsWSL = false, facts.IsWSL = false → OK
+	c13 := &Condition{IsWSL: new(false)}
+	if !c13.Match(facts) {
+		t.Error("IsWSL=false should match facts.IsWSL=false")
+	}
+
+	// Three-state bools: IsContainer = true, facts.IsContainer = false → fail
+	c14 := &Condition{IsContainer: new(true)}
+	if c14.Match(facts) {
+		t.Error("IsContainer=true should NOT match facts.IsContainer=false")
+	}
+
+	// AND semantics: all fields must match
+	c15 := &Condition{
+		DistroFamily: []string{"debian"},
+		Arch:         []string{"x86_64"},
+		Libc:         []string{"glibc"},
+	}
+	if !c15.Match(facts) {
+		t.Error("all three conditions should match")
+	}
+
+	// AND semantics: one field fails
+	c16 := &Condition{
+		DistroFamily: []string{"debian"},
+		Arch:         []string{"aarch64"},
+	}
+	if c16.Match(facts) {
+		t.Error("arch aarch64 should fail on x86_64 system")
+	}
+}
+
+func TestConditionMatchesNilFacts(t *testing.T) {
+	// nil condition → always true
+	var nilCond *Condition
+	if !nilCond.Match(nil) {
+		t.Error("nil condition with nil facts should be true")
+	}
+
+	// zero condition with nil facts → true (conservative)
+	empty := &Condition{}
+	if !empty.Match(nil) {
+		t.Error("empty condition with nil facts should be true")
+	}
+
+	// non-zero condition with nil facts → false (conservative: can't verify)
+	c := &Condition{DistroFamily: []string{"debian"}}
+	if c.Match(nil) {
+		t.Error("non-empty condition with nil facts should be false (conservative)")
+	}
+
+	c2 := &Condition{Arch: []string{"x86_64"}}
+	if c2.Match(nil) {
+		t.Error("non-empty condition with nil facts should be false (conservative)")
+	}
+}
+
+func TestConditionMatchesPartialFacts(t *testing.T) {
+	// Facts with only DistroID set — simulate partial detection
+	facts := &engine.Facts{
+		DistroID:   "arch",
+		TargetArch: runtime.GOARCH,
+		OS:         runtime.GOOS,
+	}
+
+	// Match on distro_id only should work
+	c := &Condition{DistroID: []string{"arch"}}
+	if !c.Match(facts) {
+		t.Error("DistroID arch should match")
+	}
+
+	// Match on a field that IS set should work with zero-value others
+	c2 := &Condition{Arch: []string{runtime.GOARCH}}
+	if !c2.Match(facts) {
+		t.Errorf("Arch %s should match", runtime.GOARCH)
+	}
+
+	// Match on a missing field (not in facts) should fail if condition requires it
+	// facts.Kernel is "" — Kernel condition with "anything" won't match
+	c3 := &Condition{Kernel: []string{"some-kernel"}}
+	if c3.Match(facts) {
+		t.Error("Kernel condition should not match when facts.Kernel is empty")
+	}
+}
+
+func TestConditionIsZero(t *testing.T) {
+	tests := []struct {
+		name   string
+		cond   *Condition
+		isZero bool
+	}{
+		{"nil cond", nil, true},
+		{"empty", &Condition{}, true},
+		{"distro_family", &Condition{DistroFamily: []string{"arch"}}, false},
+		{"distro_id", &Condition{DistroID: []string{"ubuntu"}}, false},
+		{"arch", &Condition{Arch: []string{"x86_64"}}, false},
+		{"os", &Condition{OS: []string{"linux"}}, false},
+		{"kernel", &Condition{Kernel: []string{"6.7.0"}}, false},
+		{"libc", &Condition{Libc: []string{"glibc"}}, false},
+		{"init_system", &Condition{InitSystem: []string{"systemd"}}, false},
+		{"is_wsl set", &Condition{IsWSL: new(true)}, false},
+		{"is_container set", &Condition{IsContainer: new(false)}, false},
+		{"is_wsl nil is zero", &Condition{DistroFamily: []string{}}, true},
+	}
+
+	// Note: nil receiver doesn't have IsZero, handle separately
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.cond == nil {
+				return // nil receiver test handled separately
+			}
+			got := tt.cond.IsZero()
+			if got != tt.isZero {
+				t.Errorf("IsZero() = %v, want %v for %s", got, tt.isZero, tt.name)
+			}
+		})
+	}
+}
+
+func TestExpandBucketsNoOp(t *testing.T) {
+	// Order with no bucket names returns unchanged
+	input := []string{"native", "cargo", "go"}
+	got := ExpandBuckets(input)
+	if len(got) != len(input) {
+		t.Fatalf("expected length %d, got %d", len(input), len(got))
+	}
+	for i, v := range input {
+		if got[i] != v {
+			t.Fatalf("got[%d] = %q, want %q", i, got[i], v)
+		}
+	}
+
+	// Empty input
+	got = ExpandBuckets(nil)
+	if len(got) != 0 {
+		t.Fatalf("expected empty, got %d", len(got))
+	}
+}
+
+func TestExpandBucketsExpansion(t *testing.T) {
+	// "python" → ["pip", "pipx", "uv"]
+	got := ExpandBuckets([]string{"python"})
+	want := []string{"pip", "pipx", "uv"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d elements, got %d: %v", len(want), len(got), got)
+	}
+	for i, v := range want {
+		if got[i] != v {
+			t.Fatalf("got[%d] = %q, want %q", i, got[i], v)
+		}
+	}
+
+	// Mixed
+	got = ExpandBuckets([]string{"native", "python", "cargo"})
+	want = []string{"native", "pip", "pipx", "uv", "cargo"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d elements, got %d: %v", len(want), len(got), got)
+	}
+	for i, v := range want {
+		if got[i] != v {
+			t.Fatalf("got[%d] = %q, want %q", i, got[i], v)
+		}
+	}
+}
+
+func TestExpandBucketsDeduplicate(t *testing.T) {
+	// "python" + "pip" → bucket expands to ["pip", "pipx", "uv"], then "pip" literal stays
+	// Dedup only applies WITHIN bucket expansion, not for literal entries
+	got := ExpandBuckets([]string{"python", "pip"})
+	want := []string{"pip", "pipx", "uv", "pip"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d elements, got %d: %v", len(want), len(got), got)
+	}
+	for i, v := range want {
+		if got[i] != v {
+			t.Fatalf("got[%d] = %q, want %q", i, got[i], v)
+		}
+	}
+}
+
+func TestEffectiveMethodOrderWithBuckets(t *testing.T) {
+	// No native expansion (empty nativeManagerName), but bucket expansion should work
+	defaultOrder := []string{"native", "cargo"}
+
+	tool := &Tool{
+		Name:        "test",
+		MethodPrefer: []string{"python"},
+	}
+	got := EffectiveMethodOrder(tool, defaultOrder, "")
+	// python → pip,pipx,uv prepended, then native,cargo remain (no duplicates)
+	expected := []string{"pip", "pipx", "uv", "native", "cargo"}
+	if len(got) != len(expected) {
+		t.Fatalf("expected %d elements, got %d: %v", len(expected), len(got), got)
+	}
+	for i, v := range expected {
+		if got[i] != v {
+			t.Fatalf("got[%d] = %q, want %q", i, got[i], v)
+		}
+	}
+
+	// No per-tool overrides — bucket in defaults
+	tool2 := &Tool{Name: "test2"}
+	defaultOrder2 := []string{"python", "native"}
+	got2 := EffectiveMethodOrder(tool2, defaultOrder2, "")
+	expected2 := []string{"pip", "pipx", "uv", "native"}
+	if len(got2) != len(expected2) {
+		t.Fatalf("expected %d elements, got %d: %v", len(expected2), len(got2), got2)
+	}
+	for i, v := range expected2 {
+		if got2[i] != v {
+			t.Fatalf("got[%d] = %q, want %q", i, got2[i], v)
+		}
+	}
+}
+
+func TestValidateAcceptsBucketNames(t *testing.T) {
+	// Bucket names in defaults.method_order should produce a warning, not an error
+	s := &Schema{
+		Defaults: Defaults{
+			MethodOrder: []string{"native", "python", "node"},
+		},
+		Tools: map[string]*Tool{
+			"mytool": {
+				Name:    "mytool",
+				Methods: []*MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "mytool"}}},
+			},
+		},
+	}
+
+	// knownKinds includes the expanded bucket members
+	warnings, err := Validate(s, []string{"native", "pip", "pipx", "uv", "npm", "pnpm", "bun"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Expect warnings about bucket expansion
+	foundPython := false
+	foundNode := false
+	for _, w := range warnings {
+		if strings.Contains(w, "python") && strings.Contains(w, "bucket") {
+			foundPython = true
+		}
+		if strings.Contains(w, "node") && strings.Contains(w, "bucket") {
+			foundNode = true
+		}
+	}
+	if !foundPython {
+		t.Error("expected warning about 'python' bucket name")
+	}
+	if !foundNode {
+		t.Error("expected warning about 'node' bucket name")
+	}
+
+	// Bucket names in per-tool method_prefer should be accepted (no error)
+	s2 := &Schema{
+		Defaults: Defaults{
+			MethodOrder: []string{"native"},
+		},
+		Tools: map[string]*Tool{
+			"mytool": {
+				Name:        "mytool",
+				MethodPrefer: []string{"python"},
+				Methods:     []*MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "mytool"}}},
+			},
+		},
+	}
+	warnings2, err2 := Validate(s2, []string{"native", "pip", "pipx", "uv"})
+	if err2 != nil {
+		t.Fatalf("unexpected error: %v", err2)
+	}
+	_ = warnings2 // bucket names in per-tool lists don't generate warnings (they pass silently)
+}
+
+func TestValidateRejectsUnknownKindInMethodPrefer(t *testing.T) {
+	// method_prefer with nonexistent kind should be a hard error
+	s := &Schema{
+		Defaults: Defaults{
+			MethodOrder: []string{"native"},
+		},
+		Tools: map[string]*Tool{
+			"mytool": {
+				Name:        "mytool",
+				MethodPrefer: []string{"nonexistent"},
+				Methods:     []*MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "mytool"}}},
+			},
+		},
+	}
+
+	_, err := Validate(s, []string{"native"})
+	if err == nil {
+		t.Fatal("expected error for unknown kind in method_prefer")
+	}
+	if !strings.Contains(err.Error(), "nonexistent") {
+		t.Errorf("error should mention 'nonexistent', got: %v", err)
+	}
+
+	// Also test method_only with unknown kind
+	s2 := &Schema{
+		Defaults: Defaults{
+			MethodOrder: []string{"native"},
+		},
+		Tools: map[string]*Tool{
+			"mytool": {
+				Name:      "mytool",
+				MethodOnly: []string{"fakekind"},
+				Methods:   []*MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "mytool"}}},
+			},
+		},
+	}
+	_, err2 := Validate(s2, []string{"native"})
+	if err2 == nil {
+		t.Fatal("expected error for unknown kind in method_only")
+	}
+}
+
+func TestParseConditionNewFields(t *testing.T) {
+	// Each new field parses correctly in isolation
+	tests := []struct {
+		name  string
+		input map[string]any
+		check func(*Condition) bool
+	}{
+		{"distro_id", map[string]any{"distro_id": []any{"ubuntu"}}, func(c *Condition) bool {
+			return len(c.DistroID) == 1 && c.DistroID[0] == "ubuntu" && c.DistroFamily == nil
+		}},
+		{"arch", map[string]any{"arch": []any{"x86_64", "aarch64"}}, func(c *Condition) bool {
+			return len(c.Arch) == 2 && c.Arch[0] == "x86_64" && c.Arch[1] == "aarch64"
+		}},
+		{"os", map[string]any{"os": []any{"linux"}}, func(c *Condition) bool {
+			return len(c.OS) == 1 && c.OS[0] == "linux"
+		}},
+		{"kernel", map[string]any{"kernel": []any{"6.7.0"}}, func(c *Condition) bool {
+			return len(c.Kernel) == 1 && c.Kernel[0] == "6.7.0"
+		}},
+		{"libc", map[string]any{"libc": []any{"musl"}}, func(c *Condition) bool {
+			return len(c.Libc) == 1 && c.Libc[0] == "musl"
+		}},
+		{"init_system", map[string]any{"init_system": []any{"systemd"}}, func(c *Condition) bool {
+			return len(c.InitSystem) == 1 && c.InitSystem[0] == "systemd"
+		}},
+		{"is_wsl true", map[string]any{"is_wsl": true}, func(c *Condition) bool {
+			return c.IsWSL != nil && *c.IsWSL == true
+		}},
+		{"is_wsl false", map[string]any{"is_wsl": false}, func(c *Condition) bool {
+			return c.IsWSL != nil && *c.IsWSL == false
+		}},
+		{"is_container true", map[string]any{"is_container": true}, func(c *Condition) bool {
+			return c.IsContainer != nil && *c.IsContainer == true
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cond := parseCondition(tt.input)
+			if cond == nil {
+				t.Fatal("parseCondition returned nil")
+			}
+			if !tt.check(cond) {
+				t.Errorf("condition check failed for %s: %+v", tt.name, cond)
+			}
+		})
+	}
+
+	// Single-value string sugar for distro_id
+	cond := parseCondition(map[string]any{"distro_id": "void"})
+	if cond == nil {
+		t.Fatal("parseCondition returned nil for string value")
+	}
+	if len(cond.DistroID) != 1 || cond.DistroID[0] != "void" {
+		t.Errorf("expected [void], got %v", cond.DistroID)
+	}
+}
+
+func TestParseConditionAllFields(t *testing.T) {
+	// Multiple fields together — all should parse
+	raw := map[string]any{
+		"distro_family": []any{"debian"},
+		"distro_id":     []any{"ubuntu"},
+		"arch":          []any{"x86_64"},
+		"os":            []any{"linux"},
+		"kernel":        []any{"6.7.0"},
+		"libc":          []any{"glibc"},
+		"init_system":   []any{"systemd"},
+		"is_wsl":        false,
+		"is_container":  false,
+	}
+	cond := parseCondition(raw)
+	if cond == nil {
+		t.Fatal("parseCondition returned nil")
+	}
+
+	if len(cond.DistroFamily) != 1 || cond.DistroFamily[0] != "debian" {
+		t.Errorf("DistroFamily: expected [debian], got %v", cond.DistroFamily)
+	}
+	if len(cond.DistroID) != 1 || cond.DistroID[0] != "ubuntu" {
+		t.Errorf("DistroID: expected [ubuntu], got %v", cond.DistroID)
+	}
+	if len(cond.Arch) != 1 || cond.Arch[0] != "x86_64" {
+		t.Errorf("Arch: expected [x86_64], got %v", cond.Arch)
+	}
+	if len(cond.OS) != 1 || cond.OS[0] != "linux" {
+		t.Errorf("OS: expected [linux], got %v", cond.OS)
+	}
+	if len(cond.Kernel) != 1 || cond.Kernel[0] != "6.7.0" {
+		t.Errorf("Kernel: expected [6.7.0], got %v", cond.Kernel)
+	}
+	if len(cond.Libc) != 1 || cond.Libc[0] != "glibc" {
+		t.Errorf("Libc: expected [glibc], got %v", cond.Libc)
+	}
+	if len(cond.InitSystem) != 1 || cond.InitSystem[0] != "systemd" {
+		t.Errorf("InitSystem: expected [systemd], got %v", cond.InitSystem)
+	}
+	if cond.IsWSL == nil || *cond.IsWSL != false {
+		t.Errorf("IsWSL: expected false, got %v", cond.IsWSL)
+	}
+	if cond.IsContainer == nil || *cond.IsContainer != false {
+		t.Errorf("IsContainer: expected false, got %v", cond.IsContainer)
+	}
+}
+
+func TestParseConditionUnknownKeysStillIgnored(t *testing.T) {
+	// Unknown keys should not cause an error (backward compat with future schema versions)
+	raw := map[string]any{
+		"distro_family":   []any{"arch"},
+		"unknown_field":   "some_value",
+		"another_unknown": []any{1, 2, 3},
+	}
+	cond := parseCondition(raw)
+	if cond == nil {
+		t.Fatal("parseCondition returned nil")
+	}
+	if len(cond.DistroFamily) != 1 || cond.DistroFamily[0] != "arch" {
+		t.Errorf("DistroFamily should be parsed despite unknown keys: %v", cond.DistroFamily)
+	}
+
+	// When ONLY unknown keys are present, should return nil (IsZero)
+	raw2 := map[string]any{
+		"future_field": "future_value",
+	}
+	cond2 := parseCondition(raw2)
+	if cond2 != nil {
+		t.Error("parseCondition should return nil when only unknown keys are present")
+	}
 }

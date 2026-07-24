@@ -38,6 +38,9 @@ type Executor struct {
 	defaultMethodOrder []string // from schema.Defaults.MethodOrder; default = schema.DefaultMethodOrder
 	nativeManagerName  string   // resolved from clan via native.Lookup
 
+	// system facts for when-condition evaluation
+	facts *engine.Facts
+
 	// schema info for state tracking
 	schemaPath    string
 	schemaModTime time.Time
@@ -165,6 +168,9 @@ func WithDefaultMethodOrder(order []string) Option {
 			ex.defaultMethodOrder = order
 		}
 	}
+}
+func WithFacts(f *engine.Facts) Option {
+	return func(ex *Executor) { ex.facts = f }
 }
 func New() *Executor {
 	ex := &Executor{
@@ -473,13 +479,11 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *schema.Tool, resul
 
 		attempt := MethodAttempt{Kind: method.Kind}
 
-		if method.When != nil && len(method.When.DistroFamily) > 0 {
-			if !engine.MatchesDistroFamily(ex.clan, method.When.DistroFamily) {
-				attempt.Status = "skip_when"
-				result.Methods = append(result.Methods, attempt)
-				ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "skip_when", "requires", fmt.Sprintf("%v", method.When.DistroFamily))
-				continue
-			}
+		if method.When != nil && !method.When.Match(ex.facts) {
+			attempt.Status = "skip_when"
+			result.Methods = append(result.Methods, attempt)
+			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "skip_when", "requires", fmt.Sprintf("%v", method.When))
+			continue
 		}
 
 		adapter := ex.LookupAdapter(method.Kind)
@@ -749,13 +753,11 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *schema.Tool, clan str
 		attempt := MethodAttempt{Kind: method.Kind}
 
 		// Check when condition.
-		if method.When != nil && len(method.When.DistroFamily) > 0 {
-			if !engine.MatchesDistroFamily(clan, method.When.DistroFamily) {
-				attempt.Status = "skip_when"
-				attempt.Error = fmt.Sprintf("distro_family mismatch: need %v, have %s", method.When.DistroFamily, clan)
-				attempts = append(attempts, attempt)
-				continue
-			}
+		if method.When != nil && !method.When.Match(ex.facts) {
+			attempt.Status = "skip_when"
+			attempt.Error = fmt.Sprintf("when condition not met: %+v", method.When)
+			attempts = append(attempts, attempt)
+			continue
 		}
 
 		// Look up adapter for this method kind.

@@ -188,7 +188,7 @@ func validateRequiredFields(s *schema.Schema) *Result {
 }
 
 // validateWhenDirectives checks that when clauses only use known keys.
-// Currently the only supported key is "distro_family".
+// If When is non-nil but IsZero() is true, the parser didn't recognize any keys.
 func validateWhenDirectives(s *schema.Schema) *Result {
 	r := &Result{}
 
@@ -198,9 +198,9 @@ func validateWhenDirectives(s *schema.Schema) *Result {
 				continue
 			}
 
-			// If When is non-nil but DistroFamily is empty, it means the
+			// If When is non-nil but all fields are zero, it means the
 			// when clause had keys the parser didn't recognize.
-			if len(mc.When.DistroFamily) == 0 {
+			if mc.When.IsZero() {
 				r.Add(ValidationError{
 					Code:    WarnUnknownWhenKey,
 					Field:   fieldPath(toolName, i, "when"),

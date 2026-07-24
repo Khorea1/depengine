@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"depengine/pkg/engine"
 	"depengine/pkg/native"
 
 	"depengine/pkg/log"
@@ -78,6 +79,99 @@ type MethodCandidate struct {
 // (arch, libc, ...) can be added without changing call sites.
 type Condition struct {
 	DistroFamily []string
+	DistroID     []string
+	Arch         []string
+	OS           []string
+	Kernel       []string
+	Libc         []string
+	InitSystem   []string
+	IsWSL        *bool
+	IsContainer  *bool
+}
+
+func (c *Condition) IsZero() bool {
+	return len(c.DistroFamily) == 0 &&
+		len(c.DistroID) == 0 &&
+		len(c.Arch) == 0 &&
+		len(c.OS) == 0 &&
+		len(c.Kernel) == 0 &&
+		len(c.Libc) == 0 &&
+		len(c.InitSystem) == 0 &&
+		c.IsWSL == nil &&
+		c.IsContainer == nil
+}
+
+// Match reports whether this condition is satisfied by the given system facts.
+// All non-zero fields must match (AND semantics). Empty/nil fields are skipped.
+// Returns true for a nil receiver (nil condition = always match).
+func (c *Condition) Match(facts *engine.Facts) bool {
+	if c == nil {
+		return true
+	}
+	if facts == nil {
+		// Conservative: can't verify without facts. A condition with only
+		// DistroFamily matches if no other fields are set (empty condition).
+		return c.IsZero()
+	}
+
+	// DistroFamily: resolved clan (ResolveFamily is a pure function)
+	if len(c.DistroFamily) > 0 {
+		clan := engine.ResolveFamily(facts)
+		if !engine.MatchesDistroFamily(clan, c.DistroFamily) {
+			return false
+		}
+	}
+
+	// String-slice fields: case-insensitive OR-match (exact)
+	if len(c.DistroID) > 0 && !matchExact(c.DistroID, facts.DistroID) {
+		return false
+	}
+	if len(c.Arch) > 0 && !matchExact(c.Arch, facts.TargetArch) {
+		return false
+	}
+	if len(c.OS) > 0 && !matchExact(c.OS, facts.OS) {
+		return false
+	}
+	if len(c.Kernel) > 0 && !matchExact(c.Kernel, facts.Kernel) {
+		return false
+	}
+	if len(c.InitSystem) > 0 && !matchExact(c.InitSystem, facts.InitSystem) {
+		return false
+	}
+
+	// Libc: prefix match for version-suffixed values
+	if len(c.Libc) > 0 && !matchPrefix(c.Libc, facts.Libc) {
+		return false
+	}
+
+	// Three-state bools
+	if c.IsWSL != nil && *c.IsWSL != facts.IsWSL {
+		return false
+	}
+	if c.IsContainer != nil && *c.IsContainer != facts.IsContainer {
+		return false
+	}
+
+	return true
+}
+
+func matchExact(allowed []string, actual string) bool {
+	for _, a := range allowed {
+		if strings.EqualFold(a, actual) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchPrefix(allowed []string, actual string) bool {
+	actualLower := strings.ToLower(actual)
+	for _, a := range allowed {
+		if strings.HasPrefix(actualLower, strings.ToLower(a)) {
+			return true
+		}
+	}
+	return false
 }
 
 // ParseSchemaError is returned by ParseSchema when the problem is in the
@@ -474,6 +568,25 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	return methods
 }
 
+func toStringSlice(v any) []string {
+	switch t := v.(type) {
+	case []any:
+		return anySliceToStrings(t)
+	case string:
+		return []string{t} // single-value sugar
+	default:
+		return nil
+	}
+}
+
+func parseBoolPtr(v any) *bool {
+	b, ok := v.(bool)
+	if !ok {
+		return nil
+	}
+	return &b
+}
+
 func parseCondition(raw any) *Condition {
 	rm, ok := raw.(map[string]any)
 	if !ok {
@@ -484,19 +597,31 @@ func parseCondition(raw any) *Condition {
 	for k, v := range rm {
 		switch k {
 		case "distro_family":
-			if df, ok := v.([]any); ok {
-				cond.DistroFamily = anySliceToStrings(df)
-			}
+			cond.DistroFamily = toStringSlice(v)
+		case "distro_id":
+			cond.DistroID = toStringSlice(v)
+		case "arch":
+			cond.Arch = toStringSlice(v)
+		case "os":
+			cond.OS = toStringSlice(v)
+		case "kernel":
+			cond.Kernel = toStringSlice(v)
+		case "libc":
+			cond.Libc = toStringSlice(v)
+		case "init_system":
+			cond.InitSystem = toStringSlice(v)
+		case "is_wsl":
+			cond.IsWSL = parseBoolPtr(v)
+		case "is_container":
+			cond.IsContainer = parseBoolPtr(v)
 		default:
 			invalidKeys = append(invalidKeys, k)
 		}
 	}
 	if len(invalidKeys) > 0 {
-		// Logged at debug level — unknown keys in `when` are not an error
-		// (they may be from future schema versions).
 		log.Default.Debug("parseCondition: ignoring unknown keys", "keys", invalidKeys)
 	}
-	if len(cond.DistroFamily) == 0 {
+	if cond.IsZero() {
 		return nil
 	}
 	return cond
@@ -585,6 +710,33 @@ func MergeMethodOrder(toolOrder, defaultOrder []string) []string {
 	return merged
 }
 
+// ExpandBuckets replaces bucket names in a method order list with their
+// constituent concrete method kinds. Unknown names pass through unchanged.
+func ExpandBuckets(order []string) []string {
+	var expanded []string
+	for _, k := range order {
+		if methods, ok := DefaultBuckets[k]; ok {
+			for _, m := range methods {
+				if !contains(expanded, m) {
+					expanded = append(expanded, m)
+				}
+			}
+		} else {
+			expanded = append(expanded, k)
+		}
+	}
+	return expanded
+}
+
+func contains(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
 // EffectiveMethodOrder returns the method order effective for a given tool,
 // considering per-tool MethodOnly (exclusive), MethodPrefer (preferred prefix),
 // deprecated MethodOrder (alias for MethodPrefer), or defaultOrder (fallback).
@@ -594,32 +746,38 @@ func MergeMethodOrder(toolOrder, defaultOrder []string) []string {
 func EffectiveMethodOrder(tool *Tool, defaultOrder []string, nativeManagerName string) []string {
 	needsExpand := nativeManagerName != "" && nativeManagerName != "native"
 
+	// Always expand bucket names in the default order first.
+	defaultOrder = ExpandBuckets(defaultOrder)
+
 	// method_only: exclusive list — no remainder from defaults.
 	if len(tool.MethodOnly) > 0 {
+		toolList := ExpandBuckets(tool.MethodOnly)
 		if needsExpand {
-			return ExpandMethodOrder(tool.MethodOnly, nativeManagerName)
+			return ExpandMethodOrder(toolList, nativeManagerName)
 		}
-		return tool.MethodOnly
+		return toolList
 	}
 
 	// method_prefer: prefix + remainder from defaults.
 	if len(tool.MethodPrefer) > 0 {
+		toolList := ExpandBuckets(tool.MethodPrefer)
 		if needsExpand {
-			expandedDefault := ExpandMethodOrder(defaultOrder, nativeManagerName)
-			expandedTool := ExpandMethodOrder(tool.MethodPrefer, nativeManagerName)
-			return MergeMethodOrder(expandedTool, expandedDefault)
+			expDefault := ExpandMethodOrder(defaultOrder, nativeManagerName)
+			expTool := ExpandMethodOrder(toolList, nativeManagerName)
+			return MergeMethodOrder(expTool, expDefault)
 		}
-		return MergeMethodOrder(tool.MethodPrefer, defaultOrder)
+		return MergeMethodOrder(toolList, defaultOrder)
 	}
 
 	// method_order: deprecated alias for method_prefer (backward compat).
 	if len(tool.MethodOrder) > 0 {
+		toolList := ExpandBuckets(tool.MethodOrder)
 		if needsExpand {
-			expandedDefault := ExpandMethodOrder(defaultOrder, nativeManagerName)
-			expandedTool := ExpandMethodOrder(tool.MethodOrder, nativeManagerName)
-			return MergeMethodOrder(expandedTool, expandedDefault)
+			expDefault := ExpandMethodOrder(defaultOrder, nativeManagerName)
+			expTool := ExpandMethodOrder(toolList, nativeManagerName)
+			return MergeMethodOrder(expTool, expDefault)
 		}
-		return MergeMethodOrder(tool.MethodOrder, defaultOrder)
+		return MergeMethodOrder(toolList, defaultOrder)
 	}
 
 	if needsExpand {
@@ -704,6 +862,12 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 	for _, kind := range s.Defaults.MethodOrder {
 		if native.IsNativeManagerName(kind) {
 			continue // valid: native manager name, resolved at execution time
+		}
+		if _, isBucket := DefaultBuckets[kind]; isBucket {
+			warnings = append(warnings, fmt.Sprintf(
+				"defaults.method_order entry %q is a bucket name → expands to %v",
+				kind, DefaultBuckets[kind]))
+			continue
 		}
 		if _, ok := set[kind]; !ok {
 			warnings = append(warnings, fmt.Sprintf(
@@ -804,18 +968,33 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 	// Validate per-tool method_order entries.
 	for _, toolName := range names {
 		tool := s.Tools[toolName]
-		if len(tool.MethodOrder) > 0 {
-			for _, kind := range tool.MethodOrder {
+
+		// Validate all three method-ordering fields for unknown kinds.
+		checkOrderSlice := func(slice []string, fieldName string) {
+			for _, kind := range slice {
 				if native.IsNativeManagerName(kind) {
+					continue
+				}
+				if _, isBucket := DefaultBuckets[kind]; isBucket {
 					continue
 				}
 				if _, ok := set[kind]; !ok {
 					hardErrors = append(hardErrors, fmt.Sprintf(
-						"tool %q: method_order entry %q is not a registered method kind",
-						toolName, kind,
+						"tool %q: %s entry %q is not a registered method kind",
+						toolName, fieldName, kind,
 					))
 				}
 			}
+		}
+
+		if len(tool.MethodOrder) > 0 {
+			checkOrderSlice(tool.MethodOrder, "method_order")
+		}
+		if len(tool.MethodPrefer) > 0 {
+			checkOrderSlice(tool.MethodPrefer, "method_prefer")
+		}
+		if len(tool.MethodOnly) > 0 {
+			checkOrderSlice(tool.MethodOnly, "method_only")
 		}
 	}
 
