@@ -255,7 +255,7 @@ Instala todas as tools do schema, respeitando `method_order`, `when`,
 
 | Flag | Default | Descrição |
 |------|---------|-----------|
-| `--schema` | `schema.toml` | Caminho para o schema |
+| `--schema` | `depengine.toml` | Caminho para o schema (auto-detectado: depengine.toml, schema.toml, depends.toml) |
 | `--dry-run` | `false` | Mostra o que seria instalado sem executar |
 | `--verbose` | `false` | Saída detalhada por tool |
 | `--json` | `false` | Saída em JSON |
@@ -268,6 +268,9 @@ Instala todas as tools do schema, respeitando `method_order`, `when`,
 | `--jobs <n>` | `1` | Máximo de instalações simultâneas |
 | `--allow-arbitrary-code` | `false` | Suprime avisos de segurança para scripts de build |
 | `--frozen-lockfile` | `false` | Aborta se o lockfile não existir |
+| `--manifest <path>` | auto (XDG_CONFIG_HOME) | Caminho para o manifest pessoal |
+| `--no-manifest` | `false` | Desabilita o manifest pessoal |
+| `--quiet` | `false` | Suprime saída não essencial |
 
 ### `depengine validate [flags]`
 
@@ -275,14 +278,23 @@ Valida o schema e opcionalmente o ambiente.
 
 | Flag | Default | Descrição |
 |------|---------|-----------|
-| `--schema` | `schema.toml` | Caminho para o schema |
+| `--schema` | `depengine.toml` | Caminho para o schema (auto-detectado: depengine.toml, schema.toml, depends.toml) |
 | `--check-env` | `false` | Verifica se as tools necessárias estão no PATH |
 | `--format` | `text` | Formato de saída: `text` ou `json` |
 | `--strict` | `false` | Warnings viram erros (exit code 1) |
+| `--manifest <path>` | auto (XDG_CONFIG_HOME) | Caminho para o manifest pessoal |
+| `--no-manifest` | `false` | Desabilita o manifest pessoal |
 
-### `depengine check <tool>`
+### `depengine check <tool> [flags]`
 
 Verifica se uma tool específica está instalada na máquina.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--manifest <path>` | auto (XDG_CONFIG_HOME) | Caminho para o manifest pessoal |
+| `--no-manifest` | `false` | Desabilita o manifest pessoal |
+| `--live` | `false` | Verifica o sistema real em vez do arquivo de estado |
+| `--format` | `text` | Formato de saída: `text` ou `json` |
 
 ### `depengine status [tool]`
 
@@ -292,11 +304,20 @@ Mostra o estado de instalação de todas as tools ou de uma específica.
 |------|---------|-----------|
 | `--format` | `text` | Formato: `text` ou `json` |
 | `--orphans` | `false` | Mostra apenas tools instaladas que não estão no schema |
+| `--manifest <path>` | auto (XDG_CONFIG_HOME) | Caminho para o manifest pessoal |
+| `--no-manifest` | `false` | Desabilita o manifest pessoal |
 
-### `depengine remove <tool>`
+### `depengine remove <tool> [flags]`
 
 Remove uma tool instalada pelo depengine. Apenas tools com suporte a
 remoção no adapter (nativas, cargo, pip, etc.) são removidas.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--all` | `false` | Remove todas as tools rastreadas |
+| `--dry-run` | `false` | Mostra o que seria removido sem executar |
+| `--force` | `false` | Pula confirmação ao remover todas as tools |
+| `--only <tool>` | — | Remove apenas uma tool específica (alternativa ao argumento posicional) |
 
 ### `depengine update [flags]`
 
@@ -304,12 +325,14 @@ Atualiza o schema.lock resolvendo placeholders `{latest}` via GitHub API.
 
 | Flag | Default | Descrição |
 |------|---------|-----------|
-| `--schema` | `schema.toml` | Caminho para o schema |
+| `--schema` | `depengine.toml` | Caminho para o schema (auto-detectado: depengine.toml, schema.toml, depends.toml) |
 | `--lock` | `schema.lock` | Caminho para o lockfile |
 | `--profile <tag>` | — | Filtra tools por tag (ex: `desktop`, `server`) |
 | `--frozen-lockfile` | `false` | Aborta se schema.lock não existir |
 | `--dry-run` | `false` | Mostra o que seria atualizado sem escrever |
 | `-v` | `false` | Saída detalhada |
+| `--manifest <path>` | auto (XDG_CONFIG_HOME) | Caminho para o manifest pessoal |
+| `--no-manifest` | `false` | Desabilita o manifest pessoal |
 
 ### `depengine graph [flags]`
 
@@ -321,6 +344,8 @@ Mostra o grafo de dependência como texto, Mermaid ou DOT.
 | `--only <tool>` | — | Mostra apenas o subgrafo de uma tool |
 | `--skip <tools>` | — | Pula tools do grafo (separadas por vírgula) |
 | `--profile <tag>` | — | Filtra tools por tag |
+| `--manifest <path>` | auto (XDG_CONFIG_HOME) | Caminho para o manifest pessoal |
+| `--no-manifest` | `false` | Desabilita o manifest pessoal |
 
 ### `depengine why <tool>`
 
@@ -329,6 +354,7 @@ Explica como uma tool seria instalada, método por método.
 | Flag | Default | Descrição |
 |------|---------|-----------|
 | `--json` | `false` | Saída em JSON |
+| `--format` | `text` | Formato de saída: `text` ou `json` |
 
 ### `depengine forget <tool>`
 
@@ -350,6 +376,7 @@ Compara dois arquivos de estado.
 | Flag | Default | Descrição |
 |------|---------|-----------|
 | `--other <path>` | — | Segundo arquivo de estado |
+| `--json` | `false` | Exibe diferenças como JSON |
 
 ### `depengine completion <shell>`
 
@@ -362,6 +389,10 @@ Exporta SBOM (Software Bill of Materials) no formato CycloneDX 1.5 ou SPDX 2.3.
 | Flag | Default | Descrição |
 |------|---------|-----------|
 | `--format` | `cyclonedx` | Formato: `cyclonedx` ou `spdx` |
+
+### `depengine help [comando]`
+
+Mostra ajuda para o depengine ou um comando específico. Use `depengine help --man` para exibir a página de manual.
 
 ### Exit codes
 
