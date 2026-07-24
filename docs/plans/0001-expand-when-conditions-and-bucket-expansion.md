@@ -2,8 +2,8 @@
 
 **Status:** Approved  
 **Date:** 2026-07-24  
-**Authors:** SchemaArchitect, ExecutorEngineer, SafetyReviewer (orchestrated)  
-**Auditor:** Main (final approval)
+**Authors:** depengine team
+**Auditor:** (internal review)
 
 ---
 
