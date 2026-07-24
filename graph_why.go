@@ -34,7 +34,7 @@ func runGraph(args []string) {
 		os.Exit(2)
 	}
 
-	s, err := schema.ParseSchemaNoFacts(*graphSchema)
+	s, err := schema.ParseSchema(*graphSchema, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(exitCodeForError(err))
@@ -103,7 +103,7 @@ func runWhy(args []string) {
 	}
 	toolName := remain[0]
 
-	s, err := schema.ParseSchemaNoFacts(*whySchema)
+	s, err := schema.ParseSchema(*whySchema, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)

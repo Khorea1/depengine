@@ -38,7 +38,7 @@ func ParseManifest(path string) (map[string]*Tool, error) {
 		return nil, fmt.Errorf("manifest [packages]: expected table, got %T", raw)
 	}
 
-	tools, err := normalizeTools(rawMap, Defaults{Manager: "native"})
+	tools, err := normalizeTools("", rawMap, Defaults{Manager: "native"})
 	if err != nil {
 		return nil, fmt.Errorf("manifest [packages]: %w", err)
 	}
@@ -113,11 +113,11 @@ func ResolveSchema(s *Schema, manifest map[string]*Tool) (*Schema, int) {
 	return result, mergedCount
 }
 
-// ResolveSchemaFromFiles is a convenience that calls ParseSchemaNoFacts,
+// ResolveSchemaFromFiles is a convenience that calls ParseSchema,
 // ParseManifest for each manifest path (in order), and ResolveSchema.
 // If a manifest path is empty, it is skipped.
 func ResolveSchemaFromFiles(schemaPath string, manifestPaths ...string) (*Schema, error) {
-	s, err := ParseSchemaNoFacts(schemaPath)
+	s, err := ParseSchema(schemaPath, nil)
 	if err != nil {
 		return nil, fmt.Errorf("parse schema: %w", err)
 	}
@@ -211,7 +211,7 @@ func mergeMethods(name string, st, mt *Tool, methodOrder []string) []*MethodCand
 	}
 
 	// 3. Re-order.
-	return orderByMethodOrder(out, methodOrder)
+	return OrderMethods(out, methodOrder)
 }
 
 // mergeNativeMethods applies the native-specific merge rules.

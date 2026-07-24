@@ -660,9 +660,8 @@ ruff = { pip = "organize-tool", python = true }`)
 
 
 func TestBucketExpansion_BucketWithStringValNotExpanded(t *testing.T) {
-	// When bucket value is not bool(true), the key stays in valMap and
-	// buildMethods will handle it (as an unknown method kind → error).
-	// This should parse without panic/crash; validation catches unknown kinds.
+	// When bucket value is a string, it expands to each method in the bucket.
+	// The native method is auto-injected by buildMethods.
 	p := writeSchema(t, `
 [defaults]
 manager = "native"
@@ -677,23 +676,26 @@ ruff = { python = "some-string" }`)
 	if !ok {
 		t.Fatal("expected tool ruff")
 	}
-	// "python" key stays in valMap since value is string, not bool true.
-	// buildMethods creates a method with Kind="python" (no parse error, but
-	// Validate will flag it as unknown kind).
-	var found bool
+	// Bucket expansion creates methods for each method kind in the python bucket:
+	// pip, pipx, uv — each with pkg="some-string"
+	expectedKinds := map[string]string{
+		"pip":  "some-string",
+		"pipx": "some-string",
+		"uv":   "some-string",
+	}
+	found := make(map[string]bool)
 	for _, m := range tool.Methods {
-		if m.Kind == "python" {
-			found = true
-			if m.Err != nil {
-				t.Fatalf("string value does not cause parse error, got: %v", m.Err)
-			}
-			if pkg, ok := m.Config["pkg"].(string); !ok || pkg != "some-string" {
-				t.Fatalf("expected pkg 'some-string', got %q", pkg)
+		if want, ok := expectedKinds[m.Kind]; ok {
+			found[m.Kind] = true
+			if pkg, ok := m.Config["pkg"].(string); !ok || pkg != want {
+				t.Fatalf("%s: expected pkg %q, got %q", m.Kind, want, pkg)
 			}
 		}
 	}
-	if !found {
-		t.Fatal("expected python method to remain (not expanded) for non-bool value")
+	for kind := range expectedKinds {
+		if !found[kind] {
+			t.Fatalf("expected method %q from bucket expansion, not found", kind)
+		}
 	}
 }
 
@@ -724,6 +726,182 @@ ruff = { python = false }`)
 	}
 	if !found {
 		t.Fatal("expected python method to remain (not expanded) for false value")
+	}
+}
+
+
+// --- Per-tool method_prefer, method_only, and deprecated method_order ---
+
+func TestToolMethodPrefer(t *testing.T) {
+	// method_prefer prepends to the default order without removing other methods.
+	p := writeSchema(t, `
+[defaults]
+manager = "native"
+
+[tools]
+myapp = { method_prefer = ["cargo"], cargo = true }
+`)
+	s, err := ParseSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	tool, ok := s.Tools["myapp"]
+	if !ok {
+		t.Fatal("tool myapp not found")
+	}
+	// MethodPrefer should be set.
+	if len(tool.MethodPrefer) != 1 || tool.MethodPrefer[0] != "cargo" {
+		t.Fatalf("expected MethodPrefer [\"cargo\"], got %v", tool.MethodPrefer)
+	}
+	// Deprecated MethodOrder should also be set for backward compat.
+	if len(tool.MethodOrder) != 0 {
+		t.Fatalf("expected MethodOrder to be empty (only set by method_order key), got %v", tool.MethodOrder)
+	}
+}
+
+func TestToolMethodOnly(t *testing.T) {
+	// method_only restricts to only the listed methods, in that order.
+	p := writeSchema(t, `
+[defaults]
+manager = "native"
+
+[tools]
+myapp = { method_only = ["cargo"], cargo = true }
+`)
+	s, err := ParseSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	tool, ok := s.Tools["myapp"]
+	if !ok {
+		t.Fatal("tool myapp not found")
+	}
+	if len(tool.MethodOnly) != 1 || tool.MethodOnly[0] != "cargo" {
+		t.Fatalf("expected MethodOnly [\"cargo\"], got %v", tool.MethodOnly)
+	}
+}
+
+func TestToolDeprecatedMethodOrder(t *testing.T) {
+	// Deprecated method_order still works (backward compat) with same semantics
+	// as method_prefer (sets both MethodPrefer and MethodOrder).
+	p := writeSchema(t, `
+[defaults]
+manager = "native"
+
+[tools]
+myapp = { method_order = ["cargo"], cargo = true }
+`)
+	s, err := ParseSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	tool, ok := s.Tools["myapp"]
+	if !ok {
+		t.Fatal("tool myapp not found")
+	}
+	if len(tool.MethodOrder) != 1 || tool.MethodOrder[0] != "cargo" {
+		t.Fatalf("expected MethodOrder [\"cargo\"], got %v", tool.MethodOrder)
+	}
+	// Backward compat: MethodPrefer should also be set.
+	if len(tool.MethodPrefer) != 1 || tool.MethodPrefer[0] != "cargo" {
+		t.Fatalf("expected MethodPrefer [\"cargo\"] from deprecated method_order, got %v", tool.MethodPrefer)
+	}
+}
+
+func TestToolMethodPreferAndOrderPreferWins(t *testing.T) {
+	// When both method_order and method_prefer are specified, method_prefer wins.
+	// The tool should only have MethodPrefer set by method_prefer (not by method_order).
+	p := writeSchema(t, `
+[defaults]
+manager = "native"
+
+[tools]
+myapp = { method_order = ["pip"], method_prefer = ["cargo"], cargo = true }
+`)
+	s, err := ParseSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	tool, ok := s.Tools["myapp"]
+	if !ok {
+		t.Fatal("tool myapp not found")
+	}
+	// MethodPrefer should be set from method_prefer, not method_order.
+	if len(tool.MethodPrefer) != 1 || tool.MethodPrefer[0] != "cargo" {
+		t.Fatalf("expected MethodPrefer [\"cargo\"] (method_prefer wins), got %v", tool.MethodPrefer)
+	}
+}
+
+
+func TestEffectiveMethodOrderDefaults(t *testing.T) {
+	// No per-tool method preference → default order is returned unmodified.
+	tool := &Tool{Name: "test"}
+	defaultOrder := []string{"native", "cargo", "pip"}
+	got := EffectiveMethodOrder(tool, defaultOrder, "")
+	if len(got) != len(defaultOrder) {
+		t.Fatalf("expected length %d, got %d: %v", len(defaultOrder), len(got), got)
+	}
+	for i, k := range defaultOrder {
+		if got[i] != k {
+			t.Fatalf("got[%d] = %q, want %q", i, got[i], k)
+		}
+	}
+}
+
+func TestEffectiveMethodOrderPrefer(t *testing.T) {
+	// method_prefer prepends to default order, with defaults appended (no duplicates).
+	tool := &Tool{
+		Name:        "test",
+		MethodPrefer: []string{"cargo"},
+	}
+	defaultOrder := []string{"native", "cargo", "pip"}
+	got := EffectiveMethodOrder(tool, defaultOrder, "")
+	expected := []string{"cargo", "native", "pip"}
+	if len(got) != len(expected) {
+		t.Fatalf("expected length %d, got %d: %v", len(expected), len(got), got)
+	}
+	for i, k := range expected {
+		if got[i] != k {
+			t.Fatalf("got[%d] = %q, want %q", i, got[i], k)
+		}
+	}
+}
+
+func TestEffectiveMethodOrderOnly(t *testing.T) {
+	// method_only returns only the listed methods.
+	tool := &Tool{
+		Name:       "test",
+		MethodOnly: []string{"go"},
+	}
+	defaultOrder := []string{"native", "cargo", "go", "pip"}
+	got := EffectiveMethodOrder(tool, defaultOrder, "")
+	expected := []string{"go"}
+	if len(got) != len(expected) {
+		t.Fatalf("expected length %d, got %d: %v", len(expected), len(got), got)
+	}
+	for i, k := range expected {
+		if got[i] != k {
+			t.Fatalf("got[%d] = %q, want %q", i, got[i], k)
+		}
+	}
+}
+
+func TestEffectiveMethodOrderDeprecated(t *testing.T) {
+	// Deprecated method_order works like method_prefer.
+	tool := &Tool{
+		Name:        "test",
+		MethodOrder: []string{"git"},
+	}
+	defaultOrder := []string{"native", "git", "http"}
+	got := EffectiveMethodOrder(tool, defaultOrder, "")
+	expected := []string{"git", "native", "http"}
+	if len(got) != len(expected) {
+		t.Fatalf("expected length %d, got %d: %v", len(expected), len(got), got)
+	}
+	for i, k := range expected {
+		if got[i] != k {
+			t.Fatalf("got[%d] = %q, want %q", i, got[i], k)
+		}
 	}
 }
 

@@ -131,11 +131,31 @@ func truncateStr(s string, n int) string {
 	return s[:n-3] + "..."
 }
 
-// ValidateSchema runs structural and semantic validation on a parsed schema.
-// It does NOT duplicate the method-kind checks already performed by
-// schema.Validate — callers should call both independently.
-func ValidateSchema(s *schema.Schema) *Result {
+// ValidateSchema runs structural and semantic validation on a parsed schema,
+// including method-kind checks when knownKinds is non-nil (callers that want
+// adapter registration verification pass exec.RegisteredKinds(); tests that
+// only check field-level validation pass nil).
+func ValidateSchema(s *schema.Schema, knownKinds []string) *Result {
 	r := &Result{}
+
+	// Method-kind validation (delegated from schema.Validate).
+	if knownKinds != nil {
+		verr, warnings := schema.Validate(s, knownKinds)
+		if verr != nil {
+			r.Add(ValidationError{
+				Code:    ErrInvalidValue,
+				Field:   "tools",
+				Message: verr.Error(),
+			})
+		}
+		for _, w := range warnings {
+			r.Add(ValidationError{
+				Code:    ErrInvalidValue,
+				Field:   "tools",
+				Message: w,
+			})
+		}
+	}
 
 	// Structural checks.
 	r.Merge(validateRequiredFields(s))
@@ -147,5 +167,6 @@ func ValidateSchema(s *schema.Schema) *Result {
 	r.Merge(validateDanglingReferences(s))
 	r.Merge(validateMalformedURLs(s))
 	r.Merge(validateUnknownDistroFamily(s))
+	r.Merge(validateMethodOrderConflicts(s))
 	return r
 }

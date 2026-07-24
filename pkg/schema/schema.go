@@ -50,8 +50,12 @@ type Tool struct {
 	PostInstall string // shell command run after successful install
 	Requires    []string
 	Methods     []*MethodCandidate
+	MethodOrder []string // DEPRECATED per-tool: use MethodPrefer instead. Kept for backward compat.
+	MethodPrefer []string // prefix: try these first, then fall back to defaults
+	MethodOnly  []string // exclusive: use ONLY these methods, in this order
 	IsSimple    bool
 	Tags        []string // profile tags for --profile filtering (e.g. "desktop", "server")
+	Ecosystem   string   // "python", "node", etc — empty if not from bucket
 }
 
 // MethodCandidate is one way to install the parent Tool. Kind is the
@@ -92,8 +96,8 @@ func (e *ParseSchemaError) Unwrap() error { return e.Err }
 // full [tools.X] block) all collapse into Tool + MethodCandidate pairs. The
 // substitution map m is applied to every string leaf during normalization:
 // this is where {arch}/{distro_family}/{os}/{kernel}/{libc}/{init_system}/...
-// get replaced. Pass an empty-ish map for tooling that needs the raw text
-// (validation can flag unknown placeholders via Expand leaving them in place).
+// get replaced. Pass nil for m to skip placeholder expansion (use for
+// read-only operations like check/validate).
 //
 // Behavior notes:
 //   - placeholder expansion runs AFTER TOML decoding and BEFORE ordering,
@@ -104,6 +108,9 @@ func (e *ParseSchemaError) Unwrap() error { return e.Err }
 //   - the `simple` list is processed first; an inline table redeclaring a
 //     simple tool is an error (TODO.md accepts this as E_DUPE_TOOL).
 func ParseSchema(path string, m map[string]string) (*Schema, error) {
+	if m == nil {
+		m = map[string]string{}
+	}
 	rawBytes, err := os.ReadFile(path)
 	if err != nil {
 		return nil, &ParseSchemaError{Err: fmt.Errorf("reading schema %s: %w", path, err)}
@@ -126,7 +133,7 @@ func ParseSchema(path string, m map[string]string) (*Schema, error) {
 
 	defaults := extractDefaults(raw["defaults"])
 
-	tools, err := normalizeTools(rawTools, defaults)
+	tools, err := normalizeTools(path, rawTools, defaults)
 	if err != nil {
 		return nil, &ParseSchemaError{Err: err}
 	}
@@ -134,44 +141,22 @@ func ParseSchema(path string, m map[string]string) (*Schema, error) {
 	return &Schema{Defaults: defaults, Tools: tools}, nil
 }
 
-// ParseSchemaNoFacts loads and normalizes a schema.toml without gathering
-// distro facts. Placeholders are left unexpanded (passed an empty map).
-// Use this for read-only operations (check, validate) that don't need
-// the ~50-100ms overhead of running detect_os.sh.
-func ParseSchemaNoFacts(path string) (*Schema, error) {
-	rawBytes, err := os.ReadFile(path)
-	if err != nil {
-		return nil, &ParseSchemaError{Err: fmt.Errorf("reading schema %s: %w", path, err)}
-	}
 
-	var raw map[string]any
-	if err := toml.Unmarshal(rawBytes, &raw); err != nil {
-		return nil, &ParseSchemaError{Err: fmt.Errorf("parse TOML %s: %w", path, err)}
-	}
-	// Expand with empty map — no placeholders will be substituted.
-	raw = ExpandAll(raw, map[string]string{}).(map[string]any)
-	rawTools, _ := raw["tools"].(map[string]any)
-	if rawTools == nil {
-		rawTools = map[string]any{}
-	}
-	defaults := extractDefaults(raw["defaults"])
-	tools, err := normalizeTools(rawTools, defaults)
-	if err != nil {
-		return nil, &ParseSchemaError{Err: err}
-	}
-	return &Schema{Defaults: defaults, Tools: tools}, nil
+// DefaultMethodOrder is the engine-wide canonical preference order for
+// install methods. Used as default and as canonical remainder when the
+// user specifies a partial method_order.
+var DefaultMethodOrder = []string{
+	"native", "scoop", "choco", "cargo", "go", "pipx", "uv", "pip",
+	"npm", "pnpm", "bun", "gem", "yarn", "yarn-berry",
+	"composer", "apm", "vscode", "vscodium", "flatpak",
+	"snap", "cask", "mas", "sdkman", "steamcmd",
+	"pacstall", "aur", "conda", "asdf", "git", "http",
 }
 func extractDefaults(raw any) Defaults {
 	d := Defaults{
 		Manager:   "native",
 		AurHelper: "paru",
-		MethodOrder: []string{
-			"native", "scoop", "choco", "cargo", "go", "pipx", "uv", "pip",
-			"npm", "pnpm", "bun", "gem", "yarn", "yarn-berry",
-			"composer", "apm", "vscode", "vscodium", "flatpak",
-			"snap", "cask", "mas", "sdkman", "steamcmd",
-			"pacstall", "aur", "conda", "asdf", "git", "http",
-		},
+		MethodOrder: DefaultMethodOrder,
 	}
 	if raw == nil {
 		return d
@@ -196,13 +181,24 @@ func extractDefaults(raw any) Defaults {
 			}
 		}
 		if len(order) > 0 {
-			d.MethodOrder = order
+			seen := make(map[string]bool, len(order))
+			merged := make([]string, 0, len(DefaultMethodOrder))
+			merged = append(merged, order...)
+			for _, k := range order {
+				seen[k] = true
+			}
+			for _, k := range DefaultMethodOrder {
+				if !seen[k] {
+					merged = append(merged, k)
+				}
+			}
+			d.MethodOrder = merged
 		}
 	}
 	return d
 }
 
-func normalizeTools(rawTools map[string]any, defaults Defaults) (map[string]*Tool, error) {
+func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (map[string]*Tool, error) {
 	tools := map[string]*Tool{}
 
 	// 1. Process `simple` list first.
@@ -213,7 +209,8 @@ func normalizeTools(rawTools map[string]any, defaults Defaults) (map[string]*Too
 				continue
 			}
 			if _, dup := tools[name]; dup {
-				return nil, fmt.Errorf("tool %q redeclarada (lista simple)", name)
+				line, _ := findLineInFile(path, name)
+				return nil, fmt.Errorf("%s:%d: tool %q redeclared (simple list)", path, line, name)
 			}
 			tools[name] = &Tool{
 				Name:     name,
@@ -230,12 +227,14 @@ func normalizeTools(rawTools map[string]any, defaults Defaults) (map[string]*Too
 	for _, name := range sortedKeys(rawTools, "simple") {
 		val := rawTools[name]
 		if _, dup := tools[name]; dup {
-			return nil, fmt.Errorf("tool %q redeclarada (simple + tabela)", name)
+			line, _ := findLineInFile(path, name)
+			return nil, fmt.Errorf("%s:%d: tool %q redeclared (simple + inline table)", path, line, name)
 		}
 		tool := &Tool{Name: name}
 		valMap, ok := val.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("tool %q: esperava tabela, got %T", name, val)
+			line, _ := findLineInFile(path, name)
+			return nil, fmt.Errorf("%s:%d: tool %q: expected inline table, got %T", path, line, name, val)
 		}
 
 		if r, ok := valMap["requires"].([]any); ok {
@@ -260,25 +259,92 @@ func normalizeTools(rawTools map[string]any, defaults Defaults) (map[string]*Too
 
 		// Expande chaves que são nomes de bucket para os method kinds correspondentes.
 		// Ex: `ruff = { python = true }` → `ruff = { pipx = true, uv = true }`
+		// Suporta três shapes:
+		//   bool:   python = true       → cada método recebe true
+		//   string: python = "pkgname"  → cada método recebe o nome do pacote
+		//   map:    python = { pkg = …, when = … } → cada método recebe clone da config
 		for k, v := range valMap {
 			if methods, ok := DefaultBuckets[k]; ok {
-				if bv, ok := v.(bool); ok && bv {
+				switch tv := v.(type) {
+				case bool:
+					if tv {
+						for _, m := range methods {
+							if _, exists := valMap[m]; !exists {
+								valMap[m] = true
+							}
+						}
+						tool.Ecosystem = k
+						delete(valMap, k)
+					}
+				case string:
 					for _, m := range methods {
 						if _, exists := valMap[m]; !exists {
-							valMap[m] = true
+							valMap[m] = tv
 						}
 					}
+					tool.Ecosystem = k
+					delete(valMap, k)
+				case map[string]any:
+					shared := tv
+					for _, m := range methods {
+						if _, exists := valMap[m]; !exists {
+							cloned := make(map[string]any, len(shared))
+							for mk, mv := range shared {
+								cloned[mk] = mv
+							}
+							valMap[m] = cloned
+						}
+					}
+					tool.Ecosystem = k
 					delete(valMap, k)
 				}
 			}
 		}
+		// Read per-tool method preference keys.
+		if mo, ok := valMap["method_order"].([]any); ok {
+			order := anySliceToStrings(mo)
+			if len(order) > 0 {
+				tool.MethodPrefer = order
+				tool.MethodOrder = order // backward compat
+				log.Default.Warn(fmt.Sprintf("tool %q: [defaults].method_order is deprecated for per-tool use; use method_prefer = %v instead", name, order))
+			}
+		}
+		if mp, ok := valMap["method_prefer"].([]any); ok {
+			order := anySliceToStrings(mp)
+			if len(order) > 0 {
+				if tool.MethodPrefer != nil {
+					// Both method_order and method_prefer specified — method_prefer wins
+					log.Default.Warn(fmt.Sprintf("tool %q: both method_order and method_prefer specified; method_prefer takes precedence", name))
+				}
+				tool.MethodPrefer = order
+			}
+		}
+		if mo, ok := valMap["method_only"].([]any); ok {
+			order := anySliceToStrings(mo)
+			if len(order) > 0 {
+				tool.MethodOnly = order
+			}
+		}
 
 		methods := buildMethods(name, valMap)
-		tool.Methods = orderByMethodOrder(methods, defaults.MethodOrder)
+		effectiveOrder := EffectiveMethodOrder(tool, defaults.MethodOrder, defaults.Manager)
+		tool.Methods = OrderMethods(methods, effectiveOrder)
 		tools[name] = tool
 	}
 	return tools, nil
 }
+
+// platformMethodConditions maps method kinds that are inherently bound to
+// a single OS/distro family to their implicit when condition. Applied
+// during parseMethod when the user hasn't set an explicit when.
+var platformMethodConditions = map[string]Condition{
+	"aur":   {DistroFamily: []string{"arch"}},
+	"cask":  {DistroFamily: []string{"macos"}},
+	"mas":   {DistroFamily: []string{"macos"}},
+	"scoop": {DistroFamily: []string{"windows"}},
+	"choco": {DistroFamily: []string{"windows"}},
+}
+
 
 func parseMethod(kind string, val any) (*MethodCandidate, error) {
 	mc := &MethodCandidate{Kind: kind, Config: map[string]any{}}
@@ -292,7 +358,7 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 			// true → usa tool.Name como pkg (SubstitutePkg fallback)
 			mc.Config["pkg"] = ""
 		} else {
-			return nil, fmt.Errorf("invalid method value: false (use true or a package name)")
+			return nil, fmt.Errorf("method %q: invalid value false (use true, a package name, or a config table)", kind)
 		}
 	case map[string]any:
 		// `when` is hoisted out; everything else stays in Config.
@@ -308,6 +374,14 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 	default:
 		return nil, fmt.Errorf("invalid method value type: %T", val)
 	}
+
+	// Apply implicit platform condition if user didn't set explicit when.
+	if mc.When == nil {
+		if cond, ok := platformMethodConditions[kind]; ok {
+			mc.When = &cond
+		}
+	}
+
 	return mc, nil
 }
 
@@ -317,9 +391,13 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 //
 // When a tool declares only non-native methods (go, cargo, pip, etc.) without
 // any native manager overrides, a "native" method is automatically injected
-// with the tool name as the default package name. This ensures method_order
-// (where "native" comes first) is respected even when the schema only mentions
-// language-specific installers.
+// with the tool name as the default package name.
+//
+// A native candidate is automatically injected so the native method
+// is available for every tool. If native is in the effective method_order
+// (user list or canonical remainder), it will be tried in that position.
+// If the tool also declares non-native methods, those appear as separate
+// candidates ordered by method_order.
 //
 // Example: fd = { apt = "fd-find" }
 //
@@ -345,7 +423,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	var nonNativeKeys []string
 	var nativeBlockConfig map[string]any
 
-	for _, k := range sortedKeys(valMap, "requires", "pre_install", "preinstall", "post_install", "postinstall", "tags") {
+	for _, k := range sortedKeys(valMap, "requires", "pre_install", "preinstall", "post_install", "postinstall", "tags", "method_order", "method_prefer", "method_only") {
 		if k == "native" {
 			if m, ok := valMap[k].(map[string]any); ok {
 				nativeBlockConfig = m
@@ -425,7 +503,7 @@ func parseCondition(raw any) *Condition {
 	}
 	return cond
 }
-func orderByMethodOrder(methods []*MethodCandidate, order []string) []*MethodCandidate {
+func OrderMethods(methods []*MethodCandidate, order []string) []*MethodCandidate {
 	prio := map[string]int{}
 	for i, k := range order {
 		prio[k] = i
@@ -447,6 +525,109 @@ func orderByMethodOrder(methods []*MethodCandidate, order []string) []*MethodCan
 		}
 	})
 	return out
+}
+
+// ExpandMethodOrder resolves native manager references in a method_order
+// list for the current machine's native manager.
+//
+// Rules:
+//   - If the native manager name (e.g. "apt") appears explicitly in the
+//     list, all "native" entries are removed (avoids duplicate attempts).
+//   - The native manager name entry is replaced with "native" so it matches
+//     the method kind used by schema parsing.
+//   - All other entries pass through unchanged.
+//   - If nativeManagerName is empty (unknown clan), the order is returned
+//     unchanged.
+func ExpandMethodOrder(order []string, nativeManagerName string) []string {
+	if nativeManagerName == "" {
+		return order
+	}
+
+	hasExplicitNativeMgr := false
+	for _, k := range order {
+		if k == nativeManagerName {
+			hasExplicitNativeMgr = true
+			break
+		}
+	}
+
+	expanded := make([]string, 0, len(order))
+	for _, k := range order {
+		switch {
+		case k == "native" && hasExplicitNativeMgr:
+			// Skip: native manager name has its own explicit entry
+		case k == nativeManagerName:
+			expanded = append(expanded, "native")
+		default:
+			expanded = append(expanded, k)
+		}
+	}
+	return expanded
+}
+
+// MergeMethodOrder merges a tool-specific method_order with the default
+// order. The tool's list forms the prefix; entries from the default not
+// already in the tool's list are appended as the remainder.
+// toolOrder may be nil (returns defaultOrder unchanged).
+func MergeMethodOrder(toolOrder, defaultOrder []string) []string {
+	if toolOrder == nil {
+		return defaultOrder
+	}
+	seen := make(map[string]bool, len(toolOrder))
+	merged := make([]string, 0, len(defaultOrder))
+	for _, k := range toolOrder {
+		merged = append(merged, k)
+		seen[k] = true
+	}
+	for _, k := range defaultOrder {
+		if !seen[k] {
+			merged = append(merged, k)
+		}
+	}
+	return merged
+}
+
+// EffectiveMethodOrder returns the method order effective for a given tool,
+// considering per-tool MethodOnly (exclusive), MethodPrefer (preferred prefix),
+// deprecated MethodOrder (alias for MethodPrefer), or defaultOrder (fallback).
+// When nativeManagerName is a specific distro manager (e.g. "apt", "pacman"),
+// native manager references in the order are expanded. Pass empty string or "native"
+// to skip expansion (appropriate at schema-parse time).
+func EffectiveMethodOrder(tool *Tool, defaultOrder []string, nativeManagerName string) []string {
+	needsExpand := nativeManagerName != "" && nativeManagerName != "native"
+
+	// method_only: exclusive list — no remainder from defaults.
+	if len(tool.MethodOnly) > 0 {
+		if needsExpand {
+			return ExpandMethodOrder(tool.MethodOnly, nativeManagerName)
+		}
+		return tool.MethodOnly
+	}
+
+	// method_prefer: prefix + remainder from defaults.
+	if len(tool.MethodPrefer) > 0 {
+		if needsExpand {
+			expandedDefault := ExpandMethodOrder(defaultOrder, nativeManagerName)
+			expandedTool := ExpandMethodOrder(tool.MethodPrefer, nativeManagerName)
+			return MergeMethodOrder(expandedTool, expandedDefault)
+		}
+		return MergeMethodOrder(tool.MethodPrefer, defaultOrder)
+	}
+
+	// method_order: deprecated alias for method_prefer (backward compat).
+	if len(tool.MethodOrder) > 0 {
+		if needsExpand {
+			expandedDefault := ExpandMethodOrder(defaultOrder, nativeManagerName)
+			expandedTool := ExpandMethodOrder(tool.MethodOrder, nativeManagerName)
+			return MergeMethodOrder(expandedTool, expandedDefault)
+		}
+		return MergeMethodOrder(tool.MethodOrder, defaultOrder)
+	}
+
+	if needsExpand {
+		return ExpandMethodOrder(defaultOrder, nativeManagerName)
+	}
+	return defaultOrder
 }
 
 func anySliceToStrings(in []any) []string {
@@ -481,6 +662,23 @@ func sortedKeys(m map[string]any, exclude ...string) []string {
 	return keys
 }
 
+// findLineInFile returns the 1-based line number of the first occurrence of key in the file.
+// Used to augment error messages with file positions when go-toml/v2 doesn't expose them.
+func findLineInFile(path, key string) (int, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	lines := strings.Split(string(data), "\n")
+	for i, line := range lines {
+		if strings.Contains(line, key+" ") || strings.Contains(line, key+"=") || strings.Contains(line, key+".") {
+			return i + 1, nil
+		}
+	}
+	return 0, fmt.Errorf("key %q not found", key)
+}
+
+
 // Validate checks a parsed Schema for references to method kinds that no
 // adapter will ever satisfy. Unknown kinds in Defaults.MethodOrder or any
 // MethodCandidate.Kind cause a tool whose only candidates are unknown to
@@ -506,6 +704,9 @@ func Validate(s *Schema, knownKinds []string) (error, []string) {
 
 	// Check Defaults.MethodOrder entries first.
 	for _, kind := range s.Defaults.MethodOrder {
+		if native.IsNativeManagerName(kind) {
+			continue // valid: native manager name, resolved at execution time
+		}
 		if _, ok := set[kind]; !ok {
 			warnings = append(warnings, fmt.Sprintf(
 				"warning: defaults.method_order lists unknown kind %q (no adapter registered for this name)",
@@ -562,6 +763,16 @@ func Validate(s *Schema, knownKinds []string) (error, []string) {
 			}
 		}
 
+		// Check for parse errors on individual methods (e.g. pip = false).
+		for _, mc := range tool.Methods {
+			if mc.Err != nil {
+				hardErrors = append(hardErrors, fmt.Sprintf(
+					"tool %q: %v",
+					toolName, mc.Err,
+				))
+			}
+		}
+
 		// Part C: warn if tool name matches a known method kind.
 		if _, ok := set[toolName]; ok {
 			warnings = append(warnings, fmt.Sprintf(
@@ -585,6 +796,24 @@ func Validate(s *Schema, knownKinds []string) (error, []string) {
 					"tool %q has method %q which is not in method_order — it will be tried after all ordered methods",
 					toolName, kind,
 				))
+			}
+		}
+	}
+
+	// Validate per-tool method_order entries.
+	for _, toolName := range names {
+		tool := s.Tools[toolName]
+		if len(tool.MethodOrder) > 0 {
+			for _, kind := range tool.MethodOrder {
+				if native.IsNativeManagerName(kind) {
+					continue
+				}
+				if _, ok := set[kind]; !ok {
+					hardErrors = append(hardErrors, fmt.Sprintf(
+						"tool %q: method_order entry %q is not a registered method kind",
+						toolName, kind,
+					))
+				}
 			}
 		}
 	}

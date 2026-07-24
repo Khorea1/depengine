@@ -31,9 +31,9 @@ simple = ["nvim"]
 nvim = { pacman = "neovim", apt = "neovim" }
 `)
 
-	s, err := ParseSchemaNoFacts(schemaPath)
+	s, err := ParseSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchemaNoFacts: %v", err)
+		t.Fatalf("ParseSchema: %v", err)
 	}
 	mt, err := ParseManifest(manifestPath)
 	if err != nil {
@@ -84,9 +84,9 @@ simple = ["fd"]
 fd = { apt = "fd-find" }
 `)
 
-	s, err := ParseSchemaNoFacts(schemaPath)
+	s, err := ParseSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchemaNoFacts: %v", err)
+		t.Fatalf("ParseSchema: %v", err)
 	}
 	mt, err := ParseManifest(manifestPath)
 	if err != nil {
@@ -130,9 +130,9 @@ fd = { apt = "fd-find-original" }
 fd = { pacman = "fd-bin", apt = "fd-find-override" }
 `)
 
-	s, err := ParseSchemaNoFacts(schemaPath)
+	s, err := ParseSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchemaNoFacts: %v", err)
+		t.Fatalf("ParseSchema: %v", err)
 	}
 	mt, err := ParseManifest(manifestPath)
 	if err != nil {
@@ -180,9 +180,9 @@ simple = ["nvim"]
 nvim = { cargo = "neovim" }
 `)
 
-	s, err := ParseSchemaNoFacts(schemaPath)
+	s, err := ParseSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchemaNoFacts: %v", err)
+		t.Fatalf("ParseSchema: %v", err)
 	}
 	mt, err := ParseManifest(manifestPath)
 	if err != nil {
@@ -220,9 +220,9 @@ neovim = { cargo = "neovim-schema" }
 neovim = { cargo = "neovim-manifest" }
 `)
 
-	s, err := ParseSchemaNoFacts(schemaPath)
+	s, err := ParseSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchemaNoFacts: %v", err)
+		t.Fatalf("ParseSchema: %v", err)
 	}
 	mt, err := ParseManifest(manifestPath)
 	if err != nil {
@@ -263,9 +263,9 @@ simple = ["fastfetch"]
 fastfetch = { http = { url = "https://example.com/fastfetch.zip" } }
 `)
 
-	s, err := ParseSchemaNoFacts(schemaPath)
+	s, err := ParseSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchemaNoFacts: %v", err)
+		t.Fatalf("ParseSchema: %v", err)
 	}
 	mt, err := ParseManifest(manifestPath)
 	if err != nil {
@@ -312,9 +312,9 @@ simple = ["nvim"]
   when = { distro_family = ["arch"] }
 `)
 
-	s, err := ParseSchemaNoFacts(schemaPath)
+	s, err := ParseSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchemaNoFacts: %v", err)
+		t.Fatalf("ParseSchema: %v", err)
 	}
 	mt, err := ParseManifest(manifestPath)
 	if err != nil {
@@ -359,9 +359,9 @@ nvim = { cargo = { pkg = "neovim", when = { distro_family = ["debian"] } } }
   when = { distro_family = ["arch"] }
 `)
 
-	s, err := ParseSchemaNoFacts(schemaPath)
+	s, err := ParseSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchemaNoFacts: %v", err)
+		t.Fatalf("ParseSchema: %v", err)
 	}
 	mt, err := ParseManifest(manifestPath)
 	if err != nil {
@@ -401,9 +401,9 @@ simple = ["zsh"]
 nvim = { pacman = "neovim" }
 `)
 
-	s, err := ParseSchemaNoFacts(schemaPath)
+	s, err := ParseSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchemaNoFacts: %v", err)
+		t.Fatalf("ParseSchema: %v", err)
 	}
 	mt, err := ParseManifest(manifestPath)
 	if err != nil {
@@ -434,9 +434,9 @@ nvim = { requires = ["zsh"], pacman = "neovim" }
 nvim = { pacman = "neovim" }
 `)
 
-	s, err := ParseSchemaNoFacts(schemaPath)
+	s, err := ParseSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchemaNoFacts: %v", err)
+		t.Fatalf("ParseSchema: %v", err)
 	}
 	mt, err := ParseManifest(manifestPath)
 	if err != nil {
@@ -463,9 +463,9 @@ simple = ["nvim"]
 nvim = { pacman = "neovim" }
 `)
 
-	s, err := ParseSchemaNoFacts(schemaPath)
+	s, err := ParseSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchemaNoFacts: %v", err)
+		t.Fatalf("ParseSchema: %v", err)
 	}
 	mt, err := ParseManifest(manifestPath)
 	if err != nil {
@@ -504,9 +504,9 @@ nvim = { pacman = "neovim", cargo = "neovim-cargo" }
 nvim = { pacman = "neovim" }
 `)
 
-	s2, err := ParseSchemaNoFacts(schemaPath2)
+	s2, err := ParseSchema(schemaPath2, nil)
 	if err != nil {
-		t.Fatalf("ParseSchemaNoFacts: %v", err)
+		t.Fatalf("ParseSchema: %v", err)
 	}
 	mt2, err := ParseManifest(manifestPath2)
 	if err != nil {
@@ -544,9 +544,9 @@ simple = ["nvim"]
 nvim = { cargo = "neovim" }
 `)
 
-	s, err := ParseSchemaNoFacts(schemaPath)
+	s, err := ParseSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchemaNoFacts: %v", err)
+		t.Fatalf("ParseSchema: %v", err)
 	}
 	mt, err := ParseManifest(manifestPath)
 	if err != nil {
@@ -578,9 +578,9 @@ manager = "native"
 simple = ["nvim"]
 `)
 
-	s, err := ParseSchemaNoFacts(schemaPath)
+	s, err := ParseSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchemaNoFacts: %v", err)
+		t.Fatalf("ParseSchema: %v", err)
 	}
 
 	// Manually construct manifest with an errored method.

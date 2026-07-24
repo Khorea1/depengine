@@ -52,7 +52,7 @@ func runStatus(args []string) {
 	var s *schema.Schema
 	if schemaPath != "" {
 		var err error
-		s, err = schema.ParseSchemaNoFacts(schemaPath)
+		s, err = schema.ParseSchema(schemaPath, nil)
 		if err != nil {
 			log.Default.Warn("load schema for comparison", "error", err)
 			s = nil

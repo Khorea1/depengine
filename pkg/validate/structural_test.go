@@ -404,7 +404,7 @@ func TestValidatePlaceholders_KnownTokens(t *testing.T) {
 
 func TestValidateSchema_ValidMinimal(t *testing.T) {
 	s := parseTestdata(t, "valid_minimal.toml")
-	r := ValidateSchema(s)
+	r := ValidateSchema(s, nil)
 	if r.HasErrors() || len(r.Warnings) > 0 {
 		t.Errorf("expected clean validation, got %d errors, %d warnings: %v",
 			len(r.Errors), len(r.Warnings), r.All())
@@ -413,13 +413,103 @@ func TestValidateSchema_ValidMinimal(t *testing.T) {
 
 func TestValidateSchema_ValidFull(t *testing.T) {
 	s := parseTestdata(t, "valid_full.toml")
-	r := ValidateSchema(s)
+	r := ValidateSchema(s, nil)
 	if r.HasErrors() {
 		t.Errorf("expected no errors, got: %v", r.Errors)
 	}
 	// Possibly warnings about placeholders — {latest} is known, so should be clean.
 	for _, w := range r.Warnings {
 		t.Logf("warning: %s", w.Error())
+	}
+}
+
+func TestValidateMethodOrderConflicts(t *testing.T) {
+	// method_prefer + method_only on same tool → error.
+	s := &schema.Schema{
+		Tools: map[string]*schema.Tool{
+			"myapp": {
+				Name:        "myapp",
+				MethodPrefer: []string{"cargo"},
+				MethodOnly:  []string{"go"},
+				Methods:     []*schema.MethodCandidate{{Kind: "cargo"}, {Kind: "go"}},
+			},
+		},
+	}
+	r := validateMethodOrderConflicts(s)
+	if !r.HasErrors() {
+		t.Fatal("expected error for conflicting method_prefer + method_only, got none")
+	}
+	found := false
+	for _, e := range r.Errors {
+		if strings.Contains(e.Message, "method_prefer and method_only cannot both be set") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected specific error about method_prefer + method_only, got: %v", r.Errors)
+	}
+}
+
+func TestValidateMethodOrderDeprecatedAndOnly(t *testing.T) {
+	// method_order (deprecated) + method_only → error.
+	s := &schema.Schema{
+		Tools: map[string]*schema.Tool{
+			"myapp": {
+				Name:        "myapp",
+				MethodOrder: []string{"native"},
+				MethodOnly:  []string{"go"},
+				Methods:     []*schema.MethodCandidate{{Kind: "native"}, {Kind: "go"}},
+			},
+		},
+	}
+	r := validateMethodOrderConflicts(s)
+	if !r.HasErrors() {
+		t.Fatal("expected error for conflicting method_order + method_only, got none")
+	}
+	found := false
+	for _, e := range r.Errors {
+		if strings.Contains(e.Message, "method_order and method_only cannot both be set") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected specific error about method_order + method_only, got: %v", r.Errors)
+	}
+}
+
+func TestValidateMethodOrderOnlyNoConflict(t *testing.T) {
+	// method_only alone → no error.
+	s := &schema.Schema{
+		Tools: map[string]*schema.Tool{
+			"myapp": {
+				Name:       "myapp",
+				MethodOnly: []string{"go"},
+				Methods:    []*schema.MethodCandidate{{Kind: "go"}},
+			},
+		},
+	}
+	r := validateMethodOrderConflicts(s)
+	if r.HasErrors() {
+		t.Fatalf("expected no error for method_only alone, got: %v", r.Errors)
+	}
+}
+
+func TestValidateMethodPreferNoConflict(t *testing.T) {
+	// method_prefer alone → no error.
+	s := &schema.Schema{
+		Tools: map[string]*schema.Tool{
+			"myapp": {
+				Name:        "myapp",
+				MethodPrefer: []string{"cargo"},
+				Methods:     []*schema.MethodCandidate{{Kind: "cargo"}},
+			},
+		},
+	}
+	r := validateMethodOrderConflicts(s)
+	if r.HasErrors() {
+		t.Fatalf("expected no error for method_prefer alone, got: %v", r.Errors)
 	}
 }
 
@@ -483,7 +573,7 @@ func TestParseEdgeAllMethods(t *testing.T) {
 
 func TestValidateAllMethods_NoErrors(t *testing.T) {
 	s := parseTestdata(t, "edge_all_methods.toml")
-	r := ValidateSchema(s)
+	r := ValidateSchema(s, nil)
 	if r.HasErrors() {
 		t.Errorf("expected no errors in edge_all_methods, got %d: %v", len(r.Errors), r.Errors)
 	}
@@ -501,7 +591,7 @@ func TestValidateAllMethods_NoErrors(t *testing.T) {
 func TestValidateMultipleErrors_CountAndTypes(t *testing.T) {
 	// invalid_multiple_errors.toml has many errors — verify they're all found.
 	s := parseTestdata(t, "invalid_multiple_errors.toml")
-	r := ValidateSchema(s)
+	r := ValidateSchema(s, nil)
 
 	if len(r.Errors) == 0 {
 		t.Fatal("expected errors in invalid_multiple_errors, got none")
@@ -531,7 +621,7 @@ func TestValidateMultipleErrors_CountAndTypes(t *testing.T) {
 
 func TestValidateEmptyConfig_Orphan(t *testing.T) {
 	s := parseTestdata(t, "invalid_empty_config.toml")
-	r := ValidateSchema(s)
+	r := ValidateSchema(s, nil)
 	// "orphan = {}" has no method — ParseSchema should have handled it.
 	// It might create a native method or fail to parse. Let's check.
 	if len(r.Errors)+len(r.Warnings) > 0 {
@@ -690,7 +780,7 @@ func TestValidateWhenDirectives_NoTools(t *testing.T) {
 
 func TestValidateFromFile_ValidEdgeCases(t *testing.T) {
 	s := parseTestdata(t, "valid_edge_cases.toml")
-	r := ValidateSchema(s)
+	r := ValidateSchema(s, nil)
 	if r.HasErrors() {
 		t.Errorf("expected no errors in valid_edge_cases, got %d: %v", len(r.Errors), r.Errors)
 	}
@@ -698,7 +788,7 @@ func TestValidateFromFile_ValidEdgeCases(t *testing.T) {
 
 func TestValidateFromFile_MixedPlaceholders(t *testing.T) {
 	s := parseTestdata(t, "edge_mixed_placeholders.toml")
-	r := ValidateSchema(s)
+	r := ValidateSchema(s, nil)
 	// Should have at least some placeholder warnings.
 	if len(r.Warnings) == 0 {
 		t.Fatal("expected warnings for unknown placeholders")

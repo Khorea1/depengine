@@ -14,6 +14,7 @@ import (
 	"depengine/pkg/log"
 	"depengine/pkg/run"
 	"depengine/pkg/schema"
+	"depengine/pkg/validate"
 )
 
 // defaultSchemaPath returns the default schema file path, trying common names.
@@ -48,12 +49,15 @@ func loadSchema(path string) (*schema.Schema, string, *engine.Facts, error) {
 	if err != nil {
 		return nil, "", nil, err
 	}
-	if verr, warnings := schema.Validate(s, exec.RegisteredKinds()); verr != nil {
-		return nil, "", nil, verr
-	} else if len(warnings) > 0 {
-		for _, w := range warnings {
-			log.Default.Warn(w)
+	vr := validate.ValidateSchema(s, exec.RegisteredKinds())
+	if vr.HasErrors() {
+		for _, e := range vr.Errors {
+			log.Default.Error(e.Error())
 		}
+		return nil, "", nil, &schema.ParseSchemaError{Err: errors.New("schema validation failed")}
+	}
+	for _, w := range vr.Warnings {
+		log.Default.Warn(w.Error())
 	}
 	return s, clan, facts, nil
 }

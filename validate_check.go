@@ -58,23 +58,8 @@ func runValidate(args []string) {
 	}
 
 	knownKinds := exec.RegisteredKinds()
-	result := validate.ValidateSchema(s)
+	result := validate.ValidateSchema(s, knownKinds)
 
-	verr, warnings := schema.Validate(s, knownKinds)
-	if verr != nil {
-		result.Add(validate.ValidationError{
-			Code:    "E_UNKNOWN_METHOD",
-			Field:   "tools",
-			Message: verr.Error(),
-		})
-	}
-	for _, w := range warnings {
-		result.Add(validate.ValidationError{
-			Code:    "W_UNKNOWN_METHOD",
-			Field:   "tools",
-			Message: w,
-		})
-	}
 
 	if *validateCheckEnv {
 		envResult := validate.CheckEnv(ctx, run.OSExecRunner{})
