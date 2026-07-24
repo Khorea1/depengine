@@ -955,3 +955,97 @@ func TestToolTimeout(t *testing.T) {
 		t.Fatal("expected non-empty error message on timeout")
 	}
 }
+
+// --- Method ordering tests ---
+
+type orderTrackingAdapter struct {
+	kindValue    string
+	attemptOrder *[]string // shared slice to record attempts
+}
+
+func (m *orderTrackingAdapter) Kind() string { return m.kindValue }
+func (m *orderTrackingAdapter) Available(ctx context.Context, rn run.Runner) bool { return true }
+func (m *orderTrackingAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool { return false }
+func (m *orderTrackingAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+	*m.attemptOrder = append(*m.attemptOrder, m.kindValue)
+	return &installError{msg: "order tracking failure"}
+}
+
+func TestExecutorReordersMethodsByExpandedOrder(t *testing.T) {
+	// Set up an executor with a custom defaultMethodOrder that includes a native
+	// manager name. The executor should expand it (e.g. "apt" → "native") before
+	// using it to order methods.
+	var attemptOrder []string
+
+	nativeAdapter := &orderTrackingAdapter{kindValue: "native", attemptOrder: &attemptOrder}
+	cargoAdapter := &orderTrackingAdapter{kindValue: "cargo", attemptOrder: &attemptOrder}
+
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithDefaultMethodOrder([]string{"apt", "cargo"})(ex) // "apt" will be expanded
+	WithAdapters(nativeAdapter, cargoAdapter)(ex)
+
+	// Set nativeManagerName directly (simulating what Execute would do)
+	ex.nativeManagerName = "apt"
+
+	s := &schema.Schema{
+		Defaults: schema.Defaults{Manager: "native", MethodOrder: []string{"apt", "cargo"}},
+		Tools: map[string]*schema.Tool{
+			"tool1": {
+				Name: "tool1",
+				Methods: []*schema.MethodCandidate{
+					{Kind: "native", Config: map[string]any{"pkg": "tool1"}},
+					{Kind: "cargo", Config: map[string]any{"pkg": "binary"}},
+				},
+			},
+		},
+	}
+
+	// tryMethods directly
+	result := &ToolResult{Tool: "tool1"}
+	ex.tryMethods(context.Background(), s.Tools["tool1"], result, time.Now())
+
+	// First method tried should be "native" (expanded from "apt"), second "cargo"
+	if len(attemptOrder) < 2 {
+		t.Fatalf("expected at least 2 attempts, got %d: %v", len(attemptOrder), attemptOrder)
+	}
+	if attemptOrder[0] != "native" {
+		t.Fatalf("expected first attempt to be 'native' (expanded from 'apt'), got %q", attemptOrder[0])
+	}
+	if attemptOrder[1] != "cargo" {
+		t.Fatalf("expected second attempt to be 'cargo', got %q", attemptOrder[1])
+	}
+}
+
+func TestExplainToolRespectsExpandedOrder(t *testing.T) {
+	var attemptOrder []string
+
+	nativeAdapter := &orderTrackingAdapter{kindValue: "native", attemptOrder: &attemptOrder}
+	cargoAdapter := &orderTrackingAdapter{kindValue: "cargo", attemptOrder: &attemptOrder}
+
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithDefaultMethodOrder([]string{"cargo", "apt"})(ex) // "apt" will be expanded
+	WithAdapters(nativeAdapter, cargoAdapter)(ex)
+	ex.nativeManagerName = "apt"
+
+	tool := &schema.Tool{
+		Name: "tool1",
+		Methods: []*schema.MethodCandidate{
+			{Kind: "native", Config: map[string]any{"pkg": "tool1"}},
+			{Kind: "cargo", Config: map[string]any{"pkg": "binary"}},
+		},
+	}
+
+	attempts := ex.ExplainTool(context.Background(), tool, "debian")
+	// The expanded order should be ["cargo", "native"] (cargo first, then apt→native)
+	expectedOrder := []string{"cargo", "native"}
+	if len(attempts) != 2 {
+		t.Fatalf("expected 2 attempts, got %d", len(attempts))
+	}
+	for i, a := range attempts {
+		if a.Kind != expectedOrder[i] {
+			t.Fatalf("at index %d: expected kind %q, got %q; full: %+v", i, expectedOrder[i], a.Kind, attempts)
+		}
+	}
+}

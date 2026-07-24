@@ -27,6 +27,7 @@ type Executor struct {
 	toolTimeout        time.Duration
 	methodTimeout      time.Duration
 	dryRun             bool
+	quiet              bool // suppress per-tool status line output (--quiet)
 	sortBy             SortField
 	adapters           map[string]Adapter // per-instance adapter registry
 	logger             *slog.Logger       // structured logger; nil = no structured output
@@ -34,9 +35,14 @@ type Executor struct {
 	maxJobs            int                // max concurrent tools; 0 or 1 = sequential (default)
 	allowArbitraryCode bool               // if false, warn about dangerous methods (build scripts, etc.)
 
+	defaultMethodOrder []string // from schema.Defaults.MethodOrder; default = schema.DefaultMethodOrder
+	nativeManagerName  string   // resolved from clan via native.Lookup
+
 	// schema info for state tracking
 	schemaPath    string
 	schemaModTime time.Time
+
+	color bool // whether to emit ANSI color codes in status output
 }
 
 // Option configures the executor.
@@ -98,6 +104,14 @@ func WithAllowArbitraryCode() Option {
 	}
 }
 
+// WithQuiet suppresses per-tool status line output, showing only the
+// final summary. Restores the old summary-only behavior.
+func WithQuiet() Option {
+	return func(e *Executor) {
+		e.quiet = true
+	}
+}
+
 // WithLogger sets the structured logger for the executor. When set, the
 // executor emits structured DEBUG/INFO logs at each decision point in
 // addition to the user-facing output via outWriter (default os.Stderr).
@@ -144,27 +158,46 @@ func WithSchemaInfo(path string, modTime time.Time) Option {
 		e.schemaModTime = modTime
 	}
 }
-func New() *Executor {
-	return &Executor{
-		rn:            run.OSExecRunner{},
-		toolTimeout:   5 * time.Minute,
-		methodTimeout: 2 * time.Minute,
-		maxJobs:       1,
-		adapters:      make(map[string]Adapter),
-		outWriter:     os.Stderr,
-	}
-}
 
-// lookupAdapter returns the adapter for the given kind. It checks the
-// per-instance registry first, falling back to the package-level global
-// registry for adapters registered via init() (e.g. native adapter).
-func (ex *Executor) lookupAdapter(kind string) Adapter {
-	if ex.adapters != nil {
-		if a, ok := ex.adapters[kind]; ok {
-			return a
+func WithDefaultMethodOrder(order []string) Option {
+	return func(ex *Executor) {
+		if len(order) > 0 {
+			ex.defaultMethodOrder = order
 		}
 	}
-	return Lookup(kind)
+}
+func New() *Executor {
+	ex := &Executor{
+		rn:                 run.OSExecRunner{},
+		toolTimeout:        5 * time.Minute,
+		methodTimeout:      2 * time.Minute,
+		maxJobs:            1,
+		adapters:           make(map[string]Adapter, len(adapters)),
+		outWriter:          os.Stderr,
+		defaultMethodOrder: schema.DefaultMethodOrder,
+		color:              shouldUseColor(),
+	}
+	// Pre-populate from the global adapter registry.
+	// Adapters registered via init() (git, http, native, lang, etc.)
+	// are available to every executor. WithAdapters can override them.
+	adaptersMu.RLock()
+	for k, a := range adapters {
+		ex.adapters[k] = a
+	}
+	adaptersMu.RUnlock()
+	return ex
+}
+
+// lookupAdapter returns the adapter for the given kind from the executor's
+// per-instance registry. Returns nil if no adapter is registered for that kind.
+func (ex *Executor) lookupAdapter(kind string) Adapter {
+	return ex.adapters[kind]
+}
+
+// LookupAdapter returns the adapter for the given kind from the executor's
+// per-instance registry. Returns nil if no adapter is registered for that kind.
+func (ex *Executor) LookupAdapter(kind string) Adapter {
+	return ex.lookupAdapter(kind)
 }
 
 // Execute runs all tools in the schema in dependency order.
@@ -192,6 +225,14 @@ func (ex *Executor) Execute(ctx context.Context, s *schema.Schema, clan string) 
 	start := time.Now()
 	report := &ExecReport{}
 	ex.clan = clan
+
+	// Resolve native manager name from clan for method_order expansion.
+	if mgr, ok := native.Lookup(clan); ok {
+		ex.nativeManagerName = mgr.Name
+	}
+	if len(s.Defaults.MethodOrder) > 0 {
+		ex.defaultMethodOrder = s.Defaults.MethodOrder
+	}
 
 	ex.logDebug(ctx, "executor", "phase", "init", "clan", clan, "tools", len(s.Tools))
 	// Only sync native package index if at least one tool uses a native method.
@@ -417,11 +458,17 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 	return result
 }
 
+// effectiveMethodOrder returns the method_order effective for a given
+// tool, applying per-tool overrides and native manager expansion.
+func (ex *Executor) effectiveMethodOrder(tool *schema.Tool) []string {
+	return schema.EffectiveMethodOrder(tool, ex.defaultMethodOrder, ex.nativeManagerName)
+}
+
 // tryMethods iterates through all methods of a tool, trying each in order.
 // It modifies result in place — on success the result is terminal; on
-// exhaustion of all methods it falls through to the failover status.
 func (ex *Executor) tryMethods(toolCtx context.Context, tool *schema.Tool, result *ToolResult, toolStart time.Time) {
-	for _, method := range tool.Methods {
+	orderedMethods := schema.OrderMethods(tool.Methods, ex.effectiveMethodOrder(tool))
+	for _, method := range orderedMethods {
 		select {
 		case <-toolCtx.Done():
 			result.Status = StatusFailed
@@ -533,6 +580,51 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *schema.Tool, resul
 // formatToolResult generates a user-facing status line for a tool execution
 // result. It is a package-level function (no Executor dependency) so it can be
 // tested independently of the full executor pipeline.
+
+// shouldUseColor reports whether status output should include ANSI color
+// codes. It respects the NO_COLOR environment variable (standard convention)
+// and checks that stderr is a character device (terminal). On non-Unix systems
+// where os.ModeCharDevice is not set, it defaults to no color.
+func shouldUseColor() bool {
+	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	if os.Getenv("FORCE_COLOR") != "" {
+		return true
+	}
+	fi, err := os.Stderr.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
+}
+
+// colorizeStatusSymbol wraps the status symbol character in a line with
+// the appropriate ANSI color code, followed by a reset. Returns the line
+// unchanged when colors are not enabled.
+func (ex *Executor) colorizeStatusSymbol(line string) string {
+	if !ex.color {
+		return line
+	}
+	type symColor struct {
+		symbol string
+		ansi   string
+	}
+	colors := []symColor{
+		{"✓", "\033[32m"},  // green
+		{"✗", "\033[31m"},  // red
+		{"–", "\033[33m"},  // yellow
+		{"→", "\033[36m"},  // cyan
+		{"•", "\033[2m"},   // dim
+	}
+	for _, c := range colors {
+		if strings.Contains(line, c.symbol) {
+			return strings.Replace(line, c.symbol, c.ansi+c.symbol+"\033[0m", 1)
+		}
+	}
+	return line
+}
+
 func formatToolResult(tool string, status StatusEnum, method, errMsg string) string {
 	switch status {
 	case StatusInstalled:
@@ -584,7 +676,11 @@ func (ex *Executor) recordToolResult(ctx context.Context, result *ToolResult, re
 		// Virtual isn't counted in report totals, just logged.
 		ex.logDebug(ctx, "tool", "tool", result.Tool, "status", "virtual")
 	}
-	ex.outputf("%s", formatToolResult(result.Tool, result.Status, result.Method, result.Error))
+	if !ex.quiet {
+		line := formatToolResult(result.Tool, result.Status, result.Method, result.Error)
+		line = ex.colorizeStatusSymbol(line)
+		ex.outputf("%s", line)
+	}
 }
 
 // executeLevelParallel runs all tools in a topological level concurrently,
@@ -646,7 +742,12 @@ func (ex *Executor) executeLevelParallel(ctx context.Context, s *schema.Schema, 
 
 // This is the engine behind `depengine why <tool>`.
 func (ex *Executor) ExplainTool(ctx context.Context, tool *schema.Tool, clan string) []MethodAttempt {
-	methods := tool.Methods
+	// Resolve native manager for method_order expansion.
+	if mgr, ok := native.Lookup(clan); ok {
+		ex.nativeManagerName = mgr.Name
+	}
+	orderedMethods := schema.OrderMethods(tool.Methods, ex.effectiveMethodOrder(tool))
+	methods := orderedMethods
 	if len(methods) == 0 {
 		return []MethodAttempt{{Kind: "", Status: "virtual", Error: "dependency group (no methods declared)"}}
 	}
