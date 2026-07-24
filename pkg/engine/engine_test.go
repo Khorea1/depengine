@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -250,5 +251,21 @@ func TestResolveFamilyNilFactsPanic(t *testing.T) {
 func TestMatchesDistroFamilyNilSlice(t *testing.T) {
 	if MatchesDistroFamily("arch", nil) {
 		t.Fatal("MatchesDistroFamily should return false for nil allowed list")
+	}
+}
+
+// TestDetectOSScriptsAreInSync ensures the embedded detect_os.sh (used by
+// locateDetectScript) matches scripts/detect_os.sh (shipped alongside the
+// binary as a fallback). These MUST stay in sync — edit the engine copy,
+// then replicate to scripts/.
+func TestDetectOSScriptsAreInSync(t *testing.T) {
+	const scriptsPath = "../../scripts/detect_os.sh"
+	got, err := os.ReadFile(scriptsPath)
+	if err != nil {
+		t.Fatalf("reading scripts/detect_os.sh: %v", err)
+	}
+	if string(got) != string(detectScriptContent) {
+		t.Fatalf("scripts/detect_os.sh differs from pkg/engine/detect_os.sh\n" +
+			"Edit pkg/engine/detect_os.sh, then copy to scripts/detect_os.sh")
 	}
 }
