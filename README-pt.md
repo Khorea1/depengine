@@ -374,13 +374,14 @@ Exporta SBOM (Software Bill of Materials) no formato CycloneDX 1.5 ou SPDX 2.3.
 
 ---
 
-## Métodos de instalação suportados (28)
+## Métodos de instalação suportados (30)
 
 | Categoria | Métodos |
 |-----------|---------|
 | **Nativo** | `native` (auto-detecta apt/pacman/dnf/brew/...) + aliases por manager |
 | **Linguagem** | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `pnpm`, `bun`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
 | **Desktop** | `flatpak`, `snap`, `vscode`, `vscodium`, `cask` (macOS), `mas` (Mac App Store) |
+| **Windows** | `scoop`, `choco` |
 | **Especializados** | `sdkman`, `steamcmd`, `pacstall`, `aur` (com helper configurável), `conda`, `asdf` |
 | **Outros** | `git` (clone + build), `http` (download + extração + checksum) |
 

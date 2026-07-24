@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+
+	"depengine/pkg/log"
 )
 
 // fileLock implements io.Closer for a flock-based lock.
@@ -16,8 +18,9 @@ type fileLock struct {
 }
 
 func (l *fileLock) Close() error {
-	// Release the lock, then close the file.
-	_ = syscall.Flock(int(l.f.Fd()), syscall.LOCK_UN)
+	if err := syscall.Flock(int(l.f.Fd()), syscall.LOCK_UN); err != nil {
+		log.Default.Warn("flock unlock failed", "error", err)
+	}
 	return l.f.Close()
 }
 

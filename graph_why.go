@@ -141,7 +141,7 @@ func runWhy(args []string) {
 		lang.ReconfigureAUR(helper)
 	}
 
-	if verr, warnings := schema.Validate(s, exec.RegisteredKinds()); verr != nil {
+	if warnings, verr := schema.Validate(s, exec.RegisteredKinds()); verr != nil {
 		log.Default.Error("schema validation", "error", verr)
 		os.Exit(exitCodeForError(verr))
 	} else if len(warnings) > 0 {

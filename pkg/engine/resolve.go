@@ -10,26 +10,26 @@ import (
 // Keys are lowercase (Facts.DistroID already comes lowercase from the
 // fetcher).
 var idToFamily = map[string]string{
-	// família debian (apt)
+	// debian family (apt)
 	"ubuntu": "debian", "debian": "debian",
 	"pop": "debian", "elementary": "debian", "raspbian": "debian",
 	"kali": "debian", "zorin": "debian", "neon": "debian",
 
-	// família arch (pacman)
+	// arch family (pacman)
 	"arch": "arch", "manjaro": "arch", "endeavouros": "arch",
 	"garuda": "arch", "artix": "arch", "cachyos": "arch",
 
-	// família fedora/rhel (dnf) — treated as one clan today; both use dnf.
+	// fedora/rhel family (dnf) — treated as one clan today; both use dnf.
 	// If we ever need a distinct rhel/yum path, it splits here while the
 	// macos/termux/... entries stay put (and `when.distro_family`
 	// compares against clans, not manager keys).
 	"fedora": "fedora", "rhel": "fedora", "centos": "fedora",
 	"rocky": "fedora", "almalinux": "fedora",
 
-	// família mint (apt) — Linux Mint uses apt but has mint-specific metadata.
+	// mint family (apt) — Linux Mint uses apt but has mint-specific metadata.
 	"linuxmint": "mint",
 
-	// família suse (zypper)
+	// suse family (zypper)
 	"opensuse-leap": "suse", "opensuse-tumbleweed": "suse", "sles": "suse",
 
 	"alpine":  "alpine",               // apk

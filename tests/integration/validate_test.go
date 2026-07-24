@@ -82,7 +82,7 @@ func runDepengine(args ...string) (output string, exitCode int) {
 // ============ Valid schemas ============
 
 func TestValidate_ValidSchema(t *testing.T) {
-	output, code := runDepengine("validate", "--schema", schemaPath())
+	output, code := runDepengine("validate", "--no-manifest", "--schema", schemaPath())
 	if code != 0 {
 		t.Errorf("expected exit 0 for valid schema, got %d; output:\n%s", code, output)
 	}
@@ -102,7 +102,7 @@ func TestValidate_AllValidEdgeCases(t *testing.T) {
 	}
 	for _, f := range files {
 		t.Run(f, func(t *testing.T) {
-			output, code := runDepengine("validate", "--schema", validatePath(f))
+			output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath(f))
 			if code != 0 {
 				t.Errorf("exit %d for %s; output:\n%s", code, f, output)
 			}
@@ -113,7 +113,7 @@ func TestValidate_AllValidEdgeCases(t *testing.T) {
 // ============ Invalid schemas ============
 
 func TestValidate_InvalidDanglingRef(t *testing.T) {
-	output, code := runDepengine("validate", "--schema", validatePath("invalid_dangling_ref.toml"))
+	output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath("invalid_dangling_ref.toml"))
 	if code != 2 {
 		t.Fatalf("expected exit 2, got %d; output:\n%s", code, output)
 	}
@@ -123,7 +123,7 @@ func TestValidate_InvalidDanglingRef(t *testing.T) {
 }
 
 func TestValidate_Cycle(t *testing.T) {
-	output, code := runDepengine("validate", "--schema", validatePath("invalid_cycle.toml"))
+	output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath("invalid_cycle.toml"))
 	if code != 2 {
 		t.Fatalf("expected exit 2, got %d; output:\n%s", code, output)
 	}
@@ -133,7 +133,7 @@ func TestValidate_Cycle(t *testing.T) {
 }
 
 func TestValidate_MultipleErrors(t *testing.T) {
-	output, code := runDepengine("validate", "--schema", validatePath("invalid_multiple_errors.toml"))
+	output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath("invalid_multiple_errors.toml"))
 	if code != 2 {
 		t.Fatalf("expected exit 2, got %d; output:\n%s", code, output)
 	}
@@ -145,7 +145,7 @@ func TestValidate_MultipleErrors(t *testing.T) {
 }
 
 func TestValidate_PlaceholderWarning(t *testing.T) {
-	output, code := runDepengine("validate", "--schema", validatePath("invalid_unknown_placeholder.toml"))
+	output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath("invalid_unknown_placeholder.toml"))
 	if code != 0 {
 		t.Fatalf("expected exit 0 (warnings only), got %d; output:\n%s", code, output)
 	}
@@ -166,7 +166,7 @@ func TestValidate_AllInvalidExit2(t *testing.T) {
 	}
 	for _, name := range names {
 		t.Run(name, func(t *testing.T) {
-			output, code := runDepengine("validate", "--schema", validatePath(name))
+			output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath(name))
 			if code != 2 {
 				t.Errorf("expected exit 2, got %d; output:\n%s", code, output)
 			}
@@ -177,19 +177,19 @@ func TestValidate_AllInvalidExit2(t *testing.T) {
 // ============ CLI flags ============
 
 func TestValidate_StrictFlag(t *testing.T) {
-	_, codeNoStrict := runDepengine("validate", "--schema", validatePath("invalid_unknown_placeholder.toml"))
+	_, codeNoStrict := runDepengine("validate", "--no-manifest", "--schema", validatePath("invalid_unknown_placeholder.toml"))
 	if codeNoStrict != 0 {
 		t.Error("without --strict expected exit 0")
 	}
 
-	output, codeStrict := runDepengine("validate", "--schema", validatePath("invalid_unknown_placeholder.toml"), "--strict")
+	output, codeStrict := runDepengine("validate", "--no-manifest", "--schema", validatePath("invalid_unknown_placeholder.toml"), "--strict")
 	if codeStrict != 1 {
 		t.Errorf("with --strict expected exit 1, got %d; output:\n%s", codeStrict, output)
 	}
 }
 
 func TestValidate_JSONFormat(t *testing.T) {
-	output, code := runDepengine("validate", "--schema", validatePath("invalid_multiple_errors.toml"), "--format=json")
+	output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath("invalid_multiple_errors.toml"), "--format=json")
 	if code != 2 {
 		t.Fatalf("expected exit 2, got %d; output:\n%s", code, output)
 	}
@@ -206,7 +206,7 @@ func TestValidate_JSONFormat(t *testing.T) {
 }
 
 func TestValidate_JSONFormatSuccess(t *testing.T) {
-	output, code := runDepengine("validate", "--schema", validatePath("valid_minimal.toml"), "--format=json")
+	output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath("valid_minimal.toml"), "--format=json")
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d; output:\n%s", code, output)
 	}
@@ -223,7 +223,7 @@ func TestValidate_JSONFormatSuccess(t *testing.T) {
 }
 
 func TestValidate_CheckEnv(t *testing.T) {
-	output, code := runDepengine("validate", "--schema", schemaPath(), "--check-env")
+	output, code := runDepengine("validate", "--no-manifest", "--schema", schemaPath(), "--check-env")
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d; output:\n%s", code, output)
 	}
@@ -233,7 +233,7 @@ func TestValidate_CheckEnv(t *testing.T) {
 }
 
 func TestValidate_CheckEnvJSON(t *testing.T) {
-	output, code := runDepengine("validate", "--schema", schemaPath(), "--check-env", "--format=json")
+	output, code := runDepengine("validate", "--no-manifest", "--schema", schemaPath(), "--check-env", "--format=json")
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d; output:\n%s", code, output)
 	}
@@ -248,7 +248,7 @@ func TestValidate_CheckEnvJSON(t *testing.T) {
 }
 
 func TestValidate_StrictCheckEnv(t *testing.T) {
-	output, code := runDepengine("validate", "--schema", schemaPath(), "--strict", "--check-env")
+	output, code := runDepengine("validate", "--no-manifest", "--schema", schemaPath(), "--strict", "--check-env")
 	if code != 0 && code != 1 {
 		t.Errorf("expected exit 0 or 1, got %d; output:\n%s", code, output)
 	}
@@ -257,7 +257,7 @@ func TestValidate_StrictCheckEnv(t *testing.T) {
 // ============ Corner cases ============
 
 func TestValidate_NonExistentSchema(t *testing.T) {
-	output, code := runDepengine("validate", "--schema", "/nonexistent/path/schema.toml")
+	output, code := runDepengine("validate", "--no-manifest", "--schema", "/nonexistent/path/schema.toml")
 	if code != 2 {
 		t.Errorf("expected exit 2, got %d", code)
 	}
@@ -272,7 +272,7 @@ func TestValidate_EmptySchemaFile(t *testing.T) {
 	if err := os.WriteFile(emptyPath, []byte("[tools]\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	output, code := runDepengine("validate", "--schema", emptyPath)
+	output, code := runDepengine("validate", "--no-manifest", "--schema", emptyPath)
 	if code != 0 {
 		t.Errorf("expected exit 0, got %d; output:\n%s", code, output)
 	}

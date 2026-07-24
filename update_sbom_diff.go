@@ -175,7 +175,6 @@ func runDiff(args []string) {
 	}
 
 	if diffCmd.NArg() != 2 {
-		aPath = state.DefaultPath()
 		ls, err := state.LoadShared()
 		if err != nil {
 			log.Default.Error("load current state", "error", err)

@@ -45,7 +45,7 @@ fd   = { apt = "fd-find" }                                   # nos demais, "fd"
 nvim = { pacman = "neovim", apt = "neovim", brew = "neovim" }
 hypr = { pacman = "hyprland" }
 
-go = { pacman = "go", apt = "golang-go" }
+golang = { pacman = "go", apt = "golang-go" }
 
 # ------------------------------------------------------------------------
 # CASO 3 — Manager de linguagem (pip, pipx, uv, go, cargo, npm, gem...).
@@ -117,6 +117,24 @@ zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
 #                                Se a condição não bate, o motor pula esse
 #                                método e vai para o próximo.
 # ------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------
+# CASO 10 — Buckets de ecossistema: python, node.
+# Quando pkg == tool_name (~80% dos casos Python/Node), use `true`
+# em vez de repetir o nome. Buckets expandem para todos os methods
+# do ecossistema de uma vez.
+#
+#   python = true  ≡  { pip = true, pipx = true, uv = true }
+#   node   = true  ≡  { npm = true, pnpm = true, bun = true }
+#
+# Cada `true` usa o nome da tool como pkg (SubstitutePkg fallback).
+# ------------------------------------------------------------------------
+ruff = { python = true }        # ≡ { pipx = "ruff", uv = "ruff" }
+prettier = { node = true }      # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
+httpie = { python = true }      # pip + pipx + uv (pkg=httpie em todos)
+
+# Pode misturar bucket com método explícito: o explícito NÃO é sobrescrito.
+# (exemplo: organize = { pip = "organize-tool", python = true })
 [tools.DepartureMono]
 postinstall = "fc-cache -fv"
 
@@ -137,7 +155,7 @@ postinstall = "fc-cache -fv"
 
 # marina — container-based dev environment. Requires go, podman, docker-compose.
 [tools.marina]
-requires = ["go", "podman", "docker-compose"]
+requires = ["golang", "podman", "docker-compose"]
 
 # scripts — personal shell scripts in ~/.local/bin. No external deps.
 [tools.scripts]
@@ -173,21 +191,3 @@ requires = []
 #   when, url, build, checksum, checksum_url, checksum_file_format,
 #   signature_url, signing_key, extract_to, pkg, git
 # ==============================================================================
-
-# ------------------------------------------------------------------------
-# CASO 10 — Buckets de ecossistema: python, node.
-# Quando pkg == tool_name (~80% dos casos Python/Node), use `true`
-# em vez de repetir o nome. Buckets expandem para todos os methods
-# do ecossistema de uma vez.
-#
-#   python = true  ≡  { pip = true, pipx = true, uv = true }
-#   node   = true  ≡  { npm = true, pnpm = true, bun = true }
-#
-# Cada `true` usa o nome da tool como pkg (SubstitutePkg fallback).
-# ------------------------------------------------------------------------
-ruff = { python = true }        # ≡ { pipx = "ruff", uv = "ruff" }
-prettier = { node = true }      # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
-httpie = { python = true }      # pip + pipx + uv (pkg=httpie em todos)
-
-# Pode misturar bucket com método explícito: o explícito NÃO é sobrescrito.
-organize = { pip = "organize-tool", python = true }  # pip não é sobrescrito

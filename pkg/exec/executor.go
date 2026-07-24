@@ -188,16 +188,10 @@ func New() *Executor {
 	return ex
 }
 
-// lookupAdapter returns the adapter for the given kind from the executor's
-// per-instance registry. Returns nil if no adapter is registered for that kind.
-func (ex *Executor) lookupAdapter(kind string) Adapter {
-	return ex.adapters[kind]
-}
-
 // LookupAdapter returns the adapter for the given kind from the executor's
 // per-instance registry. Returns nil if no adapter is registered for that kind.
 func (ex *Executor) LookupAdapter(kind string) Adapter {
-	return ex.lookupAdapter(kind)
+	return ex.adapters[kind]
 }
 
 // Execute runs all tools in the schema in dependency order.
@@ -490,7 +484,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *schema.Tool, resul
 			}
 		}
 
-		adapter := ex.lookupAdapter(method.Kind)
+		adapter := ex.LookupAdapter(method.Kind)
 		if adapter == nil {
 			attempt.Status = "skip_unavailable"
 			attempt.Error = fmt.Sprintf("no adapter for %q", method.Kind)
@@ -767,7 +761,7 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *schema.Tool, clan str
 		}
 
 		// Look up adapter for this method kind.
-		adapter := ex.lookupAdapter(method.Kind)
+		adapter := ex.LookupAdapter(method.Kind)
 		if adapter == nil {
 			attempt.Status = "skip_unavailable"
 			attempt.Error = fmt.Sprintf("no adapter registered for kind %q", method.Kind)

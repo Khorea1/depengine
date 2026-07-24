@@ -14,8 +14,8 @@ Complete reference for `schema.toml`, installation methods, and placeholders.
 - [`method_order`](#method-order)
 - [`requires`](#requires)
 - [`postinstall`](#postinstall)
-- [Supported Methods (28)](#supported-methods-28)
-  - [native](#native) | [cargo](#cargo) | [go](#go) | [pip](#pip) | [pipx](#pipx) | [uv](#uv) | [npm](#npm) | [pnpm](#pnpm) | [bun](#bun) | [gem](#gem) | [yarn](#yarn) | [yarn-berry](#yarn-berry) | [composer](#composer) | [apm](#apm) | [vscode](#vscode) | [vscodium](#vscodium) | [flatpak](#flatpak) | [snap](#snap) | [cask](#cask) | [mas](#mas) | [sdkman](#sdkman) | [steamcmd](#steamcmd) | [pacstall](#pacstall) | [aur](#aur) | [conda](#conda) | [asdf](#asdf) | [git](#git) | [http](#http)
+- [Supported Methods (30)](#supported-methods-30)
+  - [native](#native) | [cargo](#cargo) | [go](#go) | [pip](#pip) | [pipx](#pipx) | [uv](#uv) | [npm](#npm) | [pnpm](#pnpm) | [bun](#bun) | [gem](#gem) | [yarn](#yarn) | [yarn-berry](#yarn-berry) | [composer](#composer) | [apm](#apm) | [vscode](#vscode) | [vscodium](#vscodium) | [flatpak](#flatpak) | [snap](#snap) | [cask](#cask) | [mas](#mas) | [sdkman](#sdkman) | [steamcmd](#steamcmd) | [pacstall](#pacstall) | [aur](#aur) | [scoop](#scoop) | [choco](#choco) | [conda](#conda) | [asdf](#asdf) | [git](#git) | [http](#http)
 - [Placeholders](#placeholders)
 
 ---
@@ -70,7 +70,7 @@ depengine sbom --format=spdx        # export SPDX SBOM
     [tools.NAME.method]  # one sub-table per candidate method
 ```
 
-**Golden rule:** Tool-level fields (`requires`, `postinstall`) live outside methods.
+**Golden rule:** Tool-level fields (`requires`, `pre_install`, `postinstall`) live outside methods.
 Method-level fields (`when`, `url`, `build`, `checksum`, `extract_to`, `pkg`, `git`) live inside the method.
 
 ---
@@ -162,12 +162,10 @@ postinstall = "fc-cache -fv"
 ## Tool-Level Fields
 
 These live at the `[tools.NAME]` level — they apply regardless of which method ends up being used.
-| Field | Type | Description |
-|-------|------|-------------|
 | `requires` | `[string]` | List of tool names that must be installed first. Enforces topological ordering. |
+| `pre_install` | `string` | Shell command run before any method execution. If it fails, the tool is aborted. Requires `--allow-arbitrary-code`. |
 | `postinstall` | `string` | Shell command run once after any method succeeds for this tool. |
 | `tags` | `[string]` | Profile tags for `--profile` filtering (e.g. `["desktop", "server"]`). Tools without tags are always included. |
-
 ---
 
 ## Method Fields
@@ -280,17 +278,16 @@ postinstall = "echo installed on {os}/{arch}"
 
 ---
 
-## Supported Methods (28)
 
+## Supported Methods (30)
 | Category | Methods |
 |----------|---------|
 | **Native** | `native` (auto-detect apt/pacman/dnf/brew/...) + per-manager aliases |
 | **Language** | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `pnpm`, `bun`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
 | **Desktop** | `flatpak`, `snap`, `vscode`, `vscodium`, `cask` (macOS), `mas` (Mac App Store) |
+| **Windows** | `scoop`, `choco` |
 | **Specialized** | `sdkman`, `steamcmd`, `pacstall`, `aur`, `conda`, `asdf` |
 | **Other** | `git` (clone + build), `http` (download + extract + checksum) |
-
-### native
 
 Auto-detects the distro's package manager (15 distros):
 
@@ -505,6 +502,23 @@ google-chrome = { aur = "google-chrome" }
 [tools.DepartureMono.aur]
 pkg  = "otf-departure-mono-nerd"
 when = { distro_family = ["arch"] }
+```
+
+
+### scoop
+
+Windows packages via Scoop (requires Windows).
+
+```toml
+git = { scoop = "git" }
+```
+
+### choco
+
+Windows packages via Chocolatey (requires Windows).
+
+```toml
+firefox = { choco = "firefox" }
 ```
 
 ### conda

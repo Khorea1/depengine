@@ -184,23 +184,23 @@ Remove all tracked tools.
 .TP
 .BR \-\-dry\-run
 Show what would be removed without executing.
-.SS "flags do graph"
+.SS "graph flags"
 .TP
 .BR \-\-schema " <path>"
-Caminho para o arquivo de schema. Padrão: \fBschema.toml\fR.
+Path to the schema file. Default: \fBschema.toml\fR.
 .TP
 .BR \-\-format " <fmt>"
-Formato de saída: \fBmermaid\fR, \fBdot\fR ou \fBtext\fR (padrão).
+Output format: \fBmermaid\fR, \fBdot\fR, or \fBtext\fR (default).
 .TP
 .BR \-\-only " <tool>"
-Mostra apenas o subgrafo da ferramenta especificada e suas dependências
-transitivas.
+Show only the subgraph for the specified tool and its transitive
+dependencies.
 .TP
 .BR \-\-skip " <tools>"
-Pula ferramentas específicas (lista separada por vírgulas).
+Skip specific tools (comma-separated list).
 .TP
 .BR \-\-profile " <tag>"
-Mostra apenas ferramentas com a tag especificada (ex: \fB--profile=server\fR).
+Show only tools with the given tag (e.g. \fB--profile=server\fR).
 .SS "undo flags"
 .TP
 .BR \-\-list

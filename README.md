@@ -372,13 +372,14 @@ Exports an SBOM in CycloneDX 1.5 or SPDX 2.3 format.
 
 ---
 
-## Supported installation methods (28)
+## Supported installation methods (30)
 
 | Category | Methods |
 |----------|---------|
 | **Native** | `native` (auto-detects apt/pacman/dnf/brew/...) + per-manager aliases |
 | **Language** | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `pnpm`, `bun`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
 | **Desktop** | `flatpak`, `snap`, `vscode`, `vscodium`, `cask` (macOS), `mas` (Mac App Store) |
+| **Windows** | `scoop`, `choco` |
 | **Specialized** | `sdkman`, `steamcmd`, `pacstall`, `aur` (configurable helper), `conda`, `asdf` |
 | **Other** | `git` (clone + build), `http` (download + extract + checksum) |
 

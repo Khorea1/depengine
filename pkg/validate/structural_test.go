@@ -30,7 +30,6 @@ func cond(families ...string) *schema.Condition {
 	return &schema.Condition{DistroFamily: families}
 }
 
-func strPtr(s string) *string { return &s }
 
 // parseTestdata is a test helper that parses a TOML file from testdata/.
 func parseTestdata(t *testing.T, name string) *schema.Schema {

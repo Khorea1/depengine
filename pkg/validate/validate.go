@@ -140,7 +140,7 @@ func ValidateSchema(s *schema.Schema, knownKinds []string) *Result {
 
 	// Method-kind validation (delegated from schema.Validate).
 	if knownKinds != nil {
-		verr, warnings := schema.Validate(s, knownKinds)
+		warnings, verr := schema.Validate(s, knownKinds)
 		if verr != nil {
 			r.Add(ValidationError{
 				Code:    ErrInvalidValue,

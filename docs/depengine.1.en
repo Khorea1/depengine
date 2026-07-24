@@ -29,6 +29,15 @@ and topological ordering. See OPTIONS below for flags.
 Validates the schema structure and optionally the system environment.
 Reports unknown methods, unknown placeholders, and missing tools.
 .TP
+.B init " [flags]"
+Initializes a new depengine project by creating a minimal
+.B depengine.toml
+or
+.B schema.toml
+scaffold in the current directory. Use
+.B \-\-schema
+to specify a custom path.
+.TP
 .B check " <tool>"
 Checks whether a specific tool is installed on the machine. Exits 0
 if installed, 1 if not found.

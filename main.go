@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"depengine/pkg/exec"
+	"depengine/pkg/i18n"
 	"depengine/pkg/lang"
 )
 
@@ -45,7 +46,11 @@ func main() {
 		runDiff(os.Args[2:])
 	case "version", "-v", "--version":
 		fmt.Println("depengine " + version)
-		fmt.Println("Motor distro-agnostic de instalação de dependências")
+		if i18n.GetLocale() == "pt" {
+			fmt.Println("Motor distro-agnóstico de instalação de dependências")
+		} else {
+			fmt.Println("Distro-agnostic dependency installer")
+		}
 	case "help", "-h", "--help":
 		if len(os.Args) > 2 && os.Args[2] == "--man" {
 			printManPage()

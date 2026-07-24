@@ -12,9 +12,10 @@ import (
 )
 
 // DefinitionHash computes a stable SHA256 hash of a tool's schema definition.
-// The hash covers the tool name, requires, postinstall, and every method's
-// kind, config, and when condition. Methods are sorted by (kind, intra-kind
-// ordinal) for reproducible output even with duplicate kinds.
+// The hash covers the tool name, requires, preinstall, postinstall, tags,
+// and every method's kind, config, and when condition. Methods are sorted
+// by (kind, intra-kind ordinal) for reproducible output even with duplicate
+// kinds.
 func DefinitionHash(tool *schema.Tool) string {
 	h := sha256.New()
 	h.Write([]byte(tool.Name))
@@ -25,6 +26,10 @@ func DefinitionHash(tool *schema.Tool) string {
 		h.Write([]byte(req))
 		h.Write([]byte{0})
 	}
+	h.Write([]byte{0})
+
+	// Include PreInstall.
+	h.Write([]byte(tool.PreInstall))
 	h.Write([]byte{0})
 
 	// Include PostInstall.

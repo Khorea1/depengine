@@ -3,23 +3,23 @@
 //
 // Architecture
 //
-//	Executor.orquestrar(schema, facts, clan)
+//	Executor.execute(schema, facts, clan)
 //	  │
-//	  ├─ 1. Resolver ordem topológica das tools (pkg/graph)
+//	  ├─ 1. Resolve topological order of tools (pkg/graph)
 //	  │
-//	  ├─ 2. Para cada tool (na ordem do grafo):
+//	  ├─ 2. For each tool (in graph order):
 //	  │     │
-//	  │     ├─ 2a. Para cada método (na ordem de method_order):
-//	  │     │      ├─ when bate?           → PULA
-//	  │     │      ├─ adapter.Available()? → não → PULA
-//	  │     │      ├─ adapter.Check() ok?  → sim → PULA (já instalado)
-//	  │     │      ├─ adapter.Install()    → ok  → SUCESSO
-//	  │     │      └─ Install() falhou     → tenta próximo método
+//	  │     ├─ 2a. For each method (in method_order):
+//	  │     │      ├─ when matches?           → skip
+//	  │     │      ├─ adapter.Available()?    → no → skip
+//	  │     │      ├─ adapter.Check() ok?     → yes → skip (already installed)
+//	  │     │      ├─ adapter.Install()       → ok  → SUCCESS
+//	  │     │      └─ Install() failed        → try next method
 //	  │     │
-//	  │     ├─ 2b. Se algum método sucedeu → executa postinstall (se houver)
-//	  │     └─ 2c. Se todos falharam       → log erro, CONTINUA
+//	  │     ├─ 2b. If any method succeeded → run postinstall (if any)
+//	  │     └─ 2c. If all failed            → log error, CONTINUE
 //	  │
-//	  └─ 3. Reportar resumo (sucessos, falhas, pulados)
+//	  └─ 3. Report summary (successes, failures, skips)
 //
 // Adding a new adapter: implement Adapter, call Register in an init().
 // The executor is generic — it only knows this interface.

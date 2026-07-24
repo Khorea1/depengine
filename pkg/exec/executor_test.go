@@ -1,7 +1,6 @@
 package exec
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -95,10 +94,6 @@ func mockSchema(tools ...string) *schema.Schema {
 	return s
 }
 
-func captureLogs() (Option, *bytes.Buffer) {
-	var buf bytes.Buffer
-	return WithOutput(&buf), &buf
-}
 
 func TestExecutorFallback(t *testing.T) {
 	methodA := &testMockAdapter{kindValue: "failer"}
@@ -768,17 +763,17 @@ func TestLookupAdapter(t *testing.T) {
 	ex := New()
 
 	// Look up a registered adapter.
-	got := ex.lookupAdapter("test-adapter")
+	got := ex.LookupAdapter("test-adapter")
 	if got == nil {
-		t.Fatal("lookupAdapter returned nil for registered adapter")
+		t.Fatal("LookupAdapter returned nil for registered adapter")
 	}
 	if got.Kind() != "test-adapter" {
-		t.Fatalf("lookupAdapter returned kind %q, want %q", got.Kind(), "test-adapter")
+		t.Fatalf("LookupAdapter returned kind %q, want %q", got.Kind(), "test-adapter")
 	}
 
 	// Look up an unregistered kind returns nil.
-	if unreg := ex.lookupAdapter("nope"); unreg != nil {
-		t.Fatalf("lookupAdapter for unregistered kind should be nil, got %v", unreg)
+	if unreg := ex.LookupAdapter("nope"); unreg != nil {
+		t.Fatalf("LookupAdapter for unregistered kind should be nil, got %v", unreg)
 	}
 }
 func TestExecutorPreAndPostInstall(t *testing.T) {

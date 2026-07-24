@@ -248,6 +248,28 @@ func TestDefinitionHashIncludesPostInstall(t *testing.T) {
 	}
 }
 
+func TestDefinitionHashIncludesPreInstall(t *testing.T) {
+	base := &schema.Tool{
+		Name: "test",
+		Methods: []*schema.MethodCandidate{
+			{Kind: "native", Config: map[string]any{"pkg": "test"}},
+		},
+	}
+	withPre := &schema.Tool{
+		Name:        "test",
+		PreInstall: "curl -fsSL https://example.com/setup.sh | sh",
+		Methods: []*schema.MethodCandidate{
+			{Kind: "native", Config: map[string]any{"pkg": "test"}},
+		},
+	}
+
+	h1 := DefinitionHash(base)
+	h2 := DefinitionHash(withPre)
+	if h1 == h2 {
+		t.Fatal("DefinitionHash should differ when PreInstall is added")
+	}
+}
+
 func TestDefinitionHashIncludesWhenCondition(t *testing.T) {
 	base := &schema.Tool{
 		Name: "test",

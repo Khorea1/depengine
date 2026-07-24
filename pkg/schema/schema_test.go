@@ -348,7 +348,7 @@ func TestValidateRejectsUnreachableTool(t *testing.T) {
 			},
 		},
 	}
-	err, warnings := Validate(s, []string{"native", "cargo"})
+	warnings, err := Validate(s, []string{"native", "cargo"})
 	if err == nil {
 		t.Fatal("expected error for unreachable tool")
 	}
@@ -376,7 +376,7 @@ func TestValidateWarnsOnUnknownKindWithKnownFallback(t *testing.T) {
 			},
 		},
 	}
-	err, warnings := Validate(s, []string{"native", "cargo"})
+	warnings, err := Validate(s, []string{"native", "cargo"})
 	if err != nil {
 		t.Fatalf("expected no error (has known fallback), got: %v", err)
 	}
@@ -407,7 +407,7 @@ func TestValidateAcceptsAllKnown(t *testing.T) {
 			},
 		},
 	}
-	err, warnings := Validate(s, []string{"native", "cargo"})
+	warnings, err := Validate(s, []string{"native", "cargo"})
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}

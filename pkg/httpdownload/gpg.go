@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -20,7 +19,7 @@ var DefaultKeyServer = "keys.openpgp.org"
 // available or signature verification fails.
 func GPGVerify(ctx context.Context, rn run.Runner, checksumFile, signatureFile, signingKey string) error {
 	// Check if gpg is available on the system.
-	if _, err := exec.LookPath("gpg"); err != nil {
+	if !run.LookPath(ctx, rn, "gpg") {
 		return fmt.Errorf("gpg: not found in PATH, cannot verify signature")
 	}
 

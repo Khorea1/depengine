@@ -3,8 +3,6 @@ package lang
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"depengine/pkg/exec"
@@ -48,15 +46,5 @@ func (a *SteamCMDAdapter) Install(ctx context.Context, rn run.Runner, tool *sche
 	return nil
 }
 
-func installDirFromConfig(mc *schema.MethodCandidate, pkg string) string {
-	if d, ok := mc.Config["dir"].(string); ok && d != "" {
-		return d
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".steam", "steamapps", "common", pkg)
-}
 
 var _ exec.Adapter = (*SteamCMDAdapter)(nil)

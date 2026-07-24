@@ -32,10 +32,10 @@ type Defaults struct {
 }
 
 
-// DefaultBuckets mapeia nomes de ecossistema para lista de method kinds.
-// Usado em normalizeTools quando uma chave não é method kind conhecido nem
-// nome de manager nativo. Buckets evitam repetir o mesmo conjunto de métodos
-// para cada ferramenta de um mesmo ecossistema.
+// DefaultBuckets maps ecosystem names to lists of method kinds.
+// Used in normalizeTools when a key is neither a known method kind nor
+// a native manager name. Buckets avoid repeating the same set of methods
+// for every tool in the same ecosystem.
 var DefaultBuckets = map[string][]string{
 	"python": {"pip", "pipx", "uv"},
 	"node":   {"npm", "pnpm", "bun"},
@@ -257,12 +257,12 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 			tool.Tags = anySliceToStrings(t)
 		}
 
-		// Expande chaves que são nomes de bucket para os method kinds correspondentes.
+		// Expand bucket names into their corresponding method kinds.
 		// Ex: `ruff = { python = true }` → `ruff = { pipx = true, uv = true }`
-		// Suporta três shapes:
-		//   bool:   python = true       → cada método recebe true
-		//   string: python = "pkgname"  → cada método recebe o nome do pacote
-		//   map:    python = { pkg = …, when = … } → cada método recebe clone da config
+		// Supports three shapes:
+		//   bool:   python = true       → each method gets true
+		//   string: python = "pkgname"  → each method gets the package name
+		//   map:    python = { pkg = …, when = … } → each method gets a clone of the config
 		for k, v := range valMap {
 			if methods, ok := DefaultBuckets[k]; ok {
 				switch tv := v.(type) {
@@ -386,7 +386,7 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 }
 
 // buildMethods processes the keys of an inline-table tool declaration and
-// collapses native-manager overrides (CASO 2) into a single "native" method
+// collapses native-manager overrides into a single "native" method
 // with a pkg_overrides map, while keeping non-native keys as separate methods.
 //
 // When a tool declares only non-native methods (go, cargo, pip, etc.) without
@@ -423,7 +423,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	var nonNativeKeys []string
 	var nativeBlockConfig map[string]any
 
-	for _, k := range sortedKeys(valMap, "requires", "pre_install", "preinstall", "post_install", "postinstall", "tags", "method_order", "method_prefer", "method_only") {
+	for _, k := range sortedKeys(valMap, "requires", "pre_install", "preinstall", "post_install", "postinstall", "tags", "method_order", "method_prefer", "method_only", "when") {
 		if k == "native" {
 			if m, ok := valMap[k].(map[string]any); ok {
 				nativeBlockConfig = m
@@ -448,10 +448,8 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 		if len(nativeOverrides) > 0 {
 			cfg["pkg_overrides"] = nativeOverrides
 		}
-		if nativeBlockConfig != nil {
-			for k, v := range nativeBlockConfig {
-				cfg[k] = v
-			}
+		for k, v := range nativeBlockConfig {
+			cfg[k] = v
 		}
 		methods = append(methods, &MethodCandidate{
 			Kind:   "native",
@@ -693,7 +691,7 @@ func findLineInFile(path, key string) (int, error) {
 // still install via the known fallback. Defaults.MethodOrder entries that
 // are unknown are always warned, never errored — they are a hint about
 // preference, not a per-tool contract.
-func Validate(s *Schema, knownKinds []string) (error, []string) {
+func Validate(s *Schema, knownKinds []string) ([]string, error) {
 	set := make(map[string]struct{}, len(knownKinds))
 	for _, k := range knownKinds {
 		set[k] = struct{}{}
@@ -784,6 +782,9 @@ func Validate(s *Schema, knownKinds []string) (error, []string) {
 		// Part B: warn if some method kinds are absent from method_order.
 		var inOrder, notInOrder []string
 		for _, mc := range tool.Methods {
+			if native.IsNativeManagerName(mc.Kind) {
+				continue // native manager aliases resolve to "native" at runtime
+			}
 			if _, ok := orderSet[mc.Kind]; ok {
 				inOrder = append(inOrder, mc.Kind)
 			} else {
@@ -819,7 +820,7 @@ func Validate(s *Schema, knownKinds []string) (error, []string) {
 	}
 
 	if len(hardErrors) > 0 {
-		return &ParseSchemaError{Err: errors.New(strings.Join(hardErrors, "\n"))}, warnings
+	return warnings, &ParseSchemaError{Err: errors.New(strings.Join(hardErrors, "\n"))}
 	}
-	return nil, warnings
+	return warnings, nil
 }
