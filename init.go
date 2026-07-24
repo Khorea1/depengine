@@ -19,7 +19,7 @@ manager = "native"
 aur_helper = "paru"
 
 # Method resolution order: the engine tries each until one succeeds.
-method_order = ["native", "scoop", "choco", "cargo", "go", "pipx", "uv", "pip", "bun", "npm", "pnpm", "gem", "flatpak", "snap", "conda", "asdf", "git", "http"]
+method_order = ["native", "scoop", "choco", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm", "bun", "gem", "yarn", "yarn-berry", "composer", "apm", "vscode", "vscodium", "flatpak", "snap", "cask", "mas", "sdkman", "steamcmd", "pacstall", "aur", "conda", "asdf", "git", "http"]
 
 [tools]
 # Tools whose package name matches on every distro:

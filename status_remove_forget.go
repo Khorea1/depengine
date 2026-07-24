@@ -139,7 +139,7 @@ func runStatus(args []string) {
 		return tools[i].Name < tools[j].Name
 	})
 
-	if *statusFormat == "json" || *statusJSON {
+	if *statusFormat == "json" {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(tools); err != nil {

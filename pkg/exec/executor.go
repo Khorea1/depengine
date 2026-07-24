@@ -352,12 +352,10 @@ func (ex *Executor) writeState(ctx context.Context, s *schema.Schema, report *Ex
 // keys that trigger arbitrary code execution (build scripts, etc.).
 func (ex *Executor) hasDangerousMethod(tool *schema.Tool) bool {
 	for _, m := range tool.Methods {
-		// Build script config keys are user-supplied and may execute arbitrary code.
-		for _, key := range []string{"build", "build_cmd", "build_command"} {
-			if v, ok := m.Config[key]; ok {
-				if s, ok := v.(string); ok && s != "" {
-					return true
-				}
+		// Build script config key is user-supplied and may execute arbitrary code.
+		if v, ok := m.Config["build"]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				return true
 			}
 		}
 	}
