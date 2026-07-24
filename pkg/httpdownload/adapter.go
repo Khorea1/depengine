@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"depengine/pkg/downloadcache"
 	"depengine/pkg/exec"
@@ -108,7 +109,9 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 	if !fromCache {
 		// Download from remote.
 		dl := SelectDownloader(ctx, rn)
-		if err := dl.Download(ctx, resolvedURL, tmpFile); err != nil {
+		if err := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
+			return dl.Download(retryCtx, resolvedURL, tmpFile)
+		}); err != nil {
 			return fmt.Errorf("http: download %s: %w", tool.Name, err)
 		}
 	}
@@ -121,7 +124,9 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.T
 				log.Default.Warn("cached copy failed checksum, re-downloading", "tool", tool.Name)
 				downloadcache.Remove(resolvedURL)
 				dl := SelectDownloader(ctx, rn)
-				if err2 := dl.Download(ctx, resolvedURL, tmpFile); err2 != nil {
+				if err2 := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
+					return dl.Download(retryCtx, resolvedURL, tmpFile)
+				}); err2 != nil {
 					return fmt.Errorf("http: download %s (re-download): %w", tool.Name, err2)
 				}
 				// Retry checksum verification on fresh download.
