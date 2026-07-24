@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/depengine/depengine/main/schema/depengine.schema.json",
+  "$id": "https://raw.githubusercontent.com/Khorea1/depengine/main/schema/depengine.schema.json",
   "title": "depengine schema.toml",
   "description": "JSON Schema for depengine schema.toml — validates structure, method kinds, and required fields for distro-agnostic dependency installation files.",
   "type": "object",

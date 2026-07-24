@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/depengine/depengine/actions"><img src="https://github.com/depengine/depengine/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://pkg.go.dev/github.com/depengine/depengine"><img src="https://pkg.go.dev/badge/github.com/depengine/depengine" alt="Go Reference"></a>
-  <a href="https://goreportcard.com/report/github.com/depengine/depengine"><img src="https://goreportcard.com/badge/github.com/depengine/depengine" alt="Go Report Card"></a>
+  <a href="https://github.com/Khorea1/depengine/actions"><img src="https://github.com/Khorea1/depengine/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://pkg.go.dev/github.com/Khorea1/depengine"><img src="https://pkg.go.dev/badge/github.com/Khorea1/depengine" alt="Go Reference"></a>
+  <a href="https://goreportcard.com/report/github.com/Khorea1/depengine"><img src="https://goreportcard.com/badge/github.com/Khorea1/depengine" alt="Go Report Card"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue" alt="Licença"></a>
   <img src="https://img.shields.io/badge/go-1.26-blue" alt="Go 1.26">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Plataforma">
@@ -407,7 +407,7 @@ Para ativar no VSCode com a extensão TOML (taplo), crie na raiz do projeto um `
 ```json
 {
   "taplo.schema.enabled": true,
-  "taplo.schema.url": "https://raw.githubusercontent.com/depengine/depengine/main/schema/depengine.schema.json"
+  "taplo.schema.url": "https://raw.githubusercontent.com/Khorea1/depengine/main/schema/depengine.schema.json"
 }
 ```
 

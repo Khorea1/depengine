@@ -32,7 +32,7 @@ nfpms:
     package_name: depengine
     file_name_template: "depengine_{{ .Version }}_{{ .Arch }}"
     vendor: depengine
-    homepage: https://github.com/depengine/depengine
+    homepage: https://github.com/Khorea1/depengine
     maintainer: depengine team
     description: Distro-agnostic dependency installer
     license: GPL-3.0-or-later
@@ -50,7 +50,7 @@ nfpms:
 
 brews:
   - name: depengine
-    homepage: https://github.com/depengine/depengine
+    homepage: https://github.com/Khorea1/depengine
     description: Distro-agnostic dependency installer
     license: GPL-3.0-or-later
     repository:
