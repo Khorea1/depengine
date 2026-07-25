@@ -1,4 +1,4 @@
-module depengine
+module github.com/Khorea1/depengine
 
 go 1.26.4
 
