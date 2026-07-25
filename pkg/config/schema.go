@@ -38,7 +38,7 @@ var ToolFieldStrategy = map[string]MergeStrategy{
 	"MethodPrefer": MergeLocalOnly,
 	"MethodOnly":   MergeLocalOnly,
 	"IsSimple":     MergeOverwrite,
-	"Tags":         MergeLocalOnly,
+	"Tags":         MergeUnionSlice,
 	"Ecosystem":    MergeOverwrite,
 }
 
@@ -61,7 +61,6 @@ var ToolFieldIsSet = map[string]func(*Tool) bool{
 	"PreInstall":   func(t *Tool) bool { return t.PreInstall != "" },
 	"PostInstall":  func(t *Tool) bool { return t.PostInstall != "" },
 	"Requires":     func(t *Tool) bool { return len(t.Requires) > 0 },
-	"Tags":         func(t *Tool) bool { return len(t.Tags) > 0 },
 	"MethodOrder":  func(t *Tool) bool { return len(t.MethodOrder) > 0 },
 	"MethodPrefer": func(t *Tool) bool { return len(t.MethodPrefer) > 0 },
 	"MethodOnly":   func(t *Tool) bool { return len(t.MethodOnly) > 0 },
@@ -98,20 +97,8 @@ func (pc *provenanceCollector) record(field, source string, schemaVal, manifestV
 // mergeConfig holds options for MergeLayers.
 type mergeConfig struct {
 	collectProvenance bool
-	layerNames        []string
 }
 
-// MergeOption configures MergeLayers behavior.
-type MergeOption func(*mergeConfig)
-
-// WithProvenance enables provenance collection during merge. layerNames are
-// optional labels for the layers (len must match layer count if provided).
-func WithProvenance(layerNames ...string) MergeOption {
-	return func(c *mergeConfig) {
-		c.collectProvenance = true
-		c.layerNames = layerNames
-	}
-}
 
 // Schema is the fully-normalized in-memory form of schema.toml after parsing.
 // It is the engine's working set: defaults + a flat map of tools, each with

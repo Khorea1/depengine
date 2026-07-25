@@ -259,7 +259,7 @@ d = { pip = "d3" }
 func TestValidateManifestLayer_RejectsIntentFields(t *testing.T) {
 	p := writeSchemaInline(t, `
 [packages]
-nvim = { pacman = "neovim", pre_install = "dangerous", requires = ["zsh"], tags = ["desktop"] }
+	nvim = { pacman = "neovim", pre_install = "dangerous", requires = ["zsh"] }
 	`)
 	s, err := ParseSchema(p, nil, "packages")
 	if err != nil {
@@ -276,9 +276,6 @@ nvim = { pacman = "neovim", pre_install = "dangerous", requires = ["zsh"], tags 
 	}
 	if !strings.Contains(msg, "requires") {
 		t.Fatalf("expected error about requires, got: %s", msg)
-	}
-	if !strings.Contains(msg, "tags") {
-		t.Fatalf("expected error about tags, got: %s", msg)
 	}
 }
 
@@ -725,6 +722,40 @@ nvim = { pacman = "neovim" }
 	// Should have at least one field source recorded
 	if len(nvimProv) == 0 {
 		t.Fatal("expected at least one provenance entry for nvim")
+	}
+}
+
+// TestMergeLayers_TagsUnion verifies that Tags use MergeUnionSlice:
+// tags from both layers are unioned without duplicates.
+func TestMergeLayers_TagsUnion(t *testing.T) {
+	schemaPath := writeSchemaInline(t, `
+[tools]
+rustup = { cargo = "rustup", tags = ["dev", "lang"] }
+	`)
+	manifestPath := writeSchemaInline(t, `
+[packages]
+rustup = { tags = ["personal", "lang"] }
+	`)
+	schema, err := ParseSchema(schemaPath, nil)
+	if err != nil {
+		t.Fatalf("ParseSchema(schema): %v", err)
+	}
+	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	if err != nil {
+		t.Fatalf("ParseSchema(manifest): %v", err)
+	}
+
+	merged := MergeLayers(manifest, schema)
+
+	tool, ok := merged.Tools["rustup"]
+	if !ok {
+		t.Fatal("expected rustup in merged result")
+	}
+
+	want := []string{"personal", "lang", "dev"}
+	got := tool.Tags
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("merged Tags = %v, want %v", got, want)
 	}
 }
 

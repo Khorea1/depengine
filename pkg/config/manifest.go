@@ -82,7 +82,6 @@ func ResolveSchemaFromFiles(schemaPath string, manifestPaths ...string) (*Schema
 //   - If a tool only exists in one layer, that version is used.
 //   - Defaults come from the most specific layer that has them.
 //   - Method ordering is preserved from the merged schema's defaults.
-//   - Pass MergeOption(s) to enable provenance collection.
 func MergeLayers(layers ...*Schema) *Schema {
 	return MergeLayersWithOpts(nil, layers...)
 }
@@ -262,21 +261,8 @@ func mergeMethodConfigs(lower, upper *MethodCandidate, pc *provenanceCollector) 
 
 	return result
 }
-
-// mergeSlices performs a union merge for a slice field.
 func mergeSlices(result *Tool, lower, upper *Tool, field string) *Tool {
 	switch field {
-	case "Requires":
-		seen := make(map[string]bool, len(result.Requires))
-		for _, v := range result.Requires {
-			seen[v] = true
-		}
-		for _, v := range upper.Requires {
-			if !seen[v] {
-				result.Requires = append(result.Requires, v)
-				seen[v] = true
-			}
-		}
 	case "Tags":
 		seen := make(map[string]bool, len(result.Tags))
 		for _, v := range result.Tags {
@@ -285,39 +271,6 @@ func mergeSlices(result *Tool, lower, upper *Tool, field string) *Tool {
 		for _, v := range upper.Tags {
 			if !seen[v] {
 				result.Tags = append(result.Tags, v)
-				seen[v] = true
-			}
-		}
-	case "MethodOrder":
-		seen := make(map[string]bool, len(result.MethodOrder))
-		for _, v := range result.MethodOrder {
-			seen[v] = true
-		}
-		for _, v := range upper.MethodOrder {
-			if !seen[v] {
-				result.MethodOrder = append(result.MethodOrder, v)
-				seen[v] = true
-			}
-		}
-	case "MethodPrefer":
-		seen := make(map[string]bool, len(result.MethodPrefer))
-		for _, v := range result.MethodPrefer {
-			seen[v] = true
-		}
-		for _, v := range upper.MethodPrefer {
-			if !seen[v] {
-				result.MethodPrefer = append(result.MethodPrefer, v)
-				seen[v] = true
-			}
-		}
-	case "MethodOnly":
-		seen := make(map[string]bool, len(result.MethodOnly))
-		for _, v := range result.MethodOnly {
-			seen[v] = true
-		}
-		for _, v := range upper.MethodOnly {
-			if !seen[v] {
-				result.MethodOnly = append(result.MethodOnly, v)
 				seen[v] = true
 			}
 		}
