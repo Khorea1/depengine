@@ -15,12 +15,112 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+
+// MergeStrategy defines how a field is merged across layers.
+type MergeStrategy int
+
+const (
+	MergeOverwrite   MergeStrategy = iota // most specific wins entirely
+	MergeMapMerge                         // key-by-key within map, most specific wins per key
+	MergeUnionSlice                       // union without duplicates
+	MergeLocalOnly                        // only schema layer may set; manifest presence is error
+	MergeMethods                          // special: merge method slices by Kind, then MapMerge Config
+)
+
+// ToolFieldStrategy defines merge policy for every exported field of Tool.
+var ToolFieldStrategy = map[string]MergeStrategy{
+	"Name":         MergeOverwrite,
+	"PreInstall":   MergeLocalOnly,
+	"PostInstall":  MergeLocalOnly,
+	"Requires":     MergeLocalOnly,
+	"Methods":      MergeMethods,
+	"MethodOrder":  MergeLocalOnly,
+	"MethodPrefer": MergeLocalOnly,
+	"MethodOnly":   MergeLocalOnly,
+	"IsSimple":     MergeOverwrite,
+	"Tags":         MergeLocalOnly,
+	"Ecosystem":    MergeOverwrite,
+}
+
+// MethodConfigFieldStrategy defines merge policy per Config key of MethodCandidate.
+var MethodConfigFieldStrategy = map[string]MergeStrategy{
+	"pkg":           MergeOverwrite,
+	"pkg_overrides": MergeMapMerge,
+	"url":           MergeOverwrite,
+	"build":         MergeOverwrite,
+	"checksum":      MergeOverwrite,
+	"checksum_url":  MergeOverwrite,
+	"extract_to":    MergeOverwrite,
+	"git":           MergeOverwrite,
+	"binary":        MergeOverwrite,
+}
+
+// ToolFieldIsSet maps field name to a function that reports whether the field
+// is considered "set" (non-zero) on a Tool. Used for MergeLocalOnly validation.
+var ToolFieldIsSet = map[string]func(*Tool) bool{
+	"PreInstall":   func(t *Tool) bool { return t.PreInstall != "" },
+	"PostInstall":  func(t *Tool) bool { return t.PostInstall != "" },
+	"Requires":     func(t *Tool) bool { return len(t.Requires) > 0 },
+	"Tags":         func(t *Tool) bool { return len(t.Tags) > 0 },
+	"MethodOrder":  func(t *Tool) bool { return len(t.MethodOrder) > 0 },
+	"MethodPrefer": func(t *Tool) bool { return len(t.MethodPrefer) > 0 },
+	"MethodOnly":   func(t *Tool) bool { return len(t.MethodOnly) > 0 },
+}
+
+// FieldSource describes which layer contributed to a field's value.
+type FieldSource struct {
+	Field    string `json:"field"`
+	Source   string `json:"source"` // "schema", "manifest", "both"
+	Schema   any    `json:"schema,omitempty"`
+	Manifest any    `json:"manifest,omitempty"`
+	Merged   any    `json:"merged"`
+}
+
+// provenanceCollector accumulates FieldSource entries during a merge.
+type provenanceCollector struct {
+	toolName string
+	sources  []FieldSource
+}
+
+func (pc *provenanceCollector) record(field, source string, schemaVal, manifestVal, mergedVal any) {
+	if pc == nil {
+		return
+	}
+	pc.sources = append(pc.sources, FieldSource{
+		Field:    field,
+		Source:   source,
+		Schema:   schemaVal,
+		Manifest: manifestVal,
+		Merged:   mergedVal,
+	})
+}
+
+// mergeConfig holds options for MergeLayers.
+type mergeConfig struct {
+	collectProvenance bool
+	layerNames        []string
+}
+
+// MergeOption configures MergeLayers behavior.
+type MergeOption func(*mergeConfig)
+
+// WithProvenance enables provenance collection during merge. layerNames are
+// optional labels for the layers (len must match layer count if provided).
+func WithProvenance(layerNames ...string) MergeOption {
+	return func(c *mergeConfig) {
+		c.collectProvenance = true
+		c.layerNames = layerNames
+	}
+}
+
 // Schema is the fully-normalized in-memory form of schema.toml after parsing.
 // It is the engine's working set: defaults + a flat map of tools, each with
 // its method candidates ordered by defaults.method_order.
 type Schema struct {
-	Defaults Defaults
-	Tools    map[string]*Tool
+	Defaults     Defaults
+	Tools        map[string]*Tool
+	AllowNewTools bool             `json:"-"`
+	Provenance    map[string][]FieldSource `json:"-"` // tool name → field sources
 }
 
 // Defaults mirrors the [defaults] table. Omitted fields keep engine-safe
@@ -53,6 +153,47 @@ type Tool struct {
 	IsSimple    bool
 	Tags        []string // profile tags for --profile filtering (e.g. "desktop", "server")
 	Ecosystem   string   // "python", "node", etc — empty if not from bucket
+}
+
+// cloneTool returns a deep copy of t.
+func cloneTool(t *Tool) *Tool {
+	if t == nil {
+		return nil
+	}
+	out := *t
+	out.Requires = append([]string{}, t.Requires...)
+	out.Tags = append([]string{}, t.Tags...)
+	out.MethodOrder = append([]string{}, t.MethodOrder...)
+	out.MethodPrefer = append([]string{}, t.MethodPrefer...)
+	out.MethodOnly = append([]string{}, t.MethodOnly...)
+	out.Methods = cloneMethods(t.Methods)
+	return &out
+}
+
+// cloneMethods returns a deep copy of a MethodCandidate slice.
+func cloneMethods(methods []*MethodCandidate) []*MethodCandidate {
+	out := make([]*MethodCandidate, len(methods))
+	for i, m := range methods {
+		out[i] = cloneMethod(m)
+	}
+	return out
+}
+
+// cloneMethod returns a deep copy of m.
+func cloneMethod(m *MethodCandidate) *MethodCandidate {
+	if m == nil {
+		return nil
+	}
+	out := *m
+	out.Config = make(map[string]any, len(m.Config))
+	for k, v := range m.Config {
+		out.Config[k] = v // shallow copy; map values are not deeply cloned
+	}
+	if m.When != nil {
+		w := *m.When
+		out.When = &w
+	}
+	return &out
 }
 
 // MethodCandidate is one way to install the parent Tool. Kind is the
@@ -236,7 +377,18 @@ func ParseSchema(path string, m map[string]string, section ...string) (*Schema, 
 		return nil, &ParseSchemaError{Err: err}
 	}
 
-	return &Schema{Defaults: defaults, Tools: tools}, nil
+	allowNewTools := false
+	if sectionName == "packages" {
+		if manifestRaw, ok := raw["manifest"]; ok {
+			if manifestMap, ok := manifestRaw.(map[string]any); ok {
+				if allow, ok := manifestMap["allow_new_tools"]; ok {
+					allowNewTools, _ = allow.(bool)
+				}
+			}
+		}
+	}
+
+	return &Schema{Defaults: defaults, Tools: tools, AllowNewTools: allowNewTools}, nil
 }
 
 

@@ -62,6 +62,9 @@ func ResolveSchemaFromFiles(schemaPath string, manifestPaths ...string) (*Schema
 		if err := ValidateManifestLayer(mt); err != nil {
 			return nil, fmt.Errorf("manifest %s: %w", mp, err)
 		}
+		if err := ValidateManifestNewTools(s, mt); err != nil {
+			return nil, fmt.Errorf("manifest %s: %w", mp, err)
+		}
 		// Insert manifest layers before the schema layer so schema wins.
 		layers = append(layers[:len(layers)-1], mt, layers[len(layers)-1])
 	}
@@ -71,15 +74,27 @@ func ResolveSchemaFromFiles(schemaPath string, manifestPaths ...string) (*Schema
 
 // MergeLayers merges an ordered list of Schema pointers, from least specific
 // (lowest priority) to most specific (highest priority), and returns a new
-// *Schema. Later layers win entirely per-tool (not field-by-field).
+// *Schema. Field-level merge strategies are applied per ToolFieldStrategy.
 //
 // Rules:
-//   - If a tool exists in multiple layers, the MOST SPECIFIC layer's version
-//     wins entirely (whole Tool struct).
+//   - If a tool exists in multiple layers, fields are merged per their
+//     MergeStrategy (Overwrite, LocalOnly, UnionSlice, or Methods).
 //   - If a tool only exists in one layer, that version is used.
 //   - Defaults come from the most specific layer that has them.
 //   - Method ordering is preserved from the merged schema's defaults.
+//   - Pass MergeOption(s) to enable provenance collection.
 func MergeLayers(layers ...*Schema) *Schema {
+	return MergeLayersWithOpts(nil, layers...)
+}
+
+// MergeLayersWithProvenance is like MergeLayers but also collects provenance
+// information describing which layer contributed to each field.
+func MergeLayersWithProvenance(layers ...*Schema) *Schema {
+	return MergeLayersWithOpts(&mergeConfig{collectProvenance: true}, layers...)
+}
+
+// MergeLayersWithOpts is like MergeLayers but accepts merge options.
+func MergeLayersWithOpts(opts *mergeConfig, layers ...*Schema) *Schema {
 	if len(layers) == 0 {
 		return &Schema{
 			Defaults: Defaults{
@@ -92,50 +107,420 @@ func MergeLayers(layers ...*Schema) *Schema {
 
 	// Defaults from the most specific layer.
 	result := &Schema{
-		Defaults: layers[len(layers)-1].Defaults,
-		Tools:    make(map[string]*Tool),
+		Defaults:   layers[len(layers)-1].Defaults,
+		Tools:      make(map[string]*Tool),
+		Provenance: make(map[string][]FieldSource),
 	}
 
-	// Iterate layers in order; later layers overwrite earlier ones.
+	// Iterate layers in order; later layers overwrite earlier ones field-by-field.
 	for _, layer := range layers {
 		if layer == nil {
 			continue
 		}
 		for name, tool := range layer.Tools {
-			result.Tools[name] = tool
+			existing, exists := result.Tools[name]
+			if !exists {
+				// First occurrence: clone and use as-is.
+				result.Tools[name] = cloneTool(tool)
+				continue
+			}
+			// Merge tool: existing is lower priority, tool is higher priority.
+			var pc *provenanceCollector
+			if opts != nil && opts.collectProvenance {
+				pc = &provenanceCollector{toolName: name}
+			}
+			result.Tools[name] = mergeTools(existing, tool, pc)
+			if pc != nil {
+				result.Provenance[name] = pc.sources
+			}
 		}
 	}
 
 	return result
 }
 
-// ValidateManifestLayer validates that a Schema parsed from the manifest
-// layer does not contain fields that are security-sensitive or should only
-// appear in the local schema. Returns a clear error listing all violations.
-//
-// Fields NOT allowed in the manifest layer:
-//   - pre_install (arbitrary commands from a shared file)
-//   - post_install / postinstall (arbitrary commands from a shared file)
-//   - requires (dependency declarations)
-//   - tags (profile filtering intent)
+// mergeTools merges two Tool values using the field strategies in ToolFieldStrategy.
+// lower is the lower-priority (less specific) layer, upper is the higher-priority one.
+// The result is a new *Tool (cloned).
+func mergeTools(lower, upper *Tool, pc *provenanceCollector) *Tool {
+	// Start with the lower layer as base.
+	result := cloneTool(lower)
+
+	for field, strategy := range ToolFieldStrategy {
+		schemeVal, manifestVal := schemaValue(upper, lower, field)
+		switch strategy {
+		case MergeOverwrite:
+			// Use upper (more specific) value if it's set.
+			if isFieldSet(upper, field) {
+				_ = setField(result, upper, field)
+				pc.record(field, "schema", schemeVal, manifestVal, upperFieldValue(upper, field))
+			} else {
+				pc.record(field, "manifest", schemeVal, manifestVal, lowerFieldValue(lower, field))
+			}
+
+		case MergeLocalOnly:
+			// Only set from upper (schema) layer; ignore lower layer values.
+			if isFieldSet(upper, field) {
+				_ = setField(result, upper, field)
+				pc.record(field, "schema", schemeVal, manifestVal, upperFieldValue(upper, field))
+			} else if isFieldSet(lower, field) {
+				// Lower had it but MergeLocalOnly means propagate only if upper also has it.
+				// But we clear it because lower shouldn't have set it.
+				_ = setFieldZero(result, field)
+				pc.record(field, "schema", schemeVal, manifestVal, nil)
+			} else {
+				pc.record(field, "manifest", schemeVal, manifestVal, "-")
+			}
+
+		case MergeUnionSlice:
+			// Union of lower's and upper's elements without duplicates.
+			if isFieldSet(lower, field) || isFieldSet(upper, field) {
+				result = mergeSlices(result, lower, upper, field)
+				pc.record(field, "both", schemeVal, manifestVal, upperFieldValue(upper, field))
+			}
+
+		case MergeMethods:
+			merged := mergeMethodSlices(lower.Methods, upper.Methods, pc)
+			result.Methods = merged
+			pc.record("Methods", "both", lower.Methods, upper.Methods, merged)
+		}
+	}
+
+	return result
+}
+
+// mergeMethodSlices merges two MethodCandidate slices by Kind.
+// lower is the lower-priority layer, upper is higher-priority.
+func mergeMethodSlices(lower, upper []*MethodCandidate, pc *provenanceCollector) []*MethodCandidate {
+	// Index lower by Kind.
+	byKind := make(map[string]*MethodCandidate, len(lower))
+	order := make([]string, 0, len(lower))
+	for _, m := range lower {
+		byKind[m.Kind] = m
+		order = append(order, m.Kind)
+	}
+
+	// Track which kinds we've seen.
+	seen := make(map[string]bool, len(lower))
+	for _, k := range order {
+		seen[k] = true
+	}
+
+	// Merge upper into lower.
+	for _, upperMethod := range upper {
+		if lowerMethod, exists := byKind[upperMethod.Kind]; exists {
+			merged := mergeMethodConfigs(lowerMethod, upperMethod, pc)
+			byKind[upperMethod.Kind] = merged
+		} else {
+			byKind[upperMethod.Kind] = cloneMethod(upperMethod)
+			order = append(order, upperMethod.Kind)
+		}
+	}
+
+	// Build result preserving order (lower methods first, then new upper methods).
+	result := make([]*MethodCandidate, 0, len(byKind))
+	for _, kind := range order {
+		result = append(result, byKind[kind])
+	}
+	return result
+}
+
+// mergeMethodConfigs merges two MethodCandidate values for the same Kind.
+// lower is lower priority, upper is higher priority.
+func mergeMethodConfigs(lower, upper *MethodCandidate, pc *provenanceCollector) *MethodCandidate {
+	// Start with upper as base (more specific).
+	result := cloneMethod(upper)
+
+	// For each key in lower.Config that upper doesn't have, copy it up.
+	for key, lowerVal := range lower.Config {
+		upperVal, inUpper := upper.Config[key]
+		if !inUpper {
+			result.Config[key] = lowerVal
+			continue
+		}
+
+		// Both have the key. Check the merge strategy.
+		strategy := MethodConfigFieldStrategy[key]
+		if strategy == MergeMapMerge {
+			// Merge inner maps.
+			upperMap, upperOk := upperVal.(map[string]any)
+			lowerMap, lowerOk := lowerVal.(map[string]any)
+			if upperOk && lowerOk {
+				merged := make(map[string]any, len(upperMap)+len(lowerMap))
+				for k, v := range lowerMap {
+					merged[k] = v
+				}
+				for k, v := range upperMap {
+					merged[k] = v
+				}
+				result.Config[key] = merged
+			}
+			// If either isn't a map, fall back to Overwrite (upper wins)
+		}
+		// For MergeOverwrite or any other strategy: upper already in place.
+	}
+
+	return result
+}
+
+// mergeSlices performs a union merge for a slice field.
+func mergeSlices(result *Tool, lower, upper *Tool, field string) *Tool {
+	switch field {
+	case "Requires":
+		seen := make(map[string]bool, len(result.Requires))
+		for _, v := range result.Requires {
+			seen[v] = true
+		}
+		for _, v := range upper.Requires {
+			if !seen[v] {
+				result.Requires = append(result.Requires, v)
+				seen[v] = true
+			}
+		}
+	case "Tags":
+		seen := make(map[string]bool, len(result.Tags))
+		for _, v := range result.Tags {
+			seen[v] = true
+		}
+		for _, v := range upper.Tags {
+			if !seen[v] {
+				result.Tags = append(result.Tags, v)
+				seen[v] = true
+			}
+		}
+	case "MethodOrder":
+		seen := make(map[string]bool, len(result.MethodOrder))
+		for _, v := range result.MethodOrder {
+			seen[v] = true
+		}
+		for _, v := range upper.MethodOrder {
+			if !seen[v] {
+				result.MethodOrder = append(result.MethodOrder, v)
+				seen[v] = true
+			}
+		}
+	case "MethodPrefer":
+		seen := make(map[string]bool, len(result.MethodPrefer))
+		for _, v := range result.MethodPrefer {
+			seen[v] = true
+		}
+		for _, v := range upper.MethodPrefer {
+			if !seen[v] {
+				result.MethodPrefer = append(result.MethodPrefer, v)
+				seen[v] = true
+			}
+		}
+	case "MethodOnly":
+		seen := make(map[string]bool, len(result.MethodOnly))
+		for _, v := range result.MethodOnly {
+			seen[v] = true
+		}
+		for _, v := range upper.MethodOnly {
+			if !seen[v] {
+				result.MethodOnly = append(result.MethodOnly, v)
+				seen[v] = true
+			}
+		}
+	}
+	return result
+}
+
+// field helpers for mergeTools
+
+// schemaValue returns the values from upper and lower layers for a field,
+// using "schema" to mean the more specific (upper) layer.
+func schemaValue(upper, lower *Tool, field string) (schemaVal, manifestVal any) {
+	return upperFieldValue(upper, field), lowerFieldValue(lower, field)
+}
+
+func upperFieldValue(t *Tool, field string) any {
+	if t == nil {
+		return nil
+	}
+	switch field {
+	case "Name":
+		return t.Name
+	case "PreInstall":
+		return t.PreInstall
+	case "PostInstall":
+		return t.PostInstall
+	case "Requires":
+		return t.Requires
+	case "Methods":
+		return t.Methods
+	case "MethodOrder":
+		return t.MethodOrder
+	case "MethodPrefer":
+		return t.MethodPrefer
+	case "MethodOnly":
+		return t.MethodOnly
+	case "IsSimple":
+		return t.IsSimple
+	case "Tags":
+		return t.Tags
+	case "Ecosystem":
+		return t.Ecosystem
+	default:
+		return nil
+	}
+}
+
+func lowerFieldValue(t *Tool, field string) any {
+	return upperFieldValue(t, field)
+}
+
+// isFieldSet reports whether a field on `upper` has been set.
+func isFieldSet(upper *Tool, field string) bool {
+	if upper == nil {
+		return false
+	}
+	switch field {
+	case "Name":
+		return upper.Name != ""
+	case "PreInstall":
+		return upper.PreInstall != ""
+	case "PostInstall":
+		return upper.PostInstall != ""
+	case "Requires":
+		return len(upper.Requires) > 0
+	case "Methods":
+		return len(upper.Methods) > 0
+	case "MethodOrder":
+		return len(upper.MethodOrder) > 0
+	case "MethodPrefer":
+		return len(upper.MethodPrefer) > 0
+	case "MethodOnly":
+		return len(upper.MethodOnly) > 0
+	case "IsSimple":
+		return upper.IsSimple
+	case "Tags":
+		return len(upper.Tags) > 0
+	case "Ecosystem":
+		return upper.Ecosystem != ""
+	default:
+		return false
+	}
+}
+
+// setField copies a field value from src to dst.
+func setField(dst, src *Tool, field string) error {
+	switch field {
+	case "Name":
+		dst.Name = src.Name
+	case "PreInstall":
+		dst.PreInstall = src.PreInstall
+	case "PostInstall":
+		dst.PostInstall = src.PostInstall
+	case "Requires":
+		dst.Requires = append([]string{}, src.Requires...)
+	case "Methods":
+		dst.Methods = cloneMethods(src.Methods)
+	case "MethodOrder":
+		dst.MethodOrder = append([]string{}, src.MethodOrder...)
+	case "MethodPrefer":
+		dst.MethodPrefer = append([]string{}, src.MethodPrefer...)
+	case "MethodOnly":
+		dst.MethodOnly = append([]string{}, src.MethodOnly...)
+	case "IsSimple":
+		dst.IsSimple = src.IsSimple
+	case "Tags":
+		dst.Tags = append([]string{}, src.Tags...)
+	case "Ecosystem":
+		dst.Ecosystem = src.Ecosystem
+	}
+	return nil
+}
+
+// setFieldZero resets a field to its zero value.
+func setFieldZero(t *Tool, field string) error {
+	switch field {
+	case "Name":
+		t.Name = ""
+	case "PreInstall":
+		t.PreInstall = ""
+	case "PostInstall":
+		t.PostInstall = ""
+	case "Requires":
+		t.Requires = nil
+	case "Methods":
+		t.Methods = nil
+	case "MethodOrder":
+		t.MethodOrder = nil
+	case "MethodPrefer":
+		t.MethodPrefer = nil
+	case "MethodOnly":
+		t.MethodOnly = nil
+	case "IsSimple":
+		t.IsSimple = false
+	case "Tags":
+		t.Tags = nil
+	case "Ecosystem":
+		t.Ecosystem = ""
+	}
+	return nil
+}
+
 func ValidateManifestLayer(s *Schema) error {
 	var errs []string
 	for name, tool := range s.Tools {
-		if tool.PreInstall != "" {
-			errs = append(errs, fmt.Sprintf("tool %q: pre_install is not allowed in manifest layer", name))
-		}
-		if tool.PostInstall != "" {
-			errs = append(errs, fmt.Sprintf("tool %q: post_install is not allowed in manifest layer", name))
-		}
-		if len(tool.Requires) > 0 {
-			errs = append(errs, fmt.Sprintf("tool %q: requires is not allowed in manifest layer", name))
-		}
-		if len(tool.Tags) > 0 {
-			errs = append(errs, fmt.Sprintf("tool %q: tags is not allowed in manifest layer", name))
+		for field, strategy := range ToolFieldStrategy {
+			if strategy != MergeLocalOnly {
+				continue
+			}
+			isSet, ok := ToolFieldIsSet[field]
+			if !ok {
+				continue
+			}
+			if isSet(tool) {
+				// Use TOML-style field name for error messages.
+				tomlName := toolFieldToTOML(field)
+				errs = append(errs, fmt.Sprintf("tool %q: %s is not allowed in manifest layer", name, tomlName))
+			}
 		}
 	}
 	if len(errs) > 0 {
-	return fmt.Errorf("manifest validation:\n%s", strings.Join(errs, "\n"))
+		return fmt.Errorf("manifest validation:\n%s", strings.Join(errs, "\n"))
+	}
+	return nil
+}
+
+// toolFieldToTOML maps Go struct field names to their TOML equivalents for
+// user-facing error messages.
+func toolFieldToTOML(field string) string {
+	switch field {
+	case "PreInstall":
+		return "pre_install"
+	case "PostInstall":
+		return "post_install"
+	case "Requires":
+		return "requires"
+	case "Tags":
+		return "tags"
+	case "MethodOrder":
+		return "method_order"
+	case "MethodPrefer":
+		return "method_prefer"
+	case "MethodOnly":
+		return "method_only"
+	default:
+		return field
+	}
+}
+
+// ValidateManifestNewTools checks that the manifest does not introduce tools
+// not present in the schema unless AllowNewTools is true in the manifest.
+func ValidateManifestNewTools(schema, manifest *Schema) error {
+	if manifest.AllowNewTools {
+		return nil
+	}
+	var errs []string
+	for name := range manifest.Tools {
+		if _, exists := schema.Tools[name]; !exists {
+			errs = append(errs, fmt.Sprintf("tool %q in manifest not found in schema; set [manifest] allow_new_tools = true to allow", name))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("manifest introduces new tools:\n%s", strings.Join(errs, "\n"))
 	}
 	return nil
 }
