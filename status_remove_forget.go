@@ -11,11 +11,11 @@ import (
 	"time"
 	"bufio"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/log"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
-	"depengine/pkg/state"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/state"
 )
 
 // runStatus shows the installation status of tools by comparing the state
@@ -57,10 +57,10 @@ func runStatus(args []string) {
 		}
 	}
 
-	var s *schema.Schema
+	var s *config.Schema
 	if schemaPath != "" {
 		var err error
-		s, err = schema.ParseSchema(schemaPath, nil)
+		s, err = config.ParseSchema(schemaPath, nil)
 		if err != nil {
 			log.Default.Warn("load schema for comparison", "error", err)
 			s = nil
@@ -71,20 +71,24 @@ func runStatus(args []string) {
 			manifestPath := *statusManifest
 			manifestAuto := false
 			if !noManifest && manifestPath == "" {
-				manifestPath = schema.DefaultManifestPath()
+				manifestPath = config.DefaultManifestPath()
 				if manifestPath != "" {
 					manifestAuto = true
 				}
 			}
 			if manifestPath != "" {
-				manifestTools, merr := schema.ParseManifest(manifestPath)
+				manifestSchema, merr := config.ParseSchema(manifestPath, nil, "packages")
 				if merr != nil {
 					log.Default.Warn("load manifest", "error", merr)
-				} else if manifestTools != nil {
-					var count int
-					s, count = schema.ResolveSchema(s, manifestTools)
-					if manifestAuto && count > 0 {
-						fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
+				} else if gerr := config.ValidateGlobalLayer(manifestSchema); gerr != nil {
+					log.Default.Warn("validate manifest", "error", gerr)
+				} else {
+					count := len(manifestSchema.Tools)
+					if count > 0 {
+						s = config.MergeLayers(manifestSchema, s)
+						if manifestAuto {
+							fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
+						}
 					}
 				}
 			}
@@ -194,7 +198,7 @@ func runRemove(args []string) {
 	st := ls.State()
 
 	// Optionally load schema for validation.
-	var schemaTools map[string]*schema.Tool
+	var schemaTools map[string]*config.Tool
 	if *removeSchema != "" {
 		s, _, _, err := loadSchema(*removeSchema)
 		if err != nil {
@@ -231,11 +235,11 @@ func runRemove(args []string) {
 		}
 
 		remover := adapter.(exec.Remover)
-		mc := &schema.MethodCandidate{
+		mc := &config.MethodCandidate{
 			Kind:   toolState.Method,
 			Config: toolState.Config,
 		}
-		tool := &schema.Tool{Name: toolName}
+		tool := &config.Tool{Name: toolName}
 
 		if *removeDryRun {
 			log.Default.Info("would remove", "tool", toolName, "method", toolState.Method)

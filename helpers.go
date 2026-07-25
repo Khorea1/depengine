@@ -8,13 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"depengine/pkg/engine"
-	"depengine/pkg/exec"
-	"depengine/pkg/lock"
-	"depengine/pkg/log"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
-	"depengine/pkg/validate"
+	"github.com/Khorea1/depengine/pkg/engine"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/lock"
+	"github.com/Khorea1/depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/validate"
 )
 
 // defaultSchemaPath returns the default schema file path, trying common names.
@@ -31,7 +31,7 @@ func defaultSchemaPath() string {
 
 // loadSchema reads and validates a schema.toml from path, gathering OS facts.
 // Returns the parsed Schema, clan name, Facts, or an error for exitCodeForError.
-func loadSchema(path string) (*schema.Schema, string, *engine.Facts, error) {
+func loadSchema(path string) (*config.Schema, string, *engine.Facts, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, "", nil, err
@@ -45,7 +45,7 @@ func loadSchema(path string) (*schema.Schema, string, *engine.Facts, error) {
 		return nil, "", nil, err
 	}
 	clan := engine.ResolveFamily(facts)
-	s, err := schema.ParseSchema(path, schema.BuildMap(facts, clan))
+	s, err := config.ParseSchema(path, config.BuildMap(facts, clan))
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -54,7 +54,7 @@ func loadSchema(path string) (*schema.Schema, string, *engine.Facts, error) {
 		for _, e := range vr.Errors {
 			log.Default.Error(e.Error())
 		}
-		return nil, "", nil, &schema.ParseSchemaError{Err: errors.New("schema validation failed")}
+		return nil, "", nil, &config.ParseSchemaError{Err: errors.New("schema validation failed")}
 	}
 	for _, w := range vr.Warnings {
 		log.Default.Warn(w.Error())
@@ -67,7 +67,7 @@ func loadSchema(path string) (*schema.Schema, string, *engine.Facts, error) {
 // loadSchema directly. Returns the resolved schema, clan, facts, number of
 // manifest tools that contributed (0 when no manifest), and any error.
 // On manifest parse errors the function returns the error (caller decides exit).
-func loadSchemaWithManifest(schemaPath, manifestPath string) (*schema.Schema, string, *engine.Facts, int, error) {
+func loadSchemaWithManifest(schemaPath, manifestPath string) (*config.Schema, string, *engine.Facts, int, error) {
 	s, clan, facts, err := loadSchema(schemaPath)
 	if err != nil {
 		return nil, "", nil, 0, err
@@ -76,16 +76,17 @@ func loadSchemaWithManifest(schemaPath, manifestPath string) (*schema.Schema, st
 		return s, clan, facts, 0, nil
 	}
 
-	manifestTools, merr := schema.ParseManifest(manifestPath)
+	manifestSchema, merr := config.ParseSchema(manifestPath, nil, "packages")
 	if merr != nil {
 		return nil, "", nil, 0, merr
 	}
+	if gerr := config.ValidateGlobalLayer(manifestSchema); gerr != nil {
+		return nil, "", nil, 0, gerr
+	}
 
-	count := 0
-	if manifestTools != nil {
-		var resolved *schema.Schema
-		resolved, count = schema.ResolveSchema(s, manifestTools)
-		s = resolved
+	count := len(manifestSchema.Tools)
+	if count > 0 {
+		s = config.MergeLayers(manifestSchema, s)
 	}
 	return s, clan, facts, count, nil
 }
@@ -94,7 +95,7 @@ func loadSchemaWithManifest(schemaPath, manifestPath string) (*schema.Schema, st
 
 
 func exitCodeForError(err error) int {
-	var schemaErr *schema.ParseSchemaError
+	var schemaErr *config.ParseSchemaError
 	if errors.As(err, &schemaErr) {
 		return 2
 	}
@@ -104,11 +105,11 @@ func exitCodeForError(err error) int {
 // filteredByTags applies profile filtering: if profile is non-empty,
 // only include tools that have no tags (universal) OR have the
 // specified profile tag in their Tags slice.
-func filteredByTags(tools map[string]*schema.Tool, profile string) map[string]*schema.Tool {
+func filteredByTags(tools map[string]*config.Tool, profile string) map[string]*config.Tool {
 	if profile == "" {
 		return tools
 	}
-	result := make(map[string]*schema.Tool, len(tools))
+	result := make(map[string]*config.Tool, len(tools))
 	for name, tool := range tools {
 		if len(tool.Tags) == 0 {
 			result[name] = tool
@@ -125,7 +126,7 @@ func filteredByTags(tools map[string]*schema.Tool, profile string) map[string]*s
 }
 
 // filterTools applies --only, --skip, and --profile filters to the tool map.
-func filterTools(tools map[string]*schema.Tool, only, skip, profile string) map[string]*schema.Tool {
+func filterTools(tools map[string]*config.Tool, only, skip, profile string) map[string]*config.Tool {
 	if only == "" && skip == "" && profile == "" {
 		return tools
 	}
@@ -133,7 +134,7 @@ func filterTools(tools map[string]*schema.Tool, only, skip, profile string) map[
 	for _, name := range strings.Split(skip, ",") {
 		skipSet[strings.TrimSpace(name)] = true
 	}
-	filtered := make(map[string]*schema.Tool, len(tools))
+	filtered := make(map[string]*config.Tool, len(tools))
 	for name, tool := range tools {
 		if skipSet[name] {
 			continue
@@ -175,7 +176,7 @@ func filterTools(tools map[string]*schema.Tool, only, skip, profile string) map[
 // loadLockfile reads the lockfile for a given schema. Returns nil if no
 // lockfile exists or it's corrupted (logs a warning).
 // Exits with code 2 if --frozen-lockfile is set and no lock exists.
-func loadLockfile(schemaPath string, s *schema.Schema, frozen bool, lg *slog.Logger) *lock.Lock {
+func loadLockfile(schemaPath string, s *config.Schema, frozen bool, lg *slog.Logger) *lock.Lock {
 	lockPath := lock.DefaultPath(schemaPath)
 	lk, err := lock.Load(lockPath)
 	if err != nil {
@@ -192,7 +193,7 @@ func loadLockfile(schemaPath string, s *schema.Schema, frozen bool, lg *slog.Log
 }
 
 // saveLockfile resolves version pins, merges with any existing lock, and persists.
-func saveLockfile(ctx context.Context, s *schema.Schema, lockPath string, oldLock *lock.Lock, lg *slog.Logger, diagnose bool) {
+func saveLockfile(ctx context.Context, s *config.Schema, lockPath string, oldLock *lock.Lock, lg *slog.Logger, diagnose bool) {
 	newLock, err := lock.ResolveAll(ctx, s, run.OSExecRunner{})
 	if err != nil {
 		lg.Warn("resolve lock", "error", err)
@@ -220,7 +221,7 @@ func saveLockfile(ctx context.Context, s *schema.Schema, lockPath string, oldLoc
 // hasLatestPlaceholders checks whether any tool method in the schema uses
 // a {latest} placeholder in its URL. Used by install to decide whether
 // auto-resolution is needed when no lockfile exists.
-func hasLatestPlaceholders(s *schema.Schema) bool {
+func hasLatestPlaceholders(s *config.Schema) bool {
 	for _, tool := range s.Tools {
 		for _, method := range tool.Methods {
 			if url, ok := method.Config["url"].(string); ok && strings.Contains(url, "{latest}") {

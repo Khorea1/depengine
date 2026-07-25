@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/log"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
-	"depengine/pkg/state"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/state"
 )
 
 func relativeTime(t time.Time) string {
@@ -182,11 +182,11 @@ func runUndo(args []string) {
 		}
 
 		remover := adapter.(exec.Remover)
-		mc := &schema.MethodCandidate{
+		mc := &config.MethodCandidate{
 			Kind:   toolState.Method,
 			Config: toolState.Config,
 		}
-		tool := &schema.Tool{Name: name}
+		tool := &config.Tool{Name: name}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		if err := remover.Remove(ctx, run.OSExecRunner{}, tool, mc); err != nil {

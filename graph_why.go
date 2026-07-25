@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"os"
 
-	"depengine/pkg/engine"
-	"depengine/pkg/exec"
-	"depengine/pkg/graph"
-	"depengine/pkg/ecosystem"
-	"depengine/pkg/log"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/engine"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/graph"
+	"github.com/Khorea1/depengine/pkg/ecosystem"
+	"github.com/Khorea1/depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 func runGraph(args []string) {
@@ -35,7 +35,7 @@ func runGraph(args []string) {
 		os.Exit(2)
 	}
 
-	s, err := schema.ParseSchema(*graphSchema, nil)
+	s, err := config.ParseSchema(*graphSchema, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(exitCodeForError(err))
@@ -45,21 +45,25 @@ func runGraph(args []string) {
 	manifestPath := *graphManifest
 	manifestAuto := false
 	if !noManifest && manifestPath == "" {
-		manifestPath = schema.DefaultManifestPath()
+		manifestPath = config.DefaultManifestPath()
 		if manifestPath != "" {
 			manifestAuto = true
 		}
 	}
 	if manifestPath != "" {
-		manifestTools, merr := schema.ParseManifest(manifestPath)
+		manifestSchema, merr := config.ParseSchema(manifestPath, nil, "packages")
 		if merr != nil {
 			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", merr)
 			os.Exit(2)
 		}
-		if manifestTools != nil {
-			var count int
-			s, count = schema.ResolveSchema(s, manifestTools)
-			if manifestAuto && count > 0 {
+		if gerr := config.ValidateGlobalLayer(manifestSchema); gerr != nil {
+			fmt.Fprintf(os.Stderr, "error validating manifest: %v\n", gerr)
+			os.Exit(2)
+		}
+		count := len(manifestSchema.Tools)
+		if count > 0 {
+			s = config.MergeLayers(manifestSchema, s)
+			if manifestAuto {
 				fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
 			}
 		}
@@ -105,7 +109,7 @@ func runWhy(args []string) {
 	}
 	toolName := remain[0]
 
-	s, err := schema.ParseSchema(*whySchema, nil)
+	s, err := config.ParseSchema(*whySchema, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
@@ -115,21 +119,25 @@ func runWhy(args []string) {
 	manifestPath := *whyManifest
 	manifestAuto := false
 	if !noManifest && manifestPath == "" {
-		manifestPath = schema.DefaultManifestPath()
+		manifestPath = config.DefaultManifestPath()
 		if manifestPath != "" {
 			manifestAuto = true
 		}
 	}
 	if manifestPath != "" {
-		manifestTools, merr := schema.ParseManifest(manifestPath)
+		manifestSchema, merr := config.ParseSchema(manifestPath, nil, "packages")
 		if merr != nil {
 			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", merr)
 			os.Exit(2)
 		}
-		if manifestTools != nil {
-			var count int
-			s, count = schema.ResolveSchema(s, manifestTools)
-			if manifestAuto && count > 0 {
+		if gerr := config.ValidateGlobalLayer(manifestSchema); gerr != nil {
+			fmt.Fprintf(os.Stderr, "error validating manifest: %v\n", gerr)
+			os.Exit(2)
+		}
+		count := len(manifestSchema.Tools)
+		if count > 0 {
+			s = config.MergeLayers(manifestSchema, s)
+			if manifestAuto {
 				fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
 			}
 		}
@@ -143,7 +151,7 @@ func runWhy(args []string) {
 		ecosystem.ReconfigureAUR(helper)
 	}
 
-	if warnings, verr := schema.Validate(s, exec.RegisteredKinds()); verr != nil {
+	if warnings, verr := config.Validate(s, exec.RegisteredKinds()); verr != nil {
 		log.Default.Error("schema validation", "error", verr)
 		os.Exit(exitCodeForError(verr))
 	} else if len(warnings) > 0 {

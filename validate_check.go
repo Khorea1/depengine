@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"os"
 
-	"depengine/pkg/engine"
-	"depengine/pkg/exec"
-	"depengine/pkg/log"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
-	"depengine/pkg/validate"
+	"github.com/Khorea1/depengine/pkg/engine"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/validate"
 )
 
 func runValidate(args []string) {
@@ -28,7 +28,7 @@ func runValidate(args []string) {
 
 	ctx := context.Background()
 
-	s, err := schema.ParseSchema(*validateSchema, map[string]string{})
+	s, err := config.ParseSchema(*validateSchema, map[string]string{})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
@@ -38,21 +38,25 @@ func runValidate(args []string) {
 	manifestPath := *validateManifest
 	manifestAuto := false
 	if !noManifest && manifestPath == "" {
-		manifestPath = schema.DefaultManifestPath()
+		manifestPath = config.DefaultManifestPath()
 		if manifestPath != "" {
 			manifestAuto = true
 		}
 	}
 	if manifestPath != "" {
-		manifestTools, merr := schema.ParseManifest(manifestPath)
+		manifestSchema, merr := config.ParseSchema(manifestPath, nil, "packages")
 		if merr != nil {
 			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", merr)
 			os.Exit(2)
 		}
-		if manifestTools != nil {
-			var count int
-			s, count = schema.ResolveSchema(s, manifestTools)
-			if manifestAuto && count > 0 {
+		if gerr := config.ValidateGlobalLayer(manifestSchema); gerr != nil {
+			fmt.Fprintf(os.Stderr, "error validating manifest: %v\n", gerr)
+			os.Exit(2)
+		}
+		count := len(manifestSchema.Tools)
+		if count > 0 {
+			s = config.MergeLayers(manifestSchema, s)
+			if manifestAuto {
 				fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
 			}
 		}
@@ -132,7 +136,7 @@ func runCheck(args []string) {
 	manifestPath := *checkManifest
 	manifestAuto := false
 	if !noManifest && manifestPath == "" {
-		manifestPath = schema.DefaultManifestPath()
+		manifestPath = config.DefaultManifestPath()
 		if manifestPath != "" {
 			manifestAuto = true
 		}

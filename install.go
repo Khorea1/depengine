@@ -7,15 +7,15 @@ import (
 	"log/slog"
 	"os"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/git"
-	"depengine/pkg/httpdownload"
-	"depengine/pkg/ecosystem"
-	"depengine/pkg/lock"
-	"depengine/pkg/log"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
-	"depengine/pkg/state"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/git"
+	"github.com/Khorea1/depengine/pkg/httpdownload"
+	"github.com/Khorea1/depengine/pkg/ecosystem"
+	"github.com/Khorea1/depengine/pkg/lock"
+	"github.com/Khorea1/depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/state"
 )
 
 func runInstall(args []string) {
@@ -30,7 +30,7 @@ func runInstall(args []string) {
 	installOnly := installCmd.String("only", "", "only install specific tool")
 	installSkip := installCmd.String("skip", "", "skip specific tools (comma-separated)")
 	installProfile := installCmd.String("profile", "", "only install tools with matching tag (e.g. minimal,desktop,server)")
-	installFrozen := installCmd.Bool("frozen-lockfile", false, "fail if schema.lock does not exist or needs update")
+	installFrozen := installCmd.Bool("frozen-lockfile", false, "fail if depengine.lock does not exist or needs update")
 	installDiagnose := installCmd.Bool("diagnose", false, "diagnostic mode: DEBUG + dry-run + verbose")
 	installLogLevel := installCmd.String("log-level", "", "log level: debug, info, warn, error")
 	installSortBy := installCmd.String("sort-by", "", "sort output by: name, status, method")
@@ -75,7 +75,7 @@ func runInstall(args []string) {
 	manifestPath := *installManifest
 	manifestAuto := false
 	if !noManifest && manifestPath == "" {
-		manifestPath = schema.DefaultManifestPath()
+		manifestPath = config.DefaultManifestPath()
 		if manifestPath != "" {
 			manifestAuto = true
 		}
@@ -190,7 +190,7 @@ func runInstall(args []string) {
 	// After successful install, guide the user to share.
 	if report.Failed == 0 && report.Success > 0 && !*installDryRun {
 		fmt.Fprintln(os.Stderr, "Share schema.toml in git so others can reproduce your tools:")
-		fmt.Fprintln(os.Stderr, "  git add schema.toml schema.lock && git commit")
+		fmt.Fprintln(os.Stderr, "  git add schema.toml depengine.lock && git commit")
 	}
 
 	if report.Failed > 0 {

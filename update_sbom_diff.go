@@ -8,13 +8,13 @@ import (
 	"os"
 	"time"
 
-	"depengine/pkg/ecosystem"
-	"depengine/pkg/lock"
-	"depengine/pkg/log"
-	"depengine/pkg/run"
-	"depengine/pkg/sbom"
-	"depengine/pkg/schema"
-	"depengine/pkg/state"
+	"github.com/Khorea1/depengine/pkg/ecosystem"
+	"github.com/Khorea1/depengine/pkg/lock"
+	"github.com/Khorea1/depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/sbom"
+	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/state"
 )
 
 func runUpdate(args []string) {
@@ -23,9 +23,9 @@ func runUpdate(args []string) {
 	updateSchema := updateCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
 	updateManifest := updateCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	updateNoManifest := updateCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
-	updateLock := updateCmd.String("lock", "", "path to schema.lock (default: alongside schema.toml)")
+	updateLock := updateCmd.String("lock", "", "path to depengine.lock (default: alongside schema.toml)")
 	updateProfile := updateCmd.String("profile", "", "only resolve & pin tools with matching tag")
-	updateFrozen := updateCmd.Bool("frozen-lockfile", false, "abort if schema.lock does not exist")
+	updateFrozen := updateCmd.Bool("frozen-lockfile", false, "abort if depengine.lock does not exist")
 	updateDryRun := updateCmd.Bool("dry-run", false, "show what would be updated without writing lock")
 	updateVerbose := updateCmd.Bool("v", false, "detailed output")
 	updateCmd.Parse(args)
@@ -37,7 +37,7 @@ func runUpdate(args []string) {
 	manifestPath := *updateManifest
 	manifestAuto := false
 	if !noManifest && manifestPath == "" {
-		manifestPath = schema.DefaultManifestPath()
+		manifestPath = config.DefaultManifestPath()
 		if manifestPath != "" {
 			manifestAuto = true
 		}
