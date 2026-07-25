@@ -1,58 +1,57 @@
 # ==============================================================================
-# manifest.toml — CONHECIMENTO PESSOAL DE INSTALAÇÃO
+# manifest.toml — PERSONAL INSTALLATION KNOWLEDGE
 # ==============================================================================
-# Este arquivo vive em $XDG_CONFIG_HOME/depengine/manifest.toml e complementa
-# o schema.toml do projeto com conhecimento de "como instalar" cada pacote
-# no seu sistema.
+# This file lives at $XDG_CONFIG_HOME/depengine/manifest.toml and complements
+# the project's schema.toml with per-machine knowledge of "how to install"
+# each package on your system.
 #
-# REGRA: o schema diz O QUE você quer (intenção); o manifesto diz COMO instalar
-# (conhecimento específico do seu ambiente). Quando ambos definem a mesma
-# ferramenta, o schema substitui COMPLETAMENTE a entrada do manifesto
-# (substituição total por tool, não campo-a-campo).
+# RULE: the schema says WHAT you want (intent); the manifest says HOW to install
+# (environment-specific knowledge). When both define the same tool, the schema
+# COMPLETELY replaces the manifest entry (full tool replacement, not field-by-field).
 #
-# USO: copie para ~/.config/depengine/manifest.toml e edite os métodos conforme
-# seu ambiente. Remova ou comente linhas de ferramentas que não usa.
+# USAGE: copy to ~/.config/depengine/manifest.toml and edit methods for your
+# environment. Remove or comment out lines for tools you don't use.
 # ==============================================================================
 #
-# ⚠ ATENÇÃO: Este arquivo é um EXEMPLO ILUSTRATIVO. Várias ferramentas abaixo
-# incluem campos (tags, pre_install, postinstall, requires) que o validador
-# RECUSA no manifesto real. Ao copiar para ~/.config/depengine/manifest.toml,
-# remova ou comente esses campos — eles só funcionam no schema.toml do projeto.
-# Consulte docs/ para detalhes.
+# ⚠ NOTE: This file is an ILLUSTRATIVE EXAMPLE. Several tools below include
+# fields (tags, pre_install, postinstall, requires) that the validator REJECTS
+# in a real manifest. When copying to ~/.config/depengine/manifest.toml,
+# remove or comment out these fields — they only work in the project's schema.toml.
+# See docs/ for details.
 
 # ==============================================================================
-# [packages] — conhecimento de instalação
+# [packages] — installation knowledge
 # ==============================================================================
-# Mesma gramática do schema.toml: `simple = [...]`, inline tables, blocos.
-# A diferença: aqui só entra conhecimento NÃO-TRIVIAL (nome de pacote difere
-# por distro, ou usa métodos não-nativos). Ferramentas cujo nome é o mesmo
-# em todo lugar NÃO precisam estar aqui.
+# Same grammar as schema.toml: `simple = [...]`, inline tables, blocks.
+# The difference: only NON-TRIVIAL knowledge goes here (package names that differ
+# by distro, or use non-native methods). Tools whose name is the same everywhere
+# do NOT need to be here.
 #
-# ATRIBUTOS DISPONÍVEIS POR MÉTODO:
+# ATTRIBUTES AVAILABLE PER METHOD:
 #
 #   git:   url, build, branch, depth, binary, checksum, signature_url
 #   http:  url, checksum, checksum_url, checksum_file_format, signature_url,
 #          signing_key, extract_to, binary
 #   native/aur/cargo/go/pip/pipx/uv/npm/bun/pnpm/gem:
-#          pkg, git (para cargo/go install --git), when
+#          pkg, git (for cargo/go install --git), when
 #
-#   Tool-level: requires, pre_install (ou preinstall), postinstall, tags
-#   Condicional: when = { distro_family = [...] }
+#   Tool-level: requires, pre_install (or preinstall), postinstall, tags
+#   Conditional: when = { distro_family = [...] }
 # ==============================================================================
 [packages]
 
 # ==============================================================================
-# SEÇÃO 1 — Métodos nativos + linguagem combinados
+# SECTION 1 — Native + language managers combined
 # ==============================================================================
-# Cada tool aparece UMA ÚNICA VEZ. Métodos nativos (pacman, apt, brew) e de
-# linguagem (cargo, go, pipx, npm…) convivem na mesma inline table — o motor
-# tenta um por vez seguindo method_order.
+# Each tool appears ONCE. Native managers (pacman, apt, brew) and language
+# managers (cargo, go, pipx, npm…) coexist in the same inline table — the engine
+# tries one at a time following method_order.
 #
-# Quando o nome do binário difere do pacote no manager nativo, declaramos
-# o override; nos managers não declarados, o nome da tool é usado como fallback.
+# When the binary name differs from the native manager's package name, we declare
+# the override; for undeclared managers, the tool name is used as fallback.
 # ==============================================================================
 
-# --- nativos + multiecosystemo ---
+# --- native + multi-ecosystem ---
 nvim      = { pacman = "neovim",             apt = "neovim",                brew = "neovim" }
 fd        = { apt = "fd-find",               cargo = "fd-find" }
 go        = { pacman = "go",                 apt = "golang-go" }
@@ -68,12 +67,12 @@ yazi      = { pacman = "yazi",               apt = "yazi" }
 dust      = { pacman = "dust",               apt = "du-dust",                                           cargo = "du-dust" }
 procs     = { pacman = "procs",              apt = "procs",                                             cargo = "procs" }
 doggo     = { pacman = "doggo",              apt = "doggo" }
-hx        = { pacman = "helix",              apt = "helix" }      # alias para helix
+hx        = { pacman = "helix",              apt = "helix" }      # alias for helix
 lazygit   = { pacman = "lazygit",            brew = "lazygit",                                          go = "github.com/jesseduffield/lazygit" }
 
-# --- pip / pipx / uv (Python) — com bucket ``python = true`` ---
-# Quando pkg == tool_name, não precisa repetir: ``ruff = { python = true }``
-# expande para ``{ pip = true, pipx = true, uv = true }``.
+# --- pip / pipx / uv (Python) — with ``python = true`` bucket ---
+# When pkg == tool_name, no need to repeat: ``ruff = { python = true }``
+# expands to ``{ pip = true, pipx = true, uv = true }``.
 organize      = { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }   # organize-tool ≠ organize
 httpie        = { python = true }
 poetry        = { python = true }
@@ -136,14 +135,14 @@ hexyl         = { cargo = "hexyl" }
 ouch          = { cargo = "ouch" }
 fclones       = { cargo = "fclones" }
 
-# --- cargo install --git (diretamente de repositório, não do crates.io) ---
+# --- cargo install --git (directly from repository, not crates.io) ---
 aichat        = { cargo = { git = "https://github.com/sigoden/aichat" } }
 matugen       = { cargo = { git = "https://github.com/InioX/matugen" } }
 nh            = { cargo = { git = "https://github.com/not-an-aardvark/nh" } }   # node --run helper
 
-# --- npm / pnpm / bun (Node.js) — com bucket ``node = true`` ---
-# ``node = true`` expande para ``{ npm = true, pnpm = true, bun = true }``.
-# Método explícito antes do bucket não é sobrescrito.
+# --- npm / pnpm / bun (Node.js) — with ``node = true`` bucket ---
+# ``node = true`` expands to ``{ npm = true, pnpm = true, bun = true }``.
+# Explicit method before the bucket is not overwritten.
 neovim        = { node = true }
 markdownlint  = { npm = "markdownlint-cli" }       # markdownlint-cli ≠ markdownlint
 prettier      = { node = true }
@@ -165,28 +164,28 @@ spotify       = { flatpak = "com.spotify.Client",    snap = "spotify" }
 slack         = { flatpak = "com.slack.Slack" }
 
 # ==============================================================================
-# SEÇÃO 2 — Instalação via git (clonar + build manual)
+# SECTION 2 — Installation via git (clone + manual build)
 # ==============================================================================
-# O motor clona o repositório e executa `build` dentro dele.
-# Atributos: url (obrigatório), build, branch, depth (padrão 1), binary, checksum
+# The engine clones the repository and runs `build` inside it.
+# Attributes: url (required), build, branch, depth (default 1), binary, checksum
 # ==============================================================================
 
 ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install" } }
 fasd = { git = { url = "https://github.com/clvv/fasd",          build = "PREFIX=$HOME/.local make install" } }
 
-# Com branch específica e clone completo (depth = 0)
+# With specific branch and full clone (depth = 0)
 neovim-git = { git = { url = "https://github.com/neovim/neovim", branch = "master", depth = 0, build = "make CMAKE_BUILD_TYPE=Release && sudo make install" } }
 
-# Com binary field (verifica se ~/.local/bin/lf existe após build)
+# With binary field (checks if ~/.local/bin/lf exists after build)
 lf-source   = { git = { url = "https://github.com/gokcehan/lf",  build = "go build -o $HOME/.local/bin/lf", binary = "lf" } }
 
-# Apenas clone (plugin manager)
+# Clone only (plugin manager)
 tpm         = { git = { url = "https://github.com/tmux-plugins/tpm", depth = 1 } }
 
 # ==============================================================================
-# SEÇÃO 3 — Instalação via http (release binary / deb / archive)
+# SECTION 3 — Installation via http (release binary / deb / archive)
 # ==============================================================================
-# Baixa um artefato pronto. Suporta {latest} placeholder,
+# Downloads a ready-made artifact. Supports {latest} placeholder,
 # checksum, checksum_url, signature_url, extract_to.
 # ==============================================================================
 
@@ -197,7 +196,7 @@ tpm         = { git = { url = "https://github.com/tmux-plugins/tpm", depth = 1 }
   checksum = "sha256:auto"
 
 
-# Com checksum_url explícito e formato sha256sum
+# With explicit checksum_url and sha256sum format
 [packages.lazygit-bin]
   [packages.lazygit-bin.http]
   url                  = "https://github.com/jesseduffield/lazygit/releases/download/{latest}/lazygit_{latest}_Linux_x86_64.tar.gz"
@@ -207,7 +206,7 @@ tpm         = { git = { url = "https://github.com/tmux-plugins/tpm", depth = 1 }
   extract_to           = "~/.local/bin"
 
 
-# Assinatura GPG + extração de binário único
+# GPG signature + single binary extraction
 [packages.age]
   [packages.age.http]
   url           = "https://github.com/FiloSottile/age/releases/download/v1.2.0/age-v1.2.0-linux-amd64.tar.gz"
@@ -217,7 +216,7 @@ tpm         = { git = { url = "https://github.com/tmux-plugins/tpm", depth = 1 }
   extract_to    = "~/.local/bin"
 
 
-# Binário extraído com binary field
+# Binary extracted with binary field
 [packages.gh]
   [packages.gh.http]
   url        = "https://github.com/cli/cli/releases/download/{latest}/gh_{latest}_linux_amd64.tar.gz"
@@ -226,7 +225,7 @@ tpm         = { git = { url = "https://github.com/tmux-plugins/tpm", depth = 1 }
   binary     = "gh"
 
 
-# Fontes em zip com extração direta para diretório de fonts
+# Fonts in zip with direct extraction to fonts directory
 [packages.JetBrainsMono]
   [packages.JetBrainsMono.http]
   url        = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/JetBrainsMono.zip"
@@ -241,26 +240,26 @@ tpm         = { git = { url = "https://github.com/tmux-plugins/tpm", depth = 1 }
   extract_to = "~/.local/share/fonts/FiraCode"
 
 
-# Arquivo .deb direto
+# Direct .deb file
 [packages.slack-deb]
   [packages.slack-deb.http]
   url      = "https://downloads.slack-edge.com/desktop-releases/linux/{latest}/slack-desktop-{latest}-amd64.deb"
   checksum = "sha256:auto"
 
 # ==============================================================================
-# SEÇÃO 4 — Bloco completo com método condicional + hooks
+# SECTION 4 — Full block with conditional method + hooks
 # ==============================================================================
-# Use o formato de bloco quando uma ferramenta precisa de:
-#   - Múltiplos métodos concorrentes com diferentes condições
+# Use block format when a tool needs:
+#   - Multiple competing methods with different conditions
 #   - Hooks pre_install / postinstall
-#   - Tags para profile filtering
-#   - requires (dependências entre tools)
+#   - Tags for profile filtering
+#   - requires (dependencies between tools)
 # ==============================================================================
 
-# --- DepartureMono Nerd Font: AUR no Arch, HTTP nos demais ---
+# --- DepartureMono Nerd Font: AUR on Arch, HTTP everywhere else ---
 [packages.DepartureMono]
 tags = ["fonts"]
-# postinstall roda após QUALQUER método ter sucesso
+# postinstall runs after ANY method succeeds
 postinstall = "fc-cache -fv"
 
   [packages.DepartureMono.aur]
@@ -273,7 +272,7 @@ postinstall = "fc-cache -fv"
   extract_to = "~/.local/share/fonts/DepartureMono"
 
 
-# --- wezterm: AUR → AppImage → compilação manual (fallback) ---
+# --- wezterm: AUR → AppImage → manual compilation (fallback) ---
 [packages.wezterm]
 tags = ["terminal"]
 
@@ -308,7 +307,7 @@ tags     = ["search"]
   binary     = "rga"
 
 
-# --- Docker: nativo → script get.docker.com (fallback) ---
+# --- Docker: native → get.docker.com script (fallback) ---
 [packages.docker]
 tags = ["containers"]
 
@@ -321,7 +320,7 @@ tags = ["containers"]
   build  = "sh get-docker.sh"
 
 
-# --- Lua Language Server: AUR → binário pré-compilado ---
+# --- Lua Language Server: AUR → pre-compiled binary ---
 [packages.lua-language-server]
 tags = ["lsp", "dev"]
 
@@ -336,7 +335,7 @@ tags = ["lsp", "dev"]
   binary     = "lua-language-server"
 
 
-# --- mise: cargo → curl|sh (fallback) com hook pre_install ---
+# --- mise: cargo → curl|sh (fallback) with pre_install hook ---
 [packages.mise]
 tags = ["dev", "runtimes"]
 pre_install  = "which curl >/dev/null || (apt-get update && apt-get install -y curl)"
@@ -350,7 +349,7 @@ postinstall  = "mise help >/dev/null"
   build  = "sh mise.sh"
 
 
-# --- shellcheck: native → cargo → binário pré-compilado ---
+# --- shellcheck: native → cargo → pre-compiled binary ---
 [packages.shellcheck]
 tags = ["lint", "dev"]
 
@@ -402,9 +401,9 @@ tags = ["lint", "containers"]
 
 
 # ==============================================================================
-# SEÇÃO 5 — Ferramentas com distribuição exclusiva (AUR / conda / etc.)
+# SECTION 5 — Tools with exclusive distribution (AUR / conda / etc.)
 # ==============================================================================
-# O motor pula métodos cujo when não bate o ambiente atual.
+# The engine skips methods whose when does not match the current environment.
 # ==============================================================================
 
 [packages.paru]
@@ -429,22 +428,22 @@ tags = ["aur-helper"]
 
 
 # ==============================================================================
-# CHECKLIST — qual formato usar para um novo pacote no manifesto?
+# CHECKLIST — which format to use for a new package in the manifest?
 # ==============================================================================
-# 1. Só muda o nome do pacote entre managers nativos?
-#       → inline table: `nome = { pacman = "...", apt = "...", brew = "..." }`
+# 1. Only the package name differs between native managers?
+#       → inline table: `name = { pacman = "...", apt = "...", brew = "..." }`
 #
-# 2. Usa manager de linguagem (cargo, go, pipx, npm...) sem condição?
-#       → inline table: `nome = { cargo = "nome-do-crate" }`
+# 2. Uses a language manager (cargo, go, pipx, npm...) without a condition?
+#       → inline table: `name = { cargo = "name-of-crate" }`
 #
-# 3. Precisa de when, hooks (pre_install/postinstall), tags, requires,
-#    ou múltiplos métodos concorrentes?
-#       → bloco completo: [packages.NOME] + [packages.NOME.metodo]
+# 3. Needs when, hooks (pre_install/postinstall), tags, requires,
+#    or multiple competing methods?
+#       → full block: [packages.NAME] + [packages.NAME.method]
 #
-# Campos que SEMPRE ficam no nível do pacote (fora do método):
+# Fields that ALWAYS stay at the package level (outside method):
 #   requires, pre_install, postinstall, tags
 #
-# Campos que SEMPRE ficam dentro do método:
+# Fields that ALWAYS stay inside the method:
 #   when, pkg, url, build, branch, depth, checksum, checksum_url,
 #   checksum_file_format, signature_url, signing_key, extract_to,
 #   binary, git

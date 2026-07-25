@@ -1,56 +1,56 @@
 # ==============================================================================
-# schema.toml — TEMPLATE / REFERÊNCIA
+# schema.toml — TEMPLATE / REFERENCE
 # ==============================================================================
-# Este arquivo descreve como instalar dependências de forma distro-agnostic.
-# O motor externo (o programa que lê este arquivo) decide COMO instalar cada
-# tool, tentando os métodos declarados na ordem certa até um funcionar.
+# This file describes how to install dependencies in a distro-agnostic way.
+# The engine (the program that reads this file) decides HOW to install each
+# tool, trying declared methods in order until one succeeds.
 #
-# REGRA DE OURO: tudo que está OMITIDO = comportamento padrão definido pelo
-# motor externo (ex: nome do pacote = nome da tool, se nada for dito).
+# GOLDEN RULE: everything OMITTED = default behavior defined by the engine
+# (e.g., package name = tool name, if nothing is specified).
 # ==============================================================================
 
 
 [defaults]
-# Manager usado quando uma tool não especifica nada (ver seção "simple" abaixo).
-# "native" = o gerenciador de pacotes nativo da distro do usuário
-# (apt, pacman, dnf, zypper, etc — o motor detecta sozinho).
+# Manager used when a tool specifies nothing (see "simple" section below).
+# "native" = the user's distro native package manager
+# (apt, pacman, dnf, zypper, etc — the engine detects it automatically).
 manager = "native"
 
-# Helper de AUR a usar quando algum método for "aur". Só relevante em Arch-based.
+# AUR helper to use when any method is "aur". Only relevant on Arch-based.
 aur_helper = "paru"
 
-# Quando uma tool declara MAIS DE UM método candidato (ex: cargo, go, aur, git),
-# esta lista define a ordem de tentativa. O motor para no primeiro que funcionar.
+# When a tool declares MORE THAN ONE candidate method (e.g., cargo, go, aur, git),
+# this list defines the trial order. The engine stops at the first one that works.
 method_order = ["native", "scoop", "choco", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm", "bun", "gem", "yarn", "yarn-berry", "composer", "apm", "vscode", "vscodium", "flatpak", "snap", "cask", "mas", "sdkman", "steamcmd", "pacstall", "aur", "conda", "asdf", "git", "http"]
 
 
 # ==============================================================================
-# [tools] — TODAS as dependências vivem aqui dentro
+# [tools] — ALL dependencies live inside here
 # ==============================================================================
 [tools]
 
 # ------------------------------------------------------------------------
-# CASO 1 — Tool "simples": nome do pacote é igual em toda distro relevante.
-# Não precisa de tabela nenhuma, só listar o nome. Usa `defaults.manager`.
+# CASE 1 — "Simple" tool: package name is the same on every relevant distro.
+# No table needed, just list the name. Uses `defaults.manager`.
 # ------------------------------------------------------------------------
 simple = ["zsh", "zathura", "w3m", "rofi", "mpv", "kitty", "tmux", "rclone", "podman", "docker-compose", "bat", "lsd"]
 
 
 # ------------------------------------------------------------------------
-# CASO 2 — Nome do pacote muda conforme o manager nativo.
-# Formato: inline table com `<manager> = "nome-do-pacote-nesse-manager"`.
-# Managers não listados aqui usam o próprio nome da tool como fallback.
+# CASE 2 — Package name differs by native manager.
+# Format: inline table with `<manager> = "package-name-in-that-manager"`.
+# Managers not listed here use the tool name itself as fallback.
 # ------------------------------------------------------------------------
-fd   = { apt = "fd-find" }                                   # nos demais, "fd"
+fd   = { apt = "fd-find" }                                   # everywhere else: "fd"
 nvim = { pacman = "neovim", apt = "neovim", brew = "neovim" }
 hypr = { pacman = "hyprland" }
 
 golang = { pacman = "go", apt = "golang-go" }
 
 # ------------------------------------------------------------------------
-# CASO 3 — Manager de linguagem (pip, pipx, uv, go, cargo, npm, gem...).
-# O valor é o nome do pacote/módulo NESSE ecossistema — pode ser diferente
-# do nome do binário final.
+# CASE 3 — Language manager (pip, pipx, uv, go, cargo, npm, gem...).
+# The value is the package/module name IN THAT ecosystem — it may differ
+# from the final binary name.
 # ------------------------------------------------------------------------
 organize = { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }
 fzf      = { go = "github.com/junegunn/fzf" }
@@ -58,85 +58,83 @@ lf       = { go = "github.com/gokcehan/lf" }
 
 
 # ------------------------------------------------------------------------
-# CASO 4 — cargo/go instalando direto de um repositório git (não do
-# crates.io/pkg.go.dev oficial). Sub-chave `git` dentro do manager.
+# CASE 4 — cargo/go installing directly from a git repository (not from
+# crates.io / pkg.go.dev official). Sub-key `git` within the manager.
 aichat = { aur = { pkg = "aichat", when = { distro_family = ["arch"] } }, cargo = { git = "https://github.com/sigoden/aichat" } }
 matugen    = { cargo = { git = "https://github.com/InioX/matugen" } }
 
 
 # ------------------------------------------------------------------------
-# CASO 5 — Método "git": clona o repo e roda um comando de build manual.
-# Campos:
-#   url   = repositório a clonar
-#   build = comando executado dentro do repo clonado (sempre esse nome,
-#           nunca "install" — evita ambiguidade de nomenclatura)
+# CASE 5 — "git" method: clones the repo and runs a manual build command.
+# Fields:
+#   url   = repository to clone
+#   build = command executed inside the cloned repo (always called "build",
+#           never "install" — avoids naming ambiguity)
 # ------------------------------------------------------------------------
 ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install" } }
 fasd = { git = { url = "https://github.com/clvv/fasd",        build = "PREFIX=$HOME/.local make install" } }
 
 
 # ------------------------------------------------------------------------
-# CASO 6 — Método "http": baixa um artefato pronto (deb, zip, binário...).
-# O campo checksum aceita vários algoritmos e formatos:
-#   sha256:<hex>        → SHA-256 fixo (recomendado)
-#   sha256:auto         → resolução automática do hash
-#   md5:<hex>, sha1:<hex>, sha512:<hex> → outros algoritmos
-#   checksum_url        → URL explícita do arquivo de checksums
-#   checksum_file_format → "sha256sum" (padrão), "bsd", ou "raw"
-#   signature_url       → verificação GPG da assinatura do checksum
+# CASE 6 — "http" method: downloads a ready-made artifact (deb, zip, binary...).
+# The checksum field accepts various algorithms and formats:
+#   sha256:<hex>        → fixed SHA-256 (recommended)
+#   sha256:auto         → automatic hash resolution
+#   md5:<hex>, sha1:<hex>, sha512:<hex> → other algorithms
+#   checksum_url        → explicit URL of the checksums file
+#   checksum_file_format → "sha256sum" (default), "bsd", or "raw"
+#   signature_url       → GPG verification of the checksum signature
 fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb", checksum = "sha256:auto" } }
 
-# Exemplo com SHA-512 e checksum_url explícito:
+# Example with SHA-512 and explicit checksum_url:
 "tool-example" = { http = { url = "https://example.com/tool-{latest}.tar.gz", checksum = "sha512:auto", checksum_url = "https://example.com/SHA512SUMS" } }
 
 # ------------------------------------------------------------------------
-# CASO 7 — Dependência entre tools e override simultâneo de pacote.
-# `requires` é um campo de NÍVEL DE TOOL (não do método): vale não importa
-# qual método acabe sendo usado para instalar essa tool.
+# CASE 7 — Tool dependency and simultaneous package override.
+# `requires` is a TOOL-LEVEL field (not method-level): it applies no matter
+# which method ends up installing the tool.
 # ------------------------------------------------------------------------
 zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
 
 
 # ------------------------------------------------------------------------
-# CASO 8 — Caso complexo: múltiplos métodos concorrentes + condição de
-# distro + hook pós-instalação. Aqui NÃO dá para inlinar (ficaria ilegível
-# ou o TOML não permite quebra de linha dentro de inline table), então
-# promovemos para bloco completo com sub-tabelas.
+# CASE 8 — Complex case: multiple competing methods + distro condition +
+# post-install hook. This CANNOT be inlined (it would be unreadable or TOML
+# does not allow line breaks inside inline tables), so we promote it to a
+# full block with sub-tables.
 #
-# Regras deste formato:
-#   - [tools.NOME]            → campos de nível de tool: `requires`,
-#                                `postinstall` (roda depois que QUALQUER
-#                                método tiver sucesso).
-#   - [tools.NOME.metodo]     → um bloco por método candidato. O motor
-#                                tenta na ordem em que aparecem no arquivo
-#                                (ou por `method_order`, se nenhuma ordem
-#                                explícita for dada).
-#   - `when`                  → condição de aplicabilidade DENTRO do
-#                                método (nunca um nível de aninhamento
-#                                próprio, nunca vira nome de "manager").
-#                                Se a condição não bate, o motor pula esse
-#                                método e vai para o próximo.
+# Rules for this format:
+#   - [tools.NAME]              → tool-level fields: `requires`,
+#                                 `postinstall` (runs after ANY method succeeds).
+#   - [tools.NAME.method]       → one block per candidate method. The engine
+#                                 tries them in file order (or by `method_order`,
+#                                 if no explicit order is given).
+#   - `when`                    → applicability condition WITHIN the method
+#                                 (never its own nesting level, never becomes
+#                                 a "manager" name). If the condition doesn't
+#                                 match, the engine skips this method and moves
+#                                 to the next.
 # ------------------------------------------------------------------------
 
 # ==============================================================================
-# CASO 9 — `when` com múltiplas dimensões de plataforma.
-# O campo `when` aceita várias condições simultâneas (AND entre campos,
-# OR dentro de cada lista). Métodos cuja condição não bate são pulados
-# silenciosamente — o motor tenta o próximo método na ordem.
+# CASE 9 — `when` with multiple platform dimensions.
+# The `when` field accepts several simultaneous conditions (AND across fields,
+# OR within each list). Methods whose condition doesn't match are silently
+# skipped — the engine tries the next method in order.
 #
-# Dimensões disponíveis:
-#   distro_family → clã resolvido (arch, debian, fedora, alpine, ...)
-#   distro_id     → ID exato da distro (ubuntu, arch, fedora, ...)
-#   arch          → arquitetura (x86_64, aarch64, armv7l, ...)
-#   os            → sistema operacional (linux, darwin, windows, ...)
-#   kernel        → versão do kernel (uname -r)
-#   libc          → biblioteca C (glibc, musl, ...) — correspondência por prefixo
-#   init_system   → sistema de init (systemd, openrc, runit, ...)
-#   is_wsl        → true/false (ambiente WSL)
-#   is_container  → true/false (ambiente container)
+# Available dimensions:
+#   distro_family → resolved family (arch, debian, fedora, alpine, ...)
+#   distro_id     → exact distro ID (ubuntu, arch, fedora, ...)
+#   arch          → architecture (x86_64, aarch64, armv7l, ...)
+#   os            → operating system (linux, darwin, windows, ...)
+#   kernel        → kernel version (uname -r)
+#   libc          → C library (glibc, musl, ...) — prefix matching
+#   init_system   → init system (systemd, openrc, runit, ...)
+#   is_wsl        → true/false (WSL environment)
+#   is_container  → true/false (container environment)
 # ==============================================================================
 
-# --- Binário diferente conforme libc (glibc vs musl) ---
+# --- Binary differs by libc (glibc vs musl) ---
 [tools.restic]
   # glibc build (Linux desktop typical)
   [tools.restic.http]
@@ -149,7 +147,7 @@ zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
   when = { arch = ["x86_64", "aarch64"], os = ["linux"], libc = ["musl"] }
 
 
-# --- WSL vs nativo Linux ---
+# --- WSL vs native Linux ---
 [tools.podman]
   [tools.podman.native]
   when = { is_wsl = false }
@@ -159,7 +157,7 @@ zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
   when = { is_wsl = true }
 
 
-# --- Container-aware: binário estático dentro de container, nativo fora ---
+# --- Container-aware: static binary inside container, native outside ---
 [tools.neovim]
   [tools.neovim.native]
   when = { is_container = false }
@@ -177,7 +175,7 @@ zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
   when = { distro_family = ["arch"], kernel = ["6.7", "6.8", "6.9"] }
 
 
-# --- macOS vs Linux: plataforma completamente diferente ---
+# --- macOS vs Linux: completely different platform ---
 [tools.skhd]
   [tools.skhd.brew]
   pkg = "koekeishiya/formulae/skhd"
@@ -188,7 +186,7 @@ zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
   when = { os = ["linux"], distro_family = ["arch", "debian", "fedora"] }
 
 
-# --- Distro ID exato (não clã) para distros com pacotes específicos ---
+# --- Exact distro ID (not family) for distros with specific packages ---
 [tools.ulauncher]
   [tools.ulauncher.aur]
   pkg = "ulauncher"
@@ -199,29 +197,29 @@ zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
   when = { distro_id = ["ubuntu", "debian"] }
 
 # ------------------------------------------------------------------------
-# CASO 10 — Buckets de ecossistema: python, node.
-# Quando pkg == tool_name (~80% dos casos Python/Node), use `true`
-# em vez de repetir o nome. Buckets expandem para todos os methods
-# do ecossistema de uma vez.
+# CASE 10 — Ecosystem buckets: python, node.
+# When pkg == tool_name (~80% of Python/Node cases), use `true`
+# instead of repeating the name. Buckets expand to all methods
+# in the ecosystem at once.
 #
 #   python = true        ≡  { pip = true, pipx = true, uv = true }
 #   node   = true        ≡  { npm = true, pnpm = true, bun = true }
 #   python = "pkgname"   ≡  { pip = "pkgname", pipx = "pkgname", uv = "pkgname" }
 #
-# Três formatos de valor:
-#   true           → cada método usa tool.Name como pkg
-#   "string"       → cada método recebe a string como pkg
-#   { pkg, when }  → cada método recebe um clone do mapa
+# Three value formats:
+#   true           → each method uses tool.Name as pkg
+#   "string"       → each method receives the string as pkg
+#   { pkg, when }  → each method receives a clone of the map
 #
-# Cada `true` usa o nome da tool como pkg (SubstitutePkg fallback).
+# Each `true` uses the tool name as pkg (SubstitutePkg fallback).
 # ------------------------------------------------------------------------
 ruff = { python = true }               # ≡ { pipx = "ruff", uv = "ruff" }
 prettier = { node = true }             # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
 organize = { python = "organize-tool" } # ≡ { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }
-httpie = { python = true }             # pip + pipx + uv (pkg=httpie em todos)
+httpie = { python = true }             # pip + pipx + uv (pkg=httpie for all)
 
-# Pode misturar bucket com método explícito: o explícito NÃO é sobrescrito.
-# organize = { pip = "organize-tool", python = true } mantém pip explícito.
+# Can mix bucket with explicit method: the explicit method is NOT overwritten.
+# organize = { pip = "organize-tool", python = true } keeps the explicit pip.
 [tools.DepartureMono]
 postinstall = "fc-cache -fv"
 
@@ -235,9 +233,9 @@ postinstall = "fc-cache -fv"
 
 
 # ------------------------------------------------------------------------
-# CASO 9 — Tool virtual (config-only, sem método de instalação).
-# Útil para agrupar dependências ou servir como marcador para grupos
-# de arquivos de configuração que não instalam pacotes externos.
+# CASE 11 — Virtual tool (config-only, no installation method).
+# Useful for grouping dependencies or serving as a marker for groups
+# of configuration files that don't install external packages.
 # ------------------------------------------------------------------------
 
 # marina — container-based dev environment. Requires go, podman, docker-compose.
@@ -258,26 +256,27 @@ requires = []
 
 
 # ==============================================================================
-# CHECKLIST — qual formato usar para uma tool nova?
+# CHECKLIST — which format to use for a new tool?
 # ==============================================================================
-# 1. Nome do pacote é sempre o mesmo, sem condições especiais?
-#       → adiciona na lista `simple`.
+# 1. Is the package name always the same, with no special conditions?
+#       → add to the `simple` list.
 #
-# 2. Só muda o nome do pacote entre managers (nativo e/ou linguagem),
-#    sem `when`, sem múltiplos métodos concorrentes, cabe numa linha?
-#       → inline table: `nome = { manager = "pacote", ... }`
+# 2. Only the package name differs between managers (native and/or language),
+#    without `when`, without multiple competing methods, fits on one line?
+#       → inline table: `name = { manager = "package", ... }`
 #
-# 3. Precisa de `when`, tem mais de um método candidato, ou a linha
-#    inline ficaria enorme/ilegível?
+# 3. Needs `when`, has more than one candidate method, or the inline line
+#    would be huge/unreadable?
+#       → full block: [tools.NAME] + [tools.NAME.method]
 #
-# 4. Precisa de condições multiplataforma (arch + libc + os + is_container)?
-#       → use `when` com múltiplos campos: `when = { arch = [...], os = [...], libc = [...] }`
-#       → bloco completo: [tools.NOME] + [tools.NOME.metodo]
+# 4. Needs cross-platform conditions (arch + libc + os + is_container)?
+#       → use `when` with multiple fields: `when = { arch = [...], os = [...], libc = [...] }`
+#       → full block: [tools.NAME] + [tools.NAME.method]
 #
-# Campos que SEMPRE ficam no nível da tool (fora do método):
+# Fields that ALWAYS stay at the tool level (outside method):
 #   requires, postinstall
 #
-# Campos que SEMPRE ficam dentro do método:
+# Fields that ALWAYS stay inside the method:
 #   when, url, build, checksum, checksum_url, checksum_file_format,
 #   signature_url, signing_key, extract_to, pkg, git
 # ==============================================================================
