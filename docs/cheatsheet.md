@@ -101,11 +101,11 @@ The engine merges layers **field-by-field** using per-field strategies (not whol
   simple = [...]    #   shorthand list
   name = { ... }    #   inline table
   [tools.NAME]      #   full block (for complex tools)
-    [tools.NAME.method]  # one sub-table per candidate method
+    [tools.NAME.method]  # one sub-table per candidate method; use kind = "..." when section name differs from adapter key
 ```
 
 **Golden rule:** Tool-level fields (`requires`, `pre_install`, `postinstall`) live outside methods.
-Method-level fields (`when`, `url`, `build`, `checksum`, `extract_to`, `pkg`, `git`) live inside the method.
+Method-level fields (`kind`, `when`, `url`, `build`, `checksum`, `extract_to`, `pkg`, `git`) live inside the method.
 
 ---
 

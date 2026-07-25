@@ -80,6 +80,7 @@ func loadSchemaWithManifest(schemaPath, manifestPath string) (*config.Schema, st
 	if merr != nil {
 		return nil, "", nil, 0, merr
 	}
+	config.FilterManifestTools(s, manifestSchema)
 	if gerr := config.ValidateManifestLayer(manifestSchema); gerr != nil {
 		return nil, "", nil, 0, gerr
 	}

@@ -447,7 +447,7 @@ tags = ["aur-helper"]
 #   requires, pre_install, postinstall, tags
 #
 # Fields that ALWAYS stay inside the method:
-#   when, pkg, url, build, branch, depth, checksum, checksum_url,
+#   kind, when, pkg, url, build, branch, depth, checksum, checksum_url,
 #   checksum_file_format, signature_url, signing_key, extract_to,
 #   binary, git
 # ==============================================================================

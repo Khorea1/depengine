@@ -1,6 +1,10 @@
 package native
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/Khorea1/depengine/pkg/run"
+)
 
 // BuildInstallCmd substitutes "{pkg}" and prepends sudo when the manager
 // requires it. Returns nil if the clan has no known native manager — the
@@ -55,5 +59,11 @@ func withSudo(cmd []string, sudoRequired bool) []string {
 	if !sudoRequired {
 		return cmd
 	}
-	return append([]string{"sudo"}, cmd...)
+	if prefix := run.ElevationPrefix(); prefix != nil {
+		return append(prefix, cmd...)
+	}
+	// No working elevation — return as-is and let the call fail with
+	// a clear permission error rather than silently succeeding with
+	// insufficient privileges.
+	return cmd
 }

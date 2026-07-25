@@ -27,7 +27,11 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 	attempts := make([]MethodAttempt, 0, len(methods))
 
 	for _, method := range methods {
-		attempt := MethodAttempt{Kind: method.Kind}
+		displayKind := method.Kind
+		if method.Label != "" {
+			displayKind = method.Label
+		}
+		attempt := MethodAttempt{Kind: displayKind}
 
 		// Check when condition.
 		if method.When != nil && !method.When.Match(ex.facts) {
@@ -36,12 +40,10 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 			attempts = append(attempts, attempt)
 			continue
 		}
-
-		// Look up adapter for this method kind.
 		adapter := ex.LookupAdapter(method.Kind)
 		if adapter == nil {
 			attempt.Status = "skip_unavailable"
-			attempt.Error = fmt.Sprintf("no adapter registered for kind %q", method.Kind)
+			attempt.Error = fmt.Sprintf("no adapter registered for kind %q", displayKind)
 			attempts = append(attempts, attempt)
 			continue
 		}
@@ -49,7 +51,7 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 		// Check if the adapter is available on this system.
 		if !adapter.Available(ctx, ex.rn) {
 			attempt.Status = "skip_unavailable"
-			attempt.Error = fmt.Sprintf("adapter %q not available (binary not on PATH)", method.Kind)
+			attempt.Error = fmt.Sprintf("adapter %q not available (binary not on PATH)", displayKind)
 			attempts = append(attempts, attempt)
 			continue
 		}

@@ -64,7 +64,11 @@ func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequ
 func extractTar(ctx context.Context, src, dest string, flags []string, rn run.Runner, sudoRequired bool) error {
 	args := append(flags, src, "-C", dest)
 	if sudoRequired && os.Geteuid() != 0 {
-		res := rn.Run(ctx, "sudo", append([]string{"tar"}, args...)...)
+		sudoBin := "sudo"
+		if prefix := run.ElevationPrefix(); prefix != nil {
+			sudoBin = prefix[0]
+		}
+		res := rn.Run(ctx, sudoBin, append([]string{"tar"}, args...)...)
 		if res.Err != nil {
 			return fmt.Errorf("tar: %w", res.Err)
 		}
@@ -87,7 +91,11 @@ func extractTar(ctx context.Context, src, dest string, flags []string, rn run.Ru
 
 func extractZip(ctx context.Context, src, dest string, rn run.Runner, sudoRequired bool) error {
 	if sudoRequired && os.Geteuid() != 0 {
-		res := rn.Run(ctx, "sudo", "unzip", "-o", src, "-d", dest)
+		sudoBin := "sudo"
+		if prefix := run.ElevationPrefix(); prefix != nil {
+			sudoBin = prefix[0]
+		}
+		res := rn.Run(ctx, sudoBin, "unzip", "-o", src, "-d", dest)
 		if res.Err != nil {
 			return fmt.Errorf("unzip: %w", res.Err)
 		}
@@ -111,9 +119,13 @@ func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired boo
 	if _, err := exec.LookPath("dpkg"); err != nil {
 		return fmt.Errorf("cannot install .deb package: dpkg not found (this system is not Debian-based; consider adding a native method fallback)")
 	}
+	sudoBin := "sudo"
+	if prefix := run.ElevationPrefix(); prefix != nil {
+		sudoBin = prefix[0]
+	}
 	runCmd := func(args ...string) run.Result {
 		if sudoRequired && os.Geteuid() != 0 {
-			args = append([]string{"sudo"}, args...)
+			args = append([]string{sudoBin}, args...)
 		}
 		return rn.Run(ctx, args[0], args[1:]...)
 	}

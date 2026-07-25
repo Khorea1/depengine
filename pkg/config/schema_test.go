@@ -1457,3 +1457,164 @@ func TestParseConditionUnknownKeysStillIgnored(t *testing.T) {
 		t.Error("parseCondition should return nil when only unknown keys are present")
 	}
 }
+
+func TestParseMethodKindField(t *testing.T) {
+	// kind = "http" on a block → mc.Kind == "http", mc.Label == "http-musl",
+	// mc.Config does NOT contain "kind"
+	mc, err := parseMethod("http-musl", map[string]any{
+		"kind": "http",
+		"url":  "https://example.com/musl",
+	})
+	if err != nil {
+		t.Fatalf("parseMethod: %v", err)
+	}
+	if mc.Kind != "http" {
+		t.Errorf("expected Kind %q, got %q", "http", mc.Kind)
+	}
+	if mc.Label != "http-musl" {
+		t.Errorf("expected Label %q, got %q", "http-musl", mc.Label)
+	}
+	if _, ok := mc.Config["kind"]; ok {
+		t.Errorf("Config should not contain 'kind' key, got %v", mc.Config)
+	}
+	if mc.Config["url"] != "https://example.com/musl" {
+		t.Errorf("expected url in Config, got %v", mc.Config)
+	}
+
+	// kind = "" → falls back to section name as kind
+	mc, err = parseMethod("http-musl", map[string]any{
+		"kind": "",
+		"url":  "https://example.com/musl",
+	})
+	if err != nil {
+		t.Fatalf("parseMethod: %v", err)
+	}
+	if mc.Kind != "http-musl" {
+		t.Errorf("expected Kind %q (section name fallback), got %q", "http-musl", mc.Kind)
+	}
+	if mc.Label != "" {
+		t.Errorf("expected empty Label for empty kind, got %q", mc.Label)
+	}
+
+	// No kind field → existing behavior unchanged
+	mc, err = parseMethod("http", map[string]any{
+		"url": "https://example.com",
+	})
+	if err != nil {
+		t.Fatalf("parseMethod: %v", err)
+	}
+	if mc.Kind != "http" {
+		t.Errorf("expected Kind %q, got %q", "http", mc.Kind)
+	}
+	if mc.Label != "" {
+		t.Errorf("expected empty Label, got %q", mc.Label)
+	}
+
+	// Non-string kind → ignored, kind stays in Config
+	mc, err = parseMethod("http-musl", map[string]any{
+		"kind": []string{"http"},
+		"url":  "https://example.com",
+	})
+	if err != nil {
+		t.Fatalf("parseMethod: %v", err)
+	}
+	if mc.Kind != "http-musl" {
+		t.Errorf("expected Kind %q (unchanged), got %q", "http-musl", mc.Kind)
+	}
+	if _, ok := mc.Config["kind"]; !ok {
+		t.Errorf("Config should contain 'kind' key for non-string kind values")
+	}
+}
+
+func TestSchemaKindFieldResolvesAdapter(t *testing.T) {
+	p := writeSchema(t, `
+[defaults]
+manager = "native"
+
+[tools.restic]
+  [tools.restic.http-musl]
+  kind = "http"
+  url = "https://example.com/musl"
+  when = { libc = ["musl"] }
+`)
+	s, err := ParseSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	tool := s.Tools["restic"]
+	if tool == nil {
+		t.Fatal("expected tool 'restic' to be parsed")
+	}
+
+	// Find the http-musl method
+	var found bool
+	for _, m := range tool.Methods {
+		if m.Label == "http-musl" {
+			found = true
+			if m.Kind != "http" {
+				t.Errorf("expected Kind %q, got %q", "http", m.Kind)
+			}
+			if m.Label != "http-musl" {
+				t.Errorf("expected Label %q, got %q", "http-musl", m.Label)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected method with Label 'http-musl'")
+	}
+
+	// Validate with knownKinds containing "http" should pass
+	warnings, err := Validate(s, []string{"native", "http"})
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	for _, w := range warnings {
+		if strings.Contains(w, "http") {
+			t.Fatalf("unexpected warning about 'http': %s", w)
+		}
+	}
+}
+
+func TestSchemaKindFieldBackwardCompat(t *testing.T) {
+	// Existing schema without 'kind' field — Kind == section name, Label == ""
+	p := writeSchema(t, `
+[defaults]
+manager = "native"
+
+[tools.restic]
+  [tools.restic.http]
+  url = "https://example.com"
+`)
+	s, err := ParseSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	tool := s.Tools["restic"]
+	if tool == nil {
+		t.Fatal("expected tool 'restic'")
+	}
+
+	var found bool
+	for _, m := range tool.Methods {
+		if m.Kind == "http" {
+			found = true
+			if m.Label != "" {
+				t.Errorf("expected empty Label for backward compat, got %q", m.Label)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected method with Kind 'http'")
+	}
+
+	// Validate passes as before
+	warnings, err := Validate(s, []string{"native", "http"})
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	for _, w := range warnings {
+		if strings.Contains(w, "http") && !strings.Contains(w, "method_order") {
+			t.Fatalf("unexpected warning: %s", w)
+		}
+	}
+}

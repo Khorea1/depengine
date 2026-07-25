@@ -107,6 +107,10 @@
           "description": "Package/module/binary name to install via this method."
         },
         "when": { "$ref": "#/definitions/whenCondition" },
+        "kind": {
+          "type": "string",
+          "description": "Override the adapter dispatch key. When the section key differs from the adapter kind (e.g. \"http-musl\" is a variant of \"http\"), set kind = \"<adapter>\" so the method resolves to the correct adapter."
+        },
         "git": {
           "type": "string",
           "description": "Git repository URL (for cargo install --git, go install, etc.)."

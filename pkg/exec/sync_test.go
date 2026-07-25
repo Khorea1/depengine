@@ -8,6 +8,9 @@ import (
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
+func init() {
+	run.OverrideElevation("sudo")
+}
 func TestSyncManagerNeedsSyncTrue(t *testing.T) {
 	t.Parallel()
 	sm := NewSyncManager(&run.FakeRunner{}, "debian")

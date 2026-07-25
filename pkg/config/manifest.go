@@ -42,6 +42,23 @@ func DefaultManifestPath() string {
 // Each manifest path is parsed with ParseSchema(path, nil, "packages") and
 // validated with ValidateManifestLayer. An empty manifest path is skipped.
 // The result merges all layers: manifest files (earlier = lower priority),
+
+// FilterManifestTools removes tools from the manifest that are not present in
+// the schema when AllowNewTools is false. When AllowNewTools is true, all tools
+// are kept (they may introduce new capabilities).
+//
+// Manifest-only tools are "rejected" (silently excluded) by default — they
+// don't participate in validation or merging unless AllowNewTools is set.
+func FilterManifestTools(schema, manifest *Schema) {
+	if manifest.AllowNewTools {
+		return
+	}
+	for name := range manifest.Tools {
+		if _, exists := schema.Tools[name]; !exists {
+			delete(manifest.Tools, name)
+		}
+	}
+}
 // then the local schema (highest priority).
 func ResolveSchemaFromFiles(schemaPath string, manifestPaths ...string) (*Schema, error) {
 	s, err := ParseSchema(schemaPath, nil)
@@ -60,13 +77,15 @@ func ResolveSchemaFromFiles(schemaPath string, manifestPaths ...string) (*Schema
 		if err != nil {
 			return nil, fmt.Errorf("parse manifest %s: %w", mp, err)
 		}
+		// Strip manifest-only tools before validation+merge.
+		// When AllowNewTools=false, they're "rejected" (silently excluded).
+		FilterManifestTools(s, mt)
 		if err := ValidateManifestLayer(mt); err != nil {
 			return nil, fmt.Errorf("manifest %s: %w", mp, err)
 		}
 		if err := ValidateManifestNewTools(s, mt); err != nil {
 			return nil, fmt.Errorf("manifest %s: %w", mp, err)
 		}
-		// Insert manifest layers before the schema layer so schema wins.
 		layers = append(layers[:len(layers)-1], mt, layers[len(layers)-1])
 	}
 
@@ -477,18 +496,13 @@ func toolFieldToTOML(field string) string {
 
 // ValidateManifestNewTools checks that the manifest does not introduce tools
 // not present in the schema unless AllowNewTools is true in the manifest.
+//
+// When AllowNewTools is false, manifest-only tools are silently ignored
+// ("rejected" = excluded from merge, not an error). Use FilterManifestTools
+// before this function to strip them from the manifest, or simply rely on
+// the fact that this function returns nil — the contract is that manifest-only
+// tools are excluded by default, not errored.
 func ValidateManifestNewTools(schema, manifest *Schema) error {
-	if manifest.AllowNewTools {
-		return nil
-	}
-	var errs []string
-	for name := range manifest.Tools {
-		if _, exists := schema.Tools[name]; !exists {
-			errs = append(errs, fmt.Sprintf("tool %q in manifest not found in schema; set [manifest] allow_new_tools = true to allow", name))
-		}
-	}
-	if len(errs) > 0 {
-		return fmt.Errorf("manifest introduces new tools:\n%s", strings.Join(errs, "\n"))
-	}
+	_ = schema // kept for signature compatibility; filtering is handled by FilterManifestTools
 	return nil
 }

@@ -273,7 +273,7 @@ var _ Remover = (*NativeByManagerAdapter)(nil)
 // replaceManagerBinary replaces the binary name in a native manager command
 // with the actual binary name (e.g. "dnf5" instead of "dnf"). This handles
 // the case where a manager kind (e.g. "dnf5") maps to a clan whose default
-// binary is different. It skips the "sudo" prefix if present.
+// binary is different. It skips any known elevation prefix (sudo, pkexec).
 func replaceManagerBinary(cmd []string, managerName, clan string) []string {
 	if len(cmd) == 0 {
 		return cmd
@@ -286,9 +286,9 @@ func replaceManagerBinary(cmd []string, managerName, clan string) []string {
 	if managerName == nm.Name {
 		return cmd
 	}
-	// Replace the binary (first arg after "sudo" if present, otherwise first arg).
+	// Skip known elevation prefixes to reach the actual manager binary.
 	start := 0
-	if cmd[0] == "sudo" {
+	if len(cmd) > 1 && run.IsElevationPrefix(cmd[0]) {
 		start = 1
 	}
 	if start < len(cmd) {
@@ -296,3 +296,4 @@ func replaceManagerBinary(cmd []string, managerName, clan string) []string {
 	}
 	return cmd
 }
+

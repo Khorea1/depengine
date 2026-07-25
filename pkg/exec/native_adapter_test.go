@@ -9,6 +9,9 @@ import (
 	"github.com/Khorea1/depengine/pkg/config"
 )
 
+func init() {
+	run.OverrideElevation("sudo")
+}
 func TestNativeAdapterAutoDetect(t *testing.T) {
 	t.Run("finds manager when one exists", func(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 0}

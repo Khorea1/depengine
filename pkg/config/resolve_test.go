@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 )
 
@@ -254,12 +253,13 @@ d = { pip = "d3" }
 	}
 }
 
-// TestValidateManifestLayer_RejectsIntentFields verifies that ValidateManifestLayer
-// rejects fields that should not be in a manifest.
-func TestValidateManifestLayer_RejectsIntentFields(t *testing.T) {
+// TestValidateManifestLayer_AcceptsIntentFields verifies that fields like
+// pre_install, post_install, requires, method_order are now allowed in the
+// manifest layer. The manifest provides defaults; the schema overrides.
+func TestValidateManifestLayer_AcceptsIntentFields(t *testing.T) {
 	p := writeSchemaInline(t, `
 [packages]
-	nvim = { pacman = "neovim", pre_install = "dangerous", requires = ["zsh"] }
+	nvim = { pacman = "neovim", pre_install = "some-setup", requires = ["zsh"] }
 	`)
 	s, err := ParseSchema(p, nil, "packages")
 	if err != nil {
@@ -267,15 +267,8 @@ func TestValidateManifestLayer_RejectsIntentFields(t *testing.T) {
 	}
 
 	err = ValidateManifestLayer(s)
-	if err == nil {
-		t.Fatal("expected error from ValidateManifestLayer, got nil")
-	}
-	msg := err.Error()
-	if !strings.Contains(msg, "pre_install") {
-		t.Fatalf("expected error about pre_install, got: %s", msg)
-	}
-	if !strings.Contains(msg, "requires") {
-		t.Fatalf("expected error about requires, got: %s", msg)
+	if err != nil {
+		t.Fatalf("expected no error (intent fields are now allowed in manifest), got: %v", err)
 	}
 }
 
@@ -596,9 +589,9 @@ fd = { pacman = "fd-rust" }
 	}
 }
 
-// TestValidateManifestNewTools_RejectsWithoutFlag — manifest introducing tools
-// not in the schema should be rejected when allow_new_tools is not set.
-func TestValidateManifestNewTools_RejectsWithoutFlag(t *testing.T) {
+// TestFilterManifestTools_RejectsWithoutFlag — FilterManifestTools removes tools
+// from the manifest that are not in the schema when AllowNewTools is not set.
+func TestFilterManifestTools_RejectsWithoutFlag(t *testing.T) {
 	schemaPath := writeSchemaInline(t, `
 [tools]
 nvim = { apt = "neovim" }
@@ -618,13 +611,14 @@ newtool = { pip = "new-pkg" }
 		t.Fatalf("ParseSchema(manifest): %v", err)
 	}
 
-	// Without allow_new_tools, manifest having "newtool" that's not in schema should fail
-	err = ValidateManifestNewTools(schema, manifest)
-	if err == nil {
-		t.Fatal("expected error for new tool in manifest without allow_new_tools")
+	// Without allow_new_tools, FilterManifestTools should remove "newtool"
+	FilterManifestTools(schema, manifest)
+	if _, exists := manifest.Tools["newtool"]; exists {
+		t.Fatal("expected 'newtool' to be removed by FilterManifestTools, but it still exists")
 	}
-	if !strings.Contains(err.Error(), "newtool") {
-		t.Errorf("error should mention 'newtool', got: %v", err)
+	// "nvim" should remain since it's in the schema
+	if _, exists := manifest.Tools["nvim"]; !exists {
+		t.Fatal("expected 'nvim' to remain after filtering, but it was removed")
 	}
 }
 

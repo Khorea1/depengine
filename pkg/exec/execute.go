@@ -287,6 +287,10 @@ func (ex *Executor) effectiveMethodOrder(tool *config.Tool) []string {
 func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, result *ToolResult, toolStart time.Time) {
 	orderedMethods := config.OrderMethods(tool.Methods, ex.effectiveMethodOrder(tool))
 	for _, method := range orderedMethods {
+		displayKind := method.Kind
+		if method.Label != "" {
+			displayKind = method.Label
+		}
 		select {
 		case <-toolCtx.Done():
 			result.Status = StatusFailed
@@ -297,55 +301,55 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		default:
 		}
 
-		attempt := MethodAttempt{Kind: method.Kind}
+		attempt := MethodAttempt{Kind: displayKind}
 
 		if method.When != nil && !method.When.Match(ex.facts) {
 			attempt.Status = "skip_when"
 			result.Methods = append(result.Methods, attempt)
-			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "skip_when", "requires", fmt.Sprintf("%v", method.When))
+			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_when", "requires", fmt.Sprintf("%v", method.When))
 			continue
 		}
 
 		adapter := ex.LookupAdapter(method.Kind)
 		if adapter == nil {
 			attempt.Status = "skip_unavailable"
-			attempt.Error = fmt.Sprintf("no adapter for %q", method.Kind)
+			attempt.Error = fmt.Sprintf("no adapter for %q", displayKind)
 			result.Methods = append(result.Methods, attempt)
-			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "skip_no_adapter")
+			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_no_adapter")
 			continue
 		}
 
 		if !adapter.Available(toolCtx, ex.rn) {
 			attempt.Status = "skip_unavailable"
-			attempt.Error = fmt.Sprintf("adapter %q not available", method.Kind)
+			attempt.Error = fmt.Sprintf("adapter %q not available", displayKind)
 			result.Methods = append(result.Methods, attempt)
-			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "skip_unavailable")
+			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_unavailable")
 			continue
 		}
 
 		if adapter.Check(toolCtx, ex.rn, tool, method) {
 			result.Status = StatusAlready
-			result.Method = method.Kind
+			result.Method = displayKind
 			result.Config = method.Config
-			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "already_installed")
+			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "already_installed")
 			result.Duration = time.Since(toolStart).String()
 			return
 		}
 
 		if ex.dryRun {
 			result.Status = StatusWouldInstall
-			result.Method = method.Kind
+			result.Method = displayKind
 			attempt.Status = "success"
 			result.Methods = append(result.Methods, attempt)
-			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "would_install")
+			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "would_install")
 			result.Duration = time.Since(toolStart).String()
 			return
 		}
 
-		ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "installing")
+		ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "installing")
 		runner := ex.rn
 		if lr, ok := runner.(*run.LoggingRunner); ok {
-			runner = lr.WithContext(run.Context{Tool: tool.Name, Method: method.Kind})
+			runner = lr.WithContext(run.Context{Tool: tool.Name, Method: displayKind})
 		}
 
 		// method-timeout applies to each individual attempt.
@@ -355,9 +359,9 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 
 		if err == nil {
 			result.Status = StatusInstalled
-			result.Method = method.Kind
+			result.Method = displayKind
 			result.Config = method.Config
-			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "installed")
+			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "installed")
 			if tool.PostInstall != "" {
 				// Postinstall gets a fresh timeout from the tool-level context,
 				// not the cancelled method context.
@@ -374,7 +378,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		attempt.Status = "failed"
 		attempt.Error = err.Error()
 		result.Methods = append(result.Methods, attempt)
-		ex.logWarn(toolCtx, "tool", "tool", tool.Name, "method", method.Kind, "status", "failed", "error", err.Error())
+		ex.logWarn(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "failed", "error", err.Error())
 	}
 
 	// All methods exhausted — determine terminal status.

@@ -4,7 +4,14 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/Khorea1/depengine/pkg/run"
 )
+
+func init() {
+	// Force "sudo" as elevation method for deterministic test results.
+	run.OverrideElevation("sudo")
+}
 
 func TestBuildCommandsMatchExpectedPerClan(t *testing.T) {
 	cases := []struct {

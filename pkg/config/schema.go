@@ -29,13 +29,13 @@ const (
 // ToolFieldStrategy defines merge policy for every exported field of Tool.
 var ToolFieldStrategy = map[string]MergeStrategy{
 	"Name":         MergeOverwrite,
-	"PreInstall":   MergeLocalOnly,
-	"PostInstall":  MergeLocalOnly,
-	"Requires":     MergeLocalOnly,
+	"PreInstall":   MergeOverwrite,
+	"PostInstall":  MergeOverwrite,
+	"Requires":     MergeOverwrite,
 	"Methods":      MergeMethods,
-	"MethodOrder":  MergeLocalOnly,
-	"MethodPrefer": MergeLocalOnly,
-	"MethodOnly":   MergeLocalOnly,
+	"MethodOrder":  MergeOverwrite,
+	"MethodPrefer": MergeOverwrite,
+	"MethodOnly":   MergeOverwrite,
 	"IsSimple":     MergeOverwrite,
 	"Tags":         MergeUnionSlice,
 	"Ecosystem":    MergeOverwrite,
@@ -190,7 +190,8 @@ func cloneMethod(m *MethodCandidate) *MethodCandidate {
 // callers should surface this with other diagnostics rather than silently
 // dropping the method.
 type MethodCandidate struct {
-	Kind   string
+	Kind   string          // adapter dispatch key (e.g. "http")
+	Label  string          // TOML section key (e.g. "http-musl"), empty = use Kind
 	When   *Condition
 	Config map[string]any
 	Err    error
@@ -589,14 +590,19 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 			return nil, fmt.Errorf("method %q: invalid value false (use true, a package name, or a config table)", kind)
 		}
 	case map[string]any:
-		// `when` is hoisted out; everything else stays in Config.
+		// `when` and `kind` are hoisted out; everything else stays in Config.
 		if rawWhen, ok := t["when"]; ok {
 			mc.When = parseCondition(rawWhen)
+			delete(t, "when")
+		}
+		if rawKind, ok := t["kind"]; ok {
+			if ks, ok := rawKind.(string); ok && ks != "" {
+				mc.Kind = ks      // override adapter dispatch key
+				mc.Label = kind    // store TOML section key as label
+				delete(t, "kind")  // don't pass to adapter
+			}
 		}
 		for k, v := range t {
-			if k == "when" {
-				continue
-			}
 			mc.Config[k] = v
 		}
 	default:
@@ -651,7 +657,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	var nonNativeKeys []string
 	var nativeBlockConfig map[string]any
 
-	for _, k := range sortedKeys(valMap, "requires", "pre_install", "preinstall", "post_install", "postinstall", "tags", "method_order", "method_prefer", "method_only", "when") {
+	for _, k := range sortedKeys(valMap, "requires", "pre_install", "preinstall", "post_install", "postinstall", "tags", "method_order", "method_prefer", "method_only", "when", "kind") {
 		if k == "native" {
 			if m, ok := valMap[k].(map[string]any); ok {
 				nativeBlockConfig = m
@@ -1018,21 +1024,42 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 			}
 		}
 		if len(unknownKinds) > 0 {
+			// Build prefix hints for variant detection (e.g. "http-musl" → "http").
+			prefixHints := map[string]string{}
+			for _, uk := range unknownKinds {
+				for known := range set {
+					if strings.HasPrefix(uk, known) {
+						prefixHints[uk] = fmt.Sprintf(
+							"\n  note: %q looks like a variant of %q — set kind = %q in the method block",
+							uk, known, known,
+						)
+						break
+					}
+				}
+			}
 			if knownCount == 0 {
-				// All kinds unknown — hard error: tool is unreachable. List all.
+				// All kinds unknown — hard error: tool is unreachable.
 				for _, uk := range unknownKinds {
-					hardErrors = append(hardErrors, fmt.Sprintf(
-						"unknown method kind %q for tool %q (no adapter is registered; hint: register the adapter in initAdapters or fix the typo)",
+					msg := fmt.Sprintf(
+						"method kind %q for tool %q is not a registered adapter — if this is a variant of an existing method kind (e.g. \"http-musl\" of \"http\"), add kind = \"<kind>\" to the method block",
 						uk, toolName,
-					))
+					)
+					if hint := prefixHints[uk]; hint != "" {
+						msg += hint
+					}
+					hardErrors = append(hardErrors, msg)
 				}
 			} else {
 				// At least one known fallback — warn for each unknown kind.
 				for _, uk := range unknownKinds {
-					warnings = append(warnings, fmt.Sprintf(
-						"warning: tool %q declares unknown method kind %q (will be skipped at runtime; keeps known fallbacks)",
+					msg := fmt.Sprintf(
+						"warning: tool %q declares method kind %q which is not a registered adapter (will be skipped at runtime) — if this is a variant of an existing method, add kind = \"<kind>\" to the method block",
 						toolName, uk,
-					))
+					)
+					if hint := prefixHints[uk]; hint != "" {
+						msg += hint
+					}
+					warnings = append(warnings, msg)
 				}
 			}
 		}

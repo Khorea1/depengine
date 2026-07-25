@@ -26,12 +26,13 @@ func (a *PacstallAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	if !run.LookPath(ctx, rn, "pacstall") {
 		return false
 	}
-	// Install uses sudo when not running as root; verify it's available too.
-	// (This doesn't check passwordless sudo — just that the binary exists.)
-	if !isElevated() {
-		return run.LookPath(ctx, rn, "sudo")
+	// Elevation is needed unless already root.
+	// Use the shared elevation detector instead of hardcoding "sudo".
+	if isElevated() {
+		return true
 	}
-	return true
+	// ElevationMethod probes sudo -n and pkexec, caching the result.
+	return run.ElevationMethod() != ""
 }
 
 func (a *PacstallAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
@@ -49,12 +50,15 @@ func (a *PacstallAdapter) Install(ctx context.Context, rn run.Runner, tool *conf
 		return fmt.Errorf("pacstall: no package name")
 	}
 
-	// Use sudo if not running as root. The caller should ensure the
-	// user has passwordless sudo for pacstall or a cached credential.
+	// Use elevation (sudo/pkexec) if not running as root.
+	// ElevationPrefix detects the best method at runtime.
 	var cmd []string
 	if isElevated() {
 		cmd = []string{"pacstall", "-I", pkg[0]}
+	} else if prefix := run.ElevationPrefix(); prefix != nil {
+		cmd = append(prefix, "pacstall", "-I", pkg[0])
 	} else {
+		// No working elevation — try with bare sudo anyway for a clear error.
 		cmd = []string{"sudo", "pacstall", "-I", pkg[0]}
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)

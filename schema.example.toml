@@ -33,7 +33,7 @@ method_order = ["native", "scoop", "choco", "cargo", "go", "pipx", "uv", "pip", 
 # CASE 1 — "Simple" tool: package name is the same on every relevant distro.
 # No table needed, just list the name. Uses `defaults.manager`.
 # ------------------------------------------------------------------------
-simple = ["zsh", "zathura", "w3m", "rofi", "mpv", "kitty", "tmux", "rclone", "podman", "docker-compose", "bat", "lsd"]
+simple = ["zsh", "zathura", "w3m", "rofi", "mpv", "kitty", "tmux", "rclone", "docker-compose", "bat", "lsd"]
 
 
 # ------------------------------------------------------------------------
@@ -143,6 +143,7 @@ zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
 
   # musl build (Alpine Linux, containers)
   [tools.restic.http-musl]
+  kind = "http"
   url = "https://github.com/restic/restic/releases/download/{latest}/restic_{latest}_linux_{arch}_musl.bz2"
   when = { arch = ["x86_64", "aarch64"], os = ["linux"], libc = ["musl"] }
 

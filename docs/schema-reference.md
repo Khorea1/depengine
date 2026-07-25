@@ -105,7 +105,7 @@ postinstall = "fc-cache -fv"
 
 > **Golden rule:** tool-level fields (`requires`, `postinstall`,
 > `pre_install`) go _outside_ the method block. Method-specific fields
-> (`when`, `url`, `build`, `checksum`, `extract_to`, `pkg`, `git`) go
+> (`kind`, `when`, `url`, `build`, `checksum`, `extract_to`, `pkg`, `git`) go
 > _inside_.
 
 ## Case 10 — Platform conditions (`when`), multi-dimension gating

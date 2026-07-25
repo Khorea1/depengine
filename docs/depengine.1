@@ -233,6 +233,26 @@ Global method_order is ignored for this tool.
 .B method_order
 Deprecated. Synonym for \fBmethod_prefer\fR.
 
+.SS "kind field (adapter dispatch override)"
+.PP
+The \fBkind\fR field overrides the adapter dispatch key inside a method block.
+Normally the section key (e.g. \fBhttp-musl\fR) IS the kind. When you have two
+methods that use the same adapter but differ only in their install source
+(e.g. glibc vs musl builds), set \fBkind = "http"\fR so the second variant
+resolves to the same adapter.
+.PP
+Example:
+.PP
+.nf
+[tools.restic]
+  [tools.restic.http-musl]
+  kind = "http"
+  url = "https://example.com/musl"
+  when = { libc = ["musl"] }
+.fi
+.PP
+When \fBkind\fR is absent, the section key acts as the kind (backward
+compatible). Non-string values are silently ignored.
 .SS "when condition (platform gate by method)"
 .PP
 The \fBwhen\fR field inside a method declaration restricts which platforms
