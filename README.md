@@ -37,7 +37,8 @@ This README covers the essentials. For everything else:
 
 | Document | What's in it |
 |----------|---------------|
-| [`docs/schema-reference.md`](docs/schema-reference.md) | Every `schema.toml` syntax case (1–11), `when` conditions, buckets, method control — the full spec |
+| [`docs/schema-reference.md`](docs/schema-reference.md) | Every `schema.toml` syntax case, `when` conditions, buckets, method control — the full spec |
+| [`docs/cli-reference.md`](docs/cli-reference.md) | Every command and flag, with defaults |
 | [`docs/cheatsheet.md`](docs/cheatsheet.md) | One-page copy-paste reference: commands, flags, placeholders |
 | [`docs/architecture.md`](docs/architecture.md) | Internal package layout and install flow — for contributors |
 | [`docs/depengine.1`](docs/depengine.1) | Man page (`depengine help --man`, or `man depengine` if installed) |
@@ -146,142 +147,42 @@ cp manifest.example.toml ~/.config/depengine/manifest.toml
 # then edit: add your tools, set per-distro package names, define custom methods
 ```
 
-When you run `depengine install` or `depengine validate`, your manifest
-merges with the project's schema. Tools only in your manifest are rejected by
-default (to prevent accidentally injecting personal tools into a shared
-project) — set `[manifest] allow_new_tools = true` in your manifest to allow
-it. Fields that exist in both layers merge field-by-field (e.g. per-manager
-package names), and the schema always wins on conflict. Fields that could
-inject arbitrary intent into a shared project (`pre_install`, `post_install`,
-`requires`, `method_order`, `method_prefer`, `method_only`) can be set in the manifest as defaults; the schema overrides them on conflict — see
-[the merge rules in the schema reference](docs/schema-reference.md#manifest-merge-rules)
-for the full breakdown.
+When you run `install` or `validate`, your manifest merges with the
+project's schema. Three rules to remember:
+
+1. **The schema always wins on conflict.** Your manifest fills in gaps; it
+   never overrides what the project declares.
+2. **Tools that only exist in your manifest are rejected by default** — this
+   stops you from accidentally injecting a personal tool into a shared
+   project. Opt in with `[manifest] allow_new_tools = true`.
+3. **A few fields can run arbitrary code** (`pre_install`, `post_install`,
+   `requires`, `method_order`, `method_prefer`, `method_only`). Your manifest
+   can set defaults for these, but the schema still overrides them.
+
+Full breakdown: [manifest merge rules](docs/schema-reference.md#manifest-merge-rules).
+
 ---
 
-## CLI reference
+## Commands at a glance
 
-### `depengine init [flags]`
+| Command | Does |
+|---------|------|
+| `init` | Create a new `schema.toml` |
+| `install` | Install all tools from the schema |
+| `validate` | Check the schema without installing anything |
+| `check <tool>` | Check whether one tool is installed |
+| `status [tool]` | Show what's installed |
+| `remove <tool>` | Uninstall a tool |
+| `update` | Resolve `{latest}` placeholders, write `depengine.lock` |
+| `graph` | Show the dependency graph |
+| `why <tool>` | Explain how a tool would be installed |
+| `forget <tool>` | Drop a tool from state without touching the system |
+| `undo` | Revert the last installation |
+| `diff` | Compare two state files |
+| `sbom` | Export an SBOM (CycloneDX or SPDX) |
+| `completion <shell>` | Generate shell completion scripts |
 
-Creates a new `schema.toml` (or a custom path). Fails if the file already exists.
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--schema <path>` | `schema.toml` | Path to write the schema file |
-| `--add <tools>` | — | Comma-separated tool names to pre-populate |
-| `--interactive` | `false` | Interactive wizard — prompts for tools, methods, and options step by step |
-
-### `depengine install [flags]`
-
-Installs all tools from the schema, respecting `method_order`, `when`,
-`requires`, and topological ordering.
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--schema` | auto (`schema.toml` → `depengine.toml` → `depends.toml`) | Path to schema file |
-| `--dry-run` | `false` | Show what would be installed |
-| `--json` | `false` | JSON output |
-| `--only <tool>` | — | Install a single tool |
-| `--skip <tools>` | — | Skip comma-separated tools |
-| `--sort-by` | — | Sort output: `name`, `status`, `method` |
-| `--log-level` | `info` | `debug`, `info`, `warn`, `error` |
-| `--diagnose` | `false` | Diagnostic mode: DEBUG + dry-run + verbose |
-| `--profile <tag>` | — | Filter tools by tag (e.g. `desktop`, `server`) |
-| `--jobs <n>` | `1` | Max concurrent installations |
-| `--allow-arbitrary-code` | `false` | Allow tools with build scripts / hooks that run arbitrary code |
-| `--frozen-lockfile` | `false` | Abort if `depengine.lock` doesn't exist |
-| `--manifest <path>` | auto (XDG_CONFIG_HOME) | Path to personal manifest |
-| `--no-manifest` | `false` | Disable personal manifest |
-| `--quiet` | `false` | Suppress non-essential output |
-
-### `depengine validate [flags]`
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--schema` | auto | Path to schema |
-| `--check-env` | `false` | Check required tools are on PATH |
-| `--format` | `text` | `text` or `json` |
-| `--strict` | `false` | Warnings become errors (exit code 1) |
-| `--manifest` / `--no-manifest` | — | Same as `install` |
-
-### `depengine check <tool> [flags]`
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--live` | `false` | Check the live system instead of the state file |
-| `--format` | `text` | `text` or `json` |
-
-### `depengine status [tool]`
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--format` | `text` | `text` or `json` |
-| `--orphans` | `false` | Show only installed tools not in the schema |
-
-### `depengine remove <tool> [flags]`
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--all` | `false` | Remove all tracked tools |
-| `--dry-run` | `false` | Show what would be removed |
-| `--force` | `false` | Skip confirmation when removing all |
-
-### `depengine update [flags]`
-
-Resolves `{latest}` placeholders and writes `depengine.lock`.
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--lock` | `depengine.lock` | Path to lockfile |
-| `--profile <tag>` | — | Filter tools by tag |
-| `--frozen-lockfile` | `false` | Abort if `depengine.lock` doesn't exist |
-| `--dry-run` | `false` | Show what would change |
-
-### `depengine graph [flags]`
-
-Shows the dependency graph as text, Mermaid, or DOT.
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--format` | `text` | `text`, `mermaid`, or `dot` |
-| `--only <tool>` | — | Subgraph for one tool |
-
-### `depengine why <tool> [flags]`
-
-Explains how a tool would be installed, method by method.
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--fields` | `false` | Show field-level provenance — which layer (schema/manifest) contributed each field |
-| `--format` | `text` | `text` or `json` |
-
-### `depengine forget <tool>`
-
-Removes a tool from state without touching the system.
-
-### `depengine undo [flags]`
-
-Reverts the last installation using a snapshot.
-
-### `depengine diff [flags]`
-
-Compares two state files.
-
-### `depengine sbom [flags]`
-
-Exports an SBOM in CycloneDX 1.5 or SPDX 2.3.
-
-### `depengine completion <shell>`
-
-Generates shell completion scripts (`bash`, `zsh`, `fish`).
-
-### Exit codes
-
-| Code | Meaning |
-|------|---------|
-| `0` | Success |
-| `1` | Tool failure / strict mode warnings |
-| `2` | Schema error (invalid TOML, validation) |
-| `3` | Runtime error (`detect_os.sh` not found, etc.) |
+Every flag and default lives in **[`docs/cli-reference.md`](docs/cli-reference.md)**.
 
 ---
 
