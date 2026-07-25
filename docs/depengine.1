@@ -17,7 +17,7 @@ respeitando condições por distro, dependências entre ferramentas e
 hooks pós-instalação. O binário é estático, sem dependências de runtime
 na máquina alvo.
 .PP
-Checksums resolvidos via \fB:auto\fR são travados em \fBschema.lock\fR
+Checksums resolvidos via \fB:auto\fR são travados em \fBdepengine.lock\fR
 para reprodutibilidade. Algoritmos suportados: SHA-256, SHA-512, SHA-1, MD5.
 Verificação de assinatura GPG é suportada via \fBsignature_url\fR
 e \fBsigning_key\fR.
@@ -85,7 +85,7 @@ para alternar para saída SPDX. Útil para integração com scanners de vulnerab
 como grype ou trivy.
 .TP
 .B update " [flags]"
-Atualiza o \fBschema.lock\fR resolvendo placeholders \fB{latest}\fR (refs git,
+Atualiza o \fBdepengine.lock\fR resolvendo placeholders \fB{latest}\fR (refs git,
 URLs http) via GitHub API. Gera um novo lockfile com as versões resolvidas.
 Use
 .B \-\-frozen\-lockfile

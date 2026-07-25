@@ -81,7 +81,7 @@ _depengine() {
                 "--jobs	Número de instalações simultâneas"
                 "--profile	Filtrar tools por tag (ex: desktop, server)"
                 "--allow-arbitrary-code	Permitir scripts de build arbitrários"
-                "--frozen-lockfile	Abortar se schema.lock não existir"
+                "--frozen-lockfile	Abortar se depengine.lock não existir"
             )
             ;;
         validate)
@@ -111,7 +111,7 @@ _depengine() {
             flag_descs=(
                 "--schema	Caminho para o schema"
                 "--profile	Filtrar tools por tag"
-                "--frozen-lockfile	Abortar se schema.lock não existir"
+                "--frozen-lockfile	Abortar se depengine.lock não existir"
                 "--dry-run	Simulação sem escrever lockfile"
                 "--lock	Caminho para o lockfile"
             )

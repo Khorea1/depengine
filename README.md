@@ -72,7 +72,7 @@ depengine status
 > # → Installed
 >
 > # Commit the schema and lock so others can reproduce:
-> #   git add depengine.toml schema.lock && git commit
+> #   git add depengine.toml depengine.lock && git commit
 >
 >
 > # --- OTHER DEVELOPER: clone and install ---
@@ -84,7 +84,7 @@ depengine status
 >
 > # --- ADVANCED: pin versions explicitly (optional) ---
 > ./depengine update
-> # → writes schema.lock with pinned versions
+> # → writes depengine.lock with pinned versions
 > ./depengine install --frozen-lockfile
 > # → only installs pinned versions
 >
@@ -99,7 +99,7 @@ depengine status
 > ./depengine remove nvim                    # uninstall
 >
 > # Resolve {latest} placeholders
-> ./depengine update                         # writes schema.lock
+> ./depengine update                         # writes depengine.lock
 >
 > # Export SBOM
 > ./depengine sbom --format cyclonedx        # CycloneDX 1.5
@@ -510,14 +510,14 @@ Removes a tool installed by depengine (native, cargo, pip, etc.).
 
 ### `depengine update [flags]`
 
-Updates `schema.lock` by resolving `{latest}` via GitHub API.
+Updates `depengine.lock` by resolving `{latest}` via GitHub API.
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--schema` | `depengine.toml` | Path to schema (auto-detected: depengine.toml, schema.toml, depends.toml) |
-| `--lock` | `schema.lock` | Path to lockfile |
+| `--lock` | `depengine.lock` | Path to lockfile |
 | `--profile <tag>` | — | Filter tools by tag |
-| `--frozen-lockfile` | `false` | Abort if schema.lock doesn't exist |
+| `--frozen-lockfile` | `false` | Abort if depengine.lock doesn't exist |
 | `--dry-run` | `false` | Show what would be updated |
 | `-v` | `false` | Verbose output |
 | `--manifest <path>` | auto (XDG_CONFIG_HOME) | Path to personal manifest |
@@ -622,7 +622,7 @@ mint    → apt        opkg   → opkg
 flowchart TB
     subgraph Input
         SCHEMA[schema.toml]
-        LOCK[schema.lock]
+        LOCK[depengine.lock]
     end
 
     subgraph Engine

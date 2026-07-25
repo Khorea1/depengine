@@ -71,7 +71,7 @@ function _depengine_completions
             echo -e "--jobs\tNúmero de instalações simultâneas"
             echo -e "--profile\tFiltrar tools por tag (ex: desktop, server)"
             echo -e "--allow-arbitrary-code\tPermitir scripts de build arbitrários"
-            echo -e "--frozen-lockfile\tAbortar se schema.lock não existir"
+            echo -e "--frozen-lockfile\tAbortar se depengine.lock não existir"
         case validate
             echo -e "--schema\tCaminho para o schema"
             echo -e "--check-env\tVerificar se tools necessárias estão no PATH"
@@ -89,7 +89,7 @@ function _depengine_completions
         case update
             echo -e "--schema\tCaminho para o schema"
             echo -e "--profile\tFiltrar tools por tag"
-            echo -e "--frozen-lockfile\tAbortar se schema.lock não existir"
+            echo -e "--frozen-lockfile\tAbortar se depengine.lock não existir"
             echo -e "--dry-run\tSimulação sem escrever lockfile"
             echo -e "--lock\tCaminho para o lockfile"
         case graph

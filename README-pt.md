@@ -70,7 +70,7 @@ depengine init --add "zsh,bat,nvim,ruff"
 # → Installed
 
 # Commit o schema e lock para outros reproduzirem:
-#   git add depengine.toml schema.lock && git commit
+#   git add depengine.toml depengine.lock && git commit
 
 
 # --- OUTRO DEV: clona e instala ---
@@ -82,7 +82,7 @@ depengine install
 
 # --- AVANÇADO: travar versões explicitamente (opcional) ---
 ./depengine update
-# → escreve schema.lock com versões fixadas
+# → escreve depengine.lock com versões fixadas
 ./depengine install --frozen-lockfile
 # → só instala versões fixadas
 
@@ -97,7 +97,7 @@ depengine install
 ./depengine remove nvim                    # desinstalar
 
 # Resolver placeholders {latest}
-./depengine update                         # escreve schema.lock
+./depengine update                         # escreve depengine.lock
 
 # Exportar SBOM
 ./depengine sbom --format cyclonedx        # CycloneDX 1.5
@@ -514,14 +514,14 @@ remoção no adapter (nativas, cargo, pip, etc.) são removidas.
 
 ### `depengine update [flags]`
 
-Atualiza o schema.lock resolvendo placeholders `{latest}` via GitHub API.
+Atualiza o depengine.lock resolvendo placeholders `{latest}` via GitHub API.
 
 | Flag | Default | Descrição |
 |------|---------|-----------|
 | `--schema` | `depengine.toml` | Caminho para o schema (auto-detectado: depengine.toml, schema.toml, depends.toml) |
-| `--lock` | `schema.lock` | Caminho para o lockfile |
+| `--lock` | `depengine.lock` | Caminho para o lockfile |
 | `--profile <tag>` | — | Filtra tools por tag (ex: `desktop`, `server`) |
-| `--frozen-lockfile` | `false` | Aborta se schema.lock não existir |
+| `--frozen-lockfile` | `false` | Aborta se depengine.lock não existir |
 | `--dry-run` | `false` | Mostra o que seria atualizado sem escrever |
 | `-v` | `false` | Saída detalhada |
 | `--manifest <path>` | auto (XDG_CONFIG_HOME) | Caminho para o manifest pessoal |
@@ -626,7 +626,7 @@ mint    → apt        opkg   → opkg
 flowchart TB
     subgraph Input
         SCHEMA[schema.toml]
-        LOCK[schema.lock]
+        LOCK[depengine.lock]
     end
 
     subgraph Engine
