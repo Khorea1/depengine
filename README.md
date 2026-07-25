@@ -118,14 +118,15 @@ Two files work together:
 | `schema.toml` | Project root | **What** to install — the shared dependency list | Yes, commit to git |
 | `manifest.toml` | `~/.config/depengine/manifest.toml` | **How** to install — personal package name overrides | No, per-machine |
 
-### Merge rules (when both define the same tool)
+### Merge behavior (when both files define the same tool name)
 
-1. **Tool-level fields** (`requires`, `pre_install`, `postinstall`, `tags`): always from schema.
-2. **Native method `pkg`**: schema wins, **except** when the schema has the tool in `simple = [...]` (auto-injected pkg equals tool name) — in that case, manifest's pkg overrides.
-3. **Native `pkg_overrides`** (per-manager names like `apt = "fd-find"`): merged — schema keys take priority, manifest fills in missing managers.
-4. **Non-native methods** (cargo, go, pip, …): if both define the same kind, schema wins. If only manifest has that kind, it's added.
-5. **Tools only in manifest** are **ignored** — the manifest only *augments* schema tools, never adds new ones.
-6. Final method order follows `schema.toml`'s `method_order`.
+The engine merges layers by **whole-tool overwrite** (not field-by-field):
+
+1. **Whole-tool overwrite**: When schema and manifest both define the same tool name, the schema's *entire* tool entry replaces the manifest's — methods, pkg settings, everything. Nothing is merged field-by-field.
+2. **Tools only in manifest**: These ARE included — the manifest can add tools not present in the schema.
+3. **Tools only in schema**: Included as always.
+4. **Defaults**: Always from the schema. Any `[defaults]` in the manifest is ignored.
+5. **Fields NOT allowed in manifest**: `pre_install`, `postinstall`/`post_install`, `requires`, `tags` are rejected by `ValidateManifestLayer` and cause an error. Only set these in your project's `schema.toml`.
 
 > Most users never need a manifest. Start with just `schema.toml`. Add a manifest only when the package name differs on your distro (e.g. `apt install fd-find` vs `pacman -S fd`).
 

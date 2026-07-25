@@ -6,12 +6,19 @@
 # no seu sistema.
 #
 # REGRA: o schema diz O QUE você quer (intenção); o manifesto diz COMO instalar
-# (conhecimento específico do seu ambiente). Field-level do schema sempre
-# vence sobre o manifesto.
+# (conhecimento específico do seu ambiente). Quando ambos definem a mesma
+# ferramenta, o schema substitui COMPLETAMENTE a entrada do manifesto
+# (substituição total por tool, não campo-a-campo).
 #
 # USO: copie para ~/.config/depengine/manifest.toml e edite os métodos conforme
 # seu ambiente. Remova ou comente linhas de ferramentas que não usa.
 # ==============================================================================
+#
+# ⚠ ATENÇÃO: Este arquivo é um EXEMPLO ILUSTRATIVO. Várias ferramentas abaixo
+# incluem campos (tags, pre_install, postinstall, requires) que o validador
+# RECUSA no manifesto real. Ao copiar para ~/.config/depengine/manifest.toml,
+# remova ou comente esses campos — eles só funcionam no schema.toml do projeto.
+# Consulte docs/ para detalhes.
 
 # ==============================================================================
 # [packages] — conhecimento de instalação

@@ -74,15 +74,18 @@ Two files work together:
 | `schema.toml` | Project root | **What** to install — the shared dependency list | Yes, commit to git |
 | `manifest.toml` | `~/.config/depengine/manifest.toml` | **How** to install — personal package name overrides | No, per-machine |
 
-**Merge rules** (when both define the same tool):
-1. Tool-level fields (`requires`, `pre_install`, `postinstall`, `tags`): always from schema.
-2. Native method `pkg`: schema wins, **except** when the tool is in `simple = [...]` (auto-injected pkg = tool name) — manifest's pkg overrides.
-3. Native `pkg_overrides` (per-manager names): merged — schema keys take priority, manifest fills in missing managers.
-4. Non-native methods: if both define the same kind, schema wins; if only manifest has it, it's added.
-5. Tools only in manifest are **ignored** — manifest only *augments* schema, never adds new tools.
-6. Final method order follows `schema.toml`'s `method_order`.
+**Comportamento de merge** (quando ambos definem a mesma ferramenta):
 
-> Most users never need a manifest. Start with just `schema.toml`.
+O motor mescla camadas por **substituição total da tool** (não campo-a-campo):
+
+1. **Substituição total da tool**: O schema (camada mais específica) substitui a entrada *inteira* do manifesto para um dado nome de ferramenta — métodos, configurações de pkg, tudo. Nada é mesclado campo-a-campo.
+2. **Ferramentas só no manifest**: SÃO incluídas — o manifest pode adicionar ferramentas que não estão no schema.
+3. **Ferramentas só no schema**: Incluídas como sempre.
+4. **Defaults**: Sempre vindos do schema. Qualquer `[defaults]` no manifest é ignorado.
+5. **Campos NÃO permitidos no manifest**: `pre_install`, `postinstall`/`post_install`, `requires`, `tags` são rejeitados por `ValidateManifestLayer`.
+
+> A maioria dos usuários nunca precisa de um manifest. Comece só com `schema.toml`.
+
 
 ---
 ## Schema Structure

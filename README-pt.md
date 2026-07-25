@@ -119,14 +119,15 @@ Dois arquivos trabalham juntos:
 | `schema.toml` | Raiz do projeto | **O que** instalar — lista de dependências compartilhada | Sim, commit no git |
 | `manifest.toml` | `~/.config/depengine/manifest.toml` | **Como** instalar — sobrescritas pessoais de nome de pacote | Não, por máquina |
 
-### Regras de merge (quando ambos definem a mesma ferramenta)
+### Comportamento de merge (quando ambos definem a mesma ferramenta)
 
-1. **Campos de nível de tool** (`requires`, `pre_install`, `postinstall`, `tags`): sempre do schema.
-2. **Native method `pkg`**: schema vence, **exceto** quando o schema tem a tool em `simple = [...]` (pkg auto-injetado = nome da tool) — nesse caso, o pkg do manifest sobrescreve.
-3. **Native `pkg_overrides`** (nomes por gerenciador como `apt = "fd-find"`): mesclado — chaves do schema têm prioridade, manifest preenche gerenciadores faltantes.
-4. **Métodos não-nativos** (cargo, go, pip, …): se ambos definem o mesmo tipo, schema vence. Se só o manifest tem aquele tipo, é adicionado.
-5. **Ferramentas só no manifest** são **ignoradas** — o manifest apenas *aumenta* tools do schema, nunca adiciona novas.
-6. A ordem final dos métodos segue `method_order` do `schema.toml`.
+O motor mescla camadas por **substituição total da tool** (não campo-a-campo):
+
+1. **Substituição total da tool**: Quando schema e manifest definem o mesmo nome de ferramenta, a entrada *inteira* do schema substitui a do manifest — métodos, configurações de pkg, tudo. Nada é mesclado campo-a-campo.
+2. **Ferramentas só no manifest**: SÃO incluídas — o manifest pode adicionar ferramentas que não estão no schema.
+3. **Ferramentas só no schema**: Incluídas como sempre.
+4. **Defaults**: Sempre vindos do schema. Qualquer `[defaults]` no manifest é ignorado.
+5. **Campos NÃO permitidos no manifest**: `pre_install`, `postinstall`/`post_install`, `requires`, `tags` são rejeitados por `ValidateManifestLayer` e causam erro. Defina-os apenas no `schema.toml` do projeto.
 
 > A maioria dos usuários nunca precisa de um manifest. Comece só com `schema.toml`. Adicione um manifest apenas quando o nome do pacote diferir na sua distro (ex.: `apt install fd-find` vs `pacman -S fd`).
 

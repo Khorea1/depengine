@@ -68,13 +68,15 @@ Two files work together:
 | `schema.toml` | Project root | **What** to install — the shared dependency list | Yes, commit to git |
 | `manifest.toml` | `~/.config/depengine/manifest.toml` | **How** to install — personal package name overrides | No, per-machine |
 
-**Merge rules** (when both define the same tool):
-1. Tool-level fields (`requires`, `pre_install`, `postinstall`, `tags`): always from schema.
-2. Native method `pkg`: schema wins, **except** when the tool is in `simple = [...]` (auto-injected pkg = tool name) — manifest's pkg overrides.
-3. Native `pkg_overrides` (per-manager names): merged — schema keys take priority, manifest fills in missing managers.
-4. Non-native methods: if both define the same kind, schema wins; if only manifest has it, it's added.
-5. Tools only in manifest are **ignored** — manifest only *augments* schema, never adds new tools.
-6. Final method order follows `schema.toml`'s `method_order`.
+**Merge behavior** (when both define the same tool):
+
+The engine merges layers by **whole-tool overwrite** (not field-by-field):
+
+1. **Whole-tool overwrite**: The schema (most specific layer) replaces the manifest's *entire* tool entry for a given tool name — methods, pkg settings, everything. Nothing is merged field-by-field.
+2. **Tools only in manifest**: ARE included — the manifest can add tools not in the schema.
+3. **Tools only in schema**: Included as always.
+4. **Defaults**: Always from the schema. Manifest `[defaults]` is ignored.
+5. **Fields NOT allowed in manifest**: `pre_install`, `postinstall`/`post_install`, `requires`, `tags` are rejected by `ValidateManifestLayer`.
 
 > Most users never need a manifest. Start with just `schema.toml`.
 
