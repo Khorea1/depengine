@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // DefinitionHash computes a stable SHA256 hash of a tool's schema definition.
@@ -16,7 +16,7 @@ import (
 // and every method's kind, config, and when condition. Methods are sorted
 // by (kind, intra-kind ordinal) for reproducible output even with duplicate
 // kinds.
-func DefinitionHash(tool *schema.Tool) string {
+func DefinitionHash(tool *config.Tool) string {
 	h := sha256.New()
 	h.Write([]byte(tool.Name))
 	h.Write([]byte{0})
@@ -50,7 +50,7 @@ func DefinitionHash(tool *schema.Tool) string {
 		kind   string
 		idx    int
 		config map[string]any
-		when   *schema.Condition
+		when   *config.Condition
 	}
 	kindCount := map[string]int{}
 	entries := make([]methodEntry, 0, len(tool.Methods))

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // validateRequiredFields checks that method-kind-specific required fields
@@ -24,7 +24,7 @@ var commonStringKeys = []string{
 	"checksum_url", "checksum_file_format", "signature_url", "signing_key",
 }
 
-func validateRequiredFields(s *schema.Schema) *Result {
+func validateRequiredFields(s *config.Schema) *Result {
 	r := &Result{}
 
 	for toolName, tool := range s.Tools {
@@ -189,7 +189,7 @@ func validateRequiredFields(s *schema.Schema) *Result {
 
 // validateWhenDirectives checks that when clauses only use known keys.
 // If When is non-nil but IsZero() is true, the parser didn't recognize any keys.
-func validateWhenDirectives(s *schema.Schema) *Result {
+func validateWhenDirectives(s *config.Schema) *Result {
 	r := &Result{}
 
 	for toolName, tool := range s.Tools {
@@ -216,7 +216,7 @@ func validateWhenDirectives(s *schema.Schema) *Result {
 // validatePlaceholders scans every string leaf in the schema (tool names,
 // method config values, postinstall, requires) and flags {name} tokens
 // that are not in the known set.
-func validatePlaceholders(s *schema.Schema) *Result {
+func validatePlaceholders(s *config.Schema) *Result {
 	r := &Result{}
 
 	for toolName, tool := range s.Tools {
@@ -247,7 +247,7 @@ func validatePlaceholders(s *schema.Schema) *Result {
 
 // scanPlaceholders extracts {name} tokens from s and flags unknown ones.
 func scanPlaceholders(s, field string, r *Result) {
-	matches := schema.PlaceholderRe.FindAllStringSubmatch(s, -1)
+	matches := config.PlaceholderRe.FindAllStringSubmatch(s, -1)
 	for _, m := range matches {
 		name := m[1] // captured group
 		if !knownPlaceholderLookup[name] {
@@ -276,7 +276,7 @@ func isHexString(s string) bool {
 
 // validateMethodOrderConflicts checks that no tool has both method_prefer
 // (or deprecated method_order) and method_only set simultaneously.
-func validateMethodOrderConflicts(s *schema.Schema) *Result {
+func validateMethodOrderConflicts(s *config.Schema) *Result {
 	r := &Result{}
 	for name, tool := range s.Tools {
 		if len(tool.MethodPrefer) > 0 && len(tool.MethodOnly) > 0 {

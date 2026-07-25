@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 // fakeRunner returns an error for every command — simulates nothing on PATH.

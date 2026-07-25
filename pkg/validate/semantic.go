@@ -7,12 +7,12 @@ import (
 	"sort"
 	"strings"
 
-	"depengine/pkg/graph"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/graph"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // validateCycles detects dependency cycles using graph.Sort.
-func validateCycles(s *schema.Schema) *Result {
+func validateCycles(s *config.Schema) *Result {
 	r := &Result{}
 
 	_, err := graph.Sort(s.Tools)
@@ -38,7 +38,7 @@ func validateCycles(s *schema.Schema) *Result {
 
 // validateDanglingReferences checks that tools listed in requires actually
 // exist in the schema.
-func validateDanglingReferences(s *schema.Schema) *Result {
+func validateDanglingReferences(s *config.Schema) *Result {
 	r := &Result{}
 
 	for toolName, tool := range s.Tools {
@@ -57,7 +57,7 @@ func validateDanglingReferences(s *schema.Schema) *Result {
 }
 
 // validateMalformedURLs checks URL fields for basic syntactic validity.
-func validateMalformedURLs(s *schema.Schema) *Result {
+func validateMalformedURLs(s *config.Schema) *Result {
 	r := &Result{}
 
 	for toolName, tool := range s.Tools {
@@ -75,7 +75,7 @@ func validateMalformedURLs(s *schema.Schema) *Result {
 
 			// Replace placeholders with a safe token so URL parsing
 			// doesn't choke on {latest} etc.
-			checkURL := schema.PlaceholderRe.ReplaceAllString(urlStr, "_")
+			checkURL := config.PlaceholderRe.ReplaceAllString(urlStr, "_")
 
 			parsed, err := url.Parse(checkURL)
 			if err != nil || parsed.Scheme == "" || parsed.Host == "" {
@@ -93,7 +93,7 @@ func validateMalformedURLs(s *schema.Schema) *Result {
 
 // validateUnknownDistroFamily checks that when.distro_family values are
 // known clan names.
-func validateUnknownDistroFamily(s *schema.Schema) *Result {
+func validateUnknownDistroFamily(s *config.Schema) *Result {
 	r := &Result{}
 
 	for toolName, tool := range s.Tools {

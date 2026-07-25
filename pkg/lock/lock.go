@@ -1,7 +1,7 @@
-// Package lock provides a schema.lock mechanism for reproducible installations.
+// Package lock provides a depengine.lock mechanism for reproducible installations.
 //
 // schema.toml declares intent ("install the latest release of tool X"), while
-// schema.lock pins the resolved versions so that repeated installs produce the
+// depengine.lock pins the resolved versions so that repeated installs produce the
 // same result — akin to Cargo.lock or package-lock.json.
 //
 // The lock captures resolved {latest} tags for every tool method that uses a
@@ -13,7 +13,7 @@
 //
 //	schema.toml → ParseSchema → resolve {latest} → patch schema → execute
 //	                               ↓
-//	                           schema.lock
+//	                           depengine.lock
 package lock
 
 import (
@@ -23,9 +23,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"depengine/pkg/ghrelease"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/ghrelease"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -44,18 +44,15 @@ type ToolPin struct {
 	Checksum string `toml:"checksum,omitempty"` // pinned concrete checksum (e.g. "sha256:abc123...")
 }
 
-// DefaultPath returns the default lockfile path derived from the schema path.
-// The lockfile name mirrors the schema file with a .lock extension:
-//   schema.toml   → schema.lock
-//   depends.toml  → depends.lock
+// DefaultPath returns the default lockfile path for a given schema file.
+// Always produces a lockfile named "depengine.lock" in the same directory
+// as the schema file — matches Cargo.lock and package-lock.json conventions.
+//   schema.toml   → depengine.lock
 //   depengine.toml → depengine.lock
+//   depends.toml  → depengine.lock
 func DefaultPath(schemaPath string) string {
 	dir := filepath.Dir(schemaPath)
-	base := filepath.Base(schemaPath)
-	if ext := filepath.Ext(base); ext != "" {
-		base = base[:len(base)-len(ext)]
-	}
-	return filepath.Join(dir, base+".lock")
+	return filepath.Join(dir, "depengine.lock")
 }
 
 // Load reads a lock file. A missing file is NOT an error — returns nil, nil.
@@ -119,7 +116,7 @@ func toolKey(toolName, methodKind string) string {
 // ResolveAll scans every tool method in the schema for {latest} in URL fields,
 // resolves them via the GitHub releases API, and returns a Lock with the pinned
 // values. Empty lock (no tools needing resolution) is still valid.
-func ResolveAll(ctx context.Context, s *schema.Schema, rn run.Runner) (*Lock, error) {
+func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, error) {
 	l := &Lock{
 		Version: 1,
 		Tools:   make(map[string]ToolPin),
@@ -167,7 +164,7 @@ func ResolveAll(ctx context.Context, s *schema.Schema, rn run.Runner) (*Lock, er
 // When a pin has a Checksum, any "checksum" field containing ":auto" is
 // replaced with the concrete hash. Methods not present in the lock, or whose
 // current url no longer contains "{latest}", are left untouched.
-func Apply(s *schema.Schema, l *Lock) {
+func Apply(s *config.Schema, l *Lock) {
 	if l == nil {
 		return
 	}

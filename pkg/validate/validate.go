@@ -1,6 +1,6 @@
 // Package validate implements structural, semantic, and environmental
 // validation for depengine schema.toml files. It complements the basic
-// method-kind checks in pkg/schema.Validate with field-level scrutiny:
+// method-kind checks in pkg/config.Validate with field-level scrutiny:
 // required fields per method, placeholder validity, dependency cycles,
 // dangling references, URL correctness, and environment readiness.
 package validate
@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"strings"
 
-	"depengine/pkg/native"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/native"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // ErrorCode is a stable identifier for a class of validation findings.
@@ -82,12 +82,12 @@ func (r *Result) All() []ValidationError {
 	return out
 }
 
-// knownPlaceholderLookup is built once from schema.KnownPlaceholders(),
+// knownPlaceholderLookup is built once from config.KnownPlaceholders(),
 // the single source of truth for permitted {name} tokens.
 var knownPlaceholderLookup = buildPlaceholderLookup()
 
 func buildPlaceholderLookup() map[string]bool {
-	names := schema.KnownPlaceholders()
+	names := config.KnownPlaceholders()
 	m := make(map[string]bool, len(names))
 	for _, n := range names {
 		m[n] = true
@@ -135,12 +135,12 @@ func truncateStr(s string, n int) string {
 // including method-kind checks when knownKinds is non-nil (callers that want
 // adapter registration verification pass exec.RegisteredKinds(); tests that
 // only check field-level validation pass nil).
-func ValidateSchema(s *schema.Schema, knownKinds []string) *Result {
+func ValidateSchema(s *config.Schema, knownKinds []string) *Result {
 	r := &Result{}
 
-	// Method-kind validation (delegated from schema.Validate).
+	// Method-kind validation (delegated from config.Validate).
 	if knownKinds != nil {
-		warnings, verr := schema.Validate(s, knownKinds)
+		warnings, verr := config.Validate(s, knownKinds)
 		if verr != nil {
 			r.Add(ValidationError{
 				Code:    ErrInvalidValue,

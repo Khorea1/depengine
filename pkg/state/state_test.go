@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 func TestDefaultPath(t *testing.T) {
@@ -142,9 +142,9 @@ func TestLoadCorruptedFile(t *testing.T) {
 }
 
 func TestDefinitionHashStability(t *testing.T) {
-	tool := &schema.Tool{
+	tool := &config.Tool{
 		Name: "fd",
-		Methods: []*schema.MethodCandidate{
+		Methods: []*config.MethodCandidate{
 			{Kind: "native", Config: map[string]any{"pkg": "fd-find"}},
 			{Kind: "cargo", Config: map[string]any{"pkg": "fd-find"}},
 		},
@@ -159,15 +159,15 @@ func TestDefinitionHashStability(t *testing.T) {
 }
 
 func TestDefinitionHashDiffersForDifferentTools(t *testing.T) {
-	tool1 := &schema.Tool{
+	tool1 := &config.Tool{
 		Name: "fd",
-		Methods: []*schema.MethodCandidate{
+		Methods: []*config.MethodCandidate{
 			{Kind: "native", Config: map[string]any{"pkg": "fd-find"}},
 		},
 	}
-	tool2 := &schema.Tool{
+	tool2 := &config.Tool{
 		Name: "ripgrep",
-		Methods: []*schema.MethodCandidate{
+		Methods: []*config.MethodCandidate{
 			{Kind: "native", Config: map[string]any{"pkg": "ripgrep"}},
 		},
 	}
@@ -181,16 +181,16 @@ func TestDefinitionHashDiffersForDifferentTools(t *testing.T) {
 }
 
 func TestDefinitionHashSortOrderIndependent(t *testing.T) {
-	tool1 := &schema.Tool{
+	tool1 := &config.Tool{
 		Name: "fd",
-		Methods: []*schema.MethodCandidate{
+		Methods: []*config.MethodCandidate{
 			{Kind: "cargo", Config: map[string]any{"pkg": "fd-find"}},
 			{Kind: "native", Config: map[string]any{"pkg": "fd-find"}},
 		},
 	}
-	tool2 := &schema.Tool{
+	tool2 := &config.Tool{
 		Name: "fd",
-		Methods: []*schema.MethodCandidate{
+		Methods: []*config.MethodCandidate{
 			{Kind: "native", Config: map[string]any{"pkg": "fd-find"}},
 			{Kind: "cargo", Config: map[string]any{"pkg": "fd-find"}},
 		},
@@ -205,16 +205,16 @@ func TestDefinitionHashSortOrderIndependent(t *testing.T) {
 }
 
 func TestDefinitionHashIncludesRequires(t *testing.T) {
-	base := &schema.Tool{
+	base := &config.Tool{
 		Name: "test",
-		Methods: []*schema.MethodCandidate{
+		Methods: []*config.MethodCandidate{
 			{Kind: "native", Config: map[string]any{"pkg": "test"}},
 		},
 	}
-	withRequires := &schema.Tool{
+	withRequires := &config.Tool{
 		Name:     "test",
 		Requires: []string{"other-tool"},
-		Methods: []*schema.MethodCandidate{
+		Methods: []*config.MethodCandidate{
 			{Kind: "native", Config: map[string]any{"pkg": "test"}},
 		},
 	}
@@ -227,16 +227,16 @@ func TestDefinitionHashIncludesRequires(t *testing.T) {
 }
 
 func TestDefinitionHashIncludesPostInstall(t *testing.T) {
-	base := &schema.Tool{
+	base := &config.Tool{
 		Name: "test",
-		Methods: []*schema.MethodCandidate{
+		Methods: []*config.MethodCandidate{
 			{Kind: "native", Config: map[string]any{"pkg": "test"}},
 		},
 	}
-	withPost := &schema.Tool{
+	withPost := &config.Tool{
 		Name:        "test",
 		PostInstall: "fc-cache -fv",
-		Methods: []*schema.MethodCandidate{
+		Methods: []*config.MethodCandidate{
 			{Kind: "native", Config: map[string]any{"pkg": "test"}},
 		},
 	}
@@ -249,16 +249,16 @@ func TestDefinitionHashIncludesPostInstall(t *testing.T) {
 }
 
 func TestDefinitionHashIncludesPreInstall(t *testing.T) {
-	base := &schema.Tool{
+	base := &config.Tool{
 		Name: "test",
-		Methods: []*schema.MethodCandidate{
+		Methods: []*config.MethodCandidate{
 			{Kind: "native", Config: map[string]any{"pkg": "test"}},
 		},
 	}
-	withPre := &schema.Tool{
+	withPre := &config.Tool{
 		Name:        "test",
 		PreInstall: "curl -fsSL https://example.com/setup.sh | sh",
-		Methods: []*schema.MethodCandidate{
+		Methods: []*config.MethodCandidate{
 			{Kind: "native", Config: map[string]any{"pkg": "test"}},
 		},
 	}
@@ -271,16 +271,16 @@ func TestDefinitionHashIncludesPreInstall(t *testing.T) {
 }
 
 func TestDefinitionHashIncludesWhenCondition(t *testing.T) {
-	base := &schema.Tool{
+	base := &config.Tool{
 		Name: "test",
-		Methods: []*schema.MethodCandidate{
+		Methods: []*config.MethodCandidate{
 			{Kind: "native", Config: map[string]any{"pkg": "test"}},
 		},
 	}
-	withWhen := &schema.Tool{
+	withWhen := &config.Tool{
 		Name: "test",
-		Methods: []*schema.MethodCandidate{
-			{Kind: "native", Config: map[string]any{"pkg": "test"}, When: &schema.Condition{DistroFamily: []string{"arch"}}},
+		Methods: []*config.MethodCandidate{
+			{Kind: "native", Config: map[string]any{"pkg": "test"}, When: &config.Condition{DistroFamily: []string{"arch"}}},
 		},
 	}
 

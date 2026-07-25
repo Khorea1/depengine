@@ -5,37 +5,37 @@ import (
 	"strings"
 	"testing"
 
-	"depengine/pkg/schema"
+	cfg "github.com/Khorea1/depengine/pkg/config"
 )
 
 // helper to build a Schema struct inline for unit tests.
 
-func tool(name string, methods []*schema.MethodCandidate, requires []string) *schema.Tool {
-	return &schema.Tool{
+func tool(name string, methods []*cfg.MethodCandidate, requires []string) *cfg.Tool {
+	return &cfg.Tool{
 		Name:     name,
 		Methods:  methods,
 		Requires: requires,
 	}
 }
 
-func mc(kind string, when *schema.Condition, config map[string]any) *schema.MethodCandidate {
-	return &schema.MethodCandidate{
+func mc(kind string, when *cfg.Condition, cfgMap map[string]any) *cfg.MethodCandidate {
+	return &cfg.MethodCandidate{
 		Kind:   kind,
 		When:   when,
-		Config: config,
+		Config: cfgMap,
 	}
 }
 
-func cond(families ...string) *schema.Condition {
-	return &schema.Condition{DistroFamily: families}
+func cond(families ...string) *cfg.Condition {
+	return &cfg.Condition{DistroFamily: families}
 }
 
 
 // parseTestdata is a test helper that parses a TOML file from testdata/.
-func parseTestdata(t *testing.T, name string) *schema.Schema {
+func parseTestdata(t *testing.T, name string) *cfg.Schema {
 	t.Helper()
 	path := filepath.Join("testdata", name)
-	s, err := schema.ParseSchema(path, map[string]string{})
+	s, err := cfg.ParseSchema(path, map[string]string{})
 	if err != nil {
 		t.Fatalf("ParseSchema(%s): %v", name, err)
 	}
@@ -45,9 +45,9 @@ func parseTestdata(t *testing.T, name string) *schema.Schema {
 // ---------- Structural: required fields ----------
 
 func TestValidateRequiredFields_Valid(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"zsh": tool("zsh", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"zsh": tool("zsh", []*cfg.MethodCandidate{
 				mc("native", nil, map[string]any{}),
 			}, nil),
 		},
@@ -59,9 +59,9 @@ func TestValidateRequiredFields_Valid(t *testing.T) {
 }
 
 func TestValidateRequiredFields_GitMissingURL(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"myapp": tool("myapp", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"myapp": tool("myapp", []*cfg.MethodCandidate{
 				mc("git", nil, map[string]any{"build": "make"}),
 			}, nil),
 		},
@@ -83,9 +83,9 @@ func TestValidateRequiredFields_GitMissingURL(t *testing.T) {
 }
 
 func TestValidateRequiredFields_HTTPMissingURL(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"myapp": tool("myapp", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"myapp": tool("myapp", []*cfg.MethodCandidate{
 				mc("http", nil, map[string]any{"checksum": "sha256:auto"}),
 			}, nil),
 		},
@@ -97,9 +97,9 @@ func TestValidateRequiredFields_HTTPMissingURL(t *testing.T) {
 }
 
 func TestValidateRequiredFields_GitURLNotString(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"myapp": tool("myapp", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"myapp": tool("myapp", []*cfg.MethodCandidate{
 				mc("git", nil, map[string]any{"url": 42}),
 			}, nil),
 		},
@@ -111,9 +111,9 @@ func TestValidateRequiredFields_GitURLNotString(t *testing.T) {
 }
 
 func TestValidateRequiredFields_HTTPValid(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"myapp": tool("myapp", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"myapp": tool("myapp", []*cfg.MethodCandidate{
 				mc("http", nil, map[string]any{"url": "https://example.com/file.deb"}),
 			}, nil),
 		},
@@ -125,9 +125,9 @@ func TestValidateRequiredFields_HTTPValid(t *testing.T) {
 }
 
 func TestValidateRequiredFields_BuildNotString(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"myapp": tool("myapp", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"myapp": tool("myapp", []*cfg.MethodCandidate{
 				mc("git", nil, map[string]any{"url": "https://example.com/repo", "build": 123}),
 			}, nil),
 		},
@@ -139,9 +139,9 @@ func TestValidateRequiredFields_BuildNotString(t *testing.T) {
 }
 
 func TestValidateRequiredFields_ExtractToString(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"myapp": tool("myapp", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"myapp": tool("myapp", []*cfg.MethodCandidate{
 				mc("http", nil, map[string]any{
 					"url":        "https://example.com/file.zip",
 					"extract_to": 42,
@@ -156,9 +156,9 @@ func TestValidateRequiredFields_ExtractToString(t *testing.T) {
 }
 
 func TestValidateRequiredFields_ChecksumNotString(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"myapp": tool("myapp", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"myapp": tool("myapp", []*cfg.MethodCandidate{
 				mc("http", nil, map[string]any{
 					"url":      "https://example.com/file.deb",
 					"checksum": 42,
@@ -173,9 +173,9 @@ func TestValidateRequiredFields_ChecksumNotString(t *testing.T) {
 }
 
 func TestValidateRequiredFields_CargoGitNotString(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"myapp": tool("myapp", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"myapp": tool("myapp", []*cfg.MethodCandidate{
 				mc("cargo", nil, map[string]any{"git": 42}),
 			}, nil),
 		},
@@ -187,9 +187,9 @@ func TestValidateRequiredFields_CargoGitNotString(t *testing.T) {
 }
 
 func TestValidateRequiredFields_MultipleMethods(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"myapp": tool("myapp", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"myapp": tool("myapp", []*cfg.MethodCandidate{
 				mc("git", nil, map[string]any{}),                           // missing url
 				mc("native", nil, map[string]any{"pkg": "myapp"}),          // ok
 				mc("http", nil, map[string]any{"url": "https://ex.com/x"}), // ok
@@ -207,9 +207,9 @@ func TestValidateRequiredFields_MultipleMethods(t *testing.T) {
 }
 
 func TestValidateRequiredFields_CommonStringKeys_Invalid(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"test": tool("test", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"test": tool("test", []*cfg.MethodCandidate{
 				mc("native", nil, map[string]any{"pkg": 42}),
 			}, nil),
 		},
@@ -227,9 +227,9 @@ func TestValidateRequiredFields_CommonStringKeys_Invalid(t *testing.T) {
 }
 
 func TestValidateRequiredFields_CommonStringKeys_Valid(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"test": tool("test", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"test": tool("test", []*cfg.MethodCandidate{
 				mc("native", nil, map[string]any{
 					"pkg":        "bat",
 					"cask":       "alfred",
@@ -252,9 +252,9 @@ func TestValidateRequiredFields_CommonStringKeys_Valid(t *testing.T) {
 }
 
 func TestValidateRequiredFields_CommonStringKeys_MultipleWrongTypes(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"test": tool("test", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"test": tool("test", []*cfg.MethodCandidate{
 				mc("native", nil, map[string]any{
 					"pkg":     true, // wrong type
 					"command": 42,   // wrong type
@@ -284,9 +284,9 @@ func TestValidateRequiredFields_CommonStringKeys_MultipleWrongTypes(t *testing.T
 // ---------- Structural: when directives ----------
 
 func TestValidateWhenDirectives_Valid(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"myapp": tool("myapp", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"myapp": tool("myapp", []*cfg.MethodCandidate{
 				mc("native", cond("arch"), map[string]any{}),
 			}, nil),
 		},
@@ -298,9 +298,9 @@ func TestValidateWhenDirectives_Valid(t *testing.T) {
 }
 
 func TestValidateWhenDirectives_NilWhen(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"myapp": tool("myapp", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"myapp": tool("myapp", []*cfg.MethodCandidate{
 				mc("native", nil, map[string]any{}),
 			}, nil),
 		},
@@ -314,9 +314,9 @@ func TestValidateWhenDirectives_NilWhen(t *testing.T) {
 // ---------- Structural: placeholders ----------
 
 func TestValidatePlaceholders_Valid(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"myapp": tool("myapp", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"myapp": tool("myapp", []*cfg.MethodCandidate{
 				mc("git", nil, map[string]any{
 					"url": "https://github.com/{distro_family}/repo.git",
 				}),
@@ -330,9 +330,9 @@ func TestValidatePlaceholders_Valid(t *testing.T) {
 }
 
 func TestValidatePlaceholders_UnknownToken(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"myapp": tool("myapp", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"myapp": tool("myapp", []*cfg.MethodCandidate{
 				mc("http", nil, map[string]any{
 					"url": "https://example.com/{unknown_placeholder}/file.deb",
 				}),
@@ -349,11 +349,11 @@ func TestValidatePlaceholders_UnknownToken(t *testing.T) {
 }
 
 func TestValidatePlaceholders_InPostInstall(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
 			"myapp": {
 				Name: "myapp",
-				Methods: []*schema.MethodCandidate{
+				Methods: []*cfg.MethodCandidate{
 					mc("native", nil, map[string]any{}),
 				},
 				PostInstall: "command {bad_placeholder}",
@@ -382,9 +382,9 @@ func TestValidatePlaceholders_KnownTokens(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &schema.Schema{
-				Tools: map[string]*schema.Tool{
-					"myapp": tool("myapp", []*schema.MethodCandidate{
+			s := &cfg.Schema{
+				Tools: map[string]*cfg.Tool{
+					"myapp": tool("myapp", []*cfg.MethodCandidate{
 						mc("http", nil, map[string]any{
 							"url": "https://example.com/" + tt.value + "/file",
 						}),
@@ -424,13 +424,13 @@ func TestValidateSchema_ValidFull(t *testing.T) {
 
 func TestValidateMethodOrderConflicts(t *testing.T) {
 	// method_prefer + method_only on same tool → error.
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
 			"myapp": {
 				Name:        "myapp",
 				MethodPrefer: []string{"cargo"},
 				MethodOnly:  []string{"go"},
-				Methods:     []*schema.MethodCandidate{{Kind: "cargo"}, {Kind: "go"}},
+				Methods:     []*cfg.MethodCandidate{{Kind: "cargo"}, {Kind: "go"}},
 			},
 		},
 	}
@@ -452,13 +452,13 @@ func TestValidateMethodOrderConflicts(t *testing.T) {
 
 func TestValidateMethodOrderDeprecatedAndOnly(t *testing.T) {
 	// method_order (deprecated) + method_only → error.
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
 			"myapp": {
 				Name:        "myapp",
 				MethodOrder: []string{"native"},
 				MethodOnly:  []string{"go"},
-				Methods:     []*schema.MethodCandidate{{Kind: "native"}, {Kind: "go"}},
+				Methods:     []*cfg.MethodCandidate{{Kind: "native"}, {Kind: "go"}},
 			},
 		},
 	}
@@ -480,12 +480,12 @@ func TestValidateMethodOrderDeprecatedAndOnly(t *testing.T) {
 
 func TestValidateMethodOrderOnlyNoConflict(t *testing.T) {
 	// method_only alone → no error.
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
 			"myapp": {
 				Name:       "myapp",
 				MethodOnly: []string{"go"},
-				Methods:    []*schema.MethodCandidate{{Kind: "go"}},
+				Methods:    []*cfg.MethodCandidate{{Kind: "go"}},
 			},
 		},
 	}
@@ -497,12 +497,12 @@ func TestValidateMethodOrderOnlyNoConflict(t *testing.T) {
 
 func TestValidateMethodPreferNoConflict(t *testing.T) {
 	// method_prefer alone → no error.
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
 			"myapp": {
 				Name:        "myapp",
 				MethodPrefer: []string{"cargo"},
-				Methods:     []*schema.MethodCandidate{{Kind: "cargo"}},
+				Methods:     []*cfg.MethodCandidate{{Kind: "cargo"}},
 			},
 		},
 	}
@@ -670,12 +670,12 @@ func TestValidateWhenDirectives_EmptyWhen(t *testing.T) {
 
 func TestValidateWhenDirectives_NilWhenMultiple(t *testing.T) {
 	// Multiple methods with mix of nil and non-nil When
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"app": tool("app", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"app": tool("app", []*cfg.MethodCandidate{
 				mc("native", nil, map[string]any{}),
 				mc("native", cond("debian"), map[string]any{}),
-				mc("native", &schema.Condition{}, map[string]any{}), // empty Condition
+				mc("native", &cfg.Condition{}, map[string]any{}), // empty Condition
 			}, nil),
 		},
 	}
@@ -688,9 +688,9 @@ func TestValidateWhenDirectives_NilWhenMultiple(t *testing.T) {
 
 func TestValidateRequiredFields_NestedStructs(t *testing.T) {
 	// All fields that should NOT produce errors
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"app": tool("app", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"app": tool("app", []*cfg.MethodCandidate{
 				mc("native", nil, map[string]any{
 					"pkg": "myapp",
 				}),
@@ -717,9 +717,9 @@ func TestValidateRequiredFields_NestedStructs(t *testing.T) {
 
 func TestValidatePlaceholders_Boundary(t *testing.T) {
 	// Edge cases: empty string, just braces, mixed with special chars
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"app": tool("app", []*schema.MethodCandidate{
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"app": tool("app", []*cfg.MethodCandidate{
 				mc("http", nil, map[string]any{
 					"url": "",
 				}),
@@ -754,7 +754,7 @@ func TestValidatePlaceholders_Boundary(t *testing.T) {
 
 func TestValidateRequiredFields_NoTools(t *testing.T) {
 	// Empty schema with no tools
-	s := &schema.Schema{Tools: map[string]*schema.Tool{}}
+	s := &cfg.Schema{Tools: map[string]*cfg.Tool{}}
 	r := validateRequiredFields(s)
 	if r.HasErrors() || len(r.Warnings) > 0 {
 		t.Errorf("expected no findings for empty schema, got %v", r.All())
@@ -762,7 +762,7 @@ func TestValidateRequiredFields_NoTools(t *testing.T) {
 }
 
 func TestValidatePlaceholders_NoTools(t *testing.T) {
-	s := &schema.Schema{Tools: map[string]*schema.Tool{}}
+	s := &cfg.Schema{Tools: map[string]*cfg.Tool{}}
 	r := validatePlaceholders(s)
 	if len(r.Warnings) > 0 {
 		t.Errorf("expected no warnings for empty schema, got %v", r.Warnings)
@@ -770,7 +770,7 @@ func TestValidatePlaceholders_NoTools(t *testing.T) {
 }
 
 func TestValidateWhenDirectives_NoTools(t *testing.T) {
-	s := &schema.Schema{Tools: map[string]*schema.Tool{}}
+	s := &cfg.Schema{Tools: map[string]*cfg.Tool{}}
 	r := validateWhenDirectives(s)
 	if len(r.Warnings) > 0 {
 		t.Errorf("expected no warnings for empty schema, got %v", r.Warnings)

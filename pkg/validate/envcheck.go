@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	"depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 // EnvCheck reports the availability of a system tool on the current PATH.

@@ -3,14 +3,14 @@ package validate
 import (
 	"testing"
 
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // ---------- Dangling references ----------
 
 func TestValidateDanglingReferences_Valid(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
 			"a": tool("a", nil, nil),
 			"b": tool("b", nil, []string{"a"}),
 		},
@@ -22,8 +22,8 @@ func TestValidateDanglingReferences_Valid(t *testing.T) {
 }
 
 func TestValidateDanglingReferences_MissingDep(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
 			"a": tool("a", nil, []string{"nonexistent"}),
 		},
 	}
@@ -40,8 +40,8 @@ func TestValidateDanglingReferences_MissingDep(t *testing.T) {
 }
 
 func TestValidateDanglingReferences_MultipleDeps(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
 			"a": tool("a", nil, []string{"b", "c"}), // both missing
 			"b": tool("b", nil, nil),                // defined
 		},
@@ -55,8 +55,8 @@ func TestValidateDanglingReferences_MultipleDeps(t *testing.T) {
 // ---------- Cycles ----------
 
 func TestValidateCycles_NoCycle(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
 			"a": tool("a", nil, []string{"b"}),
 			"b": tool("b", nil, []string{"c"}),
 			"c": tool("c", nil, nil),
@@ -69,8 +69,8 @@ func TestValidateCycles_NoCycle(t *testing.T) {
 }
 
 func TestValidateCycles_DirectCycle(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
 			"a": tool("a", nil, []string{"b"}),
 			"b": tool("b", nil, []string{"a"}),
 		},
@@ -85,8 +85,8 @@ func TestValidateCycles_DirectCycle(t *testing.T) {
 }
 
 func TestValidateCycles_SelfCycle(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
 			"a": tool("a", nil, []string{"a"}),
 		},
 	}
@@ -97,8 +97,8 @@ func TestValidateCycles_SelfCycle(t *testing.T) {
 }
 
 func TestValidateCycles_IndirectCycle(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
 			"a": tool("a", nil, []string{"b"}),
 			"b": tool("b", nil, []string{"c"}),
 			"c": tool("c", nil, []string{"a"}),
@@ -111,8 +111,8 @@ func TestValidateCycles_IndirectCycle(t *testing.T) {
 }
 
 func TestValidateCycles_NoDeps(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
 			"a": tool("a", nil, nil),
 			"b": tool("b", nil, nil),
 		},
@@ -126,9 +126,9 @@ func TestValidateCycles_NoDeps(t *testing.T) {
 // ---------- Malformed URLs ----------
 
 func TestValidateMalformedURLs_ValidHTTP(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"app": tool("app", []*schema.MethodCandidate{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
+			"app": tool("app", []*config.MethodCandidate{
 				mc("http", nil, map[string]any{"url": "https://example.com/file.deb"}),
 			}, nil),
 		},
@@ -140,9 +140,9 @@ func TestValidateMalformedURLs_ValidHTTP(t *testing.T) {
 }
 
 func TestValidateMalformedURLs_ValidGit(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"app": tool("app", []*schema.MethodCandidate{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
+			"app": tool("app", []*config.MethodCandidate{
 				mc("git", nil, map[string]any{"url": "https://github.com/user/repo.git"}),
 			}, nil),
 		},
@@ -154,9 +154,9 @@ func TestValidateMalformedURLs_ValidGit(t *testing.T) {
 }
 
 func TestValidateMalformedURLs_Invalid(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"app": tool("app", []*schema.MethodCandidate{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
+			"app": tool("app", []*config.MethodCandidate{
 				mc("http", nil, map[string]any{"url": "not-a-valid-url"}),
 			}, nil),
 		},
@@ -169,9 +169,9 @@ func TestValidateMalformedURLs_Invalid(t *testing.T) {
 
 func TestValidateMalformedURLs_WithPlaceholder(t *testing.T) {
 	// URL with {latest} placeholder should be valid after replacement.
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"app": tool("app", []*schema.MethodCandidate{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
+			"app": tool("app", []*config.MethodCandidate{
 				mc("http", nil, map[string]any{
 					"url": "https://github.com/user/repo/releases/download/{latest}/file.deb",
 				}),
@@ -186,9 +186,9 @@ func TestValidateMalformedURLs_WithPlaceholder(t *testing.T) {
 
 func TestValidateMalformedURLs_NonHTTPGitKind(t *testing.T) {
 	// native and cargo don't need url validation.
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"app": tool("app", []*schema.MethodCandidate{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
+			"app": tool("app", []*config.MethodCandidate{
 				mc("native", nil, map[string]any{"pkg": "app"}),
 				mc("cargo", nil, map[string]any{}),
 			}, nil),
@@ -203,9 +203,9 @@ func TestValidateMalformedURLs_NonHTTPGitKind(t *testing.T) {
 // ---------- Unknown distro family ----------
 
 func TestValidateUnknownDistroFamily_Valid(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"app": tool("app", []*schema.MethodCandidate{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
+			"app": tool("app", []*config.MethodCandidate{
 				mc("native", cond("debian", "arch"), map[string]any{}),
 			}, nil),
 		},
@@ -217,9 +217,9 @@ func TestValidateUnknownDistroFamily_Valid(t *testing.T) {
 }
 
 func TestValidateUnknownDistroFamily_Unknown(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"app": tool("app", []*schema.MethodCandidate{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
+			"app": tool("app", []*config.MethodCandidate{
 				mc("native", cond("nonexistent_os"), map[string]any{}),
 			}, nil),
 		},
@@ -234,9 +234,9 @@ func TestValidateUnknownDistroFamily_Unknown(t *testing.T) {
 }
 
 func TestValidateUnknownDistroFamily_NilWhen(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"app": tool("app", []*schema.MethodCandidate{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
+			"app": tool("app", []*config.MethodCandidate{
 				mc("native", nil, map[string]any{}),
 			}, nil),
 		},
@@ -248,9 +248,9 @@ func TestValidateUnknownDistroFamily_NilWhen(t *testing.T) {
 }
 
 func TestValidateUnknownDistroFamily_Multiple(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
-			"app": tool("app", []*schema.MethodCandidate{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
+			"app": tool("app", []*config.MethodCandidate{
 				mc("native", cond("debian", "madeup", "arch", "fake"), map[string]any{}),
 			}, nil),
 		},

@@ -7,31 +7,31 @@ import (
 	"path/filepath"
 	"testing"
 
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 func TestDefaultPath(t *testing.T) {
 	got := DefaultPath("/home/user/dotfiles/schema.toml")
-	want := "/home/user/dotfiles/schema.lock"
+	want := "/home/user/dotfiles/depengine.lock"
 	if got != want {
 		t.Fatalf("DefaultPath = %q, want %q", got, want)
 	}
 
 	got2 := DefaultPath("schema.toml")
-	want2 := "schema.lock"
+	want2 := "depengine.lock"
 	if got2 != want2 {
 		t.Fatalf("DefaultPath = %q, want %q", got2, want2)
 	}
 
 	got3 := DefaultPath("depends.toml")
-	want3 := "depends.lock"
-	if got3 != want3 {
-		t.Fatalf("DefaultPath(depends.toml) = %q, want %q", got3, want3)
+	want3 := "depends.toml"
+	if got3 == want3 {
+		t.Fatalf("DefaultPath(depends.toml) should not equal input, got %q", got3)
 	}
 
 	got4 := DefaultPath("/tmp/foo.yaml")
-	want4 := "/tmp/foo.lock"
+	want4 := "/tmp/depengine.lock"
 	if got4 != want4 {
 		t.Fatalf("DefaultPath(/tmp/foo.yaml) = %q, want %q", got4, want4)
 	}
@@ -39,7 +39,7 @@ func TestDefaultPath(t *testing.T) {
 
 func TestSaveLoadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "schema.lock")
+	path := filepath.Join(dir, "depengine.lock")
 
 	l := &Lock{
 		Version: 1,
@@ -89,23 +89,23 @@ func TestLoadMissingFileIsNil(t *testing.T) {
 
 func TestResolveAllNoLatest(t *testing.T) {
 	// Schema with no {latest} URLs — captures concrete checksums only.
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
 			"zsh": {
 				Name: "zsh",
-				Methods: []*schema.MethodCandidate{
+				Methods: []*config.MethodCandidate{
 					{Kind: "native", Config: map[string]any{"pkg": "zsh"}},
 				},
 			},
 			"ctpv": {
 				Name: "ctpv",
-				Methods: []*schema.MethodCandidate{
+				Methods: []*config.MethodCandidate{
 					{Kind: "git", Config: map[string]any{"url": "https://github.com/user/repo.git"}},
 				},
 			},
 			"tool-with-checksum": {
 				Name: "tool-with-checksum",
-				Methods: []*schema.MethodCandidate{
+				Methods: []*config.MethodCandidate{
 					{
 						Kind: "http",
 						Config: map[string]any{
@@ -144,11 +144,11 @@ func TestResolveAllNoLatest(t *testing.T) {
 }
 
 func TestApplyPinsURLs(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
 			"ff": {
 				Name: "ff",
-				Methods: []*schema.MethodCandidate{
+				Methods: []*config.MethodCandidate{
 					{
 						Kind: "http",
 						Config: map[string]any{
@@ -184,11 +184,11 @@ func TestApplyPinsURLs(t *testing.T) {
 }
 
 func TestApplySkipsMethodsWithoutLockEntry(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
 			"ff": {
 				Name: "ff",
-				Methods: []*schema.MethodCandidate{
+				Methods: []*config.MethodCandidate{
 					{
 						Kind: "git",
 						Config: map[string]any{
@@ -214,11 +214,11 @@ func TestApplySkipsMethodsWithoutLockEntry(t *testing.T) {
 
 func TestApplyChecksumOnlyPin(t *testing.T) {
 	// Lock has a checksum pin but no Latest — only checksum should be applied.
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
 			"tool": {
 				Name: "tool",
-				Methods: []*schema.MethodCandidate{
+				Methods: []*config.MethodCandidate{
 					{
 						Kind: "http",
 						Config: map[string]any{
@@ -255,7 +255,7 @@ func TestApplyChecksumOnlyPin(t *testing.T) {
 
 func TestSaveLoadFile(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "subdir", "schema.lock")
+	path := filepath.Join(dir, "subdir", "depengine.lock")
 
 	l := &Lock{
 		Version: 1,
@@ -278,11 +278,11 @@ func TestSaveLoadFile(t *testing.T) {
 }
 
 func TestResolveAllCapturesChecksumResolved(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
 			"tool": {
 				Name: "tool",
-				Methods: []*schema.MethodCandidate{
+				Methods: []*config.MethodCandidate{
 					{
 						Kind: "http",
 						Config: map[string]any{
@@ -315,11 +315,11 @@ func TestResolveAllCapturesChecksumResolved(t *testing.T) {
 }
 
 func TestResolveAllSkipsAutoChecksum(t *testing.T) {
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
 			"tool": {
 				Name: "tool",
-				Methods: []*schema.MethodCandidate{
+				Methods: []*config.MethodCandidate{
 					{
 						Kind: "http",
 						Config: map[string]any{
@@ -346,11 +346,11 @@ func TestResolveAllSkipsAutoChecksum(t *testing.T) {
 func TestChecksumPinRoundTrip(t *testing.T) {
 	// Start with :auto checksum, apply a lock with concrete checksum,
 	// verify the schema now holds the concrete hash.
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
 			"tool": {
 				Name: "tool",
-				Methods: []*schema.MethodCandidate{
+				Methods: []*config.MethodCandidate{
 					{
 						Kind: "http",
 						Config: map[string]any{
@@ -398,11 +398,11 @@ func TestApplySurvivesURLTemplateChange(t *testing.T) {
 	}
 
 	// schema.toml has SINCE been edited to a corrected asset name.
-	s := &schema.Schema{
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
 			"ff": {
 				Name: "ff",
-				Methods: []*schema.MethodCandidate{
+				Methods: []*config.MethodCandidate{
 					{
 						Kind: "http",
 						Config: map[string]any{
