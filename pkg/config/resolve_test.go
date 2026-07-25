@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -17,14 +18,13 @@ func writeSchemaInline(t *testing.T, content string) string {
 	}
 	return p
 }
-
 // TestMergeLayers_LaterLayerWins verifies that tools in later layers
-// completely overwrite earlier layers (whole-tool, not field-by-field).
+// merge field-by-field according to their MergeStrategy, not whole-tool.
 func TestMergeLayers_LaterLayerWins(t *testing.T) {
-	// Layer 1 (lower priority): manifest with nvim having native + manual method_order.
+	// Layer 1 (lower priority): manifest with nvim having pacman override.
 	manifestPath := writeSchemaInline(t, `
 [packages]
-nvim = { pacman = "neovim", method_order = ["native"] }
+nvim = { pacman = "neovim" }
 	`)
 	manifest, err := ParseSchema(manifestPath, nil, "packages")
 	if err != nil {
@@ -47,7 +47,7 @@ nvim = { apt = "neovim-full", requires = ["zsh"] }
 		t.Fatal("expected nvim in merged schema")
 	}
 
-	// Schema layer wins entirely: should have apt from schema, not pacman from manifest.
+	// Field-level merge: schema's apt + manifest's pacman should both survive.
 	hasPacman := false
 	hasApt := false
 	for _, m := range nvim.Methods {
@@ -62,8 +62,8 @@ nvim = { apt = "neovim-full", requires = ["zsh"] }
 			}
 		}
 	}
-	if hasPacman {
-		t.Fatal("expected schema's version to win (no pacman override from manifest)")
+	if !hasPacman {
+		t.Fatal("expected pacman override from manifest to be present (field-level merge)")
 	}
 	if !hasApt {
 		t.Fatal("expected apt override from schema to be present")
@@ -307,10 +307,12 @@ func TestResolveSchemaFromFiles(t *testing.T) {
 nvim = { apt = "neovim" }
 	`)
 	manifestPath := writeSchemaInline(t, `
+[manifest]
+allow_new_tools = true
+
 [packages]
 fd = { cargo = "fd-find" }
 	`)
-
 	s, err := ResolveSchemaFromFiles(schemaPath, manifestPath)
 	if err != nil {
 		t.Fatalf("ResolveSchemaFromFiles: %v", err)
@@ -336,5 +338,459 @@ nvim = { apt = "neovim" }
 	}
 	if _, ok := s.Tools["nvim"]; !ok {
 		t.Fatal("expected nvim in resolved schema")
+	}
+}
+
+// TestMergeFieldStrategies — table-driven unit tests for each merge strategy.
+func TestMergeFieldStrategies(t *testing.T) {
+	tests := []struct {
+		name     string
+		strategy MergeStrategy
+		lower    any // value from lower-priority layer
+		upper    any // value from higher-priority layer
+		want     any // expected merged value
+	}{
+		// MergeOverwrite
+		{name: "overwrite/lower-only", strategy: MergeOverwrite,
+			lower: "apt", upper: nil, want: "apt"},
+		{name: "overwrite/upper-only", strategy: MergeOverwrite,
+			lower: nil, upper: "pacman", want: "pacman"},
+		{name: "overwrite/both-upper-wins", strategy: MergeOverwrite,
+			lower: "apt", upper: "pacman", want: "pacman"},
+		{name: "overwrite/both-empty", strategy: MergeOverwrite,
+			lower: "", upper: "", want: ""},
+
+		// MergeMapMerge
+		{name: "mapmerge/lower-only",
+			strategy: MergeMapMerge,
+			lower:    map[string]any{"apt": "neovim"},
+			upper:    nil,
+			want:     map[string]any{"apt": "neovim"}},
+		{name: "mapmerge/upper-only",
+			strategy: MergeMapMerge,
+			lower:    nil,
+			upper:    map[string]any{"pacman": "neovim"},
+			want:     map[string]any{"pacman": "neovim"}},
+		{name: "mapmerge/both-disjoint-keys",
+			strategy: MergeMapMerge,
+			lower:    map[string]any{"apt": "neovim"},
+			upper:    map[string]any{"pacman": "neovim"},
+			want:     map[string]any{"apt": "neovim", "pacman": "neovim"}},
+		{name: "mapmerge/upper-overwrites-same-key",
+			strategy: MergeMapMerge,
+			lower:    map[string]any{"apt": "neovim-old"},
+			upper:    map[string]any{"apt": "neovim"},
+			want:     map[string]any{"apt": "neovim"}},
+		{name: "mapmerge/both-empty",
+			strategy: MergeMapMerge,
+			lower:    map[string]any{},
+			upper:    map[string]any{},
+			want:     map[string]any{}},
+
+		// MergeUnionSlice
+		{name: "unionslice/lower-only",
+			strategy: MergeUnionSlice,
+			lower:    []string{"a", "b"}, upper: nil,
+			want: []string{"a", "b"}},
+		{name: "unionslice/upper-only",
+			strategy: MergeUnionSlice,
+			lower: nil, upper: []string{"c"},
+			want: []string{"c"}},
+		{name: "unionslice/both-distinct",
+			strategy: MergeUnionSlice,
+			lower: []string{"a", "b"}, upper: []string{"c"},
+			want: []string{"a", "b", "c"}},
+		{name: "unionslice/dedup",
+			strategy: MergeUnionSlice,
+			lower: []string{"a", "b"}, upper: []string{"b", "c"},
+			want: []string{"a", "b", "c"}},
+		{name: "unionslice/both-empty",
+			strategy: MergeUnionSlice,
+			lower: []string{}, upper: []string{},
+			want: []string{}},
+		{name: "unionslice/upper-subset-of-lower",
+			strategy: MergeUnionSlice,
+			lower: []string{"a", "b", "c"}, upper: []string{"a"},
+			want: []string{"a", "b", "c"}},
+
+		// MergeLocalOnly
+		{name: "localonly/lower-only",
+			strategy: MergeLocalOnly,
+			lower: "some-value", upper: nil,
+			want: "some-value"},
+		{name: "localonly/neither",
+			strategy: MergeLocalOnly,
+			lower: "", upper: "",
+			want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := applyMergeStrategy(tt.strategy, tt.lower, tt.upper)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("applyMergeStrategy(%v, %v, %v) = %v, want %v",
+					tt.strategy, tt.lower, tt.upper, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestMergeLayers_PkgOverridesPreserved — regression test ensuring manifest
+// package overrides are merged with (not replaced by) schema overrides.
+func TestMergeLayers_PkgOverridesPreserved(t *testing.T) {
+	// Schema defines nvim with apt override
+	schemaPath := writeSchemaInline(t, `
+[tools]
+nvim = { apt = "neovim", requires = ["zsh"] }
+	`)
+	schema, err := ParseSchema(schemaPath, nil)
+	if err != nil {
+		t.Fatalf("ParseSchema(schema): %v", err)
+	}
+
+	// Manifest defines nvim with pacman override (should complement, not replace)
+	manifestPath := writeSchemaInline(t, `
+[packages]
+nvim = { pacman = "neovim" }
+	`)
+	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	if err != nil {
+		t.Fatalf("ParseSchema(manifest): %v", err)
+	}
+
+	// Merge: manifest first (lower priority), schema last (higher priority)
+	merged := MergeLayers(manifest, schema)
+	nvim := merged.Tools["nvim"]
+	if nvim == nil {
+		t.Fatal("expected nvim in merged schema")
+	}
+
+	// Find the native method
+	var nativeMethod *MethodCandidate
+	for _, m := range nvim.Methods {
+		if m.Kind == "native" {
+			nativeMethod = m
+			break
+		}
+	}
+	if nativeMethod == nil {
+		t.Fatal("expected native method for nvim")
+	}
+
+	overrides, ok := nativeMethod.Config["pkg_overrides"].(map[string]any)
+	if !ok {
+		t.Fatal("expected pkg_overrides in native method config")
+	}
+
+	// Both apt (from schema) AND pacman (from manifest) should survive
+	if overrides["apt"] != "neovim" {
+		t.Errorf("apt override lost: got %v, want 'neovim'", overrides["apt"])
+	}
+	if overrides["pacman"] != "neovim" {
+		t.Errorf("pacman override missing: got %v, want 'neovim'", overrides["pacman"])
+	}
+
+	// Requires should come from schema (LocalOnly, schema sets it)
+	if len(nvim.Requires) != 1 || nvim.Requires[0] != "zsh" {
+		t.Errorf("requires should be [zsh] from schema, got %v", nvim.Requires)
+	}
+}
+
+// TestMergeLayers_MethodKindUnion — different method kinds from both layers merge.
+func TestMergeLayers_MethodKindUnion(t *testing.T) {
+	// Schema: nvim with cargo method
+	schemaPath := writeSchemaInline(t, `
+[tools]
+nvim = { cargo = "neovim" }
+	`)
+	schema, err := ParseSchema(schemaPath, nil)
+	if err != nil {
+		t.Fatalf("ParseSchema(schema): %v", err)
+	}
+
+	// Manifest: nvim with pacman override
+	manifestPath := writeSchemaInline(t, `
+[packages]
+nvim = { pacman = "neovim" }
+	`)
+	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	if err != nil {
+		t.Fatalf("ParseSchema(manifest): %v", err)
+	}
+
+	merged := MergeLayers(manifest, schema)
+	nvim := merged.Tools["nvim"]
+
+	// Should have both native (from manifest merge) and cargo (from schema) methods
+	kinds := make(map[string]bool)
+	for _, m := range nvim.Methods {
+		kinds[m.Kind] = true
+	}
+	if !kinds["native"] {
+		t.Error("expected native method from merged layers")
+	}
+	if !kinds["cargo"] {
+		t.Error("expected cargo method from schema")
+	}
+}
+
+// TestAllToolFieldsHaveMergeStrategy — enforces completeness of ToolFieldStrategy.
+func TestAllToolFieldsHaveMergeStrategy(t *testing.T) {
+	toolType := reflect.TypeOf(Tool{})
+	for i := 0; i < toolType.NumField(); i++ {
+		field := toolType.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+		if _, ok := ToolFieldStrategy[field.Name]; !ok {
+			t.Errorf("Tool field %q has no merge strategy in ToolFieldStrategy", field.Name)
+		}
+	}
+}
+
+// TestMergeLayers_ManifestToolSchemaFieldOverwrite — schema field wins over
+// manifest for same tool, but manifest additions survive.
+func TestMergeLayers_ManifestToolSchemaFieldOverwrite(t *testing.T) {
+	// Schema defines fd with apt override
+	schemaPath := writeSchemaInline(t, `
+[tools]
+fd = { apt = "fd-find" }
+	`)
+	schema, err := ParseSchema(schemaPath, nil)
+	if err != nil {
+		t.Fatalf("ParseSchema(schema): %v", err)
+	}
+
+	// Manifest defines same tool fd but with pacman override
+	manifestPath := writeSchemaInline(t, `
+[packages]
+fd = { pacman = "fd-rust" }
+	`)
+	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	if err != nil {
+		t.Fatalf("ParseSchema(manifest): %v", err)
+	}
+
+	merged := MergeLayers(manifest, schema)
+	fd := merged.Tools["fd"]
+
+	var nativeMethod *MethodCandidate
+	for _, m := range fd.Methods {
+		if m.Kind == "native" {
+			nativeMethod = m
+			break
+		}
+	}
+	if nativeMethod == nil {
+		t.Fatal("expected native method")
+	}
+
+	overrides, ok := nativeMethod.Config["pkg_overrides"].(map[string]any)
+	if !ok {
+		t.Fatal("expected pkg_overrides")
+	}
+
+	// Schema's apt should be preserved, manifest's pacman should be added
+	if overrides["apt"] != "fd-find" {
+		t.Errorf("schema apt override lost: got %v, want 'fd-find'", overrides["apt"])
+	}
+	if overrides["pacman"] != "fd-rust" {
+		t.Errorf("manifest pacman override missing: got %v, want 'fd-rust'", overrides["pacman"])
+	}
+}
+
+// TestValidateManifestNewTools_RejectsWithoutFlag — manifest introducing tools
+// not in the schema should be rejected when allow_new_tools is not set.
+func TestValidateManifestNewTools_RejectsWithoutFlag(t *testing.T) {
+	schemaPath := writeSchemaInline(t, `
+[tools]
+nvim = { apt = "neovim" }
+	`)
+	schema, err := ParseSchema(schemaPath, nil)
+	if err != nil {
+		t.Fatalf("ParseSchema(schema): %v", err)
+	}
+
+	manifestPath := writeSchemaInline(t, `
+[packages]
+nvim = { pacman = "neovim" }
+newtool = { pip = "new-pkg" }
+	`)
+	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	if err != nil {
+		t.Fatalf("ParseSchema(manifest): %v", err)
+	}
+
+	// Without allow_new_tools, manifest having "newtool" that's not in schema should fail
+	err = ValidateManifestNewTools(schema, manifest)
+	if err == nil {
+		t.Fatal("expected error for new tool in manifest without allow_new_tools")
+	}
+	if !strings.Contains(err.Error(), "newtool") {
+		t.Errorf("error should mention 'newtool', got: %v", err)
+	}
+}
+
+// TestValidateManifestNewTools_AllowsWithFlag — manifest introducing new tools
+// succeeds when allow_new_tools is set.
+func TestValidateManifestNewTools_AllowsWithFlag(t *testing.T) {
+	schemaPath := writeSchemaInline(t, `
+[tools]
+nvim = { apt = "neovim" }
+	`)
+	schema, err := ParseSchema(schemaPath, nil)
+	if err != nil {
+		t.Fatalf("ParseSchema(schema): %v", err)
+	}
+
+	manifestPath := writeSchemaInline(t, `
+[manifest]
+allow_new_tools = true
+
+[packages]
+nvim = { pacman = "neovim" }
+newtool = { pip = "new-pkg" }
+	`)
+	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	if err != nil {
+		t.Fatalf("ParseSchema(manifest): %v", err)
+	}
+
+	// With allow_new_tools, "newtool" should be allowed
+	err = ValidateManifestNewTools(schema, manifest)
+	if err != nil {
+		t.Errorf("expected no error with allow_new_tools, got: %v", err)
+	}
+}
+
+// TestValidateManifestNewTools_NoNewToolsIsFine — existing tools only in
+// manifest is always fine.
+func TestValidateManifestNewTools_NoNewToolsIsFine(t *testing.T) {
+	schemaPath := writeSchemaInline(t, `
+[tools]
+nvim = { apt = "neovim" }
+	`)
+	schema, err := ParseSchema(schemaPath, nil)
+	if err != nil {
+		t.Fatalf("ParseSchema(schema): %v", err)
+	}
+
+	manifestPath := writeSchemaInline(t, `
+[packages]
+nvim = { pacman = "neovim" }
+	`)
+	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	if err != nil {
+		t.Fatalf("ParseSchema(manifest): %v", err)
+	}
+
+	err = ValidateManifestNewTools(schema, manifest)
+	if err != nil {
+		t.Errorf("expected no error, got: %v", err)
+	}
+}
+
+// TestMergeLayers_Provenance — provenance tracking records which layer each
+// tool's fields came from.
+func TestMergeLayers_Provenance(t *testing.T) {
+	schemaPath := writeSchemaInline(t, `
+[tools]
+nvim = { apt = "neovim", requires = ["zsh"] }
+	`)
+	schema, err := ParseSchema(schemaPath, nil)
+	if err != nil {
+		t.Fatalf("ParseSchema(schema): %v", err)
+	}
+
+	manifestPath := writeSchemaInline(t, `
+[packages]
+nvim = { pacman = "neovim" }
+	`)
+	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	if err != nil {
+		t.Fatalf("ParseSchema(manifest): %v", err)
+	}
+
+	merged := MergeLayersWithProvenance(manifest, schema)
+
+	if merged.Provenance == nil {
+		t.Fatal("expected Provenance to be populated")
+	}
+
+	nvimProv, ok := merged.Provenance["nvim"]
+	if !ok {
+		t.Fatal("expected provenance for nvim")
+	}
+
+	// Should have at least one field source recorded
+	if len(nvimProv) == 0 {
+		t.Fatal("expected at least one provenance entry for nvim")
+	}
+}
+
+// applyMergeStrategy is a test helper that applies a MergeStrategy to generic
+// lower/upper values for use in table-driven tests.
+func applyMergeStrategy(s MergeStrategy, lower, upper any) any {
+	switch s {
+	case MergeOverwrite:
+		if upper != nil && upper != "" {
+			return upper
+		}
+		return lower
+	case MergeLocalOnly:
+		if upper != nil && upper != "" {
+			return upper
+		}
+		return lower
+	case MergeMapMerge:
+		if upper == nil {
+			return lower
+		}
+		if lower == nil {
+			return upper
+		}
+		lowerMap, lowerOk := lower.(map[string]any)
+		upperMap, upperOk := upper.(map[string]any)
+		if lowerOk && upperOk {
+			result := make(map[string]any, len(lowerMap)+len(upperMap))
+			for k, v := range lowerMap {
+				result[k] = v
+			}
+			for k, v := range upperMap {
+				result[k] = v
+			}
+			return result
+		}
+		return upper
+	case MergeUnionSlice:
+		if upper == nil {
+			return lower
+		}
+		if lower == nil {
+			return upper
+		}
+		lowerSlice, lowerOk := lower.([]string)
+		upperSlice, upperOk := upper.([]string)
+		if lowerOk && upperOk {
+			seen := make(map[string]bool, len(lowerSlice))
+			result := make([]string, 0, len(lowerSlice)+len(upperSlice))
+			for _, v := range lowerSlice {
+				result = append(result, v)
+				seen[v] = true
+			}
+			for _, v := range upperSlice {
+				if !seen[v] {
+					result = append(result, v)
+					seen[v] = true
+				}
+			}
+			return result
+		}
+		return upper
+	default:
+		if upper != nil {
+			return upper
+		}
+		return lower
 	}
 }
