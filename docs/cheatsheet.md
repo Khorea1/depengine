@@ -74,18 +74,17 @@ Two files work together:
 | `schema.toml` | Project root | **What** to install — the shared dependency list | Yes, commit to git |
 | `manifest.toml` | `~/.config/depengine/manifest.toml` | **How** to install — personal package name overrides | No, per-machine |
 
-**Comportamento de merge** (quando ambos definem a mesma ferramenta):
+**Merge behavior** (when both define the same tool):
 
-O motor mescla camadas por **substituição total da tool** (não campo-a-campo):
+The engine merges layers by **whole-tool overwrite** (not field-by-field):
 
-1. **Substituição total da tool**: O schema (camada mais específica) substitui a entrada *inteira* do manifesto para um dado nome de ferramenta — métodos, configurações de pkg, tudo. Nada é mesclado campo-a-campo.
-2. **Ferramentas só no manifest**: SÃO incluídas — o manifest pode adicionar ferramentas que não estão no schema.
-3. **Ferramentas só no schema**: Incluídas como sempre.
-4. **Defaults**: Sempre vindos do schema. Qualquer `[defaults]` no manifest é ignorado.
-5. **Campos NÃO permitidos no manifest**: `pre_install`, `postinstall`/`post_install`, `requires`, `tags` são rejeitados por `ValidateManifestLayer`.
+1. **Whole-tool overwrite**: The schema (most specific layer) replaces the manifest's *entire* tool entry for a given tool name — methods, pkg settings, everything. Nothing is merged field-by-field.
+2. **Tools only in manifest**: ARE included — the manifest can add tools not in the schema.
+3. **Tools only in schema**: Included as always.
+4. **Defaults**: Always from the schema. Manifest `[defaults]` is ignored.
+5. **Fields NOT allowed in manifest**: `pre_install`, `postinstall`/`post_install`, `requires`, `tags` are rejected by `ValidateManifestLayer`.
 
-> A maioria dos usuários nunca precisa de um manifest. Comece só com `schema.toml`.
-
+> Most users never need a manifest. Start with just `schema.toml`.
 
 ---
 ## Schema Structure
@@ -186,40 +185,41 @@ postinstall = "fc-cache -fv"
   extract_to = "~/.local/share/fonts/DepartureMono"
 ```
 
-### Forma 6 — Bucket de ecossistema (atalho python/node)
+### Form 6 — Ecosystem bucket shorthand
 
-Quando o nome do pacote é igual ao nome da tool (~80% dos casos Python/Node),
-use uma chave **bucket** em vez de repetir o mesmo nome para cada método.
-Buckets expandem para todos os métodos daquele ecossistema de uma vez.
+When the package name equals the tool name (~80% of Python/Node cases),
+use a **bucket** key instead of repeating the same name for every method.
+Buckets expand to all methods in that ecosystem in one go.
 
-**Buckets built-in:**
+**Built-in buckets:**
 
-| Bucket | Expansão | Uso típico |
-|--------|----------|------------|
-| `python = true` | `{ pip = true, pipx = true, uv = true }` | Ferramentas Python (ruff, httpie, poetry) |
-| `node = true` | `{ npm = true, pnpm = true, bun = true }` | Ferramentas Node (prettier, eslint, tsx) |
+| Bucket | Expansion | Typical use |
+|--------|-----------|-------------|
+| `python = true` | `{ pip = true, pipx = true, uv = true }` | Python tools (ruff, httpie, poetry) |
+| `node = true` | `{ npm = true, pnpm = true, bun = true }` | Node tools (prettier, eslint, tsx) |
 
-O valor do bucket aceita três formatos:
+Bucket values accept three shapes:
 
-| Valor | Efeito | Exemplo |
+| Value | Effect | Example |
 |-------|--------|---------|
-| `true` | Cada método usa o nome da tool como `pkg` | `ruff = { python = true }` |
-| `"string"` | Cada método recebe a string como `pkg` | `organize = { python = "organize-tool" }` |
-| `{ pkg = …, when = … }` | Cada método recebe um clone do mapa | `organize = { python = { pkg = "organize-tool", when = { distro_family = ["arch"] } } }` |
+| `true` | Each method uses the tool name as `pkg` | `ruff = { python = true }` |
+| `"string"` | Each method gets the string as `pkg` | `organize = { python = "organize-tool" }` |
+| `{ pkg = …, when = … }` | Each method gets a clone of the config map | `organize = { python = { pkg = "organize-tool", when = { distro_family = ["arch"] } } }` |
 
 ```toml
 ruff = { python = true }               # ≡ { pipx = "ruff", uv = "ruff" }
 prettier = { node = true }             # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
 organize = { python = "organize-tool" } # ≡ { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }
-httpie = { python = true }             # pip + pipx + uv (pkg=httpie em todos)
+httpie = { python = true }             # pip + pipx + uv (pkg=httpie on all)
 ```
 
-> Métodos explícitos NÃO são sobrescritos pelo bucket:
-> `organize = { pip = "organize-tool", python = true }` mantém `pip` como
-> `"organize-tool"` e expande apenas `pipx`/`uv`.
+> Explicit methods are NOT overridden by the bucket:
+> `organize = { pip = "organize-tool", python = true }` keeps `pip` as
+> `"organize-tool"` and only expands `pipx`/`uv`.
 >
-> `python = false` não expande (o motor trata `python` como método
-> desconhecido → erro em `validate`).
+> `python = false` won't expand (the engine treats `python` as an unknown
+> method → error on `validate`).
+
 
 ---
 
