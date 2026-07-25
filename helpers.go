@@ -83,10 +83,13 @@ func loadSchemaWithManifest(schemaPath, manifestPath string) (*config.Schema, st
 	if gerr := config.ValidateManifestLayer(manifestSchema); gerr != nil {
 		return nil, "", nil, 0, gerr
 	}
+	if gerr := config.ValidateManifestNewTools(s, manifestSchema); gerr != nil {
+		return nil, "", nil, 0, gerr
+	}
 
 	count := len(manifestSchema.Tools)
 	if count > 0 {
-		s = config.MergeLayers(manifestSchema, s)
+		s = config.MergeLayersWithProvenance(manifestSchema, s)
 	}
 	return s, clan, facts, count, nil
 }

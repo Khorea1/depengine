@@ -82,6 +82,8 @@ func runStatus(args []string) {
 					log.Default.Warn("load manifest", "error", merr)
 				} else if gerr := config.ValidateManifestLayer(manifestSchema); gerr != nil {
 					log.Default.Warn("validate manifest", "error", gerr)
+				} else if gerr := config.ValidateManifestNewTools(s, manifestSchema); gerr != nil {
+					log.Default.Warn("validate manifest new tools", "error", gerr)
 				} else {
 					count := len(manifestSchema.Tools)
 					if count > 0 {

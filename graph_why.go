@@ -101,6 +101,7 @@ func runWhy(args []string) {
 	whyManifest := whyCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	whyNoManifest := whyCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
 	whyJSON := whyCmd.Bool("json", false, "JSON output")
+	whyFields := whyCmd.Bool("fields", false, "show field-level provenance")
 	whyCmd.Parse(args)
 	remain := whyCmd.Args()
 	if len(remain) < 1 {
@@ -134,9 +135,17 @@ func runWhy(args []string) {
 			fmt.Fprintf(os.Stderr, "error validating manifest: %v\n", gerr)
 			os.Exit(2)
 		}
+		if gerr := config.ValidateManifestNewTools(s, manifestSchema); gerr != nil {
+			fmt.Fprintf(os.Stderr, "error validating manifest: %v\n", gerr)
+			os.Exit(2)
+		}
 		count := len(manifestSchema.Tools)
 		if count > 0 {
-			s = config.MergeLayers(manifestSchema, s)
+			if *whyFields {
+				s = config.MergeLayersWithProvenance(manifestSchema, s)
+			} else {
+				s = config.MergeLayers(manifestSchema, s)
+			}
 			if manifestAuto {
 				fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
 			}
@@ -209,5 +218,27 @@ func runWhy(args []string) {
 			reason = "ready to install"
 		}
 		fmt.Printf("  %s %s — %s\n", statusSymbol, a.Kind, reason)
+	}
+
+	if *whyFields {
+		if provenance, ok := s.Provenance[toolName]; ok && len(provenance) > 0 {
+			fmt.Println("\nField provenance:")
+			for _, fs := range provenance {
+				var mergedStr string
+				switch v := fs.Merged.(type) {
+				case string:
+					mergedStr = v
+				case []string:
+					mergedStr = fmt.Sprintf("%v", v)
+				case []*config.MethodCandidate:
+					mergedStr = fmt.Sprintf("[%d methods]", len(v))
+				case bool:
+					mergedStr = fmt.Sprintf("%v", v)
+				default:
+					mergedStr = fmt.Sprintf("%v", v)
+				}
+				fmt.Printf("  %s: source=%s merged=%v\n", fs.Field, fs.Source, mergedStr)
+			}
+		}
 	}
 }
