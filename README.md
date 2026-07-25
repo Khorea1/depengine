@@ -153,8 +153,7 @@ project) — set `[manifest] allow_new_tools = true` in your manifest to allow
 it. Fields that exist in both layers merge field-by-field (e.g. per-manager
 package names), and the schema always wins on conflict. Fields that could
 inject arbitrary intent into a shared project (`pre_install`, `post_install`,
-`requires`, `method_order`, `method_prefer`, `method_only`) are rejected if
-you try to set them in the manifest — see
+`requires`, `method_order`, `method_prefer`, `method_only`) can be set in the manifest as defaults; the schema overrides them on conflict — see
 [the merge rules in the schema reference](docs/schema-reference.md#manifest-merge-rules)
 for the full breakdown.
 ---

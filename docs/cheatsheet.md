@@ -79,8 +79,7 @@ The engine merges layers **field-by-field** using per-field strategies (not whol
 
 | Strategy | Fields | Behavior |
 |----------|--------|---------|
-| `MergeLocalOnly` | `requires`, `pre_install`, `postinstall`/`post_install`, `method_order`, `method_prefer`, `method_only` | Schema values are authoritative; manifest values for these fields are **rejected** by `ValidateManifestLayer`. |
-| `MergeOverwrite` | `name`, `is_simple`, `ecosystem` | Most specific layer (schema) wins entirely. |
+| `MergeOverwrite` | `name`, `is_simple`, `ecosystem`, `pre_install`, `postinstall`/`post_install`, `requires`, `method_order`, `method_prefer`, `method_only` | Most specific layer (schema) wins entirely. |
 | `MergeMethods` | `methods` | Methods are merged by Kind: the schema overrides manifest methods of the same kind (Config keys merge per `MethodConfigFieldStrategy`), but methods unique to each layer are preserved. |
 | `MergeUnionSlice` | `tags` | Union without duplicates — tags from both layers are combined. |
 | `MergeMapMerge` | `pkg_overrides` (inside method Config) | Merged per key; the schema's value wins on conflict. |
@@ -91,7 +90,7 @@ The engine merges layers **field-by-field** using per-field strategies (not whol
 - Tools only in schema: included as always.
 - Defaults always from the schema; manifest `[defaults]` is ignored.
 - Tags from both layers are merged (tags are allowed in the manifest).
-- Fields NOT allowed in manifest: `pre_install`, `postinstall`/`post_install`, `requires`, `method_order`, `method_prefer`, `method_only`.
+- Intent fields (`pre_install`, `postinstall`/`post_install`, `requires`, `method_order`, `method_prefer`, `method_only`) ARE allowed in the manifest — they act as defaults, and the schema overrides them on conflict.
 ---
 ## Schema Structure
 
@@ -213,7 +212,7 @@ Bucket values accept three shapes:
 | `{ pkg = …, when = … }` | Each method gets a clone of the config map | `organize = { python = { pkg = "organize-tool", when = { distro_family = ["arch"] } } }` |
 
 ```toml
-ruff = { python = true }               # ≡ { pipx = "ruff", uv = "ruff" }
+ruff = { python = true }               # ≡ { pip = "ruff", pipx = "ruff", uv = "ruff" }
 prettier = { node = true }             # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
 organize = { python = "organize-tool" } # ≡ { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }
 httpie = { python = true }             # pip + pipx + uv (pkg=httpie on all)

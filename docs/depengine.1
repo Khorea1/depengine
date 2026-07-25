@@ -354,7 +354,7 @@ Bucket values accept three shapes:
 .PP
 Examples:
 .EX
-ruff = { python = true }               # ≡ { pipx = "ruff", uv = "ruff" }
+ruff = { python = true }               # ≡ { pip = "ruff", pipx = "ruff", uv = "ruff" }
 organize = { python = "organize-tool" } # ≡ pip/pipx/uv with pkg="organize-tool"
 prettier = { node = true }             # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
 .EE

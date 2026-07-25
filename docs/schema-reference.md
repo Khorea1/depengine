@@ -31,7 +31,7 @@ lf       = { go  = "github.com/gokcehan/lf" }
 ```
 
 > When `pkg == tool_name`, use `true` instead of repeating:
-> `ruff = { python = true }` ≡ `ruff = { pipx = "ruff", uv = "ruff" }`.
+> `ruff = { python = true }` ≡ `ruff = { pip = "ruff", pipx = "ruff", uv = "ruff" }`.
 > Buckets (`python`, `node`) expand to all methods in that ecosystem at once
 > — see Case 11.
 
@@ -193,7 +193,7 @@ ecosystem at once.
 | `node = true` | `{ npm = true, pnpm = true, bun = true }` |
 
 ```toml
-ruff     = { python = true }   # ≡ { pipx = "ruff", uv = "ruff" }
+ruff     = { python = true }   # ≡ { pip = "ruff", pipx = "ruff", uv = "ruff" }
 prettier = { node = true }     # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
 ```
 
@@ -249,10 +249,10 @@ according to a declared strategy per field:
    where a key exists in both, the schema wins.
 3. **Union** (e.g. `tags`): values from both layers are combined, without
    duplicates.
-4. **Schema-only** (`pre_install`, `post_install`, `requires`,
-   `method_order`, `method_prefer`, `method_only`): the manifest is not
-   allowed to set these at all — `depengine validate` rejects it with a
-   clear error if it tries.
+4. **Schema-overrides** (`pre_install`, `post_install`, `requires`,
+   `method_order`, `method_prefer`, `method_only`): the manifest may set
+   these as defaults, but the schema layer wins on conflict — the
+   manifest's value is replaced, not merged.
 5. **Tools only in the manifest** are rejected by default — your personal
    manifest doesn't silently add tools to a project you're working on.
    Set `[manifest] allow_new_tools = true` in your manifest to allow it
