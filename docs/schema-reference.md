@@ -13,9 +13,11 @@ each one). The engine tries methods in `method_order` until one succeeds.
 
 - [Naming a tool](#naming-a-tool) — simple names, per-manager names, ecosystem buckets
 - [Custom sources](#custom-sources) — git forks, manual builds, HTTP artifacts
+- [Method reference](#method-reference) — one-line syntax for all 30 methods
 - [Hooks & dependencies](#hooks--dependencies) — pre-install hooks, tool-to-tool `requires`
 - [Platform targeting](#platform-targeting) — `when` conditions, multi-method fallback
 - [Method control](#per-tool-method-control) — `method_prefer`, `method_only`
+- [Placeholders](#placeholders) — `{arch}`, `{os}`, `{latest}`, and more
 - [Manifest merge rules](#manifest-merge-rules) — how schema + personal manifest combine
 
 ---
@@ -93,6 +95,15 @@ matugen = { cargo = { git = "https://github.com/InioX/matugen" } }
 ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install" } }
 ```
 
+| Field | Required | Description |
+|-------|----------|--------------|
+| `url` | yes | Git repository URL |
+| `build` | no | Shell command run in the cloned directory |
+| `extract_to` | no | Directory to copy build artifacts into |
+| `branch` | no | Branch or tag to clone (default: repo's default branch) |
+| `depth` | no | Clone depth — `"1"` for shallow (default), `"0"` for full history |
+| `binary` | no | Binary name for check/remove; required for removal from shared directories |
+
 ### HTTP: download an artifact (deb, zip, binary)
 
 ```toml
@@ -111,6 +122,62 @@ fastfetch = { http = {
 > **If you omit `checksum` entirely, the file is installed with no
 > integrity check at all.** Treat that the same as any other
 > arbitrary-code-execution risk in your schema.
+
+| Field | Required | Description |
+|-------|----------|--------------|
+| `url` | yes | Download URL; supports `{latest}` |
+| `checksum` | no | `"sha256:<hex>"`, `"md5:<hex>"`, `"sha1:<hex>"`, `"sha512:<hex>"`, or `"<algo>:auto"` |
+| `checksum_url` | no | Explicit URL for the checksum file (overrides auto patterns) |
+| `checksum_file_format` | no | `"sha256sum"` (default), `"bsd"`, or `"raw"` |
+| `signature_url` | no | GPG detached signature URL, for verifying the checksum file |
+| `signing_key` | no | GPG key URL or fingerprint |
+| `extract_to` | no | Extraction destination (default: `/usr/local/bin`) |
+| `sudo_required` | no | Boolean, default `true`. Set `false` when extracting to a user-writable path (e.g. `~/.local/bin`) |
+
+Archive type is auto-detected from the URL extension: `.tar.gz`, `.tgz`,
+`.zip`, `.deb`, `.bin`, or bare binary.
+
+---
+
+## Method reference
+
+One-line syntax for every supported method. All of them accept `when` (see
+[Platform targeting](#platform-targeting)); `git` and `http` take extra
+fields, documented above under [Custom sources](#custom-sources).
+
+| Method | What it installs | Example |
+|--------|-------------------|---------|
+| `native` | Auto-detected distro manager (apt/pacman/dnf/brew/...) | `fd = { apt = "fd-find" }` |
+| `cargo` | crates.io (or a git repo via `git` sub-key) | `ripgrep = { cargo = "ripgrep" }` |
+| `go` | pkg.go.dev (or a git repo via `git` sub-key) | `fzf = { go = "github.com/junegunn/fzf" }` |
+| `pip` | Python packages | `organize = { pip = "organize-tool" }` |
+| `pipx` | Python CLI tools, isolated environments | `organize = { pipx = "organize-tool" }` |
+| `uv` | Python packages via `uv tool` | `organize = { uv = "organize-tool" }` |
+| `npm` | Global npm packages | `prettier = { npm = "prettier" }` |
+| `pnpm` | Global pnpm packages | `prettier = { pnpm = "prettier" }` |
+| `bun` | Global bun packages | `tsx = { bun = "tsx" }` |
+| `gem` | Ruby gems | `sass = { gem = "sass" }` |
+| `yarn` | Global yarn packages | `typescript = { yarn = "typescript" }` |
+| `yarn-berry` | Yarn Berry (v2+) global packages | `typescript = { yarn-berry = "typescript" }` |
+| `composer` | Global PHP Composer packages | `php-cs-fixer = { composer = "friendsofphp/php-cs-fixer" }` |
+| `apm` | Atom package manager (legacy) | `atom-beautify = { apm = "atom-beautify" }` |
+| `vscode` | VS Code extensions | `golang = { vscode = "golang.go" }` |
+| `vscodium` | VSCodium extensions | `golang = { vscodium = "golang.go" }` |
+| `flatpak` | Flathub apps | `spotify = { flatpak = "com.spotify.Client" }` |
+| `snap` | Snap packages | `hello = { snap = "hello" }` |
+| `cask` | macOS Homebrew casks | `docker = { cask = "docker" }` |
+| `mas` | Mac App Store, by app ID | `xcode = { mas = "497799835" }` |
+| `sdkman` | SDKMAN! JVM SDKs | `java17 = { sdkman = "java" }` |
+| `steamcmd` | SteamCMD game server tools | `cs2 = { steamcmd = "730" }` |
+| `pacstall` | Pacstall packages (Debian-based AUR-like) | `neofetch = { pacstall = "neofetch" }` |
+| `aur` | Arch User Repository (via configured `aur_helper`) | `google-chrome = { aur = "google-chrome" }` |
+| `winget` | Windows Package Manager | `git = { winget = "Git.Git" }` |
+| `scoop` | Windows, via Scoop | `git = { scoop = "git" }` |
+| `choco` | Windows, via Chocolatey | `firefox = { choco = "firefox" }` |
+| `conda` | Conda packages | `numpy = { conda = "numpy" }` |
+| `asdf` | asdf version manager plugins | `nodejs = { asdf = "nodejs" }` |
+| `git` | Clone + build (see field table above) | `ctpv = { git = { url = "...", build = "make install" } }` |
+| `http` | Download + extract + checksum (see field table above) | `fastfetch = { http = { url = "...", checksum = "sha256:auto" } }` |
 
 ---
 
@@ -254,6 +321,40 @@ legacy = { method_only = ["aur", "git"], aur = { pkg = "legacy" }, git = { url =
   order — the global `method_order` is ignored for this tool.
 - Both live at tool level (same level as `requires`, `tags`, `postinstall`),
   not inside a method block.
+
+---
+
+## Placeholders
+
+Placeholders are expanded in every string field before installation.
+Unknown placeholders are left untouched, so `depengine validate` can flag
+them.
+
+| Placeholder | Source | Example |
+|-------------|--------|---------|
+| `{arch}` | `detect_os.sh` | `x86_64`, `aarch64` |
+| `{os}` | `detect_os.sh` | `linux`, `darwin` |
+| `{distro_family}` | Resolved clan | `debian`, `arch`, `fedora` |
+| `{id}` | `detect_os.sh` | `ubuntu`, `arch` |
+| `{distro_name}` | `detect_os.sh` | `Ubuntu 24.04 LTS` |
+| `{distro_id_like}` | `detect_os.sh` | `debian` |
+| `{target_family}` | `detect_os.sh` | `linux` |
+| `{kernel}` | `detect_os.sh` | `5.15.0` |
+| `{libc}` | `detect_os.sh` | `glibc`, `musl` |
+| `{init_system}` | `detect_os.sh` | `systemd`, `openrc` |
+| `{detection}` | `detect_os.sh` | `os-release` |
+| `{confidence}` | `detect_os.sh` | `high`, `medium` |
+| `{is_wsl}` / `{is_container}` / `{is_android}` | `detect_os.sh` | `true`, `false` |
+| `{pkg}` | Adapter-owned — substituted at install time | package name |
+| `{latest}` | Adapter-owned — resolved via GitHub API (`git`/`http`) | `v1.2.3` |
+
+```toml
+# {arch}/{os} expand from detect_os.sh before installation:
+fastfetch = { http = { url = "https://example.com/{os}/{arch}/fastfetch.deb" } }
+
+# {latest} is resolved by the http/git adapter via GitHub's API:
+fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb" } }
+```
 
 ---
 

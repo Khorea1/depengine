@@ -210,18 +210,14 @@ mint   → apt      opkg    → opkg
 
 ## Placeholders
 
-| Placeholder | Source | Example |
-|-------------|--------|---------|
-| `{arch}` | `detect_os.sh` | `x86_64`, `aarch64` |
-| `{os}` | `detect_os.sh` | `linux`, `darwin` |
-| `{distro_family}` | Resolved clan | `debian`, `arch`, `fedora` |
-| `{kernel}` | `detect_os.sh` | `5.15.0` |
-| `{libc}` | `detect_os.sh` | `glibc`, `musl` |
-| `{init_system}` | `detect_os.sh` | `systemd`, `openrc` |
-| `{pkg}` | Substituted by the adapter at install time | package name |
-| `{latest}` | Resolved via GitHub API (`git`/`http` adapters) | `v1.2.3` |
+Placeholders like `{arch}`, `{os}`, and `{latest}` get expanded in schema
+fields before installation:
 
-Unknown placeholders are flagged by `depengine validate`.
+```toml
+fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb" } }
+```
+
+Full list of all 15 placeholders: [schema-reference.md#placeholders](docs/schema-reference.md#placeholders).
 
 ## Editor support
 
@@ -243,6 +239,7 @@ VSCode) use it for autocomplete, inline validation, and hover docs. Add to
 |----------|--------|
 | `DEPENGINE_DETECT_SCRIPT` | Path to `detect_os.sh` (default: next to the binary) |
 | `DEPENGINE_MANIFEST` | Path to the personal manifest, overriding XDG discovery |
+| `XDG_STATE_HOME` | Base directory for the state file (default: `~/.local/state/depengine/state.json`) |
 | `DEPENGINE_TRACE_ID` | Trace ID propagated to subprocesses |
 | `DEPENGINE_LOG_JSON` | `=1` enables JSON log output |
 
