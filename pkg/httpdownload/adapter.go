@@ -100,7 +100,6 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 		// Copy the cached file to the temp location.
 		if err := copyLocalFile(cachedPath, tmpFile); err != nil {
 			// Cache read error is non-fatal — fall through to download.
-			cachedPath = ""
 		} else {
 			fromCache = true
 		}

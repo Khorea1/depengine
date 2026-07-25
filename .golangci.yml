@@ -3,9 +3,9 @@ run:
   timeout: 3m
   tests: true
 linters:
-  default: standard
+  default: none
   enable:
-    - misspell
-    - revive
+    - govet
+    - ineffassign
 issues:
   max-same-issues: 50

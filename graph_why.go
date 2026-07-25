@@ -202,7 +202,7 @@ func runWhy(args []string) {
 
 	fmt.Printf("Why %s? (%d methods)\n", toolName, len(tool.Methods))
 	for _, a := range attempts {
-		statusSymbol := "?"
+		var statusSymbol string
 		switch a.Status {
 		case "would_install":
 			statusSymbol = "✓"
