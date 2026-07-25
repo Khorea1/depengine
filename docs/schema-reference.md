@@ -154,6 +154,7 @@ engine evaluates all non-empty fields against the detected system facts:
   when = { arch = ["x86_64", "aarch64"], os = ["linux"], libc = ["glibc"] }
 
   [tools.restic.http-musl]
+  kind = "http"
   url  = "https://github.com/restic/restic/releases/download/{latest}/restic_{latest}_linux_{arch}_musl.bz2"
   when = { arch = ["x86_64", "aarch64"], os = ["linux"], libc = ["musl"] }
 ```
