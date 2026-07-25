@@ -36,11 +36,10 @@ func DefaultManifestPath() string {
 }
 
 // ResolveSchemaFromFiles is a convenience that parses a local schema and one
-// or more manifest files (in order), validates the global/manifest layers,
-// and merges them via MergeLayers.
+// or more manifest files (in order), validates the manifest layers.
 //
 // Each manifest path is parsed with ParseSchema(path, nil, "packages") and
-// validated with ValidateGlobalLayer. An empty manifest path is skipped.
+// validated with ValidateManifestLayer. An empty manifest path is skipped.
 // The result merges all layers: manifest files (earlier = lower priority),
 // then the local schema (highest priority).
 func ResolveSchemaFromFiles(schemaPath string, manifestPaths ...string) (*Schema, error) {
@@ -60,7 +59,7 @@ func ResolveSchemaFromFiles(schemaPath string, manifestPaths ...string) (*Schema
 		if err != nil {
 			return nil, fmt.Errorf("parse manifest %s: %w", mp, err)
 		}
-		if err := ValidateGlobalLayer(mt); err != nil {
+		if err := ValidateManifestLayer(mt); err != nil {
 			return nil, fmt.Errorf("manifest %s: %w", mp, err)
 		}
 		// Insert manifest layers before the schema layer so schema wins.
@@ -110,33 +109,33 @@ func MergeLayers(layers ...*Schema) *Schema {
 	return result
 }
 
-// ValidateGlobalLayer validates that a Schema parsed from the global/manifest
+// ValidateManifestLayer validates that a Schema parsed from the manifest
 // layer does not contain fields that are security-sensitive or should only
 // appear in the local schema. Returns a clear error listing all violations.
 //
-// Fields NOT allowed in the global layer:
+// Fields NOT allowed in the manifest layer:
 //   - pre_install (arbitrary commands from a shared file)
 //   - post_install / postinstall (arbitrary commands from a shared file)
 //   - requires (dependency declarations)
 //   - tags (profile filtering intent)
-func ValidateGlobalLayer(s *Schema) error {
+func ValidateManifestLayer(s *Schema) error {
 	var errs []string
 	for name, tool := range s.Tools {
 		if tool.PreInstall != "" {
-			errs = append(errs, fmt.Sprintf("tool %q: pre_install is not allowed in global manifest layer", name))
+			errs = append(errs, fmt.Sprintf("tool %q: pre_install is not allowed in manifest layer", name))
 		}
 		if tool.PostInstall != "" {
-			errs = append(errs, fmt.Sprintf("tool %q: post_install is not allowed in global manifest layer", name))
+			errs = append(errs, fmt.Sprintf("tool %q: post_install is not allowed in manifest layer", name))
 		}
 		if len(tool.Requires) > 0 {
-			errs = append(errs, fmt.Sprintf("tool %q: requires is not allowed in global manifest layer", name))
+			errs = append(errs, fmt.Sprintf("tool %q: requires is not allowed in manifest layer", name))
 		}
 		if len(tool.Tags) > 0 {
-			errs = append(errs, fmt.Sprintf("tool %q: tags is not allowed in global manifest layer", name))
+			errs = append(errs, fmt.Sprintf("tool %q: tags is not allowed in manifest layer", name))
 		}
 	}
 	if len(errs) > 0 {
-		return fmt.Errorf("global manifest validation:\n%s", strings.Join(errs, "\n"))
+	return fmt.Errorf("manifest validation:\n%s", strings.Join(errs, "\n"))
 	}
 	return nil
 }

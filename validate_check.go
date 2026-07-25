@@ -49,7 +49,7 @@ func runValidate(args []string) {
 			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", merr)
 			os.Exit(2)
 		}
-		if gerr := config.ValidateGlobalLayer(manifestSchema); gerr != nil {
+		if gerr := config.ValidateManifestLayer(manifestSchema); gerr != nil {
 			fmt.Fprintf(os.Stderr, "error validating manifest: %v\n", gerr)
 			os.Exit(2)
 		}

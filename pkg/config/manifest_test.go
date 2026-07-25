@@ -91,8 +91,8 @@ nvim = { pacman = "neovim", requires = ["zsh"], tags = ["desktop"] }
 	if nvim == nil {
 		t.Fatal("expected nvim in parsed manifest")
 	}
-	// ParseSchema preserves these fields (ValidateGlobalLayer catches them
-	// at the merge step; see TestValidateGlobalLayer_RejectsIntentFields).
+	// ParseSchema preserves these fields (ValidateManifestLayer catches them
+	// at the merge step; see TestValidateManifestLayer_RejectsIntentFields).
 	if nvim.Requires == nil || len(nvim.Requires) != 1 || nvim.Requires[0] != "zsh" {
 		t.Fatalf("expected requires to be preserved by parser, got %v", nvim.Requires)
 	}

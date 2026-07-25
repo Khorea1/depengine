@@ -80,7 +80,7 @@ func runStatus(args []string) {
 				manifestSchema, merr := config.ParseSchema(manifestPath, nil, "packages")
 				if merr != nil {
 					log.Default.Warn("load manifest", "error", merr)
-				} else if gerr := config.ValidateGlobalLayer(manifestSchema); gerr != nil {
+				} else if gerr := config.ValidateManifestLayer(manifestSchema); gerr != nil {
 					log.Default.Warn("validate manifest", "error", gerr)
 				} else {
 					count := len(manifestSchema.Tools)

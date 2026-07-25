@@ -254,9 +254,9 @@ d = { pip = "d3" }
 	}
 }
 
-// TestValidateGlobalLayer_RejectsIntentFields verifies that ValidateGlobalLayer
+// TestValidateManifestLayer_RejectsIntentFields verifies that ValidateManifestLayer
 // rejects fields that should not be in a manifest.
-func TestValidateGlobalLayer_RejectsIntentFields(t *testing.T) {
+func TestValidateManifestLayer_RejectsIntentFields(t *testing.T) {
 	p := writeSchemaInline(t, `
 [packages]
 nvim = { pacman = "neovim", pre_install = "dangerous", requires = ["zsh"], tags = ["desktop"] }
@@ -266,9 +266,9 @@ nvim = { pacman = "neovim", pre_install = "dangerous", requires = ["zsh"], tags 
 		t.Fatalf("ParseSchema(manifest): %v", err)
 	}
 
-	err = ValidateGlobalLayer(s)
+	err = ValidateManifestLayer(s)
 	if err == nil {
-		t.Fatal("expected error from ValidateGlobalLayer, got nil")
+		t.Fatal("expected error from ValidateManifestLayer, got nil")
 	}
 	msg := err.Error()
 	if !strings.Contains(msg, "pre_install") {
@@ -282,9 +282,9 @@ nvim = { pacman = "neovim", pre_install = "dangerous", requires = ["zsh"], tags 
 	}
 }
 
-// TestValidateGlobalLayer_AcceptsCleanLayer verifies that a clean manifest
+// TestValidateManifestLayer_AcceptsCleanLayer verifies that a clean manifest
 // passes validation.
-func TestValidateGlobalLayer_AcceptsCleanLayer(t *testing.T) {
+func TestValidateManifestLayer_AcceptsCleanLayer(t *testing.T) {
 	p := writeSchemaInline(t, `
 [packages]
 fd = { cargo = "fd-find" }
@@ -294,7 +294,7 @@ fd = { cargo = "fd-find" }
 		t.Fatalf("ParseSchema(manifest): %v", err)
 	}
 
-	err = ValidateGlobalLayer(s)
+	err = ValidateManifestLayer(s)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
