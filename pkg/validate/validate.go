@@ -35,6 +35,8 @@ const (
 	WarnUnknownWhenKey      ErrorCode = "W_UNKNOWN_WHEN_KEY"
 	WarnUnknownDistroFamily ErrorCode = "W_UNKNOWN_DISTRO_FAMILY"
 	WarnAutoChecksum        ErrorCode = "W_AUTO_CHECKSUM"
+	WarnEnvMissing          ErrorCode = "W_ENV_MISSING"
+	WarnSignatureNoKey      ErrorCode = "W_SIGNATURE_NO_KEY"
 )
 
 // ValidationError represents a single validation finding.
@@ -173,5 +175,6 @@ func ValidateSchema(s *config.Schema, knownKinds []string) *Result {
 	r.Merge(validateMalformedURLs(s))
 	r.Merge(validateUnknownDistroFamily(s))
 	r.Merge(validateMethodOrderConflicts(s))
+	r.Merge(validateSignatureSecurity(s))
 	return r
 }

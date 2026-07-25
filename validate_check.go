@@ -96,7 +96,7 @@ func runValidate(args []string) {
 		for _, ch := range envResult.Checks {
 			if !ch.Found {
 				result.Add(validate.ValidationError{
-					Code:    "W_ENV_MISSING",
+					Code:    validate.WarnEnvMissing,
 					Field:   "environment",
 					Message: ch.Message,
 				})
