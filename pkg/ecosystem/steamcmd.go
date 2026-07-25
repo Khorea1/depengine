@@ -25,6 +25,10 @@ func (a *SteamCMDAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	return run.LookPath(ctx, rn, "steamcmd")
 }
 
+// Always returns false because steamcmd is inherently stateful — it updates
+// game servers to the latest version on every run. Skipping the check means
+// we always ensure the server is current, which is the expected behavior.
+
 func (a *SteamCMDAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	return false
 }

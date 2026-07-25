@@ -1179,7 +1179,7 @@ func TestExpandBucketsExpansion(t *testing.T) {
 	}
 }
 
-func TestExpandBucketsDeduplicate(t *testing.T) {
+func TestExpandBucketsPreservesLiteralAfterBucket(t *testing.T) {
 	// "python" + "pip" → bucket expands to ["pip", "pipx", "uv"], then "pip" literal stays
 	// Dedup only applies WITHIN bucket expansion, not for literal entries
 	got := ExpandBuckets([]string{"python", "pip"})

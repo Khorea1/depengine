@@ -150,7 +150,7 @@ func hasWord(s, word string) bool {
 			return false
 		}
 		abs := start + idx
-		before := abs == 0 || s[abs-1] == ' ' || s[abs-1] == '\t' || s[abs-1] == '\n'
+		before := abs == 0 || s[abs-1] == ' ' || s[abs-1] == '\t' || s[abs-1] == '\n' || s[abs-1] == '-'
 		after := abs+len(word) >= len(s) || s[abs+len(word)] == ' ' || s[abs+len(word)] == '\t' || s[abs+len(word)] == '\n' || s[abs+len(word)] == '-'
 		if before && after {
 			return true

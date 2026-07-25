@@ -102,7 +102,7 @@ func gatherFactsGo() *Facts {
 		OS:              runtime.GOOS,
 		TargetFamily:    tf,
 		TargetArch:      runtime.GOARCH,
-		Kernel:          runtime.GOOS,
+		Kernel:          "unknown",
 		DetectionMethod: "go-builtin",
 		Confidence:      "low",
 		DistroID:        "",

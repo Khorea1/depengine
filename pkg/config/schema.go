@@ -15,16 +15,15 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-
 // MergeStrategy defines how a field is merged across layers.
 type MergeStrategy int
 
 const (
-	MergeOverwrite   MergeStrategy = iota // most specific wins entirely
-	MergeMapMerge                         // key-by-key within map, most specific wins per key
-	MergeUnionSlice                       // union without duplicates
-	MergeLocalOnly                        // only schema layer may set; manifest presence is error
-	MergeMethods                          // special: merge method slices by Kind, then MapMerge Config
+	MergeOverwrite  MergeStrategy = iota // most specific wins entirely
+	MergeMapMerge                        // key-by-key within map, most specific wins per key
+	MergeUnionSlice                      // union without duplicates
+	MergeLocalOnly                       // only schema layer may set; manifest presence is error
+	MergeMethods                         // special: merge method slices by Kind, then MapMerge Config
 )
 
 // ToolFieldStrategy defines merge policy for every exported field of Tool.
@@ -99,14 +98,13 @@ type mergeConfig struct {
 	collectProvenance bool
 }
 
-
 // Schema is the fully-normalized in-memory form of schema.toml after parsing.
 // It is the engine's working set: defaults + a flat map of tools, each with
 // its method candidates ordered by defaults.method_order.
 type Schema struct {
-	Defaults     Defaults
-	Tools        map[string]*Tool
-	AllowNewTools bool             `json:"-"`
+	Defaults      Defaults
+	Tools         map[string]*Tool
+	AllowNewTools bool                     `json:"-"`
 	Provenance    map[string][]FieldSource `json:"-"` // tool name → field sources
 }
 
@@ -120,26 +118,26 @@ type Defaults struct {
 	MethodOrder []string
 }
 
-
 // DefaultBuckets maps ecosystem names to lists of method kinds.
 // This is delegated to methodkind.DefaultBuckets — the single source of truth.
 var DefaultBuckets = methodkind.DefaultBuckets
+
 // Tool is one entry under [tools]. IsSimple distinguishes names that came
 // straight from the `simple = [...]` list (single native candidate whose
 // pkg equals the tool's own name) from anything declared via inline table
 // or full block.
 type Tool struct {
-	Name        string
-	PreInstall  string // shell command run before install; failure aborts install
-	PostInstall string // shell command run after successful install
-	Requires    []string
-	Methods     []*MethodCandidate
-	MethodOrder []string // DEPRECATED per-tool: use MethodPrefer instead. Kept for backward compat.
+	Name         string
+	PreInstall   string // shell command run before install; failure aborts install
+	PostInstall  string // shell command run after successful install
+	Requires     []string
+	Methods      []*MethodCandidate
+	MethodOrder  []string // DEPRECATED per-tool: use MethodPrefer instead. Kept for backward compat.
 	MethodPrefer []string // prefix: try these first, then fall back to defaults
-	MethodOnly  []string // exclusive: use ONLY these methods, in this order
-	IsSimple    bool
-	Tags        []string // profile tags for --profile filtering (e.g. "desktop", "server")
-	Ecosystem   string   // "python", "node", etc — empty if not from bucket
+	MethodOnly   []string // exclusive: use ONLY these methods, in this order
+	IsSimple     bool
+	Tags         []string // profile tags for --profile filtering (e.g. "desktop", "server")
+	Ecosystem    string   // "python", "node", etc — empty if not from bucket
 }
 
 // cloneTool returns a deep copy of t.
@@ -378,15 +376,15 @@ func ParseSchema(path string, m map[string]string, section ...string) (*Schema, 
 	return &Schema{Defaults: defaults, Tools: tools, AllowNewTools: allowNewTools}, nil
 }
 
-
 // DefaultMethodOrder is the engine-wide canonical preference order for
 // install methods. This is delegated to methodkind.DefaultMethodOrder — the
 // single source of truth.
 var DefaultMethodOrder = methodkind.DefaultMethodOrder
+
 func extractDefaults(raw any) Defaults {
 	d := Defaults{
-		Manager:   "native",
-		AurHelper: "paru",
+		Manager:     "native",
+		AurHelper:   "paru",
 		MethodOrder: DefaultMethodOrder,
 	}
 	if raw == nil {
@@ -575,7 +573,6 @@ var platformMethodConditions = map[string]Condition{
 	"scoop": {DistroFamily: []string{"windows"}},
 	"choco": {DistroFamily: []string{"windows"}},
 }
-
 
 func parseMethod(kind string, val any) (*MethodCandidate, error) {
 	mc := &MethodCandidate{Kind: kind, Config: map[string]any{}}
@@ -950,7 +947,6 @@ func findLineInFile(path, key string) (int, error) {
 	return 0, fmt.Errorf("key %q not found", key)
 }
 
-
 // Validate checks a parsed Schema for references to method kinds that no
 // adapter will ever satisfy. Unknown kinds in Defaults.MethodOrder or any
 // MethodCandidate.Kind cause a tool whose only candidates are unknown to
@@ -1115,7 +1111,7 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 	}
 
 	if len(hardErrors) > 0 {
-	return warnings, &ParseSchemaError{Err: errors.New(strings.Join(hardErrors, "\n"))}
+		return warnings, &ParseSchemaError{Err: errors.New(strings.Join(hardErrors, "\n"))}
 	}
 	return warnings, nil
 }

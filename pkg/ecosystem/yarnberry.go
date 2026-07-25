@@ -67,7 +67,7 @@ func (a *YarnBerryAdapter) Check(ctx context.Context, rn run.Runner, tool *confi
 	// Use yarn node to check local resolution: exits 0 if package is installed,
 	// 1 if not. This avoids hitting the npm registry (unlike `yarn info`).
 	res := rn.Run(ctx, "yarn", "node", "-e",
-		"process.exit(require.resolve(process.argv[1])?0:1)", pkg[0])
+		"try{process.exit(require.resolve(process.argv[1])?0:1)}catch(e){process.exit(1)}", pkg[0])
 	return res.Err == nil && res.ExitCode == 0
 }
 

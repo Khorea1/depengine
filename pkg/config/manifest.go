@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/Khorea1/depengine/pkg/methodkind"
@@ -415,8 +416,22 @@ func setFieldZero(t *Tool, field string) error {
 
 func ValidateManifestLayer(s *Schema) error {
 	var errs []string
-	for name, tool := range s.Tools {
-		for field, strategy := range ToolFieldStrategy {
+	// Sort tool names for deterministic error messages across runs
+	toolNames := make([]string, 0, len(s.Tools))
+	for name := range s.Tools {
+		toolNames = append(toolNames, name)
+	}
+	sort.Strings(toolNames)
+	for _, name := range toolNames {
+		tool := s.Tools[name]
+		// Sort fields for deterministic error messages
+		fields := make([]string, 0, len(ToolFieldStrategy))
+		for field := range ToolFieldStrategy {
+			fields = append(fields, field)
+		}
+		sort.Strings(fields)
+		for _, field := range fields {
+			strategy := ToolFieldStrategy[field]
 			if strategy != MergeLocalOnly {
 				continue
 			}
