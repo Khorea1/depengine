@@ -9,20 +9,33 @@ specific.
 A schema describes **tools** (dependencies) and **methods** (how to install
 each one). The engine tries methods in `method_order` until one succeeds.
 
-## Case 1 — Simple tool (name = package everywhere)
+**On this page:**
+
+- [Naming a tool](#naming-a-tool) — simple names, per-manager names, ecosystem buckets
+- [Custom sources](#custom-sources) — git forks, manual builds, HTTP artifacts
+- [Hooks & dependencies](#hooks--dependencies) — pre-install hooks, tool-to-tool `requires`
+- [Platform targeting](#platform-targeting) — `when` conditions, multi-method fallback
+- [Method control](#per-tool-method-control) — `method_prefer`, `method_only`
+- [Manifest merge rules](#manifest-merge-rules) — how schema + personal manifest combine
+
+---
+
+## Naming a tool
+
+### Simple tool (name = package everywhere)
 
 ```toml
 simple = ["zsh", "bat", "kitty", "mpv"]
 ```
 
-## Case 2 — Package name varies per native manager
+### Package name varies per native manager
 
 ```toml
 fd   = { apt = "fd-find" }                 # "fd" on all others
 nvim = { pacman = "neovim", apt = "neovim" }
 ```
 
-## Case 3 — Language ecosystem managers
+### Language ecosystem managers
 
 ```toml
 organize = { pip = "organize-tool", pipx = "organize-tool" }
@@ -30,12 +43,43 @@ fzf      = { go  = "github.com/junegunn/fzf" }
 lf       = { go  = "github.com/gokcehan/lf" }
 ```
 
-> When `pkg == tool_name`, use `true` instead of repeating:
-> `ruff = { python = true }` ≡ `ruff = { pip = "ruff", pipx = "ruff", uv = "ruff" }`.
-> Buckets (`python`, `node`) expand to all methods in that ecosystem at once
-> — see Case 11.
+### `true` shorthand and ecosystem buckets
 
-## Case 4 — cargo/go with a custom git source
+When the package name equals the tool name (~80% of Python/Node cases), use
+`true` instead of repeating it. Buckets expand to every method in an
+ecosystem at once.
+
+| Bucket | Expansion |
+|--------|-----------|
+| `python = true` | `{ pip = true, pipx = true, uv = true }` |
+| `node = true` | `{ npm = true, pnpm = true, bun = true }` |
+
+```toml
+ruff     = { python = true }   # ≡ { pip = "ruff", pipx = "ruff", uv = "ruff" }
+prettier = { node = true }     # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
+```
+
+> Explicit methods are **not** overridden by the bucket:
+> `organize = { pip = "organize-tool", python = true }` keeps `pip` as
+> `"organize-tool"` and only expands `pipx`/`uv`.
+>
+> Buckets also accept a package name string or a config map:
+>
+> ```toml
+> organize = { python = "organize-tool" }
+> # ≡ { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }
+> ```
+>
+> `python = false` does not expand — the engine treats `python` as an
+> unknown method and errors on `validate`. `all = true` does not exist —
+> too imprecise, risks installing the wrong package from the wrong
+> ecosystem.
+
+---
+
+## Custom sources
+
+### cargo/go with a custom git source
 
 For when you need a fork or a source other than the official registry:
 
@@ -43,27 +87,13 @@ For when you need a fork or a source other than the official registry:
 matugen = { cargo = { git = "https://github.com/InioX/matugen" } }
 ```
 
-## Case 5 — Pre-install hook (before any method)
-
-```toml
-[tools.myenv]
-pre_install = "curl -fsSL https://setup.example.com | sh"
-
-  [tools.myenv.native]
-  pkg = "my-env"
-```
-
-> `pre_install` runs before the first method — if it fails, the tool is
-> aborted. Requires `--allow-arbitrary-code` (a security warning is shown by
-> default, and the tool is skipped unless the flag is passed).
-
-## Case 6 — Git: clone + manual build
+### Git: clone + manual build
 
 ```toml
 ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install" } }
 ```
 
-## Case 7 — HTTP: download an artifact (deb, zip, binary)
+### HTTP: download an artifact (deb, zip, binary)
 
 ```toml
 fastfetch = { http = {
@@ -82,13 +112,35 @@ fastfetch = { http = {
 > integrity check at all.** Treat that the same as any other
 > arbitrary-code-execution risk in your schema.
 
-## Case 8 — Tool-to-tool dependency
+---
+
+## Hooks & dependencies
+
+### Pre-install hook (before any method)
+
+```toml
+[tools.myenv]
+pre_install = "curl -fsSL https://setup.example.com | sh"
+
+  [tools.myenv.native]
+  pkg = "my-env"
+```
+
+> `pre_install` runs before the first method — if it fails, the tool is
+> aborted. Requires `--allow-arbitrary-code` (a security warning is shown by
+> default, and the tool is skipped unless the flag is passed).
+
+### Tool-to-tool dependency
 
 ```toml
 zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
 ```
 
-## Case 9 — Complex case: multiple methods + distro condition
+---
+
+## Platform targeting
+
+### Complex case: multiple methods + distro condition
 
 ```toml
 [tools.DepartureMono]
@@ -108,7 +160,7 @@ postinstall = "fc-cache -fv"
 > (`kind`, `when`, `url`, `build`, `checksum`, `extract_to`, `pkg`, `git`) go
 > _inside_.
 
-## Case 10 — Platform conditions (`when`), multi-dimension gating
+### Platform conditions (`when`), multi-dimension gating
 
 A method's `when` clause can specify **multiple platform dimensions**. The
 engine evaluates all non-empty fields against the detected system facts:
@@ -181,37 +233,7 @@ engine evaluates all non-empty fields against the detected system facts:
 > **Tip:** run `depengine why <tool>` to see which method applies on your
 > current machine and why the others were skipped.
 
-## Case 11 — `true` shorthand and ecosystem buckets
-
-When the package name equals the tool name (~80% of Python/Node cases), use
-`true` instead of repeating it. Buckets expand to every method in an
-ecosystem at once.
-
-| Bucket | Expansion |
-|--------|-----------|
-| `python = true` | `{ pip = true, pipx = true, uv = true }` |
-| `node = true` | `{ npm = true, pnpm = true, bun = true }` |
-
-```toml
-ruff     = { python = true }   # ≡ { pip = "ruff", pipx = "ruff", uv = "ruff" }
-prettier = { node = true }     # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
-```
-
-> Explicit methods are **not** overridden by the bucket:
-> `organize = { pip = "organize-tool", python = true }` keeps `pip` as
-> `"organize-tool"` and only expands `pipx`/`uv`.
->
-> Buckets also accept a package name string or a config map:
->
-> ```toml
-> organize = { python = "organize-tool" }
-> # ≡ { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }
-> ```
->
-> `python = false` does not expand — the engine treats `python` as an
-> unknown method and errors on `validate`. `all = true` does not exist —
-> too imprecise, risks installing the wrong package from the wrong
-> ecosystem.
+---
 
 ## Per-tool method control
 
