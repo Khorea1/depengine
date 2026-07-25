@@ -216,3 +216,77 @@ func TestGPGVerifyAllExistingPass(t *testing.T) {
 		t.Fatalf("VerifyChecksum should pass: %v", err)
 	}
 }
+
+// TestGPGVerifyWrongSigner verifies that GPGVerify rejects a signature made
+// by key B when key A was expected, even when both keys are present in the
+// keyring. This test proves the signer-confusion vulnerability is fixed.
+func TestGPGVerifyWrongSigner(t *testing.T) {
+	skipIfNoGPG(t)
+	setupGPGDir(t)
+
+	// Create checksum file.
+	checksumContent := []byte("abc123  test.tar.gz\n")
+	checksumFile := filepath.Join(t.TempDir(), "checksum.sha256")
+	if err := os.WriteFile(checksumFile, checksumContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Generate signer B and sign with it (B is the only key at signing time).
+	genGPGKey(t, "signer-b@example.com")
+	sigFile := signFile(t, checksumFile) // signs with B (the default key)
+
+	// Export B's key.
+	exportB := exec.Command("gpg", "--armor", "--export", "signer-b@example.com")
+	keyDataB, err := exportB.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyFileB := filepath.Join(t.TempDir(), "pubkey-b.asc")
+	if err := os.WriteFile(keyFileB, keyDataB, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Generate signer A.
+	genGPGKey(t, "signer-a@example.com")
+	exportA := exec.Command("gpg", "--armor", "--export", "signer-a@example.com")
+	keyDataA, err := exportA.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyFileA := filepath.Join(t.TempDir(), "pubkey-a.asc")
+	if err := os.WriteFile(keyFileA, keyDataA, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a combined key file: A's public key first, then B's.
+	// extractFingerprintFromKeyFile (called by importSigningKey via --show-key)
+	// will return A's fingerprint (the first fpr: line).
+	// But the checksum was signed by B. The identity check must catch this.
+	combinedKeyFile := filepath.Join(t.TempDir(), "pubkey-combined.asc")
+	combined := append([]byte(nil), keyDataA...)
+	combined = append(combined, keyDataB...)
+	if err := os.WriteFile(combinedKeyFile, combined, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reset GNUPGHOME to a clean dir — no keys pre-imported.
+	cleanDir := t.TempDir()
+	if err := os.Chmod(cleanDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GNUPGHOME", cleanDir)
+
+	// Call GPGVerify with the combined key file as signingKey.
+	// Before the fix: imports both keys into the shared keyring, verifies B's sig using B's key — passes (BUG).
+	// After the fix:  extracts A's fingerprint as expected, imports both into isolated homedir,
+	//                 verifies B's sig using B's key — passes crypto check (exit 0),
+	//                 then identity comparison fails: expected A, got B.
+	rn := &run.OSExecRunner{}
+	err = GPGVerify(context.Background(), rn, checksumFile, sigFile, "file://"+combinedKeyFile)
+	if err == nil {
+		t.Fatal("GPGVerify should fail: signed by key B, expected key A")
+	}
+	if !strings.Contains(err.Error(), "expected") {
+		t.Fatalf("error should mention fingerprint mismatch, got: %v", err)
+	}
+}
