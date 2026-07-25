@@ -74,17 +74,23 @@ Two files work together:
 | `schema.toml` | Project root | **What** to install — the shared dependency list | Yes, commit to git |
 | `manifest.toml` | `~/.config/depengine/manifest.toml` | **How** to install — personal package name overrides | No, per-machine |
 
-**Merge behavior** (when both define the same tool):
 
-The engine merges layers by **whole-tool overwrite** (not field-by-field):
+The engine merges layers **field-by-field** using per-field strategies (not whole-tool overwrite):
 
-1. **Whole-tool overwrite**: The schema (most specific layer) replaces the manifest's *entire* tool entry for a given tool name — methods, pkg settings, everything. Nothing is merged field-by-field.
-2. **Tools only in manifest**: ARE included — the manifest can add tools not in the schema.
-3. **Tools only in schema**: Included as always.
-4. **Defaults**: Always from the schema. Manifest `[defaults]` is ignored.
-5. **Fields NOT allowed in manifest**: `pre_install`, `postinstall`/`post_install`, `requires`, `tags` are rejected by `ValidateManifestLayer`.
+| Strategy | Fields | Behavior |
+|----------|--------|---------|
+| `MergeLocalOnly` | `requires`, `pre_install`, `postinstall`/`post_install`, `tags`, `method_order`, `method_prefer`, `method_only` | Schema values are authoritative; manifest values for these fields are **rejected** by `ValidateManifestLayer`. |
+| `MergeOverwrite` | `name`, `is_simple`, `ecosystem` | Most specific layer (schema) wins entirely. |
+| `MergeMethods` | `methods` | Methods are merged by Kind: the schema overrides manifest methods of the same kind (Config keys merge per `MethodConfigFieldStrategy`), but methods unique to each layer are preserved. |
+| `MergeUnionSlice` | `tags` | Union without duplicates — tags from both layers are combined. |
+| `MergeMapMerge` | `pkg_overrides` (inside method Config) | Merged per key; the schema's value wins on conflict. |
+| — | `method_order` (defaults-level) | Most specific layer's entire list wins (the merge uses the full `Defaults` struct, not per-field). |
 
-> Most users never need a manifest. Start with just `schema.toml`.
+**Key rules:**
+- Tools only in manifest: ARE included (manifest can add tools not in the schema).
+- Tools only in schema: included as always.
+- Defaults always from the schema; manifest `[defaults]` is ignored.
+- Fields NOT allowed in manifest: `pre_install`, `postinstall`/`post_install`, `requires`, `tags` are rejected by `ValidateManifestLayer`.
 
 ---
 ## Schema Structure
@@ -250,6 +256,7 @@ These live inside each method block (`[tools.NAME.method]` or in their inline ta
 | `branch` | `git` | Git branch or tag to clone. |
 | `depth` | `git` | Clone depth — `"1"` for shallow (default), `"0"` for full history. |
 | `binary` | `git` | Binary name for check/remove. |
+| `sudo_required` | `http`, `git` | Boolean (default `true` for `http`). When `true`, extraction/installation runs with `sudo`. Set to `false` when extracting to a user-writable path (e.g. `~/.local/bin`). Default is `true` for `http` because the default `extract_to` is `/usr/local/bin`. |
 
 ---
 
@@ -264,12 +271,21 @@ current system, the engine skips that method and tries the next one in
 pkg  = "my-tool"
 when = { distro_family = ["arch"] }
 ```
+| Key | Type | Description |
+|-----|------|-------------|
+| `distro_family` | `[string]` | Resolved distro clan. Only attempt this method on the listed families. See table below. |
+| `distro_id` | `[string]` | Exact distro ID (e.g. `"ubuntu"`, `"fedora"`). Case-insensitive match. |
+| `arch` | `[string]` | Target hardware architecture (e.g. `"x86_64"`, `"aarch64"`). |
+| `os` | `[string]` | Operating system (e.g. `"linux"`, `"darwin"`, `"windows"`). |
+| `kernel` | `[string]` | Kernel name (e.g. `"linux"`, `"darwin"`). |
+| `libc` | `[string]` | C standard library (prefix match — `"glibc"` matches `"glibc_2.35"`). Values: `"glibc"`, `"musl"`. |
+| `init_system` | `[string]` | Init system (e.g. `"systemd"`, `"openrc"`). |
+| `is_wsl` | `bool` | Whether running under WSL (Windows Subsystem for Linux). |
+| `is_container` | `bool` | Whether running inside a container. |
 
-| Key | Value | Meaning |
-|-----|-------|---------|
-| `distro_family` | `[string]` | Only attempt this method on the listed distro families. |
+All non-zero fields must match (AND semantics). A `when` with no non-zero fields matches everything.
 
-Resolved families (15 clans): `debian`, `mint`, `arch`, `fedora`, `suse`,
+Resolved `distro_family` values (15 clans): `debian`, `mint`, `arch`, `fedora`, `suse`,
 `alpine`, `void`, `gentoo`, `macos`, `termux`, `freebsd`, `openbsd`,
 `netbsd`, `windows`, `opkg`.
 
@@ -362,7 +378,7 @@ postinstall = "echo installed on {os}/{arch}"
 | **Native** | `native` (auto-detect apt/pacman/dnf/brew/...) + per-manager aliases |
 | **Language** | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `pnpm`, `bun`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
 | **Desktop** | `flatpak`, `snap`, `vscode`, `vscodium`, `cask` (macOS), `mas` (Mac App Store) |
-| **Windows** | `scoop`, `choco` |
+| **Windows** | `winget`, `scoop`, `choco` |
 | **Specialized** | `sdkman`, `steamcmd`, `pacstall`, `aur`, `conda`, `asdf` |
 | **Other** | `git` (clone + build), `http` (download + extract + checksum) |
 Auto-detects the distro's package manager (15 distros):
@@ -731,3 +747,4 @@ nvim = { pacman = "neovim" }
 | `DEPENGINE_TRACE_ID` | Trace ID propagated to subprocesses for correlated logging |
 | `DEPENGINE_LOG_JSON` | Set to `1` for JSON logger output |
 | `XDG_STATE_HOME` | Base directory for state file (`$XDG_STATE_HOME/depengine/state.json`, default `~/.local/state/depengine/state.json`) |
+| `DEPENGINE_MANIFEST` | Path to the personal manifest, overriding XDG discovery (`~/.config/depengine/manifest.toml`) |

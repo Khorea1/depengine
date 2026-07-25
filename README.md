@@ -158,6 +158,7 @@ Creates a new `schema.toml` (or a custom path). Fails if the file already exists
 |------|---------|-------------|
 | `--schema <path>` | `schema.toml` | Path to write the schema file |
 | `--add <tools>` | — | Comma-separated tool names to pre-populate |
+| `--interactive` | `false` | Interactive wizard — prompts for tools, methods, and options step by step |
 
 ### `depengine install [flags]`
 

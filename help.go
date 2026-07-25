@@ -22,7 +22,7 @@ func printCommandHelp(name string) {
 		desc = "Install tools from schema.toml"
 		fs.String("schema", "", "path to schema (auto-detected)")
 		fs.Bool("dry-run", false, "show what would be installed")
-		fs.Bool("verbose", false, "detailed output per tool")
+		fs.Bool("verbose", false, "deprecated — output is now verbose by default; use --quiet for summary-only")
 		fs.Bool("json", false, "JSON output")
 		fs.String("only", "", "install a single tool")
 		fs.String("skip", "", "skip comma-separated tools")
@@ -92,6 +92,7 @@ func printCommandHelp(name string) {
 	case "why":
 		desc = "Explain how a tool would be installed"
 		fs.Bool("json", false, "JSON output")
+		fs.Bool("fields", false, "show field-level provenance from schema/manifest merge")
 	case "sbom":
 		desc = "Export SBOM (CycloneDX or SPDX)"
 		fs.String("format", "cyclonedx", "output format: cyclonedx or spdx")

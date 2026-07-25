@@ -198,9 +198,9 @@ type MethodCandidate struct {
 	Err    error
 }
 
-// Condition is the parsed form of `when = { ... }`. Today only
-// distro_family is honored; the struct is exported so future fields
-// (arch, libc, ...) can be added without changing call sites.
+// Condition is the parsed form of `when = { ... }`. All fields (distro_family,
+// distro_id, arch, os, kernel, libc, init_system, is_wsl, is_container) are
+// honored by Match().
 type Condition struct {
 	DistroFamily []string
 	DistroID     []string
