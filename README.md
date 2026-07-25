@@ -121,31 +121,42 @@ depengine install                    # same tools, same versions
 
 ---
 
-## `schema.toml` vs `manifest.toml` — two files, two jobs
+## `schema.toml` vs `manifest.toml` — two layers, one merged config
 
-Most projects only ever need `schema.toml`. The second file exists for one
-specific situation: when a package's name differs on your machine in a way
-that isn't worth putting in the shared, version-controlled schema.
+depengine merges two layers per field: the **project schema** and your
+**personal manifest**. Neither replaces the other — they complement.
 
-| File | Lives in | Answers | Shared with your team? |
-|------|----------|---------|--------------------------|
-| `schema.toml` | Project root | **What** to install | Yes — commit it |
-| `manifest.toml` | `~/.config/depengine/manifest.toml` | **How** to install, personally | No — stays on your machine |
+| File | Lives in | Purpose | Shared? |
+|------|----------|---------|---------|
+| `schema.toml` | Project root | **What** to install — the project's dependency list | Yes, commit it |
+| `manifest.toml` | `~/.config/depengine/manifest.toml` | **Your personal install catalog** — how you install things, plus personal defaults | No, stays on your machine |
+
+The manifest does two jobs:
+
+1. **Reusable knowledge base** — your accumulated recipes for how to install
+   each tool (cargo vs git vs http, package name per distro, custom build
+   steps). Build it once, carry it across every project — no need to repeat
+   complex configs in every schema.toml.
+2. **Machine-specific overrides** — when a package's name differs on your
+   distro, or you prefer a different installation method than what the
+   project's schema declares.
 
 ```sh
-# Only if you need it:
 cp manifest.example.toml ~/.config/depengine/manifest.toml
-# edit method overrides for your machine, e.g. pkg_overrides.pacman = "..."
+# then edit: add your tools, set per-distro package names, define custom methods
 ```
 
-Fields overlap field-by-field where it makes sense (e.g. per-manager package
-name overrides), and the schema always wins when both define the same
-top-level field. Fields that could inject arbitrary intent into a shared
-project (`pre_install`, `post_install`, `requires`, `tags`) are rejected if
+When you run `depengine install` or `depengine validate`, your manifest
+merges with the project's schema. Tools only in your manifest are rejected by
+default (to prevent accidentally injecting personal tools into a shared
+project) — set `[manifest] allow_new_tools = true` in your manifest to allow
+it. Fields that exist in both layers merge field-by-field (e.g. per-manager
+package names), and the schema always wins on conflict. Fields that could
+inject arbitrary intent into a shared project (`pre_install`, `post_install`,
+`requires`, `method_order`, `method_prefer`, `method_only`) are rejected if
 you try to set them in the manifest — see
 [the merge rules in the schema reference](docs/schema-reference.md#manifest-merge-rules)
 for the full breakdown.
-
 ---
 
 ## CLI reference

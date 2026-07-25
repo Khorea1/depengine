@@ -1,23 +1,26 @@
 # ==============================================================================
-# manifest.toml — PERSONAL INSTALLATION KNOWLEDGE
+# manifest.toml — PERSONAL INSTALL CATALOG
 # ==============================================================================
-# This file lives at $XDG_CONFIG_HOME/depengine/manifest.toml and complements
-# the project's schema.toml with per-machine knowledge of "how to install"
-# each package on your system.
+# This file lives at $XDG_CONFIG_HOME/depengine/manifest.toml and merges with
+# any project's schema.toml. It serves two purposes:
 #
-# RULE: the schema says WHAT you want (intent); the manifest says HOW to install
-# (environment-specific knowledge). When both define the same tool, the schema
-# COMPLETELY replaces the manifest entry (full tool replacement, not field-by-field).
+#   1. Reusable knowledge base — your accumulated recipes for how to install
+#      each tool (cargo vs git vs http, package name per distro, custom builds).
+#      Build it once, carry it across every project.
+#   2. Machine-specific overrides — when a package name differs on your distro
+#      or you prefer a different method than what the project declares.
 #
-# USAGE: copy to ~/.config/depengine/manifest.toml and edit methods for your
-# environment. Remove or comment out lines for tools you don't use.
+# Merge behavior: fields merge per-type (methods merge by kind, tags union,
+# most fields schema-wins). See docs/ for the full breakdown.
+#
+# USAGE: copy to ~/.config/depengine/manifest.toml and edit.
 # ==============================================================================
 #
 # ⚠ NOTE: This file is an ILLUSTRATIVE EXAMPLE. Several tools below include
-# fields (tags, pre_install, postinstall, requires) that the validator REJECTS
-# in a real manifest. When copying to ~/.config/depengine/manifest.toml,
-# remove or comment out these fields — they only work in the project's schema.toml.
-# See docs/ for details.
+# fields (pre_install, postinstall, requires, method_order) that the validator
+# REJECTS in a real manifest — they only work in the project's schema.toml.
+# When copying to ~/.config/depengine/manifest.toml, remove or comment out
+# these fields. See docs/ for details.
 
 # ==============================================================================
 # [packages] — installation knowledge

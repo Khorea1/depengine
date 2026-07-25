@@ -236,8 +236,8 @@ legacy = { method_only = ["aur", "git"], aur = { pkg = "legacy" }, git = { url =
 
 ## Manifest merge rules
 
-*(See [the README](../README.md#schematoml-vs-manifesttoml--two-files-two-jobs)
-for when you'd actually want a manifest.)*
+*(See [the README](../README.md#schematoml-vs-manifesttoml--two-layers-one-merged-config)
+for a high-level overview of the two layers.)*
 
 `schema.toml` and `~/.config/depengine/manifest.toml` merge per field,
 according to a declared strategy per field:
@@ -252,12 +252,11 @@ according to a declared strategy per field:
    `method_order`, `method_prefer`, `method_only`): the manifest is not
    allowed to set these at all — `depengine validate` rejects it with a
    clear error if it tries.
-5. **Tools only in the manifest** are included by default. If you don't
-   want your personal manifest silently adding tools your team doesn't
-   have in the shared schema, this is intentional and opt-in — set
-   `[manifest] allow_new_tools = true` to allow it explicitly; otherwise
-   `depengine validate`/`install` errors if the manifest declares a tool
-   the schema doesn't know about.
+5. **Tools only in the manifest** are rejected by default — your personal
+   manifest doesn't silently add tools to a project you're working on.
+   Set `[manifest] allow_new_tools = true` in your manifest to allow it
+   explicitly. Without it, `depengine validate`/`install` errors when a
+   manifest-only tool is found.
 
 Run `depengine why <tool> --fields` to see exactly which layer contributed
 each field for a given tool.

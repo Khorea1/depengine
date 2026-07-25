@@ -67,19 +67,19 @@ depengine diff --other other.json   # compare current state with other.json
 
 ## Schema vs Manifest
 
-Two files work together:
+Two layers merge per field:
 
 | File | Location | Purpose | Shared? |
 |------|----------|---------|---------|
 | `schema.toml` | Project root | **What** to install — the shared dependency list | Yes, commit to git |
-| `manifest.toml` | `~/.config/depengine/manifest.toml` | **How** to install — personal package name overrides | No, per-machine |
+| `manifest.toml` | `~/.config/depengine/manifest.toml` | **Your personal install catalog** + machine-specific overrides | No, per-machine |
 
 
 The engine merges layers **field-by-field** using per-field strategies (not whole-tool overwrite):
 
 | Strategy | Fields | Behavior |
 |----------|--------|---------|
-| `MergeLocalOnly` | `requires`, `pre_install`, `postinstall`/`post_install`, `tags`, `method_order`, `method_prefer`, `method_only` | Schema values are authoritative; manifest values for these fields are **rejected** by `ValidateManifestLayer`. |
+| `MergeLocalOnly` | `requires`, `pre_install`, `postinstall`/`post_install`, `method_order`, `method_prefer`, `method_only` | Schema values are authoritative; manifest values for these fields are **rejected** by `ValidateManifestLayer`. |
 | `MergeOverwrite` | `name`, `is_simple`, `ecosystem` | Most specific layer (schema) wins entirely. |
 | `MergeMethods` | `methods` | Methods are merged by Kind: the schema overrides manifest methods of the same kind (Config keys merge per `MethodConfigFieldStrategy`), but methods unique to each layer are preserved. |
 | `MergeUnionSlice` | `tags` | Union without duplicates — tags from both layers are combined. |
@@ -87,11 +87,11 @@ The engine merges layers **field-by-field** using per-field strategies (not whol
 | — | `method_order` (defaults-level) | Most specific layer's entire list wins (the merge uses the full `Defaults` struct, not per-field). |
 
 **Key rules:**
-- Tools only in manifest: ARE included (manifest can add tools not in the schema).
+- Tools only in manifest: **rejected by default** (set `[manifest] allow_new_tools = true` to allow).
 - Tools only in schema: included as always.
 - Defaults always from the schema; manifest `[defaults]` is ignored.
-- Fields NOT allowed in manifest: `pre_install`, `postinstall`/`post_install`, `requires`, `tags` are rejected by `ValidateManifestLayer`.
-
+- Tags from both layers are merged (tags are allowed in the manifest).
+- Fields NOT allowed in manifest: `pre_install`, `postinstall`/`post_install`, `requires`, `method_order`, `method_prefer`, `method_only`.
 ---
 ## Schema Structure
 
