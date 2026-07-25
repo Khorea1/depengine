@@ -15,7 +15,7 @@ const initTemplate = `# %[1]s — depengine project configuration
 # See: https://github.com/Khorea1/depengine
 #
 # Commit this file so everyone on the project gets the same tools:
-#   git add %[1]s schema.lock && git commit
+#   git add %[1]s depengine.lock && git commit
 # Personal installation knowledge goes in ~/.config/depengine/manifest.toml.
 
 [defaults]
@@ -220,7 +220,7 @@ func runInteractiveInit(path string) {
 # See: https://github.com/Khorea1/depengine
 #
 # Commit this file so everyone on the project gets the same tools:
-#   git add %s schema.lock && git commit
+#   git add %s depengine.lock && git commit
 # Personal installation knowledge goes in ~/.config/depengine/manifest.toml.
 
 [defaults]

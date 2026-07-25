@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"depengine/pkg/i18n"
+	"github.com/Khorea1/depengine/pkg/i18n"
 )
 
 func printUsage() {
@@ -25,7 +25,7 @@ Uso:
 Comandos:
   init      Inicializar schema.toml para um projeto
   install   Instalar ferramentas do schema.toml
-  update    Resolver {latest} e travar versões no schema.lock
+  update    Resolver {latest} e travar versões no depengine.lock
   validate  Validar schema.toml e ambiente
   check     Verificar se ferramentas já estão instaladas (alias para status --json)
   status    Mostrar estado das ferramentas em relação ao schema
@@ -55,7 +55,7 @@ Usage:
 Commands:
   init      Initialize a schema.toml for a new project
   install   Install tools from schema.toml
-  update    Resolve {latest} and pin versions in schema.lock
+  update    Resolve {latest} and pin versions in depengine.lock
   validate  Validate schema.toml and environment
   check     Check if tools are already installed (alias for status --json)
   status    Show tool status vs schema

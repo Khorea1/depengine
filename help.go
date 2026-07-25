@@ -72,7 +72,7 @@ func printCommandHelp(name string) {
 		fs.Bool("list", false, "list available snapshots")
 		fs.String("snapshot", "", "revert to specific snapshot")
 	case "update":
-		desc = "Resolve {latest} and pin versions in schema.lock"
+		desc = "Resolve {latest} and pin versions in depengine.lock"
 		fs.String("schema", "", "path to schema (auto-detected)")
 		fs.String("lock", "", "path to lockfile")
 		fs.String("profile", "", "filter tools by tag")
