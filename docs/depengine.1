@@ -1,340 +1,285 @@
-.TH DEPENGINE 1 "2026-07-10" "depengine" "Comandos do Usuário"
-.SH NOME
-depengine \- motor distro-agnóstico de instalação de dependências guiado por schema.toml
-.SH SINOPSE
+.TH DEPENGINE 1 "2026-07-10" "depengine" "Tools"
+.SH NAME
+depengine \- distro-agnostic dependency installation engine guided by schema.toml
+.SH SYNOPSIS
 .B depengine
-.I comando
+.I command
 .RI [ flags ]
-.RI [ argumentos ]
-.SH DESCRIÇÃO
+.RI [ arguments ]
+.SH DESCRIPTION
 .PP
-depengine é um instalador de dependências em binário único escrito em Go.
-Você descreve \fIo que\fR instalar em um
+depengine is a single-binary dependency installer written in Go.
+You describe \fIwhat\fR to install in a declarative
 .BR schema.toml ;
-o motor decide \fIcomo\fR instalar cada ferramenta tentando métodos em
-ordem (nativo, cargo, go, pip, git, http, ...) até um funcionar,
-respeitando condições por distro, dependências entre ferramentas e
-hooks pós-instalação. O binário é estático, sem dependências de runtime
-na máquina alvo.
-.PP
-Checksums resolvidos via \fB:auto\fR são travados em \fBdepengine.lock\fR
-para reprodutibilidade. Algoritmos suportados: SHA-256, SHA-512, SHA-1, MD5.
-Verificação de assinatura GPG é suportada via \fBsignature_url\fR
-e \fBsigning_key\fR.
-.SH COMANDOS
+the engine decides \fIhow\fR to install each tool by trying methods in
+order (native, cargo, go, pip, git, http, ...) until one succeeds,
+respecting per-distro conditions, inter-tool dependencies, and
+post-installation hooks. The binary is static with no runtime
+dependencies on the target machine.
+.SH COMMANDS
 .TP
 .B install " [flags]"
-Instala todas as ferramentas do schema, respeitando
+Installs all tools from the schema, respecting
 .BR method_order ,
 .BR when ,
 .BR requires ,
-e ordenação topológica. Veja OPÇÕES abaixo para flags.
-.TP
-.B init " [flags]"
-Inicializa um novo projeto depengine criando um
-.B depengine.toml
-ou
-.B schema.toml
-minimalista no diretório atual. Use
-.B \-\-schema
-para especificar um caminho personalizado.
+and topological ordering. See OPTIONS below for flags.
 .TP
 .B validate " [flags]"
-Valida a estrutura do schema e opcionalmente o ambiente do sistema.
-Reporta métodos desconhecidos, placeholders desconhecidos e ferramentas ausentes.
+Validates the schema structure and optionally the system environment.
+Reports unknown methods, unknown placeholders, and missing tools.
+.TP
+.B init " [flags]"
+Initializes a new depengine project by creating a minimal
+.B depengine.toml
+or
+.B schema.toml
+scaffold in the current directory. Use
+.B \-\-schema
+to specify a custom path.
 .TP
 .B check " <tool>"
-Verifica se uma ferramenta específica está instalada na máquina. Sai com 0
-se instalada, 1 se não encontrada.
+Checks whether a specific tool is installed on the machine. Exits 0
+if installed, 1 if not found.
 .TP
 .B status " [flags]"
-Mostra o status de instalação das ferramentas comparando o arquivo de estado
-com o schema. Reporta ferramentas instaladas, ausentes, órfãs e
-desatualizadas.
+Shows the installation status of tools by comparing the state file
+against the schema. Reports installed, missing, orphaned, and
+outdated tools.
 .TP
 .B remove " <tool> | --all"
-Remove uma ferramenta usando o adapter que a instalou originalmente. Use
+Removes a tool using the adapter that originally installed it. Use
 .B --all
-para remover todas as ferramentas rastreadas.
+to remove every tracked tool.
 .TP
 .B forget " <tool>"
-Remove uma ferramenta do arquivo de estado sem tocar no sistema. Útil
-quando uma ferramenta foi removida manualmente ou o estado está dessincronizado.
+Removes a tool from the state file without touching the system. Useful
+when a tool was removed manually or the state is out of sync.
 .TP
 .B version
-Imprime a versão e uma breve descrição.
+Prints the version and a short description.
 .TP
 .B completion " bash|zsh|fish"
-Imprime o script de completação para o shell informado. Adicione ao
-arquivo de configuração do seu shell (ex.:
+Prints the shell completion script for the given shell. Source the
+output in your shell rc file (e.g.
 .BR "source <(depengine completion bash)" )
-para ativar a completação por TAB.
+to enable tab completion.
 .TP
 .B undo " [flags]"
-Reverte a última
+Reverts the last
 .B install
-restaurando o snapshot de estado anterior e removendo ferramentas que
-foram adicionadas desde aquele snapshot.
+by restoring the previous state snapshot and removing tools that were
+added since that snapshot.
 .TP
 .B sbom " [flags]"
-Exporta o estado atual do depengine como um Software Bill of Materials (SBOM)
-no formato CycloneDX 1.5 ou SPDX 2.3 JSON. Cada ferramenta instalada vira um
-componente/pacote no BOM. Use
+Exports the current depengine state as a Software Bill of Materials (SBOM)
+in CycloneDX 1.5 or SPDX 2.3 JSON format. Each installed tool becomes a
+component/package in the BOM. Use
 .B \-\-format spdx
-para alternar para saída SPDX. Útil para integração com scanners de vulnerabilidade
-como grype ou trivy.
+to switch to SPDX output. Useful for integration with vulnerability scanners
+such as grype or trivy.
 .TP
 .B update " [flags]"
-Atualiza o \fBdepengine.lock\fR resolvendo placeholders \fB{latest}\fR (refs git,
-URLs http) via GitHub API. Gera um novo lockfile com as versões resolvidas.
-Use
-.B \-\-frozen\-lockfile
-para abortar se o lockfile não existir.
+Resolves {latest} placeholders (git refs, http URLs) via the GitHub API and writes the pinned versions to \fBdepengine.lock\fR. Use \fB\-\-frozen\-lockfile\fR to abort if the lockfile does not exist.
 .TP
 .B why " <tool>"
-Explica como uma ferramenta seria instalada: para cada método, reporta o
+Explains how a tool would be installed: for each method, reports the
 status (\fBalready_installed\fR, \fBwould_install\fR,
-\fBskip_unavailable\fR, \fBskip_when\fR). Suporta \fB--json\fR e
-\fB--format\fR para consumo programático.
+\fBskip_unavailable\fR, \fBskip_when\fR). Supports \fB--json\fR for
+programmatic consumption.
+.TP
+.B diff " [flags] [file1] [file2]"
+Compares depengine state files between machines or arbitrary paths.
+If no files are given, compares the current state with the file specified by
+.BR \-\-other .
+If one file is given, compares the current state with that file.
+If two files are given, compares the two files directly.
 .TP
 .B graph " [flags]"
-Gera o grafo de dependências em um de três formatos: Mermaid (fluxograma),
-DOT (Graphviz) ou texto (grupos por nível). Use
+Outputs the dependency graph in one of three formats: Mermaid (flowchart),
+DOT (Graphviz), or text (level groups). Use
 .B \-\-only
-para focar em uma ferramenta específica e suas dependências transitivas.
+to focus on a single tool and its transitive dependencies.
+.SH OPTIONS
+.SS "install flags"
 .TP
-.B diff " [flags] [arquivo1] [arquivo2]"
-Compara arquivos de estado do depengine entre máquinas ou caminhos arbitrários.
-Se nenhum arquivo for informado, compara o estado atual com o arquivo especificado por
-.BR \-\-other .
-Se um arquivo for informado, compara o estado atual com aquele arquivo.
-Se dois arquivos forem informados, compara os dois arquivos diretamente.
-.SH OPÇÕES
-.SS "flags do install"
-.TP
-.BR \-\-schema " <caminho>"
-Caminho para o arquivo de schema. Padrão: \fBschema.toml\fR ou \fBdepengine.toml\fR.
+.BR \-\-schema " <path>"
+Path to the schema file. Default: \fBschema.toml\fR.
 .TP
 .BR \-\-dry\-run
-Mostra o que seria instalado sem executar nada.
+Show what would be installed without executing anything.
 .TP
 .BR \-\-verbose " | \fB\-v\fR"
-Saída detalhada por ferramenta.
+Detailed per-tool output.
 .TP
 .BR \-\-json
-Emite saída JSON para consumo programático.
+Emit JSON output for programmatic consumption.
 .TP
 .BR \-\-only " <tool>"
-Instala apenas a ferramenta especificada.
+Install only the specified tool.
 .TP
 .BR \-\-skip " <tools>"
-Pula ferramentas específicas (lista separada por vírgulas).
+Skip specific tools (comma-separated list).
 .TP
 .BR \-\-profile " <tag>"
-Instala apenas ferramentas com a tag informada ou sem tags (ex.: \fB--profile=desktop\fR).
-Útil para atingir diferentes perfis de máquina a partir de um único schema.
+Only install tools that have the given tag or no tags (e.g. \fB--profile=desktop\fR).
+Useful for targeting different machine profiles from a single schema file.
 .TP
-.BR \-\-sort\-by " <campo>"
-Ordena saída por: \fBname\fR, \fBstatus\fR ou \fBmethod\fR.
+.BR \-\-sort\-by " <field>"
+Sort output by: \fBname\fR, \fBstatus\fR, or \fBmethod\fR.
 .TP
-.BR \-\-log\-level " <nível>"
-Nível de log: \fBdebug\fR, \fBinfo\fR, \fBwarn\fR ou \fBerror\fR.
+.BR \-\-log\-level " <level>"
+Log level: \fBdebug\fR, \fBinfo\fR, \fBwarn\fR, or \fBerror\fR.
 .TP
 .BR \-\-diagnose
-Modo diagnóstico: implica \fB--dry-run\fR, \fB--verbose\fR e nível de log
-\fBdebug\fR.
+Diagnostic mode: implies \fB--dry-run\fR, \fB--verbose\fR, and
+\fBdebug\fR log level.
 .TP
 .BR \-\-jobs " <n>"
-Máximo de instalações simultâneas dentro de um nível topológico. Padrão: 1
-(sequencial).
-.IP
-Aviso: Executar múltiplos gerenciadores de pacotes nativos concorrentemente pode
-causar contenção de lock ou corrupção. Prefira \fB--jobs=1\fR ao instalar
-muitas ferramentas nativas.
+Maximum concurrent installations within a topological level. Default: 1
+(sequential).
 .TP
 .BR \-\-allow-arbitrary-code
-Suprime avisos de segurança para scripts de build (execução de código arbitrário).
+Suppress security warnings for build scripts (arbitrary code execution).
+.SS "validate flags"
 .TP
-.BR \-\-manifest " <caminho>"
-Caminho para o manifest pessoal (padrão: \fB$XDG_CONFIG_HOME/depengine/manifest.toml\fR).
-.TP
-.BR \-\-no\-manifest
-Desabilita o manifest pessoal (em vez de auto-detecção).
-.SS "flags do validate"
-.TP
-.BR \-\-schema " <caminho>"
-Caminho para o arquivo de schema. Padrão: \fBschema.toml\fR ou \fBdepengine.toml\fR.
+.BR \-\-schema " <path>"
+Path to the schema file. Default: \fBschema.toml\fR.
 .TP
 .BR \-\-check\-env
-Verifica se as ferramentas necessárias estão disponíveis no ambiente (PATH).
+Check whether required tools are available in the environment (PATH).
 .TP
 .BR \-\-format " <fmt>"
-Formato de saída: \fBtext\fR (padrão) ou \fBjson\fR.
+Output format: \fBtext\fR (default) or \fBjson\fR.
 .TP
 .BR \-\-strict
-Trata avisos como erros (código de saída 1).
+Treat warnings as errors (exit code 1).
+.SS "status flags"
 .TP
-.BR \-\-manifest " <caminho>"
-Caminho para o manifest pessoal.
-.TP
-.BR \-\-no\-manifest
-Desabilita o manifest pessoal.
-.SS "flags do status"
-.TP
-.BR \-\-schema " <caminho>"
-Sobrescreve o caminho do schema (padrão: do arquivo de estado).
+.BR \-\-schema " <path>"
+Override the schema path (default: from state file).
 .TP
 .BR \-\-json
-Emite saída JSON.
+Emit JSON output.
 .TP
 .BR \-\-orphans
-Mostra apenas ferramentas órfãs (instaladas mas não no schema).
-.TP
-.BR \-\-manifest " <caminho>"
-Caminho para o manifest pessoal.
-.TP
-.BR \-\-no\-manifest
-Desabilita o manifest pessoal.
-.SS "flags do remove"
+Show only orphaned tools (installed but no longer in schema).
+.SS "remove flags"
 .TP
 .BR \-\-all
-Remove todas as ferramentas rastreadas.
+Remove all tracked tools.
 .TP
 .BR \-\-dry\-run
-Mostra o que seria removido sem executar.
+Show what would be removed without executing.
+.SS "graph flags"
 .TP
-.BR \-\-force
-Pula confirmação ao remover todas as ferramentas.
-.TP
-.BR \-\-only " <tool>"
-Remove apenas uma ferramenta específica (alternativa ao argumento posicional).
-.TP
-.BR \-\-schema " <caminho>"
-Caminho para o schema.toml (opcional, para validação).
-.SS "flags do graph"
-.TP
-.BR \-\-schema " <caminho>"
-Caminho para o arquivo de schema. Padrão: \fBschema.toml\fR ou \fBdepengine.toml\fR.
+.BR \-\-schema " <path>"
+Path to the schema file. Default: \fBschema.toml\fR.
 .TP
 .BR \-\-format " <fmt>"
-Formato de saída: \fBmermaid\fR, \fBdot\fR ou \fBtext\fR (padrão).
+Output format: \fBmermaid\fR, \fBdot\fR, or \fBtext\fR (default).
 .TP
 .BR \-\-only " <tool>"
-Mostra apenas o subgrafo da ferramenta especificada e suas dependências
-transitivas.
+Show only the subgraph for the specified tool and its transitive
+dependencies.
 .TP
 .BR \-\-skip " <tools>"
-Pula ferramentas específicas (lista separada por vírgulas).
+Skip specific tools (comma-separated list).
 .TP
 .BR \-\-profile " <tag>"
-Mostra apenas ferramentas com a tag informada (ex.: \fB--profile=server\fR).
-.TP
-.BR \-\-manifest " <caminho>"
-Caminho para o manifest pessoal.
-.TP
-.BR \-\-no\-manifest"
-Desabilita o manifest pessoal.
-.SS "flags do undo"
+Show only tools with the given tag (e.g. \fB--profile=server\fR).
+.SS "undo flags"
 .TP
 .BR \-\-list
-Lista snapshots disponíveis com timestamps e contagem de ferramentas.
+List available snapshots with timestamps and tool counts.
 .TP
-.BR \-\-snapshot " <caminho>"
-Restaura um snapshot específico em vez do mais recente.
-.SS "flags do sbom"
-.TP
-.BR \-\-format " <fmt>"
-Formato de saída: \fBcyclonedx\fR (padrão) ou \fBspdx\fR.
-.SS "flags do diff"
-.TP
-.BR \-\-json
-Emite diferenças como JSON.
-.TP
-.BR \-\-other " <caminho>"
-Caminho para o outro arquivo de estado a comparar (usado quando nenhum argumento é fornecido).
-.SS "flags do why"
-.TP
-.BR \-\-json
-Emite saída JSON para consumo programático.
+.BR \-\-snapshot " <path>"
+Restore a specific snapshot file instead of the most recent one.
+.SS "sbom flags"
 .TP
 .BR \-\-format " <fmt>"
-Formato de saída: \fBtext\fR (padrão) ou \fBjson\fR.
-.SS "flags do update"
+Output format: \fBcyclonedx\fR (default) or \fBspdx\fR.
+.SS "diff flags"
+.TP
+.BR \-\-json
+Output differences as JSON.
+.TP
+.BR \-\-other " <path>"
+Path to the other state file to compare (used when no arguments are provided).
+.SS "why flags"
+.TP
+.BR \-\-json
+Emit JSON output for programmatic consumption.
+.TP
+.BR \-\-format " <fmt>"
+Output format: \fBtext\fR (default) or \fBjson\fR.
+.SS "update flags"
 .TP
 .BR \-\-frozen\-lockfile
-Aborta se nenhum lockfile existir (previne resolver {latest} da rede).
+Abort if no lockfile exists (prevents resolving {latest} from network).
 .TP
 .BR \-\-dry\-run
-Mostra o que seria atualizado sem executar.
-.TP
-.BR \-\-schema " <caminho>"
-Caminho para o arquivo de schema. Padrão: \fBschema.toml\fR ou \fBdepengine.toml\fR.
-.TP
-.BR \-\-manifest " <caminho>"
-Caminho para o manifest pessoal.
-.TP
-.BR \-\-no\-manifest"
-Desabilita o manifest pessoal.
-.SS "flags do schema (tool-level method control)"
+Show what would be updated without executing.
+.SS "schema-level per-tool method control"
 .TP
 .B method_prefer
-Lista de métodos para tentar primeiro, antes dos defaults.
-Exemplo: \fBmethod_prefer = ["cargo"]\fR tenta cargo antes do nativo.
+List of methods to try first, before the defaults.
+Example: \fBmethod_prefer = ["cargo"]\fR tries cargo before native.
 .TP
 .B method_only
-Lista exaustiva de métodos — apenas estes são tentados, nesta ordem.
-Global method_order é ignorado para esta ferramenta.
+Exhaustive list of methods — only these are tried, in this order.
+Global method_order is ignored for this tool.
 .TP
 .B method_order
-Depreciado. Sinônimo de \fBmethod_prefer\fR.
+Deprecated. Synonym for \fBmethod_prefer\fR.
 
-.SS "condição when (filtro de plataforma por método)"
+.SS "when condition (platform gate by method)"
 .PP
-O campo \fBwhen\fR dentro de um método define em quais sistemas aquele método
-é aplicável. A condição é avaliada contra os fatos detectados pelo
-\fBdetect_os.sh\fR em runtime. Semântica: AND entre campos, OR dentro de
-cada lista. Campos vazios são ignorados. \fBwhen\fR ausente = sempre tenta.
+The \fBwhen\fR field inside a method declaration restricts which platforms
+that method applies to. The condition is evaluated against facts detected
+by \fBdetect_os.sh\fR at runtime. Semantics: AND across fields, OR within
+each list. Empty fields are ignored. Absent \fBwhen\fR = always try.
 .PP
-Campos disponíveis:
+Available fields:
 .TP
 .B distro_family
-Lista de famílias de distro (clãs resolvidos). Exemplo: \fB["arch"]\fR bate em
-Arch, EndeavourOS, Manjaro, CachyOS. Valores comuns: arch, debian, fedora,
+List of distro families (resolved clans). Example: \fB["arch"]\fR matches
+Arch, EndeavourOS, Manjaro, CachyOS. Common values: arch, debian, fedora,
 alpine, gentoo, void, suse, macos, freebsd, openbsd, netbsd, termux, android.
 .TP
 .B distro_id
-Lista de IDs exatos de distro (case-insensitive). Exemplo: \fB["ubuntu",
-"debian"]\fR bate exatamente nessas, não em Mint ou Pop!_OS.
+List of exact distro IDs (case-insensitive). Example: \fB["ubuntu",
+"debian"]\fR matches exactly those, not Mint or Pop!_OS.
 .TP
 .B arch
-Lista de arquiteturas (\fBuname -m\fR). Exemplo: \fB["x86_64", "aarch64"]\fR.
+List of architectures (\fBuname -m\fR). Example: \fB["x86_64", "aarch64"]\fR.
 .TP
 .B os
-Lista de sistemas operacionais (\fBuname -s\fR minúsculo). Exemplo:
+List of operating systems (lowercase \fBuname -s\fR). Example:
 \fB["linux"]\fR, \fB["darwin"]\fR, \fB["freebsd"]\fR.
 .TP
 .B kernel
-Lista de versões de kernel (\fBuname -r\fR). Correspondência exata
-(case-insensitive). Exemplo: \fB["6.7.0-arch", "6.8.0"]\fR.
+List of kernel versions (\fBuname -r\fR). Exact match (case-insensitive).
+Example: \fB["6.7.0-arch", "6.8.0"]\fR.
 .TP
 .B libc
-Lista de bibliotecas C. Usa correspondência por \fBprefixo\fR: \fB["glibc"]\fR
-bate em "glibc 2.35". Valores: glibc, musl, uclibc, freebsd-libc.
+List of C libraries. Uses \fBprefix\fR matching: \fB["glibc"]\fR matches
+"glibc 2.35". Values: glibc, musl, uclibc, freebsd-libc.
 .TP
 .B init_system
-Lista de sistemas de init. Valores: systemd, openrc, runit, sysvinit.
+List of init systems. Values: systemd, openrc, runit, sysvinit.
 .TP
 .B is_wsl
-Booleano de três estados: \fBtrue\fR (só WSL), \fBfalse\fR (só não-WSL),
-omitido (ignora). Detectado via /proc/version ou WSL_DISTRO_NAME.
+Three-state boolean: \fBtrue\fR (WSL only), \fBfalse\fR (non-WSL only),
+omitted (ignored). Detected via /proc/version or WSL_DISTRO_NAME.
 .TP
 .B is_container
-Booleano de três estados: \fBtrue\fR (só container), \fBfalse\fR (só
-não-container), omitido (ignora). Detectado via /.dockerenv, cgroup etc.
+Three-state boolean: \fBtrue\fR (container only), \fBfalse\fR (non-container
+only), omitted (ignored). Detected via /.dockerenv, cgroup, etc.
 .PP
-Exemplos:
+Examples:
 .EX
-# AUR só no Arch, HTTP nos demais
+# AUR only on Arch, HTTP elsewhere
 [tools.DepartureMono]
   [tools.DepartureMono.aur]
   pkg  = "otf-departure-mono-nerd"
@@ -343,7 +288,7 @@ Exemplos:
   [tools.DepartureMono.http]
   url = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/DepartureMono.zip"
 
-# Binário diferente por libc (glibc vs musl/Alpine)
+# Different binary per libc (glibc vs musl/Alpine)
 [tools.restic]
   [tools.restic.http]
   url = "https://github.com/restic/restic/releases/download/{latest}/restic_{latest}_linux_{arch}.bz2"
@@ -353,7 +298,7 @@ Exemplos:
   url = "https://github.com/restic/restic/releases/download/{latest}/restic_{latest}_linux_{arch}_musl.bz2"
   when = { arch = ["x86_64","aarch64"], os = ["linux"], libc = ["musl"] }
 
-# Pula nativo em container
+# Skip native in containers
 [tools.neovim]
   [tools.neovim.native]
   when = { is_container = false }
@@ -363,187 +308,175 @@ Exemplos:
   when = { is_container = true }
 .EE
 .PP
-Dica: use \fBdepengine why <ferramenta>\fR para ver por que um método
-foi pulado (\fBskip_when\fR) ou seria tentado.
+Tip: run \fBdepengine why <tool>\fR to see why a method was
+skipped (\fBskip_when\fR) or would be attempted.
 
-.SS "buckets de ecossistema (atalho python/node)"
+.SS "ecosystem buckets (python/node shorthand)"
 .PP
-Buckets expandem para todos os métodos daquele ecossistema de uma vez,
-evitando repetir o mesmo nome para \fBpip\fR, \fBpipx\fR e \fBuv\fR (python)
-ou \fBnpm\fR, \fBpnpm\fR e \fBbun\fR (node).
+Buckets expand to all methods in that ecosystem at once, avoiding repetition
+across \fBpip\fR, \fBpipx\fR and \fBuv\fR (python) or \fBnpm\fR, \fBpnpm\fR
+and \fBbun\fR (node).
 .TP
 .B python
-Expande para \fBpip\fR, \fBpipx\fR e \fBuv\fR.
+Expands to \fBpip\fR, \fBpipx\fR and \fBuv\fR.
 .TP
 .B node
-Expande para \fBnpm\fR, \fBpnpm\fR e \fBbun\fR.
+Expands to \fBnpm\fR, \fBpnpm\fR and \fBbun\fR.
 .PP
-O valor do bucket aceita três formatos:
+Bucket values accept three shapes:
 .br
-\fBtrue\fR \— cada método usa o nome da tool como \fBpkg\fR.
+\fBtrue\fR \— each method uses the tool name as \fBpkg\fR.
 .br
-\fB"string"\fR \— cada método recebe a string como \fBpkg\fR.
+\fB"string"\fR \— each method gets the string as \fBpkg\fR.
 .br
-\fB{ pkg = ..., when = ... }\fR \— cada método recebe um clone do mapa.
+\fB{ pkg = ..., when = ... }\fR \— each method gets a clone of the config map.
 .PP
-Exemplos:
+Examples:
 .EX
 ruff = { python = true }               # ≡ { pipx = "ruff", uv = "ruff" }
-organize = { python = "organize-tool" } # ≡ pip/pipx/uv com pkg="organize-tool"
+organize = { python = "organize-tool" } # ≡ pip/pipx/uv with pkg="organize-tool"
 prettier = { node = true }             # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
 .EE
 .PP
-Métodos explícitos não são sobrescritos pelo bucket:
-\fBorganize = { pip = "organize-tool", python = true }\fR mantém
-\fBpip = "organize-tool"\fR e expande apenas \fBpipx\fR/\fBuv\fR.
-Use \fBpython = false\fR para desabilitar a expansão.
+Explicit methods are NOT overridden by the bucket:
+\fBorganize = { pip = "organize-tool", python = true }\fR keeps
+\fBpip = "organize-tool"\fR and only expands \fBpipx\fR/\fBuv\fR.
+Use \fBpython = false\fR to disable expansion.
 
-.SH EXEMPLOS
-.SS "Build e validação"
+.SH EXAMPLES
+.SS "Build and validate"
 .EX
 go build -o depengine .
 ./depengine validate
 .EE
-.SS "Validar com checagem de ambiente e saída JSON"
+.SS "Validate with environment check and JSON output"
 .EX
 ./depengine validate --check-env --format=json
 .EE
-.SS "Instalar todas as ferramentas de um schema personalizado"
+.SS "Install all tools from a custom schema"
 .EX
 ./depengine install --schema my-tools.toml
 .EE
-.SS "Instalar uma única ferramenta em modo verboso"
+.SS "Install a single tool verbosely"
 .EX
 ./depengine install --only nvim --verbose
 .EE
-.SS "Dry run com saída ordenada"
-.EX
-./depengine install --dry-run --sort-by name
-.EE
-.SS "Diagnosticar: DEBUG + dry-run + verbose"
+.SS "Dry run with sorted output"
 .EX
 ./depengine install --diagnose
 .EE
-.SS "Instalar com profile (apenas desktop)"
+.SS "Install with profile (desktop-only)"
 .EX
 ./depengine install --profile=desktop
 .EE
-.SS "Verificar se uma ferramenta está instalada"
+.SS "Check if a tool is installed"
 .EX
 ./depengine check nvim
 .EE
-.SS "Mostrar status de instalação"
+.SS "Show installation status"
 .EX
 ./depengine status
 ./depengine status --json
 ./depengine status --orphans
 .EE
-.SS "Remover uma ferramenta"
+.SS "Remove a tool"
 .EX
 ./depengine remove bat
 ./depengine remove --all --dry-run
 .EE
-.SS "Ativar completação de shell"
+.SS "Enable shell completion"
 .EX
 # Bash
 source <(depengine completion bash)
 
 # Zsh
 source <(depengine completion zsh)
-.SS "Mostrar grafo de dependências"
+
+# Fish
+depengine completion fish | source
+.EE
+.SS "Show dependency graph"
 .EX
 ./depengine graph
 ./depengine graph --format=mermaid
 ./depengine graph --format=dot --only=tool_name
 ./depengine graph --profile=desktop
 .EE
-.SS "Exportar SBOM"
+.SS "Export SBOM"
 .EX
 ./depengine sbom
 ./depengine sbom --format=spdx
 .EE
-.SS "Comparar arquivos de estado (diff)"
-.EX
-# Comparar estado atual com --other
-./depengine diff --other machine2.json
-
-# Comparar estado atual com arquivo
-./depengine diff machine2.json
-
-# Comparar dois arquivos diretamente
-./depengine diff state1.json state2.json
-
-# Saída como JSON
-./depengine diff --json machine2.json
-.EE
-.SH AMBIENTE
+.SH ENVIRONMENT
 .TP
 .B DEPENGINE_DETECT_SCRIPT
-Caminho para o script
+Path to the
 .B detect_os.sh
-Padrão: primeiro procura na pasta \fBscripts/\fR junto ao
-binário, depois no \fBPATH\fR.
+script. Default: first search alongside the binary in a
+.B scripts/
+directory, then on \fBPATH\fR.
 .TP
 .B DEPENGINE_TRACE_ID
-ID de rastreamento propagado a subprocessos para log correlacionado.
+Trace ID propagated to subprocesses for correlated logging.
 .TP
 .B DEPENGINE_LOG_JSON
-Defina como \fB1\fR para ativar saída JSON do logger estruturado.
+Set to \fB1\fR to enable JSON output for the structured logger.
 .TP
 .B XDG_STATE_HOME
-Diretório base para o arquivo de estado. O arquivo de estado é armazenado em
-\fB$XDG_STATE_HOME/depengine/state.json\fR, com fallback para
+Base directory for the state file. The state file is stored at
+\fB$XDG_STATE_HOME/depengine/state.json\fR, falling back to
 \fB~/.local/state/depengine/state.json\fR.
-.SH ARQUIVOS
+.SH FILES
 .TP
 .B schema.toml
-O schema declarativo descrevendo ferramentas e métodos de instalação.
-Incluído no projeto como modelo de referência.
+The declarative schema describing tools and installation methods.
+Shipped with the project as a reference template.
 .TP
 .B scripts/detect_os.sh
-Script de detecção do sistema invocado em runtime para obter informações de SO,
-arquitetura, distro, libc e sistema de init.
+System detection script invoked at runtime to gather OS, architecture,
+distro, libc, and init-system facts.
 .TP
 .BI $XDG_STATE_HOME/depengine/state.json
-Arquivo de estado rastreando quais ferramentas foram instaladas, por qual método
-e quando. Usado pelos comandos
+State file tracking which tools were installed, by which method, and
+when. Used by the
 .B status
-e
+and
 .B remove
-.
+commands.
 .TP
 .B scripts/depengine-completion.bash
 .B scripts/depengine-completion.zsh
 .B scripts/depengine-completion.fish
-Scripts de completação para shell emitidos pelo comando
+Shell completion scripts emitted by the
 .B completion
-.
-.SH "CÓDIGOS DE SAÍDA"
+command.
+.SH "EXIT STATUS"
 .TP
 0
-Sucesso — todas as ferramentas instaladas ou já presentes.
+Success — all tools installed or already present.
 .TP
 1
-Alguma ferramenta falhou ao instalar, ou validação em modo strict encontrou avisos.
+Some tool failed to install, or strict-mode validation found warnings.
 .TP
 2
-Erro de schema — TOML inválido, falha de validação, método desconhecido ou
-placeholder desconhecido.
+Schema error — invalid TOML, validation failure, unknown method, or
+unknown placeholder.
 .TP
 3
-Erro de runtime —
+Runtime error —
 .B detect_os.sh
-não encontrado, falha de E/S de estado, ou outro erro de infraestrutura.
-.SH "VEJA TAMBÉM"
+not found, state I/O failure, or other infrastructure error.
+.SH "SEE ALSO"
 .PP
-O README do projeto e
+The project README and
 .B docs/cheatsheet.md
-contêm a referência completa do
+contain the complete
 .B schema.toml
-, exemplos de métodos e documentação de placeholders.
+reference, method examples, and placeholder documentation.
 .SH BUGS
 .PP
-Reporte problemas no repositório do projeto.
-.SH AUTORES
+Report issues at the project repository.
+.SH AUTHORS
 .PP
-Escrito como parte do projeto depengine. Licenciado sob GPL-3.0-or-later.
+Written as part of the depengine project. Licensed under the GPL-3.0-or-later
+license.
