@@ -15,6 +15,11 @@ import (
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/validate"
 )
+type jsonOutput struct {
+	Errors   []validate.ValidationError `json:"errors"`
+	Warnings []validate.ValidationError `json:"warnings"`
+}
+
 
 func runValidate(args []string) {
 	// flags maintained in help.go:printCommandHelp
@@ -33,17 +38,9 @@ func runValidate(args []string) {
 	if err != nil {
 		var sce *config.SchemaCodeError
 		if errors.As(err, &sce) && *validateFormat == "json" {
-			type jsonErr struct {
-				Code    string `json:"code"`
-				Field   string `json:"field"`
-				Message string `json:"message"`
-			}
-			out := struct {
-				Errors   []jsonErr `json:"errors"`
-				Warnings []any     `json:"warnings"`
-			}{
-				Errors: []jsonErr{{
-					Code:    string(sce.Code),
+			out := jsonOutput{
+				Errors: []validate.ValidationError{{
+					Code:    validate.ErrorCode(sce.Code),
 					Field:   "tools",
 					Message: sce.Msg,
 				}},
@@ -108,10 +105,6 @@ func runValidate(args []string) {
 	}
 
 	if *validateFormat == "json" {
-		type jsonOutput struct {
-			Errors   []validate.ValidationError `json:"errors"`
-			Warnings []validate.ValidationError `json:"warnings"`
-		}
 		out := jsonOutput{
 			Errors:   result.Errors,
 			Warnings: result.Warnings,
