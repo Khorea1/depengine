@@ -7,7 +7,6 @@
 
 <p align="center">
   <a href="https://github.com/Khorea1/depengine/actions"><img src="https://github.com/Khorea1/depengine/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://goreportcard.com/report/github.com/Khorea1/depengine"><img src="https://goreportcard.com/badge/github.com/Khorea1/depengine" alt="Go Report Card"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue" alt="License"></a>
   <img src="https://img.shields.io/badge/go-1.26-blue" alt="Go 1.26">
 </p>
