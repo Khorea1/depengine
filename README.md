@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/go-1.26-blue" alt="Go 1.26">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Platform">
   <img src="https://img.shields.io/badge/static%20binary-%E2%9C%93-brightgreen" alt="Static binary">
-  <img src="https://img.shields.io/badge/windows-limited-yellow" alt="Windows">
+  <img src="https://img.shields.io/badge/windows-beta-yellow" alt="Windows">
 </p>
 
 ---
@@ -38,9 +38,9 @@ depengine status
 
 ---
 
-> **Note:** Windows builds are provided but **not fully supported** — file locking
-> and state management are not implemented on Windows. Linux and macOS are the
-> primary targets.
+> **Note:** Windows builds are provided. **Windows support is newer and less
+> battle-tested** than Linux and macOS. File locking and state management are
+> fully implemented on all platforms.
 >
 > ## Quick start — the sharing workflow
 >

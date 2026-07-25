@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/go-1.26-blue" alt="Go 1.26">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey" alt="Plataforma">
   <img src="https://img.shields.io/badge/static%20binary-%E2%9C%93-brightgreen" alt="Binário estático">
-  <img src="https://img.shields.io/badge/windows-limitado-yellow" alt="Windows">
+  <img src="https://img.shields.io/badge/windows-beta-yellow" alt="Windows">
 </p>
 
 ---
@@ -103,9 +103,9 @@ depengine install
 ./depengine sbom --format cyclonedx        # CycloneDX 1.5
 ./depengine sbom --format spdx > bom.json  # SPDX 2.3
 ```
-> **Nota:** Compilações para Windows são fornecidas mas **não têm suporte completo**
-> — locking de arquivos e gerenciamento de estado não estão implementados no Windows.
-> Linux e macOS são os alvos principais.
+> **Nota:** Compilações para Windows são fornecidas. **O suporte a Windows é mais
+> recente e menos testado** que Linux e macOS. Locking de arquivos e gerenciamento
+> de estado estão totalmente implementados em todas as plataformas.
 
 
 ---
