@@ -297,6 +297,10 @@ func matchPrefix(allowed []string, actual string) bool {
 	return false
 }
 
+// ErrorCode is a stable identifier for a class of validation or schema error.
+// This duplicates pkg/validate.ErrorCode to avoid an import cycle.
+type ErrorCode string
+
 // ParseSchemaError is returned by ParseSchema when the problem is in the
 // schema file itself (invalid TOML, validation errors, redeclared tools, etc.),
 // as opposed to an I/O or runtime error. Callers use errors.As to distinguish
@@ -307,6 +311,20 @@ type ParseSchemaError struct {
 
 func (e *ParseSchemaError) Error() string { return e.Err.Error() }
 func (e *ParseSchemaError) Unwrap() error { return e.Err }
+
+// SchemaCodeError is a typed error carrying a stable ErrorCode, used when the
+// schema has a well-defined validation problem (e.g. duplicate tool declaration).
+// Callers can use errors.As to extract the code programmatically.
+type SchemaCodeError struct {
+	Code ErrorCode
+	Path string
+	Line int
+	Msg  string
+}
+
+func (e *SchemaCodeError) Error() string {
+	return fmt.Sprintf("%s:%d: [%s] %s", e.Path, e.Line, e.Code, e.Msg)
+}
 
 // ParseSchema loads, decodes and normalizes a schema.toml file. It produces a
 // flat Schema where the three declaration shapes (simple list, inline table,
@@ -323,7 +341,7 @@ func (e *ParseSchemaError) Unwrap() error { return e.Err }
 //   - placeholders unknown to m are left untouched; validation layer is
 //     responsible for flagging them, not the parser.
 //   - the `simple` list is processed first; an inline table redeclaring a
-//     simple tool is an error (TODO.md accepts this as E_DUPE_TOOL).
+//     simple tool is an error (SchemaCodeError with Code "E_DUPE_TOOL").
 //   - section is the TOML table name to read for tool declarations
 //     (default "tools"; use "packages" for manifest files).
 func ParseSchema(path string, m map[string]string, section ...string) (*Schema, error) {
@@ -440,7 +458,12 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 			}
 			if _, dup := tools[name]; dup {
 				line, _ := findLineInFile(path, name)
-				return nil, fmt.Errorf("%s:%d: tool %q redeclared (simple list)", path, line, name)
+				return nil, &SchemaCodeError{
+					Code: "E_DUPE_TOOL",
+					Path: path,
+					Line: line,
+					Msg:  fmt.Sprintf("tool %q redeclared (simple list)", name),
+				}
 			}
 			tools[name] = &Tool{
 				Name:     name,
@@ -458,7 +481,12 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 		val := rawTools[name]
 		if _, dup := tools[name]; dup {
 			line, _ := findLineInFile(path, name)
-			return nil, fmt.Errorf("%s:%d: tool %q redeclared (simple + inline table)", path, line, name)
+			return nil, &SchemaCodeError{
+				Code: "E_DUPE_TOOL",
+				Path: path,
+				Line: line,
+				Msg:  fmt.Sprintf("tool %q redeclared (simple + inline table)", name),
+			}
 		}
 		tool := &Tool{Name: name}
 		valMap, ok := val.(map[string]any)

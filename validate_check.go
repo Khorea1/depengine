@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -30,6 +31,32 @@ func runValidate(args []string) {
 
 	s, err := config.ParseSchema(*validateSchema, map[string]string{})
 	if err != nil {
+		var sce *config.SchemaCodeError
+		if errors.As(err, &sce) && *validateFormat == "json" {
+			type jsonErr struct {
+				Code    string `json:"code"`
+				Field   string `json:"field"`
+				Message string `json:"message"`
+			}
+			out := struct {
+				Errors   []jsonErr `json:"errors"`
+				Warnings []any     `json:"warnings"`
+			}{
+				Errors: []jsonErr{{
+					Code:    string(sce.Code),
+					Field:   "tools",
+					Message: sce.Msg,
+				}},
+			}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(out); err != nil {
+				fmt.Fprintf(os.Stderr, "error encoding JSON: %v\n", err)
+				os.Exit(3)
+			}
+			os.Exit(2)
+		}
+		// Fallback: plain text on stderr (existing behavior)
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
 	}

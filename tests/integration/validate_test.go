@@ -174,6 +174,43 @@ func TestValidate_AllInvalidExit2(t *testing.T) {
 	}
 }
 
+func TestValidate_DupeTool(t *testing.T) {
+	output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath("invalid_dupe_tool.toml"))
+	if code != 2 {
+		t.Fatalf("expected exit 2, got %d; output:\n%s", code, output)
+	}
+	if !strings.Contains(output, "E_DUPE_TOOL") {
+		t.Error("expected E_DUPE_TOOL in text output")
+	}
+}
+
+func TestValidate_DupeToolJSON(t *testing.T) {
+	output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath("invalid_dupe_tool.toml"), "--format=json")
+	if code != 2 {
+		t.Fatalf("expected exit 2, got %d; output:\n%s", code, output)
+	}
+	var result struct {
+		Errors   []json.RawMessage `json:"errors"`
+		Warnings []json.RawMessage `json:"warnings"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, output)
+	}
+	if len(result.Errors) != 1 {
+		t.Fatalf("expected 1 error, got %d", len(result.Errors))
+	}
+	// The first error's code should contain E_DUPE_TOOL.
+	var firstErr struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(result.Errors[0], &firstErr); err != nil {
+		t.Fatalf("invalid error JSON: %v", err)
+	}
+	if firstErr.Code != "E_DUPE_TOOL" {
+		t.Errorf("expected code E_DUPE_TOOL, got %q", firstErr.Code)
+	}
+}
+
 // ============ CLI flags ============
 
 func TestValidate_StrictFlag(t *testing.T) {

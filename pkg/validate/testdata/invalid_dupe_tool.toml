@@ -1,0 +1,3 @@
+[tools]
+simple = ["zsh", "bat"]
+bat = { apt = "bat" }

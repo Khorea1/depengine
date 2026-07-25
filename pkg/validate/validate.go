@@ -24,6 +24,11 @@ const (
 	ErrMalformedURL    ErrorCode = "E_MALFORMED_URL"
 	ErrInvalidValue    ErrorCode = "E_INVALID_VALUE"
 	ErrInvalidChecksum ErrorCode = "E_INVALID_CHECKSUM"
+	// ErrDupeTool is produced by pkg/config.SchemaCodeError when a tool is
+	// redeclared (simple list + inline table). It is emitted before
+	// ValidateSchema runs, so it surfaces via ParseSchema error handling
+	// rather than as a ValidationError.
+	ErrDupeTool ErrorCode = "E_DUPE_TOOL"
 
 	// Warnings (soft — schema may still work).
 	WarnUnknownPlaceholder  ErrorCode = "W_UNKNOWN_PLACEHOLDER"
