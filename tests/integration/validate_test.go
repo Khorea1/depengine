@@ -363,3 +363,58 @@ func TestValidate_HelpContainsValidate(t *testing.T) {
 		t.Error("expected 'validate' subcommand in help")
 	}
 }
+
+// ============ Signature-no-key warning ============
+
+func TestValidate_SignatureNoKeyWarning(t *testing.T) {
+	output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath("warn_signature_no_key.toml"))
+	if code != 0 {
+		t.Errorf("expected exit 0 (warning), got %d; output:\n%s", code, output)
+	}
+	if !strings.Contains(output, "W_SIGNATURE_NO_KEY") {
+		t.Error("expected W_SIGNATURE_NO_KEY in output")
+	}
+	if !strings.Contains(output, "signature_url is set without signing_key") {
+		t.Error("expected warning message about missing signing_key")
+	}
+}
+
+func TestValidate_SignatureNoKeyJSON(t *testing.T) {
+	output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath("warn_signature_no_key.toml"), "--format=json")
+	if code != 0 {
+		t.Errorf("expected exit 0, got %d; output:\n%s", code, output)
+	}
+	var result struct {
+		Errors   []json.RawMessage `json:"errors"`
+		Warnings []json.RawMessage `json:"warnings"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, output)
+	}
+	if len(result.Warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d", len(result.Warnings))
+	}
+	var warn struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(result.Warnings[0], &warn); err != nil {
+		t.Fatalf("invalid warning JSON: %v", err)
+	}
+	if warn.Code != "W_SIGNATURE_NO_KEY" {
+		t.Errorf("expected code W_SIGNATURE_NO_KEY, got %q", warn.Code)
+	}
+}
+
+func TestValidate_SignatureNoKeyStrict(t *testing.T) {
+	// Without --strict: exit 0
+	_, codeNoStrict := runDepengine("validate", "--no-manifest", "--schema", validatePath("warn_signature_no_key.toml"))
+	if codeNoStrict != 0 {
+		t.Error("without --strict expected exit 0")
+	}
+
+	// With --strict: exit 1 (warning treated as error)
+	output, codeStrict := runDepengine("validate", "--no-manifest", "--schema", validatePath("warn_signature_no_key.toml"), "--strict")
+	if codeStrict != 1 {
+		t.Errorf("with --strict expected exit 1, got %d; output:\n%s", codeStrict, output)
+	}
+}
