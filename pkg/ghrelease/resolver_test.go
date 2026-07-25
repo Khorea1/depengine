@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 // redirectTripper is an http.RoundTripper that rewrites requests to a test

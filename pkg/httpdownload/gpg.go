@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 // DefaultKeyServer is the GPG keyserver used to receive signing keys by fingerprint.

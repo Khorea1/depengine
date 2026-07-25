@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // RenderMermaid returns a Mermaid flowchart string from the topological levels
@@ -18,7 +18,7 @@ import (
 //
 // Arrows point from dependencies to the tools that require them,
 // showing the installation order (dependencies first).
-func RenderMermaid(levels [][]string, tools map[string]*schema.Tool) string {
+func RenderMermaid(levels [][]string, tools map[string]*config.Tool) string {
 	var b strings.Builder
 	b.WriteString("graph TD\n")
 
@@ -38,7 +38,7 @@ func RenderMermaid(levels [][]string, tools map[string]*schema.Tool) string {
 //	}
 //
 // Arrows point from dependencies to the tools that require them.
-func RenderDOT(levels [][]string, tools map[string]*schema.Tool) string {
+func RenderDOT(levels [][]string, tools map[string]*config.Tool) string {
 	var b strings.Builder
 	b.WriteString("digraph depengine {\n")
 
@@ -59,7 +59,7 @@ func RenderDOT(levels [][]string, tools map[string]*schema.Tool) string {
 //
 // Tools within each level are sorted alphabetically.
 // When tools map is provided and a tool has tags, they are shown in parentheses.
-func RenderText(levels [][]string, tools map[string]*schema.Tool) string {
+func RenderText(levels [][]string, tools map[string]*config.Tool) string {
 	var b strings.Builder
 	for i, level := range levels {
 		sorted := make([]string, len(level))
@@ -82,7 +82,7 @@ type edge struct {
 
 // collectEdges builds a sorted list of edges from the tools map.
 // Each edge represents "tool requires dep", rendered as dep --> tool.
-func collectEdges(tools map[string]*schema.Tool) []edge {
+func collectEdges(tools map[string]*config.Tool) []edge {
 	var edges []edge
 	for name, tool := range tools {
 		for _, dep := range tool.Requires {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/log"
 )
 
 // SnapshotInfo holds metadata about a saved snapshot.

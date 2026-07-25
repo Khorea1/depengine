@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/ghrelease"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/ghrelease"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // GitAdapter implements exec.Adapter for git-based installations.
@@ -46,7 +46,7 @@ func (a *GitAdapter) Available(ctx context.Context, rn run.Runner) bool {
 // strategies:
 //  1. If extract_to is set and contains a .git dir, consider it installed.
 //  2. If binary is set and exists on PATH, consider it installed.
-func (a *GitAdapter) Check(ctx context.Context, rn run.Runner, _ *schema.Tool, mc *schema.MethodCandidate) bool {
+func (a *GitAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) bool {
 	if extractTo, ok := mc.Config["extract_to"].(string); ok && extractTo != "" {
 		res := rn.Run(ctx, "test", "-d", extractTo+"/.git")
 		if res.Err == nil && res.ExitCode == 0 {
@@ -64,7 +64,7 @@ func (a *GitAdapter) Check(ctx context.Context, rn run.Runner, _ *schema.Tool, m
 
 // Install clones the repository, optionally builds, and optionally copies
 // artifacts to the configured extract_to directory.
-func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	url, ok := mc.Config["url"].(string)
 	if !ok || url == "" {
 		return fmt.Errorf("git: no url configured for tool %q", tool.Name)
@@ -197,7 +197,7 @@ func isSharedDir(path string) bool {
 
 // Remove uninstalls the tool by removing either the extracted binary (if extract_to
 // is a shared directory) or the entire extract_to directory (if it is tool-specific).
-func (a *GitAdapter) Remove(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (a *GitAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	extractTo, ok := mc.Config["extract_to"].(string)
 	if !ok || extractTo == "" {
 		return fmt.Errorf("git: remove not supported without extract_to — installed via custom buildCmd/make install")

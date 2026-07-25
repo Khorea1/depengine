@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 // skipIfNoGPG skips the test if gpg is not available.

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 func TestHTTPAdapterKind(t *testing.T) {
@@ -30,7 +30,7 @@ func TestHTTPAdapterAvailable(t *testing.T) {
 func TestHTTPAdapterCheckViaExtractTo(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 0, Stdout: "file1"}
 	adapter := NewHTTPAdapter()
-	mc := &schema.MethodCandidate{Config: map[string]any{"extract_to": "/opt/tool"}}
+	mc := &config.MethodCandidate{Config: map[string]any{"extract_to": "/opt/tool"}}
 
 	if !adapter.Check(context.Background(), fr, nil, mc) {
 		t.Fatal("Check should be true when extract_to exists and has files")
@@ -40,7 +40,7 @@ func TestHTTPAdapterCheckViaExtractTo(t *testing.T) {
 func TestHTTPAdapterCheckViaBinary(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 0}
 	adapter := NewHTTPAdapter()
-	mc := &schema.MethodCandidate{Config: map[string]any{"binary": "somebin"}}
+	mc := &config.MethodCandidate{Config: map[string]any{"binary": "somebin"}}
 
 	if !adapter.Check(context.Background(), fr, nil, mc) {
 		t.Fatal("Check should be true when binary is in PATH")
@@ -50,7 +50,7 @@ func TestHTTPAdapterCheckViaBinary(t *testing.T) {
 func TestHTTPAdapterCheckNotFound(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 1}
 	adapter := NewHTTPAdapter()
-	mc := &schema.MethodCandidate{Config: map[string]any{}}
+	mc := &config.MethodCandidate{Config: map[string]any{}}
 
 	if adapter.Check(context.Background(), fr, nil, mc) {
 		t.Fatal("Check should be false when nothing found")
@@ -59,8 +59,8 @@ func TestHTTPAdapterCheckNotFound(t *testing.T) {
 
 func TestHTTPAdapterInstallNoURL(t *testing.T) {
 	adapter := NewHTTPAdapter()
-	tool := &schema.Tool{Name: "mytool"}
-	mc := &schema.MethodCandidate{Config: map[string]any{}}
+	tool := &config.Tool{Name: "mytool"}
+	mc := &config.MethodCandidate{Config: map[string]any{}}
 
 	err := adapter.Install(context.Background(), nil, tool, mc)
 	if err == nil {

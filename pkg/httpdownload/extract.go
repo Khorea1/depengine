@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 // Extract decompresses src into dest based on the file extension.

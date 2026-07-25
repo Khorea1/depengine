@@ -9,7 +9,7 @@ import (
 	"sort"
 	"time"
 
-	"depengine/pkg/state"
+	"github.com/Khorea1/depengine/pkg/state"
 )
 
 // ─── CycloneDX 1.5 ────────────────────────────────────────────────────────────

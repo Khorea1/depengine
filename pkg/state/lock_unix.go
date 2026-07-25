@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/log"
 )
 
 // fileLock implements io.Closer for a flock-based lock.

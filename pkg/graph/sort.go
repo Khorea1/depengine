@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // SortOption configures Sort behavior.
@@ -36,7 +36,7 @@ func WithLogger(l *slog.Logger) SortOption {
 // Uses a single Kahn's algorithm pass for both cycle detection and level
 // computation. Returns an error if a cycle is detected (CycleError) or if
 // a required tool is missing.
-func Sort(tools map[string]*schema.Tool, opts ...SortOption) ([][]string, error) {
+func Sort(tools map[string]*config.Tool, opts ...SortOption) ([][]string, error) {
 	if len(tools) == 0 {
 		return [][]string{}, nil
 	}

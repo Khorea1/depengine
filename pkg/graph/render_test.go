@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 func TestRenderMermaid(t *testing.T) {
-	tools := map[string]*schema.Tool{
+	tools := map[string]*config.Tool{
 		"a": {Name: "a", Requires: []string{"b"}},
 		"b": {Name: "b", Requires: []string{"c"}},
 		"c": {Name: "c"},
@@ -29,7 +29,7 @@ func TestRenderMermaid(t *testing.T) {
 }
 
 func TestRenderDOT(t *testing.T) {
-	tools := map[string]*schema.Tool{
+	tools := map[string]*config.Tool{
 		"a": {Name: "a", Requires: []string{"b"}},
 		"b": {Name: "b", Requires: []string{"c"}},
 		"c": {Name: "c"},
@@ -54,7 +54,7 @@ func TestRenderDOT(t *testing.T) {
 
 func TestRenderText(t *testing.T) {
 	levels := [][]string{{"c"}, {"b"}, {"a"}}
-	tools := map[string]*schema.Tool{}
+	tools := map[string]*config.Tool{}
 
 	got := RenderText(levels, tools)
 
@@ -73,7 +73,7 @@ func TestRenderTextSortsLevels(t *testing.T) {
 	// Tools within a level must be sorted alphabetically.
 	levels := [][]string{{"z", "a", "m"}}
 	want := "level 0: a, m, z\n"
-	got := RenderText(levels, map[string]*schema.Tool{})
+	got := RenderText(levels, map[string]*config.Tool{})
 	if got != want {
 		t.Errorf("RenderText should sort tools within level:\ngot:  %q\nwant: %q", got, want)
 	}
@@ -84,7 +84,7 @@ func TestRenderTextEmpty(t *testing.T) {
 	if got != "" {
 		t.Errorf("RenderText(nil) should be empty, got: %q", got)
 	}
-	got = RenderText([][]string{}, map[string]*schema.Tool{})
+	got = RenderText([][]string{}, map[string]*config.Tool{})
 	if got != "" {
 		t.Errorf("RenderText([][]string{}) should be empty, got: %q", got)
 	}
@@ -92,7 +92,7 @@ func TestRenderTextEmpty(t *testing.T) {
 
 func TestRenderNoEdges(t *testing.T) {
 	// Two tools with no dependencies — no edges expected.
-	tools := map[string]*schema.Tool{
+	tools := map[string]*config.Tool{
 		"a": {Name: "a"},
 		"b": {Name: "b"},
 	}
@@ -111,7 +111,7 @@ func TestRenderNoEdges(t *testing.T) {
 
 func TestRenderDeterministic(t *testing.T) {
 	// Same input must produce identical output every time.
-	tools := map[string]*schema.Tool{
+	tools := map[string]*config.Tool{
 		"z": {Name: "z", Requires: []string{"a", "m"}},
 		"a": {Name: "a", Requires: []string{"b"}},
 		"b": {Name: "b"},

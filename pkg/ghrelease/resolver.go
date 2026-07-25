@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 // GitHub URL patterns for release/tag resolution.
@@ -67,7 +67,7 @@ func ResolveLatest(ctx context.Context, urlStr string, rn run.Runner) (string, e
 // returns the same literal fallback ("latest") that ResolveLatest substitutes,
 // so callers can treat the return value uniformly as "the placeholder value".
 //
-// This exists for pkg/lock: schema.lock pins a resolved *version*, not a
+// This exists for pkg/lock: depengine.lock pins a resolved *version*, not a
 // fully-resolved URL. Storing just the tag means that if the URL template in
 // schema.toml later changes (a corrected asset filename, a new architecture
 // suffix, etc.) between `depengine update` runs, `depengine install` still
@@ -101,7 +101,7 @@ func fetchLatestTag(ctx context.Context, owner, repo string, rn run.Runner) (str
 		return "", fmt.Errorf("resolve latest: request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("User-Agent", "depengine/0.1")
+	req.Header.Set("User-Agent", "github.com/Khorea1/depengine/0.1")
 
 	// Add GitHub token if available to raise rate limit from 60 to 5000 req/h.
 	if token := githubToken(ctx, rn); token != "" {

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/i18n"
-	"depengine/pkg/ecosystem"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/i18n"
+	"github.com/Khorea1/depengine/pkg/ecosystem"
 )
 
 var version = "dev"

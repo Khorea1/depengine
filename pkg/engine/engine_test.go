@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 // fakeRunner records the last call and returns canned stdout, with a

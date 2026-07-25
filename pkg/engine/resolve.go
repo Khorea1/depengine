@@ -3,7 +3,7 @@ package engine
 import (
 	"strings"
 
-	"depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/log"
 )
 
 // idToFamily covers the common case: the distro_id is recognized directly.

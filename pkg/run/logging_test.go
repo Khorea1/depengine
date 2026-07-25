@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/log"
 )
 
 func TestLoggingRunnerPassesResultThrough(t *testing.T) {

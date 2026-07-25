@@ -3,18 +3,18 @@ package graph
 import (
 	"testing"
 
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
-func tool(name string, requires ...string) *schema.Tool {
-	return &schema.Tool{
+func tool(name string, requires ...string) *config.Tool {
+	return &config.Tool{
 		Name:     name,
 		Requires: requires,
 	}
 }
 
 func TestSortLinearDependency(t *testing.T) {
-	tools := map[string]*schema.Tool{
+	tools := map[string]*config.Tool{
 		"a": tool("a", "b"),
 		"b": tool("b", "c"),
 		"c": tool("c"),
@@ -41,7 +41,7 @@ func TestSortLinearDependency(t *testing.T) {
 }
 
 func TestSortDAG(t *testing.T) {
-	tools := map[string]*schema.Tool{
+	tools := map[string]*config.Tool{
 		"a": tool("a", "b", "c"),
 		"b": tool("b", "d"),
 		"c": tool("c", "d"),
@@ -74,7 +74,7 @@ func TestSortDAG(t *testing.T) {
 }
 
 func TestSortNoDeps(t *testing.T) {
-	tools := map[string]*schema.Tool{
+	tools := map[string]*config.Tool{
 		"x": tool("x"),
 		"y": tool("y"),
 		"z": tool("z"),
@@ -92,7 +92,7 @@ func TestSortNoDeps(t *testing.T) {
 }
 
 func TestSortCycle(t *testing.T) {
-	tools := map[string]*schema.Tool{
+	tools := map[string]*config.Tool{
 		"a": tool("a", "b"),
 		"b": tool("b", "c"),
 		"c": tool("c", "a"),
@@ -113,7 +113,7 @@ func TestSortCycle(t *testing.T) {
 }
 
 func TestSortSelfCycle(t *testing.T) {
-	tools := map[string]*schema.Tool{
+	tools := map[string]*config.Tool{
 		"a": tool("a", "a"),
 	}
 	_, err := Sort(tools)
@@ -127,7 +127,7 @@ func TestSortSelfCycle(t *testing.T) {
 }
 
 func TestSortMissingDependency(t *testing.T) {
-	tools := map[string]*schema.Tool{
+	tools := map[string]*config.Tool{
 		"a": tool("a", "nonexistent"),
 	}
 	_, err := Sort(tools)
@@ -137,7 +137,7 @@ func TestSortMissingDependency(t *testing.T) {
 }
 
 func TestSortEmptyReturnsEmpty(t *testing.T) {
-	levels, err := Sort(map[string]*schema.Tool{})
+	levels, err := Sort(map[string]*config.Tool{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

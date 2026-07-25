@@ -3,7 +3,7 @@ package git
 import (
 	"testing"
 
-	"depengine/pkg/exectest"
+	"github.com/Khorea1/depengine/pkg/exectest"
 )
 
 func TestConformance(t *testing.T) {

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"depengine/pkg/log"
-	"depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 // Facts is a 1:1 mirror of detect_os.sh's --json output. Nothing is

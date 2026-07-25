@@ -3,8 +3,8 @@ package httpdownload
 import (
 	"context"
 
-	"depengine/pkg/ghrelease"
-	"depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/ghrelease"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 // ResolveLatest replaces `{latest}` in a URL with the resolved version from

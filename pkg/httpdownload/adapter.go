@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"depengine/pkg/downloadcache"
-	"depengine/pkg/exec"
-	"depengine/pkg/log"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/downloadcache"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // HTTPAdapter implements exec.Adapter for HTTP(S) downloads.
@@ -41,7 +41,7 @@ func (a *HTTPAdapter) Available(ctx context.Context, rn run.Runner) bool {
 // Check verifies if the tool appears already installed. Looks at:
 //   - extract_to directory (must exist and have contents)
 //   - binary in PATH (from config)
-func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, _ *schema.Tool, mc *schema.MethodCandidate) bool {
+func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) bool {
 	if extractTo, ok := mc.Config["extract_to"].(string); ok && extractTo != "" {
 		res := rn.Run(ctx, "test", "-d", extractTo)
 		if res.Err == nil && res.ExitCode == 0 {
@@ -59,7 +59,7 @@ func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, _ *schema.Tool, 
 
 // Install downloads a file from URL, optionally verifies its checksum,
 // and extracts it based on file type.
-func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	urlRaw, ok := mc.Config["url"].(string)
 	if !ok || urlRaw == "" {
 		return fmt.Errorf("http: no url configured for tool %q", tool.Name)
@@ -233,7 +233,7 @@ func (a *HTTPAdapter) verifyChecksum(ctx context.Context, rn run.Runner, filePat
 // resolveAutoChecksum handles :auto checksum resolution by trying to fetch
 // a companion checksum file and extracting the expected hash.
 func (a *HTTPAdapter) resolveAutoChecksum(ctx context.Context, rn run.Runner, filePath, downloadURL string, cc *checksumConfig, config map[string]any) error {
-	log.Default.Warn("checksum fetched from server (TOFU)", "algorithm", cc.algorithm, "hint", "use checksum_url for a separate source, or pin the hash in schema.lock")
+	log.Default.Warn("checksum fetched from server (TOFU)", "algorithm", cc.algorithm, "hint", "use checksum_url for a separate source, or pin the hash in depengine.lock")
 
 	parsedURL, err := url.Parse(downloadURL)
 	if err != nil {

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 func TestGitAdapterAvailable(t *testing.T) {
@@ -43,7 +43,7 @@ func TestGitAdapterKind(t *testing.T) {
 func TestGitAdapterCheckViaExtractTo(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 0}
 	adapter := NewGitAdapter()
-	mc := &schema.MethodCandidate{Config: map[string]any{"extract_to": "/tmp/test"}}
+	mc := &config.MethodCandidate{Config: map[string]any{"extract_to": "/tmp/test"}}
 
 	if !adapter.Check(context.Background(), fr, nil, mc) {
 		t.Fatal("Check should be true when extract_to/.git exists")
@@ -54,7 +54,7 @@ func TestGitAdapterCheckViaBinary(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 0}
 	adapter := NewGitAdapter()
 	// extract_to not present, binary present.
-	mc := &schema.MethodCandidate{Config: map[string]any{"binary": "somebin"}}
+	mc := &config.MethodCandidate{Config: map[string]any{"binary": "somebin"}}
 
 	if !adapter.Check(context.Background(), fr, nil, mc) {
 		t.Fatal("Check should be true when binary is on PATH")
@@ -64,7 +64,7 @@ func TestGitAdapterCheckViaBinary(t *testing.T) {
 func TestGitAdapterCheckNotFound(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 1}
 	adapter := NewGitAdapter()
-	mc := &schema.MethodCandidate{Config: map[string]any{}}
+	mc := &config.MethodCandidate{Config: map[string]any{}}
 
 	if adapter.Check(context.Background(), fr, nil, mc) {
 		t.Fatal("Check should be false when nothing found")
@@ -74,8 +74,8 @@ func TestGitAdapterCheckNotFound(t *testing.T) {
 func TestGitAdapterInstallGeneratesCloneCommand(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 0}
 	adapter := NewGitAdapter()
-	tool := &schema.Tool{Name: "mytool"}
-	mc := &schema.MethodCandidate{
+	tool := &config.Tool{Name: "mytool"}
+	mc := &config.MethodCandidate{
 		Config: map[string]any{
 			"url": "https://github.com/user/repo.git",
 		},
@@ -101,8 +101,8 @@ func TestGitAdapterInstallGeneratesCloneCommand(t *testing.T) {
 
 func TestGitAdapterInstallWithoutURL(t *testing.T) {
 	adapter := NewGitAdapter()
-	tool := &schema.Tool{Name: "mytool"}
-	mc := &schema.MethodCandidate{Config: map[string]any{}}
+	tool := &config.Tool{Name: "mytool"}
+	mc := &config.MethodCandidate{Config: map[string]any{}}
 
 	err := adapter.Install(context.Background(), nil, tool, mc)
 	if err == nil {
@@ -113,8 +113,8 @@ func TestGitAdapterInstallWithoutURL(t *testing.T) {
 func TestGitAdapterInstallWithBuild(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 0}
 	adapter := NewGitAdapter()
-	tool := &schema.Tool{Name: "mytool"}
-	mc := &schema.MethodCandidate{
+	tool := &config.Tool{Name: "mytool"}
+	mc := &config.MethodCandidate{
 		Config: map[string]any{
 			"url":   "https://github.com/user/repo.git",
 			"build": "make install",
@@ -152,8 +152,8 @@ func TestGitAdapterInstallWithBuild(t *testing.T) {
 func TestGitAdapterInstallWithShellSyntaxBuild(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 0}
 	adapter := NewGitAdapter()
-	tool := &schema.Tool{Name: "mytool"}
-	mc := &schema.MethodCandidate{
+	tool := &config.Tool{Name: "mytool"}
+	mc := &config.MethodCandidate{
 		Config: map[string]any{
 			"url":   "https://github.com/user/repo.git",
 			"build": "make && sudo make install",
@@ -187,8 +187,8 @@ func TestGitAdapterInstallWithShellSyntaxBuild(t *testing.T) {
 func TestGitAdapterInstallWithBuildFails(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 1, Stderr: "compilation error"}
 	adapter := NewGitAdapter()
-	tool := &schema.Tool{Name: "mytool"}
-	mc := &schema.MethodCandidate{
+	tool := &config.Tool{Name: "mytool"}
+	mc := &config.MethodCandidate{
 		Config: map[string]any{
 			"url":   "https://github.com/user/repo.git",
 			"build": "make",
@@ -207,8 +207,8 @@ func TestGitAdapterInstallWithBuildFails(t *testing.T) {
 func TestGitAdapterInstallResolvesLatestNonGitHub(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 0}
 	adapter := NewGitAdapter()
-	tool := &schema.Tool{Name: "mytool"}
-	mc := &schema.MethodCandidate{
+	tool := &config.Tool{Name: "mytool"}
+	mc := &config.MethodCandidate{
 		Config: map[string]any{
 			"url": "https://gitlab.com/user/repo/-/archive/{latest}/archive.tar.gz",
 		},
@@ -259,8 +259,8 @@ func TestGitAdapterInstallResolvesLatestNonGitHub(t *testing.T) {
 func TestGitAdapterInstallPreservesURLWithoutLatest(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 0}
 	adapter := NewGitAdapter()
-	tool := &schema.Tool{Name: "mytool"}
-	mc := &schema.MethodCandidate{
+	tool := &config.Tool{Name: "mytool"}
+	mc := &config.MethodCandidate{
 		Config: map[string]any{
 			"url": "https://github.com/user/repo.git",
 		},
@@ -298,8 +298,8 @@ func TestGitAdapterCanRemove(t *testing.T) {
 func TestGitAdapterRemoveWithoutExtractTo(t *testing.T) {
 	fr := &run.FakeRunner{}
 	adapter := NewGitAdapter()
-	tool := &schema.Tool{Name: "mytool"}
-	mc := &schema.MethodCandidate{
+	tool := &config.Tool{Name: "mytool"}
+	mc := &config.MethodCandidate{
 		Config: map[string]any{},
 	}
 
@@ -315,7 +315,7 @@ func TestGitAdapterRemoveWithoutExtractTo(t *testing.T) {
 func TestGitAdapterRemoveSharedDirWithBinary(t *testing.T) {
 	fr := &run.FakeRunner{}
 	adapter := NewGitAdapter()
-	tool := &schema.Tool{Name: "mytool"}
+	tool := &config.Tool{Name: "mytool"}
 
 	// Setup temporary shared-like directory
 	tempDir := t.TempDir()
@@ -330,7 +330,7 @@ func TestGitAdapterRemoveSharedDirWithBinary(t *testing.T) {
 		t.Fatalf("failed to write dummy binary: %v", err)
 	}
 
-	mc := &schema.MethodCandidate{
+	mc := &config.MethodCandidate{
 		Config: map[string]any{
 			"extract_to": sharedDir,
 			"binary":     binaryName,
@@ -356,7 +356,7 @@ func TestGitAdapterRemoveSharedDirWithBinary(t *testing.T) {
 func TestGitAdapterRemoveSharedDirWithoutBinary(t *testing.T) {
 	fr := &run.FakeRunner{}
 	adapter := NewGitAdapter()
-	tool := &schema.Tool{Name: "mytool"}
+	tool := &config.Tool{Name: "mytool"}
 
 	tempDir := t.TempDir()
 	sharedDir := filepath.Join(tempDir, "bin")
@@ -364,7 +364,7 @@ func TestGitAdapterRemoveSharedDirWithoutBinary(t *testing.T) {
 		t.Fatalf("failed to create temp bin dir: %v", err)
 	}
 
-	mc := &schema.MethodCandidate{
+	mc := &config.MethodCandidate{
 		Config: map[string]any{
 			"extract_to": sharedDir,
 		},
@@ -382,7 +382,7 @@ func TestGitAdapterRemoveSharedDirWithoutBinary(t *testing.T) {
 func TestGitAdapterRemovePrivateDir(t *testing.T) {
 	fr := &run.FakeRunner{}
 	adapter := NewGitAdapter()
-	tool := &schema.Tool{Name: "mytool"}
+	tool := &config.Tool{Name: "mytool"}
 
 	tempDir := t.TempDir()
 	privateDir := filepath.Join(tempDir, "mytool-private-dir")
@@ -395,7 +395,7 @@ func TestGitAdapterRemovePrivateDir(t *testing.T) {
 		t.Fatalf("failed to write dummy file: %v", err)
 	}
 
-	mc := &schema.MethodCandidate{
+	mc := &config.MethodCandidate{
 		Config: map[string]any{
 			"extract_to": privateDir,
 		},
@@ -461,8 +461,8 @@ func TestIsSharedDir(t *testing.T) {
 func TestGitAdapterInstallResolvesLatestTagInBranch(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 0}
 	adapter := NewGitAdapter()
-	tool := &schema.Tool{Name: "mytool"}
-	mc := &schema.MethodCandidate{
+	tool := &config.Tool{Name: "mytool"}
+	mc := &config.MethodCandidate{
 		Config: map[string]any{
 			// GitHub-archive-style URL where {latest} is embedded in the path.
 			"url": "https://example.com/repo/archive/refs/tags/{latest}.tar.gz",

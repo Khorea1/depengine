@@ -2,7 +2,7 @@
 //
 // Usage:
 //
-//	import "depengine/pkg/log"
+//	import "github.com/Khorea1/depengine/pkg/log"
 //
 //	// Use the default logger (stderr, INFO level).
 //	log.Default.Info("starting up", "phase", "init")

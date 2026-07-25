@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"depengine/pkg/state"
+	"github.com/Khorea1/depengine/pkg/state"
 )
 
 func TestExportCycloneDX(t *testing.T) {

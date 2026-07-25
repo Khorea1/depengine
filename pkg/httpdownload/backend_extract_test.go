@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 func TestSelectDownloaderPrefersCurl(t *testing.T) {
