@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // AsdfAdapter implements the Adapter interface for asdf/mise packages.
@@ -24,7 +24,7 @@ func (a *AsdfAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	return run.LookPath(ctx, rn, "asdf") || run.LookPath(ctx, rn, "mise")
 }
 
-func (a *AsdfAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
+func (a *AsdfAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
 	if len(pkg) == 0 || pkg[0] == "" {
 		return false
@@ -40,7 +40,7 @@ func (a *AsdfAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Too
 	return false
 }
 
-func (a *AsdfAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (a *AsdfAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
 	if len(pkg) == 0 || pkg[0] == "" {
 		return fmt.Errorf("asdf: no package name")

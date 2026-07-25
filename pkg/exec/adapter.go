@@ -29,8 +29,8 @@ import (
 	"context"
 	"strings"
 
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // Adapter is the contract that every method backend (native, cargo, git,
@@ -49,12 +49,12 @@ type Adapter interface {
 	// Check reports whether the tool managed by this adapter is already
 	// installed. Uses the adapter's check command (e.g. dpkg -s,
 	// cargo install --list | grep). Exit 0 → installed.
-	Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool
+	Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool
 
 	// Install runs the installation command for this method. Returns
 	// nil on success, an error describing what went wrong on failure.
 	// The executor handles fallback when Install fails.
-	Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error
+	Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error
 }
 
 // Remover is an optional interface that adapters can implement to support
@@ -63,7 +63,7 @@ type Adapter interface {
 // Remover, the executor falls back to a manual-removal instruction.
 type Remover interface {
 	Adapter
-	Remove(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error
+	Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error
 	// CanRemove reports whether this adapter actually supports removal.
 	// Adapters may implement Remover but have no remove template configured.
 	CanRemove() bool
@@ -76,7 +76,7 @@ func CanRemove(adapter Adapter) bool {
 
 // SubstitutePkg replaces "{pkg}" in cmd with the package name from
 // mc.Config["pkg"], falling back to tool.Name. Shared by all adapters.
-func SubstitutePkg(cmd []string, tool *schema.Tool, mc *schema.MethodCandidate) []string {
+func SubstitutePkg(cmd []string, tool *config.Tool, mc *config.MethodCandidate) []string {
 	pkg := tool.Name
 	if p, ok := mc.Config["pkg"].(string); ok && p != "" {
 		pkg = p

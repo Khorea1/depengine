@@ -1,7 +1,7 @@
 package ecosystem
 
 import (
-	"depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/exec"
 )
 
 // AURByNameAdapter registers an AUR helper by its binary name (e.g. "paru",

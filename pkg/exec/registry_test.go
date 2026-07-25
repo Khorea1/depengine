@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // mockAdapter is a minimal adapter for testing the registry.
@@ -15,10 +15,10 @@ type mockAdapter struct {
 
 func (m *mockAdapter) Kind() string                               { return m.kindValue }
 func (m *mockAdapter) Available(context.Context, run.Runner) bool { return true }
-func (m *mockAdapter) Check(context.Context, run.Runner, *schema.Tool, *schema.MethodCandidate) bool {
+func (m *mockAdapter) Check(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
 	return false
 }
-func (m *mockAdapter) Install(context.Context, run.Runner, *schema.Tool, *schema.MethodCandidate) error {
+func (m *mockAdapter) Install(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
 	return nil
 }
 

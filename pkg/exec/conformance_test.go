@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // TestAllRegisteredAdaptersConformance runs basic conformance checks against
@@ -22,8 +22,8 @@ func TestAllRegisteredAdaptersConformance(t *testing.T) {
 		t.Run(adapter.Kind(), func(t *testing.T) {
 			ctx := context.Background()
 			fr := &run.FakeRunner{}
-			tool := &schema.Tool{Name: "conformance-test"}
-			mc := &schema.MethodCandidate{Kind: adapter.Kind(), Config: map[string]any{}}
+			tool := &config.Tool{Name: "conformance-test"}
+			mc := &config.MethodCandidate{Kind: adapter.Kind(), Config: map[string]any{}}
 
 			// Kind
 			if k := adapter.Kind(); k == "" {

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // SteamCMDAdapter manages game server installations via Valve's SteamCMD.
@@ -25,11 +25,11 @@ func (a *SteamCMDAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	return run.LookPath(ctx, rn, "steamcmd")
 }
 
-func (a *SteamCMDAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
+func (a *SteamCMDAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	return false
 }
 
-func (a *SteamCMDAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (a *SteamCMDAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
 	if len(pkg) == 0 {
 		return fmt.Errorf("steamcmd: no app id")

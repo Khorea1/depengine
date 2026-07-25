@@ -3,9 +3,9 @@ package ecosystem
 import (
 	"context"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // GoAdapter extends BaseAdapter with a smarter Check that falls back to
@@ -28,7 +28,7 @@ func NewGoAdapter() *GoAdapter {
 
 // Check runs `which {pkg}` (the import path); if that fails, it retries
 // with `which tool.Name` (the binary name that `go install` produces).
-func (a *GoAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
+func (a *GoAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	// First try: which {pkg} (import path or explicit pkg config).
 	if a.BaseAdapter.Check(ctx, rn, tool, mc) {
 		return true
@@ -42,7 +42,7 @@ func (a *GoAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool,
 		importPath = p
 	}
 	if importPath != tool.Name {
-		fallbackMC := &schema.MethodCandidate{
+		fallbackMC := &config.MethodCandidate{
 			Kind:   mc.Kind,
 			Config: map[string]any{"pkg": tool.Name},
 		}

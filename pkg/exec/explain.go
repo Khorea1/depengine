@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"depengine/pkg/native"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/native"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // ExplainTool evaluates all methods for a single tool WITHOUT installing.
@@ -14,12 +14,12 @@ import (
 // already_installed (Check passed), or would_install (ready to install).
 //
 // This is the engine behind `depengine why <tool>`.
-func (ex *Executor) ExplainTool(ctx context.Context, tool *schema.Tool, clan string) []MethodAttempt {
+func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan string) []MethodAttempt {
 	// Resolve native manager for method_order expansion.
 	if mgr, ok := native.Lookup(clan); ok {
 		ex.nativeManagerName = mgr.Name
 	}
-	orderedMethods := schema.OrderMethods(tool.Methods, ex.effectiveMethodOrder(tool))
+	orderedMethods := config.OrderMethods(tool.Methods, ex.effectiveMethodOrder(tool))
 	methods := orderedMethods
 	if len(methods) == 0 {
 		return []MethodAttempt{{Kind: "", Status: "virtual", Error: "dependency group (no methods declared)"}}

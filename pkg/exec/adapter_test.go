@@ -4,15 +4,15 @@ import (
 	"context"
 	"testing"
 
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 type removableMockAdapter struct {
 	mockAdapter
 }
 
-func (r *removableMockAdapter) Remove(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (r *removableMockAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	return nil
 }
 
@@ -22,7 +22,7 @@ type removableFalseMockAdapter struct {
 	mockAdapter
 }
 
-func (r *removableFalseMockAdapter) Remove(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (r *removableFalseMockAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	return nil
 }
 

@@ -6,9 +6,9 @@ import (
 	"os"
 	"time"
 
-	"depengine/pkg/engine"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/engine"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // Executor orchestrates the installation of all tools in a schema.
@@ -27,7 +27,7 @@ type Executor struct {
 	maxJobs            int                // max concurrent tools; 0 or 1 = sequential (default)
 	allowArbitraryCode bool               // if false, warn about dangerous methods (build scripts, etc.)
 
-	defaultMethodOrder []string // from schema.Defaults.MethodOrder; default = schema.DefaultMethodOrder
+	defaultMethodOrder []string // from config.Defaults.MethodOrder; default = config.DefaultMethodOrder
 	nativeManagerName  string   // resolved from clan via native.Lookup
 
 	// system facts for when-condition evaluation
@@ -172,7 +172,7 @@ func New() *Executor {
 		maxJobs:            1,
 		adapters:           make(map[string]Adapter, len(adapters)),
 		outWriter:          os.Stderr,
-		defaultMethodOrder: schema.DefaultMethodOrder,
+		defaultMethodOrder: config.DefaultMethodOrder,
 		color:              shouldUseColor(),
 	}
 	// Pre-populate from the global adapter registry.

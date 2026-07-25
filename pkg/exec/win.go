@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 func init() {
@@ -39,7 +39,7 @@ func (w *winAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	return run.LookPath(ctx, rn, w.binary)
 }
 
-func (w *winAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
+func (w *winAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	if rn == nil {
 		return false
 	}
@@ -48,7 +48,7 @@ func (w *winAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool
 	return res.Err == nil && res.ExitCode == 0
 }
 
-func (w *winAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (w *winAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	if rn == nil {
 		return fmt.Errorf("%s: no runner", w.kind)
 	}
@@ -64,7 +64,7 @@ func (w *winAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.To
 	return nil
 }
 
-func (w *winAdapter) Remove(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (w *winAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	if rn == nil {
 		return fmt.Errorf("%s: no runner", w.kind)
 	}

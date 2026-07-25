@@ -12,9 +12,9 @@ import (
 	"fmt"
 	"strings"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // BaseConfig describes one language adapter. Most adapters share this
@@ -70,7 +70,7 @@ func (a *BaseAdapter) Available(ctx context.Context, rn run.Runner) bool {
 
 // Check runs the check command template. Exit 0 means installed.
 // Returns false immediately if the adapter's binary is not available.
-func (a *BaseAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
+func (a *BaseAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	if !a.Available(ctx, rn) {
 		return false
 	}
@@ -84,7 +84,7 @@ func (a *BaseAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Too
 
 // Install runs the install command template.
 // Returns an error immediately if the adapter's binary is not available.
-func (a *BaseAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (a *BaseAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	if !a.Available(ctx, rn) {
 		return fmt.Errorf("%s: binary %q not available on PATH", a.config.KindName, a.config.Binary)
 	}
@@ -108,7 +108,7 @@ func (a *BaseAdapter) CanRemove() bool {
 }
 
 // Remove runs the remove command template. Returns nil on success.
-func (a *BaseAdapter) Remove(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (a *BaseAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	cmd := a.buildCmd(a.config.RemoveTmpl, tool, mc)
 	if cmd == nil {
 		return fmt.Errorf("%s: no remove command", a.config.KindName)
@@ -125,7 +125,7 @@ func (a *BaseAdapter) Remove(ctx context.Context, rn run.Runner, tool *schema.To
 }
 
 // buildCmd substitutes {pkg} in the template and returns the command.
-func (a *BaseAdapter) buildCmd(tmpl []string, tool *schema.Tool, mc *schema.MethodCandidate) []string {
+func (a *BaseAdapter) buildCmd(tmpl []string, tool *config.Tool, mc *config.MethodCandidate) []string {
 	if len(tmpl) == 0 {
 		return nil
 	}

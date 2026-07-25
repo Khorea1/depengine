@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"depengine/pkg/native"
-	"depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/native"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 // SyncManager handles native package manager index synchronization.

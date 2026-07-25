@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
-	"depengine/pkg/state"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/state"
 )
 
 type testMockAdapter struct {
@@ -28,13 +28,13 @@ func (m *testMockAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	}
 	return true
 }
-func (m *testMockAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
+func (m *testMockAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	if m.checkFunc != nil {
 		return m.checkFunc(tool.Name)
 	}
 	return false
 }
-func (m *testMockAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (m *testMockAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	if m.installFunc != nil {
 		return m.installFunc(tool.Name)
 	}
@@ -57,13 +57,13 @@ func (m *blockingMockAdapter) Available(ctx context.Context, rn run.Runner) bool
 	}
 	return true
 }
-func (m *blockingMockAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
+func (m *blockingMockAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	if m.checkFunc != nil {
 		return m.checkFunc(tool.Name)
 	}
 	return false
 }
-func (m *blockingMockAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (m *blockingMockAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	select {
 	case <-m.block:
 		return nil
@@ -76,19 +76,19 @@ type installError struct{ msg string }
 
 func (e *installError) Error() string { return e.msg }
 
-func mockSchema(tools ...string) *schema.Schema {
-	s := &schema.Schema{
-		Defaults: schema.Defaults{
+func mockSchema(tools ...string) *config.Schema {
+	s := &config.Schema{
+		Defaults: config.Defaults{
 			Manager:     "native",
 			MethodOrder: []string{"native"},
 		},
-		Tools: map[string]*schema.Tool{},
+		Tools: map[string]*config.Tool{},
 	}
 	for _, name := range tools {
-		s.Tools[name] = &schema.Tool{
+		s.Tools[name] = &config.Tool{
 			Name:     name,
 			IsSimple: true,
-			Methods:  []*schema.MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": name}}},
+			Methods:  []*config.MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": name}}},
 		}
 	}
 	return s
@@ -111,12 +111,12 @@ func TestExecutorFallback(t *testing.T) {
 	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
 	WithAdapters(methodA, methodB)(ex)
 
-	s := &schema.Schema{
-		Defaults: schema.Defaults{Manager: "native", MethodOrder: []string{"failer", "succeeder"}},
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Defaults: config.Defaults{Manager: "native", MethodOrder: []string{"failer", "succeeder"}},
+		Tools: map[string]*config.Tool{
 			"tool1": {
 				Name: "tool1",
-				Methods: []*schema.MethodCandidate{
+				Methods: []*config.MethodCandidate{
 					{Kind: "failer", Config: map[string]any{"pkg": "tool1"}},
 					{Kind: "succeeder", Config: map[string]any{"pkg": "tool1"}},
 				},
@@ -151,13 +151,13 @@ func TestExecutorSkipsWhenCondition(t *testing.T) {
 	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
 	WithAdapters(mockA, mockB)(ex)
 
-	s := &schema.Schema{
-		Defaults: schema.Defaults{Manager: "native", MethodOrder: []string{"debian-only", "any-distro"}},
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Defaults: config.Defaults{Manager: "native", MethodOrder: []string{"debian-only", "any-distro"}},
+		Tools: map[string]*config.Tool{
 			"tool1": {
 				Name: "tool1",
-				Methods: []*schema.MethodCandidate{
-					{Kind: "debian-only", When: &schema.Condition{DistroFamily: []string{"debian"}}},
+				Methods: []*config.MethodCandidate{
+					{Kind: "debian-only", When: &config.Condition{DistroFamily: []string{"debian"}}},
 					{Kind: "any-distro"},
 				},
 			},
@@ -227,12 +227,12 @@ func TestExecutorAdapterUnavailable(t *testing.T) {
 	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
 	WithAdapters(mock)(ex)
 
-	s := &schema.Schema{
-		Defaults: schema.Defaults{Manager: "some-adapter", MethodOrder: []string{"some-adapter"}},
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Defaults: config.Defaults{Manager: "some-adapter", MethodOrder: []string{"some-adapter"}},
+		Tools: map[string]*config.Tool{
 			"tool1": {
 				Name: "tool1",
-				Methods: []*schema.MethodCandidate{
+				Methods: []*config.MethodCandidate{
 					{Kind: "some-adapter", Config: map[string]any{"pkg": "tool1"}},
 				},
 			},
@@ -692,7 +692,7 @@ func TestExecutorBlocksDangerous(t *testing.T) {
 
 func TestHasDangerousMethod(t *testing.T) {
 	ex := &Executor{}
-	tool := &schema.Tool{Name: "test"}
+	tool := &config.Tool{Name: "test"}
 
 	// No methods → not dangerous.
 	if ex.hasDangerousMethod(tool) {
@@ -700,7 +700,7 @@ func TestHasDangerousMethod(t *testing.T) {
 	}
 
 	// Method with build config key → dangerous.
-	tool.Methods = []*schema.MethodCandidate{
+	tool.Methods = []*config.MethodCandidate{
 		{Config: map[string]any{"build": "make"}},
 	}
 	if !ex.hasDangerousMethod(tool) {
@@ -708,7 +708,7 @@ func TestHasDangerousMethod(t *testing.T) {
 	}
 
 	// Method with build_cmd → dangerous.
-	tool.Methods = []*schema.MethodCandidate{
+	tool.Methods = []*config.MethodCandidate{
 		{Config: map[string]any{"build_cmd": "ninja"}},
 	}
 	if !ex.hasDangerousMethod(tool) {
@@ -716,7 +716,7 @@ func TestHasDangerousMethod(t *testing.T) {
 	}
 
 	// Method with build_command → dangerous.
-	tool.Methods = []*schema.MethodCandidate{
+	tool.Methods = []*config.MethodCandidate{
 		{Config: map[string]any{"build_command": "cmake --build"}},
 	}
 	if !ex.hasDangerousMethod(tool) {
@@ -724,7 +724,7 @@ func TestHasDangerousMethod(t *testing.T) {
 	}
 
 	// Method with non-string build value → not dangerous.
-	tool.Methods = []*schema.MethodCandidate{
+	tool.Methods = []*config.MethodCandidate{
 		{Config: map[string]any{"build": true}},
 	}
 	if ex.hasDangerousMethod(tool) {
@@ -732,7 +732,7 @@ func TestHasDangerousMethod(t *testing.T) {
 	}
 
 	// Method with empty string build value → not dangerous.
-	tool.Methods = []*schema.MethodCandidate{
+	tool.Methods = []*config.MethodCandidate{
 		{Config: map[string]any{"build": ""}},
 	}
 	if ex.hasDangerousMethod(tool) {
@@ -740,7 +740,7 @@ func TestHasDangerousMethod(t *testing.T) {
 	}
 
 	// AUR/Pacstall methods are NOT flagged (explicit user choice).
-	tool.Methods = []*schema.MethodCandidate{
+	tool.Methods = []*config.MethodCandidate{
 		{Kind: "aur", Config: map[string]any{"pkg": "foo"}},
 	}
 	if ex.hasDangerousMethod(tool) {
@@ -924,12 +924,12 @@ func TestToolTimeout(t *testing.T) {
 	WithToolTimeout(10 * time.Millisecond)(ex)
 	WithMethodTimeout(5 * time.Millisecond)(ex)
 
-	s := &schema.Schema{
-		Defaults: schema.Defaults{Manager: "native", MethodOrder: []string{"blocker"}},
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Defaults: config.Defaults{Manager: "native", MethodOrder: []string{"blocker"}},
+		Tools: map[string]*config.Tool{
 			"tool1": {
 				Name: "tool1",
-				Methods: []*schema.MethodCandidate{
+				Methods: []*config.MethodCandidate{
 					{Kind: "blocker", Config: map[string]any{"pkg": "tool1"}},
 				},
 			},
@@ -960,8 +960,8 @@ type orderTrackingAdapter struct {
 
 func (m *orderTrackingAdapter) Kind() string { return m.kindValue }
 func (m *orderTrackingAdapter) Available(ctx context.Context, rn run.Runner) bool { return true }
-func (m *orderTrackingAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool { return false }
-func (m *orderTrackingAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (m *orderTrackingAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool { return false }
+func (m *orderTrackingAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	*m.attemptOrder = append(*m.attemptOrder, m.kindValue)
 	return &installError{msg: "order tracking failure"}
 }
@@ -983,12 +983,12 @@ func TestExecutorReordersMethodsByExpandedOrder(t *testing.T) {
 	// Set nativeManagerName directly (simulating what Execute would do)
 	ex.nativeManagerName = "apt"
 
-	s := &schema.Schema{
-		Defaults: schema.Defaults{Manager: "native", MethodOrder: []string{"apt", "cargo"}},
-		Tools: map[string]*schema.Tool{
+	s := &config.Schema{
+		Defaults: config.Defaults{Manager: "native", MethodOrder: []string{"apt", "cargo"}},
+		Tools: map[string]*config.Tool{
 			"tool1": {
 				Name: "tool1",
-				Methods: []*schema.MethodCandidate{
+				Methods: []*config.MethodCandidate{
 					{Kind: "native", Config: map[string]any{"pkg": "tool1"}},
 					{Kind: "cargo", Config: map[string]any{"pkg": "binary"}},
 				},
@@ -1024,9 +1024,9 @@ func TestExplainToolRespectsExpandedOrder(t *testing.T) {
 	WithAdapters(nativeAdapter, cargoAdapter)(ex)
 	ex.nativeManagerName = "apt"
 
-	tool := &schema.Tool{
+	tool := &config.Tool{
 		Name: "tool1",
-		Methods: []*schema.MethodCandidate{
+		Methods: []*config.MethodCandidate{
 			{Kind: "native", Config: map[string]any{"pkg": "tool1"}},
 			{Kind: "cargo", Config: map[string]any{"pkg": "binary"}},
 		},

@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // YarnBerryAdapter manages packages via Yarn Berry (v2+). Unlike classic
@@ -59,7 +59,7 @@ func parseMajorVersion(version string) (int, bool) {
 	return major, true
 }
 
-func (a *YarnBerryAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
+func (a *YarnBerryAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
 	if len(pkg) == 0 {
 		return false
@@ -71,7 +71,7 @@ func (a *YarnBerryAdapter) Check(ctx context.Context, rn run.Runner, tool *schem
 	return res.Err == nil && res.ExitCode == 0
 }
 
-func (a *YarnBerryAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (a *YarnBerryAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
 	if len(pkg) == 0 {
 		return fmt.Errorf("yarn-berry: no package name")

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // CondaAdapter implements the Adapter interface for conda packages.
@@ -24,7 +24,7 @@ func (a *CondaAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	return run.LookPath(ctx, rn, "conda")
 }
 
-func (a *CondaAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
+func (a *CondaAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
 	if len(pkg) == 0 || pkg[0] == "" {
 		return false
@@ -33,7 +33,7 @@ func (a *CondaAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.To
 	return res.Err == nil && res.ExitCode == 0 && hasWord(string(res.Stdout), pkg[0])
 }
 
-func (a *CondaAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (a *CondaAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
 	if len(pkg) == 0 || pkg[0] == "" {
 		return fmt.Errorf("conda: no package name")

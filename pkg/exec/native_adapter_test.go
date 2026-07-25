@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 func TestNativeAdapterAutoDetect(t *testing.T) {
@@ -39,8 +39,8 @@ func TestNativeAdapterAutoDetect(t *testing.T) {
 }
 
 func TestNativeAdapterCheckWithAutoDetect(t *testing.T) {
-	mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
-	tool := &schema.Tool{Name: "git"}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+	tool := &config.Tool{Name: "git"}
 
 	t.Run("installed", func(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 0}
@@ -64,15 +64,15 @@ func TestNativeAdapterCheckWithAutoDetect(t *testing.T) {
 	t.Run("empty pkg returns false", func(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 0}
 		adapter := NewNativeAdapter("")
-		if adapter.Check(context.Background(), fr, tool, &schema.MethodCandidate{Config: map[string]any{}}) {
+		if adapter.Check(context.Background(), fr, tool, &config.MethodCandidate{Config: map[string]any{}}) {
 			t.Fatal("Check should be false with empty pkg")
 		}
 	})
 }
 
 func TestNativeAdapterInstallWithAutoDetect(t *testing.T) {
-	mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
-	tool := &schema.Tool{Name: "git"}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+	tool := &config.Tool{Name: "git"}
 
 	t.Run("success", func(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 0}
@@ -122,7 +122,7 @@ func TestNativeAdapterInstallWithAutoDetect(t *testing.T) {
 
 func TestPkgFromConfigResolvesClanOverrides(t *testing.T) {
 	t.Run("uses override for matching clan", func(t *testing.T) {
-		mc := &schema.MethodCandidate{
+		mc := &config.MethodCandidate{
 			Config: map[string]any{
 				"pkg":           "fd",
 				"pkg_overrides": map[string]any{"apt": "fd-find"},
@@ -134,7 +134,7 @@ func TestPkgFromConfigResolvesClanOverrides(t *testing.T) {
 	})
 
 	t.Run("falls back to default pkg for non-matching clan", func(t *testing.T) {
-		mc := &schema.MethodCandidate{
+		mc := &config.MethodCandidate{
 			Config: map[string]any{
 				"pkg":           "fd",
 				"pkg_overrides": map[string]any{"apt": "fd-find"},
@@ -146,7 +146,7 @@ func TestPkgFromConfigResolvesClanOverrides(t *testing.T) {
 	})
 
 	t.Run("falls back to default pkg when no overrides exist", func(t *testing.T) {
-		mc := &schema.MethodCandidate{
+		mc := &config.MethodCandidate{
 			Config: map[string]any{"pkg": "fd"},
 		}
 		if got := pkgFromConfig(mc, "debian"); got != "fd" {
@@ -155,7 +155,7 @@ func TestPkgFromConfigResolvesClanOverrides(t *testing.T) {
 	})
 
 	t.Run("empty clan falls back to pkg key", func(t *testing.T) {
-		mc := &schema.MethodCandidate{
+		mc := &config.MethodCandidate{
 			Config: map[string]any{"pkg": "git"},
 		}
 		if got := pkgFromConfig(mc, ""); got != "git" {
@@ -165,7 +165,7 @@ func TestPkgFromConfigResolvesClanOverrides(t *testing.T) {
 
 	t.Run("override keyed by alias resolves for multiple clans", func(t *testing.T) {
 		// "apt" is Manager.Name for both debian and mint.
-		mc := &schema.MethodCandidate{
+		mc := &config.MethodCandidate{
 			Config: map[string]any{
 				"pkg":           "tool",
 				"pkg_overrides": map[string]any{"apt": "tool-apt"},
@@ -214,8 +214,8 @@ func TestFindClanByManagerResolvesBinaryNameVariants(t *testing.T) {
 }
 
 func TestNativeAdapterRemove(t *testing.T) {
-	mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
-	tool := &schema.Tool{Name: "git"}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+	tool := &config.Tool{Name: "git"}
 
 	t.Run("runs remove command after detection", func(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 0}
@@ -311,8 +311,8 @@ func TestNativeByManagerAdapterImplementsRemover(t *testing.T) {
 func TestNativeByManagerAdapterRemoveDelegates(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 0}
 	a := &NativeByManagerAdapter{managerName: "sh", rn: fr}
-	mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
-	tool := &schema.Tool{Name: "git"}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+	tool := &config.Tool{Name: "git"}
 
 	// Remove should not panic or return error — it delegates to NativeAdapter.Remove
 	// which uses findClanByManager. Since "sh" isn't a real manager, it will fail
@@ -329,8 +329,8 @@ func TestNativeByManagerAdapterCheck(t *testing.T) {
 	t.Run("installed", func(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 0}
 		a := &NativeByManagerAdapter{managerName: "apt"}
-		mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
-		tool := &schema.Tool{Name: "git"}
+		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+		tool := &config.Tool{Name: "git"}
 
 		got := a.Check(context.Background(), fr, tool, mc)
 		if !got {
@@ -356,8 +356,8 @@ func TestNativeByManagerAdapterCheck(t *testing.T) {
 	t.Run("not installed", func(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 1}
 		a := &NativeByManagerAdapter{managerName: "apt"}
-		mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
-		tool := &schema.Tool{Name: "git"}
+		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+		tool := &config.Tool{Name: "git"}
 
 		got := a.Check(context.Background(), fr, tool, mc)
 		if got {
@@ -371,8 +371,8 @@ func TestNativeByManagerAdapterCheck(t *testing.T) {
 	t.Run("empty pkg returns false", func(t *testing.T) {
 		fr := &run.FakeRunner{}
 		a := &NativeByManagerAdapter{managerName: "apt"}
-		mc := &schema.MethodCandidate{Config: map[string]any{}}
-		tool := &schema.Tool{Name: "git"}
+		mc := &config.MethodCandidate{Config: map[string]any{}}
+		tool := &config.Tool{Name: "git"}
 
 		got := a.Check(context.Background(), fr, tool, mc)
 		if got {
@@ -386,8 +386,8 @@ func TestNativeByManagerAdapterCheck(t *testing.T) {
 	t.Run("unknown manager returns false", func(t *testing.T) {
 		fr := &run.FakeRunner{}
 		a := &NativeByManagerAdapter{managerName: "nonexistent"}
-		mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
-		tool := &schema.Tool{Name: "git"}
+		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+		tool := &config.Tool{Name: "git"}
 
 		got := a.Check(context.Background(), fr, tool, mc)
 		if got {
@@ -403,8 +403,8 @@ func TestNativeByManagerAdapterInstall(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 0}
 		a := &NativeByManagerAdapter{managerName: "apt"}
-		mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
-		tool := &schema.Tool{Name: "git"}
+		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+		tool := &config.Tool{Name: "git"}
 
 		err := a.Install(context.Background(), fr, tool, mc)
 		if err != nil {
@@ -433,8 +433,8 @@ func TestNativeByManagerAdapterInstall(t *testing.T) {
 	t.Run("runner error", func(t *testing.T) {
 		fr := &run.FakeRunner{Err: fmt.Errorf("test error")}
 		a := &NativeByManagerAdapter{managerName: "apt"}
-		mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
-		tool := &schema.Tool{Name: "git"}
+		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+		tool := &config.Tool{Name: "git"}
 
 		err := a.Install(context.Background(), fr, tool, mc)
 		if err == nil {
@@ -445,8 +445,8 @@ func TestNativeByManagerAdapterInstall(t *testing.T) {
 	t.Run("non-zero exit", func(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 1, Stderr: "permission denied"}
 		a := &NativeByManagerAdapter{managerName: "apt"}
-		mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
-		tool := &schema.Tool{Name: "git"}
+		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+		tool := &config.Tool{Name: "git"}
 
 		err := a.Install(context.Background(), fr, tool, mc)
 		if err == nil {
@@ -457,8 +457,8 @@ func TestNativeByManagerAdapterInstall(t *testing.T) {
 	t.Run("empty pkg returns error", func(t *testing.T) {
 		fr := &run.FakeRunner{}
 		a := &NativeByManagerAdapter{managerName: "apt"}
-		mc := &schema.MethodCandidate{Config: map[string]any{}}
-		tool := &schema.Tool{Name: "git"}
+		mc := &config.MethodCandidate{Config: map[string]any{}}
+		tool := &config.Tool{Name: "git"}
 
 		err := a.Install(context.Background(), fr, tool, mc)
 		if err == nil {
@@ -472,8 +472,8 @@ func TestNativeByManagerAdapterInstall(t *testing.T) {
 	t.Run("unknown manager returns error", func(t *testing.T) {
 		fr := &run.FakeRunner{}
 		a := &NativeByManagerAdapter{managerName: "nonexistent"}
-		mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "git"}}
-		tool := &schema.Tool{Name: "git"}
+		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+		tool := &config.Tool{Name: "git"}
 
 		err := a.Install(context.Background(), fr, tool, mc)
 		if err == nil {

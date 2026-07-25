@@ -10,17 +10,17 @@ import (
 	"sync"
 	"time"
 
-	"depengine/pkg/graph"
-	"depengine/pkg/native"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
-	"depengine/pkg/state"
+	"github.com/Khorea1/depengine/pkg/graph"
+	"github.com/Khorea1/depengine/pkg/native"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/state"
 )
 
 // Execute runs all tools in the schema in dependency order.
 // needsNativeSync reports whether the schema contains any tool with a native
 // method for the given clan. If no tool uses native, index sync is skipped.
-func needsNativeSync(s *schema.Schema, clan string) bool {
+func needsNativeSync(s *config.Schema, clan string) bool {
 	if s == nil {
 		return false
 	}
@@ -38,7 +38,7 @@ func needsNativeSync(s *schema.Schema, clan string) bool {
 	return false
 }
 
-func (ex *Executor) Execute(ctx context.Context, s *schema.Schema, clan string) (*ExecReport, error) {
+func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) (*ExecReport, error) {
 	start := time.Now()
 	report := &ExecReport{}
 	ex.clan = clan
@@ -125,7 +125,7 @@ func (ex *Executor) Execute(ctx context.Context, s *schema.Schema, clan string) 
 // writeState persists the installation state file after a successful run.
 // It loads existing state and merges in the current run's results, preserving
 // tools installed by other schemas or earlier runs.
-func (ex *Executor) writeState(ctx context.Context, s *schema.Schema, report *ExecReport) {
+func (ex *Executor) writeState(ctx context.Context, s *config.Schema, report *ExecReport) {
 	if ex.schemaPath == "" {
 		ex.logWarn(ctx, "state not persisted: no schema path configured (install may not be trackable)")
 		return
@@ -173,7 +173,7 @@ func (ex *Executor) writeState(ctx context.Context, s *schema.Schema, report *Ex
 
 // hasDangerousMethod checks whether any of the tool's methods have config
 // keys that trigger arbitrary code execution (build scripts, etc.).
-func (ex *Executor) hasDangerousMethod(tool *schema.Tool) bool {
+func (ex *Executor) hasDangerousMethod(tool *config.Tool) bool {
 	for _, m := range tool.Methods {
 		for _, key := range []string{"build", "build_cmd", "build_command"} {
 			if v, ok := m.Config[key]; ok {
@@ -186,7 +186,7 @@ func (ex *Executor) hasDangerousMethod(tool *schema.Tool) bool {
 	return false
 }
 
-func (ex *Executor) runPreinstall(ctx context.Context, tool *schema.Tool) error {
+func (ex *Executor) runPreinstall(ctx context.Context, tool *config.Tool) error {
 	cmd := strings.TrimSpace(tool.PreInstall)
 	if cmd == "" {
 		return nil
@@ -209,7 +209,7 @@ func (ex *Executor) runPreinstall(ctx context.Context, tool *schema.Tool) error 
 	return nil
 }
 
-func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResult {
+func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResult {
 	toolStart := time.Now()
 	result := ToolResult{Tool: tool.Name}
 	methods := tool.Methods
@@ -222,13 +222,13 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 
 	// Security warnings for tools with arbitrary code execution surfaces.
 	type dangerCheck struct {
-		has    func(*schema.Tool) bool
+		has    func(*config.Tool) bool
 		detail string
 	}
 	checks := []dangerCheck{
 		{ex.hasDangerousMethod, "config includes build scripts that may execute arbitrary code"},
-		{func(t *schema.Tool) bool { return t.PostInstall != "" }, "has a post-install hook (arbitrary code execution)"},
-		{func(t *schema.Tool) bool { return t.PreInstall != "" }, "has a pre-install hook (arbitrary code execution)"},
+		{func(t *config.Tool) bool { return t.PostInstall != "" }, "has a post-install hook (arbitrary code execution)"},
+		{func(t *config.Tool) bool { return t.PreInstall != "" }, "has a pre-install hook (arbitrary code execution)"},
 	}
 	if !ex.allowArbitraryCode {
 		hasDanger := false
@@ -277,15 +277,15 @@ func (ex *Executor) executeTool(ctx context.Context, tool *schema.Tool) ToolResu
 
 // effectiveMethodOrder returns the method_order effective for a given
 // tool, applying per-tool overrides and native manager expansion.
-func (ex *Executor) effectiveMethodOrder(tool *schema.Tool) []string {
-	return schema.EffectiveMethodOrder(tool, ex.defaultMethodOrder, ex.nativeManagerName)
+func (ex *Executor) effectiveMethodOrder(tool *config.Tool) []string {
+	return config.EffectiveMethodOrder(tool, ex.defaultMethodOrder, ex.nativeManagerName)
 }
 
 // tryMethods iterates through all methods of a tool, trying each in order.
 // It modifies result in place — on success the result is terminal; on
 // exhaustion it sets the final status to StatusFailed or StatusSkippedUnavailable.
-func (ex *Executor) tryMethods(toolCtx context.Context, tool *schema.Tool, result *ToolResult, toolStart time.Time) {
-	orderedMethods := schema.OrderMethods(tool.Methods, ex.effectiveMethodOrder(tool))
+func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, result *ToolResult, toolStart time.Time) {
+	orderedMethods := config.OrderMethods(tool.Methods, ex.effectiveMethodOrder(tool))
 	for _, method := range orderedMethods {
 		select {
 		case <-toolCtx.Done():
@@ -498,7 +498,7 @@ func (ex *Executor) recordToolResult(ctx context.Context, result *ToolResult, re
 // executeLevelParallel runs all tools in a topological level concurrently,
 // limiting concurrency to ex.maxJobs. Results are collected thread-safely
 // via recordToolResult.
-func (ex *Executor) executeLevelParallel(ctx context.Context, s *schema.Schema, level []string, report *ExecReport) {
+func (ex *Executor) executeLevelParallel(ctx context.Context, s *config.Schema, level []string, report *ExecReport) {
 	toolCh := make(chan string, len(level))
 	resultCh := make(chan ToolResult, len(level))
 
@@ -547,7 +547,7 @@ func (ex *Executor) executeLevelParallel(ctx context.Context, s *schema.Schema, 
 	}
 }
 
-func (ex *Executor) runPostinstall(ctx context.Context, tool *schema.Tool) error {
+func (ex *Executor) runPostinstall(ctx context.Context, tool *config.Tool) error {
 	cmd := strings.TrimSpace(tool.PostInstall)
 	if cmd == "" {
 		return nil

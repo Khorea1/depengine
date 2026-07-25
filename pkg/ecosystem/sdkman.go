@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // SDKManAdapter manages SDKs via SDKMAN (https://sdkman.io). Install is
@@ -35,7 +35,7 @@ func (a *SDKManAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	return run.LookPath(ctx, rn, "sdk")
 }
 
-func (a *SDKManAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
+func (a *SDKManAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	candidate := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
 	if len(candidate) == 0 {
 		return false
@@ -49,7 +49,7 @@ func (a *SDKManAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.T
 	return err == nil
 }
 
-func (a *SDKManAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (a *SDKManAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
 	if len(pkg) == 0 {
 		return fmt.Errorf("sdkman: no package name")

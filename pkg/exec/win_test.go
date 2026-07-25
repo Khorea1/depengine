@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // lookupWinAdapter finds a winAdapter by kind from the global registry.
@@ -80,8 +80,8 @@ func TestWinAdapterAvailable(t *testing.T) {
 
 func TestWinAdapterCheck(t *testing.T) {
 	ctx := context.Background()
-	mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "fd"}}
-	tool := &schema.Tool{Name: "fd"}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "fd"}}
+	tool := &config.Tool{Name: "fd"}
 
 	t.Run("scoop installed", func(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 0}
@@ -137,7 +137,7 @@ func TestWinAdapterCheck(t *testing.T) {
 	t.Run("uses tool name when no pkg in config", func(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 0}
 		a := lookupWinAdapter("scoop")
-		a.Check(ctx, fr, tool, &schema.MethodCandidate{Config: map[string]any{}})
+		a.Check(ctx, fr, tool, &config.MethodCandidate{Config: map[string]any{}})
 		if len(fr.Calls) != 1 {
 			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
 		}
@@ -150,8 +150,8 @@ func TestWinAdapterCheck(t *testing.T) {
 
 func TestWinAdapterInstall(t *testing.T) {
 	ctx := context.Background()
-	mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "fd"}}
-	tool := &schema.Tool{Name: "fd"}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "fd"}}
+	tool := &config.Tool{Name: "fd"}
 
 	t.Run("scoop install succeeds", func(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 0}
@@ -224,8 +224,8 @@ func TestWinAdapterInstall(t *testing.T) {
 	t.Run("uses tool name when no pkg in config", func(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 0}
 		a := lookupWinAdapter("scoop")
-		toolNoConfig := &schema.Tool{Name: "neovim"}
-		if err := a.Install(ctx, fr, toolNoConfig, &schema.MethodCandidate{Config: map[string]any{}}); err != nil {
+		toolNoConfig := &config.Tool{Name: "neovim"}
+		if err := a.Install(ctx, fr, toolNoConfig, &config.MethodCandidate{Config: map[string]any{}}); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(fr.Calls) != 1 {
@@ -239,8 +239,8 @@ func TestWinAdapterInstall(t *testing.T) {
 
 func TestWinAdapterRemove(t *testing.T) {
 	ctx := context.Background()
-	mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "fd"}}
-	tool := &schema.Tool{Name: "fd"}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "fd"}}
+	tool := &config.Tool{Name: "fd"}
 
 	t.Run("scoop remove succeeds", func(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 0}

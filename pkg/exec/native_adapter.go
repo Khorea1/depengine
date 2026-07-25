@@ -6,9 +6,9 @@ import (
 	"strings"
 	"sync"
 
-	"depengine/pkg/native"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/native"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // NativeAdapter wraps pkg/native to implement the Adapter interface.
@@ -52,7 +52,7 @@ func (a *NativeAdapter) Available(ctx context.Context, rn run.Runner) bool {
 }
 
 // Check runs the native manager's check command.
-func (a *NativeAdapter) Check(ctx context.Context, rn run.Runner, _ *schema.Tool, mc *schema.MethodCandidate) bool {
+func (a *NativeAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) bool {
 	clan := a.detectClan(ctx, rn)
 	if clan == "" {
 		return false
@@ -71,7 +71,7 @@ func (a *NativeAdapter) Check(ctx context.Context, rn run.Runner, _ *schema.Tool
 
 // Install runs the install command. Sync is handled by the executor's
 // SyncManager, not here.
-func (a *NativeAdapter) Install(ctx context.Context, rn run.Runner, _ *schema.Tool, mc *schema.MethodCandidate) error {
+func (a *NativeAdapter) Install(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) error {
 	clan := a.detectClan(ctx, rn)
 	if clan == "" {
 		return fmt.Errorf("native: no native manager found")
@@ -80,7 +80,7 @@ func (a *NativeAdapter) Install(ctx context.Context, rn run.Runner, _ *schema.To
 }
 
 // Remove uninstalls a package via the native package manager.
-func (a *NativeAdapter) Remove(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (a *NativeAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	clan := a.detectClan(ctx, rn)
 	if clan == "" {
 		return fmt.Errorf("no native manager detected")
@@ -109,7 +109,7 @@ func (a *NativeAdapter) CanRemove() bool { return true }
 // When clan is non-empty and the MC has pkg_overrides, it checks for a
 // clan-specific override first (e.g. apt→"fd-find" on debian). Falls back
 // to the generic "pkg" key, then to empty string.
-func pkgFromConfig(mc *schema.MethodCandidate, clan string) string {
+func pkgFromConfig(mc *config.MethodCandidate, clan string) string {
 	if clan != "" {
 		if overrides, ok := mc.Config["pkg_overrides"].(map[string]any); ok {
 			for _, name := range native.ManagerNamesForClan(clan) {
@@ -127,7 +127,7 @@ func pkgFromConfig(mc *schema.MethodCandidate, clan string) string {
 
 // runNativeInstall runs the install command for a native package manager.
 // Shared by NativeAdapter and NativeByManagerAdapter.
-func runNativeInstall(ctx context.Context, rn run.Runner, prefix, clan string, mc *schema.MethodCandidate) error {
+func runNativeInstall(ctx context.Context, rn run.Runner, prefix, clan string, mc *config.MethodCandidate) error {
 	pkg := pkgFromConfig(mc, clan)
 	if pkg == "" {
 		return fmt.Errorf("%s: no package name", prefix)
@@ -189,7 +189,7 @@ func (a *NativeByManagerAdapter) Available(ctx context.Context, rn run.Runner) b
 	return run.LookPath(ctx, rn, a.managerName)
 }
 
-func (a *NativeByManagerAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
+func (a *NativeByManagerAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	clan := findClanByManager(a.managerName)
 	if clan == "" {
 		return false
@@ -208,7 +208,7 @@ func (a *NativeByManagerAdapter) Check(ctx context.Context, rn run.Runner, tool 
 	return res.Err == nil && res.ExitCode == 0
 }
 
-func (a *NativeByManagerAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (a *NativeByManagerAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	clan := findClanByManager(a.managerName)
 	if clan == "" {
 		return fmt.Errorf("native(%s): no clan found for manager", a.managerName)
@@ -234,7 +234,7 @@ func (a *NativeByManagerAdapter) Install(ctx context.Context, rn run.Runner, too
 	return nil
 }
 
-func (a *NativeByManagerAdapter) Remove(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (a *NativeByManagerAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	clan := findClanByManager(a.managerName)
 	if clan == "" {
 		return fmt.Errorf("native(%s): no clan found for manager", a.managerName)

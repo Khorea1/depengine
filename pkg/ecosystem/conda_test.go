@@ -4,14 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
-func condaTool(name, pkg string) (*schema.Tool, *schema.MethodCandidate) {
-	tool := &schema.Tool{Name: name}
-	mc := &schema.MethodCandidate{
+func condaTool(name, pkg string) (*config.Tool, *config.MethodCandidate) {
+	tool := &config.Tool{Name: name}
+	mc := &config.MethodCandidate{
 		Kind:   "conda",
 		Config: map[string]any{"pkg": pkg},
 	}
@@ -66,8 +66,8 @@ func TestCondaAdapterCheckNoPkg(t *testing.T) {
 	fr := &run.FakeRunner{}
 
 	a := &CondaAdapter{}
-	tool := &schema.Tool{Name: "tool"}
-	mc := &schema.MethodCandidate{Kind: "conda"} // no pkg
+	tool := &config.Tool{Name: "tool"}
+	mc := &config.MethodCandidate{Kind: "conda"} // no pkg
 	if a.Check(context.Background(), fr, tool, mc) {
 		t.Fatal("expected Check=false when no package name")
 	}
@@ -108,8 +108,8 @@ func TestCondaAdapterInstallNoPkg(t *testing.T) {
 	fr := &run.FakeRunner{}
 
 	a := &CondaAdapter{}
-	tool := &schema.Tool{Name: ""} // both tool name and config are empty
-	mc := &schema.MethodCandidate{Kind: "conda"}
+	tool := &config.Tool{Name: ""} // both tool name and config are empty
+	mc := &config.MethodCandidate{Kind: "conda"}
 	if err := a.Install(context.Background(), fr, tool, mc); err == nil {
 		t.Fatal("expected error for missing package name")
 	}

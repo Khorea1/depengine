@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // CargoAdapter extends BaseAdapter with git-repo support: when
@@ -25,7 +25,7 @@ func NewCargoAdapter() *CargoAdapter {
 }
 
 // Install checks for a git URL in config and switches to --git mode.
-func (a *CargoAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (a *CargoAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	if gitURL, ok := mc.Config["git"].(string); ok && gitURL != "" {
 		cmd := []string{"cargo", "install", "--git", gitURL}
 		if pkg, ok := mc.Config["pkg"].(string); ok && pkg != "" {

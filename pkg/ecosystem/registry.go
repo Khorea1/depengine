@@ -1,7 +1,8 @@
 package ecosystem
 
 import (
-	"depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/methodkind"
 )
 
 // Configs holds the definitions for all supported language adapters.
@@ -125,6 +126,17 @@ var Configs = map[string]BaseConfig{
 		CheckTmpl:   []string{"sh", "-c", `mas list | grep -qF -- "$1"`, "sh", "{pkg}"},
 		InstallTmpl: []string{"mas", "install", "{pkg}"},
 	},
+}
+
+func init() {
+	// Verify that all Configs keys are known method kinds.
+	// This ensures the ecosystem package stays consistent with methodkind,
+	// the single source of truth for kind names.
+	for name := range Configs {
+		if !methodkind.IsKnownKind(name) {
+			panic("ecosystem: Configs key " + name + " is not in methodkind.KnownKinds()")
+		}
+	}
 }
 
 // RegisterAll registers all language adapters with the global exec registry.

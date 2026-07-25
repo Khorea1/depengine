@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 func TestSyncManagerNeedsSyncTrue(t *testing.T) {

@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // PacstallAdapter manages packages via Pacstall, an AUR-style package
@@ -34,7 +34,7 @@ func (a *PacstallAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	return true
 }
 
-func (a *PacstallAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
+func (a *PacstallAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
 	if len(pkg) == 0 {
 		return false
@@ -43,7 +43,7 @@ func (a *PacstallAdapter) Check(ctx context.Context, rn run.Runner, tool *schema
 	return res.Err == nil && res.ExitCode == 0
 }
 
-func (a *PacstallAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (a *PacstallAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
 	if len(pkg) == 0 {
 		return fmt.Errorf("pacstall: no package name")

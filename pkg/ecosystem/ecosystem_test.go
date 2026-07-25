@@ -4,14 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
-func tool(name, pkg string) (*schema.Tool, *schema.MethodCandidate) {
-	t := &schema.Tool{Name: name}
-	mc := &schema.MethodCandidate{
+func tool(name, pkg string) (*config.Tool, *config.MethodCandidate) {
+	t := &config.Tool{Name: name}
+	mc := &config.MethodCandidate{
 		Kind:   name,
 		Config: map[string]any{"pkg": pkg},
 	}
@@ -212,8 +212,8 @@ func TestAURAdapterCheckInstall(t *testing.T) {
 }
 
 func TestSubstitutePkgFromConfig(t *testing.T) {
-	tl := &schema.Tool{Name: "mytool"}
-	mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "mycustompkg"}}
+	tl := &config.Tool{Name: "mytool"}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "mycustompkg"}}
 
 	got := exec.SubstitutePkg([]string{"{pkg}"}, tl, mc)
 	if len(got) == 0 || got[0] != "mycustompkg" {
@@ -222,8 +222,8 @@ func TestSubstitutePkgFromConfig(t *testing.T) {
 }
 
 func TestSubstitutePkgFallback(t *testing.T) {
-	tl := &schema.Tool{Name: "mytool"}
-	mc := &schema.MethodCandidate{Config: map[string]any{}}
+	tl := &config.Tool{Name: "mytool"}
+	mc := &config.MethodCandidate{Config: map[string]any{}}
 
 	got := exec.SubstitutePkg([]string{"{pkg}"}, tl, mc)
 	if len(got) == 0 || got[0] != "mytool" {
@@ -246,8 +246,8 @@ func TestPipxCheckReturnsFalseForUninstalled(t *testing.T) {
 		InstallTmpl: []string{"pipx", "install", "{pkg}"},
 	})
 
-	tool := &schema.Tool{Name: "nonexistent-pkg"}
-	mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "nonexistent-pkg"}}
+	tool := &config.Tool{Name: "nonexistent-pkg"}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "nonexistent-pkg"}}
 
 	if adapter.Check(context.Background(), fr, tool, mc) {
 		t.Fatal("pipx Check should return false for uninstalled package")
@@ -266,8 +266,8 @@ func TestUvCheckReturnsFalseForUninstalled(t *testing.T) {
 		InstallTmpl: []string{"uv", "tool", "install", "{pkg}"},
 	})
 
-	tool := &schema.Tool{Name: "nonexistent-uv-tool"}
-	mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "nonexistent-uv-tool"}}
+	tool := &config.Tool{Name: "nonexistent-uv-tool"}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "nonexistent-uv-tool"}}
 
 	if adapter.Check(context.Background(), fr, tool, mc) {
 		t.Fatal("uv Check should return false for uninstalled tool")
@@ -335,8 +335,8 @@ func TestPacstallCheckUsesCorrectFlag(t *testing.T) {
 	t.Parallel()
 	fr := &run.FakeRunner{ExitCode: 0}
 	adapter := NewPacstallAdapter()
-	tool := &schema.Tool{Name: "test"}
-	mc := &schema.MethodCandidate{Config: map[string]any{"pkg": "foo"}}
+	tool := &config.Tool{Name: "test"}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "foo"}}
 
 	adapter.Check(context.Background(), fr, tool, mc)
 
@@ -355,10 +355,10 @@ func TestPacstallCheckUsesCorrectFlag(t *testing.T) {
 func TestSteamCMDCheckWithEmptyInstallDir(t *testing.T) {
 	t.Parallel()
 	adapter := NewSteamCMDAdapter()
-	tool := &schema.Tool{Name: "test"}
+	tool := &config.Tool{Name: "test"}
 
 	t.Run("returns false when dir config is empty string", func(t *testing.T) {
-		mcWithEmptyDir := &schema.MethodCandidate{
+		mcWithEmptyDir := &config.MethodCandidate{
 			Config: map[string]any{"pkg": "730", "dir": ""},
 		}
 		fr := &run.FakeRunner{ExitCode: 0}
@@ -369,7 +369,7 @@ func TestSteamCMDCheckWithEmptyInstallDir(t *testing.T) {
 	})
 
 	t.Run("returns false when no pkg", func(t *testing.T) {
-		mcNoPkg := &schema.MethodCandidate{Config: map[string]any{}}
+		mcNoPkg := &config.MethodCandidate{Config: map[string]any{}}
 		fr := &run.FakeRunner{ExitCode: 0}
 		got := adapter.Check(context.Background(), fr, tool, mcNoPkg)
 		if got {
@@ -378,7 +378,7 @@ func TestSteamCMDCheckWithEmptyInstallDir(t *testing.T) {
 	})
 
 	t.Run("uses explicit dir when provided", func(t *testing.T) {
-		mcWithDir := &schema.MethodCandidate{
+		mcWithDir := &config.MethodCandidate{
 			Config: map[string]any{"pkg": "730", "dir": "/tmp"},
 		}
 		fr := &run.FakeRunner{ExitCode: 0}

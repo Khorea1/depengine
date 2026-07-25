@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"depengine/pkg/exec"
-	"depengine/pkg/run"
-	"depengine/pkg/schema"
+	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // AURAdapter handles packages from the Arch User Repository via a helper
@@ -27,7 +27,7 @@ func (a *AURAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	return run.LookPath(ctx, rn, a.helper)
 }
 
-func (a *AURAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) bool {
+func (a *AURAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
 	if len(pkg) == 0 || pkg[0] == "" {
 		return false
@@ -37,7 +37,7 @@ func (a *AURAdapter) Check(ctx context.Context, rn run.Runner, tool *schema.Tool
 	return res.Err == nil && res.ExitCode == 0
 }
 
-func (a *AURAdapter) Install(ctx context.Context, rn run.Runner, tool *schema.Tool, mc *schema.MethodCandidate) error {
+func (a *AURAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
 	if len(pkg) == 0 || pkg[0] == "" {
 		return fmt.Errorf("aur: no package name")
