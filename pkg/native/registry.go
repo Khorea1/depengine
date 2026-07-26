@@ -47,6 +47,11 @@ type Manager struct {
 	// Empty means the manager has no standard remove command and the
 	// engine will fall back to manual-removal instructions.
 	RemoveCmd []string
+
+	// AtomicBatch marks managers that can install multiple packages in a
+	// single elevated command, all-or-nothing. When true, the executor
+	// batches same-clan packages into one install step.
+	AtomicBatch bool
 }
 
 // managers maps a manager key (NOT directly a clan — see package doc) to
@@ -61,6 +66,7 @@ var managers = map[string]Manager{
 		InstallCmd:   []string{"apt-get", "install", "-y", "{pkg}"},
 		CheckCmd:     []string{"dpkg", "-s", "{pkg}"},
 		RemoveCmd:    []string{"apt-get", "remove", "-y", "{pkg}"},
+		AtomicBatch: true,
 	},
 	"arch": {
 		Name:         "pacman",
@@ -68,6 +74,7 @@ var managers = map[string]Manager{
 		InstallCmd:   []string{"pacman", "-S", "--noconfirm", "--needed", "{pkg}"},
 		CheckCmd:     []string{"pacman", "-Qi", "{pkg}"},
 		RemoveCmd:    []string{"pacman", "-R", "--noconfirm", "{pkg}"},
+		AtomicBatch: true,
 	},
 	"fedora": {
 		Name:         "dnf",
@@ -75,6 +82,7 @@ var managers = map[string]Manager{
 		InstallCmd:   []string{"dnf", "install", "-y", "{pkg}"},
 		CheckCmd:     []string{"rpm", "-q", "{pkg}"},
 		RemoveCmd:    []string{"dnf", "remove", "-y", "{pkg}"},
+		AtomicBatch: true,
 	},
 	"suse": {
 		Name:         "zypper",
@@ -82,6 +90,7 @@ var managers = map[string]Manager{
 		InstallCmd:   []string{"zypper", "--non-interactive", "install", "{pkg}"},
 		CheckCmd:     []string{"rpm", "-q", "{pkg}"},
 		RemoveCmd:    []string{"zypper", "--non-interactive", "remove", "{pkg}"},
+		AtomicBatch: true,
 	},
 	"alpine": {
 		Name:         "apk",
@@ -91,6 +100,7 @@ var managers = map[string]Manager{
 		InstallCmd:   []string{"apk", "add", "{pkg}"},
 		CheckCmd:     []string{"apk", "info", "-e", "{pkg}"},
 		RemoveCmd:    []string{"apk", "del", "{pkg}"},
+		AtomicBatch: true,
 	},
 	// void uses xbps-install -Sy (sync + install in one command).
 	// NeedsSync is false because -Sy handles the sync inline.
@@ -100,6 +110,7 @@ var managers = map[string]Manager{
 		InstallCmd:   []string{"xbps-install", "-Sy", "{pkg}"},
 		CheckCmd:     []string{"xbps-query", "{pkg}"},
 		RemoveCmd:    []string{"xbps-remove", "-y", "{pkg}"},
+		AtomicBatch: true,
 	},
 	"gentoo": {
 		Name:         "emerge",
@@ -107,6 +118,7 @@ var managers = map[string]Manager{
 		InstallCmd:   []string{"emerge", "--quiet", "{pkg}"},
 		CheckCmd:     []string{"equery", "list", "{pkg}"},
 		RemoveCmd:    []string{"emerge", "--unmerge", "{pkg}"},
+		AtomicBatch: true,
 	},
 	"macos": {
 		Name:         "brew",
@@ -114,6 +126,7 @@ var managers = map[string]Manager{
 		InstallCmd:   []string{"brew", "install", "{pkg}"},
 		CheckCmd:     []string{"brew", "list", "{pkg}"},
 		RemoveCmd:    []string{"brew", "uninstall", "{pkg}"},
+		AtomicBatch: true,
 	},
 	"termux": {
 		Name:         "pkg",
@@ -123,6 +136,7 @@ var managers = map[string]Manager{
 		InstallCmd:   []string{"pkg", "install", "-y", "{pkg}"},
 		CheckCmd:     []string{"dpkg", "-s", "{pkg}"},
 		RemoveCmd:    []string{"pkg", "uninstall", "-y", "{pkg}"},
+		AtomicBatch: true,
 	},
 	"freebsd": {
 		Name:         "pkg",
@@ -130,6 +144,7 @@ var managers = map[string]Manager{
 		InstallCmd:   []string{"pkg", "install", "-y", "{pkg}"},
 		CheckCmd:     []string{"pkg", "info", "-e", "{pkg}"},
 		RemoveCmd:    []string{"pkg", "delete", "-y", "{pkg}"},
+		AtomicBatch: true,
 	},
 	"openbsd": {
 		Name:         "pkg_add",
@@ -137,6 +152,7 @@ var managers = map[string]Manager{
 		InstallCmd:   []string{"pkg_add", "{pkg}"},
 		CheckCmd:     []string{"pkg_info", "-e", "{pkg}"},
 		RemoveCmd:    []string{"pkg_delete", "{pkg}"},
+		AtomicBatch: true,
 	},
 	"netbsd": {
 		Name:         "pkgin",
@@ -144,6 +160,7 @@ var managers = map[string]Manager{
 		InstallCmd:   []string{"pkgin", "-y", "install", "{pkg}"},
 		CheckCmd:     []string{"pkg_info", "-e", "{pkg}"},
 		RemoveCmd:    []string{"pkgin", "-y", "remove", "{pkg}"},
+		AtomicBatch: true,
 	},
 	// Windows managers.
 	// winget is built into Windows 10 1709+ and Windows 11.
@@ -154,6 +171,7 @@ var managers = map[string]Manager{
 		InstallCmd:   []string{"winget", "install", "--id", "{pkg}"},
 		CheckCmd:     []string{"winget", "list", "--id", "{pkg}"},
 		RemoveCmd:    []string{"winget", "uninstall", "--id", "{pkg}"},
+		AtomicBatch:  false,
 	},
 	"mint": {
 		Name:         "apt",
@@ -163,6 +181,7 @@ var managers = map[string]Manager{
 		InstallCmd:   []string{"apt-get", "install", "-y", "{pkg}"},
 		CheckCmd:     []string{"dpkg", "-s", "{pkg}"},
 		RemoveCmd:    []string{"apt-get", "remove", "-y", "{pkg}"},
+		AtomicBatch: true,
 	},
 
 	// opkg — embedded Linux package manager (OpenWrt, LEDE, etc).
@@ -172,6 +191,7 @@ var managers = map[string]Manager{
 		InstallCmd:   []string{"opkg", "install", "{pkg}"},
 		CheckCmd:     []string{"opkg", "status", "{pkg}"},
 		RemoveCmd:    []string{"opkg", "remove", "{pkg}"},
+		AtomicBatch: true,
 	},
 }
 
@@ -313,6 +333,7 @@ func IsNativeManagerName(name string) bool {
 	}
 	return false
 }
+
 
 // ManagerNamesForClan returns every binary name that can refer to the given
 // clan's native manager. This is the Manager.Name (e.g. "apt" for debian,

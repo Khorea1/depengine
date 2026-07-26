@@ -47,6 +47,47 @@ func BuildSyncCmd(clan string) []string {
 	return withSudo(nm.SyncCmd, nm.SudoRequired)
 }
 
+// BuildBatchInstallCmd builds a single install command for multiple packages.
+// It finds the {pkg} placeholder in the InstallCmd template and replaces it
+// with all package names as separate argv entries. Returns nil if the clan
+// has no known native manager — the caller then falls through to per-tool install.
+//
+// Package names are validated against a safe pattern before inclusion.
+// The caller MUST ensure all packages share the same clan.
+func BuildBatchInstallCmd(clan string, pkgs []string) []string {
+	nm, ok := Lookup(clan)
+	if !ok {
+		return nil
+	}
+	if !nm.AtomicBatch {
+		return nil // skip batching for non-atomic managers
+	}
+
+	// Find the {pkg} placeholder position and replace it with all packages.
+	cmd := make([]string, 0, len(nm.InstallCmd)-1+len(pkgs))
+	for _, arg := range nm.InstallCmd {
+		if strings.Contains(arg, "{pkg}") {
+			// Replace {pkg} with the first package, then add the rest.
+			first := strings.ReplaceAll(arg, "{pkg}", pkgs[0])
+			cmd = append(cmd, first)
+			for i := 1; i < len(pkgs); i++ {
+				cmd = append(cmd, pkgs[i])
+			}
+		} else {
+			cmd = append(cmd, arg)
+		}
+	}
+
+	return withSudo(cmd, nm.SudoRequired)
+}
+
+// IsBatchCapable reports whether the clan's native manager supports
+// multi-package batch install (AtomicBatch == true).
+func IsBatchCapable(clan string) bool {
+	nm, ok := Lookup(clan)
+	return ok && nm.AtomicBatch
+}
+
 func substitutePkg(cmd []string, pkg string) []string {
 	out := make([]string, len(cmd))
 	for i, arg := range cmd {
@@ -67,3 +108,4 @@ func withSudo(cmd []string, sudoRequired bool) []string {
 	// insufficient privileges.
 	return cmd
 }
+
