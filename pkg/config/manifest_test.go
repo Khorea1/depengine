@@ -116,3 +116,58 @@ func TestParseSchema_ManifestPackagesSectionEmpty(t *testing.T) {
 		t.Fatalf("expected 0 tools for empty [packages], got %d", len(s.Tools))
 	}
 }
+
+func TestMergeLayersWithProvenanceThreeLayers(t *testing.T) {
+	// Three layers where the same tool appears in all three with different fields.
+	// This tests that provenance accumulates across merges rather than being
+	// overwritten by the last merge (the bug at line 153).
+
+	l1p := writeSchemaInline(t, `
+[tools]
+vim = { pre_install = "echo l1" }
+`)
+	l1, err := ParseSchema(l1p, nil)
+	if err != nil {
+		t.Fatalf("ParseSchema(layer1): %v", err)
+	}
+
+	l2p := writeSchemaInline(t, `
+[tools]
+vim = { post_install = "echo l2" }
+`)
+	l2, err := ParseSchema(l2p, nil)
+	if err != nil {
+		t.Fatalf("ParseSchema(layer2): %v", err)
+	}
+
+	l3p := writeSchemaInline(t, `
+[tools]
+vim = { requires = ["g"] }
+`)
+	l3, err := ParseSchema(l3p, nil)
+	if err != nil {
+		t.Fatalf("ParseSchema(layer3): %v", err)
+	}
+
+	merged := MergeLayersWithProvenance(l1, l2, l3)
+
+	prov, ok := merged.Provenance["vim"]
+	if !ok {
+		t.Fatal("expected provenance for vim")
+	}
+
+	// With three layers, the tool goes through two merges.
+	// Each merge records a provenance entry per field.
+	// With the bug (assignment instead of append), only the last merge's
+	// entries survive, so PreInstall would appear only once.
+	preCount := 0
+	for _, fs := range prov {
+		if fs.Field == "PreInstall" {
+			preCount++
+		}
+	}
+	if preCount < 2 {
+		t.Errorf("PreInstall provenance from multiple merges: got %d occurrence(s), want >= 2 (provenance was overwritten, not accumulated)",
+			preCount)
+	}
+}

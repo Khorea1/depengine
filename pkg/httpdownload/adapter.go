@@ -149,7 +149,7 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	if v, ok := mc.Config["sudo_required"].(bool); ok {
 		sudoRequired = v
 	}
-	if err := Extract(ctx, tmpFile, extractTo, ext, rn, sudoRequired); err != nil {
+	if err := Extract(ctx, tmpFile, extractTo, ext, rn, sudoRequired, tool.Name); err != nil {
 		return fmt.Errorf("http: extract: %w", err)
 	}
 

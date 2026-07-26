@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/Khorea1/depengine/pkg/run"
@@ -20,21 +21,30 @@ import (
 // Returns nil when elevation is available or not needed.
 // Returns an error when sudo is required but no working elevation method
 // is available and we're not already root.
-func elevationGuard(sudoRequired bool) error {
+func elevationGuard(sudoRequired bool, toolName string) error {
 	if !sudoRequired || os.Geteuid() == 0 {
 		return nil
 	}
 	if run.ElevationPrefix() != nil {
 		return nil
 	}
-	return fmt.Errorf("cannot elevate: no working elevation method (sudo/doas/pkexec) available and permission will be denied")
+	var hint string
+	if runtime.GOOS == "windows" {
+		hint = "Run this command in an elevated (Administrator) shell"
+	} else {
+		hint = "Install sudo with passwordless access, or run as root"
+	}
+	if toolName != "" {
+		return fmt.Errorf("cannot elevate for tool %q: %s", toolName, hint)
+	}
+	return fmt.Errorf("cannot elevate: no working elevation method (sudo/doas/pkexec) available. %s", hint)
 }
 
 // Extract decompresses src into dest based on the file extension.
 // Delegates to external tools (tar, unzip, dpkg) for v0.1 to avoid
 // adding Go archive-library dependencies. Go stdlib archive support
 // may replace this in a future version.
-func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequired bool) error {
+func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequired bool, toolName string) error {
 	// Ensure destination exists.
 	if err := os.MkdirAll(dest, 0o755); err != nil {
 		return fmt.Errorf("extract: mkdir %s: %w", dest, err)
@@ -56,29 +66,29 @@ func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequ
 
 	switch ext {
 	case ".tar.gz", ".tgz":
-		return extractTar(ctx, src, dest, []string{"xzf"}, rn, sudoRequired)
+		return extractTar(ctx, src, dest, []string{"xzf"}, rn, sudoRequired, toolName)
 	case ".tar.bz2":
-		return extractTar(ctx, src, dest, []string{"xjf"}, rn, sudoRequired)
+		return extractTar(ctx, src, dest, []string{"xjf"}, rn, sudoRequired, toolName)
 	case ".tar.xz":
-		return extractTar(ctx, src, dest, []string{"xJf"}, rn, sudoRequired)
+		return extractTar(ctx, src, dest, []string{"xJf"}, rn, sudoRequired, toolName)
 	case ".tar.zst":
-		return extractTar(ctx, src, dest, []string{"--zstd", "-xf"}, rn, sudoRequired)
+		return extractTar(ctx, src, dest, []string{"--zstd", "-xf"}, rn, sudoRequired, toolName)
 	case ".tar":
-		return extractTar(ctx, src, dest, []string{"xf"}, rn, sudoRequired)
+		return extractTar(ctx, src, dest, []string{"xf"}, rn, sudoRequired, toolName)
 	case ".zip":
-		return extractZip(ctx, src, dest, rn, sudoRequired)
+		return extractZip(ctx, src, dest, rn, sudoRequired, toolName)
 	case ".deb":
-		return installDeb(ctx, src, rn, sudoRequired)
+		return installDeb(ctx, src, rn, sudoRequired, toolName)
 	default:
 		// Treat as a plain binary — copy and chmod.
 		return copyBinary(src, dest)
 	}
 }
 
-func extractTar(ctx context.Context, src, dest string, flags []string, rn run.Runner, sudoRequired bool) error {
+func extractTar(ctx context.Context, src, dest string, flags []string, rn run.Runner, sudoRequired bool, toolName string) error {
 	args := append(flags, src, "-C", dest)
 	if sudoRequired && os.Geteuid() != 0 {
-		if err := elevationGuard(sudoRequired); err != nil {
+		if err := elevationGuard(sudoRequired, toolName); err != nil {
 			return fmt.Errorf("tar: %w", err)
 		}
 		sudoBin := run.ElevationPrefix()[0]
@@ -103,9 +113,9 @@ func extractTar(ctx context.Context, src, dest string, flags []string, rn run.Ru
 	return nil
 }
 
-func extractZip(ctx context.Context, src, dest string, rn run.Runner, sudoRequired bool) error {
+func extractZip(ctx context.Context, src, dest string, rn run.Runner, sudoRequired bool, toolName string) error {
 	if sudoRequired && os.Geteuid() != 0 {
-		if err := elevationGuard(sudoRequired); err != nil {
+		if err := elevationGuard(sudoRequired, toolName); err != nil {
 			return fmt.Errorf("unzip: %w", err)
 		}
 		sudoBin := run.ElevationPrefix()[0]
@@ -128,14 +138,14 @@ func extractZip(ctx context.Context, src, dest string, rn run.Runner, sudoRequir
 	return nil
 }
 
-func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired bool) error {
+func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired bool, toolName string) error {
 	// Guard: dpkg must exist on the system.
 	if _, err := exec.LookPath("dpkg"); err != nil {
 		return fmt.Errorf("cannot install .deb package: dpkg not found (this system is not Debian-based; consider adding a native method fallback)")
 	}
 	var sudoBin string
 	if sudoRequired && os.Geteuid() != 0 {
-		if err := elevationGuard(sudoRequired); err != nil {
+		if err := elevationGuard(sudoRequired, toolName); err != nil {
 			return fmt.Errorf("dpkg: %w", err)
 		}
 		sudoBin = run.ElevationPrefix()[0]

@@ -150,7 +150,7 @@ func MergeLayersWithOpts(opts *mergeConfig, layers ...*Schema) *Schema {
 			}
 			result.Tools[name] = mergeTools(existing, tool, pc)
 			if pc != nil {
-				result.Provenance[name] = pc.sources
+				result.Provenance[name] = append(result.Provenance[name], pc.sources...)
 			}
 		}
 	}

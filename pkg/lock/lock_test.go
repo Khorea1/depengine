@@ -7,8 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 func TestDefaultPath(t *testing.T) {
@@ -529,3 +530,118 @@ func TestResolveAllDuplicateMethodKinds(t *testing.T) {
 		t.Error("both methods got the same checksum; expected different values")
 	}
 }
+
+func TestMethodHashRoundTrip(t *testing.T) {
+	// Verify that ResolveAll populates MethodsHash for tools with methods,
+	// and that Apply can read it without warning when the hash matches.
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
+			"tool": {
+				Name: "tool",
+				Methods: []*config.MethodCandidate{
+					{Kind: "http", Config: map[string]any{"url": "https://example.com/a.tar.gz", "checksum": "sha256:aaaa"}},
+					{Kind: "git", Config: map[string]any{"url": "https://example.com/b.git"}},
+				},
+			},
+		},
+	}
+
+	l, err := ResolveAll(context.Background(), s, run.OSExecRunner{})
+	if err != nil {
+		t.Fatalf("ResolveAll: %v", err)
+	}
+
+	// MethodsHash should be populated.
+	h := l.MethodsHash["tool"]
+	if h == "" {
+		t.Fatal("MethodsHash should not be empty after ResolveAll")
+	}
+
+	// Verify hash is deterministic.
+	expected := computeMethodsHash(s.Tools["tool"].Methods)
+	if h != expected {
+		t.Fatalf("MethodsHash = %q, want %q", h, expected)
+	}
+
+	// Apply with matching hash should not warn.
+	saved := log.Default
+	cap := log.NewTestLogger(t)
+	log.Default = cap.Logger
+	defer func() { log.Default = saved }()
+
+	Apply(s, l)
+
+	cap.AssertNotContains(t, "method ordering changed")
+}
+
+func TestApplyMethodReorderingWarning(t *testing.T) {
+	// Create a lock with a known MethodsHash, then call Apply with a schema
+	// whose methods are reordered (different kind sequence) and verify a warning.
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
+			"tool": {
+				Name: "tool",
+				Methods: []*config.MethodCandidate{
+					{Kind: "http", Config: map[string]any{"url": "https://example.com/a.tar.gz"}},
+					{Kind: "git", Config: map[string]any{"url": "https://example.com/b.git"}},
+				},
+			},
+		},
+	}
+
+	// Create a lock with the correct hash for the schema.
+	l, err := ResolveAll(context.Background(), s, run.OSExecRunner{})
+	if err != nil {
+		t.Fatalf("ResolveAll: %v", err)
+	}
+
+	// Now reorder the schema methods.
+	s.Tools["tool"].Methods[0], s.Tools["tool"].Methods[1] = s.Tools["tool"].Methods[1], s.Tools["tool"].Methods[0]
+
+	// Capture log output.
+	saved := log.Default
+	cap := log.NewTestLogger(t)
+	log.Default = cap.Logger
+	defer func() { log.Default = saved }()
+
+	Apply(s, l)
+
+	cap.AssertContains(t, "method ordering changed")
+	cap.AssertContains(t, "tool")
+}
+
+func TestMethodHashDifferentTools(t *testing.T) {
+	// Different method lists should produce different hashes.
+	methodsA := []*config.MethodCandidate{
+		{Kind: "native"},
+		{Kind: "git"},
+	}
+	methodsB := []*config.MethodCandidate{
+		{Kind: "git"},
+		{Kind: "native"},
+	}
+	methodsC := []*config.MethodCandidate{
+		{Kind: "native"},
+		{Kind: "http"},
+	}
+
+	hashA := computeMethodsHash(methodsA)
+	hashB := computeMethodsHash(methodsB)
+	hashC := computeMethodsHash(methodsC)
+
+	if hashA == hashB {
+		t.Error("reordered same kinds should produce different hashes")
+	}
+	if hashA == hashC {
+		t.Error("different kind sequences should produce different hashes")
+	}
+	if hashB == hashC {
+		t.Error("different kind sequences should produce different hashes")
+	}
+
+	// Determinism check.
+	if computeMethodsHash(methodsA) != hashA {
+		t.Error("hash should be deterministic")
+	}
+}
+

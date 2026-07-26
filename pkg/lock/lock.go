@@ -18,22 +18,26 @@ package lock
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/Khorea1/depengine/pkg/ghrelease"
-	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/ghrelease"
+	"github.com/Khorea1/depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/run"
 
 	"github.com/pelletier/go-toml/v2"
 )
 
 // Lock pins resolved placeholder values for reproducible installs.
 type Lock struct {
-	Version int                `toml:"version"`
-	Tools   map[string]ToolPin `toml:"tools"`
+	Version     int                `toml:"version"`
+	Tools       map[string]ToolPin `toml:"tools"`
+	MethodsHash map[string]string  `toml:"methods_hash,omitempty" json:"methods_hash,omitempty"`
 }
 
 // ToolPin captures resolved values for one tool's {latest} placeholder and/or
@@ -112,14 +116,26 @@ func Save(path string, l *Lock) error {
 func toolKey(toolName, methodKind string, idx int) string {
 	return fmt.Sprintf("%s/%s/%d", toolName, methodKind, idx)
 }
+// computeMethodsHash returns a SHA-256 hash of the tool's method kinds in order.
+// Used to detect reordering of same-kind methods between lock and apply.
+func computeMethodsHash(methods []*config.MethodCandidate) string {
+	h := sha256.New()
+	for _, m := range methods {
+		h.Write([]byte(m.Kind))
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 
 // ResolveAll scans every tool method in the schema for {latest} in URL fields,
 // resolves them via the GitHub releases API, and returns a Lock with the pinned
 // values. Empty lock (no tools needing resolution) is still valid.
 func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, error) {
 	l := &Lock{
-		Version: 1,
-		Tools:   make(map[string]ToolPin),
+		Version:     1,
+		Tools:       make(map[string]ToolPin),
+		MethodsHash: make(map[string]string),
 	}
 
 	for name, tool := range s.Tools {
@@ -154,6 +170,11 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 				l.Tools[key] = pin
 			}
 		}
+		// Compute and store methods-ordering hash so Apply can detect
+		// if methods of the same kind have been reordered.
+		if len(tool.Methods) > 0 {
+			l.MethodsHash[name] = computeMethodsHash(tool.Methods)
+		}
 	}
 
 	return l, nil
@@ -170,6 +191,16 @@ func Apply(s *config.Schema, l *Lock) {
 	}
 	for name, tool := range s.Tools {
 		kindCount := make(map[string]int)
+		// Warn if method ordering has changed since lock was created.
+		if l.MethodsHash != nil {
+			currentHash := computeMethodsHash(tool.Methods)
+			if storedHash, ok := l.MethodsHash[name]; ok && storedHash != currentHash {
+				log.Default.Warn("method ordering changed since lock was created",
+					"tool", name,
+					"action", "run 'depengine update' to refresh pins")
+			}
+		}
+
 		for _, method := range tool.Methods {
 			idx := kindCount[method.Kind]
 			kindCount[method.Kind] = idx + 1
