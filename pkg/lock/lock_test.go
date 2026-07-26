@@ -131,12 +131,12 @@ func TestResolveAllNoLatest(t *testing.T) {
 		t.Errorf("expected 1 pinned tool (checksum), got %d", got)
 	}
 
-	pin, ok := l.Tools["tool-with-checksum/http"]
+	pin, ok := l.Tools["tool-with-checksum/http/0"]
 	if !ok {
-		t.Fatal("expected tool-with-checksum/http to have a pin")
+		t.Fatal("expected tool-with-checksum/http/0 to have a pin")
 	}
 	if pin.Checksum != "sha256:def456" {
-		t.Errorf("tool-with-checksum/http.Checksum = %q, want sha256:def456", pin.Checksum)
+		t.Errorf("tool-with-checksum/http/0.Checksum = %q, want sha256:def456", pin.Checksum)
 	}
 	if pin.Latest != "" {
 		t.Errorf("expected no Latest, got %q", pin.Latest)
@@ -164,7 +164,7 @@ func TestApplyPinsURLs(t *testing.T) {
 	l := &Lock{
 		Version: 1,
 		Tools: map[string]ToolPin{
-			"ff/http": {Latest: "v3.0.0", Checksum: "sha256:abc123"},
+			"ff/http/0": {Latest: "v3.0.0", Checksum: "sha256:abc123"},
 		},
 	}
 
@@ -234,7 +234,7 @@ func TestApplyChecksumOnlyPin(t *testing.T) {
 	l := &Lock{
 		Version: 1,
 		Tools: map[string]ToolPin{
-			"tool/http": {Checksum: "sha256:f00bar"},
+			"tool/http/0": {Checksum: "sha256:f00bar"},
 		},
 	}
 
@@ -260,7 +260,7 @@ func TestSaveLoadFile(t *testing.T) {
 	l := &Lock{
 		Version: 1,
 		Tools: map[string]ToolPin{
-			"test/git": {Latest: "v1.0.0"},
+			"test/git/0": {Latest: "v1.0.0"},
 		},
 	}
 
@@ -304,9 +304,9 @@ func TestResolveAllCapturesChecksumResolved(t *testing.T) {
 		t.Fatal("expected non-nil lock")
 	}
 
-	pin, ok := l.Tools["tool/http"]
+	pin, ok := l.Tools["tool/http/0"]
 	if !ok {
-		t.Fatal("expected tool/http to have a pin")
+		t.Fatal("expected tool/http/0 to have a pin")
 	}
 	// Should prefer _checksum_resolved over checksum.
 	if pin.Checksum != "sha256:resolved123" {
@@ -338,8 +338,8 @@ func TestResolveAllSkipsAutoChecksum(t *testing.T) {
 	}
 
 	// :auto checksums should NOT be captured as pins.
-	if _, ok := l.Tools["tool/http"]; ok {
-		t.Error("tool/http should not have a pin when checksum is :auto")
+	if _, ok := l.Tools["tool/http/0"]; ok {
+		t.Error("tool/http/0 should not have a pin when checksum is :auto")
 	}
 }
 
@@ -366,7 +366,7 @@ func TestChecksumPinRoundTrip(t *testing.T) {
 	l := &Lock{
 		Version: 1,
 		Tools: map[string]ToolPin{
-			"tool/http": {Checksum: "sha256:pinned789"},
+			"tool/http/0": {Checksum: "sha256:pinned789"},
 		},
 	}
 
@@ -393,7 +393,7 @@ func TestApplySurvivesURLTemplateChange(t *testing.T) {
 	l := &Lock{
 		Version: 1,
 		Tools: map[string]ToolPin{
-			"ff/http": {Latest: "v3.0.0"},
+			"ff/http/0": {Latest: "v3.0.0"},
 		},
 	}
 
@@ -421,5 +421,111 @@ func TestApplySurvivesURLTemplateChange(t *testing.T) {
 	want := "https://github.com/user/fastfetch/releases/download/v3.0.0/ff-linux-amd64.deb"
 	if got != want {
 		t.Fatalf("Apply URL = %q, want %q (template edit should be preserved, version should stay pinned)", got, want)
+	}
+}
+
+func TestApplyDuplicateMethodKinds(t *testing.T) {
+	l := &Lock{
+		Version: 1,
+		Tools: map[string]ToolPin{
+			"tool/http/0": {Latest: "v1.0.0"},
+			"tool/http/1": {Latest: "v2.0.0"},
+		},
+	}
+
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
+			"tool": {
+				Name: "tool",
+				Methods: []*config.MethodCandidate{
+					{
+						Kind: "http",
+						Config: map[string]any{
+							"url": "https://github.com/owner/repo-a/releases/download/{latest}/tool-a.deb",
+						},
+					},
+					{
+						Kind: "http",
+						Config: map[string]any{
+							"url": "https://github.com/owner/repo-b/releases/download/{latest}/tool-b.deb",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	Apply(s, l)
+
+	mc0 := s.Tools["tool"].Methods[0]
+	got0 := mc0.Config["url"].(string)
+	want0 := "https://github.com/owner/repo-a/releases/download/v1.0.0/tool-a.deb"
+	if got0 != want0 {
+		t.Fatalf("method[0] URL = %q, want %q", got0, want0)
+	}
+
+	mc1 := s.Tools["tool"].Methods[1]
+	got1 := mc1.Config["url"].(string)
+	want1 := "https://github.com/owner/repo-b/releases/download/v2.0.0/tool-b.deb"
+	if got1 != want1 {
+		t.Fatalf("method[1] URL = %q, want %q", got1, want1)
+	}
+
+	// Verify they got DIFFERENT tags (not the same tag leaked).
+	if got0 == got1 {
+		t.Errorf("methods got the same resolved URL; expected different tags: both = %q", got0)
+	}
+}
+
+func TestResolveAllDuplicateMethodKinds(t *testing.T) {
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
+			"tool": {
+				Name: "tool",
+				Methods: []*config.MethodCandidate{
+					{
+						Kind: "http",
+						Config: map[string]any{
+							"url":      "https://example.com/tool-a.tar.gz",
+							"checksum": "sha256:aaaa1111",
+						},
+					},
+					{
+						Kind: "http",
+						Config: map[string]any{
+							"url":      "https://example.com/tool-b.tar.gz",
+							"checksum": "sha256:bbbb2222",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	l, err := ResolveAll(context.Background(), s, run.OSExecRunner{})
+	if err != nil {
+		t.Fatalf("ResolveAll: %v", err)
+	}
+
+	// Both methods should have distinct lock entries.
+	pin0, ok0 := l.Tools["tool/http/0"]
+	if !ok0 {
+		t.Fatal("expected pin for tool/http/0")
+	}
+	if pin0.Checksum != "sha256:aaaa1111" {
+		t.Errorf("pin0.Checksum = %q, want sha256:aaaa1111", pin0.Checksum)
+	}
+
+	pin1, ok1 := l.Tools["tool/http/1"]
+	if !ok1 {
+		t.Fatal("expected pin for tool/http/1")
+	}
+	if pin1.Checksum != "sha256:bbbb2222" {
+		t.Errorf("pin1.Checksum = %q, want sha256:bbbb2222", pin1.Checksum)
+	}
+
+	// Verify they are different entries.
+	if pin0.Checksum == pin1.Checksum {
+		t.Error("both methods got the same checksum; expected different values")
 	}
 }

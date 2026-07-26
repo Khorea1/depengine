@@ -37,8 +37,8 @@ type Lock struct {
 }
 
 // ToolPin captures resolved values for one tool's {latest} placeholder and/or
-// checksum. The key in Lock.Tools is "<toolName>/<methodKind>" so that the same
-// tool with both git and http methods can pin each independently.
+// checksum. The key in Lock.Tools is "<toolName>/<methodKind>/<idx>" so that methods
+// of the same kind (e.g. two http methods as mirrors) each get their own pin.
 type ToolPin struct {
 	Latest   string `toml:"latest,omitempty"`
 	Checksum string `toml:"checksum,omitempty"` // pinned concrete checksum (e.g. "sha256:abc123...")
@@ -108,9 +108,9 @@ func Save(path string, l *Lock) error {
 	return nil
 }
 
-// toolKey builds a stable key for Lock.Tools: "<toolName>/<methodKind>".
-func toolKey(toolName, methodKind string) string {
-	return toolName + "/" + methodKind
+// toolKey builds a stable key for Lock.Tools: "<toolName>/<methodKind>/<idx>".
+func toolKey(toolName, methodKind string, idx int) string {
+	return fmt.Sprintf("%s/%s/%d", toolName, methodKind, idx)
 }
 
 // ResolveAll scans every tool method in the schema for {latest} in URL fields,
@@ -123,8 +123,11 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 	}
 
 	for name, tool := range s.Tools {
+		kindCount := make(map[string]int)
 		for _, method := range tool.Methods {
-			key := toolKey(name, method.Kind)
+			idx := kindCount[method.Kind]
+			kindCount[method.Kind] = idx + 1
+			key := toolKey(name, method.Kind, idx)
 			pin := ToolPin{}
 
 			// Resolve {latest} in URL fields (git and http methods only).
@@ -161,16 +164,16 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 // occurrence in its current "url" field is replaced with the pinned tag
 // (the URL template itself always comes from the schema being applied to,
 // so a template edited since the lock was last updated still takes effect).
-// When a pin has a Checksum, any "checksum" field containing ":auto" is
-// replaced with the concrete hash. Methods not present in the lock, or whose
-// current url no longer contains "{latest}", are left untouched.
 func Apply(s *config.Schema, l *Lock) {
 	if l == nil {
 		return
 	}
 	for name, tool := range s.Tools {
+		kindCount := make(map[string]int)
 		for _, method := range tool.Methods {
-			key := toolKey(name, method.Kind)
+			idx := kindCount[method.Kind]
+			kindCount[method.Kind] = idx + 1
+			key := toolKey(name, method.Kind, idx)
 			pin, ok := l.Tools[key]
 			if !ok {
 				continue
