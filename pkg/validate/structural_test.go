@@ -935,3 +935,83 @@ func TestValidatePackageName_PkgOverrides(t *testing.T) {
 		t.Fatal("expected error for unsafe pkg_overrides value")
 	}
 }
+
+func TestValidatePackageNames_ValidateSchema(t *testing.T) {
+	tests := []struct {
+		name      string
+		cfg       map[string]any
+		wantErr   bool
+		errCode   ErrorCode
+	}{
+		{
+			name:    "leading-dash-pkg",
+			cfg:     map[string]any{"pkg": "--malicious-flag"},
+			wantErr: true,
+			errCode: ErrUnsafePackageName,
+		},
+		{
+			name:    "empty-pkg-allowed",
+			cfg:     map[string]any{"pkg": ""},
+			wantErr: false,
+		},
+		{
+			name:    "valid-pkg",
+			cfg:     map[string]any{"pkg": "valid-pkg"},
+			wantErr: false,
+		},
+		{
+			name: "unsafe-pkg-overrides",
+			cfg: map[string]any{
+				"pkg": "safe-pkg",
+				"pkg_overrides": map[string]any{
+					"apt": "--unsafe",
+				},
+			},
+			wantErr: true,
+			errCode: ErrUnsafePackageName,
+		},
+		{
+			name:    "no-pkg-field",
+			cfg:     map[string]any{},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &cfg.Schema{
+				Tools: map[string]*cfg.Tool{
+					"testtool": tool("testtool", []*cfg.MethodCandidate{
+						mc("native", nil, tt.cfg),
+					}, nil),
+				},
+			}
+			r := ValidateSchema(s, nil)
+			if tt.wantErr {
+				if !r.HasErrors() {
+					t.Fatal("expected validation errors, got none")
+				}
+				found := false
+				for _, e := range r.Errors {
+					if e.Code == tt.errCode {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected error with code %s, got: %v", tt.errCode, r.Errors)
+				}
+			} else {
+				for _, e := range r.All() {
+					if e.Code == ErrUnsafePackageName {
+						t.Errorf("unexpected ErrUnsafePackageName error: %v", e)
+					}
+				}
+				if r.HasErrors() {
+					// Log other errors but don't fail — they're outside our scope.
+					t.Logf("non-package-name errors (ignored by test): %v", r.Errors)
+				}
+			}
+		})
+	}
+}
