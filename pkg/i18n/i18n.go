@@ -14,12 +14,23 @@ import (
 // Currently supported: "pt", "en".
 func GetLocale() string {
 	// LANGUAGE (GNU gettext) has highest priority for message language.
-	// It is a colon-separated list; we check the first entry.
+	// It is a colon-separated list; each entry is tried in order.
 	for _, env := range []string{"LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"} {
-		if v := os.Getenv(env); v != "" {
-			// LANGUAGE is colon-separated; take the first entry.
-			lang := strings.Split(v, ":")[0]
-			lang = strings.Split(lang, ".")[0]
+		v := os.Getenv(env)
+		if v == "" {
+			continue
+		}
+		// Split by colon for LANGUAGE (priority list); other env vars
+		// are single-valued per POSIX.
+		entries := strings.Split(v, ":")
+		if env != "LANGUAGE" {
+			entries = entries[:1] // only first entry for non-LANGUAGE vars
+		}
+		for _, entry := range entries {
+			if entry == "" {
+				continue // skip empty entries
+			}
+			lang := strings.Split(entry, ".")[0]
 			lang = strings.Split(lang, "_")[0]
 			switch lang {
 			case "pt":

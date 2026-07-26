@@ -208,40 +208,46 @@ func mergeTools(lower, upper *Tool, pc *provenanceCollector) *Tool {
 	return result
 }
 
-// mergeMethodSlices merges two MethodCandidate slices by Kind.
+// mergeMethodSlices merges two MethodCandidate slices by identity (Kind + Label).
 // lower is the lower-priority layer, upper is higher-priority.
 func mergeMethodSlices(lower, upper []*MethodCandidate, pc *provenanceCollector) []*MethodCandidate {
-	// Index lower by Kind.
+	// Index lower by identity key (Kind + NUL + Label).
 	byKind := make(map[string]*MethodCandidate, len(lower))
 	order := make([]string, 0, len(lower))
 	for _, m := range lower {
-		byKind[m.Kind] = m
-		order = append(order, m.Kind)
-	}
-
-	// Track which kinds we've seen.
-	seen := make(map[string]bool, len(lower))
-	for _, k := range order {
-		seen[k] = true
+		key := methodKey(m)
+		byKind[key] = m
+		order = append(order, key)
 	}
 
 	// Merge upper into lower.
 	for _, upperMethod := range upper {
-		if lowerMethod, exists := byKind[upperMethod.Kind]; exists {
+		key := methodKey(upperMethod)
+		if lowerMethod, exists := byKind[key]; exists {
 			merged := mergeMethodConfigs(lowerMethod, upperMethod, pc)
-			byKind[upperMethod.Kind] = merged
+			byKind[key] = merged
 		} else {
-			byKind[upperMethod.Kind] = cloneMethod(upperMethod)
-			order = append(order, upperMethod.Kind)
+			byKind[key] = cloneMethod(upperMethod)
+			order = append(order, key)
 		}
 	}
 
 	// Build result preserving order (lower methods first, then new upper methods).
 	result := make([]*MethodCandidate, 0, len(byKind))
-	for _, kind := range order {
-		result = append(result, byKind[kind])
+	for _, k := range order {
+		result = append(result, byKind[k])
 	}
 	return result
+}
+
+// methodKey returns an identity key for a MethodCandidate, combining Kind and
+// Label with a NUL separator so that Kind="http"+Label="mirror" does not
+// collide with Kind="http-mirror"+Label="".
+func methodKey(m *MethodCandidate) string {
+	if m.Label != "" {
+		return m.Kind + "\x00" + m.Label
+	}
+	return m.Kind
 }
 
 // mergeMethodConfigs merges two MethodCandidate values for the same Kind.

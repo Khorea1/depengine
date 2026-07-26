@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"regexp"
 )
 
 const initTemplate = `# %[1]s — depengine project configuration
@@ -32,6 +33,8 @@ simple = [%s]
 #
 # Full docs: https://github.com/Khorea1/depengine#readme
 `
+
+var toolNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,128}$`)
 
 func runInit(args []string) {
 	// flags maintained in help.go:printCommandHelp
@@ -80,9 +83,18 @@ func runInit(args []string) {
 	simpleList := `"tool1", "tool2"`
 	if *addTools != "" {
 		names := strings.Split(*addTools, ",")
-		quoted := make([]string, len(names))
-		for i, n := range names {
-			quoted[i] = `"` + strings.TrimSpace(n) + `"`
+		var quoted []string
+		for _, n := range names {
+			n = strings.TrimSpace(n)
+			if n == "" {
+				fmt.Fprintf(os.Stderr, "error: empty tool name (check for doubled commas or trailing comma)\n")
+				os.Exit(1)
+			}
+			if !toolNameRegex.MatchString(n) {
+				fmt.Fprintf(os.Stderr, "error: invalid tool name %q: use only letters, digits, underscores, hyphens, and dots\n", n)
+				os.Exit(1)
+			}
+			quoted = append(quoted, fmt.Sprintf("%q", n))
 		}
 		simpleList = strings.Join(quoted, ", ")
 	}
@@ -196,7 +208,7 @@ func runInteractiveInit(path string) {
 			if url == "" {
 				url = "true"
 			}
-			customLines = append(customLines, fmt.Sprintf("%s = { git = %s }", name, url))
+			customLines = append(customLines, fmt.Sprintf("%s = { git = %q }", name, url))
 		case 7:
 			url, err := prompt(r, "Download URL")
 			if err != nil {
@@ -205,7 +217,7 @@ func runInteractiveInit(path string) {
 			if url == "" {
 				url = "true"
 			}
-			customLines = append(customLines, fmt.Sprintf("%s = { http = %s }", name, url))
+			customLines = append(customLines, fmt.Sprintf("%s = { http = %q }", name, url))
 		case 8:
 			customLines = append(customLines, fmt.Sprintf("# %s = {  }  # TODO: configure manually", name))
 		}
