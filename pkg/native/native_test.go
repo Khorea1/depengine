@@ -173,3 +173,37 @@ func join(args []string) string {
 	}
 	return strings.Join(args, " ")
 }
+
+func TestBuildBatchInstallCmd_EmptyPkgs(t *testing.T) {
+	// Should return nil, not panic, when pkgs is empty.
+	result := BuildBatchInstallCmd("arch", []string{})
+	if result != nil {
+		t.Errorf("BuildBatchInstallCmd(arch, []{}) = %v, want nil", result)
+	}
+}
+
+func TestBuildBatchInstallCmd_NonAtomicClans(t *testing.T) {
+	nonAtomic := []string{"macos", "gentoo"}
+	for _, clan := range nonAtomic {
+		result := BuildBatchInstallCmd(clan, []string{"pkg1"})
+		if result != nil {
+			t.Errorf("BuildBatchInstallCmd(%q, [pkg1]) = %v, want nil (non-atomic)", clan, result)
+		}
+	}
+}
+
+func TestIsBatchCapable_NonAtomic(t *testing.T) {
+	if IsBatchCapable("macos") {
+		t.Error("IsBatchCapable(macos) = true, want false (brew is not atomic)")
+	}
+	if IsBatchCapable("gentoo") {
+		t.Error("IsBatchCapable(gentoo) = true, want false (emerge is not atomic)")
+	}
+	// Sanity check: batch-capable clans still report correctly.
+	if !IsBatchCapable("debian") {
+		t.Error("IsBatchCapable(debian) = false, want true (apt is atomic)")
+	}
+	if !IsBatchCapable("arch") {
+		t.Error("IsBatchCapable(arch) = false, want true (pacman is atomic)")
+	}
+}

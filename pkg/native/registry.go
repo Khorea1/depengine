@@ -48,9 +48,12 @@ type Manager struct {
 	// engine will fall back to manual-removal instructions.
 	RemoveCmd []string
 
-	// AtomicBatch marks managers that can install multiple packages in a
-	// single elevated command, all-or-nothing. When true, the executor
-	// batches same-clan packages into one install step.
+	// AtomicBatch marks managers whose multi-package install is truly
+	// all-or-nothing — either every package installs or the system state
+	// is unchanged (transactional rollback on failure). When true, the
+	// executor batches same-clan packages into one install step.
+	// Set false for managers that install item-at-a-time without rollback
+	// (brew, emerge), even if they accept multiple package arguments.
 	AtomicBatch bool
 }
 
@@ -112,21 +115,25 @@ var managers = map[string]Manager{
 		RemoveCmd:    []string{"xbps-remove", "-y", "{pkg}"},
 		AtomicBatch: true,
 	},
+	// gentoo: emerge installs sequentially — if one package fails, earlier ones
+	// are already on disk. Not all-or-nothing, so AtomicBatch is false.
 	"gentoo": {
 		Name:         "emerge",
 		SudoRequired: true,
 		InstallCmd:   []string{"emerge", "--quiet", "{pkg}"},
 		CheckCmd:     []string{"equery", "list", "{pkg}"},
 		RemoveCmd:    []string{"emerge", "--unmerge", "{pkg}"},
-		AtomicBatch: true,
+		AtomicBatch: false,
 	},
+	// macos: brew installs packages sequentially without rollback on failure.
+	// Not atomic, so AtomicBatch is false.
 	"macos": {
 		Name:         "brew",
 		SudoRequired: false,
 		InstallCmd:   []string{"brew", "install", "{pkg}"},
 		CheckCmd:     []string{"brew", "list", "{pkg}"},
 		RemoveCmd:    []string{"brew", "uninstall", "{pkg}"},
-		AtomicBatch: true,
+		AtomicBatch: false,
 	},
 	"termux": {
 		Name:         "pkg",

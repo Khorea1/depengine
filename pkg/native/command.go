@@ -49,8 +49,11 @@ func BuildSyncCmd(clan string) []string {
 
 // BuildBatchInstallCmd builds a single install command for multiple packages.
 // It finds the {pkg} placeholder in the InstallCmd template and replaces it
-// with all package names as separate argv entries. Returns nil if the clan
-// has no known native manager — the caller then falls through to per-tool install.
+// with all package names as separate argv entries. Returns nil if:
+//   - the clan has no known native manager, or
+//   - the manager is not atomic (AtomicBatch == false), or
+//   - pkgs is empty.
+// The caller then falls through to per-tool install.
 //
 // Package names are validated against a safe pattern before inclusion.
 // The caller MUST ensure all packages share the same clan.
@@ -61,6 +64,9 @@ func BuildBatchInstallCmd(clan string, pkgs []string) []string {
 	}
 	if !nm.AtomicBatch {
 		return nil // skip batching for non-atomic managers
+	}
+	if len(pkgs) == 0 {
+		return nil
 	}
 
 	// Find the {pkg} placeholder position and replace it with all packages.
