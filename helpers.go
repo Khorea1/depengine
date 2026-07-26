@@ -91,6 +91,13 @@ func loadSchemaWithManifest(schemaPath, manifestPath string) (*config.Schema, st
 	count := len(manifestSchema.Tools)
 	if count > 0 {
 		s = config.MergeLayersWithProvenance(manifestSchema, s)
+		vr := validate.ValidateSchema(s, exec.RegisteredKinds())
+		if vr.HasErrors() {
+			for _, e := range vr.Errors {
+				log.Default.Error(e.Error())
+			}
+			return nil, "", nil, 0, &config.ParseSchemaError{Err: errors.New("schema validation failed after manifest merge")}
+		}
 	}
 	return s, clan, facts, count, nil
 }
