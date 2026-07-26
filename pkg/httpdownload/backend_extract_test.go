@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"os"
+	"strings"
 	"path/filepath"
 	"testing"
 
@@ -362,5 +363,37 @@ func TestExtractSkipsSafetyCheckForUnsupportedCompression(t *testing.T) {
 	}
 	if len(fr.Calls) != 1 {
 		t.Fatalf("expected extraction to proceed via tar (no stdlib xz check), got %d calls", len(fr.Calls))
+	}
+}
+
+// --- elevation guard ---
+
+func TestElevationGuardNoMethod(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("test requires non-root")
+	}
+
+	err := elevationGuard(true)
+	if run.ElevationPrefix() == nil {
+		// No elevation available — guard must report an error.
+		if err == nil {
+			t.Fatal("expected error when sudo required but no elevation method")
+		}
+		if !strings.Contains(err.Error(), "elevation method") {
+			t.Errorf("error should mention 'elevation method', got: %v", err)
+		}
+	} else {
+		// Elevation is available — guard must pass.
+		if err != nil {
+			t.Fatalf("expected no error when elevation available, got: %v", err)
+		}
+	}
+}
+
+func TestElevationGuardNotNeeded(t *testing.T) {
+	t.Parallel()
+	if err := elevationGuard(false); err != nil {
+		t.Errorf("expected no error when sudo not required, got: %v", err)
 	}
 }

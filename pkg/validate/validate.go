@@ -7,10 +7,11 @@ package validate
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
-	"github.com/Khorea1/depengine/pkg/native"
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/native"
 )
 
 // ErrorCode is a stable identifier for a class of validation findings.
@@ -24,6 +25,7 @@ const (
 	ErrMalformedURL    ErrorCode = "E_MALFORMED_URL"
 	ErrInvalidValue    ErrorCode = "E_INVALID_VALUE"
 	ErrInvalidChecksum ErrorCode = "E_INVALID_CHECKSUM"
+	ErrUnsafePackageName      ErrorCode = "E_UNSAFE_PACKAGE_NAME"
 	// ErrDupeTool is produced by pkg/config.SchemaCodeError when a tool is
 	// redeclared (simple list + inline table). It is emitted before
 	// ValidateSchema runs, so it surfaces via ParseSchema error handling
@@ -138,6 +140,65 @@ func truncateStr(s string, n int) string {
 	return s[:n-3] + "..."
 }
 
+// validatePackageName checks that a package name does not start with '-'
+// (which would be interpreted as a flag by most package managers) and only
+// contains characters valid across all supported package managers.
+// Empty string is allowed (no package name = no substitution needed).
+func validatePackageName(name string) *ValidationError {
+	if name == "" {
+		return nil
+	}
+	// Must start with alphanumeric (no leading dash = no flag injection).
+	// Allowed chars: alphanumeric, dots, hyphens, underscores, plus,
+	// at-signs, colons, and forward slashes. This covers:
+	//   - apt/deb:       libfoo-dev, python3.11, g++, sgml-base
+	//   - pacman:        cat/pkg, lib32-alsa, mingw-w64-x86_64-pkg
+	//   - dnf/rpm:       python3-devel, gcc-c++
+	//   - apk:           alpine-sdk, python3@edge
+	//   - brew:          gcc@latest, user/repo
+	//   - winget:        Microsoft.VCRedist, nodejs:20/current
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9][a-zA-Z0-9._+@:/:-]*$`, name); !matched {
+		return &ValidationError{
+			Code:    ErrUnsafePackageName,
+			Field:   "pkg",
+			Message: fmt.Sprintf("unsafe package name %q: must start with alphanumeric character and contain only [a-zA-Z0-9._+@:/:-]", truncateStr(name, 80)),
+		}
+	}
+	return nil
+}
+
+// validatePackageNames checks every method candidate's pkg and pkg_overrides
+// fields for safe package naming.
+func validatePackageNames(s *config.Schema) *Result {
+	r := &Result{}
+	for toolName, tool := range s.Tools {
+		for i, method := range tool.Methods {
+			if pkg, ok := method.Config["pkg"]; ok {
+				if pkgStr, ok := pkg.(string); ok {
+					if verr := validatePackageName(pkgStr); verr != nil {
+						verr.Field = fieldPath(toolName, i, "pkg")
+						r.Add(*verr)
+					}
+				}
+			}
+			// Also check pkg_overrides values.
+			if overrides, ok := method.Config["pkg_overrides"]; ok {
+				if overrideMap, ok := overrides.(map[string]any); ok {
+					for manager, pkg := range overrideMap {
+						if pkgStr, ok := pkg.(string); ok {
+							if verr := validatePackageName(pkgStr); verr != nil {
+								verr.Field = fieldPath(toolName, i, "pkg_overrides."+manager)
+								r.Add(*verr)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return r
+}
+
 // ValidateSchema runs structural and semantic validation on a parsed schema,
 // including method-kind checks when knownKinds is non-nil (callers that want
 // adapter registration verification pass exec.RegisteredKinds(); tests that
@@ -168,6 +229,7 @@ func ValidateSchema(s *config.Schema, knownKinds []string) *Result {
 	r.Merge(validateRequiredFields(s))
 	r.Merge(validateWhenDirectives(s))
 	r.Merge(validatePlaceholders(s))
+	r.Merge(validatePackageNames(s))
 
 	// Semantic checks.
 	r.Merge(validateCycles(s))

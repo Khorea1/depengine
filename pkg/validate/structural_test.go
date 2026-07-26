@@ -827,3 +827,111 @@ func TestValidateFromFile_InvalidBadTypes(t *testing.T) {
 		t.Logf("type errors found: %v", r.Errors)
 	}
 }
+
+// ---------- Package name safety ----------
+
+func TestValidatePackageName_Valid(t *testing.T) {
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"foo": tool("foo", []*cfg.MethodCandidate{
+				mc("native", nil, map[string]any{"pkg": "valid-pkg"}),
+			}, nil),
+		},
+	}
+	r := validatePackageNames(s)
+	if r.HasErrors() {
+		t.Errorf("expected no errors, got %v", r.Errors)
+	}
+}
+
+func TestValidatePackageName_LeadingDash(t *testing.T) {
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"foo": tool("foo", []*cfg.MethodCandidate{
+				mc("native", nil, map[string]any{"pkg": "-y"}),
+			}, nil),
+		},
+	}
+	r := validatePackageNames(s)
+	if !r.HasErrors() {
+		t.Fatal("expected error for leading dash")
+	}
+	if r.Errors[0].Code != ErrUnsafePackageName {
+		t.Errorf("expected ErrUnsafePackageName, got %s", r.Errors[0].Code)
+	}
+}
+
+func TestValidatePackageName_EmptyAllowed(t *testing.T) {
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"foo": tool("foo", []*cfg.MethodCandidate{
+				mc("native", nil, map[string]any{"pkg": ""}),
+			}, nil),
+		},
+	}
+	r := validatePackageNames(s)
+	if r.HasErrors() {
+		t.Errorf("expected no errors for empty pkg, got %v", r.Errors)
+	}
+}
+
+func TestValidatePackageName_ComplexValid(t *testing.T) {
+	cases := []string{
+		"g++",
+		"python3.11-dev",
+		"libfoo++-dev",
+		"gcc@latest",
+		"nodejs:20/current",
+		"user/repo",
+		"Microsoft.VCRedist",
+		"cat/pkg",
+		"lib32-alsa",
+		"python3-devel",
+	}
+	for _, pkg := range cases {
+		s := &cfg.Schema{
+			Tools: map[string]*cfg.Tool{
+				"foo": tool("foo", []*cfg.MethodCandidate{
+					mc("native", nil, map[string]any{"pkg": pkg}),
+				}, nil),
+			},
+		}
+		r := validatePackageNames(s)
+		if r.HasErrors() {
+			t.Errorf("expected no errors for pkg %q, got %v", pkg, r.Errors)
+		}
+	}
+}
+
+func TestValidatePackageName_WithSpace(t *testing.T) {
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"foo": tool("foo", []*cfg.MethodCandidate{
+				mc("native", nil, map[string]any{"pkg": "--reinstall malicious"}),
+			}, nil),
+		},
+	}
+	r := validatePackageNames(s)
+	if !r.HasErrors() {
+		t.Fatal("expected error for pkg with spaces")
+	}
+}
+
+func TestValidatePackageName_PkgOverrides(t *testing.T) {
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"foo": tool("foo", []*cfg.MethodCandidate{
+				mc("native", nil, map[string]any{
+					"pkg": "safe-pkg",
+					"pkg_overrides": map[string]any{
+						"apt": "-malicious",
+					},
+				}),
+			}, nil),
+		},
+	}
+	r := validatePackageNames(s)
+	if !r.HasErrors() {
+		t.Fatal("expected error for unsafe pkg_overrides value")
+	}
+}

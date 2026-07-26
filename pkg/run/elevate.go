@@ -10,7 +10,8 @@ import (
 
 var (
 	elevationMu     sync.Mutex
-	elevationMethod string // "" = unprobed, "sudo"|"doas"|"pkexec"|"run0" = detected
+	elevationMethod string   // "" = unprobed/not-found, "sudo"|"doas"|"pkexec"|"run0" = detected
+	elevationProbed bool     // true once detectElevation has been called
 )
 
 // elevationCandidates is the ordered list of elevation binaries to probe.
@@ -67,12 +68,12 @@ func detectElevation() string {
 
 // ElevationMethod returns the detected elevation method, probing once
 // and caching the result for the lifetime of the process.
-// Returns "" if no working elevation method is available.
 func ElevationMethod() string {
 	elevationMu.Lock()
 	defer elevationMu.Unlock()
-	if elevationMethod == "" {
+	if !elevationProbed {
 		elevationMethod = detectElevation()
+		elevationProbed = true
 	}
 	return elevationMethod
 }
@@ -101,9 +102,9 @@ func IsElevationPrefix(name string) bool {
 // OverrideElevation forces a specific elevation method for testing.
 // Pass "sudo", "doas", "pkexec", or "run0" to simulate a particular environment.
 // Pass "" to restore auto-detection (re-detects on next call).
-// Do not call in production code.
 func OverrideElevation(method string) {
 	elevationMu.Lock()
 	elevationMethod = method
+	elevationProbed = method != "" // "" means "re-probe on next call"
 	elevationMu.Unlock()
 }
