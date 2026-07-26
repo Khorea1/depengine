@@ -24,6 +24,8 @@ type State struct {
 type ToolState struct {
 	// Method is the method name used for installation (e.g. "native", "cargo").
 	Method string `json:"method"`
+	// MethodKind is the technical method kind (e.g. "http"), not the display label.
+	MethodKind string `json:"method_kind,omitempty"`
 	// InstalledAt is the RFC3339 timestamp of when the tool was installed.
 	InstalledAt string `json:"installed_at"`
 	// PostinstallDone is true if a postinstall script was successfully run.

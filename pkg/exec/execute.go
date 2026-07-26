@@ -412,6 +412,7 @@ func (ex *Executor) writeState(ctx context.Context, s *config.Schema, report *Ex
 		}
 		st.Tools[tr.Tool] = state.ToolState{
 			Method:          tr.Method,
+			MethodKind:      tr.MethodKind,
 			InstalledAt:     time.Now().UTC().Format(time.RFC3339),
 			PostinstallDone: tr.PostinstallDone,
 			DefinitionHash:  state.DefinitionHash(tool),
@@ -523,8 +524,10 @@ func (ex *Executor) effectiveMethodOrder(tool *config.Tool) []string {
 // It modifies result in place — on success the result is terminal; on
 // exhaustion it sets the final status to StatusFailed or StatusSkippedUnavailable.
 func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, result *ToolResult, toolStart time.Time) {
+	var lastMethodKind string
 	orderedMethods := config.OrderMethods(tool.Methods, ex.effectiveMethodOrder(tool))
 	for _, method := range orderedMethods {
+		lastMethodKind = method.Kind
 		displayKind := method.Kind
 		if method.Label != "" {
 			displayKind = method.Label
@@ -568,6 +571,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		if adapter.Check(toolCtx, ex.rn, tool, method) {
 			result.Status = StatusAlready
 			result.Method = displayKind
+			result.MethodKind = method.Kind
 			result.Config = method.Config
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "already_installed")
 			result.Duration = time.Since(toolStart).String()
@@ -577,6 +581,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		if ex.dryRun {
 			result.Status = StatusWouldInstall
 			result.Method = displayKind
+			result.MethodKind = method.Kind
 			attempt.Status = "success"
 			result.Methods = append(result.Methods, attempt)
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "would_install")
@@ -598,6 +603,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		if err == nil {
 			result.Status = StatusInstalled
 			result.Method = displayKind
+			result.MethodKind = method.Kind
 			result.Config = method.Config
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "installed")
 			if tool.PostInstall != "" {
@@ -631,6 +637,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		last := result.Methods[len(result.Methods)-1]
 		result.Error = last.Error
 		result.Method = last.Kind
+		result.MethodKind = lastMethodKind
 	}
 	result.Duration = time.Since(toolStart).String()
 }

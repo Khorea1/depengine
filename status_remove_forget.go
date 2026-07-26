@@ -226,22 +226,26 @@ func runRemove(args []string) {
 			log.Default.Warn("tool not installed, nothing to remove", "tool", toolName)
 			return false
 		}
+		methodKind := toolState.MethodKind
+		if methodKind == "" {
+			methodKind = toolState.Method // fallback for old state files
+		}
 
-		adapter := exec.Lookup(toolState.Method)
+		adapter := exec.Lookup(methodKind)
 		if adapter == nil {
-			log.Default.Warn("adapter not found for method", "tool", toolName, "method", toolState.Method)
+			log.Default.Warn("adapter not found for method", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
 			log.Default.Warn("manual remove required", "tool", toolName)
 			return false
 		}
 
 		if !exec.CanRemove(adapter) {
-			log.Default.Warn("manual remove required", "tool", toolName, "method", toolState.Method)
+			log.Default.Warn("manual remove required", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
 			return false
 		}
 
 		remover := adapter.(exec.Remover)
 		mc := &config.MethodCandidate{
-			Kind:   toolState.Method,
+			Kind:   methodKind,
 			Config: toolState.Config,
 		}
 		tool := &config.Tool{Name: toolName}

@@ -168,22 +168,27 @@ func runUndo(args []string) {
 
 		log.Default.Info("removing tool added after snapshot", "tool", name, "method", toolState.Method)
 
-		adapter := exec.Lookup(toolState.Method)
+		methodKind := toolState.MethodKind
+		if methodKind == "" {
+			methodKind = toolState.Method // fallback for old state files
+		}
+
+		adapter := exec.Lookup(methodKind)
 		if adapter == nil {
-			log.Default.Warn("adapter not found — manual removal may be needed", "tool", name, "method", toolState.Method)
+			log.Default.Warn("adapter not found — manual removal may be needed", "tool", name, "method", toolState.Method, "methodKind", methodKind)
 			hadFailure = true
 			continue
 		}
 
 		if !exec.CanRemove(adapter) {
-			log.Default.Warn("adapter does not support automated removal — manual removal needed", "tool", name, "method", toolState.Method)
+			log.Default.Warn("adapter does not support automated removal — manual removal needed", "tool", name, "method", toolState.Method, "methodKind", methodKind)
 			hadFailure = true
 			continue
 		}
 
 		remover := adapter.(exec.Remover)
 		mc := &config.MethodCandidate{
-			Kind:   toolState.Method,
+			Kind:   methodKind,
 			Config: toolState.Config,
 		}
 		tool := &config.Tool{Name: name}

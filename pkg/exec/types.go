@@ -43,6 +43,7 @@ type ToolResult struct {
 	Tool     string
 	Status   StatusEnum
 	Method   string          // method that succeeded (or last one that failed)
+	MethodKind string        // technical kind (e.g. "http"), not display label
 	Error    string          // populated only if StatusFailed
 	Methods  []MethodAttempt // history of attempts (for --verbose)
 	Duration string          // human-readable duration (e.g. "3.2s"), set by executor

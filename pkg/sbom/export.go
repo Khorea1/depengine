@@ -73,13 +73,17 @@ func ExportCycloneDX(s *state.State) ([]byte, error) {
 		ts := s.Tools[name]
 
 		// Infer component type from method.
-		compType := componentType(ts.Method)
+		methodKind := ts.MethodKind
+		if methodKind == "" {
+			methodKind = ts.Method // fallback for old state files
+		}
+		compType := componentType(methodKind)
 
 		// Extract version from config if available, fallback to "0.0.0".
 		version := extractVersion(ts.Config)
 
 		// Build purl: pkg:{type}/{name}@{version}
-		purl := fmt.Sprintf("pkg:%s/%s@%s", purlType(ts.Method), name, version)
+		purl := fmt.Sprintf("pkg:%s/%s@%s", purlType(methodKind), name, version)
 
 		comp := CycloneDXComponent{
 			Type:    compType,
