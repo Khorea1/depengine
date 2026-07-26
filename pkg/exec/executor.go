@@ -27,6 +27,8 @@ type Executor struct {
 	maxJobs            int                // max concurrent tools; 0 or 1 = sequential (default)
 	allowArbitraryCode bool               // if false, warn about dangerous methods (build scripts, etc.)
 
+	batchTimeout time.Duration // per-batch timeout, scaled by package count
+
 	defaultMethodOrder []string // from config.Defaults.MethodOrder; default = config.DefaultMethodOrder
 	nativeManagerName  string   // resolved from clan via native.Lookup
 
@@ -63,6 +65,16 @@ func WithMethodTimeout(d time.Duration) Option {
 	return func(e *Executor) {
 		if d > 0 {
 			e.methodTimeout = d
+		}
+	}
+}
+
+// WithBatchTimeout sets the timeout for a batch native install command.
+// If not set, defaults to methodTimeout * candidate count.
+func WithBatchTimeout(d time.Duration) Option {
+	return func(ex *Executor) {
+		if d > 0 {
+			ex.batchTimeout = d
 		}
 	}
 }

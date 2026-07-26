@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -38,9 +39,163 @@ func needsNativeSync(s *config.Schema, clan string) bool {
 	return false
 }
 
+// batchCandidate represents one tool eligible for batch native install.
+type batchCandidate struct {
+	toolName string
+	tool     *config.Tool
+	method   *config.MethodCandidate
+	pkg      string // resolved package name (with clan-specific overrides)
+}
+
+// identifyBatchCandidates examines all tools in a level and returns those
+// whose next non-skipped method candidate is "native". It also records
+// already-installed tools directly into the report (StatusAlready) and
+// excludes them from the remaining set.
+func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string, s *config.Schema, report *ExecReport) (candidates []batchCandidate, remaining []string) {
+	remaining = make([]string, 0, len(level))
+
+	for _, toolName := range level {
+		tool, ok := s.Tools[toolName]
+		if !ok {
+			continue
+		}
+		if len(tool.Methods) == 0 {
+			remaining = append(remaining, toolName)
+			continue
+		}
+
+		orderedMethods := config.OrderMethods(tool.Methods, ex.effectiveMethodOrder(tool))
+
+		foundNative := false
+		for _, method := range orderedMethods {
+			if method.When != nil && !method.When.Match(ex.facts) {
+				continue
+			}
+
+			adapter := ex.LookupAdapter(method.Kind)
+			if adapter == nil {
+				continue
+			}
+
+			if !adapter.Available(ctx, ex.rn) {
+				continue
+			}
+
+			isNative := method.Kind == "native" || native.IsNativeManagerName(method.Kind)
+
+			if !isNative {
+				break
+			}
+
+			// Already installed — record and exclude from remaining.
+			if adapter.Check(ctx, ex.rn, tool, method) {
+				ex.recordToolResult(ctx, &ToolResult{
+					Tool:   toolName,
+					Status: StatusAlready,
+					Method: method.Kind,
+				}, report)
+				foundNative = true
+				break
+			}
+
+			// Resolve package name for batch.
+			pkg := pkgFromConfig(method, ex.clan)
+			if pkg == "" {
+				break
+			}
+
+			if !validBatchPkgName(pkg) {
+				break
+			}
+
+			if !native.IsBatchCapable(ex.clan) {
+				break
+			}
+
+			candidates = append(candidates, batchCandidate{
+				toolName: toolName,
+				tool:     tool,
+				method:   method,
+				pkg:      pkg,
+			})
+			foundNative = true
+			break
+		}
+
+		if !foundNative {
+			remaining = append(remaining, toolName)
+		}
+	}
+
+	return candidates, remaining
+}
+
+// validBatchPkgName checks that a package name is safe for batch inclusion.
+// We reject names that could be misinterpreted as command-line flags.
+var pkgNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9.+-_]*$`)
+
+func validBatchPkgName(name string) bool {
+	return pkgNameRegexp.MatchString(name)
+}
+
+// batchNativeInstall runs a single elevated command to install all candidate
+// packages. Returns true if the batch succeeded (exit code 0), false if it
+// failed (any other exit). On failure, the caller MUST NOT mark any tool as
+// installed — the serial fallback handles each tool independently.
+func (ex *Executor) batchNativeInstall(ctx context.Context, candidates []batchCandidate) bool {
+	pkgs := make([]string, len(candidates))
+	for i, c := range candidates {
+		pkgs[i] = c.pkg
+	}
+
+	cmd := native.BuildBatchInstallCmd(ex.clan, pkgs)
+	if cmd == nil {
+		return false
+	}
+
+	timeout := ex.methodTimeout * time.Duration(max(1, len(pkgs)))
+	if ex.batchTimeout > 0 {
+		timeout = ex.batchTimeout
+	}
+	if ex.toolTimeout > 0 && timeout > ex.toolTimeout {
+		timeout = ex.toolTimeout
+	}
+
+	batchCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	runner := ex.rn
+	if lr, ok := runner.(*run.LoggingRunner); ok {
+		runner = lr.WithContext(run.Context{Tool: "batch", Method: "native"})
+	}
+
+	ex.outputf("  ⚡  batch installing %d packages via %s (1 elevation)\n", len(pkgs), ex.nativeManagerName)
+	ex.logDebug(ctx, "batch", "clan", ex.clan, "packages", strings.Join(pkgs, " "), "status", "started")
+
+	res := runner.Run(batchCtx, cmd[0], cmd[1:]...)
+
+	if res.Err != nil || res.ExitCode != 0 {
+		ex.outputf("  ⚡  batch install failed (%s), falling back to per-tool install\n", formatBatchError(res))
+		ex.logWarn(ctx, "batch", "clan", ex.clan, "packages", strings.Join(pkgs, " "), "status", "failed", "error", res.Err, "exit_code", res.ExitCode)
+		return false
+	}
+
+	ex.logDebug(ctx, "batch", "clan", ex.clan, "packages", strings.Join(pkgs, " "), "status", "succeeded")
+	return true
+}
+
+// formatBatchError produces a short error string from a batch run result.
+func formatBatchError(res run.Result) string {
+	if res.Err != nil {
+		return res.Err.Error()
+	}
+	return fmt.Sprintf("exit code %d", res.ExitCode)
+}
+
 func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) (*ExecReport, error) {
 	start := time.Now()
 	report := &ExecReport{}
+	
 	ex.clan = clan
 
 	// Resolve native manager name from clan for method_order expansion.
@@ -85,18 +240,110 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 	}
 
 	for _, level := range levels {
-		if ex.maxJobs <= 1 {
-			// Sequential: exact same behavior as before.
-			for _, toolName := range level {
+		// PHASE 1: PreInstall hooks (before batch or serial install).
+		preinstallFailed := make(map[string]bool)
+		preinstallDone := make(map[string]bool)
+		for _, toolName := range level {
+			tool, ok := s.Tools[toolName]
+			if !ok || tool.PreInstall == "" {
+				continue
+			}
+			preCtx, preCancel := context.WithTimeout(ctx, ex.methodTimeout)
+			err := ex.runPreinstall(preCtx, tool)
+			preCancel()
+			if err != nil {
+				ex.recordToolResult(ctx, &ToolResult{
+					Tool:   toolName,
+					Status: StatusFailed,
+					Error:  fmt.Sprintf("pre-install: %v", err),
+				}, report)
+				preinstallFailed[toolName] = true
+				ex.logWarn(ctx, "preinstall", "tool", toolName, "error", err.Error())
+			} else {
+				preinstallDone[toolName] = true
+			}
+		}
+
+		// Filter level: remove tools whose PreInstall failed or are dangerous.
+		filteredLevel := make([]string, 0, len(level))
+		for _, toolName := range level {
+			if preinstallFailed[toolName] {
+				continue
+			}
+			// Run dangerous-code check before batch so that dangerous
+			// tools are not batched. Mirrors the check in executeTool.
+			tool := s.Tools[toolName]
+			if tool != nil && !ex.allowArbitraryCode {
+				hasDanger := ex.hasDangerousMethod(tool) || tool.PostInstall != "" || tool.PreInstall != ""
+				if hasDanger {
+					ex.outputf("  ⚠  %s: has hooks or build scripts that may execute arbitrary code. Use --allow-arbitrary-code to suppress this warning.\n", toolName)
+					ex.logWarn(ctx, "security", "tool", toolName, "warning", "has dangerous hooks")
+					ex.recordToolResult(ctx, &ToolResult{
+						Tool:   toolName,
+						Status: StatusSkippedUnavailable,
+						Error:  "requires --allow-arbitrary-code (tool has arbitrary code execution capability)",
+					}, report)
+					continue
+				}
+			}
+
+			filteredLevel = append(filteredLevel, toolName)
+		}
+
+		// PHASE 2: Optimistic batch native install.
+		candidates, remaining := ex.identifyBatchCandidates(ctx, filteredLevel, s, report)
+
+		if len(candidates) > 0 && ex.clan != "" {
+			if ex.dryRun {
+				names := make([]string, len(candidates))
+				for i, c := range candidates {
+					names[i] = c.toolName
+				}
+				ex.outputf("  ⚡  would batch native install: %s via %s\n", strings.Join(names, ", "), ex.nativeManagerName)
+				for _, c := range candidates {
+					ex.recordToolResult(ctx, &ToolResult{
+						Tool: c.toolName, Status: StatusWouldInstall, Method: "native",
+					}, report)
+				}
+			} else if ex.batchNativeInstall(ctx, candidates) {
+				for _, c := range candidates {
+					tr := ToolResult{
+						Tool: c.toolName, Status: StatusInstalled, Method: "native", Config: c.method.Config,
+					}
+					if preinstallDone[c.toolName] {
+						tr.PreinstallDone = true
+					}
+					if c.tool.PostInstall != "" {
+						postCtx, postCancel := context.WithTimeout(ctx, ex.methodTimeout)
+						if err := ex.runPostinstall(postCtx, c.tool); err == nil {
+							tr.PostinstallDone = true
+						}
+						postCancel()
+					}
+					ex.recordToolResult(ctx, &tr, report)
+				}
+			} else {
+				// Batch failed — transparent fallback to per-tool.
+				remaining = filteredLevel
+			}
+		} // else: no candidates — remaining from identifyBatchCandidates is correct
+
+		// PHASE 3: Serial or parallel for remaining.
+		// Set PreinstallDone on executeTool results for tools that had successful PreInstall.
+		if ex.maxJobs <= 1 || len(remaining) <= 1 {
+			for _, toolName := range remaining {
 				tool, ok := s.Tools[toolName]
 				if !ok {
 					continue
 				}
 				result := ex.executeTool(ctx, tool)
+				if preinstallDone[toolName] {
+					result.PreinstallDone = true
+				}
 				ex.recordToolResult(ctx, &result, report)
 			}
 		} else {
-			ex.executeLevelParallel(ctx, s, level, report)
+			ex.executeLevelParallel(ctx, s, remaining, report, preinstallDone)
 		}
 	}
 
@@ -254,21 +501,6 @@ func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResu
 		var cancel context.CancelFunc
 		toolCtx, cancel = context.WithTimeout(ctx, ex.toolTimeout)
 		defer cancel()
-	}
-
-	// Pre-install hook: runs before any install attempt. Failure aborts the tool.
-	if tool.PreInstall != "" {
-		preCtx, preCancel := context.WithTimeout(toolCtx, ex.methodTimeout)
-		if err := ex.runPreinstall(preCtx, tool); err != nil {
-			preCancel()
-			result.Status = StatusFailed
-			result.Error = fmt.Sprintf("pre-install: %v", err)
-			result.Duration = time.Since(toolStart).String()
-			ex.logWarn(ctx, "preinstall", "tool", tool.Name, "error", err.Error())
-			return result
-		}
-		preCancel()
-		result.PreinstallDone = true
 	}
 
 	ex.tryMethods(toolCtx, tool, &result, toolStart)
@@ -502,7 +734,7 @@ func (ex *Executor) recordToolResult(ctx context.Context, result *ToolResult, re
 // executeLevelParallel runs all tools in a topological level concurrently,
 // limiting concurrency to ex.maxJobs. Results are collected thread-safely
 // via recordToolResult.
-func (ex *Executor) executeLevelParallel(ctx context.Context, s *config.Schema, level []string, report *ExecReport) {
+func (ex *Executor) executeLevelParallel(ctx context.Context, s *config.Schema, level []string, report *ExecReport, preinstallDone map[string]bool) {
 	toolCh := make(chan string, len(level))
 	resultCh := make(chan ToolResult, len(level))
 
@@ -529,6 +761,9 @@ func (ex *Executor) executeLevelParallel(ctx context.Context, s *config.Schema, 
 					continue
 				}
 				result := ex.executeTool(ctx, tool)
+				if preinstallDone[toolName] {
+					result.PreinstallDone = true
+				}
 				resultCh <- result
 			}
 		}()

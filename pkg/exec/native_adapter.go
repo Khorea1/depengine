@@ -108,7 +108,6 @@ func (a *NativeAdapter) CanRemove() bool { return true }
 // pkgFromConfig extracts the package name from a MethodCandidate's Config.
 // When clan is non-empty and the MC has pkg_overrides, it checks for a
 // clan-specific override first (e.g. apt→"fd-find" on debian). Falls back
-// to the generic "pkg" key, then to empty string.
 func pkgFromConfig(mc *config.MethodCandidate, clan string) string {
 	if clan != "" {
 		if overrides, ok := mc.Config["pkg_overrides"].(map[string]any); ok {

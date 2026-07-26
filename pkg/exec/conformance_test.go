@@ -48,3 +48,153 @@ func TestAllRegisteredAdaptersConformance(t *testing.T) {
 		})
 	}
 }
+
+// perToolNativeAdapter is a mock adapter registered as "native" that
+// returns different Install results per tool name. Used to test that
+// batch failure does not consume the native method attempt.
+type perToolNativeAdapter struct {
+	testMockAdapter
+}
+
+func (a *perToolNativeAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+	if tool.Name == "fd" {
+		return &installError{"fd native install failed"}
+	}
+	return nil // bat succeeds
+}
+
+func TestBatchDoesNotChangeMethodSelection(t *testing.T) {
+	// Two tools: fd (native fails -> falls back to git), bat (native succeeds).
+	// Batch should attempt a combined native install, fail, then transparently
+	// fall back per-tool. The method selection must be identical to serial.
+	nativeAdp := &perToolNativeAdapter{}
+	nativeAdp.kindValue = "native"
+	nativeAdp.availableFunc = func() bool { return true }
+	nativeAdp.checkFunc = func(string) bool { return false }
+
+	gitMock := &testMockAdapter{kindValue: "git"}
+	gitMock.installFunc = func(string) error { return nil }
+	gitMock.availableFunc = func() bool { return true }
+	gitMock.checkFunc = func(string) bool { return false }
+
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 1})(ex) // batch fails
+	WithAdapters(nativeAdp, gitMock)(ex)
+
+	s := &config.Schema{
+		Defaults: config.Defaults{
+			Manager:     "native",
+			MethodOrder: []string{"native", "git"},
+		},
+		Tools: map[string]*config.Tool{
+			"fd": {
+				Name: "fd",
+				Methods: []*config.MethodCandidate{
+					{Kind: "native", Config: map[string]any{"pkg": "fd"}},
+					{Kind: "git", Config: map[string]any{"pkg": "fd"}},
+				},
+			},
+			"bat": {
+				Name: "bat",
+				Methods: []*config.MethodCandidate{
+					{Kind: "native", Config: map[string]any{"pkg": "bat"}},
+					{Kind: "git", Config: map[string]any{"pkg": "bat"}},
+				},
+			},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), s, "arch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Success != 2 {
+		t.Fatalf("expected 2 successes, got %d. Tools: %+v", report.Success, report.Tools)
+	}
+
+	results := make(map[string]ToolResult)
+	for _, r := range report.Tools {
+		results[r.Tool] = r
+	}
+
+	// fd: native failed in batch AND in serial fallback -> installed via git
+	fd, ok := results["fd"]
+	if !ok {
+		t.Fatal("fd not found in results")
+	}
+	if fd.Status != StatusInstalled {
+		t.Fatalf("fd expected StatusInstalled, got %v", fd.Status)
+	}
+	if fd.Method != "git" {
+		t.Fatalf("fd expected method 'git' (native failed, fell back), got %q — batch failure consumed native attempt!", fd.Method)
+	}
+
+	// bat: native failed in batch but succeeded in serial fallback -> installed via native
+	bat, ok := results["bat"]
+	if !ok {
+		t.Fatal("bat not found in results")
+	}
+	if bat.Status != StatusInstalled {
+		t.Fatalf("bat expected StatusInstalled, got %v", bat.Status)
+	}
+	if bat.Method != "native" {
+		t.Fatalf("bat expected method 'native', got %q — batch failure consumed native attempt!", bat.Method)
+	}
+}
+
+func TestBatchHappyPath(t *testing.T) {
+	// Two tools both with native-only methods. Batch succeeds and both are
+	// installed in a single elevated command.
+	nativeAdp := &testMockAdapter{kindValue: "native"}
+	nativeAdp.installFunc = func(string) error { return nil }
+	nativeAdp.availableFunc = func() bool { return true }
+	nativeAdp.checkFunc = func(string) bool { return false }
+
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex) // ExitCode 0, batch succeeds
+	WithAdapters(nativeAdp)(ex)
+
+	s := &config.Schema{
+		Defaults: config.Defaults{
+			Manager:     "native",
+			MethodOrder: []string{"native"},
+		},
+		Tools: map[string]*config.Tool{
+			"fd": {
+				Name: "fd",
+				Methods: []*config.MethodCandidate{
+					{Kind: "native", Config: map[string]any{"pkg": "fd"}},
+				},
+			},
+			"bat": {
+				Name: "bat",
+				Methods: []*config.MethodCandidate{
+					{Kind: "native", Config: map[string]any{"pkg": "bat"}},
+				},
+			},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), s, "arch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Success != 2 {
+		t.Fatalf("expected 2 successes, got %d. Tools: %+v", report.Success, report.Tools)
+	}
+
+	results := make(map[string]ToolResult)
+	for _, r := range report.Tools {
+		results[r.Tool] = r
+	}
+
+	for _, name := range []string{"fd", "bat"} {
+		tr := results[name]
+		if tr.Status != StatusInstalled {
+			t.Fatalf("%s expected StatusInstalled, got %v", name, tr.Status)
+		}
+		if tr.Method != "native" {
+			t.Fatalf("%s expected method 'native', got %q", name, tr.Method)
+		}
+	}
+}

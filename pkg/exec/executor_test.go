@@ -187,7 +187,7 @@ func TestExecutorAllMethodsFail(t *testing.T) {
 	WithAdapters(mock)(ex)
 
 	s := mockSchema("tool1")
-	report, err := ex.Execute(context.Background(), s, "arch")
+	report, err := ex.Execute(context.Background(), s, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -558,7 +558,7 @@ func TestExecutorParallelExecution(t *testing.T) {
 	WithMaxJobs(3)(ex)
 
 	s := mockSchema("a", "b", "c")
-	report, err := ex.Execute(context.Background(), s, "arch")
+	report, err := ex.Execute(context.Background(), s, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
