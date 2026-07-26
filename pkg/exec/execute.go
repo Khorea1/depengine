@@ -240,10 +240,34 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 	}
 
 	for _, level := range levels {
-		// PHASE 1: PreInstall hooks (before batch or serial install).
+		// PHASE 1: Dangerous-code filter (BEFORE any execution — including PreInstall).
+		filteredLevel := make([]string, 0, len(level))
+		for _, toolName := range level {
+			tool, ok := s.Tools[toolName]
+			if !ok {
+				filteredLevel = append(filteredLevel, toolName)
+				continue
+			}
+			if !ex.allowArbitraryCode {
+				hasDanger := ex.hasDangerousMethod(tool) || tool.PostInstall != "" || tool.PreInstall != ""
+				if hasDanger {
+					ex.outputf("  ⚠  %s: has hooks or build scripts that may execute arbitrary code. Use --allow-arbitrary-code to suppress this warning.\n", toolName)
+					ex.logWarn(ctx, "security", "tool", toolName, "warning", "has dangerous hooks")
+					ex.recordToolResult(ctx, &ToolResult{
+						Tool:   toolName,
+						Status: StatusSkippedUnavailable,
+						Error:  "requires --allow-arbitrary-code (tool has arbitrary code execution capability)",
+					}, report)
+					continue
+				}
+			}
+			filteredLevel = append(filteredLevel, toolName)
+		}
+
+		// PHASE 2: PreInstall hooks (only for tools that passed the security gate).
 		preinstallFailed := make(map[string]bool)
 		preinstallDone := make(map[string]bool)
-		for _, toolName := range level {
+		for _, toolName := range filteredLevel {
 			tool, ok := s.Tools[toolName]
 			if !ok || tool.PreInstall == "" {
 				continue
@@ -264,34 +288,16 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 			}
 		}
 
-		// Filter level: remove tools whose PreInstall failed or are dangerous.
-		filteredLevel := make([]string, 0, len(level))
-		for _, toolName := range level {
-			if preinstallFailed[toolName] {
-				continue
+		// PHASE 3: Further filter out tools that failed preinstall.
+		survivorLevel := make([]string, 0, len(filteredLevel))
+		for _, toolName := range filteredLevel {
+			if !preinstallFailed[toolName] {
+				survivorLevel = append(survivorLevel, toolName)
 			}
-			// Run dangerous-code check before batch so that dangerous
-			// tools are not batched. Mirrors the check in executeTool.
-			tool := s.Tools[toolName]
-			if tool != nil && !ex.allowArbitraryCode {
-				hasDanger := ex.hasDangerousMethod(tool) || tool.PostInstall != "" || tool.PreInstall != ""
-				if hasDanger {
-					ex.outputf("  ⚠  %s: has hooks or build scripts that may execute arbitrary code. Use --allow-arbitrary-code to suppress this warning.\n", toolName)
-					ex.logWarn(ctx, "security", "tool", toolName, "warning", "has dangerous hooks")
-					ex.recordToolResult(ctx, &ToolResult{
-						Tool:   toolName,
-						Status: StatusSkippedUnavailable,
-						Error:  "requires --allow-arbitrary-code (tool has arbitrary code execution capability)",
-					}, report)
-					continue
-				}
-			}
-
-			filteredLevel = append(filteredLevel, toolName)
 		}
 
-		// PHASE 2: Optimistic batch native install.
-		candidates, remaining := ex.identifyBatchCandidates(ctx, filteredLevel, s, report)
+		// PHASE 4: Optimistic batch native install.
+		candidates, remaining := ex.identifyBatchCandidates(ctx, survivorLevel, s, report)
 
 		if len(candidates) > 0 && ex.clan != "" {
 			if ex.dryRun {
@@ -324,11 +330,11 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 				}
 			} else {
 				// Batch failed — transparent fallback to per-tool.
-				remaining = filteredLevel
+				remaining = survivorLevel
 			}
 		} // else: no candidates — remaining from identifyBatchCandidates is correct
 
-		// PHASE 3: Serial or parallel for remaining.
+		// PHASE 5: Serial or parallel for remaining.
 		// Set PreinstallDone on executeTool results for tools that had successful PreInstall.
 		if ex.maxJobs <= 1 || len(remaining) <= 1 {
 			for _, toolName := range remaining {

@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/run"
@@ -195,6 +196,68 @@ func TestBatchHappyPath(t *testing.T) {
 		}
 		if tr.Method != "native" {
 			t.Fatalf("%s expected method 'native', got %q", name, tr.Method)
+		}
+	}
+}
+
+// TestPreInstallBlockedWithoutAllowArbitraryCode verifies that tools with
+// PreInstall hooks are blocked BEFORE the pre-install command runs when
+// --allow-arbitrary-code is NOT set. This is a regression test: the previous
+// code ran PreInstall unconditionally and only checked the security gate after
+// the arbitrary code had already executed.
+func TestPreInstallBlockedWithoutAllowArbitraryCode(t *testing.T) {
+	// Create a FakeRunner to record every command execution.
+	fr := &run.FakeRunner{ExitCode: 0}
+
+	// Register a safe adapter so the tool is installable.
+	safeAdp := &testMockAdapter{kindValue: "safe"}
+	safeAdp.availableFunc = func() bool { return true }
+	safeAdp.checkFunc = func(string) bool { return false }
+	safeAdp.installFunc = func(name string) error { return nil }
+
+	ex := New()
+	WithRunner(fr)(ex)
+	WithAdapters(safeAdp)(ex)
+	// NOTE: No WithAllowArbitraryCode() — the security gate should block PreInstall.
+
+	// A tool with PreInstall set (and no allow-arbitrary-code).
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
+			"evil-tool": {
+				Name:       "evil-tool",
+				PreInstall: "touch /tmp/pwned",
+				Methods: []*config.MethodCandidate{
+					{
+						Kind:   "safe",
+						Config: map[string]any{"pkg": "harmless"},
+					},
+				},
+			},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), s, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// VERIFICATION 1: The tool must NOT have been installed — it should be skipped.
+	if len(report.Tools) == 0 {
+		t.Fatal("expected at least one tool result")
+	}
+	result := report.Tools[0]
+	if result.Status != StatusSkippedUnavailable {
+		t.Fatalf("expected StatusSkippedUnavailable, got %v (status=%v)", result.Status, result.Status)
+	}
+	if result.Tool != "evil-tool" {
+		t.Fatalf("expected tool 'evil-tool', got %q", result.Tool)
+	}
+
+	// VERIFICATION 2: FakeRunner must NOT have executed the pre-install command.
+	// The pre-install runs as: "sh", "-c", "<command>"
+	for _, call := range fr.Calls {
+		if call.Name == "sh" && len(call.Args) >= 2 && call.Args[0] == "-c" && strings.Contains(call.Args[1], "touch /tmp/pwned") {
+			t.Errorf("SECURITY REGRESSION: pre-install command 'touch /tmp/pwned' was executed despite --allow-arbitrary-code not being set. Calls: %+v", fr.Calls)
 		}
 	}
 }
