@@ -200,6 +200,78 @@ func TestBatchHappyPath(t *testing.T) {
 	}
 }
 
+func TestBatchFallbackAlreadyInstalled(t *testing.T) {
+	// toolA is already installed (Check returns true), toolB is a batch
+	// candidate, toolC is non-native. The batch fails, and the fallback must
+	// NOT re-introduce toolA into the remaining set (regression test).
+	nativeAdp := &testMockAdapter{kindValue: "native"}
+	nativeAdp.availableFunc = func() bool { return true }
+	nativeAdp.checkFunc = func(name string) bool {
+		return name == "toolA" // toolA is already installed
+	}
+	nativeAdp.installFunc = func(string) error { return nil }
+
+	gitAdp := &testMockAdapter{kindValue: "git"}
+	gitAdp.availableFunc = func() bool { return true }
+	gitAdp.checkFunc = func(string) bool { return false }
+	gitAdp.installFunc = func(string) error { return nil }
+
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 1})(ex) // batch fails
+	WithAdapters(nativeAdp, gitAdp)(ex)
+
+	s := &config.Schema{
+		Defaults: config.Defaults{
+			Manager:     "native",
+			MethodOrder: []string{"native", "git"},
+		},
+		Tools: map[string]*config.Tool{
+			"toolA": {
+				Name: "toolA",
+				Methods: []*config.MethodCandidate{
+					{Kind: "native", Config: map[string]any{"pkg": "toolA"}},
+				},
+			},
+			"toolB": {
+				Name: "toolB",
+				Methods: []*config.MethodCandidate{
+					{Kind: "native", Config: map[string]any{"pkg": "toolB"}},
+				},
+			},
+			"toolC": {
+				Name: "toolC",
+				Methods: []*config.MethodCandidate{
+					{Kind: "git", Config: map[string]any{"pkg": "toolC"}},
+				},
+			},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), s, "arch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if report.Already != 1 {
+		t.Fatalf("expected Already == 1, got %d", report.Already)
+	}
+
+	if len(report.Tools) != 3 {
+		t.Fatalf("expected 3 tool results, got %d: %+v", len(report.Tools), report.Tools)
+	}
+
+	// Each tool must appear exactly once (regression: old code duplicated toolA).
+	seen := make(map[string]int)
+	for _, tr := range report.Tools {
+		seen[tr.Tool]++
+	}
+	for _, name := range []string{"toolA", "toolB", "toolC"} {
+		if seen[name] != 1 {
+			t.Fatalf("tool %q appears %d times in results (expected 1)", name, seen[name])
+		}
+	}
+}
+
 // TestPreInstallBlockedWithoutAllowArbitraryCode verifies that tools with
 // PreInstall hooks are blocked BEFORE the pre-install command runs when
 // --allow-arbitrary-code is NOT set. This is a regression test: the previous

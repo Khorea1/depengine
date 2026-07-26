@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/graph"
 	"github.com/Khorea1/depengine/pkg/native"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/state"
 )
 
@@ -195,7 +195,7 @@ func formatBatchError(res run.Result) string {
 func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) (*ExecReport, error) {
 	start := time.Now()
 	report := &ExecReport{}
-	
+
 	ex.clan = clan
 
 	// Resolve native manager name from clan for method_order expansion.
@@ -330,7 +330,12 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 				}
 			} else {
 				// Batch failed — transparent fallback to per-tool.
-				remaining = survivorLevel
+				// remaining already excludes tools recorded as StatusAlready by
+				// identifyBatchCandidates; we just add the candidates back so they
+				// go through the serial path.
+				for _, c := range candidates {
+					remaining = append(remaining, c.toolName)
+				}
 			}
 		} // else: no candidates — remaining from identifyBatchCandidates is correct
 
