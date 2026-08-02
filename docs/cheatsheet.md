@@ -101,7 +101,7 @@ when = { distro_family = ["arch"] }
 
 ```toml
 myapp  = { method_prefer = ["cargo"], cargo = true }   # try cargo first, fall back
-legacy = { method_only = ["aur", "git"], aur = { pkg = "legacy" } }  # no fallback
+legacy = { method_only = ["aur", "git"], aur = { pkg = "legacy" }, git = { url = "..." } }  # only these methods are tried — no native fallback
 ```
 
 Details: [schema-reference.md#per-tool-method-control](schema-reference.md#per-tool-method-control).

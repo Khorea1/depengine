@@ -5,6 +5,7 @@ _depengine_commands() {
   local -a commands
   commands=(
     'install:Instalar ferramentas do schema.toml'
+    'init:Inicializar um novo schema.toml'
     'update:Resolver {latest} e travar versões no depengine.lock'
     'validate:Validar schema.toml e ambiente'
     'check:Verificar se ferramentas já estão instaladas'
@@ -147,7 +148,7 @@ _depengine() {
       why)
         flags=(
           '--json[Saída em JSON]'
-          '--format[Formato de saída: text, json]'
+          '--fields[Mostrar proveniência dos campos]'
         )
         ;;
       undo)

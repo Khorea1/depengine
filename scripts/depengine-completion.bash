@@ -13,7 +13,7 @@ _depengine() {
     local cur prev words cword
     _init_completion -n = || return
 
-    local cmds="install check status remove version validate help completion undo sbom graph diff update why forget"
+    local cmds="install init check status remove version validate help completion undo sbom graph diff update why forget"
 
     # Dynamic flag values (--flag:values...)
     local log_levels="error warn info debug"
@@ -128,7 +128,7 @@ _depengine() {
         why)
             flag_descs=(
                 "--json	Saída em JSON"
-                "--format	Formato de saída: text, json"
+                "--fields	Mostrar proveniência dos campos"
             )
             ;;
         undo)

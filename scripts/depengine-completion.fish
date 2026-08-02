@@ -1,7 +1,7 @@
 # fish completion for depengine
 
 function _depengine_completions
-    set --local cmds install check status remove version validate help completion undo sbom graph diff update why forget
+    set --local cmds install init check status remove version validate help completion undo sbom graph diff update why forget
 
     set --local cmd (commandline -opc)
     set --local cmd_count (count $cmd)
@@ -100,7 +100,7 @@ function _depengine_completions
             echo -e "--profile\tFiltrar tools por tag"
         case why
             echo -e "--json\tSaída em JSON"
-            echo -e "--format\tFormato de saída: text, json"
+            echo -e "--fields\tMostrar proveniência dos campos"
         case undo
             echo -e "--list\tListar snapshots disponíveis"
             echo -e "--snapshot\tReverter para um snapshot específico"

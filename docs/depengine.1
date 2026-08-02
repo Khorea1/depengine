@@ -227,8 +227,10 @@ List of methods to try first, before the defaults.
 Example: \fBmethod_prefer = ["cargo"]\fR tries cargo before native.
 .TP
 .B method_only
-Exhaustive list of methods — only these are tried, in this order.
-Global method_order is ignored for this tool.
+Filters the tool's candidate methods: only the listed methods are tried,
+in this order, and the native method is NOT attempted unless explicitly
+listed — there is no native fallback. Global method_order is ignored for
+this tool.
 .TP
 .B method_order
 Deprecated. Synonym for \fBmethod_prefer\fR.
@@ -433,9 +435,18 @@ depengine completion fish | source
 .B DEPENGINE_DETECT_SCRIPT
 Path to the
 .B detect_os.sh
-script. Default: first search alongside the binary in a
-.B scripts/
-directory, then on \fBPATH\fR.
+script. Search order: an embedded copy of the script is used by default;
+if this variable is set it overrides the embedded copy; otherwise the
+engine looks for
+.B scripts/detect_os.sh
+alongside the binary, then
+.B detect_os.sh
+on \fBPATH\fR.
+.TP
+.B DEPENGINE_MANIFEST
+Path to the personal manifest file, overriding the default XDG discovery
+(\fB$XDG_CONFIG_HOME/depengine/manifest.toml\fR, or
+\fB~/.config/depengine/manifest.toml\fR if unset).
 .TP
 .B DEPENGINE_TRACE_ID
 Trace ID propagated to subprocesses for correlated logging.

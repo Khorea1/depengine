@@ -54,12 +54,18 @@ Installs all tools from the schema, respecting `method_order`, `when`,
 | `--live` | `false` | Check the live system instead of the state file |
 | `--format` | `text` | `text` or `json` |
 
-## `depengine status [tool]`
+## `depengine status [flags]`
+
+Shows the installation status of all tools in state against the schema.
+Positional arguments are ignored — `status` always lists every tracked tool.
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `--schema` | from state | Override schema path |
 | `--format` | `text` | `text` or `json` |
+| `--json` | `false` | JSON output (shorthand for `--format=json`) |
 | `--orphans` | `false` | Show only installed tools not in the schema |
+| `--manifest` / `--no-manifest` | — | Same as `install` |
 
 ## `depengine remove <tool> [flags]`
 
@@ -75,10 +81,13 @@ Resolves `{latest}` placeholders and writes `depengine.lock`.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--lock` | `depengine.lock` | Path to lockfile |
-| `--profile <tag>` | — | Filter tools by tag |
+| `--schema` | auto | Path to schema |
+| `--lock` | alongside schema | Path to `depengine.lock` |
+| `--profile` | — | Filter tools by tag |
 | `--frozen-lockfile` | `false` | Abort if `depengine.lock` doesn't exist |
-| `--dry-run` | `false` | Show what would change |
+| `--dry-run` | `false` | Show what would change without writing |
+| `-v` | `false` | Verbose output |
+| `--manifest` / `--no-manifest` | — | Same as `install` |
 
 ## `depengine graph [flags]`
 
@@ -95,8 +104,10 @@ Explains how a tool would be installed, method by method.
 
 | Flag | Default | Description |
 |------|---------|-------------|
+| `--schema` | auto | Path to schema |
+| `--json` | `false` | JSON output |
 | `--fields` | `false` | Show field-level provenance — which layer (schema/manifest) contributed each field |
-| `--format` | `text` | `text` or `json` |
+| `--manifest` / `--no-manifest` | — | Same as `install` |
 
 ## `depengine forget <tool>`
 

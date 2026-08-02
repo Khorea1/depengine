@@ -102,12 +102,14 @@ git clone <project> && cd <project>
 depengine install                    # same tools, same versions
 
 # --- Optional: pin exact versions ---
-./depengine update                   # writes depengine.lock
+./depengine update                   # resolves {latest}, writes depengine.lock
+./depengine update --dry-run         # preview what would be pinned
+./depengine update --frozen-lockfile # abort if depengine.lock doesn't exist
 ./depengine install --frozen-lockfile
 
 # --- Everyday commands ---
-./depengine status                   # what's installed
-./depengine status nvim              # a specific tool
+./depengine status                   # what's installed (positional args are ignored)
+./depengine status --json            # same, machine-readable
 ./depengine remove nvim              # uninstall
 ./depengine why nvim                 # explain which method would run, and why
 ./depengine sbom --format cyclonedx  # export an SBOM
@@ -170,7 +172,7 @@ Full breakdown: [manifest merge rules](docs/schema-reference.md#manifest-merge-r
 | `install` | Install all tools from the schema |
 | `validate` | Check the schema without installing anything |
 | `check <tool>` | Check whether one tool is installed |
-| `status [tool]` | Show what's installed |
+| `status` | Show what's installed (all tools; positional args ignored) |
 | `remove <tool>` | Uninstall a tool |
 | `update` | Resolve `{latest}` placeholders, write `depengine.lock` |
 | `graph` | Show the dependency graph |
@@ -203,6 +205,43 @@ debian → apt      fedora  → dnf       suse    → zypper    arch  → pacman
 alpine → apk      void    → xbps      gentoo  → emerge    macos → brew
 termux → pkg      freebsd → pkg       openbsd → pkg_add   netbsd → pkg
 mint   → apt      opkg    → opkg
+```
+
+---
+
+## HTTP download security
+
+HTTP installs can verify the download with a `checksum` field inside the
+method block:
+
+```toml
+[tools.yq]
+  [tools.yq.http]
+  url = "https://github.com/mikefarah/yq/releases/download/{latest}/yq_linux_{arch}"
+  checksum = "sha256:<hex>"          # pinned — verified exactly
+```
+
+- `checksum = "sha256:<hex>"` — the download is hashed and compared against
+the pinned value; a mismatch rejects the install. Algorithms: `sha256`,
+`sha512`, `sha1`, `md5`.
+- `checksum = "sha256:auto"` — the expected hash is fetched from a companion
+checksum file on first use. This is **TOFU (Trust On First Use)**: the hash
+comes from the same server as the binary, so it is **not** verified against
+a trusted source (the engine logs a warning and suggests pinning the hash in
+`depengine.lock`). Two fields tune `:auto` resolution:
+  - `checksum_url` — explicit URL of the checksum file, when you host it
+    separately from the download.
+  - `checksum_file_format` — layout of that file: `sha256sum` (hash +
+    filename), `bsd` (BSD extended), or `raw` (the whole file is the hash).
+    Defaults to auto-detection.
+
+```toml
+[tools.yq]
+  [tools.yq.http]
+  url = "https://github.com/mikefarah/yq/releases/download/{latest}/yq_linux_{arch}"
+  checksum = "sha256:auto"
+  checksum_url = "https://example.com/sha256sums.txt"
+  checksum_file_format = "sha256sum"   # sha256sum | bsd | raw
 ```
 
 ---
