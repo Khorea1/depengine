@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
@@ -9,12 +10,12 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"bufio"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/lock"
 	"github.com/Khorea1/depengine/pkg/log"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/state"
 )
 
@@ -57,6 +58,13 @@ func runStatus(args []string) {
 		}
 	}
 
+	// Load the lockfile alongside the schema for installed-vs-pinned
+	// version comparisons (outdated detection). A missing lock is fine.
+	var lk *lock.Lock
+	if schemaPath != "" {
+		lk, _ = lock.Load(lock.DefaultPath(schemaPath))
+	}
+
 	var s *config.Schema
 	if schemaPath != "" {
 		var err error
@@ -76,27 +84,27 @@ func runStatus(args []string) {
 					manifestAuto = true
 				}
 			}
-		if manifestPath != "" {
-			manifestSchema, merr := config.ParseSchema(manifestPath, nil, "packages")
-			if merr != nil {
-				log.Default.Warn("load manifest", "error", merr)
-			} else {
-				config.FilterManifestTools(s, manifestSchema)
-				if gerr := config.ValidateManifestLayer(manifestSchema); gerr != nil {
-					log.Default.Warn("validate manifest", "error", gerr)
-				} else if gerr := config.ValidateManifestNewTools(s, manifestSchema); gerr != nil {
-					log.Default.Warn("validate manifest new tools", "error", gerr)
+			if manifestPath != "" {
+				manifestSchema, merr := config.ParseSchema(manifestPath, nil, "packages")
+				if merr != nil {
+					log.Default.Warn("load manifest", "error", merr)
 				} else {
-					count := len(manifestSchema.Tools)
-					if count > 0 {
-						s = config.MergeLayers(manifestSchema, s)
-						if manifestAuto {
-							fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
+					config.FilterManifestTools(s, manifestSchema)
+					if gerr := config.ValidateManifestLayer(manifestSchema); gerr != nil {
+						log.Default.Warn("validate manifest", "error", gerr)
+					} else if gerr := config.ValidateManifestNewTools(s, manifestSchema); gerr != nil {
+						log.Default.Warn("validate manifest new tools", "error", gerr)
+					} else {
+						count := len(manifestSchema.Tools)
+						if count > 0 {
+							s = config.MergeLayers(manifestSchema, s)
+							if manifestAuto {
+								fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
+							}
 						}
 					}
 				}
 			}
-		}
 		}
 	}
 
@@ -104,6 +112,7 @@ func runStatus(args []string) {
 		Name    string `json:"name"`
 		Status  string `json:"status"`
 		Method  string `json:"method,omitempty"`
+		Version string `json:"version,omitempty"`
 		Updated string `json:"updated,omitempty"`
 	}
 
@@ -119,17 +128,29 @@ func runStatus(args []string) {
 		if *statusOrphans && status != "orphaned" {
 			continue
 		}
-		if status == "installed" && s != nil && !*statusOrphans && ts.DefinitionHash != "" {
+		if status == "installed" && s != nil && !*statusOrphans {
+			outdated := false
 			if stTool, inSchema := s.Tools[name]; inSchema {
-				if state.DefinitionHash(stTool) != ts.DefinitionHash {
-					status = "outdated"
+				// Definition drift: the schema definition changed since install.
+				if ts.DefinitionHash != "" && state.DefinitionHash(stTool) != ts.DefinitionHash {
+					outdated = true
 				}
+				// Version drift: the installed version differs from the pinned one.
+				if !outdated && ts.Version != "" {
+					if pin, ok := lockPinFor(lk, name, ts.MethodKind); ok && state.VersionOutdated(ts.Version, pin.Latest) {
+						outdated = true
+					}
+				}
+			}
+			if outdated {
+				status = "outdated"
 			}
 		}
 		tools = append(tools, toolStatus{
 			Name:    name,
 			Status:  status,
 			Method:  ts.Method,
+			Version: ts.Version,
 			Updated: ts.InstalledAt,
 		})
 	}
@@ -161,17 +182,17 @@ func runStatus(args []string) {
 
 	if len(tools) == 0 {
 		if *statusOrphans {
-		fmt.Fprintln(os.Stderr, "No orphan tools.")
+			fmt.Fprintln(os.Stderr, "No orphan tools.")
 		} else {
-		fmt.Fprintln(os.Stderr, "No tools in state. Run 'depengine install' first.")
+			fmt.Fprintln(os.Stderr, "No tools in state. Run 'depengine install' first.")
 		}
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "%-30s %-12s %-10s  %s\n", "Tool", "Status", "Method", "Installed At")
-	fmt.Fprintln(os.Stderr, strings.Repeat("-", 70))
+	fmt.Fprintf(os.Stderr, "%-30s %-12s %-10s %-18s  %s\n", "Tool", "Status", "Method", "Version", "Installed At")
+	fmt.Fprintln(os.Stderr, strings.Repeat("-", 88))
 	for _, t := range tools {
-		fmt.Fprintf(os.Stderr, "%-30s %-12s %-10s  %s\n", t.Name, t.Status, t.Method, t.Updated)
+		fmt.Fprintf(os.Stderr, "%-30s %-12s %-10s %-18s  %s\n", t.Name, t.Status, t.Method, t.Version, t.Updated)
 	}
 }
 

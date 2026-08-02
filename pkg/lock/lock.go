@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
@@ -51,15 +52,19 @@ type ToolPin struct {
 // DefaultPath returns the default lockfile path for a given schema file.
 // Always produces a lockfile named "depengine.lock" in the same directory
 // as the schema file — matches Cargo.lock and package-lock.json conventions.
-//   schema.toml   → depengine.lock
-//   depengine.toml → depengine.lock
-//   depends.toml  → depengine.lock
+//
+//	schema.toml   → depengine.lock
+//	depengine.toml → depengine.lock
+//	depends.toml  → depengine.lock
 func DefaultPath(schemaPath string) string {
 	dir := filepath.Dir(schemaPath)
 	return filepath.Join(dir, "depengine.lock")
 }
 
 // Load reads a lock file. A missing file is NOT an error — returns nil, nil.
+// Legacy lock files written with "<toolName>/<methodKind>" keys (no "/<idx>"
+// suffix) are accepted transparently: their pins are re-keyed to the canonical
+// "<toolName>/<methodKind>/0" form (see normalizeTools).
 func Load(path string) (*Lock, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -72,14 +77,26 @@ func Load(path string) (*Lock, error) {
 	if err := toml.Unmarshal(data, &l); err != nil {
 		return nil, fmt.Errorf("lock: parse %s: %w", path, err)
 	}
+	normalizeTools(l.Tools)
 	return &l, nil
 }
 
-// Save writes l to path, creating parent directories as needed.
+// Save writes l to path, creating parent directories as needed. The file is
+// always written with canonical "<toolName>/<methodKind>/<idx>" keys; any
+// legacy keys in l are normalized on a copy, so the caller's lock is untouched.
 func Save(path string, l *Lock) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("lock: mkdir: %w", err)
+	}
+
+	out := *l
+	if l.Tools != nil {
+		out.Tools = make(map[string]ToolPin, len(l.Tools))
+		for k, v := range l.Tools {
+			out.Tools[k] = v
+		}
+		normalizeTools(out.Tools)
 	}
 
 	// Write to a temp file in the same directory (ensures same-filesystem rename).
@@ -88,7 +105,7 @@ func Save(path string, l *Lock) error {
 	if err != nil {
 		return fmt.Errorf("lock: create tmp: %w", err)
 	}
-	if err := toml.NewEncoder(f).Encode(l); err != nil {
+	if err := toml.NewEncoder(f).Encode(out); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("lock: encode: %w", err)
@@ -113,9 +130,49 @@ func Save(path string, l *Lock) error {
 }
 
 // toolKey builds a stable key for Lock.Tools: "<toolName>/<methodKind>/<idx>".
+// This is the canonical key shape that writers emit.
 func toolKey(toolName, methodKind string, idx int) string {
 	return fmt.Sprintf("%s/%s/%d", toolName, methodKind, idx)
 }
+
+// normalizeTools rewrites legacy "<toolName>/<methodKind>" keys (written by
+// older depengine versions without the "/<idx>" suffix) into the canonical
+// "<toolName>/<methodKind>/<idx>" form, mapping legacy pins to idx 0. If both
+// forms exist for the same key, the canonical entry wins.
+func normalizeTools(tools map[string]ToolPin) {
+	canonical := make(map[string]ToolPin, len(tools))
+	for key, pin := range tools {
+		if isCanonicalKey(key) {
+			canonical[key] = pin
+		}
+	}
+	for key, pin := range tools {
+		if isCanonicalKey(key) {
+			continue
+		}
+		normKey := key + "/0"
+		if _, exists := canonical[normKey]; !exists {
+			canonical[normKey] = pin
+		}
+	}
+	clear(tools)
+	for k, v := range canonical {
+		tools[k] = v
+	}
+}
+
+// isCanonicalKey reports whether key has the canonical
+// "<toolName>/<methodKind>/<idx>" shape, i.e. its last "/"-separated segment
+// is the numeric method index.
+func isCanonicalKey(key string) bool {
+	i := strings.LastIndex(key, "/")
+	if i < 0 || i == len(key)-1 {
+		return false
+	}
+	_, err := strconv.Atoi(key[i+1:])
+	return err == nil
+}
+
 // computeMethodsHash returns a SHA-256 hash of the tool's method kinds in order.
 // Used to detect reordering of same-kind methods between lock and apply.
 func computeMethodsHash(methods []*config.MethodCandidate) string {
@@ -126,7 +183,6 @@ func computeMethodsHash(methods []*config.MethodCandidate) string {
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
-
 
 // ResolveAll scans every tool method in the schema for {latest} in URL fields,
 // resolves them via the GitHub releases API, and returns a Lock with the pinned

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // CargoAdapter extends BaseAdapter with git-repo support: when
@@ -42,6 +42,33 @@ func (a *CargoAdapter) Install(ctx context.Context, rn run.Runner, tool *config.
 		return nil
 	}
 	return a.BaseAdapter.Install(ctx, rn, tool, mc)
+}
+
+// InstalledVersion reports the installed crate version by querying
+// `cargo install --list`. Best-effort: returns "" when the crate is not
+// listed or the query fails.
+func (a *CargoAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (string, error) {
+	pkg := tool.Name
+	if p, ok := mc.Config["pkg"].(string); ok && p != "" {
+		pkg = p
+	}
+	res := rn.Run(ctx, "cargo", "install", "--list")
+	if res.Err != nil || res.ExitCode != 0 {
+		return "", nil
+	}
+	// `cargo install --list` prints one line per crate: "  bat v0.24.0:".
+	for _, line := range strings.Split(string(res.Stdout), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || fields[0] != pkg {
+			continue
+		}
+		ver := strings.TrimSuffix(fields[1], ":")
+		ver = strings.TrimPrefix(ver, "v")
+		if ver != "" {
+			return ver, nil
+		}
+	}
+	return "", nil
 }
 
 // Ensure CargoAdapter implements exec.Adapter.

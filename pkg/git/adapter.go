@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/ghrelease"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // GitAdapter implements exec.Adapter for git-based installations.
@@ -60,6 +60,23 @@ func (a *GitAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, m
 		}
 	}
 	return false
+}
+
+// InstalledVersion reports the version the git method pinned the tool to:
+// the resolved `{latest}` tag when the URL still contains the placeholder, or
+// the configured branch. Returns "" when no version is knowable.
+func (a *GitAdapter) InstalledVersion(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) (string, error) {
+	urlRaw, ok := mc.Config["url"].(string)
+	if !ok || urlRaw == "" {
+		return "", nil
+	}
+	if tag, err := ghrelease.VersionTag(ctx, urlRaw, rn); err == nil && tag != "" && tag != "latest" {
+		return tag, nil
+	}
+	if branch, ok := mc.Config["branch"].(string); ok && branch != "" {
+		return branch, nil
+	}
+	return "", nil
 }
 
 // Install clones the repository, optionally builds, and optionally copies

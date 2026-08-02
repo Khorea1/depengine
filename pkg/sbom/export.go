@@ -79,8 +79,9 @@ func ExportCycloneDX(s *state.State) ([]byte, error) {
 		}
 		compType := componentType(methodKind)
 
-		// Extract version from config if available, fallback to "0.0.0".
-		version := extractVersion(ts.Config)
+		// Prefer the recorded installed version; "0.0.0" only when nothing
+		// is knowable (state may fall back to a lock pin before export).
+		version := componentVersion(ts)
 
 		// Build purl: pkg:{type}/{name}@{version}
 		purl := fmt.Sprintf("pkg:%s/%s@%s", purlType(methodKind), name, version)
@@ -139,9 +140,19 @@ func purlType(method string) string {
 	}
 }
 
+// componentVersion resolves the version to report for a tool: the recorded
+// ToolState.Version (set at install time by the adapter or from a lock pin)
+// first, then config-derived values, then "0.0.0" when nothing is knowable.
+func componentVersion(ts state.ToolState) string {
+	if ts.Version != "" {
+		return ts.Version
+	}
+	return extractVersion(ts.Config)
+}
+
 // extractVersion tries to find a version string in the tool's config map.
-// Falls back to "0.0.0" if not found.
-// This is best-effort — depengine doesn't consistently track versions yet.
+// Falls back to "0.0.0" if not found. This is a fallback for state files
+// written before versions were tracked; exporters prefer ToolState.Version.
 func extractVersion(config map[string]any) string {
 	if config == nil {
 		return "0.0.0"
@@ -207,7 +218,7 @@ func ExportSPDX(s *state.State) ([]byte, error) {
 
 	for _, name := range names {
 		ts := s.Tools[name]
-		version := extractVersion(ts.Config)
+		version := componentVersion(ts)
 
 		pkg := SPDXPackage{
 			Name:        name,

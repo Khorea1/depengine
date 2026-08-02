@@ -45,10 +45,10 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	l := &Lock{
 		Version: 1,
 		Tools: map[string]ToolPin{
-			"ctpv/git":  {Latest: "v1.0.0"},
-			"ff/http":   {Latest: "v2.1.0"},
-			"other/git": {Latest: "v0.5.0"},
-			"tool/http": {Latest: "v3.0.0", Checksum: "sha256:abc123"},
+			"ctpv/git/0":  {Latest: "v1.0.0"},
+			"ff/http/0":   {Latest: "v2.1.0"},
+			"other/git/0": {Latest: "v0.5.0"},
+			"tool/http/0": {Latest: "v3.0.0", Checksum: "sha256:abc123"},
 		},
 	}
 
@@ -64,14 +64,14 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if got.Version != 1 {
 		t.Errorf("Version = %d, want 1", got.Version)
 	}
-	if got.Tools["ctpv/git"].Latest != "v1.0.0" {
-		t.Errorf("ctpv/git.Latest = %q, want v1.0.0", got.Tools["ctpv/git"].Latest)
+	if got.Tools["ctpv/git/0"].Latest != "v1.0.0" {
+		t.Errorf("ctpv/git/0.Latest = %q, want v1.0.0", got.Tools["ctpv/git/0"].Latest)
 	}
-	if got.Tools["ff/http"].Latest != "v2.1.0" {
-		t.Errorf("ff/http.Latest = %q, want v2.1.0", got.Tools["ff/http"].Latest)
+	if got.Tools["ff/http/0"].Latest != "v2.1.0" {
+		t.Errorf("ff/http/0.Latest = %q, want v2.1.0", got.Tools["ff/http/0"].Latest)
 	}
-	if got.Tools["tool/http"].Checksum != "sha256:abc123" {
-		t.Errorf("tool/http.Checksum = %q, want sha256:abc123", got.Tools["tool/http"].Checksum)
+	if got.Tools["tool/http/0"].Checksum != "sha256:abc123" {
+		t.Errorf("tool/http/0.Checksum = %q, want sha256:abc123", got.Tools["tool/http/0"].Checksum)
 	}
 }
 
@@ -85,6 +85,89 @@ func TestLoadMissingFileIsNil(t *testing.T) {
 	}
 	if l != nil {
 		t.Fatal("expected nil lock for missing file")
+	}
+}
+
+// TestLoadLegacyKeysNormalize is the regression test for the lock-format
+// divergence: older depengine versions wrote "tools.<tool>/<kind>" keys without
+// the "/<idx>" suffix, while updates now write "tools.<tool>/<kind>/<idx>".
+// A legacy lock must parse to the same tool set as its canonical equivalent,
+// with pins re-keyed to idx 0.
+func TestLoadLegacyKeysNormalize(t *testing.T) {
+	loadFrom := func(t *testing.T, body string) *Lock {
+		t.Helper()
+		dir := t.TempDir()
+		path := filepath.Join(dir, "depengine.lock")
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatalf("write lock: %v", err)
+		}
+		l, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		return l
+	}
+
+	// Mirror of the legacy lock committed at the repo root.
+	legacy := `version = 1
+
+[tools]
+[tools.'DepartureMono/http']
+latest = 'v3.4.0'
+
+[tools.'fastfetch/http']
+latest = '2.66.0'
+`
+	canonical := `version = 1
+
+[tools]
+[tools.'DepartureMono/http/0']
+latest = 'v3.4.0'
+
+[tools.'fastfetch/http/0']
+latest = '2.66.0'
+`
+
+	legacyLock := loadFrom(t, legacy)
+	canonicalLock := loadFrom(t, canonical)
+
+	if len(legacyLock.Tools) != len(canonicalLock.Tools) {
+		t.Fatalf("legacy lock has %d tools, canonical has %d", len(legacyLock.Tools), len(canonicalLock.Tools))
+	}
+	for key, want := range canonicalLock.Tools {
+		got, ok := legacyLock.Tools[key]
+		if !ok {
+			t.Errorf("legacy lock missing canonical key %q", key)
+			continue
+		}
+		if got != want {
+			t.Errorf("legacy lock pin %q = %+v, want %+v", key, got, want)
+		}
+	}
+	if _, ok := legacyLock.Tools["DepartureMono/http"]; ok {
+		t.Error("legacy key 'DepartureMono/http' should have been normalized away")
+	}
+
+	// Mixed file: canonical entries must win over legacy duplicates, and
+	// legacy-only entries still normalize to their idx-0 key.
+	mixed := `version = 1
+
+[tools]
+[tools.'DepartureMono/http']
+latest = 'v0.0.1-stale'
+
+[tools.'DepartureMono/http/0']
+latest = 'v3.4.0'
+
+[tools.'fastfetch/http']
+latest = '2.66.0'
+`
+	mixedLock := loadFrom(t, mixed)
+	if got := mixedLock.Tools["DepartureMono/http/0"].Latest; got != "v3.4.0" {
+		t.Errorf("mixed lock: canonical entry should win, got %q, want v3.4.0", got)
+	}
+	if got := mixedLock.Tools["fastfetch/http/0"].Latest; got != "2.66.0" {
+		t.Errorf("mixed lock: legacy-only pin not normalized, got %q, want 2.66.0", got)
 	}
 }
 
@@ -644,4 +727,3 @@ func TestMethodHashDifferentTools(t *testing.T) {
 		t.Error("hash should be deterministic")
 	}
 }
-

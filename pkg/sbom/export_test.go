@@ -160,6 +160,60 @@ func TestComponentType(t *testing.T) {
 	}
 }
 
+func TestExportCycloneDXVersionFallback(t *testing.T) {
+	s := &state.State{
+		Version: 1,
+		Tools: map[string]state.ToolState{
+			// Recorded ToolState.Version wins over config-derived values.
+			"recorded": {
+				Method:  "http",
+				Version: "v4.30.0",
+				Config:  map[string]any{"version": "0.0.0"},
+			},
+			// No recorded version: fall back to config-derived values.
+			"configOnly": {
+				Method: "cargo",
+				Config: map[string]any{"tag": "v0.24.0"},
+			},
+			// Nothing knowable: 0.0.0 is the last resort.
+			"unknown": {
+				Method: "native",
+				Config: map[string]any{},
+			},
+		},
+	}
+
+	data, err := ExportCycloneDX(s)
+	if err != nil {
+		t.Fatalf("ExportCycloneDX: %v", err)
+	}
+
+	var bom struct {
+		Components []struct {
+			Name    string `json:"name"`
+			Version string `json:"version"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(data, &bom); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	got := map[string]string{}
+	for _, c := range bom.Components {
+		got[c.Name] = c.Version
+	}
+
+	if got["recorded"] != "v4.30.0" {
+		t.Errorf("recorded version: got %q, want %q", got["recorded"], "v4.30.0")
+	}
+	if got["configOnly"] != "v0.24.0" {
+		t.Errorf("config fallback: got %q, want %q", got["configOnly"], "v0.24.0")
+	}
+	if got["unknown"] != "0.0.0" {
+		t.Errorf("unknown version: got %q, want %q", got["unknown"], "0.0.0")
+	}
+}
+
 func TestExtractVersion(t *testing.T) {
 	cases := []struct {
 		name   string

@@ -6,14 +6,15 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 	"time"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/ecosystem"
 	"github.com/Khorea1/depengine/pkg/lock"
 	"github.com/Khorea1/depengine/pkg/log"
 	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/sbom"
-	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/state"
 )
 
@@ -75,7 +76,7 @@ func runUpdate(args []string) {
 	if *updateFrozen {
 		if _, err := os.Stat(lockPath); err != nil {
 			lg.Error("frozen-lockfile: lockfile not found", "path", lockPath)
-			os.Exit(1)
+			os.Exit(2)
 		}
 	}
 	if *updateDryRun {
@@ -91,6 +92,11 @@ func runUpdate(args []string) {
 	pinned := len(newLock.Tools)
 	done(fmt.Sprintf("done (%d pinned)", pinned))
 
+	// Warn about installed tools whose versions no longer match the pins
+	// that were just resolved. Warn-only: applying the new versions is a
+	// separate install step.
+	reportVersionDrift(newLock)
+
 	if *updateVerbose {
 		for key, pin := range newLock.Tools {
 			fmt.Fprintf(os.Stderr, "  %s → %s\n", key, pin.Latest)
@@ -101,6 +107,48 @@ func runUpdate(args []string) {
 	}
 
 	fmt.Fprintln(os.Stderr, "Run 'depengine install' to use the updated lock.")
+}
+
+// reportVersionDrift compares freshly-resolved lock pins against the versions
+// recorded in state and warns about installed tools that are now out of date.
+// Warn-only by design: `depengine update` refreshes the lock; applying the new
+// versions is a separate install step.
+func reportVersionDrift(newLock *lock.Lock) {
+	if newLock == nil || len(newLock.Tools) == 0 {
+		return
+	}
+	ls, err := state.LoadShared()
+	if err != nil {
+		return
+	}
+	defer ls.Close()
+	st := ls.State()
+	if len(st.Tools) == 0 {
+		return
+	}
+
+	var drifted []string
+	for name, ts := range st.Tools {
+		if ts.Version == "" {
+			continue
+		}
+		pin, ok := lockPinFor(newLock, name, ts.MethodKind)
+		if !ok || pin.Latest == "" {
+			continue
+		}
+		if state.VersionOutdated(ts.Version, pin.Latest) {
+			drifted = append(drifted, fmt.Sprintf("%s: installed %s, pinned %s", name, ts.Version, pin.Latest))
+		}
+	}
+	if len(drifted) == 0 {
+		return
+	}
+	sort.Strings(drifted)
+	fmt.Fprintln(os.Stderr, "  ⚠ version drift: installed versions differ from newly-pinned versions")
+	for _, d := range drifted {
+		fmt.Fprintf(os.Stderr, "    %s\n", d)
+	}
+	fmt.Fprintln(os.Stderr, "    Remove and reinstall the affected tools to upgrade.")
 }
 
 func runSBOM(args []string) {
@@ -117,6 +165,23 @@ func runSBOM(args []string) {
 	defer ls.Close()
 
 	st := ls.State()
+
+	// Fall back to lock pins for tools whose recorded version is empty
+	// (e.g. state files written before version tracking): 0.0.0 should only
+	// appear when nothing is knowable.
+	if st.SchemaPath != "" {
+		if lk, lerr := lock.Load(lock.DefaultPath(st.SchemaPath)); lerr == nil && lk != nil {
+			for name, ts := range st.Tools {
+				if ts.Version != "" {
+					continue
+				}
+				if pin, ok := lockPinFor(lk, name, ts.MethodKind); ok && pin.Latest != "" {
+					ts.Version = pin.Latest
+					st.Tools[name] = ts
+				}
+			}
+		}
+	}
 
 	var data []byte
 	switch *sbomFormat {

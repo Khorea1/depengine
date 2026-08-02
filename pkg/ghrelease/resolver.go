@@ -62,6 +62,19 @@ func ResolveLatest(ctx context.Context, urlStr string, rn run.Runner) (string, e
 	return strings.ReplaceAll(urlStr, "{latest}", tag), nil
 }
 
+// VersionTag returns the concrete release tag that `{latest}` resolves to
+// for urlStr — the version a tool is installed at. For URLs that still
+// contain the `{latest}` placeholder it resolves via the GitHub API (cached);
+// for URLs without the placeholder (e.g. pins already baked in by
+// depengine.lock) it returns "" since the tag cannot be recovered
+// generically from an arbitrary URL.
+func VersionTag(ctx context.Context, urlStr string, rn run.Runner) (string, error) {
+	if !strings.Contains(urlStr, "{latest}") {
+		return "", nil
+	}
+	return ResolveLatestTag(ctx, urlStr, rn)
+}
+
 // ResolveLatestTag resolves the bare version tag that `{latest}` would
 // expand to in urlStr, WITHOUT baking it into a URL. For non-GitHub URLs it
 // returns the same literal fallback ("latest") that ResolveLatest substitutes,
