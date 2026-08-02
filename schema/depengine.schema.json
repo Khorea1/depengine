@@ -22,7 +22,7 @@
         "method_order": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Order in which methods are tried when a tool declares multiple candidates. Stops at the first that succeeds."
+          "description": "Order in which methods are tried when a tool declares multiple candidates. Stops at the first that succeeds. Accepts method kind names (native, cargo, go, pip, git, http, ...) and ecosystem bucket names (python, node), which expand to their member kinds."
         }
       }
     },
@@ -40,6 +40,33 @@
       "additionalProperties": {
         "$ref": "#/definitions/toolDeclaration"
       }
+    },
+    "packages": {
+      "type": "object",
+      "title": "Package declarations (manifest files)",
+      "description": "Manifest files declare install knowledge under [packages] instead of [tools]. The grammar is identical: the special 'simple' list plus one declaration per package.",
+      "properties": {
+        "simple": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of simple package names. These packages use the default manager (native) and the package name equals the tool name."
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/toolDeclaration"
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "title": "Manifest options",
+      "description": "Options for a manifest file ([manifest] table, next to [packages]). Read by the manifest merge layer.",
+      "properties": {
+        "allow_new_tools": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow the manifest to introduce tools that don't exist in the project schema. When false (default), manifest-only tools are silently excluded from the merge."
+        }
+      }
     }
   },
   "definitions": {
@@ -56,7 +83,7 @@
     "inlineTool": {
       "type": "object",
       "title": "Tool declaration (inline or full block)",
-      "description": "A tool declared as an inline table ({ apt = \"fd-find\" }) or a full block ([tools.X] + [tools.X.method]).",
+      "description": "A tool declared as an inline table ({ apt = \"fd-find\" }) or a full block ([tools.X] + [tools.X.method]). The parser also accepts the bucket shorthands python and node (e.g. python = true expands to pip/pipx/uv) and any method kind name as a key.",
       "properties": {
         "requires": {
           "type": "array",
@@ -67,6 +94,14 @@
           "type": "string",
           "description": "Pre-install hook that runs before any method is attempted. Runs via shell."
         },
+        "preinstall": {
+          "type": "string",
+          "description": "Alias for pre_install — the parser accepts both spellings; pre_install wins when both are present."
+        },
+        "post_install": {
+          "type": "string",
+          "description": "Alias for postinstall — the parser accepts both spellings; post_install wins when both are present."
+        },
         "postinstall": {
           "type": "string",
           "description": "Post-install command that runs after any method succeeds (e.g. fc-cache, systemctl daemon-reload)."
@@ -75,6 +110,11 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Tags for profile filtering (e.g. desktop, server, fonts)."
+        },
+        "method_order": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Deprecated per-tool alias for method_prefer. Kept for backward compatibility; prefer method_prefer."
         },
         "method_prefer": {
           "type": "array",
@@ -94,17 +134,27 @@
     "methodValue": {
       "oneOf": [
         { "type": "string", "description": "Package/module name for this method. Shorthand for { pkg = \"<name>\" }." },
+        {
+          "type": "boolean",
+          "const": true,
+          "description": "Boolean shorthand: each method in the bucket uses the tool name as its package. Example: python = true expands to { pip = true, pipx = true, uv = true }. Only true is accepted — false is rejected by the parser."
+        },
         { "$ref": "#/definitions/methodObject" }
       ]
     },
     "methodObject": {
       "type": "object",
       "title": "Method configuration",
-      "description": "Configuration for one installation method. Can include method-specific fields plus an optional 'when' condition.",
+      "description": "Configuration for one installation method. Can include method-specific fields plus an optional 'when' condition. Unknown keys are passed through to the adapter verbatim, so method-specific fields beyond those listed here are also accepted.",
       "properties": {
         "pkg": {
           "type": "string",
           "description": "Package/module/binary name to install via this method."
+        },
+        "pkg_overrides": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Per-native-manager package name overrides for the native method. The native adapter picks the entry matching the detected manager and falls back to pkg when the manager isn't listed. Example: { pacman = \"neovim\", apt = \"neovim\" }."
         },
         "when": { "$ref": "#/definitions/whenCondition" },
         "kind": {
@@ -164,6 +214,14 @@
           "type": "string",
           "description": "Binary name to check for. Used by git adapter's Check() to verify installation."
         },
+        "artifact": {
+          "type": "string",
+          "description": "Subpath inside the cloned repository to copy into extract_to (git adapter). Defaults to the clone root (/) when omitted."
+        },
+        "version": {
+          "type": "string",
+          "description": "Version to install (sdkman method: sdk install <package> <version>)."
+        },
         "sudo_required": {
           "type": "boolean",
           "default": true,
@@ -174,40 +232,40 @@
     "whenCondition": {
       "type": "object",
       "title": "When condition — platform applicability gate",
-      "description": "Condition that gates a method's applicability. The engine evaluates every non-empty field against system facts (AND semantics — all must match). If the condition doesn't match, this method is skipped and the next one is tried.\n\nEach field accepts a list of values (OR semantics — any single match suffices). Comparison is case-insensitive. Libc uses prefix matching (e.g. \"glibc\" matches \"glibc 2.35\").",
+      "description": "Condition that gates a method's applicability. The engine evaluates every non-empty field against system facts (AND semantics — all must match). If the condition doesn't match, this method is skipped and the next one is tried.\n\nEach list field accepts a single string (shorthand for a one-element list) or a list of values (OR semantics — any single match suffices). Comparison is case-insensitive. Libc uses prefix matching (e.g. \"glibc\" matches \"glibc 2.35\").",
       "properties": {
         "distro_family": {
-          "type": "array",
+          "type": ["string", "array"],
           "items": { "type": "string" },
           "description": "Match on resolved distro family (clan). Values: debian, arch, fedora, alpine, gentoo, void, suse, macos, freebsd, openbsd, netbsd, termux, android, nixos, solus, slackware, mageia, openmandriva, or unknown.\n\nExample: [\"arch\"] matches Arch Linux, EndeavourOS, Manjaro, CachyOS."
         },
         "distro_id": {
-          "type": "array",
+          "type": ["string", "array"],
           "items": { "type": "string" },
           "description": "Match on exact distro ID (from /etc/os-release ID=). Case-insensitive. Example: [\"ubuntu\", \"debian\"] matches exactly those distros, not Mint or Pop!_OS."
         },
         "arch": {
-          "type": "array",
+          "type": ["string", "array"],
           "items": { "type": "string" },
           "description": "Match on target architecture (output of uname -m). Example: [\"x86_64\", \"aarch64\"] matches both AMD64 and ARM64 systems."
         },
         "os": {
-          "type": "array",
+          "type": ["string", "array"],
           "items": { "type": "string" },
           "description": "Match on operating system name (lowercase uname -s). Common values: linux, darwin, windows, freebsd, openbsd, netbsd. Example: [\"linux\"] matches any Linux."
         },
         "kernel": {
-          "type": "array",
+          "type": ["string", "array"],
           "items": { "type": "string" },
           "description": "Match on full kernel version string (uname -r). Exact match, case-insensitive. Example: [\"6.7.0-arch\", \"6.8.0\"] for kernel-specific packages."
         },
         "libc": {
-          "type": "array",
+          "type": ["string", "array"],
           "items": { "type": "string" },
           "description": "Match on C standard library. Uses prefix matching — \"glibc\" matches \"glibc 2.35\". Values the detector emits: glibc, musl, uclibc, freebsd-libc. Example: [\"musl\"] matches Alpine Linux."
         },
         "init_system": {
-          "type": "array",
+          "type": ["string", "array"],
           "items": { "type": "string" },
           "description": "Match on init system. Values: systemd, openrc, runit, sysvinit. Example: [\"systemd\"] matches distros using systemd."
         },
