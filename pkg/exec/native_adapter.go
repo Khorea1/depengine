@@ -6,9 +6,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/native"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // NativeAdapter wraps pkg/native to implement the Adapter interface.
@@ -295,4 +295,3 @@ func replaceManagerBinary(cmd []string, managerName, clan string) []string {
 	}
 	return cmd
 }
-

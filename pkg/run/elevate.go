@@ -10,8 +10,8 @@ import (
 
 var (
 	elevationMu     sync.Mutex
-	elevationMethod string   // "" = unprobed/not-found, "sudo"|"doas"|"pkexec"|"run0" = detected
-	elevationProbed bool     // true once detectElevation has been called
+	elevationMethod string // "" = unprobed/not-found, "sudo"|"doas"|"pkexec"|"run0" = detected
+	elevationProbed bool   // true once detectElevation has been called
 )
 
 // elevationCandidates is the ordered list of elevation binaries to probe.

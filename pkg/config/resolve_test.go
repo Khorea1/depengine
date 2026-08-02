@@ -17,6 +17,7 @@ func writeSchemaInline(t *testing.T, content string) string {
 	}
 	return p
 }
+
 // TestMergeLayers_LaterLayerWins verifies that tools in later layers
 // merge field-by-field according to their MergeStrategy, not whole-tool.
 func TestMergeLayers_LaterLayerWins(t *testing.T) {
@@ -384,33 +385,33 @@ func TestMergeFieldStrategies(t *testing.T) {
 			want: []string{"a", "b"}},
 		{name: "unionslice/upper-only",
 			strategy: MergeUnionSlice,
-			lower: nil, upper: []string{"c"},
+			lower:    nil, upper: []string{"c"},
 			want: []string{"c"}},
 		{name: "unionslice/both-distinct",
 			strategy: MergeUnionSlice,
-			lower: []string{"a", "b"}, upper: []string{"c"},
+			lower:    []string{"a", "b"}, upper: []string{"c"},
 			want: []string{"a", "b", "c"}},
 		{name: "unionslice/dedup",
 			strategy: MergeUnionSlice,
-			lower: []string{"a", "b"}, upper: []string{"b", "c"},
+			lower:    []string{"a", "b"}, upper: []string{"b", "c"},
 			want: []string{"a", "b", "c"}},
 		{name: "unionslice/both-empty",
 			strategy: MergeUnionSlice,
-			lower: []string{}, upper: []string{},
+			lower:    []string{}, upper: []string{},
 			want: []string{}},
 		{name: "unionslice/upper-subset-of-lower",
 			strategy: MergeUnionSlice,
-			lower: []string{"a", "b", "c"}, upper: []string{"a"},
+			lower:    []string{"a", "b", "c"}, upper: []string{"a"},
 			want: []string{"a", "b", "c"}},
 
 		// MergeLocalOnly
 		{name: "localonly/lower-only",
 			strategy: MergeLocalOnly,
-			lower: "some-value", upper: nil,
+			lower:    "some-value", upper: nil,
 			want: "some-value"},
 		{name: "localonly/neither",
 			strategy: MergeLocalOnly,
-			lower: "", upper: "",
+			lower:    "", upper: "",
 			want: ""},
 	}
 

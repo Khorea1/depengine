@@ -53,6 +53,7 @@ func BuildSyncCmd(clan string) []string {
 //   - the clan has no known native manager, or
 //   - the manager is not atomic (AtomicBatch == false), or
 //   - pkgs is empty.
+//
 // The caller then falls through to per-tool install.
 //
 // Package names are validated against a safe pattern before inclusion.
@@ -114,4 +115,3 @@ func withSudo(cmd []string, sudoRequired bool) []string {
 	// insufficient privileges.
 	return cmd
 }
-

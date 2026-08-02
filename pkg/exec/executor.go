@@ -6,9 +6,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/engine"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // Executor orchestrates the installation of all tools in a schema.

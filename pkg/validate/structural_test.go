@@ -30,7 +30,6 @@ func cond(families ...string) *cfg.Condition {
 	return &cfg.Condition{DistroFamily: families}
 }
 
-
 // parseTestdata is a test helper that parses a TOML file from testdata/.
 func parseTestdata(t *testing.T, name string) *cfg.Schema {
 	t.Helper()
@@ -427,10 +426,10 @@ func TestValidateMethodOrderConflicts(t *testing.T) {
 	s := &cfg.Schema{
 		Tools: map[string]*cfg.Tool{
 			"myapp": {
-				Name:        "myapp",
+				Name:         "myapp",
 				MethodPrefer: []string{"cargo"},
-				MethodOnly:  []string{"go"},
-				Methods:     []*cfg.MethodCandidate{{Kind: "cargo"}, {Kind: "go"}},
+				MethodOnly:   []string{"go"},
+				Methods:      []*cfg.MethodCandidate{{Kind: "cargo"}, {Kind: "go"}},
 			},
 		},
 	}
@@ -500,9 +499,9 @@ func TestValidateMethodPreferNoConflict(t *testing.T) {
 	s := &cfg.Schema{
 		Tools: map[string]*cfg.Tool{
 			"myapp": {
-				Name:        "myapp",
+				Name:         "myapp",
 				MethodPrefer: []string{"cargo"},
-				Methods:     []*cfg.MethodCandidate{{Kind: "cargo"}},
+				Methods:      []*cfg.MethodCandidate{{Kind: "cargo"}},
 			},
 		},
 	}
@@ -938,10 +937,10 @@ func TestValidatePackageName_PkgOverrides(t *testing.T) {
 
 func TestValidatePackageNames_ValidateSchema(t *testing.T) {
 	tests := []struct {
-		name      string
-		cfg       map[string]any
-		wantErr   bool
-		errCode   ErrorCode
+		name    string
+		cfg     map[string]any
+		wantErr bool
+		errCode ErrorCode
 	}{
 		{
 			name:    "leading-dash-pkg",

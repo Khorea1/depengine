@@ -100,7 +100,6 @@ func statusLabel(s StatusEnum) string {
 	}
 }
 
-
 // Detail returns a formatted table with per-tool results.
 func (r *ExecReport) Detail() string {
 	if len(r.Tools) == 0 {

@@ -8,12 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/engine"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/lock"
 	"github.com/Khorea1/depengine/pkg/log"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/validate"
 )
 
@@ -101,9 +101,6 @@ func loadSchemaWithManifest(schemaPath, manifestPath string) (*config.Schema, st
 	}
 	return s, clan, facts, count, nil
 }
-
-
-
 
 func exitCodeForError(err error) int {
 	var schemaErr *config.ParseSchemaError

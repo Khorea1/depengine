@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/state"
 )
 
@@ -93,7 +93,6 @@ func mockSchema(tools ...string) *config.Schema {
 	}
 	return s
 }
-
 
 func TestExecutorFallback(t *testing.T) {
 	methodA := &testMockAdapter{kindValue: "failer"}
@@ -909,7 +908,6 @@ func TestFormatToolResult(t *testing.T) {
 	}
 }
 
-
 func TestToolTimeout(t *testing.T) {
 	blocking := &blockingMockAdapter{
 		kindValue: "blocker",
@@ -958,9 +956,11 @@ type orderTrackingAdapter struct {
 	attemptOrder *[]string // shared slice to record attempts
 }
 
-func (m *orderTrackingAdapter) Kind() string { return m.kindValue }
+func (m *orderTrackingAdapter) Kind() string                                      { return m.kindValue }
 func (m *orderTrackingAdapter) Available(ctx context.Context, rn run.Runner) bool { return true }
-func (m *orderTrackingAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool { return false }
+func (m *orderTrackingAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
+	return false
+}
 func (m *orderTrackingAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	*m.attemptOrder = append(*m.attemptOrder, m.kindValue)
 	return &installError{msg: "order tracking failure"}

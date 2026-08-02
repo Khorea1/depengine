@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/ecosystem"
 	"github.com/Khorea1/depengine/pkg/engine"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/graph"
-	"github.com/Khorea1/depengine/pkg/ecosystem"
 	"github.com/Khorea1/depengine/pkg/log"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 func runGraph(args []string) {

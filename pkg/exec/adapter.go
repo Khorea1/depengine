@@ -29,8 +29,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 // Adapter is the contract that every method backend (native, cargo, git,

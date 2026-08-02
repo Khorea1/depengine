@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 // lookupWinAdapter finds a winAdapter by kind from the global registry.

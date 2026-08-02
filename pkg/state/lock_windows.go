@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	modkernel32     = syscall.NewLazyDLL("kernel32.dll")
+	modkernel32      = syscall.NewLazyDLL("kernel32.dll")
 	procLockFileEx   = modkernel32.NewProc("LockFileEx")
 	procUnlockFileEx = modkernel32.NewProc("UnlockFileEx")
 )

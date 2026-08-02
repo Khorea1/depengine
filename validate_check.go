@@ -8,18 +8,18 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/engine"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/log"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/validate"
 )
+
 type jsonOutput struct {
 	Errors   []validate.ValidationError `json:"errors"`
 	Warnings []validate.ValidationError `json:"warnings"`
 }
-
 
 func runValidate(args []string) {
 	// flags maintained in help.go:printCommandHelp
@@ -90,7 +90,6 @@ func runValidate(args []string) {
 	knownKinds := exec.RegisteredKinds()
 	result := validate.ValidateSchema(s, knownKinds)
 
-
 	if *validateCheckEnv {
 		envResult := validate.CheckEnv(ctx, run.OSExecRunner{})
 		for _, ch := range envResult.Checks {
@@ -136,7 +135,7 @@ func runValidate(args []string) {
 	os.Exit(exitCode)
 }
 
-	// flags maintained in help.go:printCommandHelp
+// flags maintained in help.go:printCommandHelp
 func runCheck(args []string) {
 	checkCmd := flag.NewFlagSet("check", flag.ExitOnError)
 	checkSchema := checkCmd.String("schema", defaultSchemaPath(), "path to schema.toml")

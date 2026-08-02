@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 func TestGitAdapterAvailable(t *testing.T) {

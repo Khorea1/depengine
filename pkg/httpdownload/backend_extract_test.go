@@ -6,8 +6,8 @@ import (
 	"compress/gzip"
 	"context"
 	"os"
-	"strings"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/run"

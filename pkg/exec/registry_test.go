@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 // mockAdapter is a minimal adapter for testing the registry.

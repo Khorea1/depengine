@@ -256,7 +256,7 @@ func TestDefinitionHashIncludesPreInstall(t *testing.T) {
 		},
 	}
 	withPre := &config.Tool{
-		Name:        "test",
+		Name:       "test",
 		PreInstall: "curl -fsSL https://example.com/setup.sh | sh",
 		Methods: []*config.MethodCandidate{
 			{Kind: "native", Config: map[string]any{"pkg": "test"}},

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
-	"regexp"
 )
 
 const initTemplate = `# %[1]s — depengine project configuration
@@ -317,4 +317,3 @@ func promptMultiMap(r *bufio.Reader, msg string, keys []string) (map[string]stri
 	}
 	return result, nil
 }
-

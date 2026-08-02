@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Khorea1/depengine/pkg/native"
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/native"
 )
 
 // ExplainTool evaluates all methods for a single tool WITHOUT installing.

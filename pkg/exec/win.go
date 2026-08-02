@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 func init() {
@@ -29,8 +29,8 @@ func init() {
 // winAdapter implements Adapter for a Windows package manager (scoop, choco).
 // Commands use "{pkg}" as a placeholder for the package name from Tool or config.
 type winAdapter struct {
-	kind, binary                          string
-	installCmd, checkCmd, removeCmd       []string
+	kind, binary                    string
+	installCmd, checkCmd, removeCmd []string
 }
 
 func (w *winAdapter) Kind() string { return w.kind }

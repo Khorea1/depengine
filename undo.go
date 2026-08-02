@@ -5,14 +5,14 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strconv"
 	"path/filepath"
+	"strconv"
 	"time"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/log"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/state"
 )
 
@@ -62,7 +62,7 @@ func relativeTime(t time.Time) string {
 	}
 }
 
-	// flags maintained in help.go:printCommandHelp
+// flags maintained in help.go:printCommandHelp
 func runUndo(args []string) {
 	undoCmd := flag.NewFlagSet("undo", flag.ExitOnError)
 	undoList := undoCmd.Bool("list", false, "list available snapshots")

@@ -59,6 +59,7 @@ func FilterManifestTools(schema, manifest *Schema) {
 		}
 	}
 }
+
 // then the local schema (highest priority).
 func ResolveSchemaFromFiles(schemaPath string, manifestPaths ...string) (*Schema, error) {
 	s, err := ParseSchema(schemaPath, nil)

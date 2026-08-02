@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Khorea1/depengine/pkg/graph"
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/graph"
 )
 
 // validateCycles detects dependency cycles using graph.Sort.

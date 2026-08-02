@@ -483,7 +483,6 @@ simple = ["zsh", "bat"]`)
 	}
 }
 
-
 func TestParseMethodBool_TrueReturnsEmptyPkg(t *testing.T) {
 	mc, err := parseMethod("pipx", true)
 	if err != nil {
@@ -661,7 +660,6 @@ ruff = { pip = "organize-tool", python = true }`)
 	}
 }
 
-
 func TestBucketExpansion_BucketWithStringValNotExpanded(t *testing.T) {
 	// When bucket value is a string, it expands to each method in the bucket.
 	// The native method is auto-injected by buildMethods.
@@ -731,7 +729,6 @@ ruff = { python = false }`)
 		t.Fatal("expected python method to remain (not expanded) for false value")
 	}
 }
-
 
 // --- Per-tool method_prefer, method_only, and deprecated method_order ---
 
@@ -835,7 +832,6 @@ myapp = { method_order = ["pip"], method_prefer = ["cargo"], cargo = true }
 	}
 }
 
-
 func TestEffectiveMethodOrderDefaults(t *testing.T) {
 	// No per-tool method preference → default order is returned unmodified.
 	tool := &Tool{Name: "test"}
@@ -854,7 +850,7 @@ func TestEffectiveMethodOrderDefaults(t *testing.T) {
 func TestEffectiveMethodOrderPrefer(t *testing.T) {
 	// method_prefer prepends to default order, with defaults appended (no duplicates).
 	tool := &Tool{
-		Name:        "test",
+		Name:         "test",
 		MethodPrefer: []string{"cargo"},
 	}
 	defaultOrder := []string{"native", "cargo", "pip"}
@@ -924,7 +920,6 @@ func methodKindSet(methods []*MethodCandidate) map[string]bool {
 	}
 	return set
 }
-
 
 func TestConditionMatches(t *testing.T) {
 	// Build a baseline Facts that would match a debian system.
@@ -1199,7 +1194,7 @@ func TestEffectiveMethodOrderWithBuckets(t *testing.T) {
 	defaultOrder := []string{"native", "cargo"}
 
 	tool := &Tool{
-		Name:        "test",
+		Name:         "test",
 		MethodPrefer: []string{"python"},
 	}
 	got := EffectiveMethodOrder(tool, defaultOrder, "")
@@ -1273,9 +1268,9 @@ func TestValidateAcceptsBucketNames(t *testing.T) {
 		},
 		Tools: map[string]*Tool{
 			"mytool": {
-				Name:        "mytool",
+				Name:         "mytool",
 				MethodPrefer: []string{"python"},
-				Methods:     []*MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "mytool"}}},
+				Methods:      []*MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "mytool"}}},
 			},
 		},
 	}
@@ -1294,9 +1289,9 @@ func TestValidateRejectsUnknownKindInMethodPrefer(t *testing.T) {
 		},
 		Tools: map[string]*Tool{
 			"mytool": {
-				Name:        "mytool",
+				Name:         "mytool",
 				MethodPrefer: []string{"nonexistent"},
-				Methods:     []*MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "mytool"}}},
+				Methods:      []*MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "mytool"}}},
 			},
 		},
 	}
@@ -1316,9 +1311,9 @@ func TestValidateRejectsUnknownKindInMethodPrefer(t *testing.T) {
 		},
 		Tools: map[string]*Tool{
 			"mytool": {
-				Name:      "mytool",
+				Name:       "mytool",
 				MethodOnly: []string{"fakekind"},
-				Methods:   []*MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "mytool"}}},
+				Methods:    []*MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "mytool"}}},
 			},
 		},
 	}
