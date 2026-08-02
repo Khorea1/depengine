@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // AsdfAdapter implements the Adapter interface for asdf/mise packages.
@@ -97,4 +97,47 @@ func (a *AsdfAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	return fmt.Errorf("asdf: neither asdf nor mise found")
 }
 
+// CanRemove reports whether this adapter supports removal. Removal is
+// possible when an explicit version is known (see Remove).
+func (a *AsdfAdapter) CanRemove() bool { return true }
+
+// Remove uninstalls a specific version of a tool via asdf or mise.
+//
+// asdf/mise uninstall are version-dependent: unlike Install (which resolves
+// "latest"), `asdf uninstall <plugin> <version>` and `mise uninstall
+// <plugin>@<version>` require an exact installed version. The version is read
+// from mc.Config["version"]; when absent, removal cannot proceed and a manual
+// command is suggested.
+func (a *AsdfAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
+	if len(pkg) == 0 || pkg[0] == "" {
+		return fmt.Errorf("asdf: no package name")
+	}
+	version, ok := mc.Config["version"].(string)
+	if !ok || version == "" {
+		return fmt.Errorf("asdf: removal is version-dependent; set config version = \"<exact installed version>\" or run `asdf uninstall %s <version>` manually", pkg[0])
+	}
+	for _, cmd := range []string{"asdf", "mise"} {
+		if !run.LookPath(ctx, rn, cmd) {
+			continue
+		}
+		var res run.Result
+		if cmd == "mise" {
+			res = rn.Run(ctx, cmd, "uninstall", pkg[0]+"@"+version)
+		} else {
+			res = rn.Run(ctx, cmd, "uninstall", pkg[0], version)
+		}
+		if res.Err != nil {
+			return fmt.Errorf("%s: remove failed: %w", cmd, res.Err)
+		}
+		if res.ExitCode != 0 {
+			stderr := strings.TrimSpace(string(res.Stderr))
+			return fmt.Errorf("%s: remove exited %d: %s", cmd, res.ExitCode, stderr)
+		}
+		return nil
+	}
+	return fmt.Errorf("asdf: neither asdf nor mise found")
+}
+
 var _ exec.Adapter = (*AsdfAdapter)(nil)
+var _ exec.Remover = (*AsdfAdapter)(nil)

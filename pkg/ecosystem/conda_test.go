@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 func condaTool(name, pkg string) (*config.Tool, *config.MethodCandidate) {
@@ -115,10 +115,52 @@ func TestCondaAdapterInstallNoPkg(t *testing.T) {
 	}
 }
 
-func TestCondaAdapterDoesNotRemoveViaCanRemove(t *testing.T) {
+func TestCondaAdapterCanRemove(t *testing.T) {
 	t.Parallel()
 	a := &CondaAdapter{}
-	if exec.CanRemove(a) {
-		t.Fatal("CondaAdapter should not implement Remover")
+	if !exec.CanRemove(a) {
+		t.Fatal("CondaAdapter should implement Remover with CanRemove=true")
+	}
+}
+
+func TestCondaAdapterRemove(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{ExitCode: 0}
+
+	a := &CondaAdapter{}
+	tool, mc := condaTool("python", "python")
+	if err := a.Remove(context.Background(), fr, tool, mc); err != nil {
+		t.Fatalf("unexpected Remove error: %v", err)
+	}
+
+	if len(fr.Calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(fr.Calls))
+	}
+	got := fr.Calls[0]
+	if got.Name != "conda" || got.Args[0] != "remove" || got.Args[1] != "-y" || got.Args[2] != "python" {
+		t.Errorf("unexpected remove call: %v", got)
+	}
+}
+
+func TestCondaAdapterRemoveFailure(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{ExitCode: 1, Stderr: "PackagesNotFoundError"}
+
+	a := &CondaAdapter{}
+	tool, mc := condaTool("python", "python")
+	if err := a.Remove(context.Background(), fr, tool, mc); err == nil {
+		t.Fatal("expected Remove error, got nil")
+	}
+}
+
+func TestCondaAdapterRemoveNoPkg(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{}
+
+	a := &CondaAdapter{}
+	tool := &config.Tool{Name: ""} // both tool name and config are empty
+	mc := &config.MethodCandidate{Kind: "conda"}
+	if err := a.Remove(context.Background(), fr, tool, mc); err == nil {
+		t.Fatal("expected error for missing package name")
 	}
 }

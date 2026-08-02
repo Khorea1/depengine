@@ -8,6 +8,10 @@ import (
 // Configs holds the definitions for all supported language adapters.
 // Each entry maps to a method_order name and describes how to check
 // for and install packages via that tool.
+//
+// Removal policy: entries with a RemoveTmpl support automated removal
+// (BaseAdapter.CanRemove == true). Entries without one intentionally stay
+// "manual remove required" — see the per-entry comments for why.
 var Configs = map[string]BaseConfig{
 	"cargo": {
 		KindName:    "cargo",
@@ -17,11 +21,16 @@ var Configs = map[string]BaseConfig{
 		RemoveTmpl:  []string{"cargo", "uninstall", "{pkg}"},
 	},
 	"go": {
-		KindName:    "go",
-		Binary:      "go",
-		CheckTmpl:   []string{"which", "{pkg}"},
+		KindName: "go",
+		Binary:   "go",
+		// {bin} is the binary name derived from the import path (last path
+		// element, or the element after /cmd/): `go install` never puts the
+		// import path itself on PATH, so `which {pkg}` could never pass.
+		CheckTmpl:   []string{"which", "{bin}"},
 		InstallTmpl: []string{"go", "install", "{pkg}@latest"},
-		RemoveTmpl:  []string{"go", "clean", "{pkg}"},
+		// No RemoveTmpl: `go clean` does not uninstall (it only clears the
+		// build cache), so removal is handled by GoAdapter.Remove, which
+		// deletes the installed binary from the GOBIN directory.
 	},
 	"pip": {
 		KindName:       "pip",
@@ -43,6 +52,7 @@ var Configs = map[string]BaseConfig{
 		Binary:      "uv",
 		CheckTmpl:   []string{"sh", "-c", `uv tool list 2>/dev/null | grep -qF -- "$1"`, "sh", "{pkg}"},
 		InstallTmpl: []string{"uv", "tool", "install", "{pkg}"},
+		RemoveTmpl:  []string{"uv", "tool", "uninstall", "{pkg}"},
 	},
 	"npm": {
 		KindName:    "npm",
@@ -56,6 +66,7 @@ var Configs = map[string]BaseConfig{
 		Binary:         "pnpm",
 		CheckTmpl:      []string{"pnpm", "ls", "-g", "--depth=0", "{pkg}"},
 		InstallTmpl:    []string{"pnpm", "add", "-g", "{pkg}"},
+		RemoveTmpl:     []string{"pnpm", "remove", "-g", "{pkg}"},
 		AvailableExtra: "corepack",
 	},
 	"bun": {
@@ -63,25 +74,31 @@ var Configs = map[string]BaseConfig{
 		Binary:      "bun",
 		CheckTmpl:   []string{"sh", "-c", `bun pm ls -g | grep -qF -- "$1"`, "sh", "{pkg}"},
 		InstallTmpl: []string{"bun", "add", "-g", "{pkg}"},
+		RemoveTmpl:  []string{"bun", "remove", "-g", "{pkg}"},
 	},
 	"gem": {
 		KindName:    "gem",
 		Binary:      "gem",
 		CheckTmpl:   []string{"sh", "-c", `gem list "$1" | grep -qF -- "$1"`, "sh", "{pkg}"},
 		InstallTmpl: []string{"gem", "install", "{pkg}"},
+		RemoveTmpl:  []string{"gem", "uninstall", "{pkg}"},
 	},
 	"yarn": {
 		KindName:    "yarn",
 		Binary:      "yarn",
 		CheckTmpl:   []string{"sh", "-c", `yarn global list --depth=0 | grep -qF -- "$1"`, "sh", "{pkg}"},
 		InstallTmpl: []string{"yarn", "global", "add", "{pkg}"},
+		RemoveTmpl:  []string{"yarn", "global", "remove", "{pkg}"},
 	},
 	"composer": {
 		KindName:    "composer",
 		Binary:      "composer",
 		CheckTmpl:   []string{"composer", "global", "show", "--locked", "{pkg}"},
 		InstallTmpl: []string{"composer", "global", "require", "{pkg}"},
+		RemoveTmpl:  []string{"composer", "global", "remove", "{pkg}"},
 	},
+	// apm is deprecated (Atom was discontinued); `apm uninstall` is
+	// unreliable against modern registries. Kept manual.
 	"apm": {
 		KindName:    "apm",
 		Binary:      "apm",
@@ -100,7 +117,11 @@ var Configs = map[string]BaseConfig{
 		Binary:      "snap",
 		CheckTmpl:   []string{"snap", "list", "{pkg}"},
 		InstallTmpl: []string{"snap", "install", "{pkg}"},
+		RemoveTmpl:  []string{"snap", "remove", "{pkg}"},
 	},
+	// vscode/vscodium install editor extensions; uninstalling an extension
+	// (`code --uninstall-extension`) only matches exact extension IDs and
+	// removing the editor itself is out of scope. Kept manual.
 	"vscode": {
 		KindName:       "vscode",
 		Binary:         "code",
@@ -108,6 +129,7 @@ var Configs = map[string]BaseConfig{
 		InstallTmpl:    []string{"code", "--install-extension", "{pkg}"},
 		AvailableExtra: "code-insiders",
 	},
+	// vscodium: same extension-based policy as vscode above. Kept manual.
 	"vscodium": {
 		KindName:    "vscodium",
 		Binary:      "codium",
@@ -119,7 +141,10 @@ var Configs = map[string]BaseConfig{
 		Binary:      "brew",
 		CheckTmpl:   []string{"brew", "list", "--cask", "{pkg}"},
 		InstallTmpl: []string{"brew", "install", "--cask", "{pkg}"},
+		RemoveTmpl:  []string{"brew", "uninstall", "--cask", "{pkg}"},
 	},
+	// mas installs macOS App Store apps by numeric app id; `mas uninstall`
+	// also requires the numeric id, which {pkg} may not be. Kept manual.
 	"mas": {
 		KindName:    "mas",
 		Binary:      "mas",

@@ -7,14 +7,18 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // SDKManAdapter manages SDKs via SDKMAN (https://sdkman.io). Install is
 // `sdk install {candidate}`; check probes whether the candidate directory
 // exists under ~/.sdkman/candidates/.
+//
+// Removal is intentionally manual: `sdk uninstall` requires a candidate plus
+// an exact installed version (SDKMAN keeps multiple versions per candidate),
+// and depengine does not track which version was installed.
 type SDKManAdapter struct{}
 
 func NewSDKManAdapter() *SDKManAdapter {

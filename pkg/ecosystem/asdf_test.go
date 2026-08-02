@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 func asdfTool(name, pkg string) (*config.Tool, *config.MethodCandidate) {
@@ -131,10 +131,58 @@ func TestAsdfAdapterInstallNoPkg(t *testing.T) {
 	}
 }
 
-func TestAsdfAdapterDoesNotRemoveViaCanRemove(t *testing.T) {
+func TestAsdfAdapterCanRemove(t *testing.T) {
 	t.Parallel()
 	a := &AsdfAdapter{}
-	if exec.CanRemove(a) {
-		t.Fatal("AsdfAdapter should not implement Remover")
+	if !exec.CanRemove(a) {
+		t.Fatal("AsdfAdapter should implement Remover with CanRemove=true")
+	}
+}
+
+func TestAsdfAdapterRemove(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{ExitCode: 0}
+
+	a := &AsdfAdapter{}
+	tool := &config.Tool{Name: "nodejs"}
+	mc := &config.MethodCandidate{Kind: "asdf", Config: map[string]any{"pkg": "nodejs", "version": "18.0.0"}}
+	if err := a.Remove(context.Background(), fr, tool, mc); err != nil {
+		t.Fatalf("unexpected Remove error: %v", err)
+	}
+
+	got := fr.Calls
+	if len(got) < 2 {
+		t.Fatalf("expected at least 2 calls (which asdf, asdf uninstall), got %d", len(got))
+	}
+	if got[0].Name != "which" || got[0].Args[0] != "asdf" {
+		t.Errorf("expected first call 'which asdf', got %v", got[0])
+	}
+	last := got[len(got)-1]
+	if last.Name != "asdf" || len(last.Args) < 3 || last.Args[0] != "uninstall" || last.Args[1] != "nodejs" || last.Args[2] != "18.0.0" {
+		t.Errorf("expected 'asdf uninstall nodejs 18.0.0', got %v", last)
+	}
+}
+
+func TestAsdfAdapterRemoveRequiresVersion(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{ExitCode: 0}
+
+	a := &AsdfAdapter{}
+	tool := &config.Tool{Name: "nodejs"}
+	mc := &config.MethodCandidate{Kind: "asdf", Config: map[string]any{"pkg": "nodejs"}} // no version
+	if err := a.Remove(context.Background(), fr, tool, mc); err == nil {
+		t.Fatal("expected error when no version is configured")
+	}
+}
+
+func TestAsdfAdapterRemoveNoPkg(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{}
+
+	a := &AsdfAdapter{}
+	tool := &config.Tool{Name: ""}
+	mc := &config.MethodCandidate{Kind: "asdf", Config: map[string]any{"version": "18.0.0"}}
+	if err := a.Remove(context.Background(), fr, tool, mc); err == nil {
+		t.Fatal("expected error for missing package name")
 	}
 }

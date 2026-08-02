@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // YarnBerryAdapter manages packages via Yarn Berry (v2+). Unlike classic
@@ -19,6 +19,9 @@ import (
 // NOTE: Berry installs are project-local, not global. Tools installed via
 // this adapter live in the current project's node_modules/.bin and won't
 // be available system-wide. This is a Berry design constraint, not a bug.
+//
+// Removal is intentionally manual: there is no global remove in Berry —
+// `yarn remove` only removes from the current project's package.json.
 type YarnBerryAdapter struct{}
 
 func NewYarnBerryAdapter() *YarnBerryAdapter {

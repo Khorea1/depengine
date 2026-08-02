@@ -5,14 +5,18 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // SteamCMDAdapter manages game server installations via Valve's SteamCMD.
 // The `steamcmd` binary must already be on PATH. Install runs
 // `steamcmd +login anonymous +app_update {app_id} +quit`.
+//
+// Removal is intentionally manual: steamcmd has no uninstall concept —
+// game servers are updated in place and "removal" means deleting the
+// server's install directory.
 type SteamCMDAdapter struct{}
 
 func NewSteamCMDAdapter() *SteamCMDAdapter {
@@ -49,6 +53,5 @@ func (a *SteamCMDAdapter) Install(ctx context.Context, rn run.Runner, tool *conf
 	}
 	return nil
 }
-
 
 var _ exec.Adapter = (*SteamCMDAdapter)(nil)

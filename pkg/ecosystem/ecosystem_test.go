@@ -2,11 +2,12 @@ package ecosystem
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 func tool(name, pkg string) (*config.Tool, *config.MethodCandidate) {
@@ -387,4 +388,182 @@ func TestSteamCMDCheckWithEmptyInstallDir(t *testing.T) {
 			t.Fatal("Check should return false (always checks for updates)")
 		}
 	})
+}
+
+// TestRemovalMatrixRegistryKinds locks in the CanRemove matrix for the
+// BaseAdapter-driven kinds in Configs. Kinds with a RemoveTmpl must be
+// removable; kinds deliberately left manual must not.
+func TestRemovalMatrixRegistryKinds(t *testing.T) {
+	removable := []string{"cargo", "pip", "pipx", "uv", "npm", "pnpm", "bun", "gem", "yarn", "composer", "flatpak", "snap", "cask"}
+	manual := []string{"go", "apm", "vscode", "vscodium", "mas"}
+
+	for _, kind := range removable {
+		t.Run(kind+"/removable", func(t *testing.T) {
+			cfg, ok := Configs[kind]
+			if !ok {
+				t.Fatalf("Configs[%q] missing", kind)
+			}
+			if len(cfg.RemoveTmpl) == 0 {
+				t.Fatalf("Configs[%q].RemoveTmpl is empty; kind should be removable", kind)
+			}
+			if !exec.CanRemove(NewBaseAdapter(cfg)) {
+				t.Fatalf("kind %q should report CanRemove=true", kind)
+			}
+		})
+	}
+
+	for _, kind := range manual {
+		t.Run(kind+"/manual", func(t *testing.T) {
+			cfg, ok := Configs[kind]
+			if !ok {
+				t.Fatalf("Configs[%q] missing", kind)
+			}
+			if len(cfg.RemoveTmpl) != 0 {
+				t.Fatalf("Configs[%q].RemoveTmpl should stay empty (manual removal)", kind)
+			}
+			if exec.CanRemove(NewBaseAdapter(cfg)) {
+				t.Fatalf("kind %q should report CanRemove=false", kind)
+			}
+		})
+	}
+}
+
+func TestAURAdapterCanRemove(t *testing.T) {
+	t.Parallel()
+	adapter := NewAURAdapter("paru")
+	if !exec.CanRemove(adapter) {
+		t.Fatal("AURAdapter should implement Remover with CanRemove=true")
+	}
+	// Named aliases embed AURAdapter and must inherit removal support.
+	for _, alias := range []string{"paru", "yay"} {
+		byName := &AURByNameAdapter{AURAdapter: NewAURAdapter(alias), name: alias}
+		if !exec.CanRemove(byName) {
+			t.Fatalf("AUR alias %q should implement Remover", alias)
+		}
+	}
+}
+
+func TestAURAdapterRemove(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{ExitCode: 0}
+	adapter := NewAURAdapter("paru")
+	tl, mc := tool("test-aur-pkg", "test-aur-pkg")
+
+	if err := adapter.Remove(context.Background(), fr, tl, mc); err != nil {
+		t.Fatalf("Remove should succeed: %v", err)
+	}
+	if len(fr.Calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(fr.Calls))
+	}
+	got := fr.Calls[0]
+	if got.Name != "paru" || len(got.Args) != 3 || got.Args[0] != "-Rns" || got.Args[1] != "--noconfirm" || got.Args[2] != "test-aur-pkg" {
+		t.Errorf("unexpected remove call: %v", got)
+	}
+}
+
+func TestAURAdapterRemoveFailure(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{ExitCode: 1, Stderr: "target not found"}
+	adapter := NewAURAdapter("yay")
+	tl, mc := tool("test-aur-pkg", "test-aur-pkg")
+
+	if err := adapter.Remove(context.Background(), fr, tl, mc); err == nil {
+		t.Fatal("expected Remove error on non-zero exit, got nil")
+	}
+}
+
+// TestGoBinaryNamePrefersCmdElement locks in the derivation rule used by the
+// go Check (and the {bin} template placeholder): the binary name is the last
+// path element, or the element right after a "/cmd/" segment when present.
+func TestGoBinaryNamePrefersCmdElement(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		importPath string
+		want       string
+	}{
+		{"golang.org/x/tools/cmd/stringer", "stringer"},
+		{"golang.org/x/tools/cmd/goimports", "goimports"},
+		{"github.com/foo/bar/cmd/baz", "baz"},
+		// Element after /cmd/ wins even when the import path nests deeper.
+		{"github.com/foo/cmd/tool/extra", "tool"},
+		{"github.com/junegunn/fzf", "fzf"},
+		{"k8s.io/kubectl", "kubectl"},
+		{"simple", "simple"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.importPath, func(t *testing.T) {
+			if got := goBinaryName(tc.importPath); got != tc.want {
+				t.Fatalf("goBinaryName(%q) = %q, want %q", tc.importPath, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestGoAdapterCheckUsesDerivedBinaryName verifies that the go Check targets
+// the binary produced by `go install <import path>` (which stringer), never
+// the import path itself (which golang.org/x/tools/cmd/stringer always
+// fails — the import path is not a PATH entry).
+func TestGoAdapterCheckUsesDerivedBinaryName(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{ExitCode: 0}
+	adapter := NewGoAdapter()
+	tool := &config.Tool{Name: "gostr"}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "golang.org/x/tools/cmd/stringer"}}
+
+	if !adapter.Check(context.Background(), fr, tool, mc) {
+		t.Fatal("Check should report installed when the derived binary exists")
+	}
+	last := fr.Calls[len(fr.Calls)-1]
+	if last.Name != "which" || len(last.Args) != 1 || last.Args[0] != "stringer" {
+		t.Fatalf("Check ran %v %v, want which stringer", last.Name, last.Args)
+	}
+}
+
+// TestGoAdapterCheckNeverChecksImportPath verifies the acceptance criterion
+// "no `which` on import paths anywhere": every which invocation must target
+// a bare binary name.
+func TestGoAdapterCheckNeverChecksImportPath(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{ExitCode: 1}
+	adapter := NewGoAdapter()
+	tool := &config.Tool{Name: "gostr"}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "golang.org/x/tools/cmd/stringer"}}
+
+	if adapter.Check(context.Background(), fr, tool, mc) {
+		t.Fatal("Check should be false when the derived binary is missing")
+	}
+	if len(fr.Calls) == 0 {
+		t.Fatal("expected at least one check call")
+	}
+	for _, call := range fr.Calls {
+		if call.Name != "which" {
+			continue
+		}
+		for _, arg := range call.Args {
+			if strings.Contains(arg, "/") {
+				t.Fatalf("Check ran which on a path-style name %q (import paths must never be checked)", arg)
+			}
+		}
+	}
+}
+
+// TestBaseAdapterCheckSubstitutesBinPlaceholder verifies the {bin} template
+// placeholder is rendered with the binary name derived from {pkg}.
+func TestBaseAdapterCheckSubstitutesBinPlaceholder(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{ExitCode: 0}
+	adapter := NewBaseAdapter(BaseConfig{
+		KindName:  "go",
+		Binary:    "go",
+		CheckTmpl: []string{"which", "{bin}"},
+	})
+	tl, mc := tool("gostr", "golang.org/x/tools/cmd/stringer")
+
+	if !adapter.Check(context.Background(), fr, tl, mc) {
+		t.Fatal("Check should be true when the derived binary exists")
+	}
+	last := fr.Calls[len(fr.Calls)-1]
+	if last.Name != "which" || len(last.Args) != 1 || last.Args[0] != "stringer" {
+		t.Fatalf("Check ran %v %v, want which stringer", last.Name, last.Args)
+	}
 }

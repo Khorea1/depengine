@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // CondaAdapter implements the Adapter interface for conda packages.
@@ -49,4 +49,31 @@ func (a *CondaAdapter) Install(ctx context.Context, rn run.Runner, tool *config.
 	return nil
 }
 
+// CanRemove reports whether this adapter supports removal.
+func (a *CondaAdapter) CanRemove() bool { return true }
+
+// Remove uninstalls a package from the active conda environment.
+//
+// Env-scoping caveat: `conda remove` (like the Install's `conda install`)
+// operates on the currently active environment (base unless a named env is
+// activated). Packages installed into a named env via `conda install -n <env>`
+// would need `conda remove -n <env>` here; depengine does not track which env
+// a tool was installed into, so removal targets the active one.
+func (a *CondaAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
+	if len(pkg) == 0 || pkg[0] == "" {
+		return fmt.Errorf("conda: no package name")
+	}
+	res := rn.Run(ctx, "conda", "remove", "-y", pkg[0])
+	if res.Err != nil {
+		return fmt.Errorf("conda: remove failed: %w", res.Err)
+	}
+	if res.ExitCode != 0 {
+		stderr := strings.TrimSpace(string(res.Stderr))
+		return fmt.Errorf("conda: remove exited %d: %s", res.ExitCode, stderr)
+	}
+	return nil
+}
+
 var _ exec.Adapter = (*CondaAdapter)(nil)
+var _ exec.Remover = (*CondaAdapter)(nil)

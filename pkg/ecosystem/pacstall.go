@@ -6,14 +6,18 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // PacstallAdapter manages packages via Pacstall, an AUR-style package
 // manager for Debian/Ubuntu. Install requires sudo since it modifies
 // system packages.
+//
+// Removal is intentionally manual: `pacstall -R {pkg}` exists but requires
+// the same elevation as install and interactive confirmation; it is left to
+// the user to keep the matrix conservative.
 type PacstallAdapter struct{}
 
 func NewPacstallAdapter() *PacstallAdapter {

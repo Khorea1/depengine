@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // AURAdapter handles packages from the Arch User Repository via a helper
@@ -54,5 +54,29 @@ func (a *AURAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 	return nil
 }
 
-// Ensure AURAdapter implements exec.Adapter at compile time.
+// CanRemove reports whether this adapter supports removal. AUR helpers
+// (paru/yay) pass pacman operations through, so -Rns works.
+func (a *AURAdapter) CanRemove() bool { return true }
+
+// Remove uninstalls a package via the AUR helper's pacman passthrough.
+// --noconfirm avoids an interactive confirmation prompt, matching Install.
+func (a *AURAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
+	if len(pkg) == 0 || pkg[0] == "" {
+		return fmt.Errorf("aur: no package name")
+	}
+	cmd := []string{a.helper, "-Rns", "--noconfirm", pkg[0]}
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	if res.Err != nil {
+		return fmt.Errorf("aur: remove failed: %w", res.Err)
+	}
+	if res.ExitCode != 0 {
+		stderr := strings.TrimSpace(string(res.Stderr))
+		return fmt.Errorf("aur: remove exited %d: %s", res.ExitCode, stderr)
+	}
+	return nil
+}
+
+// Ensure AURAdapter implements exec.Adapter and exec.Remover at compile time.
 var _ exec.Adapter = (*AURAdapter)(nil)
+var _ exec.Remover = (*AURAdapter)(nil)
