@@ -7,10 +7,15 @@
 //
 //	~/.cache/depengine/downloads/<sha256-of-url>
 //
-// Cache entries are NOT automatically evicted — they are overwritten on
-// re-download (which happens when a checksum mismatch is detected or when
-// the caller requests a fresh download). For most schemas this means each
-// artifact is downloaded exactly once.
+// Cache entries are evicted automatically: whenever a new entry is stored,
+// if the total size of the cache exceeds maxCacheBytes (1 GiB by default,
+// overridable via the DEPENGINE_CACHE_MAX_BYTES environment variable), the
+// least-recently-used entries are removed until the cache is back under the
+// limit. Recency is tracked by modification time, refreshed on both store
+// and lookup, so frequently re-used artifacts are the last to go. Entries
+// are also overwritten on re-download (which happens when a checksum
+// mismatch is detected or when the caller requests a fresh download). For
+// most schemas this means each artifact is downloaded exactly once.
 package downloadcache
 
 import (
@@ -20,7 +25,75 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
+	"time"
 )
+
+// defaultCacheMaxBytes is the default maximum total size of the download
+// cache before least-recently-used entries are evicted (1 GiB).
+const defaultCacheMaxBytes int64 = 1 << 30
+
+// maxCacheBytes returns the cache size limit in bytes. It honors the
+// DEPENGINE_CACHE_MAX_BYTES environment variable; a value of 0 disables
+// automatic eviction. Unset, empty, or unparseable values fall back to
+// defaultCacheMaxBytes so a bad override can never break downloads.
+func maxCacheBytes() int64 {
+	if v := os.Getenv("DEPENGINE_CACHE_MAX_BYTES"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return defaultCacheMaxBytes
+}
+
+// evict removes the least-recently-used regular files in dir (by
+// modification time, oldest first) until the total size of the remaining
+// files is at or below max. It is best-effort: files that fail to stat or
+// remove are skipped, and it returns the number of files removed.
+func evict(dir string, max int64) int {
+	if max <= 0 {
+		return 0
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0 // missing or unreadable cache: nothing to evict
+	}
+	type item struct {
+		name string
+		size int64
+		mod  time.Time
+	}
+	items := make([]item, 0, len(entries))
+	var total int64
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		items = append(items, item{name: e.Name(), size: info.Size(), mod: info.ModTime()})
+		total += info.Size()
+	}
+	if total <= max {
+		return 0
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].mod.Before(items[j].mod) })
+	var removed int
+	for _, it := range items {
+		if total <= max {
+			break
+		}
+		if err := os.Remove(filepath.Join(dir, it.name)); err != nil {
+			continue // entry may already be gone; keep evicting
+		}
+		total -= it.size
+		removed++
+	}
+	return removed
+}
 
 // CacheDir returns the download cache directory, respecting XDG_CACHE_HOME.
 func CacheDir() string {
@@ -48,10 +121,14 @@ func Path(url string) string {
 }
 
 // Lookup returns the cached file path if a valid entry exists for url.
-// It returns empty string when the cache has no entry for url.
+// It returns empty string when the cache has no entry for url. A hit
+// refreshes the entry's modification time so eviction treats it as
+// recently used.
 func Lookup(url string) string {
 	p := Path(url)
 	if _, err := os.Stat(p); err == nil {
+		now := time.Now()
+		os.Chtimes(p, now, now) // best-effort LRU refresh
 		return p
 	}
 	return ""
@@ -68,9 +145,12 @@ func Store(url, src string) (string, error) {
 	}
 
 	dst := Path(url)
+	now := time.Now()
 
 	// Try rename first (fast, atomic within the same filesystem).
 	if err := os.Rename(src, dst); err == nil {
+		os.Chtimes(dst, now, now) // mark the fresh entry as most recently used
+		evict(dir, maxCacheBytes())
 		return dst, nil
 	}
 
@@ -79,6 +159,8 @@ func Store(url, src string) (string, error) {
 		return "", fmt.Errorf("downloadcache: store: %w", err)
 	}
 	os.Remove(src) // best-effort cleanup
+	os.Chtimes(dst, now, now)
+	evict(dir, maxCacheBytes())
 	return dst, nil
 }
 
