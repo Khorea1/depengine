@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile.debian
     container_name: depengine-test-debian
-    volumes: ["./:/app"]
+    volumes: ["../../:/app"]
     working_dir: /app
     command: ["./tests/crossplatform/test.sh"]
     environment:
@@ -20,7 +20,7 @@ services:
       context: .
       dockerfile: Dockerfile.arch
     container_name: depengine-test-arch
-    volumes: ["./:/app"]
+    volumes: ["../../:/app"]
     working_dir: /app
     command: ["./tests/crossplatform/test.sh"]
     environment:
@@ -34,7 +34,7 @@ services:
       context: .
       dockerfile: Dockerfile.fedora
     container_name: depengine-test-fedora
-    volumes: ["./:/app"]
+    volumes: ["../../:/app"]
     working_dir: /app
     command: ["./tests/crossplatform/test.sh"]
     environment:
@@ -48,7 +48,7 @@ services:
       context: .
       dockerfile: Dockerfile.alpine
     container_name: depengine-test-alpine
-    volumes: ["./:/app"]
+    volumes: ["../../:/app"]
     working_dir: /app
     command: ["./tests/crossplatform/test.sh"]
     environment:

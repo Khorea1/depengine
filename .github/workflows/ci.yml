@@ -54,3 +54,92 @@ jobs:
       with:
         name: depengine-binary
         path: depengine
+
+  # Multi-distro integration suite (Docker Compose, 4 distros). Docker is
+  # preinstalled on ubuntu-24.04 runners; the run step is gated on a docker
+  # availability probe so the job degrades to a no-op if docker is ever absent.
+  integration:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.x.x
+
+    - name: Check Docker availability
+      id: docker-check
+      run: |
+        if docker info >/dev/null 2>&1; then
+          echo "available=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "available=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Run docker integration suite (debian, arch, fedora, alpine)
+      if: steps.docker-check.outputs.available == 'true'
+      run: |
+        docker compose -f tests/integration/docker-compose.yml build
+        for distro in debian arch fedora alpine; do
+          docker compose -f tests/integration/docker-compose.yml run --rm "$distro"
+        done
+
+  # Cross-platform smoke suite (Docker Compose, 4 distros): validates schema
+  # parsing, install/check/status/remove against each distro's native manager.
+  # Also gated on docker availability.
+  crossplatform:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.x.x
+
+    - name: Check Docker availability
+      id: docker-check
+      run: |
+        if docker info >/dev/null 2>&1; then
+          echo "available=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "available=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Run cross-platform tests (debian, arch, fedora, alpine)
+      if: steps.docker-check.outputs.available == 'true'
+      run: |
+        docker compose -f tests/crossplatform/docker-compose.yml build
+        for distro in debian arch fedora alpine; do
+          docker compose -f tests/crossplatform/docker-compose.yml run --rm "$distro"
+        done
+
+  # Native adapters claimed for macOS (brew/cask/mas) and Windows
+  # (scoop/choco/winget) are compile-time claims today — validate them at the
+  # compile + unit level on the real runners.
+  test-macos:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.x.x
+
+    - name: Set up Go
+      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.x.x
+      with:
+        go-version: '1.26'
+
+    - name: Install dependencies
+      run: go mod download
+
+    - name: Run tests
+      run: go test ./...
+
+  test-windows:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.x.x
+
+    - name: Set up Go
+      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.x.x
+      with:
+        go-version: '1.26'
+
+    - name: Install dependencies
+      run: go mod download
+
+    - name: Run tests
+      run: go test ./...

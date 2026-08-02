@@ -1,13 +1,13 @@
 # Dockerfile for Fedora
 FROM fedora:latest
 
+# Go toolchain from distro packages — test.sh runs `go build` inside the
+# container (go.mod requires go 1.26; fedora's `golang` package tracks upstream).
 RUN dnf update -y && dnf install -y \
+    golang \
     curl \
     git \
     && dnf clean all
-
-# Install Go (for building depengine if needed)
-# RUN dnf install -y golang
 
 # WORKDIR /app
 # COPY . .

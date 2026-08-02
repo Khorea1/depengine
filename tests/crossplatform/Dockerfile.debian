@@ -1,15 +1,14 @@
 # Dockerfile for Debian
 FROM debian:latest
 
+# Go toolchain from distro packages — test.sh runs `go build` inside the
+# container (go.mod requires go 1.26; golang-go is Debian's Go package).
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    golang-go \
     curl \
     git \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-
-# Install Go (for building depengine if needed, though we'll likely copy it in)
-# RUN curl -fsSL https://golang.org/dl/go1.21.5.linux-amd64.tar.gz | tar -C /usr/local -xzf -
-# ENV PATH=$PATH:/usr/local/go/bin
 
 # WORKDIR /app
 # COPY . .

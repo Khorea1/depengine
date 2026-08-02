@@ -16,8 +16,16 @@ neovim = { pacman = "neovim", apt = "neovim", brew = "neovim" }
 
 # Language-specific tools
 http-server = { npm = "http-server" } # Example for npm
-exa = { rust = "exa" } # Assuming rust is a valid adapter, if not use cargo or git
-starship = { "shell.zsh" = "starship", "shell.bash" = "starship", "shell.fish" = "starship" } # Example for shell integration
+# exa is a Rust utility — "rust" is not a registered method kind in the current
+# grammar (see pkg/methodkind/methodkind.go knownKinds); the cargo adapter is the
+# valid way to install it.
+exa = { cargo = "exa" }
+
+# Shell prompt. The previous "shell.zsh"/"shell.bash"/"shell.fish" method kinds
+# do NOT exist in the current grammar, which made this schema fail validation
+# (E_INVALID_VALUE). Replaced with real kinds: native distro packages where
+# available, plus cargo as the universal upstream install method.
+starship = { apt = "starship", pacman = "starship", dnf = "starship", apk = "starship", brew = "starship", cargo = "starship" }
 
 # Tools using git method
 # NOTE: Replace with actual git repos that can be installed via git clone and a build command
@@ -54,7 +62,7 @@ requires = ["zsh"]
   pkg = "example-tool-arch"
   when = { distro = "arch" }
 
-  [tools.example-tool.fedora]
+  [tools.example-tool.dnf]
   pkg = "example-tool-fedora"
   when = { distro = "fedora" }
 
