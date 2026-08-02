@@ -5,6 +5,8 @@
 package state
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,6 +20,11 @@ type State struct {
 	SchemaPath       string               `json:"schema_path"`
 	SchemaModifiedAt string               `json:"schema_modified_at"`
 	Tools            map[string]ToolState `json:"tools"`
+	// Checksum is the SHA256 hex digest of the canonical JSON of the state
+	// with this field zeroed. It is written by Save and verified by LoadFrom
+	// to detect corrupted or tampered state files. Empty on legacy files
+	// written before this field existed (they load without verification).
+	Checksum string `json:"checksum,omitempty"`
 }
 
 // ToolState records one installed tool.
@@ -31,8 +38,11 @@ type ToolState struct {
 	// PostinstallDone is true if a postinstall script was successfully run.
 	PostinstallDone bool `json:"postinstall_done"`
 	// DefinitionHash is the SHA256 of the tool's schema definition at install time.
-	DefinitionHash string         `json:"definition_hash"`
-	Config         map[string]any `json:"config"`
+	DefinitionHash string `json:"definition_hash"`
+	// Version is the installed tool version when the adapter can determine it
+	// (e.g. the resolved/pinned tag at install time). Empty when unknown.
+	Version string         `json:"version,omitempty"`
+	Config  map[string]any `json:"config"`
 }
 
 // DefaultPath returns the platform-appropriate state file path.
@@ -70,6 +80,18 @@ func Save(s *State) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("create state dir: %w", err)
 	}
+	// Compute the integrity checksum over the canonical JSON of the state
+	// with the checksum field zeroed. encoding/json marshals maps with
+	// sorted keys, so re-marshalling the same state yields identical bytes
+	// and LoadFrom can reproduce the digest for verification.
+	s.Checksum = ""
+	canonical, err := json.Marshal(s)
+	if err != nil {
+		return fmt.Errorf("marshal state for checksum: %w", err)
+	}
+	sum := sha256.Sum256(canonical)
+	s.Checksum = hex.EncodeToString(sum[:])
+
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal state: %w", err)
@@ -196,6 +218,26 @@ func LoadFrom(path string) (*State, error) {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return nil, fmt.Errorf("parse state: %w", err)
 	}
+
+	// Verify integrity when the file carries a checksum. Legacy files written
+	// before this feature was added have no checksum and load unchanged.
+	// Re-marshal with the checksum field zeroed must reproduce the exact
+	// canonical JSON that Save hashed, so any data corruption or tampering
+	// surfaces as a digest mismatch.
+	if s.Checksum != "" {
+		want := s.Checksum
+		s.Checksum = ""
+		canonical, err := json.Marshal(&s)
+		if err != nil {
+			return nil, fmt.Errorf("marshal state for checksum: %w", err)
+		}
+		sum := sha256.Sum256(canonical)
+		if got := hex.EncodeToString(sum[:]); got != want {
+			return nil, fmt.Errorf("corrupted state file %s: checksum mismatch", path)
+		}
+		s.Checksum = want
+	}
+
 	if s.Tools == nil {
 		s.Tools = make(map[string]ToolState)
 	}

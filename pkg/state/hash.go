@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
@@ -86,6 +87,66 @@ func DefinitionHash(tool *config.Tool) string {
 	}
 
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// VersionOutdated reports whether the installed version differs from the
+// pinned version — the version-drift half of outdated detection (the other
+// half is DefinitionHash). A leading "v"/"V" and surrounding whitespace are
+// ignored, and dot-separated segments are compared numerically ("1.2" equals
+// "1.2.0"). It returns false when either version is unknown (empty), since
+// drift cannot be proven without both sides.
+func VersionOutdated(installed, pinned string) bool {
+	if installed == "" || pinned == "" {
+		return false
+	}
+	return compareVersions(installed, pinned) != 0
+}
+
+// compareVersions compares two version strings segment by segment, treating
+// segments as numbers when both parse, and falling back to string comparison
+// otherwise (covers pre-release suffixes like "1.2.3-rc1" and date tags).
+func compareVersions(a, b string) int {
+	pa, pb := versionParts(a), versionParts(b)
+	n := len(pa)
+	if len(pb) > n {
+		n = len(pb)
+	}
+	for i := range n {
+		sa, sb := "0", "0"
+		if i < len(pa) {
+			sa = pa[i]
+		}
+		if i < len(pb) {
+			sb = pb[i]
+		}
+		na, ea := strconv.ParseInt(sa, 10, 64)
+		nb, eb := strconv.ParseInt(sb, 10, 64)
+		if ea == nil && eb == nil {
+			switch {
+			case na < nb:
+				return -1
+			case na > nb:
+				return 1
+			}
+			continue
+		}
+		switch {
+		case sa < sb:
+			return -1
+		case sa > sb:
+			return 1
+		}
+	}
+	return 0
+}
+
+// versionParts splits a version string into dot-separated segments, dropping
+// a leading "v"/"V" prefix and surrounding whitespace.
+func versionParts(v string) []string {
+	v = strings.TrimSpace(v)
+	v = strings.TrimPrefix(v, "v")
+	v = strings.TrimPrefix(v, "V")
+	return strings.Split(v, ".")
 }
 
 // writeMapCanonical writes a deterministic hash of a map[string]any by
