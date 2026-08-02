@@ -190,8 +190,8 @@ func cloneMethod(m *MethodCandidate) *MethodCandidate {
 // callers should surface this with other diagnostics rather than silently
 // dropping the method.
 type MethodCandidate struct {
-	Kind   string          // adapter dispatch key (e.g. "http")
-	Label  string          // TOML section key (e.g. "http-musl"), empty = use Kind
+	Kind   string // adapter dispatch key (e.g. "http")
+	Label  string // TOML section key (e.g. "http-musl"), empty = use Kind
 	When   *Condition
 	Config map[string]any
 	Err    error
@@ -626,8 +626,8 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 		if rawKind, ok := t["kind"]; ok {
 			if ks, ok := rawKind.(string); ok && ks != "" {
 				mc.Kind = ks      // override adapter dispatch key
-				mc.Label = kind    // store TOML section key as label
-				delete(t, "kind")  // don't pass to adapter
+				mc.Label = kind   // store TOML section key as label
+				delete(t, "kind") // don't pass to adapter
 			}
 		}
 		for k, v := range t {
@@ -655,11 +655,18 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 // any native manager overrides, a "native" method is automatically injected
 // with the tool name as the default package name.
 //
-// A native candidate is automatically injected so the native method
-// is available for every tool. If native is in the effective method_order
-// (user list or canonical remainder), it will be tried in that position.
-// If the tool also declares non-native methods, those appear as separate
-// candidates ordered by method_order.
+// A native candidate is injected so the native method is available for every
+// tool — UNLESS the tool declares method_only (an exclusive list) and native
+// is not part of it. method_only filters the candidate set, not just the
+// order: a tool restricted to http/go must never fall back to the native
+// manager (which may require elevation). method_prefer/method_order are
+// prefixes that still allow the native remainder, so they do not suppress
+// the implicit native candidate.
+//
+// If native is in the effective method_order (user list or canonical
+// remainder), it will be tried in that position. If the tool also declares
+// non-native methods, those appear as separate candidates ordered by
+// method_order.
 //
 // Example: fd = { apt = "fd-find" }
 //
@@ -703,9 +710,22 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 		}
 	}
 
-	// Always inject a native method when there are any relevant keys.
+	// method_only is an EXCLUSIVE list ("use ONLY these methods"): the
+	// implicit native candidate must not be injected when native is not part
+	// of the declared list. See methodOnlyAllowsNative for the match rules.
+	injectNative := true
+	if only, ok := valMap["method_only"].([]any); ok {
+		if onlyList := anySliceToStrings(only); len(onlyList) > 0 {
+			injectNative = methodOnlyAllowsNative(onlyList)
+			if !injectNative && (len(nativeOverrides) > 0 || nativeBlockConfig != nil) {
+				log.Default.Warn(fmt.Sprintf("tool %q: method_only %v excludes native; dropping the native manager method", name, onlyList))
+			}
+		}
+	}
+
+	// Inject a native method when there are any relevant keys.
 	// With overrides if native manager names are present, plain otherwise.
-	if len(nativeOverrides) > 0 || len(nonNativeKeys) > 0 || nativeBlockConfig != nil {
+	if injectNative && (len(nativeOverrides) > 0 || len(nonNativeKeys) > 0 || nativeBlockConfig != nil) {
 		cfg := map[string]any{"pkg": name}
 		if len(nativeOverrides) > 0 {
 			cfg["pkg_overrides"] = nativeOverrides
@@ -734,6 +754,21 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	}
 
 	return methods
+}
+
+// methodOnlyAllowsNative reports whether an exclusive method_only list
+// permits the implicit native method. Native is allowed when "native"
+// itself is listed, or when a native manager name (apt, pacman, …) is
+// listed — ExpandMethodOrder rewrites a matching manager name to "native"
+// at runtime, so the candidate must exist for the order to be satisfiable.
+// Bucket names (python, node) never expand to native.
+func methodOnlyAllowsNative(only []string) bool {
+	for _, k := range ExpandBuckets(only) {
+		if k == "native" || native.IsNativeManagerName(k) {
+			return true
+		}
+	}
+	return false
 }
 
 func toStringSlice(v any) []string {

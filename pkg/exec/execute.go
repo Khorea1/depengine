@@ -214,11 +214,14 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 			ex.outputf("  syncing package index...\n")
 			ex.logInfo(ctx, "sync", "status", "syncing")
 			if err := syncMgr.Sync(ctx); err != nil {
-				ex.outputf("  ⚠  sync warning: %v (continuing)\n", err)
-				ex.logWarn(ctx, "sync", "status", "warning", "error", err)
-			} else {
-				ex.logDebug(ctx, "sync", "status", "done")
+				// A failed index sync leaves the native manager with stale
+				// metadata — native installs may silently install wrong
+				// versions or fail unpredictably. Fail loudly instead of
+				// continuing.
+				ex.logWarn(ctx, "sync", "status", "failed", "error", err)
+				return nil, fmt.Errorf("package index sync failed: %w", err)
 			}
+			ex.logDebug(ctx, "sync", "status", "done")
 		}
 	}
 
@@ -239,10 +242,40 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 		}
 	}
 
+	// failedTools accumulates tools that did not get installed (failed or
+	// unavailable), so dependents in later levels (requires) are blocked
+	// instead of silently proceeding and reporting themselves installed.
+	failedTools := make(map[string]string) // toolName -> reason
+
 	for _, level := range levels {
+		// PHASE 0: requires — a tool whose dependency failed must not attempt
+		// to install (its runtime prerequisite is absent). It is marked failed
+		// so the run exits non-zero and its own dependents are blocked
+		// transitively.
+		blockedByRequires := make(map[string]string) // toolName -> failure message
+		for _, toolName := range level {
+			tool, ok := s.Tools[toolName]
+			if !ok {
+				continue
+			}
+			for _, dep := range tool.Requires {
+				if reason, bad := failedTools[dep]; bad {
+					blockedByRequires[toolName] = fmt.Sprintf("requires failed dependency: %s (%s)", dep, reason)
+					break
+				}
+			}
+		}
+
 		// PHASE 1: Dangerous-code filter (BEFORE any execution — including PreInstall).
 		filteredLevel := make([]string, 0, len(level))
 		for _, toolName := range level {
+			if msg, blocked := blockedByRequires[toolName]; blocked {
+				failedTools[toolName] = msg
+				ex.recordToolResult(ctx, &ToolResult{
+					Tool: toolName, Status: StatusFailed, Error: msg,
+				}, report)
+				continue
+			}
 			tool, ok := s.Tools[toolName]
 			if !ok {
 				filteredLevel = append(filteredLevel, toolName)
@@ -253,11 +286,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 				if hasDanger {
 					ex.outputf("  ⚠  %s: has hooks or build scripts that may execute arbitrary code. Use --allow-arbitrary-code to suppress this warning.\n", toolName)
 					ex.logWarn(ctx, "security", "tool", toolName, "warning", "has dangerous hooks")
-					ex.recordToolResult(ctx, &ToolResult{
-						Tool:   toolName,
-						Status: StatusSkippedUnavailable,
-						Error:  "requires --allow-arbitrary-code (tool has arbitrary code execution capability)",
-					}, report)
+					ex.recordBlockedTool(ctx, toolName, report)
 					continue
 				}
 			}
@@ -312,21 +341,34 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 					}, report)
 				}
 			} else if ex.batchNativeInstall(ctx, candidates) {
+				// The manager returning exit 0 does not guarantee every package
+				// landed (some managers silently skip unknown package names).
+				// Verify per tool: only tools whose Check passes are marked
+				// installed; the rest fall back to the serial path, which
+				// re-tries native and then any remaining methods.
 				for _, c := range candidates {
-					tr := ToolResult{
-						Tool: c.toolName, Status: StatusInstalled, Method: "native", Config: c.method.Config,
-					}
-					if preinstallDone[c.toolName] {
-						tr.PreinstallDone = true
-					}
-					if c.tool.PostInstall != "" {
-						postCtx, postCancel := context.WithTimeout(ctx, ex.methodTimeout)
-						if err := ex.runPostinstall(postCtx, c.tool); err == nil {
-							tr.PostinstallDone = true
+					adapter := ex.LookupAdapter(c.method.Kind)
+					if adapter != nil && adapter.Check(ctx, ex.rn, c.tool, c.method) {
+						tr := ToolResult{
+							Tool: c.toolName, Status: StatusInstalled, Method: "native", Config: c.method.Config,
 						}
-						postCancel()
+						if preinstallDone[c.toolName] {
+							tr.PreinstallDone = true
+						}
+						if c.tool.PostInstall != "" {
+							postCtx, postCancel := context.WithTimeout(ctx, ex.methodTimeout)
+							if err := ex.runPostinstall(postCtx, c.tool); err != nil {
+								tr.Status = StatusFailed
+								tr.Error = fmt.Sprintf("post-install: %v", err)
+							} else {
+								tr.PostinstallDone = true
+							}
+							postCancel()
+						}
+						ex.recordToolResult(ctx, &tr, report)
+					} else {
+						remaining = append(remaining, c.toolName)
 					}
-					ex.recordToolResult(ctx, &tr, report)
 				}
 			} else {
 				// Batch failed — transparent fallback to per-tool.
@@ -356,6 +398,26 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 		} else {
 			ex.executeLevelParallel(ctx, s, remaining, report, preinstallDone)
 		}
+
+		// Record this level's failures so dependents in later levels are
+		// blocked. Tools already recorded as blocked by requires above are
+		// skipped here (they were registered at PHASE 0).
+		for _, toolName := range level {
+			if _, blocked := blockedByRequires[toolName]; blocked {
+				continue
+			}
+			tr := recordedResult(report, toolName)
+			if tr == nil {
+				continue
+			}
+			if tr.Status == StatusFailed || tr.Status == StatusSkippedUnavailable {
+				reason := tr.Error
+				if reason == "" {
+					reason = "not installed"
+				}
+				failedTools[toolName] = reason
+			}
+		}
 	}
 
 	if ex.sortBy != "" {
@@ -374,26 +436,65 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 	}
 
 	if !ex.dryRun {
-		ex.writeState(ctx, s, report)
+		if err := ex.writeState(ctx, s, report); err != nil {
+			// The installs may have succeeded, but the run is not complete:
+			// without state, status/diff/sbom cannot report what happened.
+			return nil, fmt.Errorf("persisting state: %w", err)
+		}
 	}
 
 	return report, nil
 }
 
+// Versioner is an optional interface adapters may implement to report the
+// version of a tool at install time. The executor calls InstalledVersion
+// while recording state; a non-nil error or an empty string means the version
+// is unknown and ToolState.Version is left empty.
+type Versioner interface {
+	Adapter
+	InstalledVersion(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (string, error)
+}
+
+// versionProbeTimeout bounds the per-tool version probe so a hanging
+// `--version` call cannot stall an install run.
+const versionProbeTimeout = 15 * time.Second
+
+// installedVersion asks the adapter that installed the tool for the version
+// it knows about. Best-effort: unknown versions and failures yield "".
+func (ex *Executor) installedVersion(ctx context.Context, tool *config.Tool, tr ToolResult) string {
+	adapter := ex.LookupAdapter(tr.MethodKind)
+	if adapter == nil {
+		return ""
+	}
+	ver, ok := adapter.(Versioner)
+	if !ok {
+		return ""
+	}
+	mc := &config.MethodCandidate{Kind: tr.MethodKind, Config: tr.Config}
+	probeCtx, cancel := context.WithTimeout(ctx, versionProbeTimeout)
+	defer cancel()
+	version, err := ver.InstalledVersion(probeCtx, ex.rn, tool, mc)
+	if err != nil {
+		return ""
+	}
+	return version
+}
+
 // writeState persists the installation state file after a successful run.
 // It loads existing state and merges in the current run's results, preserving
-// tools installed by other schemas or earlier runs.
-func (ex *Executor) writeState(ctx context.Context, s *config.Schema, report *ExecReport) {
+// tools installed by other schemas or earlier runs. Errors are returned so
+// the caller can fail the run with a visible message instead of silently
+// leaving the state file stale.
+func (ex *Executor) writeState(ctx context.Context, s *config.Schema, report *ExecReport) error {
 	if ex.schemaPath == "" {
 		ex.logWarn(ctx, "state not persisted: no schema path configured (install may not be trackable)")
-		return
+		return nil
 	}
 
 	// Load existing state under exclusive lock to prevent TOCTOU races.
 	ls, err := state.LoadLocked()
 	if err != nil {
-		ex.logWarn(ctx, "state lock failed", "error", err)
-		return
+		return fmt.Errorf("state lock failed: %w", err)
 	}
 	defer ls.Close()
 
@@ -415,7 +516,8 @@ func (ex *Executor) writeState(ctx context.Context, s *config.Schema, report *Ex
 		if !ok {
 			continue
 		}
-		st.Tools[tr.Tool] = state.ToolState{
+		existing, hadExisting := st.Tools[tr.Tool]
+		ts := state.ToolState{
 			Method:          tr.Method,
 			MethodKind:      tr.MethodKind,
 			InstalledAt:     time.Now().UTC().Format(time.RFC3339),
@@ -423,11 +525,21 @@ func (ex *Executor) writeState(ctx context.Context, s *config.Schema, report *Ex
 			DefinitionHash:  state.DefinitionHash(tool),
 			Config:          tr.Config,
 		}
+		// Record the installed version when the adapter can determine it.
+		// When it cannot (e.g. a {latest} pin baked into the download URL),
+		// keep a previously recorded version instead of clearing it.
+		if ver := ex.installedVersion(ctx, tool, tr); ver != "" {
+			ts.Version = ver
+		} else if hadExisting {
+			ts.Version = existing.Version
+		}
+		st.Tools[tr.Tool] = ts
 	}
 
 	if err := ls.Save(); err != nil {
-		ex.logWarn(ctx, "state save failed", "error", err)
+		return fmt.Errorf("state save failed: %w", err)
 	}
+	return nil
 }
 
 // hasDangerousMethod checks whether any of the tool's methods have config
@@ -499,7 +611,13 @@ func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResu
 			}
 		}
 		if hasDanger {
-			result.Status = StatusSkippedUnavailable
+			// Defensive duplicate of the PHASE 1 gate in Execute: this path is
+			// unreachable from Execute (Phase 1 pre-filters every dangerous
+			// tool), but if any future caller reaches executeTool directly,
+			// the blocked tool must still count as a failure (exit != 0)
+			// rather than silently skipping. StatusFailed is what makes
+			// report.Failed>0 and therefore the non-zero exit.
+			result.Status = StatusFailed
 			result.Error = "requires --allow-arbitrary-code (tool has arbitrary code execution capability)"
 			result.Duration = time.Since(toolStart).String()
 			ex.logDebug(ctx, "tool", "tool", tool.Name, "status", "blocked_dangerous")
@@ -613,12 +731,20 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "installed")
 			if tool.PostInstall != "" {
 				// Postinstall gets a fresh timeout from the tool-level context,
-				// not the cancelled method context.
+				// not the cancelled method context. A failing post-install
+				// hook means the tool is not in the state the schema requires,
+				// so the tool is marked failed (and the run exits non-zero)
+				// instead of being silently reported as installed.
 				postCtx, postCancel := context.WithTimeout(toolCtx, ex.methodTimeout)
-				if err := ex.runPostinstall(postCtx, tool); err == nil {
-					result.PostinstallDone = true
-				}
+				perr := ex.runPostinstall(postCtx, tool)
 				postCancel()
+				if perr != nil {
+					result.Status = StatusFailed
+					result.Error = fmt.Sprintf("post-install: %v", perr)
+					result.Duration = time.Since(toolStart).String()
+					return
+				}
+				result.PostinstallDone = true
 			}
 			result.Duration = time.Since(toolStart).String()
 			return
@@ -700,6 +826,9 @@ func formatToolResult(tool string, status StatusEnum, method, errMsg string) str
 	case StatusSkippedWhen:
 		return fmt.Sprintf("  – %s: skipped (when condition)\n", tool)
 	case StatusSkippedUnavailable:
+		if errMsg != "" {
+			return fmt.Sprintf("  – %s: skipped (%s)\n", tool, errMsg)
+		}
 		return fmt.Sprintf("  – %s: skipped (no method available)\n", tool)
 	case StatusWouldInstall:
 		return fmt.Sprintf("  → %s: would install via %s (dry-run)\n", tool, method)
@@ -747,6 +876,37 @@ func (ex *Executor) recordToolResult(ctx context.Context, result *ToolResult, re
 		line = ex.colorizeStatusSymbol(line)
 		ex.outputf("%s", line)
 	}
+}
+
+// recordBlockedTool records a tool blocked by the security gate. The tool
+// keeps the "skipped" status (no attempt was made), but the run must exit
+// non-zero: a requested tool that was not installed is a failure, and the
+// install command keys its exit code on report.Failed. The extra Failed
+// increment is intentional — recordToolResult only bumps Skipped for this
+// status, and callers of the report (install.go) treat Failed>0 as exit 1.
+func (ex *Executor) recordBlockedTool(ctx context.Context, toolName string, report *ExecReport) {
+	ex.recordToolResult(ctx, &ToolResult{
+		Tool:   toolName,
+		Status: StatusSkippedUnavailable,
+		Error:  "requires --allow-arbitrary-code (tool has arbitrary code execution capability)",
+	}, report)
+	report.mu.Lock()
+	report.Failed++
+	report.mu.Unlock()
+}
+
+// recordedResult returns the last ToolResult recorded for toolName, or nil.
+// Callers must invoke it only after the tool's level has finished executing
+// (no concurrent writers at that point); the mutex is held defensively.
+func recordedResult(report *ExecReport, toolName string) *ToolResult {
+	report.mu.Lock()
+	defer report.mu.Unlock()
+	for i := len(report.Tools) - 1; i >= 0; i-- {
+		if report.Tools[i].Tool == toolName {
+			return &report.Tools[i]
+		}
+	}
+	return nil
 }
 
 // executeLevelParallel runs all tools in a topological level concurrently,
@@ -814,13 +974,13 @@ func (ex *Executor) runPostinstall(ctx context.Context, tool *config.Tool) error
 	// Run through sh -c to support shell syntax (pipes, redirections, quotes).
 	res := ex.rn.Run(ctx, "sh", "-c", cmd)
 	if res.Err != nil {
-		ex.outputf("    ⚠  postinstall: %s (continuing)\n", res.Err.Error())
+		ex.outputf("    ⚠  postinstall: %s (failed)\n", res.Err.Error())
 		ex.logWarn(ctx, "postinstall", "tool", tool.Name, "error", res.Err.Error())
 		return res.Err
 	}
 	if res.ExitCode != 0 {
 		err := fmt.Errorf("postinstall exited %d", res.ExitCode)
-		ex.outputf("    ⚠  postinstall: exit %d (continuing)\n", res.ExitCode)
+		ex.outputf("    ⚠  postinstall: exit %d (failed)\n", res.ExitCode)
 		ex.logWarn(ctx, "postinstall", "tool", tool.Name, "exit_code", res.ExitCode)
 		return err
 	}
