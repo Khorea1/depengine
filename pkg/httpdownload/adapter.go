@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/downloadcache"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/log"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // HTTPAdapter implements exec.Adapter for HTTP(S) downloads.
@@ -38,19 +38,31 @@ func (a *HTTPAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	return true
 }
 
-// Check verifies if the tool appears already installed. Looks at:
-//   - extract_to directory (must exist and have contents)
-//   - binary in PATH (from config)
-func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) bool {
-	if extractTo, ok := mc.Config["extract_to"].(string); ok && extractTo != "" {
-		res := rn.Run(ctx, "test", "-d", extractTo)
-		if res.Err == nil && res.ExitCode == 0 {
-			// Directory exists and has contents.
-			res2 := rn.Run(ctx, "ls", "-A", extractTo)
-			return res2.Err == nil && res2.ExitCode == 0 && len(res2.Stdout) > 0
+// Check verifies if the tool appears already installed. The check is
+// file-based, never directory-based:
+//   - extract_to configured → the extracted TARGET FILE must exist inside it
+//     (extract_to/<binary> when the install record names a binary, otherwise
+//     extract_to/<tool name>). A bare directory is NOT proof of installation:
+//     an unrelated operation (e.g. another tool's clone) can create the
+//     directory while this tool's file was never downloaded.
+//   - binary configured without extract_to → binary must be reachable on PATH.
+func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
+	extractTo, _ := mc.Config["extract_to"].(string)
+	binary, _ := mc.Config["binary"].(string)
+
+	if extractTo != "" {
+		target := binary
+		if target == "" {
+			if tool == nil {
+				return false
+			}
+			target = tool.Name
 		}
+		res := rn.Run(ctx, "test", "-f", filepath.Join(extractTo, target))
+		return res.Err == nil && res.ExitCode == 0
 	}
-	if binary, ok := mc.Config["binary"].(string); ok && binary != "" {
+
+	if binary != "" {
 		res := rn.Run(ctx, "which", binary)
 		return res.Err == nil && res.ExitCode == 0
 	}

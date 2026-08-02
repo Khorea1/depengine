@@ -12,9 +12,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/config"
 )
 
 // BaseConfig describes one language adapter. Most adapters share this
@@ -28,7 +28,9 @@ type BaseConfig struct {
 	Binary string
 
 	// CheckTmpl is the command template for checking installation.
-	// "{pkg}" is replaced with the package name.
+	// "{pkg}" is replaced with the package name; "{bin}" with the binary
+	// name derived from the package/import path (last path element, or the
+	// element after /cmd/).
 	CheckTmpl []string
 
 	// InstallTmpl is the command template for installing.
@@ -124,12 +126,24 @@ func (a *BaseAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 	return nil
 }
 
-// buildCmd substitutes {pkg} in the template and returns the command.
+// buildCmd substitutes {pkg} and {bin} in the template and returns the command.
+// {bin} is derived from the resolved package name via goBinaryName — the
+// binary name that a Go `go install <import path>` produces (last path
+// element, or the element after a "/cmd/" segment when present).
 func (a *BaseAdapter) buildCmd(tmpl []string, tool *config.Tool, mc *config.MethodCandidate) []string {
 	if len(tmpl) == 0 {
 		return nil
 	}
-	return exec.SubstitutePkg(tmpl, tool, mc)
+	cmd := exec.SubstitutePkg(tmpl, tool, mc)
+	pkg := tool.Name
+	if p, ok := mc.Config["pkg"].(string); ok && p != "" {
+		pkg = p
+	}
+	bin := goBinaryName(pkg)
+	for i, arg := range cmd {
+		cmd[i] = strings.ReplaceAll(arg, "{bin}", bin)
+	}
+	return cmd
 }
 
 // Compile-time interface checks.

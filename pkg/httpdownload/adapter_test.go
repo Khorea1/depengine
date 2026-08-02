@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 func TestHTTPAdapterKind(t *testing.T) {
@@ -28,12 +28,55 @@ func TestHTTPAdapterAvailable(t *testing.T) {
 }
 
 func TestHTTPAdapterCheckViaExtractTo(t *testing.T) {
-	fr := &run.FakeRunner{ExitCode: 0, Stdout: "file1"}
+	fr := &run.FakeRunner{ExitCode: 0}
 	adapter := NewHTTPAdapter()
+	tool := &config.Tool{Name: "mytool"}
 	mc := &config.MethodCandidate{Config: map[string]any{"extract_to": "/opt/tool"}}
 
-	if !adapter.Check(context.Background(), fr, nil, mc) {
-		t.Fatal("Check should be true when extract_to exists and has files")
+	if !adapter.Check(context.Background(), fr, tool, mc) {
+		t.Fatal("Check should be true when extract_to/<tool> file exists")
+	}
+	// The check must target the extracted FILE (extract_to/<tool>), not the
+	// parent directory.
+	if len(fr.Calls) != 1 || fr.Calls[0].Name != "test" ||
+		len(fr.Calls[0].Args) != 2 || fr.Calls[0].Args[0] != "-f" ||
+		fr.Calls[0].Args[1] != filepath.Join("/opt/tool", "mytool") {
+		t.Fatalf("Check ran %+v, want test -f %s", fr.Calls, filepath.Join("/opt/tool", "mytool"))
+	}
+}
+
+func TestHTTPAdapterCheckViaExtractToBinary(t *testing.T) {
+	// When the install record names a binary, the target file is
+	// extract_to/<binary>.
+	fr := &run.FakeRunner{ExitCode: 0}
+	adapter := NewHTTPAdapter()
+	tool := &config.Tool{Name: "httptool"}
+	mc := &config.MethodCandidate{Config: map[string]any{"extract_to": "/opt/bin", "binary": "yq"}}
+
+	if !adapter.Check(context.Background(), fr, tool, mc) {
+		t.Fatal("Check should be true when extract_to/<binary> file exists")
+	}
+	if len(fr.Calls) != 1 || fr.Calls[0].Name != "test" ||
+		fr.Calls[0].Args[0] != "-f" || fr.Calls[0].Args[1] != filepath.Join("/opt/bin", "yq") {
+		t.Fatalf("Check ran %+v, want test -f %s", fr.Calls, filepath.Join("/opt/bin", "yq"))
+	}
+}
+
+func TestHTTPAdapterCheckDirectoryOnlyIsNotInstalled(t *testing.T) {
+	// Regression: a directory created by an unrelated operation (e.g.
+	// another tool's clone) must NOT count as installed — the target FILE
+	// must exist. test -f failing (exit 1) means "not installed" even
+	// though the parent directory exists.
+	fr := &run.FakeRunner{ExitCode: 1}
+	adapter := NewHTTPAdapter()
+	tool := &config.Tool{Name: "httptool"}
+	mc := &config.MethodCandidate{Config: map[string]any{"extract_to": "/opt/bin", "binary": "yq"}}
+
+	if adapter.Check(context.Background(), fr, tool, mc) {
+		t.Fatal("Check must be false when only the directory exists (target file missing)")
+	}
+	if len(fr.Calls) != 1 || fr.Calls[0].Name != "test" || fr.Calls[0].Args[0] != "-f" {
+		t.Fatalf("Check ran %+v, want a single file-based test -f", fr.Calls)
 	}
 }
 

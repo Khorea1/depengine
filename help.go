@@ -45,7 +45,7 @@ func printCommandHelp(name string) {
 		fs.String("format", "text", "output format: text or json")
 		fs.Bool("strict", false, "warnings become errors")
 	case "check":
-		desc = "Check if a tool is installed"
+		desc = "Check if a tool is actually installed (runs each method's check command)"
 		fs.String("schema", "", "path to schema (auto-detected)")
 		fs.String("manifest", "", "path to personal manifest")
 		fs.Bool("no-manifest", false, "disable personal manifest")
