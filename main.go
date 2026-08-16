@@ -22,6 +22,8 @@ func main() {
 		runInstall(os.Args[2:])
 	case "update":
 		runUpdate(os.Args[2:])
+	case "upgrade":
+		runUpgrade(os.Args[2:])
 	case "validate":
 		runValidate(os.Args[2:])
 	case "check":

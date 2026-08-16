@@ -90,6 +90,14 @@ func TestCommandHelperSubprocess(t *testing.T) {
 		runUndo(args)
 	case "forget":
 		runForget(args)
+	case "upgrade":
+		// Upgrade flags are passed via DEPENGINE_TEST_ARGS to avoid
+		// collision with the Go test binary's own flag parser.
+		var upgradeArgs []string
+		if a := os.Getenv("DEPENGINE_TEST_ARGS"); a != "" {
+			upgradeArgs = strings.Split(a, "\x1f")
+		}
+		runUpgrade(upgradeArgs)
 	default:
 		os.Exit(99)
 	}
@@ -186,17 +194,30 @@ func TestRemoveGoTool(t *testing.T) {
 		t.Fatalf("state still contains gostr after remove: %+v", st.Tools)
 	}
 }
-
-// TestRemoveHTTPTool removes a tool whose adapter has no Remover: the
-// command must print 'manual remove required', exit 1, and keep the state.
+// TestRemoveHTTPTool removes a tool installed via http: now that HTTPAdapter
+// implements Remover, the command exits 0 and removes the state entry.
+// The extract_to points to a /bin-suffixed temp dir, so Remove deletes
+// only the target binary (extract_to/<tool>), not the dir itself.
 func TestRemoveHTTPTool(t *testing.T) {
 	stateHome := t.TempDir()
 	homeDir := t.TempDir()
+
+	// Create a /bin-suffixed dir so isSharedDir returns true.
+	sharedDir := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(sharedDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Plant the target binary.
+	binPath := filepath.Join(sharedDir, "httptool")
+	if err := os.WriteFile(binPath, []byte("fake"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
 	httpState := state.ToolState{
 		Method:      "http",
 		MethodKind:  "http",
 		InstalledAt: "2026-08-01T00:00:00Z",
-		Config:      map[string]any{"url": "https://example.invalid/tool.tar.gz", "extract_to": "/tmp/fake-tool"},
+		Config:      map[string]any{"url": "https://example.invalid/tool.tar.gz", "extract_to": sharedDir},
 	}
 	writeTestState(t, stateHome, map[string]state.ToolState{"httptool": httpState})
 
@@ -205,15 +226,20 @@ func TestRemoveHTTPTool(t *testing.T) {
 		"httptool",
 	)
 
-	if code != 1 {
-		t.Fatalf("remove httptool exit = %d, want 1 (output: %s)", code, out)
+	if code != 0 {
+		t.Fatalf("remove httptool exit = %d, want 0 (output: %s)", code, out)
 	}
-	if !strings.Contains(out, "manual remove required") {
-		t.Fatalf("output should mention manual removal, got: %s", out)
+	if !strings.Contains(out, "removed") {
+		t.Fatalf("output should mention removal, got: %s", out)
 	}
+	// Binary should be gone from shared dir.
+	if _, err := os.Stat(binPath); !os.IsNotExist(err) {
+		t.Fatalf("binary %s should be removed (err=%v)", binPath, err)
+	}
+	// State entry should be cleaned.
 	st := loadTestState(t, stateHome)
-	if _, ok := st.Tools["httptool"]; !ok {
-		t.Fatalf("state entry for httptool must be kept when removal is manual: %+v", st.Tools)
+	if _, ok := st.Tools["httptool"]; ok {
+		t.Fatalf("state should not contain httptool after remove: %+v", st.Tools)
 	}
 }
 

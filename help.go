@@ -102,6 +102,17 @@ func printCommandHelp(name string) {
 		fs.Bool("json", false, "output as JSON")
 	case "completion":
 		desc = "Generate shell completion scripts"
+	case "upgrade":
+		desc = "Upgrade installed tools to pinned versions in depengine.lock"
+		fs.String("schema", "", "path to schema (auto-detected)")
+		fs.String("manifest", "", "path to personal manifest")
+		fs.Bool("no-manifest", false, "disable personal manifest")
+		fs.Bool("dry-run", false, "show what would be upgraded")
+		fs.String("only", "", "only upgrade a specific tool")
+		fs.Bool("force", false, "skip confirmation prompt")
+		fs.Bool("json", false, "JSON output")
+		fs.Bool("quiet", false, "suppress non-essential output")
+		fs.Bool("allow-arbitrary-code", false, "suppress security warnings")
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", name)
 		os.Exit(1)

@@ -203,3 +203,16 @@ func New() *Executor {
 func (ex *Executor) LookupAdapter(kind string) Adapter {
 	return ex.adapters[kind]
 }
+
+// DefaultMethodOrder returns the effective default method order for the
+// executor. Used by callers that need to resolve method ordering outside
+// the normal Execute path (e.g. upgrade).
+func (ex *Executor) DefaultMethodOrder() []string {
+	return ex.defaultMethodOrder
+}
+
+// NativeManagerName returns the resolved native package manager name
+// (e.g. "apt", "pacman"). Empty when no clan is set.
+func (ex *Executor) NativeManagerName() string {
+	return ex.nativeManagerName
+}
