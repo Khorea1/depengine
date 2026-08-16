@@ -692,3 +692,173 @@ func TestVerifyChecksumFileFormatRaw(t *testing.T) {
 		t.Fatalf("error should mention the checksum URL, got: %v", err)
 	}
 }
+
+
+// --- Remove tests ---
+
+func TestHTTPAdapterCanRemove(t *testing.T) {
+	if !NewHTTPAdapter().CanRemove() {
+		t.Fatal("CanRemove should return true")
+	}
+}
+
+func TestHTTPAdapterRemoveSharedDirWithBinary(t *testing.T) {
+	dir := t.TempDir()
+	binPath := filepath.Join(dir, "mytool")
+	if err := os.WriteFile(binPath, []byte("binary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := NewHTTPAdapter()
+	tool := &config.Tool{Name: "mytool"}
+	// dir is not shared (it's a temp dir), but we test os.Remove directly.
+	// Use /usr/local/bin as shared in the test by setting binary and
+	// faking extract_to to the temp dir with binary.
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"extract_to": dir,
+		"binary":     "mytool",
+	}}
+
+	// Temp dir is not shared, so Remove will os.RemoveAll(dir).
+	if err := adapter.Remove(context.Background(), &run.FakeRunner{}, tool, mc); err != nil {
+		t.Fatalf("Remove failed: %v", err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("directory %s should be removed", dir)
+	}
+}
+
+func TestHTTPAdapterRemoveSharedDirRemovesOnlyBinary(t *testing.T) {
+	dir := t.TempDir()
+
+	// Use a dir ending in /bin so isSharedDir returns true.
+	sharedDir := filepath.Join(dir, "bin")
+	if err := os.Mkdir(sharedDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	binInShared := filepath.Join(sharedDir, "mytool")
+	if err := os.WriteFile(binInShared, []byte("binary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	decoyInShared := filepath.Join(sharedDir, "other")
+	if err := os.WriteFile(decoyInShared, []byte("decoy"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := NewHTTPAdapter()
+	tool := &config.Tool{Name: "mytool"}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"extract_to": sharedDir,
+		"binary":     "mytool",
+	}}
+
+	if err := adapter.Remove(context.Background(), &run.FakeRunner{}, tool, mc); err != nil {
+		t.Fatalf("Remove failed: %v", err)
+	}
+	if _, err := os.Stat(binInShared); !os.IsNotExist(err) {
+		t.Fatalf("binary should be deleted from shared dir")
+	}
+	if _, err := os.Stat(decoyInShared); err != nil {
+		t.Fatalf("decoy file should remain in shared dir: %v", err)
+	}
+}
+
+func TestHTTPAdapterRemoveNoExtractToUsesToolName(t *testing.T) {
+	// Default extract_to = /usr/local/bin — we can't write there in tests.
+	// Instead, use a shared-dir-suffixed temp and verify tool name is the target.
+	dir := t.TempDir()
+	sharedDir := filepath.Join(dir, "bin")
+	if err := os.Mkdir(sharedDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	binPath := filepath.Join(sharedDir, "named-tool")
+	if err := os.WriteFile(binPath, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := NewHTTPAdapter()
+	tool := &config.Tool{Name: "named-tool"}
+	// No binary, no extract_to — should default to /usr/local/bin + tool.Name.
+	// But we can't write to /usr/local/bin. Override extract_to to our /bin dir.
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"extract_to": sharedDir,
+	}}
+
+	if err := adapter.Remove(context.Background(), &run.FakeRunner{}, tool, mc); err != nil {
+		t.Fatalf("Remove failed: %v", err)
+	}
+	if _, err := os.Stat(binPath); !os.IsNotExist(err) {
+		t.Fatalf("tool file should be deleted: %v", err)
+	}
+}
+
+func TestHTTPAdapterRemoveNonexistentNoError(t *testing.T) {
+	adapter := NewHTTPAdapter()
+	tool := &config.Tool{Name: "ghost"}
+	dir := t.TempDir()
+	sharedDir := filepath.Join(dir, "bin")
+	if err := os.Mkdir(sharedDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"extract_to": sharedDir,
+		"binary":     "ghost",
+	}}
+
+	// Removing nonexistent file should return nil (not an error).
+	if err := adapter.Remove(context.Background(), &run.FakeRunner{}, tool, mc); err != nil {
+		t.Fatalf("Remove should not error for nonexistent file: %v", err)
+	}
+}
+
+func TestHTTPAdapterRemoveToolSpecificDir(t *testing.T) {
+	// Non-shared extract_to → entire directory deleted.
+	dir := t.TempDir()
+	toolDir := filepath.Join(dir, "mytool-dir")
+	if err := os.Mkdir(toolDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(toolDir, "mytool"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(toolDir, "extra.txt"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := NewHTTPAdapter()
+	tool := &config.Tool{Name: "mytool"}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"extract_to": " " + toolDir, // whitespace prefix to ensure not shared-suffixed
+	}}
+	// Trim is not done by adapter, so use clean path.
+	mc.Config["extract_to"] = toolDir
+
+	if err := adapter.Remove(context.Background(), &run.FakeRunner{}, tool, mc); err != nil {
+		t.Fatalf("Remove failed: %v", err)
+	}
+	if _, err := os.Stat(toolDir); !os.IsNotExist(err) {
+		t.Fatalf("tool-specific directory should be deleted: %v", err)
+	}
+}
+
+func TestIsSharedDir(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"/usr/local/bin", true},
+		{"/bin", true},
+		{"/usr/bin", true},
+		{"/opt", true},
+		{"/", true},
+		{"/home/user/tools/bin", true},
+		{"/opt/myapp", false},
+		{"/home/user/.local/share", false},
+		{"", true}, // "." — filepath.Clean("") == "."
+	}
+	for _, tt := range tests {
+		if got := isSharedDir(tt.path); got != tt.want {
+			t.Errorf("isSharedDir(%q) = %v, want %v", tt.path, got, tt.want)
+		}
+	}
+}

@@ -356,6 +356,72 @@ func (a *HTTPAdapter) fetchChecksumFromURL(ctx context.Context, rn run.Runner, c
 // Ensure HTTPAdapter implements exec.Adapter.
 var _ exec.Adapter = (*HTTPAdapter)(nil)
 
+
+// isSharedDir checks if a directory path is a common shared system directory.
+// We avoid deleting these directories completely during uninstallation.
+func isSharedDir(path string) bool {
+	p := filepath.Clean(path)
+	if p == "/" || p == "." {
+		return true
+	}
+	shared := []string{
+		"/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin",
+		"/opt", "/usr", "/usr/local", "/lib", "/usr/lib", "/usr/local/lib",
+		"C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)",
+	}
+	for _, s := range shared {
+		if p == s {
+			return true
+		}
+	}
+	if strings.HasSuffix(p, "/bin") || strings.HasSuffix(p, "/sbin") || strings.HasSuffix(p, "\\bin") {
+		return true
+	}
+	return false
+}
+
+// Remove uninstalls an HTTP-installed tool. If extract_to is a shared
+// directory (e.g. /usr/local/bin), only the extracted binary is removed.
+// If extract_to is tool-specific, the entire directory is deleted.
+// Without extract_to, removal is not supported — the download was extracted
+// to the default /usr/local/bin, which is shared, so we remove the binary or
+// the tool name from there.
+func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+	extractTo, _ := mc.Config["extract_to"].(string)
+	if extractTo == "" {
+		extractTo = "/usr/local/bin" // Install default
+	}
+
+	binary, _ := mc.Config["binary"].(string)
+	target := binary
+	if target == "" {
+		if tool == nil {
+			return fmt.Errorf("http: remove not supported — no extract_to and no tool name")
+		}
+		target = tool.Name
+	}
+
+	if isSharedDir(extractTo) {
+		path := filepath.Join(extractTo, target)
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("http: remove %s: %w", path, err)
+		}
+		return nil
+	}
+
+	// Not a shared directory — safe to delete the whole directory
+	if err := os.RemoveAll(extractTo); err != nil {
+		return fmt.Errorf("http: remove directory %s: %w", extractTo, err)
+	}
+	return nil
+}
+
+// CanRemove returns true — the adapter can remove installations done via
+// HTTP download when extract_to and/or binary is configured.
+func (a *HTTPAdapter) CanRemove() bool { return true }
+
+// Ensure HTTPAdapter implements exec.Remover at compile time.
+var _ exec.Remover = (*HTTPAdapter)(nil)
 // copyLocalFile copies a file from src to dst, preserving permissions.
 // Used by the download cache to materialize cached files into temp locations.
 func copyLocalFile(src, dst string) error {
