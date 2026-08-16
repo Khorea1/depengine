@@ -3,7 +3,6 @@ package ecosystem
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
@@ -39,14 +38,7 @@ func (a *CondaAdapter) Install(ctx context.Context, rn run.Runner, tool *config.
 		return fmt.Errorf("conda: no package name")
 	}
 	res := rn.Run(ctx, "conda", "install", "-y", pkg[0])
-	if res.Err != nil {
-		return fmt.Errorf("conda: install failed: %w", res.Err)
-	}
-	if res.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res.Stderr))
-		return fmt.Errorf("conda: install exited %d: %s", res.ExitCode, stderr)
-	}
-	return nil
+	return run.CheckResult(res, "conda: install")
 }
 
 // CanRemove reports whether this adapter supports removal.
@@ -65,14 +57,7 @@ func (a *CondaAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.T
 		return fmt.Errorf("conda: no package name")
 	}
 	res := rn.Run(ctx, "conda", "remove", "-y", pkg[0])
-	if res.Err != nil {
-		return fmt.Errorf("conda: remove failed: %w", res.Err)
-	}
-	if res.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res.Stderr))
-		return fmt.Errorf("conda: remove exited %d: %s", res.ExitCode, stderr)
-	}
-	return nil
+	return run.CheckResult(res, "conda: remove")
 }
 
 var _ exec.Adapter = (*CondaAdapter)(nil)

@@ -2,7 +2,6 @@ package exec
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/Khorea1/depengine/pkg/native"
 	"github.com/Khorea1/depengine/pkg/run"
@@ -40,11 +39,8 @@ func (sm *SyncManager) Sync(ctx context.Context) error {
 	}
 
 	res := sm.rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil {
-		return fmt.Errorf("sync failed: %w", res.Err)
-	}
-	if res.ExitCode != 0 {
-		return fmt.Errorf("sync exited %d", res.ExitCode)
+	if err := run.CheckResult(res, "sync"); err != nil {
+		return err
 	}
 
 	sm.synced = true

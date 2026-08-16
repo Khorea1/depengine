@@ -67,11 +67,8 @@ func gpgVerifyWithIdentityCheck(ctx context.Context, rn run.Runner, checksumFile
 
 	// Run verification with status output for fingerprint extraction.
 	res := rn.Run(ctx, "gpg", "--homedir", homedir, "--verify", "--batch", "--status-fd=1", signatureFile, checksumFile)
-	if res.Err != nil {
-		return fmt.Errorf("gpg: signature verification failed: %w", res.Err)
-	}
-	if res.ExitCode != 0 {
-		return fmt.Errorf("gpg: signature verification failed: %s", strings.TrimSpace(string(res.Stderr)))
+	if err := run.CheckResult(res, "gpg: signature verification failed"); err != nil {
+		return err
 	}
 
 	// Extract the actual signer's primary fingerprint from the status output.

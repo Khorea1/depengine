@@ -3,7 +3,6 @@ package exec
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/Khorea1/depengine/pkg/config"
@@ -94,13 +93,7 @@ func (a *NativeAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.
 		return fmt.Errorf("no remove command for clan %q", clan)
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil {
-		return fmt.Errorf("remove command failed: %w", res.Err)
-	}
-	if res.ExitCode != 0 {
-		return fmt.Errorf("remove exited %d: %s", res.ExitCode, strings.TrimSpace(string(res.Stderr)))
-	}
-	return nil
+	return run.CheckResult(res, "native: remove")
 }
 
 func (a *NativeAdapter) CanRemove() bool { return true }
@@ -136,14 +129,7 @@ func runNativeInstall(ctx context.Context, rn run.Runner, prefix, clan string, m
 		return fmt.Errorf("%s: no install command for clan %q", prefix, clan)
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil {
-		return fmt.Errorf("%s: install failed: %w", prefix, res.Err)
-	}
-	if res.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res.Stderr))
-		return fmt.Errorf("%s: install exited %d: %s", prefix, res.ExitCode, stderr)
-	}
-	return nil
+	return run.CheckResult(res, prefix+": install")
 }
 
 // RegisterNativeManagerAliases registers aliases for each known native
@@ -223,14 +209,7 @@ func (a *NativeByManagerAdapter) Install(ctx context.Context, rn run.Runner, too
 	// Use the actual manager binary name (e.g. "dnf5" instead of "dnf").
 	cmd = replaceManagerBinary(cmd, a.managerName, clan)
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil {
-		return fmt.Errorf("native(%s): install failed: %w", a.managerName, res.Err)
-	}
-	if res.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res.Stderr))
-		return fmt.Errorf("native(%s): install exited %d: %s", a.managerName, res.ExitCode, stderr)
-	}
-	return nil
+	return run.CheckResult(res, "native("+a.managerName+"): install")
 }
 
 func (a *NativeByManagerAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {

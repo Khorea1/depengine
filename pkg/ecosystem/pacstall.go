@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
@@ -66,14 +65,7 @@ func (a *PacstallAdapter) Install(ctx context.Context, rn run.Runner, tool *conf
 		cmd = []string{"sudo", "pacstall", "-I", pkg[0]}
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil {
-		return fmt.Errorf("pacstall: install failed: %w", res.Err)
-	}
-	if res.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res.Stderr))
-		return fmt.Errorf("pacstall: install exited %d: %s", res.ExitCode, stderr)
-	}
-	return nil
+	return run.CheckResult(res, "pacstall: install")
 }
 
 var _ exec.Adapter = (*PacstallAdapter)(nil)

@@ -3,7 +3,6 @@ package ecosystem
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
@@ -44,14 +43,7 @@ func (a *SteamCMDAdapter) Install(ctx context.Context, rn run.Runner, tool *conf
 	}
 	cmd := []string{"steamcmd", "+login", "anonymous", "+app_update", pkg[0], "+quit"}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil {
-		return fmt.Errorf("steamcmd: install failed: %w", res.Err)
-	}
-	if res.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res.Stderr))
-		return fmt.Errorf("steamcmd: install exited %d: %s", res.ExitCode, stderr)
-	}
-	return nil
+	return run.CheckResult(res, "steamcmd: install")
 }
 
 var _ exec.Adapter = (*SteamCMDAdapter)(nil)

@@ -93,21 +93,13 @@ func extractTar(ctx context.Context, src, dest string, flags []string, rn run.Ru
 		}
 		sudoBin := run.ElevationPrefix()[0]
 		res := rn.Run(ctx, sudoBin, append([]string{"tar"}, args...)...)
-		if res.Err != nil {
-			return fmt.Errorf("tar: %w", res.Err)
-		}
-		if res.ExitCode != 0 {
-			stderr := strings.TrimSpace(string(res.Stderr))
-			return fmt.Errorf("tar: exited %d: %s", res.ExitCode, stderr)
+		if err := run.CheckResult(res, "tar"); err != nil {
+			return err
 		}
 	} else {
 		res := rn.Run(ctx, "tar", args...)
-		if res.Err != nil {
-			return fmt.Errorf("tar: %w", res.Err)
-		}
-		if res.ExitCode != 0 {
-			stderr := strings.TrimSpace(string(res.Stderr))
-			return fmt.Errorf("tar: exited %d: %s", res.ExitCode, stderr)
+		if err := run.CheckResult(res, "tar"); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -120,19 +112,13 @@ func extractZip(ctx context.Context, src, dest string, rn run.Runner, sudoRequir
 		}
 		sudoBin := run.ElevationPrefix()[0]
 		res := rn.Run(ctx, sudoBin, "unzip", "-o", src, "-d", dest)
-		if res.Err != nil {
-			return fmt.Errorf("unzip: %w", res.Err)
-		}
-		if res.ExitCode != 0 {
-			return fmt.Errorf("unzip: exited %d", res.ExitCode)
+		if err := run.CheckResult(res, "unzip"); err != nil {
+			return err
 		}
 	} else {
 		res := rn.Run(ctx, "unzip", "-o", src, "-d", dest)
-		if res.Err != nil {
-			return fmt.Errorf("unzip: %w", res.Err)
-		}
-		if res.ExitCode != 0 {
-			return fmt.Errorf("unzip: exited %d", res.ExitCode)
+		if err := run.CheckResult(res, "unzip"); err != nil {
+			return err
 		}
 	}
 	return nil

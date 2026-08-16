@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
@@ -63,14 +62,7 @@ func (a *SDKManAdapter) Install(ctx context.Context, rn run.Runner, tool *config
 		cmd = append(cmd, v)
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil {
-		return fmt.Errorf("sdkman: install failed: %w", res.Err)
-	}
-	if res.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res.Stderr))
-		return fmt.Errorf("sdkman: install exited %d: %s", res.ExitCode, stderr)
-	}
-	return nil
+	return run.CheckResult(res, "sdkman: install")
 }
 
 var _ exec.Adapter = (*SDKManAdapter)(nil)

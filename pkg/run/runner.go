@@ -11,8 +11,10 @@ package run
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 // Result captures everything a caller needs to decide what happened:
@@ -89,4 +91,26 @@ func LookPath(ctx context.Context, rn Runner, name string) bool {
 	}
 	res := rn.Run(ctx, "which", name)
 	return res.Err == nil && res.ExitCode == 0
+}
+
+// CheckResult inspects a Result and returns nil when the command succeeded,
+// or a formatted error when it failed. It encodes the canonical pattern
+// repeated across every adapter: res.Err is a spawn failure (binary not found,
+// timeout, signal), a non-zero ExitCode is a command-level failure whose stderr
+// carries the useful message. The prefix labels the error (e.g. "git", "cargo",
+// "native: install") so callers see "git: clone exited 128: ...".
+//
+// The error verbs match existing adapter conventions:
+//   - spawn failure: "<prefix>: failed: <err>"
+//   - non-zero exit:  "<prefix>: exited <code>: <stderr>"
+// Use CheckResult when both cases should be errors. When only res.Err matters
+// (e.g. asdf plugin-add, best-effort version probes), handle Result inline.
+func CheckResult(res Result, prefix string) error {
+	if res.Err != nil {
+		return fmt.Errorf("%s: failed: %w", prefix, res.Err)
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("%s: exited %d: %s", prefix, res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	return nil
 }

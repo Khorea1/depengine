@@ -2,7 +2,6 @@ package ecosystem
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
@@ -32,14 +31,7 @@ func (a *CargoAdapter) Install(ctx context.Context, rn run.Runner, tool *config.
 			cmd = append(cmd, pkg)
 		}
 		res := rn.Run(ctx, cmd[0], cmd[1:]...)
-		if res.Err != nil {
-			return fmt.Errorf("cargo --git: install failed: %w", res.Err)
-		}
-		if res.ExitCode != 0 {
-			stderr := strings.TrimSpace(string(res.Stderr))
-			return fmt.Errorf("cargo --git: install exited %d: %s", res.ExitCode, stderr)
-		}
-		return nil
+		return run.CheckResult(res, "cargo --git: install")
 	}
 	return a.BaseAdapter.Install(ctx, rn, tool, mc)
 }

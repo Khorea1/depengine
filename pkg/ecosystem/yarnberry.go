@@ -81,14 +81,7 @@ func (a *YarnBerryAdapter) Install(ctx context.Context, rn run.Runner, tool *con
 	}
 	cmd := []string{"yarn", "add", pkg[0]}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil {
-		return fmt.Errorf("yarn-berry: install failed: %w", res.Err)
-	}
-	if res.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res.Stderr))
-		return fmt.Errorf("yarn-berry: install exited %d: %s", res.ExitCode, stderr)
-	}
-	return nil
+	return run.CheckResult(res, "yarn-berry: install")
 }
 
 var _ exec.Adapter = (*YarnBerryAdapter)(nil)

@@ -142,26 +142,18 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 
 	// Run git clone.
 	res := rn.Run(ctx, "git", cloneArgs...)
-	if res.Err != nil {
-		return fmt.Errorf("git: clone failed: %w", res.Err)
-	}
-	if res.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res.Stderr))
-		return fmt.Errorf("git: clone exited %d: %s", res.ExitCode, stderr)
-	}
+if err := run.CheckResult(res, "git: clone"); err != nil {
+	return err
+}
 
 	// Run build step if configured.
 	if buildCmd, ok := mc.Config["build"].(string); ok && buildCmd != "" {
 		// Security: buildCmd is passed raw to sh -c to support shell syntax.
 		fullCmd := fmt.Sprintf("cd %s && %s", shellQuote(cloneDir), buildCmd)
 		buildRes := rn.Run(ctx, "sh", "-c", fullCmd)
-		if buildRes.Err != nil {
-			return fmt.Errorf("git: build failed: %w", buildRes.Err)
-		}
-		if buildRes.ExitCode != 0 {
-			stderr := strings.TrimSpace(string(buildRes.Stderr))
-			return fmt.Errorf("git: build exited %d: %s", buildRes.ExitCode, stderr)
-		}
+if err := run.CheckResult(buildRes, "git: build"); err != nil {
+	return err
+}
 	}
 
 	// If extract_to is set, copy artifacts from clone dir to extract destination.
@@ -176,13 +168,9 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 		}
 		cpCmd := fmt.Sprintf("cp -r %s/. %s", shellQuote(src), shellQuote(extractTo))
 		cpRes := rn.Run(ctx, "sh", "-c", cpCmd)
-		if cpRes.Err != nil {
-			return fmt.Errorf("git: copy artifacts: %w", cpRes.Err)
-		}
-		if cpRes.ExitCode != 0 {
-			stderr := strings.TrimSpace(string(cpRes.Stderr))
-			return fmt.Errorf("git: copy exited %d: %s", cpRes.ExitCode, stderr)
-		}
+if err := run.CheckResult(cpRes, "git: copy"); err != nil {
+	return err
+}
 	}
 
 	return nil

@@ -95,14 +95,7 @@ func (a *BaseAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 		return fmt.Errorf("%s: no install command", a.config.KindName)
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil {
-		return fmt.Errorf("%s: install failed: %w", a.config.KindName, res.Err)
-	}
-	if res.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res.Stderr))
-		return fmt.Errorf("%s: install exited %d: %s", a.config.KindName, res.ExitCode, stderr)
-	}
-	return nil
+	return run.CheckResult(res, a.config.KindName+": install")
 }
 
 func (a *BaseAdapter) CanRemove() bool {
@@ -116,14 +109,7 @@ func (a *BaseAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 		return fmt.Errorf("%s: no remove command", a.config.KindName)
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil {
-		return fmt.Errorf("%s: remove failed: %w", a.config.KindName, res.Err)
-	}
-	if res.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res.Stderr))
-		return fmt.Errorf("%s: remove exited %d: %s", a.config.KindName, res.ExitCode, stderr)
-	}
-	return nil
+	return run.CheckResult(res, a.config.KindName+": remove")
 }
 
 // buildCmd substitutes {pkg} and {bin} in the template and returns the command.

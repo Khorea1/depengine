@@ -72,13 +72,7 @@ func NewCurlDownloader(rn run.Runner) *CurlDownloader {
 
 func (d *CurlDownloader) Download(ctx context.Context, url, dest string) error {
 	res := d.rn.Run(ctx, "curl", "-fsSL", "-o", dest, url)
-	if res.Err != nil {
-		return fmt.Errorf("curl: %w", res.Err)
-	}
-	if res.ExitCode != 0 {
-		return fmt.Errorf("curl: exited %d", res.ExitCode)
-	}
-	return nil
+	return run.CheckResult(res, "curl")
 }
 
 // WgetDownloader uses `wget -q -O {dest} {url}`.
@@ -93,13 +87,7 @@ func NewWgetDownloader(rn run.Runner) *WgetDownloader {
 
 func (d *WgetDownloader) Download(ctx context.Context, url, dest string) error {
 	res := d.rn.Run(ctx, "wget", "-q", "-O", dest, url)
-	if res.Err != nil {
-		return fmt.Errorf("wget: %w", res.Err)
-	}
-	if res.ExitCode != 0 {
-		return fmt.Errorf("wget: exited %d", res.ExitCode)
-	}
-	return nil
+	return run.CheckResult(res, "wget")
 }
 
 // SelectDownloader returns the best available download backend.

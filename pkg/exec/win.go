@@ -3,7 +3,6 @@ package exec
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/run"
@@ -54,14 +53,7 @@ func (w *winAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 	}
 	cmd := SubstitutePkg(w.installCmd, tool, mc)
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil {
-		return fmt.Errorf("%s: install failed: %w", w.kind, res.Err)
-	}
-	if res.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res.Stderr))
-		return fmt.Errorf("%s: install exited %d: %s", w.kind, res.ExitCode, stderr)
-	}
-	return nil
+	return run.CheckResult(res, w.kind+": install")
 }
 
 func (w *winAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
@@ -73,14 +65,7 @@ func (w *winAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Too
 	}
 	cmd := SubstitutePkg(w.removeCmd, tool, mc)
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if res.Err != nil {
-		return fmt.Errorf("%s: remove failed: %w", w.kind, res.Err)
-	}
-	if res.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res.Stderr))
-		return fmt.Errorf("%s: remove exited %d: %s", w.kind, res.ExitCode, stderr)
-	}
-	return nil
+	return run.CheckResult(res, w.kind+": remove")
 }
 func (w *winAdapter) CanRemove() bool { return len(w.removeCmd) > 0 }
 
