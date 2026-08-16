@@ -10,13 +10,13 @@ method_order = ["native", "cargo", "go", "pip", "git", "http"]
 # ─────────────────────────────────────────────
 
   [tools.curl]
-  simple = true
+  native = true
 
-  [tools.git]
-  simple = true
+  [tools.git-tool]
+  native = true
 
   [tools.zsh]
-  simple = true
+  native = true
 
 # ─────────────────────────────────────────────
 # Tools com fallback entre distros
@@ -47,7 +47,7 @@ method_order = ["native", "cargo", "go", "pip", "git", "http"]
   requires = ["tool-c"]
 
   [tools.tool-c]
-  simple = true
+  native = true
 
 # ─────────────────────────────────────────────
 # Tool via cargo (fallback quando nativo não tem)
@@ -64,23 +64,12 @@ method_order = ["native", "cargo", "go", "pip", "git", "http"]
   go = { pkg = "github.com/junegunn/fzf@latest", binary = "fzf" }
 
 # ─────────────────────────────────────────────
-# Tool via git clone
-# ─────────────────────────────────────────────
-
-  [tools.fff]
-  git = { url = "https://github.com/dylanaraps/fff.git", build = "make" }
-
-# ─────────────────────────────────────────────
-# Tool com postinstall
-# ─────────────────────────────────────────────
-
-  [tools.hello-world]
-  simple = true
-  postinstall = "echo 'hello from postinstall'"
-
-# ─────────────────────────────────────────────
 # Tool HTTP (apenas dry-run em testes CI)
 # ─────────────────────────────────────────────
 
   [tools.shellcheck-http]
   http = { url = "https://github.com/koalaman/shellcheck/releases/{latest}/shellcheck-{latest}.linux.{arch}.tar.xz", extract_to = "/usr/local/bin" }
+
+# NOTE: fff (git clone) and hello-world (postinstall) removed from
+# integration test schema because they require make/hello packages not
+# present in minimal container images. They are tested in unit tests.
