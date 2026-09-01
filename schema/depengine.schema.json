@@ -224,8 +224,8 @@
         },
         "sudo_required": {
           "type": "boolean",
-          "default": true,
-          "description": "Whether the http method requires sudo for extraction/installation. Set to false when the tool is extracted to a user-writable path (e.g. ~/.local/bin)."
+          "default": null,
+          "description": "Whether the http method requires sudo for extraction/installation. Default is path-derived: false when extract_to is inside the user's home (e.g. ~/.local/share/fonts), true for system paths (e.g. /usr/local/bin). Set explicitly to override."
         }
       }
     },

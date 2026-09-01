@@ -132,7 +132,8 @@ fastfetch = { http = {
 | `signature_url` | no | GPG detached signature URL, for verifying the checksum file |
 | `signing_key` | no | GPG key URL or fingerprint |
 | `extract_to` | no | Extraction destination (default: `/usr/local/bin`) |
-| `sudo_required` | no | Boolean, default `true`. Set `false` when extracting to a user-writable path (e.g. `~/.local/bin`) |
+
+| `sudo_required` | no | Boolean, default is **path-derived**: `false` when `extract_to` is inside the user's home (e.g. `~/.local/share/fonts`), `true` for system paths (e.g. the `/usr/local/bin` default). Set explicitly to override. |
 
 Archive type is auto-detected from the URL extension: `.tar.gz`, `.tgz`,
 `.zip`, `.deb`, `.bin`, or bare binary.

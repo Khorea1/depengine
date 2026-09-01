@@ -40,6 +40,24 @@ func elevationGuard(sudoRequired bool, toolName string) error {
 	return fmt.Errorf("cannot elevate: no working elevation method (sudo/doas/pkexec) available. %s", hint)
 }
 
+// defaultSudoRequired reports whether installing into dest needs elevation
+// when sudo_required is not set in the schema: destinations under the user's
+// home directory are user-writable (e.g. ~/.local/share/fonts on Linux,
+// ~/Library on macOS) and default to NO sudo; everything else (the
+// /usr/local/bin default, /opt, system font dirs…) needs elevation.
+func defaultSudoRequired(dest string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return true // can't determine home → stay safe
+	}
+	home = filepath.Clean(home)
+	dest = filepath.Clean(dest)
+	if dest == home {
+		return false
+	}
+	return !strings.HasPrefix(dest, home+string(filepath.Separator))
+}
+
 // Extract decompresses src into dest based on the file extension.
 // Delegates to external tools (tar, unzip, dpkg) for v0.1 to avoid
 // adding Go archive-library dependencies. Go stdlib archive support

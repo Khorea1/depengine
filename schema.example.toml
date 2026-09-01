@@ -95,6 +95,12 @@ fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/release
 # which method ends up installing the tool.
 # ------------------------------------------------------------------------
 zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
+# DepartureMono dependencies — declared as simple native tools. `unzip` extracts
+# the HTTP zip payload; `fc-cache` (provided by fontconfig) runs as postinstall
+# to register the fonts. On Termux fc-cache ships in `fontconfig-utils` (pkg),
+# hence the per-manager override.
+unzip      = { native = "unzip" }
+fontconfig = { native = { pkg = "fontconfig", pkg_overrides = { pkg = "fontconfig-utils" } } }
 
 
 # ------------------------------------------------------------------------
@@ -223,14 +229,17 @@ httpie = { python = true }             # pip + pipx + uv (pkg=httpie for all)
 # organize = { pip = "organize-tool", python = true } keeps the explicit pip.
 [tools.DepartureMono]
 postinstall = "fc-cache -fv"
+requires = ["unzip", "fontconfig"]
+method_only = ["aur", "http"]   # AUR on Arch (PKGBUILD source = nerd-fonts DepartureMono.zip v3.4.0); HTTP zip everywhere else. Never fall back to native (no such package outside Arch).
 
   [tools.DepartureMono.aur]
   pkg  = "otf-departure-mono-nerd"
   when = { distro_family = ["arch"] }
 
   [tools.DepartureMono.http]
-  url        = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/DepartureMono.zip"
-  extract_to = "~/.local/share/fonts/DepartureMono"
+  url           = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/DepartureMono.zip"
+  checksum      = "sha256:e186890efcae31b72e9f2abc860360123ec1b3ae03bc79bb2a9fec388ebade8a" # literal pin (lockfile pins v3.4.0; nerd-fonts publishes no checksum file, so sha256:auto 404s)
+  extract_to    = "~/.local/share/fonts/DepartureMono"
 
 
 # ------------------------------------------------------------------------

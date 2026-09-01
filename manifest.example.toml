@@ -64,6 +64,12 @@ eza       = { pacman = "eza",                apt = "eza" }
 delta     = { pacman = "git-delta",          apt = "git-delta",             brew = "git-delta",     cargo = "git-delta" }
 tealdeer  = { pacman = "tealdeer",           apt = "tealdeer",                                           cargo = "tealdeer" }
 helix     = { pacman = "helix",              apt = "helix",                                              cargo = "helix" }
+# DepartureMono dependencies: unzip extracts the HTTP zip payload; fontconfig
+# provides fc-cache (postinstall). Both are same-name on almost every manager;
+# Termux's pkg hosts fc-cache in fontconfig-utils (pkg binary name is shared
+# with FreeBSD — the override key "pkg" hits both, acceptable there).
+unzip      = { native = "unzip" }
+fontconfig = { native = { pkg = "fontconfig", pkg_overrides = { pkg = "fontconfig-utils" } } }
 zellij    = { pacman = "zellij",             apt = "zellij",                                             cargo = "zellij" }
 sesh      = { pacman = "sesh",               apt = "sesh" }
 yazi      = { pacman = "yazi",               apt = "yazi" }
@@ -264,15 +270,19 @@ tpm         = { git = { url = "https://github.com/tmux-plugins/tpm", depth = 1 }
 tags = ["fonts"]
 # postinstall runs after ANY method succeeds
 postinstall = "fc-cache -fv"
+# Dependencies: unzip extracts the HTTP zip; fontconfig provides fc-cache
+# (postinstall). On Termux fc-cache ships in fontconfig-utils (pkg manager).
+requires = ["unzip", "fontconfig"]
+method_only = ["aur", "http"]   # AUR on Arch (PKGBUILD source = nerd-fonts DepartureMono.zip v3.4.0); HTTP zip everywhere else. Never fall back to native.
 
   [packages.DepartureMono.aur]
   pkg  = "otf-departure-mono-nerd"
   when = { distro_family = ["arch"] }
 
   [packages.DepartureMono.http]
-  url        = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/DepartureMono.zip"
-  checksum   = "sha256:auto"
-  extract_to = "~/.local/share/fonts/DepartureMono"
+  url           = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/DepartureMono.zip"
+  checksum      = "sha256:e186890efcae31b72e9f2abc860360123ec1b3ae03bc79bb2a9fec388ebade8a" # literal pin (lockfile pins v3.4.0; nerd-fonts publishes no checksum file, so sha256:auto 404s)
+  extract_to    = "~/.local/share/fonts/DepartureMono"
 
 
 # --- wezterm: AUR → AppImage → manual compilation (fallback) ---

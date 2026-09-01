@@ -48,6 +48,7 @@ func (a *GitAdapter) Available(ctx context.Context, rn run.Runner) bool {
 //  2. If binary is set and exists on PATH, consider it installed.
 func (a *GitAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) bool {
 	if extractTo, ok := mc.Config["extract_to"].(string); ok && extractTo != "" {
+		extractTo = config.ExpandHomeDir(extractTo)
 		res := rn.Run(ctx, "test", "-d", extractTo+"/.git")
 		if res.Err == nil && res.ExitCode == 0 {
 			return true
@@ -158,6 +159,7 @@ if err := run.CheckResult(buildRes, "git: build"); err != nil {
 
 	// If extract_to is set, copy artifacts from clone dir to extract destination.
 	if extractTo, ok := mc.Config["extract_to"].(string); ok && extractTo != "" {
+		extractTo = config.ExpandHomeDir(extractTo)
 		artifact, ok2 := mc.Config["artifact"].(string)
 		if !ok2 || artifact == "" {
 			artifact = "/"
@@ -204,6 +206,7 @@ func isSharedDir(path string) bool {
 // is a shared directory) or the entire extract_to directory (if it is tool-specific).
 func (a *GitAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	extractTo, ok := mc.Config["extract_to"].(string)
+	extractTo = config.ExpandHomeDir(extractTo)
 	if !ok || extractTo == "" {
 		return fmt.Errorf("git: remove not supported without extract_to — installed via custom buildCmd/make install")
 	}

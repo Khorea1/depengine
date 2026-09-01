@@ -48,6 +48,7 @@ func (a *HTTPAdapter) Available(ctx context.Context, rn run.Runner) bool {
 //   - binary configured without extract_to → binary must be reachable on PATH.
 func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	extractTo, _ := mc.Config["extract_to"].(string)
+	extractTo = config.ExpandHomeDir(extractTo)
 	binary, _ := mc.Config["binary"].(string)
 
 	if extractTo != "" {
@@ -156,8 +157,12 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	if e, ok := mc.Config["extract_to"].(string); ok && e != "" {
 		extractTo = e
 	}
-	// Check sudo policy for dpkg installs.
-	sudoRequired := true
+	extractTo = config.ExpandHomeDir(extractTo)
+	// sudo is path-derived: destinations under $HOME are user-writable and
+	// need no elevation (e.g. ~/.local/share/fonts); everything else (the
+	// /usr/local/bin default, /opt, …) keeps sudo. Explicit sudo_required
+	// in the schema always wins.
+	sudoRequired := defaultSudoRequired(extractTo)
 	if v, ok := mc.Config["sudo_required"].(bool); ok {
 		sudoRequired = v
 	}
@@ -388,6 +393,7 @@ func isSharedDir(path string) bool {
 // the tool name from there.
 func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	extractTo, _ := mc.Config["extract_to"].(string)
+	extractTo = config.ExpandHomeDir(extractTo)
 	if extractTo == "" {
 		extractTo = "/usr/local/bin" // Install default
 	}
