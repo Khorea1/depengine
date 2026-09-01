@@ -37,9 +37,8 @@ type Facts struct {
 	OS              string `json:"os"`
 }
 
-// locateDetectScript decides where to invoke detect_os.sh, in order:
-//  1. embedded content → write to a temp file, return its path
-//  2. the DEPENGINE_DETECT_SCRIPT env var (explicit override)
+//  1. the DEPENGINE_DETECT_SCRIPT env var (explicit override)
+//  2. embedded content → write to a temp file, return its path
 //  3. a "scripts/detect_os.sh" alongside the engine binary itself
 //     (this is how the project ships: binary + scripts/ together)
 //  4. "detect_os.sh" on the PATH, for those who installed it loose
@@ -47,7 +46,15 @@ type Facts struct {
 // The second return value, clean, is true when the returned path is a
 // temp file that the caller should remove after use.
 func locateDetectScript() (string, bool, error) {
-	// 1. Embedded content (always available at compile time).
+	// 1. DEPENGINE_DETECT_SCRIPT env var (explicit override, highest priority).
+	if p := os.Getenv("DEPENGINE_DETECT_SCRIPT"); p != "" {
+		if _, err := os.Stat(p); err == nil {
+			return p, false, nil
+		}
+		return "", false, fmt.Errorf("DEPENGINE_DETECT_SCRIPT points to %q but the file does not exist", p)
+	}
+
+	// 2. Embedded content (always available at compile time).
 	if len(detectScriptContent) > 0 {
 		f, err := os.CreateTemp("", "detect_os.sh.*")
 		if err == nil {
@@ -62,14 +69,6 @@ func locateDetectScript() (string, bool, error) {
 			os.Remove(path)
 		}
 		// Fall through if anything goes wrong with the temp file.
-	}
-
-	// 2. DEPENGINE_DETECT_SCRIPT env var.
-	if p := os.Getenv("DEPENGINE_DETECT_SCRIPT"); p != "" {
-		if _, err := os.Stat(p); err == nil {
-			return p, false, nil
-		}
-		return "", false, fmt.Errorf("DEPENGINE_DETECT_SCRIPT points to %q but the file does not exist", p)
 	}
 
 	// 3. scripts/detect_os.sh alongside the binary.

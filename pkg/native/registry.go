@@ -141,7 +141,10 @@ var managers = map[string]Manager{
 		NeedsSync:    true,
 		SyncCmd:      []string{"pkg", "update", "-y"},
 		InstallCmd:   []string{"pkg", "install", "-y", "{pkg}"},
-		CheckCmd:     []string{"dpkg", "-s", "{pkg}"},
+        // CheckCmd: dpkg -s {pkg} — Termux's pkg is a wrapper around apt, which sits on dpkg.
+        // dpkg -s is the only clean exit-0/exit-1 test for "is this package installed?"
+        // (Termux's pkg has no direct equivalent). This mirrors the debian clan.
+        CheckCmd:     []string{"dpkg", "-s", "{pkg}"},
 		RemoveCmd:    []string{"pkg", "uninstall", "-y", "{pkg}"},
 		AtomicBatch:  true,
 	},

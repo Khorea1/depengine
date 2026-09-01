@@ -246,32 +246,69 @@ if [ "$DETECTED" -eq 0 ]; then
         esac
     fi
     if [ "$_is_termux" -eq 1 ]; then
-        DISTRO_ID="termux"
-        DISTRO_NAME="Termux"
-        TARGET_FAMILY="unix"
-        DETECTION_METHOD="termux"
-        IS_ANDROID=1
-        CONFIDENCE="high"
-        DETECTED=1
+        # proot-distro guests (proot-distro login debian/ubuntu/...) inherit
+        # $TERMUX_VERSION and $PREFIX from the parent Termux, so the env-var
+        # heuristic above fires inside the guest too. But a proot guest
+        # exposes a REAL /etc/os-release (ID=debian, ubuntu, alpine, ...),
+        # which bare Termux does not. Trust os-release over the heuristic:
+        # if it reports a real distro, leave DETECTED=0 so Tentativa 3
+        # (os-release block) resolves the correct clan and native manager
+        # instead of trying `pkg install` (which does not exist in proot).
+        _proot_guest=0
+        if [ -r /etc/os-release ]; then
+            parse_os_release /etc/os-release
+            case "$ENV_ID" in
+                termux|android|'') _proot_guest=0 ;;
+                *) _proot_guest=1 ;;
+            esac
+        fi
+        if [ "$_proot_guest" -eq 0 ]; then
+            DISTRO_ID="termux"
+            DISTRO_NAME="Termux"
+            TARGET_FAMILY="unix"
+            DETECTION_METHOD="termux"
+            IS_ANDROID=1
+            CONFIDENCE="high"
+            DETECTED=1
+        fi
     fi
 fi
 # ---------------------------------------------------------------
 # Tentativa 2: Android genérico (não-Termux)
 # ---------------------------------------------------------------
 if [ "$DETECTED" -eq 0 ]; then
+    _is_android_hw=0
     if have_cmd getprop || [ -e /system/build.prop ]; then
-        DISTRO_ID="android"
-        _andver=$(run_cmd_safe 2 getprop ro.build.version.release)
-        if [ -n "$_andver" ]; then
-            DISTRO_NAME="Android $_andver"
-        else
-            DISTRO_NAME="Android"
+        _is_android_hw=1
+    fi
+    if [ "$_is_android_hw" -eq 1 ]; then
+        # proot-distro guests inherit getprop / /system/build.prop from the
+        # parent Android, so this Android heuristic also fires inside Linux
+        # proot guests. If a REAL /etc/os-release exists (ID not android/
+        # termux/''), defer to Tentativa 3 (os-release) which resolves the
+        # actual guest distro instead of masquerading as Android.
+        _proot_guest_os=0
+        if [ -r /etc/os-release ]; then
+            parse_os_release /etc/os-release
+            case "$ENV_ID" in
+                termux|android|'') _proot_guest_os=0 ;;
+                *) _proot_guest_os=1 ;;
+            esac
         fi
-        TARGET_FAMILY="unix"
-        DETECTION_METHOD="android-generic"
-        IS_ANDROID=1
-        CONFIDENCE="medium"
-        DETECTED=1
+        if [ "$_proot_guest_os" -eq 0 ]; then
+            DISTRO_ID="android"
+            _andver=$(run_cmd_safe 2 getprop ro.build.version.release)
+            if [ -n "$_andver" ]; then
+                DISTRO_NAME="Android $_andver"
+            else
+                DISTRO_NAME="Android"
+            fi
+            TARGET_FAMILY="unix"
+            DETECTION_METHOD="android-generic"
+            IS_ANDROID=1
+            CONFIDENCE="medium"
+            DETECTED=1
+        fi
     fi
 fi
 # ---------------------------------------------------------------
