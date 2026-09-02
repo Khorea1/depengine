@@ -926,6 +926,7 @@ func TestConditionMatches(t *testing.T) {
 	facts := &engine.Facts{
 		DistroID:     "ubuntu",
 		DistroIDLike: "debian",
+		TargetFamily: "unix",
 		TargetArch:   "x86_64",
 		OS:           "linux",
 		Kernel:       "6.7.0-generic",
@@ -955,6 +956,19 @@ func TestConditionMatches(t *testing.T) {
 	c2 := &Condition{DistroFamily: []string{"arch"}}
 	if c2.Match(facts) {
 		t.Error("ubuntu is not arch family, should not match")
+	}
+	// TargetFamily match
+	cTF := &Condition{TargetFamily: []string{"unix"}}
+	if !cTF.Match(facts) {
+		t.Error("TargetFamily unix should match linux facts")
+	}
+	cTF2 := &Condition{TargetFamily: []string{"windows"}}
+	if cTF2.Match(facts) {
+		t.Error("TargetFamily windows should not match unix facts")
+	}
+	cTF3 := &Condition{TargetFamily: []string{"UNIX"}}
+	if !cTF3.Match(facts) {
+		t.Error("TargetFamily match should be case-insensitive")
 	}
 
 	// DistroID match (case-insensitive)
@@ -1103,6 +1117,7 @@ func TestConditionIsZero(t *testing.T) {
 		{"nil cond", nil, true},
 		{"empty", &Condition{}, true},
 		{"distro_family", &Condition{DistroFamily: []string{"arch"}}, false},
+		{"target_family", &Condition{TargetFamily: []string{"unix"}}, false},
 		{"distro_id", &Condition{DistroID: []string{"ubuntu"}}, false},
 		{"arch", &Condition{Arch: []string{"x86_64"}}, false},
 		{"os", &Condition{OS: []string{"linux"}}, false},
@@ -1389,6 +1404,7 @@ func TestParseConditionAllFields(t *testing.T) {
 		"arch":          []any{"x86_64"},
 		"os":            []any{"linux"},
 		"kernel":        []any{"6.7.0"},
+		"target_family": []any{"unix"},
 		"libc":          []any{"glibc"},
 		"init_system":   []any{"systemd"},
 		"is_wsl":        false,
@@ -1419,6 +1435,9 @@ func TestParseConditionAllFields(t *testing.T) {
 	}
 	if len(cond.InitSystem) != 1 || cond.InitSystem[0] != "systemd" {
 		t.Errorf("InitSystem: expected [systemd], got %v", cond.InitSystem)
+	}
+	if len(cond.TargetFamily) != 1 || cond.TargetFamily[0] != "unix" {
+		t.Errorf("TargetFamily: expected [unix], got %v", cond.TargetFamily)
 	}
 	if cond.IsWSL == nil || *cond.IsWSL != false {
 		t.Errorf("IsWSL: expected false, got %v", cond.IsWSL)

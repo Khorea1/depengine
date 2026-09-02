@@ -280,6 +280,11 @@ List of architectures (\fBuname -m\fR). Example: \fB["x86_64", "aarch64"]\fR.
 List of operating systems (lowercase \fBuname -s\fR). Example:
 \fB["linux"]\fR, \fB["darwin"]\fR, \fB["freebsd"]\fR.
 .TP
+.B target_family
+OS family. \fB["unix"]\fR matches linux, darwin, the BSDs and termux;
+\fB["windows"]\fR matches the windows clan (native, MINGW/CYGWIN/MSYS).
+Use this instead of listing every unix \fBos\fR value.
+.TP
 .B kernel
 List of kernel versions (\fBuname -r\fR). Exact match (case-insensitive).
 Example: \fB["6.7.0-arch", "6.8.0"]\fR.

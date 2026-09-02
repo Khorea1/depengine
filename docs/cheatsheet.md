@@ -55,6 +55,10 @@ Full flag list: [cli-reference.md](cli-reference.md).
 **Golden rule:** tool-level fields (`requires`, `pre_install`, `postinstall`,
 `tags`) live outside methods; method-level fields (`kind`, `when`, `url`,
 `build`, `checksum`, `pkg`, `git`) live inside.
+Tool-level fields can carry conditions: `postinstall = { cmd = "...", when =
+{ target_family = ["unix"] } }` skips the hook when it can't apply, and
+`requires_when = { fontconfig = { target_family = ["unix"] } }` drops the
+dependency from the graph when its condition fails.
 
 ```toml
 [defaults]
@@ -91,7 +95,7 @@ pkg  = "my-tool"
 when = { distro_family = ["arch"] }
 ```
 
-`distro_family`, `distro_id`, `arch`, `os`, `kernel`, `libc`, `init_system`
+`distro_family`, `distro_id`, `arch`, `os`, `kernel`, `libc`, `init_system`, `target_family`
 (string-list, AND across fields, OR within); `is_wsl`, `is_container`
 (bool). Full table: [schema-reference.md#platform-targeting](schema-reference.md#platform-targeting).
 

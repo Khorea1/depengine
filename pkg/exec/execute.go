@@ -225,7 +225,10 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 		}
 	}
 
-	levels, err := graph.Sort(s.Tools, graph.WithLogger(ex.logger))
+	// Graph sees facts-filtered requires: a gated dep (requires_when) is an
+	// edge only on platforms where its condition matches.
+	toolsForGraph := config.FilteredTools(s.Tools, ex.facts)
+	levels, err := graph.Sort(toolsForGraph, graph.WithLogger(ex.logger))
 	if err != nil {
 		return nil, fmt.Errorf("dependency resolution: %w", err)
 	}
@@ -258,7 +261,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 			if !ok {
 				continue
 			}
-			for _, dep := range tool.Requires {
+			for _, dep := range tool.EffectiveRequires(ex.facts) {
 				if reason, bad := failedTools[dep]; bad {
 					blockedByRequires[toolName] = fmt.Sprintf("requires failed dependency: %s (%s)", dep, reason)
 					break
@@ -969,6 +972,11 @@ func (ex *Executor) runPostinstall(ctx context.Context, tool *config.Tool) error
 	if cmd == "" {
 		return nil
 	}
+		if tool.PostInstallWhen != nil && !tool.PostInstallWhen.Match(ex.facts) {
+			ex.outputf("    postinstall: skipped (when condition not met)\n")
+			ex.logDebug(ctx, "postinstall", "tool", tool.Name, "status", "skip_when")
+			return nil
+		}
 	ex.outputf("    postinstall: %s\n", cmd)
 	ex.logDebug(ctx, "postinstall", "tool", tool.Name, "cmd", cmd)
 	// Run through sh -c to support shell syntax (pipes, redirections, quotes).

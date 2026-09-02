@@ -203,6 +203,25 @@ pre_install = "curl -fsSL https://setup.example.com | sh"
 ```toml
 zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
 ```
+A dependency can be gated per-platform with `requires_when` — useful when a
+dep is only needed for some `when`-gated methods:
+
+```toml
+requires      = ["unzip", "fontconfig"]
+requires_when = { fontconfig = { target_family = ["unix"] } }
+```
+
+`fontconfig` participates in the install graph only on unix; on Windows the
+edge disappears (no dangling-ref error, no blocking).
+
+`postinstall` (and `post_install`) additionally accept a table form with
+its own `when`, so platform-specific hooks don't run where they can't work:
+
+```toml
+postinstall = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
+```
+
+The plain-string form stays valid and is unconditional.
 
 ---
 
@@ -212,15 +231,20 @@ zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
 
 ```toml
 [tools.DepartureMono]
-postinstall = "fc-cache -fv"
+postinstall = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
 
   [tools.DepartureMono.aur]
   pkg  = "otf-departure-mono-nerd"
   when = { distro_family = ["arch"] }
 
+  [tools.DepartureMono.scoop]
+  pkg  = "nerd-fonts/DepartureMono-NF"
+  when = { target_family = ["windows"] }
+
   [tools.DepartureMono.http]
   url        = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/DepartureMono.zip"
   extract_to = "~/.local/share/fonts/DepartureMono"
+  when       = { target_family = ["unix"] }
 ```
 
 > **Golden rule:** tool-level fields (`requires`, `postinstall`,
@@ -249,6 +273,7 @@ engine evaluates all non-empty fields against the detected system facts:
 | `distro_id` | `string[]` | Exact (case-insensitive) | `ubuntu`, `arch`, `fedora`, `debian`, `alpine`... |
 | `arch` | `string[]` | Exact (case-insensitive) | `x86_64`, `aarch64`, `armv7l`... |
 | `os` | `string[]` | Exact (case-insensitive) | `linux`, `darwin`, `windows`, `freebsd`, `openbsd`, `netbsd` |
+| `target_family` | `string[]` | Exact (case-insensitive) | `unix` (linux, darwin, BSDs, termux), `windows` |
 | `kernel` | `string[]` | Exact (case-insensitive) | `6.7.0-arch`, `5.15.0-generic`... |
 | `libc` | `string[]` | **Prefix** match | `glibc` matches `glibc 2.35`; `musl` for Alpine |
 | `init_system` | `string[]` | Exact (case-insensitive) | `systemd`, `openrc`, `runit`, `sysvinit` |

@@ -324,8 +324,12 @@ func upperFieldValue(t *Tool, field string) any {
 		return t.PreInstall
 	case "PostInstall":
 		return t.PostInstall
+	case "PostInstallWhen":
+		return t.PostInstallWhen
 	case "Requires":
 		return t.Requires
+	case "RequiresWhen":
+		return t.RequiresWhen
 	case "Methods":
 		return t.Methods
 	case "MethodOrder":
@@ -361,8 +365,12 @@ func isFieldSet(upper *Tool, field string) bool {
 		return upper.PreInstall != ""
 	case "PostInstall":
 		return upper.PostInstall != ""
+	case "PostInstallWhen":
+		return upper.PostInstallWhen != nil
 	case "Requires":
 		return len(upper.Requires) > 0
+	case "RequiresWhen":
+		return len(upper.RequiresWhen) > 0
 	case "Methods":
 		return len(upper.Methods) > 0
 	case "MethodOrder":
@@ -391,8 +399,12 @@ func setField(dst, src *Tool, field string) error {
 		dst.PreInstall = src.PreInstall
 	case "PostInstall":
 		dst.PostInstall = src.PostInstall
+	case "PostInstallWhen":
+		dst.PostInstallWhen = src.PostInstallWhen
 	case "Requires":
 		dst.Requires = append([]string{}, src.Requires...)
+	case "RequiresWhen":
+		dst.RequiresWhen = src.RequiresWhen
 	case "Methods":
 		dst.Methods = cloneMethods(src.Methods)
 	case "MethodOrder":
@@ -420,8 +432,13 @@ func setFieldZero(t *Tool, field string) error {
 		t.PreInstall = ""
 	case "PostInstall":
 		t.PostInstall = ""
+		t.PostInstallWhen = nil
+	case "PostInstallWhen":
+		t.PostInstallWhen = nil
 	case "Requires":
 		t.Requires = nil
+	case "RequiresWhen":
+		t.RequiresWhen = nil
 	case "Methods":
 		t.Methods = nil
 	case "MethodOrder":
@@ -486,8 +503,12 @@ func toolFieldToTOML(field string) string {
 		return "pre_install"
 	case "PostInstall":
 		return "post_install"
+	case "PostInstallWhen":
+		return "post_install.when"
 	case "Requires":
 		return "requires"
+	case "RequiresWhen":
+		return "requires_when"
 	case "Tags":
 		return "tags"
 	case "MethodOrder":

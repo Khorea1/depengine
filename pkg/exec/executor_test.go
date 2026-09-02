@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/engine"
 	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/state"
 )
@@ -298,6 +299,38 @@ func TestExecutorPostInstall(t *testing.T) {
 	}
 	if report.Success != 1 {
 		t.Fatalf("expected 1 success, got %d", report.Success)
+	}
+}
+
+func TestExecutorSkipsPostInstallOnUnmatchedWhen(t *testing.T) {
+	mock := &testMockAdapter{
+		kindValue:     "native",
+		availableFunc: func() bool { return true },
+		checkFunc:     func(string) bool { return false },
+		installFunc:   func(string) error { return nil },
+	}
+	fr := &run.FakeRunner{ExitCode: 0}
+	ex := New()
+	WithAllowArbitraryCode()(ex)
+	WithRunner(fr)(ex)
+	WithAdapters(mock)(ex)
+	WithFacts(&engine.Facts{OS: "windows", TargetFamily: "windows"})(ex)
+
+	s := mockSchema("tool1")
+	s.Tools["tool1"].PostInstall = "fc-cache -fv"
+	s.Tools["tool1"].PostInstallWhen = &config.Condition{TargetFamily: []string{"unix"}}
+
+	report, err := ex.Execute(context.Background(), s, "arch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Success != 1 {
+		t.Fatalf("expected 1 success, got %d", report.Success)
+	}
+	for _, c := range fr.Calls {
+		if len(c.Args) > 0 && c.Args[0] == "fc-cache -fv" {
+			t.Errorf("postinstall should be skipped on windows facts, but ran: %+v", c.Args)
+		}
 	}
 }
 

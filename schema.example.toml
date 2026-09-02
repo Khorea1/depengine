@@ -71,8 +71,8 @@ matugen    = { cargo = { git = "https://github.com/InioX/matugen" } }
 #   build = command executed inside the cloned repo (always called "build",
 #           never "install" — avoids naming ambiguity)
 # ------------------------------------------------------------------------
-ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install" } }
-fasd = { git = { url = "https://github.com/clvv/fasd",        build = "PREFIX=$HOME/.local make install" } }
+ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install", when = { target_family = ["unix"] } } }
+fasd = { git = { url = "https://github.com/clvv/fasd",        build = "PREFIX=$HOME/.local make install", when = { target_family = ["unix"] } } }
 
 
 # ------------------------------------------------------------------------
@@ -84,7 +84,7 @@ fasd = { git = { url = "https://github.com/clvv/fasd",        build = "PREFIX=$H
 #   checksum_url        → explicit URL of the checksums file
 #   checksum_file_format → "sha256sum" (default), "bsd", or "raw"
 #   signature_url       → GPG verification of the checksum signature
-fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb", checksum = "sha256:auto" } }
+fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb", checksum = "sha256:auto", when = { os = ["linux"] } } }
 
 # Example with SHA-512 and explicit checksum_url:
 "tool-example" = { http = { url = "https://example.com/tool-{latest}.tar.gz", checksum = "sha512:auto", checksum_url = "https://example.com/SHA512SUMS" } }
@@ -133,6 +133,7 @@ fontconfig = { native = { pkg = "fontconfig", pkg_overrides = { pkg = "fontconfi
 #   distro_id     → exact distro ID (ubuntu, arch, fedora, ...)
 #   arch          → architecture (x86_64, aarch64, armv7l, ...)
 #   os            → operating system (linux, darwin, windows, ...)
+#   target_family → OS family (unix = linux/darwin/BSD/termux, windows)
 #   kernel        → kernel version (uname -r)
 #   libc          → C library (glibc, musl, ...) — prefix matching
 #   init_system   → init system (systemd, openrc, runit, ...)
@@ -228,9 +229,10 @@ httpie = { python = true }             # pip + pipx + uv (pkg=httpie for all)
 # Can mix bucket with explicit method: the explicit method is NOT overwritten.
 # organize = { pip = "organize-tool", python = true } keeps the explicit pip.
 [tools.DepartureMono]
-postinstall = "fc-cache -fv"
+postinstall = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
 requires = ["unzip", "fontconfig"]
-method_only = ["aur", "http"]   # AUR on Arch (PKGBUILD source = nerd-fonts DepartureMono.zip v3.4.0); HTTP zip everywhere else. Never fall back to native (no such package outside Arch).
+requires_when = { unzip = { target_family = ["unix"] }, fontconfig = { target_family = ["unix"] } }
+method_only = ["aur", "scoop", "http"]   # aur on Arch, scoop on Windows, http elsewhere. Never fall back to native (no such package outside Arch).
 
   [tools.DepartureMono.aur]
   pkg  = "otf-departure-mono-nerd"
@@ -240,6 +242,11 @@ method_only = ["aur", "http"]   # AUR on Arch (PKGBUILD source = nerd-fonts Depa
   url           = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/DepartureMono.zip"
   checksum      = "sha256:e186890efcae31b72e9f2abc860360123ec1b3ae03bc79bb2a9fec388ebade8a" # literal pin (lockfile pins v3.4.0; nerd-fonts publishes no checksum file, so sha256:auto 404s)
   extract_to    = "~/.local/share/fonts/DepartureMono"
+  when          = { target_family = ["unix"] } # zip + $HOME fonts path + fc-cache postinstall are unix-only assumptions
+
+  [tools.DepartureMono.scoop]
+  pkg  = "nerd-fonts/DepartureMono-NF"
+  when = { target_family = ["windows"] } # scoop extras bucket; fontconfig is Windows-incompatible
 
 
 # ------------------------------------------------------------------------

@@ -28,6 +28,19 @@ func DefinitionHash(tool *config.Tool) string {
 		h.Write([]byte{0})
 	}
 	h.Write([]byte{0})
+	// RequiresWhen: hash each gated dep with its condition.
+	deps := make([]string, 0, len(tool.RequiresWhen))
+	for dep := range tool.RequiresWhen {
+		deps = append(deps, dep)
+	}
+	sort.Strings(deps)
+	for _, dep := range deps {
+		h.Write([]byte(dep))
+		h.Write([]byte{0})
+		h.Write([]byte(fmt.Sprintf("%v", tool.RequiresWhen[dep])))
+		h.Write([]byte{0})
+	}
+	h.Write([]byte{0})
 
 	// Include PreInstall.
 	h.Write([]byte(tool.PreInstall))
@@ -35,6 +48,10 @@ func DefinitionHash(tool *config.Tool) string {
 
 	// Include PostInstall.
 	h.Write([]byte(tool.PostInstall))
+	h.Write([]byte{0})
+	if tool.PostInstallWhen != nil {
+		h.Write([]byte(fmt.Sprintf("%v", tool.PostInstallWhen)))
+	}
 	h.Write([]byte{0})
 
 	// Include Tags.

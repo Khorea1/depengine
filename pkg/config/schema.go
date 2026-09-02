@@ -28,17 +28,19 @@ const (
 
 // ToolFieldStrategy defines merge policy for every exported field of Tool.
 var ToolFieldStrategy = map[string]MergeStrategy{
-	"Name":         MergeOverwrite,
-	"PreInstall":   MergeOverwrite,
-	"PostInstall":  MergeOverwrite,
-	"Requires":     MergeOverwrite,
-	"Methods":      MergeMethods,
-	"MethodOrder":  MergeOverwrite,
-	"MethodPrefer": MergeOverwrite,
-	"MethodOnly":   MergeOverwrite,
-	"IsSimple":     MergeOverwrite,
-	"Tags":         MergeUnionSlice,
-	"Ecosystem":    MergeOverwrite,
+	"Name":            MergeOverwrite,
+	"PreInstall":      MergeOverwrite,
+	"PostInstall":     MergeOverwrite,
+	"PostInstallWhen": MergeOverwrite,
+	"Requires":        MergeOverwrite,
+	"RequiresWhen":    MergeOverwrite,
+	"Methods":         MergeMethods,
+	"MethodOrder":     MergeOverwrite,
+	"MethodPrefer":    MergeOverwrite,
+	"MethodOnly":      MergeOverwrite,
+	"IsSimple":        MergeOverwrite,
+	"Tags":            MergeUnionSlice,
+	"Ecosystem":       MergeOverwrite,
 }
 
 // MethodConfigFieldStrategy defines merge policy per Config key of MethodCandidate.
@@ -57,12 +59,14 @@ var MethodConfigFieldStrategy = map[string]MergeStrategy{
 // ToolFieldIsSet maps field name to a function that reports whether the field
 // is considered "set" (non-zero) on a Tool. Used for MergeLocalOnly validation.
 var ToolFieldIsSet = map[string]func(*Tool) bool{
-	"PreInstall":   func(t *Tool) bool { return t.PreInstall != "" },
-	"PostInstall":  func(t *Tool) bool { return t.PostInstall != "" },
-	"Requires":     func(t *Tool) bool { return len(t.Requires) > 0 },
-	"MethodOrder":  func(t *Tool) bool { return len(t.MethodOrder) > 0 },
-	"MethodPrefer": func(t *Tool) bool { return len(t.MethodPrefer) > 0 },
-	"MethodOnly":   func(t *Tool) bool { return len(t.MethodOnly) > 0 },
+	"PreInstall":      func(t *Tool) bool { return t.PreInstall != "" },
+	"PostInstall":     func(t *Tool) bool { return t.PostInstall != "" },
+	"PostInstallWhen": func(t *Tool) bool { return t.PostInstallWhen != nil },
+	"Requires":        func(t *Tool) bool { return len(t.Requires) > 0 },
+	"RequiresWhen":    func(t *Tool) bool { return len(t.RequiresWhen) > 0 },
+	"MethodOrder":     func(t *Tool) bool { return len(t.MethodOrder) > 0 },
+	"MethodPrefer":    func(t *Tool) bool { return len(t.MethodPrefer) > 0 },
+	"MethodOnly":      func(t *Tool) bool { return len(t.MethodOnly) > 0 },
 }
 
 // FieldSource describes which layer contributed to a field's value.
@@ -127,9 +131,16 @@ var DefaultBuckets = methodkind.DefaultBuckets
 // pkg equals the tool's own name) from anything declared via inline table
 // or full block.
 type Tool struct {
-	Name         string
-	PreInstall   string // shell command run before install; failure aborts install
-	PostInstall  string // shell command run after successful install
+	Name        string
+	PreInstall  string // shell command run before install; failure aborts install
+	PostInstall string // shell command run after successful install
+	// PostInstallWhen gates PostInstall by platform facts. Set only by the
+	// table form `postinstall = { cmd = "...", when = {...} }`; nil = always run.
+	PostInstallWhen *Condition
+	// RequiresWhen gates individual Requires entries by platform facts:
+	// `requires_when = { fontconfig = { target_family = ["unix"] } }`.
+	// A dep with no entry always applies. Conditions are immutable post-parse.
+	RequiresWhen map[string]*Condition
 	Requires     []string
 	Methods      []*MethodCandidate
 	MethodOrder  []string // DEPRECATED per-tool: use MethodPrefer instead. Kept for backward compat.
@@ -141,12 +152,55 @@ type Tool struct {
 }
 
 // cloneTool returns a deep copy of t.
+// EffectiveRequires returns the deps of t that apply under the given facts:
+// FilteredTools clones tools with Requires reduced to what applies under
+// facts — pass it to graph.Sort and blockedBy checks so a unix-only dep
+// (e.g. fontconfig for a font on Windows) never blocks installation.
+func FilteredTools(tools map[string]*Tool, facts *engine.Facts) map[string]*Tool {
+	if tools == nil || facts == nil {
+		return tools
+	}
+	out := make(map[string]*Tool, len(tools))
+	for name, t := range tools {
+		if len(t.RequiresWhen) == 0 {
+			out[name] = t
+			continue
+		}
+		c := cloneTool(t)
+		c.Requires = t.EffectiveRequires(facts)
+		out[name] = c
+	}
+	return out
+}
+
+// entries gated by RequiresWhen only match when their condition is met.
+// Facts nil means no filtering (match everything).
+func (t *Tool) EffectiveRequires(facts *engine.Facts) []string {
+	if facts == nil || len(t.RequiresWhen) == 0 {
+		return t.Requires
+	}
+	out := make([]string, 0, len(t.Requires))
+	for _, dep := range t.Requires {
+		if c, gated := t.RequiresWhen[dep]; gated && !c.Match(facts) {
+			continue
+		}
+		out = append(out, dep)
+	}
+	return out
+}
+
 func cloneTool(t *Tool) *Tool {
 	if t == nil {
 		return nil
 	}
 	out := *t
 	out.Requires = append([]string{}, t.Requires...)
+	if t.RequiresWhen != nil {
+		out.RequiresWhen = make(map[string]*Condition, len(t.RequiresWhen))
+		for k, v := range t.RequiresWhen {
+			out.RequiresWhen[k] = v
+		}
+	}
 	out.Tags = append([]string{}, t.Tags...)
 	out.MethodOrder = append([]string{}, t.MethodOrder...)
 	out.MethodPrefer = append([]string{}, t.MethodPrefer...)
@@ -198,10 +252,11 @@ type MethodCandidate struct {
 }
 
 // Condition is the parsed form of `when = { ... }`. All fields (distro_family,
-// distro_id, arch, os, kernel, libc, init_system, is_wsl, is_container) are
+// distro_id, arch, os, kernel, libc, init_system, is_wsl, is_container, target_family) are
 // honored by Match().
 type Condition struct {
 	DistroFamily []string
+	TargetFamily []string
 	DistroID     []string
 	Arch         []string
 	OS           []string
@@ -214,6 +269,7 @@ type Condition struct {
 
 func (c *Condition) IsZero() bool {
 	return len(c.DistroFamily) == 0 &&
+		len(c.TargetFamily) == 0 &&
 		len(c.DistroID) == 0 &&
 		len(c.Arch) == 0 &&
 		len(c.OS) == 0 &&
@@ -247,6 +303,9 @@ func (c *Condition) Match(facts *engine.Facts) bool {
 
 	// String-slice fields: case-insensitive OR-match (exact)
 	if len(c.DistroID) > 0 && !matchExact(c.DistroID, facts.DistroID) {
+		return false
+	}
+	if len(c.TargetFamily) > 0 && !matchExact(c.TargetFamily, facts.TargetFamily) {
 		return false
 	}
 	if len(c.Arch) > 0 && !matchExact(c.Arch, facts.TargetArch) {
@@ -501,15 +560,43 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 				tool.Requires = nil
 			}
 		}
+		// requires_when gates individual deps by platform facts:
+		// `requires_when = { fontconfig = { target_family = ["unix"] } }`.
+		if rw, ok := valMap["requires_when"].(map[string]any); ok {
+			tool.RequiresWhen = make(map[string]*Condition, len(rw))
+			for dep, v := range rw {
+				wm, ok := v.(map[string]any)
+				if !ok {
+					line, _ := findLineInFile(path, name)
+					return nil, fmt.Errorf("%s:%d: tool %q: requires_when.%s: expected inline table, got %T", path, line, name, dep, v)
+				}
+				tool.RequiresWhen[dep] = parseCondition(wm)
+			}
+		}
 		if pi, ok := valMap["pre_install"].(string); ok {
 			tool.PreInstall = pi
 		} else if pi, ok := valMap["preinstall"].(string); ok {
 			tool.PreInstall = pi
 		}
-		if pi, ok := valMap["post_install"].(string); ok {
-			tool.PostInstall = pi
-		} else if pi, ok := valMap["postinstall"].(string); ok {
-			tool.PostInstall = pi
+		// post_install/postinstall accept a plain string (unconditional) or
+		// the table form { cmd = "...", when = {...} } gating the hook.
+		parsePostInstall := func(v any) {
+			switch pi := v.(type) {
+			case string:
+				tool.PostInstall = pi
+			case map[string]any:
+				if c, ok := pi["cmd"].(string); ok {
+					tool.PostInstall = c
+				}
+				if wm, ok := pi["when"].(map[string]any); ok {
+					tool.PostInstallWhen = parseCondition(wm)
+				}
+			}
+		}
+		if v, ok := valMap["post_install"]; ok {
+			parsePostInstall(v)
+		} else if v, ok := valMap["postinstall"]; ok {
+			parsePostInstall(v)
 		}
 		if t, ok := valMap["tags"].([]any); ok {
 			tool.Tags = anySliceToStrings(t)
@@ -692,7 +779,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	var nonNativeKeys []string
 	var nativeBlockConfig map[string]any
 
-	for _, k := range sortedKeys(valMap, "requires", "pre_install", "preinstall", "post_install", "postinstall", "tags", "method_order", "method_prefer", "method_only", "when", "kind") {
+	for _, k := range sortedKeys(valMap, "requires", "requires_when", "pre_install", "preinstall", "post_install", "postinstall", "tags", "method_order", "method_prefer", "method_only", "when", "kind") {
 		if k == "native" {
 			if m, ok := valMap[k].(map[string]any); ok {
 				nativeBlockConfig = m
@@ -813,6 +900,8 @@ func parseCondition(raw any) *Condition {
 			cond.Libc = toStringSlice(v)
 		case "init_system":
 			cond.InitSystem = toStringSlice(v)
+		case "target_family":
+			cond.TargetFamily = toStringSlice(v)
 		case "is_wsl":
 			cond.IsWSL = parseBoolPtr(v)
 		case "is_container":
