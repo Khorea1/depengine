@@ -119,8 +119,43 @@ func printCommandHelp(name string) {
 		os.Exit(1)
 	}
 
+	c := newCLIStyle(os.Stdout)
 	if desc != "" {
-		fmt.Printf("depengine %s — %s\n\nFlags:\n", name, desc)
+		fmt.Fprintf(c.w, "%s\n\n", c.bold(fmt.Sprintf("depengine %s — %s", name, desc)))
 	}
-	fs.PrintDefaults()
+	printFlags(c, fs)
+}
+
+// printFlags renders an aligned one-line-per-flag table: bold flag names on
+// the left, placeholders for valued flags (--schema PATH), defaults in dim
+// parentheses only when non-zero, so a 14-flag command like install scans as
+// a table instead of the two-line-per-flag block flag.PrintDefaults emits.
+func printFlags(c *cliStyle, fs *flag.FlagSet) {
+	type row struct{ left, usage, def string }
+	var rows []row
+	leftWidth := 0
+	fs.VisitAll(func(f *flag.Flag) {
+		name, usage := flag.UnquoteUsage(f)
+		left := "--" + f.Name
+		if name != "" {
+			left += " " + name
+		}
+		def := ""
+		if f.DefValue != "" && f.DefValue != "false" && f.DefValue != "0" {
+			def = "(default: " + f.DefValue + ")"
+		}
+		if len(left) > leftWidth {
+			leftWidth = len(left)
+		}
+		rows = append(rows, row{left: left, usage: usage, def: def})
+	})
+
+	fmt.Fprintln(c.w, c.dim("Flags"))
+	for _, r := range rows {
+		line := fmt.Sprintf("  %s  %s", c.bold(padRight(r.left, leftWidth)), r.usage)
+		if r.def != "" {
+			line += " " + c.dim(r.def)
+		}
+		fmt.Fprintln(c.w, line)
+	}
 }

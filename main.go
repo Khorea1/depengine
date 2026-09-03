@@ -17,35 +17,49 @@ func main() {
 		printUsage()
 		os.Exit(0)
 	}
-	switch os.Args[1] {
+	cmd := os.Args[1]
+	args := os.Args[2:]
+	// `depengine <cmd> --help` renders the same aligned help as
+	// `depengine help <cmd>` — without this, the flag package's ExitOnError
+	// would take over and dump its default two-line-per-flag usage.
+	if wantsHelp(args) {
+		switch cmd {
+		case "install", "update", "upgrade", "validate", "check", "graph",
+			"status", "forget", "remove", "why", "undo", "sbom", "init",
+			"diff":
+			printCommandHelp(cmd)
+			os.Exit(0)
+		}
+	}
+	switch cmd {
 	case "install":
-		runInstall(os.Args[2:])
+		runInstall(args)
 	case "update":
-		runUpdate(os.Args[2:])
+		runUpdate(args)
 	case "upgrade":
-		runUpgrade(os.Args[2:])
+		runUpgrade(args)
 	case "validate":
-		runValidate(os.Args[2:])
+		runValidate(args)
 	case "check":
-		runCheck(os.Args[2:])
+		runCheck(args)
 	case "graph":
-		runGraph(os.Args[2:])
+		runGraph(args)
 	case "status":
-		runStatus(os.Args[2:])
+		runStatus(args)
 	case "forget":
-		runForget(os.Args[2:])
+		runForget(args)
 	case "remove":
-		runRemove(os.Args[2:])
+		runRemove(args)
 	case "why":
-		runWhy(os.Args[2:])
+		runWhy(args)
 	case "undo":
-		runUndo(os.Args[2:])
+		runUndo(args)
 	case "sbom":
-		runSBOM(os.Args[2:])
+		runSBOM(args)
 	case "init":
-		runInit(os.Args[2:])
+		runInit(args)
 	case "diff":
-		runDiff(os.Args[2:])
+		runDiff(args)
 	case "version", "-v", "--version":
 		fmt.Println("depengine " + version)
 		if i18n.GetLocale() == "pt" {
