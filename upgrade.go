@@ -194,14 +194,30 @@ func runUpgrade(args []string) {
 		return outdated[i].name < outdated[j].name
 	})
 
-	fmt.Fprintf(os.Stderr, "depengine upgrade: distro=%s clan=%s arch=%s outdated=%d\n",
-		facts.DistroID, clan, facts.TargetArch, len(outdated))
+	c := newCLIStyle(os.Stderr)
+
+	printKV(c, "depengine upgrade",
+		[2]string{"schema", *upgradeSchema},
+		[2]string{"target", fmt.Sprintf("%s (%s) · %s", facts.DistroID, clan, facts.TargetArch)},
+		[2]string{"outdated", fmt.Sprintf("%d", len(outdated))},
+	)
 
 	// Confirmation prompt (unless --force or --dry-run or --json).
 	if !*upgradeForce && !*upgradeDryRun && !*upgradeJSON && isInteractive() {
-		fmt.Fprintln(os.Stderr, "\nThe following tools will be upgraded:")
+		// Aligned name column plus a dimmed old→new version pair: the list
+		// is a risk review ("do I accept these bumps?"), so the decision-
+		// relevant data (name, how big the jump is) must line up.
+		nameW := 0
 		for _, ot := range outdated {
-			fmt.Fprintf(os.Stderr, "  %s: %s → %s\n", ot.name, ot.ts.Version, ot.pinnedVer)
+			if len(ot.name) > nameW {
+				nameW = len(ot.name)
+			}
+		}
+		fmt.Fprintln(os.Stderr, c.bold("The following tools will be upgraded:"))
+		for _, ot := range outdated {
+			fmt.Fprintf(os.Stderr, "  %s  %s → %s\n",
+				c.cyan(padRight(ot.name, nameW)),
+				c.dim(ot.ts.Version), c.green(ot.pinnedVer))
 		}
 		fmt.Fprint(os.Stderr, "\nProceed? [y/N] ")
 		var input string
@@ -228,8 +244,8 @@ func runUpgrade(args []string) {
 		if adapter == nil {
 			res.Status = "failed"
 			res.Error = fmt.Sprintf("no adapter for method %q", ot.methodKind)
-			if !*upgradeQuiet || *upgradeJSON {
-				fmt.Fprintf(os.Stderr, "  ✗  %s: %s\n", ot.name, res.Error)
+			if !*upgradeQuiet {
+				c.fail("%s: %s", ot.name, res.Error)
 			}
 			results = append(results, res)
 			failed++
@@ -240,8 +256,8 @@ func runUpgrade(args []string) {
 		if *upgradeDryRun {
 			res.Status = "would_upgrade"
 			res.NewVer = ot.pinnedVer
-			if !*upgradeQuiet || *upgradeJSON {
-				fmt.Fprintf(os.Stderr, "  →  %s: %s → %s (dry-run)\n", ot.name, ot.ts.Version, ot.pinnedVer)
+			if !*upgradeQuiet {
+				c.arrow("%s: %s → %s (dry-run)", ot.name, ot.ts.Version, ot.pinnedVer)
 			}
 			results = append(results, res)
 			wouldUpgrade++
@@ -252,8 +268,8 @@ func runUpgrade(args []string) {
 			// Adapter can't remove — skip with a clear message.
 			res.Status = "skipped"
 			res.Error = fmt.Sprintf("adapter %q does not support removal — remove manually and reinstall", ot.methodKind)
-			if !*upgradeQuiet || *upgradeJSON {
-				fmt.Fprintf(os.Stderr, "  –  %s: %s\n", ot.name, res.Error)
+			if !*upgradeQuiet {
+				c.skip("%s: %s", ot.name, res.Error)
 			}
 			results = append(results, res)
 			skipped++
@@ -277,8 +293,8 @@ func runUpgrade(args []string) {
 		if err != nil {
 			res.Status = "failed"
 			res.Error = fmt.Sprintf("remove failed: %v", err)
-			if !*upgradeQuiet || *upgradeJSON {
-				fmt.Fprintf(os.Stderr, "  ✗  %s: %s\n", ot.name, res.Error)
+			if !*upgradeQuiet {
+				c.fail("%s: %s", ot.name, res.Error)
 			}
 			results = append(results, res)
 			failed++
@@ -300,8 +316,8 @@ func runUpgrade(args []string) {
 		if err != nil {
 			res.Status = "failed"
 			res.Error = fmt.Sprintf("reinstall failed: %v", err)
-			if !*upgradeQuiet || *upgradeJSON {
-				fmt.Fprintf(os.Stderr, "  ✗  %s: %s\n", ot.name, res.Error)
+			if !*upgradeQuiet {
+				c.fail("%s: %s", ot.name, res.Error)
 			}
 			results = append(results, res)
 			failed++
@@ -334,7 +350,7 @@ func runUpgrade(args []string) {
 			res.NewVer = ot.pinnedVer
 		}
 		if !*upgradeQuiet {
-			fmt.Fprintf(os.Stderr, "  ✓  %s: %s → %s\n", ot.name, ot.ts.Version, res.NewVer)
+			c.ok("%s: %s → %s", ot.name, ot.ts.Version, res.NewVer)
 		}
 		results = append(results, res)
 		upgraded++
@@ -359,10 +375,29 @@ func runUpgrade(args []string) {
 		}
 		b, _ := json.MarshalIndent(out, "", "  ")
 		fmt.Println(string(b))
-	} else if *upgradeDryRun {
-		fmt.Fprintf(os.Stderr, "\nUpgrade complete (dry-run): %d would_upgrade, %d skipped, %d failed\n", wouldUpgrade, skipped, failed)
 	} else {
-		fmt.Fprintf(os.Stderr, "\nUpgrade complete: %d upgraded, %d skipped, %d failed\n", upgraded, skipped, failed)
+		// Footer mirrors the ✓/✗/–/→ vocabulary of the per-tool lines: a
+		// count only gets a colored marker when it's non-zero, so a clean run
+		// is one quiet green line and a failure is impossible to miss.
+		fmt.Fprintln(os.Stderr)
+		var parts []string
+		if *upgradeDryRun {
+			if wouldUpgrade > 0 {
+				parts = append(parts, c.cyan(fmt.Sprintf("%d would upgrade", wouldUpgrade)))
+			}
+		} else if upgraded > 0 {
+			parts = append(parts, c.green(fmt.Sprintf("%d upgraded", upgraded)))
+		}
+		if skipped > 0 {
+			parts = append(parts, c.yellow(fmt.Sprintf("%d skipped", skipped)))
+		}
+		if failed > 0 {
+			parts = append(parts, c.red(fmt.Sprintf("%d failed", failed)))
+		}
+		if len(parts) == 0 {
+			parts = append(parts, "nothing to do")
+		}
+		fmt.Fprintf(os.Stderr, "  %s\n", strings.Join(parts, "  ·  "))
 	}
 
 	if failed > 0 {
