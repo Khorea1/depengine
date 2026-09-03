@@ -144,8 +144,7 @@ func runCheck(args []string) {
 	checkJSON := checkCmd.Bool("json", false, "JSON output")
 	checkFormat := checkCmd.String("format", "", "output format (json)")
 	checkLive := checkCmd.Bool("live", false, "check via adapter (may run subprocesses)")
-	checkCmd.Parse(args)
-	remain := checkCmd.Args()
+	remain := parseFlagsInterspersed(checkCmd, args)
 	if len(remain) < 1 {
 		log.Default.Error("usage: depengine check <tool>")
 		os.Exit(1)

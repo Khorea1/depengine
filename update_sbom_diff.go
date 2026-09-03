@@ -209,13 +209,13 @@ func runDiff(args []string) {
 	diffCmd := flag.NewFlagSet("diff", flag.ExitOnError)
 	diffOther := diffCmd.String("other", "", "path to other state file (used when no args)")
 	diffJSON := diffCmd.Bool("json", false, "output as JSON")
-	diffCmd.Parse(args)
+	diffArgs := parseFlagsInterspersed(diffCmd, args)
 
 	var aPath, bPath string
 	var aState, bState *state.State
 	var err error
 
-	switch diffCmd.NArg() {
+	switch len(diffArgs) {
 	case 0:
 		if *diffOther == "" {
 			fmt.Fprintf(os.Stderr, "error: --other is required when no arguments are given\n")
@@ -223,10 +223,10 @@ func runDiff(args []string) {
 		}
 		bPath = *diffOther
 	case 1:
-		bPath = diffCmd.Arg(0)
+		bPath = diffArgs[0]
 	case 2:
-		aPath = diffCmd.Arg(0)
-		bPath = diffCmd.Arg(1)
+		aPath = diffArgs[0]
+		bPath = diffArgs[1]
 		aState, err = state.LoadFrom(aPath)
 		if err != nil {
 			log.Default.Error("load first state", "path", aPath, "error", err)
@@ -242,7 +242,7 @@ func runDiff(args []string) {
 		os.Exit(2)
 	}
 
-	if diffCmd.NArg() != 2 {
+	if len(diffArgs) != 2 {
 		ls, err := state.LoadShared()
 		if err != nil {
 			log.Default.Error("load current state", "error", err)

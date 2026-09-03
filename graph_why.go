@@ -103,8 +103,7 @@ func runWhy(args []string) {
 	whyNoManifest := whyCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
 	whyJSON := whyCmd.Bool("json", false, "JSON output")
 	whyFields := whyCmd.Bool("fields", false, "show field-level provenance")
-	whyCmd.Parse(args)
-	remain := whyCmd.Args()
+	remain := parseFlagsInterspersed(whyCmd, args)
 	if len(remain) < 1 {
 		log.Default.Error("usage: depengine why <tool>")
 		os.Exit(1)

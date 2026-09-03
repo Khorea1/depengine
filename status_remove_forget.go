@@ -206,7 +206,7 @@ func runRemove(args []string) {
 	removeSchema := removeCmd.String("schema", "", "path to schema.toml (optional, for validation)")
 	removeOnly := removeCmd.String("only", "", "only remove specific tool (alternative to positional arg)")
 	removeForce := removeCmd.Bool("force", false, "skip confirmation when removing all tools")
-	removeCmd.Parse(args)
+	removeArgs := parseFlagsInterspersed(removeCmd, args)
 
 	// Validate mutually exclusive flags.
 	if *removeAll && *removeOnly != "" {
@@ -314,8 +314,8 @@ func runRemove(args []string) {
 		if !removeTool(*removeOnly) {
 			hadFailure = true
 		}
-	} else if len(removeCmd.Args()) > 0 {
-		for _, toolName := range removeCmd.Args() {
+	} else if len(removeArgs) > 0 {
+		for _, toolName := range removeArgs {
 			if !removeTool(toolName) {
 				hadFailure = true
 			}
@@ -342,14 +342,14 @@ func runRemove(args []string) {
 func runForget(args []string) {
 	// flags maintained in help.go:printCommandHelp
 	forgetCmd := flag.NewFlagSet("forget", flag.ExitOnError)
-	forgetCmd.Parse(args)
+	forgetArgs := parseFlagsInterspersed(forgetCmd, args)
 
-	if len(forgetCmd.Args()) != 1 {
+	if len(forgetArgs) != 1 {
 		log.Default.Error("usage: depengine forget <tool>")
 		os.Exit(1)
 	}
 
-	toolName := forgetCmd.Arg(0)
+	toolName := forgetArgs[0]
 	ls, err := state.LoadLocked()
 	if err != nil {
 		log.Default.Error("state lock", "error", err)
