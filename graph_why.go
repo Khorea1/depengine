@@ -206,7 +206,7 @@ func runWhy(args []string) {
 	}
 
 	c := newCLIStyle(os.Stdout)
-	fmt.Fprintf(c.w, "%s  %s\n\n", c.bold(fmt.Sprintf("Why %s?", toolName)), c.dim(fmt.Sprintf("%d candidate methods, first available wins", len(attempts))))
+	fmt.Fprintf(c.w, "%s  %s\n\n", c.bold(fmt.Sprintf("Why %s?", toolName)), c.dim(plural(len(attempts), "candidate method")+", first available wins"))
 	kindW := 0
 	for _, a := range attempts {
 		if len(a.Kind) > kindW {
