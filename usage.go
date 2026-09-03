@@ -25,7 +25,7 @@ Uso:
 Comandos:
   init      Inicializar schema.toml para um projeto
   install   Instalar ferramentas do schema.toml
-  upgrade  Atualizar ferramentas instaladas para as versões travadas no depengine.lock
+  upgrade   Atualizar ferramentas instaladas para as versões travadas no depengine.lock
   validate  Validar schema.toml e ambiente
   check     Verificar se uma ferramenta está de fato instalada (roda o check do adapter)
   status    Mostrar estado das ferramentas em relação ao schema
@@ -55,7 +55,7 @@ Usage:
 Commands:
   init      Initialize a schema.toml for a new project
   install   Install tools from schema.toml
-  upgrade  Upgrade installed tools to pinned versions in depengine.lock
+  upgrade   Upgrade installed tools to pinned versions in depengine.lock
   validate  Validate schema.toml and environment
   check     Check whether a tool is actually installed (runs the adapter check)
   status    Show tool status vs schema
@@ -67,6 +67,7 @@ Commands:
   sbom      Export SBOM (CycloneDX or SPDX)
   diff      Compare state between machines
   completion Generate autocomplete script
+
 Global flags:
   --version, -v   Show version
   --help, -h      Show help
