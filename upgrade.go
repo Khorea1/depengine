@@ -112,8 +112,9 @@ func runUpgrade(args []string) {
 	)(ex)
 	exec.WithSchemaInfo(*upgradeSchema, schemaFile.ModTime())(ex)
 	exec.WithLogger(lg)(ex)
-	exec.WithRunner(run.NewLoggingRunner(run.OSExecRunner{}, lg))
-	exec.WithFacts(facts)
+	runner := run.NewLoggingRunner(run.OSExecRunner{}, lg)
+	exec.WithRunner(runner)(ex)
+	exec.WithFacts(facts)(ex)
 	if *upgradeDryRun {
 		exec.WithDryRun()(ex)
 	}
@@ -181,7 +182,7 @@ func runUpgrade(args []string) {
 
 	if len(outdated) == 0 {
 		if *upgradeJSON {
-			fmt.Println(`{"upgraded":0,"skipped":0,"failed":0,"results":[]}`)
+			fmt.Println(`{"upgraded":0,"skipped":0,"failed":0,"would_upgrade":0,"results":[]}`)
 		} else {
 			fmt.Fprintln(os.Stderr, "All installed tools are up to date.")
 		}
@@ -214,7 +215,7 @@ func runUpgrade(args []string) {
 
 	// Upgrade each outdated tool: Remove then Install.
 	var results []upgradeResult
-	upgraded, failed, skipped := 0, 0, 0
+	upgraded, failed, skipped, wouldUpgrade := 0, 0, 0, 0
 
 	for _, ot := range outdated {
 		res := upgradeResult{
@@ -243,7 +244,7 @@ func runUpgrade(args []string) {
 				fmt.Fprintf(os.Stderr, "  →  %s: %s → %s (dry-run)\n", ot.name, ot.ts.Version, ot.pinnedVer)
 			}
 			results = append(results, res)
-			skipped++
+			wouldUpgrade++
 			continue
 		}
 
@@ -269,8 +270,9 @@ func runUpgrade(args []string) {
 			mc.Config = findMethodConfig(ot.tool, ot.methodKind)
 		}
 
+		tr := runner.WithContext(run.Context{Tool: ot.name, Method: ot.methodKind})
 		removeCtx, removeCancel := context.WithTimeout(ctx, 2*time.Minute)
-		err := remover.Remove(removeCtx, run.OSExecRunner{}, ot.tool, mc)
+		err := remover.Remove(removeCtx, tr, ot.tool, mc)
 		removeCancel()
 		if err != nil {
 			res.Status = "failed"
@@ -293,7 +295,7 @@ func runUpgrade(args []string) {
 		}
 
 		installCtx, installCancel := context.WithTimeout(ctx, 10*time.Minute)
-		err = adapter.Install(installCtx, run.OSExecRunner{}, ot.tool, installMC)
+		err = adapter.Install(installCtx, tr, ot.tool, installMC)
 		installCancel()
 		if err != nil {
 			res.Status = "failed"
@@ -309,7 +311,7 @@ func runUpgrade(args []string) {
 		}
 
 		// Step 3: Probe version.
-		newVer := probeVersion(adapter, ot.tool, installMC)
+		newVer := probeVersion(adapter, tr, ot.tool, installMC)
 
 		// Step 4: Update state.
 		newTS := state.ToolState{
@@ -349,13 +351,16 @@ func runUpgrade(args []string) {
 	// Output.
 	if *upgradeJSON {
 		out := map[string]any{
-			"upgraded": upgraded,
-			"skipped":  skipped,
-			"failed":   failed,
-			"results":  results,
+			"upgraded":      upgraded,
+			"skipped":       skipped,
+			"failed":        failed,
+			"would_upgrade": wouldUpgrade,
+			"results":       results,
 		}
 		b, _ := json.MarshalIndent(out, "", "  ")
 		fmt.Println(string(b))
+	} else if *upgradeDryRun {
+		fmt.Fprintf(os.Stderr, "\nUpgrade complete (dry-run): %d would_upgrade, %d skipped, %d failed\n", wouldUpgrade, skipped, failed)
 	} else {
 		fmt.Fprintf(os.Stderr, "\nUpgrade complete: %d upgraded, %d skipped, %d failed\n", upgraded, skipped, failed)
 	}
@@ -387,14 +392,14 @@ func findMethodCandidate(tool *config.Tool, kind string, methodOrder []string) *
 }
 
 // probeVersion calls the adapter's InstalledVersion if it implements Versioner.
-func probeVersion(adapter exec.Adapter, tool *config.Tool, mc *config.MethodCandidate) string {
+func probeVersion(adapter exec.Adapter, runner run.Runner, tool *config.Tool, mc *config.MethodCandidate) string {
 	v, ok := adapter.(exec.Versioner)
 	if !ok {
 		return ""
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	ver, err := v.InstalledVersion(ctx, run.OSExecRunner{}, tool, mc)
+	ver, err := v.InstalledVersion(ctx, runner, tool, mc)
 	if err != nil || ver == "" {
 		return ""
 	}
