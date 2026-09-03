@@ -20,6 +20,13 @@ import (
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
+// UserAgent is the identifying string sent on every request this package
+// makes to the GitHub API. Exported so other packages that also talk to
+// github.com directly (e.g. httpdownload's GoDownloader, downloading the
+// release asset itself rather than resolving {latest}) can present as the
+// same client instead of drifting out of sync with a copy-pasted literal.
+const UserAgent = "github.com/Khorea1/depengine/0.1"
+
 // GitHub URL patterns for release/tag resolution.
 var (
 	githubRepoRe = regexp.MustCompile(`^https?://github\.com/([^/]+)/([^/]+)`)
@@ -114,7 +121,7 @@ func fetchLatestTag(ctx context.Context, owner, repo string, rn run.Runner) (str
 		return "", fmt.Errorf("resolve latest: request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("User-Agent", "github.com/Khorea1/depengine/0.1")
+	req.Header.Set("User-Agent", UserAgent)
 
 	// Add GitHub token if available to raise rate limit from 60 to 5000 req/h.
 	if token := githubToken(ctx, rn); token != "" {
@@ -146,6 +153,19 @@ func fetchLatestTag(ctx context.Context, owner, repo string, rn run.Runner) (str
 
 	cache.Store(cacheKey, rel.TagName)
 	return rel.TagName, nil
+}
+
+// GithubToken returns a GitHub personal access token from environment.
+// Checks GITHUB_TOKEN first, then GH_TOKEN (common aliases used by gh CLI and CI),
+// falling back to `gh auth token` if the GitHub CLI is authenticated. Returns ""
+// if no token is available.
+//
+// Exported so other packages that talk to github.com directly (e.g.
+// httpdownload's GoDownloader, which needs the token to fetch private-repo
+// release assets, not just resolve {latest}) can reuse the same resolution
+// order and the same `gh auth token` cache instead of re-implementing it.
+func GithubToken(ctx context.Context, rn run.Runner) string {
+	return githubToken(ctx, rn)
 }
 
 // githubToken returns a GitHub personal access token from environment.

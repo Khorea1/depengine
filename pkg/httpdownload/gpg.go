@@ -122,7 +122,7 @@ func importSigningKeyFromURL(ctx context.Context, rn run.Runner, homedir, signin
 			return "", fmt.Errorf("gpg: writing key file: %w", err)
 		}
 	} else {
-		dl := NewGoDownloader()
+		dl := NewGoDownloader(rn)
 		if err := dl.Download(ctx, signingKey, keyFile); err != nil {
 			return "", fmt.Errorf("gpg: downloading signing key: %w", err)
 		}
