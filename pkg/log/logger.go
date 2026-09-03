@@ -52,17 +52,14 @@ type LogContext struct {
 }
 
 // New creates a new slog.Logger writing to out at the given level.
-// The default handler is text (human-readable); set env DEPENGINE_LOG_JSON=1
-// to switch to JSON for programmatic consumption.
+// The default handler is a human-oriented pretty printer (see pretty.go);
+// set env DEPENGINE_LOG_JSON=1 to switch to JSON for programmatic
+// consumption instead.
 func New(out io.Writer, level slog.Leveler) *slog.Logger {
-	opts := &slog.HandlerOptions{Level: level}
-	var handler slog.Handler
 	if os.Getenv("DEPENGINE_LOG_JSON") == "1" {
-		handler = slog.NewJSONHandler(out, opts)
-	} else {
-		handler = slog.NewTextHandler(out, opts)
+		return slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{Level: level}))
 	}
-	return slog.New(handler)
+	return slog.New(newPrettyHandler(out, level))
 }
 
 // WithContext returns a logger with LogContext fields pre-attached as
