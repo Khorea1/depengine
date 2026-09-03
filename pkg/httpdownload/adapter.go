@@ -361,7 +361,6 @@ func (a *HTTPAdapter) fetchChecksumFromURL(ctx context.Context, rn run.Runner, c
 // Ensure HTTPAdapter implements exec.Adapter.
 var _ exec.Adapter = (*HTTPAdapter)(nil)
 
-
 // isSharedDir checks if a directory path is a common shared system directory.
 // We avoid deleting these directories completely during uninstallation.
 func isSharedDir(path string) bool {
@@ -428,6 +427,7 @@ func (a *HTTPAdapter) CanRemove() bool { return true }
 
 // Ensure HTTPAdapter implements exec.Remover at compile time.
 var _ exec.Remover = (*HTTPAdapter)(nil)
+
 // copyLocalFile copies a file from src to dst, preserving permissions.
 // Used by the download cache to materialize cached files into temp locations.
 func copyLocalFile(src, dst string) error {

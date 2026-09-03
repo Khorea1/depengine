@@ -18,7 +18,7 @@ func writeTestLock(t *testing.T, schemaDir string, tools map[string]lock.ToolPin
 	t.Helper()
 	lk := &lock.Lock{
 		Version: 1,
-		Tools:  tools,
+		Tools:   tools,
 	}
 	var buf strings.Builder
 	if err := toml.NewEncoder(&buf).Encode(lk); err != nil {

@@ -194,6 +194,7 @@ func TestRemoveGoTool(t *testing.T) {
 		t.Fatalf("state still contains gostr after remove: %+v", st.Tools)
 	}
 }
+
 // TestRemoveHTTPTool removes a tool installed via http: now that HTTPAdapter
 // implements Remover, the command exits 0 and removes the state entry.
 // The extract_to points to a /bin-suffixed temp dir, so Remove deletes

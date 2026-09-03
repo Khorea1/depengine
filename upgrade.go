@@ -23,12 +23,12 @@ import (
 
 // upgradeResult records the outcome of upgrading one tool.
 type upgradeResult struct {
-	Tool    string `json:"tool"`
-	Status  string `json:"status"` // "upgraded", "skipped", "failed", "would_upgrade"
-	OldVer  string `json:"old_version,omitempty"`
-	NewVer  string `json:"new_version,omitempty"`
-	Method  string `json:"method,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Tool   string `json:"tool"`
+	Status string `json:"status"` // "upgraded", "skipped", "failed", "would_upgrade"
+	OldVer string `json:"old_version,omitempty"`
+	NewVer string `json:"new_version,omitempty"`
+	Method string `json:"method,omitempty"`
+	Error  string `json:"error,omitempty"`
 }
 
 // runUpgrade upgrades installed tools whose recorded version is outdated
@@ -315,7 +315,7 @@ func runUpgrade(args []string) {
 		newTS := state.ToolState{
 			Method:          ot.ts.Method,
 			MethodKind:      ot.methodKind,
-			InstalledAt:      time.Now().UTC().Format(time.RFC3339),
+			InstalledAt:     time.Now().UTC().Format(time.RFC3339),
 			PostinstallDone: ot.ts.PostinstallDone,
 			DefinitionHash:  state.DefinitionHash(ot.tool),
 			Version:         newVer,

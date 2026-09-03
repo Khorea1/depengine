@@ -693,7 +693,6 @@ func TestVerifyChecksumFileFormatRaw(t *testing.T) {
 	}
 }
 
-
 // --- Remove tests ---
 
 func TestHTTPAdapterCanRemove(t *testing.T) {

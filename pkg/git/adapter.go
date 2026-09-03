@@ -143,18 +143,18 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 
 	// Run git clone.
 	res := rn.Run(ctx, "git", cloneArgs...)
-if err := run.CheckResult(res, "git: clone"); err != nil {
-	return err
-}
+	if err := run.CheckResult(res, "git: clone"); err != nil {
+		return err
+	}
 
 	// Run build step if configured.
 	if buildCmd, ok := mc.Config["build"].(string); ok && buildCmd != "" {
 		// Security: buildCmd is passed raw to sh -c to support shell syntax.
 		fullCmd := fmt.Sprintf("cd %s && %s", shellQuote(cloneDir), buildCmd)
 		buildRes := rn.Run(ctx, "sh", "-c", fullCmd)
-if err := run.CheckResult(buildRes, "git: build"); err != nil {
-	return err
-}
+		if err := run.CheckResult(buildRes, "git: build"); err != nil {
+			return err
+		}
 	}
 
 	// If extract_to is set, copy artifacts from clone dir to extract destination.
@@ -170,9 +170,9 @@ if err := run.CheckResult(buildRes, "git: build"); err != nil {
 		}
 		cpCmd := fmt.Sprintf("cp -r %s/. %s", shellQuote(src), shellQuote(extractTo))
 		cpRes := rn.Run(ctx, "sh", "-c", cpCmd)
-if err := run.CheckResult(cpRes, "git: copy"); err != nil {
-	return err
-}
+		if err := run.CheckResult(cpRes, "git: copy"); err != nil {
+			return err
+		}
 	}
 
 	return nil

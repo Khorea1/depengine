@@ -10,6 +10,10 @@ import (
 	"github.com/Khorea1/depengine/pkg/engine"
 )
 
+// boolPtr returns a pointer to v, for populating *bool condition fields
+// (e.g. Condition.IsWSL, Condition.IsContainer) inline in test tables.
+func boolPtr(v bool) *bool { return &v }
+
 // writeSchema writes a temp schema.toml next to the test, returning its path.
 func writeSchema(t *testing.T, content string) string {
 	t.Helper()
@@ -1024,13 +1028,13 @@ func TestConditionMatches(t *testing.T) {
 	}
 
 	// Three-state bools: IsWSL = false, facts.IsWSL = false → OK
-	c13 := &Condition{IsWSL: new(false)}
+	c13 := &Condition{IsWSL: boolPtr(false)}
 	if !c13.Match(facts) {
 		t.Error("IsWSL=false should match facts.IsWSL=false")
 	}
 
 	// Three-state bools: IsContainer = true, facts.IsContainer = false → fail
-	c14 := &Condition{IsContainer: new(true)}
+	c14 := &Condition{IsContainer: boolPtr(true)}
 	if c14.Match(facts) {
 		t.Error("IsContainer=true should NOT match facts.IsContainer=false")
 	}
@@ -1124,8 +1128,8 @@ func TestConditionIsZero(t *testing.T) {
 		{"kernel", &Condition{Kernel: []string{"6.7.0"}}, false},
 		{"libc", &Condition{Libc: []string{"glibc"}}, false},
 		{"init_system", &Condition{InitSystem: []string{"systemd"}}, false},
-		{"is_wsl set", &Condition{IsWSL: new(true)}, false},
-		{"is_container set", &Condition{IsContainer: new(false)}, false},
+		{"is_wsl set", &Condition{IsWSL: boolPtr(true)}, false},
+		{"is_container set", &Condition{IsContainer: boolPtr(false)}, false},
 		{"is_wsl nil is zero", &Condition{DistroFamily: []string{}}, true},
 	}
 
