@@ -105,11 +105,14 @@ func runInit(args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("✓ %s created", path)
+	// The ✓ goes to stdout (the created path is the consumable result,
+	// pipeable), the hints go to stderr (guidance, not data).
+	c := newCLIStyle(os.Stdout)
+	msg := fmt.Sprintf("✓ %s created", path)
 	if *addTools != "" {
-		fmt.Printf(" with %d tools", len(strings.Split(*addTools, ",")))
+		msg += fmt.Sprintf(" with %d tools", len(strings.Split(*addTools, ",")))
 	}
-	fmt.Println()
+	fmt.Fprintln(c.w, c.green(msg))
 	fmt.Fprintln(os.Stderr, "Next: run 'depengine validate' to verify, or 'depengine install' to install.")
 	fmt.Fprintln(os.Stderr, "Share this file with your team: git add schema.toml && git commit")
 }

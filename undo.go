@@ -82,12 +82,19 @@ func runUndo(args []string) {
 			fmt.Fprintln(os.Stderr, "No snapshots available.")
 			return
 		}
-		fmt.Fprintln(os.Stderr, "Available snapshots:")
+		c := newCLIStyle(os.Stderr)
+		fmt.Fprintln(c.w, c.bold("Available snapshots:"))
+		idxW := len(fmt.Sprintf("%d", len(snapshots)))
 		for i, s := range snapshots {
 			idx := i + 1
-			rel := relativeTime(s.Timestamp)
-			ts := s.Timestamp.Format("2006-01-02 15:04:05")
-			fmt.Fprintf(os.Stderr, "  %d.  %-20s  %s  %s  (%d tools)\n", idx, rel, ts, filepath.Base(s.Path), s.ToolCount)
+			// Column order answers the choosing question left to right: which
+			// index do I pass, how old is it, what's inside. The full path is
+			// noise in the common case — the filename alone identifies it.
+			fmt.Fprintf(c.w, "  %s  %s  %s  %s\n",
+				c.cyan(padRight(fmt.Sprintf("%d", idx), idxW)),
+				padRight(relativeTime(s.Timestamp), 14),
+				c.dim(filepath.Base(s.Path)),
+				c.dim(fmt.Sprintf("(%s)", plural(s.ToolCount, "tool"))))
 		}
 		return
 	}
