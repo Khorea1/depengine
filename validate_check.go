@@ -115,14 +115,30 @@ func runValidate(args []string) {
 			os.Exit(3)
 		}
 	} else {
-		for _, e := range result.Errors {
-			fmt.Fprintf(os.Stderr, "error: %v\n", e)
-		}
-		for _, w := range result.Warnings {
-			fmt.Fprintf(os.Stderr, "warning: %v\n", w)
-		}
-		if len(result.Errors) == 0 {
-			fmt.Fprintf(os.Stderr, "✓ schema is valid\n")
+		c := newCLIStyle(os.Stderr)
+		if len(result.Errors) == 0 && len(result.Warnings) == 0 {
+			fmt.Fprintf(c.w, "\n%s\n", c.green("✓ schema is valid"))
+		} else {
+			if len(result.Errors) == 0 {
+				// Warnings without errors still mean the schema is usable —
+				// say so explicitly instead of leaving the ✗/⚠ section as
+				// the only closing signal.
+				fmt.Fprintf(c.w, "\n%s\n", c.green("✓ schema is valid"))
+			}
+			if len(result.Errors) > 0 {
+				fmt.Fprintf(c.w, "\n%s\n", c.red(fmt.Sprintf("✗ %d error(s)", len(result.Errors))))
+				for _, e := range result.Errors {
+					// [E_CODE] field — message; the code is what to grep for,
+					// the field is where to fix.
+					fmt.Fprintf(c.w, "  %s %s  %s\n", c.red(string(e.Code)), c.dim(string(e.Field)+":"), e.Message)
+				}
+			}
+			if len(result.Warnings) > 0 {
+				fmt.Fprintf(c.w, "\n%s\n", c.yellow(fmt.Sprintf("⚠ %d warning(s)", len(result.Warnings))))
+				for _, w := range result.Warnings {
+					fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow(string(w.Code)), c.dim(string(w.Field)+":"), w.Message)
+				}
+			}
 		}
 	}
 
@@ -198,7 +214,7 @@ func runCheck(args []string) {
 					"method": method.Kind,
 				})
 			} else {
-				fmt.Fprintf(os.Stderr, "✓ %s is installed (via %s)\n", toolName, method.Kind)
+				newCLIStyle(os.Stderr).ok("%s is installed (via %s)", toolName, method.Kind)
 			}
 			os.Exit(0)
 		}
@@ -209,7 +225,7 @@ func runCheck(args []string) {
 			"status": "not-installed",
 		})
 	} else {
-		fmt.Fprintf(os.Stderr, "✗ %s is not installed\n", toolName)
+		newCLIStyle(os.Stderr).fail("%s is not installed", toolName)
 	}
 	os.Exit(1)
 }
