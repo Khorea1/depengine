@@ -69,7 +69,6 @@ func runGraph(args []string) {
 			}
 		}
 	}
-	fmt.Fprintf(os.Stderr, "depengine graph: tools=%d\n", len(s.Tools))
 	s.Tools = filterTools(s.Tools, *graphOnly, *graphSkip, *graphProfile)
 
 	if len(s.Tools) == 0 {
@@ -83,6 +82,13 @@ func runGraph(args []string) {
 		os.Exit(2)
 	}
 
+	if *graphFormat == "text" {
+		// Text format is the human-facing one — give it a header naming the
+		// working set, so a long level list doesn't start mid-air. Mermaid and
+		// dot are machine-consumed; no decoration there.
+		c := newCLIStyle(os.Stderr)
+		fmt.Fprintf(c.w, "%s\n\n", c.dim(fmt.Sprintf("%d tools in %d levels", len(s.Tools), len(levels))))
+	}
 	switch *graphFormat {
 	case "mermaid":
 		fmt.Print(graph.RenderMermaid(levels, s.Tools))
@@ -199,27 +205,34 @@ func runWhy(args []string) {
 		return
 	}
 
-	fmt.Printf("Why %s? (%d methods)\n", toolName, len(tool.Methods))
+	c := newCLIStyle(os.Stdout)
+	fmt.Fprintf(c.w, "%s  %s\n\n", c.bold(fmt.Sprintf("Why %s?", toolName)), c.dim(fmt.Sprintf("%d candidate methods, first available wins", len(attempts))))
+	kindW := 0
 	for _, a := range attempts {
-		var statusSymbol string
-		switch a.Status {
-		case "would_install":
-			statusSymbol = "✓"
-		case "already_installed":
-			statusSymbol = "✓"
-		case "skip_when":
-			statusSymbol = "–"
-		case "skip_unavailable":
-			statusSymbol = "✗"
-		default:
-			statusSymbol = "?"
+		if len(a.Kind) > kindW {
+			kindW = len(a.Kind)
 		}
+	}
+	for _, a := range attempts {
 		reason := a.Error
 		if reason == "" {
 			reason = "ready to install"
 		}
-		fmt.Printf("  %s %s — %s\n", statusSymbol, a.Kind, reason)
+		kind := padRight(a.Kind, kindW)
+		switch a.Status {
+		case "would_install":
+			fmt.Fprintf(c.w, "  %s %s  %s\n", c.green("✓"), kind, c.dim("→ "+reason))
+		case "already_installed":
+			fmt.Fprintf(c.w, "  %s %s  %s\n", c.green("✓"), kind, c.dim("already installed"))
+		case "skip_when":
+			fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("skipped: "+reason))
+		case "skip_unavailable":
+			fmt.Fprintf(c.w, "  %s %s  %s\n", c.red("✗"), c.dim(kind), c.dim("unavailable: "+reason))
+		default:
+			fmt.Fprintf(c.w, "  %s %s  %s\n", c.dim("?"), kind, c.dim(reason))
+		}
 	}
+	fmt.Fprintln(c.w)
 
 	if *whyFields {
 		if provenance, ok := s.Provenance[toolName]; ok && len(provenance) > 0 {
