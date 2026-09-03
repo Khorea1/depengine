@@ -126,6 +126,38 @@ func TestSortSelfCycle(t *testing.T) {
 	}
 }
 
+func TestSortCycleWithDependentOutsideCycle(t *testing.T) {
+	// a↔b form a cycle; d depends on a cycle member but is not part of it.
+	// Walking children edges could dead-end at d and mask the real cycle;
+	// the reported cycle must name a and b regardless of map iteration order.
+	tools := map[string]*config.Tool{
+		"a": tool("a", "b"),
+		"b": tool("b", "a"),
+		"d": tool("d", "a"),
+	}
+	_, err := Sort(tools)
+	if err == nil {
+		t.Fatal("expected cycle error, got nil")
+	}
+	ce, ok := err.(*CycleError)
+	if !ok {
+		t.Fatalf("expected *CycleError, got %T: %v", err, err)
+	}
+	if len(ce.Cycle) != 2 {
+		t.Fatalf("expected 2-node cycle [a b], got %v", ce.Cycle)
+	}
+	found := map[string]bool{}
+	for _, name := range ce.Cycle {
+		if name != "a" && name != "b" {
+			t.Fatalf("cycle contains node outside the real cycle: %v", ce.Cycle)
+		}
+		found[name] = true
+	}
+	if !found["a"] || !found["b"] {
+		t.Fatalf("cycle should contain both a and b, got %v", ce.Cycle)
+	}
+}
+
 func TestSortMissingDependency(t *testing.T) {
 	tools := map[string]*config.Tool{
 		"a": tool("a", "nonexistent"),

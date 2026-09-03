@@ -83,7 +83,7 @@ func Sort(tools map[string]*config.Tool, opts ...SortOption) ([][]string, error)
 		sort.Strings(level)
 		if len(level) == 0 {
 			// Remaining tools all have inDegree > 0 → cycle.
-			cycle := extractCycle(remaining, children)
+			cycle := extractCycle(remaining, tools)
 			return nil, &CycleError{Cycle: cycle}
 		}
 
@@ -103,39 +103,41 @@ func Sort(tools map[string]*config.Tool, opts ...SortOption) ([][]string, error)
 }
 
 // extractCycle finds a cycle among the remaining (unprocessed) tools by
-// following edges until a duplicate is encountered.
-func extractCycle(remaining map[string]bool, children map[string][]string) []string {
-	visited := map[string]bool{}
+// following Requires edges until a node repeats.
+//
+// Every remaining tool requires at least one other remaining tool —
+// otherwise Kahn's algorithm would have placed it in a level — so a walk
+// along Requires edges inside remaining never dead-ends and the path must
+// revisit a node. Start nodes are tried in sorted order so the reported
+// cycle is deterministic for a given schema.
+func extractCycle(remaining map[string]bool, tools map[string]*config.Tool) []string {
+	starts := make([]string, 0, len(remaining))
 	for name := range remaining {
-		if visited[name] {
-			continue
-		}
+		starts = append(starts, name)
+	}
+	sort.Strings(starts)
+	for _, name := range starts {
 		path := []string{}
 		pathSet := map[string]int{}
 		cur := name
-		for remaining[cur] {
+		for {
 			if idx, ok := pathSet[cur]; ok {
 				// Found a cycle — slice from the first occurrence.
 				return append([]string(nil), path[idx:]...)
 			}
 			pathSet[cur] = len(path)
 			path = append(path, cur)
-			visited[cur] = true
-			// Follow first child that's also in remaining.
-			next := ""
-			for _, child := range children[cur] {
-				if remaining[child] {
-					next = child
+			// Follow the first requirement that's also in remaining.
+			// At least one exists (Kahn's invariant above).
+			for _, req := range tools[cur].Requires {
+				if remaining[req] {
+					cur = req
 					break
 				}
 			}
-			if next == "" {
-				break // dead end, no cycle from this path
-			}
-			cur = next
 		}
 	}
-	return []string{"unknown cycle"}
+	return []string{"unknown cycle"} // unreachable: a non-empty remaining set always contains a cycle
 }
 
 // CycleError is returned when a dependency cycle is detected.
