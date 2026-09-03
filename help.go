@@ -11,6 +11,7 @@ import (
 func printCommandHelp(name string) {
 	var desc string
 	fs := flag.NewFlagSet(name, flag.ExitOnError)
+	fs.SetOutput(os.Stdout)
 
 	switch name {
 	case "init":
