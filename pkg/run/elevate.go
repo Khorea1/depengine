@@ -9,9 +9,10 @@ import (
 )
 
 var (
-	elevationMu     sync.Mutex
-	elevationMethod string // "" = unprobed/not-found, "sudo"|"doas"|"pkexec"|"run0" = detected
-	elevationProbed bool   // true once detectElevation has been called
+	elevationMu         sync.Mutex
+	elevationMethod     string // "" = unprobed/not-found, "sudo"|"doas"|"pkexec"|"run0" = detected
+	elevationProbed     bool   // true once detectElevation has been called
+	elevationOverridden bool   // true when OverrideElevation forced a method, bypassing euid/probing
 )
 
 // elevationCandidates is the ordered list of elevation binaries to probe.
@@ -81,8 +82,16 @@ func ElevationMethod() string {
 // ElevationPrefix returns a command prefix to elevate privileges.
 // Returns ["sudo"], ["doas"], ["pkexec"], or ["run0"] when elevation is
 // available and needed, or nil when already root or no method works.
+//
+// A method forced via OverrideElevation always wins: tests that simulate a
+// non-root environment must get the forced prefix back even when the test
+// process itself happens to run as root (e.g. inside a container).
 func ElevationPrefix() []string {
-	if os.Geteuid() == 0 {
+	elevationMu.Lock()
+	forced := elevationOverridden
+	elevationMu.Unlock()
+
+	if !forced && os.Geteuid() == 0 {
 		return nil
 	}
 	method := ElevationMethod()
@@ -106,5 +115,6 @@ func OverrideElevation(method string) {
 	elevationMu.Lock()
 	elevationMethod = method
 	elevationProbed = method != "" // "" means "re-probe on next call"
+	elevationOverridden = method != ""
 	elevationMu.Unlock()
 }

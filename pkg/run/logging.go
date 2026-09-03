@@ -12,6 +12,15 @@ import (
 type Context struct {
 	Tool   string
 	Method string
+
+	// Probe marks this run as an availability/version/already-installed
+	// check (e.g. "which cargo", "dpkg -s foo") rather than an actual
+	// install attempt. A non-zero exit from a probe is the EXPECTED way
+	// the executor learns "not available" / "not installed yet" — it is
+	// not a failure the user needs to see scroll by. Probe results are
+	// logged at DEBUG instead of WARN; real install/build/postinstall
+	// commands (Probe: false, the default) keep full WARN visibility.
+	Probe bool
 }
 
 // command execution. Use it to get a full audit trail of all subprocesses.
@@ -79,15 +88,23 @@ func (lr *LoggingRunner) Run(ctx context.Context, name string, args ...string) R
 		"duration", elapsed.String(),
 	}, baseAttrs[4:]...) // skip cmd and args from baseAttrs (already included)
 
+	// Probes (availability/already-installed checks) failing is routine
+	// control flow, not something worth a WARN — demote to DEBUG so it
+	// only surfaces with --log-level debug / --diagnose.
+	failLevel := slog.LevelWarn
+	if lr.ctx.Probe {
+		failLevel = slog.LevelDebug
+	}
+
 	if result.Err != nil {
 		// Process failed to start or was killed (timeout, signal).
-		lr.logger.Warn("run failed", append(attrs,
+		lr.logger.Log(ctx, failLevel, "run failed", append(attrs,
 			"error", result.Err.Error(),
 			"stderr", truncateStderr(result.Stderr),
 		)...)
 	} else if result.ExitCode != 0 {
 		// Process ran but exited non-zero.
-		lr.logger.Warn("run exited non-zero", append(attrs,
+		lr.logger.Log(ctx, failLevel, "run exited non-zero", append(attrs,
 			"stderr", truncateStderr(result.Stderr),
 		)...)
 	} else {

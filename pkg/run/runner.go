@@ -11,6 +11,7 @@ package run
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -70,6 +71,21 @@ func (OSExecRunner) Run(ctx context.Context, name string, args ...string) Result
 		exit = cmd.ProcessState.ExitCode()
 	}
 
+	// cmd.Run() returns a non-nil *exec.ExitError for ANY non-zero exit —
+	// that's a command that ran fine and just said "no" (e.g. `which cargo`
+	// when cargo isn't installed, or `apt-get update` hitting a dead repo).
+	// Reporting that through Err would violate the Result contract above
+	// (and the one FakeRunner already enforces — see
+	// TestResultNonZeroExitDoesNotSetErr) and makes every caller that
+	// branches on Err vs ExitCode treat routine "ran, said no" the same as
+	// "never ran at all". Only keep Err for errors that are NOT a plain
+	// exit-status result: binary not found, permission denied, killed by
+	// signal, context deadline/cancellation, etc.
+	var exitErr *exec.ExitError
+	if runErr != nil && errors.As(runErr, &exitErr) {
+		runErr = nil
+	}
+
 	return Result{
 		Stdout:   stdout.Bytes(),
 		Stderr:   stderr.Bytes(),
@@ -103,6 +119,7 @@ func LookPath(ctx context.Context, rn Runner, name string) bool {
 // The error verbs match existing adapter conventions:
 //   - spawn failure: "<prefix>: failed: <err>"
 //   - non-zero exit:  "<prefix>: exited <code>: <stderr>"
+//
 // Use CheckResult when both cases should be errors. When only res.Err matters
 // (e.g. asdf plugin-add, best-effort version probes), handle Result inline.
 func CheckResult(res Result, prefix string) error {
