@@ -18,6 +18,9 @@ import (
 
 func relativeTime(t time.Time) string {
 	d := time.Since(t)
+	if d < 0 {
+		return "in the future"
+	}
 	switch {
 	case d < time.Minute:
 		return "just now"
@@ -143,16 +146,10 @@ func runUndo(args []string) {
 	}
 
 	if len(toRemove) == 0 {
+		// Do not restore snapshot state here: tools the user deliberately
+		// removed after the snapshot exist in snapState but not in curState;
+		// restoring snapState.Tools would reintroduce phantom entries.
 		log.Default.Info("nothing to undo (no tools were added since snapshot)")
-
-		curState.Tools = snapState.Tools
-		curState.SchemaPath = snapState.SchemaPath
-		curState.SchemaModifiedAt = snapState.SchemaModifiedAt
-		if err := ls.Save(); err != nil {
-			log.Default.Error("save state after undo", "error", err)
-			ls.Close()
-			os.Exit(3)
-		}
 		return
 	}
 
