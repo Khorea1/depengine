@@ -102,18 +102,22 @@ func runInstall(args []string) {
 	// One aligned block instead of several scattered Fprintf calls — a
 	// single glance answers "what schema, what target, how many tools,
 	// is this a dry run" before any per-tool output starts scrolling by.
+	cs := newCLIStyle(os.Stderr)
 	title := "depengine install"
 	if *installDryRun {
 		title = "depengine install — dry run (no changes will be made)"
 	}
-	fmt.Fprintln(os.Stderr, boldIfColor(title))
-	fmt.Fprintf(os.Stderr, "  schema   %s\n", *installSchema)
-	if manifestAuto && manifestCount > 0 {
-		fmt.Fprintf(os.Stderr, "  manifest %s (%d tools merged)\n", manifestPath, manifestCount)
+	pairs := [][2]string{
+		{"schema", *installSchema},
 	}
-	fmt.Fprintf(os.Stderr, "  target   %s (%s) · %s\n", facts.DistroID, clan, facts.TargetArch)
-	fmt.Fprintf(os.Stderr, "  tools    %d\n", len(s.Tools))
-	fmt.Fprintln(os.Stderr)
+	if manifestAuto && manifestCount > 0 {
+		pairs = append(pairs, [2]string{"manifest", fmt.Sprintf("%s (%s)", manifestPath, plural(manifestCount, "tool")+" merged")})
+	}
+	pairs = append(pairs,
+		[2]string{"target", fmt.Sprintf("%s (%s) · %s", facts.DistroID, clan, facts.TargetArch)},
+		[2]string{"tools", fmt.Sprintf("%d", len(s.Tools))},
+	)
+	printKV(cs, title, pairs...)
 
 	schemaFile, err := os.Stat(*installSchema)
 	if err != nil {
@@ -204,7 +208,7 @@ func runInstall(args []string) {
 
 	if *installDryRun && !*installJSON {
 		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, colorWrap("36", "Dry run — no changes were made. Remove --dry-run to install."))
+		fmt.Fprintln(os.Stderr, cs.cyan("Dry run — no changes were made. Remove --dry-run to install."))
 	}
 
 	if !*installDryRun {
@@ -219,8 +223,8 @@ func runInstall(args []string) {
 	// After successful install, guide the user to share.
 	if report.Failed == 0 && report.Success > 0 && !*installDryRun {
 		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, colorWrap("2", "Share schema.toml in git so others can reproduce your tools:"))
-		fmt.Fprintln(os.Stderr, colorWrap("2", "  git add schema.toml depengine.lock && git commit"))
+		fmt.Fprintln(os.Stderr, cs.dim("Share schema.toml in git so others can reproduce your tools:"))
+		fmt.Fprintln(os.Stderr, cs.dim("  git add schema.toml depengine.lock && git commit"))
 	}
 
 	if report.Failed > 0 {
@@ -330,8 +334,9 @@ func syncInstalledVersions(ctx context.Context, lockPath string, report *exec.Ex
 			continue
 		}
 		if state.VersionOutdated(ts.Version, pin.Latest) {
-			fmt.Fprintln(os.Stderr, colorWrap("33", fmt.Sprintf("  ⚠ %s: installed version %s differs from pinned %s (remove and reinstall to upgrade)",
-				tr.Tool, ts.Version, pin.Latest)))
+			s := newCLIStyle(os.Stderr)
+			s.warn("%s: installed version %s differs from pinned %s (run 'depengine upgrade')",
+				tr.Tool, ts.Version, pin.Latest)
 		}
 	}
 
@@ -340,24 +345,4 @@ func syncInstalledVersions(ctx context.Context, lockPath string, report *exec.Ex
 			lg.Warn("state save failed (version sync)", "error", err)
 		}
 	}
-}
-
-// boldIfColor wraps s in bold when the terminal supports color, matching
-// pkg/exec's color decision (NO_COLOR / TERM=dumb / char-device check) so
-// the CLI's own header line doesn't make a different call than the ✓/✗
-// status lines and the Detail() table right below it.
-func boldIfColor(s string) string {
-	return colorWrap("1", s)
-}
-
-// colorWrap wraps s in ANSI code (an SGR parameter, e.g. "1" for bold, "33"
-// for yellow) when color output is enabled, and returns s unchanged
-// otherwise. Centralizes the on/off decision for install.go's own tip and
-// warning lines (the "share schema.toml" hint, the pinned-version-mismatch
-// warning, the dry-run footer) so they don't each re-derive it.
-func colorWrap(code, s string) string {
-	if !exec.ShouldUseColor() {
-		return s
-	}
-	return "\033[" + code + "m" + s + "\033[0m"
 }
