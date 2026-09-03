@@ -514,14 +514,16 @@ func TestGoAdapterCheckUsesDerivedBinaryName(t *testing.T) {
 		t.Fatal("Check should report installed when the derived binary exists")
 	}
 	last := fr.Calls[len(fr.Calls)-1]
-	if last.Name != "which" || len(last.Args) != 1 || last.Args[0] != "stringer" {
-		t.Fatalf("Check ran %v %v, want which stringer", last.Name, last.Args)
+	// Template: sh -c 'command -v "$1" >/dev/null' sh stringer
+	// The positional $1 (last arg) must be the derived binary name.
+	if last.Name != "sh" || len(last.Args) != 4 || last.Args[3] != "stringer" {
+		t.Fatalf("Check ran %v %v, want sh -c 'command -v ...' sh stringer", last.Name, last.Args)
 	}
 }
 
 // TestGoAdapterCheckNeverChecksImportPath verifies the acceptance criterion
-// "no `which` on import paths anywhere": every which invocation must target
-// a bare binary name.
+// "no binary-name lookup on import paths anywhere": every check invocation
+// must target a bare binary name (no "/" in the positional argument).
 func TestGoAdapterCheckNeverChecksImportPath(t *testing.T) {
 	t.Parallel()
 	fr := &run.FakeRunner{ExitCode: 1}
@@ -536,13 +538,10 @@ func TestGoAdapterCheckNeverChecksImportPath(t *testing.T) {
 		t.Fatal("expected at least one check call")
 	}
 	for _, call := range fr.Calls {
-		if call.Name != "which" {
-			continue
-		}
-		for _, arg := range call.Args {
-			if strings.Contains(arg, "/") {
-				t.Fatalf("Check ran which on a path-style name %q (import paths must never be checked)", arg)
-			}
+		// sh -c templates carry the checked name as the trailing positional arg.
+		name := call.Args[len(call.Args)-1]
+		if strings.Contains(name, "/") {
+			t.Fatalf("Check ran a lookup on a path-style name %q (import paths must never be checked)... %v %v", name, call.Name, call.Args)
 		}
 	}
 }

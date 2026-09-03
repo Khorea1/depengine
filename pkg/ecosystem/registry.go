@@ -16,7 +16,7 @@ var Configs = map[string]BaseConfig{
 	"cargo": {
 		KindName:    "cargo",
 		Binary:      "cargo",
-		CheckTmpl:   []string{"sh", "-c", `cargo install --list | grep -qF -- "$1"`, "sh", "{pkg}"},
+		CheckTmpl:   []string{"sh", "-c", `cargo install --list | grep -qE "^$1 v"`, "sh", "{pkg}"},
 		InstallTmpl: []string{"cargo", "install", "{pkg}"},
 		RemoveTmpl:  []string{"cargo", "uninstall", "{pkg}"},
 	},
@@ -25,8 +25,9 @@ var Configs = map[string]BaseConfig{
 		Binary:   "go",
 		// {bin} is the binary name derived from the import path (last path
 		// element, or the element after /cmd/): `go install` never puts the
-		// import path itself on PATH, so `which {pkg}` could never pass.
-		CheckTmpl:   []string{"which", "{bin}"},
+		// import path itself on PATH, so `command -v {pkg}` could never pass.
+		// `command -v` is a POSIX builtin — no external `which` binary needed.
+		CheckTmpl:   []string{"sh", "-c", `command -v "$1" >/dev/null`, "sh", "{bin}"},
 		InstallTmpl: []string{"go", "install", "{pkg}@latest"},
 		// No RemoveTmpl: `go clean` does not uninstall (it only clears the
 		// build cache), so removal is handled by GoAdapter.Remove, which
@@ -43,14 +44,14 @@ var Configs = map[string]BaseConfig{
 	"pipx": {
 		KindName:    "pipx",
 		Binary:      "pipx",
-		CheckTmpl:   []string{"sh", "-c", `pipx list --short 2>/dev/null | grep -qF -- "$1"`, "sh", "{pkg}"},
+		CheckTmpl:   []string{"sh", "-c", `pipx list --short 2>/dev/null | awk -v n="$1" '$1 == n { found = 1 } END { exit !found }'`, "sh", "{pkg}"},
 		InstallTmpl: []string{"pipx", "install", "{pkg}"},
 		RemoveTmpl:  []string{"pipx", "uninstall", "{pkg}"},
 	},
 	"uv": {
 		KindName:    "uv",
 		Binary:      "uv",
-		CheckTmpl:   []string{"sh", "-c", `uv tool list 2>/dev/null | grep -qF -- "$1"`, "sh", "{pkg}"},
+		CheckTmpl:   []string{"sh", "-c", `uv tool list 2>/dev/null | awk -v n="$1" '$1 == n { found = 1 } END { exit !found }'`, "sh", "{pkg}"},
 		InstallTmpl: []string{"uv", "tool", "install", "{pkg}"},
 		RemoveTmpl:  []string{"uv", "tool", "uninstall", "{pkg}"},
 	},
@@ -72,21 +73,21 @@ var Configs = map[string]BaseConfig{
 	"bun": {
 		KindName:    "bun",
 		Binary:      "bun",
-		CheckTmpl:   []string{"sh", "-c", `bun pm ls -g | grep -qF -- "$1"`, "sh", "{pkg}"},
+		CheckTmpl:   []string{"sh", "-c", `bun pm ls -g | awk -v n="$1" 'index($NF, n "@") == 1 { found = 1 } END { exit !found }'`, "sh", "{pkg}"},
 		InstallTmpl: []string{"bun", "add", "-g", "{pkg}"},
 		RemoveTmpl:  []string{"bun", "remove", "-g", "{pkg}"},
 	},
 	"gem": {
 		KindName:    "gem",
 		Binary:      "gem",
-		CheckTmpl:   []string{"sh", "-c", `gem list "$1" | grep -qF -- "$1"`, "sh", "{pkg}"},
+		CheckTmpl:   []string{"sh", "-c", `gem list "$1" | awk -v n="$1" '$1 == n { found = 1 } END { exit !found }'`, "sh", "{pkg}"},
 		InstallTmpl: []string{"gem", "install", "{pkg}"},
 		RemoveTmpl:  []string{"gem", "uninstall", "{pkg}"},
 	},
 	"yarn": {
 		KindName:    "yarn",
 		Binary:      "yarn",
-		CheckTmpl:   []string{"sh", "-c", `yarn global list --depth=0 | grep -qF -- "$1"`, "sh", "{pkg}"},
+		CheckTmpl:   []string{"sh", "-c", `yarn global list --depth=0 | awk -v n="$1" 'index($2, "\"" n "@") == 1 { found = 1 } END { exit !found }'`, "sh", "{pkg}"},
 		InstallTmpl: []string{"yarn", "global", "add", "{pkg}"},
 		RemoveTmpl:  []string{"yarn", "global", "remove", "{pkg}"},
 	},
@@ -102,7 +103,7 @@ var Configs = map[string]BaseConfig{
 	"apm": {
 		KindName:    "apm",
 		Binary:      "apm",
-		CheckTmpl:   []string{"sh", "-c", `apm list --installed --bare | grep -qF -- "$1"`, "sh", "{pkg}"},
+		CheckTmpl:   []string{"sh", "-c", `apm list --installed --bare | awk -v n="$1" 'index($1, n "@") == 1 { found = 1 } END { exit !found }'`, "sh", "{pkg}"},
 		InstallTmpl: []string{"apm", "install", "{pkg}"},
 	},
 	"flatpak": {
@@ -125,7 +126,7 @@ var Configs = map[string]BaseConfig{
 	"vscode": {
 		KindName:       "vscode",
 		Binary:         "code",
-		CheckTmpl:      []string{"sh", "-c", `code --list-extensions | grep -qF -- "$1"`, "sh", "{pkg}"},
+		CheckTmpl:      []string{"sh", "-c", `code --list-extensions | grep -qFx -- "$1"`, "sh", "{pkg}"},
 		InstallTmpl:    []string{"code", "--install-extension", "{pkg}"},
 		AvailableExtra: "code-insiders",
 	},
@@ -133,7 +134,7 @@ var Configs = map[string]BaseConfig{
 	"vscodium": {
 		KindName:    "vscodium",
 		Binary:      "codium",
-		CheckTmpl:   []string{"sh", "-c", `codium --list-extensions | grep -qF -- "$1"`, "sh", "{pkg}"},
+		CheckTmpl:   []string{"sh", "-c", `codium --list-extensions | grep -qFx -- "$1"`, "sh", "{pkg}"},
 		InstallTmpl: []string{"codium", "--install-extension", "{pkg}"},
 	},
 	"cask": {
@@ -148,7 +149,7 @@ var Configs = map[string]BaseConfig{
 	"mas": {
 		KindName:    "mas",
 		Binary:      "mas",
-		CheckTmpl:   []string{"sh", "-c", `mas list | grep -qF -- "$1"`, "sh", "{pkg}"},
+		CheckTmpl:   []string{"sh", "-c", `mas list | awk -v n="$1" '$1 == n { found = 1 } END { exit !found }'`, "sh", "{pkg}"},
 		InstallTmpl: []string{"mas", "install", "{pkg}"},
 	},
 }
