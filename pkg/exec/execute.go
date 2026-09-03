@@ -77,7 +77,7 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 				continue
 			}
 
-			if !adapter.Available(ctx, ex.rn) {
+			if !adapter.Available(ctx, ex.probeRunner(toolName, method.Kind)) {
 				continue
 			}
 
@@ -88,7 +88,7 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 			}
 
 			// Already installed — record and exclude from remaining.
-			if adapter.Check(ctx, ex.rn, tool, method) {
+			if adapter.Check(ctx, ex.probeRunner(toolName, method.Kind), tool, method) {
 				ex.recordToolResult(ctx, &ToolResult{
 					Tool:   toolName,
 					Status: StatusAlready,
@@ -212,13 +212,16 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 		syncMgr := NewSyncManager(ex.rn, clan)
 		if syncMgr.NeedsSync() {
 			ex.outputf("  syncing package index...\n")
-			ex.logInfo(ctx, "sync", "status", "syncing")
+			ex.logDebug(ctx, "sync", "status", "syncing")
 			if err := syncMgr.Sync(ctx); err != nil {
 				// A failed index sync leaves the native manager with stale
 				// metadata — native installs may silently install wrong
 				// versions or fail unpredictably. Fail loudly instead of
-				// continuing.
-				ex.logWarn(ctx, "sync", "status", "failed", "error", err)
+				// continuing. The runner already logged the underlying
+				// command failure (cmd/exit/stderr) at WARN; the returned
+				// error propagates to install.go's top-level "execute
+				// failed" — no need for a third echo of the same message
+				// in between.
 				return nil, fmt.Errorf("package index sync failed: %w", err)
 			}
 			ex.logDebug(ctx, "sync", "status", "done")
@@ -238,7 +241,13 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 	for i, level := range levels {
 		ex.logDebug(ctx, "graph", "level", i, "tools", strings.Join(level, ", "))
 	}
-	if ex.dryRun {
+	// The level-by-level graph breakdown is internal decision-making detail
+	// (why the engine picked this order) rather than "what will happen to
+	// my system" — the per-tool ✓/✗/→ lines right below already answer
+	// that. Keep it out of the default dry-run so a plain `install
+	// --dry-run` reads as a plan, not a debugger dump; --diagnose still
+	// gets the full picture.
+	if ex.dryRun && ex.diagnose {
 		ex.outputf("  dependency order (%d levels):\n", len(levels))
 		for i, level := range levels {
 			ex.outputf("    level %d: %s\n", i, strings.Join(level, ", "))
@@ -351,7 +360,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 				// re-tries native and then any remaining methods.
 				for _, c := range candidates {
 					adapter := ex.LookupAdapter(c.method.Kind)
-					if adapter != nil && adapter.Check(ctx, ex.rn, c.tool, c.method) {
+					if adapter != nil && adapter.Check(ctx, ex.probeRunner(c.toolName, c.method.Kind), c.tool, c.method) {
 						tr := ToolResult{
 							Tool: c.toolName, Status: StatusInstalled, Method: "native", Config: c.method.Config,
 						}
@@ -428,11 +437,16 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 	}
 
 	report.Duration = time.Since(start)
-	ex.logInfo(ctx, "executor", "phase", "done",
+	// DEBUG, not INFO: the human-readable Summary()/Detail() (and --json for
+	// programmatic use) already say this right below, in prose instead of
+	// key=value pairs. Logging it again at INFO just doubles up the same
+	// information in two different visual languages back to back.
+	ex.logDebug(ctx, "executor", "phase", "done",
 		"success", report.Success,
 		"failed", report.Failed,
 		"skipped", report.Skipped,
 		"already", report.Already,
+		"would_install", report.WouldInstall,
 		"duration", report.Duration.String())
 	if ex.logger != nil && ex.logger.Enabled(ctx, slog.LevelDebug) {
 		ex.logDebug(ctx, "executor", "phase", "report", "json", report.JSON())
@@ -686,7 +700,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			continue
 		}
 
-		if !adapter.Available(toolCtx, ex.rn) {
+		if !adapter.Available(toolCtx, ex.probeRunner(tool.Name, displayKind)) {
 			attempt.Status = "skip_unavailable"
 			attempt.Error = fmt.Sprintf("adapter %q not available", displayKind)
 			result.Methods = append(result.Methods, attempt)
@@ -694,7 +708,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			continue
 		}
 
-		if adapter.Check(toolCtx, ex.rn, tool, method) {
+		if adapter.Check(toolCtx, ex.probeRunner(tool.Name, displayKind), tool, method) {
 			result.Status = StatusAlready
 			result.Method = displayKind
 			result.MethodKind = method.Kind
@@ -774,6 +788,15 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		result.MethodKind = lastMethodKind
 	}
 	result.Duration = time.Since(toolStart).String()
+}
+
+// ShouldUseColor reports whether ANSI color codes should be emitted for the
+// current process's stderr. Exported so callers outside this package (e.g.
+// the CLI's own status/tip lines in install.go) make the same terminal/
+// NO_COLOR decision as the ✓/✗/–/→ status lines and the Detail() table,
+// instead of every caller re-implementing the same character-device check.
+func ShouldUseColor() bool {
+	return shouldUseColor()
 }
 
 // shouldUseColor reports whether status output should include ANSI color
@@ -868,7 +891,7 @@ func (ex *Executor) recordToolResult(ctx context.Context, result *ToolResult, re
 		report.Failed++
 		ex.logWarn(ctx, "tool", "tool", result.Tool, "status", "failed", "error", result.Error, "duration", result.Duration)
 	case StatusWouldInstall:
-		// WouldInstall isn't counted in report totals, just logged.
+		report.WouldInstall++
 		ex.logDebug(ctx, "tool", "tool", result.Tool, "method", result.Method, "status", "would_install")
 	case StatusVirtual:
 		// Virtual isn't counted in report totals, just logged.
@@ -972,11 +995,11 @@ func (ex *Executor) runPostinstall(ctx context.Context, tool *config.Tool) error
 	if cmd == "" {
 		return nil
 	}
-		if tool.PostInstallWhen != nil && !tool.PostInstallWhen.Match(ex.facts) {
-			ex.outputf("    postinstall: skipped (when condition not met)\n")
-			ex.logDebug(ctx, "postinstall", "tool", tool.Name, "status", "skip_when")
-			return nil
-		}
+	if tool.PostInstallWhen != nil && !tool.PostInstallWhen.Match(ex.facts) {
+		ex.outputf("    postinstall: skipped (when condition not met)\n")
+		ex.logDebug(ctx, "postinstall", "tool", tool.Name, "status", "skip_when")
+		return nil
+	}
 	ex.outputf("    postinstall: %s\n", cmd)
 	ex.logDebug(ctx, "postinstall", "tool", tool.Name, "cmd", cmd)
 	// Run through sh -c to support shell syntax (pipes, redirections, quotes).

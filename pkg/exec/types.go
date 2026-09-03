@@ -68,10 +68,14 @@ type MethodAttempt struct {
 type ExecReport struct {
 	mu sync.Mutex // protects concurrent access during parallel execution
 
-	Tools    []ToolResult
-	Success  int
-	Failed   int
-	Skipped  int
-	Already  int
-	Duration time.Duration
+	Tools   []ToolResult
+	Success int
+	Failed  int
+	Skipped int
+	Already int
+	// WouldInstall counts StatusWouldInstall tools (--dry-run only). Kept
+	// separate from Success so a real install's "N installed" can never be
+	// confused with a dry-run's "N would install".
+	WouldInstall int
+	Duration     time.Duration
 }

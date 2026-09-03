@@ -20,6 +20,7 @@ type Executor struct {
 	methodTimeout      time.Duration
 	dryRun             bool
 	quiet              bool // suppress per-tool status line output (--quiet)
+	diagnose           bool // show internal decision-making detail (graph levels, etc.) (--diagnose)
 	sortBy             SortField
 	adapters           map[string]Adapter // per-instance adapter registry
 	logger             *slog.Logger       // structured logger; nil = no structured output
@@ -119,6 +120,17 @@ func WithQuiet() Option {
 	}
 }
 
+// WithDiagnose enables internal decision-making detail in the output (e.g.
+// the dependency-graph level listing during --dry-run). This is extra detail
+// aimed at debugging depengine itself, not the "what will happen to my
+// system" question a normal run answers — so it's opt-in via --diagnose
+// rather than shown by default.
+func WithDiagnose() Option {
+	return func(e *Executor) {
+		e.diagnose = true
+	}
+}
+
 // WithLogger sets the structured logger for the executor. When set, the
 // executor emits structured DEBUG/INFO logs at each decision point in
 // addition to the user-facing output via outWriter (default os.Stderr).
@@ -202,6 +214,20 @@ func New() *Executor {
 // per-instance registry. Returns nil if no adapter is registered for that kind.
 func (ex *Executor) LookupAdapter(kind string) Adapter {
 	return ex.adapters[kind]
+}
+
+// probeRunner returns ex.rn tagged as a probe for the given tool/method, so
+// that Available()/Check() calls — which routinely "fail" (exit non-zero)
+// simply to report "not installed yet" / "not on PATH" — log at DEBUG
+// instead of WARN. Real install attempts go through ex.rn untagged (or
+// tagged Probe: false) and keep full WARN visibility on failure. Falls back
+// to ex.rn unchanged if it isn't a *run.LoggingRunner (e.g. tests using
+// run.FakeRunner directly).
+func (ex *Executor) probeRunner(tool, method string) run.Runner {
+	if lr, ok := ex.rn.(*run.LoggingRunner); ok {
+		return lr.WithContext(run.Context{Tool: tool, Method: method, Probe: true})
+	}
+	return ex.rn
 }
 
 // DefaultMethodOrder returns the effective default method order for the

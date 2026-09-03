@@ -60,6 +60,9 @@ func statusPriority(s StatusEnum) int {
 // Example: "5 installed, 1 failed, 2 skipped, 3 already"
 func (r *ExecReport) Summary() string {
 	parts := []string{}
+	if r.WouldInstall > 0 {
+		parts = append(parts, fmt.Sprintf("%d would install", r.WouldInstall))
+	}
 	if r.Success > 0 {
 		parts = append(parts, fmt.Sprintf("%d installed", r.Success))
 	}
@@ -100,12 +103,36 @@ func statusLabel(s StatusEnum) string {
 	}
 }
 
-// Detail returns a formatted table with per-tool results.
+// statusColor returns the ANSI color code for a StatusEnum, matching the
+// palette colorizeStatusSymbol uses for the live ✓/✗/–/→ lines so the table
+// and the streamed output speak the same visual language.
+func statusColor(s StatusEnum) string {
+	switch s {
+	case StatusInstalled, StatusAlready:
+		return "\033[32m" // green
+	case StatusFailed:
+		return "\033[31m" // red
+	case StatusSkippedWhen, StatusSkippedUnavailable:
+		return "\033[33m" // yellow
+	case StatusWouldInstall:
+		return "\033[36m" // cyan
+	case StatusVirtual:
+		return "\033[2m" // dim
+	default:
+		return ""
+	}
+}
+
+// Detail returns a formatted table with per-tool results. Failed tools get
+// their error message on an indented line directly under the row — the
+// table is the only output shown in --quiet mode, so it needs to carry
+// enough to diagnose a failure without re-running with a different flag.
 func (r *ExecReport) Detail() string {
 	if len(r.Tools) == 0 {
-		return "no tools processed"
+		return "no tools processed\n"
 	}
 
+	color := shouldUseColor()
 	availWidth := terminalWidth()
 	toolWidth := 24
 	statusWidth := 15
@@ -142,11 +169,33 @@ func (r *ExecReport) Detail() string {
 		if method == "" {
 			method = "—"
 		}
-		b.WriteString(fmt.Sprintf(format+"\n",
-			truncate(tr.Tool, toolWidth-1),
-			statusLabel(tr.Status),
-			method,
-		))
+		label := statusLabel(tr.Status)
+		// Pad the label to statusWidth-1 BEFORE colorizing — ANSI escape
+		// codes are zero-width visually but count toward len(), which
+		// would otherwise throw off column alignment.
+		paddedLabel := label
+		if pad := statusWidth - 1 - len(label); pad > 0 {
+			paddedLabel = label + strings.Repeat(" ", pad)
+		}
+		if color {
+			if c := statusColor(tr.Status); c != "" {
+				paddedLabel = c + paddedLabel + "\033[0m"
+			}
+		}
+		row := fmt.Sprintf("%-*s %s %-*s\n",
+			toolWidth, truncate(tr.Tool, toolWidth-1),
+			paddedLabel,
+			methodWidth, method,
+		)
+		b.WriteString(row)
+		if tr.Status == StatusFailed && tr.Error != "" {
+			errLine := "    ↳ " + truncate(tr.Error, toolWidth+statusWidth+methodWidth-4)
+			if color {
+				errLine = "\033[31m" + errLine + "\033[0m"
+			}
+			b.WriteString(errLine)
+			b.WriteByte('\n')
+		}
 	}
 
 	b.WriteString(sep)
@@ -165,20 +214,22 @@ func (r *ExecReport) JSON() string {
 		Error  string `json:"error,omitempty"`
 	}
 	out := struct {
-		Tools   []jsonTool `json:"tools"`
-		Summary string     `json:"summary"`
-		Success int        `json:"success"`
-		Failed  int        `json:"failed"`
-		Skipped int        `json:"skipped"`
-		Already int        `json:"already"`
-		Seconds float64    `json:"duration_seconds"`
+		Tools        []jsonTool `json:"tools"`
+		Summary      string     `json:"summary"`
+		Success      int        `json:"success"`
+		Failed       int        `json:"failed"`
+		Skipped      int        `json:"skipped"`
+		Already      int        `json:"already"`
+		WouldInstall int        `json:"would_install,omitempty"`
+		Seconds      float64    `json:"duration_seconds"`
 	}{
-		Summary: r.Summary(),
-		Success: r.Success,
-		Failed:  r.Failed,
-		Skipped: r.Skipped,
-		Already: r.Already,
-		Seconds: r.Duration.Seconds(),
+		Summary:      r.Summary(),
+		Success:      r.Success,
+		Failed:       r.Failed,
+		Skipped:      r.Skipped,
+		Already:      r.Already,
+		WouldInstall: r.WouldInstall,
+		Seconds:      r.Duration.Seconds(),
 	}
 	for _, tr := range r.Tools {
 		out.Tools = append(out.Tools, jsonTool{

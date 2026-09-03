@@ -91,15 +91,29 @@ func runInstall(args []string) {
 		lg.Error("load schema", "error", err)
 		os.Exit(exitCodeForError(err))
 	}
-	if manifestAuto && manifestCount > 0 {
-		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
-	}
 	if helper := s.Defaults.AurHelper; helper != "" {
 		ecosystem.ReconfigureAUR(helper)
 	}
 
-	fmt.Fprintf(os.Stderr, "depengine install: distro=%s clan=%s arch=%s tools=%d\n",
-		facts.DistroID, clan, facts.TargetArch, len(s.Tools))
+	if *installVerbose {
+		fmt.Fprintln(os.Stderr, "depengine: --verbose is deprecated; output is now verbose by default. Use --quiet for the old summary-only behavior.")
+	}
+
+	// One aligned block instead of several scattered Fprintf calls — a
+	// single glance answers "what schema, what target, how many tools,
+	// is this a dry run" before any per-tool output starts scrolling by.
+	title := "depengine install"
+	if *installDryRun {
+		title = "depengine install — dry run (no changes will be made)"
+	}
+	fmt.Fprintln(os.Stderr, boldIfColor(title))
+	fmt.Fprintf(os.Stderr, "  schema   %s\n", *installSchema)
+	if manifestAuto && manifestCount > 0 {
+		fmt.Fprintf(os.Stderr, "  manifest %s (%d tools merged)\n", manifestPath, manifestCount)
+	}
+	fmt.Fprintf(os.Stderr, "  target   %s (%s) · %s\n", facts.DistroID, clan, facts.TargetArch)
+	fmt.Fprintf(os.Stderr, "  tools    %d\n", len(s.Tools))
+	fmt.Fprintln(os.Stderr)
 
 	schemaFile, err := os.Stat(*installSchema)
 	if err != nil {
@@ -107,9 +121,6 @@ func runInstall(args []string) {
 		os.Exit(exitCodeForError(err))
 	}
 
-	if *installVerbose {
-		fmt.Fprintln(os.Stderr, "depengine: --verbose is deprecated; output is now verbose by default. Use --quiet for the old summary-only behavior.")
-	}
 	ex := exec.New()
 	exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
 	exec.WithAdapters(
@@ -136,6 +147,9 @@ func runInstall(args []string) {
 	}
 	if *installQuiet {
 		exec.WithQuiet()(ex)
+	}
+	if *installDiagnose {
+		exec.WithDiagnose()(ex)
 	}
 
 	lockPath := lock.DefaultPath(*installSchema)
@@ -176,10 +190,21 @@ func runInstall(args []string) {
 
 	if *installJSON {
 		fmt.Println(report.JSON())
-	} else if *installVerbose || *installDryRun {
+	} else if *installQuiet || *installVerbose {
+		// --quiet showed no live per-tool lines, so the table is the only
+		// place detail (and failure reasons) surface. --verbose is an
+		// explicit ask for the same recap in addition to what already
+		// streamed. Plain --dry-run and plain install deliberately do NOT
+		// hit this branch: the live ✓/✗/→ lines already told the whole
+		// story, and reprinting them as a table would just be noise.
 		fmt.Fprint(os.Stderr, report.Detail())
 	} else {
 		fmt.Fprintln(os.Stderr, report.Summary())
+	}
+
+	if *installDryRun && !*installJSON {
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, colorWrap("36", "Dry run — no changes were made. Remove --dry-run to install."))
 	}
 
 	if !*installDryRun {
@@ -193,8 +218,9 @@ func runInstall(args []string) {
 
 	// After successful install, guide the user to share.
 	if report.Failed == 0 && report.Success > 0 && !*installDryRun {
-		fmt.Fprintln(os.Stderr, "Share schema.toml in git so others can reproduce your tools:")
-		fmt.Fprintln(os.Stderr, "  git add schema.toml depengine.lock && git commit")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, colorWrap("2", "Share schema.toml in git so others can reproduce your tools:"))
+		fmt.Fprintln(os.Stderr, colorWrap("2", "  git add schema.toml depengine.lock && git commit"))
 	}
 
 	if report.Failed > 0 {
@@ -304,8 +330,8 @@ func syncInstalledVersions(ctx context.Context, lockPath string, report *exec.Ex
 			continue
 		}
 		if state.VersionOutdated(ts.Version, pin.Latest) {
-			fmt.Fprintf(os.Stderr, "  ⚠ %s: installed version %s differs from pinned %s (remove and reinstall to upgrade)\n",
-				tr.Tool, ts.Version, pin.Latest)
+			fmt.Fprintln(os.Stderr, colorWrap("33", fmt.Sprintf("  ⚠ %s: installed version %s differs from pinned %s (remove and reinstall to upgrade)",
+				tr.Tool, ts.Version, pin.Latest)))
 		}
 	}
 
@@ -314,4 +340,24 @@ func syncInstalledVersions(ctx context.Context, lockPath string, report *exec.Ex
 			lg.Warn("state save failed (version sync)", "error", err)
 		}
 	}
+}
+
+// boldIfColor wraps s in bold when the terminal supports color, matching
+// pkg/exec's color decision (NO_COLOR / TERM=dumb / char-device check) so
+// the CLI's own header line doesn't make a different call than the ✓/✗
+// status lines and the Detail() table right below it.
+func boldIfColor(s string) string {
+	return colorWrap("1", s)
+}
+
+// colorWrap wraps s in ANSI code (an SGR parameter, e.g. "1" for bold, "33"
+// for yellow) when color output is enabled, and returns s unchanged
+// otherwise. Centralizes the on/off decision for install.go's own tip and
+// warning lines (the "share schema.toml" hint, the pinned-version-mismatch
+// warning, the dry-run footer) so they don't each re-derive it.
+func colorWrap(code, s string) string {
+	if !exec.ShouldUseColor() {
+		return s
+	}
+	return "\033[" + code + "m" + s + "\033[0m"
 }
