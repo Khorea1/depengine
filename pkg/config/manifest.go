@@ -36,13 +36,6 @@ func DefaultManifestPath() string {
 	return p
 }
 
-// ResolveSchemaFromFiles is a convenience that parses a local schema and one
-// or more manifest files (in order), validates the manifest layers.
-//
-// Each manifest path is parsed with ParseSchema(path, nil, "packages") and
-// validated with ValidateManifestLayer. An empty manifest path is skipped.
-// The result merges all layers: manifest files (earlier = lower priority),
-
 // FilterManifestTools removes tools from the manifest that are not present in
 // the schema when AllowNewTools is false. When AllowNewTools is true, all tools
 // are kept (they may introduce new capabilities).
@@ -60,6 +53,12 @@ func FilterManifestTools(schema, manifest *Schema) {
 	}
 }
 
+// ResolveSchemaFromFiles is a convenience that parses a local schema and one
+// or more manifest files (in order), validates the manifest layers.
+//
+// Each manifest path is parsed with ParseSchema(path, nil, "packages") and
+// validated with ValidateManifestLayer. An empty manifest path is skipped.
+// The result merges all layers: manifest files (earlier = lower priority),
 // then the local schema (highest priority).
 func ResolveSchemaFromFiles(schemaPath string, manifestPaths ...string) (*Schema, error) {
 	s, err := ParseSchema(schemaPath, nil)
@@ -67,8 +66,9 @@ func ResolveSchemaFromFiles(schemaPath string, manifestPaths ...string) (*Schema
 		return nil, fmt.Errorf("parse schema: %w", err)
 	}
 
-	// Collect layers from least to most specific.
-	layers := []*Schema{s}
+	// Collect layers from least to most specific: every manifest in the
+	// order given, then the schema last (highest priority).
+	layers := make([]*Schema, 0, len(manifestPaths)+1)
 
 	for _, mp := range manifestPaths {
 		if mp == "" {
@@ -87,8 +87,9 @@ func ResolveSchemaFromFiles(schemaPath string, manifestPaths ...string) (*Schema
 		if err := ValidateManifestNewTools(s, mt); err != nil {
 			return nil, fmt.Errorf("manifest %s: %w", mp, err)
 		}
-		layers = append(layers[:len(layers)-1], mt, layers[len(layers)-1])
+		layers = append(layers, mt)
 	}
+	layers = append(layers, s)
 
 	return MergeLayers(layers...), nil
 }
@@ -288,6 +289,12 @@ func mergeMethodConfigs(lower, upper *MethodCandidate, pc *provenanceCollector) 
 
 	return result
 }
+// mergeSlices applies MergeUnionSlice for a specific field. It only knows
+// about "Tags" today — that is the only field registered with
+// MergeUnionSlice in ToolFieldStrategy. If a new field is ever given that
+// strategy, it MUST get a case here too, or its values will silently pass
+// through unmerged (the clone from mergeTools' base layer wins with no
+// union and no error).
 func mergeSlices(result *Tool, lower, upper *Tool, field string) *Tool {
 	switch field {
 	case "Tags":
@@ -301,6 +308,8 @@ func mergeSlices(result *Tool, lower, upper *Tool, field string) *Tool {
 				seen[v] = true
 			}
 		}
+	default:
+		panic(fmt.Sprintf("mergeSlices: field %q has MergeUnionSlice strategy but no merge case implemented", field))
 	}
 	return result
 }
@@ -457,6 +466,24 @@ func setFieldZero(t *Tool, field string) error {
 	return nil
 }
 
+// ValidateManifestNewTools checks that the manifest does not introduce tools
+// not present in the schema unless AllowNewTools is true in the manifest.
+//
+// When AllowNewTools is false, manifest-only tools are silently ignored
+// ("rejected" = excluded from merge, not an error). Use FilterManifestTools
+// before this function to strip them from the manifest, or simply rely on
+// the fact that this function returns nil — the contract is that manifest-only
+// tools are excluded by default, not errored.
+//
+// This is intentionally always nil today (kept for call-site/API stability
+// across pkg/config and its callers: helpers.go, status_remove_forget.go,
+// graph_why.go). Deleting it outright would require touching those files too,
+// which is outside the pkg/config-only scope of this change.
+func ValidateManifestNewTools(schema, manifest *Schema) error {
+	_ = schema // kept for signature compatibility; filtering is handled by FilterManifestTools
+	return nil
+}
+
 func ValidateManifestLayer(s *Schema) error {
 	var errs []string
 	// Sort tool names for deterministic error messages across runs
@@ -522,15 +549,3 @@ func toolFieldToTOML(field string) string {
 	}
 }
 
-// ValidateManifestNewTools checks that the manifest does not introduce tools
-// not present in the schema unless AllowNewTools is true in the manifest.
-//
-// When AllowNewTools is false, manifest-only tools are silently ignored
-// ("rejected" = excluded from merge, not an error). Use FilterManifestTools
-// before this function to strip them from the manifest, or simply rely on
-// the fact that this function returns nil — the contract is that manifest-only
-// tools are excluded by default, not errored.
-func ValidateManifestNewTools(schema, manifest *Schema) error {
-	_ = schema // kept for signature compatibility; filtering is handled by FilterManifestTools
-	return nil
-}
