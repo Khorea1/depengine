@@ -89,6 +89,24 @@ Resolves `{latest}` placeholders and writes `depengine.lock`.
 | `-v` | `false` | Verbose output |
 | `--manifest` / `--no-manifest` | — | Same as `install` |
 
+## `depengine upgrade [flags]`
+
+Upgrades installed tools whose recorded version is older than the pinned
+version in `depengine.lock`. Requires a lockfile — run `depengine update`
+first to resolve and pin versions. For each outdated tool, removes the old
+install and reinstalls at the pinned version, then updates state.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--schema` | auto | Path to schema |
+| `--manifest` / `--no-manifest` | — | Same as `install` |
+| `--only <tool>` | — | Only upgrade this tool |
+| `--dry-run` | `false` | Show what would be upgraded without making changes |
+| `--force` | `false` | Skip confirmation prompt |
+| `--json` | `false` | JSON output |
+| `--quiet` | `false` | Suppress per-tool status lines |
+| `--allow-arbitrary-code` | `false` | Suppress security warnings for build scripts / arbitrary code |
+
 ## `depengine graph [flags]`
 
 Shows the dependency graph as text, Mermaid, or DOT.

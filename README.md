@@ -175,6 +175,7 @@ Full breakdown: [manifest merge rules](docs/schema-reference.md#manifest-merge-r
 | `status` | Show what's installed (all tools; positional args ignored) |
 | `remove <tool>` | Uninstall a tool |
 | `update` | Resolve `{latest}` placeholders, write `depengine.lock` |
+| `upgrade` | Upgrade installed tools to the versions pinned in `depengine.lock` |
 | `graph` | Show the dependency graph |
 | `why <tool>` | Explain how a tool would be installed |
 | `forget <tool>` | Drop a tool from state without touching the system |

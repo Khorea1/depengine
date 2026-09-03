@@ -7,6 +7,7 @@ _depengine_commands() {
     'install:Instalar ferramentas do schema.toml'
     'init:Inicializar um novo schema.toml'
     'update:Resolver {latest} e travar versões no depengine.lock'
+    'upgrade:Atualizar ferramentas instaladas para as versões travadas no depengine.lock'
     'validate:Validar schema.toml e ambiente'
     'check:Verificar se ferramentas já estão instaladas'
     'status:Mostrar estado das ferramentas em relação ao schema'
@@ -134,6 +135,19 @@ _depengine() {
           '--frozen-lockfile[Abortar se depengine.lock não existir]'
           '--dry-run[Simulação sem escrever lockfile]'
           '--lock[Caminho para o lockfile]'
+        )
+        ;;
+      upgrade)
+        flags=(
+          '--schema[Caminho para o schema]'
+          '--manifest[Caminho para o manifest pessoal]'
+          '--no-manifest[Desabilitar o manifest pessoal]'
+          '--only[Atualizar apenas uma tool específica]'
+          '--dry-run[Simulação sem alterações]'
+          '--force[Pular confirmação]'
+          '--json[Saída em JSON]'
+          '--quiet[Suprimir linhas de status por tool]'
+          '--allow-arbitrary-code[Permitir scripts de build arbitrários]'
         )
         ;;
       graph)

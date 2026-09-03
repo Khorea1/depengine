@@ -13,7 +13,7 @@ _depengine() {
     local cur prev words cword
     _init_completion -n = || return
 
-    local cmds="install init check status remove version validate help completion undo sbom graph diff update why forget"
+    local cmds="install init check status remove version validate help completion undo sbom graph diff update upgrade why forget"
 
     # Dynamic flag values (--flag:values...)
     local log_levels="error warn info debug"
@@ -114,6 +114,19 @@ _depengine() {
                 "--frozen-lockfile	Abortar se depengine.lock não existir"
                 "--dry-run	Simulação sem escrever lockfile"
                 "--lock	Caminho para o lockfile"
+            )
+            ;;
+        upgrade)
+            flag_descs=(
+                "--schema	Caminho para o schema"
+                "--manifest	Caminho para o manifest pessoal"
+                "--no-manifest	Desabilitar o manifest pessoal"
+                "--only	Atualizar apenas uma tool específica"
+                "--dry-run	Simulação sem alterações"
+                "--force	Pular confirmação"
+                "--json	Saída em JSON"
+                "--quiet	Suprimir linhas de status por tool"
+                "--allow-arbitrary-code	Permitir scripts de build arbitrários"
             )
             ;;
         graph)

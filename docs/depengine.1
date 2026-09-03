@@ -82,6 +82,17 @@ such as grype or trivy.
 .B update " [flags]"
 Resolves {latest} placeholders (git refs, http URLs) via the GitHub API and writes the pinned versions to \fBdepengine.lock\fR. Use \fB\-\-frozen\-lockfile\fR to abort if the lockfile does not exist.
 .TP
+.B upgrade " [flags]"
+Upgrades installed tools whose recorded version is older than the pinned
+version in \fBdepengine.lock\fR. Requires a lockfile \(em run
+.B update
+first. For each outdated tool, removes the old install and reinstalls at
+the pinned version, then updates state. Use
+.B \-\-only
+to restrict to one tool and
+.B \-\-dry\-run
+to preview without making changes.
+.TP
 .B why " <tool>"
 Explains how a tool would be installed: for each method, reports the
 status (\fBalready_installed\fR, \fBwould_install\fR,
@@ -220,6 +231,25 @@ Abort if no lockfile exists (prevents resolving {latest} from network).
 .TP
 .BR \-\-dry\-run
 Show what would be updated without executing.
+.SS "upgrade flags"
+.TP
+.BR \-\-only " <tool>"
+Only upgrade this tool.
+.TP
+.BR \-\-dry\-run
+Show what would be upgraded without making changes.
+.TP
+.BR \-\-force
+Skip the confirmation prompt.
+.TP
+.BR \-\-json
+Emit JSON output.
+.TP
+.BR \-\-quiet
+Suppress per-tool status lines.
+.TP
+.BR \-\-allow\-arbitrary\-code
+Suppress security warnings for build scripts / arbitrary code.
 .SS "schema-level per-tool method control"
 .TP
 .B method_prefer

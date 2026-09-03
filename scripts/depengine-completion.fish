@@ -1,7 +1,7 @@
 # fish completion for depengine
 
 function _depengine_completions
-    set --local cmds install init check status remove version validate help completion undo sbom graph diff update why forget
+    set --local cmds install init check status remove version validate help completion undo sbom graph diff update upgrade why forget
 
     set --local cmd (commandline -opc)
     set --local cmd_count (count $cmd)
@@ -92,6 +92,16 @@ function _depengine_completions
             echo -e "--frozen-lockfile\tAbortar se depengine.lock não existir"
             echo -e "--dry-run\tSimulação sem escrever lockfile"
             echo -e "--lock\tCaminho para o lockfile"
+        case upgrade
+            echo -e "--schema\tCaminho para o schema"
+            echo -e "--manifest\tCaminho para o manifest pessoal"
+            echo -e "--no-manifest\tDesabilitar o manifest pessoal"
+            echo -e "--only\tAtualizar apenas uma tool específica"
+            echo -e "--dry-run\tSimulação sem alterações"
+            echo -e "--force\tPular confirmação"
+            echo -e "--json\tSaída em JSON"
+            echo -e "--quiet\tSuprimir linhas de status por tool"
+            echo -e "--allow-arbitrary-code\tPermitir scripts de build arbitrários"
         case graph
             echo -e "--schema\tCaminho para o schema"
             echo -e "--format\tFormato: text, mermaid, dot"
