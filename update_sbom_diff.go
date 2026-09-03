@@ -56,10 +56,17 @@ func runUpdate(args []string) {
 		ecosystem.ReconfigureAUR(helper)
 	}
 
-	fmt.Fprintf(os.Stderr, "depengine update: distro=%s clan=%s arch=%s tools=%d\n",
-		facts.DistroID, clan, facts.TargetArch, len(s.Tools))
-
 	s.Tools = filterTools(s.Tools, "", "", *updateProfile)
+
+	// Aligned KV block up front — same header language as install — so the
+	// plan (what schema, which target, how many tools) reads in one glance
+	// before the spinner takes over the line below.
+	c := newCLIStyle(os.Stderr)
+	printKV(c, "depengine update",
+		[2]string{"schema", *updateSchema},
+		[2]string{"target", fmt.Sprintf("%s (%s) · %s", facts.DistroID, clan, facts.TargetArch)},
+		[2]string{"tools", fmt.Sprintf("%d", len(s.Tools))},
+	)
 
 	done := spinner(ctx, "Resolving latest versions")
 	newLock, err := lock.ResolveAll(ctx, s, run.OSExecRunner{})
@@ -79,18 +86,18 @@ func runUpdate(args []string) {
 			os.Exit(2)
 		}
 	}
+	pinned := len(newLock.Tools)
 	if *updateDryRun {
-		fmt.Fprintf(os.Stderr, "dry-run: %d pins would be written to %s\n", len(newLock.Tools), lockPath)
+		done(c.cyan("dry-run"))
+		c.arrow("would pin %d versions to %s", pinned, lockPath)
 	} else {
 		if err := lock.Save(lockPath, newLock); err != nil {
-			fmt.Fprintln(os.Stderr, "FAIL")
+			done("FAIL")
 			lg.Error("save lock", "error", err)
 			os.Exit(1)
 		}
+		done(fmt.Sprintf("(%d pinned)", pinned))
 	}
-
-	pinned := len(newLock.Tools)
-	done(fmt.Sprintf("done (%d pinned)", pinned))
 
 	// Warn about installed tools whose versions no longer match the pins
 	// that were just resolved. Warn-only: applying the new versions is a
@@ -98,15 +105,31 @@ func runUpdate(args []string) {
 	reportVersionDrift(newLock)
 
 	if *updateVerbose {
-		for key, pin := range newLock.Tools {
-			fmt.Fprintf(os.Stderr, "  %s → %s\n", key, pin.Latest)
+		// Sorted so reruns are diffable; aligned so the eye scans the
+		// version column, not the ragged arrow column.
+		keys := make([]string, 0, len(newLock.Tools))
+		for key := range newLock.Tools {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		keyW := 0
+		for _, k := range keys {
+			if len(k) > keyW {
+				keyW = len(k)
+			}
+		}
+		for _, key := range keys {
+			pin := newLock.Tools[key]
+			fmt.Fprintf(os.Stderr, "  %s  → %s\n", padRight(key, keyW), c.cyan(pin.Latest))
 			if pin.Checksum != "" {
-				fmt.Fprintf(os.Stderr, "    checksum: %s\n", pin.Checksum)
+				fmt.Fprintf(os.Stderr, "  %s  %s\n", padRight("", keyW), c.dim(pin.Checksum))
 			}
 		}
 	}
 
-	fmt.Fprintln(os.Stderr, "Run 'depengine install' to use the updated lock.")
+	if !*updateDryRun {
+		fmt.Fprintln(c.w, c.dim("Run 'depengine install' to apply."))
+	}
 }
 
 // reportVersionDrift compares freshly-resolved lock pins against the versions
@@ -144,11 +167,12 @@ func reportVersionDrift(newLock *lock.Lock) {
 		return
 	}
 	sort.Strings(drifted)
-	fmt.Fprintln(os.Stderr, "  ⚠ version drift: installed versions differ from newly-pinned versions")
+	c := newCLIStyle(os.Stderr)
+	fmt.Fprintln(c.w, c.yellow("  ⚠ version drift: installed versions differ from newly-pinned versions"))
 	for _, d := range drifted {
-		fmt.Fprintf(os.Stderr, "    %s\n", d)
+		fmt.Fprintf(c.w, "    %s\n", d)
 	}
-	fmt.Fprintln(os.Stderr, "    Remove and reinstall the affected tools to upgrade.")
+	fmt.Fprintln(c.w, c.dim("    Run 'depengine upgrade' to apply."))
 }
 
 func runSBOM(args []string) {
@@ -275,6 +299,7 @@ func runDiff(args []string) {
 			os.Exit(3)
 		}
 	} else {
+		c := newCLIStyle(os.Stderr)
 		var onlyA, onlyB, diffCount int
 		for _, item := range items {
 			switch item.Side {
@@ -287,36 +312,39 @@ func runDiff(args []string) {
 			}
 		}
 
+		// Section headers are bold, counts live in the header line, and each
+		// entry is one aligned line — a diff is scanned section-first, so the
+		// header must carry the "is there anything here" answer by itself.
 		if onlyA > 0 {
-			fmt.Fprintln(os.Stderr, "=== Only in current ===")
+			fmt.Fprintf(c.w, "\n%s\n", c.bold(fmt.Sprintf("Only in current (%d)", onlyA)))
 			for _, item := range items {
 				if item.Side == "only_a" {
-					fmt.Fprintf(os.Stderr, "  %s (%s, installed %s)\n", item.Name, item.MethodA, item.InstalledAtA)
+					fmt.Fprintf(c.w, "  %s %s  %s\n", c.green("+"), item.Name, c.dim(fmt.Sprintf("%s, %s", item.MethodA, item.InstalledAtA)))
 				}
 			}
 		}
 
 		if onlyB > 0 {
-			fmt.Fprintln(os.Stderr, "=== Only in other ===")
+			fmt.Fprintf(c.w, "\n%s\n", c.bold(fmt.Sprintf("Only in other (%d)", onlyB)))
 			for _, item := range items {
 				if item.Side == "only_b" {
-					fmt.Fprintf(os.Stderr, "  %s (%s, installed %s)\n", item.Name, item.MethodB, item.InstalledAtB)
+					fmt.Fprintf(c.w, "  %s %s  %s\n", c.red("-"), item.Name, c.dim(fmt.Sprintf("%s, %s", item.MethodB, item.InstalledAtB)))
 				}
 			}
 		}
 
 		if diffCount > 0 {
-			fmt.Fprintln(os.Stderr, "=== Definition changed ===")
+			fmt.Fprintf(c.w, "\n%s\n", c.bold(fmt.Sprintf("Definition changed (%d)", diffCount)))
 			for _, item := range items {
 				if item.Side == "different" {
-					fmt.Fprintf(os.Stderr, "  %s\n", item.Name)
-					fmt.Fprintf(os.Stderr, "    current: %s (hash: %s)\n", item.MethodA, item.HashA)
-					fmt.Fprintf(os.Stderr, "    other: %s (hash: %s)\n", item.MethodB, item.HashB)
+					fmt.Fprintf(c.w, "  %s %s\n", c.yellow("~"), item.Name)
+					fmt.Fprintf(c.w, "    %s %s %s\n", c.dim("current:"), item.MethodA, c.dim(fmt.Sprintf("(hash: %s)", item.HashA)))
+					fmt.Fprintf(c.w, "    %s %s %s\n", c.dim("other:  "), item.MethodB, c.dim(fmt.Sprintf("(hash: %s)", item.HashB)))
 				}
 			}
 		}
 
-		fmt.Fprintf(os.Stderr, "\n%d tools differ.\n", len(items))
+		fmt.Fprintf(c.w, "\n%s\n", c.dim(fmt.Sprintf("%s differ.", plural(len(items), "tool"))))
 	}
 }
 
