@@ -8,17 +8,16 @@ import (
 	"github.com/Khorea1/depengine/pkg/config"
 )
 
-// RenderMermaid returns a Mermaid flowchart string from the topological levels
-// and the tool dependency map. It produces:
+// RenderMermaid returns a Mermaid flowchart string from the tool dependency
+// map. It produces:
 //
 //	graph TD
-//	  level0_tool1 --> level1_toolA
-//	  level0_tool2 --> level1_toolA
+//	  dep --> tool
 //	  ...
 //
 // Arrows point from dependencies to the tools that require them,
 // showing the installation order (dependencies first).
-func RenderMermaid(levels [][]string, tools map[string]*config.Tool) string {
+func RenderMermaid(tools map[string]*config.Tool) string {
 	var b strings.Builder
 	b.WriteString("graph TD\n")
 
@@ -38,7 +37,7 @@ func RenderMermaid(levels [][]string, tools map[string]*config.Tool) string {
 //	}
 //
 // Arrows point from dependencies to the tools that require them.
-func RenderDOT(levels [][]string, tools map[string]*config.Tool) string {
+func RenderDOT(tools map[string]*config.Tool) string {
 	var b strings.Builder
 	b.WriteString("digraph depengine {\n")
 

@@ -13,9 +13,8 @@ func TestRenderMermaid(t *testing.T) {
 		"b": {Name: "b", Requires: []string{"c"}},
 		"c": {Name: "c"},
 	}
-	levels := [][]string{{"c"}, {"b"}, {"a"}}
 
-	got := RenderMermaid(levels, tools)
+	got := RenderMermaid(tools)
 
 	if !strings.HasPrefix(got, "graph TD\n") {
 		t.Errorf("RenderMermaid should start with 'graph TD\\n':\n%s", got)
@@ -34,9 +33,8 @@ func TestRenderDOT(t *testing.T) {
 		"b": {Name: "b", Requires: []string{"c"}},
 		"c": {Name: "c"},
 	}
-	levels := [][]string{{"c"}, {"b"}, {"a"}}
 
-	got := RenderDOT(levels, tools)
+	got := RenderDOT(tools)
 
 	if !strings.HasPrefix(got, "digraph depengine {\n") {
 		t.Errorf("RenderDOT should start with 'digraph depengine {\\n':\n%s", got)
@@ -96,14 +94,13 @@ func TestRenderNoEdges(t *testing.T) {
 		"a": {Name: "a"},
 		"b": {Name: "b"},
 	}
-	levels := [][]string{{"a", "b"}}
 
-	mermaid := RenderMermaid(levels, tools)
+	mermaid := RenderMermaid(tools)
 	if mermaid != "graph TD\n" {
 		t.Errorf("RenderMermaid with no deps should only have header:\n%s", mermaid)
 	}
 
-	dot := RenderDOT(levels, tools)
+	dot := RenderDOT(tools)
 	if dot != "digraph depengine {\n}\n" {
 		t.Errorf("RenderDOT with no deps should only have wrapper:\n%s", dot)
 	}
@@ -119,14 +116,14 @@ func TestRenderDeterministic(t *testing.T) {
 	}
 	levels := [][]string{{"b"}, {"a", "m"}, {"z"}}
 
-	m1 := RenderMermaid(levels, tools)
-	m2 := RenderMermaid(levels, tools)
+	m1 := RenderMermaid(tools)
+	m2 := RenderMermaid(tools)
 	if m1 != m2 {
 		t.Errorf("RenderMermaid not deterministic:\n%s\nvs\n%s", m1, m2)
 	}
 
-	d1 := RenderDOT(levels, tools)
-	d2 := RenderDOT(levels, tools)
+	d1 := RenderDOT(tools)
+	d2 := RenderDOT(tools)
 	if d1 != d2 {
 		t.Errorf("RenderDOT not deterministic:\n%s\nvs\n%s", d1, d2)
 	}

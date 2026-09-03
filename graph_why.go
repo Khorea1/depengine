@@ -91,9 +91,9 @@ func runGraph(args []string) {
 	}
 	switch *graphFormat {
 	case "mermaid":
-		fmt.Print(graph.RenderMermaid(levels, s.Tools))
+		fmt.Print(graph.RenderMermaid(s.Tools))
 	case "dot":
-		fmt.Print(graph.RenderDOT(levels, s.Tools))
+		fmt.Print(graph.RenderDOT(s.Tools))
 	case "text":
 		fmt.Print(graph.RenderText(levels, s.Tools))
 	}
