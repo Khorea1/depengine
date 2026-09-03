@@ -166,10 +166,6 @@ func runStatus(args []string) {
 		}
 	}
 
-	sort.Slice(tools, func(i, j int) bool {
-		return tools[i].Name < tools[j].Name
-	})
-
 	if *statusFormat == "json" {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -189,10 +185,97 @@ func runStatus(args []string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "%-30s %-12s %-10s %-18s  %s\n", "Tool", "Status", "Method", "Version", "Installed At")
-	fmt.Fprintln(os.Stderr, strings.Repeat("-", 88))
+	// Actionable states first: outdated tools need attention, missing ones
+	// block the schema, orphaned ones are cleanup candidates. Installed and
+	// healthy come last — they're the background noise.
+	sort.SliceStable(tools, func(i, j int) bool {
+		pi, pj := statusRank(tools[i].Status), statusRank(tools[j].Status)
+		if pi != pj {
+			return pi < pj
+		}
+		return tools[i].Name < tools[j].Name
+	})
+
+	c := newCLIStyle(os.Stderr)
+	nameW, stW, methW, verW := len("Tool"), len("Status"), len("Method"), len("Version")
 	for _, t := range tools {
-		fmt.Fprintf(os.Stderr, "%-30s %-12s %-10s %-18s  %s\n", t.Name, t.Status, t.Method, t.Version, t.Updated)
+		if len(t.Name) > nameW {
+			nameW = len(t.Name)
+		}
+		if len(t.Status) > stW {
+			stW = len(t.Status)
+		}
+		if len(t.Method) > methW {
+			methW = len(t.Method)
+		}
+		if len(t.Version) > verW {
+			verW = len(t.Version)
+		}
+	}
+
+	fmt.Fprintf(c.w, "  %s  %s  %s  %s  %s\n",
+		c.dim(padRight("Tool", nameW)), c.dim(padRight("Status", stW)),
+		c.dim(padRight("Method", methW)), c.dim(padRight("Version", verW)), c.dim("Installed"))
+	counts := map[string]int{}
+	for _, t := range tools {
+		counts[t.Status]++
+		method := t.Method
+		if method == "" {
+			method = "—"
+		}
+		version := t.Version
+		if version == "" {
+			version = "—"
+		}
+		// Relative time scans faster than an RFC3339 timestamp for a "how old
+		// is this install" question the status table answers constantly.
+		installed := "—"
+		if ts, err := time.Parse(time.RFC3339, t.Updated); err == nil {
+			installed = relativeTime(ts)
+		} else if t.Updated != "" {
+			installed = t.Updated
+		}
+		fmt.Fprintf(c.w, "  %s  %s  %s  %s  %s\n",
+			padRight(t.Name, nameW), statusStyled(c, padRight(t.Status, stW), t.Status),
+			padRight(method, methW), c.dim(padRight(version, verW)), c.dim(installed))
+	}
+
+	fmt.Fprintln(c.w)
+	var parts []string
+	for _, st := range []string{"outdated", "missing", "orphaned", "installed"} {
+		if n := counts[st]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, st))
+		}
+	}
+	fmt.Fprintf(c.w, "  %s\n", c.dim(strings.Join(parts, "  ·  ")))
+}
+
+func statusRank(s string) int {
+	switch s {
+	case "outdated":
+		return 0
+	case "missing":
+		return 1
+	case "orphaned":
+		return 2
+	default: // installed
+		return 3
+	}
+}
+
+// statusStyled colors a status word by severity. The string must already be
+// padded — the caller pads before colorizing so ANSI escapes don't break
+// column alignment.
+func statusStyled(c *cliStyle, padded, status string) string {
+	switch status {
+	case "outdated":
+		return c.yellow(padded)
+	case "missing":
+		return c.red(padded)
+	case "orphaned":
+		return c.yellow(padded)
+	default: // installed
+		return c.green(padded)
 	}
 }
 
