@@ -29,8 +29,15 @@ func NewNativeAdapter(clan string) *NativeAdapter {
 func (a *NativeAdapter) Kind() string { return "native" }
 
 // detectClan probes known native managers to find one that exists in PATH.
+// If a clan was already supplied to NewNativeAdapter (the common case: the
+// caller resolved it from OS facts via engine.ResolveFamily), that value is
+// authoritative and is never overwritten by probing — probing is only a
+// fallback for adapters constructed with an empty clan.
 func (a *NativeAdapter) detectClan(ctx context.Context, rn run.Runner) string {
 	a.once.Do(func() {
+		if a.clan != "" {
+			return
+		}
 		for _, clan := range native.KnownClans() {
 			mgr, ok := native.Lookup(clan)
 			if !ok {
