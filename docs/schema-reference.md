@@ -352,27 +352,47 @@ legacy = { method_only = ["aur", "git"], aur = { pkg = "legacy" }, git = { url =
 
 ## Placeholders
 
-Placeholders are expanded in every string field before installation.
-Unknown placeholders are left untouched, so `depengine validate` can flag
-them.
+Placeholders are `{name}` tokens expanded in every string field before
+installation. `depengine validate` checks them two ways:
 
-| Placeholder | Source | Example |
-|-------------|--------|---------|
-| `{arch}` | `detect_os.sh` | `x86_64`, `aarch64` |
-| `{os}` | `detect_os.sh` | `linux`, `darwin` |
-| `{distro_family}` | Resolved clan | `debian`, `arch`, `fedora` |
-| `{id}` | `detect_os.sh` | `ubuntu`, `arch` |
-| `{distro_name}` | `detect_os.sh` | `Ubuntu 24.04 LTS` |
-| `{distro_id_like}` | `detect_os.sh` | `debian` |
-| `{target_family}` | `detect_os.sh` | `linux` |
-| `{kernel}` | `detect_os.sh` | `5.15.0` |
-| `{libc}` | `detect_os.sh` | `glibc`, `musl` |
-| `{init_system}` | `detect_os.sh` | `systemd`, `openrc` |
-| `{detection}` | `detect_os.sh` | `os-release` |
-| `{confidence}` | `detect_os.sh` | `high`, `medium` |
-| `{is_wsl}` / `{is_container}` / `{is_android}` | `detect_os.sh` | `true`, `false` |
-| `{pkg}` | Adapter-owned — substituted at install time | package name |
-| `{latest}` | Adapter-owned — resolved via GitHub API (`git`/`http`) | `v1.2.3` |
+- **Unknown name** — a typo like `{archh}` isn't in the table below, so it's
+  left untouched by `Expand` and flagged as `W_UNKNOWN_PLACEHOLDER`. This
+  also catches typos outside the `{lowercase_snake_case}` charset, such as
+  `{Arch}`, `{ARCH}`, or `{arch-name}` — placeholder names are matched
+  case-sensitively, so any of those are "unknown" even though `{arch}` is
+  valid.
+- **Wrong method kind** — `{pkg}` and `{latest}` are only ever substituted
+  by specific adapters (see the "Valid for" column). Using either inside a
+  method `Kind` its adapter doesn't run for is a known name in the wrong
+  place, flagged separately as `W_MISPLACED_PLACEHOLDER` — the token is
+  never rejected outright, but it will stay literal in the resolved URL or
+  command at runtime, so treat the warning as a real bug in the schema.
+
+| Placeholder | Source | Valid for | Example |
+|-------------|--------|-----------|---------|
+| `{arch}` | `detect_os.sh` | any method | `x86_64`, `aarch64` |
+| `{os}` | `detect_os.sh` | any method | `linux`, `darwin` |
+| `{distro_family}` | Resolved clan | any method | `debian`, `arch`, `fedora` |
+| `{id}` | `detect_os.sh` | any method | `ubuntu`, `arch` |
+| `{distro_name}` | `detect_os.sh` | any method | `Ubuntu 24.04 LTS` |
+| `{distro_id_like}` | `detect_os.sh` | any method | `debian` |
+| `{target_family}` | `detect_os.sh` | any method | `linux` |
+| `{kernel}` | `detect_os.sh` | any method | `5.15.0` |
+| `{libc}` | `detect_os.sh` | any method | `glibc`, `musl` |
+| `{init_system}` | `detect_os.sh` | any method | `systemd`, `openrc` |
+| `{detection}` | `detect_os.sh` | any method | `os-release` |
+| `{confidence}` | `detect_os.sh` | any method | `high`, `medium` |
+| `{is_wsl}` / `{is_container}` / `{is_android}` | `detect_os.sh` | any method | `true`, `false` |
+| `{pkg}` | Adapter-owned — substituted at install time | **`native` only** (or a manager name used directly as `kind`, e.g. `kind = "apt"`) | package name |
+| `{latest}` | Adapter-owned — resolved via GitHub API | **`git` and `http` only** | `v1.2.3` |
+
+The `detect_os.sh`-sourced placeholders (everything above `{pkg}`/`{latest}`)
+are expanded for every method `Kind` — they come from facts gathered once
+per run, not from a specific adapter, so there's no wrong place to use them.
+`{pkg}` and `{latest}` are different: each is substituted by exactly one
+adapter, so putting `{pkg}` on a `git`/`http` method, or `{latest}` on a
+`native` method, produces a schema that validates other fields fine but
+never gets that token replaced.
 
 ```toml
 # {arch}/{os} expand from detect_os.sh before installation:
@@ -380,6 +400,12 @@ fastfetch = { http = { url = "https://example.com/{os}/{arch}/fastfetch.deb" } }
 
 # {latest} is resolved by the http/git adapter via GitHub's API:
 fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb" } }
+
+# WRONG: {pkg} on an http method is never substituted — it ships as a
+# literal "{pkg}" in the URL. depengine validate flags this as
+# W_MISPLACED_PLACEHOLDER. {pkg} only works on a native method:
+# broken:  sometool = { http = { url = "https://example.com/{pkg}.deb" } }
+# correct: sometool = { apt = "sometool-bin" }  # native, {pkg} substituted internally
 ```
 
 ---
