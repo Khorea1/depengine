@@ -31,7 +31,7 @@ Installs all tools from the schema, respecting `method_order`, `when`,
 | `--diagnose` | `false` | Diagnostic mode: DEBUG + dry-run + verbose |
 | `--profile <tag>` | — | Filter tools by tag (e.g. `desktop`, `server`) |
 | `--jobs <n>` | `1` | Max concurrent installations |
-| `--allow-arbitrary-code` | `false` | Allow tools with build scripts / hooks that run arbitrary code |
+| `--allow-arbitrary-code` | `false` | Suppress security warnings for build scripts / arbitrary code — without it, tools with hooks or build scripts that can run arbitrary code are blocked |
 | `--frozen-lockfile` | `false` | Abort if `depengine.lock` doesn't exist |
 | `--manifest <path>` | auto (XDG_CONFIG_HOME) | Path to personal manifest |
 | `--no-manifest` | `false` | Disable personal manifest |
@@ -134,6 +134,11 @@ Removes a tool from state without touching the system.
 ## `depengine undo [flags]`
 
 Reverts the last installation using a snapshot.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--list` | `false` | List available snapshots |
+| `--snapshot <path>` | latest | Revert to a specific snapshot file |
 
 ## `depengine diff [flags]`
 

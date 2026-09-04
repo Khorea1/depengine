@@ -17,38 +17,42 @@ var (
 
 // elevationCandidates is the ordered list of elevation binaries to probe.
 // Each entry is checked in order; the first that works is cached.
-//  1. sudo -n:   works when passwordless sudo is configured
+//
+// Probing here means "is this binary present and plausibly usable", never
+// "run the privileged command for real". pkexec and run0 have no dry-run
+// mode — invoking them for real (even with `true`) triggers an actual
+// polkit authentication (a real prompt/dialog) as a side effect of a mere
+// availability check, which previously fired from Adapter.Available()
+// paths before the user had asked to install anything. Only sudo/doas
+// support a true side-effect-free probe (`-n`, which fails closed instead
+// of prompting), so they alone use it; pkexec/run0 fall back to a plain
+// LookPath and are validated for real only when actually invoked to elevate.
+//
+//  1. sudo:      works when interactive (TTY session, see EnsureSudo/
+//     KeepAlive in session.go) or when NOPASSWD is configured
 //  2. doas:      simpler alternative, typically configured passwordless
-//  3. pkexec:    PolKit-based, no TTY required
-//  4. run0:      systemd 256+, PolKit-based via machinectl
+//  3. pkexec:    PolKit-based, no TTY required, kept last: no cache, every
+//     call re-prompts
+//  4. run0:      systemd 256+, PolKit-based, also no cache
 var elevationCandidates = []struct {
 	name    string
 	probeFn func() bool
 }{
 	{"sudo", func() bool {
-		if _, err := exec.LookPath("sudo"); err != nil {
-			return false
-		}
-		// sudo -n runs non-interactively; exits 0 only when no password is needed.
-		return exec.Command("sudo", "-n", "true").Run() == nil
+		_, err := exec.LookPath("sudo")
+		return err == nil
 	}},
 	{"doas", func() bool {
-		if _, err := exec.LookPath("doas"); err != nil {
-			return false
-		}
-		return exec.Command("doas", "-n", "true").Run() == nil
+		_, err := exec.LookPath("doas")
+		return err == nil
 	}},
 	{"pkexec", func() bool {
-		if _, err := exec.LookPath("pkexec"); err != nil {
-			return false
-		}
-		return exec.Command("pkexec", "true").Run() == nil
+		_, err := exec.LookPath("pkexec")
+		return err == nil
 	}},
 	{"run0", func() bool {
-		if _, err := exec.LookPath("run0"); err != nil {
-			return false
-		}
-		return exec.Command("run0", "true").Run() == nil
+		_, err := exec.LookPath("run0")
+		return err == nil
 	}},
 }
 

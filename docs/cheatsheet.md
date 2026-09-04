@@ -112,7 +112,7 @@ Details: [schema-reference.md#per-tool-method-control](schema-reference.md#per-t
 
 ---
 
-## All 30 methods
+## All 31 methods
 
 Full one-liner-per-method table (with `git`/`http` field lists):
 [schema-reference.md#method-reference](schema-reference.md#method-reference).
@@ -132,7 +132,7 @@ Other:       git, http
 ## Placeholders
 
 `{arch}` `{os}` `{distro_family}` `{kernel}` `{libc}` `{pkg}` `{latest}` and
-8 more — full table: [schema-reference.md#placeholders](schema-reference.md#placeholders).
+10 more — full table: [schema-reference.md#placeholders](schema-reference.md#placeholders).
 
 ---
 

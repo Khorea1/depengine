@@ -727,3 +727,23 @@ func TestMethodHashDifferentTools(t *testing.T) {
 		t.Error("hash should be deterministic")
 	}
 }
+
+func TestMethodHashDetectsSameKindReordering(t *testing.T) {
+	// Two methods sharing a Kind ("http") but distinguished by Label, as
+	// happens with mirrors (e.g. "http-musl" and "http-glibc"). Apply keys
+	// pins by kind+index-within-kind, so swapping these two changes which
+	// pin each one receives — the hash must change too, or the reordering
+	// warning in Apply can never fire for this (most common) case.
+	before := []*config.MethodCandidate{
+		{Kind: "http", Label: "http-musl"},
+		{Kind: "http", Label: "http-glibc"},
+	}
+	after := []*config.MethodCandidate{
+		{Kind: "http", Label: "http-glibc"},
+		{Kind: "http", Label: "http-musl"},
+	}
+
+	if computeMethodsHash(before) == computeMethodsHash(after) {
+		t.Error("swapping same-kind methods with different labels should change the hash")
+	}
+}

@@ -39,6 +39,23 @@ func needsNativeSync(s *config.Schema, clan string) bool {
 	return false
 }
 
+// needsElevation reports whether this run will need root at some point:
+// either the clan's native manager requires sudo (SudoRequired), or any
+// tool method resolves to that manager. Used to decide whether to pay for
+// a single upfront sudo prompt (run.EnsureSudo) instead of letting the
+// first elevated command discover mid-run that it has no way to ask.
+func needsElevation(s *config.Schema, clan string) bool {
+	mgr, ok := native.Lookup(clan)
+	if !ok || !mgr.SudoRequired {
+		return false
+	}
+	// needsNativeSync's tool scan ("does any tool resolve to this clan's
+	// native manager") is exactly the condition we need here too — a
+	// manager that needs sudo for install needs it whether or not it also
+	// needs an index sync.
+	return needsNativeSync(s, clan)
+}
+
 // batchCandidate represents one tool eligible for batch native install.
 type batchCandidate struct {
 	toolName string
@@ -207,6 +224,24 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 	}
 
 	ex.logDebug(ctx, "executor", "phase", "init", "clan", clan, "tools", len(s.Tools))
+
+	// Obtain the sudo credential once, upfront, with the real terminal
+	// attached — and keep it alive in the background for the rest of the
+	// run. Without this, every individual elevated command (native.
+	// withSudo) would rely on sudo's own prompt, which OSExecRunner can
+	// never deliver (its Stdin/Stdout/Stderr are buffers, not the real
+	// terminal): elevation would silently fail on every run that isn't
+	// already NOPASSWD. This is skipped in dry-run: a plan should never
+	// prompt for credentials it won't use.
+	if !ex.dryRun && needsElevation(s, clan) {
+		if err := run.EnsureSudo(ctx); err != nil {
+			return nil, fmt.Errorf("elevation: %w", err)
+		}
+		keepAliveCtx, cancelKeepAlive := context.WithCancel(ctx)
+		defer cancelKeepAlive()
+		go run.KeepAlive(keepAliveCtx)
+	}
+
 	// Only sync native package index if at least one tool uses a native method.
 	if needsNativeSync(s, clan) {
 		syncMgr := NewSyncManager(ex.rn, clan)

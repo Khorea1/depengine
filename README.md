@@ -256,7 +256,7 @@ fields before installation:
 fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb" } }
 ```
 
-Full list of all 15 placeholders: [schema-reference.md#placeholders](docs/schema-reference.md#placeholders).
+Full list of all 17 placeholders: [schema-reference.md#placeholders](docs/schema-reference.md#placeholders).
 
 ## Editor support
 

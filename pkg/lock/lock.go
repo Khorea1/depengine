@@ -173,12 +173,23 @@ func isCanonicalKey(key string) bool {
 	return err == nil
 }
 
-// computeMethodsHash returns a SHA-256 hash of the tool's method kinds in order.
-// Used to detect reordering of same-kind methods between lock and apply.
+// computeMethodsHash returns a SHA-256 hash of the tool's method kinds and
+// labels, in order. Used to detect reordering of same-kind methods between
+// lock and apply.
+//
+// Label is included (not just Kind) because Apply keys pins by
+// "<toolName>/<kind>/<idx-within-kind>": swapping the position of two
+// methods that share a Kind changes which pin each one receives, but the
+// kind sequence alone is unchanged by such a swap and would not move the
+// hash. Label (the TOML section key, e.g. "http-musl") is the field that
+// actually distinguishes same-kind mirrors, so hashing it too makes the
+// swap detectable whenever the methods are labeled.
 func computeMethodsHash(methods []*config.MethodCandidate) string {
 	h := sha256.New()
 	for _, m := range methods {
 		h.Write([]byte(m.Kind))
+		h.Write([]byte{0})
+		h.Write([]byte(m.Label))
 		h.Write([]byte{0})
 	}
 	return hex.EncodeToString(h.Sum(nil))
