@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/engine"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/log"
 	"github.com/Khorea1/depengine/pkg/run"
@@ -158,6 +159,19 @@ func runUndo(args []string) {
 		// restoring snapState.Tools would reintroduce phantom entries.
 		log.Default.Info("nothing to undo (no tools were added since snapshot)")
 		return
+	}
+
+	// The global "native" adapter (registered in main.go) is constructed
+	// with an empty clan and falls back to PATH-probing, which is ambiguous
+	// for manager binaries shared across clans (e.g. "pkg" on both termux
+	// and freebsd — same install command, different check/remove commands).
+	// Resolve the real clan from OS facts and make it authoritative here,
+	// the same way install/upgrade already do, so removal always uses the
+	// correct check/remove commands for this machine.
+	if facts, err := engine.GatherFacts(run.OSExecRunner{}); err == nil {
+		exec.Replace(exec.NewNativeAdapter(engine.ResolveFamily(facts)))
+	} else {
+		log.Default.Warn("could not gather OS facts; falling back to PATH-probing for native manager detection", "error", err)
 	}
 
 	// Capture original state before removal, so failed tools can be preserved.
