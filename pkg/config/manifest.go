@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 
 	"github.com/Khorea1/depengine/pkg/methodkind"
 )
@@ -484,68 +482,19 @@ func ValidateManifestNewTools(schema, manifest *Schema) error {
 	return nil
 }
 
+// ValidateManifestLayer previously rejected manifest-layer tools that set
+// fields marked MergeLocalOnly ("schema layer only"). No field in
+// ToolFieldStrategy has used MergeLocalOnly since intent fields (pre_install,
+// post_install, requires, method_order, ...) were deliberately opened up to
+// the manifest layer — see TestValidateManifestLayer_AcceptsIntentFields.
+// That made the per-field loop this function used to run permanently
+// unreachable (it could never find a MergeLocalOnly field to reject), so it
+// always returned nil while its doc comment implied an active check. The
+// dead loop has been removed; the function is now an explicit no-op, kept
+// only so its five call sites (helpers.go, status_remove_forget.go,
+// validate_check.go, graph_why.go) don't need to change. If a future field
+// needs manifest-layer rejection, give it strategy MergeLocalOnly in
+// ToolFieldStrategy and reinstate a check here.
 func ValidateManifestLayer(s *Schema) error {
-	var errs []string
-	// Sort tool names for deterministic error messages across runs
-	toolNames := make([]string, 0, len(s.Tools))
-	for name := range s.Tools {
-		toolNames = append(toolNames, name)
-	}
-	sort.Strings(toolNames)
-	for _, name := range toolNames {
-		tool := s.Tools[name]
-		// Sort fields for deterministic error messages
-		fields := make([]string, 0, len(ToolFieldStrategy))
-		for field := range ToolFieldStrategy {
-			fields = append(fields, field)
-		}
-		sort.Strings(fields)
-		for _, field := range fields {
-			strategy := ToolFieldStrategy[field]
-			if strategy != MergeLocalOnly {
-				continue
-			}
-			isSet, ok := ToolFieldIsSet[field]
-			if !ok {
-				continue
-			}
-			if isSet(tool) {
-				// Use TOML-style field name for error messages.
-				tomlName := toolFieldToTOML(field)
-				errs = append(errs, fmt.Sprintf("tool %q: %s is not allowed in manifest layer", name, tomlName))
-			}
-		}
-	}
-	if len(errs) > 0 {
-		return fmt.Errorf("manifest validation:\n%s", strings.Join(errs, "\n"))
-	}
 	return nil
 }
-
-// toolFieldToTOML maps Go struct field names to their TOML equivalents for
-// user-facing error messages.
-func toolFieldToTOML(field string) string {
-	switch field {
-	case "PreInstall":
-		return "pre_install"
-	case "PostInstall":
-		return "post_install"
-	case "PostInstallWhen":
-		return "post_install.when"
-	case "Requires":
-		return "requires"
-	case "RequiresWhen":
-		return "requires_when"
-	case "Tags":
-		return "tags"
-	case "MethodOrder":
-		return "method_order"
-	case "MethodPrefer":
-		return "method_prefer"
-	case "MethodOnly":
-		return "method_only"
-	default:
-		return field
-	}
-}
-

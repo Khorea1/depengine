@@ -56,19 +56,6 @@ var MethodConfigFieldStrategy = map[string]MergeStrategy{
 	"binary":        MergeOverwrite,
 }
 
-// ToolFieldIsSet maps field name to a function that reports whether the field
-// is considered "set" (non-zero) on a Tool. Used for MergeLocalOnly validation.
-var ToolFieldIsSet = map[string]func(*Tool) bool{
-	"PreInstall":      func(t *Tool) bool { return t.PreInstall != "" },
-	"PostInstall":     func(t *Tool) bool { return t.PostInstall != "" },
-	"PostInstallWhen": func(t *Tool) bool { return t.PostInstallWhen != nil },
-	"Requires":        func(t *Tool) bool { return len(t.Requires) > 0 },
-	"RequiresWhen":    func(t *Tool) bool { return len(t.RequiresWhen) > 0 },
-	"MethodOrder":     func(t *Tool) bool { return len(t.MethodOrder) > 0 },
-	"MethodPrefer":    func(t *Tool) bool { return len(t.MethodPrefer) > 0 },
-	"MethodOnly":      func(t *Tool) bool { return len(t.MethodOnly) > 0 },
-}
-
 // FieldSource describes which layer contributed to a field's value.
 type FieldSource struct {
 	Field    string `json:"field"`
