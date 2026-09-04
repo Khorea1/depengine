@@ -296,6 +296,11 @@ func ManagerNames() []string {
 	for name := range seen {
 		out = append(out, name)
 	}
+	// Deterministic order: map iteration is randomized per-process, and
+	// callers (e.g. RegisterNativeManagerAliases) use this order to decide
+	// registration/probing precedence. Without sorting, behavior for
+	// ambiguous cases could vary between runs on the same machine.
+	sort.Strings(out)
 	return out
 }
 
@@ -309,6 +314,13 @@ func KnownClans() []string {
 			out = append(out, clan)
 		}
 	}
+	// Deterministic order: pkg/exec's detectClan probes clans in this order
+	// via LookPath and stops at the first match. Two clans can share the
+	// same manager binary name (e.g. "pkg" for both termux and freebsd),
+	// so an unordered, per-process-random iteration could resolve to a
+	// different — and for that binary, behaviorally different — clan
+	// between runs on the same machine.
+	sort.Strings(out)
 	return out
 }
 
@@ -326,16 +338,27 @@ func AllClans() []string {
 	return out
 }
 
+// nativeManagerNames holds every Manager.Name value, precomputed once so
+// IsNativeManagerName doesn't rescan the managers map on every call (it's
+// invoked once per method kind during schema validation). Mirrors the
+// knownKindSet pattern in pkg/methodkind for the same kind of lookup.
+var nativeManagerNames = buildNativeManagerNames()
+
+func buildNativeManagerNames() map[string]bool {
+	set := make(map[string]bool, len(managers))
+	for _, m := range managers {
+		set[m.Name] = true
+	}
+	return set
+}
+
 // IsNativeManagerName reports whether name is a known native package-manager
 // identifier — either a Manager.Name (apt, pacman, dnf, …) or an entry in
 // the reverse alias map (emerge, portage, yum, …). Used by the schema parser
 // to distinguish native-manager overrides from language/method kinds.
 func IsNativeManagerName(name string) bool {
-	// Check Manager.Name values.
-	for _, m := range managers {
-		if m.Name == name {
-			return true
-		}
+	if nativeManagerNames[name] {
+		return true
 	}
 	// Check managerNameToClan binary-name aliases.
 	if _, ok := managerNameToClan[name]; ok {
