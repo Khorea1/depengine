@@ -41,11 +41,20 @@ simple = ["zsh", "zathura", "w3m", "rofi", "mpv", "kitty", "tmux", "rclone", "do
 # Format: inline table with `<manager> = "package-name-in-that-manager"`.
 # Managers not listed here use the tool name itself as fallback.
 # ------------------------------------------------------------------------
-fd   = { apt = "fd-find" }                                   # everywhere else: "fd"
+# fd: apt names it "fd-find" (a pre-existing "fd" package already claimed the
+# name); fd also ships prebuilt glibc/musl/aarch64 binaries with a real
+# {latest}-safe filename scheme, so its full multi-arch/libc definition is
+# promoted to a full block — see CASE 9 below (search for [tools.fd]).
 nvim = { pacman = "neovim", apt = "neovim", brew = "neovim" }
 hypr = { pacman = "hyprland" }
 
 golang = { pacman = "go", apt = "golang-go" }
+
+# python-pip: bootstrapping pip itself (before pip/pipx/uv can be used) is a
+# native-manager job with real per-family divergence: Alpine prefixes Python
+# packages with "py3-", Gentoo/Portage packages are category-qualified
+# ("dev-python/..."), and RPM/DEB families use "python3-".
+python-pip = { pacman = "python-pip", apt = "python3-pip", dnf = "python3-pip", zypper = "python3-pip", apk = "py3-pip", xbps = "python3-pip", emerge = "dev-python/pip" }
 
 # ------------------------------------------------------------------------
 # CASE 3 — Language manager (pip, pipx, uv, go, cargo, npm, gem...).
@@ -141,18 +150,138 @@ fontconfig = { native = { pkg = "fontconfig", pkg_overrides = { pkg = "fontconfi
 #   is_container  → true/false (container environment)
 # ==============================================================================
 
-# --- Binary differs by libc (glibc vs musl) ---
-[tools.restic]
-  # glibc build (Linux desktop typical)
-  [tools.restic.http]
-  url = "https://github.com/restic/restic/releases/download/{latest}/restic_{latest}_linux_{arch}.bz2"
-  when = { arch = ["x86_64", "aarch64"], os = ["linux"], libc = ["glibc"] }
+# --- Binary ships separate glibc and musl builds (real Rust cross-release) ---
+# fd's tag and its asset filenames both carry the "v" prefix consistently
+# (v10.2.0 in the path AND the filename), so {latest} is safe to reuse in
+# both places here — contrast with the restic/node_exporter case further
+# below, where that is NOT true.
+[tools.fd]
+  [tools.fd.native]
+  pkg_overrides = { apt = "fd-find" }   # everywhere else: "fd" (tool name)
 
-  # musl build (Alpine Linux, containers)
-  [tools.restic.http-musl]
-  kind = "http"
-  url = "https://github.com/restic/restic/releases/download/{latest}/restic_{latest}_linux_{arch}_musl.bz2"
-  when = { arch = ["x86_64", "aarch64"], os = ["linux"], libc = ["musl"] }
+  # glibc build (typical desktop/server distros)
+  [tools.fd.http]
+  url        = "https://github.com/sharkdp/fd/releases/download/{latest}/fd-{latest}-x86_64-unknown-linux-gnu.tar.gz"
+  checksum   = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "fd"
+  when       = { arch = ["x86_64"], os = ["linux"], libc = ["glibc"] }
+
+  # musl build (Alpine, distroless/scratch containers)
+  [tools.fd.http-musl]
+  kind       = "http"
+  url        = "https://github.com/sharkdp/fd/releases/download/{latest}/fd-{latest}-x86_64-unknown-linux-musl.tar.gz"
+  checksum   = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "fd"
+  when       = { arch = ["x86_64"], os = ["linux"], libc = ["musl"] }
+
+  # aarch64/glibc (e.g. Ubuntu Server on ARM, AWS Graviton)
+  [tools.fd.http-arm64]
+  kind       = "http"
+  url        = "https://github.com/sharkdp/fd/releases/download/{latest}/fd-{latest}-aarch64-unknown-linux-gnu.tar.gz"
+  checksum   = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "fd"
+  when       = { arch = ["aarch64"], os = ["linux"], libc = ["glibc"] }
+
+
+# --- {arch} is uname-style (x86_64/aarch64/armv7l); many Go-toolchain
+# release assets instead use GOARCH naming (amd64/arm64/arm) — {arch} can't
+# be used verbatim for those, so the literal GOARCH string is hardcoded per
+# `when.arch` branch below. yq's filenames don't embed a version at all, so
+# it dodges the second problem entirely. ---
+[tools.yq]
+  [tools.yq.http]
+  url        = "https://github.com/mikefarah/yq/releases/download/{latest}/yq_linux_amd64"
+  checksum   = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "yq"
+  when       = { arch = ["x86_64"], os = ["linux"] }
+
+  [tools.yq.http-arm64]
+  kind       = "http"
+  url        = "https://github.com/mikefarah/yq/releases/download/{latest}/yq_linux_arm64"
+  checksum   = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "yq"
+  when       = { arch = ["aarch64"], os = ["linux"] }
+
+  [tools.yq.http-darwin-arm64]
+  kind       = "http"
+  url        = "https://github.com/mikefarah/yq/releases/download/{latest}/yq_darwin_arm64"
+  checksum   = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "yq"
+  when       = { arch = ["aarch64"], os = ["darwin"] }
+
+
+# --- Two mismatches stacked at once: restic and node_exporter tag their
+# releases with a "v" prefix (v0.17.3, v1.8.2) but the asset FILENAMES strip
+# it (restic_0.17.3_..., node_exporter-1.8.2....), AND their assets use
+# GOARCH naming, not uname's. {latest} substitutes the raw tag verbatim and
+# has no way to strip a prefix mid-string, so a filename shaped like this
+# can't safely use {latest} twice — pin a literal version instead and bump
+# it by hand on upgrade (this is exactly what `depengine.lock` already does
+# for the DepartureMono/fastfetch pins above). ---
+[tools.restic]
+  [tools.restic.http]
+  url        = "https://github.com/restic/restic/releases/download/v0.17.3/restic_0.17.3_linux_amd64.bz2"
+  checksum   = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "restic"
+  when       = { arch = ["x86_64"], os = ["linux"] }
+
+  [tools.restic.http-arm64]
+  kind       = "http"
+  url        = "https://github.com/restic/restic/releases/download/v0.17.3/restic_0.17.3_linux_arm64.bz2"
+  checksum   = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "restic"
+  when       = { arch = ["aarch64"], os = ["linux"] }
+
+[tools.node_exporter]
+  [tools.node_exporter.http]
+  url        = "https://github.com/prometheus/node_exporter/releases/download/v1.8.2/node_exporter-1.8.2.linux-amd64.tar.gz"
+  checksum   = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "node_exporter"
+  when       = { arch = ["x86_64"], os = ["linux"] }
+
+  [tools.node_exporter.http-arm64]
+  kind       = "http"
+  url        = "https://github.com/prometheus/node_exporter/releases/download/v1.8.2/node_exporter-1.8.2.linux-arm64.tar.gz"
+  checksum   = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "node_exporter"
+  when       = { arch = ["aarch64"], os = ["linux"] }
+
+  # 32-bit ARM (Raspberry Pi class): uname reports "armv7l", the release
+  # asset says "armv7" — a THIRD spelling, distinct from both {arch} and GOARCH.
+  [tools.node_exporter.http-armv7]
+  kind       = "http"
+  url        = "https://github.com/prometheus/node_exporter/releases/download/v1.8.2/node_exporter-1.8.2.linux-armv7.tar.gz"
+  checksum   = "sha256:auto"
+  extract_to = "~/.local/bin"
+  binary     = "node_exporter"
+  when       = { arch = ["armv7l"], os = ["linux"] }
+
+
+# --- Same manager binary name ("pkg"), two unrelated clans (FreeBSD vs
+# Termux share it — see native/registry.go), disambiguated with `when`
+# instead of a manager-keyed override. Also: BSD `make` is already spoken
+# for (BSD make, not GNU make), so GNU Make ships as a separate "gmake"
+# package there — a second native-kind method candidate is declared with an
+# explicit `kind = "native"` override and its own `when`. ---
+[tools.gnu-make]
+  [tools.gnu-make.native]
+  pkg = "make"
+  when = { os = ["linux"] }
+
+  [tools.gnu-make.native-bsd]
+  kind = "native"
+  pkg  = "gmake"
+  when = { distro_family = ["freebsd", "openbsd", "netbsd"] }
 
 
 # --- WSL vs native Linux ---
@@ -203,6 +332,17 @@ fontconfig = { native = { pkg = "fontconfig", pkg_overrides = { pkg = "fontconfi
   [tools.ulauncher.apt]
   pkg = "ulauncher"
   when = { distro_id = ["ubuntu", "debian"] }
+
+
+# --- Termux renamed the CLI tool package away from the library package:
+# "openssl" on Termux is the shared-library package, while the `openssl`
+# *binary* (the one this schema cares about) ships in "openssl-tool". Not
+# expressible via distro_family (termux is its own clan already), but shown
+# here for contrast with a "normal" Linux distro where the split doesn't exist. ---
+[tools.openssl]
+  [tools.openssl.native]
+  pkg_overrides = { pkg = "openssl-tool" }   # pkg = Termux's manager binary name
+  when = { distro_family = ["termux", "debian", "arch", "fedora", "alpine"] }
 
 # ------------------------------------------------------------------------
 # CASE 10 — Ecosystem buckets: python, node.
