@@ -1,89 +1,39 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/Khorea1/depengine/pkg/ecosystem"
 	"github.com/Khorea1/depengine/pkg/exec"
-	"github.com/Khorea1/depengine/pkg/i18n"
 )
 
 var version = "dev"
 
 func main() {
 	initAdapters()
-	if len(os.Args) < 2 {
-		printUsage()
-		os.Exit(0)
-	}
-	cmd := os.Args[1]
-	args := os.Args[2:]
-	// `depengine <cmd> --help` renders the same aligned help as
-	// `depengine help <cmd>` — without this, the flag package's ExitOnError
-	// would take over and dump its default two-line-per-flag usage.
-	if wantsHelp(args) {
-		switch cmd {
-		case "install", "update", "upgrade", "validate", "check", "graph",
-			"status", "forget", "remove", "why", "undo", "sbom", "init",
-			"diff":
-			printCommandHelp(cmd)
-			os.Exit(0)
-		}
-	}
-	switch cmd {
-	case "install":
-		runInstall(args)
-	case "update":
-		runUpdate(args)
-	case "upgrade":
-		runUpgrade(args)
-	case "validate":
-		runValidate(args)
-	case "check":
-		runCheck(args)
-	case "graph":
-		runGraph(args)
-	case "status":
-		runStatus(args)
-	case "forget":
-		runForget(args)
-	case "remove":
-		runRemove(args)
-	case "why":
-		runWhy(args)
-	case "undo":
-		runUndo(args)
-	case "sbom":
-		runSBOM(args)
-	case "init":
-		runInit(args)
-	case "diff":
-		runDiff(args)
-	case "version", "-v", "--version":
-		fmt.Println("depengine " + version)
-		if i18n.GetLocale() == "pt" {
-			fmt.Println("Motor distro-agnóstico de instalação de dependências")
-		} else {
-			fmt.Println("Distro-agnostic dependency installer")
-		}
-	case "help", "-h", "--help":
-		if len(os.Args) == 2 || (len(os.Args) > 2 && os.Args[2] == "--man") {
-			if len(os.Args) > 2 && os.Args[2] == "--man" {
-				printManPage()
-			} else {
-				printUsage()
-			}
-		} else {
-			printCommandHelp(os.Args[2])
-		}
-	case "completion":
-		runCompletion(os.Args[2:])
-	default:
-		fmt.Fprintf(os.Stderr, "error: unknown command %q\n", os.Args[1])
-		printUsage()
+	root := newRootCmd()
+	root.SetArgs(normalizeArgs(os.Args[1:]))
+	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+// normalizeArgs rewrites single-dash long flags (e.g. `-schema path`) into
+// Cobra's expected double-dash form (`--schema path`). The old stdlib flag
+// package treated `-x` and `--x` identically, so existing scripts and
+// muscle memory used either interchangeably; pflag (Cobra's flag parser)
+// does not, and reads `-schema` as a run of single-letter shorthands. Real
+// shorthands (`-v`, `-h`) and already-double-dash flags pass through as-is.
+func normalizeArgs(args []string) []string {
+	out := make([]string, len(args))
+	for i, a := range args {
+		if len(a) > 2 && a[0] == '-' && a[1] != '-' {
+			out[i] = "-" + a
+		} else {
+			out[i] = a
+		}
+	}
+	return out
 }
 
 func initAdapters() {

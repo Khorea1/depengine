@@ -90,19 +90,6 @@ func (c *cliStyle) yellow(s string) string {
 }
 func (c *cliStyle) cyan(s string) string { return styled(c.color, ansiCyan, s) }
 
-// wantsHelp reports whether args contain -h/--help (or "help") anywhere, so
-// `depengine install --help` and `depengine help install` render the same
-// aligned help. flag.ExitOnError would otherwise fall back to the stdlib
-// two-line-per-flag dump, bypassing printCommandHelp entirely.
-func wantsHelp(args []string) bool {
-	for _, a := range args {
-		if a == "-h" || a == "--help" || a == "help" {
-			return true
-		}
-	}
-	return false
-}
-
 // status renders one symbol-prefixed status line in the shared ✓/✗/–/→
 // vocabulary of pkg/exec's status lines, with the symbol colored.
 func (c *cliStyle) status(symbol, color, format string, args ...any) {

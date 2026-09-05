@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -56,26 +55,6 @@ func defaultSchemaPath() string {
 			strings.Join(found, ", "), found[0])
 	}
 	return found[0]
-}
-
-// parseFlagsInterspersed parses flags and positional args in any order and
-// returns the positional args. Go's flag package stops at the first
-// non-flag argument, which would silently swallow flags placed after a
-// positional (e.g. `depengine why zsh --schema x.toml`). The loop re-parses
-// after each consumed positional, so both orders behave identically.
-// The `--` terminator is honored by the flag package itself.
-func parseFlagsInterspersed(fs *flag.FlagSet, args []string) []string {
-	var positional []string
-	for len(args) > 0 {
-		fs.Parse(args)
-		args = fs.Args()
-		if len(args) == 0 {
-			break
-		}
-		positional = append(positional, args[0])
-		args = args[1:]
-	}
-	return positional
 }
 
 // loadSchema reads and validates a schema.toml from path, gathering OS facts.

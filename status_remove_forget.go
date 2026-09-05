@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"sort"
@@ -18,20 +17,43 @@ import (
 	"github.com/Khorea1/depengine/pkg/log"
 	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/state"
+	"github.com/spf13/cobra"
 )
+
+// newStatusCmd builds `depengine status`.
+func newStatusCmd() *cobra.Command {
+	statusSchema := new(string)
+	statusManifest := new(string)
+	statusNoManifest := new(bool)
+	statusFormat := new(string)
+	statusJSON := new(bool)
+	statusOrphans := new(bool)
+
+	cmd := &cobra.Command{
+		Use:     "status",
+		Short:   ifPT("Mostrar estado das ferramentas em relação ao schema", "Show tool installation state vs schema"),
+		GroupID: groupInspect,
+		Args:    cobra.NoArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			runStatus(statusSchema, statusManifest, statusNoManifest, statusFormat, statusJSON, statusOrphans)
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(statusSchema, "schema", "", "override schema path")
+	f.StringVar(statusManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
+	f.BoolVar(statusNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	f.StringVar(statusFormat, "format", "text", "output format: text or json")
+	f.BoolVar(statusJSON, "json", false, "JSON output (shorthand for --format=json)")
+	f.BoolVar(statusOrphans, "orphans", false, "show only orphaned tools")
+	return cmd
+}
 
 // runStatus shows the installation status of tools by comparing the state
 // file against the schema. It reports installed, missing, and outdated tools.
-func runStatus(args []string) {
-	// flags maintained in help.go:printCommandHelp
-	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
-	statusSchema := statusCmd.String("schema", "", "override schema path")
-	statusManifest := statusCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
-	statusNoManifest := statusCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
-	statusFormat := statusCmd.String("format", "text", "output format: text or json")
-	statusJSON := statusCmd.Bool("json", false, "JSON output (shorthand for --format=json)")
-	statusOrphans := statusCmd.Bool("orphans", false, "show only orphaned tools")
-	statusCmd.Parse(args)
+// Body unchanged from the pre-Cobra version — only the flag declarations
+// above it moved.
+func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, statusFormat *string, statusJSON, statusOrphans *bool) {
 	if *statusJSON {
 		if *statusFormat == "text" {
 			*statusFormat = "json"
@@ -280,18 +302,38 @@ func statusStyled(c *cliStyle, padded, status string) string {
 	}
 }
 
-// runRemove removes a tool using the adapter that installed it.
-// Supports --all, --dry-run, --schema, and --only flags.
-func runRemove(args []string) {
-	// flags maintained in help.go:printCommandHelp
-	removeCmd := flag.NewFlagSet("remove", flag.ExitOnError)
-	removeAll := removeCmd.Bool("all", false, "remove all tools")
-	removeDryRun := removeCmd.Bool("dry-run", false, "show what would be removed")
-	removeSchema := removeCmd.String("schema", "", "path to schema.toml (optional, for validation)")
-	removeOnly := removeCmd.String("only", "", "only remove specific tool (alternative to positional arg)")
-	removeForce := removeCmd.Bool("force", false, "skip confirmation when removing all tools")
-	removeArgs := parseFlagsInterspersed(removeCmd, args)
+// newRemoveCmd builds `depengine remove`.
+func newRemoveCmd() *cobra.Command {
+	removeAll := new(bool)
+	removeDryRun := new(bool)
+	removeSchema := new(string)
+	removeOnly := new(string)
+	removeForce := new(bool)
 
+	cmd := &cobra.Command{
+		Use:     "remove [tool...]",
+		Short:   ifPT("Remover ferramentas do sistema", "Remove tools from the system"),
+		GroupID: groupManage,
+		Args:    cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			runRemove(args, removeAll, removeDryRun, removeSchema, removeOnly, removeForce)
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.BoolVar(removeAll, "all", false, "remove all tools")
+	f.BoolVar(removeDryRun, "dry-run", false, "show what would be removed")
+	f.StringVar(removeSchema, "schema", "", "path to schema.toml (optional, for validation)")
+	f.StringVar(removeOnly, "only", "", "only remove specific tool (alternative to positional arg)")
+	f.BoolVar(removeForce, "force", false, "skip confirmation when removing all tools")
+	return cmd
+}
+
+// runRemove removes a tool using the adapter that installed it.
+// Supports --all, --dry-run, --schema, and --only flags. Body unchanged
+// from the pre-Cobra version — only the flag declarations above it moved,
+// and removeArgs is now the positional args Cobra already separated out.
+func runRemove(removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce *bool) {
 	// Validate mutually exclusive flags.
 	if *removeAll && *removeOnly != "" {
 		log.Default.Error("cannot use both --all and --only")
@@ -435,18 +477,24 @@ func runRemove(args []string) {
 	}
 }
 
-// runForget removes a tool from state without attempting system removal.
-func runForget(args []string) {
-	// flags maintained in help.go:printCommandHelp
-	forgetCmd := flag.NewFlagSet("forget", flag.ExitOnError)
-	forgetArgs := parseFlagsInterspersed(forgetCmd, args)
-
-	if len(forgetArgs) != 1 {
-		log.Default.Error("usage: depengine forget <tool>")
-		os.Exit(1)
+// newForgetCmd builds `depengine forget`.
+func newForgetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "forget <tool>",
+		Short:   ifPT("Esquecer uma ferramenta sem tentar removê-la do sistema", "Forget a tool from state without removing it from the system"),
+		GroupID: groupManage,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			runForget(args[0])
+			return nil
+		},
 	}
+}
 
-	toolName := forgetArgs[0]
+// runForget removes a tool from state without attempting system removal.
+// Body unchanged from the pre-Cobra version — Cobra's cobra.ExactArgs(1)
+// now enforces the argument count that the old manual length check did.
+func runForget(toolName string) {
 	ls, err := state.LoadLocked()
 	if err != nil {
 		log.Default.Error("state lock", "error", err)

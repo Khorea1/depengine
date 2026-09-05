@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/Khorea1/depengine/pkg/log"
 	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/validate"
+	"github.com/spf13/cobra"
 )
 
 type jsonOutput struct {
@@ -21,17 +21,36 @@ type jsonOutput struct {
 	Warnings []validate.ValidationError `json:"warnings"`
 }
 
-func runValidate(args []string) {
-	// flags maintained in help.go:printCommandHelp
-	validateCmd := flag.NewFlagSet("validate", flag.ExitOnError)
-	validateSchema := validateCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
-	validateManifest := validateCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
-	validateNoManifest := validateCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
-	validateCheckEnv := validateCmd.Bool("check-env", false, "check system environment for required tools")
-	validateFormat := validateCmd.String("format", "text", "output format: text or json")
-	validateStrict := validateCmd.Bool("strict", false, "treat warnings as errors")
-	validateCmd.Parse(args)
+// newValidateCmd builds `depengine validate`.
+func newValidateCmd() *cobra.Command {
+	validateSchema := new(string)
+	validateManifest := new(string)
+	validateNoManifest := new(bool)
+	validateCheckEnv := new(bool)
+	validateFormat := new(string)
+	validateStrict := new(bool)
 
+	cmd := &cobra.Command{
+		Use:     "validate",
+		Short:   ifPT("Validar schema.toml", "Validate schema.toml"),
+		GroupID: groupInspect,
+		Args:    cobra.NoArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			runValidate(validateSchema, validateManifest, validateNoManifest, validateCheckEnv, validateFormat, validateStrict)
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(validateSchema, "schema", defaultSchemaPath(), "path to schema.toml")
+	f.StringVar(validateManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
+	f.BoolVar(validateNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	f.BoolVar(validateCheckEnv, "check-env", false, "check system environment for required tools")
+	f.StringVar(validateFormat, "format", "text", "output format: text or json")
+	f.BoolVar(validateStrict, "strict", false, "treat warnings as errors")
+	return cmd
+}
+
+func runValidate(validateSchema, validateManifest *string, validateNoManifest, validateCheckEnv *bool, validateFormat *string, validateStrict *bool) {
 	ctx := context.Background()
 
 	s, err := config.ParseSchema(*validateSchema, map[string]string{})
@@ -151,22 +170,40 @@ func runValidate(args []string) {
 	os.Exit(exitCode)
 }
 
-// flags maintained in help.go:printCommandHelp
-func runCheck(args []string) {
-	checkCmd := flag.NewFlagSet("check", flag.ExitOnError)
-	checkSchema := checkCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
-	checkManifest := checkCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
-	checkNoManifest := checkCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
-	checkJSON := checkCmd.Bool("json", false, "JSON output")
-	checkFormat := checkCmd.String("format", "", "output format (json)")
-	checkLive := checkCmd.Bool("live", false, "check via adapter (may run subprocesses)")
-	remain := parseFlagsInterspersed(checkCmd, args)
-	if len(remain) < 1 {
-		log.Default.Error("usage: depengine check <tool>")
-		os.Exit(1)
-	}
-	toolName := remain[0]
+// newCheckCmd builds `depengine check`.
+func newCheckCmd() *cobra.Command {
+	checkSchema := new(string)
+	checkManifest := new(string)
+	checkNoManifest := new(bool)
+	checkJSON := new(bool)
+	checkFormat := new(string)
+	checkLive := new(bool)
 
+	cmd := &cobra.Command{
+		Use:     "check <tool>",
+		Short:   ifPT("Verificar se uma ferramenta está instalada", "Check whether a tool is installed"),
+		GroupID: groupInspect,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			runCheck(args[0], checkSchema, checkManifest, checkNoManifest, checkJSON, checkFormat, checkLive)
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(checkSchema, "schema", defaultSchemaPath(), "path to schema.toml")
+	f.StringVar(checkManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
+	f.BoolVar(checkNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	f.BoolVar(checkJSON, "json", false, "JSON output")
+	f.StringVar(checkFormat, "format", "", "output format (json)")
+	f.BoolVar(checkLive, "live", false, "check via adapter (may run subprocesses)")
+	return cmd
+}
+
+// runCheck reports whether a single tool is installed. Body unchanged from
+// the pre-Cobra version — Cobra's cobra.ExactArgs(1) now enforces the
+// argument count that the old manual length check did, and toolName arrives
+// as a plain argument instead of remain[0].
+func runCheck(toolName string, checkSchema, checkManifest *string, checkNoManifest, checkJSON *bool, checkFormat *string, checkLive *bool) {
 	noManifest := *checkNoManifest
 	manifestPath := *checkManifest
 	manifestAuto := false

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 
@@ -14,20 +13,41 @@ import (
 	"github.com/Khorea1/depengine/pkg/graph"
 	"github.com/Khorea1/depengine/pkg/log"
 	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/spf13/cobra"
 )
 
-func runGraph(args []string) {
-	// flags maintained in help.go:printCommandHelp
-	graphCmd := flag.NewFlagSet("graph", flag.ExitOnError)
-	graphSchema := graphCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
-	graphManifest := graphCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
-	graphNoManifest := graphCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
-	graphFormat := graphCmd.String("format", "text", "output format: mermaid, dot, text")
-	graphProfile := graphCmd.String("profile", "", "only show tools with matching tag")
-	graphOnly := graphCmd.String("only", "", "only show subgraph for specific tool")
-	graphSkip := graphCmd.String("skip", "", "skip specific tools (comma-separated)")
-	graphCmd.Parse(args)
+// newGraphCmd builds `depengine graph`.
+func newGraphCmd() *cobra.Command {
+	graphSchema := new(string)
+	graphManifest := new(string)
+	graphNoManifest := new(bool)
+	graphFormat := new(string)
+	graphProfile := new(string)
+	graphOnly := new(string)
+	graphSkip := new(string)
 
+	cmd := &cobra.Command{
+		Use:     "graph",
+		Short:   ifPT("Mostrar o grafo de dependências", "Show the dependency graph"),
+		GroupID: groupInspect,
+		Args:    cobra.NoArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			runGraph(graphSchema, graphManifest, graphNoManifest, graphFormat, graphProfile, graphOnly, graphSkip)
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(graphSchema, "schema", defaultSchemaPath(), "path to schema.toml")
+	f.StringVar(graphManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
+	f.BoolVar(graphNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	f.StringVar(graphFormat, "format", "text", "output format: mermaid, dot, text")
+	f.StringVar(graphProfile, "profile", "", "only show tools with matching tag")
+	f.StringVar(graphOnly, "only", "", "only show subgraph for specific tool")
+	f.StringVar(graphSkip, "skip", "", "skip specific tools (comma-separated)")
+	return cmd
+}
+
+func runGraph(graphSchema, graphManifest *string, graphNoManifest *bool, graphFormat, graphProfile, graphOnly, graphSkip *string) {
 	switch *graphFormat {
 	case "mermaid", "dot", "text":
 	default:
@@ -99,23 +119,40 @@ func runGraph(args []string) {
 	}
 }
 
-// runWhy shows why a tool would be installed via each candidate method,
-// without actually installing anything. Useful for debugging complex schemas.
-func runWhy(args []string) {
-	// flags maintained in help.go:printCommandHelp
-	whyCmd := flag.NewFlagSet("why", flag.ExitOnError)
-	whySchema := whyCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
-	whyManifest := whyCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
-	whyNoManifest := whyCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
-	whyJSON := whyCmd.Bool("json", false, "JSON output")
-	whyFields := whyCmd.Bool("fields", false, "show field-level provenance")
-	remain := parseFlagsInterspersed(whyCmd, args)
-	if len(remain) < 1 {
-		log.Default.Error("usage: depengine why <tool>")
-		os.Exit(1)
-	}
-	toolName := remain[0]
+// newWhyCmd builds `depengine why`.
+func newWhyCmd() *cobra.Command {
+	whySchema := new(string)
+	whyManifest := new(string)
+	whyNoManifest := new(bool)
+	whyJSON := new(bool)
+	whyFields := new(bool)
 
+	cmd := &cobra.Command{
+		Use:     "why <tool>",
+		Short:   ifPT("Explicar como uma ferramenta seria instalada", "Explain how a tool would be installed"),
+		GroupID: groupInspect,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			runWhy(args[0], whySchema, whyManifest, whyNoManifest, whyJSON, whyFields)
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(whySchema, "schema", defaultSchemaPath(), "path to schema.toml")
+	f.StringVar(whyManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
+	f.BoolVar(whyNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	f.BoolVar(whyJSON, "json", false, "JSON output")
+	f.BoolVar(whyFields, "fields", false, "show field-level provenance")
+	return cmd
+}
+
+// runWhy shows why a tool would be installed via each candidate method,
+// without actually installing anything. Useful for debugging complex
+// schemas. Body unchanged from the pre-Cobra version — Cobra's
+// cobra.ExactArgs(1) now enforces the argument count that the old manual
+// length check did, and toolName arrives as a plain argument instead of
+// remain[0].
+func runWhy(toolName string, whySchema, whyManifest *string, whyNoManifest, whyJSON, whyFields *bool) {
 	s, err := config.ParseSchema(*whySchema, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)

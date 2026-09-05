@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,35 +16,70 @@ import (
 	"github.com/Khorea1/depengine/pkg/log"
 	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/state"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
-func runInstall(args []string) {
-	// flags maintained in help.go:printCommandHelp
-	installCmd := flag.NewFlagSet("install", flag.ExitOnError)
-	installSchema := installCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
-	installManifest := installCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
-	installNoManifest := installCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
-	installDryRun := installCmd.Bool("dry-run", false, "show what would be installed")
-	installVerbose := installCmd.Bool("verbose", false, "detailed output")
-	installJSON := installCmd.Bool("json", false, "JSON output")
-	installOnly := installCmd.String("only", "", "only install specific tool")
-	installSkip := installCmd.String("skip", "", "skip specific tools (comma-separated)")
-	installProfile := installCmd.String("profile", "", "only install tools with matching tag (e.g. minimal,desktop,server)")
-	installFrozen := installCmd.Bool("frozen-lockfile", false, "fail if depengine.lock does not exist or needs update")
-	installDiagnose := installCmd.Bool("diagnose", false, "diagnostic mode: DEBUG + dry-run + verbose")
-	installLogLevel := installCmd.String("log-level", "", "log level: debug, info, warn, error")
-	installSortBy := installCmd.String("sort-by", "", "sort output by: name, status, method")
-	installJobs := installCmd.Int("jobs", 1, "max concurrent installations (default 1 = sequential)")
-	installAllowArbitrary := installCmd.Bool("allow-arbitrary-code", false, "suppress security warnings for build scripts / arbitrary code")
-	installQuiet := installCmd.Bool("quiet", false, "suppress per-tool status lines; show only final summary")
-	installCmd.Parse(args)
+// newInstallCmd builds `depengine install`. All flags are declared here,
+// once — Cobra's --help, error messages, and shell completion are derived
+// straight from this declaration.
+func newInstallCmd() *cobra.Command {
+	installSchema := new(string)
+	installManifest := new(string)
+	installNoManifest := new(bool)
+	installDryRun := new(bool)
+	installVerbose := new(bool)
+	installJSON := new(bool)
+	installOnly := new(string)
+	installSkip := new(string)
+	installProfile := new(string)
+	installFrozen := new(bool)
+	installDiagnose := new(bool)
+	installLogLevel := new(string)
+	installSortBy := new(string)
+	installJobs := new(int)
+	installAllowArbitrary := new(bool)
+	installQuiet := new(bool)
 
+	cmd := &cobra.Command{
+		Use:     "install",
+		Short:   ifPT("Instalar ferramentas do schema.toml", "Install tools from schema.toml"),
+		GroupID: groupManage,
+		Args:    cobra.NoArgs,
+		RunE: func(installCmd *cobra.Command, args []string) error {
+			runInstall(installCmd, installSchema, installManifest, installNoManifest, installDryRun, installVerbose, installJSON, installOnly, installSkip, installProfile, installFrozen, installDiagnose, installLogLevel, installSortBy, installJobs, installAllowArbitrary, installQuiet)
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(installSchema, "schema", defaultSchemaPath(), "path to schema.toml")
+	f.StringVar(installManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
+	f.BoolVar(installNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	f.BoolVar(installDryRun, "dry-run", false, "show what would be installed")
+	f.BoolVar(installVerbose, "verbose", false, "detailed output")
+	f.BoolVar(installJSON, "json", false, "JSON output")
+	f.StringVar(installOnly, "only", "", "only install specific tool")
+	f.StringVar(installSkip, "skip", "", "skip specific tools (comma-separated)")
+	f.StringVar(installProfile, "profile", "", "only install tools with matching tag (e.g. minimal,desktop,server)")
+	f.BoolVar(installFrozen, "frozen-lockfile", false, "fail if depengine.lock does not exist or needs update")
+	f.BoolVar(installDiagnose, "diagnose", false, "diagnostic mode: DEBUG + dry-run + verbose")
+	f.StringVar(installLogLevel, "log-level", "", "log level: debug, info, warn, error")
+	f.StringVar(installSortBy, "sort-by", "", "sort output by: name, status, method")
+	f.IntVar(installJobs, "jobs", 1, "max concurrent installations (default 1 = sequential)")
+	f.BoolVar(installAllowArbitrary, "allow-arbitrary-code", false, "suppress security warnings for build scripts / arbitrary code")
+	f.BoolVar(installQuiet, "quiet", false, "suppress per-tool status lines; show only final summary")
+	return cmd
+}
+
+// runInstall installs tools from schema.toml. Body unchanged from the
+// pre-Cobra version — only the flag declarations above it moved.
+func runInstall(cmd *cobra.Command, installSchema, installManifest *string, installNoManifest, installDryRun, installVerbose, installJSON *bool, installOnly, installSkip, installProfile *string, installFrozen, installDiagnose *bool, installLogLevel, installSortBy *string, installJobs *int, installAllowArbitrary, installQuiet *bool) {
 	lg := log.Default
 
 	if *installDiagnose {
 		// Only override flags the user didn't explicitly set.
 		saw := make(map[string]bool)
-		installCmd.Visit(func(f *flag.Flag) {
+		cmd.Flags().Visit(func(f *pflag.Flag) {
 			saw[f.Name] = true
 		})
 		if !saw["dry-run"] {

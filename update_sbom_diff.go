@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"sort"
@@ -16,21 +15,43 @@ import (
 	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/sbom"
 	"github.com/Khorea1/depengine/pkg/state"
+	"github.com/spf13/cobra"
 )
 
-func runUpdate(args []string) {
-	// flags maintained in help.go:printCommandHelp
-	updateCmd := flag.NewFlagSet("update", flag.ExitOnError)
-	updateSchema := updateCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
-	updateManifest := updateCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
-	updateNoManifest := updateCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
-	updateLock := updateCmd.String("lock", "", "path to depengine.lock (default: alongside schema.toml)")
-	updateProfile := updateCmd.String("profile", "", "only resolve & pin tools with matching tag")
-	updateFrozen := updateCmd.Bool("frozen-lockfile", false, "abort if depengine.lock does not exist")
-	updateDryRun := updateCmd.Bool("dry-run", false, "show what would be updated without writing lock")
-	updateVerbose := updateCmd.Bool("v", false, "detailed output")
-	updateCmd.Parse(args)
+// newUpdateCmd builds `depengine update`.
+func newUpdateCmd() *cobra.Command {
+	updateSchema := new(string)
+	updateManifest := new(string)
+	updateNoManifest := new(bool)
+	updateLock := new(string)
+	updateProfile := new(string)
+	updateFrozen := new(bool)
+	updateDryRun := new(bool)
+	updateVerbose := new(bool)
 
+	cmd := &cobra.Command{
+		Use:     "update",
+		Short:   ifPT("Resolver e fixar versões em depengine.lock", "Resolve and pin versions into depengine.lock"),
+		GroupID: groupManage,
+		Args:    cobra.NoArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			runUpdate(updateSchema, updateManifest, updateNoManifest, updateLock, updateProfile, updateFrozen, updateDryRun, updateVerbose)
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(updateSchema, "schema", defaultSchemaPath(), "path to schema.toml")
+	f.StringVar(updateManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
+	f.BoolVar(updateNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	f.StringVar(updateLock, "lock", "", "path to depengine.lock (default: alongside schema.toml)")
+	f.StringVar(updateProfile, "profile", "", "only resolve & pin tools with matching tag")
+	f.BoolVar(updateFrozen, "frozen-lockfile", false, "abort if depengine.lock does not exist")
+	f.BoolVar(updateDryRun, "dry-run", false, "show what would be updated without writing lock")
+	f.BoolVar(updateVerbose, "v", false, "detailed output")
+	return cmd
+}
+
+func runUpdate(updateSchema, updateManifest *string, updateNoManifest *bool, updateLock, updateProfile *string, updateFrozen, updateDryRun, updateVerbose *bool) {
 	ctx := context.Background()
 	lg := log.Default
 
@@ -175,12 +196,25 @@ func reportVersionDrift(newLock *lock.Lock) {
 	fmt.Fprintln(c.w, c.dim("    Run 'depengine upgrade' to apply."))
 }
 
-func runSBOM(args []string) {
-	// flags maintained in help.go:printCommandHelp
-	sbomCmd := flag.NewFlagSet("sbom", flag.ExitOnError)
-	sbomFormat := sbomCmd.String("format", "cyclonedx", "output format: cyclonedx or spdx")
-	sbomCmd.Parse(args)
+// newSBOMCmd builds `depengine sbom`.
+func newSBOMCmd() *cobra.Command {
+	sbomFormat := new(string)
 
+	cmd := &cobra.Command{
+		Use:     "sbom",
+		Short:   ifPT("Exportar um SBOM do estado instalado", "Export a software bill of materials of installed state"),
+		GroupID: groupExport,
+		Args:    cobra.NoArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			runSBOM(sbomFormat)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(sbomFormat, "format", "cyclonedx", "output format: cyclonedx or spdx")
+	return cmd
+}
+
+func runSBOM(sbomFormat *string) {
 	ls, err := state.LoadShared()
 	if err != nil {
 		log.Default.Error("load state", "error", err)
@@ -227,14 +261,32 @@ func runSBOM(args []string) {
 	fmt.Println(string(data))
 }
 
-// runDiff compares two state files and outputs the differences.
-func runDiff(args []string) {
-	// flags maintained in help.go:printCommandHelp
-	diffCmd := flag.NewFlagSet("diff", flag.ExitOnError)
-	diffOther := diffCmd.String("other", "", "path to other state file (used when no args)")
-	diffJSON := diffCmd.Bool("json", false, "output as JSON")
-	diffArgs := parseFlagsInterspersed(diffCmd, args)
+// newDiffCmd builds `depengine diff`.
+func newDiffCmd() *cobra.Command {
+	diffOther := new(string)
+	diffJSON := new(bool)
 
+	cmd := &cobra.Command{
+		Use:     "diff [file1] [file2]",
+		Short:   ifPT("Comparar dois arquivos de estado", "Compare two state files"),
+		GroupID: groupInspect,
+		Args:    cobra.MaximumNArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			runDiff(args, diffOther, diffJSON)
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(diffOther, "other", "", "path to other state file (used when no args)")
+	f.BoolVar(diffJSON, "json", false, "output as JSON")
+	return cmd
+}
+
+// runDiff compares two state files and outputs the differences. Body
+// unchanged from the pre-Cobra version — diffArgs is now the positional
+// args Cobra already separated out, and cobra.MaximumNArgs(2) replaces the
+// old `default:` branch of the length switch below.
+func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) {
 	var aPath, bPath string
 	var aState, bState *state.State
 	var err error
@@ -261,9 +313,6 @@ func runDiff(args []string) {
 			log.Default.Error("load second state", "path", bPath, "error", err)
 			os.Exit(3)
 		}
-	default:
-		fmt.Fprintf(os.Stderr, "usage: depengine diff [--json] [--other <path>] [<file1> [<file2>]]\n")
-		os.Exit(2)
 	}
 
 	if len(diffArgs) != 2 {

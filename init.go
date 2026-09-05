@@ -2,13 +2,14 @@ package main
 
 import (
 	"bufio"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 const initTemplate = `# %[1]s — depengine project configuration
@@ -36,14 +37,32 @@ simple = [%s]
 
 var toolNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,128}$`)
 
-func runInit(args []string) {
-	// flags maintained in help.go:printCommandHelp
-	fs := flag.NewFlagSet("init", flag.ContinueOnError)
-	output := fs.String("schema", "", "path to write (default: schema.toml)")
-	addTools := fs.String("add", "", "comma-separated tool names to pre-populate (e.g. 'zsh,bat,nvim')")
-	interactive := fs.Bool("interactive", false, "interactive mode: walk through adding tools")
-	_ = fs.Parse(args)
+// newInitCmd builds `depengine init`.
+func newInitCmd() *cobra.Command {
+	output := new(string)
+	addTools := new(string)
+	interactive := new(bool)
 
+	cmd := &cobra.Command{
+		Use:     "init",
+		Short:   ifPT("Inicializar schema.toml para um projeto", "Initialize a schema.toml for a new project"),
+		GroupID: groupManage,
+		Args:    cobra.NoArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			runInit(output, addTools, interactive)
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(output, "schema", "", "path to write (default: schema.toml)")
+	f.StringVar(addTools, "add", "", "comma-separated tool names to pre-populate (e.g. 'zsh,bat,nvim')")
+	f.BoolVar(interactive, "interactive", false, "interactive mode: walk through adding tools")
+	return cmd
+}
+
+// runInit writes a new schema.toml. Body unchanged from the pre-Cobra
+// version — only the flag declarations above it moved.
+func runInit(output, addTools *string, interactive *bool) {
 	path := *output
 	if path == "" {
 		path = "schema.toml"

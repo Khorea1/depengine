@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +14,7 @@ import (
 	"github.com/Khorea1/depengine/pkg/log"
 	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/state"
+	"github.com/spf13/cobra"
 )
 
 func relativeTime(t time.Time) string {
@@ -67,11 +67,28 @@ func relativeTime(t time.Time) string {
 }
 
 // flags maintained in help.go:printCommandHelp
-func runUndo(args []string) {
-	undoCmd := flag.NewFlagSet("undo", flag.ExitOnError)
-	undoList := undoCmd.Bool("list", false, "list available snapshots")
-	undoSpecific := undoCmd.String("snapshot", "", "revert to specific snapshot file path")
-	undoCmd.Parse(args)
+// newUndoCmd builds `depengine undo`.
+func newUndoCmd() *cobra.Command {
+	undoList := new(bool)
+	undoSpecific := new(string)
+
+	cmd := &cobra.Command{
+		Use:     "undo",
+		Short:   ifPT("Reverter para um snapshot anterior do estado", "Revert to a previous state snapshot"),
+		GroupID: groupManage,
+		Args:    cobra.NoArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			runUndo(undoList, undoSpecific)
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.BoolVar(undoList, "list", false, "list available snapshots")
+	f.StringVar(undoSpecific, "snapshot", "", "revert to specific snapshot file path")
+	return cmd
+}
+
+func runUndo(undoList *bool, undoSpecific *string) {
 
 	if *undoList {
 		snapshots, err := state.ListSnapshots()

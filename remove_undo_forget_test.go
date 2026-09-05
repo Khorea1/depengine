@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/Khorea1/depengine/pkg/ecosystem"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/state"
+	"github.com/spf13/cobra"
 )
 
 // init mirrors main.initAdapters: the test binary never runs main(), so the
@@ -83,13 +85,13 @@ func TestCommandHelperSubprocess(t *testing.T) {
 		t.Skip("subprocess entry point; run indirectly via runCommand")
 	}
 	args := os.Args[2:] // skip binary name and the -test.run flag
-	switch os.Getenv("DEPENGINE_TEST_HELPER_CMD") {
+	switch cmd := os.Getenv("DEPENGINE_TEST_HELPER_CMD"); cmd {
 	case "remove":
-		runRemove(args)
+		runViaCobra(newRemoveCmd(), args)
 	case "undo":
-		runUndo(args)
+		runViaCobra(newUndoCmd(), args)
 	case "forget":
-		runForget(args)
+		runViaCobra(newForgetCmd(), args)
 	case "upgrade":
 		// Upgrade flags are passed via DEPENGINE_TEST_ARGS to avoid
 		// collision with the Go test binary's own flag parser.
@@ -97,12 +99,23 @@ func TestCommandHelperSubprocess(t *testing.T) {
 		if a := os.Getenv("DEPENGINE_TEST_ARGS"); a != "" {
 			upgradeArgs = strings.Split(a, "\x1f")
 		}
-		runUpgrade(upgradeArgs)
+		runViaCobra(newUpgradeCmd(), upgradeArgs)
 	default:
 		os.Exit(99)
 	}
 	// A successful command returns here (failure paths call os.Exit).
 	os.Exit(0)
+}
+
+// runViaCobra executes a single cobra.Command the same way the real CLI
+// does (parse args, then RunE), so these tests exercise the exact code path
+// `depengine remove|undo|forget|upgrade ...` runs, flag parsing included.
+func runViaCobra(cmd *cobra.Command, args []string) {
+	cmd.SetArgs(normalizeArgs(args))
+	if err := cmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 func writeTestState(t *testing.T, stateHome string, tools map[string]state.ToolState) {

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"sort"
@@ -19,6 +18,7 @@ import (
 	"github.com/Khorea1/depengine/pkg/log"
 	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/state"
+	"github.com/spf13/cobra"
 )
 
 // upgradeResult records the outcome of upgrading one tool.
@@ -31,22 +31,47 @@ type upgradeResult struct {
 	Error  string `json:"error,omitempty"`
 }
 
+// newUpgradeCmd builds `depengine upgrade`.
+func newUpgradeCmd() *cobra.Command {
+	upgradeSchema := new(string)
+	upgradeManifest := new(string)
+	upgradeNoManifest := new(bool)
+	upgradeDryRun := new(bool)
+	upgradeOnly := new(string)
+	upgradeForce := new(bool)
+	upgradeJSON := new(bool)
+	upgradeQuiet := new(bool)
+	upgradeAllowArbitrary := new(bool)
+
+	cmd := &cobra.Command{
+		Use:     "upgrade",
+		Short:   ifPT("Atualizar ferramentas para as versões do depengine.lock", "Upgrade installed tools to pinned versions"),
+		GroupID: groupManage,
+		Args:    cobra.NoArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			runUpgrade(upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary)
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(upgradeSchema, "schema", defaultSchemaPath(), "path to schema.toml")
+	f.StringVar(upgradeManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
+	f.BoolVar(upgradeNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	f.BoolVar(upgradeDryRun, "dry-run", false, "show what would be upgraded without making changes")
+	f.StringVar(upgradeOnly, "only", "", "only upgrade specific tool")
+	f.BoolVar(upgradeForce, "force", false, "skip confirmation prompt")
+	f.BoolVar(upgradeJSON, "json", false, "JSON output")
+	f.BoolVar(upgradeQuiet, "quiet", false, "suppress per-tool status lines")
+	f.BoolVar(upgradeAllowArbitrary, "allow-arbitrary-code", false, "suppress security warnings for build scripts / arbitrary code")
+	return cmd
+}
+
 // runUpgrade upgrades installed tools whose recorded version is outdated
 // relative to the pinned version in depengine.lock. For each outdated tool,
 // it calls adapter.Remove followed by adapter.Install, then updates state.
-func runUpgrade(args []string) {
-	upgradeCmd := flag.NewFlagSet("upgrade", flag.ExitOnError)
-	upgradeSchema := upgradeCmd.String("schema", defaultSchemaPath(), "path to schema.toml")
-	upgradeManifest := upgradeCmd.String("manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
-	upgradeNoManifest := upgradeCmd.Bool("no-manifest", false, "disable personal manifest (default: auto-detect)")
-	upgradeDryRun := upgradeCmd.Bool("dry-run", false, "show what would be upgraded without making changes")
-	upgradeOnly := upgradeCmd.String("only", "", "only upgrade specific tool")
-	upgradeForce := upgradeCmd.Bool("force", false, "skip confirmation prompt")
-	upgradeJSON := upgradeCmd.Bool("json", false, "JSON output")
-	upgradeQuiet := upgradeCmd.Bool("quiet", false, "suppress per-tool status lines")
-	upgradeAllowArbitrary := upgradeCmd.Bool("allow-arbitrary-code", false, "suppress security warnings for build scripts / arbitrary code")
-	upgradeCmd.Parse(args)
-
+// Body unchanged from the pre-Cobra version — only the flag declarations
+// above it moved.
+func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool) {
 	ctx := context.Background()
 	lg := log.Default
 
