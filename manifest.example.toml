@@ -16,11 +16,13 @@
 # USAGE: copy to ~/.config/depengine/manifest.toml and edit.
 # ==============================================================================
 #
-# ⚠ NOTE: This file is an ILLUSTRATIVE EXAMPLE. Several tools below include
-# fields (pre_install, postinstall, requires, method_order) that the validator
-# REJECTS in a real manifest — they only work in the project's schema.toml.
-# When copying to ~/.config/depengine/manifest.toml, remove or comment out
-# these fields. See docs/ for details.
+# ⚠ NOTE: This file is an ILLUSTRATIVE EXAMPLE. `pre_install`/`preinstall`,
+# `postinstall`, `requires`, and `method_order` all merge fine from a real
+# manifest too (schema-wins-on-conflict, same as everywhere else) — nothing
+# here is rejected by the validator. What IS manifest-only is adding a tool
+# that doesn't exist in the project's schema.toml at all: that requires
+# `[manifest] allow_new_tools = true` (see the block below). See docs/ for
+# the full merge-precedence breakdown.
 
 # ==============================================================================
 # [packages] — installation knowledge
@@ -57,7 +59,7 @@
 # --- native + multi-ecosystem ---
 nvim      = { pacman = "neovim",             apt = "neovim",                brew = "neovim" }
 fd        = { apt = "fd-find",               cargo = "fd-find" }
-go        = { pacman = "go",                 apt = "golang-go" }
+golang    = { pacman = "go",                 apt = "golang-go" }   # named "golang" (not "go") to avoid colliding with the "go install" method kind — see CHECKLIST/method_order
 rg        = { pacman = "ripgrep",            apt = "ripgrep" }
 btop      = { pacman = "btop",               apt = "btop" }
 eza       = { pacman = "eza",                apt = "eza" }
@@ -86,7 +88,7 @@ organize      = { pip = "organize-tool", pipx = "organize-tool", uv = "organize-
 httpie        = { python = true }
 poetry        = { python = true }
 ruff          = { python = true }
-uv            = { python = true }
+uv-cli        = { python = true }   # named "uv-cli" (not "uv") to avoid colliding with the "uv" method kind
 shell-gpt     = { python = true }
 youtube-dl    = { python = true }
 yt-dlp        = { python = true }
@@ -159,7 +161,7 @@ eslint        = { node = true }
 typescript    = { node = true }
 tsx           = { node = true }
 oxlint        = { node = true }
-bun           = { node = true }
+bun-runtime   = { npm = "bun", pnpm = "bun" }   # named "bun-runtime" (not "bun") to avoid colliding with the "bun" method kind; npm's "bun" package is an installer shim for the real binary
 
 # --- gem (Ruby) ---
 jekyll        = { gem = "jekyll" }
@@ -307,14 +309,20 @@ tags = ["terminal"]
 
 # --- ripgrep-all (rga): cargo → http (fallback) ---
 [packages.rga]
-requires = ["ripgrep"]
+requires = ["rg"]
 tags     = ["search"]
 
   [packages.rga.cargo]
   pkg = "ripgrep_all"
 
   [packages.rga.http]
-  url      = "https://github.com/phiresky/ripgrep-all/releases/download/{latest}/ripgrep_all-v{latest}-x86_64-unknown-linux-musl.tar.gz"
+  # NOTE: {latest} resolves to the raw git tag, which already carries the
+  # "v" (e.g. "v0.10.10") — ripgrep-all's own asset filenames also keep
+  # that "v" (ripgrep_all-v0.10.10-...), so {latest} is reused as-is here.
+  # Prepending a literal "v" (`ripgrep_all-v{latest}-...`) would double it
+  # into "vv0.10.10" and 404 — the same class of mistake fixed for
+  # restic/node_exporter in schema.example.toml (see that file's comments).
+  url      = "https://github.com/phiresky/ripgrep-all/releases/download/{latest}/ripgrep_all-{latest}-x86_64-unknown-linux-musl.tar.gz"
   checksum = "sha256:auto"
   extract_to = "~/.local/bin"
   binary     = "rga"
@@ -326,7 +334,7 @@ tags = ["containers"]
 
   [packages.docker.native]
   pkg  = "docker"
-  when = { distro_family = ["arch", "debian", "ubuntu", "fedora"] }
+  when = { distro_family = ["arch", "debian", "fedora"] }
 
   [packages.docker.http]
   url    = "https://get.docker.com"
@@ -368,7 +376,7 @@ tags = ["lint", "dev"]
 
   [packages.shellcheck.native]
   pkg  = "shellcheck"
-  when = { distro_family = ["arch", "debian", "ubuntu", "fedora"] }
+  when = { distro_family = ["arch", "debian", "fedora"] }
 
   [packages.shellcheck.cargo]
   pkg = "shellcheck"
@@ -386,7 +394,7 @@ tags = ["lint", "dev"]
 
   [packages.shfmt.native]
   pkg  = "shfmt"
-  when = { distro_family = ["arch", "debian", "ubuntu", "fedora"] }
+  when = { distro_family = ["arch", "debian", "fedora"] }
 
   [packages.shfmt.go]
   pkg = "mvdan.cc/sh/v3/cmd/shfmt"
@@ -414,30 +422,171 @@ tags = ["lint", "containers"]
 
 
 # ==============================================================================
-# SECTION 5 — Tools with exclusive distribution (AUR / conda / etc.)
+# SECTION 5 — Method kinds not exercised anywhere above.
+# `defaults.method_order` in schema.example.toml lists every kind the engine
+# understands; the ones below (yarn classic, Yarn Berry, Composer, apm,
+# VS Code/VSCodium extensions, Homebrew casks, the Mac App Store, SDKMAN,
+# SteamCMD, Pacstall, asdf, and Windows's three competing managers) had no
+# working example anywhere in this repo before now. All of the ecosystem
+# ones below take a single `pkg` field, exactly like cargo/go/pip do.
+# ==============================================================================
+
+# --- yarn (classic, v1): global add. Kept for legacy projects; Berry (v2+)
+# below is the modern default and does NOT support global installs at all. ---
+gtop = { yarn = "gtop" }   # real npm package: system monitor dashboard, htop-alike
+
+# --- yarn-berry (v2+): project-local only — `yarn add` inside the current
+# project's package.json, not a global install. Real CLI tool commonly added
+# this way in a Node monorepo. ---
+[packages.vercel]
+  [packages.vercel.yarn-berry]
+  pkg = "vercel"
+
+# --- composer (PHP): global require, same idea as pipx/npm -g. ---
+[packages.laravel-installer]
+  [packages.laravel-installer.composer]
+  pkg = "laravel/installer"   # vendor/package, Composer's real naming convention
+
+# --- apm: Atom's package manager. Atom itself was discontinued by GitHub in
+# December 2022; apm is kept here only as a worked example of a fully
+# deprecated ecosystem the engine still knows how to drive (uninstall is
+# manual — see pkg/ecosystem/registry.go's comment on why). ---
+[packages.minimap]
+  [packages.minimap.apm]
+  pkg = "minimap"   # real, once-ubiquitous Atom package (sidebar code minimap)
+
+# --- vscode / vscodium: editor extensions, installed by publisher.name ID.
+# Extension (un)install is inherently manual bookkeeping (see
+# pkg/ecosystem/registry.go) — Check just looks for the ID in
+# `code --list-extensions`. ---
+[packages.python-vscode-ext]
+  [packages.python-vscode-ext.vscode]
+  pkg = "ms-python.python"
+
+[packages.rust-analyzer-vscode-ext]
+  [packages.rust-analyzer-vscode-ext.vscode]
+  pkg = "rust-lang.rust-analyzer"
+
+# VSCodium pulls from Open VSX, not the Microsoft Marketplace — most
+# Microsoft-published extensions (ms-python.python, C/C++ tools, the
+# Microsoft themes) are absent there for licensing reasons, but
+# community-published ones like Prettier are mirrored fine.
+[packages.prettier-vscodium-ext]
+  [packages.prettier-vscodium-ext.vscodium]
+  pkg = "esbenp.prettier-vscode"
+
+# --- cask: macOS GUI apps via `brew install --cask`. ---
+iterm2    = { cask = "iterm2" }
+rectangle = { cask = "rectangle" }   # window-tiling manager
+
+# --- mas: Mac App Store apps, addressed by their numeric App Store ID
+# (found in the app's App Store URL, e.g. .../id441258766). ---
+magnet = { mas = "441258766" }   # Magnet, window manager
+xcode  = { mas = "497799835" }   # Xcode — the canonical mas example
+
+# --- sdkman: JVM-ecosystem SDKs. Candidate identifiers carry a vendor
+# suffix — "-tem" is Eclipse Temurin; omitting the version installs
+# whatever SDKMAN currently resolves as default for that candidate. ---
+[packages.temurin-17]
+  [packages.temurin-17.sdkman]
+  pkg = "17.0.9-tem"
+
+gradle = { sdkman = "gradle" }
+
+# --- steamcmd: dedicated game servers by numeric Steam AppID (found on
+# SteamDB or the store page URL). Check always reports "not installed" —
+# steamcmd re-validates/updates in place on every run instead of skipping,
+# which is the correct behavior for a server that must stay patched. ---
+valheim-server = { steamcmd = "896660" }
+tf2-server     = { steamcmd = "232250" }
+
+# --- pacstall: AUR-style community packages for Debian/Ubuntu, repackaging
+# vendor .debs the distro won't ship directly. Its scripts conventionally
+# suffix repackaged proprietary binaries with "-deb". ---
+spotify-pacstall = { pacstall = "spotify-deb" }
+chrome-pacstall  = { pacstall = "google-chrome-stable-deb" }
+
+# --- asdf: version manager plugins (mise is a drop-in-compatible
+# reimplementation — the adapter checks for either binary, see
+# pkg/ecosystem/asdf_adapter.go). Plugin names usually match the runtime name. ---
+nodejs-asdf  = { asdf = "nodejs" }
+erlang-asdf  = { asdf = "erlang" }
+
+# --- Windows: THREE competing package managers, three different ID
+# conventions. winget is the OS-native default on Windows 10 1709+/11 (no
+# `kind` override needed — it's just `pkg_overrides` like apt/pacman/dnf
+# are on Linux) and uses reverse-DNS-ish "Publisher.Product" IDs. scoop and
+# choco are opt-in managers the user installs separately, tried in
+# `method_order`, and both use plain lowercase names. ---
+[packages.git-scm]
+# named "git-scm" (not "git") to avoid colliding with the "git" method kind
+# (clone + build installs, used throughout SECTION 2 above)
+  [packages.git-scm.native]
+  pkg_overrides = { winget = "Git.Git" }
+  when          = { os = ["windows"] }
+
+  [packages.git-scm.scoop]
+  pkg = "git"
+
+  [packages.git-scm.choco]
+  pkg = "git"
+
+[packages.powertoys]
+  [packages.powertoys.native]
+  pkg  = "Microsoft.PowerToys"
+  when = { os = ["windows"] }   # winget-only — no scoop/choco fallback needed
+
+
+# ==============================================================================
+# SECTION 6 — Tools with exclusive distribution (AUR / conda / etc.)
 # ==============================================================================
 # The engine skips methods whose when does not match the current environment.
 # ==============================================================================
 
-[packages.paru]
+[packages.paru-helper]
 tags = ["aur-helper"]
+# named "paru-helper" (not "paru") to avoid colliding with the "paru" method
+# kind (the AUR-helper-invocation alias used when defaults.aur_helper = "paru")
 
-  [packages.paru.aur]
+  [packages.paru-helper.aur]
   pkg  = "paru"
   when = { distro_family = ["arch"] }
 
-  [packages.paru.git]
+  [packages.paru-helper.git]
   url   = "https://github.com/Morganamilo/paru"
   build = "makepkg -si"
   when  = { distro_family = ["arch"] }
 
 
-[packages.yay]
+[packages.yay-helper]
 tags = ["aur-helper"]
+# named "yay-helper" (not "yay") for the same reason as paru-helper above.
 
-  [packages.yay.aur]
+  [packages.yay-helper.aur]
   pkg  = "yay-bin"
   when = { distro_family = ["arch"] }
+
+
+# ==============================================================================
+# [manifest] — manifest-only settings
+# ==============================================================================
+# By default a manifest can only add KNOWLEDGE (methods, overrides, hooks)
+# to tools the active project's schema.toml already declares — it can't
+# introduce a tool the project doesn't know about. Set allow_new_tools = true
+# to lift that, for personal tools you always want available regardless of
+# which project you're in (dotfiles bootstrappers, your own scripts, etc.).
+# ==============================================================================
+[manifest]
+allow_new_tools = true
+
+# dotbot only makes sense with allow_new_tools = true above — no project's
+# schema.toml is expected to know about a specific person's dotfiles repo.
+[packages.dotbot]
+tags = ["personal", "dotfiles"]
+
+  [packages.dotbot.git]
+  url   = "https://github.com/anishathalye/dotbot"
+  depth = 1
 
 
 # ==============================================================================
