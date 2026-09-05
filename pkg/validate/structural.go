@@ -59,6 +59,34 @@ func validateRequiredFields(s *config.Schema) *Result {
 						Message: fmt.Sprintf("http method url must be a string, got %T", v),
 					})
 				}
+
+			case "github":
+				if v, ok := mc.Config["repo"]; !ok || v == "" {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "repo"),
+						Message: fmt.Sprintf("github method for tool %q requires a repo field (\"owner/repo\")", toolName),
+					})
+				} else if _, isStr := v.(string); !isStr {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "repo"),
+						Message: fmt.Sprintf("github method repo must be a string, got %T", v),
+					})
+				}
+				if v, ok := mc.Config["asset"]; !ok || v == "" {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "asset"),
+						Message: fmt.Sprintf("github method for tool %q requires an asset filename pattern", toolName),
+					})
+				} else if _, isStr := v.(string); !isStr {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "asset"),
+						Message: fmt.Sprintf("github method asset must be a string, got %T", v),
+					})
+				}
 			}
 
 			// Check build field type if present (any method kind).

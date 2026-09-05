@@ -438,6 +438,24 @@ func ParseSchema(path string, m map[string]string, section ...string) (*Schema, 
 		}
 	}
 
+	// The "github" adapter needs the machine's raw arch/os facts (uname-style
+	// "x86_64", GOOS-style "linux"/"darwin"/...) to resolve {arch_any}/{os_any}
+	// against the real release-asset list at install time. Those two tokens
+	// are deliberately NOT expanded by ExpandAll above (they aren't in m's
+	// key set, so Expand leaves them untouched) — the adapter needs the raw
+	// facts, not a single pre-picked spelling, to try every known synonym.
+	// Adapters have no other way to reach engine.Facts, so we stash the two
+	// values it needs directly on its own method candidates here, the one
+	// place ParseSchema still has both `tools` and `m` in scope.
+	for _, tool := range tools {
+		for _, mc := range tool.Methods {
+			if mc.Kind == "github" {
+				mc.Config["_current_arch"] = m["arch"]
+				mc.Config["_current_os"] = m["os"]
+			}
+		}
+	}
+
 	return &Schema{Defaults: defaults, Tools: tools, AllowNewTools: allowNewTools}, nil
 }
 

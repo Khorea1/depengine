@@ -84,7 +84,13 @@ func KnownPlaceholders() []string {
 		out = append(out, k)
 	}
 	sort.Strings(out)
-	out = append(out, "pkg", "latest")
+	// "pkg" and "latest" are adapter-owned (native, and git/http
+	// respectively); "arch_any"/"os_any" are likewise adapter-owned, for the
+	// "github" method only — see ghrelease.ResolveAssetURL. All four are
+	// deliberately left unexpanded by BuildMap/Expand (no entry in the map
+	// this function derives from) so their owning adapter sees the literal
+	// token, not a single pre-picked value.
+	out = append(out, "pkg", "latest", "arch_any", "os_any")
 	return out
 }
 

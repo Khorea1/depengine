@@ -138,6 +138,60 @@ fastfetch = { http = {
 Archive type is auto-detected from the URL extension: `.tar.gz`, `.tgz`,
 `.zip`, `.deb`, `.bin`, or bare binary.
 
+### GitHub: resolve the asset by matching against the real release, not a guessed URL
+
+Some projects publish a different asset filename convention per architecture
+(`amd64` vs `x86_64` vs `x64`, `arm64` vs `aarch64`, ...). Writing one `http`
+method per spelling works, but doesn't scale — a single tool can need 3+
+near-identical method blocks just to cover the archs you care about, one per
+spelling the upstream project happened to choose.
+
+`github` takes a repo and an asset filename **pattern** instead of a fixed
+URL, resolves the latest release via the GitHub API, and matches the pattern
+against the *actual* list of asset names in that release — so it works
+regardless of which spelling convention was used, without you having to
+enumerate it:
+
+```toml
+[tools.node_exporter.github]
+repo  = "prometheus/node_exporter"      # "owner/repo", or a full github.com URL
+asset = "node_exporter-{version}.linux-{arch_any}.tar.gz"
+checksum   = "sha256:auto"
+extract_to = "~/.local/bin"
+binary     = "node_exporter"
+```
+
+This single block replaces separate `http`/`http-arm64`/`http-armv7` blocks
+for the same tool.
+
+| Field | Required | Description |
+|-------|----------|--------------|
+| `repo` | yes | `"owner/repo"` (or a full `https://github.com/owner/repo` URL) |
+| `asset` | yes | Filename pattern matched against the release's real asset names (see placeholders below) |
+
+Every other field (`checksum`, `checksum_url`, `checksum_file_format`,
+`signature_url`, `signing_key`, `extract_to`, `binary`, `sudo_required`) has
+the exact same meaning as on `http` — once the asset is resolved, `github`
+downloads/verifies/extracts it exactly like `http` would.
+
+`asset` supports two placeholders that are resolved **by this adapter only**
+(they are not part of the regular placeholder table below, and are never
+expanded to a single fixed value ahead of time — see the note at the end of
+the [Placeholders](#placeholders) section):
+
+- **`{arch_any}`** — matches any known spelling of the machine's
+  architecture (e.g. on `x86_64`, also matches `amd64` or `x64` in the asset
+  name).
+- **`{os_any}`** — matches any known spelling of the machine's OS (e.g. on
+  `darwin`, also matches `macos` or `osx`).
+- **`{version}`** — the resolved release tag, matched with or without a
+  leading `v` (covers both `v1.2.3` tags and `1.2.3`-named assets).
+
+If no asset in the release matches the pattern, `depengine install` fails
+with an error listing every asset that *was* found in that release, so you
+can see exactly what's available and adjust `asset` — it never silently
+downloads the wrong file.
+
 ---
 
 ## Method reference
@@ -179,6 +233,7 @@ fields, documented above under [Custom sources](#custom-sources).
 | `asdf` | asdf version manager plugins | `nodejs = { asdf = "nodejs" }` |
 | `git` | Clone + build (see field table above) | `ctpv = { git = { url = "...", build = "make install" } }` |
 | `http` | Download + extract + checksum (see field table above) | `fastfetch = { http = { url = "...", checksum = "sha256:auto" } }` |
+| `github` | Like `http`, but resolves the download URL by matching an asset *pattern* against the real asset list of a GitHub release (see below) | `node_exporter = { github = { repo = "prometheus/node_exporter", asset = "node_exporter-{version}.linux-{arch_any}.tar.gz" } }` |
 
 ---
 
@@ -385,6 +440,8 @@ installation. `depengine validate` checks them two ways:
 | `{is_wsl}` / `{is_container}` / `{is_android}` | `detect_os.sh` | any method | `true`, `false` |
 | `{pkg}` | Adapter-owned — substituted at install time | **`native` only** (or a manager name used directly as `kind`, e.g. `kind = "apt"`) | package name |
 | `{latest}` | Adapter-owned — resolved via GitHub API | **`git` and `http` only** | `v1.2.3` |
+| `{arch_any}` | Adapter-owned — matched (not substituted) against real asset names | **`github` only**, `asset` field | matches `x86_64`/`amd64`/`x64`, etc. |
+| `{os_any}` | Adapter-owned — matched (not substituted) against real asset names | **`github` only**, `asset` field | matches `darwin`/`macos`/`osx`, etc. |
 
 The `detect_os.sh`-sourced placeholders (everything above `{pkg}`/`{latest}`)
 are expanded for every method `Kind` — they come from facts gathered once
