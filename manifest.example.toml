@@ -17,7 +17,7 @@
 # ==============================================================================
 #
 # ⚠ NOTE: This file is an ILLUSTRATIVE EXAMPLE. `pre_install`/`preinstall`,
-# `postinstall`, `requires`, and `method_order` all merge fine from a real
+# `postinstall`, `requires`, and `method_prefer` all merge fine from a real
 # manifest too (schema-wins-on-conflict, same as everywhere else) — nothing
 # here is rejected by the validator. What IS manifest-only is adding a tool
 # that doesn't exist in the project's schema.toml at all: that requires

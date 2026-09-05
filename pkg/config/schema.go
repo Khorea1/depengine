@@ -26,23 +26,6 @@ const (
 	MergeMethods                         // special: merge method slices by Kind, then MapMerge Config
 )
 
-// ToolFieldStrategy defines merge policy for every exported field of Tool.
-var ToolFieldStrategy = map[string]MergeStrategy{
-	"Name":            MergeOverwrite,
-	"PreInstall":      MergeOverwrite,
-	"PostInstall":     MergeOverwrite,
-	"PostInstallWhen": MergeOverwrite,
-	"Requires":        MergeOverwrite,
-	"RequiresWhen":    MergeOverwrite,
-	"Methods":         MergeMethods,
-	"MethodOrder":     MergeOverwrite,
-	"MethodPrefer":    MergeOverwrite,
-	"MethodOnly":      MergeOverwrite,
-	"IsSimple":        MergeOverwrite,
-	"Tags":            MergeUnionSlice,
-	"Ecosystem":       MergeOverwrite,
-}
-
 // MethodConfigFieldStrategy defines merge policy per Config key of MethodCandidate.
 var MethodConfigFieldStrategy = map[string]MergeStrategy{
 	"pkg":           MergeOverwrite,
@@ -118,24 +101,23 @@ var DefaultBuckets = methodkind.DefaultBuckets
 // pkg equals the tool's own name) from anything declared via inline table
 // or full block.
 type Tool struct {
-	Name        string
-	PreInstall  string // shell command run before install; failure aborts install
-	PostInstall string // shell command run after successful install
+	Name        string `merge:"overwrite"`
+	PreInstall  string `merge:"overwrite"` // shell command run before install; failure aborts install
+	PostInstall string `merge:"overwrite"` // shell command run after successful install
 	// PostInstallWhen gates PostInstall by platform facts. Set only by the
 	// table form `postinstall = { cmd = "...", when = {...} }`; nil = always run.
-	PostInstallWhen *Condition
+	PostInstallWhen *Condition `merge:"overwrite"`
 	// RequiresWhen gates individual Requires entries by platform facts:
 	// `requires_when = { fontconfig = { target_family = ["unix"] } }`.
 	// A dep with no entry always applies. Conditions are immutable post-parse.
-	RequiresWhen map[string]*Condition
-	Requires     []string
-	Methods      []*MethodCandidate
-	MethodOrder  []string // DEPRECATED per-tool: use MethodPrefer instead. Kept for backward compat.
-	MethodPrefer []string // prefix: try these first, then fall back to defaults
-	MethodOnly   []string // exclusive: use ONLY these methods, in this order
-	IsSimple     bool
-	Tags         []string // profile tags for --profile filtering (e.g. "desktop", "server")
-	Ecosystem    string   // "python", "node", etc — empty if not from bucket
+	RequiresWhen map[string]*Condition `merge:"overwrite"`
+	Requires     []string               `merge:"overwrite"`
+	Methods      []*MethodCandidate     `merge:"methods"`
+	MethodPrefer []string               `merge:"overwrite"` // prefix: try these first, then fall back to defaults
+	MethodOnly   []string               `merge:"overwrite"` // exclusive: use ONLY these methods, in this order
+	IsSimple     bool                   `merge:"overwrite"`
+	Tags         []string               `merge:"union"` // profile tags for --profile filtering (e.g. "desktop", "server")
+	Ecosystem    string                 `merge:"overwrite"` // "python", "node", etc — empty if not from bucket
 }
 
 // cloneTool returns a deep copy of t.
@@ -189,7 +171,6 @@ func cloneTool(t *Tool) *Tool {
 		}
 	}
 	out.Tags = append([]string{}, t.Tags...)
-	out.MethodOrder = append([]string{}, t.MethodOrder...)
 	out.MethodPrefer = append([]string{}, t.MethodPrefer...)
 	out.MethodOnly = append([]string{}, t.MethodOnly...)
 	out.Methods = cloneMethods(t.Methods)
@@ -242,16 +223,16 @@ type MethodCandidate struct {
 // distro_id, arch, os, kernel, libc, init_system, is_wsl, is_container, target_family) are
 // honored by Match().
 type Condition struct {
-	DistroFamily []string
-	TargetFamily []string
-	DistroID     []string
-	Arch         []string
-	OS           []string
-	Kernel       []string
-	Libc         []string
-	InitSystem   []string
-	IsWSL        *bool
-	IsContainer  *bool
+	DistroFamily []string `cfg:"distro_family"`
+	TargetFamily []string `cfg:"target_family"`
+	DistroID     []string `cfg:"distro_id"`
+	Arch         []string `cfg:"arch"`
+	OS           []string `cfg:"os"`
+	Kernel       []string `cfg:"kernel"`
+	Libc         []string `cfg:"libc"`
+	InitSystem   []string `cfg:"init_system"`
+	IsWSL        *bool    `cfg:"is_wsl"`
+	IsContainer  *bool    `cfg:"is_container"`
 }
 
 func (c *Condition) IsZero() bool {
@@ -650,22 +631,14 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 				}
 			}
 		}
-		// Read per-tool method preference keys.
-		if mo, ok := valMap["method_order"].([]any); ok {
-			order := anySliceToStrings(mo)
-			if len(order) > 0 {
-				tool.MethodPrefer = order
-				tool.MethodOrder = order // backward compat
-				log.Default.Warn(fmt.Sprintf("tool %q: [defaults].method_order is deprecated for per-tool use; use method_prefer = %v instead", name, order))
-			}
-		}
+		// Read per-tool method preference keys. The per-tool `method_order`
+		// alias (deprecated spelling of method_prefer) has been removed; a
+		// schema still using it now gets its value treated like any other
+		// unrecognized key — see buildMethods/Validate for the resulting
+		// diagnostics.
 		if mp, ok := valMap["method_prefer"].([]any); ok {
 			order := anySliceToStrings(mp)
 			if len(order) > 0 {
-				if tool.MethodPrefer != nil {
-					// Both method_order and method_prefer specified — method_prefer wins
-					log.Default.Warn(fmt.Sprintf("tool %q: both method_order and method_prefer specified; method_prefer takes precedence", name))
-				}
 				tool.MethodPrefer = order
 			}
 		}
@@ -751,9 +724,9 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 // tool — UNLESS the tool declares method_only (an exclusive list) and native
 // is not part of it. method_only filters the candidate set, not just the
 // order: a tool restricted to http/go must never fall back to the native
-// manager (which may require elevation). method_prefer/method_order are
-// prefixes that still allow the native remainder, so they do not suppress
-// the implicit native candidate.
+// manager (which may require elevation). method_prefer is a prefix that
+// still allows the native remainder, so it does not suppress the implicit
+// native candidate.
 //
 // If native is in the effective method_order (user list or canonical
 // remainder), it will be tried in that position. If the tool also declares
@@ -784,7 +757,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	var nonNativeKeys []string
 	var nativeBlockConfig map[string]any
 
-	for _, k := range sortedKeys(valMap, "requires", "requires_when", "pre_install", "preinstall", "post_install", "postinstall", "tags", "method_order", "method_prefer", "method_only", "when", "kind") {
+	for _, k := range sortedKeys(valMap, "requires", "requires_when", "pre_install", "preinstall", "post_install", "postinstall", "tags", "method_prefer", "method_only", "when", "kind") {
 		if k == "native" {
 			if m, ok := valMap[k].(map[string]any); ok {
 				nativeBlockConfig = m
@@ -888,34 +861,7 @@ func parseCondition(raw any) *Condition {
 		return nil
 	}
 	cond := &Condition{}
-	var invalidKeys []string
-	for k, v := range rm {
-		switch k {
-		case "distro_family":
-			cond.DistroFamily = toStringSlice(v)
-		case "distro_id":
-			cond.DistroID = toStringSlice(v)
-		case "arch":
-			cond.Arch = toStringSlice(v)
-		case "os":
-			cond.OS = toStringSlice(v)
-		case "kernel":
-			cond.Kernel = toStringSlice(v)
-		case "libc":
-			cond.Libc = toStringSlice(v)
-		case "init_system":
-			cond.InitSystem = toStringSlice(v)
-		case "target_family":
-			cond.TargetFamily = toStringSlice(v)
-		case "is_wsl":
-			cond.IsWSL = parseBoolPtr(v)
-		case "is_container":
-			cond.IsContainer = parseBoolPtr(v)
-		default:
-			invalidKeys = append(invalidKeys, k)
-		}
-	}
-	if len(invalidKeys) > 0 {
+	if invalidKeys := decodeStructFields(cond, rm); len(invalidKeys) > 0 {
 		log.Default.Debug("parseCondition: ignoring unknown keys", "keys", invalidKeys)
 	}
 	if cond.IsZero() {
@@ -1015,7 +961,7 @@ func ExpandBuckets(order []string) []string {
 
 // EffectiveMethodOrder returns the method order effective for a given tool,
 // considering per-tool MethodOnly (exclusive), MethodPrefer (preferred prefix),
-// deprecated MethodOrder (alias for MethodPrefer), or defaultOrder (fallback).
+// or defaultOrder (fallback).
 // When nativeManagerName is a specific distro manager (e.g. "apt", "pacman"),
 // native manager references in the order are expanded. Pass empty string or "native"
 // to skip expansion (appropriate at schema-parse time).
@@ -1037,17 +983,6 @@ func EffectiveMethodOrder(tool *Tool, defaultOrder []string, nativeManagerName s
 	// method_prefer: prefix + remainder from defaults.
 	if len(tool.MethodPrefer) > 0 {
 		toolList := ExpandBuckets(tool.MethodPrefer)
-		if needsExpand {
-			expDefault := ExpandMethodOrder(defaultOrder, nativeManagerName)
-			expTool := ExpandMethodOrder(toolList, nativeManagerName)
-			return MergeMethodOrder(expTool, expDefault)
-		}
-		return MergeMethodOrder(toolList, defaultOrder)
-	}
-
-	// method_order: deprecated alias for method_prefer (backward compat).
-	if len(tool.MethodOrder) > 0 {
-		toolList := ExpandBuckets(tool.MethodOrder)
 		if needsExpand {
 			expDefault := ExpandMethodOrder(defaultOrder, nativeManagerName)
 			expTool := ExpandMethodOrder(toolList, nativeManagerName)
@@ -1261,11 +1196,11 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 		}
 	}
 
-	// Validate per-tool method_order entries.
+	// Validate per-tool method preference entries (method_prefer, method_only).
 	for _, toolName := range names {
 		tool := s.Tools[toolName]
 
-		// Validate all three method-ordering fields for unknown kinds.
+		// Validate both method-ordering fields for unknown kinds.
 		checkOrderSlice := func(slice []string, fieldName string) {
 			for _, kind := range slice {
 				if native.IsNativeManagerName(kind) {
@@ -1283,9 +1218,6 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 			}
 		}
 
-		if len(tool.MethodOrder) > 0 {
-			checkOrderSlice(tool.MethodOrder, "method_order")
-		}
 		if len(tool.MethodPrefer) > 0 {
 			checkOrderSlice(tool.MethodPrefer, "method_prefer")
 		}

@@ -525,7 +525,9 @@ nvim = { pacman = "neovim" }
 	}
 }
 
-// TestAllToolFieldsHaveMergeStrategy — enforces completeness of ToolFieldStrategy.
+// TestAllToolFieldsHaveMergeStrategy — enforces that every exported Tool
+// field declares a `merge` struct tag (the merge strategy now lives on the
+// field itself instead of in a side-table keyed by field name).
 func TestAllToolFieldsHaveMergeStrategy(t *testing.T) {
 	toolType := reflect.TypeOf(Tool{})
 	for i := 0; i < toolType.NumField(); i++ {
@@ -533,8 +535,8 @@ func TestAllToolFieldsHaveMergeStrategy(t *testing.T) {
 		if !field.IsExported() {
 			continue
 		}
-		if _, ok := ToolFieldStrategy[field.Name]; !ok {
-			t.Errorf("Tool field %q has no merge strategy in ToolFieldStrategy", field.Name)
+		if tag := field.Tag.Get("merge"); tag == "" {
+			t.Errorf("Tool field %q has no `merge` struct tag", field.Name)
 		}
 	}
 }

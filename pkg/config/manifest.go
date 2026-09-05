@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 
 	"github.com/Khorea1/depengine/pkg/methodkind"
 )
@@ -94,7 +95,8 @@ func ResolveSchemaFromFiles(schemaPath string, manifestPaths ...string) (*Schema
 
 // MergeLayers merges an ordered list of Schema pointers, from least specific
 // (lowest priority) to most specific (highest priority), and returns a new
-// *Schema. Field-level merge strategies are applied per ToolFieldStrategy.
+// *Schema. Field-level merge strategies are applied per each field's `merge`
+// struct tag on Tool (see schema.go).
 //
 // Rules:
 //   - If a tool exists in multiple layers, fields are merged per their
@@ -158,44 +160,148 @@ func MergeLayersWithOpts(opts *mergeConfig, layers ...*Schema) *Schema {
 	return result
 }
 
-// mergeTools merges two Tool values using the field strategies in ToolFieldStrategy.
-// lower is the lower-priority (less specific) layer, upper is the higher-priority one.
+// toolMergeField pairs a Tool struct field (by index) with the strategy
+// declared in its `merge` tag.
+type toolMergeField struct {
+	index    int
+	name     string
+	strategy MergeStrategy
+}
+
+// toolMergeFields is computed once from Tool's `merge` struct tags: the
+// single source of truth for how each field is merged across layers. This
+// replaces the old ToolFieldStrategy map (a second place every field name
+// had to be listed) and the four hand-written switch statements that used
+// to read it (schemaValue/isFieldSet/setField/setFieldZero) — one generic,
+// reflection-driven implementation now serves every field kind Tool has.
+var toolMergeFields = buildToolMergeFields()
+
+func buildToolMergeFields() []toolMergeField {
+	t := reflect.TypeOf(Tool{})
+	fields := make([]toolMergeField, 0, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		sf := t.Field(i)
+		tag := sf.Tag.Get("merge")
+		if tag == "" {
+			continue
+		}
+		var strategy MergeStrategy
+		switch tag {
+		case "overwrite":
+			strategy = MergeOverwrite
+		case "local_only":
+			strategy = MergeLocalOnly
+		case "union":
+			strategy = MergeUnionSlice
+		case "methods":
+			strategy = MergeMethods
+		default:
+			panic(fmt.Sprintf("config: Tool field %q has unknown merge tag %q", sf.Name, tag))
+		}
+		fields = append(fields, toolMergeField{index: i, name: sf.Name, strategy: strategy})
+	}
+	return fields
+}
+
+// fieldIsSet reports whether v (a field of *Tool) holds a non-default value,
+// using the same per-kind zero test the old field-name switch used to encode
+// one case at a time: strings compare to "", bools to false, slices/maps to
+// length 0, pointers to nil.
+func fieldIsSet(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.String:
+		return v.String() != ""
+	case reflect.Bool:
+		return v.Bool()
+	case reflect.Slice, reflect.Map:
+		return v.Len() > 0
+	case reflect.Ptr, reflect.Interface:
+		return !v.IsNil()
+	default:
+		return !v.IsZero()
+	}
+}
+
+// assignField copies src into dst. String-slice fields are copied
+// element-by-element (matching the defensive copies the old setField made
+// for Requires/MethodPrefer/MethodOnly/Tags); every other kind is assigned
+// directly, which is exactly what the old switch did for the rest (Name,
+// PreInstall, PostInstall, PostInstallWhen, RequiresWhen, IsSimple, Ecosystem).
+func assignField(dst, src reflect.Value) {
+	if src.Kind() == reflect.Slice && src.Type().Elem().Kind() == reflect.String {
+		cp := reflect.MakeSlice(src.Type(), src.Len(), src.Len())
+		reflect.Copy(cp, src)
+		dst.Set(cp)
+		return
+	}
+	dst.Set(src)
+}
+
+// unionStringSlice appends elements of upper onto dst that aren't already
+// present, preserving dst's existing order. Works for any []string field,
+// so a new field tagged `merge:"union"` is handled automatically instead of
+// needing its own case (the old mergeSlices panicked until one was added).
+func unionStringSlice(dst, upper reflect.Value) {
+	seen := make(map[string]bool, dst.Len())
+	for i := 0; i < dst.Len(); i++ {
+		seen[dst.Index(i).String()] = true
+	}
+	for i := 0; i < upper.Len(); i++ {
+		s := upper.Index(i).String()
+		if !seen[s] {
+			dst.Set(reflect.Append(dst, upper.Index(i)))
+			seen[s] = true
+		}
+	}
+}
+
+// mergeTools merges two Tool values using the per-field strategy declared in
+// each field's `merge` struct tag (see toolMergeFields). lower is the
+// lower-priority (less specific) layer, upper is the higher-priority one.
 // The result is a new *Tool (cloned).
 func mergeTools(lower, upper *Tool, pc *provenanceCollector) *Tool {
 	// Start with the lower layer as base.
 	result := cloneTool(lower)
 
-	for field, strategy := range ToolFieldStrategy {
-		schemeVal, manifestVal := schemaValue(upper, lower, field)
-		switch strategy {
+	rv := reflect.ValueOf(result).Elem()
+	uv := reflect.ValueOf(upper).Elem()
+	lv := reflect.ValueOf(lower).Elem()
+
+	for _, tf := range toolMergeFields {
+		dstField := rv.Field(tf.index)
+		upperField := uv.Field(tf.index)
+		lowerField := lv.Field(tf.index)
+		schemeVal, manifestVal := upperField.Interface(), lowerField.Interface()
+
+		switch tf.strategy {
 		case MergeOverwrite:
 			// Use upper (more specific) value if it's set.
-			if isFieldSet(upper, field) {
-				_ = setField(result, upper, field)
-				pc.record(field, "schema", schemeVal, manifestVal, upperFieldValue(upper, field))
+			if fieldIsSet(upperField) {
+				assignField(dstField, upperField)
+				pc.record(tf.name, "schema", schemeVal, manifestVal, dstField.Interface())
 			} else {
-				pc.record(field, "manifest", schemeVal, manifestVal, lowerFieldValue(lower, field))
+				pc.record(tf.name, "manifest", schemeVal, manifestVal, lowerField.Interface())
 			}
 
 		case MergeLocalOnly:
 			// Only set from upper (schema) layer; ignore lower layer values.
-			if isFieldSet(upper, field) {
-				_ = setField(result, upper, field)
-				pc.record(field, "schema", schemeVal, manifestVal, upperFieldValue(upper, field))
-			} else if isFieldSet(lower, field) {
+			if fieldIsSet(upperField) {
+				assignField(dstField, upperField)
+				pc.record(tf.name, "schema", schemeVal, manifestVal, dstField.Interface())
+			} else if fieldIsSet(lowerField) {
 				// Lower had it but MergeLocalOnly means propagate only if upper also has it.
 				// But we clear it because lower shouldn't have set it.
-				_ = setFieldZero(result, field)
-				pc.record(field, "schema", schemeVal, manifestVal, nil)
+				dstField.Set(reflect.Zero(dstField.Type()))
+				pc.record(tf.name, "schema", schemeVal, manifestVal, nil)
 			} else {
-				pc.record(field, "manifest", schemeVal, manifestVal, "-")
+				pc.record(tf.name, "manifest", schemeVal, manifestVal, "-")
 			}
 
 		case MergeUnionSlice:
 			// Union of lower's and upper's elements without duplicates.
-			if isFieldSet(lower, field) || isFieldSet(upper, field) {
-				result = mergeSlices(result, lower, upper, field)
-				pc.record(field, "both", schemeVal, manifestVal, upperFieldValue(upper, field))
+			if fieldIsSet(lowerField) || fieldIsSet(upperField) {
+				unionStringSlice(dstField, upperField)
+				pc.record(tf.name, "both", schemeVal, manifestVal, dstField.Interface())
 			}
 
 		case MergeMethods:
@@ -287,183 +393,6 @@ func mergeMethodConfigs(lower, upper *MethodCandidate, pc *provenanceCollector) 
 
 	return result
 }
-// mergeSlices applies MergeUnionSlice for a specific field. It only knows
-// about "Tags" today — that is the only field registered with
-// MergeUnionSlice in ToolFieldStrategy. If a new field is ever given that
-// strategy, it MUST get a case here too, or its values will silently pass
-// through unmerged (the clone from mergeTools' base layer wins with no
-// union and no error).
-func mergeSlices(result *Tool, lower, upper *Tool, field string) *Tool {
-	switch field {
-	case "Tags":
-		seen := make(map[string]bool, len(result.Tags))
-		for _, v := range result.Tags {
-			seen[v] = true
-		}
-		for _, v := range upper.Tags {
-			if !seen[v] {
-				result.Tags = append(result.Tags, v)
-				seen[v] = true
-			}
-		}
-	default:
-		panic(fmt.Sprintf("mergeSlices: field %q has MergeUnionSlice strategy but no merge case implemented", field))
-	}
-	return result
-}
-
-// field helpers for mergeTools
-
-// schemaValue returns the values from upper and lower layers for a field,
-// using "schema" to mean the more specific (upper) layer.
-func schemaValue(upper, lower *Tool, field string) (schemaVal, manifestVal any) {
-	return upperFieldValue(upper, field), lowerFieldValue(lower, field)
-}
-
-func upperFieldValue(t *Tool, field string) any {
-	if t == nil {
-		return nil
-	}
-	switch field {
-	case "Name":
-		return t.Name
-	case "PreInstall":
-		return t.PreInstall
-	case "PostInstall":
-		return t.PostInstall
-	case "PostInstallWhen":
-		return t.PostInstallWhen
-	case "Requires":
-		return t.Requires
-	case "RequiresWhen":
-		return t.RequiresWhen
-	case "Methods":
-		return t.Methods
-	case "MethodOrder":
-		return t.MethodOrder
-	case "MethodPrefer":
-		return t.MethodPrefer
-	case "MethodOnly":
-		return t.MethodOnly
-	case "IsSimple":
-		return t.IsSimple
-	case "Tags":
-		return t.Tags
-	case "Ecosystem":
-		return t.Ecosystem
-	default:
-		return nil
-	}
-}
-
-func lowerFieldValue(t *Tool, field string) any {
-	return upperFieldValue(t, field)
-}
-
-// isFieldSet reports whether a field on `upper` has been set.
-func isFieldSet(upper *Tool, field string) bool {
-	if upper == nil {
-		return false
-	}
-	switch field {
-	case "Name":
-		return upper.Name != ""
-	case "PreInstall":
-		return upper.PreInstall != ""
-	case "PostInstall":
-		return upper.PostInstall != ""
-	case "PostInstallWhen":
-		return upper.PostInstallWhen != nil
-	case "Requires":
-		return len(upper.Requires) > 0
-	case "RequiresWhen":
-		return len(upper.RequiresWhen) > 0
-	case "Methods":
-		return len(upper.Methods) > 0
-	case "MethodOrder":
-		return len(upper.MethodOrder) > 0
-	case "MethodPrefer":
-		return len(upper.MethodPrefer) > 0
-	case "MethodOnly":
-		return len(upper.MethodOnly) > 0
-	case "IsSimple":
-		return upper.IsSimple
-	case "Tags":
-		return len(upper.Tags) > 0
-	case "Ecosystem":
-		return upper.Ecosystem != ""
-	default:
-		return false
-	}
-}
-
-// setField copies a field value from src to dst.
-func setField(dst, src *Tool, field string) error {
-	switch field {
-	case "Name":
-		dst.Name = src.Name
-	case "PreInstall":
-		dst.PreInstall = src.PreInstall
-	case "PostInstall":
-		dst.PostInstall = src.PostInstall
-	case "PostInstallWhen":
-		dst.PostInstallWhen = src.PostInstallWhen
-	case "Requires":
-		dst.Requires = append([]string{}, src.Requires...)
-	case "RequiresWhen":
-		dst.RequiresWhen = src.RequiresWhen
-	case "Methods":
-		dst.Methods = cloneMethods(src.Methods)
-	case "MethodOrder":
-		dst.MethodOrder = append([]string{}, src.MethodOrder...)
-	case "MethodPrefer":
-		dst.MethodPrefer = append([]string{}, src.MethodPrefer...)
-	case "MethodOnly":
-		dst.MethodOnly = append([]string{}, src.MethodOnly...)
-	case "IsSimple":
-		dst.IsSimple = src.IsSimple
-	case "Tags":
-		dst.Tags = append([]string{}, src.Tags...)
-	case "Ecosystem":
-		dst.Ecosystem = src.Ecosystem
-	}
-	return nil
-}
-
-// setFieldZero resets a field to its zero value.
-func setFieldZero(t *Tool, field string) error {
-	switch field {
-	case "Name":
-		t.Name = ""
-	case "PreInstall":
-		t.PreInstall = ""
-	case "PostInstall":
-		t.PostInstall = ""
-		t.PostInstallWhen = nil
-	case "PostInstallWhen":
-		t.PostInstallWhen = nil
-	case "Requires":
-		t.Requires = nil
-	case "RequiresWhen":
-		t.RequiresWhen = nil
-	case "Methods":
-		t.Methods = nil
-	case "MethodOrder":
-		t.MethodOrder = nil
-	case "MethodPrefer":
-		t.MethodPrefer = nil
-	case "MethodOnly":
-		t.MethodOnly = nil
-	case "IsSimple":
-		t.IsSimple = false
-	case "Tags":
-		t.Tags = nil
-	case "Ecosystem":
-		t.Ecosystem = ""
-	}
-	return nil
-}
-
 // ValidateManifestNewTools checks that the manifest does not introduce tools
 // not present in the schema unless AllowNewTools is true in the manifest.
 //
@@ -483,18 +412,17 @@ func ValidateManifestNewTools(schema, manifest *Schema) error {
 }
 
 // ValidateManifestLayer previously rejected manifest-layer tools that set
-// fields marked MergeLocalOnly ("schema layer only"). No field in
-// ToolFieldStrategy has used MergeLocalOnly since intent fields (pre_install,
-// post_install, requires, method_order, ...) were deliberately opened up to
-// the manifest layer — see TestValidateManifestLayer_AcceptsIntentFields.
-// That made the per-field loop this function used to run permanently
-// unreachable (it could never find a MergeLocalOnly field to reject), so it
-// always returned nil while its doc comment implied an active check. The
-// dead loop has been removed; the function is now an explicit no-op, kept
-// only so its five call sites (helpers.go, status_remove_forget.go,
-// validate_check.go, graph_why.go) don't need to change. If a future field
-// needs manifest-layer rejection, give it strategy MergeLocalOnly in
-// ToolFieldStrategy and reinstate a check here.
+// fields tagged `merge:"local_only"` ("schema layer only"). No Tool field
+// has used that tag since intent fields (pre_install, post_install,
+// requires, method_prefer, ...) were deliberately opened up to the manifest
+// layer — see TestValidateManifestLayer_AcceptsIntentFields. That made the
+// per-field loop this function used to run permanently unreachable (it could
+// never find a local_only field to reject), so it always returned nil while
+// its doc comment implied an active check. The dead loop has been removed;
+// the function is now an explicit no-op, kept only so its five call sites
+// (helpers.go, status_remove_forget.go, validate_check.go, graph_why.go)
+// don't need to change. If a future field needs manifest-layer rejection,
+// tag it `merge:"local_only"` on Tool and reinstate a check here.
 func ValidateManifestLayer(s *Schema) error {
 	return nil
 }

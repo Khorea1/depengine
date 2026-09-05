@@ -449,34 +449,6 @@ func TestValidateMethodOrderConflicts(t *testing.T) {
 	}
 }
 
-func TestValidateMethodOrderDeprecatedAndOnly(t *testing.T) {
-	// method_order (deprecated) + method_only → error.
-	s := &cfg.Schema{
-		Tools: map[string]*cfg.Tool{
-			"myapp": {
-				Name:        "myapp",
-				MethodOrder: []string{"native"},
-				MethodOnly:  []string{"go"},
-				Methods:     []*cfg.MethodCandidate{{Kind: "native"}, {Kind: "go"}},
-			},
-		},
-	}
-	r := validateMethodOrderConflicts(s)
-	if !r.HasErrors() {
-		t.Fatal("expected error for conflicting method_order + method_only, got none")
-	}
-	found := false
-	for _, e := range r.Errors {
-		if strings.Contains(e.Message, "method_order and method_only cannot both be set") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("expected specific error about method_order + method_only, got: %v", r.Errors)
-	}
-}
-
 func TestValidateMethodOrderOnlyNoConflict(t *testing.T) {
 	// method_only alone → no error.
 	s := &cfg.Schema{

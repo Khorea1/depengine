@@ -303,7 +303,7 @@ func isHexString(s string) bool {
 }
 
 // validateMethodOrderConflicts checks that no tool has both method_prefer
-// (or deprecated method_order) and method_only set simultaneously.
+// and method_only set simultaneously.
 func validateMethodOrderConflicts(s *config.Schema) *Result {
 	r := &Result{}
 	for name, tool := range s.Tools {
@@ -312,14 +312,6 @@ func validateMethodOrderConflicts(s *config.Schema) *Result {
 				Code:    ErrInvalidValue,
 				Field:   fmt.Sprintf("tools.%s", name),
 				Message: fmt.Sprintf("method_prefer and method_only cannot both be set on tool %q", name),
-			})
-		}
-		// Also check deprecated method_order combined with method_only
-		if len(tool.MethodOrder) > 0 && len(tool.MethodOnly) > 0 {
-			r.Add(ValidationError{
-				Code:    ErrInvalidValue,
-				Field:   fmt.Sprintf("tools.%s", name),
-				Message: fmt.Sprintf("method_order and method_only cannot both be set on tool %q (use method_prefer instead of method_order)", name),
 			})
 		}
 	}

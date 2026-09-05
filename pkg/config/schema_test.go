@@ -734,7 +734,7 @@ ruff = { python = false }`)
 	}
 }
 
-// --- Per-tool method_prefer, method_only, and deprecated method_order ---
+// --- Per-tool method_prefer and method_only ---
 
 func TestToolMethodPrefer(t *testing.T) {
 	// method_prefer prepends to the default order without removing other methods.
@@ -756,10 +756,6 @@ myapp = { method_prefer = ["cargo"], cargo = true }
 	// MethodPrefer should be set.
 	if len(tool.MethodPrefer) != 1 || tool.MethodPrefer[0] != "cargo" {
 		t.Fatalf("expected MethodPrefer [\"cargo\"], got %v", tool.MethodPrefer)
-	}
-	// Deprecated MethodOrder should also be set for backward compat.
-	if len(tool.MethodOrder) != 0 {
-		t.Fatalf("expected MethodOrder to be empty (only set by method_order key), got %v", tool.MethodOrder)
 	}
 }
 
@@ -785,9 +781,12 @@ myapp = { method_only = ["cargo"], cargo = true }
 	}
 }
 
-func TestToolDeprecatedMethodOrder(t *testing.T) {
-	// Deprecated method_order still works (backward compat) with same semantics
-	// as method_prefer (sets both MethodPrefer and MethodOrder).
+func TestToolPerToolMethodOrderNoLongerSpecial(t *testing.T) {
+	// The deprecated per-tool `method_order` alias for method_prefer has been
+	// removed. A schema still using it no longer gets special treatment: the
+	// key falls through like any other unrecognized entry and is treated as
+	// an attempted (and invalid) method declaration, surfaced as a parse
+	// error on that candidate rather than silently reinterpreted.
 	p := writeSchema(t, `
 [defaults]
 manager = "native"
@@ -803,36 +802,20 @@ myapp = { method_order = ["cargo"], cargo = true }
 	if !ok {
 		t.Fatal("tool myapp not found")
 	}
-	if len(tool.MethodOrder) != 1 || tool.MethodOrder[0] != "cargo" {
-		t.Fatalf("expected MethodOrder [\"cargo\"], got %v", tool.MethodOrder)
+	if len(tool.MethodPrefer) != 0 {
+		t.Fatalf("expected MethodPrefer to stay unset (method_order is no longer an alias), got %v", tool.MethodPrefer)
 	}
-	// Backward compat: MethodPrefer should also be set.
-	if len(tool.MethodPrefer) != 1 || tool.MethodPrefer[0] != "cargo" {
-		t.Fatalf("expected MethodPrefer [\"cargo\"] from deprecated method_order, got %v", tool.MethodPrefer)
+	var found bool
+	for _, m := range tool.Methods {
+		if m.Kind == "method_order" {
+			found = true
+			if m.Err == nil {
+				t.Fatal("expected the leftover method_order key to surface a parse error")
+			}
+		}
 	}
-}
-
-func TestToolMethodPreferAndOrderPreferWins(t *testing.T) {
-	// When both method_order and method_prefer are specified, method_prefer wins.
-	// The tool should only have MethodPrefer set by method_prefer (not by method_order).
-	p := writeSchema(t, `
-[defaults]
-manager = "native"
-
-[tools]
-myapp = { method_order = ["pip"], method_prefer = ["cargo"], cargo = true }
-`)
-	s, err := ParseSchema(p, fixedMap())
-	if err != nil {
-		t.Fatalf("ParseSchema: %v", err)
-	}
-	tool, ok := s.Tools["myapp"]
-	if !ok {
-		t.Fatal("tool myapp not found")
-	}
-	// MethodPrefer should be set from method_prefer, not method_order.
-	if len(tool.MethodPrefer) != 1 || tool.MethodPrefer[0] != "cargo" {
-		t.Fatalf("expected MethodPrefer [\"cargo\"] (method_prefer wins), got %v", tool.MethodPrefer)
+	if !found {
+		t.Fatal("expected method_order to fall through as an (invalid) method candidate")
 	}
 }
 
@@ -879,25 +862,6 @@ func TestEffectiveMethodOrderOnly(t *testing.T) {
 	defaultOrder := []string{"native", "cargo", "go", "pip"}
 	got := EffectiveMethodOrder(tool, defaultOrder, "")
 	expected := []string{"go"}
-	if len(got) != len(expected) {
-		t.Fatalf("expected length %d, got %d: %v", len(expected), len(got), got)
-	}
-	for i, k := range expected {
-		if got[i] != k {
-			t.Fatalf("got[%d] = %q, want %q", i, got[i], k)
-		}
-	}
-}
-
-func TestEffectiveMethodOrderDeprecated(t *testing.T) {
-	// Deprecated method_order works like method_prefer.
-	tool := &Tool{
-		Name:        "test",
-		MethodOrder: []string{"git"},
-	}
-	defaultOrder := []string{"native", "git", "http"}
-	got := EffectiveMethodOrder(tool, defaultOrder, "")
-	expected := []string{"git", "native", "http"}
 	if len(got) != len(expected) {
 		t.Fatalf("expected length %d, got %d: %v", len(expected), len(got), got)
 	}

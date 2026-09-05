@@ -482,7 +482,7 @@ according to a declared strategy per field:
 3. **Union** (e.g. `tags`): values from both layers are combined, without
    duplicates.
 4. **Schema-overrides** (`pre_install`, `post_install`, `requires`,
-   `method_order`, `method_prefer`, `method_only`): the manifest may set
+   `method_prefer`, `method_only`): the manifest may set
    these as defaults, but the schema layer wins on conflict — the
    manifest's value is replaced, not merged.
 5. **Tools only in the manifest** are rejected by default — your personal
