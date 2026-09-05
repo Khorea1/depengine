@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -18,16 +19,43 @@ import (
 	"github.com/Khorea1/depengine/pkg/validate"
 )
 
-// defaultSchemaPath returns the default schema file path, trying common names.
-// If none exist, returns "schema.toml" so the caller gets the original error.
+// schemaCandidateNames are the filenames auto-detected as a project schema,
+// in priority order. Keep this in sync with docs/*.md mentions of
+// auto-detection.
+var schemaCandidateNames = []string{"schema.toml", "depengine.toml", "depends.toml"}
+
+// defaultSchemaPath returns the default schema file path, trying common names
+// in schemaCandidateNames order. If none exist, returns "schema.toml" so the
+// caller gets the original "file not found" error instead of a confusing one.
+//
+// If MORE THAN ONE candidate exists simultaneously, this is almost always a
+// mistake (e.g. a leftover file from migrating between naming conventions,
+// or a merge that landed two of them side by side) rather than intentional —
+// silently picking the first one by priority means the user can edit the
+// "wrong" file and see their changes never take effect, with no indication
+// why. So instead of guessing quietly, we print a loud, explicit warning to
+// stderr naming every candidate found and which one was selected, so the
+// ambiguity is visible instead of silent. This only fires for the *default*
+// (auto-detected) path — passing --schema explicitly bypasses this function
+// entirely and is never second-guessed.
 func defaultSchemaPath() string {
-	candidates := []string{"schema.toml", "depengine.toml", "depends.toml"}
-	for _, c := range candidates {
+	var found []string
+	for _, c := range schemaCandidateNames {
 		if _, err := os.Stat(c); err == nil {
-			return c
+			found = append(found, c)
 		}
 	}
-	return "schema.toml"
+	if len(found) == 0 {
+		return "schema.toml"
+	}
+	if len(found) > 1 {
+		fmt.Fprintf(os.Stderr,
+			"warning: multiple schema files found (%s) — using %q. "+
+				"This is ambiguous: pass --schema explicitly to silence this warning, "+
+				"or remove the file(s) you don't intend to use.\n",
+			strings.Join(found, ", "), found[0])
+	}
+	return found[0]
 }
 
 // parseFlagsInterspersed parses flags and positional args in any order and
@@ -60,6 +88,7 @@ func loadSchema(path string) (*config.Schema, string, *engine.Facts, error) {
 	if info.IsDir() {
 		path = filepath.Join(path, "schema.toml")
 	}
+	log.Default.Debug("loading schema", "path", path)
 
 	facts, err := engine.GatherFacts(run.OSExecRunner{})
 	if err != nil {
