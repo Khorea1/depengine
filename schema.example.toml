@@ -61,7 +61,7 @@ python-pip = { pacman = "python-pip", apt = "python3-pip", dnf = "python3-pip", 
 # The value is the package/module name IN THAT ecosystem — it may differ
 # from the final binary name.
 # ------------------------------------------------------------------------
-organize = { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }
+organize = { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" } # or { python = "organize-tool" }
 fzf      = { go = "github.com/junegunn/fzf" }
 lf       = { go = "github.com/gokcehan/lf" }
 
