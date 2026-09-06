@@ -90,6 +90,13 @@ type Defaults struct {
 	Manager     string
 	AurHelper   string
 	MethodOrder []string
+	// ArchMap/OSMap override the built-in {arch}/{os} spelling table (see
+	// defaultArchMap/defaultOSMap in archdefaults.go) for every method in
+	// every tool, unless a method declares its own arch_map/os_map (which
+	// wins — see MethodCandidate.ArchMap). Keys are lowercased at parse
+	// time via normalizeAliasMap; values are left exactly as written.
+	ArchMap map[string]string
+	OSMap   map[string]string
 }
 
 // DefaultBuckets maps ecosystem names to lists of method kinds.
@@ -217,6 +224,13 @@ type MethodCandidate struct {
 	When   *Condition
 	Config map[string]any
 	Err    error
+	// ArchMap/OSMap are this method's own override of the {arch}/{os}
+	// spelling table, taking priority over [defaults].arch_map/os_map and
+	// the engine builtin (see Defaults.ArchMap doc). Hoisted out of Config
+	// at parse time the same way "when"/"kind" are — never passed through
+	// to the adapter as part of Config.
+	ArchMap map[string]string
+	OSMap   map[string]string
 }
 
 // Condition is the parsed form of `when = { ... }`. All fields (distro_family,
@@ -385,9 +399,27 @@ func ParseSchema(path string, m map[string]string, section ...string) (*Schema, 
 		return nil, &ParseSchemaError{Err: fmt.Errorf("parse TOML %s: %w", path, err)}
 	}
 
-	// Expand placeholders across the entire raw tree in one pass. Non-string
-	// leaves are returned unchanged by ExpandAll, so booleans/ints survive.
-	raw = ExpandAll(raw, m).(map[string]any)
+	// {arch}/{os} are deliberately withheld from this first, whole-tree
+	// expansion pass and resolved afterwards, once per method (see the
+	// arch_map/os_map resolution loop below): arch_map/os_map layering
+	// (method > [defaults] > engine builtin) picks the *effective*
+	// spelling before {arch}/{os} gets substituted, and that choice can
+	// differ per method, so it can't be folded into this single global
+	// map. Every other placeholder is expanded here exactly as before.
+	// hasArch/hasOS false means m carries no facts at all (validate/check-
+	// style callers pass nil or {}), in which case {arch}/{os} are left
+	// untouched below too, exactly like the pre-existing behavior for
+	// every other unknown-to-m placeholder.
+	rawArch, hasArch := m["arch"]
+	rawOS, hasOS := m["os"]
+	mWithoutArchOS := make(map[string]string, len(m))
+	for k, v := range m {
+		if k == "arch" || k == "os" {
+			continue
+		}
+		mWithoutArchOS[k] = v
+	}
+	raw = ExpandAll(raw, mWithoutArchOS).(map[string]any)
 
 	// Determine which section to read tool declarations from.
 	sectionName := "tools"
@@ -419,21 +451,61 @@ func ParseSchema(path string, m map[string]string, section ...string) (*Schema, 
 		}
 	}
 
-	// The "github" adapter needs the machine's raw arch/os facts (uname-style
-	// "x86_64", GOOS-style "linux"/"darwin"/...) to resolve {arch_any}/{os_any}
-	// against the real release-asset list at install time. Those two tokens
-	// are deliberately NOT expanded by ExpandAll above (they aren't in m's
-	// key set, so Expand leaves them untouched) — the adapter needs the raw
-	// facts, not a single pre-picked spelling, to try every known synonym.
-	// Adapters have no other way to reach engine.Facts, so we stash the two
-	// values it needs directly on its own method candidates here, the one
-	// place ParseSchema still has both `tools` and `m` in scope.
+	// {arch}/{os} were withheld above; now that arch_map/os_map layering is
+	// known (defaults parsed, tools/methods built with their own ArchMap/
+	// OSMap hoisted out), resolve them per-recipient:
+	//
+	//   - "github" method candidates: unchanged from before this feature.
+	//     The adapter needs the machine's raw arch/os facts (uname-style
+	//     "x86_64", GOOS-style "linux"/"darwin"/...) to resolve
+	//     {arch_any}/{os_any} against the real release-asset list at
+	//     install time — those two tokens are adapter-owned and were never
+	//     in m's key set to begin with, so Expand always left them
+	//     untouched. Adapters have no other way to reach engine.Facts, so
+	//     we stash the two raw values it needs directly on its own method
+	//     candidates here. github does its own arch/os resolution via
+	//     regex over every known synonym (ghrelease.archSynonyms/
+	//     osSynonyms), so it is deliberately excluded from the arch_map/
+	//     os_map mechanism below, which only ever picks one spelling.
+	//   - tool.PreInstall/PostInstall: plain shell command strings, not
+	//     part of any method's Config, so arch_map/os_map (scoped to
+	//     [defaults] and method blocks) doesn't apply to them — they just
+	//     get the raw fact value, same as every other placeholder.
+	//   - every other method candidate's Config: {arch}/{os} resolve
+	//     through resolveAlias's method > defaults > builtin layering
+	//     before substitution.
+	if hasArch || hasOS {
+		backfill := map[string]string{}
+		if hasArch {
+			backfill["arch"] = rawArch
+		}
+		if hasOS {
+			backfill["os"] = rawOS
+		}
+		for _, tool := range tools {
+			tool.PreInstall = Expand(tool.PreInstall, backfill)
+			tool.PostInstall = Expand(tool.PostInstall, backfill)
+		}
+	}
+
 	for _, tool := range tools {
 		for _, mc := range tool.Methods {
 			if mc.Kind == "github" {
 				mc.Config["_current_arch"] = m["arch"]
 				mc.Config["_current_os"] = m["os"]
+				continue
 			}
+			if !hasArch && !hasOS {
+				continue
+			}
+			localMap := map[string]string{}
+			if hasArch {
+				localMap["arch"] = resolveAlias(rawArch, mc.ArchMap, defaults.ArchMap, defaultArchMap)
+			}
+			if hasOS {
+				localMap["os"] = resolveAlias(rawOS, mc.OSMap, defaults.OSMap, defaultOSMap)
+			}
+			mc.Config = ExpandAll(mc.Config, localMap).(map[string]any)
 		}
 	}
 
@@ -463,6 +535,12 @@ func extractDefaults(raw any) Defaults {
 	}
 	if v, ok := rm["aur_helper"].(string); ok && v != "" {
 		d.AurHelper = v
+	}
+	if v, ok := rm["arch_map"]; ok {
+		d.ArchMap = normalizeAliasMap(v)
+	}
+	if v, ok := rm["os_map"]; ok {
+		d.OSMap = normalizeAliasMap(v)
 	}
 	if v, ok := rm["method_order"].([]any); ok {
 		order := make([]string, 0, len(v))
@@ -695,6 +773,14 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 				delete(t, "kind") // don't pass to adapter
 			}
 		}
+		if rawArchMap, ok := t["arch_map"]; ok {
+			mc.ArchMap = normalizeAliasMap(rawArchMap)
+			delete(t, "arch_map")
+		}
+		if rawOSMap, ok := t["os_map"]; ok {
+			mc.OSMap = normalizeAliasMap(rawOSMap)
+			delete(t, "os_map")
+		}
 		for k, v := range t {
 			mc.Config[k] = v
 		}
@@ -798,9 +884,19 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 		for k, v := range nativeBlockConfig {
 			cfg[k] = v
 		}
+		// Hoist arch_map/os_map the same way parseMethod does, in case a
+		// native = { ... } block ever needs to override the {arch}/{os}
+		// spelling (native pkg names rarely template on arch/os, but the
+		// mechanism should be consistent across every method Config).
+		archMap := normalizeAliasMap(cfg["arch_map"])
+		osMap := normalizeAliasMap(cfg["os_map"])
+		delete(cfg, "arch_map")
+		delete(cfg, "os_map")
 		methods = append(methods, &MethodCandidate{
-			Kind:   "native",
-			Config: cfg,
+			Kind:    "native",
+			Config:  cfg,
+			ArchMap: archMap,
+			OSMap:   osMap,
 		})
 	}
 

@@ -3,6 +3,7 @@ package config
 import (
 	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/Khorea1/depengine/pkg/engine"
 )
@@ -91,6 +92,36 @@ func KnownPlaceholders() []string {
 	// this function derives from) so their owning adapter sees the literal
 	// token, not a single pre-picked value.
 	out = append(out, "pkg", "latest", "arch_any", "os_any")
+	return out
+}
+
+// normalizeAliasMap converts a raw arch_map/os_map inline table (as decoded
+// by go-toml into map[string]any) into a map[string]string for use with
+// resolveAlias. Keys are lowercased — they are matched against
+// engine.Facts values case-insensitively, exactly like
+// ghrelease.synonymGroup's strings.ToLower(value) lookup. Values are left
+// byte-for-byte as written: they are opaque strings a schema author chose
+// to match an upstream naming convention (release URLs are frequently
+// case-sensitive), so they must never be case-normalized. Returns nil if
+// raw isn't a non-empty table of string values (including when the key
+// was absent entirely), so callers can treat a nil map as "no override at
+// this layer" without a separate presence check.
+func normalizeAliasMap(raw any) map[string]string {
+	rm, ok := raw.(map[string]any)
+	if !ok || len(rm) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(rm))
+	for k, v := range rm {
+		s, ok := v.(string)
+		if !ok {
+			continue
+		}
+		out[strings.ToLower(k)] = s
+	}
+	if len(out) == 0 {
+		return nil
+	}
 	return out
 }
 
