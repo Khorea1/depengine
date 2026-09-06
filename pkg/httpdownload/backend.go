@@ -79,6 +79,9 @@ func (d *GoDownloader) Download(ctx context.Context, url, dest string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("http: %s returned %s (hint: check this tool's arch_map/os_map — the upstream release asset may use a different spelling of arch/os than this machine's own)", url, resp.Status)
+		}
 		return fmt.Errorf("http: %s returned %s", url, resp.Status)
 	}
 
@@ -144,6 +147,26 @@ func SelectDownloader(ctx context.Context, rn run.Runner) Downloader {
 	}
 	// Go net/http is always available.
 	return NewGoDownloader(rn)
+}
+
+// downloadErrorWithHint appends the arch_map/os_map hint to a download
+// error when it looks like a 404, for downloaders (curl, wget) that don't
+// give us a typed status code the way GoDownloader does — we only have
+// their stderr text to go on. GoDownloader already attaches the hint
+// itself (see its precise resp.StatusCode check above), so this checks for
+// that marker to avoid appending the hint twice.
+func downloadErrorWithHint(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "arch_map/os_map") {
+		return err // GoDownloader already attached the hint
+	}
+	if strings.Contains(msg, "404") {
+		return fmt.Errorf("%w (hint: check this tool's arch_map/os_map — the upstream release asset may use a different spelling of arch/os than this machine's own)", err)
+	}
+	return err
 }
 
 // fileExtension returns a recognizable extension for the URL path.

@@ -124,7 +124,7 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 		if err := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
 			return dl.Download(retryCtx, resolvedURL, tmpFile)
 		}); err != nil {
-			return fmt.Errorf("http: download %s: %w", tool.Name, err)
+			return fmt.Errorf("http: download %s: %w", tool.Name, downloadErrorWithHint(err))
 		}
 	}
 

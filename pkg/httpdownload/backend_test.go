@@ -2,11 +2,14 @@ package httpdownload
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/run"
@@ -69,8 +72,62 @@ func TestGoDownloaderDownloadNonOKStatus(t *testing.T) {
 	dl := NewGoDownloader(&run.FakeRunner{})
 	dest := filepath.Join(t.TempDir(), "out.bin")
 
-	if err := dl.Download(context.Background(), ts.URL, dest); err == nil {
+	err := dl.Download(context.Background(), ts.URL, dest)
+	if err == nil {
 		t.Fatal("expected error for 404 response, got nil")
+	}
+	// A 404 specifically should hint at arch_map/os_map, since that's the
+	// most common reason a "http" method's URL 404s: the upstream release
+	// spells arch/os differently than this machine's own facts.
+	if !strings.Contains(err.Error(), "arch_map/os_map") {
+		t.Fatalf("expected 404 error to hint at arch_map/os_map, got: %v", err)
+	}
+}
+
+func TestGoDownloaderDownloadOtherStatusNoHint(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	t.Cleanup(ts.Close)
+
+	dl := NewGoDownloader(&run.FakeRunner{})
+	dest := filepath.Join(t.TempDir(), "out.bin")
+
+	err := dl.Download(context.Background(), ts.URL, dest)
+	if err == nil {
+		t.Fatal("expected error for 403 response, got nil")
+	}
+	// Only 404 gets the arch_map/os_map hint — a 403 has nothing to do
+	// with arch/os spelling and shouldn't carry a misleading suggestion.
+	if strings.Contains(err.Error(), "arch_map/os_map") {
+		t.Fatalf("403 error should not carry the arch_map/os_map hint: %v", err)
+	}
+}
+
+func TestDownloadErrorWithHint(t *testing.T) {
+	t.Parallel()
+	if got := downloadErrorWithHint(nil); got != nil {
+		t.Fatalf("nil in, expected nil out, got %v", got)
+	}
+	// curl/wget give us only stderr text, no typed status — best-effort
+	// match on "404" in that text.
+	err404 := errors.New("curl: (22) The requested URL returned error: 404")
+	got := downloadErrorWithHint(err404)
+	if !strings.Contains(got.Error(), "arch_map/os_map") {
+		t.Fatalf("expected hint appended, got: %v", got)
+	}
+	// GoDownloader's own 404 error already carries the hint text; must not
+	// be doubled up.
+	already := fmt.Errorf("http: %s returned %s (hint: check this tool's arch_map/os_map — the upstream release asset may use a different spelling of arch/os than this machine's own)", "url", "404 Not Found")
+	got2 := downloadErrorWithHint(already)
+	if n := strings.Count(got2.Error(), "arch_map/os_map"); n != 1 {
+		t.Fatalf("expected hint exactly once, got %d in: %v", n, got2)
+	}
+	// A non-404 error passes through unchanged.
+	other := errors.New("connection reset by peer")
+	if got3 := downloadErrorWithHint(other); got3.Error() != other.Error() {
+		t.Fatalf("expected unchanged error, got: %v", got3)
 	}
 }
 
