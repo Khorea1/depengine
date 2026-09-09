@@ -115,6 +115,18 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 				break
 			}
 
+			// Not installed — confirm it's actually installable before
+			// batching it. Without this, a phantom native candidate from
+			// `simple = [...]` (a package that doesn't exist in this
+			// clan's repo at all) would join the batch and either fail
+			// the whole atomic install or silently vanish from it. Let it
+			// fall through to `remaining`, where tryMethods will apply
+			// the same check and either advance to the next method_order
+			// candidate or fail with a clear diagnostic.
+			if !checkAvailable(ctx, ex.probeRunner(toolName, method.Kind), adapter, tool, method) {
+				break
+			}
+
 			// Resolve package name for batch.
 			pkg := pkgFromConfig(method, ex.clan)
 			if pkg == "" {
@@ -751,6 +763,20 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "already_installed")
 			result.Duration = time.Since(toolStart).String()
 			return
+		}
+
+		// Not installed — but is it actually installable via this method?
+		// Check()==false alone can't tell "not installed yet" apart from
+		// "not a real package for this manager" (see AvailabilityChecker
+		// doc). Without this, a `simple = [...]` tool with no real native
+		// package would be reported as "would install" and then fail a
+		// real install, instead of falling through to the next method.
+		if !checkAvailable(toolCtx, ex.probeRunner(tool.Name, displayKind), adapter, tool, method) {
+			attempt.Status = "skip_unavailable"
+			attempt.Error = fmt.Sprintf("%s: package not found in repo/index", displayKind)
+			result.Methods = append(result.Methods, attempt)
+			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_not_in_repo")
+			continue
 		}
 
 		if ex.dryRun {

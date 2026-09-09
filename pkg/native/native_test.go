@@ -71,6 +71,51 @@ func TestBuildCommandsMatchExpectedPerClan(t *testing.T) {
 	}
 }
 
+// TestBuildSearchCmd covers the availability-check fix: clans where a
+// clean exit-code-only repo query is known (void, debian/mint/termux via
+// apt-cache, arch, fedora, macos) must return a command, and clans with
+// no configured SearchCmd must return nil so callers fail open instead of
+// guessing.
+func TestBuildSearchCmd(t *testing.T) {
+	cases := []struct {
+		name string
+		clan string
+		want string // space-joined expected command, "" means nil
+	}{
+		{"void xbps-query -R", "void", "xbps-query -R serpantinumd"},
+		{"debian apt-cache show", "debian", "apt-cache show serpantinumd"},
+		{"mint apt-cache show", "mint", "apt-cache show serpantinumd"},
+		{"termux apt-cache show", "termux", "apt-cache show serpantinumd"},
+		{"arch pacman -Si", "arch", "pacman -Si serpantinumd"},
+		{"fedora dnf list", "fedora", "dnf list serpantinumd"},
+		{"macos brew info", "macos", "brew info serpantinumd"},
+		{"suse has no SearchCmd configured", "suse", ""},
+		{"alpine has no SearchCmd configured", "alpine", ""},
+		{"unknown clan returns nil", "unknown", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := BuildSearchCmd(c.clan, "serpantinumd")
+			if c.want == "" {
+				if got != nil {
+					t.Fatalf("expected nil, got %v", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("expected %q, got nil", c.want)
+			}
+			if strings.Join(got, " ") != c.want {
+				t.Fatalf("expected %q, got %q", c.want, strings.Join(got, " "))
+			}
+			// Search must never carry sudo — it's a read-only repo query.
+			if got[0] == "sudo" {
+				t.Fatalf("SearchCmd must not be sudo-prefixed: %v", got)
+			}
+		})
+	}
+}
+
 func TestBuildSyncCmdOnlyForManagersThatNeedIt(t *testing.T) {
 	synced := map[string]bool{"debian": true, "alpine": true, "termux": true, "mint": true}
 	for clan := range synced {

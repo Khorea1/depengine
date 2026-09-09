@@ -74,6 +74,44 @@ func CanRemove(adapter Adapter) bool {
 	return ok && r.CanRemove()
 }
 
+// AvailabilityChecker is an optional interface for adapters that can
+// distinguish "not installed yet" from "does not exist as an installable
+// target at all" for a given method candidate — e.g. a native package
+// manager where the resolved package name isn't in any configured repo.
+//
+// Without this, Check() == false is ambiguous: the executor cannot tell
+// "go ahead and install this" apart from "this was never a real candidate
+// in the first place" (the schema.go `simple = [...]` shortcut injects a
+// native MethodCandidate for every simple tool with no such validation,
+// so any simple tool whose name isn't an actual native package — AUR-only,
+// cargo-only, or simply nonexistent — looks installable until this check
+// runs).
+//
+// Adapters that don't implement this interface are assumed to always have
+// the package available, preserving prior behavior for methods that have
+// no concept of "not in any repo" (cargo, go, pip, git, http, ...).
+type AvailabilityChecker interface {
+	Adapter
+	// CheckAvailable reports whether the package this method candidate
+	// targets actually exists as an installable target (e.g. in the
+	// manager's repo/index), independent of whether it is already
+	// installed. Implementations that cannot cheaply determine this
+	// should return true (assume available): failing open only risks a
+	// wasted install attempt, whereas failing closed risks silently
+	// skipping a tool that really was installable.
+	CheckAvailable(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool
+}
+
+// checkAvailable consults AvailabilityChecker if the adapter implements
+// it; otherwise it assumes the package is available, which preserves
+// existing behavior for adapters that have no notion of "not in any repo".
+func checkAvailable(ctx context.Context, rn run.Runner, adapter Adapter, tool *config.Tool, mc *config.MethodCandidate) bool {
+	if ac, ok := adapter.(AvailabilityChecker); ok {
+		return ac.CheckAvailable(ctx, rn, tool, mc)
+	}
+	return true
+}
+
 // SubstitutePkg replaces "{pkg}" in cmd with the package name from
 // mc.Config["pkg"], falling back to tool.Name. Shared by all adapters.
 func SubstitutePkg(cmd []string, tool *config.Tool, mc *config.MethodCandidate) []string {

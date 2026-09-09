@@ -75,6 +75,31 @@ func (a *NativeAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool
 	return res.Err == nil && res.ExitCode == 0
 }
 
+// CheckAvailable reports whether mc's package exists in the detected
+// clan's repo/index at all, independent of install status. This is what
+// separates "not installed yet" (→ install it) from "not a real package"
+// (→ skip, try the next method_order candidate, or fail cleanly) — see
+// AvailabilityChecker's doc comment for why this matters for `simple`
+// tools. Clans with no SearchCmd configured (native.BuildSearchCmd
+// returns nil) fail open and report available, unchanged from before this
+// check existed.
+func (a *NativeAdapter) CheckAvailable(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) bool {
+	clan := a.detectClan(ctx, rn)
+	if clan == "" {
+		return true
+	}
+	pkg := pkgFromConfig(mc, clan)
+	if pkg == "" {
+		return true
+	}
+	cmd := native.BuildSearchCmd(clan, pkg)
+	if cmd == nil {
+		return true
+	}
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	return res.Err == nil && res.ExitCode == 0
+}
+
 // Install runs the install command. Sync is handled by the executor's
 // SyncManager, not here.
 func (a *NativeAdapter) Install(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) error {
@@ -200,6 +225,28 @@ func (a *NativeByManagerAdapter) Check(ctx context.Context, rn run.Runner, tool 
 	return res.Err == nil && res.ExitCode == 0
 }
 
+// CheckAvailable mirrors NativeAdapter.CheckAvailable but resolves the
+// clan from the manager binary name (findClanByManager) instead of
+// probing, and swaps in the actual manager binary for aliases (dnf5, etc)
+// the same way Check and Install do.
+func (a *NativeByManagerAdapter) CheckAvailable(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) bool {
+	clan := findClanByManager(a.managerName)
+	if clan == "" {
+		return true
+	}
+	pkg := pkgFromConfig(mc, clan)
+	if pkg == "" {
+		return true
+	}
+	cmd := native.BuildSearchCmd(clan, pkg)
+	if cmd == nil {
+		return true
+	}
+	cmd = replaceManagerBinary(cmd, a.managerName, clan)
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	return res.Err == nil && res.ExitCode == 0
+}
+
 func (a *NativeByManagerAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	clan := findClanByManager(a.managerName)
 	if clan == "" {
@@ -254,6 +301,8 @@ func findClanByManager(name string) string {
 // Compile-time interface checks.
 var _ Remover = (*NativeAdapter)(nil)
 var _ Remover = (*NativeByManagerAdapter)(nil)
+var _ AvailabilityChecker = (*NativeAdapter)(nil)
+var _ AvailabilityChecker = (*NativeByManagerAdapter)(nil)
 
 // replaceManagerBinary replaces the binary name in a native manager command
 // with the actual binary name (e.g. "dnf5" instead of "dnf"). This handles

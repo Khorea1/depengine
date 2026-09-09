@@ -27,6 +27,20 @@ func BuildCheckCmd(clan, pkg string) []string {
 	return substitutePkg(nm.CheckCmd, pkg)
 }
 
+// BuildSearchCmd substitutes "{pkg}" in the search command. Never adds
+// sudo — querying repo/index metadata should never need privilege. Returns
+// nil if the clan has no known native manager or no SearchCmd is
+// configured for it (some managers have no reliable exit-code-only way to
+// answer "does this exist at all" without a shell pipeline); callers
+// should treat a nil result as "unknown" and fail open, not as "not found".
+func BuildSearchCmd(clan, pkg string) []string {
+	nm, ok := Lookup(clan)
+	if !ok || len(nm.SearchCmd) == 0 {
+		return nil
+	}
+	return substitutePkg(nm.SearchCmd, pkg)
+}
+
 // BuildRemoveCmd substitutes "{pkg}" in the remove command. Returns nil if
 // the clan has no known native manager or no remove command.
 func BuildRemoveCmd(clan, pkg string) []string {

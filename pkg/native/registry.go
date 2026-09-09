@@ -43,6 +43,19 @@ type Manager struct {
 	// CheckCmd uses "{pkg}" as well; exit code 0 means already installed.
 	CheckCmd []string
 
+	// SearchCmd uses "{pkg}" as well; exit code 0 means the package exists
+	// as an installable target in this manager's repo/index — independent
+	// of whether it is already installed. This is what lets the engine
+	// distinguish "not installed yet" from "does not exist at all" (e.g.
+	// an AUR-only or cargo-only tool that a `simple = [...]` entry
+	// otherwise turns into a phantom native candidate — see schema.go
+	// normalizeTools and pkg/exec's CheckAvailable).
+	//
+	// Left empty for managers where no exit-code-only, shell-free query
+	// is known to be reliable; CheckAvailable then fails open (assumes
+	// the package is available) rather than guessing.
+	SearchCmd []string
+
 	// RemoveCmd uses "{pkg}" as a placeholder for the package name.
 	// Empty means the manager has no standard remove command and the
 	// engine will fall back to manual-removal instructions.
@@ -68,24 +81,33 @@ var managers = map[string]Manager{
 		SyncCmd:      []string{"apt-get", "update"},
 		InstallCmd:   []string{"apt-get", "install", "-y", "{pkg}"},
 		CheckCmd:     []string{"dpkg", "-s", "{pkg}"},
-		RemoveCmd:    []string{"apt-get", "remove", "-y", "{pkg}"},
-		AtomicBatch:  true,
+		// apt-cache show exits non-zero (100) when no package by this
+		// exact name exists in any configured source.
+		SearchCmd:   []string{"apt-cache", "show", "{pkg}"},
+		RemoveCmd:   []string{"apt-get", "remove", "-y", "{pkg}"},
+		AtomicBatch: true,
 	},
 	"arch": {
 		Name:         "pacman",
 		SudoRequired: true,
 		InstallCmd:   []string{"pacman", "-S", "--noconfirm", "--needed", "{pkg}"},
 		CheckCmd:     []string{"pacman", "-Qi", "{pkg}"},
-		RemoveCmd:    []string{"pacman", "-R", "--noconfirm", "{pkg}"},
-		AtomicBatch:  true,
+		// pacman -Si queries the sync (repo) databases, not the local
+		// install db; exits 1 when the package isn't in any repo.
+		SearchCmd:   []string{"pacman", "-Si", "{pkg}"},
+		RemoveCmd:   []string{"pacman", "-R", "--noconfirm", "{pkg}"},
+		AtomicBatch: true,
 	},
 	"fedora": {
 		Name:         "dnf",
 		SudoRequired: true,
 		InstallCmd:   []string{"dnf", "install", "-y", "{pkg}"},
 		CheckCmd:     []string{"rpm", "-q", "{pkg}"},
-		RemoveCmd:    []string{"dnf", "remove", "-y", "{pkg}"},
-		AtomicBatch:  true,
+		// dnf list exits non-zero ("Error: No matching Packages to
+		// list.") when the package isn't in any enabled repo.
+		SearchCmd:   []string{"dnf", "list", "{pkg}"},
+		RemoveCmd:   []string{"dnf", "remove", "-y", "{pkg}"},
+		AtomicBatch: true,
 	},
 	"suse": {
 		Name:         "zypper",
@@ -112,8 +134,13 @@ var managers = map[string]Manager{
 		SudoRequired: true,
 		InstallCmd:   []string{"xbps-install", "-Sy", "{pkg}"},
 		CheckCmd:     []string{"xbps-query", "{pkg}"},
-		RemoveCmd:    []string{"xbps-remove", "-y", "{pkg}"},
-		AtomicBatch:  true,
+		// xbps-query -R queries the (synced) repo index rather than the
+		// local install db; exits 1 when the package isn't in any repo
+		// at all. This is what catches AUR/cargo-only tools that a
+		// `simple = [...]` entry would otherwise report as installable.
+		SearchCmd:   []string{"xbps-query", "-R", "{pkg}"},
+		RemoveCmd:   []string{"xbps-remove", "-y", "{pkg}"},
+		AtomicBatch: true,
 	},
 	// gentoo: emerge installs sequentially — if one package fails, earlier ones
 	// are already on disk. Not all-or-nothing, so AtomicBatch is false.
@@ -132,8 +159,11 @@ var managers = map[string]Manager{
 		SudoRequired: false,
 		InstallCmd:   []string{"brew", "install", "{pkg}"},
 		CheckCmd:     []string{"brew", "list", "{pkg}"},
-		RemoveCmd:    []string{"brew", "uninstall", "{pkg}"},
-		AtomicBatch:  false,
+		// brew info exits 1 ("Error: No available formula/cask...") when
+		// no formula or cask by this name exists.
+		SearchCmd:   []string{"brew", "info", "{pkg}"},
+		RemoveCmd:   []string{"brew", "uninstall", "{pkg}"},
+		AtomicBatch: false,
 	},
 	"termux": {
 		Name:         "pkg",
@@ -144,7 +174,11 @@ var managers = map[string]Manager{
 		// CheckCmd: dpkg -s {pkg} — Termux's pkg is a wrapper around apt, which sits on dpkg.
 		// dpkg -s is the only clean exit-0/exit-1 test for "is this package installed?"
 		// (Termux's pkg has no direct equivalent). This mirrors the debian clan.
-		CheckCmd:    []string{"dpkg", "-s", "{pkg}"},
+		CheckCmd: []string{"dpkg", "-s", "{pkg}"},
+		// Termux's pkg wraps apt, so apt-cache show works the same way
+		// as on debian: non-zero exit when the package isn't in any
+		// configured Termux repo (catches AUR-equivalent/cargo-only tools).
+		SearchCmd:   []string{"apt-cache", "show", "{pkg}"},
 		RemoveCmd:   []string{"pkg", "uninstall", "-y", "{pkg}"},
 		AtomicBatch: true,
 	},
@@ -190,8 +224,12 @@ var managers = map[string]Manager{
 		SyncCmd:      []string{"apt-get", "update"},
 		InstallCmd:   []string{"apt-get", "install", "-y", "{pkg}"},
 		CheckCmd:     []string{"dpkg", "-s", "{pkg}"},
-		RemoveCmd:    []string{"apt-get", "remove", "-y", "{pkg}"},
-		AtomicBatch:  true,
+		// Mint sits on the same apt/dpkg base as debian; apt-cache show
+		// exits non-zero when no package by this exact name exists in
+		// any configured source.
+		SearchCmd:   []string{"apt-cache", "show", "{pkg}"},
+		RemoveCmd:   []string{"apt-get", "remove", "-y", "{pkg}"},
+		AtomicBatch: true,
 	},
 
 	// opkg — embedded Linux package manager (OpenWrt, LEDE, etc).

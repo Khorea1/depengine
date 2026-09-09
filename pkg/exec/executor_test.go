@@ -73,6 +73,22 @@ func (m *blockingMockAdapter) Install(ctx context.Context, rn run.Runner, tool *
 	}
 }
 
+// availabilityMockAdapter is a testMockAdapter that also implements
+// AvailabilityChecker, so tests can simulate a native-style adapter that
+// distinguishes "not installed" from "doesn't exist in any repo" — the
+// distinction that fixes the `simple = [...]` phantom-candidate bug.
+type availabilityMockAdapter struct {
+	testMockAdapter
+	checkAvailableFunc func(string) bool
+}
+
+func (m *availabilityMockAdapter) CheckAvailable(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
+	if m.checkAvailableFunc != nil {
+		return m.checkAvailableFunc(tool.Name)
+	}
+	return true
+}
+
 type installError struct{ msg string }
 
 func (e *installError) Error() string { return e.msg }
@@ -132,6 +148,99 @@ func TestExecutorFallback(t *testing.T) {
 	}
 	if report.Tools[0].Method != "succeeder" {
 		t.Fatalf("expected fallback to succeeder, got %s", report.Tools[0].Method)
+	}
+}
+
+// TestExecutorSkipsPhantomNativeCandidate reproduces the reported bug:
+// a `simple = [...]` tool always gets a native MethodCandidate (see
+// schema.go normalizeTools), even when the package doesn't exist in any
+// repo. Without an availability check, Check()==false alone made the
+// dry-run report "would install" for packages that can never actually
+// install. This asserts that when the adapter can tell the package isn't
+// a real candidate, the executor skips it instead of reporting
+// StatusWouldInstall or attempting a real Install.
+func TestExecutorSkipsPhantomNativeCandidate(t *testing.T) {
+	installCalled := false
+	ghost := &availabilityMockAdapter{
+		testMockAdapter: testMockAdapter{
+			kindValue: "native",
+			checkFunc: func(string) bool { return false }, // not installed
+			installFunc: func(string) error {
+				installCalled = true
+				return nil
+			},
+		},
+		checkAvailableFunc: func(string) bool { return false }, // doesn't exist in repo
+	}
+
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithAdapters(ghost)(ex)
+	ex.dryRun = true
+
+	s := mockSchema("serpantinumd")
+	report, err := ex.Execute(context.Background(), s, "void")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.WouldInstall != 0 {
+		t.Fatalf("phantom candidate should not be reported as would-install, got WouldInstall=%d: %+v", report.WouldInstall, report.Tools)
+	}
+	if report.Tools[0].Status != StatusSkippedUnavailable {
+		t.Fatalf("expected StatusSkippedUnavailable for a package absent from the repo, got %v", report.Tools[0].Status)
+	}
+	if installCalled {
+		t.Fatal("Install should never be attempted for a package that doesn't exist in the repo")
+	}
+}
+
+// TestExecutorFallsBackWhenNativeUnavailable checks that when the native
+// candidate isn't a real package, the engine falls through to the next
+// method_order entry (e.g. cargo) rather than getting stuck on the
+// phantom native candidate.
+func TestExecutorFallsBackWhenNativeUnavailable(t *testing.T) {
+	native := &availabilityMockAdapter{
+		testMockAdapter: testMockAdapter{
+			kindValue: "native",
+			checkFunc: func(string) bool { return false },
+			installFunc: func(string) error {
+				t.Fatal("native Install should not be called for a nonexistent package")
+				return nil
+			},
+		},
+		checkAvailableFunc: func(string) bool { return false },
+	}
+	cargo := &testMockAdapter{
+		kindValue:   "cargo",
+		checkFunc:   func(string) bool { return false },
+		installFunc: func(string) error { return nil },
+	}
+
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithAdapters(native, cargo)(ex)
+
+	s := &config.Schema{
+		Defaults: config.Defaults{Manager: "native", MethodOrder: []string{"native", "cargo"}},
+		Tools: map[string]*config.Tool{
+			"serpantinumd": {
+				Name: "serpantinumd",
+				Methods: []*config.MethodCandidate{
+					{Kind: "native", Config: map[string]any{"pkg": "serpantinumd"}},
+					{Kind: "cargo", Config: map[string]any{"pkg": "serpantinumd"}},
+				},
+			},
+		},
+	}
+	report, err := ex.Execute(context.Background(), s, "void")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Success != 1 {
+		t.Fatalf("expected fallback to cargo to succeed, got %+v", report.Tools)
+	}
+	if report.Tools[0].Method != "cargo" {
+		t.Fatalf("expected method cargo, got %s", report.Tools[0].Method)
 	}
 }
 
