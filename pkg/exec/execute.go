@@ -260,17 +260,14 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 		if syncMgr.NeedsSync() {
 			ex.outputf("  syncing package index...\n")
 			ex.logDebug(ctx, "sync", "status", "syncing")
-			if err := syncMgr.Sync(ctx); err != nil {
-				// A failed index sync leaves the native manager with stale
-				// metadata — native installs may silently install wrong
-				// versions or fail unpredictably. Fail loudly instead of
-				// continuing. The runner already logged the underlying
-				// command failure (cmd/exit/stderr) at WARN; the returned
-				// error propagates to install.go's top-level "execute
-				// failed" — no need for a third echo of the same message
-				// in between.
-				return nil, fmt.Errorf("package index sync failed: %w", err)
-			}
+			// Sync() never returns a fatal error (see its doc comment): a
+			// failed index sync is a soft failure, already logged at WARN
+			// by the runner. Installation proceeds regardless — either
+			// against a stale-but-usable native cache, or via tools whose
+			// method never depended on this sync in the first place. See
+			// findings.md, Achado 1: aborting the whole run here used to
+			// veto every tool over one unrelated broken repo.
+			_ = syncMgr.Sync(ctx)
 			ex.logDebug(ctx, "sync", "status", "done")
 		}
 	}

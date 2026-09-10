@@ -151,6 +151,60 @@ func TestExecutorFallback(t *testing.T) {
 	}
 }
 
+// TestExecutorSyncFailureDoesNotAbortUnrelatedTools reproduces the audit's
+// Achado 1 (findings.md): apt-get update returns exit 100 if ANY configured
+// repo is broken (e.g. a dead third-party PPA), even when every repo the
+// requested packages actually live in is perfectly fine. That single
+// unrelated sync failure must not veto tools whose install method has
+// nothing to do with the native package manager (http, git, cargo, go...),
+// and per SyncManager.Sync's own doc comment ("logs warning on failure but
+// does not abort — install may still work from local cache") it should not
+// veto the native tool outright either. Before the fix, Execute returned a
+// fatal error before either tool was attempted.
+func TestExecutorSyncFailureDoesNotAbortUnrelatedTools(t *testing.T) {
+	native := &testMockAdapter{
+		kindValue:     "native",
+		availableFunc: func() bool { return true },
+		checkFunc:     func(string) bool { return false },
+		installFunc:   func(string) error { return nil },
+	}
+	httpAdapter := &testMockAdapter{
+		kindValue:     "http",
+		availableFunc: func() bool { return true },
+		checkFunc:     func(string) bool { return false },
+		installFunc:   func(string) error { return nil },
+	}
+
+	ex := New()
+	// Exit 100 mirrors a real `apt-get update` failure from an unrelated
+	// broken repo (see findings.md reproduction: nodesource 403 / expired
+	// signing key).
+	WithRunner(&run.FakeRunner{ExitCode: 100, Stderr: "E: Failed to fetch ... 403 Forbidden"})(ex)
+	WithAdapters(native, httpAdapter)(ex)
+
+	s := &config.Schema{
+		Defaults: config.Defaults{Manager: "native", MethodOrder: []string{"native"}},
+		Tools: map[string]*config.Tool{
+			"fastfetch": {
+				Name:    "fastfetch",
+				Methods: []*config.MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "fastfetch"}}},
+			},
+			"somehttp": {
+				Name:    "somehttp",
+				Methods: []*config.MethodCandidate{{Kind: "http", Config: map[string]any{"url": "https://example.com/x"}}},
+			},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), s, "debian")
+	if err != nil {
+		t.Fatalf("Execute aborted the whole run on a sync failure: %v", err)
+	}
+	if report.Success != 2 {
+		t.Fatalf("expected both tools to be attempted despite the sync failure, got %d successes. Tools: %+v", report.Success, report.Tools)
+	}
+}
+
 // TestExecutorSkipsPhantomNativeCandidate reproduces the reported bug:
 // a `simple = [...]` tool always gets a native MethodCandidate (see
 // schema.go normalizeTools), even when the package doesn't exist in any

@@ -76,22 +76,43 @@ func TestSyncManagerSyncAlreadySynced(t *testing.T) {
 	}
 }
 
-func TestSyncManagerSyncFailure(t *testing.T) {
+// A failed sync (runtime error, e.g. the network being unreachable) must
+// not be fatal: Sync() swallows it after the runner has already logged the
+// failure at WARN, per Achado 1 in findings.md. The command is still
+// actually attempted, and the manager honestly reports itself as not
+// synced (so a hypothetical future retry within the session wouldn't be
+// short-circuited by a false "already done").
+func TestSyncManagerSyncFailureIsNotFatal(t *testing.T) {
 	t.Parallel()
 	fr := &run.FakeRunner{Err: errors.New("network error")}
 
 	sm := NewSyncManager(fr, "debian")
-	if err := sm.Sync(context.Background()); err == nil {
-		t.Fatal("expected error for failed sync")
+	if err := sm.Sync(context.Background()); err != nil {
+		t.Fatalf("Sync must not return an error on failure, got: %v", err)
+	}
+	if len(fr.Calls) != 1 {
+		t.Fatalf("expected the sync command to still be attempted, got %d calls", len(fr.Calls))
+	}
+	if sm.synced {
+		t.Fatal("a failed sync must not be recorded as synced")
 	}
 }
 
-func TestSyncManagerSyncExitCodeFailure(t *testing.T) {
+// Same as above but for a non-zero exit code (the common real-world case:
+// `apt-get update` returning 100 because one unrelated third-party repo is
+// broken, even though the indexes the requested packages need are fine).
+func TestSyncManagerSyncExitCodeFailureIsNotFatal(t *testing.T) {
 	t.Parallel()
-	fr := &run.FakeRunner{ExitCode: 1}
+	fr := &run.FakeRunner{ExitCode: 100, Stderr: "E: Failed to fetch ... 403 Forbidden"}
 
 	sm := NewSyncManager(fr, "debian")
-	if err := sm.Sync(context.Background()); err == nil {
-		t.Fatal("expected error for non-zero exit code")
+	if err := sm.Sync(context.Background()); err != nil {
+		t.Fatalf("Sync must not return an error on non-zero exit, got: %v", err)
+	}
+	if len(fr.Calls) != 1 {
+		t.Fatalf("expected the sync command to still be attempted, got %d calls", len(fr.Calls))
+	}
+	if sm.synced {
+		t.Fatal("a failed sync must not be recorded as synced")
 	}
 }
