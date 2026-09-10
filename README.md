@@ -108,8 +108,8 @@ depengine install                    # same tools, same versions
 ./depengine install --frozen-lockfile
 
 # --- Everyday commands ---
-./depengine status                   # what's installed (positional args are ignored)
-./depengine status --json            # same, machine-readable
+./depengine status                   # what's installed
+./depengine status --format=json     # same, machine-readable
 ./depengine remove nvim              # uninstall
 ./depengine why nvim                 # explain which method would run, and why
 ./depengine sbom --format cyclonedx  # export an SBOM
@@ -172,7 +172,7 @@ Full breakdown: [manifest merge rules](docs/schema-reference.md#manifest-merge-r
 | `install` | Install all tools from the schema |
 | `validate` | Check the schema without installing anything |
 | `check <tool>` | Check whether one tool is installed |
-| `status` | Show what's installed (all tools; positional args ignored) |
+| `status` | Show what's installed (all tools; takes no arguments) |
 | `remove <tool>` | Uninstall a tool |
 | `update` | Resolve `{latest}` placeholders, write `depengine.lock` |
 | `upgrade` | Upgrade installed tools to the versions pinned in `depengine.lock` |

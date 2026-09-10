@@ -57,13 +57,13 @@ Installs all tools from the schema, respecting `method_order`, `when`,
 ## `depengine status [flags]`
 
 Shows the installation status of all tools in state against the schema.
-Positional arguments are ignored — `status` always lists every tracked tool.
+Takes no positional arguments — passing one is an error.
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--schema` | from state | Override schema path |
 | `--format` | `text` | `text` or `json` |
-| `--json` | `false` | JSON output (shorthand for `--format=json`) |
+| `--json` | `false` | **Deprecated**, prints a warning on stderr — use `--format=json` instead |
 | `--orphans` | `false` | Show only installed tools not in the schema |
 | `--manifest` / `--no-manifest` | — | Same as `install` |
 

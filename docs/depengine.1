@@ -170,8 +170,11 @@ Treat warnings as errors (exit code 1).
 .BR \-\-schema " <path>"
 Override the schema path (default: from state file).
 .TP
+.BR \-\-format " <fmt>"
+Output format: \fBtext\fR (default) or \fBjson\fR.
+.TP
 .BR \-\-json
-Emit JSON output.
+\fBDeprecated\fR, prints a warning on stderr. Use \fB--format=json\fR instead.
 .TP
 .BR \-\-orphans
 Show only orphaned tools (installed but no longer in schema).
@@ -434,7 +437,7 @@ go build -o depengine .
 .SS "Show installation status"
 .EX
 ./depengine status
-./depengine status --json
+./depengine status --format=json
 ./depengine status --orphans
 .EE
 .SS "Remove a tool"
