@@ -382,6 +382,7 @@ func TestLoadSharedReadOnly(t *testing.T) {
 
 func TestLoadFromCustomPath(t *testing.T) {
 	td := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", td)
 	path := filepath.Join(td, "custom-state.json")
 
 	// Load from non-existent file returns empty state.
