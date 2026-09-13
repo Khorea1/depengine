@@ -144,6 +144,20 @@ var Configs = map[string]BaseConfig{
 		InstallTmpl: []string{"brew", "install", "--cask", "{pkg}"},
 		RemoveTmpl:  []string{"brew", "uninstall", "--cask", "{pkg}"},
 	},
+	// appman ("AM"/"AppMan" AppImage package manager, ivan-hc/AM). Installs
+	// land on PATH as a binary named after the program (system-wide under
+	// /usr/local/bin, or ~/.local/bin in AppMan/--user mode), so `command -v`
+	// is the reliable exit-code check — `am`/`appman` itself has no
+	// documented single-package "is this installed?" query. `-y` makes `-i`
+	// (install) non-interactive; `-R` (as opposed to `-r`) removes without
+	// asking for confirmation.
+	"appman": {
+		KindName:    "appman",
+		Binary:      "appman",
+		CheckTmpl:   []string{"sh", "-c", `command -v "$1" >/dev/null`, "sh", "{pkg}"},
+		InstallTmpl: []string{"appman", "-y", "-i", "{pkg}"},
+		RemoveTmpl:  []string{"appman", "-R", "{pkg}"},
+	},
 	// mas installs macOS App Store apps by numeric app id; `mas uninstall`
 	// also requires the numeric id, which {pkg} may not be. Kept manual.
 	"mas": {

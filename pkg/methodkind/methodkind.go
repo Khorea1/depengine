@@ -14,7 +14,7 @@ var DefaultMethodOrder = []string{
 	"native", "scoop", "choco", "cargo", "go", "pipx", "uv", "pip",
 	"npm", "pnpm", "bun", "gem", "yarn", "yarn-berry",
 	"composer", "apm", "vscode", "vscodium", "flatpak",
-	"snap", "cask", "mas", "sdkman", "steamcmd",
+	"snap", "cask", "mas", "appman", "sdkman", "steamcmd",
 	"pacstall", "aur", "conda", "asdf", "git", "http",
 }
 
@@ -53,6 +53,7 @@ var knownKinds = []string{
 	"snap",
 	"cask",
 	"mas",
+	"appman",
 	"sdkman",
 	"steamcmd",
 	"pacstall",
