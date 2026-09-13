@@ -13,7 +13,7 @@ each one). The engine tries methods in `method_order` until one succeeds.
 
 - [Naming a tool](#naming-a-tool) — simple names, per-manager names, ecosystem buckets
 - [Custom sources](#custom-sources) — git forks, manual builds, HTTP artifacts
-- [Method reference](#method-reference) — one-line syntax for all 30 methods
+- [Method reference](#method-reference) — one-line syntax for all 31 methods
 - [Hooks & dependencies](#hooks--dependencies) — pre-install hooks, tool-to-tool `requires`
 - [Platform targeting](#platform-targeting) — `when` conditions, multi-method fallback
 - [Method control](#per-tool-method-control) — `method_prefer`, `method_only`
@@ -222,6 +222,7 @@ fields, documented above under [Custom sources](#custom-sources).
 | `snap` | Snap packages | `hello = { snap = "hello" }` |
 | `cask` | macOS Homebrew casks | `docker = { cask = "docker" }` |
 | `mas` | Mac App Store, by app ID | `xcode = { mas = "497799835" }` |
+| `appman` | AppImage packages via "AM"/"AppMan" (ivan-hc/AM) | `obsidian = { appman = "obsidian" }` |
 | `sdkman` | SDKMAN! JVM SDKs | `java17 = { sdkman = "java" }` |
 | `steamcmd` | SteamCMD game server tools | `cs2 = { steamcmd = "730" }` |
 | `pacstall` | Pacstall packages (Debian-based AUR-like) | `neofetch = { pacstall = "neofetch" }` |

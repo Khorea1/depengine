@@ -168,9 +168,9 @@ jekyll        = { gem = "jekyll" }
 rails         = { gem = "rails" }
 sass          = { gem = "sass" }
 
-# --- conda / flatpak / snap ---
+# --- conda / flatpak / snap / appman ---
 jupyter       = { conda = "jupyter" }
-obsidian      = { flatpak = "md.obsidian.Obsidian",  snap = "obsidian" }
+obsidian      = { flatpak = "md.obsidian.Obsidian",  snap = "obsidian", appman = "obsidian" }
 spotify       = { flatpak = "com.spotify.Client",    snap = "spotify" }
 slack         = { flatpak = "com.slack.Slack" }
 

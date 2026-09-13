@@ -66,7 +66,7 @@ manager = "native"
 aur_helper = "paru"                        # or "yay"
 method_order = ["native", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm",
   "bun", "gem", "yarn", "yarn-berry", "composer", "apm", "vscode",
-  "vscodium", "flatpak", "snap", "cask", "mas", "sdkman", "steamcmd",
+  "vscodium", "flatpak", "snap", "cask", "mas", "appman", "sdkman", "steamcmd",
   "pacstall", "aur", "conda", "asdf", "git", "http"]
 ```
 
@@ -121,7 +121,7 @@ Full one-liner-per-method table (with `git`/`http` field lists):
 Native:      native (auto-detects apt/pacman/dnf/brew/...)
 Language:    cargo, go, pip, pipx, uv, npm, pnpm, bun, gem, yarn,
              yarn-berry, composer, apm
-Desktop:     flatpak, snap, vscode, vscodium, cask, mas
+Desktop:     flatpak, snap, vscode, vscodium, cask, mas, appman
 Windows:     winget, scoop, choco
 Specialized: sdkman, steamcmd, pacstall, aur, conda, asdf
 Other:       git, http
