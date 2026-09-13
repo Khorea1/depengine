@@ -394,7 +394,7 @@ func TestSteamCMDCheckWithEmptyInstallDir(t *testing.T) {
 // BaseAdapter-driven kinds in Configs. Kinds with a RemoveTmpl must be
 // removable; kinds deliberately left manual must not.
 func TestRemovalMatrixRegistryKinds(t *testing.T) {
-	removable := []string{"cargo", "pip", "pipx", "uv", "npm", "pnpm", "bun", "gem", "yarn", "composer", "flatpak", "snap", "cask"}
+	removable := []string{"cargo", "pip", "pipx", "uv", "npm", "pnpm", "bun", "gem", "yarn", "composer", "flatpak", "snap", "cask", "appman"}
 	manual := []string{"go", "apm", "vscode", "vscodium", "mas"}
 
 	for _, kind := range removable {
@@ -565,4 +565,67 @@ func TestBaseAdapterCheckSubstitutesBinPlaceholder(t *testing.T) {
 	if last.Name != "which" || len(last.Args) != 1 || last.Args[0] != "stringer" {
 		t.Fatalf("Check ran %v %v, want which stringer", last.Name, last.Args)
 	}
+}
+
+// TestAppmanConfigCommands locks in the exact command shape for the appman
+// (AM/AppMan AppImage manager) adapter: install and remove must be
+// non-interactive (-y -i / -R), and check must be a plain `command -v`
+// lookup on the package name, since appman has no documented single-package
+// "is this installed?" query.
+func TestAppmanConfigCommands(t *testing.T) {
+	t.Parallel()
+	cfg, ok := Configs["appman"]
+	if !ok {
+		t.Fatal("Configs[\"appman\"] missing")
+	}
+	if cfg.Binary != "appman" {
+		t.Fatalf("Binary = %q, want appman", cfg.Binary)
+	}
+
+	adapter := NewBaseAdapter(cfg)
+	tl, mc := tool("obsidian", "obsidian")
+
+	fr := &run.FakeRunner{ExitCode: 0}
+	if !adapter.Check(context.Background(), fr, tl, mc) {
+		t.Fatal("Check should be true when exit code 0")
+	}
+	last := fr.Calls[len(fr.Calls)-1]
+	if last.Name != "sh" || last.Args[len(last.Args)-1] != "obsidian" {
+		t.Fatalf("Check ran %v %v, want a sh -c ... command -v lookup on \"obsidian\"", last.Name, last.Args)
+	}
+
+	fr = &run.FakeRunner{ExitCode: 0}
+	if err := adapter.Install(context.Background(), fr, tl, mc); err != nil {
+		t.Fatalf("Install: unexpected error: %v", err)
+	}
+	last = fr.Calls[len(fr.Calls)-1]
+	wantInstall := []string{"-y", "-i", "obsidian"}
+	if last.Name != "appman" || !equalArgs(last.Args, wantInstall) {
+		t.Fatalf("Install ran %v %v, want appman %v", last.Name, last.Args, wantInstall)
+	}
+
+	if !adapter.CanRemove() {
+		t.Fatal("CanRemove should be true (RemoveTmpl is set)")
+	}
+	fr = &run.FakeRunner{ExitCode: 0}
+	if err := adapter.Remove(context.Background(), fr, tl, mc); err != nil {
+		t.Fatalf("Remove: unexpected error: %v", err)
+	}
+	last = fr.Calls[len(fr.Calls)-1]
+	wantRemove := []string{"-R", "obsidian"}
+	if last.Name != "appman" || !equalArgs(last.Args, wantRemove) {
+		t.Fatalf("Remove ran %v %v, want appman %v", last.Name, last.Args, wantRemove)
+	}
+}
+
+func equalArgs(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
