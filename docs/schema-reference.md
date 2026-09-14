@@ -13,7 +13,7 @@ each one). The engine tries methods in `method_order` until one succeeds.
 
 - [Naming a tool](#naming-a-tool) — simple names, per-manager names, ecosystem buckets
 - [Custom sources](#custom-sources) — git forks, manual builds, HTTP artifacts
-- [Method reference](#method-reference) — one-line syntax for all 31 methods
+- [Method reference](#method-reference) — one-line syntax for all 32 methods
 - [Hooks & dependencies](#hooks--dependencies) — pre-install hooks, tool-to-tool `requires`
 - [Platform targeting](#platform-targeting) — `when` conditions, multi-method fallback
 - [Method control](#per-tool-method-control) — `method_prefer`, `method_only`
@@ -194,6 +194,32 @@ downloads the wrong file.
 
 ---
 
+### Container: pull an image via docker/podman
+
+`container` pulls an image into the local image store — no shim, no
+command created on PATH, nothing added to your shell. It's the right fit
+for tools you exec via `docker run`/`podman run` yourself, not for a CLI
+tool you expect to just call by name afterward.
+
+```toml
+[packages.obsidian.container]
+manager = "podman"
+source  = "lscr.io/linuxserver/obsidian"
+tag     = "latest"
+```
+
+| Field | Required | Description |
+|-------|----------|--------------|
+| `manager` | yes | `"docker"` or `"podman"` — picks which binary to drive. Not auto-detected: both can be installed on the same host at once, so guessing which one a given tool wants isn't safe. |
+| `source` | yes | The image reference (registry/repo), without the tag. |
+| `tag` | no | Defaults to `"latest"`. |
+
+`Check` looks at `<manager> images -q <source>:<tag>` — non-empty output
+means the image is already pulled. `Remove` runs `<manager> rmi
+<source>:<tag>`.
+
+---
+
 ## Method reference
 
 One-line syntax for every supported method. All of them accept `when` (see
@@ -223,6 +249,7 @@ fields, documented above under [Custom sources](#custom-sources).
 | `cask` | macOS Homebrew casks | `docker = { cask = "docker" }` |
 | `mas` | Mac App Store, by app ID | `xcode = { mas = "497799835" }` |
 | `appman` | AppImage packages via "AM"/"AppMan" (ivan-hc/AM) | `obsidian = { appman = "obsidian" }` |
+| `container` | Container images via `docker`/`podman pull` | `obsidian = { container = { manager = "podman", source = "lscr.io/linuxserver/obsidian", tag = "latest" } }` |
 | `sdkman` | SDKMAN! JVM SDKs | `java17 = { sdkman = "java" }` |
 | `steamcmd` | SteamCMD game server tools | `cs2 = { steamcmd = "730" }` |
 | `pacstall` | Pacstall packages (Debian-based AUR-like) | `neofetch = { pacstall = "neofetch" }` |

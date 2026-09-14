@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/container"
 	"github.com/Khorea1/depengine/pkg/ecosystem"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/git"
@@ -164,6 +165,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	exec.WithAdapters(
 		git.NewGitAdapter(),
 		httpdownload.NewHTTPAdapter(),
+		container.NewContainerAdapter(),
 		exec.NewNativeAdapter(clan),
 	)(ex)
 	exec.WithSchemaInfo(*installSchema, schemaFile.ModTime())(ex)

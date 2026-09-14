@@ -13,6 +13,8 @@ import (
 // Each method kind has its own contract:
 //   - git:  url (string)
 //   - http: url (string)
+//   - github: repo (string), asset (string)
+//   - container: manager (string, "docker"|"podman"), source (string)
 //   - cargo: when git sub-key present, the value must be a string URL
 //   - any:  build (string), extract_to (string), checksum (string)
 
@@ -22,6 +24,7 @@ var commonStringKeys = []string{
 	"pkg", "cask", "app", "source", "repo", "formula",
 	"package", "bin", "command", "extra_args",
 	"checksum_url", "checksum_file_format", "signature_url", "signing_key",
+	"manager", "tag",
 }
 
 func validateRequiredFields(s *config.Schema) *Result {
@@ -85,6 +88,40 @@ func validateRequiredFields(s *config.Schema) *Result {
 						Code:    ErrRequiredField,
 						Field:   fieldPath(toolName, i, "asset"),
 						Message: fmt.Sprintf("github method asset must be a string, got %T", v),
+					})
+				}
+
+			case "container":
+				if v, ok := mc.Config["manager"]; !ok || v == "" {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "manager"),
+						Message: fmt.Sprintf("container method for tool %q requires a manager field (\"docker\" or \"podman\") — it can't be auto-detected when both are installed", toolName),
+					})
+				} else if s, isStr := v.(string); !isStr {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "manager"),
+						Message: fmt.Sprintf("container method manager must be a string, got %T", v),
+					})
+				} else if s != "docker" && s != "podman" {
+					r.Add(ValidationError{
+						Code:    ErrInvalidValue,
+						Field:   fieldPath(toolName, i, "manager"),
+						Message: fmt.Sprintf("container method manager must be \"docker\" or \"podman\", got %q", s),
+					})
+				}
+				if v, ok := mc.Config["source"]; !ok || v == "" {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "source"),
+						Message: fmt.Sprintf("container method for tool %q requires a source field (the image reference)", toolName),
+					})
+				} else if _, isStr := v.(string); !isStr {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "source"),
+						Message: fmt.Sprintf("container method source must be a string, got %T", v),
 					})
 				}
 			}
