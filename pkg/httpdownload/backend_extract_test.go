@@ -153,7 +153,10 @@ func TestExtractCopyBinary(t *testing.T) {
 	}
 
 	// copyBinary is called when ext doesn't match any archive format.
-	if err := Extract(context.Background(), src, destDir, ".exe", nil, true, ""); err != nil {
+	// sudoRequired=false here: destDir is a plain user-writable tempdir, so
+	// the direct os.WriteFile path is exercised (see
+	// TestExtractCopyBinaryElevated for the sudoRequired=true path).
+	if err := Extract(context.Background(), src, destDir, ".exe", nil, false, ""); err != nil {
 		t.Fatalf("unexpected Extract error: %v", err)
 	}
 
@@ -164,6 +167,80 @@ func TestExtractCopyBinary(t *testing.T) {
 	data, _ := os.ReadFile(dest)
 	if string(data) != "binary-content" {
 		t.Fatalf("unexpected content: %s", data)
+	}
+}
+
+// TestExtractCopyBinaryElevated proves the fix for the bug flagged in
+// .dev/TODO.md's stale "already fixed" note: copyBinary used to call
+// os.WriteFile unconditionally, ignoring sudoRequired entirely — so a
+// system-scope single-file http/appimage install (extract_to under
+// /usr/local/bin, /opt, ...) would silently attempt an unprivileged write
+// into a root-owned directory and fail, unlike extractTar/extractZip/
+// installDeb, which already elevate correctly. This test forces the
+// non-root branch the same way TestElevationGuardNoMethod does, and
+// confirms Extract shells out through the elevation prefix to
+// `install -m 0755` instead of touching the filesystem directly.
+func TestExtractCopyBinaryElevated(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("test requires non-root: the sudoRequired branch only triggers when Geteuid() != 0")
+	}
+	run.OverrideElevation("sudo")
+	defer run.OverrideElevation("")
+
+	srcDir := t.TempDir()
+	src := filepath.Join(srcDir, "mybin")
+	if err := os.WriteFile(src, []byte("binary-content"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	fr := &run.FakeRunner{ExitCode: 0}
+	if err := Extract(context.Background(), src, "/usr/local/bin", ".exe", fr, true, "mytool"); err != nil {
+		t.Fatalf("unexpected Extract error: %v", err)
+	}
+
+	if len(fr.Calls) != 1 {
+		t.Fatalf("expected 1 elevated call, got %d: %+v", len(fr.Calls), fr.Calls)
+	}
+	got := fr.Calls[0]
+	if got.Name != "sudo" {
+		t.Errorf("expected elevated call via sudo, got %q", got.Name)
+	}
+	want := []string{"install", "-m", "0755", src, "/usr/local/bin/mybin"}
+	if len(got.Args) != len(want) {
+		t.Fatalf("args = %v, want %v", got.Args, want)
+	}
+	for i := range want {
+		if got.Args[i] != want[i] {
+			t.Errorf("arg[%d] = %q, want %q", i, got.Args[i], want[i])
+		}
+	}
+}
+
+// TestExtractCopyBinaryElevationUnavailable proves copyBinary now actually
+// consults elevationGuard: when sudo is required, the process isn't root,
+// and no elevation method is available, Extract must fail loudly instead of
+// falling back to an unprivileged write that would silently do the wrong
+// thing (or fail with a confusing permission error deep inside os.WriteFile).
+func TestExtractCopyBinaryElevationUnavailable(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("test requires non-root: the sudoRequired branch only triggers when Geteuid() != 0")
+	}
+	if run.ElevationPrefix() != nil {
+		t.Skip("test requires no elevation method available on this machine")
+	}
+
+	srcDir := t.TempDir()
+	src := filepath.Join(srcDir, "mybin")
+	if err := os.WriteFile(src, []byte("binary-content"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := Extract(context.Background(), src, "/usr/local/bin", ".exe", &run.FakeRunner{}, true, "mytool")
+	if err == nil {
+		t.Fatal("expected error when sudo required but no elevation method is available")
+	}
+	if !strings.Contains(err.Error(), "mytool") {
+		t.Errorf("error should name the tool, got: %v", err)
 	}
 }
 

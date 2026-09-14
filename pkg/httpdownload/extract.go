@@ -99,7 +99,7 @@ func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequ
 		return installDeb(ctx, src, rn, sudoRequired, toolName)
 	default:
 		// Treat as a plain binary — copy and chmod.
-		return copyBinary(src, dest)
+		return copyBinary(ctx, src, dest, rn, sudoRequired, toolName)
 	}
 }
 
@@ -197,8 +197,26 @@ func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired boo
 	return nil
 }
 
-func copyBinary(src, destDir string) error {
+// copyBinary installs src as a single executable file inside destDir. When
+// sudoRequired is set and the process isn't already root, os.WriteFile can't
+// help — an unprivileged process has no way to write into a root-owned
+// directory — so the copy is done via an elevated `install`, mirroring how
+// extractTar/extractZip/installDeb already shell out through
+// run.ElevationPrefix() instead of touching the filesystem directly.
+// `install -m 0755` also creates the destination with the right mode in one
+// step, avoiding a separate chmod call under sudo.
+func copyBinary(ctx context.Context, src, destDir string, rn run.Runner, sudoRequired bool, toolName string) error {
 	dest := filepath.Join(destDir, filepath.Base(src))
+
+	if sudoRequired && os.Geteuid() != 0 {
+		if err := elevationGuard(sudoRequired, toolName); err != nil {
+			return fmt.Errorf("copy: %w", err)
+		}
+		sudoBin := run.ElevationPrefix()[0]
+		res := rn.Run(ctx, sudoBin, "install", "-m", "0755", src, dest)
+		return run.CheckResult(res, "install")
+	}
+
 	input, err := os.ReadFile(src)
 	if err != nil {
 		return fmt.Errorf("copy: read %s: %w", src, err)

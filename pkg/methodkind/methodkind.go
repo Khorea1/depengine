@@ -15,7 +15,7 @@ var DefaultMethodOrder = []string{
 	"npm", "pnpm", "bun", "gem", "yarn", "yarn-berry",
 	"composer", "apm", "vscode", "vscodium", "flatpak",
 	"snap", "cask", "mas", "appman", "sdkman", "steamcmd",
-	"pacstall", "aur", "conda", "asdf", "container", "git", "http",
+	"pacstall", "aur", "conda", "asdf", "container", "appimage", "git", "http",
 }
 
 // DefaultBuckets maps ecosystem names to lists of method kinds.
@@ -61,6 +61,7 @@ var knownKinds = []string{
 	"conda",
 	"asdf",
 	"container",
+	"appimage",
 	"git",
 	"http",
 	"brew",

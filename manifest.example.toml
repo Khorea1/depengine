@@ -426,7 +426,7 @@ tags = ["lint", "containers"]
 # `defaults.method_order` in schema.example.toml lists every kind the engine
 # understands; the ones below (yarn classic, Yarn Berry, Composer, apm,
 # VS Code/VSCodium extensions, Homebrew casks, the Mac App Store, SDKMAN,
-# SteamCMD, Pacstall, asdf, container, and Windows's three competing
+# SteamCMD, Pacstall, asdf, container, appimage, and Windows's three competing
 # managers) had no working example anywhere in this repo before now. All of
 # the ecosystem ones below take a single `pkg` field, exactly like
 # cargo/go/pip do.
@@ -522,6 +522,19 @@ erlang-asdf  = { asdf = "erlang" }
   manager = "podman"
   source  = "lscr.io/linuxserver/obsidian"
   tag     = "latest"
+
+# --- appimage: resolves/downloads a .AppImage URL like `http` does
+# ({latest}/{version}/{arch}/{os}, checksum, retries, caching — same
+# fields), then installs it under a STABLE name (default: the tool name)
+# instead of the versioned filename the release ships with, and optionally
+# writes a .desktop launcher. Default install_dir is ~/.local/bin
+# (user-scope); pointing install_dir at a system path is how a system-wide
+# install is requested — there's no separate "system" boolean, sudo_required
+# is derived from the path the same way `http` derives it from extract_to. ---
+[packages.obsidian-appimage]
+  [packages.obsidian-appimage.appimage]
+  url     = "https://github.com/obsidianmd/obsidian-releases/releases/download/{latest}/Obsidian-{version}.AppImage"
+  desktop = true
 
 # --- Windows: THREE competing package managers, three different ID
 # conventions. winget is the OS-native default on Windows 10 1709+/11 (no

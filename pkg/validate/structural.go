@@ -15,6 +15,7 @@ import (
 //   - http: url (string)
 //   - github: repo (string), asset (string)
 //   - container: manager (string, "docker"|"podman"), source (string)
+//   - appimage: url (string)
 //   - cargo: when git sub-key present, the value must be a string URL
 //   - any:  build (string), extract_to (string), checksum (string)
 
@@ -24,7 +25,7 @@ var commonStringKeys = []string{
 	"pkg", "cask", "app", "source", "repo", "formula",
 	"package", "bin", "command", "extra_args",
 	"checksum_url", "checksum_file_format", "signature_url", "signing_key",
-	"manager", "tag",
+	"manager", "tag", "install_dir",
 }
 
 func validateRequiredFields(s *config.Schema) *Result {
@@ -123,6 +124,30 @@ func validateRequiredFields(s *config.Schema) *Result {
 						Field:   fieldPath(toolName, i, "source"),
 						Message: fmt.Sprintf("container method source must be a string, got %T", v),
 					})
+				}
+
+			case "appimage":
+				if v, ok := mc.Config["url"]; !ok || v == "" {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "url"),
+						Message: fmt.Sprintf("appimage method for tool %q requires a url field", toolName),
+					})
+				} else if _, isStr := v.(string); !isStr {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "url"),
+						Message: fmt.Sprintf("appimage method url must be a string, got %T", v),
+					})
+				}
+				if v, ok := mc.Config["desktop"]; ok {
+					if _, isBool := v.(bool); !isBool {
+						r.Add(ValidationError{
+							Code:    ErrRequiredField,
+							Field:   fieldPath(toolName, i, "desktop"),
+							Message: fmt.Sprintf("appimage method desktop must be a bool, got %T", v),
+						})
+					}
 				}
 			}
 

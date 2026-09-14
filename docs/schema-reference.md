@@ -13,7 +13,7 @@ each one). The engine tries methods in `method_order` until one succeeds.
 
 - [Naming a tool](#naming-a-tool) — simple names, per-manager names, ecosystem buckets
 - [Custom sources](#custom-sources) — git forks, manual builds, HTTP artifacts
-- [Method reference](#method-reference) — one-line syntax for all 32 methods
+- [Method reference](#method-reference) — one-line syntax for all 33 methods
 - [Hooks & dependencies](#hooks--dependencies) — pre-install hooks, tool-to-tool `requires`
 - [Platform targeting](#platform-targeting) — `when` conditions, multi-method fallback
 - [Method control](#per-tool-method-control) — `method_prefer`, `method_only`
@@ -220,6 +220,40 @@ means the image is already pulled. `Remove` runs `<manager> rmi
 
 ---
 
+### AppImage: portable `.AppImage` binaries
+
+`appimage` resolves and downloads a `.AppImage` URL exactly like `http`
+does ({latest}/{version}/{arch}/{os}, checksum verification, retries,
+caching — same fields, same behavior), then does the AppImage-specific
+part `http` doesn't: installing under a **stable** name instead of the
+versioned filename the release asset ships with (e.g.
+`Obsidian-1.5.3.AppImage` → `obsidian`), and optionally writing a
+`.desktop` launcher.
+
+```toml
+[packages.obsidian.appimage]
+url     = "https://github.com/obsidianmd/obsidian-releases/releases/download/{latest}/Obsidian-{version}.AppImage"
+desktop = true
+# install_dir defaults to ~/.local/bin (user-scope)
+```
+
+| Field | Required | Description |
+|-------|----------|--------------|
+| `url` | yes | Same meaning as on `http` — supports `{latest}`/`{version}`/`{arch}`/`{os}`. |
+| `install_dir` | no | Destination directory. Defaults to `~/.local/bin` (user-scope). There is no separate `system = true` boolean — pointing this at a system path (e.g. `/usr/local/bin`) is how a system-wide install is requested, and `sudo_required` is derived from the path the same way `http` derives it from `extract_to`. |
+| `binary` | no | Final executable name. Defaults to the tool's name. |
+| `desktop` | no | When `true`, also writes `~/.local/share/applications/<binary>.desktop` (a minimal, valid launcher pointing at the installed binary). Always user-scope, regardless of `install_dir`. |
+
+Every other `http` field (`checksum`, `checksum_url`, `signature_url`,
+`signing_key`, `sudo_required`, ...) has the exact same meaning here,
+because the download itself is delegated to the `http` adapter unchanged.
+
+`Check` looks for `install_dir/<binary>` — the resolved *stable* name, not
+the downloaded filename. `Remove` deletes that file and, if `desktop` was
+set, its `.desktop` entry.
+
+---
+
 ## Method reference
 
 One-line syntax for every supported method. All of them accept `when` (see
@@ -250,6 +284,7 @@ fields, documented above under [Custom sources](#custom-sources).
 | `mas` | Mac App Store, by app ID | `xcode = { mas = "497799835" }` |
 | `appman` | AppImage packages via "AM"/"AppMan" (ivan-hc/AM) | `obsidian = { appman = "obsidian" }` |
 | `container` | Container images via `docker`/`podman pull` | `obsidian = { container = { manager = "podman", source = "lscr.io/linuxserver/obsidian", tag = "latest" } }` |
+| `appimage` | Portable `.AppImage` binaries, installed under a stable name | `obsidian = { appimage = { url = "https://…/Obsidian-{version}.AppImage" } }` |
 | `sdkman` | SDKMAN! JVM SDKs | `java17 = { sdkman = "java" }` |
 | `steamcmd` | SteamCMD game server tools | `cs2 = { steamcmd = "730" }` |
 | `pacstall` | Pacstall packages (Debian-based AUR-like) | `neofetch = { pacstall = "neofetch" }` |
