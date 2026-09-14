@@ -397,6 +397,7 @@ engine evaluates all non-empty fields against the detected system facts:
 | `init_system` | `string[]` | Exact (case-insensitive) | `systemd`, `openrc`, `runit`, `sysvinit` |
 | `is_wsl` | `bool` | Three-state | Detected via `/proc/version` or `WSL_DISTRO_NAME` |
 | `is_container` | `bool` | Three-state | Detected via `.dockerenv`, cgroup, etc. |
+| `is_android` | `bool` | Three-state | Detected via Termux env vars. Needed because `os` reports `linux` on Termux — `os = ["android"]` never matches there |
 
 ```toml
 # AUR only on Arch, HTTP fallback everywhere else
@@ -431,6 +432,23 @@ engine evaluates all non-empty fields against the detected system facts:
   [tools.podman.http]
   url  = "https://github.com/containers/podman/releases/download/{latest}/podman-wsl-{arch}.zip"
   when = { is_wsl = true }
+```
+
+```toml
+# Termux-specific asset — `os = ["android"]` won't match here, use is_android
+[tools.obsidian]
+  [tools.obsidian.gh_apk]
+  kind    = "github"
+  repo    = "obsidianmd/obsidian-releases"
+  release = "latest"
+  asset   = "obsidian-{version}-android.apk"
+  when    = { is_android = true }
+
+  [tools.obsidian.gh_linux]
+  kind = "github"
+  repo = "obsidianmd/obsidian-releases"
+  asset = "Obsidian-{version}.AppImage"
+  when = { os = ["linux"] }
 ```
 
 ```toml

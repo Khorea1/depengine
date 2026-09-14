@@ -234,8 +234,8 @@ type MethodCandidate struct {
 }
 
 // Condition is the parsed form of `when = { ... }`. All fields (distro_family,
-// distro_id, arch, os, kernel, libc, init_system, is_wsl, is_container, target_family) are
-// honored by Match().
+// distro_id, arch, os, kernel, libc, init_system, is_wsl, is_container,
+// is_android, target_family) are honored by Match().
 type Condition struct {
 	DistroFamily []string `cfg:"distro_family"`
 	TargetFamily []string `cfg:"target_family"`
@@ -247,6 +247,10 @@ type Condition struct {
 	InitSystem   []string `cfg:"init_system"`
 	IsWSL        *bool    `cfg:"is_wsl"`
 	IsContainer  *bool    `cfg:"is_container"`
+	// IsAndroid matches Facts.IsAndroid. Needed because Facts.OS reports
+	// "linux" on Termux (Android's userland), so `when = { os = ["android"] }`
+	// never matches there — this is the only reliable way to target Android.
+	IsAndroid *bool `cfg:"is_android"`
 }
 
 func (c *Condition) IsZero() bool {
@@ -259,7 +263,8 @@ func (c *Condition) IsZero() bool {
 		len(c.Libc) == 0 &&
 		len(c.InitSystem) == 0 &&
 		c.IsWSL == nil &&
-		c.IsContainer == nil
+		c.IsContainer == nil &&
+		c.IsAndroid == nil
 }
 
 // Match reports whether this condition is satisfied by the given system facts.
@@ -313,6 +318,9 @@ func (c *Condition) Match(facts *engine.Facts) bool {
 		return false
 	}
 	if c.IsContainer != nil && *c.IsContainer != facts.IsContainer {
+		return false
+	}
+	if c.IsAndroid != nil && *c.IsAndroid != facts.IsAndroid {
 		return false
 	}
 

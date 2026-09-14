@@ -96,8 +96,8 @@ when = { distro_family = ["arch"] }
 ```
 
 `distro_family`, `distro_id`, `arch`, `os`, `kernel`, `libc`, `init_system`, `target_family`
-(string-list, AND across fields, OR within); `is_wsl`, `is_container`
-(bool). Full table: [schema-reference.md#platform-targeting](schema-reference.md#platform-targeting).
+(string-list, AND across fields, OR within); `is_wsl`, `is_container`,
+`is_android` (bool). Full table: [schema-reference.md#platform-targeting](schema-reference.md#platform-targeting).
 
 ---
 

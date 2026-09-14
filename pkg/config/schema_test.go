@@ -902,6 +902,7 @@ func TestConditionMatches(t *testing.T) {
 		InitSystem:   "systemd",
 		IsWSL:        false,
 		IsContainer:  false,
+		IsAndroid:    false,
 	}
 
 	// nil condition always matches
@@ -1003,6 +1004,18 @@ func TestConditionMatches(t *testing.T) {
 		t.Error("IsContainer=true should NOT match facts.IsContainer=false")
 	}
 
+	// Three-state bools: IsAndroid = false, facts.IsAndroid = false → OK
+	c13b := &Condition{IsAndroid: boolPtr(false)}
+	if !c13b.Match(facts) {
+		t.Error("IsAndroid=false should match facts.IsAndroid=false")
+	}
+
+	// Three-state bools: IsAndroid = true, facts.IsAndroid = false → fail
+	c14b := &Condition{IsAndroid: boolPtr(true)}
+	if c14b.Match(facts) {
+		t.Error("IsAndroid=true should NOT match facts.IsAndroid=false")
+	}
+
 	// AND semantics: all fields must match
 	c15 := &Condition{
 		DistroFamily: []string{"debian"},
@@ -1094,6 +1107,7 @@ func TestConditionIsZero(t *testing.T) {
 		{"init_system", &Condition{InitSystem: []string{"systemd"}}, false},
 		{"is_wsl set", &Condition{IsWSL: boolPtr(true)}, false},
 		{"is_container set", &Condition{IsContainer: boolPtr(false)}, false},
+		{"is_android set", &Condition{IsAndroid: boolPtr(true)}, false},
 		{"is_wsl nil is zero", &Condition{DistroFamily: []string{}}, true},
 	}
 
@@ -1340,6 +1354,12 @@ func TestParseConditionNewFields(t *testing.T) {
 		{"is_container true", map[string]any{"is_container": true}, func(c *Condition) bool {
 			return c.IsContainer != nil && *c.IsContainer == true
 		}},
+		{"is_android true", map[string]any{"is_android": true}, func(c *Condition) bool {
+			return c.IsAndroid != nil && *c.IsAndroid == true
+		}},
+		{"is_android false", map[string]any{"is_android": false}, func(c *Condition) bool {
+			return c.IsAndroid != nil && *c.IsAndroid == false
+		}},
 	}
 
 	for _, tt := range tests {
@@ -1377,6 +1397,7 @@ func TestParseConditionAllFields(t *testing.T) {
 		"init_system":   []any{"systemd"},
 		"is_wsl":        false,
 		"is_container":  false,
+		"is_android":    true,
 	}
 	cond := parseCondition(raw)
 	if cond == nil {
@@ -1412,6 +1433,9 @@ func TestParseConditionAllFields(t *testing.T) {
 	}
 	if cond.IsContainer == nil || *cond.IsContainer != false {
 		t.Errorf("IsContainer: expected false, got %v", cond.IsContainer)
+	}
+	if cond.IsAndroid == nil || *cond.IsAndroid != true {
+		t.Errorf("IsAndroid: expected true, got %v", cond.IsAndroid)
 	}
 }
 

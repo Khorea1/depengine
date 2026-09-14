@@ -148,6 +148,8 @@ fontconfig = { native = { pkg = "fontconfig", pkg_overrides = { pkg = "fontconfi
 #   init_system   → init system (systemd, openrc, runit, ...)
 #   is_wsl        → true/false (WSL environment)
 #   is_container  → true/false (container environment)
+#   is_android    → true/false (Termux/Android; note `os` reports "linux"
+#                   on Termux, so use this instead of os = ["android"])
 # ==============================================================================
 
 # --- Binary ships separate glibc and musl builds (real Rust cross-release) ---
