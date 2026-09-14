@@ -201,6 +201,96 @@ func TestValidateRequiredFields_ContainerInvalidManager(t *testing.T) {
 	}
 }
 
+func TestValidateRequiredFields_GithubValid(t *testing.T) {
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"obsidian": tool("obsidian", []*cfg.MethodCandidate{
+				mc("github", nil, map[string]any{"repo": "obsidianmd/obsidian-releases", "asset": "Obsidian-{version}.AppImage"}),
+			}, nil),
+		},
+	}
+	r := validateRequiredFields(s)
+	if r.HasErrors() {
+		t.Errorf("expected no errors for valid github method, got: %+v", r.Errors)
+	}
+}
+
+func TestValidateRequiredFields_GithubReleaseValid(t *testing.T) {
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"obsidian": tool("obsidian", []*cfg.MethodCandidate{
+				mc("github", nil, map[string]any{"repo": "obsidianmd/obsidian-releases", "asset": "Obsidian-{version}.AppImage", "release": "nightly"}),
+			}, nil),
+		},
+	}
+	r := validateRequiredFields(s)
+	if r.HasErrors() {
+		t.Errorf("expected no errors for github method with release, got: %+v", r.Errors)
+	}
+}
+
+func TestValidateRequiredFields_GithubBranchValid(t *testing.T) {
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"somefork": tool("somefork", []*cfg.MethodCandidate{
+				mc("github", nil, map[string]any{"repo": "someorg/somefork", "asset": "somefork-linux-{arch_any}", "branch": "unstable"}),
+			}, nil),
+		},
+	}
+	r := validateRequiredFields(s)
+	if r.HasErrors() {
+		t.Errorf("expected no errors for github method with branch, got: %+v", r.Errors)
+	}
+}
+
+func TestValidateRequiredFields_GithubReleaseAndBranchMutuallyExclusive(t *testing.T) {
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"somefork": tool("somefork", []*cfg.MethodCandidate{
+				mc("github", nil, map[string]any{"repo": "someorg/somefork", "asset": "somefork-linux-{arch_any}", "release": "nightly", "branch": "unstable"}),
+			}, nil),
+		},
+	}
+	r := validateRequiredFields(s)
+	found := false
+	for _, e := range r.Errors {
+		if e.Code == ErrInvalidValue && e.Field == "tools.somefork.methods[0].release" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected ErrInvalidValue for release+branch both set, got: %+v", r.Errors)
+	}
+}
+
+func TestValidateRequiredFields_GithubReleaseNotString(t *testing.T) {
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"obsidian": tool("obsidian", []*cfg.MethodCandidate{
+				mc("github", nil, map[string]any{"repo": "obsidianmd/obsidian-releases", "asset": "Obsidian-{version}.AppImage", "release": 123}),
+			}, nil),
+		},
+	}
+	r := validateRequiredFields(s)
+	if !r.HasErrors() {
+		t.Fatal("expected error for non-string release")
+	}
+}
+
+func TestValidateRequiredFields_GithubBranchEmpty(t *testing.T) {
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"somefork": tool("somefork", []*cfg.MethodCandidate{
+				mc("github", nil, map[string]any{"repo": "someorg/somefork", "asset": "somefork-linux-{arch_any}", "branch": ""}),
+			}, nil),
+		},
+	}
+	r := validateRequiredFields(s)
+	if !r.HasErrors() {
+		t.Fatal("expected error for empty branch")
+	}
+}
+
 func TestValidateRequiredFields_BuildNotString(t *testing.T) {
 	s := &cfg.Schema{
 		Tools: map[string]*cfg.Tool{

@@ -168,6 +168,8 @@ for the same tool.
 |-------|----------|--------------|
 | `repo` | yes | `"owner/repo"` (or a full `https://github.com/owner/repo` URL) |
 | `asset` | yes | Filename pattern matched against the release's real asset names (see placeholders below) |
+| `release` | no | Named release tag to resolve instead of the latest release (e.g. `"nightly"` for a project's rolling pre-release). Defaults to `"latest"`. Mutually exclusive with `branch`. |
+| `branch` | no | Literal branch name, for projects that tag a release identically to a branch (e.g. an `"unstable"` rolling build). **Does not query git branches/commits** — it resolves the same way as `release` (GitHub's "get a release by tag" API), just documenting a different intent. Mutually exclusive with `release`. |
 
 Every other field (`checksum`, `checksum_url`, `checksum_file_format`,
 `signature_url`, `signing_key`, `extract_to`, `binary`, `sudo_required`) has
@@ -449,6 +451,16 @@ engine evaluates all non-empty fields against the detected system facts:
   repo = "obsidianmd/obsidian-releases"
   asset = "Obsidian-{version}.AppImage"
   when = { os = ["linux"] }
+```
+
+```toml
+# Rolling/unstable build published as a release tagged like the branch
+[tools.somefork]
+  [tools.somefork.gh_unstable]
+  kind   = "github"
+  repo   = "someorg/somefork"
+  branch = "unstable"   # literal tag name, no ambiguity with "use releases"
+  asset  = "somefork-linux-{arch_any}"
 ```
 
 ```toml

@@ -13,7 +13,7 @@ import (
 // Each method kind has its own contract:
 //   - git:  url (string)
 //   - http: url (string)
-//   - github: repo (string), asset (string)
+//   - github: repo (string), asset (string), release/branch (string, mutually exclusive)
 //   - container: manager (string, "docker"|"podman"), source (string)
 //   - appimage: url (string)
 //   - cargo: when git sub-key present, the value must be a string URL
@@ -90,6 +90,42 @@ func validateRequiredFields(s *config.Schema) *Result {
 						Field:   fieldPath(toolName, i, "asset"),
 						Message: fmt.Sprintf("github method asset must be a string, got %T", v),
 					})
+				}
+				// release/branch are alternative ways to pin resolution to
+				// something other than the latest release — never both at
+				// once, since that's an ambiguous "which one wins?" schema.
+				releaseV, hasRelease := mc.Config["release"]
+				branchV, hasBranch := mc.Config["branch"]
+				if hasRelease && hasBranch {
+					r.Add(ValidationError{
+						Code:    ErrInvalidValue,
+						Field:   fieldPath(toolName, i, "release"),
+						Message: fmt.Sprintf("github method for tool %q sets both release and branch — they're mutually exclusive, pick one", toolName),
+					})
+				}
+				if hasRelease {
+					if _, isStr := releaseV.(string); !isStr {
+						r.Add(ValidationError{
+							Code:    ErrRequiredField,
+							Field:   fieldPath(toolName, i, "release"),
+							Message: fmt.Sprintf("github method release must be a string, got %T", releaseV),
+						})
+					}
+				}
+				if hasBranch {
+					if s, isStr := branchV.(string); !isStr {
+						r.Add(ValidationError{
+							Code:    ErrRequiredField,
+							Field:   fieldPath(toolName, i, "branch"),
+							Message: fmt.Sprintf("github method branch must be a string, got %T", branchV),
+						})
+					} else if s == "" {
+						r.Add(ValidationError{
+							Code:    ErrInvalidValue,
+							Field:   fieldPath(toolName, i, "branch"),
+							Message: fmt.Sprintf("github method for tool %q: branch must not be empty", toolName),
+						})
+					}
 				}
 
 			case "container":

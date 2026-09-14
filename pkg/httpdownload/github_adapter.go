@@ -26,8 +26,17 @@ import (
 //
 // Config fields:
 //
-//	repo  (required) "owner/repo", or a full https://github.com/owner/repo URL
-//	asset (required) filename pattern; see ghrelease.ResolveAssetURL
+//	repo    (required) "owner/repo", or a full https://github.com/owner/repo URL
+//	asset   (required) filename pattern; see ghrelease.ResolveAssetURL
+//	release (optional) named release tag to resolve instead of the latest
+//	        release, e.g. "nightly" for a project's rolling pre-release.
+//	        Defaults to "latest" (the original latest-release behavior).
+//	        Mutually exclusive with branch.
+//	branch  (optional) literal branch name, for projects that publish a
+//	        release tagged identically to a branch (e.g. an "unstable"
+//	        rolling build). This does NOT query git branches/commits — it
+//	        resolves the same way as `release`, just documenting intent
+//	        differently. Mutually exclusive with release.
 //
 // Every other field (checksum, checksum_url, extract_to, binary,
 // sudo_required, signing_key, signature_url, ...) has the exact same
@@ -97,7 +106,16 @@ func (a *GitHubAdapter) resolve(ctx context.Context, rn run.Runner, tool *config
 	arch, _ := mc.Config["_current_arch"].(string)
 	osName, _ := mc.Config["_current_os"].(string)
 
-	url, _, err := ghrelease.ResolveAssetURL(ctx, repo, assetPattern, arch, osName, rn)
+	// `release` and `branch` are mutually exclusive (enforced in
+	// pkg/validate/structural.go) and both resolve the same way: a literal
+	// tag name looked up via GitHub's "get a release by tag" API, instead
+	// of always resolving the latest release. `release = "latest"` (or
+	// omitting both fields) keeps the original latest-release behavior.
+	// See ghrelease.ResolveAssetURL's doc comment for why "branch" doesn't
+	// query git branches/commits directly.
+	ref := githubRef(mc.Config)
+
+	url, _, err := ghrelease.ResolveAssetURL(ctx, repo, assetPattern, arch, osName, ref, rn)
 	if err != nil {
 		return nil, fmt.Errorf("github: %w", err)
 	}
@@ -114,4 +132,21 @@ func (a *GitHubAdapter) resolve(ctx context.Context, rn run.Runner, tool *config
 		When:   mc.When,
 		Config: resolved,
 	}, nil
+}
+
+// githubRef reads the `release`/`branch` config keys of a "github" method
+// and returns the ref ResolveAssetURL should pin to: "" for "use the latest
+// release" (the default, and what `release = "latest"` explicitly spells
+// out), or the literal tag/branch name otherwise. `branch` takes priority
+// if a schema somehow sets both, but pkg/validate/structural.go rejects
+// that combination before it ever reaches here.
+func githubRef(cfg map[string]any) string {
+	ref, _ := cfg["release"].(string)
+	if branch, _ := cfg["branch"].(string); branch != "" {
+		ref = branch
+	}
+	if ref == "latest" {
+		ref = ""
+	}
+	return ref
 }

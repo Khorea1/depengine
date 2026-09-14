@@ -216,6 +216,57 @@ func fetchLatestRelease(ctx context.Context, owner, repo string, rn run.Runner) 
 	return &rel, nil
 }
 
+// fetchReleaseByTag calls GitHub's releases API for owner/repo/tag and
+// returns the release payload (tag name + asset list) for that *specific*
+// tag, as opposed to fetchLatestRelease's "latest" release. Used by
+// ResolveAssetURL when a "github" method pins a `release` or `branch` value
+// instead of defaulting to the latest release. Cached separately from
+// fetchLatestRelease under a tag-qualified key so "latest" and a pinned tag
+// for the same repo don't collide in the cache.
+func fetchReleaseByTag(ctx context.Context, owner, repo, tag string, rn run.Runner) (*release, error) {
+	cacheKey := owner + "/" + repo + "@" + tag
+	if v, ok := releaseCache.Load(cacheKey); ok {
+		return v.(*release), nil
+	}
+
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, tag)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("resolve release %s: request: %w", tag, err)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", UserAgent)
+	if token := githubToken(ctx, rn); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := func() (*http.Response, error) {
+		httpClientMu.RLock()
+		client := httpClient
+		httpClientMu.RUnlock()
+		return client.Do(req)
+	}()
+	if err != nil {
+		return nil, fmt.Errorf("resolve release %s: http: %w", tag, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("resolve release %s: GitHub API returned %s (does a release/tag named %q exist on %s/%s?)", tag, resp.Status, tag, owner, repo)
+	}
+
+	var rel release
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+		return nil, fmt.Errorf("resolve release %s: decode: %w", tag, err)
+	}
+	if rel.TagName == "" {
+		rel.TagName = tag
+	}
+
+	releaseCache.Store(cacheKey, &rel)
+	return &rel, nil
+}
+
 // ResolveAssetURL resolves a "github" method's {repo, asset} declaration into
 // a concrete download URL, by matching assetPattern against the *actual*
 // list of asset filenames on the latest GitHub release — instead of the
@@ -239,13 +290,32 @@ func fetchLatestRelease(ctx context.Context, owner, repo string, rn run.Runner) 
 // matches an actual asset — it returns an error naming every asset that WAS
 // found, so the schema author can see exactly what's available and adjust
 // assetPattern, rather than silently downloading the wrong file.
-func ResolveAssetURL(ctx context.Context, repo, assetPattern, targetArch, targetOS string, rn run.Runner) (url, tag string, err error) {
+//
+// ref pins resolution to a specific release/branch tag instead of the
+// latest release: "" (the common case) means "use the latest release";
+// any other value is looked up via GitHub's "get a release by tag" API
+// (/releases/tags/{ref}). This is the same underlying call regardless of
+// whether the schema author calls the field `release` (a named release,
+// e.g. a project's "nightly" rolling tag) or `branch` (a literal branch
+// name) — see the "github" case in pkg/validate/structural.go and
+// GitHubAdapter.resolve for how those two mutually-exclusive schema fields
+// both funnel into this one ref parameter. Neither spelling queries git
+// branches/commits directly: both assume the upstream project publishes a
+// GitHub Release tagged with that literal name (common for rolling/nightly
+// builds), because GitHub's Releases API has no concept of "the release
+// currently built from branch X" to resolve automatically.
+func ResolveAssetURL(ctx context.Context, repo, assetPattern, targetArch, targetOS, ref string, rn run.Runner) (url, tag string, err error) {
 	owner, name, ok := splitRepo(repo)
 	if !ok {
 		return "", "", fmt.Errorf("resolve asset: %q is not an owner/repo GitHub reference", repo)
 	}
 
-	rel, err := fetchLatestRelease(ctx, owner, name, rn)
+	var rel *release
+	if ref == "" {
+		rel, err = fetchLatestRelease(ctx, owner, name, rn)
+	} else {
+		rel, err = fetchReleaseByTag(ctx, owner, name, ref, rn)
+	}
 	if err != nil {
 		return "", "", err
 	}

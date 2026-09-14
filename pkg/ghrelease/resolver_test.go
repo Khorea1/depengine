@@ -183,3 +183,119 @@ func TestResolveLatestTagWithHTTPMock(t *testing.T) {
 		t.Fatalf("manual substitution with ResolveLatestTag's result = %q, want %q (should match ResolveLatest)", viaTagSubstitution, viaResolveLatest)
 	}
 }
+
+func TestResolveAssetURLLatest(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/asset-owner/asset-repo/releases/latest" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"tag_name": "v1.0.0", "assets": [{"name": "tool-linux-x86_64", "browser_download_url": "https://example.com/tool-linux-x86_64"}]}`))
+	}))
+	t.Cleanup(ts.Close)
+	swapHTTPClient(t, ts.URL)
+
+	url, tag, err := ResolveAssetURL(context.Background(), "asset-owner/asset-repo", "tool-linux-{arch_any}", "x86_64", "linux", "", run.OSExecRunner{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tag != "v1.0.0" {
+		t.Errorf("tag = %q, want v1.0.0", tag)
+	}
+	if url != "https://example.com/tool-linux-x86_64" {
+		t.Errorf("url = %q, want the matched asset URL", url)
+	}
+}
+
+func TestResolveAssetURLWithRef(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		want := "/repos/ref-owner/ref-repo/releases/tags/nightly"
+		if r.URL.Path != want {
+			t.Errorf("unexpected path: %s, want %s", r.URL.Path, want)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"tag_name": "nightly", "assets": [{"name": "tool-linux-aarch64", "browser_download_url": "https://example.com/tool-linux-aarch64"}]}`))
+	}))
+	t.Cleanup(ts.Close)
+	swapHTTPClient(t, ts.URL)
+
+	url, tag, err := ResolveAssetURL(context.Background(), "ref-owner/ref-repo", "tool-linux-{arch_any}", "aarch64", "linux", "nightly", run.OSExecRunner{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tag != "nightly" {
+		t.Errorf("tag = %q, want nightly", tag)
+	}
+	if url != "https://example.com/tool-linux-aarch64" {
+		t.Errorf("url = %q, want the matched asset URL", url)
+	}
+}
+
+func TestResolveAssetURLRefNotFound(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(ts.Close)
+	swapHTTPClient(t, ts.URL)
+
+	_, _, err := ResolveAssetURL(context.Background(), "missing-owner/missing-repo", "tool-linux-{arch_any}", "x86_64", "linux", "does-not-exist", run.OSExecRunner{})
+	if err == nil {
+		t.Fatal("expected error for a ref/tag that doesn't exist as a release")
+	}
+}
+
+func TestFetchReleaseByTagCachesSeparatelyFromLatest(t *testing.T) {
+	var latestHits, tagHits int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/repos/cache-owner/cache-repo/releases/latest":
+			latestHits++
+			w.Write([]byte(`{"tag_name": "v2.0.0", "assets": []}`))
+		case "/repos/cache-owner/cache-repo/releases/tags/v1.0.0":
+			tagHits++
+			w.Write([]byte(`{"tag_name": "v1.0.0", "assets": []}`))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	t.Cleanup(ts.Close)
+	swapHTTPClient(t, ts.URL)
+
+	if _, err := fetchLatestRelease(context.Background(), "cache-owner", "cache-repo", run.OSExecRunner{}); err != nil {
+		t.Fatalf("fetchLatestRelease: %v", err)
+	}
+	if _, err := fetchReleaseByTag(context.Background(), "cache-owner", "cache-repo", "v1.0.0", run.OSExecRunner{}); err != nil {
+		t.Fatalf("fetchReleaseByTag: %v", err)
+	}
+	// Second calls should hit the cache, not the server again.
+	if _, err := fetchLatestRelease(context.Background(), "cache-owner", "cache-repo", run.OSExecRunner{}); err != nil {
+		t.Fatalf("fetchLatestRelease (cached): %v", err)
+	}
+	if _, err := fetchReleaseByTag(context.Background(), "cache-owner", "cache-repo", "v1.0.0", run.OSExecRunner{}); err != nil {
+		t.Fatalf("fetchReleaseByTag (cached): %v", err)
+	}
+
+	if latestHits != 1 {
+		t.Errorf("latest endpoint hit %d times, want 1 (second call should be cached)", latestHits)
+	}
+	if tagHits != 1 {
+		t.Errorf("tag endpoint hit %d times, want 1 (second call should be cached)", tagHits)
+	}
+}
+
+// swapHTTPClient points the package's httpClient at ts for the duration of
+// the calling test, restoring the original client on cleanup. Shared helper
+// for tests that mock the GitHub API via redirectTripper.
+func swapHTTPClient(t *testing.T, testURL string) {
+	t.Helper()
+	httpClientMu.Lock()
+	orig := httpClient
+	httpClient = &http.Client{Transport: &redirectTripper{testURL: testURL}}
+	httpClientMu.Unlock()
+	t.Cleanup(func() {
+		httpClientMu.Lock()
+		httpClient = orig
+		httpClientMu.Unlock()
+	})
+}
