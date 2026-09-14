@@ -343,6 +343,71 @@ simple = ["zsh", "bat"]
 	}
 }
 
+func TestParseSchemaMultipleGithubCandidatesDifferentWhen(t *testing.T) {
+	// Confirms (TODO item 4, 3rd bullet) that two candidates of the same
+	// `kind = "github"` with different `when` conditions parse as distinct
+	// MethodCandidate entries — no parser change needed, this already falls
+	// out of the generic label+kind-override machinery in parseMethod.
+	p := writeSchema(t, `
+[defaults]
+manager = "native"
+method_order = ["native", "github"]
+
+[tools.obsidian]
+method_only = ["github"]
+
+  [tools.obsidian.gh_apk]
+  kind    = "github"
+  repo    = "obsidianmd/obsidian-releases"
+  asset   = "obsidian-{version}-android.apk"
+  when    = { is_android = true }
+
+  [tools.obsidian.gh_linux]
+  kind  = "github"
+  repo  = "obsidianmd/obsidian-releases"
+  asset = "Obsidian-{version}.AppImage"
+  when  = { os = ["linux"] }
+`)
+	s, err := ParseSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	obsidian := s.Tools["obsidian"]
+	if obsidian == nil {
+		t.Fatal("expected tool obsidian")
+	}
+	if len(obsidian.Methods) != 2 {
+		t.Fatalf("expected 2 github candidates, got %d: %+v", len(obsidian.Methods), obsidian.Methods)
+	}
+
+	byLabel := map[string]*MethodCandidate{}
+	for _, m := range obsidian.Methods {
+		if m.Kind != "github" {
+			t.Errorf("expected Kind=github for every candidate, got %q", m.Kind)
+		}
+		byLabel[m.Label] = m
+	}
+
+	apk := byLabel["gh_apk"]
+	if apk == nil {
+		t.Fatal("expected candidate labeled gh_apk")
+	}
+	if apk.When == nil || apk.When.IsAndroid == nil || *apk.When.IsAndroid != true {
+		t.Errorf("gh_apk: expected when.is_android=true, got %+v", apk.When)
+	}
+	if apk.Config["asset"] != "obsidian-{version}-android.apk" {
+		t.Errorf("gh_apk: unexpected asset config %v", apk.Config["asset"])
+	}
+
+	linux := byLabel["gh_linux"]
+	if linux == nil {
+		t.Fatal("expected candidate labeled gh_linux")
+	}
+	if linux.When == nil || len(linux.When.OS) != 1 || linux.When.OS[0] != "linux" {
+		t.Errorf("gh_linux: expected when.os=[linux], got %+v", linux.When)
+	}
+}
+
 func TestValidateRejectsUnreachableTool(t *testing.T) {
 	s := &Schema{
 		Defaults: Defaults{MethodOrder: []string{"native"}},
