@@ -64,7 +64,7 @@ func validateMalformedURLs(s *config.Schema) *Result {
 		for i, mc := range tool.Methods {
 			var urlStr string
 			switch mc.Kind {
-			case "git", "http":
+			case "git", "http", "appimage":
 				if v, ok := mc.Config["url"]; ok {
 					urlStr, _ = v.(string)
 				}

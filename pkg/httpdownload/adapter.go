@@ -93,15 +93,7 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	defer os.RemoveAll(tmpDir)
 
 	// Determine the actual filename from the download URL.
-	fileName := "download" + ext
-	if parsedURL, err := url.Parse(resolvedURL); err == nil && parsedURL.Path != "" {
-		if base := filepath.Base(parsedURL.Path); base != "" && base != "." && base != "/" {
-			if filepath.Ext(base) == "" {
-				base += ext
-			}
-			fileName = base
-		}
-	}
+	fileName := resolvedFileName(resolvedURL, ext)
 	tmpFile := tmpDir + "/" + fileName
 
 	// --- Download cache ---
@@ -185,6 +177,26 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	}
 
 	return nil
+}
+
+// resolvedFileName derives the downloaded file's name from an already-
+// {latest}-resolved URL, falling back to "download"+ext when the URL has no
+// usable path segment (e.g. a bare host, or a query-only URL). Shared by
+// HTTPAdapter.Install and AppImageAdapter, which both need to know the exact
+// on-disk name copyBinary will produce before it runs — AppImageAdapter uses
+// it to rename the file to a stable, version-independent binary name after
+// HTTPAdapter's Install finishes.
+func resolvedFileName(resolvedURL, ext string) string {
+	fileName := "download" + ext
+	if parsedURL, err := url.Parse(resolvedURL); err == nil && parsedURL.Path != "" {
+		if base := filepath.Base(parsedURL.Path); base != "" && base != "." && base != "/" {
+			if filepath.Ext(base) == "" {
+				base += ext
+			}
+			fileName = base
+		}
+	}
+	return fileName
 }
 
 // checksumConfig holds parsed checksum-related configuration.
