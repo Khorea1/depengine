@@ -67,7 +67,7 @@ aur_helper = "paru"                        # or "yay"
 method_order = ["native", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm",
   "bun", "gem", "yarn", "yarn-berry", "composer", "apm", "vscode",
   "vscodium", "flatpak", "snap", "cask", "mas", "appman", "sdkman", "steamcmd",
-  "pacstall", "aur", "conda", "asdf", "git", "http"]
+  "pacstall", "aur", "conda", "asdf", "container", "git", "http"]
 ```
 
 ---
@@ -112,7 +112,7 @@ Details: [schema-reference.md#per-tool-method-control](schema-reference.md#per-t
 
 ---
 
-## All 31 methods
+## All 32 methods
 
 Full one-liner-per-method table (with `git`/`http` field lists):
 [schema-reference.md#method-reference](schema-reference.md#method-reference).
@@ -123,7 +123,7 @@ Language:    cargo, go, pip, pipx, uv, npm, pnpm, bun, gem, yarn,
              yarn-berry, composer, apm
 Desktop:     flatpak, snap, vscode, vscodium, cask, mas, appman
 Windows:     winget, scoop, choco
-Specialized: sdkman, steamcmd, pacstall, aur, conda, asdf
+Specialized: sdkman, steamcmd, pacstall, aur, conda, asdf, container
 Other:       git, http
 ```
 

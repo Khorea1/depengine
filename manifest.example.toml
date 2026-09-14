@@ -426,9 +426,10 @@ tags = ["lint", "containers"]
 # `defaults.method_order` in schema.example.toml lists every kind the engine
 # understands; the ones below (yarn classic, Yarn Berry, Composer, apm,
 # VS Code/VSCodium extensions, Homebrew casks, the Mac App Store, SDKMAN,
-# SteamCMD, Pacstall, asdf, and Windows's three competing managers) had no
-# working example anywhere in this repo before now. All of the ecosystem
-# ones below take a single `pkg` field, exactly like cargo/go/pip do.
+# SteamCMD, Pacstall, asdf, container, and Windows's three competing
+# managers) had no working example anywhere in this repo before now. All of
+# the ecosystem ones below take a single `pkg` field, exactly like
+# cargo/go/pip do.
 # ==============================================================================
 
 # --- yarn (classic, v1): global add. Kept for legacy projects; Berry (v2+)
@@ -511,6 +512,16 @@ chrome-pacstall  = { pacstall = "google-chrome-stable-deb" }
 # pkg/ecosystem/asdf_adapter.go). Plugin names usually match the runtime name. ---
 nodejs-asdf  = { asdf = "nodejs" }
 erlang-asdf  = { asdf = "erlang" }
+
+# --- container: pulls an image via `docker`/`podman pull` — no shim, no
+# command created on PATH. `manager` is required (docker and podman can
+# coexist on the same host, so it can't be auto-detected); `tag` defaults
+# to "latest" when omitted. ---
+[packages.obsidian-container]
+  [packages.obsidian-container.container]
+  manager = "podman"
+  source  = "lscr.io/linuxserver/obsidian"
+  tag     = "latest"
 
 # --- Windows: THREE competing package managers, three different ID
 # conventions. winget is the OS-native default on Windows 10 1709+/11 (no

@@ -21,7 +21,7 @@ aur_helper = "paru"
 
 # When a tool declares MORE THAN ONE candidate method (e.g., cargo, go, aur, git),
 # this list defines the trial order. The engine stops at the first one that works.
-method_order = ["native", "scoop", "choco", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm", "bun", "gem", "yarn", "yarn-berry", "composer", "apm", "vscode", "vscodium", "flatpak", "snap", "cask", "mas", "appman", "sdkman", "steamcmd", "pacstall", "aur", "conda", "asdf", "git", "http"]
+method_order = ["native", "scoop", "choco", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm", "bun", "gem", "yarn", "yarn-berry", "composer", "apm", "vscode", "vscodium", "flatpak", "snap", "cask", "mas", "appman", "sdkman", "steamcmd", "pacstall", "aur", "conda", "asdf", "container", "git", "http"]
 
 
 # ==============================================================================
