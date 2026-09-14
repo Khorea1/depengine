@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/container"
 	"github.com/Khorea1/depengine/pkg/ecosystem"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/git"
@@ -133,6 +134,7 @@ func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgra
 	exec.WithAdapters(
 		git.NewGitAdapter(),
 		httpdownload.NewHTTPAdapter(),
+		container.NewContainerAdapter(),
 		exec.NewNativeAdapter(clan),
 	)(ex)
 	exec.WithSchemaInfo(*upgradeSchema, schemaFile.ModTime())(ex)

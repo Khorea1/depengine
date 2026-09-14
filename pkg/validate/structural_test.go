@@ -123,6 +123,84 @@ func TestValidateRequiredFields_HTTPValid(t *testing.T) {
 	}
 }
 
+func TestValidateRequiredFields_ContainerValid(t *testing.T) {
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"obsidian": tool("obsidian", []*cfg.MethodCandidate{
+				mc("container", nil, map[string]any{
+					"manager": "podman",
+					"source":  "lscr.io/linuxserver/obsidian",
+					"tag":     "latest",
+				}),
+			}, nil),
+		},
+	}
+	r := validateRequiredFields(s)
+	if r.HasErrors() {
+		t.Errorf("expected no errors, got: %v", r.Errors)
+	}
+}
+
+func TestValidateRequiredFields_ContainerMissingManager(t *testing.T) {
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"obsidian": tool("obsidian", []*cfg.MethodCandidate{
+				mc("container", nil, map[string]any{"source": "lscr.io/linuxserver/obsidian"}),
+			}, nil),
+		},
+	}
+	r := validateRequiredFields(s)
+	found := false
+	for _, e := range r.Errors {
+		if e.Code == ErrRequiredField && e.Field == "tools.obsidian.methods[0].manager" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected ErrRequiredField for manager, got: %+v", r.Errors)
+	}
+}
+
+func TestValidateRequiredFields_ContainerMissingSource(t *testing.T) {
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"obsidian": tool("obsidian", []*cfg.MethodCandidate{
+				mc("container", nil, map[string]any{"manager": "docker"}),
+			}, nil),
+		},
+	}
+	r := validateRequiredFields(s)
+	found := false
+	for _, e := range r.Errors {
+		if e.Code == ErrRequiredField && e.Field == "tools.obsidian.methods[0].source" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected ErrRequiredField for source, got: %+v", r.Errors)
+	}
+}
+
+func TestValidateRequiredFields_ContainerInvalidManager(t *testing.T) {
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"obsidian": tool("obsidian", []*cfg.MethodCandidate{
+				mc("container", nil, map[string]any{"manager": "nerdctl", "source": "redis"}),
+			}, nil),
+		},
+	}
+	r := validateRequiredFields(s)
+	found := false
+	for _, e := range r.Errors {
+		if e.Code == ErrInvalidValue && e.Field == "tools.obsidian.methods[0].manager" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected ErrInvalidValue for manager \"nerdctl\", got: %+v", r.Errors)
+	}
+}
+
 func TestValidateRequiredFields_BuildNotString(t *testing.T) {
 	s := &cfg.Schema{
 		Tools: map[string]*cfg.Tool{

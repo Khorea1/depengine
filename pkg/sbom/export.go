@@ -134,6 +134,10 @@ func purlType(method string) string {
 		return "snap"
 	case "mas":
 		return "mas"
+	case "container":
+		// https://github.com/package-url/purl-spec's registered type for
+		// container images (docker/podman pulls alike).
+		return "oci"
 	default:
 		// Generic fallback — use the method name as a purl type.
 		return method
