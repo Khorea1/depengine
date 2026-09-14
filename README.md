@@ -194,7 +194,7 @@ Every flag and default lives in **[`docs/cli-reference.md`](docs/cli-reference.m
 |----------|---------|
 | **Native** | `native` (auto-detects apt/pacman/dnf/brew/...) + per-manager aliases |
 | **Language** | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `pnpm`, `bun`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
-| **Desktop** | `flatpak`, `snap`, `vscode`, `vscodium`, `cask` (macOS), `mas` (Mac App Store) |
+| **Desktop** | `flatpak`, `snap`, `vscode`, `vscodium`, `cask` (macOS), `mas` (Mac App Store), `appman` (AppImages) |
 | **Windows** | `winget`, `scoop`, `choco` |
 | **Specialized** | `sdkman`, `steamcmd`, `pacstall`, `aur` (configurable helper), `conda`, `asdf` |
 | **Other** | `git` (clone + build), `http` (download + extract + checksum) |
