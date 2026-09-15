@@ -125,7 +125,7 @@ Desktop:     flatpak, snap, vscode, vscodium, cask, mas, appman
 Windows:     winget, scoop, choco
 Specialized: sdkman, steamcmd, pacstall, aur, conda, asdf, container,
              appimage, android
-Other:       git, http
+Other:       git, http, github
 ```
 
 ---
