@@ -118,13 +118,13 @@ type Tool struct {
 	// `requires_when = { fontconfig = { target_family = ["unix"] } }`.
 	// A dep with no entry always applies. Conditions are immutable post-parse.
 	RequiresWhen map[string]*Condition `merge:"overwrite"`
-	Requires     []string               `merge:"overwrite"`
-	Methods      []*MethodCandidate     `merge:"methods"`
-	MethodPrefer []string               `merge:"overwrite"` // prefix: try these first, then fall back to defaults
-	MethodOnly   []string               `merge:"overwrite"` // exclusive: use ONLY these methods, in this order
-	IsSimple     bool                   `merge:"overwrite"`
-	Tags         []string               `merge:"union"` // profile tags for --profile filtering (e.g. "desktop", "server")
-	Ecosystem    string                 `merge:"overwrite"` // "python", "node", etc — empty if not from bucket
+	Requires     []string              `merge:"overwrite"`
+	Methods      []*MethodCandidate    `merge:"methods"`
+	MethodPrefer []string              `merge:"overwrite"` // prefix: try these first, then fall back to defaults
+	MethodOnly   []string              `merge:"overwrite"` // exclusive: use ONLY these methods, in this order
+	IsSimple     bool                  `merge:"overwrite"`
+	Tags         []string              `merge:"union"`     // profile tags for --profile filtering (e.g. "desktop", "server")
+	Ecosystem    string                `merge:"overwrite"` // "python", "node", etc — empty if not from bucket
 }
 
 // cloneTool returns a deep copy of t.

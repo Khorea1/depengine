@@ -393,6 +393,7 @@ func mergeMethodConfigs(lower, upper *MethodCandidate, pc *provenanceCollector) 
 
 	return result
 }
+
 // ValidateManifestNewTools checks that the manifest does not introduce tools
 // not present in the schema unless AllowNewTools is true in the manifest.
 //
