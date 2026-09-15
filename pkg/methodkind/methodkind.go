@@ -32,6 +32,12 @@ var DefaultBuckets = map[string][]string{
 // synchronized with ecosystem.Configs keys in pkg/ecosystem AND with
 // native manager names in pkg/native (managers map Manager.Name values
 // and managerNameToClan alias keys).
+//
+// "github" is deliberately absent from DefaultMethodOrder (it requires
+// mandatory config — repo/asset — so it can't act as a blind fallback for
+// every tool), but it belongs here: this list is a static validity check,
+// not an ordering preference, and the "github" kind is a real registered
+// adapter (pkg/httpdownload/github_adapter.go).
 var knownKinds = []string{
 	"native",
 	"cargo",
@@ -65,6 +71,7 @@ var knownKinds = []string{
 	"android",
 	"git",
 	"http",
+	"github",
 	"brew",
 	"scoop",
 	"choco",
