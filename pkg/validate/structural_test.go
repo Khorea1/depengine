@@ -81,6 +81,44 @@ func TestValidateRequiredFields_GitMissingURL(t *testing.T) {
 	}
 }
 
+func TestValidateRequiredFields_AndroidMissingURL(t *testing.T) {
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"myapp": tool("myapp", []*cfg.MethodCandidate{
+				mc("android", nil, map[string]any{}),
+			}, nil),
+		},
+	}
+	r := validateRequiredFields(s)
+	if !r.HasErrors() {
+		t.Fatal("expected error for missing android url")
+	}
+	found := false
+	for _, e := range r.Errors {
+		if e.Code == ErrRequiredField && e.Field == "tools.myapp.methods[0].url" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected ErrRequiredField for url, got: %+v", r.Errors)
+	}
+}
+
+func TestValidateRequiredFields_AndroidValid(t *testing.T) {
+	s := &cfg.Schema{
+		Tools: map[string]*cfg.Tool{
+			"myapp": tool("myapp", []*cfg.MethodCandidate{
+				mc("android", nil, map[string]any{"url": "https://example.com/app-{version}.apk"}),
+			}, nil),
+		},
+	}
+	r := validateRequiredFields(s)
+	if r.HasErrors() {
+		t.Errorf("expected no errors, got: %+v", r.Errors)
+	}
+}
+
 func TestValidateRequiredFields_HTTPMissingURL(t *testing.T) {
 	s := &cfg.Schema{
 		Tools: map[string]*cfg.Tool{

@@ -16,6 +16,7 @@ import (
 //   - github: repo (string), asset (string), release/branch (string, mutually exclusive)
 //   - container: manager (string, "docker"|"podman"), source (string)
 //   - appimage: url (string)
+//   - android: url (string)
 //   - cargo: when git sub-key present, the value must be a string URL
 //   - any:  build (string), extract_to (string), checksum (string)
 
@@ -184,6 +185,21 @@ func validateRequiredFields(s *config.Schema) *Result {
 							Message: fmt.Sprintf("appimage method desktop must be a bool, got %T", v),
 						})
 					}
+				}
+
+			case "android":
+				if v, ok := mc.Config["url"]; !ok || v == "" {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "url"),
+						Message: fmt.Sprintf("android method for tool %q requires a url field", toolName),
+					})
+				} else if _, isStr := v.(string); !isStr {
+					r.Add(ValidationError{
+						Code:    ErrRequiredField,
+						Field:   fieldPath(toolName, i, "url"),
+						Message: fmt.Sprintf("android method url must be a string, got %T", v),
+					})
 				}
 			}
 

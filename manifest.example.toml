@@ -426,8 +426,9 @@ tags = ["lint", "containers"]
 # `defaults.method_order` in schema.example.toml lists every kind the engine
 # understands; the ones below (yarn classic, Yarn Berry, Composer, apm,
 # VS Code/VSCodium extensions, Homebrew casks, the Mac App Store, SDKMAN,
-# SteamCMD, Pacstall, asdf, container, appimage, and Windows's three competing
-# managers) had no working example anywhere in this repo before now. All of
+# SteamCMD, Pacstall, asdf, container, appimage, android, and Windows's
+# three competing managers) had no working example anywhere in this repo
+# before now. All of
 # the ecosystem ones below take a single `pkg` field, exactly like
 # cargo/go/pip do.
 # ==============================================================================
@@ -524,17 +525,37 @@ erlang-asdf  = { asdf = "erlang" }
   tag     = "latest"
 
 # --- appimage: resolves/downloads a .AppImage URL like `http` does
-# ({latest}/{version}/{arch}/{os}, checksum, retries, caching — same
-# fields), then installs it under a STABLE name (default: the tool name)
-# instead of the versioned filename the release ships with, and optionally
-# writes a .desktop launcher. Default install_dir is ~/.local/bin
-# (user-scope); pointing install_dir at a system path is how a system-wide
-# install is requested — there's no separate "system" boolean, sudo_required
-# is derived from the path the same way `http` derives it from extract_to. ---
+# ({latest} at install time, plus the universal {arch}/{os} facts, checksum,
+# retries, caching — same fields), then installs it under a STABLE name
+# (default: the tool name) instead of the versioned filename the release
+# ships with, and optionally writes a .desktop launcher. Default install_dir
+# is ~/.local/bin (user-scope); pointing install_dir at a system path is how
+# a system-wide install is requested — there's no separate "system" boolean,
+# sudo_required is derived from the path the same way `http` derives it from
+# extract_to. NOTE: {version} is NOT resolved here (only {latest}, the
+# release tag) — that placeholder only exists for the `github` method's
+# asset-matching, so a URL can't rely on a version string that differs from
+# the literal tag (e.g. a tag without its "v" prefix). ---
 [packages.obsidian-appimage]
   [packages.obsidian-appimage.appimage]
-  url     = "https://github.com/obsidianmd/obsidian-releases/releases/download/{latest}/Obsidian-{version}.AppImage"
+  url     = "https://github.com/obsidianmd/obsidian-releases/releases/download/{latest}/Obsidian-{latest}.AppImage"
   desktop = true
+
+# --- android: resolves/downloads a .apk URL like `http`/`appimage` do
+# ({latest} at install time, checksum, retries, caching), then hands it to
+# Android's own package installer via `termux-open` (termux-api package +
+# the companion Termux:API app). Runs only inside Termux — gate it with
+# `when = { is_android = true }`, since `os` reports "linux" there (see the
+# is_android note near the top of this file). No install_dir/binary field:
+# the .apk always lands in a fixed, depengine-owned cache dir under a stable
+# "<tool>.apk" name, never on PATH. Same {version} caveat as appimage above
+# applies — the filename must be a direct function of {latest}. Success
+# means "handed to the installer", not "installed": a human still taps
+# through the Android prompt, asynchronously, outside depengine. ---
+[packages.obsidian-android]
+  [packages.obsidian-android.android]
+  url  = "https://github.com/obsidianmd/obsidian-releases/releases/download/{latest}/obsidian-{latest}-android.apk"
+  when = { is_android = true }
 
 # --- Windows: THREE competing package managers, three different ID
 # conventions. winget is the OS-native default on Windows 10 1709+/11 (no

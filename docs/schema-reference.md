@@ -13,7 +13,7 @@ each one). The engine tries methods in `method_order` until one succeeds.
 
 - [Naming a tool](#naming-a-tool) — simple names, per-manager names, ecosystem buckets
 - [Custom sources](#custom-sources) — git forks, manual builds, HTTP artifacts
-- [Method reference](#method-reference) — one-line syntax for all 33 methods
+- [Method reference](#method-reference) — one-line syntax for all 36 methods
 - [Hooks & dependencies](#hooks--dependencies) — pre-install hooks, tool-to-tool `requires`
 - [Platform targeting](#platform-targeting) — `when` conditions, multi-method fallback
 - [Method control](#per-tool-method-control) — `method_prefer`, `method_only`
@@ -241,7 +241,7 @@ desktop = true
 
 | Field | Required | Description |
 |-------|----------|--------------|
-| `url` | yes | Same meaning as on `http` — supports `{latest}`/`{version}`/`{arch}`/`{os}`. |
+| `url` | yes | Same meaning as on `http` — supports `{latest}` (resolved at install time) plus the universal `{arch}`/`{os}` facts (expanded at schema-parse time, same as any other string field — see [Placeholders](#placeholders)). **Not** `{version}`/`{arch_any}`/`{os_any}` — those are resolved only by the `github` method's asset-matching, not by a literal `url`. |
 | `install_dir` | no | Destination directory. Defaults to `~/.local/bin` (user-scope). There is no separate `system = true` boolean — pointing this at a system path (e.g. `/usr/local/bin`) is how a system-wide install is requested, and `sudo_required` is derived from the path the same way `http` derives it from `extract_to`. |
 | `binary` | no | Final executable name. Defaults to the tool's name. |
 | `desktop` | no | When `true`, also writes `~/.local/share/applications/<binary>.desktop` (a minimal, valid launcher pointing at the installed binary). Always user-scope, regardless of `install_dir`. |
@@ -253,6 +253,44 @@ because the download itself is delegated to the `http` adapter unchanged.
 `Check` looks for `install_dir/<binary>` — the resolved *stable* name, not
 the downloaded filename. `Remove` deletes that file and, if `desktop` was
 set, its `.desktop` entry.
+
+---
+
+### Android: hand a `.apk` to Termux's package installer
+
+`android` resolves and downloads a `.apk` URL exactly like `http`/`appimage`
+do (`{latest}` at install time, checksum verification, retries, caching —
+same fields, same behavior), then does the one thing neither of those can:
+hand the file to Android's own package installer via `termux-open` (from
+the `termux-api` package — needs the companion **Termux:API** app installed
+too). Runs entirely inside [Termux](https://termux.dev/); see
+[`is_android`](#platform-targeting) for how to gate a candidate to it.
+
+```toml
+[tools.obsidian.android]
+url = "https://github.com/obsidianmd/obsidian-releases/releases/download/{latest}/obsidian-{version}-android.apk"
+when = { is_android = true }
+```
+
+| Field | Required | Description |
+|-------|----------|--------------|
+| `url` | yes | Same meaning as on `http` — supports `{latest}` plus the universal `{arch}`/`{os}` facts. **Not** `{version}` (see the `{version}` note under AppImage above): if the release asset's filename doesn't literally repeat `{latest}`'s tag (e.g. it drops the `v` prefix, as `obsidian-1.5.3-android.apk` does against a `v1.5.3` tag), a plain `url` can't express that — that mismatch is exactly what the `github` method kind's asset-matching solves, but there is currently no way to feed a `github`-resolved URL into `android`'s post-processing (dispatch via `termux-open`). Until that gap closes, `android` only fits `.apk` releases whose filename is a direct function of `{latest}`. |
+
+Every other `http` field (`checksum`, `checksum_url`, `signature_url`,
+`signing_key`, ...) has the exact same meaning. There is no
+`install_dir`/`binary`/`extract_to` field here, unlike `appimage` — the
+`.apk` always lands under a fixed, depengine-owned cache directory named
+`<tool>.apk`; it's never meant to end up on `PATH`.
+
+**What "installed" means here:** success means "handed to the Android
+package installer", not "installed" — a human still has to tap through the
+installer's prompt, asynchronously and outside depengine's process.
+`Check` can only confirm the `.apk` was downloaded and dispatched before
+(same file-existence logic as `appimage`), never that the app is actually
+present on the system — Termux has no reliable `pm list packages` without
+root/adb. There is no automated `Remove`, for the same reason: deleting the
+cached `.apk` would not uninstall the app and would misleadingly suggest it
+did.
 
 ---
 
@@ -287,6 +325,7 @@ fields, documented above under [Custom sources](#custom-sources).
 | `appman` | AppImage packages via "AM"/"AppMan" (ivan-hc/AM) | `obsidian = { appman = "obsidian" }` |
 | `container` | Container images via `docker`/`podman pull` | `obsidian = { container = { manager = "podman", source = "lscr.io/linuxserver/obsidian", tag = "latest" } }` |
 | `appimage` | Portable `.AppImage` binaries, installed under a stable name | `obsidian = { appimage = { url = "https://…/Obsidian-{version}.AppImage" } }` |
+| `android` | Download a `.apk` and hand it to Termux's package installer | `obsidian = { android = { url = "https://…/obsidian-{latest}-android.apk" }, when = { is_android = true } }` |
 | `sdkman` | SDKMAN! JVM SDKs | `java17 = { sdkman = "java" }` |
 | `steamcmd` | SteamCMD game server tools | `cs2 = { steamcmd = "730" }` |
 | `pacstall` | Pacstall packages (Debian-based AUR-like) | `neofetch = { pacstall = "neofetch" }` |
@@ -437,14 +476,14 @@ engine evaluates all non-empty fields against the detected system facts:
 ```
 
 ```toml
-# Termux-specific asset — `os = ["android"]` won't match here, use is_android
+# Termux-specific asset — `os = ["android"]` won't match here, use is_android.
+# The .apk's filename is a direct function of the release tag (no "v" prefix
+# mismatch — see the {version} caveat under the Android method above), so a
+# plain `url` with {latest} is enough; no `github` candidate needed.
 [tools.obsidian]
-  [tools.obsidian.gh_apk]
-  kind    = "github"
-  repo    = "obsidianmd/obsidian-releases"
-  release = "latest"
-  asset   = "obsidian-{version}-android.apk"
-  when    = { is_android = true }
+  [tools.obsidian.android]
+  url  = "https://github.com/obsidianmd/obsidian-releases/releases/download/{latest}/obsidian-{latest}-android.apk"
+  when = { is_android = true }
 
   [tools.obsidian.gh_linux]
   kind = "github"
