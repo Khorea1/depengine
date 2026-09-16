@@ -339,6 +339,12 @@ omitted (ignored). Detected via /proc/version or WSL_DISTRO_NAME.
 .B is_container
 Three-state boolean: \fBtrue\fR (container only), \fBfalse\fR (non-container
 only), omitted (ignored). Detected via /.dockerenv, cgroup, etc.
+.TP
+.B is_android
+Three-state boolean: \fBtrue\fR (Android/Termux only), \fBfalse\fR (non-Android
+only), omitted (ignored). Detected via Termux markers or Android-specific
+hardware/OS properties. Use this instead of \fBos = ["android"]\fR, which
+does not match — Android is exposed as a fact, not an \fBos\fR value.
 .PP
 Examples:
 .EX
