@@ -24,7 +24,7 @@ aur_helper = "paru"
 
 # When a tool declares MORE THAN ONE candidate method (e.g., cargo, go, aur, git),
 # this list defines the trial order. The engine stops at the first one that works.
-method_order = ["native", "scoop", "choco", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm", "bun", "gem", "yarn", "yarn-berry", "composer", "apm", "vscode", "vscodium", "flatpak", "snap", "cask", "mas", "appman", "sdkman", "steamcmd", "pacstall", "aur", "conda", "asdf", "container", "appimage", "android", "git", "http"]
+method_order = ["native", "scoop", "choco", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm", "bun", "gem", "yarn", "yarn-berry", "composer", "apm", "vscode", "vscodium", "flatpak", "snap", "cask", "mas", "appman", "sdkman", "steamcmd", "pacstall", "aur", "conda", "asdf", "container", "appimage", "android", "git", "github", "http"]
 
 
 # ==============================================================================
@@ -195,34 +195,14 @@ fontconfig = { native = { pkg = "fontconfig", pkg_overrides = { pkg = "fontconfi
   when       = { arch = ["aarch64"], os = ["linux"], libc = ["glibc"] }
 
 
-# --- {arch} is uname-style (x86_64/aarch64/armv7l); many Go-toolchain
-# release assets instead use GOARCH naming (amd64/arm64/arm) — {arch} can't
-# be used verbatim for those, so the literal GOARCH string is hardcoded per
-# `when.arch` branch below. yq's filenames don't embed a version at all, so
-# it dodges the second problem entirely. ---
-[tools.yq]
-  [tools.yq.http]
-  url        = "https://github.com/mikefarah/yq/releases/download/{latest}/yq_linux_amd64"
-  checksum   = "sha256:auto"
-  extract_to = "~/.local/bin"
-  binary     = "yq"
-  when       = { arch = ["x86_64"], os = ["linux"] }
-
-  [tools.yq.http-arm64]
-  kind       = "http"
-  url        = "https://github.com/mikefarah/yq/releases/download/{latest}/yq_linux_arm64"
-  checksum   = "sha256:auto"
-  extract_to = "~/.local/bin"
-  binary     = "yq"
-  when       = { arch = ["aarch64"], os = ["linux"] }
-
-  [tools.yq.http-darwin-arm64]
-  kind       = "http"
-  url        = "https://github.com/mikefarah/yq/releases/download/{latest}/yq_darwin_arm64"
-  checksum   = "sha256:auto"
-  extract_to = "~/.local/bin"
-  binary     = "yq"
-  when       = { arch = ["aarch64"], os = ["darwin"] }
+# --- GitHub releases: match the real asset list across OS/arch naming
+# conventions and pin the resolved release in depengine.lock. A raw asset
+# defaults to the tool name, so binary = "yq" is unnecessary. ---
+[tools.yq.github]
+repo       = "mikefarah/yq"
+asset      = "yq_{os_any}_{arch_any}"
+checksum   = "sha256:auto"
+extract_to = "~/.local/bin"
 
 
 # --- Two mismatches stacked at once: restic and node_exporter tag their
@@ -230,9 +210,8 @@ fontconfig = { native = { pkg = "fontconfig", pkg_overrides = { pkg = "fontconfi
 # it (restic_0.17.3_..., node_exporter-1.8.2....), AND their assets use
 # GOARCH naming, not uname's. {latest} substitutes the raw tag verbatim and
 # has no way to strip a prefix mid-string, so a filename shaped like this
-# can't safely use {latest} twice — pin a literal version instead and bump
-# it by hand on upgrade (this is exactly what `depengine.lock` already does
-# for the DepartureMono/fastfetch pins above). ---
+# can't safely use {latest} twice. These blocks demonstrate explicit HTTP
+# pins; for new GitHub release declarations, prefer the `github` method above. ---
 [tools.restic]
   [tools.restic.http]
   url        = "https://github.com/restic/restic/releases/download/v0.17.3/restic_0.17.3_linux_amd64.bz2"

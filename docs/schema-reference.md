@@ -138,7 +138,7 @@ fastfetch = { http = {
 Archive type is auto-detected from the URL extension: `.tar.gz`, `.tgz`,
 `.zip`, `.deb`, `.bin`, or bare binary.
 
-### GitHub: resolve the asset by matching against the real release, not a guessed URL
+### GitHub: the recommended method for GitHub release assets
 
 Some projects publish a different asset filename convention per architecture
 (`amd64` vs `x86_64` vs `x64`, `arm64` vs `aarch64`, ...). Writing one `http`
@@ -153,6 +153,10 @@ regardless of which spelling convention was used, without you having to
 enumerate it:
 
 ```toml
+[tools.yq.github]
+repo  = "mikefarah/yq"
+asset = "yq_{os_any}_{arch_any}"
+
 [tools.node_exporter.github]
 repo  = "prometheus/node_exporter"      # "owner/repo", or a full github.com URL
 asset = "node_exporter-{version}.linux-{arch_any}.tar.gz"
@@ -163,6 +167,10 @@ binary     = "node_exporter"
 
 This single block replaces separate `http`/`http-arm64`/`http-armv7` blocks
 for the same tool.
+
+The pattern must match exactly one asset. Zero matches report every available
+asset; multiple matches fail and list the ambiguous matches. depengine never
+chooses the first result heuristically.
 
 | Field | Required | Description |
 |-------|----------|--------------|
@@ -175,6 +183,17 @@ Every other field (`checksum`, `checksum_url`, `checksum_file_format`,
 `signature_url`, `signing_key`, `extract_to`, `binary`, `sudo_required`) has
 the exact same meaning as on `http` — once the asset is resolved, `github`
 downloads/verifies/extracts it exactly like `http` would.
+For a direct (non-archive) asset, `binary` is the installed filename; when it
+is omitted, `github` uses the tool name. Archives keep the normal `http`
+extraction semantics.
+
+Latest releases—implicit or written as `release = "latest"`—are pinned in
+`depengine.lock`; installation then resolves the asset only within that pinned
+release. Explicit `release` and `branch` values are left unchanged. The method
+name is canonically `github`, appears immediately before `http` in the default
+order, and has no global `gh` alias. This order only ranks declared candidates;
+it does not inject `github` automatically. A label such as `[tools.foo.gh]` is
+valid only with `kind = "github"`.
 
 `asset` supports two placeholders that are resolved **by this adapter only**
 (they are not part of the regular placeholder table below, and are never
@@ -297,7 +316,7 @@ did.
 ## Method reference
 
 One-line syntax for every supported method. All of them accept `when` (see
-[Platform targeting](#platform-targeting)); `git` and `http` take extra
+[Platform targeting](#platform-targeting)); `git`, `github`, and `http` take extra
 fields, documented above under [Custom sources](#custom-sources).
 
 | Method | What it installs | Example |
@@ -336,8 +355,8 @@ fields, documented above under [Custom sources](#custom-sources).
 | `conda` | Conda packages | `numpy = { conda = "numpy" }` |
 | `asdf` | asdf version manager plugins | `nodejs = { asdf = "nodejs" }` |
 | `git` | Clone + build (see field table above) | `ctpv = { git = { url = "...", build = "make install" } }` |
+| `github` | Recommended for GitHub Releases; matches an asset *pattern* against the real asset list (see above) | `yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }` |
 | `http` | Download + extract + checksum (see field table above) | `fastfetch = { http = { url = "...", checksum = "sha256:auto" } }` |
-| `github` | Like `http`, but resolves the download URL by matching an asset *pattern* against the real asset list of a GitHub release (see below) | `node_exporter = { github = { repo = "prometheus/node_exporter", asset = "node_exporter-{version}.linux-{arch_any}.tar.gz" } }` |
 
 ---
 

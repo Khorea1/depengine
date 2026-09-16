@@ -67,7 +67,7 @@ aur_helper = "paru"                        # or "yay"
 method_order = ["native", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm",
   "bun", "gem", "yarn", "yarn-berry", "composer", "apm", "vscode",
   "vscodium", "flatpak", "snap", "cask", "mas", "appman", "sdkman", "steamcmd",
-  "pacstall", "aur", "conda", "asdf", "container", "appimage", "android", "git", "http"]
+  "pacstall", "aur", "conda", "asdf", "container", "appimage", "android", "git", "github", "http"]
 ```
 
 ---
@@ -80,6 +80,7 @@ method_order = ["native", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm",
 | Per-manager name | `fd = { apt = "fd-find" }` |
 | Language manager | `fzf = { go = "github.com/junegunn/fzf" }` |
 | git sub-key | `matugen = { cargo = { git = "https://github.com/InioX/matugen" } }` |
+| GitHub release | `yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }` |
 | Ecosystem bucket | `ruff = { python = true }` |
 | Full block | multiple methods + `when` + hooks — see [schema-reference.md#platform-targeting](schema-reference.md#platform-targeting) |
 
@@ -125,7 +126,7 @@ Desktop:     flatpak, snap, vscode, vscodium, cask, mas, appman
 Windows:     winget, scoop, choco
 Specialized: sdkman, steamcmd, pacstall, aur, conda, asdf, container,
              appimage, android
-Other:       git, http, github
+Other:       git, github, http
 ```
 
 ---

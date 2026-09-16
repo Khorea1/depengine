@@ -198,7 +198,7 @@ Every flag and default lives in **[`docs/cli-reference.md`](docs/cli-reference.m
 | **Desktop** | `flatpak`, `snap`, `vscode`, `vscodium`, `cask` (macOS), `mas` (Mac App Store), `appman` (AppImages) |
 | **Windows** | `winget`, `scoop`, `choco` |
 | **Specialized** | `sdkman`, `steamcmd`, `pacstall`, `aur` (configurable helper), `conda`, `asdf`, `container` (docker/podman pull), `appimage` (portable `.AppImage` under a stable name), `android` (`.apk` via Termux's package installer) |
-| **Other** | `git` (clone + build), `http` (download + extract + checksum) |
+| **Other** | `git` (clone + build), `github` (recommended for GitHub release assets), `http` (download + extract + checksum) |
 
 Auto-detected native managers, by distro family:
 
@@ -211,16 +211,32 @@ mint   → apt      opkg    → opkg
 
 ---
 
-## HTTP download security
+## GitHub release assets
 
-HTTP installs can verify the download with a `checksum` field inside the
-method block:
+Use `github` for binaries published in GitHub Releases. It resolves the real
+asset list, accepts common OS/architecture spellings, and pins the release in
+`depengine.lock`:
 
 ```toml
-[tools.yq]
-  [tools.yq.http]
-  url = "https://github.com/mikefarah/yq/releases/download/{latest}/yq_linux_{arch}"
-  checksum = "sha256:<hex>"          # pinned — verified exactly
+[tools.yq.github]
+repo  = "mikefarah/yq"
+asset = "yq_{os_any}_{arch_any}"
+```
+
+Both `repo` and `asset` are required. The pattern must match exactly one asset;
+depengine reports zero or multiple matches instead of guessing. `github` is the
+canonical method name—there is no global `gh` alias.
+
+## Download security
+
+`http` and `github` installs can verify the download with a `checksum` field
+inside the method block:
+
+```toml
+[tools.yq.github]
+repo     = "mikefarah/yq"
+asset    = "yq_{os_any}_{arch_any}"
+checksum = "sha256:<hex>"          # pinned — verified exactly
 ```
 
 - `checksum = "sha256:<hex>"` — the download is hashed and compared against
@@ -238,12 +254,12 @@ a trusted source (the engine logs a warning and suggests pinning the hash in
     Defaults to auto-detection.
 
 ```toml
-[tools.yq]
-  [tools.yq.http]
-  url = "https://github.com/mikefarah/yq/releases/download/{latest}/yq_linux_{arch}"
-  checksum = "sha256:auto"
-  checksum_url = "https://example.com/sha256sums.txt"
-  checksum_file_format = "sha256sum"   # sha256sum | bsd | raw
+[tools.yq.github]
+repo                 = "mikefarah/yq"
+asset                = "yq_{os_any}_{arch_any}"
+checksum             = "sha256:auto"
+checksum_url         = "https://example.com/sha256sums.txt"
+checksum_file_format = "sha256sum"   # sha256sum | bsd | raw
 ```
 
 ---
@@ -254,7 +270,7 @@ Placeholders like `{arch}`, `{os}`, and `{latest}` get expanded in schema
 fields before installation:
 
 ```toml
-fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb" } }
+yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }
 ```
 
 Full list of all 17 placeholders: [schema-reference.md#placeholders](docs/schema-reference.md#placeholders).
