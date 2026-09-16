@@ -709,7 +709,7 @@ func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResu
 
 // tryMethods iterates through all methods of a tool, trying each in order.
 // It modifies result in place — on success the result is terminal; on
-// exhaustion it sets the final status to StatusFailed or StatusSkippedUnavailable.
+// exhaustion it sets the final status from the attempts that were made.
 func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, result *ToolResult, toolStart time.Time) {
 	var lastMethodKind string
 	orderedMethods := config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
@@ -834,12 +834,16 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		ex.logWarn(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "failed", "error", err.Error())
 	}
 
-	// All methods exhausted — determine terminal status.
-	result.Status = StatusSkippedUnavailable
+	// All methods exhausted — distinguish a platform-gated tool from one
+	// whose applicable methods were unavailable.
+	result.Status = StatusSkippedWhen
 	for _, m := range result.Methods {
 		if m.Status == "failed" {
 			result.Status = StatusFailed
 			break
+		}
+		if m.Status != "skip_when" {
+			result.Status = StatusSkippedUnavailable
 		}
 	}
 	if len(result.Methods) > 0 {

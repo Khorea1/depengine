@@ -455,6 +455,48 @@ func TestExecutorSkipsWhenCondition(t *testing.T) {
 	}
 }
 
+func TestExecutorReportsWhenAllMethodsAreGated(t *testing.T) {
+	availableCalled := false
+	adapter := &testMockAdapter{
+		kindValue: "linux-only",
+		availableFunc: func() bool {
+			availableCalled = true
+			return true
+		},
+	}
+
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithAdapters(adapter)(ex)
+	WithFacts(&engine.Facts{OS: "darwin"})(ex)
+
+	s := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"linux-only"}},
+		Tools: map[string]*config.Tool{
+			"tool": {
+				Name: "tool",
+				Methods: []*config.MethodCandidate{
+					{Kind: "linux-only", When: &config.Condition{OS: []string{"linux"}}},
+				},
+			},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), s, "darwin")
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusSkippedWhen {
+		t.Fatalf("tool result = %+v, want StatusSkippedWhen", report.Tools)
+	}
+	if report.Skipped != 1 {
+		t.Fatalf("skipped = %d, want 1", report.Skipped)
+	}
+	if availableCalled {
+		t.Fatal("Available should not run for a gated method")
+	}
+}
+
 func TestExecutorAllMethodsFail(t *testing.T) {
 	mock := &testMockAdapter{
 		kindValue:     "native",
