@@ -1,143 +1,262 @@
-// Package methodkind defines canonical method kind names, bucket definitions,
-// and default method ordering. The ecosystem kinds are statically enumerated
-// here; native manager binary names and aliases (apt, pacman, dnf, winget,
-// opkg, pkg_add, pkgin, pkg, portage, yum, …) are also listed so that
-// config.Validate can cross-check them. At runtime, the authoritative set of
-// available adapters is exec.RegisteredKinds() — this list is a compile-time
-// sanity boundary, not a dynamic registry.
+// Package methodkind defines the schema contract for installation methods.
 package methodkind
 
-// DefaultMethodOrder is the engine-wide canonical preference order for
-// install methods. Used as default and as canonical remainder when the
-// user specifies a partial method_order.
-var DefaultMethodOrder = []string{
-	"native", "scoop", "choco", "cargo", "go", "pipx", "uv", "pip",
-	"npm", "pnpm", "bun", "gem", "yarn", "yarn-berry",
-	"composer", "apm", "vscode", "vscodium", "flatpak",
-	"snap", "cask", "mas", "appman", "sdkman", "steamcmd",
-	"pacstall", "aur", "conda", "asdf", "container", "appimage", "android", "git", "http",
+import (
+	"sort"
+
+	"github.com/Khorea1/depengine/pkg/native"
+)
+
+// FieldType is the runtime and JSON-Schema type of a method config field.
+type FieldType string
+
+const (
+	String          FieldType = "string"
+	Boolean         FieldType = "boolean"
+	Integer         FieldType = "integer"
+	IntegerOrString FieldType = "integer_or_string"
+	StringMap       FieldType = "string_map"
+)
+
+// Field describes one adapter-facing config field.
+type Field struct {
+	Type     FieldType
+	Required bool
+	NonEmpty bool
+	Enum     []string
 }
 
-// DefaultBuckets maps ecosystem names to lists of method kinds.
-// Buckets avoid repeating the same set of methods for every tool in the
-// same ecosystem.
+// Contract is the declarative schema contract for one adapter kind.
+type Contract struct {
+	Kind                 string
+	Aliases              []string
+	DefaultOrder         int // zero means the kind is not a blind fallback
+	Fields               map[string]Field
+	MutuallyExclusive    [][]string
+	ImplicitDistroFamily []string
+	AllowString          bool
+	AllowTrue            bool
+	CanRemove            bool
+}
+
+var pkgField = map[string]Field{"pkg": {Type: String}}
+
+func packageContract(kind string, order int, canRemove bool) Contract {
+	return Contract{Kind: kind, DefaultOrder: order, Fields: pkgField, AllowString: true, AllowTrue: true, CanRemove: canRemove}
+}
+
+func fields(entries ...map[string]Field) map[string]Field {
+	out := make(map[string]Field)
+	for _, entry := range entries {
+		for key, value := range entry {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+func withoutField(entry map[string]Field, excluded string) map[string]Field {
+	out := make(map[string]Field, len(entry)-1)
+	for key, value := range entry {
+		if key != excluded {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+var downloadFields = map[string]Field{
+	"url":                  {Type: String, Required: true, NonEmpty: true},
+	"checksum":             {Type: String},
+	"checksum_url":         {Type: String},
+	"checksum_file_format": {Type: String, Enum: []string{"sha256sum", "bsd", "raw"}},
+	"signature_url":        {Type: String},
+	"signing_key":          {Type: String},
+	"extract_to":           {Type: String},
+	"binary":               {Type: String},
+	"sudo_required":        {Type: Boolean},
+}
+
+// Contracts is the single source of truth for method kinds, ordering and
+// adapter-facing schema fields. Keep entries in default preference order;
+// kinds with DefaultOrder zero are valid but never injected as blind fallbacks.
+var Contracts = []Contract{
+	{Kind: "native", DefaultOrder: 1, Fields: fields(pkgField, map[string]Field{"pkg_overrides": {Type: StringMap}}), AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "scoop", DefaultOrder: 2, Fields: pkgField, ImplicitDistroFamily: []string{"windows"}, AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "choco", DefaultOrder: 3, Fields: pkgField, ImplicitDistroFamily: []string{"windows"}, AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "cargo", DefaultOrder: 4, Fields: fields(pkgField, map[string]Field{"git": {Type: String}}), AllowString: true, AllowTrue: true, CanRemove: true},
+	packageContract("go", 5, true),
+	packageContract("pipx", 6, true),
+	packageContract("uv", 7, true),
+	packageContract("pip", 8, true),
+	packageContract("npm", 9, true),
+	packageContract("pnpm", 10, true),
+	packageContract("bun", 11, true),
+	packageContract("gem", 12, true),
+	packageContract("yarn", 13, true),
+	packageContract("yarn-berry", 14, false),
+	packageContract("composer", 15, true),
+	packageContract("apm", 16, false),
+	packageContract("vscode", 17, false),
+	packageContract("vscodium", 18, false),
+	packageContract("flatpak", 19, true),
+	packageContract("snap", 20, true),
+	{Kind: "cask", DefaultOrder: 21, Fields: pkgField, ImplicitDistroFamily: []string{"macos"}, AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "mas", DefaultOrder: 22, Fields: pkgField, ImplicitDistroFamily: []string{"macos"}, AllowString: true, AllowTrue: true},
+	packageContract("appman", 23, true),
+	{Kind: "sdkman", DefaultOrder: 24, Fields: fields(pkgField, map[string]Field{"version": {Type: String}}), AllowString: true, AllowTrue: true},
+	packageContract("steamcmd", 25, false),
+	packageContract("pacstall", 26, false),
+	{Kind: "aur", Aliases: []string{"paru", "yay"}, DefaultOrder: 27, Fields: pkgField, ImplicitDistroFamily: []string{"arch"}, AllowString: true, AllowTrue: true, CanRemove: true},
+	packageContract("conda", 28, true),
+	{Kind: "asdf", DefaultOrder: 29, Fields: fields(pkgField, map[string]Field{"version": {Type: String}}), AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "container", DefaultOrder: 30, Fields: map[string]Field{
+		"manager": {Type: String, Required: true, NonEmpty: true, Enum: []string{"docker", "podman"}},
+		"source":  {Type: String, Required: true, NonEmpty: true},
+		"tag":     {Type: String},
+	}, CanRemove: true},
+	{Kind: "appimage", DefaultOrder: 31, Fields: fields(downloadFields, map[string]Field{
+		"install_dir": {Type: String},
+		"desktop":     {Type: Boolean},
+	}), CanRemove: true},
+	{Kind: "android", DefaultOrder: 32, Fields: downloadFields},
+	{Kind: "git", DefaultOrder: 33, Fields: map[string]Field{
+		"url":        {Type: String, Required: true, NonEmpty: true},
+		"branch":     {Type: String},
+		"depth":      {Type: IntegerOrString},
+		"build":      {Type: String},
+		"extract_to": {Type: String},
+		"artifact":   {Type: String},
+		"binary":     {Type: String},
+	}, CanRemove: true},
+	{Kind: "http", DefaultOrder: 34, Fields: downloadFields, CanRemove: true},
+	{Kind: "github", Fields: fields(withoutField(downloadFields, "url"), map[string]Field{
+		"repo":    {Type: String, Required: true, NonEmpty: true},
+		"asset":   {Type: String, Required: true, NonEmpty: true},
+		"release": {Type: String},
+		"branch":  {Type: String, NonEmpty: true},
+	}), MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true},
+}
+
+var (
+	contractByKind     = buildContractIndex()
+	contractByAlias    = buildAliasIndex()
+	DefaultMethodOrder = buildDefaultOrder()
+	knownKinds         = buildKnownKinds()
+	knownKindSet       = buildKnownKindSet()
+)
+
+func buildContractIndex() map[string]*Contract {
+	out := make(map[string]*Contract, len(Contracts))
+	for i := range Contracts {
+		out[Contracts[i].Kind] = &Contracts[i]
+	}
+	return out
+}
+
+func buildAliasIndex() map[string]*Contract {
+	out := make(map[string]*Contract)
+	for i := range Contracts {
+		for _, alias := range Contracts[i].Aliases {
+			out[alias] = &Contracts[i]
+		}
+	}
+	return out
+}
+
+func buildDefaultOrder() []string {
+	ordered := make([]Contract, 0, len(Contracts))
+	for _, contract := range Contracts {
+		if contract.DefaultOrder > 0 {
+			ordered = append(ordered, contract)
+		}
+	}
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].DefaultOrder < ordered[j].DefaultOrder })
+	out := make([]string, len(ordered))
+	for i, contract := range ordered {
+		out[i] = contract.Kind
+	}
+	return out
+}
+
+func buildKnownKinds() []string {
+	set := make(map[string]bool, len(Contracts)+32)
+	for _, contract := range Contracts {
+		set[contract.Kind] = true
+		for _, alias := range contract.Aliases {
+			set[alias] = true
+		}
+	}
+	for _, name := range native.ManagerNames() {
+		set[name] = true
+	}
+	for _, name := range native.ManagerBinaryNames() {
+		set[name] = true
+	}
+	out := make([]string, 0, len(set))
+	for name := range set {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func buildKnownKindSet() map[string]bool {
+	out := make(map[string]bool, len(knownKinds))
+	for _, kind := range knownKinds {
+		out[kind] = true
+	}
+	return out
+}
+
+// DefaultBuckets maps ecosystem shorthands to concrete method kinds.
 var DefaultBuckets = map[string][]string{
 	"python": {"pip", "pipx", "uv"},
 	"node":   {"npm", "pnpm", "bun"},
 }
 
-// knownKinds is the full set of valid method kind names: ecosystem kinds
-// (cargo, go, pip, …) plus native manager names and aliases (apt, pacman,
-// dnf, winget, opkg, pkg_add, pkgin, pkg, portage, yum, …). Keep this
-// synchronized with ecosystem.Configs keys in pkg/ecosystem AND with
-// native manager names in pkg/native (managers map Manager.Name values
-// and managerNameToClan alias keys).
-//
-// "github" is deliberately absent from DefaultMethodOrder (it requires
-// mandatory config — repo/asset — so it can't act as a blind fallback for
-// every tool), but it belongs here: this list is a static validity check,
-// not an ordering preference, and the "github" kind is a real registered
-// adapter (pkg/httpdownload/github_adapter.go).
-var knownKinds = []string{
-	"native",
-	"cargo",
-	"go",
-	"pip",
-	"pipx",
-	"uv",
-	"npm",
-	"pnpm",
-	"bun",
-	"gem",
-	"yarn",
-	"yarn-berry",
-	"composer",
-	"apm",
-	"vscode",
-	"vscodium",
-	"flatpak",
-	"snap",
-	"cask",
-	"mas",
-	"appman",
-	"sdkman",
-	"steamcmd",
-	"pacstall",
-	"aur",
-	"conda",
-	"asdf",
-	"container",
-	"appimage",
-	"android",
-	"git",
-	"http",
-	"github",
-	"brew",
-	"scoop",
-	"choco",
-	"dnf",
-	"dnf5",
-	"emerge",
-	"apk",
-	"nix",
-	"opkg",
-	"pacman",
-	"pkg",
-	"pkg_add",
-	"pkgin",
-	"portage",
-	"xbps",
-	"yum",
-	"winget",
-	"zypper",
-	"apt",
-	"paru",
-	"yay",
-}
-
-// knownKindSet is a lookup set built from knownKinds.
-var knownKindSet map[string]bool
-
-func init() {
-	knownKindSet = make(map[string]bool, len(knownKinds))
-	for _, k := range knownKinds {
-		knownKindSet[k] = true
+// Lookup returns the contract for kind. Native package-manager aliases share
+// the native contract.
+func Lookup(kind string) (*Contract, bool) {
+	if contract, ok := contractByKind[kind]; ok {
+		return contract, true
 	}
+	if contract, ok := contractByAlias[kind]; ok {
+		return contract, true
+	}
+	if native.IsNativeManagerName(kind) {
+		return contractByKind["native"], true
+	}
+	return nil, false
 }
 
-// KnownKinds returns the complete list of valid method kind names.
-func KnownKinds() []string {
-	out := make([]string, len(knownKinds))
-	copy(out, knownKinds)
-	return out
-}
+// KnownKinds returns all adapter kinds and native manager aliases.
+func KnownKinds() []string { return append([]string(nil), knownKinds...) }
 
-// IsKnownKind reports whether k is a valid method kind name.
-func IsKnownKind(k string) bool {
-	return knownKindSet[k]
-}
+// IsKnownKind reports whether k is a method kind or native manager alias.
+func IsKnownKind(k string) bool { return knownKindSet[k] }
 
-// ExpandBuckets replaces bucket names in a method order list with their
-// constituent concrete method kinds. Unknown names pass through unchanged.
+// ExpandBuckets replaces bucket names with their concrete method kinds.
 func ExpandBuckets(order []string) []string {
 	var expanded []string
-	for _, k := range order {
-		if methods, ok := DefaultBuckets[k]; ok {
-			for _, m := range methods {
-				if !contains(expanded, m) {
-					expanded = append(expanded, m)
-				}
+	for _, kind := range order {
+		methods, ok := DefaultBuckets[kind]
+		if !ok {
+			expanded = append(expanded, kind)
+			continue
+		}
+		for _, method := range methods {
+			if !contains(expanded, method) {
+				expanded = append(expanded, method)
 			}
-		} else {
-			expanded = append(expanded, k)
 		}
 	}
 	return expanded
 }
 
-func contains(slice []string, s string) bool {
-	for _, v := range slice {
-		if v == s {
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
 			return true
 		}
 	}

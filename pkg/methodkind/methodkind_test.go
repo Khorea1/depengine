@@ -52,3 +52,38 @@ func TestKnownKindsIncludesNativeManagers(t *testing.T) {
 		)
 	}
 }
+
+func TestContractsDefineUniqueKindsAndDefaultOrder(t *testing.T) {
+	seenKinds := map[string]bool{}
+	seenOrder := map[int]bool{}
+	for _, contract := range methodkind.Contracts {
+		if seenKinds[contract.Kind] {
+			t.Errorf("duplicate contract kind %q", contract.Kind)
+		}
+		seenKinds[contract.Kind] = true
+		if contract.DefaultOrder > 0 {
+			if seenOrder[contract.DefaultOrder] {
+				t.Errorf("duplicate default order %d", contract.DefaultOrder)
+			}
+			seenOrder[contract.DefaultOrder] = true
+		}
+	}
+	if got, want := len(methodkind.DefaultMethodOrder), len(seenOrder); got != want {
+		t.Fatalf("default order has %d entries, contracts define %d", got, want)
+	}
+	for _, kind := range methodkind.DefaultMethodOrder {
+		contract, ok := methodkind.Lookup(kind)
+		if !ok || contract.DefaultOrder == 0 {
+			t.Errorf("default kind %q has no ordered contract", kind)
+		}
+	}
+}
+
+func TestContractAliasesResolveToCanonicalKind(t *testing.T) {
+	for _, alias := range []string{"paru", "yay"} {
+		contract, ok := methodkind.Lookup(alias)
+		if !ok || contract.Kind != "aur" {
+			t.Errorf("Lookup(%q) = %+v, %t; want aur", alias, contract, ok)
+		}
+	}
+}
