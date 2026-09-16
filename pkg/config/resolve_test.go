@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -12,6 +13,9 @@ func writeSchemaInline(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
 	p := filepath.Join(dir, "schema.toml")
+	if !strings.Contains(content, "schema_version") {
+		content = "schema_version = 1\n" + content
+	}
 	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 		t.Fatalf("write schema: %v", err)
 	}
@@ -26,9 +30,9 @@ func TestMergeLayers_LaterLayerWins(t *testing.T) {
 [packages]
 nvim = { pacman = "neovim" }
 	`)
-	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	manifest, err := ParseManifest(manifestPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(manifest): %v", err)
+		t.Fatalf("ParseProjectSchema(manifest): %v", err)
 	}
 
 	// Layer 2 (higher priority): schema with nvim having apt override + requires.
@@ -36,9 +40,9 @@ nvim = { pacman = "neovim" }
 [tools]
 nvim = { apt = "neovim-full", requires = ["zsh"] }
 	`)
-	localSchema, err := ParseSchema(schemaPath, nil)
+	localSchema, err := ParseProjectSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(schema): %v", err)
+		t.Fatalf("ParseProjectSchema(schema): %v", err)
 	}
 
 	merged := MergeLayers(manifest, localSchema)
@@ -79,18 +83,18 @@ func TestMergeLayers_ToolOnlyInOneLayer(t *testing.T) {
 [packages]
 fd = { cargo = "fd-find" }
 	`)
-	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	manifest, err := ParseManifest(manifestPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(manifest): %v", err)
+		t.Fatalf("ParseProjectSchema(manifest): %v", err)
 	}
 
 	schemaPath := writeSchemaInline(t, `
 [tools]
 nvim = { pacman = "neovim" }
 	`)
-	localSchema, err := ParseSchema(schemaPath, nil)
+	localSchema, err := ParseProjectSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(schema): %v", err)
+		t.Fatalf("ParseProjectSchema(schema): %v", err)
 	}
 
 	// Layer order: manifest first, schema second (most specific).
@@ -114,9 +118,9 @@ func TestMergeLayers_DefaultsFromMostSpecific(t *testing.T) {
 [packages]
 fd = { cargo = "fd-find" }
 	`)
-	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	manifest, err := ParseManifest(manifestPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(manifest): %v", err)
+		t.Fatalf("ParseProjectSchema(manifest): %v", err)
 	}
 
 	schemaPath := writeSchemaInline(t, `
@@ -126,9 +130,9 @@ method_order = ["native", "cargo"]
 [tools]
 nvim = { pacman = "neovim" }
 	`)
-	localSchema, err := ParseSchema(schemaPath, nil)
+	localSchema, err := ParseProjectSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(schema): %v", err)
+		t.Fatalf("ParseProjectSchema(schema): %v", err)
 	}
 
 	merged := MergeLayers(manifest, localSchema)
@@ -161,18 +165,18 @@ func TestMergeLayers_ToolOnlyInManifestNowIncluded(t *testing.T) {
 [packages]
 nvim = { pacman = "neovim" }
 	`)
-	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	manifest, err := ParseManifest(manifestPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(manifest): %v", err)
+		t.Fatalf("ParseProjectSchema(manifest): %v", err)
 	}
 
 	schemaPath := writeSchemaInline(t, `
 [tools]
 fd = { cargo = "fd-find" }
 	`)
-	localSchema, err := ParseSchema(schemaPath, nil)
+	localSchema, err := ParseProjectSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(schema): %v", err)
+		t.Fatalf("ParseProjectSchema(schema): %v", err)
 	}
 
 	merged := MergeLayers(manifest, localSchema)
@@ -191,9 +195,9 @@ func TestMergeLayers_ThreeLayers(t *testing.T) {
 a = { pip = "a1" }
 b = { pip = "b1" }
 	`)
-	l1, err := ParseSchema(p1, nil, "packages")
+	l1, err := ParseManifest(p1, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(l1): %v", err)
+		t.Fatalf("ParseProjectSchema(l1): %v", err)
 	}
 
 	p2 := writeSchemaInline(t, `
@@ -201,9 +205,9 @@ b = { pip = "b1" }
 b = { pip = "b2" }
 c = { pip = "c2" }
 	`)
-	l2, err := ParseSchema(p2, nil, "packages")
+	l2, err := ParseManifest(p2, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(l2): %v", err)
+		t.Fatalf("ParseProjectSchema(l2): %v", err)
 	}
 
 	p3 := writeSchemaInline(t, `
@@ -211,9 +215,9 @@ c = { pip = "c2" }
 c = { pip = "c3" }
 d = { pip = "d3" }
 	`)
-	l3, err := ParseSchema(p3, nil)
+	l3, err := ParseProjectSchema(p3, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(l3): %v", err)
+		t.Fatalf("ParseProjectSchema(l3): %v", err)
 	}
 
 	merged := MergeLayers(l1, l2, l3)
@@ -262,9 +266,9 @@ func TestValidateManifestLayer_AcceptsIntentFields(t *testing.T) {
 [packages]
 	nvim = { pacman = "neovim", pre_install = "some-setup", requires = ["zsh"] }
 	`)
-	s, err := ParseSchema(p, nil, "packages")
+	s, err := ParseManifest(p, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(manifest): %v", err)
+		t.Fatalf("ParseProjectSchema(manifest): %v", err)
 	}
 
 	err = ValidateManifestLayer(s)
@@ -280,9 +284,9 @@ func TestValidateManifestLayer_AcceptsCleanLayer(t *testing.T) {
 [packages]
 fd = { cargo = "fd-find" }
 	`)
-	s, err := ParseSchema(p, nil, "packages")
+	s, err := ParseManifest(p, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(manifest): %v", err)
+		t.Fatalf("ParseProjectSchema(manifest): %v", err)
 	}
 
 	err = ValidateManifestLayer(s)
@@ -434,9 +438,9 @@ func TestMergeLayers_PkgOverridesPreserved(t *testing.T) {
 [tools]
 nvim = { apt = "neovim", requires = ["zsh"] }
 	`)
-	schema, err := ParseSchema(schemaPath, nil)
+	schema, err := ParseProjectSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(schema): %v", err)
+		t.Fatalf("ParseProjectSchema(schema): %v", err)
 	}
 
 	// Manifest defines nvim with pacman override (should complement, not replace)
@@ -444,9 +448,9 @@ nvim = { apt = "neovim", requires = ["zsh"] }
 [packages]
 nvim = { pacman = "neovim" }
 	`)
-	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	manifest, err := ParseManifest(manifestPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(manifest): %v", err)
+		t.Fatalf("ParseProjectSchema(manifest): %v", err)
 	}
 
 	// Merge: manifest first (lower priority), schema last (higher priority)
@@ -494,9 +498,9 @@ func TestMergeLayers_MethodKindUnion(t *testing.T) {
 [tools]
 nvim = { cargo = "neovim" }
 	`)
-	schema, err := ParseSchema(schemaPath, nil)
+	schema, err := ParseProjectSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(schema): %v", err)
+		t.Fatalf("ParseProjectSchema(schema): %v", err)
 	}
 
 	// Manifest: nvim with pacman override
@@ -504,9 +508,9 @@ nvim = { cargo = "neovim" }
 [packages]
 nvim = { pacman = "neovim" }
 	`)
-	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	manifest, err := ParseManifest(manifestPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(manifest): %v", err)
+		t.Fatalf("ParseProjectSchema(manifest): %v", err)
 	}
 
 	merged := MergeLayers(manifest, schema)
@@ -549,9 +553,9 @@ func TestMergeLayers_ManifestToolSchemaFieldOverwrite(t *testing.T) {
 [tools]
 fd = { apt = "fd-find" }
 	`)
-	schema, err := ParseSchema(schemaPath, nil)
+	schema, err := ParseProjectSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(schema): %v", err)
+		t.Fatalf("ParseProjectSchema(schema): %v", err)
 	}
 
 	// Manifest defines same tool fd but with pacman override
@@ -559,9 +563,9 @@ fd = { apt = "fd-find" }
 [packages]
 fd = { pacman = "fd-rust" }
 	`)
-	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	manifest, err := ParseManifest(manifestPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(manifest): %v", err)
+		t.Fatalf("ParseProjectSchema(manifest): %v", err)
 	}
 
 	merged := MergeLayers(manifest, schema)
@@ -599,9 +603,9 @@ func TestFilterManifestTools_RejectsWithoutFlag(t *testing.T) {
 [tools]
 nvim = { apt = "neovim" }
 	`)
-	schema, err := ParseSchema(schemaPath, nil)
+	schema, err := ParseProjectSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(schema): %v", err)
+		t.Fatalf("ParseProjectSchema(schema): %v", err)
 	}
 
 	manifestPath := writeSchemaInline(t, `
@@ -609,9 +613,9 @@ nvim = { apt = "neovim" }
 nvim = { pacman = "neovim" }
 newtool = { pip = "new-pkg" }
 	`)
-	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	manifest, err := ParseManifest(manifestPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(manifest): %v", err)
+		t.Fatalf("ParseProjectSchema(manifest): %v", err)
 	}
 
 	// Without allow_new_tools, FilterManifestTools should remove "newtool"
@@ -632,9 +636,9 @@ func TestValidateManifestNewTools_AllowsWithFlag(t *testing.T) {
 [tools]
 nvim = { apt = "neovim" }
 	`)
-	schema, err := ParseSchema(schemaPath, nil)
+	schema, err := ParseProjectSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(schema): %v", err)
+		t.Fatalf("ParseProjectSchema(schema): %v", err)
 	}
 
 	manifestPath := writeSchemaInline(t, `
@@ -645,9 +649,9 @@ allow_new_tools = true
 nvim = { pacman = "neovim" }
 newtool = { pip = "new-pkg" }
 	`)
-	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	manifest, err := ParseManifest(manifestPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(manifest): %v", err)
+		t.Fatalf("ParseProjectSchema(manifest): %v", err)
 	}
 
 	// With allow_new_tools, "newtool" should be allowed
@@ -664,18 +668,18 @@ func TestValidateManifestNewTools_NoNewToolsIsFine(t *testing.T) {
 [tools]
 nvim = { apt = "neovim" }
 	`)
-	schema, err := ParseSchema(schemaPath, nil)
+	schema, err := ParseProjectSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(schema): %v", err)
+		t.Fatalf("ParseProjectSchema(schema): %v", err)
 	}
 
 	manifestPath := writeSchemaInline(t, `
 [packages]
 nvim = { pacman = "neovim" }
 	`)
-	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	manifest, err := ParseManifest(manifestPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(manifest): %v", err)
+		t.Fatalf("ParseProjectSchema(manifest): %v", err)
 	}
 
 	err = ValidateManifestNewTools(schema, manifest)
@@ -691,18 +695,18 @@ func TestMergeLayers_Provenance(t *testing.T) {
 [tools]
 nvim = { apt = "neovim", requires = ["zsh"] }
 	`)
-	schema, err := ParseSchema(schemaPath, nil)
+	schema, err := ParseProjectSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(schema): %v", err)
+		t.Fatalf("ParseProjectSchema(schema): %v", err)
 	}
 
 	manifestPath := writeSchemaInline(t, `
 [packages]
 nvim = { pacman = "neovim" }
 	`)
-	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	manifest, err := ParseManifest(manifestPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(manifest): %v", err)
+		t.Fatalf("ParseProjectSchema(manifest): %v", err)
 	}
 
 	merged := MergeLayersWithProvenance(manifest, schema)
@@ -733,13 +737,13 @@ rustup = { cargo = "rustup", tags = ["dev", "lang"] }
 [packages]
 rustup = { tags = ["personal", "lang"] }
 	`)
-	schema, err := ParseSchema(schemaPath, nil)
+	schema, err := ParseProjectSchema(schemaPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(schema): %v", err)
+		t.Fatalf("ParseProjectSchema(schema): %v", err)
 	}
-	manifest, err := ParseSchema(manifestPath, nil, "packages")
+	manifest, err := ParseManifest(manifestPath, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(manifest): %v", err)
+		t.Fatalf("ParseProjectSchema(manifest): %v", err)
 	}
 
 	merged := MergeLayers(manifest, schema)

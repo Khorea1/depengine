@@ -91,7 +91,7 @@ func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, sta
 	var s *config.Schema
 	if schemaPath != "" {
 		var err error
-		s, err = config.ParseSchema(schemaPath, nil)
+		s, err = config.ParseProjectSchema(schemaPath, nil)
 		if err != nil {
 			log.Default.Warn("load schema for comparison", "error", err)
 			s = nil
@@ -108,7 +108,7 @@ func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, sta
 				}
 			}
 			if manifestPath != "" {
-				manifestSchema, merr := config.ParseSchema(manifestPath, nil, "packages")
+				manifestSchema, merr := config.ParseManifest(manifestPath, nil)
 				if merr != nil {
 					log.Default.Warn("load manifest", "error", merr)
 				} else {

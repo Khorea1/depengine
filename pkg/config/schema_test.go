@@ -19,10 +19,35 @@ func writeSchema(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
 	p := filepath.Join(dir, "schema.toml")
+	if !strings.Contains(content, "schema_version") {
+		content = "schema_version = 1\n" + content
+	}
 	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 		t.Fatalf("write schema: %v", err)
 	}
 	return p
+}
+
+func TestParseProjectSchemaRequiresSupportedVersion(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "schema.toml")
+	if err := os.WriteFile(path, []byte("[tools]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseProjectSchema(path, nil); err == nil || !strings.Contains(err.Error(), "schema_version: required") {
+		t.Fatalf("missing version error = %v", err)
+	}
+	path = writeSchema(t, "schema_version = 2\n[tools]\n")
+	if _, err := ParseProjectSchema(path, nil); err == nil || !strings.Contains(err.Error(), "unsupported version 2") {
+		t.Fatalf("unknown version error = %v", err)
+	}
+}
+
+func TestParseProjectSchemaRejectsManifestSection(t *testing.T) {
+	path := writeSchema(t, "schema_version = 1\n[packages]\n")
+	if _, err := ParseProjectSchema(path, nil); err == nil || !strings.Contains(err.Error(), "packages: unknown root field") {
+		t.Fatalf("wrong section error = %v", err)
+	}
 }
 
 // fixedMap is a deterministic substitution table that exercises the new
@@ -48,7 +73,7 @@ manager = "native"
 [tools]
 fastfetch = { http = { url = "https://x.com/{os}/{arch}/{libc}/fastfetch-{arch}.deb" } }
 `)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -74,7 +99,7 @@ manager = "native"
 [tools]
 neovim = { pacman = "neovim-{arch}", apt = "neovim", brew = "neovim" }
 `)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -114,7 +139,7 @@ post_install = "echo installed on {os}/{arch} via {init_system}"
   url   = "https://github.com/x/{os}/{arch}.git"
   build = "make OS={os} ARCH={arch} LIBC={libc}"
 `)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -147,7 +172,7 @@ manager = "native"
 [tools]
 ff = { http = { url = "https://x.com/{latest}/ff-{arch}.deb" } }
 `)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -175,7 +200,7 @@ manager = "native"
 [tools]
 ff = { http = { url = "https://x.com/{archh}/x" } }
 `)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -202,7 +227,7 @@ manager = "native"
 [tools]
 organize = { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }
 `)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -230,7 +255,7 @@ manager = "native"
 [tools]
 mytool = { apt = "foo-apt", cargo = "foo-cargo" }
 `)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -273,7 +298,7 @@ manager = "native"
   pkg  = "foo-apt"
   when = { distro_family = ["debian"] }
 `)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -312,7 +337,7 @@ simple = ["zsh", "bat"]
   pkg  = "foo-{arch}"
   when = { distro_family = ["arch"] }
 `)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -368,7 +393,7 @@ method_only = ["github"]
   asset = "Obsidian-{version}.AppImage"
   when  = { os = ["linux"] }
 `)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -376,12 +401,13 @@ method_only = ["github"]
 	if obsidian == nil {
 		t.Fatal("expected tool obsidian")
 	}
-	if len(obsidian.Methods) != 2 {
-		t.Fatalf("expected 2 github candidates, got %d: %+v", len(obsidian.Methods), obsidian.Methods)
+	methods := SelectMethods(obsidian, s.Defaults.MethodOrder, "")
+	if len(methods) != 2 {
+		t.Fatalf("expected method_only to select 2 github candidates, got %d: %+v", len(methods), methods)
 	}
 
 	byLabel := map[string]*MethodCandidate{}
-	for _, m := range obsidian.Methods {
+	for _, m := range methods {
 		if m.Kind != "github" {
 			t.Errorf("expected Kind=github for every candidate, got %q", m.Kind)
 		}
@@ -435,7 +461,7 @@ func TestValidateRejectsUnreachableTool(t *testing.T) {
 	}
 }
 
-func TestValidateWarnsOnUnknownKindWithKnownFallback(t *testing.T) {
+func TestValidateRejectsUnknownKindWithKnownFallback(t *testing.T) {
 	s := &Schema{
 		Defaults: Defaults{MethodOrder: []string{"cargo", "nonexistent"}},
 		Tools: map[string]*Tool{
@@ -448,22 +474,9 @@ func TestValidateWarnsOnUnknownKindWithKnownFallback(t *testing.T) {
 			},
 		},
 	}
-	warnings, err := Validate(s, []string{"native", "cargo"})
-	if err != nil {
-		t.Fatalf("expected no error (has known fallback), got: %v", err)
-	}
-	if len(warnings) == 0 {
-		t.Fatal("expected at least one warning about unknown kind")
-	}
-	found := false
-	for _, w := range warnings {
-		if strings.Contains(w, "nonexistent") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("expected warning mentioning %q, got: %v", "nonexistent", warnings)
+	_, err := Validate(s, []string{"native", "cargo"})
+	if err == nil {
+		t.Fatal("expected unknown declared method kind to be a hard error")
 	}
 }
 
@@ -497,7 +510,7 @@ manager = "native"
 tags = ["desktop", "server"]
 manager = "native"
 pkg = "myapp"`)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -517,7 +530,7 @@ manager = "native"
 
 [tools]
 mycli = { tags = ["minimal"], manager = "native", pkg = "mycli" }`)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -537,7 +550,7 @@ manager = "native"
 
 [tools]
 simple = ["zsh", "bat"]`)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -600,7 +613,7 @@ manager = "native"
 
 [tools]
 ruff = { pipx = true, uv = true }`)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -646,7 +659,7 @@ manager = "native"
 
 [tools]
 ruff = { python = true }`)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -673,7 +686,7 @@ manager = "native"
 
 [tools]
 prettier = { node = true }`)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -700,7 +713,7 @@ manager = "native"
 
 [tools]
 ruff = { pip = "organize-tool", python = true }`)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -738,7 +751,7 @@ manager = "native"
 
 [tools]
 ruff = { python = "some-string" }`)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -769,33 +782,15 @@ ruff = { python = "some-string" }`)
 	}
 }
 
-func TestBucketExpansion_BucketWithFalseNotExpanded(t *testing.T) {
-	// false keeps the key in valMap; buildMethods will try to parse it and get an error.
+func TestBucketExpansion_BucketWithFalseRejected(t *testing.T) {
 	p := writeSchema(t, `
 [defaults]
 manager = "native"
 
 [tools]
 ruff = { python = false }`)
-	s, err := ParseSchema(p, fixedMap())
-	if err != nil {
-		t.Fatalf("ParseSchema: %v", err)
-	}
-	tool, ok := s.Tools["ruff"]
-	if !ok {
-		t.Fatal("expected tool ruff")
-	}
-	var found bool
-	for _, m := range tool.Methods {
-		if m.Kind == "python" {
-			found = true
-			if m.Err == nil {
-				t.Fatal("expected error on python method with false")
-			}
-		}
-	}
-	if !found {
-		t.Fatal("expected python method to remain (not expanded) for false value")
+	if _, err := ParseProjectSchema(p, fixedMap()); err == nil {
+		t.Fatal("expected python=false to fail strict parsing")
 	}
 }
 
@@ -810,7 +805,7 @@ manager = "native"
 [tools]
 myapp = { method_prefer = ["cargo"], cargo = true }
 `)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -833,7 +828,7 @@ manager = "native"
 [tools]
 myapp = { method_only = ["cargo"], cargo = true }
 `)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -846,12 +841,7 @@ myapp = { method_only = ["cargo"], cargo = true }
 	}
 }
 
-func TestToolPerToolMethodOrderNoLongerSpecial(t *testing.T) {
-	// The deprecated per-tool `method_order` alias for method_prefer has been
-	// removed. A schema still using it no longer gets special treatment: the
-	// key falls through like any other unrecognized entry and is treated as
-	// an attempted (and invalid) method declaration, surfaced as a parse
-	// error on that candidate rather than silently reinterpreted.
+func TestToolPerToolMethodOrderRejected(t *testing.T) {
 	p := writeSchema(t, `
 [defaults]
 manager = "native"
@@ -859,28 +849,8 @@ manager = "native"
 [tools]
 myapp = { method_order = ["cargo"], cargo = true }
 `)
-	s, err := ParseSchema(p, fixedMap())
-	if err != nil {
-		t.Fatalf("ParseSchema: %v", err)
-	}
-	tool, ok := s.Tools["myapp"]
-	if !ok {
-		t.Fatal("tool myapp not found")
-	}
-	if len(tool.MethodPrefer) != 0 {
-		t.Fatalf("expected MethodPrefer to stay unset (method_order is no longer an alias), got %v", tool.MethodPrefer)
-	}
-	var found bool
-	for _, m := range tool.Methods {
-		if m.Kind == "method_order" {
-			found = true
-			if m.Err == nil {
-				t.Fatal("expected the leftover method_order key to surface a parse error")
-			}
-		}
-	}
-	if !found {
-		t.Fatal("expected method_order to fall through as an (invalid) method candidate")
+	if _, err := ParseProjectSchema(p, fixedMap()); err == nil {
+		t.Fatal("expected per-tool method_order to fail strict parsing")
 	}
 }
 
@@ -934,6 +904,73 @@ func TestEffectiveMethodOrderOnly(t *testing.T) {
 		if got[i] != k {
 			t.Fatalf("got[%d] = %q, want %q", i, got[i], k)
 		}
+	}
+}
+
+func TestSelectMethodsByKindAndLabel(t *testing.T) {
+	methods := []*MethodCandidate{
+		{Kind: "native"},
+		{Kind: "github", Label: "gh_linux"},
+		{Kind: "github", Label: "gh_apk"},
+		{Kind: "http", Label: "http_musl"},
+	}
+	tests := []struct {
+		name string
+		tool *Tool
+		want []string
+	}{
+		{
+			name: "only kind",
+			tool: &Tool{Methods: methods, MethodOnly: []string{"github"}},
+			want: []string{"gh_apk", "gh_linux"},
+		},
+		{
+			name: "only label",
+			tool: &Tool{Methods: methods, MethodOnly: []string{"gh_apk"}},
+			want: []string{"gh_apk"},
+		},
+		{
+			name: "prefer label keeps fallbacks",
+			tool: &Tool{Methods: methods, MethodPrefer: []string{"http_musl"}},
+			want: []string{"http_musl", "native", "gh_apk", "gh_linux"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotMethods := SelectMethods(tt.tool, []string{"native", "github", "http"}, "")
+			got := make([]string, len(gotMethods))
+			for i, method := range gotMethods {
+				got[i] = methodName(method)
+			}
+			if strings.Join(got, ",") != strings.Join(tt.want, ",") {
+				t.Fatalf("SelectMethods() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseSchemaStrictDiagnostics(t *testing.T) {
+	tests := []struct {
+		name    string
+		schema  string
+		wantErr string
+	}{
+		{"unknown condition", `[tools]\napp = { native = { when = { is_andriod = true } } }`, "tools.app.native.when.is_andriod"},
+		{"tags type", `[tools]\napp = { native = true, tags = "desktop" }`, "tools.app.tags"},
+		{"method only type", `[tools]\napp = { native = true, method_only = "native" }`, "tools.app.method_only"},
+		{"tool when", `[tools]\napp = { native = true, when = { os = ["linux"] } }`, "tools.app.when"},
+		{"orphan requires when", `[tools]\napp = { native = true, requires_when = { dep = { os = ["linux"] } } }`, "tools.app.requires_when.dep"},
+		{"empty condition", `[tools]\napp = { native = { when = {} } }`, "condition must not be empty"},
+		{"legacy preinstall", `[tools]\napp = { native = true, preinstall = "echo no" }`, "use pre_install"},
+		{"legacy postinstall", `[tools]\napp = { native = true, postinstall = "echo no" }`, "use post_install"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseProjectSchema(writeSchema(t, strings.ReplaceAll(tt.schema, `\n`, "\n")), nil)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want substring %q", err, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -1332,7 +1369,12 @@ func TestValidateAcceptsBucketNames(t *testing.T) {
 			"mytool": {
 				Name:         "mytool",
 				MethodPrefer: []string{"python"},
-				Methods:      []*MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "mytool"}}},
+				Methods: []*MethodCandidate{
+					{Kind: "native", Config: map[string]any{"pkg": "mytool"}},
+					{Kind: "pip", Config: map[string]any{"pkg": "mytool"}},
+					{Kind: "pipx", Config: map[string]any{"pkg": "mytool"}},
+					{Kind: "uv", Config: map[string]any{"pkg": "mytool"}},
+				},
 			},
 		},
 	}
@@ -1608,7 +1650,7 @@ manager = "native"
   url = "https://example.com/musl"
   when = { libc = ["musl"] }
 `)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -1656,7 +1698,7 @@ manager = "native"
   [tools.restic.http]
   url = "https://example.com"
 `)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}

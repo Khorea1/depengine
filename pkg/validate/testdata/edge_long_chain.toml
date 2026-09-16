@@ -1,3 +1,5 @@
+schema_version = 1
+
 # Long dependency chain: t0 → t1 → t2 → ... → t9
 [tools]
 t0 = { requires = ["t1"], apt = "t0-pkg" }

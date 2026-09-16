@@ -11,7 +11,7 @@
 //
 // Pipeline:
 //
-//	schema.toml → ParseSchema → resolve {latest} → patch schema → execute
+//	schema.toml → ParseProjectSchema → resolve {latest} → patch schema → execute
 //	                               ↓
 //	                           depengine.lock
 package lock

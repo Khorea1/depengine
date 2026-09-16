@@ -28,7 +28,7 @@ const (
 	ErrUnsafePackageName ErrorCode = "E_UNSAFE_PACKAGE_NAME"
 	// ErrDupeTool is produced by pkg/config.SchemaCodeError when a tool is
 	// redeclared (simple list + inline table). It is emitted before
-	// ValidateSchema runs, so it surfaces via ParseSchema error handling
+	// ValidateSchema runs, so it surfaces via schema parse error handling
 	// rather than as a ValidationError.
 	ErrDupeTool ErrorCode = "E_DUPE_TOOL"
 

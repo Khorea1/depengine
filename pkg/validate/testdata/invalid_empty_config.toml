@@ -1,3 +1,5 @@
+schema_version = 1
+
 # Empty configs and edge cases
 [tools]
 # A tool that parses but has no viable method at all
@@ -14,4 +16,4 @@ vacuum = { requires = [] }
 
 # Tool with only postinstall but no methods  
 # (this is weird but shouldn't crash)
-ghost.postinstall = "echo hello"
+ghost.post_install = "echo hello"

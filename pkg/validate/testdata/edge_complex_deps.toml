@@ -1,3 +1,5 @@
+schema_version = 1
+
 # Diamond-shaped dependency graph:
 #   a → b → d
 #   a → c → d

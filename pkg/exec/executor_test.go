@@ -151,6 +151,55 @@ func TestExecutorFallback(t *testing.T) {
 	}
 }
 
+func TestExecutorMethodOnlyExcludesDeclaredFallback(t *testing.T) {
+	var tried []string
+	cargo := &testMockAdapter{kindValue: "cargo", installFunc: func(string) error {
+		tried = append(tried, "cargo")
+		return &installError{msg: "failed"}
+	}}
+	http := &testMockAdapter{kindValue: "http", installFunc: func(string) error {
+		tried = append(tried, "http")
+		return nil
+	}}
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithDefaultMethodOrder([]string{"cargo", "http"})(ex)
+	WithAdapters(cargo, http)(ex)
+	tool := &config.Tool{
+		Name:       "tool",
+		MethodOnly: []string{"cargo"},
+		Methods: []*config.MethodCandidate{
+			{Kind: "cargo", Config: map[string]any{"pkg": "tool"}},
+			{Kind: "http", Config: map[string]any{"url": "https://example.com/tool"}},
+		},
+	}
+	result := &ToolResult{Tool: tool.Name}
+	ex.tryMethods(context.Background(), tool, result, time.Now())
+	if strings.Join(tried, ",") != "cargo" {
+		t.Fatalf("tried methods = %v, want only cargo", tried)
+	}
+}
+
+func TestExplainToolPrefersCandidateLabel(t *testing.T) {
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithDefaultMethodOrder([]string{"github", "native"})(ex)
+	WithAdapters(&testMockAdapter{kindValue: "github"}, &testMockAdapter{kindValue: "native"})(ex)
+	tool := &config.Tool{
+		Name:         "tool",
+		MethodPrefer: []string{"gh_linux"},
+		Methods: []*config.MethodCandidate{
+			{Kind: "github", Label: "gh_apk"},
+			{Kind: "github", Label: "gh_linux"},
+			{Kind: "native"},
+		},
+	}
+	attempts := ex.ExplainTool(context.Background(), tool, "unknown")
+	if len(attempts) != 3 || attempts[0].Kind != "gh_linux" {
+		t.Fatalf("attempt order = %+v, want gh_linux first with fallbacks retained", attempts)
+	}
+}
+
 // TestExecutorSyncFailureDoesNotAbortUnrelatedTools reproduces the audit's
 // Achado 1 (findings.md): apt-get update returns exit 100 if ANY configured
 // repo is broken (e.g. a dead third-party PPA), even when every repo the

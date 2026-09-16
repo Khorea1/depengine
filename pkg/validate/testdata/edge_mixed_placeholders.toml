@@ -1,3 +1,5 @@
+schema_version = 1
+
 # Mixed valid and invalid placeholders in the same string
 [tools]
 app1 = { http = { url = "https://example.com/{arch}/{unknownz}/v{latest}.deb" } }
@@ -6,7 +8,7 @@ app3 = { git = { url = "https://github.com/user/{id}-{kernel}-repo.git" } }
 
 [tools.app4]
 requires = ["{nonexistent_dep}"]
-postinstall = "echo {arch}-{os}-{made_up}"
+post_install = "echo {arch}-{os}-{made_up}"
 
 [tools.app5.git]
 url = "git@github.com:user/repo.git"

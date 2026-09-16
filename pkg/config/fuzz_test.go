@@ -11,7 +11,7 @@ import (
 // It catches panics exclusively — parse errors are valid behavior and are
 // silently ignored. A basic substitution map (fixedMap) is used so the
 // placeholder-expansion code paths are exercised.
-func FuzzParseSchema(f *testing.F) {
+func FuzzParseProjectSchema(f *testing.F) {
 	seeds := []string{
 		"[tools]\nzsh = \"zsh\"\nfd = { apt = \"fd-find\" }",
 		"[defaults]\nmanager = \"native\"\n[tools]\nsimple = [\"a\",\"b\"]",
@@ -42,7 +42,7 @@ func FuzzParseSchema(f *testing.F) {
 			t.Skip("write:", err)
 		}
 		// Parse errors are valid behavior; we only care about panics.
-		_, _ = ParseSchema(path, m)
+		_, _ = ParseProjectSchema(path, m)
 	})
 }
 

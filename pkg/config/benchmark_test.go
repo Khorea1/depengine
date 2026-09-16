@@ -16,7 +16,7 @@ func knownKinds() []string {
 }
 
 // BenchmarkParseSchema measures the time to parse each schema size.
-func BenchmarkParseSchema(b *testing.B) {
+func BenchmarkParseProjectSchema(b *testing.B) {
 	benchmarks := []struct {
 		name string
 		path string
@@ -31,7 +31,7 @@ func BenchmarkParseSchema(b *testing.B) {
 			m := fixedMap()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_, err := ParseSchema(bm.path, m)
+				_, err := ParseProjectSchema(bm.path, m)
 				if err != nil {
 					b.Fatalf("ParseSchema: %v", err)
 				}
@@ -86,9 +86,9 @@ func BenchmarkValidation(b *testing.B) {
 	// Parse schemas once
 	parsed := make(map[string]*Schema, len(benchmarks))
 	for _, bm := range benchmarks {
-		s, err := ParseSchema(bm.path, fixedMap())
+		s, err := ParseProjectSchema(bm.path, fixedMap())
 		if err != nil {
-			b.Fatalf("ParseSchema(%s): %v", bm.name, err)
+			b.Fatalf("ParseProjectSchema(%s): %v", bm.name, err)
 		}
 		parsed[bm.name] = s
 	}

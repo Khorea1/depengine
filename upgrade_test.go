@@ -7,11 +7,26 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/lock"
 	"github.com/Khorea1/depengine/pkg/state"
 
 	"github.com/pelletier/go-toml/v2"
 )
+
+func TestFindMethodCandidateRespectsLabelSelection(t *testing.T) {
+	tool := &config.Tool{
+		MethodOnly: []string{"gh_linux"},
+		Methods: []*config.MethodCandidate{
+			{Kind: "github", Label: "gh_apk"},
+			{Kind: "github", Label: "gh_linux"},
+		},
+	}
+	got := findMethodCandidate(tool, "github", []string{"github"}, "")
+	if got == nil || got.Label != "gh_linux" {
+		t.Fatalf("findMethodCandidate() = %+v, want gh_linux", got)
+	}
+}
 
 // writeTestLock writes a depengine.lock file in the schema directory.
 func writeTestLock(t *testing.T, schemaDir string, tools map[string]lock.ToolPin) {
@@ -33,7 +48,7 @@ func writeTestLock(t *testing.T, schemaDir string, tools map[string]lock.ToolPin
 // writeTestSchema writes a minimal schema.toml with go tools.
 func writeTestSchema(t *testing.T, dir string, tools map[string]string) {
 	t.Helper()
-	content := "[defaults]\nmethod_order = [\"go\", \"native\"]\n\n"
+	content := "schema_version = 1\n\n[defaults]\nmethod_order = [\"go\", \"native\"]\n\n"
 	for name, pkg := range tools {
 		content += "[tools." + name + "]\n" +
 			"go = \"" + pkg + "\"\n"
@@ -332,7 +347,7 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	content := "[defaults]\nmethod_order = [\"http\", \"native\"]\n\n" +
+	content := "schema_version = 1\n\n[defaults]\nmethod_order = [\"http\", \"native\"]\n\n" +
 		"[tools.httptool]\n" +
 		"http = {url = \"https://example.invalid/tool.tar.gz\", extract_to = \"" + sharedDir + "\"}\n"
 	if err := os.WriteFile(filepath.Join(schemaDir, "schema.toml"), []byte(content), 0600); err != nil {

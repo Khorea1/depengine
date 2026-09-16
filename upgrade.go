@@ -330,8 +330,7 @@ func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgra
 
 		// Step 2: Install.
 		// Find the method candidate from the schema for this kind.
-		methodOrder := config.EffectiveMethodOrder(ot.tool, ex.DefaultMethodOrder(), ex.NativeManagerName())
-		installMC := findMethodCandidate(ot.tool, ot.methodKind, methodOrder)
+		installMC := findMethodCandidate(ot.tool, ot.methodKind, ex.DefaultMethodOrder(), ex.NativeManagerName())
 		if installMC == nil {
 			// Fallback: use the state config.
 			installMC = mc
@@ -443,8 +442,8 @@ func findMethodConfig(tool *config.Tool, kind string) map[string]any {
 }
 
 // findMethodCandidate returns the MethodCandidate from the tool's methods
-func findMethodCandidate(tool *config.Tool, kind string, methodOrder []string) *config.MethodCandidate {
-	ordered := config.OrderMethods(tool.Methods, methodOrder)
+func findMethodCandidate(tool *config.Tool, kind string, defaultOrder []string, nativeManagerName string) *config.MethodCandidate {
+	ordered := config.SelectMethods(tool, defaultOrder, nativeManagerName)
 	for _, m := range ordered {
 		if m.Kind == kind {
 			return m

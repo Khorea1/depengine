@@ -53,7 +53,7 @@ func newValidateCmd() *cobra.Command {
 func runValidate(validateSchema, validateManifest *string, validateNoManifest, validateCheckEnv *bool, validateFormat *string, validateStrict *bool) {
 	ctx := context.Background()
 
-	s, err := config.ParseSchema(*validateSchema, map[string]string{})
+	s, err := config.ParseProjectSchema(*validateSchema, map[string]string{})
 	if err != nil {
 		var sce *config.SchemaCodeError
 		if errors.As(err, &sce) && *validateFormat == "json" {
@@ -87,7 +87,7 @@ func runValidate(validateSchema, validateManifest *string, validateNoManifest, v
 		}
 	}
 	if manifestPath != "" {
-		manifestSchema, merr := config.ParseSchema(manifestPath, nil, "packages")
+		manifestSchema, merr := config.ParseManifest(manifestPath, nil)
 		if merr != nil {
 			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", merr)
 			os.Exit(2)

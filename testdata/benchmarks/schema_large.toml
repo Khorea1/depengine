@@ -1,3 +1,5 @@
+schema_version = 1
+
 # Large benchmark schema: ~50 tools with 5 methods each.
 # Complex dependency chains, requires, when conditions, placeholders.
 
@@ -12,7 +14,7 @@ simple = [
 ]
 
   [tools.tool10]
-  postinstall = "echo tool10 installed on {distro_family} with {arch}"
+  post_install = "echo tool10 installed on {distro_family} with {arch}"
   pacman = "tool10-pacman"
   cargo = { pkg = "tool10-cargo", when = { distro_family = ["arch", "debian"] } }
   go = "tool10-go"
@@ -88,7 +90,7 @@ simple = [
   pip = { pkg = "tool19-pip", when = { distro_family = ["fedora", "suse"] } }
 
   [tools.tool20]
-  postinstall = "echo tool20 installed on {distro_family} with {arch}"
+  post_install = "echo tool20 installed on {distro_family} with {arch}"
   dnf = "tool20-dnf"
   cargo = { pkg = "tool20-cargo", when = { distro_family = ["arch", "debian"] } }
   go = "tool20-go"
@@ -164,7 +166,7 @@ simple = [
   pip = { pkg = "tool29-pip", when = { distro_family = ["fedora", "suse"] } }
 
   [tools.tool30]
-  postinstall = "echo tool30 installed on {distro_family} with {arch}"
+  post_install = "echo tool30 installed on {distro_family} with {arch}"
   apt = "tool30-apt"
   cargo = { pkg = "tool30-cargo", when = { distro_family = ["arch", "debian"] } }
   go = "tool30-go"
@@ -240,7 +242,7 @@ simple = [
   pip = { pkg = "tool39-pip", when = { distro_family = ["fedora", "suse"] } }
 
   [tools.tool40]
-  postinstall = "echo tool40 installed on {distro_family} with {arch}"
+  post_install = "echo tool40 installed on {distro_family} with {arch}"
   pacman = "tool40-pacman"
   cargo = { pkg = "tool40-cargo", when = { distro_family = ["arch", "debian"] } }
   go = "tool40-go"

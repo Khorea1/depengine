@@ -20,7 +20,7 @@ manager = "native"
 [tools]
 fastfetch = { http = { url = "https://x.com/{os}/{arch}/fastfetch-{arch}.tar.gz" } }
 `)
-	s, err := ParseSchema(p, aarch64Map())
+	s, err := ParseProjectSchema(p, aarch64Map())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -45,7 +45,7 @@ arch_map = { aarch64 = "arm64_v2" }
 [tools]
 fastfetch = { http = { url = "https://x.com/{arch}/fastfetch.tar.gz" } }
 `)
-	s, err := ParseSchema(p, aarch64Map())
+	s, err := ParseProjectSchema(p, aarch64Map())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -72,7 +72,7 @@ fastfetch = { http = { url = "https://x.com/{arch}/fastfetch.tar.gz", arch_map =
 # proves the method-level override is scoped to just the one tool.
 other = { http = { url = "https://x.com/{arch}/other.tar.gz" } }
 `)
-	s, err := ParseSchema(p, aarch64Map())
+	s, err := ParseProjectSchema(p, aarch64Map())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -102,7 +102,7 @@ manager = "native"
 # must survive verbatim (upstream URLs are frequently case-sensitive).
 fastfetch = { http = { url = "https://x.com/{os}/fastfetch.tar.gz", os_map = { DARWIN = "macOS" } } }
 `)
-	s, err := ParseSchema(p, aarch64Map())
+	s, err := ParseProjectSchema(p, aarch64Map())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -127,7 +127,7 @@ arch_map = { aarch64 = "arm64" }
 [tools]
 fastfetch = { http = { url = "https://x.com/{arch}/fastfetch.tar.gz" } }
 `)
-	s, err := ParseSchema(p, fixedMap())
+	s, err := ParseProjectSchema(p, fixedMap())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -150,7 +150,7 @@ arch_map = { aarch64 = "arm64" }
 [tools]
 fastfetch = { github = { repo = "fastfetch-cli/fastfetch", asset = "fastfetch-{os_any}-{arch_any}" } }
 `)
-	s, err := ParseSchema(p, aarch64Map())
+	s, err := ParseProjectSchema(p, aarch64Map())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -177,12 +177,12 @@ manager = "native"
 arch_map = { aarch64 = "arm64" }
 
 [tools.fastfetch]
-preinstall  = "echo building for {arch}"
-postinstall = "echo installed on {os}"
+pre_install  = "echo building for {arch}"
+post_install = "echo installed on {os}"
   [tools.fastfetch.http]
   url = "https://x.com/{arch}/fastfetch.tar.gz"
 `)
-	s, err := ParseSchema(p, aarch64Map())
+	s, err := ParseProjectSchema(p, aarch64Map())
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
@@ -214,7 +214,7 @@ arch_map = { aarch64 = "arm64" }
 [tools]
 fastfetch = { http = { url = "https://x.com/{arch}/{os}/fastfetch.tar.gz" } }
 `)
-	s, err := ParseSchema(p, nil)
+	s, err := ParseProjectSchema(p, nil)
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}

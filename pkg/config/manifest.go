@@ -55,12 +55,12 @@ func FilterManifestTools(schema, manifest *Schema) {
 // ResolveSchemaFromFiles is a convenience that parses a local schema and one
 // or more manifest files (in order), validates the manifest layers.
 //
-// Each manifest path is parsed with ParseSchema(path, nil, "packages") and
+// Each manifest path is parsed with ParseManifest(path, nil) and
 // validated with ValidateManifestLayer. An empty manifest path is skipped.
 // The result merges all layers: manifest files (earlier = lower priority),
 // then the local schema (highest priority).
 func ResolveSchemaFromFiles(schemaPath string, manifestPaths ...string) (*Schema, error) {
-	s, err := ParseSchema(schemaPath, nil)
+	s, err := ParseProjectSchema(schemaPath, nil)
 	if err != nil {
 		return nil, fmt.Errorf("parse schema: %w", err)
 	}
@@ -73,7 +73,7 @@ func ResolveSchemaFromFiles(schemaPath string, manifestPaths ...string) (*Schema
 		if mp == "" {
 			continue
 		}
-		mt, err := ParseSchema(mp, nil, "packages")
+		mt, err := ParseManifest(mp, nil)
 		if err != nil {
 			return nil, fmt.Errorf("parse manifest %s: %w", mp, err)
 		}
@@ -118,6 +118,7 @@ func MergeLayersWithProvenance(layers ...*Schema) *Schema {
 func MergeLayersWithOpts(opts *mergeConfig, layers ...*Schema) *Schema {
 	if len(layers) == 0 {
 		return &Schema{
+			Version: 1,
 			Defaults: Defaults{
 				Manager:     "native",
 				AurHelper:   "paru",
@@ -128,6 +129,7 @@ func MergeLayersWithOpts(opts *mergeConfig, layers ...*Schema) *Schema {
 
 	// Defaults from the most specific layer.
 	result := &Schema{
+		Version:    layers[len(layers)-1].Version,
 		Defaults:   layers[len(layers)-1].Defaults,
 		Tools:      make(map[string]*Tool),
 		Provenance: make(map[string][]FieldSource),

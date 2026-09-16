@@ -1,3 +1,5 @@
+schema_version = 1
+
 # ==============================================================================
 # manifest.toml — PERSONAL INSTALL CATALOG
 # ==============================================================================
@@ -16,8 +18,8 @@
 # USAGE: copy to ~/.config/depengine/manifest.toml and edit.
 # ==============================================================================
 #
-# ⚠ NOTE: This file is an ILLUSTRATIVE EXAMPLE. `pre_install`/`preinstall`,
-# `postinstall`, `requires`, and `method_prefer` all merge fine from a real
+# ⚠ NOTE: This file is an ILLUSTRATIVE EXAMPLE. `pre_install`,
+# `post_install`, `requires`, and `method_prefer` all merge fine from a real
 # manifest too (schema-wins-on-conflict, same as everywhere else) — nothing
 # here is rejected by the validator. What IS manifest-only is adding a tool
 # that doesn't exist in the project's schema.toml at all: that requires
@@ -40,7 +42,7 @@
 #   native/aur/cargo/go/pip/pipx/uv/npm/bun/pnpm/gem:
 #          pkg, git (for cargo/go install --git), when
 #
-#   Tool-level: requires, pre_install (or preinstall), postinstall, tags
+#   Tool-level: requires, pre_install, post_install, tags
 #   Conditional: when = { distro_family = [...] }
 # ==============================================================================
 [packages]
@@ -67,7 +69,7 @@ delta     = { pacman = "git-delta",          apt = "git-delta",             brew
 tealdeer  = { pacman = "tealdeer",           apt = "tealdeer",                                           cargo = "tealdeer" }
 helix     = { pacman = "helix",              apt = "helix",                                              cargo = "helix" }
 # DepartureMono dependencies: unzip extracts the HTTP zip payload; fontconfig
-# provides fc-cache (postinstall). Both are same-name on almost every manager;
+# provides fc-cache (post_install). Both are same-name on almost every manager;
 # Termux's pkg hosts fc-cache in fontconfig-utils (pkg binary name is shared
 # with FreeBSD — the override key "pkg" hits both, acceptable there).
 unzip      = { native = "unzip" }
@@ -262,7 +264,7 @@ tpm         = { git = { url = "https://github.com/tmux-plugins/tpm", depth = 1 }
 # ==============================================================================
 # Use block format when a tool needs:
 #   - Multiple competing methods with different conditions
-#   - Hooks pre_install / postinstall
+#   - Hooks pre_install / post_install
 #   - Tags for profile filtering
 #   - requires (dependencies between tools)
 # ==============================================================================
@@ -270,10 +272,10 @@ tpm         = { git = { url = "https://github.com/tmux-plugins/tpm", depth = 1 }
 # --- DepartureMono Nerd Font: AUR on Arch, HTTP everywhere else ---
 [packages.DepartureMono]
 tags = ["fonts"]
-# postinstall runs after ANY method succeeds
-postinstall = "fc-cache -fv"
+# post_install runs after ANY method succeeds
+post_install = "fc-cache -fv"
 # Dependencies: unzip extracts the HTTP zip; fontconfig provides fc-cache
-# (postinstall). On Termux fc-cache ships in fontconfig-utils (pkg manager).
+# (post_install). On Termux fc-cache ships in fontconfig-utils (pkg manager).
 requires = ["unzip", "fontconfig"]
 method_only = ["aur", "http"]   # AUR on Arch (PKGBUILD source = nerd-fonts DepartureMono.zip v3.4.0); HTTP zip everywhere else. Never fall back to native.
 
@@ -338,7 +340,6 @@ tags = ["containers"]
 
   [packages.docker.http]
   url    = "https://get.docker.com"
-  build  = "sh get-docker.sh"
 
 
 # --- Lua Language Server: AUR → pre-compiled binary ---
@@ -360,14 +361,13 @@ tags = ["lsp", "dev"]
 [packages.mise]
 tags = ["dev", "runtimes"]
 pre_install  = "which curl >/dev/null || (apt-get update && apt-get install -y curl)"
-postinstall  = "mise help >/dev/null"
+post_install  = "mise help >/dev/null"
 
   [packages.mise.cargo]
   pkg = "mise"
 
   [packages.mise.http]
   url    = "https://mise.run"
-  build  = "sh mise.sh"
 
 
 # --- shellcheck: native → cargo → pre-compiled binary ---
@@ -435,7 +435,8 @@ tags = ["lint", "containers"]
 
 # --- yarn (classic, v1): global add. Kept for legacy projects; Berry (v2+)
 # below is the modern default and does NOT support global installs at all. ---
-gtop = { yarn = "gtop" }   # real npm package: system monitor dashboard, htop-alike
+[packages.gtop]
+yarn = "gtop"   # real npm package: system monitor dashboard, htop-alike
 
 # --- yarn-berry (v2+): project-local only — `yarn add` inside the current
 # project's package.json, not a global install. Real CLI tool commonly added
@@ -478,13 +479,17 @@ gtop = { yarn = "gtop" }   # real npm package: system monitor dashboard, htop-al
   pkg = "esbenp.prettier-vscode"
 
 # --- cask: macOS GUI apps via `brew install --cask`. ---
-iterm2    = { cask = "iterm2" }
-rectangle = { cask = "rectangle" }   # window-tiling manager
+[packages.iterm2]
+cask = "iterm2"
+[packages.rectangle]
+cask = "rectangle"   # window-tiling manager
 
 # --- mas: Mac App Store apps, addressed by their numeric App Store ID
 # (found in the app's App Store URL, e.g. .../id441258766). ---
-magnet = { mas = "441258766" }   # Magnet, window manager
-xcode  = { mas = "497799835" }   # Xcode — the canonical mas example
+[packages.magnet]
+mas = "441258766"   # Magnet, window manager
+[packages.xcode]
+mas = "497799835"   # Xcode — the canonical mas example
 
 # --- sdkman: JVM-ecosystem SDKs. Candidate identifiers carry a vendor
 # suffix — "-tem" is Eclipse Temurin; omitting the version installs
@@ -493,26 +498,33 @@ xcode  = { mas = "497799835" }   # Xcode — the canonical mas example
   [packages.temurin-17.sdkman]
   pkg = "17.0.9-tem"
 
-gradle = { sdkman = "gradle" }
+[packages.gradle]
+sdkman = "gradle"
 
 # --- steamcmd: dedicated game servers by numeric Steam AppID (found on
 # SteamDB or the store page URL). Check always reports "not installed" —
 # steamcmd re-validates/updates in place on every run instead of skipping,
 # which is the correct behavior for a server that must stay patched. ---
-valheim-server = { steamcmd = "896660" }
-tf2-server     = { steamcmd = "232250" }
+[packages.valheim-server]
+steamcmd = "896660"
+[packages.tf2-server]
+steamcmd = "232250"
 
 # --- pacstall: AUR-style community packages for Debian/Ubuntu, repackaging
 # vendor .debs the distro won't ship directly. Its scripts conventionally
 # suffix repackaged proprietary binaries with "-deb". ---
-spotify-pacstall = { pacstall = "spotify-deb" }
-chrome-pacstall  = { pacstall = "google-chrome-stable-deb" }
+[packages.spotify-pacstall]
+pacstall = "spotify-deb"
+[packages.chrome-pacstall]
+pacstall = "google-chrome-stable-deb"
 
 # --- asdf: version manager plugins (mise is a drop-in-compatible
 # reimplementation — the adapter checks for either binary, see
 # pkg/ecosystem/asdf_adapter.go). Plugin names usually match the runtime name. ---
-nodejs-asdf  = { asdf = "nodejs" }
-erlang-asdf  = { asdf = "erlang" }
+[packages.nodejs-asdf]
+asdf = "nodejs"
+[packages.erlang-asdf]
+asdf = "erlang"
 
 # --- container: pulls an image via `docker`/`podman pull` — no shim, no
 # command created on PATH. `manager` is required (docker and podman can
@@ -643,12 +655,12 @@ tags = ["personal", "dotfiles"]
 # 2. Uses a language manager (cargo, go, pipx, npm...) without a condition?
 #       → inline table: `name = { cargo = "name-of-crate" }`
 #
-# 3. Needs when, hooks (pre_install/postinstall), tags, requires,
+# 3. Needs when, hooks (pre_install/post_install), tags, requires,
 #    or multiple competing methods?
 #       → full block: [packages.NAME] + [packages.NAME.method]
 #
 # Fields that ALWAYS stay at the package level (outside method):
-#   requires, pre_install, postinstall, tags
+#   requires, pre_install, post_install, tags
 #
 # Fields that ALWAYS stay inside the method:
 #   kind, when, pkg, url, build, branch, depth, checksum, checksum_url,

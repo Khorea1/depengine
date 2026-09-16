@@ -4,7 +4,7 @@ import "strings"
 
 // defaultArchMap and defaultOSMap are the engine's built-in fallback
 // spelling tables for the {arch}/{os} placeholders. They are consulted by
-// ParseSchema when expanding {arch}/{os} in a method's Config (url, pkg,
+// ParseProjectSchema when expanding {arch}/{os} in a method's Config (url, pkg,
 // build, git, ...), used whenever neither the method's own arch_map/os_map
 // nor [defaults].arch_map/os_map has an entry for the current value.
 //

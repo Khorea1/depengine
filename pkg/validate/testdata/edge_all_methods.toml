@@ -1,3 +1,5 @@
+schema_version = 1
+
 # Every method kind with all possible config keys
 [tools]
 a_native = { native = { pkg = "zsh" } }
@@ -23,11 +25,11 @@ p_gem = { gem = { pkg = "jekyll" } }
 q_go = { go = { pkg = "github.com/user/tool" } }
 r_aur = { aur = { pkg = "yay" } }
 
-s_with_when = { when = { distro_family = ["debian"] }, apt = "vim" }
+s_with_when = { native = { pkg = "vim", when = { distro_family = ["debian"] } } }
 
-u_postinstall = { requires = ["a_native"], postinstall = "echo done", apt = "neovim" }
+u_postinstall = { requires = ["a_native"], post_install = "echo done", apt = "neovim" }
 
-[v.postinstall]
+[tools.v_postinstall]
 requires = ["a_native"]
-postinstall = "systemctl enable service"
+post_install = "systemctl enable service"
 native = { pkg = "nginx" }

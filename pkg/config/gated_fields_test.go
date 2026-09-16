@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/engine"
@@ -12,6 +13,9 @@ func writeTempSchema(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
 	p := filepath.Join(dir, "schema.toml")
+	if !strings.Contains(content, "schema_version") {
+		content = "schema_version = 1\n" + content
+	}
 	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -21,9 +25,9 @@ func writeTempSchema(t *testing.T, content string) string {
 func TestParsePostInstallTableForm(t *testing.T) {
 	p := writeTempSchema(t, `
 [tools]
-font = { native = true, postinstall = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } } }
+font = { native = true, post_install = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } } }
 `)
-	s, err := ParseSchema(p, nil)
+	s, err := ParseProjectSchema(p, nil)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -43,9 +47,9 @@ func TestParsePostInstallTableFormBlock(t *testing.T) {
 	p := writeTempSchema(t, `
 [tools.font]
 native = true
-postinstall = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
+post_install = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
 `)
-	s, err := ParseSchema(p, nil)
+	s, err := ParseProjectSchema(p, nil)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -64,9 +68,9 @@ postinstall = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
 func TestParsePostInstallStringStillWorks(t *testing.T) {
 	p := writeTempSchema(t, `
 [tools]
-app = { native = true, postinstall = "echo done" }
+app = { native = true, post_install = "echo done" }
 `)
-	s, err := ParseSchema(p, nil)
+	s, err := ParseProjectSchema(p, nil)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -86,7 +90,7 @@ dep-a = { native = true }
 dep-b = { native = true }
 app = { native = true, requires = ["dep-a", "dep-b"], requires_when = { dep-b = { target_family = ["unix"] } } }
 `)
-	s, err := ParseSchema(p, nil)
+	s, err := ParseProjectSchema(p, nil)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -106,7 +110,7 @@ func TestParseRequiresWhenRejectsNonTable(t *testing.T) {
 dep = { native = true }
 app = { native = true, requires = ["dep"], requires_when = { dep = "unix" } }
 `)
-	if _, err := ParseSchema(p, nil); err == nil {
+	if _, err := ParseProjectSchema(p, nil); err == nil {
 		t.Fatal("expected parse error for non-table requires_when entry")
 	}
 }

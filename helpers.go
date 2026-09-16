@@ -74,7 +74,7 @@ func loadSchema(path string) (*config.Schema, string, *engine.Facts, error) {
 		return nil, "", nil, err
 	}
 	clan := engine.ResolveFamily(facts)
-	s, err := config.ParseSchema(path, config.BuildMap(facts, clan))
+	s, err := config.ParseProjectSchema(path, config.BuildMap(facts, clan))
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -105,7 +105,7 @@ func loadSchemaWithManifest(schemaPath, manifestPath string) (*config.Schema, st
 		return s, clan, facts, 0, nil
 	}
 
-	manifestSchema, merr := config.ParseSchema(manifestPath, nil, "packages")
+	manifestSchema, merr := config.ParseManifest(manifestPath, nil)
 	if merr != nil {
 		return nil, "", nil, 0, merr
 	}

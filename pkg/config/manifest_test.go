@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -11,6 +12,9 @@ func writeManifest(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
 	p := filepath.Join(dir, "manifest.toml")
+	if !strings.Contains(content, "schema_version") {
+		content = "schema_version = 1\n" + content
+	}
 	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
@@ -23,9 +27,9 @@ func TestParseSchema_ManifestPackages(t *testing.T) {
 nvim = { pacman = "neovim", apt = "neovim" }
 fd = { cargo = "fd-find" }
 `)
-	s, err := ParseSchema(p, nil, "packages")
+	s, err := ParseManifest(p, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(manifest): %v", err)
+		t.Fatalf("ParseProjectSchema(manifest): %v", err)
 	}
 	if len(s.Tools) != 2 {
 		t.Fatalf("expected 2 tools, got %d", len(s.Tools))
@@ -51,7 +55,7 @@ fd = { cargo = "fd-find" }
 }
 
 func TestParseSchema_ManifestNonExistentFile(t *testing.T) {
-	_, err := ParseSchema("/nonexistent/manifest.toml", nil, "packages")
+	_, err := ParseManifest("/nonexistent/manifest.toml", nil)
 	if err == nil {
 		t.Fatal("expected error for non-existent file, got nil")
 	}
@@ -59,22 +63,25 @@ func TestParseSchema_ManifestNonExistentFile(t *testing.T) {
 
 func TestParseSchema_ManifestInvalidTOML(t *testing.T) {
 	p := writeManifest(t, `[[[invalid`)
-	_, err := ParseSchema(p, nil, "packages")
+	_, err := ParseManifest(p, nil)
 	if err == nil {
 		t.Fatal("expected error for invalid TOML")
 	}
 }
 
-func TestParseSchema_ManifestNoPackages(t *testing.T) {
+func TestParseSchema_ManifestRejectsUnknownRoot(t *testing.T) {
 	p := writeManifest(t, `[other]
 key = "value"
 `)
-	s, err := ParseSchema(p, nil, "packages")
-	if err != nil {
-		t.Fatalf("expected nil error for missing [packages], got %v", err)
+	if _, err := ParseManifest(p, nil); err == nil {
+		t.Fatal("expected unknown root field error")
 	}
-	if len(s.Tools) != 0 {
-		t.Fatalf("expected 0 tools for missing [packages], got %d", len(s.Tools))
+}
+
+func TestParseManifestRejectsProjectSection(t *testing.T) {
+	p := writeManifest(t, "schema_version = 1\n[tools]\n")
+	if _, err := ParseManifest(p, nil); err == nil || !strings.Contains(err.Error(), "tools: unknown root field") {
+		t.Fatalf("wrong section error = %v", err)
 	}
 }
 
@@ -83,9 +90,9 @@ func TestParseSchema_ManifestPreservesIntentFields(t *testing.T) {
 [packages]
 nvim = { pacman = "neovim", requires = ["zsh"], tags = ["desktop"] }
 `)
-	s, err := ParseSchema(p, nil, "packages")
+	s, err := ParseManifest(p, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(manifest): %v", err)
+		t.Fatalf("ParseProjectSchema(manifest): %v", err)
 	}
 	nvim := s.Tools["nvim"]
 	if nvim == nil {
@@ -105,9 +112,9 @@ func TestParseSchema_ManifestPackagesSectionEmpty(t *testing.T) {
 	p := writeManifest(t, `
 [packages]
 `)
-	s, err := ParseSchema(p, nil, "packages")
+	s, err := ParseManifest(p, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(manifest): %v", err)
+		t.Fatalf("ParseProjectSchema(manifest): %v", err)
 	}
 	if s == nil {
 		t.Fatal("expected non-nil Schema for empty [packages]")
@@ -126,27 +133,27 @@ func TestMergeLayersWithProvenanceThreeLayers(t *testing.T) {
 [tools]
 vim = { pre_install = "echo l1" }
 `)
-	l1, err := ParseSchema(l1p, nil)
+	l1, err := ParseProjectSchema(l1p, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(layer1): %v", err)
+		t.Fatalf("ParseProjectSchema(layer1): %v", err)
 	}
 
 	l2p := writeSchemaInline(t, `
 [tools]
 vim = { post_install = "echo l2" }
 `)
-	l2, err := ParseSchema(l2p, nil)
+	l2, err := ParseProjectSchema(l2p, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(layer2): %v", err)
+		t.Fatalf("ParseProjectSchema(layer2): %v", err)
 	}
 
 	l3p := writeSchemaInline(t, `
 [tools]
 vim = { requires = ["g"] }
 `)
-	l3, err := ParseSchema(l3p, nil)
+	l3, err := ParseProjectSchema(l3p, nil)
 	if err != nil {
-		t.Fatalf("ParseSchema(layer3): %v", err)
+		t.Fatalf("ParseProjectSchema(layer3): %v", err)
 	}
 
 	merged := MergeLayersWithProvenance(l1, l2, l3)

@@ -76,6 +76,7 @@ type mergeConfig struct {
 // It is the engine's working set: defaults + a flat map of tools, each with
 // its method candidates ordered by defaults.method_order.
 type Schema struct {
+	Version       int
 	Defaults      Defaults
 	Tools         map[string]*Tool
 	AllowNewTools bool                     `json:"-"`
@@ -112,7 +113,7 @@ type Tool struct {
 	PreInstall  string `merge:"overwrite"` // shell command run before install; failure aborts install
 	PostInstall string `merge:"overwrite"` // shell command run after successful install
 	// PostInstallWhen gates PostInstall by platform facts. Set only by the
-	// table form `postinstall = { cmd = "...", when = {...} }`; nil = always run.
+	// table form `post_install = { cmd = "...", when = {...} }`; nil = always run.
 	PostInstallWhen *Condition `merge:"overwrite"`
 	// RequiresWhen gates individual Requires entries by platform facts:
 	// `requires_when = { fontconfig = { target_family = ["unix"] } }`.
@@ -350,8 +351,8 @@ func matchPrefix(allowed []string, actual string) bool {
 // This duplicates pkg/validate.ErrorCode to avoid an import cycle.
 type ErrorCode string
 
-// ParseSchemaError is returned by ParseSchema when the problem is in the
-// schema file itself (invalid TOML, validation errors, redeclared tools, etc.),
+// ParseSchemaError is returned when a project schema or manifest is invalid
+// (invalid TOML, validation errors, redeclared tools, etc.),
 // as opposed to an I/O or runtime error. Callers use errors.As to distinguish
 // schema errors (exit code 2) from runtime errors (exit code 3).
 type ParseSchemaError struct {
@@ -375,7 +376,17 @@ func (e *SchemaCodeError) Error() string {
 	return fmt.Sprintf("%s:%d: [%s] %s", e.Path, e.Line, e.Code, e.Msg)
 }
 
-// ParseSchema loads, decodes and normalizes a schema.toml file. It produces a
+// ParseProjectSchema loads and normalizes a project schema.toml.
+func ParseProjectSchema(path string, m map[string]string) (*Schema, error) {
+	return parseDocument(path, m, "tools")
+}
+
+// ParseManifest loads and normalizes a personal manifest.toml.
+func ParseManifest(path string, m map[string]string) (*Schema, error) {
+	return parseDocument(path, m, "packages")
+}
+
+// parseDocument loads, decodes and normalizes a depengine TOML document. It produces a
 // flat Schema where the three declaration shapes (simple list, inline table,
 // full [tools.X] block) all collapse into Tool + MethodCandidate pairs. The
 // substitution map m is applied to every string leaf during normalization:
@@ -391,9 +402,7 @@ func (e *SchemaCodeError) Error() string {
 //     responsible for flagging them, not the parser.
 //   - the `simple` list is processed first; an inline table redeclaring a
 //     simple tool is an error (SchemaCodeError with Code "E_DUPE_TOOL").
-//   - section is the TOML table name to read for tool declarations
-//     (default "tools"; use "packages" for manifest files).
-func ParseSchema(path string, m map[string]string, section ...string) (*Schema, error) {
+func parseDocument(path string, m map[string]string, sectionName string) (*Schema, error) {
 	if m == nil {
 		m = map[string]string{}
 	}
@@ -429,10 +438,8 @@ func ParseSchema(path string, m map[string]string, section ...string) (*Schema, 
 	}
 	raw = ExpandAll(raw, mWithoutArchOS).(map[string]any)
 
-	// Determine which section to read tool declarations from.
-	sectionName := "tools"
-	if len(section) > 0 && section[0] != "" {
-		sectionName = section[0]
+	if err := validateRawSchema(raw, sectionName); err != nil {
+		return nil, &ParseSchemaError{Err: fmt.Errorf("%s: %w", path, err)}
 	}
 
 	// Extract rawTools from the specified section.
@@ -517,7 +524,7 @@ func ParseSchema(path string, m map[string]string, section ...string) (*Schema, 
 		}
 	}
 
-	return &Schema{Defaults: defaults, Tools: tools, AllowNewTools: allowNewTools}, nil
+	return &Schema{Version: 1, Defaults: defaults, Tools: tools, AllowNewTools: allowNewTools}, nil
 }
 
 // DefaultMethodOrder is the engine-wide canonical preference order for
@@ -647,10 +654,8 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 		}
 		if pi, ok := valMap["pre_install"].(string); ok {
 			tool.PreInstall = pi
-		} else if pi, ok := valMap["preinstall"].(string); ok {
-			tool.PreInstall = pi
 		}
-		// post_install/postinstall accept a plain string (unconditional) or
+		// post_install accepts a plain string (unconditional) or
 		// the table form { cmd = "...", when = {...} } gating the hook.
 		parsePostInstall := func(v any) {
 			switch pi := v.(type) {
@@ -666,8 +671,6 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 			}
 		}
 		if v, ok := valMap["post_install"]; ok {
-			parsePostInstall(v)
-		} else if v, ok := valMap["postinstall"]; ok {
 			parsePostInstall(v)
 		}
 		if t, ok := valMap["tags"].([]any); ok {
@@ -735,9 +738,7 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 			}
 		}
 
-		methods := buildMethods(name, valMap)
-		effectiveOrder := EffectiveMethodOrder(tool, defaults.MethodOrder, defaults.Manager)
-		tool.Methods = OrderMethods(methods, effectiveOrder)
+		tool.Methods = OrderMethods(buildMethods(name, valMap), defaults.MethodOrder)
 		tools[name] = tool
 	}
 	return tools, nil
@@ -746,12 +747,20 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 // platformMethodConditions maps method kinds that are inherently bound to
 // a single OS/distro family to their implicit when condition. Applied
 // during parseMethod when the user hasn't set an explicit when.
-var platformMethodConditions = map[string]Condition{
-	"aur":   {DistroFamily: []string{"arch"}},
-	"cask":  {DistroFamily: []string{"macos"}},
-	"mas":   {DistroFamily: []string{"macos"}},
-	"scoop": {DistroFamily: []string{"windows"}},
-	"choco": {DistroFamily: []string{"windows"}},
+var platformMethodConditions = buildPlatformMethodConditions()
+
+func buildPlatformMethodConditions() map[string]Condition {
+	out := make(map[string]Condition)
+	for _, contract := range methodkind.Contracts {
+		if len(contract.ImplicitDistroFamily) > 0 {
+			condition := Condition{DistroFamily: append([]string(nil), contract.ImplicitDistroFamily...)}
+			out[contract.Kind] = condition
+			for _, alias := range contract.Aliases {
+				out[alias] = condition
+			}
+		}
+	}
+	return out
 }
 
 func parseMethod(kind string, val any) (*MethodCandidate, error) {
@@ -815,12 +824,8 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 // with the tool name as the default package name.
 //
 // A native candidate is injected so the native method is available for every
-// tool — UNLESS the tool declares method_only (an exclusive list) and native
-// is not part of it. method_only filters the candidate set, not just the
-// order: a tool restricted to http/go must never fall back to the native
-// manager (which may require elevation). method_prefer is a prefix that
-// still allows the native remainder, so it does not suppress the implicit
-// native candidate.
+// tool. SelectMethods later removes it when method_only excludes native; the
+// raw candidate set stays intact so layer merging cannot discard information.
 //
 // If native is in the effective method_order (user list or canonical
 // remainder), it will be tried in that position. If the tool also declares
@@ -851,7 +856,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	var nonNativeKeys []string
 	var nativeBlockConfig map[string]any
 
-	for _, k := range sortedKeys(valMap, "requires", "requires_when", "pre_install", "preinstall", "post_install", "postinstall", "tags", "method_prefer", "method_only", "when", "kind") {
+	for _, k := range sortedKeys(valMap, "requires", "requires_when", "pre_install", "post_install", "tags", "method_prefer", "method_only", "when", "kind") {
 		if k == "native" {
 			if m, ok := valMap[k].(map[string]any); ok {
 				nativeBlockConfig = m
@@ -869,28 +874,20 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 		}
 	}
 
-	// method_only is an EXCLUSIVE list ("use ONLY these methods"): the
-	// implicit native candidate must not be injected when native is not part
-	// of the declared list. See methodOnlyAllowsNative for the match rules.
-	injectNative := true
-	if only, ok := valMap["method_only"].([]any); ok {
-		if onlyList := anySliceToStrings(only); len(onlyList) > 0 {
-			injectNative = methodOnlyAllowsNative(onlyList)
-			if !injectNative && (len(nativeOverrides) > 0 || nativeBlockConfig != nil) {
-				log.Default.Warn(fmt.Sprintf("tool %q: method_only %v excludes native; dropping the native manager method", name, onlyList))
-			}
-		}
-	}
-
 	// Inject a native method when there are any relevant keys.
 	// With overrides if native manager names are present, plain otherwise.
-	if injectNative && (len(nativeOverrides) > 0 || len(nonNativeKeys) > 0 || nativeBlockConfig != nil) {
+	if len(nativeOverrides) > 0 || len(nonNativeKeys) > 0 || nativeBlockConfig != nil {
 		cfg := map[string]any{"pkg": name}
 		if len(nativeOverrides) > 0 {
 			cfg["pkg_overrides"] = nativeOverrides
 		}
 		for k, v := range nativeBlockConfig {
 			cfg[k] = v
+		}
+		var when *Condition
+		if rawWhen, ok := cfg["when"]; ok {
+			when = parseCondition(rawWhen)
+			delete(cfg, "when")
 		}
 		// Hoist arch_map/os_map the same way parseMethod does, in case a
 		// native = { ... } block ever needs to override the {arch}/{os}
@@ -902,6 +899,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 		delete(cfg, "os_map")
 		methods = append(methods, &MethodCandidate{
 			Kind:    "native",
+			When:    when,
 			Config:  cfg,
 			ArchMap: archMap,
 			OSMap:   osMap,
@@ -923,21 +921,6 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	}
 
 	return methods
-}
-
-// methodOnlyAllowsNative reports whether an exclusive method_only list
-// permits the implicit native method. Native is allowed when "native"
-// itself is listed, or when a native manager name (apt, pacman, …) is
-// listed — ExpandMethodOrder rewrites a matching manager name to "native"
-// at runtime, so the candidate must exist for the order to be satisfiable.
-// Bucket names (python, node) never expand to native.
-func methodOnlyAllowsNative(only []string) bool {
-	for _, k := range ExpandBuckets(only) {
-		if k == "native" || native.IsNativeManagerName(k) {
-			return true
-		}
-	}
-	return false
 }
 
 func toStringSlice(v any) []string {
@@ -974,27 +957,49 @@ func parseCondition(raw any) *Condition {
 	return cond
 }
 func OrderMethods(methods []*MethodCandidate, order []string) []*MethodCandidate {
-	prio := map[string]int{}
-	for i, k := range order {
-		prio[k] = i
-	}
-	out := make([]*MethodCandidate, len(methods))
-	copy(out, methods)
-	sort.SliceStable(out, func(i, j int) bool {
-		pi, okI := prio[out[i].Kind]
-		pj, okJ := prio[out[j].Kind]
-		switch {
-		case okI && okJ:
-			return pi < pj
-		case okI:
-			return true
-		case okJ:
-			return false
-		default:
-			return false
-		}
+	return selectMethods(methods, order, false)
+}
+
+// SelectMethods applies a tool's method policy. Selectors match an exact
+// candidate label or every candidate of a kind. method_only is exhaustive;
+// method_prefer changes priority without removing fallbacks.
+func SelectMethods(tool *Tool, defaultOrder []string, nativeManagerName string) []*MethodCandidate {
+	order := EffectiveMethodOrder(tool, defaultOrder, nativeManagerName)
+	return selectMethods(tool.Methods, order, len(tool.MethodOnly) > 0)
+}
+
+func selectMethods(methods []*MethodCandidate, selectors []string, exclusive bool) []*MethodCandidate {
+	remaining := append([]*MethodCandidate(nil), methods...)
+	sort.SliceStable(remaining, func(i, j int) bool {
+		return methodName(remaining[i]) < methodName(remaining[j])
 	})
+
+	out := make([]*MethodCandidate, 0, len(methods))
+	for _, selector := range selectors {
+		for i := 0; i < len(remaining); {
+			if !methodMatchesSelector(remaining[i], selector) {
+				i++
+				continue
+			}
+			out = append(out, remaining[i])
+			remaining = append(remaining[:i], remaining[i+1:]...)
+		}
+	}
+	if !exclusive {
+		out = append(out, remaining...)
+	}
 	return out
+}
+
+func methodMatchesSelector(method *MethodCandidate, selector string) bool {
+	return method.Kind == selector || method.Label != "" && method.Label == selector
+}
+
+func methodName(method *MethodCandidate) string {
+	if method.Label != "" {
+		return method.Label
+	}
+	return method.Kind
 }
 
 // ExpandMethodOrder resolves native manager references in a method_order
@@ -1157,12 +1162,11 @@ func findLineInFile(path, key string) (int, error) {
 // it is a parameter rather than an import so pkg/config stays free of a
 // circular dependency on pkg/exec.
 //
-// An unknown kind that appears as some tool's ONLY candidate is a hard
-// error: the tool is unreachable. An unknown kind that appears alongside
-// at least one known kind is skipped with a logged warning: the tool may
-// still install via the known fallback. Defaults.MethodOrder entries that
-// are unknown are always warned, never errored — they are a hint about
-// preference, not a per-tool contract.
+// Unknown declared method kinds are hard errors even when another candidate
+// could succeed: silently skipping a typo makes the effective schema harder
+// to audit. Defaults.MethodOrder entries remain warnings because they are a
+// global preference and may intentionally name an adapter not registered by
+// the current binary.
 func Validate(s *Schema, knownKinds []string) ([]string, error) {
 	set := make(map[string]struct{}, len(knownKinds))
 	for _, k := range knownKinds {
@@ -1211,12 +1215,9 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 		}
 
 		var unknownKinds []string
-		knownCount := 0
 		for _, mc := range tool.Methods {
 			if _, ok := set[mc.Kind]; !ok {
 				unknownKinds = append(unknownKinds, mc.Kind)
-			} else {
-				knownCount++
 			}
 		}
 		if len(unknownKinds) > 0 {
@@ -1233,30 +1234,15 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 					}
 				}
 			}
-			if knownCount == 0 {
-				// All kinds unknown — hard error: tool is unreachable.
-				for _, uk := range unknownKinds {
-					msg := fmt.Sprintf(
-						"method kind %q for tool %q is not a registered adapter — if this is a variant of an existing method kind (e.g. \"http-musl\" of \"http\"), add kind = \"<kind>\" to the method block",
-						uk, toolName,
-					)
-					if hint := prefixHints[uk]; hint != "" {
-						msg += hint
-					}
-					hardErrors = append(hardErrors, msg)
+			for _, uk := range unknownKinds {
+				msg := fmt.Sprintf(
+					"method kind %q for tool %q is not a registered adapter — if this is a variant of an existing method kind (e.g. \"http-musl\" of \"http\"), add kind = \"<kind>\" to the method block",
+					uk, toolName,
+				)
+				if hint := prefixHints[uk]; hint != "" {
+					msg += hint
 				}
-			} else {
-				// At least one known fallback — warn for each unknown kind.
-				for _, uk := range unknownKinds {
-					msg := fmt.Sprintf(
-						"warning: tool %q declares method kind %q which is not a registered adapter (will be skipped at runtime) — if this is a variant of an existing method, add kind = \"<kind>\" to the method block",
-						toolName, uk,
-					)
-					if hint := prefixHints[uk]; hint != "" {
-						msg += hint
-					}
-					warnings = append(warnings, msg)
-				}
+				hardErrors = append(hardErrors, msg)
 			}
 		}
 
@@ -1304,19 +1290,23 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 	for _, toolName := range names {
 		tool := s.Tools[toolName]
 
-		// Validate both method-ordering fields for unknown kinds.
+		// Every selector must match a declared candidate by label or kind.
 		checkOrderSlice := func(slice []string, fieldName string) {
-			for _, kind := range slice {
-				if native.IsNativeManagerName(kind) {
-					continue
+			for _, selector := range ExpandBuckets(slice) {
+				if native.IsNativeManagerName(selector) {
+					selector = "native"
 				}
-				if _, isBucket := DefaultBuckets[kind]; isBucket {
-					continue
+				matched := false
+				for _, method := range tool.Methods {
+					if methodMatchesSelector(method, selector) {
+						matched = true
+						break
+					}
 				}
-				if _, ok := set[kind]; !ok {
+				if !matched {
 					hardErrors = append(hardErrors, fmt.Sprintf(
-						"tool %q: %s entry %q is not a registered method kind",
-						toolName, fieldName, kind,
+						"tool %q: %s entry %q does not match a declared method label or kind",
+						toolName, fieldName, selector,
 					))
 				}
 			}

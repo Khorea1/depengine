@@ -1,3 +1,5 @@
+schema_version = 1
+
 # ==============================================================================
 # schema.toml — Test schema for cross-platform testing
 # ==============================================================================
@@ -8,7 +10,8 @@ method_order = ["native", "git", "http", "npm", "cargo", "go", "pip", "pipx", "b
 
 [tools]
 # Simple tools, name is package name
-simple = ["zsh", "git", "curl", "jq", "ripgrep"]
+simple = ["zsh", "curl", "jq", "ripgrep"]
+git-cli = { native = "git" }
 
 # Tools with specific package names or managers
 zathura = { pacman = "zathura", apt = "zathura-core", brew = "zathura" }
@@ -39,9 +42,9 @@ fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/release
 # Tool requiring native package manager (e.g., for system-level dependencies)
 neofetch = { apt = "neofetch", pacman = "neofetch", dnf = "neofetch", apk = "neofetch", brew = "neofetch" }
 
-# Tool with postinstall hook
+# Tool with post_install hook
 [tools.my-custom-tool]
-postinstall = "echo 'Custom post-install script ran!'"
+post_install = "echo 'Custom post-install script ran!'"
 
   [tools.my-custom-tool.native]
   # Example: this tool might be installed via a custom script or binary
@@ -56,17 +59,17 @@ requires = ["zsh"]
 
   [tools.example-tool.apt]
   pkg = "example-tool-debian"
-  when = { distro = "debian" }
+  when = { distro_family = ["debian"] }
 
   [tools.example-tool.pacman]
   pkg = "example-tool-arch"
-  when = { distro = "arch" }
+  when = { distro_family = ["arch"] }
 
   [tools.example-tool.dnf]
   pkg = "example-tool-fedora"
-  when = { distro = "fedora" }
+  when = { distro_family = ["fedora"] }
 
   [tools.example-tool.http]
   url = "https://example.com/tool/{latest}/example-tool-{arch}.tar.gz"
   checksum = "sha256:auto"
-  when = { platform = "linux" }
+  when = { os = ["linux"] }

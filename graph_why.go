@@ -55,7 +55,7 @@ func runGraph(graphSchema, graphManifest *string, graphNoManifest *bool, graphFo
 		os.Exit(2)
 	}
 
-	s, err := config.ParseSchema(*graphSchema, nil)
+	s, err := config.ParseProjectSchema(*graphSchema, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(exitCodeForError(err))
@@ -71,7 +71,7 @@ func runGraph(graphSchema, graphManifest *string, graphNoManifest *bool, graphFo
 		}
 	}
 	if manifestPath != "" {
-		manifestSchema, merr := config.ParseSchema(manifestPath, nil, "packages")
+		manifestSchema, merr := config.ParseManifest(manifestPath, nil)
 		if merr != nil {
 			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", merr)
 			os.Exit(2)
@@ -153,7 +153,7 @@ func newWhyCmd() *cobra.Command {
 // length check did, and toolName arrives as a plain argument instead of
 // remain[0].
 func runWhy(toolName string, whySchema, whyManifest *string, whyNoManifest, whyJSON, whyFields *bool) {
-	s, err := config.ParseSchema(*whySchema, nil)
+	s, err := config.ParseProjectSchema(*whySchema, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
@@ -169,7 +169,7 @@ func runWhy(toolName string, whySchema, whyManifest *string, whyNoManifest, whyJ
 		}
 	}
 	if manifestPath != "" {
-		manifestSchema, merr := config.ParseSchema(manifestPath, nil, "packages")
+		manifestSchema, merr := config.ParseManifest(manifestPath, nil)
 		if merr != nil {
 			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", merr)
 			os.Exit(2)

@@ -1,3 +1,5 @@
+schema_version = 1
+
 # Schema de teste para integração — cobre múltiplos métodos, fallback,
 # when, requires, e diferentes tipos de instalação.
 
@@ -33,7 +35,8 @@ method_order = ["native", "cargo", "go", "pip", "git", "http"]
 # ─────────────────────────────────────────────
 
   [tools.debian-only-tool]
-  native = "hello"
+  [tools.debian-only-tool.native]
+  pkg = "hello"
   when = { distro_family = ["debian"] }
 
 # ─────────────────────────────────────────────
@@ -61,7 +64,7 @@ method_order = ["native", "cargo", "go", "pip", "git", "http"]
 # ─────────────────────────────────────────────
 
   [tools.fzf]
-  go = { pkg = "github.com/junegunn/fzf@latest", binary = "fzf" }
+  go = { pkg = "github.com/junegunn/fzf@latest" }
 
 # ─────────────────────────────────────────────
 # Tool HTTP (apenas dry-run em testes CI)

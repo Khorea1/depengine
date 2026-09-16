@@ -1,3 +1,5 @@
+schema_version = 1
+
 # Schema with MANY simultaneous errors
 [tools]
 # 1. Empty method config (no native key, no git/http/cargo)
@@ -26,4 +28,4 @@ y = { requires = ["x"] }
 bad_url = { http = { url = "not-a-valid-url-at-all" } }
 
 # 9. Unknown distro family
-exotic_distro = { when = { distro_family = "madeup_os" }, apt = "neofetch" }
+exotic_distro = { native = { pkg = "neofetch", when = { distro_family = ["madeup_os"] } } }

@@ -1,9 +1,11 @@
+schema_version = 1
+
 [defaults]
 manager = "native"
 method_order = ["native", "cargo", "go", "pip", "git", "http"]
 
 [tools]
-simple = ["zsh", "bat"]
+simple = ["zsh", "bat", "zathura"]
 
 fd = { apt = "fd-find" }
 fzf = { go = "github.com/junegunn/fzf" }
@@ -18,4 +20,6 @@ fzf = { go = "github.com/junegunn/fzf" }
   url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb"
   checksum = "sha256:auto"
 
-zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
+[tools.zathura-pdf-mupdf]
+requires = ["zathura"]
+pacman = "zathura-pdf-mupdf"

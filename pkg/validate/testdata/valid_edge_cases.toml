@@ -1,3 +1,5 @@
+schema_version = 1
+
 # Edge case: valid schema with all legitimate features combined
 [tools]
 simple = ["zsh", "bat", "fd", "htop"]
@@ -6,21 +8,19 @@ simple = ["zsh", "bat", "fd", "htop"]
 apt = "neofetch"
 pacman = "neofetch"
 brew = "neofetch"
-when = { distro_family = ["debian", "arch", "macos"] }
+native = { pkg = "neofetch", pkg_overrides = { apt = "neofetch", pacman = "neofetch", brew = "neofetch" }, when = { distro_family = ["debian", "arch", "macos"] } }
 
 [tools.starship]
 requires = ["neofetch"]
-postinstall = "starship init bash >> ~/.bashrc"
-cargo = "starship"
+post_install = "starship init bash >> ~/.bashrc"
+cargo = { pkg = "starship", when = { distro_family = ["debian", "arch"] } }
 npm = "starship"
-when = { distro_family = ["debian", "arch"] }
 
 # npm variant with macos: separate tool since TOML doesn't support
 # duplicate section keys with different when clauses
 [tools.starship_npm]
 requires = ["neofetch"]
-npm = "starship"
-when = { distro_family = "macos" }
+npm = { pkg = "starship", when = { distro_family = ["macos"] } }
 
 [tools.lazygit]
 requires = ["neofetch"]
@@ -33,20 +33,18 @@ checksum = "sha256:e861b2eab679927cfa36fe256e9deb1969b0468ad0744d61064f9d188333a
 extract_to = "/tmp/fastfetch"
 
 [tools.ripgrep]
-cargo = "ripgrep"
+cargo = { pkg = "ripgrep", when = { distro_family = ["debian", "arch", "fedora"] } }
 pip = "ripgrep"
 gem = "ripgrep"
-when = { distro_family = ["debian", "arch", "fedora"] }
 
 [tools.zoxide]
 requires = ["starship", "ripgrep"]
 cargo = "zoxide"
-postinstall = "echo 'eval \"$(zoxide init bash)\"' >> ~/.bashrc"
+post_install = "echo 'eval \"$(zoxide init bash)\"' >> ~/.bashrc"
 
 [tools.bottom]
-cargo = "bottom"
+cargo = { pkg = "bottom", when = { distro_family = ["debian", "arch", "fedora", "suse"] } }
 apt = "bottom"
-when = { distro_family = ["debian", "arch", "fedora", "suse"] }
 
 [tools.doggo]
 cargo = "doggo"

@@ -19,7 +19,7 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 	if mgr, ok := native.Lookup(clan); ok {
 		ex.nativeManagerName = mgr.Name
 	}
-	orderedMethods := config.OrderMethods(tool.Methods, ex.effectiveMethodOrder(tool))
+	orderedMethods := config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
 	methods := orderedMethods
 	if len(methods) == 0 {
 		return []MethodAttempt{{Kind: "", Status: "virtual", Error: "dependency group (no methods declared)"}}

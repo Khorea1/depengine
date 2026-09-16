@@ -345,7 +345,7 @@ func TestValidate_NonExistentSchema(t *testing.T) {
 func TestValidate_EmptySchemaFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	emptyPath := filepath.Join(tmpDir, "empty.toml")
-	if err := os.WriteFile(emptyPath, []byte("[tools]\n"), 0644); err != nil {
+	if err := os.WriteFile(emptyPath, []byte("schema_version = 1\n[tools]\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	output, code := runDepengine("validate", "--no-manifest", "--schema", emptyPath)

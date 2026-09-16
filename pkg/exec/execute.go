@@ -25,8 +25,12 @@ func needsNativeSync(s *config.Schema, clan string) bool {
 	if s == nil {
 		return false
 	}
+	nativeManagerName := ""
+	if manager, ok := native.Lookup(clan); ok {
+		nativeManagerName = manager.Name
+	}
 	for _, tool := range s.Tools {
-		for _, mc := range tool.Methods {
+		for _, mc := range config.SelectMethods(tool, s.Defaults.MethodOrder, nativeManagerName) {
 			if mc.Kind == "native" || mc.Kind == clan {
 				return true
 			}
@@ -81,7 +85,7 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 			continue
 		}
 
-		orderedMethods := config.OrderMethods(tool.Methods, ex.effectiveMethodOrder(tool))
+		orderedMethods := config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
 
 		foundNative := false
 		for _, method := range orderedMethods {
@@ -606,7 +610,7 @@ func (ex *Executor) writeState(ctx context.Context, s *config.Schema, report *Ex
 // hasDangerousMethod checks whether any of the tool's methods have config
 // keys that trigger arbitrary code execution (build scripts, etc.).
 func (ex *Executor) hasDangerousMethod(tool *config.Tool) bool {
-	for _, m := range tool.Methods {
+	for _, m := range config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName) {
 		for _, key := range []string{"build", "build_cmd", "build_command"} {
 			if v, ok := m.Config[key]; ok {
 				if s, ok := v.(string); ok && s != "" {
@@ -644,7 +648,7 @@ func (ex *Executor) runPreinstall(ctx context.Context, tool *config.Tool) error 
 func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResult {
 	toolStart := time.Now()
 	result := ToolResult{Tool: tool.Name}
-	methods := tool.Methods
+	methods := config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
 	if len(methods) == 0 {
 		result.Status = StatusVirtual
 		ex.logDebug(ctx, "tool", "tool", tool.Name, "status", "virtual")
@@ -698,18 +702,12 @@ func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResu
 	return result
 }
 
-// effectiveMethodOrder returns the method_order effective for a given
-// tool, applying per-tool overrides and native manager expansion.
-func (ex *Executor) effectiveMethodOrder(tool *config.Tool) []string {
-	return config.EffectiveMethodOrder(tool, ex.defaultMethodOrder, ex.nativeManagerName)
-}
-
 // tryMethods iterates through all methods of a tool, trying each in order.
 // It modifies result in place — on success the result is terminal; on
 // exhaustion it sets the final status to StatusFailed or StatusSkippedUnavailable.
 func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, result *ToolResult, toolStart time.Time) {
 	var lastMethodKind string
-	orderedMethods := config.OrderMethods(tool.Methods, ex.effectiveMethodOrder(tool))
+	orderedMethods := config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
 	for _, method := range orderedMethods {
 		lastMethodKind = method.Kind
 		displayKind := method.Kind
