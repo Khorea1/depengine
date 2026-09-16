@@ -114,6 +114,17 @@ func (lr *LoggingRunner) Run(ctx context.Context, name string, args ...string) R
 	return result
 }
 
+// StartElevationSession preserves the optional elevation capability of the
+// wrapped runner. A wrapper around a fake or remote runner intentionally has
+// no host elevation session to start.
+func (lr *LoggingRunner) StartElevationSession(ctx context.Context) (func(), error) {
+	session, ok := lr.inner.(ElevationSession)
+	if !ok {
+		return func() {}, nil
+	}
+	return session.StartElevationSession(ctx)
+}
+
 // truncateStderr limits stderr to 1KB to avoid bloating log output with
 // massive compiler errors or apt-get wall text. Full stderr is still
 // available via Result.Stderr for programmatic inspection.

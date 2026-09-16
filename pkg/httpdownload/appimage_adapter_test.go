@@ -175,8 +175,9 @@ func TestAppImageAdapterInstallSameNameNoRename(t *testing.T) {
 
 	installDir := t.TempDir()
 	mc := &config.MethodCandidate{Config: map[string]any{
-		"url":         ts.URL + "/obsidian",
-		"install_dir": installDir,
+		"url":           ts.URL + "/obsidian",
+		"install_dir":   installDir,
+		"sudo_required": false,
 	}}
 	fr := &run.FakeRunner{ExitCode: 1}
 
@@ -202,9 +203,10 @@ func TestAppImageAdapterInstallWithDesktopEntry(t *testing.T) {
 
 	installDir := t.TempDir()
 	mc := &config.MethodCandidate{Config: map[string]any{
-		"url":         ts.URL + "/Obsidian-2.0.0.AppImage",
-		"install_dir": installDir,
-		"desktop":     true,
+		"url":           ts.URL + "/Obsidian-2.0.0.AppImage",
+		"install_dir":   installDir,
+		"sudo_required": false,
+		"desktop":       true,
 	}}
 	fr := &run.FakeRunner{ExitCode: 1}
 
@@ -237,8 +239,9 @@ func TestAppImageAdapterInstallWithoutDesktopSkipsEntry(t *testing.T) {
 	defer ts.Close()
 
 	mc := &config.MethodCandidate{Config: map[string]any{
-		"url":         ts.URL + "/App.AppImage",
-		"install_dir": t.TempDir(),
+		"url":           ts.URL + "/App.AppImage",
+		"install_dir":   t.TempDir(),
+		"sudo_required": false,
 	}}
 	fr := &run.FakeRunner{ExitCode: 1}
 

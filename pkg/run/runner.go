@@ -37,6 +37,13 @@ type Runner interface {
 	Run(ctx context.Context, name string, args ...string) Result
 }
 
+// ElevationSession is implemented by production runners that can obtain and
+// renew interactive elevation credentials. Test and remote runners may omit
+// it; their command-execution environment owns any required elevation.
+type ElevationSession interface {
+	StartElevationSession(context.Context) (stop func(), err error)
+}
+
 // DefaultEnv copies the parent process env and appends DEPENGINE_TRACE_ID
 // when present, so child processes (and our own nested calls) carry the
 // trace through the whole install tree. Always returns a fresh slice —

@@ -30,6 +30,18 @@ import (
 // lets the cached credential expire.
 const keepAliveInterval = 45 * time.Second
 
+// StartElevationSession obtains credentials and keeps them valid until stop
+// is called. Keeping this capability on the production runner ensures an
+// injected Runner never causes hidden subprocesses on the host.
+func (OSExecRunner) StartElevationSession(ctx context.Context) (func(), error) {
+	if err := EnsureSudo(ctx); err != nil {
+		return nil, err
+	}
+	keepAliveCtx, stop := context.WithCancel(ctx)
+	go KeepAlive(keepAliveCtx)
+	return stop, nil
+}
+
 // sudoNoPasswdOK reports whether sudo can run without ever prompting
 // (NOPASSWD configured, or credential already cached from a prior session).
 // This is the one legitimate use of `sudo -n` as a probe: it fails closed
