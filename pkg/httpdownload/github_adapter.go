@@ -119,18 +119,25 @@ func (a *GitHubAdapter) resolve(ctx context.Context, rn run.Runner, tool *config
 		return nil, fmt.Errorf("github: %w", err)
 	}
 
-	resolved := make(map[string]any, len(mc.Config)+1)
+	return githubHTTPDelegate(tool, mc, url), nil
+}
+
+func githubHTTPDelegate(tool *config.Tool, mc *config.MethodCandidate, url string) *config.MethodCandidate {
+	resolved := make(map[string]any, len(mc.Config)+2)
 	for k, v := range mc.Config {
 		resolved[k] = v
 	}
 	resolved["url"] = url
+	if binary, _ := resolved["binary"].(string); binary == "" {
+		resolved["binary"] = tool.Name
+	}
 
 	return &config.MethodCandidate{
 		Kind:   "http",
 		Label:  mc.Label,
 		When:   mc.When,
 		Config: resolved,
-	}, nil
+	}
 }
 
 // githubRef reads the `release`/`branch` config keys of a "github" method

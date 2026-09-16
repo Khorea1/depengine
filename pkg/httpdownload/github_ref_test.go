@@ -1,6 +1,29 @@
 package httpdownload
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/Khorea1/depengine/pkg/config"
+)
+
+func TestGitHubHTTPDelegateDefaultsBinaryToToolName(t *testing.T) {
+	mc := &config.MethodCandidate{Kind: "github", Config: map[string]any{"repo": "owner/repo"}}
+	got := githubHTTPDelegate(&config.Tool{Name: "tool"}, mc, "https://example.com/asset")
+	if got.Config["binary"] != "tool" {
+		t.Fatalf("binary = %v, want tool", got.Config["binary"])
+	}
+	if _, ok := mc.Config["binary"]; ok {
+		t.Fatal("delegate mutated source config")
+	}
+}
+
+func TestGitHubHTTPDelegatePreservesExplicitBinary(t *testing.T) {
+	mc := &config.MethodCandidate{Kind: "github", Config: map[string]any{"binary": "yq"}}
+	got := githubHTTPDelegate(&config.Tool{Name: "tool"}, mc, "https://example.com/asset")
+	if got.Config["binary"] != "yq" {
+		t.Fatalf("binary = %v, want yq", got.Config["binary"])
+	}
+}
 
 func TestGithubRefDefaultsToLatest(t *testing.T) {
 	if got := githubRef(map[string]any{}); got != "" {

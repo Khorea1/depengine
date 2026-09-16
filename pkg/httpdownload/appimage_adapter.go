@@ -105,18 +105,8 @@ func (a *AppImageAdapter) Check(ctx context.Context, rn run.Runner, tool *config
 	return a.http.Check(ctx, rn, tool, httpDelegate(mc, installDir, name))
 }
 
-// Install downloads and installs the AppImage via HTTPAdapter, then renames
-// the result from its as-downloaded (usually version-embedding) filename to
-// the stable target name, and optionally writes a .desktop launcher.
-//
-// HTTPAdapter's copyBinary always names the installed file after the
-// download URL's basename (see resolvedFileName) — appropriate for "http",
-// where the schema author picks the URL and can match "binary" to it, but
-// wrong for AppImages: release filenames routinely embed the version
-// ("Obsidian-1.5.3.AppImage"), which would make Check() look for a moving
-// target on every upgrade. Resolving the expected filename here and
-// renaming after the fact keeps HTTPAdapter's download/checksum/retry/cache
-// logic exactly as-is instead of forking it.
+// Install downloads the AppImage under its stable binary name via HTTPAdapter
+// and optionally writes a .desktop launcher.
 func (a *AppImageAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	urlRaw, ok := mc.Config["url"].(string)
 	if !ok || urlRaw == "" {
@@ -127,22 +117,8 @@ func (a *AppImageAdapter) Install(ctx context.Context, rn run.Runner, tool *conf
 		return fmt.Errorf("appimage: tool %q has no name and no binary field to install under", tool.Name)
 	}
 
-	resolvedURL, err := ResolveLatest(ctx, urlRaw, rn)
-	if err != nil {
-		return fmt.Errorf("appimage: resolve latest: %w", err)
-	}
-	downloadedName := resolvedFileName(resolvedURL, fileExtension(resolvedURL))
-
-	sudoRequired := a.RequiresElevation(tool, mc)
-
 	if err := a.http.Install(ctx, rn, tool, httpDelegate(mc, installDir, name)); err != nil {
 		return fmt.Errorf("appimage: %w", err)
-	}
-
-	if downloadedName != name {
-		if err := renameInstalled(ctx, rn, installDir, downloadedName, name, sudoRequired, tool.Name); err != nil {
-			return fmt.Errorf("appimage: %w", err)
-		}
 	}
 
 	if desktop, _ := mc.Config["desktop"].(bool); desktop {
@@ -151,30 +127,6 @@ func (a *AppImageAdapter) Install(ctx context.Context, rn run.Runner, tool *conf
 		}
 	}
 
-	return nil
-}
-
-// renameInstalled moves oldName to newName inside dir, elevating through
-// `mv` the same way copyBinary elevates through `install` when dir isn't
-// writable by the current user. A same-directory rename never needs to
-// touch permission bits (copyBinary already set 0o755 on the original), so
-// plain `mv`/os.Rename is enough — no extra chmod step.
-func renameInstalled(ctx context.Context, rn run.Runner, dir, oldName, newName string, sudoRequired bool, toolName string) error {
-	oldPath := filepath.Join(dir, oldName)
-	newPath := filepath.Join(dir, newName)
-
-	if sudoRequired && os.Geteuid() != 0 {
-		if err := elevationGuard(sudoRequired, toolName); err != nil {
-			return fmt.Errorf("rename: %w", err)
-		}
-		sudoBin := run.ElevationPrefix()[0]
-		res := rn.Run(ctx, sudoBin, "mv", oldPath, newPath)
-		return run.CheckResult(res, "mv")
-	}
-
-	if err := os.Rename(oldPath, newPath); err != nil {
-		return fmt.Errorf("rename %s to %s: %w", oldPath, newPath, err)
-	}
 	return nil
 }
 

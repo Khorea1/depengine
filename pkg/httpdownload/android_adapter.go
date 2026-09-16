@@ -87,11 +87,8 @@ func (a *AndroidAdapter) Check(ctx context.Context, rn run.Runner, tool *config.
 	return a.http.Check(ctx, rn, tool, httpDelegate(mc, dir, name))
 }
 
-// Install downloads the .apk via HTTPAdapter, renames it from its
-// as-downloaded (usually version-embedding) filename to the stable
-// "<tool>.apk" target — same reasoning as AppImageAdapter.Install, so
-// Check() isn't chasing a moving target on every upgrade — then dispatches
-// it to the Android package installer via `termux-open`.
+// Install downloads the .apk under the stable "<tool>.apk" name via
+// HTTPAdapter, then dispatches it to Android's package installer.
 func (a *AndroidAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	urlRaw, ok := mc.Config["url"].(string)
 	if !ok || urlRaw == "" {
@@ -102,23 +99,8 @@ func (a *AndroidAdapter) Install(ctx context.Context, rn run.Runner, tool *confi
 		return fmt.Errorf("android: tool has no name to derive the .apk filename from")
 	}
 
-	resolvedURL, err := ResolveLatest(ctx, urlRaw, rn)
-	if err != nil {
-		return fmt.Errorf("android: resolve latest: %w", err)
-	}
-	downloadedName := resolvedFileName(resolvedURL, fileExtension(resolvedURL))
-
 	if err := a.http.Install(ctx, rn, tool, httpDelegate(mc, dir, name)); err != nil {
 		return fmt.Errorf("android: %w", err)
-	}
-
-	if downloadedName != name {
-		// androidAPKDir lives under $HOME (~/.cache/...) — always
-		// user-writable, never sudo_required, unlike appimage's
-		// install_dir which the schema author can point at a system path.
-		if err := renameInstalled(ctx, rn, dir, downloadedName, name, false, tool.Name); err != nil {
-			return fmt.Errorf("android: %w", err)
-		}
 	}
 
 	apkPath := filepath.Join(dir, name)

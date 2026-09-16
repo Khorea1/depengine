@@ -2,6 +2,8 @@ package httpdownload
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -11,6 +13,27 @@ import (
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/run"
 )
+
+func TestHTTPAdapterInstallDirectDownloadUsesBinaryName(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("binary-content"))
+	}))
+	t.Cleanup(ts.Close)
+
+	dest := t.TempDir()
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"url":           ts.URL + "/release-name-amd64",
+		"extract_to":    dest,
+		"binary":        "tool",
+		"sudo_required": false,
+	}}
+	if err := NewHTTPAdapter().Install(context.Background(), &run.FakeRunner{ExitCode: 1}, &config.Tool{Name: "tool"}, mc); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "tool")); err != nil {
+		t.Fatalf("binary not installed under configured name: %v", err)
+	}
+}
 
 func TestHTTPAdapterKind(t *testing.T) {
 	if NewHTTPAdapter().Kind() != "http" {

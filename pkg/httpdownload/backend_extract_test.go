@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -180,6 +181,35 @@ func TestExtractCopyBinary(t *testing.T) {
 	}
 }
 
+func TestExtractCopyBinaryUsesConfiguredName(t *testing.T) {
+	t.Parallel()
+	src := filepath.Join(t.TempDir(), "release-name-amd64")
+	if err := os.WriteFile(src, []byte("binary-content"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	destDir := t.TempDir()
+
+	if err := extract(context.Background(), src, destDir, "", "tool", nil, false, "tool"); err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(destDir, "tool")); err != nil {
+		t.Fatalf("configured binary name was not installed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(destDir, filepath.Base(src))); !os.IsNotExist(err) {
+		t.Fatalf("download basename should not be installed, got err %v", err)
+	}
+}
+
+func TestExtractArchiveIgnoresBinaryName(t *testing.T) {
+	fr := &run.FakeRunner{ExitCode: 0}
+	if err := extract(context.Background(), "/tmp/tool.tar.gz", "/tmp/dest", ".tar.gz", "renamed", fr, false, "tool"); err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if got := fr.Calls[0].Args; len(got) < 2 || got[1] != "/tmp/tool.tar.gz" {
+		t.Fatalf("archive extraction changed by binary name: %v", got)
+	}
+}
+
 // TestExtractCopyBinaryElevated proves the fix for the bug flagged in
 // .dev/TODO.md's stale "already fixed" note: copyBinary used to call
 // os.WriteFile unconditionally, ignoring sudoRequired entirely — so a
@@ -223,6 +253,27 @@ func TestExtractCopyBinaryElevated(t *testing.T) {
 		if got.Args[i] != want[i] {
 			t.Errorf("arg[%d] = %q, want %q", i, got.Args[i], want[i])
 		}
+	}
+}
+
+func TestExtractCopyBinaryElevatedUsesConfiguredName(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("test requires non-root")
+	}
+	run.OverrideElevation("sudo")
+	defer run.OverrideElevation("")
+
+	src := filepath.Join(t.TempDir(), "release-name-amd64")
+	if err := os.WriteFile(src, []byte("binary-content"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fr := &run.FakeRunner{ExitCode: 0}
+	if err := extract(context.Background(), src, "/usr/local/bin", "", "tool", fr, true, "tool"); err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	want := []string{"install", "-m", "0755", src, "/usr/local/bin/tool"}
+	if got := fr.Calls[0].Args; !slices.Equal(got, want) {
+		t.Fatalf("args = %v, want %v", got, want)
 	}
 }
 

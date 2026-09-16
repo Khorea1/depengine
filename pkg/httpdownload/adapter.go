@@ -165,7 +165,8 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	// /usr/local/bin default, /opt, …) keeps sudo. Explicit sudo_required
 	// in the schema always wins.
 	sudoRequired := a.RequiresElevation(tool, mc)
-	if err := Extract(ctx, tmpFile, extractTo, ext, rn, sudoRequired, tool.Name); err != nil {
+	binary, _ := mc.Config["binary"].(string)
+	if err := extract(ctx, tmpFile, extractTo, ext, binary, rn, sudoRequired, tool.Name); err != nil {
 		return fmt.Errorf("http: extract: %w", err)
 	}
 
@@ -188,11 +189,7 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 
 // resolvedFileName derives the downloaded file's name from an already-
 // {latest}-resolved URL, falling back to "download"+ext when the URL has no
-// usable path segment (e.g. a bare host, or a query-only URL). Shared by
-// HTTPAdapter.Install and AppImageAdapter, which both need to know the exact
-// on-disk name copyBinary will produce before it runs — AppImageAdapter uses
-// it to rename the file to a stable, version-independent binary name after
-// HTTPAdapter's Install finishes.
+// usable path segment (e.g. a bare host, or a query-only URL).
 func resolvedFileName(resolvedURL, ext string) string {
 	fileName := "download" + ext
 	if parsedURL, err := url.Parse(resolvedURL); err == nil && parsedURL.Path != "" {

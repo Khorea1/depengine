@@ -63,6 +63,10 @@ func defaultSudoRequired(dest string) bool {
 // adding Go archive-library dependencies. Go stdlib archive support
 // may replace this in a future version.
 func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequired bool, toolName string) error {
+	return extract(ctx, src, dest, ext, "", rn, sudoRequired, toolName)
+}
+
+func extract(ctx context.Context, src, dest, ext, binaryName string, rn run.Runner, sudoRequired bool, toolName string) error {
 	// Ensure destination exists.
 	if err := os.MkdirAll(dest, 0o755); err != nil {
 		return fmt.Errorf("extract: mkdir %s: %w", dest, err)
@@ -99,7 +103,7 @@ func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequ
 		return installDeb(ctx, src, rn, sudoRequired, toolName)
 	default:
 		// Treat as a plain binary — copy and chmod.
-		return copyBinary(ctx, src, dest, rn, sudoRequired, toolName)
+		return copyBinary(ctx, src, dest, binaryName, rn, sudoRequired, toolName)
 	}
 }
 
@@ -205,8 +209,11 @@ func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired boo
 // run.ElevationPrefix() instead of touching the filesystem directly.
 // `install -m 0755` also creates the destination with the right mode in one
 // step, avoiding a separate chmod call under sudo.
-func copyBinary(ctx context.Context, src, destDir string, rn run.Runner, sudoRequired bool, toolName string) error {
-	dest := filepath.Join(destDir, filepath.Base(src))
+func copyBinary(ctx context.Context, src, destDir, binaryName string, rn run.Runner, sudoRequired bool, toolName string) error {
+	if binaryName == "" {
+		binaryName = filepath.Base(src)
+	}
+	dest := filepath.Join(destDir, binaryName)
 
 	if sudoRequired && os.Geteuid() != 0 {
 		if err := elevationGuard(sudoRequired, toolName); err != nil {

@@ -122,11 +122,9 @@ func TestAndroidAdapterInstallNoURL(t *testing.T) {
 
 // --- Install: full happy path ---
 
-// TestAndroidAdapterInstallRenamesAndDispatches is the core behavior test:
-// download lands under a versioned filename (as any real release asset
-// would), gets renamed to the stable "<tool>.apk" target the same way
-// AppImageAdapter does, and is then handed to termux-open.
-func TestAndroidAdapterInstallRenamesAndDispatches(t *testing.T) {
+// The versioned asset must be downloaded directly under the stable
+// "<tool>.apk" target and then handed to termux-open.
+func TestAndroidAdapterInstallStableNameAndDispatches(t *testing.T) {
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
 

@@ -116,15 +116,9 @@ func TestAppImageAdapterInstallNoURL(t *testing.T) {
 
 // --- Install: full happy path against a local test server ---
 
-// TestAppImageAdapterInstallRenamesToStableName is the core regression test
-// for this adapter's reason to exist: HTTPAdapter's copyBinary names the
-// installed file after the download URL's basename (see resolvedFileName),
-// which for a real AppImage release asset embeds the version
-// ("Obsidian-1.5.3.AppImage"). Without the rename step, Check() would look
-// for a name that changes on every release. FakeRunner is configured with
-// ExitCode=1 so SelectDownloader falls back to GoDownloader (plain
-// net/http) instead of shelling out to a real curl/wget binary.
-func TestAppImageAdapterInstallRenamesToStableName(t *testing.T) {
+// HTTPAdapter must install the versioned release asset directly under the
+// stable AppImage binary name. FakeRunner forces the Go downloader.
+func TestAppImageAdapterInstallsStableName(t *testing.T) {
 	const body = "fake-appimage-bytes"
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(body))
@@ -164,12 +158,7 @@ func TestAppImageAdapterInstallRenamesToStableName(t *testing.T) {
 	}
 }
 
-// TestAppImageAdapterInstallSameNameNoRename covers the case where the
-// download URL's basename already matches the target binary name (no
-// {version} in the filename) — renameInstalled must not be invoked with
-// oldName == newName, which would be a same-path no-op at best and a
-// needless elevation attempt at worst on a system-scope install_dir.
-func TestAppImageAdapterInstallSameNameNoRename(t *testing.T) {
+func TestAppImageAdapterInstallSameName(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("content"))
 	}))
