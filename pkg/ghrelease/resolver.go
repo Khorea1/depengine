@@ -335,10 +335,23 @@ func ResolveAssetURL(ctx context.Context, repo, assetPattern, targetArch, target
 		return "", "", fmt.Errorf("resolve asset: %w", err)
 	}
 
+	matches := make([]asset, 0, 1)
 	for _, a := range rel.Assets {
 		if re.MatchString(a.Name) {
-			return a.BrowserDownloadURL, rel.TagName, nil
+			matches = append(matches, a)
 		}
+	}
+	if len(matches) == 1 {
+		return matches[0].BrowserDownloadURL, rel.TagName, nil
+	}
+	if len(matches) > 1 {
+		names := make([]string, len(matches))
+		for i, match := range matches {
+			names[i] = match.Name
+		}
+		return "", "", fmt.Errorf(
+			"resolve asset: multiple assets in release %s of %s matched pattern %q: %s",
+			rel.TagName, repo, assetPattern, strings.Join(names, ", "))
 	}
 
 	names := make([]string, len(rel.Assets))

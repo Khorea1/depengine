@@ -130,13 +130,13 @@ var Contracts = []Contract{
 		"artifact":   {Type: String},
 		"binary":     {Type: String},
 	}, CanRemove: true},
-	{Kind: "http", DefaultOrder: 34, Fields: downloadFields, CanRemove: true},
-	{Kind: "github", Fields: fields(withoutField(downloadFields, "url"), map[string]Field{
+	{Kind: "github", DefaultOrder: 34, Fields: fields(withoutField(downloadFields, "url"), map[string]Field{
 		"repo":    {Type: String, Required: true, NonEmpty: true},
 		"asset":   {Type: String, Required: true, NonEmpty: true},
 		"release": {Type: String},
 		"branch":  {Type: String, NonEmpty: true},
 	}), MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true},
+	{Kind: "http", DefaultOrder: 35, Fields: downloadFields, CanRemove: true},
 }
 
 var (

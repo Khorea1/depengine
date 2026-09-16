@@ -87,3 +87,21 @@ func TestContractAliasesResolveToCanonicalKind(t *testing.T) {
 		}
 	}
 }
+
+func TestGitHubPrecedesHTTPWithoutGHAlias(t *testing.T) {
+	githubIndex, httpIndex := -1, -1
+	for i, kind := range methodkind.DefaultMethodOrder {
+		switch kind {
+		case "github":
+			githubIndex = i
+		case "http":
+			httpIndex = i
+		}
+	}
+	if githubIndex < 0 || httpIndex != githubIndex+1 {
+		t.Fatalf("default order must place github immediately before http: %v", methodkind.DefaultMethodOrder)
+	}
+	if contract, ok := methodkind.Lookup("gh"); ok {
+		t.Fatalf("gh unexpectedly resolves to %q", contract.Kind)
+	}
+}

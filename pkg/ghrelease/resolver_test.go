@@ -207,6 +207,59 @@ func TestResolveAssetURLLatest(t *testing.T) {
 	}
 }
 
+func TestResolveAssetURLMatchesOSSynonyms(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"tag_name":"v1.0.0","assets":[{"name":"tool-macos-amd64","browser_download_url":"https://example.com/tool"}]}`))
+	}))
+	t.Cleanup(ts.Close)
+	swapHTTPClient(t, ts.URL)
+
+	url, _, err := ResolveAssetURL(context.Background(), "synonym-owner/synonym-repo", "tool-{os_any}-{arch_any}", "x86_64", "darwin", "", run.OSExecRunner{})
+	if err != nil {
+		t.Fatalf("ResolveAssetURL: %v", err)
+	}
+	if url != "https://example.com/tool" {
+		t.Fatalf("url = %q", url)
+	}
+}
+
+func TestResolveAssetURLNoMatchListsAvailableAssets(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"tag_name":"v1.0.0","assets":[{"name":"checksums.txt"},{"name":"tool-linux-arm64"}]}`))
+	}))
+	t.Cleanup(ts.Close)
+	swapHTTPClient(t, ts.URL)
+
+	_, _, err := ResolveAssetURL(context.Background(), "zero-owner/zero-repo", "tool-{os_any}-{arch_any}", "x86_64", "linux", "", run.OSExecRunner{})
+	if err == nil || !strings.Contains(err.Error(), "available assets: checksums.txt, tool-linux-arm64") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestResolveAssetURLRejectsMultipleMatches(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"tag_name":"v1.0.0","assets":[{"name":"tool-linux-x86_64"},{"name":"tool-linux-amd64"},{"name":"tool-linux-arm64"}]}`))
+	}))
+	t.Cleanup(ts.Close)
+	swapHTTPClient(t, ts.URL)
+
+	_, _, err := ResolveAssetURL(context.Background(), "multi-owner/multi-repo", "tool-{os_any}-{arch_any}", "x86_64", "linux", "", run.OSExecRunner{})
+	if err == nil {
+		t.Fatal("expected multiple matches to fail")
+	}
+	for _, name := range []string{"tool-linux-x86_64", "tool-linux-amd64"} {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("error does not list match %q: %v", name, err)
+		}
+	}
+	if strings.Contains(err.Error(), "tool-linux-arm64") {
+		t.Errorf("error lists non-matching asset: %v", err)
+	}
+}
+
 func TestResolveAssetURLWithRef(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		want := "/repos/ref-owner/ref-repo/releases/tags/nightly"
