@@ -141,5 +141,5 @@ Other:       git, http, github
 
 `schema.toml` (project, shared) always wins on conflict over
 `manifest.toml` (personal, `~/.config/depengine/`). Manifest-only tools are
-rejected unless `allow_new_tools = true`. Full merge rules:
+silently dropped unless `allow_new_tools = true`. Full merge rules:
 [schema-reference.md#manifest-merge-rules](schema-reference.md#manifest-merge-rules).

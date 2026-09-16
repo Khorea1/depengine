@@ -253,20 +253,23 @@ Suppress per-tool status lines.
 .TP
 .BR \-\-allow\-arbitrary\-code
 Suppress security warnings for build scripts / arbitrary code.
-.SS "schema-level per-tool method control"
+.SS "schema-level method control"
+.TP
+.B defaults.method_order
+Global, engine-wide preference order for install methods, set once under
+\fB[defaults]\fR. There is no per-tool \fBmethod_order\fR alias — use
+\fBmethod_prefer\fR/\fBmethod_only\fR below to override the order for a
+single tool.
 .TP
 .B method_prefer
-List of methods to try first, before the defaults.
+Per-tool list of methods to try first, before the defaults.
 Example: \fBmethod_prefer = ["cargo"]\fR tries cargo before native.
 .TP
 .B method_only
 Filters the tool's candidate methods: only the listed methods are tried,
 in this order, and the native method is NOT attempted unless explicitly
-listed — there is no native fallback. Global method_order is ignored for
-this tool.
-.TP
-.B method_order
-Deprecated. Synonym for \fBmethod_prefer\fR.
+listed — there is no native fallback. \fBdefaults.method_order\fR is
+ignored for this tool.
 
 .SS "kind field (adapter dispatch override)"
 .PP

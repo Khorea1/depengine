@@ -324,7 +324,7 @@ fields, documented above under [Custom sources](#custom-sources).
 | `mas` | Mac App Store, by app ID | `xcode = { mas = "497799835" }` |
 | `appman` | AppImage packages via "AM"/"AppMan" (ivan-hc/AM) | `obsidian = { appman = "obsidian" }` |
 | `container` | Container images via `docker`/`podman pull` | `obsidian = { container = { manager = "podman", source = "lscr.io/linuxserver/obsidian", tag = "latest" } }` |
-| `appimage` | Portable `.AppImage` binaries, installed under a stable name | `obsidian = { appimage = { url = "https://…/Obsidian-{version}.AppImage" } }` |
+| `appimage` | Portable `.AppImage` binaries, installed under a stable name | `obsidian = { appimage = { url = "https://…/Obsidian-{latest}.AppImage" } }` |
 | `android` | Download a `.apk` and hand it to Termux's package installer | `obsidian = { android = { url = "https://…/obsidian-{latest}-android.apk" }, when = { is_android = true } }` |
 | `sdkman` | SDKMAN! JVM SDKs | `java17 = { sdkman = "java" }` |
 | `steamcmd` | SteamCMD game server tools | `cs2 = { steamcmd = "730" }` |
@@ -617,11 +617,12 @@ according to a declared strategy per field:
    `method_prefer`, `method_only`): the manifest may set
    these as defaults, but the schema layer wins on conflict — the
    manifest's value is replaced, not merged.
-5. **Tools only in the manifest** are rejected by default — your personal
-   manifest doesn't silently add tools to a project you're working on.
-   Set `[manifest] allow_new_tools = true` in your manifest to allow it
-   explicitly. Without it, `depengine validate`/`install` errors when a
-   manifest-only tool is found.
+5. **Tools only in the manifest** are silently dropped by default — your
+   personal manifest doesn't silently add tools to a project you're working
+   on. Set `[manifest] allow_new_tools = true` in your manifest to allow it
+   explicitly. Without it, manifest-only tools are stripped before
+   validation/merge — `depengine validate`/`install` neither errors nor
+   warns, they simply don't participate in the run.
 
 Run `depengine why <tool> --fields` to see exactly which layer contributed
 each field for a given tool.

@@ -124,9 +124,13 @@ fontconfig = { native = { pkg = "fontconfig", pkg_overrides = { pkg = "fontconfi
 # Rules for this format:
 #   - [tools.NAME]              → tool-level fields: `requires`,
 #                                 `post_install` (runs after ANY method succeeds).
-#   - [tools.NAME.method]       → one block per candidate method. The engine
-#                                 tries them in file order (or by `method_order`,
-#                                 if no explicit order is given).
+#   - [tools.NAME.method]       → one block per candidate method. TOML key
+#                                 order has no meaning here — ties are broken
+#                                 deterministically by label. To control the
+#                                 trial order explicitly, use the tool-level
+#                                 `method_prefer`/`method_only` fields, or set
+#                                 the engine-wide default in
+#                                 [defaults].method_order.
 #   - `when`                    → applicability condition WITHIN the method
 #                                 (never its own nesting level, never becomes
 #                                 a "manager" name). If the condition doesn't

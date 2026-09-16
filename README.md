@@ -153,12 +153,13 @@ project's schema. Three rules to remember:
 
 1. **The schema always wins on conflict.** Your manifest fills in gaps; it
    never overrides what the project declares.
-2. **Tools that only exist in your manifest are rejected by default** — this
-   stops you from accidentally injecting a personal tool into a shared
-   project. Opt in with `[manifest] allow_new_tools = true`.
+2. **Tools that only exist in your manifest are silently dropped by default**
+   — not an error, just excluded from the run. This stops you from
+   accidentally injecting a personal tool into a shared project. Opt in with
+   `[manifest] allow_new_tools = true`.
 3. **A few fields can run arbitrary code** (`pre_install`, `post_install`,
-   `requires`, `method_order`, `method_prefer`, `method_only`). Your manifest
-   can set defaults for these, but the schema still overrides them.
+   `build`, `build_cmd`). Your manifest can set defaults for these, but the
+   schema still overrides them.
 
 Full breakdown: [manifest merge rules](docs/schema-reference.md#manifest-merge-rules).
 
