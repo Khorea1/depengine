@@ -108,23 +108,13 @@ func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, sta
 				}
 			}
 			if manifestPath != "" {
-				manifestSchema, merr := config.ParseManifest(manifestPath, nil)
+				merged, count, merr := mergeManifest(s, manifestPath, false)
 				if merr != nil {
 					log.Default.Warn("load manifest", "error", merr)
-				} else {
-					config.FilterManifestTools(s, manifestSchema)
-					if gerr := config.ValidateManifestLayer(manifestSchema); gerr != nil {
-						log.Default.Warn("validate manifest", "error", gerr)
-					} else if gerr := config.ValidateManifestNewTools(s, manifestSchema); gerr != nil {
-						log.Default.Warn("validate manifest new tools", "error", gerr)
-					} else {
-						count := len(manifestSchema.Tools)
-						if count > 0 {
-							s = config.MergeLayers(manifestSchema, s)
-							if manifestAuto {
-								fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
-							}
-						}
+				} else if count > 0 {
+					s = merged
+					if manifestAuto {
+						fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
 					}
 				}
 			}

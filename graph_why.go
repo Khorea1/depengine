@@ -71,22 +71,14 @@ func runGraph(graphSchema, graphManifest *string, graphNoManifest *bool, graphFo
 		}
 	}
 	if manifestPath != "" {
-		manifestSchema, merr := config.ParseManifest(manifestPath, nil)
-		if merr != nil {
-			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", merr)
+		var count int
+		s, count, err = mergeManifest(s, manifestPath, false)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", err)
 			os.Exit(2)
 		}
-		config.FilterManifestTools(s, manifestSchema)
-		if gerr := config.ValidateManifestLayer(manifestSchema); gerr != nil {
-			fmt.Fprintf(os.Stderr, "error validating manifest: %v\n", gerr)
-			os.Exit(2)
-		}
-		count := len(manifestSchema.Tools)
-		if count > 0 {
-			s = config.MergeLayers(manifestSchema, s)
-			if manifestAuto {
-				fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
-			}
+		if count > 0 && manifestAuto {
+			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
 		}
 	}
 	s.Tools = filterTools(s.Tools, *graphOnly, *graphSkip, *graphProfile)
@@ -169,30 +161,14 @@ func runWhy(toolName string, whySchema, whyManifest *string, whyNoManifest, whyJ
 		}
 	}
 	if manifestPath != "" {
-		manifestSchema, merr := config.ParseManifest(manifestPath, nil)
-		if merr != nil {
-			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", merr)
+		var count int
+		s, count, err = mergeManifest(s, manifestPath, *whyFields)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", err)
 			os.Exit(2)
 		}
-		config.FilterManifestTools(s, manifestSchema)
-		if gerr := config.ValidateManifestLayer(manifestSchema); gerr != nil {
-			fmt.Fprintf(os.Stderr, "error validating manifest: %v\n", gerr)
-			os.Exit(2)
-		}
-		if gerr := config.ValidateManifestNewTools(s, manifestSchema); gerr != nil {
-			fmt.Fprintf(os.Stderr, "error validating manifest: %v\n", gerr)
-			os.Exit(2)
-		}
-		count := len(manifestSchema.Tools)
-		if count > 0 {
-			if *whyFields {
-				s = config.MergeLayersWithProvenance(manifestSchema, s)
-			} else {
-				s = config.MergeLayers(manifestSchema, s)
-			}
-			if manifestAuto {
-				fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
-			}
+		if count > 0 && manifestAuto {
+			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
 		}
 	}
 	facts, factsErr := engine.GatherFacts(run.OSExecRunner{})

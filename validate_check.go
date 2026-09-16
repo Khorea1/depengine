@@ -87,22 +87,14 @@ func runValidate(validateSchema, validateManifest *string, validateNoManifest, v
 		}
 	}
 	if manifestPath != "" {
-		manifestSchema, merr := config.ParseManifest(manifestPath, nil)
-		if merr != nil {
-			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", merr)
+		var count int
+		s, count, err = mergeManifest(s, manifestPath, false)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", err)
 			os.Exit(2)
 		}
-		config.FilterManifestTools(s, manifestSchema)
-		if gerr := config.ValidateManifestLayer(manifestSchema); gerr != nil {
-			fmt.Fprintf(os.Stderr, "error validating manifest: %v\n", gerr)
-			os.Exit(2)
-		}
-		count := len(manifestSchema.Tools)
-		if count > 0 {
-			s = config.MergeLayers(manifestSchema, s)
-			if manifestAuto {
-				fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
-			}
+		if count > 0 && manifestAuto {
+			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
 		}
 	}
 

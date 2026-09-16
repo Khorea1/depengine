@@ -105,22 +105,13 @@ func loadSchemaWithManifest(schemaPath, manifestPath string) (*config.Schema, st
 		return s, clan, facts, 0, nil
 	}
 
-	manifestSchema, merr := config.ParseManifest(manifestPath, nil)
-	if merr != nil {
-		return nil, "", nil, 0, merr
+	merged, count, err := mergeManifest(s, manifestPath, true)
+	if err != nil {
+		return nil, "", nil, 0, err
 	}
-	config.FilterManifestTools(s, manifestSchema)
-	if gerr := config.ValidateManifestLayer(manifestSchema); gerr != nil {
-		return nil, "", nil, 0, gerr
-	}
-	if gerr := config.ValidateManifestNewTools(s, manifestSchema); gerr != nil {
-		return nil, "", nil, 0, gerr
-	}
-
-	count := len(manifestSchema.Tools)
 	if count > 0 {
-		s = config.MergeLayersWithProvenance(manifestSchema, s)
-		vr := validate.ValidateSchema(s, exec.RegisteredKinds())
+		s = merged
+		vr := validate.ValidateSchema(merged, exec.RegisteredKinds())
 		if vr.HasErrors() {
 			for _, e := range vr.Errors {
 				log.Default.Error(e.Error())
@@ -129,6 +120,28 @@ func loadSchemaWithManifest(schemaPath, manifestPath string) (*config.Schema, st
 		}
 	}
 	return s, clan, facts, count, nil
+}
+
+func mergeManifest(schema *config.Schema, path string, provenance bool) (*config.Schema, int, error) {
+	manifest, err := config.ParseManifest(path, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	config.FilterManifestTools(schema, manifest)
+	if err := config.ValidateManifestLayer(manifest); err != nil {
+		return nil, 0, err
+	}
+	if err := config.ValidateManifestNewTools(schema, manifest); err != nil {
+		return nil, 0, err
+	}
+	count := len(manifest.Tools)
+	if count == 0 {
+		return schema, 0, nil
+	}
+	if provenance {
+		return config.MergeLayersWithProvenance(manifest, schema), count, nil
+	}
+	return config.MergeLayers(manifest, schema), count, nil
 }
 
 func exitCodeForError(err error) int {
