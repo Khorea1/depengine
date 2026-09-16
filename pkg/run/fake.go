@@ -15,6 +15,9 @@ type FakeRunner struct {
 	Stderr   string
 	ExitCode int
 	Err      error
+	// LookPaths overrides executable lookup results by name. Unlisted names
+	// retain the default result derived from Err and ExitCode.
+	LookPaths map[string]bool
 	// Delay, if set, blocks Run this long (used to test ctx cancellation).
 	Delay time.Duration
 }
@@ -38,6 +41,9 @@ func (f *FakeRunner) RunInDir(ctx context.Context, dir, name string, args ...str
 // LookPath records a logical lookup and returns the configured result.
 func (f *FakeRunner) LookPath(ctx context.Context, name string) bool {
 	result := f.run(ctx, "", "which", name)
+	if found, ok := f.LookPaths[name]; ok {
+		return found
+	}
 	return result.Err == nil && result.ExitCode == 0
 }
 

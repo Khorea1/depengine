@@ -17,11 +17,11 @@ func TestGitAdapterAvailable(t *testing.T) {
 	adapter := NewGitAdapter()
 
 	if !adapter.Available(context.Background(), fr) {
-		t.Fatal("Available should be true when which git returns 0")
+		t.Fatal("Available should be true when git is on PATH")
 	}
 
 	if len(fr.Calls) != 1 || fr.Calls[0].Name != "which" {
-		t.Fatalf("expected 'which git', got %v", fr.Calls)
+		t.Fatalf("expected LookPath for git, got %v", fr.Calls)
 	}
 }
 
@@ -41,12 +41,29 @@ func TestGitAdapterKind(t *testing.T) {
 }
 
 func TestGitAdapterCheckViaExtractTo(t *testing.T) {
-	fr := &run.FakeRunner{ExitCode: 0}
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fr := &run.FakeRunner{}
 	adapter := NewGitAdapter()
-	mc := &config.MethodCandidate{Config: map[string]any{"extract_to": "/tmp/test"}}
+	mc := &config.MethodCandidate{Config: map[string]any{"extract_to": dir}}
 
 	if !adapter.Check(context.Background(), fr, nil, mc) {
 		t.Fatal("Check should be true when extract_to/.git exists")
+	}
+	if len(fr.Calls) != 0 {
+		t.Fatalf("filesystem check executed commands: %+v", fr.Calls)
+	}
+}
+
+func TestGitAdapterCheckRejectsFileAsGitDirectory(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".git"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if NewGitAdapter().Check(context.Background(), &run.FakeRunner{}, nil, &config.MethodCandidate{Config: map[string]any{"extract_to": dir}}) {
+		t.Fatal("Check should be false when .git is not a directory")
 	}
 }
 
@@ -58,6 +75,9 @@ func TestGitAdapterCheckViaBinary(t *testing.T) {
 
 	if !adapter.Check(context.Background(), fr, nil, mc) {
 		t.Fatal("Check should be true when binary is on PATH")
+	}
+	if len(fr.Calls) != 1 || fr.Calls[0].Name != "which" {
+		t.Fatalf("expected LookPath for binary, got %+v", fr.Calls)
 	}
 }
 

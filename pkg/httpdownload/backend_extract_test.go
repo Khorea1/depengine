@@ -15,7 +15,7 @@ import (
 
 func TestSelectDownloaderPrefersCurl(t *testing.T) {
 	t.Parallel()
-	fr := &run.FakeRunner{ExitCode: 0}
+	fr := &run.FakeRunner{LookPaths: map[string]bool{"curl": true, "wget": true}}
 
 	dl := SelectDownloader(context.Background(), fr)
 	if _, ok := dl.(*CurlDownloader); !ok {
@@ -23,9 +23,19 @@ func TestSelectDownloaderPrefersCurl(t *testing.T) {
 	}
 }
 
+func TestSelectDownloaderFallsBackToWget(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{LookPaths: map[string]bool{"curl": false, "wget": true}}
+
+	dl := SelectDownloader(context.Background(), fr)
+	if _, ok := dl.(*WgetDownloader); !ok {
+		t.Fatalf("expected WgetDownloader, got %T", dl)
+	}
+}
+
 func TestSelectDownloaderFallsBackToGo(t *testing.T) {
 	t.Parallel()
-	fr := &run.FakeRunner{ExitCode: 1}
+	fr := &run.FakeRunner{ExitCode: 1, LookPaths: map[string]bool{"curl": false, "wget": false}}
 
 	dl := SelectDownloader(context.Background(), fr)
 	if _, ok := dl.(*GoDownloader); !ok {

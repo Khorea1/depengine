@@ -74,13 +74,12 @@ func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 			}
 			target = tool.Name
 		}
-		res := rn.Run(ctx, "test", "-f", filepath.Join(extractTo, target))
-		return res.Err == nil && res.ExitCode == 0
+		info, err := os.Stat(filepath.Join(extractTo, target))
+		return err == nil && info.Mode().IsRegular()
 	}
 
 	if binary != "" {
-		res := rn.Run(ctx, "which", binary)
-		return res.Err == nil && res.ExitCode == 0
+		return run.LookPath(ctx, rn, binary)
 	}
 	return false
 }

@@ -138,11 +138,11 @@ func (d *WgetDownloader) Download(ctx context.Context, url, dest string) error {
 // (always available in Go binaries).
 func SelectDownloader(ctx context.Context, rn run.Runner) Downloader {
 	// Try curl first (handles redirects, SSL, etc. well).
-	if res := rn.Run(ctx, "which", "curl"); res.Err == nil && res.ExitCode == 0 {
+	if run.LookPath(ctx, rn, "curl") {
 		return NewCurlDownloader(rn)
 	}
 	// Fall back to wget.
-	if res := rn.Run(ctx, "which", "wget"); res.Err == nil && res.ExitCode == 0 {
+	if run.LookPath(ctx, rn, "wget") {
 		return NewWgetDownloader(rn)
 	}
 	// Go net/http is always available.

@@ -43,14 +43,12 @@ func (a *GitAdapter) Available(ctx context.Context, rn run.Runner) bool {
 func (a *GitAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) bool {
 	if extractTo, ok := mc.Config["extract_to"].(string); ok && extractTo != "" {
 		extractTo = config.ExpandHomeDir(extractTo)
-		res := rn.Run(ctx, "test", "-d", extractTo+"/.git")
-		if res.Err == nil && res.ExitCode == 0 {
+		if info, err := os.Stat(filepath.Join(extractTo, ".git")); err == nil && info.IsDir() {
 			return true
 		}
 	}
 	if binary, ok := mc.Config["binary"].(string); ok && binary != "" {
-		res := rn.Run(ctx, "which", binary)
-		if res.Err == nil && res.ExitCode == 0 {
+		if run.LookPath(ctx, rn, binary) {
 			return true
 		}
 	}

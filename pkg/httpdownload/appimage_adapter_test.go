@@ -83,20 +83,22 @@ func TestHTTPDelegatePreservesOtherConfigKeys(t *testing.T) {
 
 func TestAppImageAdapterCheckInstalled(t *testing.T) {
 	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "obsidian"), nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	mc := &config.MethodCandidate{Config: map[string]any{"install_dir": dir}}
-	fr := &run.FakeRunner{ExitCode: 0} // `test -f` succeeds
+	fr := &run.FakeRunner{}
 	if !NewAppImageAdapter().Check(context.Background(), fr, appImageTool("obsidian"), mc) {
 		t.Fatal("Check should be true when the resolved binary exists in install_dir")
 	}
-	if len(fr.Calls) != 1 || fr.Calls[0].Name != "test" ||
-		fr.Calls[0].Args[1] != filepath.Join(dir, "obsidian") {
-		t.Fatalf("Check ran %+v, want test -f %s", fr.Calls, filepath.Join(dir, "obsidian"))
+	if len(fr.Calls) != 0 {
+		t.Fatalf("filesystem check executed commands: %+v", fr.Calls)
 	}
 }
 
 func TestAppImageAdapterCheckNotInstalled(t *testing.T) {
 	mc := &config.MethodCandidate{Config: map[string]any{"install_dir": t.TempDir()}}
-	fr := &run.FakeRunner{ExitCode: 1} // `test -f` fails
+	fr := &run.FakeRunner{}
 	if NewAppImageAdapter().Check(context.Background(), fr, appImageTool("obsidian"), mc) {
 		t.Fatal("Check should be false when the binary doesn't exist yet")
 	}

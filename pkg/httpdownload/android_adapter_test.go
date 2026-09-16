@@ -75,13 +75,19 @@ func TestAndroidAdapterCheckInstalled(t *testing.T) {
 	t.Setenv("HOME", fakeHome)
 
 	mc := &config.MethodCandidate{Config: map[string]any{"url": "https://example.com/app.apk"}}
-	fr := &run.FakeRunner{ExitCode: 0} // `test -f` succeeds
+	wantPath := filepath.Join(config.ExpandHomeDir(androidAPKDir), "obsidian.apk")
+	if err := os.MkdirAll(filepath.Dir(wantPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(wantPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fr := &run.FakeRunner{}
 	if !NewAndroidAdapter().Check(context.Background(), fr, androidTool("obsidian"), mc) {
 		t.Fatal("Check should be true when the stable-named .apk exists")
 	}
-	wantPath := filepath.Join(config.ExpandHomeDir(androidAPKDir), "obsidian.apk")
-	if len(fr.Calls) != 1 || fr.Calls[0].Name != "test" || fr.Calls[0].Args[1] != wantPath {
-		t.Fatalf("Check ran %+v, want test -f %s", fr.Calls, wantPath)
+	if len(fr.Calls) != 0 {
+		t.Fatalf("filesystem check executed commands: %+v", fr.Calls)
 	}
 }
 
@@ -90,7 +96,7 @@ func TestAndroidAdapterCheckNotInstalled(t *testing.T) {
 	t.Setenv("HOME", fakeHome)
 
 	mc := &config.MethodCandidate{Config: map[string]any{"url": "https://example.com/app.apk"}}
-	fr := &run.FakeRunner{ExitCode: 1} // `test -f` fails
+	fr := &run.FakeRunner{}
 	if NewAndroidAdapter().Check(context.Background(), fr, androidTool("obsidian"), mc) {
 		t.Fatal("Check should be false when the .apk hasn't been downloaded yet")
 	}
