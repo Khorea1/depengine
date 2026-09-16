@@ -164,18 +164,28 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 		if !ok2 || artifact == "" {
 			artifact = "/"
 		}
-		src := filepath.Join(cloneDir, artifact)
+		src, err := artifactPath(cloneDir, artifact)
+		if err != nil {
+			return err
+		}
 		if err := os.MkdirAll(extractTo, 0o755); err != nil {
 			return fmt.Errorf("git: mkdir %s: %w", extractTo, err)
 		}
-		cpCmd := fmt.Sprintf("cp -r %s/. %s", shellQuote(src), shellQuote(extractTo))
-		cpRes := rn.Run(ctx, "sh", "-c", cpCmd)
-		if err := run.CheckResult(cpRes, "git: copy"); err != nil {
-			return err
+		if err := copyArtifact(ctx, src, extractTo); err != nil {
+			return fmt.Errorf("git: copy: %w", err)
 		}
 	}
 
 	return nil
+}
+
+func artifactPath(cloneDir, artifact string) (string, error) {
+	src := filepath.Join(cloneDir, artifact)
+	rel, err := filepath.Rel(cloneDir, src)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("git: artifact %q escapes clone directory", artifact)
+	}
+	return src, nil
 }
 
 // isSharedDir checks if a directory path is a common shared system directory.
