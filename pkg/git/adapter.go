@@ -29,12 +29,6 @@ func init() {
 	exec.Register(NewGitAdapter())
 }
 
-// shellQuote wraps s in single quotes, escaping any embedded single quotes
-// with the standard POSIX '\” sequence. Inside single quotes every character
-// is literal, so the result is safe for use in sh -c strings.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
-}
 func (a *GitAdapter) Kind() string { return "git" }
 
 // Available checks whether git is on PATH.
@@ -148,12 +142,16 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 	}
 
 	// Run build step if configured.
-	if buildCmd, ok := mc.Config["build"].(string); ok && buildCmd != "" {
-		// Security: buildCmd is passed raw to sh -c to support shell syntax.
-		fullCmd := fmt.Sprintf("cd %s && %s", shellQuote(cloneDir), buildCmd)
-		buildRes := rn.Run(ctx, "sh", "-c", fullCmd)
-		if err := run.CheckResult(buildRes, "git: build"); err != nil {
-			return err
+	if rawBuild, ok := mc.Config["build"]; ok {
+		buildCommands, err := parseBuildCommands(rawBuild)
+		if err != nil {
+			return fmt.Errorf("git: build: %w", err)
+		}
+		for _, command := range buildCommands {
+			buildRes := run.RunInDir(ctx, rn, cloneDir, command[0], command[1:]...)
+			if err := run.CheckResult(buildRes, "git: build"); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -177,6 +175,60 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 	}
 
 	return nil
+}
+
+func parseBuildCommands(raw any) ([][]string, error) {
+	if command, ok := raw.(string); ok {
+		if command == "" {
+			return nil, fmt.Errorf("command must not be empty")
+		}
+		return [][]string{{"sh", "-c", command}}, nil
+	}
+	if tables, ok := raw.([]any); ok {
+		commands := make([][]string, 0, len(tables))
+		for i, table := range tables {
+			command, err := parseBuildCommand(table)
+			if err != nil {
+				return nil, fmt.Errorf("command %d: %w", i, err)
+			}
+			commands = append(commands, command)
+		}
+		if len(commands) == 0 {
+			return nil, fmt.Errorf("command list must not be empty")
+		}
+		return commands, nil
+	}
+	command, err := parseBuildCommand(raw)
+	if err != nil {
+		return nil, err
+	}
+	return [][]string{command}, nil
+}
+
+func parseBuildCommand(raw any) ([]string, error) {
+	table, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("expected command table, got %T", raw)
+	}
+	if len(table) != 1 {
+		return nil, fmt.Errorf("command table must contain only run")
+	}
+	rawArgs, ok := table["run"].([]any)
+	if !ok || len(rawArgs) == 0 {
+		return nil, fmt.Errorf("run must be a non-empty string array")
+	}
+	args := make([]string, len(rawArgs))
+	for i, rawArg := range rawArgs {
+		arg, ok := rawArg.(string)
+		if !ok {
+			return nil, fmt.Errorf("run[%d] must be a string", i)
+		}
+		args[i] = arg
+	}
+	if args[0] == "" {
+		return nil, fmt.Errorf("executable must not be empty")
+	}
+	return args, nil
 }
 
 func artifactPath(cloneDir, artifact string) (string, error) {

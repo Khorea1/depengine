@@ -162,6 +162,23 @@ post_install = "echo installed on {os}/{arch} via {init_system}"
 	}
 }
 
+func TestParseSchemaExpandsPortableBuildArguments(t *testing.T) {
+	p := writeSchema(t, `
+[tools]
+tool = { git = { url = "https://example.com/tool.git", build = [{ run = ["go", "build", "-o", "tool-{arch}"] }, { run = ["strip", "tool-{arch}"] }] } }
+`)
+	s, err := ParseProjectSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	build := s.Tools["tool"].Methods[1].Config["build"].([]any)
+	first := build[0].(map[string]any)["run"].([]any)
+	second := build[1].(map[string]any)["run"].([]any)
+	if first[3] != "tool-x86_64" || second[1] != "tool-x86_64" {
+		t.Fatalf("portable build placeholders not expanded: %v", build)
+	}
+}
+
 func TestParseSchemaPreservesLatestPlaceholderSlot(t *testing.T) {
 	// {latest} is owned by the http/git adapter at install time; it must
 	// survive fact-substitution untouched.

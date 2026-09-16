@@ -16,6 +16,7 @@ const (
 	Integer         FieldType = "integer"
 	IntegerOrString FieldType = "integer_or_string"
 	StringMap       FieldType = "string_map"
+	Command         FieldType = "command"
 )
 
 // Field describes one adapter-facing config field.
@@ -124,7 +125,7 @@ var Contracts = []Contract{
 		"url":        {Type: String, Required: true, NonEmpty: true},
 		"branch":     {Type: String},
 		"depth":      {Type: IntegerOrString},
-		"build":      {Type: String},
+		"build":      {Type: Command},
 		"extract_to": {Type: String},
 		"artifact":   {Type: String},
 		"binary":     {Type: String},

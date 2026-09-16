@@ -329,7 +329,7 @@ func TestValidateRequiredFields_GithubBranchEmpty(t *testing.T) {
 	}
 }
 
-func TestValidateRequiredFields_BuildNotString(t *testing.T) {
+func TestValidateRequiredFields_BuildInvalidType(t *testing.T) {
 	s := &cfg.Schema{
 		Tools: map[string]*cfg.Tool{
 			"myapp": tool("myapp", []*cfg.MethodCandidate{
@@ -339,7 +339,43 @@ func TestValidateRequiredFields_BuildNotString(t *testing.T) {
 	}
 	r := validateRequiredFields(s)
 	if !r.HasErrors() {
-		t.Fatal("expected error for non-string build")
+		t.Fatal("expected error for invalid build type")
+	}
+}
+
+func TestValidateRequiredFields_EmptyBuildCommands(t *testing.T) {
+	tests := map[string]any{
+		"legacy":     "",
+		"structured": map[string]any{"run": []any{""}},
+	}
+	for name, build := range tests {
+		t.Run(name, func(t *testing.T) {
+			s := &cfg.Schema{Tools: map[string]*cfg.Tool{
+				"myapp": tool("myapp", []*cfg.MethodCandidate{
+					mc("git", nil, map[string]any{"url": "https://example.com/repo", "build": build}),
+				}, nil),
+			}}
+			if r := validateRequiredFields(s); !r.HasErrors() {
+				t.Fatal("expected error for empty build command")
+			}
+		})
+	}
+}
+
+func TestValidateRequiredFields_StructuredBuild(t *testing.T) {
+	s := &cfg.Schema{Tools: map[string]*cfg.Tool{
+		"myapp": tool("myapp", []*cfg.MethodCandidate{
+			mc("git", nil, map[string]any{
+				"url": "https://example.com/repo",
+				"build": []any{
+					map[string]any{"run": []any{"make"}},
+					map[string]any{"run": []any{"make", "install"}},
+				},
+			}),
+		}, nil),
+	}}
+	if r := validateRequiredFields(s); r.HasErrors() {
+		t.Fatalf("structured build should be valid: %+v", r.Errors)
 	}
 }
 

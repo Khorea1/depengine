@@ -80,10 +80,10 @@ matugen    = { cargo = { git = "https://github.com/InioX/matugen" } }
 # CASE 5 — "git" method: clones the repo and runs a manual build command.
 # Fields:
 #   url   = repository to clone
-#   build = command executed inside the cloned repo (always called "build",
-#           never "install" — avoids naming ambiguity)
+#   build = command argv (or sequential command list) executed inside the clone
+#           Legacy strings use POSIX sh -c; prefer run for portability.
 # ------------------------------------------------------------------------
-ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install", when = { target_family = ["unix"] } } }
+ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = [{ run = ["make"] }, { run = ["sudo", "make", "install"] }], when = { target_family = ["unix"] } } }
 fasd = { git = { url = "https://github.com/clvv/fasd",        build = "PREFIX=$HOME/.local make install", when = { target_family = ["unix"] } } }
 
 

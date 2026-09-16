@@ -37,6 +37,21 @@ type Runner interface {
 	Run(ctx context.Context, name string, args ...string) Result
 }
 
+// DirectoryRunner extends Runner for commands that must execute in a specific
+// working directory.
+type DirectoryRunner interface {
+	RunInDir(ctx context.Context, dir, name string, args ...string) Result
+}
+
+// RunInDir executes a command through rn with dir as its working directory.
+func RunInDir(ctx context.Context, rn Runner, dir, name string, args ...string) Result {
+	dr, ok := rn.(DirectoryRunner)
+	if !ok {
+		return Result{Err: errors.New("runner does not support a working directory")}
+	}
+	return dr.RunInDir(ctx, dir, name, args...)
+}
+
 // ElevationSession is implemented by production runners that can obtain and
 // renew interactive elevation credentials. Test and remote runners may omit
 // it; their command-execution environment owns any required elevation.
@@ -65,8 +80,18 @@ type OSExecRunner struct{}
 // Run executes name with args under ctx, capturing stdout and stderr.
 // A non-zero exit is reported in Result.ExitCode, not Result.Err.
 func (OSExecRunner) Run(ctx context.Context, name string, args ...string) Result {
+	return runCommand(ctx, "", name, args...)
+}
+
+// RunInDir executes name with dir as the child process working directory.
+func (OSExecRunner) RunInDir(ctx context.Context, dir, name string, args ...string) Result {
+	return runCommand(ctx, dir, name, args...)
+}
+
+func runCommand(ctx context.Context, dir, name string, args ...string) Result {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = DefaultEnv()
+	cmd.Dir = dir
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -138,3 +163,5 @@ func CheckResult(res Result, prefix string) error {
 	}
 	return nil
 }
+
+var _ DirectoryRunner = OSExecRunner{}

@@ -135,7 +135,7 @@ func TestGitAdapterInstallWithBuild(t *testing.T) {
 		t.Fatalf("call 0: expected 'git clone', got %q %v", cloneCall.Name, cloneCall.Args)
 	}
 
-	// Second call: sh -c with build command.
+	// Second call: sh -c with build command in the clone directory.
 	buildCall := fr.Calls[1]
 	if buildCall.Name != "sh" {
 		t.Fatalf("call 1: expected 'sh', got %q", buildCall.Name)
@@ -143,9 +143,50 @@ func TestGitAdapterInstallWithBuild(t *testing.T) {
 	if len(buildCall.Args) != 2 || buildCall.Args[0] != "-c" {
 		t.Fatalf("call 1: expected args ['-c', '...'], got %v", buildCall.Args)
 	}
-	expectedSuffix := "make install"
-	if !strings.HasSuffix(buildCall.Args[1], expectedSuffix) {
-		t.Fatalf("build command %q does not end with %q", buildCall.Args[1], expectedSuffix)
+	if buildCall.Args[1] != "make install" {
+		t.Fatalf("build command = %q, want %q", buildCall.Args[1], "make install")
+	}
+	if buildCall.Dir == "" {
+		t.Fatal("build command should run in the clone directory")
+	}
+}
+
+func TestGitAdapterInstallWithPortableBuild(t *testing.T) {
+	fr := &run.FakeRunner{ExitCode: 0}
+	adapter := NewGitAdapter()
+	tool := &config.Tool{Name: "mytool"}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"url":   "https://github.com/user/repo.git",
+		"build": map[string]any{"run": []any{"go", "build", "./cmd/tool"}},
+	}}
+
+	if err := adapter.Install(context.Background(), fr, tool, mc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	call := fr.Calls[1]
+	if call.Name != "go" || strings.Join(call.Args, " ") != "build ./cmd/tool" || call.Dir == "" {
+		t.Fatalf("portable build call = %+v", call)
+	}
+}
+
+func TestGitAdapterInstallWithPortableBuildSteps(t *testing.T) {
+	fr := &run.FakeRunner{ExitCode: 0}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"url": "https://github.com/user/repo.git",
+		"build": []any{
+			map[string]any{"run": []any{"make"}},
+			map[string]any{"run": []any{"make", "install"}},
+		},
+	}}
+
+	if err := NewGitAdapter().Install(context.Background(), fr, &config.Tool{Name: "mytool"}, mc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(fr.Calls) != 3 || fr.Calls[1].Name != "make" || fr.Calls[2].Name != "make" {
+		t.Fatalf("build calls = %+v", fr.Calls)
+	}
+	if fr.Calls[1].Dir == "" || fr.Calls[1].Dir != fr.Calls[2].Dir {
+		t.Fatalf("build steps should share clone directory: %+v", fr.Calls[1:])
 	}
 }
 

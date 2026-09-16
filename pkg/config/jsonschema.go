@@ -211,6 +211,18 @@ func methodFieldJSONSchema(field methodkind.Field) map[string]any {
 		}}
 	case methodkind.StringMap:
 		schema = stringMapJSONSchema()
+	case methodkind.Command:
+		command := map[string]any{
+			"type":                 "object",
+			"required":             []string{"run"},
+			"properties":           map[string]any{"run": map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}}},
+			"additionalProperties": false,
+		}
+		schema = map[string]any{"oneOf": []any{
+			map[string]any{"type": "string", "minLength": 1},
+			command,
+			map[string]any{"type": "array", "minItems": 1, "items": command},
+		}}
 	default:
 		panic("unknown method field type: " + field.Type)
 	}

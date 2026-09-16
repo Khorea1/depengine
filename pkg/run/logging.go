@@ -63,9 +63,21 @@ func (lr *LoggingRunner) WithContext(ctx Context) *LoggingRunner {
 // Run executes the command via the inner runner, logging the call and
 // result. The result is passed through unchanged.
 func (lr *LoggingRunner) Run(ctx context.Context, name string, args ...string) Result {
+	return lr.run(ctx, "", name, args...)
+}
+
+// RunInDir executes and logs a command with an explicit working directory.
+func (lr *LoggingRunner) RunInDir(ctx context.Context, dir, name string, args ...string) Result {
+	return lr.run(ctx, dir, name, args...)
+}
+
+func (lr *LoggingRunner) run(ctx context.Context, dir, name string, args ...string) Result {
 	baseAttrs := []any{
 		"cmd", name,
 		"args", strings.Join(args, " "),
+	}
+	if dir != "" {
+		baseAttrs = append(baseAttrs, "dir", dir)
 	}
 	if lr.ctx.Tool != "" {
 		baseAttrs = append(baseAttrs, "tool", lr.ctx.Tool)
@@ -77,7 +89,12 @@ func (lr *LoggingRunner) Run(ctx context.Context, name string, args ...string) R
 	lr.logger.Debug("run", baseAttrs...)
 
 	start := time.Now()
-	result := lr.inner.Run(ctx, name, args...)
+	var result Result
+	if dir == "" {
+		result = lr.inner.Run(ctx, name, args...)
+	} else {
+		result = RunInDir(ctx, lr.inner, dir, name, args...)
+	}
 	elapsed := time.Since(start)
 
 	// Build structured log with duration, exit code.
@@ -135,3 +152,5 @@ func truncateStderr(data []byte) string {
 	}
 	return s
 }
+
+var _ DirectoryRunner = (*LoggingRunner)(nil)

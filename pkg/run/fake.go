@@ -23,11 +23,21 @@ type FakeRunner struct {
 type FakeCall struct {
 	Name string
 	Args []string
+	Dir  string
 }
 
 func (f *FakeRunner) Run(ctx context.Context, name string, args ...string) Result {
+	return f.run(ctx, "", name, args...)
+}
+
+// RunInDir records dir along with the command and returns the configured result.
+func (f *FakeRunner) RunInDir(ctx context.Context, dir, name string, args ...string) Result {
+	return f.run(ctx, dir, name, args...)
+}
+
+func (f *FakeRunner) run(ctx context.Context, dir, name string, args ...string) Result {
 	f.mu.Lock()
-	f.Calls = append(f.Calls, FakeCall{Name: name, Args: append([]string(nil), args...)})
+	f.Calls = append(f.Calls, FakeCall{Name: name, Args: append([]string(nil), args...), Dir: dir})
 	f.mu.Unlock()
 
 	if f.Delay > 0 {
@@ -45,3 +55,5 @@ func (f *FakeRunner) Run(ctx context.Context, name string, args ...string) Resul
 		Err:      f.Err,
 	}
 }
+
+var _ DirectoryRunner = (*FakeRunner)(nil)

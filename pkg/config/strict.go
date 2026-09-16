@@ -282,6 +282,42 @@ func validateMethodField(raw any, field methodkind.Field, path string, errs *[]s
 		}
 	case methodkind.StringMap:
 		validateStringMap(raw, path, errs)
+	case methodkind.Command:
+		validateCommand(raw, path, errs)
+	}
+}
+
+func validateCommand(raw any, path string, errs *[]string) {
+	if command, ok := raw.(string); ok {
+		validateNonEmptyString(command, path, errs)
+		return
+	}
+	if commands, ok := raw.([]any); ok {
+		if len(commands) == 0 {
+			*errs = append(*errs, path+": must not be empty")
+		}
+		for i, command := range commands {
+			validateCommandTable(command, fmt.Sprintf("%s[%d]", path, i), errs)
+		}
+		return
+	}
+	validateCommandTable(raw, path, errs)
+}
+
+func validateCommandTable(raw any, path string, errs *[]string) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		*errs = append(*errs, fmt.Sprintf("%s: expected command table, got %T", path, raw))
+		return
+	}
+	for _, key := range sortedMapKeys(m) {
+		if key != "run" {
+			*errs = append(*errs, path+"."+key+": unknown field")
+		}
+	}
+	values, valid := stringList(m["run"], path+".run", errs)
+	if valid && (len(values) == 0 || values[0] == "") {
+		*errs = append(*errs, path+".run: executable must not be empty")
 	}
 }
 

@@ -110,8 +110,46 @@ func methodFieldTypeMatches(value any, fieldType methodkind.FieldType) bool {
 			}
 		}
 		return true
+	case methodkind.Command:
+		return commandTypeMatches(value)
 	}
 	return false
+}
+
+func commandTypeMatches(value any) bool {
+	if command, ok := value.(string); ok {
+		return command != ""
+	}
+	if commands, ok := value.([]any); ok {
+		if len(commands) == 0 {
+			return false
+		}
+		for _, command := range commands {
+			if !commandTableTypeMatches(command) {
+				return false
+			}
+		}
+		return true
+	}
+	return commandTableTypeMatches(value)
+}
+
+func commandTableTypeMatches(value any) bool {
+	table, ok := value.(map[string]any)
+	if !ok || len(table) != 1 {
+		return false
+	}
+	run, ok := table["run"].([]any)
+	if !ok || len(run) == 0 {
+		return false
+	}
+	for _, arg := range run {
+		if _, ok := arg.(string); !ok {
+			return false
+		}
+	}
+	executable, _ := run[0].(string)
+	return executable != ""
 }
 
 func fieldTypeDescription(fieldType methodkind.FieldType) string {
@@ -126,6 +164,8 @@ func fieldTypeDescription(fieldType methodkind.FieldType) string {
 		return "an integer or numeric string"
 	case methodkind.StringMap:
 		return "a table of strings"
+	case methodkind.Command:
+		return "a string, command table, or command table list"
 	default:
 		return string(fieldType)
 	}

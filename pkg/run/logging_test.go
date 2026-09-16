@@ -24,6 +24,17 @@ func TestLoggingRunnerPassesResultThrough(t *testing.T) {
 	cap.AssertContains(t, "run ok")
 }
 
+func TestLoggingRunnerPassesWorkingDirectoryThroughOnce(t *testing.T) {
+	inner := &FakeRunner{}
+	runner := NewLoggingRunner(inner, log.NewTestLogger(t).Logger)
+
+	runner.RunInDir(context.Background(), "/repo", "make")
+
+	if len(inner.Calls) != 1 || inner.Calls[0].Dir != "/repo" {
+		t.Fatalf("calls = %+v, want one call in /repo", inner.Calls)
+	}
+}
+
 func TestLoggingRunnerLogsNonZeroExit(t *testing.T) {
 	inner := &FakeRunner{ExitCode: 1, Stderr: "permission denied"}
 	cap := log.NewTestLogger(t)

@@ -2,6 +2,8 @@ package run
 
 import (
 	"context"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -55,6 +57,37 @@ func TestFakeRunnerHonorsCtxCancellation(t *testing.T) {
 	res := fr.Run(ctx, "slow-cmd")
 	if res.Err != context.DeadlineExceeded {
 		t.Fatalf("err = %v, want DeadlineExceeded", res.Err)
+	}
+}
+
+func TestOSExecRunnerRunInDir(t *testing.T) {
+	dir := t.TempDir()
+	name, args := "pwd", []string(nil)
+	if runtime.GOOS == "windows" {
+		name, args = "cmd.exe", []string{"/c", "cd"}
+	}
+	result := OSExecRunner{}.RunInDir(context.Background(), dir, name, args...)
+	if result.Err != nil || result.ExitCode != 0 {
+		t.Fatalf("RunInDir failed: %+v", result)
+	}
+	got, err := filepath.Abs(strings.TrimSpace(string(result.Stdout)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.Abs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.EqualFold(got, want) {
+		t.Fatalf("working directory = %q, want %q", got, want)
+	}
+}
+
+func TestRunInDirRejectsUnsupportedRunner(t *testing.T) {
+	type runOnly struct{ Runner }
+	result := RunInDir(context.Background(), runOnly{Runner: &FakeRunner{}}, t.TempDir(), "true")
+	if result.Err == nil {
+		t.Fatal("expected unsupported working-directory error")
 	}
 }
 

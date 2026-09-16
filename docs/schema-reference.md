@@ -92,13 +92,13 @@ matugen = { cargo = { git = "https://github.com/InioX/matugen" } }
 ### Git: clone + manual build
 
 ```toml
-ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install" } }
+ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = [{ run = ["make"] }, { run = ["sudo", "make", "install"] }] } }
 ```
 
 | Field | Required | Description |
 |-------|----------|--------------|
 | `url` | yes | Git repository URL |
-| `build` | no | Shell command run in the cloned directory |
+| `build` | no | Command `{ run = ["program", "arg", ...] }`, or a list of commands, run in the cloned directory. Legacy strings remain POSIX `sh -c` shorthand. |
 | `extract_to` | no | Directory to copy build artifacts into |
 | `branch` | no | Branch or tag to clone (default: repo's default branch) |
 | `depth` | no | Clone depth — `"1"` for shallow (default), `"0"` for full history |
