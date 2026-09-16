@@ -14,7 +14,6 @@ import (
 	"github.com/Khorea1/depengine/pkg/graph"
 	"github.com/Khorea1/depengine/pkg/native"
 	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/state"
 )
 
 // hasApplicableNativeMethod reports whether the schema contains a native
@@ -348,102 +347,6 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 	}
 
 	return report, nil
-}
-
-// Versioner is an optional interface adapters may implement to report the
-// version of a tool at install time. The executor calls InstalledVersion
-// while recording state; a non-nil error or an empty string means the version
-// is unknown and ToolState.Version is left empty.
-type Versioner interface {
-	Adapter
-	InstalledVersion(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (string, error)
-}
-
-// versionProbeTimeout bounds the per-tool version probe so a hanging
-// `--version` call cannot stall an install run.
-const versionProbeTimeout = 15 * time.Second
-
-// installedVersion asks the adapter that installed the tool for the version
-// it knows about. Best-effort: unknown versions and failures yield "".
-func (ex *Executor) installedVersion(ctx context.Context, tool *config.Tool, tr ToolResult) string {
-	adapter := ex.LookupAdapter(tr.MethodKind)
-	if adapter == nil {
-		return ""
-	}
-	ver, ok := adapter.(Versioner)
-	if !ok {
-		return ""
-	}
-	mc := &config.MethodCandidate{Kind: tr.MethodKind, Config: tr.Config}
-	probeCtx, cancel := context.WithTimeout(ctx, versionProbeTimeout)
-	defer cancel()
-	version, err := ver.InstalledVersion(probeCtx, ex.rn, tool, mc)
-	if err != nil {
-		return ""
-	}
-	return version
-}
-
-// writeState persists the installation state file after a successful run.
-// It loads existing state and merges in the current run's results, preserving
-// tools installed by other schemas or earlier runs. Errors are returned so
-// the caller can fail the run with a visible message instead of silently
-// leaving the state file stale.
-func (ex *Executor) writeState(ctx context.Context, s *config.Schema, report *ExecReport) error {
-	if ex.schemaPath == "" {
-		ex.logWarn(ctx, "state not persisted: no schema path configured (install may not be trackable)")
-		return nil
-	}
-
-	// Load existing state under exclusive lock to prevent TOCTOU races.
-	ls, err := state.LoadLocked()
-	if err != nil {
-		return fmt.Errorf("state lock failed: %w", err)
-	}
-	defer ls.Close()
-
-	st := ls.State()
-	st.SchemaPath = ex.schemaPath
-	st.SchemaModifiedAt = ex.schemaModTime.UTC().Format(time.RFC3339)
-	if st.Version == 0 {
-		st.Version = 1
-	}
-	if st.Tools == nil {
-		st.Tools = make(map[string]state.ToolState, len(report.Tools))
-	}
-
-	for _, tr := range report.Tools {
-		if tr.Status != StatusInstalled && tr.Status != StatusAlready {
-			continue
-		}
-		tool, ok := s.Tools[tr.Tool]
-		if !ok {
-			continue
-		}
-		existing, hadExisting := st.Tools[tr.Tool]
-		ts := state.ToolState{
-			Method:          tr.Method,
-			MethodKind:      tr.MethodKind,
-			InstalledAt:     time.Now().UTC().Format(time.RFC3339),
-			PostinstallDone: tr.PostinstallDone,
-			DefinitionHash:  state.DefinitionHash(tool),
-			Config:          tr.Config,
-		}
-		// Record the installed version when the adapter can determine it.
-		// When it cannot (e.g. a {latest} pin baked into the download URL),
-		// keep a previously recorded version instead of clearing it.
-		if ver := ex.installedVersion(ctx, tool, tr); ver != "" {
-			ts.Version = ver
-		} else if hadExisting {
-			ts.Version = existing.Version
-		}
-		st.Tools[tr.Tool] = ts
-	}
-
-	if err := ls.Save(); err != nil {
-		return fmt.Errorf("state save failed: %w", err)
-	}
-	return nil
 }
 
 func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResult {

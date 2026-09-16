@@ -1,0 +1,86 @@
+package exec
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/run"
+	depstate "github.com/Khorea1/depengine/pkg/state"
+)
+
+// Versioner is an optional adapter interface for reporting the installed
+// version while state is persisted.
+type Versioner interface {
+	Adapter
+	InstalledVersion(ctx context.Context, rn run.Runner, tool *config.Tool, method *config.MethodCandidate) (string, error)
+}
+
+const versionProbeTimeout = 15 * time.Second
+
+func (ex *Executor) installedVersion(ctx context.Context, tool *config.Tool, result ToolResult) string {
+	adapter := ex.LookupAdapter(result.MethodKind)
+	versioner, ok := adapter.(Versioner)
+	if !ok {
+		return ""
+	}
+	method := &config.MethodCandidate{Kind: result.MethodKind, Config: result.Config}
+	probeCtx, cancel := context.WithTimeout(ctx, versionProbeTimeout)
+	defer cancel()
+	version, err := versioner.InstalledVersion(probeCtx, ex.rn, tool, method)
+	if err != nil {
+		return ""
+	}
+	return version
+}
+
+func (ex *Executor) writeState(ctx context.Context, schema *config.Schema, report *ExecReport) error {
+	if ex.schemaPath == "" {
+		ex.logWarn(ctx, "state not persisted: no schema path configured (install may not be trackable)")
+		return nil
+	}
+	lockedState, err := depstate.LoadLocked()
+	if err != nil {
+		return fmt.Errorf("state lock failed: %w", err)
+	}
+	defer lockedState.Close()
+
+	current := lockedState.State()
+	current.SchemaPath = ex.schemaPath
+	current.SchemaModifiedAt = ex.schemaModTime.UTC().Format(time.RFC3339)
+	if current.Version == 0 {
+		current.Version = 1
+	}
+	if current.Tools == nil {
+		current.Tools = make(map[string]depstate.ToolState, len(report.Tools))
+	}
+	for _, result := range report.Tools {
+		if result.Status != StatusInstalled && result.Status != StatusAlready {
+			continue
+		}
+		tool, ok := schema.Tools[result.Tool]
+		if !ok {
+			continue
+		}
+		existing, hadExisting := current.Tools[result.Tool]
+		toolState := depstate.ToolState{
+			Method:          result.Method,
+			MethodKind:      result.MethodKind,
+			InstalledAt:     time.Now().UTC().Format(time.RFC3339),
+			PostinstallDone: result.PostinstallDone,
+			DefinitionHash:  depstate.DefinitionHash(tool),
+			Config:          result.Config,
+		}
+		if version := ex.installedVersion(ctx, tool, result); version != "" {
+			toolState.Version = version
+		} else if hadExisting {
+			toolState.Version = existing.Version
+		}
+		current.Tools[result.Tool] = toolState
+	}
+	if err := lockedState.Save(); err != nil {
+		return fmt.Errorf("state save failed: %w", err)
+	}
+	return nil
+}
