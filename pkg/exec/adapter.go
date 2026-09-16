@@ -102,6 +102,15 @@ type AvailabilityChecker interface {
 	CheckAvailable(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool
 }
 
+// ElevationRequirer is an optional interface for adapters whose need for
+// privilege elevation depends on method configuration (for example, an HTTP
+// install targeting /usr/local/bin). The executor uses it to establish an
+// interactive elevation session before subprocess output is captured.
+type ElevationRequirer interface {
+	Adapter
+	RequiresElevation(tool *config.Tool, mc *config.MethodCandidate) bool
+}
+
 // checkAvailable consults AvailabilityChecker if the adapter implements
 // it; otherwise it assumes the package is available, which preserves
 // existing behavior for adapters that have no notion of "not in any repo".

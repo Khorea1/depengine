@@ -34,6 +34,9 @@ const keepAliveInterval = 45 * time.Second
 // is called. Keeping this capability on the production runner ensures an
 // injected Runner never causes hidden subprocesses on the host.
 func (OSExecRunner) StartElevationSession(ctx context.Context) (func(), error) {
+	if os.Geteuid() == 0 || ElevationMethod() != "sudo" {
+		return func() {}, nil
+	}
 	if err := EnsureSudo(ctx); err != nil {
 		return nil, err
 	}

@@ -27,6 +27,39 @@ func TestHTTPAdapterAvailable(t *testing.T) {
 	}
 }
 
+func TestAdaptersRequireElevationForSystemDestinations(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := &config.Tool{Name: "tool"}
+
+	tests := []struct {
+		name    string
+		adapter interface {
+			RequiresElevation(*config.Tool, *config.MethodCandidate) bool
+		}
+		config map[string]any
+		want   bool
+	}{
+		{name: "http default", adapter: NewHTTPAdapter(), config: map[string]any{}, want: true},
+		{name: "http user path", adapter: NewHTTPAdapter(), config: map[string]any{"extract_to": filepath.Join(home, ".local", "bin")}, want: false},
+		{name: "http explicit false", adapter: NewHTTPAdapter(), config: map[string]any{"sudo_required": false}, want: false},
+		{name: "appimage default", adapter: NewAppImageAdapter(), config: map[string]any{}, want: false},
+		{name: "appimage system path", adapter: NewAppImageAdapter(), config: map[string]any{"install_dir": "/opt/tool"}, want: true},
+		{name: "github default", adapter: NewGitHubAdapter(), config: map[string]any{}, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &config.MethodCandidate{Config: tt.config}
+			if got := tt.adapter.RequiresElevation(tool, mc); got != tt.want {
+				t.Fatalf("RequiresElevation() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestHTTPAdapterCheckViaExtractTo(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 0}
 	adapter := NewHTTPAdapter()

@@ -59,6 +59,10 @@ func init() {
 
 func (a *GitHubAdapter) Kind() string { return "github" }
 
+func (a *GitHubAdapter) RequiresElevation(tool *config.Tool, mc *config.MethodCandidate) bool {
+	return a.http.RequiresElevation(tool, mc)
+}
+
 // Available mirrors HTTPAdapter: Go's net/http is always available.
 func (a *GitHubAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	return a.http.Available(ctx, rn)

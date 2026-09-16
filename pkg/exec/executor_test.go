@@ -82,6 +82,26 @@ type availabilityMockAdapter struct {
 	checkAvailableFunc func(string) bool
 }
 
+type elevationMockAdapter struct {
+	testMockAdapter
+	required bool
+}
+
+func (m *elevationMockAdapter) RequiresElevation(*config.Tool, *config.MethodCandidate) bool {
+	return m.required
+}
+
+type elevationTrackingRunner struct {
+	run.FakeRunner
+	starts int
+	stops  int
+}
+
+func (r *elevationTrackingRunner) StartElevationSession(context.Context) (func(), error) {
+	r.starts++
+	return func() { r.stops++ }, nil
+}
+
 func (m *availabilityMockAdapter) CheckAvailable(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	if m.checkAvailableFunc != nil {
 		return m.checkAvailableFunc(tool.Name)
@@ -148,6 +168,37 @@ func TestExecutorFallback(t *testing.T) {
 	}
 	if report.Tools[0].Method != "succeeder" {
 		t.Fatalf("expected fallback to succeeder, got %s", report.Tools[0].Method)
+	}
+}
+
+func TestExecutorStartsAdapterElevationSession(t *testing.T) {
+	adapter := &elevationMockAdapter{
+		testMockAdapter: testMockAdapter{kindValue: "elevated"},
+		required:        true,
+	}
+	runner := &elevationTrackingRunner{}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(adapter)(ex)
+
+	s := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"elevated"}},
+		Tools: map[string]*config.Tool{
+			"tool": {
+				Name:       "tool",
+				MethodOnly: []string{"elevated"},
+				Methods: []*config.MethodCandidate{
+					{Kind: "elevated", Config: map[string]any{}},
+				},
+			},
+		},
+	}
+
+	if _, err := ex.Execute(context.Background(), s, "darwin"); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if runner.starts != 1 || runner.stops != 1 {
+		t.Fatalf("elevation session starts/stops = %d/%d, want 1/1", runner.starts, runner.stops)
 	}
 }
 

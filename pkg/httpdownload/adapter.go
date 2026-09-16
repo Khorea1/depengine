@@ -32,6 +32,21 @@ func init() {
 
 func (a *HTTPAdapter) Kind() string { return "http" }
 
+// RequiresElevation applies the same path-derived default and explicit
+// sudo_required override used by Install.
+func (a *HTTPAdapter) RequiresElevation(_ *config.Tool, mc *config.MethodCandidate) bool {
+	extractTo := "/usr/local/bin"
+	if configured, ok := mc.Config["extract_to"].(string); ok && configured != "" {
+		extractTo = configured
+	}
+	extractTo = config.ExpandHomeDir(extractTo)
+	required := defaultSudoRequired(extractTo)
+	if configured, ok := mc.Config["sudo_required"].(bool); ok {
+		required = configured
+	}
+	return required
+}
+
 // Available returns true — Go net/http is always available; curl/wget
 // are detected lazily on actual download.
 func (a *HTTPAdapter) Available(ctx context.Context, rn run.Runner) bool {
@@ -154,10 +169,7 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	// need no elevation (e.g. ~/.local/share/fonts); everything else (the
 	// /usr/local/bin default, /opt, …) keeps sudo. Explicit sudo_required
 	// in the schema always wins.
-	sudoRequired := defaultSudoRequired(extractTo)
-	if v, ok := mc.Config["sudo_required"].(bool); ok {
-		sudoRequired = v
-	}
+	sudoRequired := a.RequiresElevation(tool, mc)
 	if err := Extract(ctx, tmpFile, extractTo, ext, rn, sudoRequired, tool.Name); err != nil {
 		return fmt.Errorf("http: extract: %w", err)
 	}

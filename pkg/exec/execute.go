@@ -43,21 +43,26 @@ func needsNativeSync(s *config.Schema, clan string) bool {
 	return false
 }
 
-// needsElevation reports whether this run will need root at some point:
-// either the clan's native manager requires sudo (SudoRequired), or any
-// tool method resolves to that manager. Used to decide whether to pay for
-// a single upfront elevation prompt instead of letting the
-// first elevated command discover mid-run that it has no way to ask.
-func needsElevation(s *config.Schema, clan string) bool {
+// needsElevation reports whether any applicable method will need root.
+func (ex *Executor) needsElevation(s *config.Schema, clan string) bool {
 	mgr, ok := native.Lookup(clan)
-	if !ok || !mgr.SudoRequired {
-		return false
+	if ok && mgr.SudoRequired && needsNativeSync(s, clan) {
+		return true
 	}
-	// needsNativeSync's tool scan ("does any tool resolve to this clan's
-	// native manager") is exactly the condition we need here too — a
-	// manager that needs sudo for install needs it whether or not it also
-	// needs an index sync.
-	return needsNativeSync(s, clan)
+
+	for _, tool := range s.Tools {
+		for _, mc := range config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName) {
+			if mc.When != nil && !mc.When.Match(ex.facts) {
+				continue
+			}
+			adapter := ex.LookupAdapter(mc.Kind)
+			requirer, ok := adapter.(ElevationRequirer)
+			if ok && requirer.RequiresElevation(tool, mc) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // batchCandidate represents one tool eligible for batch native install.
@@ -249,7 +254,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 	// terminal): elevation would silently fail on every run that isn't
 	// already NOPASSWD. This is skipped in dry-run: a plan should never
 	// prompt for credentials it won't use.
-	if session, ok := ex.rn.(run.ElevationSession); !ex.dryRun && needsElevation(s, clan) && ok {
+	if session, ok := ex.rn.(run.ElevationSession); !ex.dryRun && ex.needsElevation(s, clan) && ok {
 		stop, err := session.StartElevationSession(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("elevation: %w", err)

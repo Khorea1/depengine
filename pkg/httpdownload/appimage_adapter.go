@@ -57,6 +57,11 @@ func init() {
 
 func (a *AppImageAdapter) Kind() string { return "appimage" }
 
+func (a *AppImageAdapter) RequiresElevation(tool *config.Tool, mc *config.MethodCandidate) bool {
+	installDir, name := binaryTarget(tool, mc)
+	return a.http.RequiresElevation(tool, httpDelegate(mc, installDir, name))
+}
+
 // Available mirrors HTTPAdapter: Go's net/http is always available.
 func (a *AppImageAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	return a.http.Available(ctx, rn)
@@ -132,10 +137,7 @@ func (a *AppImageAdapter) Install(ctx context.Context, rn run.Runner, tool *conf
 	}
 	downloadedName := resolvedFileName(resolvedURL, fileExtension(resolvedURL))
 
-	sudoRequired := defaultSudoRequired(installDir)
-	if v, ok := mc.Config["sudo_required"].(bool); ok {
-		sudoRequired = v
-	}
+	sudoRequired := a.RequiresElevation(tool, mc)
 
 	if err := a.http.Install(ctx, rn, tool, httpDelegate(mc, installDir, name)); err != nil {
 		return fmt.Errorf("appimage: %w", err)
