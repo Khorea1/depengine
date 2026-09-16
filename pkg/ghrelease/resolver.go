@@ -115,6 +115,16 @@ func ResolveLatestTag(ctx context.Context, urlStr string, rn run.Runner) (string
 	return fetchLatestTag(ctx, matches[1], matches[2], rn)
 }
 
+// ResolveLatestReleaseTag returns the latest release tag for an owner/repo
+// reference. Unlike ResolveLatestTag, it does not require a URL template.
+func ResolveLatestReleaseTag(ctx context.Context, repo string, rn run.Runner) (string, error) {
+	owner, name, ok := splitRepo(repo)
+	if !ok {
+		return "", fmt.Errorf("resolve latest: %q is not an owner/repo GitHub reference", repo)
+	}
+	return fetchLatestTag(ctx, owner, name, rn)
+}
+
 // fetchLatestTag calls GitHub's releases API for owner/repo and returns the
 // latest release's tag name, using the shared in-memory cache so the same
 // repo is only fetched once per process lifecycle.

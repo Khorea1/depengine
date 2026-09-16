@@ -268,12 +268,19 @@ func saveLockfile(ctx context.Context, s *config.Schema, lockPath string, oldLoc
 	}
 }
 
-// hasLatestPlaceholders checks whether any tool method in the schema uses
-// a {latest} placeholder in its URL. Used by install to decide whether
-// auto-resolution is needed when no lockfile exists.
+// hasLatestPlaceholders checks whether any method needs a latest release
+// resolved. Used by install to decide whether auto-resolution is needed when
+// no lockfile exists.
 func hasLatestPlaceholders(s *config.Schema) bool {
 	for _, tool := range s.Tools {
 		for _, method := range tool.Methods {
+			if method.Kind == "github" {
+				branch, _ := method.Config["branch"].(string)
+				release, _ := method.Config["release"].(string)
+				if branch == "" && (release == "" || release == "latest") {
+					return true
+				}
+			}
 			if url, ok := method.Config["url"].(string); ok && strings.Contains(url, "{latest}") {
 				return true
 			}

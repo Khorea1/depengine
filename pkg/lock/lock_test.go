@@ -227,6 +227,68 @@ func TestResolveAllNoLatest(t *testing.T) {
 	}
 }
 
+func TestResolveAllPinsGitHubLatestReleases(t *testing.T) {
+	original := resolveLatestReleaseTag
+	resolveLatestReleaseTag = func(_ context.Context, repo string, _ run.Runner) (string, error) {
+		return "v1.2.3-" + filepath.Base(repo), nil
+	}
+	t.Cleanup(func() { resolveLatestReleaseTag = original })
+
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"implicit": {Name: "implicit", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{"repo": "owner/implicit", "asset": "tool-{arch_any}"}}}},
+		"latest":   {Name: "latest", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{"repo": "owner/latest", "asset": "tool-{arch_any}", "release": "latest"}}}},
+		"release":  {Name: "release", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{"repo": "owner/release", "asset": "tool-{arch_any}", "release": "nightly"}}}},
+		"branch":   {Name: "branch", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{"repo": "owner/branch", "asset": "tool-{arch_any}", "branch": "edge"}}}},
+	}}
+
+	l, err := ResolveAll(context.Background(), s, &run.FakeRunner{})
+	if err != nil {
+		t.Fatalf("ResolveAll: %v", err)
+	}
+	if got := l.Tools["implicit/github/0"].Latest; got != "v1.2.3-implicit" {
+		t.Errorf("implicit latest pin = %q", got)
+	}
+	if got := l.Tools["latest/github/0"].Latest; got != "v1.2.3-latest" {
+		t.Errorf("explicit latest pin = %q", got)
+	}
+	if _, ok := l.Tools["release/github/0"]; ok {
+		t.Error("named release must not be pinned as latest")
+	}
+	if _, ok := l.Tools["branch/github/0"]; ok {
+		t.Error("named branch must not be pinned as latest")
+	}
+}
+
+func TestApplyPinsGitHubReleaseWithoutOverwritingExplicitRefs(t *testing.T) {
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"implicit": {Name: "implicit", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{}}}},
+		"latest":   {Name: "latest", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{"release": "latest"}}}},
+		"release":  {Name: "release", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{"release": "nightly"}}}},
+		"branch":   {Name: "branch", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{"branch": "edge"}}}},
+	}}
+	l := &Lock{Version: 1, Tools: map[string]ToolPin{
+		"implicit/github/0": {Latest: "v1.0.0"},
+		"latest/github/0":   {Latest: "v2.0.0"},
+		"release/github/0":  {Latest: "v3.0.0"},
+		"branch/github/0":   {Latest: "v4.0.0"},
+	}}
+
+	Apply(s, l)
+
+	if got := s.Tools["implicit"].Methods[0].Config["release"]; got != "v1.0.0" {
+		t.Errorf("implicit release = %v", got)
+	}
+	if got := s.Tools["latest"].Methods[0].Config["release"]; got != "v2.0.0" {
+		t.Errorf("latest release = %v", got)
+	}
+	if got := s.Tools["release"].Methods[0].Config["release"]; got != "nightly" {
+		t.Errorf("named release overwritten: %v", got)
+	}
+	if got := s.Tools["branch"].Methods[0].Config["branch"]; got != "edge" {
+		t.Errorf("branch overwritten: %v", got)
+	}
+}
+
 func TestApplyPinsURLs(t *testing.T) {
 	s := &config.Schema{
 		Tools: map[string]*config.Tool{

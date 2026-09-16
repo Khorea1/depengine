@@ -34,6 +34,8 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+var resolveLatestReleaseTag = ghrelease.ResolveLatestReleaseTag
+
 // Lock pins resolved placeholder values for reproducible installs.
 type Lock struct {
 	Version     int                `toml:"version"`
@@ -225,6 +227,14 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 					pin.Latest = tag
 				}
 			}
+			if method.Kind == "github" && githubUsesLatest(method.Config) {
+				repo, _ := method.Config["repo"].(string)
+				tag, err := resolveLatestReleaseTag(ctx, repo, rn)
+				if err != nil {
+					return nil, fmt.Errorf("lock: resolve %s/github: %w", name, err)
+				}
+				pin.Latest = tag
+			}
 
 			// Capture concrete checksum (prefer adapter-resolved hash over manual pin).
 			if checksum, ok := method.Config["_checksum_resolved"].(string); ok && checksum != "" {
@@ -280,6 +290,9 @@ func Apply(s *config.Schema, l *Lock) {
 			// Substitute {latest} in the current URL template with the
 			// pinned version tag.
 			if pin.Latest != "" {
+				if method.Kind == "github" && githubUsesLatest(method.Config) {
+					method.Config["release"] = pin.Latest
+				}
 				if urlRaw, ok := method.Config["url"].(string); ok && strings.Contains(urlRaw, "{latest}") {
 					method.Config["url"] = strings.ReplaceAll(urlRaw, "{latest}", pin.Latest)
 				}
@@ -293,4 +306,12 @@ func Apply(s *config.Schema, l *Lock) {
 			}
 		}
 	}
+}
+
+func githubUsesLatest(cfg map[string]any) bool {
+	if branch, _ := cfg["branch"].(string); branch != "" {
+		return false
+	}
+	release, _ := cfg["release"].(string)
+	return release == "" || release == "latest"
 }
