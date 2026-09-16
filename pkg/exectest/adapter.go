@@ -210,16 +210,4 @@ func TestAdapterConformance(t *testing.T, a exec.Adapter) {
 		}
 	})
 
-	t.Run("RegisteredKinds_contains_kind", func(t *testing.T) {
-		found := false
-		for _, k := range exec.RegisteredKinds() {
-			if k == a.Kind() {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("Kind %q not in exec.RegisteredKinds() — may need exec.Register() call", a.Kind())
-		}
-	})
 }

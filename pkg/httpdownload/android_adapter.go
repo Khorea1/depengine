@@ -53,10 +53,6 @@ func NewAndroidAdapter() *AndroidAdapter {
 	return &AndroidAdapter{http: NewHTTPAdapter()}
 }
 
-func init() {
-	exec.Register(NewAndroidAdapter())
-}
-
 func (a *AndroidAdapter) Kind() string { return "android" }
 
 // Available requires both the Termux environment itself (cheap, dependency-

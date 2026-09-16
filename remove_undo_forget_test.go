@@ -9,21 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Khorea1/depengine/pkg/ecosystem"
-	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/state"
 	"github.com/spf13/cobra"
 )
-
-// init mirrors main.initAdapters: the test binary never runs main(), so the
-// production adapter registry would otherwise be empty. These tests exercise
-// remove/undo/forget end-to-end (including adapter dispatch), so the same
-// adapters the CLI registers must be registered here.
-func init() {
-	exec.Register(exec.NewNativeAdapter(""))
-	exec.RegisterNativeManagerAliases()
-	ecosystem.RegisterAll("paru")
-}
 
 // runCommand executes a depengine command in a child process of the test
 // binary. runRemove/runUndo/runForget call os.Exit on failure, so they can

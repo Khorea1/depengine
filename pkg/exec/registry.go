@@ -5,8 +5,8 @@ import (
 	"sync"
 )
 
-// Global adapter registry. Adapters register themselves in init().
-// The executor looks up adapters by kind at runtime.
+// Global adapter registry. The binary's composition root populates it before
+// constructing commands or executors.
 var (
 	adapters   = map[string]Adapter{}
 	adaptersMu sync.RWMutex
@@ -14,7 +14,7 @@ var (
 
 // Register inserts an adapter into the global registry. Panics if a
 // different adapter with the same Kind is already registered (fail-fast
-// on conflict at init time, never a runtime error).
+// on composition conflicts before command execution).
 func Register(a Adapter) {
 	adaptersMu.Lock()
 	defer adaptersMu.Unlock()

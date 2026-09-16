@@ -3,8 +3,11 @@ package main
 import (
 	"os"
 
+	"github.com/Khorea1/depengine/pkg/container"
 	"github.com/Khorea1/depengine/pkg/ecosystem"
 	"github.com/Khorea1/depengine/pkg/exec"
+	gitadapter "github.com/Khorea1/depengine/pkg/git"
+	"github.com/Khorea1/depengine/pkg/httpdownload"
 )
 
 var version = "dev"
@@ -40,4 +43,13 @@ func initAdapters() {
 	exec.Register(exec.NewNativeAdapter(""))
 	exec.RegisterNativeManagerAliases()
 	ecosystem.RegisterAll("paru")
+	exec.Register(gitadapter.NewGitAdapter())
+	exec.Register(httpdownload.NewHTTPAdapter())
+	exec.Register(httpdownload.NewGitHubAdapter())
+	exec.Register(httpdownload.NewAppImageAdapter())
+	exec.Register(httpdownload.NewAndroidAdapter())
+	exec.Register(container.NewContainerAdapter())
+	for _, adapter := range exec.WindowsAdapters() {
+		exec.Register(adapter)
+	}
 }

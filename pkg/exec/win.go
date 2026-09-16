@@ -8,21 +8,25 @@ import (
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
-func init() {
-	Register(&winAdapter{
-		kind:       "scoop",
-		binary:     "scoop",
-		installCmd: []string{"scoop", "install", "{pkg}"},
-		checkCmd:   []string{"scoop", "list", "{pkg}"},
-		removeCmd:  []string{"scoop", "uninstall", "{pkg}"},
-	})
-	Register(&winAdapter{
-		kind:       "choco",
-		binary:     "choco",
-		installCmd: []string{"choco", "install", "{pkg}", "-y"},
-		checkCmd:   []string{"cmd", "/c", `choco list --local-only --exact --limit-output {pkg} | findstr /c:"{pkg}"`},
-		removeCmd:  []string{"choco", "uninstall", "{pkg}", "-y"},
-	})
+// WindowsAdapters returns the built-in Windows package-manager adapters.
+// Callers explicitly add them to their registry at the composition root.
+func WindowsAdapters() []Adapter {
+	return []Adapter{
+		&winAdapter{
+			kind:       "scoop",
+			binary:     "scoop",
+			installCmd: []string{"scoop", "install", "{pkg}"},
+			checkCmd:   []string{"scoop", "list", "{pkg}"},
+			removeCmd:  []string{"scoop", "uninstall", "{pkg}"},
+		},
+		&winAdapter{
+			kind:       "choco",
+			binary:     "choco",
+			installCmd: []string{"choco", "install", "{pkg}", "-y"},
+			checkCmd:   []string{"cmd", "/c", `choco list --local-only --exact --limit-output {pkg} | findstr /c:"{pkg}"`},
+			removeCmd:  []string{"choco", "uninstall", "{pkg}", "-y"},
+		},
+	}
 }
 
 // winAdapter implements Adapter for a Windows package manager (scoop, choco).

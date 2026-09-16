@@ -191,7 +191,7 @@ func init() {
 
 // RegisterAll registers all language adapters with the global exec registry.
 // AUR needs special construction (configurable helper binary); cargo needs
-// git-repo support. Call this once from main() or an init().
+// git-repo support. Call this once from the binary's composition root.
 func RegisterAll(aurHelper string) {
 	// cargo has special git-repo support.
 	exec.Register(NewCargoAdapter())

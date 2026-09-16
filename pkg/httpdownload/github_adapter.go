@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/Khorea1/depengine/pkg/config"
-	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/ghrelease"
 	"github.com/Khorea1/depengine/pkg/run"
 )
@@ -51,10 +50,6 @@ type GitHubAdapter struct {
 // URL has been resolved.
 func NewGitHubAdapter() *GitHubAdapter {
 	return &GitHubAdapter{http: NewHTTPAdapter()}
-}
-
-func init() {
-	exec.Register(NewGitHubAdapter())
 }
 
 func (a *GitHubAdapter) Kind() string { return "github" }

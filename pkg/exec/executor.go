@@ -154,7 +154,7 @@ func WithOutput(w io.Writer) Option {
 // WithAdapters registers adapters into the executor's per-instance
 // registry. Each adapter is stored by its Kind(). Duplicate kinds
 // are silently overwritten — the last one wins (explicit construction
-// overrides global registrations from init()).
+// overrides global registrations from the composition root).
 func WithAdapters(adapters ...Adapter) Option {
 	return func(e *Executor) {
 		if e.adapters == nil {
@@ -200,8 +200,8 @@ func New() *Executor {
 		color:              shouldUseColor(),
 	}
 	// Pre-populate from the global adapter registry.
-	// Adapters registered via init() (git, http, native, lang, etc.)
-	// are available to every executor. WithAdapters can override them.
+	// Adapters registered at the composition root are available to every
+	// executor. WithAdapters can override them.
 	adaptersMu.RLock()
 	for k, a := range adapters {
 		ex.adapters[k] = a

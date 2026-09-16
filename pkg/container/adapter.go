@@ -24,10 +24,6 @@ func NewContainerAdapter() *ContainerAdapter {
 	return &ContainerAdapter{}
 }
 
-func init() {
-	exec.Register(NewContainerAdapter())
-}
-
 func (a *ContainerAdapter) Kind() string { return "container" }
 
 // Available reports whether ANY container engine (docker or podman) is on

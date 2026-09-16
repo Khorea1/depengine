@@ -21,7 +21,8 @@
 //	  │
 //	  └─ 3. Report summary (successes, failures, skips)
 //
-// Adding a new adapter: implement Adapter, call Register in an init().
+// Adding a new adapter: implement Adapter and register it at the binary's
+// composition root.
 // The executor is generic — it only knows this interface.
 package exec
 

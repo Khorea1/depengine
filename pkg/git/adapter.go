@@ -25,10 +25,6 @@ func NewGitAdapter() *GitAdapter {
 	return &GitAdapter{}
 }
 
-func init() {
-	exec.Register(NewGitAdapter())
-}
-
 func (a *GitAdapter) Kind() string { return "git" }
 
 // Available checks whether git is on PATH.

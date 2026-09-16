@@ -9,19 +9,14 @@ import (
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
-// lookupWinAdapter finds a winAdapter by kind from the global registry.
+// lookupWinAdapter finds a built-in Windows adapter by kind.
 func lookupWinAdapter(kind string) *winAdapter {
-	adaptersMu.RLock()
-	defer adaptersMu.RUnlock()
-	a, ok := adapters[kind]
-	if !ok {
-		panic(fmt.Sprintf("adapter %q not registered", kind))
+	for _, adapter := range WindowsAdapters() {
+		if adapter.Kind() == kind {
+			return adapter.(*winAdapter)
+		}
 	}
-	wa, ok := a.(*winAdapter)
-	if !ok {
-		panic(fmt.Sprintf("adapter %q is %T, not *winAdapter", kind, a))
-	}
-	return wa
+	panic(fmt.Sprintf("unknown Windows adapter %q", kind))
 }
 
 func TestWinAdapterKind(t *testing.T) {
@@ -45,16 +40,16 @@ func TestWinAdapterAvailable(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 0}
 		a := lookupWinAdapter("scoop")
 		if !a.Available(ctx, fr) {
-			t.Fatal("Available() should be true when which exits 0")
+			t.Fatal("Available() should be true when executable lookup succeeds")
 		}
 		if len(fr.Calls) != 1 {
 			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
 		}
 		if fr.Calls[0].Name != "which" {
-			t.Fatalf("expected 'which', got %q", fr.Calls[0].Name)
+			t.Fatalf("expected LookPath, got %q", fr.Calls[0].Name)
 		}
 		if len(fr.Calls[0].Args) != 1 || fr.Calls[0].Args[0] != "scoop" {
-			t.Fatalf("expected which scoop, got %v", fr.Calls[0].Args)
+			t.Fatalf("expected LookPath for scoop, got %v", fr.Calls[0].Args)
 		}
 	})
 
@@ -62,7 +57,7 @@ func TestWinAdapterAvailable(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 1}
 		a := lookupWinAdapter("choco")
 		if a.Available(ctx, fr) {
-			t.Fatal("Available() should be false when which exits non-zero")
+			t.Fatal("Available() should be false when executable lookup fails")
 		}
 	})
 
@@ -73,7 +68,7 @@ func TestWinAdapterAvailable(t *testing.T) {
 			t.Fatal("Available() should be true for choco")
 		}
 		if len(fr.Calls) != 1 || fr.Calls[0].Args[0] != "choco" {
-			t.Fatalf("expected which choco, got %v", fr.Calls[0].Args)
+			t.Fatalf("expected LookPath for choco, got %v", fr.Calls[0].Args)
 		}
 	})
 }

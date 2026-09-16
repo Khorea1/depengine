@@ -26,10 +26,6 @@ func NewHTTPAdapter() *HTTPAdapter {
 	return &HTTPAdapter{}
 }
 
-func init() {
-	exec.Register(NewHTTPAdapter())
-}
-
 func (a *HTTPAdapter) Kind() string { return "http" }
 
 // RequiresElevation applies the same path-derived default and explicit

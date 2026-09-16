@@ -51,10 +51,6 @@ func NewAppImageAdapter() *AppImageAdapter {
 	return &AppImageAdapter{http: NewHTTPAdapter()}
 }
 
-func init() {
-	exec.Register(NewAppImageAdapter())
-}
-
 func (a *AppImageAdapter) Kind() string { return "appimage" }
 
 func (a *AppImageAdapter) RequiresElevation(tool *config.Tool, mc *config.MethodCandidate) bool {
