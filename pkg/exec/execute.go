@@ -475,7 +475,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 			if tr == nil {
 				continue
 			}
-			if tr.Status == StatusFailed || tr.Status == StatusSkippedUnavailable {
+			if tr.Status == StatusFailed || tr.Status == StatusSkippedWhen || tr.Status == StatusSkippedUnavailable {
 				reason := tr.Error
 				if reason == "" {
 					reason = "not installed"

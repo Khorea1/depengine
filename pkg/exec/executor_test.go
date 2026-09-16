@@ -497,6 +497,50 @@ func TestExecutorReportsWhenAllMethodsAreGated(t *testing.T) {
 	}
 }
 
+func TestExecutorBlocksDependentWhenRequirementIsGated(t *testing.T) {
+	var installed []string
+	adapter := &testMockAdapter{
+		kindValue:   "mock",
+		installFunc: func(name string) error { installed = append(installed, name); return nil },
+	}
+
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithAdapters(adapter)(ex)
+	WithFacts(&engine.Facts{OS: "darwin"})(ex)
+
+	s := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"mock"}},
+		Tools: map[string]*config.Tool{
+			"dependency": {
+				Name: "dependency",
+				Methods: []*config.MethodCandidate{
+					{Kind: "mock", When: &config.Condition{OS: []string{"linux"}}},
+				},
+			},
+			"dependent": {
+				Name:     "dependent",
+				Requires: []string{"dependency"},
+				Methods:  []*config.MethodCandidate{{Kind: "mock"}},
+			},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), s, "darwin")
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(installed) != 0 {
+		t.Fatalf("installed = %v, want no installation attempts", installed)
+	}
+	if report.Skipped != 1 || report.Failed != 1 {
+		t.Fatalf("report counts = skipped %d, failed %d; want 1/1", report.Skipped, report.Failed)
+	}
+	if got := report.Tools[1]; got.Tool != "dependent" || got.Status != StatusFailed || !strings.Contains(got.Error, "requires failed dependency: dependency") {
+		t.Fatalf("dependent result = %+v, want failed requirement", got)
+	}
+}
+
 func TestExecutorAllMethodsFail(t *testing.T) {
 	mock := &testMockAdapter{
 		kindValue:     "native",
