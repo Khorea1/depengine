@@ -1,0 +1,135 @@
+package config
+
+import (
+	"github.com/Khorea1/depengine/pkg/engine"
+	"github.com/Khorea1/depengine/pkg/methodkind"
+)
+
+// Schema is the fully-normalized in-memory form of schema.toml after parsing.
+type Schema struct {
+	Version       int
+	Defaults      Defaults
+	Tools         map[string]*Tool
+	AllowNewTools bool                     `json:"-"`
+	Provenance    map[string][]FieldSource `json:"-"`
+}
+
+// Defaults mirrors the [defaults] table. Omitted fields keep engine-safe
+// defaults baked into the parser.
+type Defaults struct {
+	Manager     string
+	AurHelper   string
+	MethodOrder []string
+	// ArchMap/OSMap override the built-in {arch}/{os} spelling table for
+	// every method unless the method declares its own map.
+	ArchMap map[string]string
+	OSMap   map[string]string
+}
+
+// DefaultBuckets maps ecosystem names to lists of method kinds.
+var DefaultBuckets = methodkind.DefaultBuckets
+
+// Tool is one entry under [tools].
+type Tool struct {
+	Name            string                `merge:"overwrite"`
+	PreInstall      string                `merge:"overwrite"`
+	PostInstall     string                `merge:"overwrite"`
+	PostInstallWhen *Condition            `merge:"overwrite"`
+	RequiresWhen    map[string]*Condition `merge:"overwrite"`
+	Requires        []string              `merge:"overwrite"`
+	Methods         []*MethodCandidate    `merge:"methods"`
+	MethodPrefer    []string              `merge:"overwrite"`
+	MethodOnly      []string              `merge:"overwrite"`
+	IsSimple        bool                  `merge:"overwrite"`
+	Tags            []string              `merge:"union"`
+	Ecosystem       string                `merge:"overwrite"`
+}
+
+// FilteredTools clones tools with Requires reduced to the dependencies that
+// apply under facts. Tools without gated dependencies are reused.
+func FilteredTools(tools map[string]*Tool, facts *engine.Facts) map[string]*Tool {
+	if tools == nil || facts == nil {
+		return tools
+	}
+	out := make(map[string]*Tool, len(tools))
+	for name, tool := range tools {
+		if len(tool.RequiresWhen) == 0 {
+			out[name] = tool
+			continue
+		}
+		clone := cloneTool(tool)
+		clone.Requires = tool.EffectiveRequires(facts)
+		out[name] = clone
+	}
+	return out
+}
+
+// EffectiveRequires returns dependencies whose conditions match facts. Nil
+// facts disable filtering.
+func (t *Tool) EffectiveRequires(facts *engine.Facts) []string {
+	if facts == nil || len(t.RequiresWhen) == 0 {
+		return t.Requires
+	}
+	out := make([]string, 0, len(t.Requires))
+	for _, dependency := range t.Requires {
+		if condition, gated := t.RequiresWhen[dependency]; gated && !condition.Match(facts) {
+			continue
+		}
+		out = append(out, dependency)
+	}
+	return out
+}
+
+func cloneTool(tool *Tool) *Tool {
+	if tool == nil {
+		return nil
+	}
+	out := *tool
+	out.Requires = append([]string{}, tool.Requires...)
+	if tool.RequiresWhen != nil {
+		out.RequiresWhen = make(map[string]*Condition, len(tool.RequiresWhen))
+		for dependency, condition := range tool.RequiresWhen {
+			out.RequiresWhen[dependency] = condition
+		}
+	}
+	out.Tags = append([]string{}, tool.Tags...)
+	out.MethodPrefer = append([]string{}, tool.MethodPrefer...)
+	out.MethodOnly = append([]string{}, tool.MethodOnly...)
+	out.Methods = cloneMethods(tool.Methods)
+	return &out
+}
+
+func cloneMethods(methods []*MethodCandidate) []*MethodCandidate {
+	out := make([]*MethodCandidate, len(methods))
+	for i, method := range methods {
+		out[i] = cloneMethod(method)
+	}
+	return out
+}
+
+func cloneMethod(method *MethodCandidate) *MethodCandidate {
+	if method == nil {
+		return nil
+	}
+	out := *method
+	out.Config = make(map[string]any, len(method.Config))
+	for key, value := range method.Config {
+		out.Config[key] = value
+	}
+	if method.When != nil {
+		condition := *method.When
+		out.When = &condition
+	}
+	return &out
+}
+
+// MethodCandidate is one way to install the parent Tool.
+type MethodCandidate struct {
+	Kind    string
+	Label   string
+	When    *Condition
+	Config  map[string]any
+	Err     error
+	ArchMap map[string]string
+	OSMap   map[string]string
+}
