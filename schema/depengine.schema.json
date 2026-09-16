@@ -1,284 +1,3728 @@
 {
+  "$id": "https://raw.githubusercontent.com/Khorea1/depengine/master/schema/depengine.schema.json",
   "$schema": "https://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/Khorea1/depengine/main/schema/depengine.schema.json",
-  "title": "depengine schema.toml",
-  "description": "JSON Schema for depengine schema.toml — validates structure, method kinds, and required fields for distro-agnostic dependency installation files.",
-  "type": "object",
-  "properties": {
-    "defaults": {
-      "type": "object",
-      "title": "Default configuration",
-      "properties": {
-        "manager": {
-          "type": "string",
-          "default": "native",
-          "description": "Default manager when a tool doesn't specify anything."
-        },
-        "aur_helper": {
-          "type": "string",
-          "default": "paru",
-          "description": "AUR helper to use for aur method. Only relevant on Arch-based distros."
-        },
-        "method_order": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Order in which methods are tried when a tool declares multiple candidates. Stops at the first that succeeds. Accepts method kind names (native, cargo, go, pip, git, http, ...) and ecosystem bucket names (python, node), which expand to their member kinds."
-        }
-      }
-    },
-    "tools": {
-      "type": "object",
-      "title": "Tool declarations",
-      "description": "Every key under [tools] is either the special 'simple' list or a tool declaration.",
-      "properties": {
-        "simple": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "List of simple tool names. These tools use the default manager (native) and the package name equals the tool name."
-        }
-      },
-      "additionalProperties": {
-        "$ref": "#/definitions/toolDeclaration"
-      }
-    },
-    "packages": {
-      "type": "object",
-      "title": "Package declarations (manifest files)",
-      "description": "Manifest files declare install knowledge under [packages] instead of [tools]. The grammar is identical: the special 'simple' list plus one declaration per package.",
-      "properties": {
-        "simple": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "List of simple package names. These packages use the default manager (native) and the package name equals the tool name."
-        }
-      },
-      "additionalProperties": {
-        "$ref": "#/definitions/toolDeclaration"
-      }
-    },
-    "manifest": {
-      "type": "object",
-      "title": "Manifest options",
-      "description": "Options for a manifest file ([manifest] table, next to [packages]). Read by the manifest merge layer.",
-      "properties": {
-        "allow_new_tools": {
-          "type": "boolean",
-          "default": false,
-          "description": "Allow the manifest to introduce tools that don't exist in the project schema. When false (default), manifest-only tools are silently excluded from the merge."
-        }
-      }
-    }
-  },
   "definitions": {
-    "toolDeclaration": {
+    "bucketMethod": {
       "oneOf": [
-        { "$ref": "#/definitions/stringTool" },
-        { "$ref": "#/definitions/inlineTool" }
-      ]
-    },
-    "stringTool": {
-      "type": "string",
-      "description": "Tool whose native package name equals the tool name. Shorthand for { native = \"<tool-name>\" }."
-    },
-    "inlineTool": {
-      "type": "object",
-      "title": "Tool declaration (inline or full block)",
-      "description": "A tool declared as an inline table ({ apt = \"fd-find\" }) or a full block ([tools.X] + [tools.X.method]). The parser also accepts the bucket shorthands python and node (e.g. python = true expands to pip/pipx/uv) and any method kind name as a key.",
-      "properties": {
-        "requires": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "List of tool names this tool depends on (installed first)."
-        },
-        "pre_install": {
-          "type": "string",
-          "description": "Pre-install hook that runs before any method is attempted. Runs via shell."
-        },
-        "preinstall": {
-          "type": "string",
-          "description": "Alias for pre_install — the parser accepts both spellings; pre_install wins when both are present."
-        },
-        "post_install": {
-          "type": "string",
-          "description": "Alias for postinstall — the parser accepts both spellings; post_install wins when both are present."
-        },
-        "postinstall": {
-          "type": "string",
-          "description": "Post-install command that runs after any method succeeds (e.g. fc-cache, systemctl daemon-reload)."
-        },
-        "tags": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Tags for profile filtering (e.g. desktop, server, fonts)."
-        },
-        "method_order": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Deprecated per-tool alias for method_prefer. Kept for backward compatibility; prefer method_prefer."
-        },
-        "method_prefer": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Methods to try first, before the defaults. Example: ['cargo'] tries cargo before native."
-        },
-        "method_only": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Exhaustive list — only these methods are tried, in this order. Global method_order is ignored."
-        }
-      },
-      "additionalProperties": {
-        "$ref": "#/definitions/methodValue"
-      }
-    },
-    "methodValue": {
-      "oneOf": [
-        { "type": "string", "description": "Package/module name for this method. Shorthand for { pkg = \"<name>\" }." },
         {
-          "type": "boolean",
-          "const": true,
-          "description": "Boolean shorthand: each method in the bucket uses the tool name as its package. Example: python = true expands to { pip = true, pipx = true, uv = true }. Only true is accepted — false is rejected by the parser."
+          "type": "string"
         },
-        { "$ref": "#/definitions/methodObject" }
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
       ]
     },
-    "methodObject": {
-      "type": "object",
-      "title": "Method configuration",
-      "description": "Configuration for one installation method. Can include method-specific fields plus an optional 'when' condition. Unknown keys are passed through to the adapter verbatim, so method-specific fields beyond those listed here are also accepted.",
+    "condition": {
+      "additionalProperties": false,
+      "minProperties": 1,
       "properties": {
-        "pkg": {
-          "type": "string",
-          "description": "Package/module/binary name to install via this method."
+        "arch": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
-        "pkg_overrides": {
-          "type": "object",
-          "additionalProperties": { "type": "string" },
-          "description": "Per-native-manager package name overrides for the native method. The native adapter picks the entry matching the detected manager and falls back to pkg when the manager isn't listed. Example: { pacman = \"neovim\", apt = \"neovim\" }."
-        },
-        "when": { "$ref": "#/definitions/whenCondition" },
-        "kind": {
-          "type": "string",
-          "description": "Override the adapter dispatch key. When the section key differs from the adapter kind (e.g. \"http-musl\" is a variant of \"http\"), set kind = \"<adapter>\" so the method resolves to the correct adapter."
-        },
-        "git": {
-          "type": "string",
-          "description": "Git repository URL (for cargo install --git, go install, etc.)."
-        },
-        "url": {
-          "type": "string",
-          "description": "Download URL. Supports {latest} placeholder for GitHub release tags."
-        },
-        "build": {
-          "type": "string",
-          "description": "Build command executed inside the cloned repository (run via shell). Used by git adapter."
-        },
-        "checksum": {
-          "type": "string",
-          "description": "Checksum for verification. \"sha256:auto\" = calculate on first download (TOFU). \"sha256:<hex>\" = pinned verification."
-        },
-        "checksum_url": {
-          "type": "string",
-          "description": "Explicit URL for the checksum file. Overrides auto URL patterns when checksum is :auto."
-        },
-        "checksum_file_format": {
-          "type": "string",
-          "enum": ["sha256sum", "bsd", "raw"],
-          "description": "Format of the checksum file: 'sha256sum' (default), 'bsd' (BSD-style), or 'raw' (file content is the hash)."
-        },
-        "signature_url": {
-          "type": "string",
-          "description": "URL to GPG detached signature (.asc/.sig) for verifying the checksum file."
-        },
-        "signing_key": {
-          "type": "string",
-          "description": "GPG key URL or fingerprint for signature verification."
-        },
-        "extract_to": {
-          "type": "string",
-          "description": "Directory to extract/install artifacts into."
-        },
-        "branch": {
-          "type": "string",
-          "description": "Git branch to clone (git adapter)."
-        },
-        "depth": {
-          "oneOf": [
-            { "type": "integer", "minimum": 0, "description": "Git clone depth (0 = full history)." },
-            { "type": "string", "pattern": "^[0-9]+$", "description": "Git clone depth as string." }
-          ],
-          "default": 1,
-          "description": "Git clone depth (git adapter). Default 1 (shallow). 0 = full history."
-        },
-        "binary": {
-          "type": "string",
-          "description": "Binary name to check for. Used by git adapter's Check() to verify installation."
-        },
-        "artifact": {
-          "type": "string",
-          "description": "Subpath inside the cloned repository to copy into extract_to (git adapter). Defaults to the clone root (/) when omitted."
-        },
-        "version": {
-          "type": "string",
-          "description": "Version to install (sdkman method: sdk install <package> <version>)."
-        },
-        "sudo_required": {
-          "type": "boolean",
-          "default": null,
-          "description": "Whether the http method requires sudo for extraction/installation. Default is path-derived: false when extract_to is inside the user's home (e.g. ~/.local/share/fonts), true for system paths (e.g. /usr/local/bin). Set explicitly to override."
-        }
-      }
-    },
-    "whenCondition": {
-      "type": "object",
-      "title": "When condition — platform applicability gate",
-      "description": "Condition that gates a method's applicability. The engine evaluates every non-empty field against system facts (AND semantics — all must match). If the condition doesn't match, this method is skipped and the next one is tried.\n\nEach list field accepts a single string (shorthand for a one-element list) or a list of values (OR semantics — any single match suffices). Comparison is case-insensitive. Libc uses prefix matching (e.g. \"glibc\" matches \"glibc 2.35\").",
-      "properties": {
         "distro_family": {
-          "type": ["string", "array"],
-          "items": { "type": "string" },
-          "description": "Match on resolved distro family (clan). Values: debian, arch, fedora, alpine, gentoo, void, suse, macos, freebsd, openbsd, netbsd, termux, android, nixos, solus, slackware, mageia, openmandriva, or unknown.\n\nExample: [\"arch\"] matches Arch Linux, EndeavourOS, Manjaro, CachyOS."
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "distro_id": {
-          "type": ["string", "array"],
-          "items": { "type": "string" },
-          "description": "Match on exact distro ID (from /etc/os-release ID=). Case-insensitive. Example: [\"ubuntu\", \"debian\"] matches exactly those distros, not Mint or Pop!_OS."
-        },
-        "arch": {
-          "type": ["string", "array"],
-          "items": { "type": "string" },
-          "description": "Match on target architecture (output of uname -m). Example: [\"x86_64\", \"aarch64\"] matches both AMD64 and ARM64 systems."
-        },
-        "os": {
-          "type": ["string", "array"],
-          "items": { "type": "string" },
-          "description": "Match on operating system name (lowercase uname -s). Common values: linux, darwin, windows, freebsd, openbsd, netbsd. Example: [\"linux\"] matches any Linux."
-        },
-        "kernel": {
-          "type": ["string", "array"],
-          "items": { "type": "string" },
-          "description": "Match on full kernel version string (uname -r). Exact match, case-insensitive. Example: [\"6.7.0-arch\", \"6.8.0\"] for kernel-specific packages."
-        },
-        "libc": {
-          "type": ["string", "array"],
-          "items": { "type": "string" },
-          "description": "Match on C standard library. Uses prefix matching — \"glibc\" matches \"glibc 2.35\". Values the detector emits: glibc, musl, uclibc, freebsd-libc. Example: [\"musl\"] matches Alpine Linux."
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "init_system": {
-          "type": ["string", "array"],
-          "items": { "type": "string" },
-          "description": "Match on init system. Values: systemd, openrc, runit, sysvinit. Example: [\"systemd\"] matches distros using systemd."
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
-        "is_wsl": {
-          "type": "boolean",
-          "description": "Match on WSL (Windows Subsystem for Linux) environment. Set to true to restrict to WSL, false to exclude WSL. Omit to ignore."
+        "is_android": {
+          "type": "boolean"
         },
         "is_container": {
-          "type": "boolean",
-          "description": "Match on container environment. Set to true to restrict to containers (Docker, Podman, LXC), false to exclude. Omit to ignore."
+          "type": "boolean"
+        },
+        "is_wsl": {
+          "type": "boolean"
+        },
+        "kernel": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "libc": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "os": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "target_family": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
-      "additionalProperties": false
+      "type": "object"
+    },
+    "defaults": {
+      "additionalProperties": false,
+      "properties": {
+        "arch_map": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "aur_helper": {
+          "default": "paru",
+          "minLength": 1,
+          "type": "string"
+        },
+        "manager": {
+          "default": "native",
+          "minLength": 1,
+          "type": "string"
+        },
+        "method_order": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "os_map": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "manifestDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "defaults": {
+          "$ref": "#/definitions/defaults"
+        },
+        "manifest": {
+          "$ref": "#/definitions/manifestOptions"
+        },
+        "packages": {
+          "additionalProperties": {
+            "$ref": "#/definitions/tool"
+          },
+          "properties": {
+            "simple": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "schema_version": {
+          "const": 1,
+          "description": "depengine grammar version."
+        }
+      },
+      "required": [
+        "schema_version",
+        "packages"
+      ],
+      "type": "object"
+    },
+    "manifestOptions": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_new_tools": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "methodVariant": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "binary": {
+              "type": "string"
+            },
+            "checksum": {
+              "type": "string"
+            },
+            "checksum_file_format": {
+              "enum": [
+                "sha256sum",
+                "bsd",
+                "raw"
+              ],
+              "type": "string"
+            },
+            "checksum_url": {
+              "type": "string"
+            },
+            "extract_to": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "android"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "signature_url": {
+              "type": "string"
+            },
+            "signing_key": {
+              "type": "string"
+            },
+            "sudo_required": {
+              "type": "boolean"
+            },
+            "url": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind",
+            "url"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "apk"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "apm"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "binary": {
+              "type": "string"
+            },
+            "checksum": {
+              "type": "string"
+            },
+            "checksum_file_format": {
+              "enum": [
+                "sha256sum",
+                "bsd",
+                "raw"
+              ],
+              "type": "string"
+            },
+            "checksum_url": {
+              "type": "string"
+            },
+            "desktop": {
+              "type": "boolean"
+            },
+            "extract_to": {
+              "type": "string"
+            },
+            "install_dir": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "appimage"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "signature_url": {
+              "type": "string"
+            },
+            "signing_key": {
+              "type": "string"
+            },
+            "sudo_required": {
+              "type": "boolean"
+            },
+            "url": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind",
+            "url"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "appman"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "apt"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "asdf"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "aur"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "brew"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "bun"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "git": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "cargo"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "cask"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "choco"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "composer"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "conda"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "container"
+            },
+            "manager": {
+              "enum": [
+                "docker",
+                "podman"
+              ],
+              "minLength": 1,
+              "type": "string"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "source": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind",
+            "manager",
+            "source"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "dnf"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "dnf5"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "emerge"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "flatpak"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "gem"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "artifact": {
+              "type": "string"
+            },
+            "binary": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string"
+            },
+            "build": {
+              "type": "string"
+            },
+            "depth": {
+              "oneOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "pattern": "^[0-9]+$",
+                  "type": "string"
+                }
+              ]
+            },
+            "extract_to": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "git"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "url": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind",
+            "url"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "release",
+                  "branch"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "asset": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "binary": {
+              "type": "string"
+            },
+            "branch": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "checksum": {
+              "type": "string"
+            },
+            "checksum_file_format": {
+              "enum": [
+                "sha256sum",
+                "bsd",
+                "raw"
+              ],
+              "type": "string"
+            },
+            "checksum_url": {
+              "type": "string"
+            },
+            "extract_to": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "github"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "release": {
+              "type": "string"
+            },
+            "repo": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "signature_url": {
+              "type": "string"
+            },
+            "signing_key": {
+              "type": "string"
+            },
+            "sudo_required": {
+              "type": "boolean"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind",
+            "asset",
+            "repo"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "go"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "binary": {
+              "type": "string"
+            },
+            "checksum": {
+              "type": "string"
+            },
+            "checksum_file_format": {
+              "enum": [
+                "sha256sum",
+                "bsd",
+                "raw"
+              ],
+              "type": "string"
+            },
+            "checksum_url": {
+              "type": "string"
+            },
+            "extract_to": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "http"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "signature_url": {
+              "type": "string"
+            },
+            "signing_key": {
+              "type": "string"
+            },
+            "sudo_required": {
+              "type": "boolean"
+            },
+            "url": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind",
+            "url"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "mas"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "native"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "npm"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "opkg"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "pacman"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "pacstall"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "paru"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "pip"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "pipx"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "pkg"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "pkg_add"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "pkgin"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "pnpm"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "portage"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "scoop"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "sdkman"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "snap"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "steamcmd"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "uv"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "vscode"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "vscodium"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "winget"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "xbps"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "yarn"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "yarn-berry"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "yay"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "yum"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "const": "zypper"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "method_android": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "binary": {
+              "type": "string"
+            },
+            "checksum": {
+              "type": "string"
+            },
+            "checksum_file_format": {
+              "enum": [
+                "sha256sum",
+                "bsd",
+                "raw"
+              ],
+              "type": "string"
+            },
+            "checksum_url": {
+              "type": "string"
+            },
+            "extract_to": {
+              "type": "string"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "signature_url": {
+              "type": "string"
+            },
+            "signing_key": {
+              "type": "string"
+            },
+            "sudo_required": {
+              "type": "boolean"
+            },
+            "url": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "method_apm": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_appimage": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "binary": {
+              "type": "string"
+            },
+            "checksum": {
+              "type": "string"
+            },
+            "checksum_file_format": {
+              "enum": [
+                "sha256sum",
+                "bsd",
+                "raw"
+              ],
+              "type": "string"
+            },
+            "checksum_url": {
+              "type": "string"
+            },
+            "desktop": {
+              "type": "boolean"
+            },
+            "extract_to": {
+              "type": "string"
+            },
+            "install_dir": {
+              "type": "string"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "signature_url": {
+              "type": "string"
+            },
+            "signing_key": {
+              "type": "string"
+            },
+            "sudo_required": {
+              "type": "boolean"
+            },
+            "url": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "method_appman": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_asdf": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_aur": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_bun": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_cargo": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "git": {
+              "type": "string"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_cask": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_choco": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_composer": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_conda": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_container": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "manager": {
+              "enum": [
+                "docker",
+                "podman"
+              ],
+              "minLength": 1,
+              "type": "string"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "source": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "manager",
+            "source"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "method_flatpak": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_gem": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_git": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "artifact": {
+              "type": "string"
+            },
+            "binary": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string"
+            },
+            "build": {
+              "type": "string"
+            },
+            "depth": {
+              "oneOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "pattern": "^[0-9]+$",
+                  "type": "string"
+                }
+              ]
+            },
+            "extract_to": {
+              "type": "string"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "url": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "method_github": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "release",
+                  "branch"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "asset": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "binary": {
+              "type": "string"
+            },
+            "branch": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "checksum": {
+              "type": "string"
+            },
+            "checksum_file_format": {
+              "enum": [
+                "sha256sum",
+                "bsd",
+                "raw"
+              ],
+              "type": "string"
+            },
+            "checksum_url": {
+              "type": "string"
+            },
+            "extract_to": {
+              "type": "string"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "release": {
+              "type": "string"
+            },
+            "repo": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "signature_url": {
+              "type": "string"
+            },
+            "signing_key": {
+              "type": "string"
+            },
+            "sudo_required": {
+              "type": "boolean"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "asset",
+            "repo"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "method_go": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_http": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "binary": {
+              "type": "string"
+            },
+            "checksum": {
+              "type": "string"
+            },
+            "checksum_file_format": {
+              "enum": [
+                "sha256sum",
+                "bsd",
+                "raw"
+              ],
+              "type": "string"
+            },
+            "checksum_url": {
+              "type": "string"
+            },
+            "extract_to": {
+              "type": "string"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "signature_url": {
+              "type": "string"
+            },
+            "signing_key": {
+              "type": "string"
+            },
+            "sudo_required": {
+              "type": "boolean"
+            },
+            "url": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "method_mas": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_native": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_npm": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_pacstall": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_pip": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_pipx": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_pnpm": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_scoop": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_sdkman": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_snap": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_steamcmd": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_uv": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_vscode": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_vscodium": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_yarn": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_yarn_berry": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "postInstall": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "cmd": {
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "cmd"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "projectDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "defaults": {
+          "$ref": "#/definitions/defaults"
+        },
+        "schema_version": {
+          "const": 1,
+          "description": "depengine grammar version."
+        },
+        "tools": {
+          "additionalProperties": {
+            "$ref": "#/definitions/tool"
+          },
+          "properties": {
+            "simple": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_version",
+        "tools"
+      ],
+      "type": "object"
+    },
+    "tool": {
+      "additionalProperties": {
+        "$ref": "#/definitions/methodVariant"
+      },
+      "properties": {
+        "android": {
+          "$ref": "#/definitions/method_android"
+        },
+        "apk": {
+          "$ref": "#/definitions/method_native"
+        },
+        "apm": {
+          "$ref": "#/definitions/method_apm"
+        },
+        "appimage": {
+          "$ref": "#/definitions/method_appimage"
+        },
+        "appman": {
+          "$ref": "#/definitions/method_appman"
+        },
+        "apt": {
+          "$ref": "#/definitions/method_native"
+        },
+        "asdf": {
+          "$ref": "#/definitions/method_asdf"
+        },
+        "aur": {
+          "$ref": "#/definitions/method_aur"
+        },
+        "brew": {
+          "$ref": "#/definitions/method_native"
+        },
+        "bun": {
+          "$ref": "#/definitions/method_bun"
+        },
+        "cargo": {
+          "$ref": "#/definitions/method_cargo"
+        },
+        "cask": {
+          "$ref": "#/definitions/method_cask"
+        },
+        "choco": {
+          "$ref": "#/definitions/method_choco"
+        },
+        "composer": {
+          "$ref": "#/definitions/method_composer"
+        },
+        "conda": {
+          "$ref": "#/definitions/method_conda"
+        },
+        "container": {
+          "$ref": "#/definitions/method_container"
+        },
+        "dnf": {
+          "$ref": "#/definitions/method_native"
+        },
+        "dnf5": {
+          "$ref": "#/definitions/method_native"
+        },
+        "emerge": {
+          "$ref": "#/definitions/method_native"
+        },
+        "flatpak": {
+          "$ref": "#/definitions/method_flatpak"
+        },
+        "gem": {
+          "$ref": "#/definitions/method_gem"
+        },
+        "git": {
+          "$ref": "#/definitions/method_git"
+        },
+        "github": {
+          "$ref": "#/definitions/method_github"
+        },
+        "go": {
+          "$ref": "#/definitions/method_go"
+        },
+        "http": {
+          "$ref": "#/definitions/method_http"
+        },
+        "mas": {
+          "$ref": "#/definitions/method_mas"
+        },
+        "method_only": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "method_prefer": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "native": {
+          "$ref": "#/definitions/method_native"
+        },
+        "node": {
+          "$ref": "#/definitions/bucketMethod"
+        },
+        "npm": {
+          "$ref": "#/definitions/method_npm"
+        },
+        "opkg": {
+          "$ref": "#/definitions/method_native"
+        },
+        "pacman": {
+          "$ref": "#/definitions/method_native"
+        },
+        "pacstall": {
+          "$ref": "#/definitions/method_pacstall"
+        },
+        "paru": {
+          "$ref": "#/definitions/method_aur"
+        },
+        "pip": {
+          "$ref": "#/definitions/method_pip"
+        },
+        "pipx": {
+          "$ref": "#/definitions/method_pipx"
+        },
+        "pkg": {
+          "$ref": "#/definitions/method_native"
+        },
+        "pkg_add": {
+          "$ref": "#/definitions/method_native"
+        },
+        "pkgin": {
+          "$ref": "#/definitions/method_native"
+        },
+        "pnpm": {
+          "$ref": "#/definitions/method_pnpm"
+        },
+        "portage": {
+          "$ref": "#/definitions/method_native"
+        },
+        "post_install": {
+          "$ref": "#/definitions/postInstall"
+        },
+        "pre_install": {
+          "type": "string"
+        },
+        "python": {
+          "$ref": "#/definitions/bucketMethod"
+        },
+        "requires": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "requires_when": {
+          "additionalProperties": {
+            "$ref": "#/definitions/condition"
+          },
+          "type": "object"
+        },
+        "scoop": {
+          "$ref": "#/definitions/method_scoop"
+        },
+        "sdkman": {
+          "$ref": "#/definitions/method_sdkman"
+        },
+        "snap": {
+          "$ref": "#/definitions/method_snap"
+        },
+        "steamcmd": {
+          "$ref": "#/definitions/method_steamcmd"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "uv": {
+          "$ref": "#/definitions/method_uv"
+        },
+        "vscode": {
+          "$ref": "#/definitions/method_vscode"
+        },
+        "vscodium": {
+          "$ref": "#/definitions/method_vscodium"
+        },
+        "winget": {
+          "$ref": "#/definitions/method_native"
+        },
+        "xbps": {
+          "$ref": "#/definitions/method_native"
+        },
+        "yarn": {
+          "$ref": "#/definitions/method_yarn"
+        },
+        "yarn-berry": {
+          "$ref": "#/definitions/method_yarn_berry"
+        },
+        "yay": {
+          "$ref": "#/definitions/method_aur"
+        },
+        "yum": {
+          "$ref": "#/definitions/method_native"
+        },
+        "zypper": {
+          "$ref": "#/definitions/method_native"
+        }
+      },
+      "type": "object"
     }
-  }
+  },
+  "description": "Schema for version 1 project schemas and personal manifests.",
+  "oneOf": [
+    {
+      "$ref": "#/definitions/projectDocument"
+    },
+    {
+      "$ref": "#/definitions/manifestDocument"
+    }
+  ],
+  "title": "depengine configuration"
 }
