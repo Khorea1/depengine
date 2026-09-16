@@ -2,331 +2,171 @@ package validate
 
 import (
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/methodkind"
 )
 
-// validateRequiredFields checks that method-kind-specific required fields
-// are present in each method candidate's Config blob.
-//
-// Each method kind has its own contract:
-//   - git:  url (string)
-//   - http: url (string)
-//   - github: repo (string), asset (string), release/branch (string, mutually exclusive)
-//   - container: manager (string, "docker"|"podman"), source (string)
-//   - appimage: url (string)
-//   - android: url (string)
-//   - cargo: when git sub-key present, the value must be a string URL
-//   - any:  build (string), extract_to (string), checksum (string)
-
-// commonStringKeys are config keys used by various adapters that must be
-// strings. If present, their value must be of type string.
-var commonStringKeys = []string{
-	"pkg", "cask", "app", "source", "repo", "formula",
-	"package", "bin", "command", "extra_args",
-	"checksum_url", "checksum_file_format", "signature_url", "signing_key",
-	"manager", "tag", "install_dir",
-}
-
+// validateRequiredFields applies the central methodkind contracts to each
+// normalized candidate. Adapter-specific semantic checks stay below.
 func validateRequiredFields(s *config.Schema) *Result {
 	r := &Result{}
-
 	for toolName, tool := range s.Tools {
-		for i, mc := range tool.Methods {
-			switch mc.Kind {
-			case "git":
-				if v, ok := mc.Config["url"]; !ok || v == "" {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "url"),
-						Message: fmt.Sprintf("git method for tool %q requires a url field", toolName),
-					})
-				} else if _, isStr := v.(string); !isStr {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "url"),
-						Message: fmt.Sprintf("git method url must be a string, got %T", v),
-					})
+		for i, method := range tool.Methods {
+			contract, ok := methodkind.Lookup(method.Kind)
+			if !ok {
+				continue
+			}
+			keys := make([]string, 0, len(contract.Fields))
+			for key := range contract.Fields {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				field := contract.Fields[key]
+				value, present := method.Config[key]
+				if !present {
+					if field.Required {
+						r.Add(ValidationError{Code: ErrRequiredField, Field: fieldPath(toolName, i, key), Message: fmt.Sprintf("%s method for tool %q requires a %s field", contract.Kind, toolName, key)})
+					}
+					continue
 				}
-
-			case "http":
-				if v, ok := mc.Config["url"]; !ok || v == "" {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "url"),
-						Message: fmt.Sprintf("http method for tool %q requires a url field", toolName),
-					})
-				} else if _, isStr := v.(string); !isStr {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "url"),
-						Message: fmt.Sprintf("http method url must be a string, got %T", v),
-					})
+				if !methodFieldTypeMatches(value, field.Type) {
+					r.Add(ValidationError{Code: ErrRequiredField, Field: fieldPath(toolName, i, key), Message: fmt.Sprintf("%s must be %s, got %T", key, fieldTypeDescription(field.Type), value)})
+					continue
 				}
-
-			case "github":
-				if v, ok := mc.Config["repo"]; !ok || v == "" {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "repo"),
-						Message: fmt.Sprintf("github method for tool %q requires a repo field (\"owner/repo\")", toolName),
-					})
-				} else if _, isStr := v.(string); !isStr {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "repo"),
-						Message: fmt.Sprintf("github method repo must be a string, got %T", v),
-					})
-				}
-				if v, ok := mc.Config["asset"]; !ok || v == "" {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "asset"),
-						Message: fmt.Sprintf("github method for tool %q requires an asset filename pattern", toolName),
-					})
-				} else if _, isStr := v.(string); !isStr {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "asset"),
-						Message: fmt.Sprintf("github method asset must be a string, got %T", v),
-					})
-				}
-				// release/branch are alternative ways to pin resolution to
-				// something other than the latest release — never both at
-				// once, since that's an ambiguous "which one wins?" schema.
-				releaseV, hasRelease := mc.Config["release"]
-				branchV, hasBranch := mc.Config["branch"]
-				if hasRelease && hasBranch {
-					r.Add(ValidationError{
-						Code:    ErrInvalidValue,
-						Field:   fieldPath(toolName, i, "release"),
-						Message: fmt.Sprintf("github method for tool %q sets both release and branch — they're mutually exclusive, pick one", toolName),
-					})
-				}
-				if hasRelease {
-					if _, isStr := releaseV.(string); !isStr {
-						r.Add(ValidationError{
-							Code:    ErrRequiredField,
-							Field:   fieldPath(toolName, i, "release"),
-							Message: fmt.Sprintf("github method release must be a string, got %T", releaseV),
-						})
+				if field.NonEmpty {
+					if value, ok := value.(string); ok && value == "" {
+						r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, key), Message: fmt.Sprintf("%s method for tool %q: %s must not be empty", contract.Kind, toolName, key)})
 					}
 				}
-				if hasBranch {
-					if s, isStr := branchV.(string); !isStr {
-						r.Add(ValidationError{
-							Code:    ErrRequiredField,
-							Field:   fieldPath(toolName, i, "branch"),
-							Message: fmt.Sprintf("github method branch must be a string, got %T", branchV),
-						})
-					} else if s == "" {
-						r.Add(ValidationError{
-							Code:    ErrInvalidValue,
-							Field:   fieldPath(toolName, i, "branch"),
-							Message: fmt.Sprintf("github method for tool %q: branch must not be empty", toolName),
-						})
-					}
-				}
-
-			case "container":
-				if v, ok := mc.Config["manager"]; !ok || v == "" {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "manager"),
-						Message: fmt.Sprintf("container method for tool %q requires a manager field (\"docker\" or \"podman\") — it can't be auto-detected when both are installed", toolName),
-					})
-				} else if s, isStr := v.(string); !isStr {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "manager"),
-						Message: fmt.Sprintf("container method manager must be a string, got %T", v),
-					})
-				} else if s != "docker" && s != "podman" {
-					r.Add(ValidationError{
-						Code:    ErrInvalidValue,
-						Field:   fieldPath(toolName, i, "manager"),
-						Message: fmt.Sprintf("container method manager must be \"docker\" or \"podman\", got %q", s),
-					})
-				}
-				if v, ok := mc.Config["source"]; !ok || v == "" {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "source"),
-						Message: fmt.Sprintf("container method for tool %q requires a source field (the image reference)", toolName),
-					})
-				} else if _, isStr := v.(string); !isStr {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "source"),
-						Message: fmt.Sprintf("container method source must be a string, got %T", v),
-					})
-				}
-
-			case "appimage":
-				if v, ok := mc.Config["url"]; !ok || v == "" {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "url"),
-						Message: fmt.Sprintf("appimage method for tool %q requires a url field", toolName),
-					})
-				} else if _, isStr := v.(string); !isStr {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "url"),
-						Message: fmt.Sprintf("appimage method url must be a string, got %T", v),
-					})
-				}
-				if v, ok := mc.Config["desktop"]; ok {
-					if _, isBool := v.(bool); !isBool {
-						r.Add(ValidationError{
-							Code:    ErrRequiredField,
-							Field:   fieldPath(toolName, i, "desktop"),
-							Message: fmt.Sprintf("appimage method desktop must be a bool, got %T", v),
-						})
-					}
-				}
-
-			case "android":
-				if v, ok := mc.Config["url"]; !ok || v == "" {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "url"),
-						Message: fmt.Sprintf("android method for tool %q requires a url field", toolName),
-					})
-				} else if _, isStr := v.(string); !isStr {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "url"),
-						Message: fmt.Sprintf("android method url must be a string, got %T", v),
-					})
-				}
-			}
-
-			// Check build field type if present (any method kind).
-			if v, ok := mc.Config["build"]; ok {
-				if _, isStr := v.(string); !isStr {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "build"),
-						Message: fmt.Sprintf("build must be a string, got %T", v),
-					})
-				}
-			}
-
-			// Check extract_to type if present.
-			if v, ok := mc.Config["extract_to"]; ok {
-				if _, isStr := v.(string); !isStr {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "extract_to"),
-						Message: fmt.Sprintf("extract_to must be a string, got %T", v),
-					})
-				}
-			}
-
-			// Check checksum type if present.
-			if v, ok := mc.Config["checksum"]; ok {
-				if _, isStr := v.(string); !isStr {
-					r.Add(ValidationError{
-						Code:    ErrRequiredField,
-						Field:   fieldPath(toolName, i, "checksum"),
-						Message: fmt.Sprintf("checksum must be a string, got %T", v),
-					})
-				}
-			}
-
-			// Validate checksum content for http methods.
-			if mc.Kind == "http" {
-				if v, ok := mc.Config["checksum"]; ok {
-					if s, isStr := v.(string); isStr && s != "" {
-						if strings.HasSuffix(s, ":auto") {
-							r.Add(ValidationError{
-								Code:    WarnAutoChecksum,
-								Field:   fieldPath(toolName, i, "checksum"),
-								Message: fmt.Sprintf("checksum %q uses :auto — TOFU (Trust On First Use) applies, hash is NOT verified", s),
-							})
-						} else {
-							matched := false
-							for _, algo := range []struct {
-								prefix string
-								length int
-							}{
-								{"sha256:", 64},
-								{"sha512:", 128},
-								{"sha1:", 40},
-								{"md5:", 32},
-							} {
-								if strings.HasPrefix(s, algo.prefix) {
-									hexPart := s[len(algo.prefix):]
-									if len(hexPart) != algo.length || !isHexString(hexPart) {
-										r.Add(ValidationError{
-											Code:    ErrInvalidChecksum,
-											Field:   fieldPath(toolName, i, "checksum"),
-											Message: fmt.Sprintf("checksum %q has invalid format: expected %d hex characters after %s", s, algo.length, algo.prefix),
-										})
-									}
-									matched = true
-									break
-								}
-							}
-							if !matched {
-								r.Add(ValidationError{
-									Code:    ErrInvalidValue,
-									Field:   fieldPath(toolName, i, "checksum"),
-									Message: fmt.Sprintf("checksum %q does not use a recognized prefix (sha256:, sha512:, sha1:, md5:)", s),
-								})
-							}
-						}
-					}
-				}
-
-				// Validate checksum_file_format if present.
-				if v, ok := mc.Config["checksum_file_format"]; ok {
-					if s, isStr := v.(string); isStr && s != "" {
-						switch s {
-						case "sha256sum", "bsd", "raw":
-						default:
-							r.Add(ValidationError{
-								Code:    ErrInvalidValue,
-								Field:   fieldPath(toolName, i, "checksum_file_format"),
-								Message: fmt.Sprintf("checksum_file_format must be one of \"sha256sum\", \"bsd\", or \"raw\", got %q", s),
-							})
-						}
+				if len(field.Enum) > 0 {
+					value, _ := value.(string)
+					if !containsString(field.Enum, value) {
+						r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, key), Message: fmt.Sprintf("%s method %s must be one of %q, got %q", contract.Kind, key, field.Enum, value)})
 					}
 				}
 			}
-
-			// If cargo has a git sub-key, it must be a string URL.
-			if mc.Kind == "cargo" {
-				if v, ok := mc.Config["git"]; ok {
-					if _, isStr := v.(string); !isStr {
-						r.Add(ValidationError{
-							Code:    ErrRequiredField,
-							Field:   fieldPath(toolName, i, "git"),
-							Message: fmt.Sprintf("cargo git must be a string URL, got %T", v),
-						})
-					}
+			configKeys := make([]string, 0, len(method.Config))
+			for key := range method.Config {
+				configKeys = append(configKeys, key)
+			}
+			sort.Strings(configKeys)
+			for _, key := range configKeys {
+				if strings.HasPrefix(key, "_") {
+					continue
+				}
+				if _, ok := contract.Fields[key]; !ok {
+					r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, key), Message: fmt.Sprintf("field %s is not supported by method kind %s", key, contract.Kind)})
 				}
 			}
-
-			// Validate common string config keys for type correctness.
-			// These keys are used by various adapters and must be strings
-			// when present.
-			for _, key := range commonStringKeys {
-				if v, ok := mc.Config[key]; ok {
-					if _, isStr := v.(string); !isStr {
-						r.Add(ValidationError{
-							Code:    ErrRequiredField,
-							Field:   fieldPath(toolName, i, key),
-							Message: fmt.Sprintf("%s must be a string, got %T", key, v),
-						})
+			for _, group := range contract.MutuallyExclusive {
+				var present []string
+				for _, key := range group {
+					if _, ok := method.Config[key]; ok {
+						present = append(present, key)
 					}
 				}
+				if len(present) > 1 {
+					r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, present[0]), Message: fmt.Sprintf("%s method for tool %q sets mutually exclusive fields %s", contract.Kind, toolName, strings.Join(present, " and "))})
+				}
 			}
+			validateChecksum(toolName, i, method, r)
 		}
 	}
 	return r
+}
+
+func methodFieldTypeMatches(value any, fieldType methodkind.FieldType) bool {
+	switch fieldType {
+	case methodkind.String:
+		_, ok := value.(string)
+		return ok
+	case methodkind.Boolean:
+		_, ok := value.(bool)
+		return ok
+	case methodkind.Integer:
+		_, ok := value.(int64)
+		return ok
+	case methodkind.IntegerOrString:
+		switch value := value.(type) {
+		case int, int64:
+			return true
+		case string:
+			_, err := strconv.Atoi(value)
+			return err == nil
+		}
+	case methodkind.StringMap:
+		values, ok := value.(map[string]any)
+		if !ok {
+			return false
+		}
+		for _, value := range values {
+			if _, ok := value.(string); !ok {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func fieldTypeDescription(fieldType methodkind.FieldType) string {
+	switch fieldType {
+	case methodkind.String:
+		return "a string"
+	case methodkind.Boolean:
+		return "a boolean"
+	case methodkind.Integer:
+		return "an integer"
+	case methodkind.IntegerOrString:
+		return "an integer or numeric string"
+	case methodkind.StringMap:
+		return "a table of strings"
+	default:
+		return string(fieldType)
+	}
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func validateChecksum(toolName string, methodIdx int, method *config.MethodCandidate, r *Result) {
+	if method.Kind != "http" {
+		return
+	}
+	checksum, ok := method.Config["checksum"].(string)
+	if !ok || checksum == "" {
+		return
+	}
+	if strings.HasSuffix(checksum, ":auto") {
+		r.Add(ValidationError{Code: WarnAutoChecksum, Field: fieldPath(toolName, methodIdx, "checksum"), Message: fmt.Sprintf("checksum %q uses :auto — TOFU (Trust On First Use) applies, hash is NOT verified", checksum)})
+		return
+	}
+	algorithms := []struct {
+		prefix string
+		length int
+	}{{"sha256:", 64}, {"sha512:", 128}, {"sha1:", 40}, {"md5:", 32}}
+	for _, algorithm := range algorithms {
+		if !strings.HasPrefix(checksum, algorithm.prefix) {
+			continue
+		}
+		hexPart := checksum[len(algorithm.prefix):]
+		if len(hexPart) != algorithm.length || !isHexString(hexPart) {
+			r.Add(ValidationError{Code: ErrInvalidChecksum, Field: fieldPath(toolName, methodIdx, "checksum"), Message: fmt.Sprintf("checksum %q has invalid format: expected %d hex characters after %s", checksum, algorithm.length, algorithm.prefix)})
+		}
+		return
+	}
+	r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, methodIdx, "checksum"), Message: fmt.Sprintf("checksum %q does not use a recognized prefix (sha256:, sha512:, sha1:, md5:)", checksum)})
 }
 
 // validateWhenDirectives checks that when clauses only use known keys.

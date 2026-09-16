@@ -34,9 +34,9 @@ func cond(families ...string) *cfg.Condition {
 func parseTestdata(t *testing.T, name string) *cfg.Schema {
 	t.Helper()
 	path := filepath.Join("testdata", name)
-	s, err := cfg.ParseSchema(path, map[string]string{})
+	s, err := cfg.ParseProjectSchema(path, map[string]string{})
 	if err != nil {
-		t.Fatalf("ParseSchema(%s): %v", name, err)
+		t.Fatalf("ParseProjectSchema(%s): %v", name, err)
 	}
 	return s
 }
@@ -431,7 +431,7 @@ func TestValidateRequiredFields_CommonStringKeys_Invalid(t *testing.T) {
 	}
 }
 
-func TestValidateRequiredFields_CommonStringKeys_Valid(t *testing.T) {
+func TestValidateRequiredFields_RejectsUnsupportedFields(t *testing.T) {
 	s := &cfg.Schema{
 		Tools: map[string]*cfg.Tool{
 			"test": tool("test", []*cfg.MethodCandidate{
@@ -451,8 +451,8 @@ func TestValidateRequiredFields_CommonStringKeys_Valid(t *testing.T) {
 		},
 	}
 	r := validateRequiredFields(s)
-	if r.HasErrors() {
-		t.Errorf("expected no errors for valid string keys, got: %v", r.Errors)
+	if !r.HasErrors() {
+		t.Fatal("expected unsupported adapter fields to fail")
 	}
 }
 
@@ -481,8 +481,8 @@ func TestValidateRequiredFields_CommonStringKeys_MultipleWrongTypes(t *testing.T
 	if !strings.Contains(msgs[0], "pkg must be a string") && !strings.Contains(msgs[1], "pkg must be a string") {
 		t.Error("missing pkg type error")
 	}
-	if !strings.Contains(msgs[0], "command must be a string") && !strings.Contains(msgs[1], "command must be a string") {
-		t.Error("missing command type error")
+	if !strings.Contains(msgs[0], "command is not supported") && !strings.Contains(msgs[1], "command is not supported") {
+		t.Error("missing unsupported command error")
 	}
 }
 
@@ -838,10 +838,9 @@ func TestValidatePlaceholders_MixedKnownUnknown(t *testing.T) {
 	}
 }
 func TestValidateWhenDirectives_EmptyWhen(t *testing.T) {
-	s := parseTestdata(t, "invalid_empty_when.toml")
-	r := validateWhenDirectives(s)
-	if len(r.Warnings) == 0 {
-		t.Log("empty when clause not flagged (parser may have dropped it)")
+	_, err := cfg.ParseProjectSchema(filepath.Join("testdata", "invalid_empty_when.toml"), nil)
+	if err == nil || !strings.Contains(err.Error(), "condition must not be empty") {
+		t.Fatalf("expected strict parse error for empty condition, got %v", err)
 	}
 }
 
@@ -996,12 +995,9 @@ func TestValidateFromFile_EdgeSSH(t *testing.T) {
 }
 
 func TestValidateFromFile_InvalidBadTypes(t *testing.T) {
-	s := parseTestdata(t, "invalid_bad_types.toml")
-	r := validateRequiredFields(s)
-	if len(r.Errors) == 0 {
-		t.Errorf("expected type errors for invalid_bad_types.toml, got none — TOML parser may have rejected them silently")
-	} else {
-		t.Logf("type errors found: %v", r.Errors)
+	_, err := cfg.ParseProjectSchema(filepath.Join("testdata", "invalid_bad_types.toml"), nil)
+	if err == nil || !strings.Contains(err.Error(), "expected string") {
+		t.Fatalf("expected strict method-field type error, got %v", err)
 	}
 }
 
