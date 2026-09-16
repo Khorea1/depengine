@@ -71,6 +71,13 @@ func (lr *LoggingRunner) RunInDir(ctx context.Context, dir, name string, args ..
 	return lr.run(ctx, dir, name, args...)
 }
 
+// LookPath resolves an executable through the wrapped runner.
+func (lr *LoggingRunner) LookPath(ctx context.Context, name string) bool {
+	found := LookPath(ctx, lr.inner, name)
+	lr.logger.Debug("look path", "name", name, "found", found)
+	return found
+}
+
 func (lr *LoggingRunner) run(ctx context.Context, dir, name string, args ...string) Result {
 	baseAttrs := []any{
 		"cmd", name,
@@ -154,3 +161,4 @@ func truncateStderr(data []byte) string {
 }
 
 var _ DirectoryRunner = (*LoggingRunner)(nil)
+var _ PathLookupRunner = (*LoggingRunner)(nil)

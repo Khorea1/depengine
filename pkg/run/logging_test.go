@@ -35,6 +35,18 @@ func TestLoggingRunnerPassesWorkingDirectoryThroughOnce(t *testing.T) {
 	}
 }
 
+func TestLoggingRunnerPassesPathLookupThroughOnce(t *testing.T) {
+	inner := &FakeRunner{}
+	runner := NewLoggingRunner(inner, log.NewTestLogger(t).Logger)
+
+	if !runner.LookPath(context.Background(), "tool") {
+		t.Fatal("lookup should return the inner result")
+	}
+	if len(inner.Calls) != 1 || inner.Calls[0].Args[0] != "tool" {
+		t.Fatalf("calls = %+v, want one lookup for tool", inner.Calls)
+	}
+}
+
 func TestLoggingRunnerLogsNonZeroExit(t *testing.T) {
 	inner := &FakeRunner{ExitCode: 1, Stderr: "permission denied"}
 	cap := log.NewTestLogger(t)

@@ -35,6 +35,12 @@ func (f *FakeRunner) RunInDir(ctx context.Context, dir, name string, args ...str
 	return f.run(ctx, dir, name, args...)
 }
 
+// LookPath records a logical lookup and returns the configured result.
+func (f *FakeRunner) LookPath(ctx context.Context, name string) bool {
+	result := f.run(ctx, "", "which", name)
+	return result.Err == nil && result.ExitCode == 0
+}
+
 func (f *FakeRunner) run(ctx context.Context, dir, name string, args ...string) Result {
 	f.mu.Lock()
 	f.Calls = append(f.Calls, FakeCall{Name: name, Args: append([]string(nil), args...), Dir: dir})
@@ -57,3 +63,4 @@ func (f *FakeRunner) run(ctx context.Context, dir, name string, args ...string) 
 }
 
 var _ DirectoryRunner = (*FakeRunner)(nil)
+var _ PathLookupRunner = (*FakeRunner)(nil)

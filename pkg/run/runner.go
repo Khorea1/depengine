@@ -43,6 +43,12 @@ type DirectoryRunner interface {
 	RunInDir(ctx context.Context, dir, name string, args ...string) Result
 }
 
+// PathLookupRunner resolves executables without depending on an external
+// `which`/`where` utility.
+type PathLookupRunner interface {
+	LookPath(ctx context.Context, name string) bool
+}
+
 // RunInDir executes a command through rn with dir as its working directory.
 func RunInDir(ctx context.Context, rn Runner, dir, name string, args ...string) Result {
 	dr, ok := rn.(DirectoryRunner)
@@ -76,6 +82,12 @@ func DefaultEnv() []string {
 // (when set) via DefaultEnv; injecting it here is what lets trace id
 // flow into detect_os.sh and later into every adapter install.
 type OSExecRunner struct{}
+
+// LookPath reports whether name resolves through the child process PATH.
+func (OSExecRunner) LookPath(_ context.Context, name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
 
 // Run executes name with args under ctx, capturing stdout and stderr.
 // A non-zero exit is reported in Result.ExitCode, not Result.Err.
@@ -126,9 +138,9 @@ func runCommand(ctx context.Context, dir, name string, args ...string) Result {
 	}
 }
 
-// LookPath reports whether name is found on PATH via a `which` lookup
-// executed through rn. Returns true iff the lookup exits cleanly with
-// code 0 (the binary exists and is executable).
+// LookPath reports whether name is found on PATH. Native runners use the Go
+// standard library; custom runners may implement PathLookupRunner or receive
+// the legacy `which` fallback for compatibility.
 //
 // Centralizing this lets adapters and validators share one binary-existence
 // contract rather than each cloning the `which {binary}` pattern.
@@ -136,6 +148,9 @@ func runCommand(ctx context.Context, dir, name string, args ...string) Result {
 func LookPath(ctx context.Context, rn Runner, name string) bool {
 	if rn == nil {
 		rn = OSExecRunner{}
+	}
+	if lookup, ok := rn.(PathLookupRunner); ok {
+		return lookup.LookPath(ctx, name)
 	}
 	res := rn.Run(ctx, "which", name)
 	return res.Err == nil && res.ExitCode == 0
@@ -165,3 +180,4 @@ func CheckResult(res Result, prefix string) error {
 }
 
 var _ DirectoryRunner = OSExecRunner{}
+var _ PathLookupRunner = OSExecRunner{}

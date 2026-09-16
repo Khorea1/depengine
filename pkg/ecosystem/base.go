@@ -1,6 +1,6 @@
-// Package lang provides language-ecosystem adapters (cargo, go, pip, pipx,
-// uv, aur). Each adapter follows the same pattern — Available via `which`,
-// Check via a package query command, Install via a package install command.
+// Package ecosystem provides language-ecosystem adapters (cargo, go, pip, pipx,
+// uv, aur). Each adapter follows the same pattern — native PATH availability,
+// a package query for checks, and a package install command.
 //
 // The BaseAdapter struct implements exec.Adapter generically; each concrete
 // adapter is just a BaseConfig + registration. See the registry.go file
@@ -33,6 +33,13 @@ type BaseConfig struct {
 	// element after /cmd/).
 	CheckTmpl []string
 
+	// CheckPath, when set, checks an executable name directly on PATH instead
+	// of running CheckTmpl. It accepts the same placeholders.
+	CheckPath string
+
+	// CheckOutput optionally validates stdout after CheckTmpl succeeds.
+	CheckOutput CheckOutputMatcher
+
 	// InstallTmpl is the command template for installing.
 	// "{pkg}" is replaced with the package name.
 	InstallTmpl []string
@@ -46,6 +53,9 @@ type BaseConfig struct {
 	// Binary is not found (e.g. "pip3" when "pip" is missing).
 	AvailableExtra string
 }
+
+// CheckOutputMatcher reports whether command output confirms pkg is installed.
+type CheckOutputMatcher func(output, pkg string) bool
 
 // BaseAdapter implements exec.Adapter for a BaseConfig.
 type BaseAdapter struct {
@@ -76,12 +86,22 @@ func (a *BaseAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 	if !a.Available(ctx, rn) {
 		return false
 	}
+	if a.config.CheckPath != "" {
+		name := a.buildCmd([]string{a.config.CheckPath}, tool, mc)[0]
+		return run.LookPath(ctx, rn, name)
+	}
 	cmd := a.buildCmd(a.config.CheckTmpl, tool, mc)
 	if cmd == nil {
 		return false
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	return res.Err == nil && res.ExitCode == 0
+	if res.Err != nil || res.ExitCode != 0 {
+		return false
+	}
+	if a.config.CheckOutput == nil {
+		return true
+	}
+	return a.config.CheckOutput(string(res.Stdout), resolvedPkg(tool, mc))
 }
 
 // Install runs the install command template.
@@ -121,15 +141,68 @@ func (a *BaseAdapter) buildCmd(tmpl []string, tool *config.Tool, mc *config.Meth
 		return nil
 	}
 	cmd := exec.SubstitutePkg(tmpl, tool, mc)
-	pkg := tool.Name
-	if p, ok := mc.Config["pkg"].(string); ok && p != "" {
-		pkg = p
-	}
+	pkg := resolvedPkg(tool, mc)
 	bin := goBinaryName(pkg)
 	for i, arg := range cmd {
 		cmd[i] = strings.ReplaceAll(arg, "{bin}", bin)
 	}
 	return cmd
+}
+
+func resolvedPkg(tool *config.Tool, mc *config.MethodCandidate) string {
+	if pkg, ok := mc.Config["pkg"].(string); ok && pkg != "" {
+		return pkg
+	}
+	return tool.Name
+}
+
+func checkExactLine(output, pkg string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		if strings.TrimSpace(line) == pkg {
+			return true
+		}
+	}
+	return false
+}
+
+func checkFirstField(output, pkg string) bool {
+	return checkField(output, pkg, 0, false)
+}
+
+func checkLastFieldVersion(output, pkg string) bool {
+	return checkField(output, pkg, -1, true)
+}
+
+func checkSecondFieldVersion(output, pkg string) bool {
+	return checkField(output, pkg, 1, true)
+}
+
+func checkField(output, pkg string, index int, versioned bool) bool {
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		fieldIndex := index
+		if fieldIndex < 0 {
+			fieldIndex = len(fields) + fieldIndex
+		}
+		if fieldIndex < 0 || fieldIndex >= len(fields) {
+			continue
+		}
+		field := strings.Trim(fields[fieldIndex], `"`)
+		if (!versioned && field == pkg) || (versioned && strings.HasPrefix(field, pkg+"@")) {
+			return true
+		}
+	}
+	return false
+}
+
+func checkCargoPackage(output, pkg string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == pkg && strings.HasPrefix(fields[1], "v") {
+			return true
+		}
+	}
+	return false
 }
 
 // Compile-time interface checks.

@@ -2,6 +2,7 @@ package run
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -88,6 +89,20 @@ func TestRunInDirRejectsUnsupportedRunner(t *testing.T) {
 	result := RunInDir(context.Background(), runOnly{Runner: &FakeRunner{}}, t.TempDir(), "true")
 	if result.Err == nil {
 		t.Fatal("expected unsupported working-directory error")
+	}
+}
+
+func TestOSExecRunnerLookPath(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := OSExecRunner{}
+	if !runner.LookPath(context.Background(), executable) {
+		t.Fatalf("current executable %q should resolve", executable)
+	}
+	if runner.LookPath(context.Background(), "depengine-test-definitely-missing") {
+		t.Fatal("missing executable unexpectedly resolved")
 	}
 }
 

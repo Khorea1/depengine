@@ -2,6 +2,7 @@ package ecosystem
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -20,9 +21,13 @@ func tool(name, pkg string) (*config.Tool, *config.MethodCandidate) {
 }
 
 func TestBaseAdapterAvailable(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
 	adapter := NewBaseAdapter(BaseConfig{
 		KindName: "test-avail",
-		Binary:   "sh", // should exist on any Unix
+		Binary:   executable,
 	})
 
 	if !adapter.Available(context.Background(), run.OSExecRunner{}) {
@@ -45,15 +50,18 @@ func TestBaseAdapterAvailableMissing(t *testing.T) {
 }
 
 func TestBaseAdapterAvailableExtra(t *testing.T) {
-	// Try binary "nonexistent" with fallback to "sh".
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
 	adapter := NewBaseAdapter(BaseConfig{
 		KindName:       "test-extra",
 		Binary:         "this-does-not-exist",
-		AvailableExtra: "sh",
+		AvailableExtra: executable,
 	})
 
 	if !adapter.Available(context.Background(), run.OSExecRunner{}) {
-		t.Fatal("Available should fall back to extra binary 'sh'")
+		t.Fatal("Available should fall back to the extra binary")
 	}
 }
 
@@ -232,20 +240,12 @@ func TestSubstitutePkgFallback(t *testing.T) {
 	}
 }
 
-// TestPipxCheckReturnsFalseForUninstalled verifies the fix: pipx Check now
-// uses `pipx list --short | grep -qF {pkg}` so it correctly returns false
-// when the specific package is not installed.
+// TestPipxCheckReturnsFalseForUninstalled verifies that parsing the direct
+// pipx output does not confuse package-name prefixes with exact matches.
 func TestPipxCheckReturnsFalseForUninstalled(t *testing.T) {
 	t.Parallel()
-	// Simulate pipx list --short showing packages but grep -qF finding nothing.
-	fr := &run.FakeRunner{Stdout: "some-other-pkg\n", ExitCode: 1}
-
-	adapter := NewBaseAdapter(BaseConfig{
-		KindName:    "pipx",
-		Binary:      "pipx",
-		CheckTmpl:   []string{"sh", "-c", "pipx list --short 2>/dev/null | grep -qF '{pkg}'"},
-		InstallTmpl: []string{"pipx", "install", "{pkg}"},
-	})
+	fr := &run.FakeRunner{Stdout: "nonexistent-pkg-extra 1.0\n", ExitCode: 0}
+	adapter := NewBaseAdapter(Configs["pipx"])
 
 	tool := &config.Tool{Name: "nonexistent-pkg"}
 	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "nonexistent-pkg"}}
@@ -255,23 +255,56 @@ func TestPipxCheckReturnsFalseForUninstalled(t *testing.T) {
 	}
 }
 
-// TestUvCheckReturnsFalseForUninstalled verifies the uv Check fix.
+// TestUvCheckReturnsFalseForUninstalled verifies the same exact-name rule for uv.
 func TestUvCheckReturnsFalseForUninstalled(t *testing.T) {
 	t.Parallel()
-	fr := &run.FakeRunner{Stdout: "some-tool\n", ExitCode: 1}
-
-	adapter := NewBaseAdapter(BaseConfig{
-		KindName:    "uv",
-		Binary:      "uv",
-		CheckTmpl:   []string{"sh", "-c", "uv tool list 2>/dev/null | grep -qF '{pkg}'"},
-		InstallTmpl: []string{"uv", "tool", "install", "{pkg}"},
-	})
+	fr := &run.FakeRunner{Stdout: "nonexistent-uv-tool-extra 1.0\n", ExitCode: 0}
+	adapter := NewBaseAdapter(Configs["uv"])
 
 	tool := &config.Tool{Name: "nonexistent-uv-tool"}
 	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "nonexistent-uv-tool"}}
 
 	if adapter.Check(context.Background(), fr, tool, mc) {
 		t.Fatal("uv Check should return false for uninstalled tool")
+	}
+}
+
+func TestRegistryChecksParseDirectCommandOutput(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		kind   string
+		pkg    string
+		stdout string
+		want   bool
+	}{
+		{"cargo", "bat", "bat v0.25.0:\n    bat\n", true},
+		{"cargo", "bat", "bat-extra v1.0.0:\n", false},
+		{"pipx", "black", "black 25.1.0, installed using Python 3.13\n", true},
+		{"uv", "ruff", "ruff v0.11.0\n- ruff\n", true},
+		{"bun", "typescript", "└── typescript@5.8.2\n", true},
+		{"gem", "rake", "rake (13.2.1)\n", true},
+		{"yarn", "typescript", "info \"typescript@5.8.2\" has binaries:\n", true},
+		{"apm", "minimap", "minimap@4.40.0\n", true},
+		{"vscode", "golang.go", "golang.go\nms-python.python\n", true},
+		{"vscode", "golang.go", "vendor.golang.go-extra\n", false},
+		{"vscodium", "golang.go", "golang.go\r\n", true},
+		{"mas", "497799835", "497799835 Xcode (16.3)\n", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.kind+"/"+tc.pkg, func(t *testing.T) {
+			cfg := Configs[tc.kind]
+			fr := &run.FakeRunner{Stdout: tc.stdout}
+			tl, mc := tool(tc.pkg, tc.pkg)
+			got := NewBaseAdapter(cfg).Check(context.Background(), fr, tl, mc)
+			if got != tc.want {
+				t.Fatalf("Check output %q = %v, want %v", tc.stdout, got, tc.want)
+			}
+			last := fr.Calls[len(fr.Calls)-1]
+			if last.Name == "sh" || last.Name != cfg.CheckTmpl[0] {
+				t.Fatalf("check command = %v %v, want direct %q", last.Name, last.Args, cfg.CheckTmpl[0])
+			}
+		})
 	}
 }
 
@@ -514,10 +547,8 @@ func TestGoAdapterCheckUsesDerivedBinaryName(t *testing.T) {
 		t.Fatal("Check should report installed when the derived binary exists")
 	}
 	last := fr.Calls[len(fr.Calls)-1]
-	// Template: sh -c 'command -v "$1" >/dev/null' sh stringer
-	// The positional $1 (last arg) must be the derived binary name.
-	if last.Name != "sh" || len(last.Args) != 4 || last.Args[3] != "stringer" {
-		t.Fatalf("Check ran %v %v, want sh -c 'command -v ...' sh stringer", last.Name, last.Args)
+	if last.Name != "which" || len(last.Args) != 1 || last.Args[0] != "stringer" {
+		t.Fatalf("Check lookup = %v %v, want stringer", last.Name, last.Args)
 	}
 }
 
@@ -538,7 +569,6 @@ func TestGoAdapterCheckNeverChecksImportPath(t *testing.T) {
 		t.Fatal("expected at least one check call")
 	}
 	for _, call := range fr.Calls {
-		// sh -c templates carry the checked name as the trailing positional arg.
 		name := call.Args[len(call.Args)-1]
 		if strings.Contains(name, "/") {
 			t.Fatalf("Check ran a lookup on a path-style name %q (import paths must never be checked)... %v %v", name, call.Name, call.Args)
@@ -569,8 +599,8 @@ func TestBaseAdapterCheckSubstitutesBinPlaceholder(t *testing.T) {
 
 // TestAppmanConfigCommands locks in the exact command shape for the appman
 // (AM/AppMan AppImage manager) adapter: install and remove must be
-// non-interactive (-y -i / -R), and check must be a plain `command -v`
-// lookup on the package name, since appman has no documented single-package
+// non-interactive (-y -i / -R), and check must be a native PATH lookup on the
+// package name, since appman has no documented single-package
 // "is this installed?" query.
 func TestAppmanConfigCommands(t *testing.T) {
 	t.Parallel()
@@ -590,8 +620,8 @@ func TestAppmanConfigCommands(t *testing.T) {
 		t.Fatal("Check should be true when exit code 0")
 	}
 	last := fr.Calls[len(fr.Calls)-1]
-	if last.Name != "sh" || last.Args[len(last.Args)-1] != "obsidian" {
-		t.Fatalf("Check ran %v %v, want a sh -c ... command -v lookup on \"obsidian\"", last.Name, last.Args)
+	if last.Name != "which" || last.Args[len(last.Args)-1] != "obsidian" {
+		t.Fatalf("Check lookup = %v %v, want obsidian", last.Name, last.Args)
 	}
 
 	fr = &run.FakeRunner{ExitCode: 0}
