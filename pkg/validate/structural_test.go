@@ -561,7 +561,7 @@ func TestValidatePlaceholders_InPostInstall(t *testing.T) {
 				Methods: []*cfg.MethodCandidate{
 					mc("native", nil, map[string]any{}),
 				},
-				PostInstall: "command {bad_placeholder}",
+				PostInstall: []cfg.Hook{{Run: []string{"command", "{bad_placeholder}"}}},
 			},
 		},
 	}

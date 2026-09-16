@@ -31,18 +31,24 @@ var DefaultBuckets = methodkind.DefaultBuckets
 
 // Tool is one entry under [tools].
 type Tool struct {
-	Name            string                `merge:"overwrite"`
-	PreInstall      string                `merge:"overwrite"`
-	PostInstall     string                `merge:"overwrite"`
-	PostInstallWhen *Condition            `merge:"overwrite"`
-	RequiresWhen    map[string]*Condition `merge:"overwrite"`
-	Requires        []string              `merge:"overwrite"`
-	Methods         []*MethodCandidate    `merge:"methods"`
-	MethodPrefer    []string              `merge:"overwrite"`
-	MethodOnly      []string              `merge:"overwrite"`
-	IsSimple        bool                  `merge:"overwrite"`
-	Tags            []string              `merge:"union"`
-	Ecosystem       string                `merge:"overwrite"`
+	Name         string                `merge:"overwrite"`
+	PreInstall   []Hook                `merge:"overwrite"`
+	PostInstall  []Hook                `merge:"overwrite"`
+	RequiresWhen map[string]*Condition `merge:"overwrite"`
+	Requires     []string              `merge:"overwrite"`
+	Methods      []*MethodCandidate    `merge:"methods"`
+	MethodPrefer []string              `merge:"overwrite"`
+	MethodOnly   []string              `merge:"overwrite"`
+	IsSimple     bool                  `merge:"overwrite"`
+	Tags         []string              `merge:"union"`
+	Ecosystem    string                `merge:"overwrite"`
+}
+
+// Hook is an explicitly tokenized command. Run[0] is the executable and the
+// remaining elements are passed unchanged as argv.
+type Hook struct {
+	Run  []string
+	When *Condition
 }
 
 // FilteredTools clones tools with Requires reduced to the dependencies that
@@ -85,6 +91,8 @@ func cloneTool(tool *Tool) *Tool {
 		return nil
 	}
 	out := *tool
+	out.PreInstall = cloneHooks(tool.PreInstall)
+	out.PostInstall = cloneHooks(tool.PostInstall)
 	out.Requires = append([]string{}, tool.Requires...)
 	if tool.RequiresWhen != nil {
 		out.RequiresWhen = make(map[string]*Condition, len(tool.RequiresWhen))
@@ -97,6 +105,19 @@ func cloneTool(tool *Tool) *Tool {
 	out.MethodOnly = append([]string{}, tool.MethodOnly...)
 	out.Methods = cloneMethods(tool.Methods)
 	return &out
+}
+
+func cloneHooks(hooks []Hook) []Hook {
+	out := make([]Hook, len(hooks))
+	for i, hook := range hooks {
+		out[i] = hook
+		out[i].Run = append([]string(nil), hook.Run...)
+		if hook.When != nil {
+			condition := *hook.When
+			out[i].When = &condition
+		}
+	}
+	return out
 }
 
 func cloneMethods(methods []*MethodCandidate) []*MethodCandidate {

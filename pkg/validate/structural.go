@@ -207,9 +207,15 @@ func validatePlaceholders(s *config.Schema) *Result {
 			scanPlaceholders(dep, fieldPath(toolName, -1, "requires"), r)
 		}
 
-		// Check postinstall.
-		if tool.PostInstall != "" {
-			scanPlaceholders(tool.PostInstall, fieldPath(toolName, -1, "postinstall"), r)
+		for _, set := range []struct {
+			name  string
+			hooks []config.Hook
+		}{{"pre_install", tool.PreInstall}, {"post_install", tool.PostInstall}} {
+			for _, hook := range set.hooks {
+				for _, arg := range hook.Run {
+					scanPlaceholders(arg, fieldPath(toolName, -1, set.name), r)
+				}
+			}
 		}
 
 		// Check method configs.

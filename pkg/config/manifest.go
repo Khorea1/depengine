@@ -227,9 +227,12 @@ func fieldIsSet(v reflect.Value) bool {
 // assignField copies src into dst. String-slice fields are copied
 // element-by-element (matching the defensive copies the old setField made
 // for Requires/MethodPrefer/MethodOnly/Tags); every other kind is assigned
-// directly, which is exactly what the old switch did for the rest (Name,
-// PreInstall, PostInstall, PostInstallWhen, RequiresWhen, IsSimple, Ecosystem).
+// directly, which is exactly what the old switch did for the rest.
 func assignField(dst, src reflect.Value) {
+	if hooks, ok := src.Interface().([]Hook); ok {
+		dst.Set(reflect.ValueOf(cloneHooks(hooks)))
+		return
+	}
 	if src.Kind() == reflect.Slice && src.Type().Elem().Kind() == reflect.String {
 		cp := reflect.MakeSlice(src.Type(), src.Len(), src.Len())
 		reflect.Copy(cp, src)

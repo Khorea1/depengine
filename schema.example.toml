@@ -382,7 +382,7 @@ python = true               # pip + pipx + uv (pkg=httpie for all)
 # Can mix bucket with explicit method: the explicit method is NOT overwritten.
 # organize = { pip = "organize-tool", python = true } keeps the explicit pip.
 [tools.DepartureMono]
-post_install = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
+post_install = { run = ["fc-cache", "-fv"], when = { target_family = ["unix"] } }
 requires = ["unzip", "fontconfig"]
 requires_when = { unzip = { target_family = ["unix"] }, fontconfig = { target_family = ["unix"] } }
 method_only = ["aur", "scoop", "http"]   # aur on Arch, scoop on Windows, http elsewhere. Never fall back to native (no such package outside Arch).

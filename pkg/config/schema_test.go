@@ -144,8 +144,8 @@ post_install = "echo installed on {os}/{arch} via {init_system}"
 		t.Fatalf("ParseSchema: %v", err)
 	}
 	tool := s.Tools["DepartureMono"]
-	if tool.PostInstall != "echo installed on linux/x86_64 via systemd" {
-		t.Fatalf("postinstall not expanded: %q", tool.PostInstall)
+	if got := tool.PostInstall[0].Run[2]; got != "echo installed on linux/x86_64 via systemd" {
+		t.Fatalf("postinstall not expanded: %q", got)
 	}
 	if len(tool.Methods) != 2 {
 		t.Fatalf("expected 2 methods (native + git), got %d", len(tool.Methods))

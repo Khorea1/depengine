@@ -297,7 +297,7 @@ func TestPreInstallBlockedWithoutAllowArbitraryCode(t *testing.T) {
 		Tools: map[string]*config.Tool{
 			"evil-tool": {
 				Name:       "evil-tool",
-				PreInstall: "touch /tmp/pwned",
+				PreInstall: []config.Hook{{Run: []string{"sh", "-c", "touch /tmp/pwned"}}},
 				Methods: []*config.MethodCandidate{
 					{
 						Kind:   "safe",

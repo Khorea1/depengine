@@ -19,7 +19,7 @@ func GenerateJSONSchema() ([]byte, error) {
 		"condition":        conditionJSONSchema(),
 		"defaults":         defaultsJSONSchema(),
 		"manifestOptions":  manifestOptionsJSONSchema(),
-		"postInstall":      postInstallJSONSchema(),
+		"hook":             hookJSONSchema(),
 		"projectDocument":  documentJSONSchema("tools", false),
 		"manifestDocument": documentJSONSchema("packages", true),
 		"tool":             toolJSONSchema(),
@@ -102,8 +102,8 @@ func toolJSONSchema() map[string]any {
 	properties := map[string]any{
 		"requires":      stringArrayJSONSchema(),
 		"requires_when": map[string]any{"type": "object", "additionalProperties": map[string]any{"$ref": "#/definitions/condition"}},
-		"pre_install":   map[string]any{"type": "string"},
-		"post_install":  map[string]any{"$ref": "#/definitions/postInstall"},
+		"pre_install":   map[string]any{"$ref": "#/definitions/hook"},
+		"post_install":  map[string]any{"$ref": "#/definitions/hook"},
 		"tags":          stringArrayJSONSchema(),
 		"method_prefer": stringArrayJSONSchema(),
 		"method_only":   stringArrayJSONSchema(),
@@ -240,18 +240,24 @@ func conditionJSONSchema() map[string]any {
 	}
 }
 
-func postInstallJSONSchema() map[string]any {
-	return map[string]any{"oneOf": []any{
-		map[string]any{"type": "string"},
-		map[string]any{
-			"type":     "object",
-			"required": []string{"cmd"},
-			"properties": map[string]any{
-				"cmd":  map[string]any{"type": "string"},
-				"when": map[string]any{"$ref": "#/definitions/condition"},
-			},
-			"additionalProperties": false,
+func hookJSONSchema() map[string]any {
+	command := map[string]any{
+		"type": "object",
+		"oneOf": []any{
+			map[string]any{"required": []string{"cmd"}},
+			map[string]any{"required": []string{"run"}},
 		},
+		"properties": map[string]any{
+			"cmd":  map[string]any{"type": "string", "minLength": 1},
+			"run":  map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}},
+			"when": map[string]any{"$ref": "#/definitions/condition"},
+		},
+		"additionalProperties": false,
+	}
+	return map[string]any{"oneOf": []any{
+		map[string]any{"type": "string", "minLength": 1},
+		command,
+		map[string]any{"type": "array", "minItems": 1, "items": command},
 	}}
 }
 

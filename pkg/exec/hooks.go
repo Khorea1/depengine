@@ -20,49 +20,37 @@ func (ex *Executor) hasDangerousMethod(tool *config.Tool) bool {
 }
 
 func (ex *Executor) runPreinstall(ctx context.Context, tool *config.Tool) error {
-	cmd := strings.TrimSpace(tool.PreInstall)
-	if cmd == "" {
-		return nil
-	}
-	ex.outputf("    pre-install: %s\n", cmd)
-	ex.logDebug(ctx, "preinstall", "tool", tool.Name, "cmd", cmd)
-	result := ex.rn.Run(ctx, "sh", "-c", cmd)
-	if result.Err != nil {
-		ex.outputf("    ⚠  pre-install: %s (aborting)\n", result.Err)
-		ex.logWarn(ctx, "preinstall", "tool", tool.Name, "error", result.Err.Error())
-		return result.Err
-	}
-	if result.ExitCode != 0 {
-		ex.outputf("    ⚠  pre-install: exit %d (aborting)\n", result.ExitCode)
-		ex.logWarn(ctx, "preinstall", "tool", tool.Name, "exit_code", result.ExitCode)
-		return fmt.Errorf("pre-install exit %d", result.ExitCode)
-	}
-	return nil
+	return ex.runHooks(ctx, tool.Name, "pre-install", tool.PreInstall)
 }
 
 func (ex *Executor) runPostinstall(ctx context.Context, tool *config.Tool) error {
-	cmd := strings.TrimSpace(tool.PostInstall)
-	if cmd == "" {
-		return nil
+	return ex.runHooks(ctx, tool.Name, "post-install", tool.PostInstall)
+}
+
+func (ex *Executor) runHooks(ctx context.Context, toolName, phase string, hooks []config.Hook) error {
+	for _, hook := range hooks {
+		if hook.When != nil && !hook.When.Match(ex.facts) {
+			ex.outputf("    %s: skipped (when condition not met)\n", phase)
+			ex.logDebug(ctx, phase, "tool", toolName, "status", "skip_when")
+			continue
+		}
+		if len(hook.Run) == 0 || strings.TrimSpace(hook.Run[0]) == "" {
+			return fmt.Errorf("%s: empty command", phase)
+		}
+		command := strings.Join(hook.Run, " ")
+		ex.outputf("    %s: %s\n", phase, command)
+		ex.logDebug(ctx, phase, "tool", toolName, "cmd", command)
+		result := ex.rn.Run(ctx, hook.Run[0], hook.Run[1:]...)
+		if result.Err != nil {
+			ex.outputf("    ⚠  %s: %s (failed)\n", phase, result.Err)
+			ex.logWarn(ctx, phase, "tool", toolName, "error", result.Err.Error())
+			return result.Err
+		}
+		if result.ExitCode != 0 {
+			ex.outputf("    ⚠  %s: exit %d (failed)\n", phase, result.ExitCode)
+			ex.logWarn(ctx, phase, "tool", toolName, "exit_code", result.ExitCode)
+			return fmt.Errorf("%s exited %d", phase, result.ExitCode)
+		}
 	}
-	if tool.PostInstallWhen != nil && !tool.PostInstallWhen.Match(ex.facts) {
-		ex.outputf("    postinstall: skipped (when condition not met)\n")
-		ex.logDebug(ctx, "postinstall", "tool", tool.Name, "status", "skip_when")
-		return nil
-	}
-	ex.outputf("    postinstall: %s\n", cmd)
-	ex.logDebug(ctx, "postinstall", "tool", tool.Name, "cmd", cmd)
-	result := ex.rn.Run(ctx, "sh", "-c", cmd)
-	if result.Err != nil {
-		ex.outputf("    ⚠  postinstall: %s (failed)\n", result.Err)
-		ex.logWarn(ctx, "postinstall", "tool", tool.Name, "error", result.Err.Error())
-		return result.Err
-	}
-	if result.ExitCode != 0 {
-		ex.outputf("    ⚠  postinstall: exit %d (failed)\n", result.ExitCode)
-		ex.logWarn(ctx, "postinstall", "tool", tool.Name, "exit_code", result.ExitCode)
-		return fmt.Errorf("postinstall exited %d", result.ExitCode)
-	}
-	ex.logDebug(ctx, "postinstall", "tool", tool.Name, "status", "done")
 	return nil
 }

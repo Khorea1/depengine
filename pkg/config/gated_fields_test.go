@@ -35,11 +35,11 @@ font = { native = true, post_install = { cmd = "fc-cache -fv", when = { target_f
 	if tool == nil {
 		t.Fatalf("tool font not parsed; tools: %v", keysOf(s.Tools))
 	}
-	if tool.PostInstall != "fc-cache -fv" {
-		t.Errorf("expected cmd extracted, got %q", tool.PostInstall)
+	if len(tool.PostInstall) != 1 || tool.PostInstall[0].Run[2] != "fc-cache -fv" {
+		t.Errorf("expected cmd extracted, got %#v", tool.PostInstall)
 	}
-	if tool.PostInstallWhen == nil || len(tool.PostInstallWhen.TargetFamily) != 1 || tool.PostInstallWhen.TargetFamily[0] != "unix" {
-		t.Errorf("expected when target_family=[unix], got %+v", tool.PostInstallWhen)
+	if when := tool.PostInstall[0].When; when == nil || len(when.TargetFamily) != 1 || when.TargetFamily[0] != "unix" {
+		t.Errorf("expected when target_family=[unix], got %+v", when)
 	}
 }
 
@@ -57,11 +57,11 @@ post_install = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
 	if tool == nil {
 		t.Fatalf("tool font not parsed")
 	}
-	if tool.PostInstall != "fc-cache -fv" {
-		t.Errorf("expected cmd extracted, got %q", tool.PostInstall)
+	if len(tool.PostInstall) != 1 || tool.PostInstall[0].Run[2] != "fc-cache -fv" {
+		t.Errorf("expected cmd extracted, got %#v", tool.PostInstall)
 	}
-	if tool.PostInstallWhen == nil || tool.PostInstallWhen.TargetFamily[0] != "unix" {
-		t.Errorf("expected when target_family=[unix], got %+v", tool.PostInstallWhen)
+	if when := tool.PostInstall[0].When; when == nil || when.TargetFamily[0] != "unix" {
+		t.Errorf("expected when target_family=[unix], got %+v", when)
 	}
 }
 
@@ -75,11 +75,46 @@ app = { native = true, post_install = "echo done" }
 		t.Fatalf("parse: %v", err)
 	}
 	tool := s.Tools["app"]
-	if tool.PostInstall != "echo done" {
-		t.Errorf("expected string form parsed, got %q", tool.PostInstall)
+	if len(tool.PostInstall) != 1 || tool.PostInstall[0].Run[2] != "echo done" {
+		t.Errorf("expected string form parsed, got %#v", tool.PostInstall)
 	}
-	if tool.PostInstallWhen != nil {
-		t.Errorf("string form should not set PostInstallWhen, got %+v", tool.PostInstallWhen)
+	if tool.PostInstall[0].When != nil {
+		t.Errorf("string form should not set a condition, got %+v", tool.PostInstall[0].When)
+	}
+}
+
+func TestParsePortableHookVariants(t *testing.T) {
+	p := writeTempSchema(t, `
+[tools]
+app = { native = true, pre_install = [
+  { run = ["sh", "-c", "echo unix"], when = { target_family = ["unix"] } },
+  { run = ["pwsh.exe", "-NoProfile", "-Command", "Write-Output windows"], when = { target_family = ["windows"] } }
+] }
+`)
+	s, err := ParseProjectSchema(p, nil)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	hooks := s.Tools["app"].PreInstall
+	if len(hooks) != 2 || hooks[0].Run[0] != "sh" || hooks[1].Run[0] != "pwsh.exe" {
+		t.Fatalf("unexpected hooks: %#v", hooks)
+	}
+	if hooks[0].When == nil || hooks[1].When == nil {
+		t.Fatalf("conditions were not parsed: %#v", hooks)
+	}
+}
+
+func TestParseHookRejectsInvalidRun(t *testing.T) {
+	for _, hook := range []string{
+		`{ run = [] }`,
+		`{ run = [""] }`,
+		`{ cmd = "echo old", run = ["echo", "new"] }`,
+		`[{ run = ["echo"] }, "echo mixed"]`,
+	} {
+		p := writeTempSchema(t, "[tools]\napp = { native = true, pre_install = "+hook+" }\n")
+		if _, err := ParseProjectSchema(p, nil); err == nil {
+			t.Errorf("expected invalid hook %s to fail", hook)
+		}
 	}
 }
 

@@ -206,7 +206,7 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 	//     regex over every known synonym (ghrelease.archSynonyms/
 	//     osSynonyms), so it is deliberately excluded from the arch_map/
 	//     os_map mechanism below, which only ever picks one spelling.
-	//   - tool.PreInstall/PostInstall: plain shell command strings, not
+	//   - tool hooks: command arguments, not
 	//     part of any method's Config, so arch_map/os_map (scoped to
 	//     [defaults] and method blocks) doesn't apply to them — they just
 	//     get the raw fact value, same as every other placeholder.
@@ -222,8 +222,8 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 			backfill["os"] = rawOS
 		}
 		for _, tool := range tools {
-			tool.PreInstall = Expand(tool.PreInstall, backfill)
-			tool.PostInstall = Expand(tool.PostInstall, backfill)
+			expandHooks(tool.PreInstall, backfill)
+			expandHooks(tool.PostInstall, backfill)
 		}
 	}
 
@@ -376,27 +376,8 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 				tool.RequiresWhen[dep] = parseCondition(wm)
 			}
 		}
-		if pi, ok := valMap["pre_install"].(string); ok {
-			tool.PreInstall = pi
-		}
-		// post_install accepts a plain string (unconditional) or
-		// the table form { cmd = "...", when = {...} } gating the hook.
-		parsePostInstall := func(v any) {
-			switch pi := v.(type) {
-			case string:
-				tool.PostInstall = pi
-			case map[string]any:
-				if c, ok := pi["cmd"].(string); ok {
-					tool.PostInstall = c
-				}
-				if wm, ok := pi["when"].(map[string]any); ok {
-					tool.PostInstallWhen = parseCondition(wm)
-				}
-			}
-		}
-		if v, ok := valMap["post_install"]; ok {
-			parsePostInstall(v)
-		}
+		tool.PreInstall = parseHooks(valMap["pre_install"])
+		tool.PostInstall = parseHooks(valMap["post_install"])
 		if t, ok := valMap["tags"].([]any); ok {
 			tool.Tags = anySliceToStrings(t)
 		}
@@ -672,6 +653,43 @@ func anySliceToStrings(in []any) []string {
 		}
 	}
 	return out
+}
+
+func parseHooks(raw any) []Hook {
+	if raw == nil {
+		return nil
+	}
+	values, ok := raw.([]any)
+	if !ok {
+		values = []any{raw}
+	}
+	hooks := make([]Hook, 0, len(values))
+	for _, value := range values {
+		switch v := value.(type) {
+		case string:
+			hooks = append(hooks, Hook{Run: []string{"sh", "-c", v}})
+		case map[string]any:
+			hook := Hook{}
+			if cmd, ok := v["cmd"].(string); ok {
+				hook.Run = []string{"sh", "-c", cmd}
+			} else if run, ok := v["run"].([]any); ok {
+				hook.Run = anySliceToStrings(run)
+			}
+			if when, ok := v["when"].(map[string]any); ok {
+				hook.When = parseCondition(when)
+			}
+			hooks = append(hooks, hook)
+		}
+	}
+	return hooks
+}
+
+func expandHooks(hooks []Hook, values map[string]string) {
+	for i := range hooks {
+		for j := range hooks[i].Run {
+			hooks[i].Run[j] = Expand(hooks[i].Run[j], values)
+		}
+	}
 }
 
 // sortedKeys returns the keys of m in sorted order, excluding those in exclude.

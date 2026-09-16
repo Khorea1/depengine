@@ -134,6 +134,82 @@
       },
       "type": "object"
     },
+    "hook": {
+      "oneOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "oneOf": [
+            {
+              "required": [
+                "cmd"
+              ]
+            },
+            {
+              "required": [
+                "run"
+              ]
+            }
+          ],
+          "properties": {
+            "cmd": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "run": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "items": {
+            "additionalProperties": false,
+            "oneOf": [
+              {
+                "required": [
+                  "cmd"
+                ]
+              },
+              {
+                "required": [
+                  "run"
+                ]
+              }
+            ],
+            "properties": {
+              "cmd": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "run": {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "when": {
+                "$ref": "#/definitions/condition"
+              }
+            },
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      ]
+    },
     "manifestDocument": {
       "additionalProperties": false,
       "properties": {
@@ -3452,28 +3528,6 @@
         }
       ]
     },
-    "postInstall": {
-      "oneOf": [
-        {
-          "type": "string"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "cmd": {
-              "type": "string"
-            },
-            "when": {
-              "$ref": "#/definitions/condition"
-            }
-          },
-          "required": [
-            "cmd"
-          ],
-          "type": "object"
-        }
-      ]
-    },
     "projectDocument": {
       "additionalProperties": false,
       "properties": {
@@ -3643,10 +3697,10 @@
           "$ref": "#/definitions/method_native"
         },
         "post_install": {
-          "$ref": "#/definitions/postInstall"
+          "$ref": "#/definitions/hook"
         },
         "pre_install": {
-          "type": "string"
+          "$ref": "#/definitions/hook"
         },
         "python": {
           "$ref": "#/definitions/bucketMethod"

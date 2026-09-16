@@ -42,17 +42,8 @@ func DefinitionHash(tool *config.Tool) string {
 	}
 	h.Write([]byte{0})
 
-	// Include PreInstall.
-	h.Write([]byte(tool.PreInstall))
-	h.Write([]byte{0})
-
-	// Include PostInstall.
-	h.Write([]byte(tool.PostInstall))
-	h.Write([]byte{0})
-	if tool.PostInstallWhen != nil {
-		h.Write([]byte(fmt.Sprintf("%v", tool.PostInstallWhen)))
-	}
-	h.Write([]byte{0})
+	writeHooks(h, tool.PreInstall)
+	writeHooks(h, tool.PostInstall)
 
 	// Include Tags.
 	for _, tag := range tool.Tags {
@@ -104,6 +95,20 @@ func DefinitionHash(tool *config.Tool) string {
 	}
 
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func writeHooks(h hash.Hash, hooks []config.Hook) {
+	for _, hook := range hooks {
+		for _, arg := range hook.Run {
+			h.Write([]byte(arg))
+			h.Write([]byte{0})
+		}
+		if hook.When != nil {
+			h.Write([]byte(fmt.Sprintf("%v", hook.When)))
+		}
+		h.Write([]byte{0})
+	}
+	h.Write([]byte{0})
 }
 
 // VersionOutdated reports whether the installed version differs from the

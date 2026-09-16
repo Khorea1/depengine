@@ -179,7 +179,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 				continue
 			}
 			if !ex.allowArbitraryCode {
-				hasDanger := ex.hasDangerousMethod(tool) || tool.PostInstall != "" || tool.PreInstall != ""
+				hasDanger := ex.hasDangerousMethod(tool) || len(tool.PostInstall) > 0 || len(tool.PreInstall) > 0
 				if hasDanger {
 					ex.outputf("  ⚠  %s: has hooks or build scripts that may execute arbitrary code. Use --allow-arbitrary-code to suppress this warning.\n", toolName)
 					ex.logWarn(ctx, "security", "tool", toolName, "warning", "has dangerous hooks")
@@ -195,7 +195,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 		preinstallDone := make(map[string]bool)
 		for _, toolName := range filteredLevel {
 			tool, ok := s.Tools[toolName]
-			if !ok || tool.PreInstall == "" {
+			if !ok || len(tool.PreInstall) == 0 {
 				continue
 			}
 			preCtx, preCancel := context.WithTimeout(ctx, ex.methodTimeout)
@@ -252,7 +252,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 						if preinstallDone[c.toolName] {
 							tr.PreinstallDone = true
 						}
-						if c.tool.PostInstall != "" {
+						if len(c.tool.PostInstall) > 0 {
 							postCtx, postCancel := context.WithTimeout(ctx, ex.methodTimeout)
 							if err := ex.runPostinstall(postCtx, c.tool); err != nil {
 								tr.Status = StatusFailed
@@ -366,8 +366,8 @@ func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResu
 	}
 	checks := []dangerCheck{
 		{ex.hasDangerousMethod, "config includes build scripts that may execute arbitrary code"},
-		{func(t *config.Tool) bool { return t.PostInstall != "" }, "has a post-install hook (arbitrary code execution)"},
-		{func(t *config.Tool) bool { return t.PreInstall != "" }, "has a pre-install hook (arbitrary code execution)"},
+		{func(t *config.Tool) bool { return len(t.PostInstall) > 0 }, "has a post-install hook (arbitrary code execution)"},
+		{func(t *config.Tool) bool { return len(t.PreInstall) > 0 }, "has a pre-install hook (arbitrary code execution)"},
 	}
 	if !ex.allowArbitraryCode {
 		hasDanger := false
@@ -505,7 +505,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			result.MethodKind = method.Kind
 			result.Config = method.Config
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "installed")
-			if tool.PostInstall != "" {
+			if len(tool.PostInstall) > 0 {
 				// Postinstall gets a fresh timeout from the tool-level context,
 				// not the cancelled method context. A failing post-install
 				// hook means the tool is not in the state the schema requires,

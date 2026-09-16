@@ -235,7 +235,7 @@ func TestDefinitionHashIncludesPostInstall(t *testing.T) {
 	}
 	withPost := &config.Tool{
 		Name:        "test",
-		PostInstall: "fc-cache -fv",
+		PostInstall: []config.Hook{{Run: []string{"fc-cache", "-fv"}}},
 		Methods: []*config.MethodCandidate{
 			{Kind: "native", Config: map[string]any{"pkg": "test"}},
 		},
@@ -257,7 +257,7 @@ func TestDefinitionHashIncludesPreInstall(t *testing.T) {
 	}
 	withPre := &config.Tool{
 		Name:       "test",
-		PreInstall: "curl -fsSL https://example.com/setup.sh | sh",
+		PreInstall: []config.Hook{{Run: []string{"sh", "-c", "curl -fsSL https://example.com/setup.sh | sh"}}},
 		Methods: []*config.MethodCandidate{
 			{Kind: "native", Config: map[string]any{"pkg": "test"}},
 		},

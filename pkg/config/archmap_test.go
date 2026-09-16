@@ -187,10 +187,10 @@ post_install = "echo installed on {os}"
 		t.Fatalf("ParseSchema: %v", err)
 	}
 	tool := s.Tools["fastfetch"]
-	if want := "echo building for aarch64"; tool.PreInstall != want {
+	if want := "echo building for aarch64"; tool.PreInstall[0].Run[2] != want {
 		t.Fatalf("PreInstall:\n got: %v\nwant: %v", tool.PreInstall, want)
 	}
-	if want := "echo installed on darwin"; tool.PostInstall != want {
+	if want := "echo installed on darwin"; tool.PostInstall[0].Run[2] != want {
 		t.Fatalf("PostInstall:\n got: %v\nwant: %v", tool.PostInstall, want)
 	}
 	// Meanwhile the sibling http method's url DID get the alias applied.

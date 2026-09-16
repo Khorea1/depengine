@@ -131,10 +131,8 @@ func validateTool(tool map[string]any, path string, errs *[]string) {
 		case "requires":
 		case "requires_when":
 			validateRequiresWhen(tool[key], fieldPath, requires, errs)
-		case "pre_install":
-			validateString(tool[key], fieldPath, errs)
-		case "post_install":
-			validatePostInstall(tool[key], fieldPath, errs)
+		case "pre_install", "post_install":
+			validateHooks(tool[key], fieldPath, errs)
 		case "tags", "method_prefer", "method_only":
 			validateStringList(tool[key], fieldPath, errs)
 		case "preinstall":
@@ -166,27 +164,52 @@ func validateRequiresWhen(raw any, path string, requires map[string]bool, errs *
 	}
 }
 
-func validatePostInstall(raw any, path string, errs *[]string) {
-	if _, ok := raw.(string); ok {
-		return
+func validateHooks(raw any, path string, errs *[]string) {
+	switch v := raw.(type) {
+	case string:
+		validateNonEmptyString(v, path, errs)
+	case map[string]any:
+		validateHook(v, path, errs)
+	case []any:
+		if len(v) == 0 {
+			*errs = append(*errs, path+": must not be empty")
+		}
+		for i, item := range v {
+			m, ok := item.(map[string]any)
+			if !ok {
+				*errs = append(*errs, fmt.Sprintf("%s[%d]: expected table, got %T", path, i, item))
+				continue
+			}
+			validateHook(m, fmt.Sprintf("%s[%d]", path, i), errs)
+		}
+	default:
+		*errs = append(*errs, fmt.Sprintf("%s: expected string, table, or array of tables, got %T", path, raw))
 	}
-	m, ok := raw.(map[string]any)
-	if !ok {
-		*errs = append(*errs, fmt.Sprintf("%s: expected string or table, got %T", path, raw))
-		return
-	}
+}
+
+func validateHook(m map[string]any, path string, errs *[]string) {
 	for _, key := range sortedMapKeys(m) {
 		switch key {
 		case "cmd":
-			validateString(m[key], path+".cmd", errs)
+			validateNonEmptyString(m[key], path+".cmd", errs)
+		case "run":
+			if values, valid := stringList(m[key], path+".run", errs); valid {
+				if len(values) == 0 {
+					*errs = append(*errs, path+".run: must not be empty")
+				} else if values[0] == "" {
+					*errs = append(*errs, path+".run[0]: executable must not be empty")
+				}
+			}
 		case "when":
 			validateCondition(m[key], path+".when", errs)
 		default:
 			*errs = append(*errs, path+"."+key+": unknown field")
 		}
 	}
-	if _, ok := m["cmd"]; !ok {
-		*errs = append(*errs, path+".cmd: required field")
+	_, hasCmd := m["cmd"]
+	_, hasRun := m["run"]
+	if hasCmd == hasRun {
+		*errs = append(*errs, path+": exactly one of cmd or run is required")
 	}
 }
 

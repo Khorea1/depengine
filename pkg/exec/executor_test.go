@@ -654,11 +654,12 @@ func TestExecutorPostInstall(t *testing.T) {
 
 	ex := New()
 	WithAllowArbitraryCode()(ex)
-	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	fr := &run.FakeRunner{ExitCode: 0}
+	WithRunner(fr)(ex)
 	WithAdapters(mock)(ex)
 
 	s := mockSchema("tool1")
-	s.Tools["tool1"].PostInstall = "echo done"
+	s.Tools["tool1"].PostInstall = []config.Hook{{Run: []string{"echo", "done"}}}
 
 	report, err := ex.Execute(context.Background(), s, "arch")
 	if err != nil {
@@ -667,9 +668,13 @@ func TestExecutorPostInstall(t *testing.T) {
 	if report.Success != 1 {
 		t.Fatalf("expected 1 success, got %d", report.Success)
 	}
+	last := fr.Calls[len(fr.Calls)-1]
+	if last.Name != "echo" || len(last.Args) != 1 || last.Args[0] != "done" {
+		t.Fatalf("expected direct argv execution, got %+v", fr.Calls)
+	}
 }
 
-func TestExecutorSkipsPostInstallOnUnmatchedWhen(t *testing.T) {
+func TestExecutorRunsOnlyMatchingPostInstallHooks(t *testing.T) {
 	mock := &testMockAdapter{
 		kindValue:     "native",
 		availableFunc: func() bool { return true },
@@ -684,8 +689,13 @@ func TestExecutorSkipsPostInstallOnUnmatchedWhen(t *testing.T) {
 	WithFacts(&engine.Facts{OS: "windows", TargetFamily: "windows"})(ex)
 
 	s := mockSchema("tool1")
-	s.Tools["tool1"].PostInstall = "fc-cache -fv"
-	s.Tools["tool1"].PostInstallWhen = &config.Condition{TargetFamily: []string{"unix"}}
+	s.Tools["tool1"].PostInstall = []config.Hook{{
+		Run:  []string{"fc-cache", "-fv"},
+		When: &config.Condition{TargetFamily: []string{"unix"}},
+	}, {
+		Run:  []string{"pwsh.exe", "-Command", "Write-Output windows"},
+		When: &config.Condition{TargetFamily: []string{"windows"}},
+	}}
 
 	report, err := ex.Execute(context.Background(), s, "arch")
 	if err != nil {
@@ -694,10 +704,14 @@ func TestExecutorSkipsPostInstallOnUnmatchedWhen(t *testing.T) {
 	if report.Success != 1 {
 		t.Fatalf("expected 1 success, got %d", report.Success)
 	}
-	for _, c := range fr.Calls {
-		if len(c.Args) > 0 && c.Args[0] == "fc-cache -fv" {
-			t.Errorf("postinstall should be skipped on windows facts, but ran: %+v", c.Args)
+	for _, call := range fr.Calls {
+		if call.Name == "fc-cache" {
+			t.Errorf("Unix hook should be skipped on Windows facts, but ran: %+v", call)
 		}
+	}
+	last := fr.Calls[len(fr.Calls)-1]
+	if last.Name != "pwsh.exe" || len(last.Args) != 2 || last.Args[1] != "Write-Output windows" {
+		t.Fatalf("expected matching Windows hook, got %+v", fr.Calls)
 	}
 }
 
@@ -1012,7 +1026,7 @@ func TestExecutorPreInstallSuccess(t *testing.T) {
 	WithAdapters(mock)(ex)
 
 	s := mockSchema("tool1")
-	s.Tools["tool1"].PreInstall = "echo preparing"
+	s.Tools["tool1"].PreInstall = []config.Hook{{Run: []string{"echo", "preparing"}}}
 
 	report, err := ex.Execute(context.Background(), s, "arch")
 	if err != nil {
@@ -1041,7 +1055,7 @@ func TestExecutorPreInstallFailure(t *testing.T) {
 	WithAdapters(mock)(ex)
 
 	s := mockSchema("tool1")
-	s.Tools["tool1"].PreInstall = "echo preparing"
+	s.Tools["tool1"].PreInstall = []config.Hook{{Run: []string{"echo", "preparing"}}}
 
 	report, err := ex.Execute(context.Background(), s, "arch")
 	if err != nil {
@@ -1072,7 +1086,7 @@ func TestExecutorBlocksDangerous(t *testing.T) {
 	WithAdapters(mock)(ex)
 
 	s := mockSchema("tool1")
-	s.Tools["tool1"].PostInstall = "echo dangerous"
+	s.Tools["tool1"].PostInstall = []config.Hook{{Run: []string{"echo", "dangerous"}}}
 
 	report, err := ex.Execute(context.Background(), s, "arch")
 	if err != nil {
@@ -1191,8 +1205,8 @@ func TestExecutorPreAndPostInstall(t *testing.T) {
 	WithAdapters(mock)(ex)
 
 	s := mockSchema("tool1")
-	s.Tools["tool1"].PreInstall = "echo pre"
-	s.Tools["tool1"].PostInstall = "echo post"
+	s.Tools["tool1"].PreInstall = []config.Hook{{Run: []string{"sh", "-c", "echo pre"}}}
+	s.Tools["tool1"].PostInstall = []config.Hook{{Run: []string{"sh", "-c", "echo post"}}}
 
 	report, err := ex.Execute(context.Background(), s, "arch")
 	if err != nil {

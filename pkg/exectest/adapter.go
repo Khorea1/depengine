@@ -139,7 +139,7 @@ func WithRequires(s *config.Schema, toolName string, requires ...string) *config
 // WithPostInstall adds a postinstall script to a tool.
 func WithPostInstall(s *config.Schema, toolName, script string) *config.Schema {
 	if t, ok := s.Tools[toolName]; ok {
-		t.PostInstall = script
+		t.PostInstall = []config.Hook{{Run: []string{"sh", "-c", script}}}
 	}
 	return s
 }

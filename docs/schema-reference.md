@@ -357,6 +357,31 @@ pre_install = "curl -fsSL https://setup.example.com | sh"
 > aborted. Requires `--allow-arbitrary-code` (a security warning is shown by
 > default, and the tool is skipped unless the flag is passed).
 
+The string form is a POSIX shorthand and executes as `sh -c <command>`. For
+portable or shell-independent hooks, declare the executable and arguments
+explicitly with `run`:
+
+```toml
+pre_install = { run = ["curl", "-fsSLo", "tool.zip", "https://example.com/tool.zip"] }
+```
+
+`run` never inserts a shell or interprets pipes, redirects, globbing, or
+variable expansion. Invoke the desired interpreter explicitly when those
+features are required. A list can provide platform-specific variants or
+multiple sequential steps:
+
+```toml
+pre_install = [
+  { run = ["sh", "-c", "curl -fsSL \"$URL\" | tar -xz"], when = { target_family = ["unix"] } },
+  { run = ["pwsh.exe", "-NoProfile", "-NonInteractive", "-Command", "Invoke-WebRequest $env:URL -OutFile tool.zip"], when = { target_family = ["windows"] } },
+]
+```
+
+The legacy table `{ cmd = "...", when = {...} }` is also shorthand for
+`sh -c` and remains supported for compatibility. PowerShell (`pwsh.exe`),
+Windows PowerShell (`powershell.exe`), `cmd.exe`, Nushell, or any other
+interpreter can be selected explicitly through `run`.
+
 ### Tool-to-tool dependency
 
 ```toml
@@ -373,11 +398,11 @@ requires_when = { fontconfig = { target_family = ["unix"] } }
 `fontconfig` participates in the install graph only on unix; on Windows the
 edge disappears (no dangling-ref error, no blocking).
 
-`postinstall` (and `post_install`) additionally accept a table form with
-its own `when`, so platform-specific hooks don't run where they can't work:
+`post_install` accepts the same string, table, and list forms, including
+per-command `when` conditions:
 
 ```toml
-postinstall = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
+post_install = { run = ["fc-cache", "-fv"], when = { target_family = ["unix"] } }
 ```
 
 The plain-string form stays valid and is unconditional.
