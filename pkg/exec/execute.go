@@ -446,44 +446,6 @@ func (ex *Executor) writeState(ctx context.Context, s *config.Schema, report *Ex
 	return nil
 }
 
-// hasDangerousMethod checks whether any of the tool's methods have config
-// keys that trigger arbitrary code execution (build scripts, etc.).
-func (ex *Executor) hasDangerousMethod(tool *config.Tool) bool {
-	for _, m := range config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName) {
-		for _, key := range []string{"build", "build_cmd", "build_command"} {
-			if v, ok := m.Config[key]; ok {
-				if s, ok := v.(string); ok && s != "" {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-func (ex *Executor) runPreinstall(ctx context.Context, tool *config.Tool) error {
-	cmd := strings.TrimSpace(tool.PreInstall)
-	if cmd == "" {
-		return nil
-	}
-	ex.outputf("    pre-install: %s\n", cmd)
-	ex.logDebug(ctx, "preinstall", "tool", tool.Name, "cmd", cmd)
-	// Run through sh -c to support shell syntax (pipes, redirections, quotes).
-	res := ex.rn.Run(ctx, "sh", "-c", cmd)
-	if res.Err != nil {
-		ex.outputf("    ⚠  pre-install: %s (aborting)\n", res.Err.Error())
-		ex.logWarn(ctx, "preinstall", "tool", tool.Name, "error", res.Err.Error())
-		return res.Err
-	}
-	if res.ExitCode != 0 {
-		err := fmt.Errorf("pre-install exit %d", res.ExitCode)
-		ex.outputf("    ⚠  pre-install: exit %d (aborting)\n", res.ExitCode)
-		ex.logWarn(ctx, "preinstall", "tool", tool.Name, "exit_code", res.ExitCode)
-		return err
-	}
-	return nil
-}
-
 func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResult {
 	toolStart := time.Now()
 	result := ToolResult{Tool: tool.Name}
@@ -887,35 +849,6 @@ func (ex *Executor) executeLevelParallel(ctx context.Context, s *config.Schema, 
 	for i := range results {
 		ex.recordToolResult(ctx, &results[i], report)
 	}
-}
-
-func (ex *Executor) runPostinstall(ctx context.Context, tool *config.Tool) error {
-	cmd := strings.TrimSpace(tool.PostInstall)
-	if cmd == "" {
-		return nil
-	}
-	if tool.PostInstallWhen != nil && !tool.PostInstallWhen.Match(ex.facts) {
-		ex.outputf("    postinstall: skipped (when condition not met)\n")
-		ex.logDebug(ctx, "postinstall", "tool", tool.Name, "status", "skip_when")
-		return nil
-	}
-	ex.outputf("    postinstall: %s\n", cmd)
-	ex.logDebug(ctx, "postinstall", "tool", tool.Name, "cmd", cmd)
-	// Run through sh -c to support shell syntax (pipes, redirections, quotes).
-	res := ex.rn.Run(ctx, "sh", "-c", cmd)
-	if res.Err != nil {
-		ex.outputf("    ⚠  postinstall: %s (failed)\n", res.Err.Error())
-		ex.logWarn(ctx, "postinstall", "tool", tool.Name, "error", res.Err.Error())
-		return res.Err
-	}
-	if res.ExitCode != 0 {
-		err := fmt.Errorf("postinstall exited %d", res.ExitCode)
-		ex.outputf("    ⚠  postinstall: exit %d (failed)\n", res.ExitCode)
-		ex.logWarn(ctx, "postinstall", "tool", tool.Name, "exit_code", res.ExitCode)
-		return err
-	}
-	ex.logDebug(ctx, "postinstall", "tool", tool.Name, "status", "done")
-	return nil
 }
 
 // log emits a structured log entry at the given level, if a logger is set.
