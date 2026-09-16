@@ -202,6 +202,24 @@ func TestExecutorStartsAdapterElevationSession(t *testing.T) {
 	}
 }
 
+func TestExecutorSkipsElevationForGatedNativeMethod(t *testing.T) {
+	required := true
+	runner := &elevationTrackingRunner{}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithFacts(&engine.Facts{IsAndroid: false})(ex)
+
+	s := mockSchema("tool")
+	s.Tools["tool"].Methods[0].When = &config.Condition{IsAndroid: &required}
+
+	if _, err := ex.Execute(context.Background(), s, "debian"); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if runner.starts != 0 || runner.stops != 0 {
+		t.Fatalf("elevation session starts/stops = %d/%d, want 0/0", runner.starts, runner.stops)
+	}
+}
+
 func TestExecutorMethodOnlyExcludesDeclaredFallback(t *testing.T) {
 	var tried []string
 	cargo := &testMockAdapter{kindValue: "cargo", installFunc: func(string) error {

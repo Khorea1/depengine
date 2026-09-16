@@ -18,19 +18,18 @@ import (
 	"github.com/Khorea1/depengine/pkg/state"
 )
 
-// Execute runs all tools in the schema in dependency order.
-// needsNativeSync reports whether the schema contains any tool with a native
-// method for the given clan. If no tool uses native, index sync is skipped.
-func needsNativeSync(s *config.Schema, clan string) bool {
+// hasApplicableNativeMethod reports whether the schema contains a native
+// method that applies to the current system. If none applies, both index sync
+// and the upfront elevation prompt can be skipped.
+func (ex *Executor) hasApplicableNativeMethod(s *config.Schema, clan string) bool {
 	if s == nil {
 		return false
 	}
-	nativeManagerName := ""
-	if manager, ok := native.Lookup(clan); ok {
-		nativeManagerName = manager.Name
-	}
 	for _, tool := range s.Tools {
-		for _, mc := range config.SelectMethods(tool, s.Defaults.MethodOrder, nativeManagerName) {
+		for _, mc := range config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName) {
+			if mc.When != nil && !mc.When.Match(ex.facts) {
+				continue
+			}
 			if mc.Kind == "native" || mc.Kind == clan {
 				return true
 			}
@@ -46,7 +45,7 @@ func needsNativeSync(s *config.Schema, clan string) bool {
 // needsElevation reports whether any applicable method will need root.
 func (ex *Executor) needsElevation(s *config.Schema, clan string) bool {
 	mgr, ok := native.Lookup(clan)
-	if ok && mgr.SudoRequired && needsNativeSync(s, clan) {
+	if ok && mgr.SudoRequired && ex.hasApplicableNativeMethod(s, clan) {
 		return true
 	}
 
@@ -265,7 +264,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 	}
 
 	// Only sync native package index if at least one tool uses a native method.
-	if needsNativeSync(s, clan) {
+	if ex.hasApplicableNativeMethod(s, clan) {
 		syncMgr := NewSyncManager(ex.rn, clan)
 		if syncMgr.NeedsSync() {
 			ex.outputf("  syncing package index...\n")
