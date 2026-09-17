@@ -39,8 +39,10 @@ schema_version = 1
 #
 #   git:   url, build, branch, depth, extract_to, artifact, binary,
 #          managed_paths
-#   http:  url, checksum, checksum_url, checksum_file_format, signature_url,
-#          signing_key, extract_to, binary
+#   github: repo, asset, release, checksum, extract_to, strip_components,
+#           entrypoints, link_dir
+#   http:   url, checksum, checksum_url, checksum_file_format, signature_url,
+#           signing_key, extract_to, binary
 #   cargo: pkg, git, when
 #   native/aur/go/pip/pipx/uv/npm/bun/pnpm/gem: pkg, when
 #
@@ -61,7 +63,6 @@ schema_version = 1
 # ==============================================================================
 
 # --- native + multi-ecosystem ---
-nvim      = { pacman = "neovim",             apt = "neovim",                brew = "neovim" }
 fd        = { apt = "fd-find",               cargo = "fd-find" }
 golang    = { pacman = "go",                 apt = "golang-go" }   # named "golang" (not "go") to avoid colliding with the "go install" method kind — see CHECKLIST/method_order
 rg        = { pacman = "ripgrep",            apt = "ripgrep" }
@@ -158,7 +159,6 @@ nh            = { cargo = { git = "https://github.com/not-an-aardvark/nh" } }   
 # --- npm / pnpm / bun (Node.js) — with ``node = true`` bucket ---
 # ``node = true`` expands to ``{ npm = true, pnpm = true, bun = true }``.
 # Explicit method before the bucket is not overwritten.
-neovim        = { node = true }
 markdownlint  = { npm = "markdownlint-cli" }       # markdownlint-cli ≠ markdownlint
 prettier      = { node = true }
 eslint        = { node = true }
@@ -189,9 +189,6 @@ slack         = { flatpak = "com.slack.Slack" }
 ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install" } }
 fasd = { git = { url = "https://github.com/clvv/fasd",          build = "PREFIX=$HOME/.local make install" } }
 
-# With specific branch and full clone (depth = 0)
-neovim-git = { git = { url = "https://github.com/neovim/neovim", branch = "master", depth = 0, build = "make CMAKE_BUILD_TYPE=Release && sudo make install" } }
-
 # With binary field (checks if ~/.local/bin/lf exists after build)
 lf-source   = { git = { url = "https://github.com/gokcehan/lf",  build = "go build -o $HOME/.local/bin/lf", binary = "lf" } }
 
@@ -199,11 +196,33 @@ lf-source   = { git = { url = "https://github.com/gokcehan/lf",  build = "go bui
 tpm         = { git = { url = "https://github.com/tmux-plugins/tpm", depth = 1 } }
 
 # ==============================================================================
-# SECTION 3 — Installation via http (release binary / deb / archive)
+# SECTION 3 — Release assets via github/http (binary / deb / archive)
 # ==============================================================================
-# Downloads a ready-made artifact. Supports {latest} placeholder,
-# checksum, checksum_url, signature_url, extract_to.
+# Downloads a ready-made artifact. Prefer github's repo/asset matching for
+# GitHub Releases; use http for literal URLs.
 # ==============================================================================
+
+# One Neovim identity: manager-specific package IDs plus an owned GitHub archive.
+[packages.neovim]
+  [packages.neovim.native]
+  pkg = "neovim"
+  pkg_overrides = { winget = "Neovim.Neovim" }
+
+  [packages.neovim.scoop]
+  pkg = "neovim"
+
+  [packages.neovim.choco]
+  pkg = "neovim"
+
+  [packages.neovim.github]
+  repo = "neovim/neovim"
+  asset = "nvim-{os_any}-{arch_any}.tar.gz"
+  checksum = "sha256:auto"
+  strip_components = 1
+  extract_to = "~/.local/opt/neovim"
+  entrypoints = { nvim = "bin/nvim" }
+  link_dir = "~/.local/bin"
+  when = { target_family = ["unix"] }
 
 
 [packages.fastfetch]
@@ -666,7 +685,8 @@ tags = ["personal", "dotfiles"]
 #   tags, method_prefer, method_only
 #
 # Fields that ALWAYS stay inside the method:
-#   kind, when, pkg, url, build, branch, depth, checksum, checksum_url,
+#   kind, when, pkg, url, repo, asset, build, branch, depth, checksum, checksum_url,
 #   requires, sources, checksum_file_format, signature_url, signing_key,
-#   extract_to, artifact, binary, managed_paths, git
+#   extract_to, strip_components, entrypoints, link_dir, artifact, binary,
+#   managed_paths, git
 # ==============================================================================

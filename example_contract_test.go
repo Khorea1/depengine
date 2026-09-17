@@ -22,8 +22,10 @@ func TestShippedExamplesMatchRuntimeContract(t *testing.T) {
 		{path: "manifest.example.toml", parse: config.ParseManifest, manifest: true},
 	}
 
-	covered := make(map[string]bool, len(methodkind.Contracts))
+	coveredByExample := make(map[string]map[string]bool, len(tests))
 	for _, tt := range tests {
+		covered := make(map[string]bool, len(methodkind.Contracts))
+		coveredByExample[tt.path] = covered
 		t.Run(tt.path, func(t *testing.T) {
 			schema, err := tt.parse(tt.path, nil)
 			if err != nil {
@@ -45,12 +47,23 @@ func TestShippedExamplesMatchRuntimeContract(t *testing.T) {
 					}
 				}
 			}
+			if !covered["github"] {
+				t.Fatalf("%s: missing canonical github method contract", tt.path)
+			}
+			identities := neovimToolIdentities(schema)
+			if len(identities) != 1 || identities[0] != "neovim" {
+				t.Fatalf("%s: expected one canonical Neovim tool identity named neovim, got %v", tt.path, identities)
+			}
 		})
 	}
 
 	var missing []string
 	for _, contract := range methodkind.Contracts {
-		if !covered[contract.Kind] {
+		covered := false
+		for _, exampleCoverage := range coveredByExample {
+			covered = covered || exampleCoverage[contract.Kind]
+		}
+		if !covered {
 			missing = append(missing, contract.Kind)
 		}
 	}
@@ -58,6 +71,35 @@ func TestShippedExamplesMatchRuntimeContract(t *testing.T) {
 		sort.Strings(missing)
 		t.Fatalf("public method contracts missing from shipped examples: %s", strings.Join(missing, ", "))
 	}
+}
+
+func neovimToolIdentities(schema *config.Schema) []string {
+	var identities []string
+	for name, tool := range schema.Tools {
+		if name == "nvim" || strings.Contains(strings.ToLower(name), "neovim") {
+			identities = append(identities, name)
+			continue
+		}
+		for _, method := range tool.Methods {
+			if methodConfigRepresentsNeovim(method.Config) {
+				identities = append(identities, name)
+				break
+			}
+		}
+	}
+	sort.Strings(identities)
+	return identities
+}
+
+func methodConfigRepresentsNeovim(config map[string]any) bool {
+	for _, key := range []string{"pkg", "repo", "url"} {
+		value, _ := config[key].(string)
+		value = strings.ToLower(value)
+		if value == "neovim" || value == "neovim.neovim" || strings.Contains(value, "github.com/neovim/neovim") || value == "neovim/neovim" {
+			return true
+		}
+	}
+	return false
 }
 
 func formatValidationErrors(errors []validate.ValidationError) string {

@@ -49,7 +49,6 @@ simple = ["zsh", "zathura", "w3m", "rofi", "mpv", "kitty", "tmux", "rclone", "do
 # name); fd also ships prebuilt glibc/musl/aarch64 binaries with a real
 # {latest}-safe filename scheme, so its full multi-arch/libc definition is
 # promoted to a full block — see CASE 9 below (search for [tools.fd]).
-nvim = { pacman = "neovim", apt = "neovim", brew = "neovim" }
 hypr = { pacman = "hyprland" }
 
 golang = { pacman = "go", apt = "golang-go" }
@@ -101,10 +100,6 @@ fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/release
 
 # Example with SHA-512 and explicit checksum_url:
 "tool-example" = { http = { url = "https://example.com/tool-{latest}.tar.gz", checksum = "sha512:auto", checksum_url = "https://example.com/SHA512SUMS" } }
-
-# Windows installer: exact product identity is required for check/remove.
-# method_only prevents the automatically injected native candidate from running.
-nvim-msi = { method_only = ["msi"], msi = { repo = "neovim/neovim", asset = "nvim-win64.msi", product_name = "Neovim", publisher = "neovim.io", when = { target_family = ["windows"] } } }
 
 # ------------------------------------------------------------------------
 # CASE 7 — Tool dependency and simultaneous package override.
@@ -266,15 +261,35 @@ link_dir = "~/.local/bin"
   when = { is_wsl = true }
 
 
-# --- Container-aware: static binary inside container, native outside ---
+# --- One Neovim identity, with real package IDs and owned release payloads ---
 [tools.neovim]
   [tools.neovim.native]
-  when = { is_container = false }
+  pkg = "neovim"
+  pkg_overrides = { winget = "Neovim.Neovim" }
 
-  [tools.neovim.http]
-  url = "https://github.com/neovim/neovim/releases/download/stable/nvim-linux-{arch}.tar.gz"
-  extract_to = "~/.local/bin"
-  when = { is_container = true, arch = ["x86_64", "aarch64"] }
+  [tools.neovim.scoop]
+  pkg = "neovim"
+
+  [tools.neovim.choco]
+  pkg = "neovim"
+
+  [tools.neovim.github]
+  repo = "neovim/neovim"
+  asset = "nvim-{os_any}-{arch_any}.tar.gz"
+  checksum = "sha256:auto"
+  strip_components = 1
+  extract_to = "~/.local/opt/neovim"
+  entrypoints = { nvim = "bin/nvim" }
+  link_dir = "~/.local/bin"
+  when = { target_family = ["unix"] }
+
+  # Windows installer: exact product identity is required for check/remove.
+  [tools.neovim.msi]
+  repo = "neovim/neovim"
+  asset = "nvim-win64.msi"
+  product_name = "Neovim"
+  publisher = "neovim.io"
+  when = { target_family = ["windows"] }
 
 
 # --- Kernel-specific DKMS package ---
