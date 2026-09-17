@@ -107,7 +107,7 @@ changelog:
 
 release:
   github:
-    owner: depengine
+    owner: Khorea1
     name: depengine
   draft: true
   prerelease: auto

@@ -1,0 +1,52 @@
+package main
+
+import (
+	"os"
+	"strings"
+	"testing"
+)
+
+func TestReleaseWorkflowContract(t *testing.T) {
+	data, err := os.ReadFile(".github/workflows/release.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow := string(data)
+
+	for _, invariant := range []struct{ description, value string }{
+		{"version tag push trigger", "push:\n    tags:\n      - 'v*'"},
+		{"exact Go version", "go-version: '1.26.4'"},
+		{"job-scoped contents write permission", "build-and-publish:\n    permissions:\n      contents: write"},
+		{"GoReleaser version v2.17.0", "version: v2.17.0"},
+		{"GitHub Actions token", "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"},
+	} {
+		if !strings.Contains(workflow, invariant.value) {
+			t.Errorf("release workflow is missing %s", invariant.description)
+		}
+	}
+	for _, invariant := range []struct{ description, value string }{
+		{"published-release trigger", "types: [published]"},
+		{"release-event tag reference", "github.event.release.tag_name"},
+		{"write-all permission", "write-all"},
+	} {
+		if strings.Contains(workflow, invariant.value) {
+			t.Errorf("release workflow still contains %s", invariant.description)
+		}
+	}
+	if got := strings.Count(workflow, "goreleaser/goreleaser-action"); got != 1 {
+		t.Errorf("GoReleaser action invocation count = %d, want 1", got)
+	}
+	if got := strings.Count(workflow, "release --clean"); got != 1 {
+		t.Errorf("GoReleaser release --clean count = %d, want 1", got)
+	}
+}
+
+func TestGoReleaserRepositoryContract(t *testing.T) {
+	data, err := os.ReadFile(".goreleaser.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "release:\n  github:\n    owner: Khorea1\n    name: depengine\n") {
+		t.Error("GoReleaser release repository must be Khorea1/depengine")
+	}
+}
