@@ -8,6 +8,7 @@ import (
 	"github.com/Khorea1/depengine/pkg/exec"
 	gitadapter "github.com/Khorea1/depengine/pkg/git"
 	"github.com/Khorea1/depengine/pkg/httpdownload"
+	"github.com/Khorea1/depengine/pkg/msi"
 )
 
 var version = "dev"
@@ -48,6 +49,7 @@ func initAdapters() {
 	exec.Register(httpdownload.NewGitHubAdapter())
 	exec.Register(httpdownload.NewAppImageAdapter())
 	exec.Register(httpdownload.NewAndroidAdapter())
+	exec.Register(msi.NewAdapter())
 	exec.Register(container.NewContainerAdapter())
 	for _, adapter := range exec.WindowsAdapters() {
 		exec.Register(adapter)
