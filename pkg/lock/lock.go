@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
@@ -64,9 +63,6 @@ func DefaultPath(schemaPath string) string {
 }
 
 // Load reads a lock file. A missing file is NOT an error — returns nil, nil.
-// Legacy lock files written with "<toolName>/<methodKind>" keys (no "/<idx>"
-// suffix) are accepted transparently: their pins are re-keyed to the canonical
-// "<toolName>/<methodKind>/0" form (see normalizeTools).
 func Load(path string) (*Lock, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -79,26 +75,22 @@ func Load(path string) (*Lock, error) {
 	if err := toml.Unmarshal(data, &l); err != nil {
 		return nil, fmt.Errorf("lock: parse %s: %w", path, err)
 	}
-	normalizeTools(l.Tools)
+	if l.Version != 1 {
+		return nil, fmt.Errorf("lock: unsupported version %d (supported: 1)", l.Version)
+	}
+	for key := range l.Tools {
+		if !isCanonicalKey(key) {
+			return nil, fmt.Errorf("lock: invalid tool key %q; expected <tool>/<method>/<index>", key)
+		}
+	}
 	return &l, nil
 }
 
-// Save writes l to path, creating parent directories as needed. The file is
-// always written with canonical "<toolName>/<methodKind>/<idx>" keys; any
-// legacy keys in l are normalized on a copy, so the caller's lock is untouched.
+// Save writes l to path, creating parent directories as needed.
 func Save(path string, l *Lock) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("lock: mkdir: %w", err)
-	}
-
-	out := *l
-	if l.Tools != nil {
-		out.Tools = make(map[string]ToolPin, len(l.Tools))
-		for k, v := range l.Tools {
-			out.Tools[k] = v
-		}
-		normalizeTools(out.Tools)
 	}
 
 	// Write to a temp file in the same directory (ensures same-filesystem rename).
@@ -107,7 +99,7 @@ func Save(path string, l *Lock) error {
 	if err != nil {
 		return fmt.Errorf("lock: create tmp: %w", err)
 	}
-	if err := toml.NewEncoder(f).Encode(out); err != nil {
+	if err := toml.NewEncoder(f).Encode(l); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("lock: encode: %w", err)
@@ -137,32 +129,6 @@ func toolKey(toolName, methodKind string, idx int) string {
 	return fmt.Sprintf("%s/%s/%d", toolName, methodKind, idx)
 }
 
-// normalizeTools rewrites legacy "<toolName>/<methodKind>" keys (written by
-// older depengine versions without the "/<idx>" suffix) into the canonical
-// "<toolName>/<methodKind>/<idx>" form, mapping legacy pins to idx 0. If both
-// forms exist for the same key, the canonical entry wins.
-func normalizeTools(tools map[string]ToolPin) {
-	canonical := make(map[string]ToolPin, len(tools))
-	for key, pin := range tools {
-		if isCanonicalKey(key) {
-			canonical[key] = pin
-		}
-	}
-	for key, pin := range tools {
-		if isCanonicalKey(key) {
-			continue
-		}
-		normKey := key + "/0"
-		if _, exists := canonical[normKey]; !exists {
-			canonical[normKey] = pin
-		}
-	}
-	clear(tools)
-	for k, v := range canonical {
-		tools[k] = v
-	}
-}
-
 // isCanonicalKey reports whether key has the canonical
 // "<toolName>/<methodKind>/<idx>" shape, i.e. its last "/"-separated segment
 // is the numeric method index.
@@ -171,8 +137,15 @@ func isCanonicalKey(key string) bool {
 	if i < 0 || i == len(key)-1 {
 		return false
 	}
-	_, err := strconv.Atoi(key[i+1:])
-	return err == nil
+	if i == 0 || !strings.Contains(key[:i], "/") {
+		return false
+	}
+	for _, digit := range key[i+1:] {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // computeMethodsHash returns a SHA-256 hash of the tool's method kinds and
@@ -218,16 +191,15 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 			// Resolve {latest} in URL fields (git and http methods only).
 			// Pin the bare version tag, not a fully-baked URL — see the
 			// ToolPin.Latest doc comment for why.
-			if method.Kind == "git" || method.Kind == "http" {
-				if urlRaw, ok := method.Config["url"].(string); ok && strings.Contains(urlRaw, "{latest}") {
-					tag, err := ghrelease.ResolveLatestTag(ctx, urlRaw, rn)
-					if err != nil {
-						return nil, fmt.Errorf("lock: resolve %s/%s: %w", name, method.Kind, err)
-					}
-					pin.Latest = tag
+			if urlRaw, ok := method.Config["url"].(string); ok && strings.Contains(urlRaw, "{latest}") {
+				tag, err := ghrelease.ResolveLatestTag(ctx, urlRaw, rn)
+				if err != nil {
+					return nil, fmt.Errorf("lock: resolve %s/%s: %w", name, method.Kind, err)
 				}
+				pin.Latest = tag
 			}
-			if method.Kind == "github" && githubUsesLatest(method.Config) {
+			_, hasRepo := method.Config["repo"]
+			if (method.Kind == "github" || hasRepo) && githubUsesLatest(method.Config) {
 				repo, _ := method.Config["repo"].(string)
 				tag, err := resolveLatestReleaseTag(ctx, repo, rn)
 				if err != nil {
@@ -290,7 +262,8 @@ func Apply(s *config.Schema, l *Lock) {
 			// Substitute {latest} in the current URL template with the
 			// pinned version tag.
 			if pin.Latest != "" {
-				if method.Kind == "github" && githubUsesLatest(method.Config) {
+				_, hasRepo := method.Config["repo"]
+				if (method.Kind == "github" || hasRepo) && githubUsesLatest(method.Config) {
 					method.Config["release"] = pin.Latest
 				}
 				if urlRaw, ok := method.Config["url"].(string); ok && strings.Contains(urlRaw, "{latest}") {

@@ -220,16 +220,42 @@ func copyBinary(ctx context.Context, src, destDir, binaryName string, rn run.Run
 			return fmt.Errorf("copy: %w", err)
 		}
 		sudoBin := run.ElevationPrefix()[0]
-		res := rn.Run(ctx, sudoBin, "install", "-m", "0755", src, dest)
-		return run.CheckResult(res, "install")
+		tmp := dest + ".depengine-new"
+		res := rn.Run(ctx, sudoBin, "install", "-m", "0755", src, tmp)
+		if err := run.CheckResult(res, "install"); err != nil {
+			return err
+		}
+		return run.CheckResult(rn.Run(ctx, sudoBin, "mv", "-f", "--", tmp, dest), "install commit")
 	}
 
-	input, err := os.ReadFile(src)
+	in, err := os.Open(src)
 	if err != nil {
 		return fmt.Errorf("copy: read %s: %w", src, err)
 	}
-	if err := os.WriteFile(dest, input, 0o755); err != nil {
+	defer in.Close()
+	tmp, err := os.CreateTemp(destDir, ".depengine-binary-*")
+	if err != nil {
+		return fmt.Errorf("copy: stage %s: %w", dest, err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0o755); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := io.Copy(tmp, in); err != nil {
+		_ = tmp.Close()
 		return fmt.Errorf("copy: write %s: %w", dest, err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, dest); err != nil {
+		return fmt.Errorf("copy: commit %s: %w", dest, err)
 	}
 	return nil
 }

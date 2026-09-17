@@ -180,3 +180,13 @@ func fileExtension(url string) string {
 	}
 	return "" // binary
 }
+
+func installerExtension(rawURL string) string {
+	path := strings.ToLower(strings.Split(strings.Split(rawURL, "?")[0], "#")[0])
+	for _, ext := range []string{".msi", ".exe", ".pkg", ".dmg"} {
+		if strings.HasSuffix(path, ext) {
+			return ext
+		}
+	}
+	return ""
+}

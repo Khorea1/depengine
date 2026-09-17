@@ -2,10 +2,8 @@ package httpdownload
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/Khorea1/depengine/pkg/config"
-	"github.com/Khorea1/depengine/pkg/ghrelease"
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
@@ -74,11 +72,17 @@ func (a *GitHubAdapter) Check(ctx context.Context, rn run.Runner, tool *config.T
 // for the latest release, then delegates the actual download/checksum/
 // extract to HTTPAdapter.Install with "url" filled in.
 func (a *GitHubAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
-	resolvedMC, err := a.resolve(ctx, rn, tool, mc)
-	if err != nil {
-		return err
+	asset, _ := mc.Config["asset"].(string)
+	if binary, _ := mc.Config["binary"].(string); binary != "" || isArchive(fileExtension(asset)) {
+		return a.http.Install(ctx, rn, tool, mc)
 	}
-	return a.http.Install(ctx, rn, tool, resolvedMC)
+	clone := *mc
+	clone.Config = make(map[string]any, len(mc.Config)+1)
+	for key, value := range mc.Config {
+		clone.Config[key] = value
+	}
+	clone.Config["binary"] = tool.Name
+	return a.http.Install(ctx, rn, tool, &clone)
 }
 
 // Remove delegates to HTTPAdapter.Remove, which operates on extract_to/
@@ -89,70 +93,3 @@ func (a *GitHubAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.
 }
 
 func (a *GitHubAdapter) CanRemove() bool { return a.http.CanRemove() }
-
-// resolve builds a copy of mc with "url" populated from the matched GitHub
-// release asset, leaving every other field (checksum, extract_to, binary,
-// ...) untouched for HTTPAdapter to use exactly as it would for "http".
-func (a *GitHubAdapter) resolve(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (*config.MethodCandidate, error) {
-	repo, _ := mc.Config["repo"].(string)
-	if repo == "" {
-		return nil, fmt.Errorf("github: no repo configured for tool %q", tool.Name)
-	}
-	assetPattern, _ := mc.Config["asset"].(string)
-	if assetPattern == "" {
-		return nil, fmt.Errorf("github: no asset pattern configured for tool %q", tool.Name)
-	}
-	arch, _ := mc.Config["_current_arch"].(string)
-	osName, _ := mc.Config["_current_os"].(string)
-
-	// `release` and `branch` are mutually exclusive (enforced in
-	// pkg/validate/structural.go) and both resolve the same way: a literal
-	// tag name looked up via GitHub's "get a release by tag" API, instead
-	// of always resolving the latest release. `release = "latest"` (or
-	// omitting both fields) keeps the original latest-release behavior.
-	// See ghrelease.ResolveAssetURL's doc comment for why "branch" doesn't
-	// query git branches/commits directly.
-	ref := githubRef(mc.Config)
-
-	url, _, err := ghrelease.ResolveAssetURL(ctx, repo, assetPattern, arch, osName, ref, rn)
-	if err != nil {
-		return nil, fmt.Errorf("github: %w", err)
-	}
-
-	return githubHTTPDelegate(tool, mc, url), nil
-}
-
-func githubHTTPDelegate(tool *config.Tool, mc *config.MethodCandidate, url string) *config.MethodCandidate {
-	resolved := make(map[string]any, len(mc.Config)+2)
-	for k, v := range mc.Config {
-		resolved[k] = v
-	}
-	resolved["url"] = url
-	if binary, _ := resolved["binary"].(string); binary == "" {
-		resolved["binary"] = tool.Name
-	}
-
-	return &config.MethodCandidate{
-		Kind:   "http",
-		Label:  mc.Label,
-		When:   mc.When,
-		Config: resolved,
-	}
-}
-
-// githubRef reads the `release`/`branch` config keys of a "github" method
-// and returns the ref ResolveAssetURL should pin to: "" for "use the latest
-// release" (the default, and what `release = "latest"` explicitly spells
-// out), or the literal tag/branch name otherwise. `branch` takes priority
-// if a schema somehow sets both, but pkg/validate/structural.go rejects
-// that combination before it ever reaches here.
-func githubRef(cfg map[string]any) string {
-	ref, _ := cfg["release"].(string)
-	if branch, _ := cfg["branch"].(string); branch != "" {
-		ref = branch
-	}
-	if ref == "latest" {
-		ref = ""
-	}
-	return ref
-}

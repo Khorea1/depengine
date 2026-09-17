@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
@@ -37,6 +38,14 @@ func (a *GitAdapter) Available(ctx context.Context, rn run.Runner) bool {
 //  1. If extract_to is set and contains a .git dir, consider it installed.
 //  2. If binary is set and exists on PATH, consider it installed.
 func (a *GitAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) bool {
+	if paths, err := managedPaths(mc); err == nil && len(paths) > 0 {
+		for _, path := range paths {
+			if _, err := os.Stat(path); err != nil {
+				return false
+			}
+		}
+		return true
+	}
 	if extractTo, ok := mc.Config["extract_to"].(string); ok && extractTo != "" {
 		extractTo = config.ExpandHomeDir(extractTo)
 		if info, err := os.Stat(filepath.Join(extractTo, ".git")); err == nil && info.IsDir() {
@@ -71,6 +80,9 @@ func (a *GitAdapter) InstalledVersion(ctx context.Context, rn run.Runner, _ *con
 // Install clones the repository, optionally builds, and optionally copies
 // artifacts to the configured extract_to directory.
 func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+	if _, err := managedPaths(mc); err != nil {
+		return err
+	}
 	url, ok := mc.Config["url"].(string)
 	if !ok || url == "" {
 		return fmt.Errorf("git: no url configured for tool %q", tool.Name)
@@ -251,7 +263,6 @@ func isSharedDir(path string) bool {
 			return true
 		}
 	}
-	// Check for shared directory suffixes once (not re-evaluated per loop entry).
 	if strings.HasSuffix(p, "/bin") || strings.HasSuffix(p, "/sbin") || strings.HasSuffix(p, "\\bin") {
 		return true
 	}
@@ -261,6 +272,19 @@ func isSharedDir(path string) bool {
 // Remove uninstalls the tool by removing either the extracted binary (if extract_to
 // is a shared directory) or the entire extract_to directory (if it is tool-specific).
 func (a *GitAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+	if paths, err := managedPaths(mc); err != nil {
+		return err
+	} else if len(paths) > 0 {
+		sort.Slice(paths, func(i, j int) bool { return len(paths[i]) > len(paths[j]) })
+		for _, path := range paths {
+			if err := os.RemoveAll(path); err != nil {
+				if runErr := run.CheckResult(run.RunElevated(ctx, rn, "rm", "-rf", "--", path), "git: remove managed path"); runErr != nil {
+					return fmt.Errorf("git: remove managed path %s: %w", path, runErr)
+				}
+			}
+		}
+		return nil
+	}
 	extractTo, ok := mc.Config["extract_to"].(string)
 	extractTo = config.ExpandHomeDir(extractTo)
 	if !ok || extractTo == "" {
@@ -286,6 +310,30 @@ func (a *GitAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Too
 	}
 
 	return nil
+}
+
+func managedPaths(mc *config.MethodCandidate) ([]string, error) {
+	raw, ok := mc.Config["managed_paths"].([]any)
+	if !ok {
+		return nil, nil
+	}
+	home, _ := os.UserHomeDir()
+	paths := make([]string, 0, len(raw))
+	for _, item := range raw {
+		path, ok := item.(string)
+		if !ok {
+			return nil, fmt.Errorf("git: managed_paths entries must be strings")
+		}
+		path = filepath.Clean(config.ExpandHomeDir(path))
+		if !filepath.IsAbs(path) {
+			return nil, fmt.Errorf("git: managed path %q must be absolute after expansion", path)
+		}
+		if path == filepath.Dir(path) || path == filepath.Clean(home) || isSharedDir(path) {
+			return nil, fmt.Errorf("git: refusing unsafe managed path %q", path)
+		}
+		paths = append(paths, path)
+	}
+	return paths, nil
 }
 
 // CanRemove returns true — the adapter can remove installations that were done

@@ -88,86 +88,14 @@ func TestLoadMissingFileIsNil(t *testing.T) {
 	}
 }
 
-// TestLoadLegacyKeysNormalize is the regression test for the lock-format
-// divergence: older depengine versions wrote "tools.<tool>/<kind>" keys without
-// the "/<idx>" suffix, while updates now write "tools.<tool>/<kind>/<idx>".
-// A legacy lock must parse to the same tool set as its canonical equivalent,
-// with pins re-keyed to idx 0.
-func TestLoadLegacyKeysNormalize(t *testing.T) {
-	loadFrom := func(t *testing.T, body string) *Lock {
-		t.Helper()
-		dir := t.TempDir()
-		path := filepath.Join(dir, "depengine.lock")
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			t.Fatalf("write lock: %v", err)
-		}
-		l, err := Load(path)
-		if err != nil {
-			t.Fatalf("Load: %v", err)
-		}
-		return l
+func TestLoadRejectsNonCanonicalKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "depengine.lock")
+	data := []byte("version = 1\n[tools.'DepartureMono/http']\nlatest = 'v3.4.0'\n")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
 	}
-
-	// Mirror of the legacy lock committed at the repo root.
-	legacy := `version = 1
-
-[tools]
-[tools.'DepartureMono/http']
-latest = 'v3.4.0'
-
-[tools.'fastfetch/http']
-latest = '2.66.0'
-`
-	canonical := `version = 1
-
-[tools]
-[tools.'DepartureMono/http/0']
-latest = 'v3.4.0'
-
-[tools.'fastfetch/http/0']
-latest = '2.66.0'
-`
-
-	legacyLock := loadFrom(t, legacy)
-	canonicalLock := loadFrom(t, canonical)
-
-	if len(legacyLock.Tools) != len(canonicalLock.Tools) {
-		t.Fatalf("legacy lock has %d tools, canonical has %d", len(legacyLock.Tools), len(canonicalLock.Tools))
-	}
-	for key, want := range canonicalLock.Tools {
-		got, ok := legacyLock.Tools[key]
-		if !ok {
-			t.Errorf("legacy lock missing canonical key %q", key)
-			continue
-		}
-		if got != want {
-			t.Errorf("legacy lock pin %q = %+v, want %+v", key, got, want)
-		}
-	}
-	if _, ok := legacyLock.Tools["DepartureMono/http"]; ok {
-		t.Error("legacy key 'DepartureMono/http' should have been normalized away")
-	}
-
-	// Mixed file: canonical entries must win over legacy duplicates, and
-	// legacy-only entries still normalize to their idx-0 key.
-	mixed := `version = 1
-
-[tools]
-[tools.'DepartureMono/http']
-latest = 'v0.0.1-stale'
-
-[tools.'DepartureMono/http/0']
-latest = 'v3.4.0'
-
-[tools.'fastfetch/http']
-latest = '2.66.0'
-`
-	mixedLock := loadFrom(t, mixed)
-	if got := mixedLock.Tools["DepartureMono/http/0"].Latest; got != "v3.4.0" {
-		t.Errorf("mixed lock: canonical entry should win, got %q, want v3.4.0", got)
-	}
-	if got := mixedLock.Tools["fastfetch/http/0"].Latest; got != "2.66.0" {
-		t.Errorf("mixed lock: legacy-only pin not normalized, got %q, want 2.66.0", got)
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected obsolete lock key to be rejected")
 	}
 }
 

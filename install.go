@@ -268,22 +268,14 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	}
 }
 
-// lockPinFor looks up a tool's pin in a lockfile. It accepts both the
-// canonical "<tool>/<kind>/<idx>" keys and the legacy "<tool>/<kind>" form
-// (readers accept both; only writers emit canonical). When kind is empty,
-// any pin for the tool is accepted. Returns the first pin with a non-empty
-// Latest.
+// lockPinFor looks up a tool's canonical "<tool>/<kind>/<idx>" pin. When kind
+// is empty, any pin for the tool is accepted.
 func lockPinFor(l *lock.Lock, tool, kind string) (lock.ToolPin, bool) {
 	if l == nil {
 		return lock.ToolPin{}, false
 	}
 	if kind != "" {
 		exact := tool + "/" + kind
-		// Legacy key without the idx segment.
-		if pin, ok := l.Tools[exact]; ok && pin.Latest != "" {
-			return pin, true
-		}
-		// Canonical "<tool>/<kind>/<idx>" keys.
 		prefix := exact + "/"
 		for k, pin := range l.Tools {
 			if strings.HasPrefix(k, prefix) && pin.Latest != "" {

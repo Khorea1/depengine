@@ -110,7 +110,7 @@ func TestUpgradeNothingOutdated(t *testing.T) {
 
 	writeTestSchema(t, schemaDir, map[string]string{"gostr": "golang.org/x/tools/cmd/stringer"})
 	writeTestLock(t, schemaDir, map[string]lock.ToolPin{
-		"gostr/go": {Latest: "v0.1.0"},
+		"gostr/go/0": {Latest: "v0.1.0"},
 	})
 	writeTestState(t, stateHome, map[string]state.ToolState{
 		"gostr": {
@@ -147,7 +147,7 @@ func TestUpgradeDryRun(t *testing.T) {
 
 	writeTestSchema(t, schemaDir, map[string]string{"gostr": "golang.org/x/tools/cmd/stringer"})
 	writeTestLock(t, schemaDir, map[string]lock.ToolPin{
-		"gostr/go": {Latest: "v0.2.0"},
+		"gostr/go/0": {Latest: "v0.2.0"},
 	})
 	writeTestState(t, stateHome, map[string]state.ToolState{
 		"gostr": {
@@ -193,7 +193,7 @@ func TestUpgradeSkipsUnknownVersion(t *testing.T) {
 
 	writeTestSchema(t, schemaDir, map[string]string{"gostr": "golang.org/x/tools/cmd/stringer"})
 	writeTestLock(t, schemaDir, map[string]lock.ToolPin{
-		"gostr/go": {Latest: "v0.2.0"},
+		"gostr/go/0": {Latest: "v0.2.0"},
 	})
 	writeTestState(t, stateHome, map[string]state.ToolState{
 		"gostr": {
@@ -233,8 +233,8 @@ func TestUpgradeOnlyFlag(t *testing.T) {
 		"gotool2": "golang.org/x/tools/cmd/guru",
 	})
 	writeTestLock(t, schemaDir, map[string]lock.ToolPin{
-		"gostr/go":   {Latest: "v0.2.0"},
-		"gotool2/go": {Latest: "v0.3.0"},
+		"gostr/go/0":   {Latest: "v0.2.0"},
+		"gotool2/go/0": {Latest: "v0.3.0"},
 	})
 	writeTestState(t, stateHome, map[string]state.ToolState{
 		"gostr": {
@@ -282,7 +282,7 @@ func TestUpgradeJSONOutput(t *testing.T) {
 
 	writeTestSchema(t, schemaDir, map[string]string{"gostr": "golang.org/x/tools/cmd/stringer"})
 	writeTestLock(t, schemaDir, map[string]lock.ToolPin{
-		"gostr/go": {Latest: "v0.2.0"},
+		"gostr/go/0": {Latest: "v0.2.0"},
 	})
 	writeTestState(t, stateHome, map[string]state.ToolState{
 		"gostr": {
@@ -355,7 +355,7 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 	}
 
 	writeTestLock(t, schemaDir, map[string]lock.ToolPin{
-		"httptool/http": {Latest: "v2.0.0"},
+		"httptool/http/0": {Latest: "v2.0.0"},
 	})
 	writeTestState(t, stateHome, map[string]state.ToolState{
 		"httptool": {

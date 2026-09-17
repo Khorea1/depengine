@@ -1,67 +1,56 @@
 package httpdownload
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
-func TestGitHubHTTPDelegateDefaultsBinaryToToolName(t *testing.T) {
-	mc := &config.MethodCandidate{Kind: "github", Config: map[string]any{"repo": "owner/repo"}}
-	got := githubHTTPDelegate(&config.Tool{Name: "tool"}, mc, "https://example.com/asset")
-	if got.Config["binary"] != "tool" {
-		t.Fatalf("binary = %v, want tool", got.Config["binary"])
+func TestResolveArtifactDirectURL(t *testing.T) {
+	got, err := ResolveArtifact(context.Background(), &config.MethodCandidate{Config: map[string]any{
+		"url": "https://example.invalid/tool.tar.gz",
+	}}, &run.FakeRunner{})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, ok := mc.Config["binary"]; ok {
-		t.Fatal("delegate mutated source config")
-	}
-}
-
-func TestGitHubHTTPDelegatePreservesExplicitBinary(t *testing.T) {
-	mc := &config.MethodCandidate{Kind: "github", Config: map[string]any{"binary": "yq"}}
-	got := githubHTTPDelegate(&config.Tool{Name: "tool"}, mc, "https://example.com/asset")
-	if got.Config["binary"] != "yq" {
-		t.Fatalf("binary = %v, want yq", got.Config["binary"])
+	if got != "https://example.invalid/tool.tar.gz" {
+		t.Fatalf("url=%q", got)
 	}
 }
 
-func TestGithubRefDefaultsToLatest(t *testing.T) {
-	if got := githubRef(map[string]any{}); got != "" {
-		t.Errorf("no release/branch set: githubRef = %q, want \"\" (latest)", got)
+func TestResolveArtifactRejectsMissingSource(t *testing.T) {
+	_, err := ResolveArtifact(context.Background(), &config.MethodCandidate{Config: map[string]any{}}, &run.FakeRunner{})
+	if err == nil || !strings.Contains(err.Error(), "no url or complete repo+asset") {
+		t.Fatalf("err=%v", err)
 	}
 }
 
-func TestGithubRefExplicitLatest(t *testing.T) {
-	if got := githubRef(map[string]any{"release": "latest"}); got != "" {
-		t.Errorf("release=latest: githubRef = %q, want \"\" (latest)", got)
+func TestResolveArtifactRejectsIncompleteRepoAsset(t *testing.T) {
+	for _, cfg := range []map[string]any{{"repo": "owner/repo"}, {"asset": "tool-*.tar.gz"}} {
+		_, err := ResolveArtifact(context.Background(), &config.MethodCandidate{Config: cfg}, &run.FakeRunner{})
+		if err == nil || !strings.Contains(err.Error(), "complete repo+asset") {
+			t.Fatalf("cfg=%v err=%v", cfg, err)
+		}
 	}
 }
 
-func TestGithubRefNamedRelease(t *testing.T) {
-	if got := githubRef(map[string]any{"release": "nightly"}); got != "nightly" {
-		t.Errorf("release=nightly: githubRef = %q, want \"nightly\"", got)
+func TestResolveArtifactRejectsURLWithRepoAsset(t *testing.T) {
+	_, err := ResolveArtifact(context.Background(), &config.MethodCandidate{Config: map[string]any{
+		"url": "https://example.invalid/tool.tar.gz", "repo": "owner/repo", "asset": "tool.tar.gz",
+	}}, &run.FakeRunner{})
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("err=%v", err)
 	}
 }
 
-func TestGithubRefBranch(t *testing.T) {
-	if got := githubRef(map[string]any{"branch": "unstable"}); got != "unstable" {
-		t.Errorf("branch=unstable: githubRef = %q, want \"unstable\"", got)
-	}
-}
-
-func TestGithubRefBranchTakesPriorityIfBothSet(t *testing.T) {
-	// Schema-level validation (pkg/validate/structural.go) rejects setting
-	// both, but githubRef must still behave deterministically if it's ever
-	// called on an unvalidated MethodCandidate (e.g. constructed directly
-	// in a test, or a future caller that skips Validate).
-	got := githubRef(map[string]any{"release": "nightly", "branch": "unstable"})
-	if got != "unstable" {
-		t.Errorf("both set: githubRef = %q, want \"unstable\" (branch wins)", got)
-	}
-}
-
-func TestGithubRefIgnoresNonStringValues(t *testing.T) {
-	if got := githubRef(map[string]any{"release": true, "branch": 42}); got != "" {
-		t.Errorf("non-string release/branch: githubRef = %q, want \"\" (ignored)", got)
+func TestArtifactRefCarriesExplicitReleaseAndBranch(t *testing.T) {
+	ref := artifactRef(&config.MethodCandidate{Config: map[string]any{
+		"repo": "owner/repo", "asset": "tool-*.tar.gz", "release": "v1.2.3", "branch": "nightly",
+	}})
+	if ref.Release != "v1.2.3" || ref.Branch != "nightly" {
+		t.Fatalf("ref=%+v", ref)
 	}
 }

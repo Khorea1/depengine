@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -30,10 +31,17 @@ func (a *HTTPAdapter) Kind() string { return "http" }
 
 // RequiresElevation applies the same path-derived default and explicit
 // sudo_required override used by Install.
-func (a *HTTPAdapter) RequiresElevation(_ *config.Tool, mc *config.MethodCandidate) bool {
+func (a *HTTPAdapter) RequiresElevation(tool *config.Tool, mc *config.MethodCandidate) bool {
 	extractTo := "/usr/local/bin"
 	if configured, ok := mc.Config["extract_to"].(string); ok && configured != "" {
 		extractTo = configured
+	}
+	artifactName := stringConfig(mc, "url")
+	if artifactName == "" {
+		artifactName = stringConfig(mc, "asset")
+	}
+	if isArchive(fileExtension(artifactName)) {
+		extractTo = archiveTarget(tool, mc)
 	}
 	extractTo = config.ExpandHomeDir(extractTo)
 	required := defaultSudoRequired(extractTo)
@@ -61,6 +69,18 @@ func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 	extractTo, _ := mc.Config["extract_to"].(string)
 	extractTo = config.ExpandHomeDir(extractTo)
 	binary, _ := mc.Config["binary"].(string)
+	if len(entrypoints(mc)) > 0 {
+		payload := archiveTarget(tool, mc)
+		for name, relative := range entrypoints(mc) {
+			if requirePayloadFile(payload, relative) != nil {
+				return false
+			}
+			if !launcherValid(payload, linkTargetDir(mc, payload), name, relative) {
+				return false
+			}
+		}
+		return true
+	}
 
 	if extractTo != "" {
 		target := binary
@@ -83,19 +103,17 @@ func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 // Install downloads a file from URL, optionally verifies its checksum,
 // and extracts it based on file type.
 func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
-	urlRaw, ok := mc.Config["url"].(string)
-	if !ok || urlRaw == "" {
-		return fmt.Errorf("http: no url configured for tool %q", tool.Name)
-	}
-
-	// Resolve {latest} in URL.
-	resolvedURL, err := ResolveLatest(ctx, urlRaw, rn)
+	resolvedURL, err := ResolveArtifact(ctx, mc, rn)
 	if err != nil {
-		return fmt.Errorf("http: resolve latest: %w", err)
+		return fmt.Errorf("http: resolve artifact: %w", err)
 	}
 
 	// Determine file extension.
 	ext := fileExtension(resolvedURL)
+	allowInstaller, _ := mc.Config["_allow_installer"].(bool)
+	if installerExtension(resolvedURL) != "" && !allowInstaller {
+		return fmt.Errorf("http: %s is an installer; use its dedicated method kind", installerExtension(resolvedURL))
+	}
 	tmpDir, err := os.MkdirTemp("", "depengine-http-*")
 	if err != nil {
 		return fmt.Errorf("http: temp dir: %w", err)
@@ -166,7 +184,11 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	// in the schema always wins.
 	sudoRequired := a.RequiresElevation(tool, mc)
 	binary, _ := mc.Config["binary"].(string)
-	if err := extract(ctx, tmpFile, extractTo, ext, binary, rn, sudoRequired, tool.Name); err != nil {
+	if isArchive(ext) {
+		if err := installArchive(ctx, tmpFile, ext, tool, mc, rn); err != nil {
+			return fmt.Errorf("http: extract: %w", err)
+		}
+	} else if err := extract(ctx, tmpFile, extractTo, ext, binary, rn, sudoRequired, tool.Name); err != nil {
 		return fmt.Errorf("http: extract: %w", err)
 	}
 
@@ -407,6 +429,29 @@ func isSharedDir(path string) bool {
 // to the default /usr/local/bin, which is shared, so we remove the binary or
 // the tool name from there.
 func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+	if len(entrypoints(mc)) > 0 {
+		payload := archiveTarget(tool, mc)
+		elevated := defaultSudoRequired(payload) && os.Geteuid() != 0
+		for name, relative := range entrypoints(mc) {
+			launcher := filepath.Join(linkTargetDir(mc, payload), name)
+			if runtime.GOOS == "windows" {
+				launcher += ".cmd"
+			}
+			if _, err := os.Lstat(launcher); err == nil && !launcherValid(payload, linkTargetDir(mc, payload), name, relative) {
+				return fmt.Errorf("http: refusing to remove launcher %s because it no longer targets the owned payload", launcher)
+			}
+			if err := removeHTTPPath(ctx, rn, launcher, false, elevated); err != nil {
+				return fmt.Errorf("http: remove launcher: %w", err)
+			}
+		}
+		if isSharedDir(payload) {
+			return fmt.Errorf("http: refusing to remove shared archive destination %s", payload)
+		}
+		if err := removeHTTPPath(ctx, rn, payload, true, elevated); err != nil {
+			return fmt.Errorf("http: remove payload: %w", err)
+		}
+		return nil
+	}
 	extractTo, _ := mc.Config["extract_to"].(string)
 	extractTo = config.ExpandHomeDir(extractTo)
 	if extractTo == "" {
@@ -435,6 +480,29 @@ func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 		return fmt.Errorf("http: remove directory %s: %w", extractTo, err)
 	}
 	return nil
+}
+
+func removeHTTPPath(ctx context.Context, rn run.Runner, path string, recursive, elevated bool) error {
+	var err error
+	if recursive {
+		err = os.RemoveAll(path)
+	} else {
+		err = os.Remove(path)
+		if os.IsNotExist(err) {
+			return nil
+		}
+	}
+	if err == nil {
+		return nil
+	}
+	if !elevated {
+		return err
+	}
+	args := []string{"-f", "--", path}
+	if recursive {
+		args = []string{"-rf", "--", path}
+	}
+	return run.CheckResult(run.RunElevated(ctx, rn, "rm", args...), "remove owned path")
 }
 
 // CanRemove returns true — the adapter can remove installations done via
