@@ -21,6 +21,8 @@ flowchart TB
         ECOSYSTEM[pkg/ecosystem\nlanguage/tool adapters]
         GIT[pkg/git\nClone + build]
         HTTP[pkg/httpdownload\nDownload + checksum]
+        SOURCE[pkg/source\nCandidate-scoped sources]
+        MSI[pkg/msi\nWindows Installer]
     end
 
     subgraph Output
@@ -37,10 +39,13 @@ flowchart TB
     EXEC --> ECOSYSTEM
     EXEC --> GIT
     EXEC --> HTTP
+    EXEC --> SOURCE
+    EXEC --> MSI
     NATIVE --> STATE
     ECOSYSTEM --> STATE
     GIT --> STATE
     HTTP --> STATE
+    MSI --> STATE
     STATE --> REPORT
     STATE --> SBOM
 ```
@@ -58,6 +63,8 @@ flowchart TB
 | `pkg/ecosystem` | Language/tool ecosystem adapters (cargo, go, pip, npm, sdkman, steamcmd, ...) |
 | `pkg/git` | `GitAdapter`: shallow clone + build |
 | `pkg/httpdownload` | `HTTPAdapter`: download + extraction + checksum/GPG verification + `{latest}` resolution |
+| `pkg/source` | Idempotent candidate-scoped PPA/COPR/Scoop bucket/Brew tap management |
+| `pkg/msi` | MSI installation and exact uninstall-registry ownership |
 | `pkg/graph` | Topological sort (Kahn's algorithm) with cycle detection |
 | `pkg/lock` | `depengine.lock` — resolves and pins `{latest}` placeholders |
 | `pkg/state` | Installed-tool state file, with cross-platform file locking (`flock` on Unix, `LockFileEx` on Windows) |
@@ -76,7 +83,9 @@ flowchart LR
     D -->|no| B
     D -->|yes| E{Already\ninstalled?}
     E -->|yes| B
-    E -->|no| F[Install]
+    E -->|no| P[Lazy method dependencies]
+    P --> S[Ensure candidate sources]
+    S --> F[Install]
     F --> G[Report]
 ```
 

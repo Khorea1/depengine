@@ -67,7 +67,7 @@ aur_helper = "paru"                        # or "yay"
 method_order = ["native", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm",
   "bun", "gem", "yarn", "yarn-berry", "composer", "apm", "vscode",
   "vscodium", "flatpak", "snap", "cask", "mas", "appman", "sdkman", "steamcmd",
-  "pacstall", "aur", "conda", "asdf", "container", "appimage", "android", "git", "github", "http"]
+  "pacstall", "aur", "conda", "asdf", "container", "appimage", "android", "git", "github", "http", "msi"]
 ```
 
 ---
@@ -81,6 +81,9 @@ method_order = ["native", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm",
 | Language manager | `fzf = { go = "github.com/junegunn/fzf" }` |
 | git sub-key | `matugen = { cargo = { git = "https://github.com/InioX/matugen" } }` |
 | GitHub release | `yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }` |
+| Owned archive | `nvim = { github = { repo = "neovim/neovim", asset = "nvim-{os_any}-{arch_any}.tar.gz", strip_components = 1, extract_to = "~/.local/opt/nvim", entrypoints = { nvim = "bin/nvim" } } }` |
+| Snap options | `nvim = { snap = { pkg = "nvim", confinement = "classic", channel = "stable" } }` |
+| Chocolatey prerelease | `nvim = { choco = { pkg = "neovim", prerelease = true } }` |
 | Ecosystem bucket | `ruff = { python = true }` |
 | Full block | multiple methods + `when` + hooks — see [schema-reference.md#platform-targeting](schema-reference.md#platform-targeting) |
 
@@ -127,6 +130,7 @@ Windows:     winget, scoop, choco
 Specialized: sdkman, steamcmd, pacstall, aur, conda, asdf, container,
              appimage, android
 Other:       git, github, http
+Windows installer: msi
 ```
 
 ---

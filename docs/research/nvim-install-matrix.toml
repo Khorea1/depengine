@@ -1,214 +1,70 @@
-# ANALYSIS ARTIFACT — NOT a real schema entry, NOT meant to install anything.
-# Do not copy into schema.example.toml / manifest.example.toml (see E1 in
-# .dev/TODO.md: "each tool with every method" is explicitly rejected there as
-# a real-world example, for good reason — this file IS that rejected shape,
-# built on purpose to find the shape of the schema's edges).
-#
-# Source of every method below: nvim-sources.md (neovim.io/doc/install +
-# github.com/neovim/neovim releases/tag/v0.12.5), filtered down to methods
-# that are NOT a one-line `nvim = { pacman = "neovim", apt = "neovim" }` case.
-# Each candidate is annotated:
-#   OK    -> expresses the real-world install faithfully
-#   GAP   -> the schema has no field/mechanism for a requirement neovim.io
-#            actually documents; annotated with what's missing and why
-#   FALSE -> would parse and validate, but silently does the wrong thing
-#            or fails at runtime (the "monkey fills it in, it looks done,
-#            it isn't" case — the most dangerous class of gap)
+# Capability stress test for Neovim's non-trivial installation paths.
+# This is parseable reference material, not a recommended "install every
+# method" user schema.
 
 schema_version = 1
 
-[tools]
-# Declared only so `requires = ["software-properties-common"]` below resolves
-# to a real tool and `validate` can run clean — not part of the methods being
-# analyzed.
-simple = ["software-properties-common"]
+[tools.software-properties-common]
+dependency_only = true
+apt = "software-properties-common"
 
 [tools.nvim]
-# --- tool-level bookkeeping, shared by ALL candidates below ---
-requires      = ["software-properties-common"]
-requires_when = { "software-properties-common" = { distro_id = ["ubuntu"] } }
-# GAP (dependency scoping): `requires_when` gates on PLATFORM FACTS, not on
-# "which method candidate for THIS tool actually ran." software-properties-common
-# is only needed by the ppa candidate below, but requires_when can't say
-# "only when the ppa candidate is the one depengine picks" — only "only on
-# Ubuntu." If apt's plain candidate wins first (no PPA needed at all, since
-# Ubuntu ships an old-but-real neovim package), this dependency still
-# installs, unconditionally, on every Ubuntu box. There is no per-candidate
-# `requires`.
+method_prefer = ["native", "ppa", "copr", "scoop", "snap", "github", "appimage", "msi", "git"]
 
-pre_install = [
-  { run = ["sudo", "add-apt-repository", "-y", "ppa:neovim-ppa/stable"], when = { distro_id = ["ubuntu"] } },
-]
-# GAP (repo/bucket/tap registration — see also #3 scoop below, and the
-# `dnf copr enable` step neovim.io documents for the Fedora nightly build):
-# there is no schema concept for "register a package source, idempotently,
-# tied to one candidate." pre_install is the closest thing, but it is a
-# TOOL-level, unconditional-per-run hook (gated only by `when`, not by
-# "only before the ppa candidate"), requires --allow-arbitrary-code, and has
-# no Check of its own — depengine has no idea whether the PPA is already
-# registered, so this re-runs add-apt-repository on every single install run
-# forever. This is the SAME missing primitive surfacing a 3rd time below.
-
-  # ── 1. winget — divergent package ID, otherwise the "simple" case. OK. ──
-  [tools.nvim.winget]
-  pkg = "Neovim.Neovim"
-
-  # ── 2. choco (stable) — OK. ──
-  [tools.nvim.choco]
+  [tools.nvim.native]
   pkg = "neovim"
 
-  # ── 2b. choco (nightly, `choco install neovim --pre`) — GAP. ──
-  # The `choco`/`scoop`/`winget`/every package-contract kind exposes ONLY
-  # `{pkg}` (see pkg/methodkind.go `packageContract`). There is no `flags`,
-  # `args`, or `channel` field on ANY native-style package manager kind.
-  # A schema author cannot express "same manager, same package, prerelease
-  # flag" at all — not "hard to express," genuinely absent. Compare this to
-  # `github`'s `release`/`branch` fields, which solve exactly this problem
-  # for GitHub-hosted nightlies (see #11). The asymmetry is real: nightly
-  # channels are modeled for one distribution mechanism and not the other three
-  # neovim.io documents (choco --pre, snap --edge, ppa unstable).
+  [tools.nvim.ppa]
+  kind = "native"
+  pkg = "neovim"
+  when = { distro_id = ["ubuntu"] }
+  requires = ["software-properties-common"]
+  sources = [{ kind = "apt-ppa", name = "ppa:neovim-ppa/stable" }]
 
-  # ── 3. scoop — FALSE (validates, would fail on a clean machine). ──
+  [tools.nvim.copr]
+  kind = "native"
+  pkg = "neovim"
+  when = { distro_family = ["fedora"] }
+  sources = [{ kind = "dnf-copr", name = "agriffis/neovim-nightly" }]
+
   [tools.nvim.scoop]
   pkg = "neovim"
-  # neovim.io: `scoop bucket add main` must run once before `scoop install
-  # neovim` works. `scoop`'s contract is `{pkg}` only (same packageContract
-  # shape as choco/winget/snap) — no `bucket`/`source` field. On a fresh
-  # Windows box with Scoop installed but no bucket added, this candidate
-  # validates fine and fails at runtime with "couldn't find manifest for
-  # 'neovim'" — a failure depengine will just read as "this method didn't
-  # work, try the next one," silently falling through to a WORSE candidate
-  # (e.g. the source build) instead of surfacing "you're one command away."
-  # Root cause is the same missing primitive as the PPA hook above and
-  # `dnf copr enable` for the Fedora nightly build neovim.io also documents
-  # — bucket/tap/PPA/copr are four names for the same "register a source"
-  # step, and the schema has zero vocabulary for any of them.
+  # Scoop's main bucket is tracked and available by default. Declare a
+  # scoop-bucket source only for optional or custom buckets.
 
-  # ── 4. MSI installer, downloaded via PowerShell script — FALSE. ──
-  [tools.nvim.msi]
-  kind = "http"
-  url  = "https://github.com/neovim/neovim/releases/download/{latest}/nvim-win64.msi"
-  checksum = "sha256:auto"
-  when = { os = ["windows"] }
-  # `http`'s archive-type detection (pkg/httpdownload/extract.go territory,
-  # documented as ".tar.gz, .tgz, .zip, .deb, .bin, bare binary") has no
-  # ".msi" case. This candidate VALIDATES CLEANLY and downloads the file —
-  # it just never runs msiexec, so "install" silently degrades to "fetch a
-  # file nobody asked to just fetch." Nothing in `depengine validate` or
-  # `depengine install`'s success path would tell you this didn't install
-  # Neovim. This is the single most dangerous gap in this file, precisely
-  # because it fails quietly instead of loudly.
+  [tools.nvim.choco-nightly]
+  kind = "choco"
+  pkg = "neovim"
+  prerelease = true
 
-  # ── 5. Windows zip (manual unzip + optional PATH add) — FALSE. ──
-  [tools.nvim.win-zip]
-  kind       = "http"
-  url        = "https://github.com/neovim/neovim/releases/download/{latest}/nvim-win64.zip"
-  extract_to = "~/nvim"
-  checksum   = "sha256:auto"
-  when       = { os = ["windows"] }
-  # Two compounding gaps:
-  #   a) nvim-win64.zip's real contents are `nvim-win64/bin/nvim.exe` — one
-  #      nested root directory, not a flat binary. `http` has no "strip the
-  #      top-level directory" / "here's the real binary path inside the
-  #      archive" field. `extract_to` just unpacks in place. This is the
-  #      EXACT bug already flagged against schema.example.toml's own
-  #      `[tools.neovim.http]` in .dev/TODO.md E2 — same root cause,
-  #      confirmed independently here against a second OS/archive format.
-  #   b) Even if (a) were fixed, nothing puts `~/nvim/bin` on PATH. There is
-  #      no PATH-management primitive anywhere in the schema (Windows or
-  #      POSIX). `Check` would look for a binary depengine itself never
-  #      told the user how to reach.
-
-  # ── 6. Official Linux tar.gz, curl+tar+PATH recipe from neovim.io — FALSE, same as #5a/b. ──
-  [tools.nvim.linux-tarball]
-  kind       = "http"
-  url        = "https://github.com/neovim/neovim/releases/download/{latest}/nvim-linux-{arch}.tar.gz"
-  extract_to = "/opt/nvim-linux-{arch}"
-  checksum   = "sha256:auto"
-  when       = { os = ["linux"] }
-  # Identical nested-directory + no-PATH problem as #5, on the platform
-  # neovim.io itself recommends this exact method for. This is the live,
-  # currently-shipping bug in schema.example.toml (E2), not a hypothetical.
-
-  # ── 7. AppImage — OK, this is the one archive-shaped method that's actually solved. ──
-  [tools.nvim.appimage]
-  url         = "https://github.com/neovim/neovim/releases/download/{latest}/nvim-linux-{arch}.appimage"
-  install_dir = "/opt/nvim"
-  binary      = "nvim"
-  checksum    = "sha256:auto"
-  when        = { os = ["linux"] }
-  # `install_dir` + `binary` give exactly what #5/#6 are missing: a stable,
-  # named destination decoupled from the archive's own naming. Worth noting
-  # as a positive: depengine's own abstraction here is CLEANER than
-  # neovim.io's manual instructions (which involve `mv`+`export PATH`
-  # by hand). This makes the http/github gap above look like an oversight
-  # rather than a fundamental limitation — the fix pattern already exists,
-  # one method kind over.
-  #
-  # Minor, non-blocking: nvim-linux-x86_64.appimage.zsync (delta-update
-  # metadata) has no representation and doesn't need one — flagging only so
-  # it's clear this was noticed, not missed.
-
-  # ── 8. GitHub release, asset-pattern match across OS+arch — OK, mostly. ──
-  [tools.nvim.github]
-  repo   = "neovim/neovim"
-  asset  = "nvim-{os_any}-{arch_any}.tar.gz"
-  binary = "nvim"
-  checksum = "sha256:auto"
-  # This is the "recommended" method per docs/schema-reference.md and it
-  # does correctly collapse nvim-linux-x86_64.tar.gz / nvim-macos-arm64.tar.gz
-  # / etc. into one candidate. BUT: docs/schema-reference.md states plainly
-  # that `github` "downloads/verifies/extracts it exactly like `http`
-  # would" — meaning it inherits gap #6 (nested root dir, no PATH) in full.
-  # `github`'s arch/os matching and `appimage`'s stable-name/install_dir
-  # logic are mutually exclusive: you cannot ask `github` to resolve
-  # nvim-linux-x86_64.appimage BY PATTERN and then hand it to appimage's
-  # post-processing. The docs already admit this exact composition gap for
-  # `android` ("no way to feed a github-resolved URL into android's
-  # post-processing") — it's not called out for `appimage`, but the
-  # architecture is identical, so the gap is too.
-
-  # ── 9. Source build via git clone + custom CMAKE_INSTALL_PREFIX — OK, with one remove gap. ──
-  [tools.nvim.git]
-  url    = "https://github.com/neovim/neovim"
-  branch = "stable"
-  depth  = "1"
-  build  = [
-    { run = ["make", "CMAKE_BUILD_TYPE=Release"] },
-    { run = ["sudo", "make", "install"] },
-  ]
-  binary = "nvim"
-  # `make install` (per BUILD.md, mirrored in nvim-sources.md) writes to
-  # /usr/local/bin/nvim AND /usr/local/share/nvim/**. `git`'s contract only
-  # tracks one `binary` for Check/Remove. Remove will delete the binary and
-  # report success while /usr/local/share/nvim/ (runtime files, docs,
-  # syntax highlighting data — non-trivial, per neovim.io's own "Uninstall"
-  # section) is left behind. GAP: no multi-path removal model for
-  # source-built tools, which is the common case for anything with a `make
-  # install` that isn't a single static binary.
-
-  # ── 10. Snap (`snap install nvim --classic`) — FALSE, and the worst case here. ──
   [tools.nvim.snap]
   pkg = "nvim"
-  # Neovim's actual snap REQUIRES `--classic` confinement — without it,
-  # `snap install nvim` fails outright with a confinement error; it is not
-  # a "nice to have" flag, it's the difference between installed and not.
-  # `snap`'s contract (packageContract, {pkg} only) has no `classic`,
-  # `channel`, or `flags` field — same shape as the choco --pre gap (#2b),
-  # but here the consequence isn't "misses the nightly," it's "the stable
-  # candidate as written cannot succeed, full stop." A schema author who
-  # doesn't already know snap's confinement model will write exactly this,
-  # `depengine validate` will accept it, and `depengine install` will fail
-  # at runtime with an error depengine had no way to anticipate or explain.
+  confinement = "classic"
+  channel = "stable"
 
-  # ── 11. AUR nightly variant — OK as a DIFFERENT tool identity, not a channel of this one. ──
-  # neovim-nightly-bin = { aur = "neovim-nightly-bin" }
-  # Not a gap in the method-kind sense, but worth naming: "nightly" is a
-  # different package name in Arch's world, so it's naturally a different
-  # `[tools.X]` entry, not a candidate under `nvim`. Contrast with #8's
-  # `release`/`branch` fields, which DO let one GitHub-based tool switch
-  # channel without becoming a second tool. The inconsistency isn't a
-  # blocker, just worth knowing before assuming "channel" is a concept the
-  # schema treats uniformly — it doesn't, and for native-style ecosystems
-  # it can't, because AUR/apt/dnf model channel as a package-name fork, not
-  # a flag.
+  [tools.nvim.github]
+  repo = "neovim/neovim"
+  asset = "nvim-{os_any}-{arch_any}.tar.gz"
+  strip_components = 1
+  extract_to = "~/.local/opt/nvim"
+  entrypoints = { nvim = "bin/nvim" }
+  link_dir = "~/.local/bin"
+
+  [tools.nvim.appimage]
+  repo = "neovim/neovim"
+  asset = "nvim-linux-{arch_any}.appimage"
+  binary = "nvim"
+  when = { os = ["linux"] }
+
+  [tools.nvim.msi]
+  repo = "neovim/neovim"
+  asset = "nvim-win64.msi"
+  product_name = "Neovim"
+  publisher = "Neovim"
+
+  [tools.nvim.git]
+  url = "https://github.com/neovim/neovim"
+  branch = "stable"
+  build = [{ run = ["make", "CMAKE_BUILD_TYPE=Release"] }, { run = ["sudo", "make", "install"] }]
+  binary = "nvim"
+  managed_paths = ["/usr/local/bin/nvim", "/usr/local/share/nvim"]

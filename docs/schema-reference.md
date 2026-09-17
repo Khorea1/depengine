@@ -1,5 +1,8 @@
 # schema.toml — full syntax reference
 
+Only the latest contract (`schema_version = 1`) is supported. The version is a
+fail-closed identifier, not a selector for legacy parsers or migrations.
+
 This is the complete reference for every way to declare a tool in
 `schema.toml`. If you're just getting started, read
 [the README](../README.md#your-first-schematoml) first — it covers the
@@ -132,11 +135,16 @@ fastfetch = { http = {
 | `signature_url` | no | GPG detached signature URL, for verifying the checksum file |
 | `signing_key` | no | GPG key URL or fingerprint |
 | `extract_to` | no | Extraction destination (default: `/usr/local/bin`) |
+| `strip_components` | no | Remove this many leading archive path components. Applies equally to tar and zip; negative or empty results are rejected. |
+| `entrypoints` | no | Map stable command names to relative files inside `extract_to`, e.g. `{ nvim = "bin/nvim" }`. |
+| `link_dir` | no | Launcher directory. Defaults to `~/.local/bin` for user payloads and `/usr/local/bin` for system payloads. |
 
 | `sudo_required` | no | Boolean, default is **path-derived**: `false` when `extract_to` is inside the user's home (e.g. `~/.local/share/fonts`), `true` for system paths (e.g. the `/usr/local/bin` default). Set explicitly to override. |
 
-Archive type is auto-detected from the URL extension: `.tar.gz`, `.tgz`,
-`.zip`, `.deb`, `.bin`, or bare binary.
+Archives are extracted into private staging, validated, then committed as one
+owned payload. `Check` verifies payload files and launchers directly; `Remove`
+deletes only declared launchers and the owned payload. `.msi`, `.exe`, `.pkg`
+and `.dmg` are rejected by `http` instead of being mistaken for binaries.
 
 ### GitHub: the recommended method for GitHub release assets
 
@@ -162,7 +170,9 @@ repo  = "prometheus/node_exporter"      # "owner/repo", or a full github.com URL
 asset = "node_exporter-{version}.linux-{arch_any}.tar.gz"
 checksum   = "sha256:auto"
 extract_to = "~/.local/bin"
-binary     = "node_exporter"
+strip_components = 1
+entrypoints = { node_exporter = "node_exporter" }
+link_dir = "~/.local/bin"
 ```
 
 This single block replaces separate `http`/`http-arm64`/`http-armv7` blocks
@@ -180,12 +190,13 @@ chooses the first result heuristically.
 | `branch` | no | Literal branch name, for projects that tag a release identically to a branch (e.g. an `"unstable"` rolling build). **Does not query git branches/commits** — it resolves the same way as `release` (GitHub's "get a release by tag" API), just documenting a different intent. Mutually exclusive with `release`. |
 
 Every other field (`checksum`, `checksum_url`, `checksum_file_format`,
-`signature_url`, `signing_key`, `extract_to`, `binary`, `sudo_required`) has
+`signature_url`, `signing_key`, `extract_to`, `binary`, `sudo_required`,
+`strip_components`, `entrypoints`, `link_dir`) has
 the exact same meaning as on `http` — once the asset is resolved, `github`
 downloads/verifies/extracts it exactly like `http` would.
-For a direct (non-archive) asset, `binary` is the installed filename; when it
-is omitted, `github` uses the tool name. Archives keep the normal `http`
-extraction semantics.
+For a direct asset, `binary` is the installed filename. For an archive,
+`binary` retains its existing payload-check meaning; use `entrypoints` for
+stable commands whose files live below the archive root.
 
 Latest releases—implicit or written as `release = "latest"`—are pinned in
 `depengine.lock`; installation then resolves the asset only within that pinned
@@ -253,14 +264,15 @@ versioned filename the release asset ships with (e.g.
 
 ```toml
 [packages.obsidian.appimage]
-url     = "https://github.com/obsidianmd/obsidian-releases/releases/download/{latest}/Obsidian-{version}.AppImage"
+repo    = "obsidianmd/obsidian-releases"
+asset   = "Obsidian-{version}.AppImage"
 desktop = true
 # install_dir defaults to ~/.local/bin (user-scope)
 ```
 
 | Field | Required | Description |
 |-------|----------|--------------|
-| `url` | yes | Same meaning as on `http` — supports `{latest}` (resolved at install time) plus the universal `{arch}`/`{os}` facts (expanded at schema-parse time, same as any other string field — see [Placeholders](#placeholders)). **Not** `{version}`/`{arch_any}`/`{os_any}` — those are resolved only by the `github` method's asset-matching, not by a literal `url`. |
+| `url` or `repo` + `asset` | yes | Exactly one artifact source. `repo` + `asset` supports `{version}`, `{arch_any}` and `{os_any}` and is pinned in `depengine.lock`. |
 | `install_dir` | no | Destination directory. Defaults to `~/.local/bin` (user-scope). There is no separate `system = true` boolean — pointing this at a system path (e.g. `/usr/local/bin`) is how a system-wide install is requested, and `sudo_required` is derived from the path the same way `http` derives it from `extract_to`. |
 | `binary` | no | Final executable name. Defaults to the tool's name. |
 | `desktop` | no | When `true`, also writes `~/.local/share/applications/<binary>.desktop` (a minimal, valid launcher pointing at the installed binary). Always user-scope, regardless of `install_dir`. |
@@ -287,13 +299,14 @@ too). Runs entirely inside [Termux](https://termux.dev/); see
 
 ```toml
 [tools.obsidian.android]
-url = "https://github.com/obsidianmd/obsidian-releases/releases/download/{latest}/obsidian-{version}-android.apk"
+repo = "obsidianmd/obsidian-releases"
+asset = "obsidian-{version}-android.apk"
 when = { is_android = true }
 ```
 
 | Field | Required | Description |
 |-------|----------|--------------|
-| `url` | yes | Same meaning as on `http` — supports `{latest}` plus the universal `{arch}`/`{os}` facts. **Not** `{version}` (see the `{version}` note under AppImage above): if the release asset's filename doesn't literally repeat `{latest}`'s tag (e.g. it drops the `v` prefix, as `obsidian-1.5.3-android.apk` does against a `v1.5.3` tag), a plain `url` can't express that — that mismatch is exactly what the `github` method kind's asset-matching solves, but there is currently no way to feed a `github`-resolved URL into `android`'s post-processing (dispatch via `termux-open`). Until that gap closes, `android` only fits `.apk` releases whose filename is a direct function of `{latest}`. |
+| `url` or `repo` + `asset` | yes | Exactly one artifact source; GitHub matching composes with Android dispatch. |
 
 Every other `http` field (`checksum`, `checksum_url`, `signature_url`,
 `signing_key`, ...) has the exact same meaning. There is no
@@ -314,6 +327,21 @@ did.
 ---
 
 ## Method reference
+
+Manager options are typed: Snap accepts `confinement = "strict" | "classic" |
+"devmode"` and `channel = "stable" | "candidate" | "beta" | "edge"`;
+Chocolatey accepts `prerelease = true`. Arbitrary manager arguments are not a
+schema feature, so depengine retains control of non-interactive/safety flags.
+
+`git` custom installs may declare `managed_paths = ["/absolute/path", ...]`.
+All paths must be absolute after `~` expansion. Filesystem roots, the whole
+home directory, and broad shared directories are rejected. `Check` requires
+every path and `Remove` deletes only those exact targets.
+
+`msi` accepts exactly one artifact source (`url`, or `repo` + `asset`) plus
+required `product_name` and optional `publisher`. Registry matching is exact;
+install/remove use quiet `msiexec` operations, and reboot-required exit codes
+are treated as successful installs.
 
 One-line syntax for every supported method. All of them accept `when` (see
 [Platform targeting](#platform-targeting)); `git`, `github`, and `http` take extra
@@ -345,6 +373,7 @@ fields, documented above under [Custom sources](#custom-sources).
 | `container` | Container images via `docker`/`podman pull` | `obsidian = { container = { manager = "podman", source = "lscr.io/linuxserver/obsidian", tag = "latest" } }` |
 | `appimage` | Portable `.AppImage` binaries, installed under a stable name | `obsidian = { appimage = { url = "https://…/Obsidian-{latest}.AppImage" } }` |
 | `android` | Download a `.apk` and hand it to Termux's package installer | `obsidian = { android = { url = "https://…/obsidian-{latest}-android.apk" }, when = { is_android = true } }` |
+| `msi` | Install/remove a Windows Installer product by exact registry identity | `nvim = { msi = { repo = "neovim/neovim", asset = "nvim-win64.msi", product_name = "Neovim" } }` |
 | `sdkman` | SDKMAN! JVM SDKs | `java17 = { sdkman = "java" }` |
 | `steamcmd` | SteamCMD game server tools | `cs2 = { steamcmd = "730" }` |
 | `pacstall` | Pacstall packages (Debian-based AUR-like) | `neofetch = { pacstall = "neofetch" }` |
@@ -396,8 +425,9 @@ pre_install = [
 ]
 ```
 
-The legacy table `{ cmd = "...", when = {...} }` is also shorthand for
-`sh -c` and remains supported for compatibility. PowerShell (`pwsh.exe`),
+The shell-command form `{ cmd = "...", when = {...} }` explicitly means
+`sh -c`; it is a current schema form, not a version-compatibility parser. Prefer
+`run` because it preserves argv boundaries. PowerShell (`pwsh.exe`),
 Windows PowerShell (`powershell.exe`), `cmd.exe`, Nushell, or any other
 interpreter can be selected explicitly through `run`.
 
@@ -416,6 +446,26 @@ requires_when = { fontconfig = { target_family = ["unix"] } }
 
 `fontconfig` participates in the install graph only on unix; on Windows the
 edge disappears (no dangling-ref error, no blocking).
+
+Candidate-only prerequisites are declared inside the method. They run lazily
+only if that candidate is reached, and a failure discards that candidate while
+allowing fallback:
+
+```toml
+[tools.software-properties-common]
+dependency_only = true
+apt = "software-properties-common"
+
+[tools.nvim.ppa]
+kind = "native"
+pkg = "neovim"
+requires = ["software-properties-common"]
+sources = [{ kind = "apt-ppa", name = "ppa:neovim-ppa/stable" }]
+```
+
+Supported source kinds are `apt-ppa`, `dnf-copr`, `scoop-bucket`, and
+`brew-tap`. They are checked before mutation. `dependency_only` tools are not
+normal roots, but remain selectable with `--only`.
 
 `post_install` accepts the same string, table, and list forms, including
 per-command `when` conditions:
@@ -452,7 +502,7 @@ postinstall = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
 
 > **Golden rule:** tool-level fields (`requires`, `postinstall`,
 > `pre_install`) go _outside_ the method block. Method-specific fields
-> (`kind`, `when`, `url`, `build`, `checksum`, `extract_to`, `pkg`, `git`) go
+> (`kind`, `when`, `requires`, `sources`, `url`, `build`, `checksum`, `extract_to`, `pkg`, `git`) go
 > _inside_.
 
 ### Platform conditions (`when`), multi-dimension gating

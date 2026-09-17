@@ -24,7 +24,7 @@ aur_helper = "paru"
 
 # When a tool declares MORE THAN ONE candidate method (e.g., cargo, go, aur, git),
 # this list defines the trial order. The engine stops at the first one that works.
-method_order = ["native", "scoop", "choco", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm", "bun", "gem", "yarn", "yarn-berry", "composer", "apm", "vscode", "vscodium", "flatpak", "snap", "cask", "mas", "appman", "sdkman", "steamcmd", "pacstall", "aur", "conda", "asdf", "container", "appimage", "android", "git", "github", "http"]
+method_order = ["native", "scoop", "choco", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm", "bun", "gem", "yarn", "yarn-berry", "composer", "apm", "vscode", "vscodium", "flatpak", "snap", "cask", "mas", "appman", "sdkman", "steamcmd", "pacstall", "aur", "conda", "asdf", "container", "appimage", "android", "git", "github", "http", "msi"]
 
 
 # ==============================================================================
@@ -168,31 +168,27 @@ fontconfig = { native = { pkg = "fontconfig", pkg_overrides = { pkg = "fontconfi
   [tools.fd.native]
   pkg_overrides = { apt = "fd-find" }   # everywhere else: "fd" (tool name)
 
-  # glibc build (typical desktop/server distros)
-  [tools.fd.http]
-  url        = "https://github.com/sharkdp/fd/releases/download/{latest}/fd-{latest}-x86_64-unknown-linux-gnu.tar.gz"
+  [tools.fd.github]
+  repo       = "sharkdp/fd"
+  asset      = "fd-{version}-{arch_any}-unknown-linux-gnu.tar.gz"
   checksum   = "sha256:auto"
-  extract_to = "~/.local/bin"
-  binary     = "fd"
-  when       = { arch = ["x86_64"], os = ["linux"], libc = ["glibc"] }
+  strip_components = 1
+  extract_to = "~/.local/opt/fd"
+  entrypoints = { fd = "fd" }
+  link_dir = "~/.local/bin"
+  when = { os = ["linux"], libc = ["glibc"] }
 
   # musl build (Alpine, distroless/scratch containers)
-  [tools.fd.http-musl]
-  kind       = "http"
-  url        = "https://github.com/sharkdp/fd/releases/download/{latest}/fd-{latest}-x86_64-unknown-linux-musl.tar.gz"
+  [tools.fd.github-musl]
+  kind       = "github"
+  repo       = "sharkdp/fd"
+  asset      = "fd-{version}-{arch_any}-unknown-linux-musl.tar.gz"
   checksum   = "sha256:auto"
-  extract_to = "~/.local/bin"
-  binary     = "fd"
-  when       = { arch = ["x86_64"], os = ["linux"], libc = ["musl"] }
-
-  # aarch64/glibc (e.g. Ubuntu Server on ARM, AWS Graviton)
-  [tools.fd.http-arm64]
-  kind       = "http"
-  url        = "https://github.com/sharkdp/fd/releases/download/{latest}/fd-{latest}-aarch64-unknown-linux-gnu.tar.gz"
-  checksum   = "sha256:auto"
-  extract_to = "~/.local/bin"
-  binary     = "fd"
-  when       = { arch = ["aarch64"], os = ["linux"], libc = ["glibc"] }
+  strip_components = 1
+  extract_to = "~/.local/opt/fd"
+  entrypoints = { fd = "fd" }
+  link_dir = "~/.local/bin"
+  when = { os = ["linux"], libc = ["musl"] }
 
 
 # --- GitHub releases: match the real asset list across OS/arch naming
@@ -228,31 +224,14 @@ extract_to = "~/.local/bin"
   binary     = "restic"
   when       = { arch = ["aarch64"], os = ["linux"] }
 
-[tools.node_exporter]
-  [tools.node_exporter.http]
-  url        = "https://github.com/prometheus/node_exporter/releases/download/v1.8.2/node_exporter-1.8.2.linux-amd64.tar.gz"
-  checksum   = "sha256:auto"
-  extract_to = "~/.local/bin"
-  binary     = "node_exporter"
-  when       = { arch = ["x86_64"], os = ["linux"] }
-
-  [tools.node_exporter.http-arm64]
-  kind       = "http"
-  url        = "https://github.com/prometheus/node_exporter/releases/download/v1.8.2/node_exporter-1.8.2.linux-arm64.tar.gz"
-  checksum   = "sha256:auto"
-  extract_to = "~/.local/bin"
-  binary     = "node_exporter"
-  when       = { arch = ["aarch64"], os = ["linux"] }
-
-  # 32-bit ARM (Raspberry Pi class): uname reports "armv7l", the release
-  # asset says "armv7" — a THIRD spelling, distinct from both {arch} and GOARCH.
-  [tools.node_exporter.http-armv7]
-  kind       = "http"
-  url        = "https://github.com/prometheus/node_exporter/releases/download/v1.8.2/node_exporter-1.8.2.linux-armv7.tar.gz"
-  checksum   = "sha256:auto"
-  extract_to = "~/.local/bin"
-  binary     = "node_exporter"
-  when       = { arch = ["armv7l"], os = ["linux"] }
+[tools.node_exporter.github]
+repo       = "prometheus/node_exporter"
+asset      = "node_exporter-{version}.{os_any}-{arch_any}.tar.gz"
+checksum   = "sha256:auto"
+strip_components = 1
+extract_to = "~/.local/opt/node_exporter"
+entrypoints = { node_exporter = "node_exporter" }
+link_dir = "~/.local/bin"
 
 
 # --- Same manager binary name ("pkg"), two unrelated clans (FreeBSD vs
