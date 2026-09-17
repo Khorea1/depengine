@@ -15,7 +15,7 @@ func TestReleaseWorkflowContract(t *testing.T) {
 
 	for _, invariant := range []struct{ description, value string }{
 		{"version tag push trigger", "push:\n    tags:\n      - 'v*'"},
-		{"exact Go version", "go-version: '1.26.4'"},
+		{"exact Go version", "go-version: '1.27.1'"},
 		{"job-scoped contents write permission", "build-and-publish:\n    permissions:\n      contents: write"},
 		{"GoReleaser version v2.17.0", "version: v2.17.0"},
 		{"GitHub Actions token", "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"},

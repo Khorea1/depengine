@@ -2,7 +2,7 @@
 FROM archlinux:latest
 
 # Go toolchain from distro packages — test.sh runs `go build` inside the
-# container (go.mod requires go 1.26; arch's `go` package tracks upstream).
+# container (go.mod requires go 1.27; arch's `go` package tracks upstream).
 RUN pacman -Sy --noconfirm \
     go \
     curl \

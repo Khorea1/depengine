@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/Khorea1/depengine/actions"><img src="https://github.com/Khorea1/depengine/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue" alt="License"></a>
-  <img src="https://img.shields.io/badge/go-1.26-blue" alt="Go 1.26">
+  <img src="https://img.shields.io/badge/go-1.27-blue" alt="Go 1.27">
 </p>
 
 ---

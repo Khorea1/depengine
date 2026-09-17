@@ -217,7 +217,7 @@ func fieldIsSet(v reflect.Value) bool {
 		return v.Bool()
 	case reflect.Slice, reflect.Map:
 		return v.Len() > 0
-	case reflect.Ptr, reflect.Interface:
+	case reflect.Pointer, reflect.Interface:
 		return !v.IsNil()
 	default:
 		return !v.IsZero()

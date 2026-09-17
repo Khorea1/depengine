@@ -2,7 +2,7 @@
 FROM fedora:latest
 
 # Go toolchain from distro packages — test.sh runs `go build` inside the
-# container (go.mod requires go 1.26; fedora's `golang` package tracks upstream).
+# container (go.mod requires go 1.27; fedora's `golang` package tracks upstream).
 RUN dnf update -y && dnf install -y \
     golang \
     curl \
