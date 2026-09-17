@@ -34,7 +34,11 @@ func TestBuildCommandsMatchExpectedPerClan(t *testing.T) {
 		{"gentoo emerge + sudo", "gentoo", true, "sudo emerge --quiet git", "equery list git"},
 		{"mint apt + sudo", "mint", true, "sudo apt-get install -y git", "dpkg -s git"},
 		{"opkg + sudo", "opkg", true, "sudo opkg install git", "opkg status git"},
-		{"windows winget no sudo", "windows", true, "winget install --id git", "winget list --id git"},
+		{
+			"windows winget no sudo", "windows", true,
+			"winget install --id git --exact --silent --accept-package-agreements --accept-source-agreements --disable-interactivity",
+			"winget list --id git --exact --accept-source-agreements --disable-interactivity",
+		},
 		{"unknown clan returns nil", "unknown", false, "", ""},
 		{"empty clan returns nil", "", false, "", ""},
 	}
@@ -89,6 +93,10 @@ func TestBuildSearchCmd(t *testing.T) {
 		{"arch pacman -Si", "arch", "pacman -Si serpantinumd"},
 		{"fedora dnf list", "fedora", "dnf list serpantinumd"},
 		{"macos brew info", "macos", "brew info serpantinumd"},
+		{
+			"windows winget show --id --exact", "windows",
+			"winget show --id serpantinumd --exact --accept-source-agreements --disable-interactivity",
+		},
 		{"suse has no SearchCmd configured", "suse", ""},
 		{"alpine has no SearchCmd configured", "alpine", ""},
 		{"unknown clan returns nil", "unknown", ""},
@@ -114,6 +122,68 @@ func TestBuildSearchCmd(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestWinGetCommandsAreExactIDBasedAndNonInteractive fixes the full argv
+// for every winget command depengine builds (install/check/search/remove).
+// winget's default query matching is a case-insensitive substring against
+// name/ID/moniker, so a bare "{pkg}" risks resolving to the wrong package;
+// every command below must pin an exact --id match and run fully
+// non-interactively (no license/source prompt can block with no TTY to
+// answer it). See W1 in .dev/TODO.md.
+func TestWinGetCommandsAreExactIDBasedAndNonInteractive(t *testing.T) {
+	const pkg = "Some.Package"
+
+	cases := []struct {
+		name string
+		got  []string
+		want string
+	}{
+		{
+			"install", BuildInstallCmd("windows", pkg),
+			"winget install --id Some.Package --exact --silent --accept-package-agreements --accept-source-agreements --disable-interactivity",
+		},
+		{
+			"check", BuildCheckCmd("windows", pkg),
+			"winget list --id Some.Package --exact --accept-source-agreements --disable-interactivity",
+		},
+		{
+			"search", BuildSearchCmd("windows", pkg),
+			"winget show --id Some.Package --exact --accept-source-agreements --disable-interactivity",
+		},
+		{
+			"remove", BuildRemoveCmd("windows", pkg),
+			"winget uninstall --id Some.Package --exact --silent --disable-interactivity",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if join(c.got) != c.want {
+				t.Fatalf("%s = %q, want %q", c.name, join(c.got), c.want)
+			}
+			if !contains(c.got, "--exact") {
+				t.Fatalf("%s must pin --exact, got %v", c.name, c.got)
+			}
+			if !contains(c.got, "--disable-interactivity") {
+				t.Fatalf("%s must run non-interactively, got %v", c.name, c.got)
+			}
+			// winget has no root/sudo concept the way *nix managers do;
+			// elevation (UAC) is each installer's own decision.
+			if c.got[0] == "sudo" {
+				t.Fatalf("%s must not be sudo-prefixed, got %v", c.name, c.got)
+			}
+		})
+	}
+}
+
+func contains(argv []string, arg string) bool {
+	for _, a := range argv {
+		if a == arg {
+			return true
+		}
+	}
+	return false
 }
 
 func TestBuildSyncCmdOnlyForManagersThatNeedIt(t *testing.T) {

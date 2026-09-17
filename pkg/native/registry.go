@@ -209,13 +209,59 @@ var managers = map[string]Manager{
 	// Windows managers.
 	// winget is built into Windows 10 1709+ and Windows 11.
 	// choco/scoop are third-party; they use native adapter aliases or exec.Adapter-s.
+	//
+	// Every winget invocation below pairs --id with --exact: winget's
+	// default query matching is a case-insensitive substring against
+	// name/ID/moniker, so an unqualified "{pkg}" can silently install,
+	// report installed, or remove the wrong application. --exact forces
+	// exact, case-sensitive ID matching instead (confirmed against
+	// Microsoft Learn's install/list/show/uninstall command references).
+	//
+	// --disable-interactivity plus the --accept-*-agreements flags keep
+	// every command non-interactive end to end: without them, a first
+	// run against a source can block on a source- or package-license
+	// prompt with no TTY to answer it. --silent additionally suppresses
+	// the install/uninstall installer UI itself; list/show are already
+	// silent (they only print structured results).
+	//
+	// `winget list --id {pkg} --exact` and `winget show --id {pkg}
+	// --exact` are both read-only queries (no privilege, no state
+	// change) that fail with a nonzero exit code when nothing matches
+	// ("No package found matching input criteria" /
+	// APPINSTALLER_CLI_ERROR_NOT_FOUND-class codes) — that's what makes
+	// them usable as CheckCmd/SearchCmd under this package's exit-code
+	// contract (see the SearchCmd field doc). `show` is the id-lookup
+	// counterpart of `list`: it queries the configured source(s)
+	// instead of the local install DB, which is exactly the "does this
+	// exist at all" query CheckAvailable needs, and unlike `search` it
+	// takes the same --id/--exact pair as install/list/uninstall
+	// instead of a fuzzy positional query.
+	//
+	// AtomicBatch stays false and SudoRequired stays false: winget has
+	// no all-or-nothing multi-package transaction, and elevation (UAC)
+	// is each package installer's own decision, not something this
+	// engine should force.
 	"windows-winget": {
 		Name:         "winget",
 		SudoRequired: false,
-		InstallCmd:   []string{"winget", "install", "--id", "{pkg}"},
-		CheckCmd:     []string{"winget", "list", "--id", "{pkg}"},
-		RemoveCmd:    []string{"winget", "uninstall", "--id", "{pkg}"},
-		AtomicBatch:  false,
+		InstallCmd: []string{
+			"winget", "install", "--id", "{pkg}", "--exact",
+			"--silent", "--accept-package-agreements", "--accept-source-agreements",
+			"--disable-interactivity",
+		},
+		CheckCmd: []string{
+			"winget", "list", "--id", "{pkg}", "--exact",
+			"--accept-source-agreements", "--disable-interactivity",
+		},
+		SearchCmd: []string{
+			"winget", "show", "--id", "{pkg}", "--exact",
+			"--accept-source-agreements", "--disable-interactivity",
+		},
+		RemoveCmd: []string{
+			"winget", "uninstall", "--id", "{pkg}", "--exact",
+			"--silent", "--disable-interactivity",
+		},
+		AtomicBatch: false,
 	},
 	"mint": {
 		Name:         "apt",
