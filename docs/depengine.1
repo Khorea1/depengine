@@ -16,243 +16,411 @@ order (native, cargo, go, pip, git, http, ...) until one succeeds,
 respecting per-distro conditions, inter-tool dependencies, and
 post-installation hooks. The binary is static with no runtime
 dependencies on the target machine.
+.\" BEGIN GENERATED CLI REFERENCE
 .SH COMMANDS
 .TP
-.B install " [flags]"
-Installs all tools from the schema, respecting
-.BR method_order ,
-.BR when ,
-.BR requires ,
-and topological ordering. See OPTIONS below for flags.
+.B "depengine [flags]"
+Distro\-agnostic dependency installer
 .TP
-.B validate " [flags]"
-Validates the schema structure and optionally the system environment.
-Reports unknown methods, unknown placeholders, and missing tools.
+.B "depengine check <tool> [flags]"
+Check whether a tool is installed
 .TP
-.B init " [flags]"
-Initializes a new depengine project by creating a minimal
-.B depengine.toml
-or
-.B schema.toml
-scaffold in the current directory. Use
-.B \-\-schema
-to specify a custom path.
+.B "depengine completion [flags]"
+Generate the autocompletion script for depengine for the specified shell. See each sub\-command's help for details on how to use the generated script.
 .TP
-.B check " <tool>"
-Checks whether a specific tool is installed on the machine. Exits 0
-if installed, 1 if not found.
+.B "depengine completion bash"
+Generate the autocompletion script for the bash shell. This script depends on the 'bash\-completion' package. If it is not installed already, you can install it via your OS's package manager. To load completions in your current shell session: source <(depengine completion bash) To load completions for every new session, execute once: #### Linux: depengine completion bash > /etc/bash_completion.d/depengine #### macOS: depengine completion bash > $(brew \-\-prefix)/etc/bash_completion.d/depengine You will need to start a new shell for this setup to take effect.
 .TP
-.B status " [flags]"
-Shows the installation status of tools by comparing the state file
-against the schema. Reports installed, missing, orphaned, and
-outdated tools.
+.B "depengine completion fish [flags]"
+Generate the autocompletion script for the fish shell. To load completions in your current shell session: depengine completion fish | source To load completions for every new session, execute once: depengine completion fish > ~/.config/fish/completions/depengine.fish You will need to start a new shell for this setup to take effect.
 .TP
-.B remove " <tool> | --all"
-Removes a tool using the adapter that originally installed it. Use
-.B --all
-to remove every tracked tool.
+.B "depengine completion powershell [flags]"
+Generate the autocompletion script for powershell. To load completions in your current shell session: depengine completion powershell | Out\-String | Invoke\-Expression To load completions for every new session, add the output of the above command to your powershell profile.
 .TP
-.B forget " <tool>"
-Removes a tool from the state file without touching the system. Useful
-when a tool was removed manually or the state is out of sync.
+.B "depengine completion zsh [flags]"
+Generate the autocompletion script for the zsh shell. If shell completion is not already enabled in your environment you will need to enable it. You can execute the following once: echo "autoload \-U compinit; compinit" >> ~/.zshrc To load completions in your current shell session: source <(depengine completion zsh) To load completions for every new session, execute once: #### Linux: depengine completion zsh > "${fpath[1]}/_depengine" #### macOS: depengine completion zsh > $(brew \-\-prefix)/share/zsh/site\-functions/_depengine You will need to start a new shell for this setup to take effect.
 .TP
-.B version
-Prints the version and a short description.
+.B "depengine diff [file1] [file2] [flags]"
+Compare two state files
 .TP
-.B completion " bash|zsh|fish"
-Prints the shell completion script for the given shell. Source the
-output in your shell rc file (e.g.
-.BR "source <(depengine completion bash)" )
-to enable tab completion.
+.B "depengine forget <tool> [flags]"
+Forget a tool from state without removing it from the system
 .TP
-.B undo " [flags]"
-Reverts the last
-.B install
-by restoring the previous state snapshot and removing tools that were
-added since that snapshot.
+.B "depengine graph [flags]"
+Show the dependency graph
 .TP
-.B sbom " [flags]"
-Exports the current depengine state as a Software Bill of Materials (SBOM)
-in CycloneDX 1.5 or SPDX 2.3 JSON format. Each installed tool becomes a
-component/package in the BOM. Use
-.B \-\-format spdx
-to switch to SPDX output. Useful for integration with vulnerability scanners
-such as grype or trivy.
+.B "depengine help [command] [flags]"
+Help about any command
 .TP
-.B update " [flags]"
-Resolves {latest} placeholders (git refs, http URLs) via the GitHub API and writes the pinned versions to \fBdepengine.lock\fR. Use \fB\-\-frozen\-lockfile\fR to abort if the lockfile does not exist.
+.B "depengine init [flags]"
+Initialize a schema.toml for a new project
 .TP
-.B upgrade " [flags]"
-Upgrades installed tools whose recorded version is older than the pinned
-version in \fBdepengine.lock\fR. Requires a lockfile \(em run
-.B update
-first. For each outdated tool, removes the old install and reinstalls at
-the pinned version, then updates state. Use
-.B \-\-only
-to restrict to one tool and
-.B \-\-dry\-run
-to preview without making changes.
+.B "depengine install [flags]"
+Install tools from schema.toml
 .TP
-.B why " <tool>"
-Explains how a tool would be installed: for each method, reports the
-status (\fBalready_installed\fR, \fBwould_install\fR,
-\fBskip_unavailable\fR, \fBskip_when\fR). Supports \fB--json\fR for
-programmatic consumption.
+.B "depengine remove [tool...] [flags]"
+Remove tools from the system
 .TP
-.B diff " [flags] [file1] [file2]"
-Compares depengine state files between machines or arbitrary paths.
-If no files are given, compares the current state with the file specified by
-.BR \-\-other .
-If one file is given, compares the current state with that file.
-If two files are given, compares the two files directly.
+.B "depengine sbom [flags]"
+Export a software bill of materials of installed state
 .TP
-.B graph " [flags]"
-Outputs the dependency graph in one of three formats: Mermaid (flowchart),
-DOT (Graphviz), or text (level groups). Use
-.B \-\-only
-to focus on a single tool and its transitive dependencies.
+.B "depengine status [flags]"
+Show tool installation state vs schema
+.TP
+.B "depengine undo [flags]"
+Revert to a previous state snapshot
+.TP
+.B "depengine update [flags]"
+Resolve and pin versions into depengine.lock
+.TP
+.B "depengine upgrade [flags]"
+Upgrade installed tools to pinned versions
+.TP
+.B "depengine validate [flags]"
+Validate schema.toml
+.TP
+.B "depengine version [flags]"
+Show version
+Hidden compatibility command.
+.TP
+.B "depengine why <tool> [flags]"
+Explain how a tool would be installed
 .SH OPTIONS
-.SS "install flags"
+.SS "depengine flags"
 .TP
-.BR \-\-schema " <path>"
-Path to the schema file. Default: \fBschema.toml\fR.
+.B "\-h, \-\-help"
+help for depengine Scope: local. Default: false.
 .TP
-.BR \-\-dry\-run
-Show what would be installed without executing anything.
+.B "\-v, \-\-version"
+Show version Scope: local. Default: false.
+.SS "depengine check flags"
 .TP
-.BR \-\-verbose " | \fB\-v\fR"
-Detailed per-tool output.
+.B "\-\-format <string>"
+output format (json) Scope: local. Default: .
 .TP
-.BR \-\-json
-Emit JSON output for programmatic consumption.
+.B "\-h, \-\-help"
+help for check Scope: local. Default: false.
 .TP
-.BR \-\-only " <tool>"
-Install only the specified tool.
+.B "\-\-json"
+JSON output Scope: local. Default: false.
 .TP
-.BR \-\-skip " <tools>"
-Skip specific tools (comma-separated list).
+.B "\-\-live"
+check via adapter (may run subprocesses) Scope: local. Default: false.
 .TP
-.BR \-\-profile " <tag>"
-Only install tools that have the given tag or no tags (e.g. \fB--profile=desktop\fR).
-Useful for targeting different machine profiles from a single schema file.
+.B "\-\-manifest <string>"
+path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
 .TP
-.BR \-\-sort\-by " <field>"
-Sort output by: \fBname\fR, \fBstatus\fR, or \fBmethod\fR.
+.B "\-\-no\-manifest"
+disable personal manifest (default: auto\-detect) Scope: local. Default: false.
 .TP
-.BR \-\-log\-level " <level>"
-Log level: \fBdebug\fR, \fBinfo\fR, \fBwarn\fR, or \fBerror\fR.
+.B "\-\-schema <string>"
+path to schema.toml Scope: local. Default: schema.toml.
+.SS "depengine completion flags"
 .TP
-.BR \-\-diagnose
-Diagnostic mode: implies \fB--dry-run\fR, \fB--verbose\fR, and
-\fBdebug\fR log level.
+.B "\-h, \-\-help"
+help for completion Scope: local. Default: false.
+.SS "depengine completion bash flags"
 .TP
-.BR \-\-jobs " <n>"
-Maximum concurrent installations within a topological level. Default: 1
-(sequential).
+.B "\-h, \-\-help"
+help for bash Scope: local. Default: false.
 .TP
-.BR \-\-allow-arbitrary-code
-Suppress security warnings for build scripts (arbitrary code execution).
-.SS "validate flags"
+.B "\-\-no\-descriptions"
+disable completion descriptions Scope: local. Default: false.
+.SS "depengine completion fish flags"
 .TP
-.BR \-\-schema " <path>"
-Path to the schema file. Default: \fBschema.toml\fR.
+.B "\-h, \-\-help"
+help for fish Scope: local. Default: false.
 .TP
-.BR \-\-check\-env
-Check whether required tools are available in the environment (PATH).
+.B "\-\-no\-descriptions"
+disable completion descriptions Scope: local. Default: false.
+.SS "depengine completion powershell flags"
 .TP
-.BR \-\-format " <fmt>"
-Output format: \fBtext\fR (default) or \fBjson\fR.
+.B "\-h, \-\-help"
+help for powershell Scope: local. Default: false.
 .TP
-.BR \-\-strict
-Treat warnings as errors (exit code 1).
-.SS "status flags"
+.B "\-\-no\-descriptions"
+disable completion descriptions Scope: local. Default: false.
+.SS "depengine completion zsh flags"
 .TP
-.BR \-\-schema " <path>"
-Override the schema path (default: from state file).
+.B "\-h, \-\-help"
+help for zsh Scope: local. Default: false.
 .TP
-.BR \-\-format " <fmt>"
-Output format: \fBtext\fR (default) or \fBjson\fR.
+.B "\-\-no\-descriptions"
+disable completion descriptions Scope: local. Default: false.
+.SS "depengine diff flags"
 .TP
-.BR \-\-json
-\fBDeprecated\fR, prints a warning on stderr. Use \fB--format=json\fR instead.
+.B "\-h, \-\-help"
+help for diff Scope: local. Default: false.
 .TP
-.BR \-\-orphans
-Show only orphaned tools (installed but no longer in schema).
-.SS "remove flags"
+.B "\-\-json"
+output as JSON Scope: local. Default: false.
 .TP
-.BR \-\-all
-Remove all tracked tools.
+.B "\-\-other <string>"
+path to other state file (used when no args) Scope: local. Default: .
+.SS "depengine forget flags"
 .TP
-.BR \-\-dry\-run
-Show what would be removed without executing.
-.SS "graph flags"
+.B "\-h, \-\-help"
+help for forget Scope: local. Default: false.
+.SS "depengine graph flags"
 .TP
-.BR \-\-schema " <path>"
-Path to the schema file. Default: \fBschema.toml\fR.
+.B "\-\-format <string>"
+output format: mermaid, dot, text Scope: local. Default: text.
 .TP
-.BR \-\-format " <fmt>"
-Output format: \fBmermaid\fR, \fBdot\fR, or \fBtext\fR (default).
+.B "\-h, \-\-help"
+help for graph Scope: local. Default: false.
 .TP
-.BR \-\-only " <tool>"
-Show only the subgraph for the specified tool and its transitive
-dependencies.
+.B "\-\-manifest <string>"
+path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
 .TP
-.BR \-\-skip " <tools>"
-Skip specific tools (comma-separated list).
+.B "\-\-no\-manifest"
+disable personal manifest (default: auto\-detect) Scope: local. Default: false.
 .TP
-.BR \-\-profile " <tag>"
-Show only tools with the given tag (e.g. \fB--profile=server\fR).
-.SS "undo flags"
+.B "\-\-only <string>"
+only show subgraph for specific tool Scope: local. Default: .
 .TP
-.BR \-\-list
-List available snapshots with timestamps and tool counts.
+.B "\-\-profile <string>"
+only show tools with matching tag Scope: local. Default: .
 .TP
-.BR \-\-snapshot " <path>"
-Restore a specific snapshot file instead of the most recent one.
-.SS "sbom flags"
+.B "\-\-schema <string>"
+path to schema.toml Scope: local. Default: schema.toml.
 .TP
-.BR \-\-format " <fmt>"
-Output format: \fBcyclonedx\fR (default) or \fBspdx\fR.
-.SS "diff flags"
+.B "\-\-skip <string>"
+skip specific tools (comma\-separated) Scope: local. Default: .
+.SS "depengine help flags"
 .TP
-.BR \-\-json
-Output differences as JSON.
+.B "\-h, \-\-help"
+help for help Scope: local. Default: false.
 .TP
-.BR \-\-other " <path>"
-Path to the other state file to compare (used when no arguments are provided).
-.SS "why flags"
+.B "\-\-man"
+Show the man page Scope: local. Default: false.
+.SS "depengine init flags"
 .TP
-.BR \-\-json
-Emit JSON output for programmatic consumption.
+.B "\-\-add <string>"
+comma\-separated tool names to pre\-populate (e.g. 'zsh,bat,nvim') Scope: local. Default: .
 .TP
-.BR \-\-format " <fmt>"
-Output format: \fBtext\fR (default) or \fBjson\fR.
-.SS "update flags"
+.B "\-h, \-\-help"
+help for init Scope: local. Default: false.
 .TP
-.BR \-\-frozen\-lockfile
-Abort if no lockfile exists (prevents resolving {latest} from network).
+.B "\-\-interactive"
+interactive mode: walk through adding tools Scope: local. Default: false.
 .TP
-.BR \-\-dry\-run
-Show what would be updated without executing.
-.SS "upgrade flags"
+.B "\-\-schema <string>"
+path to write (default: schema.toml) Scope: local. Default: .
+.SS "depengine install flags"
 .TP
-.BR \-\-only " <tool>"
-Only upgrade this tool.
+.B "\-\-allow\-arbitrary\-code"
+suppress security warnings for build scripts / arbitrary code Scope: local. Default: false.
 .TP
-.BR \-\-dry\-run
-Show what would be upgraded without making changes.
+.B "\-\-diagnose"
+diagnostic mode: DEBUG + dry\-run + verbose Scope: local. Default: false.
 .TP
-.BR \-\-force
-Skip the confirmation prompt.
+.B "\-\-dry\-run"
+show what would be installed Scope: local. Default: false.
 .TP
-.BR \-\-json
-Emit JSON output.
+.B "\-\-frozen\-lockfile"
+fail if depengine.lock does not exist or needs update Scope: local. Default: false.
 .TP
-.BR \-\-quiet
-Suppress per-tool status lines.
+.B "\-h, \-\-help"
+help for install Scope: local. Default: false.
 .TP
-.BR \-\-allow\-arbitrary\-code
-Suppress security warnings for build scripts / arbitrary code.
+.B "\-\-jobs <int>"
+max concurrent installations (default 1 = sequential) Scope: local. Default: 1.
+.TP
+.B "\-\-json"
+JSON output Scope: local. Default: false.
+.TP
+.B "\-\-log\-level <string>"
+log level: debug, info, warn, error Scope: local. Default: .
+.TP
+.B "\-\-manifest <string>"
+path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-manifest"
+disable personal manifest (default: auto\-detect) Scope: local. Default: false.
+.TP
+.B "\-\-only <string>"
+only install specific tool Scope: local. Default: .
+.TP
+.B "\-\-profile <string>"
+only install tools with matching tag (e.g. minimal,desktop,server) Scope: local. Default: .
+.TP
+.B "\-\-quiet"
+suppress per\-tool status lines; show only final summary Scope: local. Default: false.
+.TP
+.B "\-\-schema <string>"
+path to schema.toml Scope: local. Default: schema.toml.
+.TP
+.B "\-\-skip <string>"
+skip specific tools (comma\-separated) Scope: local. Default: .
+.TP
+.B "\-\-sort\-by <string>"
+sort output by: name, status, method Scope: local. Default: .
+.TP
+.B "\-\-verbose"
+detailed output Scope: local. Default: false.
+.SS "depengine remove flags"
+.TP
+.B "\-\-all"
+remove all tools Scope: local. Default: false.
+.TP
+.B "\-\-dry\-run"
+show what would be removed Scope: local. Default: false.
+.TP
+.B "\-\-force"
+skip confirmation when removing all tools Scope: local. Default: false.
+.TP
+.B "\-h, \-\-help"
+help for remove Scope: local. Default: false.
+.TP
+.B "\-\-only <string>"
+only remove specific tool (alternative to positional arg) Scope: local. Default: .
+.TP
+.B "\-\-schema <string>"
+path to schema.toml (optional, for validation) Scope: local. Default: .
+.SS "depengine sbom flags"
+.TP
+.B "\-\-format <string>"
+output format: cyclonedx or spdx Scope: local. Default: cyclonedx.
+.TP
+.B "\-h, \-\-help"
+help for sbom Scope: local. Default: false.
+.SS "depengine status flags"
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
+.B "\-h, \-\-help"
+help for status Scope: local. Default: false.
+.TP
+.B "\-\-json"
+JSON output (shorthand for \-\-format=json) Scope: local. Default: false.
+.TP
+.B "\-\-manifest <string>"
+path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-manifest"
+disable personal manifest (default: auto\-detect) Scope: local. Default: false.
+.TP
+.B "\-\-orphans"
+show only orphaned tools Scope: local. Default: false.
+.TP
+.B "\-\-schema <string>"
+override schema path Scope: local. Default: .
+.SS "depengine undo flags"
+.TP
+.B "\-h, \-\-help"
+help for undo Scope: local. Default: false.
+.TP
+.B "\-\-list"
+list available snapshots Scope: local. Default: false.
+.TP
+.B "\-\-snapshot <string>"
+revert to specific snapshot file path Scope: local. Default: .
+.SS "depengine update flags"
+.TP
+.B "\-\-dry\-run"
+show what would be updated without writing lock Scope: local. Default: false.
+.TP
+.B "\-\-frozen\-lockfile"
+abort if depengine.lock does not exist Scope: local. Default: false.
+.TP
+.B "\-h, \-\-help"
+help for update Scope: local. Default: false.
+.TP
+.B "\-\-lock <string>"
+path to depengine.lock (default: alongside schema.toml) Scope: local. Default: .
+.TP
+.B "\-\-manifest <string>"
+path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-manifest"
+disable personal manifest (default: auto\-detect) Scope: local. Default: false.
+.TP
+.B "\-\-profile <string>"
+only resolve & pin tools with matching tag Scope: local. Default: .
+.TP
+.B "\-\-schema <string>"
+path to schema.toml Scope: local. Default: schema.toml.
+.TP
+.B "\-\-v"
+detailed output Scope: local. Default: false.
+.SS "depengine upgrade flags"
+.TP
+.B "\-\-allow\-arbitrary\-code"
+suppress security warnings for build scripts / arbitrary code Scope: local. Default: false.
+.TP
+.B "\-\-dry\-run"
+show what would be upgraded without making changes Scope: local. Default: false.
+.TP
+.B "\-\-force"
+skip confirmation prompt Scope: local. Default: false.
+.TP
+.B "\-h, \-\-help"
+help for upgrade Scope: local. Default: false.
+.TP
+.B "\-\-json"
+JSON output Scope: local. Default: false.
+.TP
+.B "\-\-manifest <string>"
+path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-manifest"
+disable personal manifest (default: auto\-detect) Scope: local. Default: false.
+.TP
+.B "\-\-only <string>"
+only upgrade specific tool Scope: local. Default: .
+.TP
+.B "\-\-quiet"
+suppress per\-tool status lines Scope: local. Default: false.
+.TP
+.B "\-\-schema <string>"
+path to schema.toml Scope: local. Default: schema.toml.
+.SS "depengine validate flags"
+.TP
+.B "\-\-check\-env"
+check system environment for required tools Scope: local. Default: false.
+.TP
+.B "\-\-format <string>"
+output format: text or json Scope: local. Default: text.
+.TP
+.B "\-h, \-\-help"
+help for validate Scope: local. Default: false.
+.TP
+.B "\-\-manifest <string>"
+path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-manifest"
+disable personal manifest (default: auto\-detect) Scope: local. Default: false.
+.TP
+.B "\-\-schema <string>"
+path to schema.toml Scope: local. Default: schema.toml.
+.TP
+.B "\-\-strict"
+treat warnings as errors Scope: local. Default: false.
+.SS "depengine version flags"
+.TP
+.B "\-h, \-\-help"
+help for version Scope: local. Default: false.
+.SS "depengine why flags"
+.TP
+.B "\-\-fields"
+show field\-level provenance Scope: local. Default: false.
+.TP
+.B "\-h, \-\-help"
+help for why Scope: local. Default: false.
+.TP
+.B "\-\-json"
+JSON output Scope: local. Default: false.
+.TP
+.B "\-\-manifest <string>"
+path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-manifest"
+disable personal manifest (default: auto\-detect) Scope: local. Default: false.
+.TP
+.B "\-\-schema <string>"
+path to schema.toml Scope: local. Default: schema.toml.
+.\" END GENERATED CLI REFERENCE
 .SS "schema-level method control"
 .TP
 .B defaults.method_order

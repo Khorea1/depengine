@@ -4,153 +4,268 @@ Every command, its flags, and defaults. For a task-oriented walkthrough,
 see [the README](../README.md); for `schema.toml` syntax, see
 [schema-reference.md](schema-reference.md).
 
-## `depengine init [flags]`
+<!-- BEGIN GENERATED CLI REFERENCE -->
+## `depengine [flags]`
 
-Creates a new `schema.toml` (or a custom path). Fails if the file already exists.
+Distro-agnostic dependency installer
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--schema <path>` | `schema.toml` | Path to write the schema file |
-| `--add <tools>` | — | Comma-separated tool names to pre-populate |
-| `--interactive` | `false` | Interactive wizard — prompts for tools, methods, and options step by step |
-
-## `depengine install [flags]`
-
-Installs all tools from the schema, respecting `method_order`, `when`,
-`requires`, and topological ordering.
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--schema` | auto (`schema.toml` → `depengine.toml` → `depends.toml`) | Path to schema file |
-| `--dry-run` | `false` | Show what would be installed |
-| `--json` | `false` | JSON output |
-| `--only <tool>` | — | Install a single tool |
-| `--skip <tools>` | — | Skip comma-separated tools |
-| `--sort-by` | — | Sort output: `name`, `status`, `method` |
-| `--log-level` | `info` | `debug`, `info`, `warn`, `error` |
-| `--diagnose` | `false` | Diagnostic mode: DEBUG + dry-run + verbose |
-| `--profile <tag>` | — | Filter tools by tag (e.g. `desktop`, `server`) |
-| `--jobs <n>` | `1` | Max concurrent installations |
-| `--allow-arbitrary-code` | `false` | Suppress security warnings for build scripts / arbitrary code — without it, tools with hooks or build scripts that can run arbitrary code are blocked |
-| `--frozen-lockfile` | `false` | Abort if `depengine.lock` doesn't exist |
-| `--manifest <path>` | auto (XDG_CONFIG_HOME) | Path to personal manifest |
-| `--no-manifest` | `false` | Disable personal manifest |
-| `--quiet` | `false` | Suppress non-essential output |
-
-## `depengine validate [flags]`
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--schema` | auto | Path to schema |
-| `--check-env` | `false` | Check required tools are on PATH |
-| `--format` | `text` | `text` or `json` |
-| `--strict` | `false` | Warnings become errors (exit code 1) |
-| `--manifest` / `--no-manifest` | — | Same as `install` |
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `-h, --help` | local | `false` | help for depengine |
+| `-v, --version` | local | `false` | Show version |
 
 ## `depengine check <tool> [flags]`
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--live` | `false` | Check the live system instead of the state file |
-| `--format` | `text` | `text` or `json` |
+Check whether a tool is installed
 
-## `depengine status [flags]`
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--format <string>` | local | `` | output format (json) |
+| `-h, --help` | local | `false` | help for check |
+| `--json` | local | `false` | JSON output |
+| `--live` | local | `false` | check via adapter (may run subprocesses) |
+| `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
+| `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
+| `--schema <string>` | local | `schema.toml` | path to schema.toml |
 
-Shows the installation status of all tools in state against the schema.
-Takes no positional arguments — passing one is an error.
+## `depengine completion [flags]`
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--schema` | from state | Override schema path |
-| `--format` | `text` | `text` or `json` |
-| `--json` | `false` | **Deprecated**, prints a warning on stderr — use `--format=json` instead |
-| `--orphans` | `false` | Show only installed tools not in the schema |
-| `--manifest` / `--no-manifest` | — | Same as `install` |
+Generate the autocompletion script for depengine for the specified shell. See each sub-command's help for details on how to use the generated script.
 
-## `depengine remove <tool> [flags]`
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `-h, --help` | local | `false` | help for completion |
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--all` | `false` | Remove all tracked tools |
-| `--dry-run` | `false` | Show what would be removed |
-| `--force` | `false` | Skip confirmation when removing all |
+## `depengine completion bash`
 
-## `depengine update [flags]`
+Generate the autocompletion script for the bash shell.  This script depends on the 'bash-completion' package. If it is not installed already, you can install it via your OS's package manager.  To load completions in your current shell session:  	source <(depengine completion bash)  To load completions for every new session, execute once:  #### Linux:  	depengine completion bash > /etc/bash_completion.d/depengine  #### macOS:  	depengine completion bash > $(brew --prefix)/etc/bash_completion.d/depengine  You will need to start a new shell for this setup to take effect.
 
-Resolves `{latest}` placeholders and writes `depengine.lock`.
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `-h, --help` | local | `false` | help for bash |
+| `--no-descriptions` | local | `false` | disable completion descriptions |
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--schema` | auto | Path to schema |
-| `--lock` | alongside schema | Path to `depengine.lock` |
-| `--profile` | — | Filter tools by tag |
-| `--frozen-lockfile` | `false` | Abort if `depengine.lock` doesn't exist |
-| `--dry-run` | `false` | Show what would change without writing |
-| `-v` | `false` | Verbose output |
-| `--manifest` / `--no-manifest` | — | Same as `install` |
+## `depengine completion fish [flags]`
 
-## `depengine upgrade [flags]`
+Generate the autocompletion script for the fish shell.  To load completions in your current shell session:  	depengine completion fish \| source  To load completions for every new session, execute once:  	depengine completion fish > ~/.config/fish/completions/depengine.fish  You will need to start a new shell for this setup to take effect.
 
-Upgrades installed tools whose recorded version is older than the pinned
-version in `depengine.lock`. Requires a lockfile — run `depengine update`
-first to resolve and pin versions. For each outdated tool, removes the old
-install and reinstalls at the pinned version, then updates state.
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `-h, --help` | local | `false` | help for fish |
+| `--no-descriptions` | local | `false` | disable completion descriptions |
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--schema` | auto | Path to schema |
-| `--manifest` / `--no-manifest` | — | Same as `install` |
-| `--only <tool>` | — | Only upgrade this tool |
-| `--dry-run` | `false` | Show what would be upgraded without making changes |
-| `--force` | `false` | Skip confirmation prompt |
-| `--json` | `false` | JSON output |
-| `--quiet` | `false` | Suppress per-tool status lines |
-| `--allow-arbitrary-code` | `false` | Suppress security warnings for build scripts / arbitrary code |
+## `depengine completion powershell [flags]`
+
+Generate the autocompletion script for powershell.  To load completions in your current shell session:  	depengine completion powershell \| Out-String \| Invoke-Expression  To load completions for every new session, add the output of the above command to your powershell profile.
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `-h, --help` | local | `false` | help for powershell |
+| `--no-descriptions` | local | `false` | disable completion descriptions |
+
+## `depengine completion zsh [flags]`
+
+Generate the autocompletion script for the zsh shell.  If shell completion is not already enabled in your environment you will need to enable it.  You can execute the following once:  	echo "autoload -U compinit; compinit" >> ~/.zshrc  To load completions in your current shell session:  	source <(depengine completion zsh)  To load completions for every new session, execute once:  #### Linux:  	depengine completion zsh > "${fpath[1]}/_depengine"  #### macOS:  	depengine completion zsh > $(brew --prefix)/share/zsh/site-functions/_depengine  You will need to start a new shell for this setup to take effect.
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `-h, --help` | local | `false` | help for zsh |
+| `--no-descriptions` | local | `false` | disable completion descriptions |
+
+## `depengine diff [file1] [file2] [flags]`
+
+Compare two state files
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `-h, --help` | local | `false` | help for diff |
+| `--json` | local | `false` | output as JSON |
+| `--other <string>` | local | `` | path to other state file (used when no args) |
+
+## `depengine forget <tool> [flags]`
+
+Forget a tool from state without removing it from the system
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `-h, --help` | local | `false` | help for forget |
 
 ## `depengine graph [flags]`
 
-Shows the dependency graph as text, Mermaid, or DOT.
+Show the dependency graph
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--format` | `text` | `text`, `mermaid`, or `dot` |
-| `--only <tool>` | — | Subgraph for one tool |
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--format <string>` | local | `text` | output format: mermaid, dot, text |
+| `-h, --help` | local | `false` | help for graph |
+| `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
+| `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
+| `--only <string>` | local | `` | only show subgraph for specific tool |
+| `--profile <string>` | local | `` | only show tools with matching tag |
+| `--schema <string>` | local | `schema.toml` | path to schema.toml |
+| `--skip <string>` | local | `` | skip specific tools (comma-separated) |
 
-## `depengine why <tool> [flags]`
+## `depengine help [command] [flags]`
 
-Explains how a tool would be installed, method by method.
+Help about any command
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--schema` | auto | Path to schema |
-| `--json` | `false` | JSON output |
-| `--fields` | `false` | Show field-level provenance — which layer (schema/manifest) contributed each field |
-| `--manifest` / `--no-manifest` | — | Same as `install` |
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `-h, --help` | local | `false` | help for help |
+| `--man` | local | `false` | Show the man page |
 
-## `depengine forget <tool>`
+## `depengine init [flags]`
 
-Removes a tool from state without touching the system.
+Initialize a schema.toml for a new project
 
-## `depengine undo [flags]`
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--add <string>` | local | `` | comma-separated tool names to pre-populate (e.g. 'zsh,bat,nvim') |
+| `-h, --help` | local | `false` | help for init |
+| `--interactive` | local | `false` | interactive mode: walk through adding tools |
+| `--schema <string>` | local | `` | path to write (default: schema.toml) |
 
-Reverts the last installation using a snapshot.
+## `depengine install [flags]`
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--list` | `false` | List available snapshots |
-| `--snapshot <path>` | latest | Revert to a specific snapshot file |
+Install tools from schema.toml
 
-## `depengine diff [flags]`
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--allow-arbitrary-code` | local | `false` | suppress security warnings for build scripts / arbitrary code |
+| `--diagnose` | local | `false` | diagnostic mode: DEBUG + dry-run + verbose |
+| `--dry-run` | local | `false` | show what would be installed |
+| `--frozen-lockfile` | local | `false` | fail if depengine.lock does not exist or needs update |
+| `-h, --help` | local | `false` | help for install |
+| `--jobs <int>` | local | `1` | max concurrent installations (default 1 = sequential) |
+| `--json` | local | `false` | JSON output |
+| `--log-level <string>` | local | `` | log level: debug, info, warn, error |
+| `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
+| `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
+| `--only <string>` | local | `` | only install specific tool |
+| `--profile <string>` | local | `` | only install tools with matching tag (e.g. minimal,desktop,server) |
+| `--quiet` | local | `false` | suppress per-tool status lines; show only final summary |
+| `--schema <string>` | local | `schema.toml` | path to schema.toml |
+| `--skip <string>` | local | `` | skip specific tools (comma-separated) |
+| `--sort-by <string>` | local | `` | sort output by: name, status, method |
+| `--verbose` | local | `false` | detailed output |
 
-Compares two state files.
+## `depengine remove [tool...] [flags]`
+
+Remove tools from the system
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--all` | local | `false` | remove all tools |
+| `--dry-run` | local | `false` | show what would be removed |
+| `--force` | local | `false` | skip confirmation when removing all tools |
+| `-h, --help` | local | `false` | help for remove |
+| `--only <string>` | local | `` | only remove specific tool (alternative to positional arg) |
+| `--schema <string>` | local | `` | path to schema.toml (optional, for validation) |
 
 ## `depengine sbom [flags]`
 
-Exports an SBOM in CycloneDX 1.5 or SPDX 2.3.
+Export a software bill of materials of installed state
 
-## `depengine completion <shell>`
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--format <string>` | local | `cyclonedx` | output format: cyclonedx or spdx |
+| `-h, --help` | local | `false` | help for sbom |
 
-Generates shell completion scripts (`bash`, `zsh`, `fish`).
+## `depengine status [flags]`
+
+Show tool installation state vs schema
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--format <string>` | local | `text` | output format: text or json |
+| `-h, --help` | local | `false` | help for status |
+| `--json` | local | `false` | JSON output (shorthand for --format=json) |
+| `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
+| `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
+| `--orphans` | local | `false` | show only orphaned tools |
+| `--schema <string>` | local | `` | override schema path |
+
+## `depengine undo [flags]`
+
+Revert to a previous state snapshot
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `-h, --help` | local | `false` | help for undo |
+| `--list` | local | `false` | list available snapshots |
+| `--snapshot <string>` | local | `` | revert to specific snapshot file path |
+
+## `depengine update [flags]`
+
+Resolve and pin versions into depengine.lock
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--dry-run` | local | `false` | show what would be updated without writing lock |
+| `--frozen-lockfile` | local | `false` | abort if depengine.lock does not exist |
+| `-h, --help` | local | `false` | help for update |
+| `--lock <string>` | local | `` | path to depengine.lock (default: alongside schema.toml) |
+| `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
+| `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
+| `--profile <string>` | local | `` | only resolve & pin tools with matching tag |
+| `--schema <string>` | local | `schema.toml` | path to schema.toml |
+| `--v` | local | `false` | detailed output |
+
+## `depengine upgrade [flags]`
+
+Upgrade installed tools to pinned versions
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--allow-arbitrary-code` | local | `false` | suppress security warnings for build scripts / arbitrary code |
+| `--dry-run` | local | `false` | show what would be upgraded without making changes |
+| `--force` | local | `false` | skip confirmation prompt |
+| `-h, --help` | local | `false` | help for upgrade |
+| `--json` | local | `false` | JSON output |
+| `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
+| `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
+| `--only <string>` | local | `` | only upgrade specific tool |
+| `--quiet` | local | `false` | suppress per-tool status lines |
+| `--schema <string>` | local | `schema.toml` | path to schema.toml |
+
+## `depengine validate [flags]`
+
+Validate schema.toml
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--check-env` | local | `false` | check system environment for required tools |
+| `--format <string>` | local | `text` | output format: text or json |
+| `-h, --help` | local | `false` | help for validate |
+| `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
+| `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
+| `--schema <string>` | local | `schema.toml` | path to schema.toml |
+| `--strict` | local | `false` | treat warnings as errors |
+
+## `depengine version [flags]`
+
+Show version
+
+Visibility: hidden (documented compatibility command).
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `-h, --help` | local | `false` | help for version |
+
+## `depengine why <tool> [flags]`
+
+Explain how a tool would be installed
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--fields` | local | `false` | show field-level provenance |
+| `-h, --help` | local | `false` | help for why |
+| `--json` | local | `false` | JSON output |
+| `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
+| `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
+| `--schema <string>` | local | `schema.toml` | path to schema.toml |
+
+<!-- END GENERATED CLI REFERENCE -->
 
 ## Exit codes
 
