@@ -35,6 +35,7 @@ type Contract struct {
 	Aliases              []string
 	DefaultOrder         int // zero means the kind is not a blind fallback
 	Fields               map[string]Field
+	SourceAlternatives   [][]string // exactly one alternative; every field in it is required
 	MutuallyExclusive    [][]string
 	ImplicitDistroFamily []string
 	AllowString          bool
@@ -90,6 +91,8 @@ var downloadFields = fields(artifactFields, map[string]Field{
 	"link_dir":         {Type: String},
 })
 
+var artifactSourceAlternatives = [][]string{{"url"}, {"repo", "asset"}}
+
 // Contracts is the single source of truth for method kinds, ordering and
 // adapter-facing schema fields. Keep entries in default preference order;
 // kinds with DefaultOrder zero are valid but never injected as blind fallbacks.
@@ -134,8 +137,8 @@ var Contracts = []Contract{
 	{Kind: "appimage", DefaultOrder: 31, Fields: fields(downloadFields, map[string]Field{
 		"install_dir": {Type: String},
 		"desktop":     {Type: Boolean},
-	}), CanRemove: true},
-	{Kind: "android", DefaultOrder: 32, Fields: downloadFields},
+	}), SourceAlternatives: artifactSourceAlternatives, CanRemove: true},
+	{Kind: "android", DefaultOrder: 32, Fields: downloadFields, SourceAlternatives: artifactSourceAlternatives},
 	{Kind: "git", DefaultOrder: 33, Fields: map[string]Field{
 		"url":           {Type: String, Required: true, NonEmpty: true},
 		"branch":        {Type: String},
@@ -151,12 +154,12 @@ var Contracts = []Contract{
 		"asset":   {Type: String, Required: true, NonEmpty: true},
 		"release": {Type: String},
 		"branch":  {Type: String, NonEmpty: true},
-	}), MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true},
-	{Kind: "http", DefaultOrder: 35, Fields: downloadFields, CanRemove: true},
+	}), SourceAlternatives: [][]string{{"repo", "asset"}}, MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true},
+	{Kind: "http", DefaultOrder: 35, Fields: downloadFields, SourceAlternatives: artifactSourceAlternatives, CanRemove: true},
 	{Kind: "msi", DefaultOrder: 36, Fields: fields(artifactFields, map[string]Field{
 		"product_name": {Type: String, Required: true, NonEmpty: true},
 		"publisher":    {Type: String},
-	}), MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, ImplicitDistroFamily: []string{"windows"}, CanRemove: true},
+	}), SourceAlternatives: artifactSourceAlternatives, MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, ImplicitDistroFamily: []string{"windows"}, CanRemove: true},
 }
 
 var (

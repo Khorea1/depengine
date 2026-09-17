@@ -76,31 +76,54 @@ func validateRequiredFields(s *config.Schema) *Result {
 					r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, present[0]), Message: fmt.Sprintf("%s method for tool %q sets mutually exclusive fields %s", contract.Kind, toolName, strings.Join(present, " and "))})
 				}
 			}
-			if contract.Kind == "http" || contract.Kind == "github" || contract.Kind == "appimage" || contract.Kind == "android" || contract.Kind == "msi" {
-				_, hasURL := method.Config["url"]
-				_, hasRepo := method.Config["repo"]
-				_, hasAsset := method.Config["asset"]
-				if contract.Kind == "github" {
-					hasRepo = true
-				}
-				if hasURL == hasRepo || hasRepo != hasAsset {
-					field := "url"
-					if hasRepo || hasAsset {
-						field = "artifact"
-					}
-					r.Add(ValidationError{Code: ErrRequiredField, Field: fieldPath(toolName, i, field), Message: fmt.Sprintf("%s method for tool %q requires exactly one of url or repo+asset", contract.Kind, toolName)})
-				}
-			}
+			validateSourceAlternatives(toolName, i, method, contract, r)
 			if strip, ok := method.Config["strip_components"].(int64); ok && strip < 0 {
 				r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, "strip_components"), Message: "strip_components must be non-negative"})
 			}
 			if method.Kind == "git" {
 				validateManagedPaths(toolName, i, method.Config["managed_paths"], r)
 			}
-			validateChecksum(toolName, i, method, r)
+			validateChecksum(toolName, i, method, contract, r)
 		}
 	}
 	return r
+}
+
+func validateSourceAlternatives(toolName string, methodIdx int, method *config.MethodCandidate, contract *methodkind.Contract, r *Result) {
+	if len(contract.SourceAlternatives) == 0 {
+		return
+	}
+	active, complete := 0, 0
+	for _, alternative := range contract.SourceAlternatives {
+		present := 0
+		for _, field := range alternative {
+			if _, ok := method.Config[field]; ok {
+				present++
+			}
+		}
+		if present > 0 {
+			active++
+		}
+		if present == len(alternative) {
+			complete++
+		}
+	}
+	if active == 1 && complete == 1 {
+		return
+	}
+	field := "artifact"
+	if active == 0 && len(contract.SourceAlternatives) > 1 {
+		field = contract.SourceAlternatives[0][0]
+	}
+	r.Add(ValidationError{Code: ErrRequiredField, Field: fieldPath(toolName, methodIdx, field), Message: fmt.Sprintf("%s method for tool %q requires exactly one of %s", contract.Kind, toolName, formatAlternatives(contract.SourceAlternatives))})
+}
+
+func formatAlternatives(alternatives [][]string) string {
+	formatted := make([]string, len(alternatives))
+	for i, alternative := range alternatives {
+		formatted[i] = strings.Join(alternative, "+")
+	}
+	return strings.Join(formatted, " or ")
 }
 
 func validateManagedPaths(tool string, index int, raw any, result *Result) {
@@ -244,8 +267,8 @@ func containsString(values []string, target string) bool {
 	return false
 }
 
-func validateChecksum(toolName string, methodIdx int, method *config.MethodCandidate, r *Result) {
-	if method.Kind != "http" {
+func validateChecksum(toolName string, methodIdx int, method *config.MethodCandidate, contract *methodkind.Contract, r *Result) {
+	if _, supported := contract.Fields["checksum"]; !supported {
 		return
 	}
 	checksum, ok := method.Config["checksum"].(string)

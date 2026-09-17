@@ -2,6 +2,7 @@ package methodkind_test
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -103,5 +104,36 @@ func TestGitHubPrecedesHTTPWithoutGHAlias(t *testing.T) {
 	}
 	if contract, ok := methodkind.Lookup("gh"); ok {
 		t.Fatalf("gh unexpectedly resolves to %q", contract.Kind)
+	}
+}
+
+func TestArtifactContractsDeclareSourcesAndChecksums(t *testing.T) {
+	tests := []struct {
+		kind         string
+		alternatives [][]string
+		checksum     bool
+	}{
+		{kind: "http", alternatives: [][]string{{"url"}, {"repo", "asset"}}, checksum: true},
+		{kind: "github", alternatives: [][]string{{"repo", "asset"}}, checksum: true},
+		{kind: "appimage", alternatives: [][]string{{"url"}, {"repo", "asset"}}, checksum: true},
+		{kind: "android", alternatives: [][]string{{"url"}, {"repo", "asset"}}, checksum: true},
+		{kind: "msi", alternatives: [][]string{{"url"}, {"repo", "asset"}}, checksum: true},
+		{kind: "native"},
+		{kind: "cargo"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.kind, func(t *testing.T) {
+			contract, ok := methodkind.Lookup(tt.kind)
+			if !ok {
+				t.Fatalf("missing contract for %q", tt.kind)
+			}
+			if !reflect.DeepEqual(contract.SourceAlternatives, tt.alternatives) {
+				t.Errorf("SourceAlternatives = %v, want %v", contract.SourceAlternatives, tt.alternatives)
+			}
+			_, checksum := contract.Fields["checksum"]
+			if checksum != tt.checksum {
+				t.Errorf("checksum support = %t, want %t", checksum, tt.checksum)
+			}
+		})
 	}
 }

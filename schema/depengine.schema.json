@@ -316,8 +316,12 @@
             },
             {
               "not": {
-                "required": [
-                  "url"
+                "anyOf": [
+                  {
+                    "required": [
+                      "url"
+                    ]
+                  }
                 ]
               },
               "required": [
@@ -609,8 +613,12 @@
             },
             {
               "not": {
-                "required": [
-                  "url"
+                "anyOf": [
+                  {
+                    "required": [
+                      "url"
+                    ]
+                  }
                 ]
               },
               "required": [
@@ -2074,6 +2082,14 @@
               }
             }
           ],
+          "oneOf": [
+            {
+              "required": [
+                "repo",
+                "asset"
+              ]
+            }
+          ],
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2283,8 +2299,12 @@
             },
             {
               "not": {
-                "required": [
-                  "url"
+                "anyOf": [
+                  {
+                    "required": [
+                      "url"
+                    ]
+                  }
                 ]
               },
               "required": [
@@ -2522,8 +2542,12 @@
             },
             {
               "not": {
-                "required": [
-                  "url"
+                "anyOf": [
+                  {
+                    "required": [
+                      "url"
+                    ]
+                  }
                 ]
               },
               "required": [
@@ -4536,8 +4560,12 @@
             },
             {
               "not": {
-                "required": [
-                  "url"
+                "anyOf": [
+                  {
+                    "required": [
+                      "url"
+                    ]
+                  }
                 ]
               },
               "required": [
@@ -4759,8 +4787,12 @@
             },
             {
               "not": {
-                "required": [
-                  "url"
+                "anyOf": [
+                  {
+                    "required": [
+                      "url"
+                    ]
+                  }
                 ]
               },
               "required": [
@@ -5906,6 +5938,14 @@
               }
             }
           ],
+          "oneOf": [
+            {
+              "required": [
+                "repo",
+                "asset"
+              ]
+            }
+          ],
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6119,8 +6159,12 @@
             },
             {
               "not": {
-                "required": [
-                  "url"
+                "anyOf": [
+                  {
+                    "required": [
+                      "url"
+                    ]
+                  }
                 ]
               },
               "required": [
@@ -6360,8 +6404,12 @@
             },
             {
               "not": {
-                "required": [
-                  "url"
+                "anyOf": [
+                  {
+                    "required": [
+                      "url"
+                    ]
+                  }
                 ]
               },
               "required": [

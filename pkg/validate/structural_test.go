@@ -161,6 +161,74 @@ func TestValidateRequiredFields_HTTPValid(t *testing.T) {
 	}
 }
 
+func TestValidateRequiredFields_ArtifactSources(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  map[string]any
+		wantErr bool
+	}{
+		{name: "url", config: map[string]any{"url": "https://example.com/app"}},
+		{name: "repo asset", config: map[string]any{"repo": "owner/repo", "asset": "app"}},
+		{name: "neither", config: map[string]any{}, wantErr: true},
+		{name: "both", config: map[string]any{"url": "https://example.com/app", "repo": "owner/repo", "asset": "app"}, wantErr: true},
+		{name: "repo only", config: map[string]any{"repo": "owner/repo"}, wantErr: true},
+		{name: "asset only", config: map[string]any{"asset": "app"}, wantErr: true},
+	}
+	for _, kind := range []string{"http", "github", "appimage", "android", "msi"} {
+		for _, tt := range tests {
+			t.Run(kind+"/"+tt.name, func(t *testing.T) {
+				config := make(map[string]any, len(tt.config)+1)
+				for key, value := range tt.config {
+					config[key] = value
+				}
+				if kind == "msi" {
+					config["product_name"] = "App"
+				}
+				s := &cfg.Schema{Tools: map[string]*cfg.Tool{"app": tool("app", []*cfg.MethodCandidate{mc(kind, nil, config)}, nil)}}
+				wantErr := tt.wantErr || kind == "github" && tt.name == "url"
+				if got := validateRequiredFields(s).HasErrors(); got != wantErr {
+					t.Errorf("HasErrors() = %t, want %t", got, wantErr)
+				}
+			})
+		}
+	}
+}
+
+func TestValidateRequiredFields_ArtifactChecksums(t *testing.T) {
+	valid := "sha256:6ca13d52ca70c883e0f0bb101e425a89e8624de51db2d2392593af6a84118090"
+	for _, kind := range []string{"http", "github", "appimage", "android", "msi"} {
+		for _, tt := range []struct {
+			name     string
+			checksum string
+			wantCode ErrorCode
+		}{
+			{name: "valid", checksum: valid},
+			{name: "malformed", checksum: "sha256:abc", wantCode: ErrInvalidChecksum},
+		} {
+			t.Run(kind+"/"+tt.name, func(t *testing.T) {
+				config := map[string]any{"repo": "owner/repo", "asset": "app", "checksum": tt.checksum}
+				if kind == "msi" {
+					config["product_name"] = "App"
+				}
+				s := &cfg.Schema{Tools: map[string]*cfg.Tool{"app": tool("app", []*cfg.MethodCandidate{mc(kind, nil, config)}, nil)}}
+				r := validateRequiredFields(s)
+				found := false
+				for _, err := range r.Errors {
+					if err.Code == tt.wantCode && tt.wantCode != "" {
+						found = true
+					}
+				}
+				if tt.wantCode == "" && r.HasErrors() {
+					t.Fatalf("valid checksum rejected: %+v", r.Errors)
+				}
+				if tt.wantCode != "" && !found {
+					t.Errorf("missing %s: %+v", tt.wantCode, r.Errors)
+				}
+			})
+		}
+	}
+}
+
 func TestValidateRequiredFields_ContainerValid(t *testing.T) {
 	s := &cfg.Schema{
 		Tools: map[string]*cfg.Tool{

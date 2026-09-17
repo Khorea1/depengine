@@ -3,7 +3,10 @@ package config
 import (
 	"bytes"
 	"os"
+	"reflect"
 	"testing"
+
+	"github.com/Khorea1/depengine/pkg/methodkind"
 )
 
 func TestGeneratedJSONSchemaIsCurrent(t *testing.T) {
@@ -17,6 +20,28 @@ func TestGeneratedJSONSchemaIsCurrent(t *testing.T) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatal("schema/depengine.schema.json is stale; run go generate ./pkg/config")
+	}
+}
+
+func TestMethodJSONSchemaUsesContractSourceAlternatives(t *testing.T) {
+	for _, tt := range []struct {
+		kind string
+		want [][]string
+	}{
+		{kind: "http", want: [][]string{{"url"}, {"repo", "asset"}}},
+		{kind: "github", want: [][]string{{"repo", "asset"}}},
+	} {
+		t.Run(tt.kind, func(t *testing.T) {
+			contract, _ := methodkind.Lookup(tt.kind)
+			options := methodObjectJSONSchema(contract, "")["oneOf"].([]any)
+			got := make([][]string, len(options))
+			for i, option := range options {
+				got[i] = option.(map[string]any)["required"].([]string)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("required source alternatives = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

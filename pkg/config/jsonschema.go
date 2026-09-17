@@ -206,11 +206,25 @@ func methodObjectJSONSchema(contract *methodkind.Contract, variantKind string) m
 		}
 		schema["allOf"] = allOf
 	}
-	if contract.Kind == "http" || contract.Kind == "appimage" || contract.Kind == "android" || contract.Kind == "msi" {
-		schema["oneOf"] = []any{
-			map[string]any{"required": []string{"url"}, "not": map[string]any{"anyOf": []any{map[string]any{"required": []string{"repo"}}, map[string]any{"required": []string{"asset"}}}}},
-			map[string]any{"required": []string{"repo", "asset"}, "not": map[string]any{"required": []string{"url"}}},
+	if len(contract.SourceAlternatives) > 0 {
+		oneOf := make([]any, len(contract.SourceAlternatives))
+		for i, alternative := range contract.SourceAlternatives {
+			otherFields := make([]any, 0)
+			for j, other := range contract.SourceAlternatives {
+				if i == j {
+					continue
+				}
+				for _, field := range other {
+					otherFields = append(otherFields, map[string]any{"required": []string{field}})
+				}
+			}
+			option := map[string]any{"required": alternative}
+			if len(otherFields) > 0 {
+				option["not"] = map[string]any{"anyOf": otherFields}
+			}
+			oneOf[i] = option
 		}
+		schema["oneOf"] = oneOf
 	}
 	return schema
 }
