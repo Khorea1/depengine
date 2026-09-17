@@ -218,8 +218,8 @@ func TestExtractArchiveIgnoresBinaryName(t *testing.T) {
 // into a root-owned directory and fail, unlike extractTar/extractZip/
 // installDeb, which already elevate correctly. This test forces the
 // non-root branch the same way TestElevationGuardNoMethod does, and
-// confirms Extract shells out through the elevation prefix to
-// `install -m 0755` instead of touching the filesystem directly.
+// confirms Extract shells out through the elevation prefix to stage the
+// binary and atomically commit it instead of touching the filesystem directly.
 func TestExtractCopyBinaryElevated(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("test requires non-root: the sudoRequired branch only triggers when Geteuid() != 0")
@@ -238,20 +238,16 @@ func TestExtractCopyBinaryElevated(t *testing.T) {
 		t.Fatalf("unexpected Extract error: %v", err)
 	}
 
-	if len(fr.Calls) != 1 {
-		t.Fatalf("expected 1 elevated call, got %d: %+v", len(fr.Calls), fr.Calls)
+	if len(fr.Calls) != 2 {
+		t.Fatalf("expected 2 elevated calls, got %d: %+v", len(fr.Calls), fr.Calls)
 	}
-	got := fr.Calls[0]
-	if got.Name != "sudo" {
-		t.Errorf("expected elevated call via sudo, got %q", got.Name)
-	}
-	want := []string{"install", "-m", "0755", src, "/usr/local/bin/mybin"}
-	if len(got.Args) != len(want) {
-		t.Fatalf("args = %v, want %v", got.Args, want)
+	want := []run.FakeCall{
+		{Name: "sudo", Args: []string{"install", "-m", "0755", src, "/usr/local/bin/mybin.depengine-new"}},
+		{Name: "sudo", Args: []string{"mv", "-f", "--", "/usr/local/bin/mybin.depengine-new", "/usr/local/bin/mybin"}},
 	}
 	for i := range want {
-		if got.Args[i] != want[i] {
-			t.Errorf("arg[%d] = %q, want %q", i, got.Args[i], want[i])
+		if got := fr.Calls[i]; got.Name != want[i].Name || !slices.Equal(got.Args, want[i].Args) {
+			t.Errorf("call[%d] = %s %v, want %s %v", i, got.Name, got.Args, want[i].Name, want[i].Args)
 		}
 	}
 }
@@ -271,9 +267,17 @@ func TestExtractCopyBinaryElevatedUsesConfiguredName(t *testing.T) {
 	if err := extract(context.Background(), src, "/usr/local/bin", "", "tool", fr, true, "tool"); err != nil {
 		t.Fatalf("extract: %v", err)
 	}
-	want := []string{"install", "-m", "0755", src, "/usr/local/bin/tool"}
-	if got := fr.Calls[0].Args; !slices.Equal(got, want) {
-		t.Fatalf("args = %v, want %v", got, want)
+	want := [][]string{
+		{"install", "-m", "0755", src, "/usr/local/bin/tool.depengine-new"},
+		{"mv", "-f", "--", "/usr/local/bin/tool.depengine-new", "/usr/local/bin/tool"},
+	}
+	if len(fr.Calls) != len(want) {
+		t.Fatalf("calls = %+v, want %d calls", fr.Calls, len(want))
+	}
+	for i := range want {
+		if got := fr.Calls[i].Args; fr.Calls[i].Name != "sudo" || !slices.Equal(got, want[i]) {
+			t.Errorf("call[%d] = %s %v, want sudo %v", i, fr.Calls[i].Name, got, want[i])
+		}
 	}
 }
 
