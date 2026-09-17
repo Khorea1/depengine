@@ -72,26 +72,26 @@ func BuildMap(f *engine.Facts, clan string) map[string]string {
 
 // KnownPlaceholders returns every {name} token that may appear in schema.toml
 // without being flagged by validation. It derives the set from BuildMap (the
-// detect_os.sh Facts surface) plus the two adapter-owned tokens "pkg" and
-// "latest" that pass through Expand untouched.
+// detect_os.sh Facts surface plus adapter-owned tokens that pass through
+// Expand untouched.
 //
 // Deriving from BuildMap ensures that adding a new Fact field automatically
 // extends the known-placeholder set — the validate package never duplicates
 // this list.
 func KnownPlaceholders() []string {
 	m := BuildMap(&engine.Facts{}, "")
-	out := make([]string, 0, len(m)+2)
+	out := make([]string, 0, len(m)+5)
 	for k := range m {
 		out = append(out, k)
 	}
 	sort.Strings(out)
 	// "pkg" and "latest" are adapter-owned (native, and git/http
-	// respectively); "arch_any"/"os_any" are likewise adapter-owned, for the
-	// "github" method only — see ghrelease.ResolveAssetURL. All four are
+	// respectively); "version"/"arch_any"/"os_any" are owned by repo+asset
+	// resolution — see ghrelease.ResolveAssetURL. All five are
 	// deliberately left unexpanded by BuildMap/Expand (no entry in the map
 	// this function derives from) so their owning adapter sees the literal
 	// token, not a single pre-picked value.
-	out = append(out, "pkg", "latest", "arch_any", "os_any")
+	out = append(out, "pkg", "latest", "version", "arch_any", "os_any")
 	return out
 }
 

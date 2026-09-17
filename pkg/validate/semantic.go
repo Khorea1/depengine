@@ -15,7 +15,7 @@ import (
 func validateCycles(s *config.Schema) *Result {
 	r := &Result{}
 
-	_, err := graph.Sort(s.Tools)
+	_, err := graph.Sort(toolsWithConditionalDependencies(s.Tools))
 	if err != nil {
 		var cycleErr *graph.CycleError
 		if errors.As(err, &cycleErr) {
@@ -42,7 +42,11 @@ func validateDanglingReferences(s *config.Schema) *Result {
 	r := &Result{}
 
 	for toolName, tool := range s.Tools {
-		for _, dep := range tool.Requires {
+		deps := append([]string(nil), tool.Requires...)
+		for _, method := range tool.Methods {
+			deps = append(deps, method.Requires...)
+		}
+		for _, dep := range deps {
 			if _, ok := s.Tools[dep]; !ok {
 				r.Add(ValidationError{
 					Code:    ErrDanglingRef,
@@ -54,6 +58,28 @@ func validateDanglingReferences(s *config.Schema) *Result {
 	}
 
 	return r
+}
+
+func toolsWithConditionalDependencies(tools map[string]*config.Tool) map[string]*config.Tool {
+	out := make(map[string]*config.Tool, len(tools))
+	for name, tool := range tools {
+		clone := *tool
+		clone.Requires = append([]string(nil), tool.Requires...)
+		seen := make(map[string]bool, len(clone.Requires))
+		for _, dep := range clone.Requires {
+			seen[dep] = true
+		}
+		for _, method := range tool.Methods {
+			for _, dep := range method.Requires {
+				if !seen[dep] {
+					clone.Requires = append(clone.Requires, dep)
+					seen[dep] = true
+				}
+			}
+		}
+		out[name] = &clone
+	}
+	return out
 }
 
 // validateMalformedURLs checks URL fields for basic syntactic validity.

@@ -100,13 +100,14 @@ func manifestOptionsJSONSchema() map[string]any {
 
 func toolJSONSchema() map[string]any {
 	properties := map[string]any{
-		"requires":      stringArrayJSONSchema(),
-		"requires_when": map[string]any{"type": "object", "additionalProperties": map[string]any{"$ref": "#/definitions/condition"}},
-		"pre_install":   map[string]any{"$ref": "#/definitions/hook"},
-		"post_install":  map[string]any{"$ref": "#/definitions/hook"},
-		"tags":          stringArrayJSONSchema(),
-		"method_prefer": stringArrayJSONSchema(),
-		"method_only":   stringArrayJSONSchema(),
+		"requires":        stringArrayJSONSchema(),
+		"requires_when":   map[string]any{"type": "object", "additionalProperties": map[string]any{"$ref": "#/definitions/condition"}},
+		"pre_install":     map[string]any{"$ref": "#/definitions/hook"},
+		"post_install":    map[string]any{"$ref": "#/definitions/hook"},
+		"tags":            stringArrayJSONSchema(),
+		"method_prefer":   stringArrayJSONSchema(),
+		"method_only":     stringArrayJSONSchema(),
+		"dependency_only": map[string]any{"type": "boolean", "default": false},
 	}
 	for _, kind := range methodkind.KnownKinds() {
 		contract, ok := methodkind.Lookup(kind)
@@ -159,6 +160,19 @@ func methodObjectJSONSchema(contract *methodkind.Contract, variantKind string) m
 		"when":     map[string]any{"$ref": "#/definitions/condition"},
 		"arch_map": stringMapJSONSchema(),
 		"os_map":   stringMapJSONSchema(),
+		"requires": stringArrayJSONSchema(),
+		"sources": map[string]any{
+			"type": "array", "minItems": 1,
+			"items": map[string]any{
+				"type": "object", "required": []string{"kind", "name"},
+				"properties": map[string]any{
+					"kind": map[string]any{"enum": []string{"apt-ppa", "dnf-copr", "scoop-bucket", "brew-tap"}},
+					"name": map[string]any{"type": "string", "minLength": 1},
+					"url":  map[string]any{"type": "string", "minLength": 1},
+				},
+				"additionalProperties": false,
+			},
+		},
 	}
 	required := make([]string, 0, len(contract.Fields)+1)
 	if variantKind != "" {
@@ -192,6 +206,12 @@ func methodObjectJSONSchema(contract *methodkind.Contract, variantKind string) m
 		}
 		schema["allOf"] = allOf
 	}
+	if contract.Kind == "http" || contract.Kind == "appimage" || contract.Kind == "android" || contract.Kind == "msi" {
+		schema["oneOf"] = []any{
+			map[string]any{"required": []string{"url"}, "not": map[string]any{"anyOf": []any{map[string]any{"required": []string{"repo"}}, map[string]any{"required": []string{"asset"}}}}},
+			map[string]any{"required": []string{"repo", "asset"}, "not": map[string]any{"required": []string{"url"}}},
+		}
+	}
 	return schema
 }
 
@@ -210,6 +230,10 @@ func methodFieldJSONSchema(field methodkind.Field) map[string]any {
 			map[string]any{"type": "string", "pattern": "^[0-9]+$"},
 		}}
 	case methodkind.StringMap:
+		schema = stringMapJSONSchema()
+	case methodkind.StringList:
+		schema = stringArrayJSONSchema()
+	case methodkind.StringStringMap:
 		schema = stringMapJSONSchema()
 	case methodkind.Command:
 		command := map[string]any{

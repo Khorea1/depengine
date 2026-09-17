@@ -129,6 +129,10 @@ func validateTool(tool map[string]any, path string, errs *[]string) {
 		fieldPath := path + "." + key
 		switch key {
 		case "requires":
+		case "dependency_only":
+			if _, ok := tool[key].(bool); !ok {
+				*errs = append(*errs, fmt.Sprintf("%s: expected boolean, got %T", fieldPath, tool[key]))
+			}
 		case "requires_when":
 			validateRequiresWhen(tool[key], fieldPath, requires, errs)
 		case "pre_install", "post_install":
@@ -242,6 +246,10 @@ func validateMethodValue(raw any, path, declaredKind string, errs *[]string) {
 				validateCondition(v[key], path+".when", errs)
 			case "arch_map", "os_map":
 				validateStringMap(v[key], path+"."+key, errs)
+			case "requires":
+				validateStringList(v[key], path+".requires", errs)
+			case "sources":
+				validateSources(v[key], path+".sources", errs)
 			default:
 				if !known {
 					continue
@@ -254,8 +262,43 @@ func validateMethodValue(raw any, path, declaredKind string, errs *[]string) {
 				validateMethodField(v[key], field, path+"."+key, errs)
 			}
 		}
+		if known {
+			validateArtifactChoice(v, path, contract.Kind, errs)
+			for _, group := range contract.MutuallyExclusive {
+				present := 0
+				for _, key := range group {
+					if _, ok := v[key]; ok {
+						present++
+					}
+				}
+				if present > 1 {
+					*errs = append(*errs, path+": fields "+strings.Join(group, " and ")+" are mutually exclusive")
+				}
+			}
+		}
 	default:
 		*errs = append(*errs, fmt.Sprintf("%s: expected string, true, or table, got %T", path, raw))
+	}
+}
+
+func validateArtifactChoice(v map[string]any, path, kind string, errs *[]string) {
+	if kind != "http" && kind != "github" && kind != "appimage" && kind != "android" && kind != "msi" {
+		return
+	}
+	_, hasURL := v["url"]
+	_, hasRepo := v["repo"]
+	_, hasAsset := v["asset"]
+	if kind == "github" {
+		hasRepo = true
+	}
+	if hasURL == hasRepo {
+		*errs = append(*errs, path+": exactly one of url or repo+asset is required")
+	}
+	if hasRepo != hasAsset {
+		*errs = append(*errs, path+": repo and asset must be specified together")
+	}
+	if strip, ok := v["strip_components"].(int64); ok && strip < 0 {
+		*errs = append(*errs, path+".strip_components: must be non-negative")
 	}
 }
 
@@ -284,6 +327,54 @@ func validateMethodField(raw any, field methodkind.Field, path string, errs *[]s
 		validateStringMap(raw, path, errs)
 	case methodkind.Command:
 		validateCommand(raw, path, errs)
+	case methodkind.StringList:
+		validateStringList(raw, path, errs)
+	case methodkind.StringStringMap:
+		validateStringMap(raw, path, errs)
+	}
+	if len(field.Enum) > 0 {
+		if value, ok := raw.(string); ok && !containsString(field.Enum, value) {
+			*errs = append(*errs, fmt.Sprintf("%s: expected one of %s", path, strings.Join(field.Enum, ", ")))
+		}
+	}
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func validateSources(raw any, path string, errs *[]string) {
+	items, ok := raw.([]any)
+	if !ok || len(items) == 0 {
+		*errs = append(*errs, path+": expected non-empty array of tables")
+		return
+	}
+	for i, item := range items {
+		p := fmt.Sprintf("%s[%d]", path, i)
+		m, ok := item.(map[string]any)
+		if !ok {
+			*errs = append(*errs, fmt.Sprintf("%s: expected table, got %T", p, item))
+			continue
+		}
+		for _, key := range sortedMapKeys(m) {
+			if key != "kind" && key != "name" && key != "url" {
+				*errs = append(*errs, p+"."+key+": unknown field")
+			}
+		}
+		validateNonEmptyString(m["kind"], p+".kind", errs)
+		validateNonEmptyString(m["name"], p+".name", errs)
+		kind, _ := m["kind"].(string)
+		if kind != "apt-ppa" && kind != "dnf-copr" && kind != "scoop-bucket" && kind != "brew-tap" {
+			*errs = append(*errs, p+".kind: unknown source kind")
+		}
+		if rawURL, exists := m["url"]; exists {
+			validateNonEmptyString(rawURL, p+".url", errs)
+		}
 	}
 }
 

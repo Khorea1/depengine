@@ -229,7 +229,7 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 
 	for _, tool := range tools {
 		for _, mc := range tool.Methods {
-			if mc.Kind == "github" {
+			if _, hasRepo := mc.Config["repo"]; hasRepo {
 				mc.Config["_current_arch"] = m["arch"]
 				mc.Config["_current_os"] = m["os"]
 				continue
@@ -363,6 +363,7 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 				tool.Requires = nil
 			}
 		}
+		tool.DependencyOnly, _ = valMap["dependency_only"].(bool)
 		// requires_when gates individual deps by platform facts:
 		// `requires_when = { fontconfig = { target_family = ["unix"] } }`.
 		if rw, ok := valMap["requires_when"].(map[string]any); ok {
@@ -503,6 +504,24 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 			mc.OSMap = normalizeAliasMap(rawOSMap)
 			delete(t, "os_map")
 		}
+		if rawRequires, ok := t["requires"]; ok {
+			mc.Requires = toStringSlice(rawRequires)
+			delete(t, "requires")
+		}
+		if rawSources, ok := t["sources"].([]any); ok {
+			for _, raw := range rawSources {
+				m, ok := raw.(map[string]any)
+				if !ok {
+					continue
+				}
+				source := Source{}
+				source.Kind, _ = m["kind"].(string)
+				source.Name, _ = m["name"].(string)
+				source.URL, _ = m["url"].(string)
+				mc.Sources = append(mc.Sources, source)
+			}
+			delete(t, "sources")
+		}
 		for k, v := range t {
 			mc.Config[k] = v
 		}
@@ -561,7 +580,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	var nonNativeKeys []string
 	var nativeBlockConfig map[string]any
 
-	for _, k := range sortedKeys(valMap, "requires", "requires_when", "pre_install", "post_install", "tags", "method_prefer", "method_only", "when", "kind") {
+	for _, k := range sortedKeys(valMap, "requires", "requires_when", "dependency_only", "pre_install", "post_install", "tags", "method_prefer", "method_only", "when", "kind") {
 		if k == "native" {
 			if m, ok := valMap[k].(map[string]any); ok {
 				nativeBlockConfig = m
@@ -602,12 +621,31 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 		osMap := normalizeAliasMap(cfg["os_map"])
 		delete(cfg, "arch_map")
 		delete(cfg, "os_map")
+		methodRequires := toStringSlice(cfg["requires"])
+		delete(cfg, "requires")
+		var methodSources []Source
+		if rawSources, ok := cfg["sources"].([]any); ok {
+			for _, raw := range rawSources {
+				m, ok := raw.(map[string]any)
+				if !ok {
+					continue
+				}
+				source := Source{}
+				source.Kind, _ = m["kind"].(string)
+				source.Name, _ = m["name"].(string)
+				source.URL, _ = m["url"].(string)
+				methodSources = append(methodSources, source)
+			}
+		}
+		delete(cfg, "sources")
 		methods = append(methods, &MethodCandidate{
-			Kind:    "native",
-			When:    when,
-			Config:  cfg,
-			ArchMap: archMap,
-			OSMap:   osMap,
+			Kind:     "native",
+			When:     when,
+			Config:   cfg,
+			ArchMap:  archMap,
+			OSMap:    osMap,
+			Requires: methodRequires,
+			Sources:  methodSources,
 		})
 	}
 

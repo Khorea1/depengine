@@ -17,6 +17,8 @@ const (
 	IntegerOrString FieldType = "integer_or_string"
 	StringMap       FieldType = "string_map"
 	Command         FieldType = "command"
+	StringList      FieldType = "string_list"
+	StringStringMap FieldType = "string_string_map"
 )
 
 // Field describes one adapter-facing config field.
@@ -66,17 +68,27 @@ func withoutField(entry map[string]Field, excluded string) map[string]Field {
 	return out
 }
 
-var downloadFields = map[string]Field{
-	"url":                  {Type: String, Required: true, NonEmpty: true},
+var artifactFields = map[string]Field{
+	"url":                  {Type: String, NonEmpty: true},
+	"repo":                 {Type: String, NonEmpty: true},
+	"asset":                {Type: String, NonEmpty: true},
+	"release":              {Type: String},
+	"branch":               {Type: String, NonEmpty: true},
 	"checksum":             {Type: String},
 	"checksum_url":         {Type: String},
 	"checksum_file_format": {Type: String, Enum: []string{"sha256sum", "bsd", "raw"}},
 	"signature_url":        {Type: String},
 	"signing_key":          {Type: String},
-	"extract_to":           {Type: String},
-	"binary":               {Type: String},
-	"sudo_required":        {Type: Boolean},
 }
+
+var downloadFields = fields(artifactFields, map[string]Field{
+	"extract_to":       {Type: String},
+	"binary":           {Type: String},
+	"sudo_required":    {Type: Boolean},
+	"strip_components": {Type: Integer},
+	"entrypoints":      {Type: StringStringMap},
+	"link_dir":         {Type: String},
+})
 
 // Contracts is the single source of truth for method kinds, ordering and
 // adapter-facing schema fields. Keep entries in default preference order;
@@ -84,7 +96,7 @@ var downloadFields = map[string]Field{
 var Contracts = []Contract{
 	{Kind: "native", DefaultOrder: 1, Fields: fields(pkgField, map[string]Field{"pkg_overrides": {Type: StringMap}}), AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "scoop", DefaultOrder: 2, Fields: pkgField, ImplicitDistroFamily: []string{"windows"}, AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "choco", DefaultOrder: 3, Fields: pkgField, ImplicitDistroFamily: []string{"windows"}, AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "choco", DefaultOrder: 3, Fields: fields(pkgField, map[string]Field{"prerelease": {Type: Boolean}}), ImplicitDistroFamily: []string{"windows"}, AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "cargo", DefaultOrder: 4, Fields: fields(pkgField, map[string]Field{"git": {Type: String}}), AllowString: true, AllowTrue: true, CanRemove: true},
 	packageContract("go", 5, true),
 	packageContract("pipx", 6, true),
@@ -101,7 +113,10 @@ var Contracts = []Contract{
 	packageContract("vscode", 17, false),
 	packageContract("vscodium", 18, false),
 	packageContract("flatpak", 19, true),
-	packageContract("snap", 20, true),
+	{Kind: "snap", DefaultOrder: 20, Fields: fields(pkgField, map[string]Field{
+		"confinement": {Type: String, Enum: []string{"strict", "classic", "devmode"}},
+		"channel":     {Type: String, Enum: []string{"stable", "candidate", "beta", "edge"}},
+	}), AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "cask", DefaultOrder: 21, Fields: pkgField, ImplicitDistroFamily: []string{"macos"}, AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "mas", DefaultOrder: 22, Fields: pkgField, ImplicitDistroFamily: []string{"macos"}, AllowString: true, AllowTrue: true},
 	packageContract("appman", 23, true),
@@ -122,13 +137,14 @@ var Contracts = []Contract{
 	}), CanRemove: true},
 	{Kind: "android", DefaultOrder: 32, Fields: downloadFields},
 	{Kind: "git", DefaultOrder: 33, Fields: map[string]Field{
-		"url":        {Type: String, Required: true, NonEmpty: true},
-		"branch":     {Type: String},
-		"depth":      {Type: IntegerOrString},
-		"build":      {Type: Command},
-		"extract_to": {Type: String},
-		"artifact":   {Type: String},
-		"binary":     {Type: String},
+		"url":           {Type: String, Required: true, NonEmpty: true},
+		"branch":        {Type: String},
+		"depth":         {Type: IntegerOrString},
+		"build":         {Type: Command},
+		"extract_to":    {Type: String},
+		"artifact":      {Type: String},
+		"binary":        {Type: String},
+		"managed_paths": {Type: StringList},
 	}, CanRemove: true},
 	{Kind: "github", DefaultOrder: 34, Fields: fields(withoutField(downloadFields, "url"), map[string]Field{
 		"repo":    {Type: String, Required: true, NonEmpty: true},
@@ -137,6 +153,10 @@ var Contracts = []Contract{
 		"branch":  {Type: String, NonEmpty: true},
 	}), MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true},
 	{Kind: "http", DefaultOrder: 35, Fields: downloadFields, CanRemove: true},
+	{Kind: "msi", DefaultOrder: 36, Fields: fields(artifactFields, map[string]Field{
+		"product_name": {Type: String, Required: true, NonEmpty: true},
+		"publisher":    {Type: String},
+	}), MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, ImplicitDistroFamily: []string{"windows"}, CanRemove: true},
 }
 
 var (

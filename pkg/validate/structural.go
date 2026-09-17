@@ -2,6 +2,8 @@ package validate
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -74,10 +76,50 @@ func validateRequiredFields(s *config.Schema) *Result {
 					r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, present[0]), Message: fmt.Sprintf("%s method for tool %q sets mutually exclusive fields %s", contract.Kind, toolName, strings.Join(present, " and "))})
 				}
 			}
+			if contract.Kind == "http" || contract.Kind == "github" || contract.Kind == "appimage" || contract.Kind == "android" || contract.Kind == "msi" {
+				_, hasURL := method.Config["url"]
+				_, hasRepo := method.Config["repo"]
+				_, hasAsset := method.Config["asset"]
+				if contract.Kind == "github" {
+					hasRepo = true
+				}
+				if hasURL == hasRepo || hasRepo != hasAsset {
+					field := "url"
+					if hasRepo || hasAsset {
+						field = "artifact"
+					}
+					r.Add(ValidationError{Code: ErrRequiredField, Field: fieldPath(toolName, i, field), Message: fmt.Sprintf("%s method for tool %q requires exactly one of url or repo+asset", contract.Kind, toolName)})
+				}
+			}
+			if strip, ok := method.Config["strip_components"].(int64); ok && strip < 0 {
+				r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, "strip_components"), Message: "strip_components must be non-negative"})
+			}
+			if method.Kind == "git" {
+				validateManagedPaths(toolName, i, method.Config["managed_paths"], r)
+			}
 			validateChecksum(toolName, i, method, r)
 		}
 	}
 	return r
+}
+
+func validateManagedPaths(tool string, index int, raw any, result *Result) {
+	values, ok := raw.([]any)
+	if !ok {
+		return
+	}
+	home, _ := os.UserHomeDir()
+	shared := map[string]bool{"/": true, "/bin": true, "/sbin": true, "/usr": true, "/usr/bin": true, "/usr/local": true, "/usr/local/bin": true, "/opt": true}
+	for _, rawPath := range values {
+		path, ok := rawPath.(string)
+		if !ok {
+			continue
+		}
+		path = filepath.Clean(config.ExpandHomeDir(path))
+		if !filepath.IsAbs(path) || path == filepath.Dir(path) || path == filepath.Clean(home) || shared[path] {
+			result.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(tool, index, "managed_paths"), Message: fmt.Sprintf("unsafe managed path %q: expected an absolute, exact owned target", path)})
+		}
+	}
 }
 
 func methodFieldTypeMatches(value any, fieldType methodkind.FieldType) bool {
@@ -100,6 +142,28 @@ func methodFieldTypeMatches(value any, fieldType methodkind.FieldType) bool {
 			return err == nil
 		}
 	case methodkind.StringMap:
+		values, ok := value.(map[string]any)
+		if !ok {
+			return false
+		}
+		for _, value := range values {
+			if _, ok := value.(string); !ok {
+				return false
+			}
+		}
+		return true
+	case methodkind.StringList:
+		values, ok := value.([]any)
+		if !ok {
+			return false
+		}
+		for _, value := range values {
+			if _, ok := value.(string); !ok {
+				return false
+			}
+		}
+		return true
+	case methodkind.StringStringMap:
 		values, ok := value.(map[string]any)
 		if !ok {
 			return false
@@ -265,7 +329,15 @@ func validatePlaceholders(s *config.Schema) *Result {
 				if !ok || strVal == "" {
 					continue
 				}
-				scanPlaceholders(strVal, fieldPath(toolName, i, key), r)
+				field := fieldPath(toolName, i, key)
+				if key != "asset" {
+					for _, token := range []string{"version", "arch_any", "os_any"} {
+						if strings.Contains(strVal, "{"+token+"}") {
+							r.Add(ValidationError{Code: WarnUnknownPlaceholder, Field: field, Message: fmt.Sprintf("placeholder {%s} is only valid in a repo+asset pattern", token)})
+						}
+					}
+				}
+				scanPlaceholders(strVal, field, r)
 			}
 		}
 	}

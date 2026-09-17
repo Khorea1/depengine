@@ -31,17 +31,18 @@ var DefaultBuckets = methodkind.DefaultBuckets
 
 // Tool is one entry under [tools].
 type Tool struct {
-	Name         string                `merge:"overwrite"`
-	PreInstall   []Hook                `merge:"overwrite"`
-	PostInstall  []Hook                `merge:"overwrite"`
-	RequiresWhen map[string]*Condition `merge:"overwrite"`
-	Requires     []string              `merge:"overwrite"`
-	Methods      []*MethodCandidate    `merge:"methods"`
-	MethodPrefer []string              `merge:"overwrite"`
-	MethodOnly   []string              `merge:"overwrite"`
-	IsSimple     bool                  `merge:"overwrite"`
-	Tags         []string              `merge:"union"`
-	Ecosystem    string                `merge:"overwrite"`
+	Name           string                `merge:"overwrite"`
+	PreInstall     []Hook                `merge:"overwrite"`
+	PostInstall    []Hook                `merge:"overwrite"`
+	RequiresWhen   map[string]*Condition `merge:"overwrite"`
+	Requires       []string              `merge:"overwrite"`
+	Methods        []*MethodCandidate    `merge:"methods"`
+	MethodPrefer   []string              `merge:"overwrite"`
+	MethodOnly     []string              `merge:"overwrite"`
+	IsSimple       bool                  `merge:"overwrite"`
+	Tags           []string              `merge:"union"`
+	Ecosystem      string                `merge:"overwrite"`
+	DependencyOnly bool                  `merge:"overwrite"`
 }
 
 // Hook is an explicitly tokenized command. Run[0] is the executable and the
@@ -133,6 +134,8 @@ func cloneMethod(method *MethodCandidate) *MethodCandidate {
 		return nil
 	}
 	out := *method
+	out.Requires = append([]string(nil), method.Requires...)
+	out.Sources = append([]Source(nil), method.Sources...)
 	out.Config = make(map[string]any, len(method.Config))
 	for key, value := range method.Config {
 		out.Config[key] = value
@@ -146,11 +149,20 @@ func cloneMethod(method *MethodCandidate) *MethodCandidate {
 
 // MethodCandidate is one way to install the parent Tool.
 type MethodCandidate struct {
-	Kind    string
-	Label   string
-	When    *Condition
-	Config  map[string]any
-	Err     error
-	ArchMap map[string]string
-	OSMap   map[string]string
+	Kind     string
+	Label    string
+	When     *Condition
+	Config   map[string]any
+	Err      error
+	ArchMap  map[string]string
+	OSMap    map[string]string
+	Requires []string
+	Sources  []Source
+}
+
+// Source is repository configuration scoped to a single method candidate.
+type Source struct {
+	Kind string
+	Name string
+	URL  string
 }
