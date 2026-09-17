@@ -52,10 +52,10 @@ Full flag list: [cli-reference.md](cli-reference.md).
     [tools.NAME.method]  # one sub-table per candidate method
 ```
 
-**Golden rule:** tool-level fields (`requires`, `pre_install`, `postinstall`,
+**Golden rule:** tool-level fields (`requires`, `pre_install`, `post_install`,
 `tags`) live outside methods; method-level fields (`kind`, `when`, `url`,
 `build`, `checksum`, `pkg`, `git`) live inside.
-Tool-level fields can carry conditions: `postinstall = { cmd = "...", when =
+Tool-level fields can carry conditions: `post_install = { cmd = "...", when =
 { target_family = ["unix"] } }` skips the hook when it can't apply, and
 `requires_when = { fontconfig = { target_family = ["unix"] } }` drops the
 dependency from the graph when its condition fails.
@@ -64,10 +64,7 @@ dependency from the graph when its condition fails.
 [defaults]
 manager = "native"
 aur_helper = "paru"                        # or "yay"
-method_order = ["native", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm",
-  "bun", "gem", "yarn", "yarn-berry", "composer", "apm", "vscode",
-  "vscodium", "flatpak", "snap", "cask", "mas", "appman", "sdkman", "steamcmd",
-  "pacstall", "aur", "conda", "asdf", "container", "appimage", "android", "git", "github", "http", "msi"]
+method_order = ["native", "cargo", "github", "http"] # preferred prefix; defaults remain
 ```
 
 ---
@@ -114,9 +111,13 @@ legacy = { method_only = ["aur", "git"], aur = { pkg = "legacy" }, git = { url =
 
 Details: [schema-reference.md#per-tool-method-control](schema-reference.md#per-tool-method-control).
 
+`kind` selects the adapter. A custom subtable name is only a candidate label,
+and TOML declaration order never sets execution priority. `method_prefer` is a
+prefix with fallbacks; `method_only` is exclusive.
+
 ---
 
-## All 36 methods
+## Installation methods
 
 Full one-liner-per-method table (with `git`/`http` field lists):
 [schema-reference.md#method-reference](schema-reference.md#method-reference).
@@ -126,19 +127,18 @@ Native:      native (auto-detects apt/pacman/dnf/brew/...)
 Language:    cargo, go, pip, pipx, uv, npm, pnpm, bun, gem, yarn,
              yarn-berry, composer, apm
 Desktop:     flatpak, snap, vscode, vscodium, cask, mas, appman
-Windows:     winget, scoop, choco
+Windows:     winget, scoop, choco, msi
 Specialized: sdkman, steamcmd, pacstall, aur, conda, asdf, container,
              appimage, android
 Other:       git, github, http
-Windows installer: msi
 ```
 
 ---
 
 ## Placeholders
 
-`{arch}` `{os}` `{distro_family}` `{kernel}` `{libc}` `{pkg}` `{latest}` and
-10 more — full table: [schema-reference.md#placeholders](schema-reference.md#placeholders).
+Runtime URL placeholders and GitHub asset-matching placeholders have different
+owners. See the full table: [schema-reference.md#placeholders](schema-reference.md#placeholders).
 
 ---
 

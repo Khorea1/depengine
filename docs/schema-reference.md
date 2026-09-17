@@ -10,14 +10,20 @@ This is the complete reference for every way to declare a tool in
 specific.
 
 A schema describes **tools** (dependencies) and **methods** (how to install
-each one). The engine tries methods in `method_order` until one succeeds.
+each one). The engine tries candidates in the effective configured method
+order until one succeeds; TOML declaration order does not set priority.
+
+All TOML snippets on this page are intentionally non-standalone fragments to
+place under a version-1 document's `[tools]` table unless they show a
+`[tools.NAME...]` path. Use [`schema.example.toml`](../schema.example.toml) for
+a complete, executable schema.
 
 **On this page:**
 
 - [Naming a tool](#naming-a-tool) — simple names, per-manager names, ecosystem buckets
 - [Custom sources](#custom-sources) — git forks, manual builds, HTTP artifacts
-- [Method reference](#method-reference) — one-line syntax for all 36 methods
-- [Hooks & dependencies](#hooks--dependencies) — pre-install hooks, tool-to-tool `requires`
+- [Method reference](#method-reference) — one-line syntax for every method
+- [Hooks & dependencies](#hooks--dependencies) — hooks before installation, tool-to-tool `requires`
 - [Platform targeting](#platform-targeting) — `when` conditions, multi-method fallback
 - [Method control](#per-tool-method-control) — `method_prefer`, `method_only`
 - [Placeholders](#placeholders) — `{arch}`, `{os}`, `{latest}`, and more
@@ -84,7 +90,7 @@ prettier = { node = true }     # ≡ { npm = "prettier", pnpm = "prettier", bun 
 
 ## Custom sources
 
-### cargo/go with a custom git source
+### Cargo with a custom git source
 
 For when you need a fork or a source other than the official registry:
 
@@ -102,10 +108,12 @@ ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = [{ run =
 |-------|----------|--------------|
 | `url` | yes | Git repository URL |
 | `build` | no | Command `{ run = ["program", "arg", ...] }`, or a list of commands, run in the cloned directory. Legacy strings remain POSIX `sh -c` shorthand. |
-| `extract_to` | no | Directory to copy build artifacts into |
 | `branch` | no | Branch or tag to clone (default: repo's default branch) |
-| `depth` | no | Clone depth — `"1"` for shallow (default), `"0"` for full history |
+| `depth` | no | Clone depth as an integer or string — `1` is the default; `0` requests full history |
+| `extract_to` | no | Directory to copy build artifacts into |
+| `artifact` | no | File or directory inside the clone to copy to `extract_to`; defaults to the clone root |
 | `binary` | no | Binary name for check/remove; required for removal from shared directories |
+| `managed_paths` | no | Absolute paths owned by the recipe; all must exist for `Check`, and removal deletes only these exact targets |
 
 ### HTTP: download an artifact (deb, zip, binary)
 
@@ -128,7 +136,9 @@ fastfetch = { http = {
 
 | Field | Required | Description |
 |-------|----------|--------------|
-| `url` | yes | Download URL; supports `{latest}` |
+| `url` or `repo` + `asset` | yes | Exactly one artifact source. Literal URLs support runtime URL placeholders such as `{latest}`, `{arch}`, and `{os}`. `repo` + `asset` uses GitHub release asset matching. |
+| `release` | no | Named GitHub release tag for `repo` + `asset` |
+| `branch` | no | GitHub release tag expressing rolling-branch intent; when set, it takes precedence over `release` |
 | `checksum` | no | `"sha256:<hex>"`, `"md5:<hex>"`, `"sha1:<hex>"`, `"sha512:<hex>"`, or `"<algo>:auto"` |
 | `checksum_url` | no | Explicit URL for the checksum file (overrides auto patterns) |
 | `checksum_file_format` | no | `"sha256sum"` (default), `"bsd"`, or `"raw"` |
@@ -138,7 +148,7 @@ fastfetch = { http = {
 | `strip_components` | no | Remove this many leading archive path components. Applies equally to tar and zip; negative or empty results are rejected. |
 | `entrypoints` | no | Map stable command names to relative files inside `extract_to`, e.g. `{ nvim = "bin/nvim" }`. |
 | `link_dir` | no | Launcher directory. Defaults to `~/.local/bin` for user payloads and `/usr/local/bin` for system payloads. |
-
+| `binary` | no | Installed filename for a direct asset, or payload name used by check/remove |
 | `sudo_required` | no | Boolean, default is **path-derived**: `false` when `extract_to` is inside the user's home (e.g. `~/.local/share/fonts`), `true` for system paths (e.g. the `/usr/local/bin` default). Set explicitly to override. |
 
 Archives are extracted into private staging, validated, then committed as one
@@ -206,7 +216,7 @@ order, and has no global `gh` alias. This order only ranks declared candidates;
 it does not inject `github` automatically. A label such as `[tools.foo.gh]` is
 valid only with `kind = "github"`.
 
-`asset` supports two placeholders that are resolved **by this adapter only**
+`asset` supports three placeholders resolved by GitHub release asset matching
 (they are not part of the regular placeholder table below, and are never
 expanded to a single fixed value ahead of time — see the note at the end of
 the [Placeholders](#placeholders) section):
@@ -234,7 +244,7 @@ for tools you exec via `docker run`/`podman run` yourself, not for a CLI
 tool you expect to just call by name afterward.
 
 ```toml
-[packages.obsidian.container]
+[tools.obsidian.container]
 manager = "podman"
 source  = "lscr.io/linuxserver/obsidian"
 tag     = "latest"
@@ -254,8 +264,9 @@ means the image is already pulled. `Remove` runs `<manager> rmi
 
 ### AppImage: portable `.AppImage` binaries
 
-`appimage` resolves and downloads a `.AppImage` URL exactly like `http`
-does ({latest}/{version}/{arch}/{os}, checksum verification, retries,
+`appimage` resolves and downloads a `.AppImage` artifact exactly like `http`
+does (runtime placeholders in literal URLs, GitHub matching placeholders in
+`repo` + `asset`, checksum verification, retries,
 caching — same fields, same behavior), then does the AppImage-specific
 part `http` doesn't: installing under a **stable** name instead of the
 versioned filename the release asset ships with (e.g.
@@ -263,7 +274,7 @@ versioned filename the release asset ships with (e.g.
 `.desktop` launcher.
 
 ```toml
-[packages.obsidian.appimage]
+[tools.obsidian.appimage]
 repo    = "obsidianmd/obsidian-releases"
 asset   = "Obsidian-{version}.AppImage"
 desktop = true
@@ -289,8 +300,9 @@ set, its `.desktop` entry.
 
 ### Android: hand a `.apk` to Termux's package installer
 
-`android` resolves and downloads a `.apk` URL exactly like `http`/`appimage`
-do (`{latest}` at install time, checksum verification, retries, caching —
+`android` resolves and downloads a `.apk` artifact exactly like `http`/`appimage`
+do (runtime placeholders such as `{latest}` in literal URLs, GitHub matching
+placeholders in `repo` + `asset`, checksum verification, retries, caching —
 same fields, same behavior), then does the one thing neither of those can:
 hand the file to Android's own package installer via `termux-open` (from
 the `termux-api` package — needs the companion **Termux:API** app installed
@@ -343,15 +355,15 @@ required `product_name` and optional `publisher`. Registry matching is exact;
 install/remove use quiet `msiexec` operations, and reboot-required exit codes
 are treated as successful installs.
 
-One-line syntax for every supported method. All of them accept `when` (see
-[Platform targeting](#platform-targeting)); `git`, `github`, and `http` take extra
-fields, documented above under [Custom sources](#custom-sources).
+One-line syntax for every supported method. All accept `when` (see
+[Platform targeting](#platform-targeting)); methods with richer configuration
+are described above or alongside their examples.
 
 | Method | What it installs | Example |
 |--------|-------------------|---------|
 | `native` | Auto-detected distro manager (apt/pacman/dnf/brew/...) | `fd = { apt = "fd-find" }` |
 | `cargo` | crates.io (or a git repo via `git` sub-key) | `ripgrep = { cargo = "ripgrep" }` |
-| `go` | pkg.go.dev (or a git repo via `git` sub-key) | `fzf = { go = "github.com/junegunn/fzf" }` |
+| `go` | Go module path via `go install` | `fzf = { go = "github.com/junegunn/fzf" }` |
 | `pip` | Python packages | `organize = { pip = "organize-tool" }` |
 | `pipx` | Python CLI tools, isolated environments | `organize = { pipx = "organize-tool" }` |
 | `uv` | Python packages via `uv tool` | `organize = { uv = "organize-tool" }` |
@@ -484,7 +496,7 @@ The plain-string form stays valid and is unconditional.
 
 ```toml
 [tools.DepartureMono]
-postinstall = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
+post_install = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
 
   [tools.DepartureMono.aur]
   pkg  = "otf-departure-mono-nerd"
@@ -500,7 +512,7 @@ postinstall = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
   when       = { target_family = ["unix"] }
 ```
 
-> **Golden rule:** tool-level fields (`requires`, `postinstall`,
+> **Golden rule:** tool-level fields (`requires`, `post_install`,
 > `pre_install`) go _outside_ the method block. Method-specific fields
 > (`kind`, `when`, `requires`, `sources`, `url`, `build`, `checksum`, `extract_to`, `pkg`, `git`) go
 > _inside_.
@@ -626,15 +638,23 @@ legacy = { method_only = ["aur", "git"], aur = { pkg = "legacy" }, git = { url =
   `method_order`; methods not listed are still tried as fallbacks.
 - **`method_only`** restricts the tool to exactly these methods, in this
   order — the global `method_order` is ignored for this tool.
-- Both live at tool level (same level as `requires`, `tags`, `postinstall`),
+- Both live at tool level (same level as `requires`, `tags`, `post_install`),
   not inside a method block.
+
+`kind` selects the adapter. A candidate subtable name selects that same kind
+only when it is a known method name; otherwise it is a label and the subtable
+must set `kind` explicitly. Order selectors match either a kind or an exact
+candidate label. TOML declaration order is never an order control, and
+`[defaults].method_order` plus `method_prefer` are prefixes: unlisted default
+methods remain available. Only `method_only` removes the remainder.
 
 ---
 
 ## Placeholders
 
-Placeholders are `{name}` tokens expanded in every string field before
-installation. `depengine validate` checks them two ways:
+Placeholders are `{name}` tokens. Platform-fact placeholders are expanded in
+string fields before installation; adapter-owned placeholders are interpreted
+later by the adapter that owns their field.
 
 - **Unknown name** — a typo like `{archh}` isn't in the table below, so it's
   left untouched by `Expand` and flagged as `W_UNKNOWN_PLACEHOLDER`. This
@@ -642,12 +662,9 @@ installation. `depengine validate` checks them two ways:
   `{Arch}`, `{ARCH}`, or `{arch-name}` — placeholder names are matched
   case-sensitively, so any of those are "unknown" even though `{arch}` is
   valid.
-- **Wrong method kind** — `{pkg}` and `{latest}` are only ever substituted
-  by specific adapters (see the "Valid for" column). Using either inside a
-  method `Kind` its adapter doesn't run for is a known name in the wrong
-  place, flagged separately as `W_MISPLACED_PLACEHOLDER` — the token is
-  never rejected outright, but it will stay literal in the resolved URL or
-  command at runtime, so treat the warning as a real bug in the schema.
+- **Wrong owner or field** — adapter-owned tokens only have meaning in the
+  locations shown below. In particular, asset-matching tokens in a literal
+  `url` are not generic substitutions and remain unresolved.
 
 | Placeholder | Source | Valid for | Example |
 |-------------|--------|-----------|---------|
@@ -665,28 +682,28 @@ installation. `depengine validate` checks them two ways:
 | `{confidence}` | `detect_os.sh` | any method | `high`, `medium` |
 | `{is_wsl}` / `{is_container}` / `{is_android}` | `detect_os.sh` | any method | `true`, `false` |
 | `{pkg}` | Adapter-owned — substituted at install time | **`native` only** (or a manager name used directly as `kind`, e.g. `kind = "apt"`) | package name |
-| `{latest}` | Adapter-owned — resolved via GitHub API | **`git` and `http` only** | `v1.2.3` |
-| `{arch_any}` | Adapter-owned — matched (not substituted) against real asset names | **`github` only**, `asset` field | matches `x86_64`/`amd64`/`x64`, etc. |
-| `{os_any}` | Adapter-owned — matched (not substituted) against real asset names | **`github` only**, `asset` field | matches `darwin`/`macos`/`osx`, etc. |
+| `{latest}` | Adapter-owned — resolved via GitHub API | Literal `url` in `git`, `http`, `appimage`, `android`, or `msi` | `v1.2.3` |
+| `{version}` | Adapter-owned — matched against a resolved GitHub release tag | `asset` in `github`, `http`, `appimage`, `android`, or `msi` when using `repo` + `asset` | matches `v1.2.3` or `1.2.3` |
+| `{arch_any}` | Adapter-owned — matched (not substituted) against real asset names | Same `repo` + `asset` methods, `asset` field only | matches `x86_64`/`amd64`/`x64`, etc. |
+| `{os_any}` | Adapter-owned — matched (not substituted) against real asset names | Same `repo` + `asset` methods, `asset` field only | matches `darwin`/`macos`/`osx`, etc. |
 
-The `detect_os.sh`-sourced placeholders (everything above `{pkg}`/`{latest}`)
-are expanded for every method `Kind` — they come from facts gathered once
-per run, not from a specific adapter, so there's no wrong place to use them.
-`{pkg}` and `{latest}` are different: each is substituted by exactly one
-adapter, so putting `{pkg}` on a `git`/`http` method, or `{latest}` on a
-`native` method, produces a schema that validates other fields fine but
-never gets that token replaced.
+The `detect_os.sh`-sourced placeholders are expanded for every method kind.
+The remaining tokens are field-specific: `{pkg}` belongs to native commands,
+`{latest}` belongs to literal artifact URLs, and `{version}`/`{arch_any}`/
+`{os_any}` belong only to GitHub release `asset` matching.
 
 ```toml
 # {arch}/{os} expand from detect_os.sh before installation:
 fastfetch = { http = { url = "https://example.com/{os}/{arch}/fastfetch.deb" } }
 
-# {latest} is resolved by the http/git adapter via GitHub's API:
+# {latest} is resolved in a literal artifact URL via GitHub's API:
 fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb" } }
 
+# Matching placeholders belong to repo+asset, never a literal URL:
+yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }
+
 # WRONG: {pkg} on an http method is never substituted — it ships as a
-# literal "{pkg}" in the URL. depengine validate flags this as
-# W_MISPLACED_PLACEHOLDER. {pkg} only works on a native method:
+# literal "{pkg}" in the URL. {pkg} only works on a native method:
 # broken:  sometool = { http = { url = "https://example.com/{pkg}.deb" } }
 # correct: sometool = { apt = "sometool-bin" }  # native, {pkg} substituted internally
 ```

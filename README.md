@@ -158,7 +158,7 @@ project's schema. Three rules to remember:
    accidentally injecting a personal tool into a shared project. Opt in with
    `[manifest] allow_new_tools = true`.
 3. **A few fields can run arbitrary code** (`pre_install`, `post_install`,
-   `build`, `build_cmd`). Your manifest can set defaults for these, but the
+   `build`). Your manifest can set defaults for these, but the
    schema still overrides them.
 
 Full breakdown: [manifest merge rules](docs/schema-reference.md#manifest-merge-rules).
@@ -196,7 +196,7 @@ Every flag and default lives in **[`docs/cli-reference.md`](docs/cli-reference.m
 | **Native** | `native` (auto-detects apt/pacman/dnf/brew/...) + per-manager aliases |
 | **Language** | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `pnpm`, `bun`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
 | **Desktop** | `flatpak`, `snap`, `vscode`, `vscodium`, `cask` (macOS), `mas` (Mac App Store), `appman` (AppImages) |
-| **Windows** | `winget`, `scoop`, `choco` |
+| **Windows** | `winget`, `scoop`, `choco`, `msi` |
 | **Specialized** | `sdkman`, `steamcmd`, `pacstall`, `aur` (configurable helper), `conda`, `asdf`, `container` (docker/podman pull), `appimage` (portable `.AppImage` under a stable name), `android` (`.apk` via Termux's package installer) |
 | **Other** | `git` (clone + build), `github` (recommended for GitHub release assets), `http` (download + extract + checksum) |
 
@@ -266,14 +266,15 @@ checksum_file_format = "sha256sum"   # sha256sum | bsd | raw
 
 ## Placeholders
 
-Placeholders like `{arch}`, `{os}`, and `{latest}` get expanded in schema
-fields before installation:
+Runtime URL placeholders such as `{arch}`, `{os}`, and `{latest}` may be used
+in literal download URLs. GitHub release asset patterns additionally support
+`{version}`, `{os_any}`, and `{arch_any}` for matching real asset names:
 
 ```toml
 yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }
 ```
 
-Full list of all 17 placeholders: [schema-reference.md#placeholders](docs/schema-reference.md#placeholders).
+Full placeholder and ownership table: [schema-reference.md#placeholders](docs/schema-reference.md#placeholders).
 
 ## Editor support
 

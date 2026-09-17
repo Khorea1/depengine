@@ -21,10 +21,18 @@ func TestGeneratedJSONSchemaIsCurrent(t *testing.T) {
 }
 
 func TestExamplesMatchRuntimeGrammar(t *testing.T) {
-	if _, err := ParseProjectSchema("../../schema.example.toml", nil); err != nil {
-		t.Fatalf("schema.example.toml: %v", err)
+	tests := []struct {
+		path  string
+		parse func(string, map[string]string) (*Schema, error)
+	}{
+		{path: "../../schema.example.toml", parse: ParseProjectSchema},
+		{path: "../../manifest.example.toml", parse: ParseManifest},
 	}
-	if _, err := ParseManifest("../../manifest.example.toml", nil); err != nil {
-		t.Fatalf("manifest.example.toml: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			if _, err := tt.parse(tt.path, nil); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

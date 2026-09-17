@@ -37,11 +37,12 @@ schema_version = 1
 #
 # ATTRIBUTES AVAILABLE PER METHOD:
 #
-#   git:   url, build, branch, depth, binary, checksum, signature_url
+#   git:   url, build, branch, depth, extract_to, artifact, binary,
+#          managed_paths
 #   http:  url, checksum, checksum_url, checksum_file_format, signature_url,
 #          signing_key, extract_to, binary
-#   native/aur/cargo/go/pip/pipx/uv/npm/bun/pnpm/gem:
-#          pkg, git (for cargo/go install --git), when
+#   cargo: pkg, git, when
+#   native/aur/go/pip/pipx/uv/npm/bun/pnpm/gem: pkg, when
 #
 #   Tool-level: requires, pre_install, post_install, tags
 #   Conditional: when = { distro_family = [...] }
@@ -181,7 +182,8 @@ slack         = { flatpak = "com.slack.Slack" }
 # SECTION 2 — Installation via git (clone + manual build)
 # ==============================================================================
 # The engine clones the repository and runs `build` inside it.
-# Attributes: url (required), build, branch, depth (default 1), binary, checksum
+# Attributes: url (required), build, branch, depth (default 1), extract_to,
+# artifact, binary, managed_paths
 # ==============================================================================
 
 ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install" } }
@@ -424,8 +426,7 @@ tags = ["lint", "containers"]
 
 # ==============================================================================
 # SECTION 5 — Method kinds not exercised anywhere above.
-# `defaults.method_order` in schema.example.toml lists every kind the engine
-# understands; the ones below (yarn classic, Yarn Berry, Composer, apm,
+# The ones below (yarn classic, Yarn Berry, Composer, apm,
 # VS Code/VSCodium extensions, Homebrew casks, the Mac App Store, SDKMAN,
 # SteamCMD, Pacstall, asdf, container, appimage, android, and Windows's
 # three competing managers) had no working example anywhere in this repo
@@ -545,10 +546,10 @@ asdf = "erlang"
 # is ~/.local/bin (user-scope); pointing install_dir at a system path is how
 # a system-wide install is requested — there's no separate "system" boolean,
 # sudo_required is derived from the path the same way `http` derives it from
-# extract_to. NOTE: {version} is NOT resolved here (only {latest}, the
-# release tag) — that placeholder only exists for the `github` method's
-# asset-matching, so a URL can't rely on a version string that differs from
-# the literal tag (e.g. a tag without its "v" prefix). ---
+# extract_to. NOTE: {version} is NOT resolved in a literal URL (only {latest},
+# the release tag) — it belongs to the `asset` field of a `repo` + `asset`
+# source, so a URL can't rely on a version string that differs from the literal
+# tag (e.g. a tag without its "v" prefix). ---
 [packages.obsidian-appimage]
   [packages.obsidian-appimage.appimage]
   url     = "https://github.com/obsidianmd/obsidian-releases/releases/download/{latest}/Obsidian-{latest}.AppImage"
@@ -661,10 +662,11 @@ tags = ["personal", "dotfiles"]
 #       → full block: [packages.NAME] + [packages.NAME.method]
 #
 # Fields that ALWAYS stay at the package level (outside method):
-#   requires, pre_install, post_install, tags
+#   requires, requires_when, dependency_only, pre_install, post_install,
+#   tags, method_prefer, method_only
 #
 # Fields that ALWAYS stay inside the method:
 #   kind, when, pkg, url, build, branch, depth, checksum, checksum_url,
-#   checksum_file_format, signature_url, signing_key, extract_to,
-#   binary, git
+#   requires, sources, checksum_file_format, signature_url, signing_key,
+#   extract_to, artifact, binary, managed_paths, git
 # ==============================================================================

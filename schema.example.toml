@@ -6,7 +6,7 @@ schema_version = 1
 # ==============================================================================
 # This file describes how to install dependencies in a distro-agnostic way.
 # The engine (the program that reads this file) decides HOW to install each
-# tool, trying declared methods in order until one succeeds.
+# tool, trying declared methods in the configured effective order until one succeeds.
 #
 # GOLDEN RULE: everything OMITTED = default behavior defined by the engine
 # (e.g., package name = tool name, if nothing is specified).
@@ -23,8 +23,9 @@ manager = "native"
 aur_helper = "paru"
 
 # When a tool declares MORE THAN ONE candidate method (e.g., cargo, go, aur, git),
-# this list defines the trial order. The engine stops at the first one that works.
-method_order = ["native", "scoop", "choco", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm", "bun", "gem", "yarn", "yarn-berry", "composer", "apm", "vscode", "vscodium", "flatpak", "snap", "cask", "mas", "appman", "sdkman", "steamcmd", "pacstall", "aur", "conda", "asdf", "container", "appimage", "android", "git", "github", "http", "msi"]
+# this prefix defines the preferred trial order. Unlisted defaults remain as
+# fallbacks; use a tool's method_only when the list must be exclusive.
+method_order = ["native", "cargo", "github", "http"]
 
 
 # ==============================================================================
@@ -70,8 +71,8 @@ lf       = { go = "github.com/gokcehan/lf" }
 
 
 # ------------------------------------------------------------------------
-# CASE 4 — cargo/go installing directly from a git repository (not from
-# crates.io / pkg.go.dev official). Sub-key `git` within the manager.
+# CASE 4 — cargo installing directly from a git repository instead of
+# crates.io. Sub-key `git` within the cargo method.
 aichat = { aur = { pkg = "aichat", when = { distro_family = ["arch"] } }, cargo = { git = "https://github.com/sigoden/aichat" } }
 matugen    = { cargo = { git = "https://github.com/InioX/matugen" } }
 
@@ -101,6 +102,10 @@ fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/release
 # Example with SHA-512 and explicit checksum_url:
 "tool-example" = { http = { url = "https://example.com/tool-{latest}.tar.gz", checksum = "sha512:auto", checksum_url = "https://example.com/SHA512SUMS" } }
 
+# Windows installer: exact product identity is required for check/remove.
+# method_only prevents the automatically injected native candidate from running.
+nvim-msi = { method_only = ["msi"], msi = { repo = "neovim/neovim", asset = "nvim-win64.msi", product_name = "Neovim", publisher = "neovim.io", when = { target_family = ["windows"] } } }
+
 # ------------------------------------------------------------------------
 # CASE 7 — Tool dependency and simultaneous package override.
 # `requires` is a TOOL-LEVEL field (not method-level): it applies no matter
@@ -117,7 +122,7 @@ fontconfig = { native = { pkg = "fontconfig", pkg_overrides = { pkg = "fontconfi
 
 # ------------------------------------------------------------------------
 # CASE 8 — Complex case: multiple competing methods + distro condition +
-# post-install hook. This CANNOT be inlined (it would be unreadable or TOML
+# hook after installation. This CANNOT be inlined (it would be unreadable or TOML
 # does not allow line breaks inside inline tables), so we promote it to a
 # full block with sub-tables.
 #
@@ -402,9 +407,11 @@ requires = []
 #       → full block: [tools.NAME] + [tools.NAME.method]
 #
 # Fields that ALWAYS stay at the tool level (outside method):
-#   requires, post_install
+#   requires, requires_when, dependency_only, pre_install, post_install,
+#   tags, method_prefer, method_only
 #
 # Fields that ALWAYS stay inside the method:
-#   when, url, build, checksum, checksum_url, checksum_file_format,
-#   signature_url, signing_key, extract_to, pkg, git
+#   kind, when, requires, sources, url, build, checksum, checksum_url,
+#   checksum_file_format, signature_url, signing_key, extract_to, artifact,
+#   binary, managed_paths, pkg, git
 # ==============================================================================
