@@ -4,6 +4,8 @@ schema_version = 1
 # ==============================================================================
 # manifest.toml — PERSONAL INSTALL CATALOG
 # ==============================================================================
+# Version 1 is the sole current contract; other versions fail closed rather
+# than enabling historical syntax.
 # This file lives at $XDG_CONFIG_HOME/depengine/manifest.toml and merges with
 # any project's schema.toml. It serves two purposes:
 #
@@ -35,19 +37,12 @@ schema_version = 1
 # by distro, or use non-native methods). Tools whose name is the same everywhere
 # do NOT need to be here.
 #
-# ATTRIBUTES AVAILABLE PER METHOD:
-#
-#   git:   url, build, branch, depth, extract_to, artifact, binary,
-#          managed_paths
-#   github: repo, asset, release, checksum, extract_to, strip_components,
-#           entrypoints, link_dir
-#   http:   url, checksum, checksum_url, checksum_file_format, signature_url,
-#           signing_key, extract_to, binary
-#   cargo: pkg, git, when
-#   native/aur/go/pip/pipx/uv/npm/bun/pnpm/gem: pkg, when
-#
-#   Tool-level: requires, pre_install, post_install, tags
-#   Conditional: when = { distro_family = [...] }
+# Method fields are adapter-specific; docs/schema-reference.md is the complete
+# contract. In particular, git accepts only url, branch, depth, build,
+# extract_to, artifact, binary, and managed_paths (plus common method fields
+# such as kind/when/requires/sources). Tool-level fields include requires,
+# requires_when, dependency_only, pre_install, post_install, tags,
+# method_prefer, and method_only.
 # ==============================================================================
 [packages]
 

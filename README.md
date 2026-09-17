@@ -52,6 +52,9 @@ to get it). The engine tries methods in order until one succeeds.
 
 ```toml
 # schema.toml
+schema_version = 1
+
+[tools]
 
 # Package name is the same everywhere — the common case.
 simple = ["zsh", "bat", "kitty", "mpv"]
@@ -139,9 +142,9 @@ The manifest does two jobs:
    each tool (cargo vs git vs http, package name per distro, custom build
    steps). Build it once, carry it across every project — no need to repeat
    complex configs in every schema.toml.
-2. **Machine-specific overrides** — when a package's name differs on your
-   distro, or you prefer a different installation method than what the
-   project's schema declares.
+2. **Machine-specific defaults** — package names and installation candidates
+   that fill gaps in the project schema. They never override a conflicting
+   project declaration.
 
 ```sh
 cp manifest.example.toml ~/.config/depengine/manifest.toml

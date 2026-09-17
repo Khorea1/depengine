@@ -43,6 +43,10 @@ Full flag list: [cli-reference.md](cli-reference.md).
 
 ## Schema structure
 
+The following is a structural fragment, not a standalone schema. Every
+document also requires `schema_version = 1`; project declarations live under
+`[tools]`, while personal manifests use `[packages]`.
+
 ```toml
 [defaults]          # global defaults (manager, aur_helper, method_order)
 [tools]             # all dependencies live here

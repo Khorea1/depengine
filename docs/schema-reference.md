@@ -13,10 +13,11 @@ A schema describes **tools** (dependencies) and **methods** (how to install
 each one). The engine tries candidates in the effective configured method
 order until one succeeds; TOML declaration order does not set priority.
 
-All TOML snippets on this page are intentionally non-standalone fragments to
-place under a version-1 document's `[tools]` table unless they show a
-`[tools.NAME...]` path. Use [`schema.example.toml`](../schema.example.toml) for
-a complete, executable schema.
+Except for the explicitly marked complete documents below, TOML snippets on
+this page are fragments: bare assignments belong under `[tools]`, while paths
+starting with `[tools.NAME...]` assume the document already has
+`schema_version = 1`. Use [`schema.example.toml`](../schema.example.toml) for a
+larger executable schema.
 
 **On this page:**
 
@@ -28,6 +29,55 @@ a complete, executable schema.
 - [Method control](#per-tool-method-control) — `method_prefer`, `method_only`
 - [Placeholders](#placeholders) — `{arch}`, `{os}`, `{latest}`, and more
 - [Manifest merge rules](#manifest-merge-rules) — how schema + personal manifest combine
+
+---
+
+## Complete copy-paste documents
+
+These standalone examples are parsed and semantically validated by the test
+suite through the same public APIs used for shipped schemas.
+
+### Minimal project schema (complete)
+
+```toml
+schema_version = 1
+
+[tools]
+simple = ["zsh", "bat"]
+```
+
+### GitHub release schema (complete)
+
+```toml
+schema_version = 1
+
+[tools]
+yq = { method_only = ["github"], github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }
+```
+
+### Ordered candidates and hooks (complete)
+
+```toml
+schema_version = 1
+
+[defaults]
+method_order = ["native", "cargo", "github", "http"]
+
+[tools]
+myapp = { method_prefer = ["cargo"], pre_install = { run = ["test", "-x", "/usr/bin/cargo"] }, post_install = { run = ["myapp", "--version"] }, cargo = true }
+```
+
+### Personal manifest admitting new tools (complete)
+
+```toml
+schema_version = 1
+
+[manifest]
+allow_new_tools = true
+
+[packages]
+personal-tool = { git = { url = "https://github.com/example/personal-tool", depth = 1 } }
+```
 
 ---
 
