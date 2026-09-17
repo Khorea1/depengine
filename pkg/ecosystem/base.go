@@ -146,6 +146,14 @@ func (a *BaseAdapter) buildCmd(tmpl []string, tool *config.Tool, mc *config.Meth
 	for i, arg := range cmd {
 		cmd[i] = strings.ReplaceAll(arg, "{bin}", bin)
 	}
+	if a.config.KindName == "snap" && len(tmpl) > 1 && tmpl[1] == "install" {
+		if confinement, _ := mc.Config["confinement"].(string); confinement == "classic" || confinement == "devmode" {
+			cmd = append(cmd, "--"+confinement)
+		}
+		if channel, _ := mc.Config["channel"].(string); channel != "" && channel != "stable" {
+			cmd = append(cmd, "--channel="+channel)
+		}
+	}
 	return cmd
 }
 

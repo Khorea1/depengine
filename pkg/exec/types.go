@@ -52,6 +52,7 @@ type ToolResult struct {
 
 	// PostinstallDone is true if a postinstall script was successfully run.
 	PostinstallDone bool
+	RebootRequired  bool
 
 	// Config stores the method's configuration (e.g., pkg override).
 	Config map[string]any

@@ -43,6 +43,9 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 			if method.Kind != "native" && !native.IsNativeManagerName(method.Kind) {
 				break
 			}
+			if len(method.Requires) > 0 || len(method.Sources) > 0 {
+				break
+			}
 			if adapter.Check(ctx, ex.probeRunner(toolName, method.Kind), tool, method) {
 				ex.recordToolResult(ctx, &ToolResult{Tool: toolName, Status: StatusAlready, Method: method.Kind}, report)
 				foundNative = true

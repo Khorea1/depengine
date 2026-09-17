@@ -232,6 +232,19 @@ func TestWinAdapterInstall(t *testing.T) {
 	})
 }
 
+func TestChocoPrereleaseArgv(t *testing.T) {
+	fr := &run.FakeRunner{}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "neovim", "prerelease": true}}
+	if err := lookupWinAdapter("choco").Install(context.Background(), fr, &config.Tool{Name: "nvim"}, mc); err != nil {
+		t.Fatal(err)
+	}
+	call := fr.Calls[0]
+	want := []string{"install", "neovim", "--pre", "-y"}
+	if fmt.Sprint(call.Args) != fmt.Sprint(want) {
+		t.Fatalf("argv=%v want=%v", call.Args, want)
+	}
+}
+
 func TestWinAdapterRemove(t *testing.T) {
 	ctx := context.Background()
 	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "fd"}}

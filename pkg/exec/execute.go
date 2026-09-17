@@ -13,6 +13,7 @@ import (
 	"github.com/Khorea1/depengine/pkg/graph"
 	"github.com/Khorea1/depengine/pkg/native"
 	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/source"
 )
 
 // hasApplicableNativeMethod reports whether the schema contains a native
@@ -64,6 +65,10 @@ func (ex *Executor) needsElevation(s *config.Schema, clan string) bool {
 func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) (*ExecReport, error) {
 	start := time.Now()
 	report := &ExecReport{}
+	ex.schema = s
+	ex.report = report
+	ex.sources = source.NewManager(ex.rn, ex.dryRun)
+	ex.dependencies = make(map[string]*dependencyRun)
 
 	ex.clan = clan
 
@@ -115,7 +120,10 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 
 	// Graph sees facts-filtered requires: a gated dep (requires_when) is an
 	// edge only on platforms where its condition matches.
-	toolsForGraph := config.FilteredTools(s.Tools, ex.facts)
+	if _, err := graph.Sort(allDependencyEdges(config.FilteredTools(s.Tools, ex.facts))); err != nil {
+		return nil, fmt.Errorf("dependency resolution: %w", err)
+	}
+	toolsForGraph := config.FilteredTools(rootTools(s.Tools), ex.facts)
 	levels, err := graph.Sort(toolsForGraph, graph.WithLogger(ex.logger))
 	if err != nil {
 		return nil, fmt.Errorf("dependency resolution: %w", err)
@@ -463,6 +471,27 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			return
 		}
 
+		if err := ex.ensureMethodDependencies(toolCtx, tool, method); err != nil {
+			attempt.Status = "failed"
+			attempt.Error = err.Error()
+			result.Methods = append(result.Methods, attempt)
+			continue
+		}
+		if len(method.Sources) > 0 {
+			missing, err := ex.sources.Ensure(toolCtx, method.Sources)
+			if err != nil {
+				attempt.Status = "failed"
+				attempt.Error = err.Error()
+				result.Methods = append(result.Methods, attempt)
+				continue
+			}
+			if ex.dryRun && len(missing) > 0 {
+				for _, source := range missing {
+					ex.outputf("    source: would add %s %s\n", source.Kind, source.Name)
+				}
+			}
+		}
+
 		// Not installed — but is it actually installable via this method?
 		// Check()==false alone can't tell "not installed yet" apart from
 		// "not a real package for this manager" (see AvailabilityChecker
@@ -504,6 +533,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			result.Method = displayKind
 			result.MethodKind = method.Kind
 			result.Config = method.Config
+			result.RebootRequired, _ = method.Config["_reboot_required"].(bool)
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "installed")
 			if len(tool.PostInstall) > 0 {
 				// Postinstall gets a fresh timeout from the tool-level context,
@@ -551,6 +581,110 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		result.MethodKind = lastMethodKind
 	}
 	result.Duration = time.Since(toolStart).String()
+}
+
+func allDependencyEdges(tools map[string]*config.Tool) map[string]*config.Tool {
+	out := make(map[string]*config.Tool, len(tools))
+	for name, tool := range tools {
+		clone := *tool
+		clone.Requires = append([]string(nil), tool.Requires...)
+		seen := make(map[string]bool, len(clone.Requires))
+		for _, dep := range clone.Requires {
+			seen[dep] = true
+		}
+		for _, method := range tool.Methods {
+			for _, dep := range method.Requires {
+				if !seen[dep] {
+					clone.Requires = append(clone.Requires, dep)
+					seen[dep] = true
+				}
+			}
+		}
+		out[name] = &clone
+	}
+	return out
+}
+
+func rootTools(tools map[string]*config.Tool) map[string]*config.Tool {
+	out := make(map[string]*config.Tool, len(tools))
+	queue := make([]string, 0, len(tools))
+	for name, tool := range tools {
+		if !tool.DependencyOnly {
+			queue = append(queue, name)
+		}
+	}
+	for len(queue) > 0 {
+		name := queue[0]
+		queue = queue[1:]
+		if _, exists := out[name]; exists {
+			continue
+		}
+		tool, exists := tools[name]
+		if !exists {
+			continue
+		}
+		out[name] = tool
+		queue = append(queue, tool.Requires...)
+	}
+	return out
+}
+
+func (ex *Executor) ensureMethodDependencies(ctx context.Context, owner *config.Tool, method *config.MethodCandidate) error {
+	for _, name := range method.Requires {
+		result, err := ex.executeDependency(ctx, name)
+		if err != nil {
+			return fmt.Errorf("%s: method %s requires %s: %w", owner.Name, method.Kind, name, err)
+		}
+		if result.Status != StatusInstalled && result.Status != StatusAlready && result.Status != StatusWouldInstall && result.Status != StatusVirtual {
+			return fmt.Errorf("%s: method %s requires %s: %s", owner.Name, method.Kind, name, result.Error)
+		}
+	}
+	return nil
+}
+
+func (ex *Executor) executeDependency(ctx context.Context, name string) (ToolResult, error) {
+	ex.dependencyMu.Lock()
+	if existing := ex.dependencies[name]; existing != nil {
+		ex.dependencyMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return ToolResult{}, ctx.Err()
+		case <-existing.done:
+			return existing.result, nil
+		}
+	}
+	run := &dependencyRun{done: make(chan struct{})}
+	ex.dependencies[name] = run
+	ex.dependencyMu.Unlock()
+
+	tool := ex.schema.Tools[name]
+	if tool == nil {
+		run.result = ToolResult{Tool: name, Status: StatusFailed, Error: "dependency is not defined"}
+	} else {
+		blocked := false
+		for _, dependency := range tool.EffectiveRequires(ex.facts) {
+			result, err := ex.executeDependency(ctx, dependency)
+			if err != nil || !dependencySucceeded(result) {
+				reason := result.Error
+				if err != nil {
+					reason = err.Error()
+				}
+				run.result = ToolResult{Tool: name, Status: StatusFailed, Error: fmt.Sprintf("requires failed dependency: %s (%s)", dependency, reason)}
+				blocked = true
+				break
+			}
+		}
+		if !blocked {
+			run.result = ex.executeTool(ctx, tool)
+		}
+		ex.recordToolResult(ctx, &run.result, ex.report)
+	}
+	close(run.done)
+	return run.result, nil
+}
+
+func dependencySucceeded(result ToolResult) bool {
+	return result.Status == StatusInstalled || result.Status == StatusAlready || result.Status == StatusWouldInstall || result.Status == StatusVirtual
 }
 
 // recordedResult returns the last ToolResult recorded for toolName, or nil.

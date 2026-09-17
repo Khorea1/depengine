@@ -3,10 +3,23 @@
 package run
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"sync"
 )
+
+// RunElevated runs one argv command through the selected elevation method.
+// It never invokes a shell.
+func RunElevated(ctx context.Context, rn Runner, name string, args ...string) Result {
+	prefix := ElevationPrefix()
+	if len(prefix) == 0 {
+		return rn.Run(ctx, name, args...)
+	}
+	argv := append(append([]string(nil), prefix[1:]...), name)
+	argv = append(argv, args...)
+	return rn.Run(ctx, prefix[0], argv...)
+}
 
 var (
 	elevationMu         sync.Mutex

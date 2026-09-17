@@ -38,6 +38,19 @@ func TestBaseAdapterAvailable(t *testing.T) {
 	}
 }
 
+func TestSnapTypedOptionsArgv(t *testing.T) {
+	fr := &run.FakeRunner{}
+	adapter := NewBaseAdapter(Configs["snap"])
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "nvim", "confinement": "classic", "channel": "beta"}}
+	if err := adapter.Install(context.Background(), fr, &config.Tool{Name: "nvim"}, mc); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(fr.Calls[len(fr.Calls)-1].Args, " ")
+	if got != "install nvim --classic --channel=beta" {
+		t.Fatalf("argv=%q", got)
+	}
+}
+
 func TestBaseAdapterAvailableMissing(t *testing.T) {
 	adapter := NewBaseAdapter(BaseConfig{
 		KindName: "test-missing",

@@ -98,6 +98,9 @@ func (ex *Executor) recordToolResult(ctx context.Context, result *ToolResult, re
 	}
 	if !ex.quiet {
 		ex.outputf("%s", ex.colorizeStatusSymbol(formatToolResult(result.Tool, result.Status, result.Method, result.Error)))
+		if result.RebootRequired {
+			ex.outputf("    reboot required to complete %s\n", result.Tool)
+		}
 	}
 }
 

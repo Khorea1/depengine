@@ -23,7 +23,11 @@ func RenderMermaid(tools map[string]*config.Tool) string {
 
 	edges := collectEdges(tools)
 	for _, e := range edges {
-		fmt.Fprintf(&b, "  %s --> %s\n", e.dep, e.tool)
+		if e.conditional {
+			fmt.Fprintf(&b, "  %s -.->|%s| %s\n", e.dep, e.method, e.tool)
+		} else {
+			fmt.Fprintf(&b, "  %s --> %s\n", e.dep, e.tool)
+		}
 	}
 
 	return b.String()
@@ -43,7 +47,11 @@ func RenderDOT(tools map[string]*config.Tool) string {
 
 	edges := collectEdges(tools)
 	for _, e := range edges {
-		fmt.Fprintf(&b, "  %q -> %q;\n", e.dep, e.tool)
+		if e.conditional {
+			fmt.Fprintf(&b, "  %q -> %q [style=dashed,label=%q];\n", e.dep, e.tool, e.method)
+		} else {
+			fmt.Fprintf(&b, "  %q -> %q;\n", e.dep, e.tool)
+		}
 	}
 
 	b.WriteString("}\n")
@@ -71,12 +79,19 @@ func RenderText(levels [][]string, tools map[string]*config.Tool) string {
 		}
 		fmt.Fprintf(&b, "level %d: %s\n", i, strings.Join(sorted, ", "))
 	}
+	for _, edge := range collectEdges(tools) {
+		if edge.conditional {
+			fmt.Fprintf(&b, "conditional: %s -[%s]-> %s\n", edge.dep, edge.method, edge.tool)
+		}
+	}
 	return b.String()
 }
 
 type edge struct {
-	tool string // tool that has the dependency
-	dep  string // the dependency
+	tool        string // tool that has the dependency
+	dep         string // the dependency
+	conditional bool
+	method      string
 }
 
 // collectEdges builds a sorted list of edges from the tools map.
@@ -87,12 +102,27 @@ func collectEdges(tools map[string]*config.Tool) []edge {
 		for _, dep := range tool.Requires {
 			edges = append(edges, edge{tool: name, dep: dep})
 		}
+		for _, method := range tool.Methods {
+			label := method.Kind
+			if method.Label != "" {
+				label = method.Label
+			}
+			for _, dep := range method.Requires {
+				edges = append(edges, edge{tool: name, dep: dep, conditional: true, method: label})
+			}
+		}
 	}
 	sort.Slice(edges, func(i, j int) bool {
 		if edges[i].tool != edges[j].tool {
 			return edges[i].tool < edges[j].tool
 		}
-		return edges[i].dep < edges[j].dep
+		if edges[i].dep != edges[j].dep {
+			return edges[i].dep < edges[j].dep
+		}
+		if edges[i].conditional != edges[j].conditional {
+			return !edges[i].conditional
+		}
+		return edges[i].method < edges[j].method
 	})
 	return edges
 }

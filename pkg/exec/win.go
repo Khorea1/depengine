@@ -56,6 +56,11 @@ func (w *winAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 		return fmt.Errorf("%s: no runner", w.kind)
 	}
 	cmd := SubstitutePkg(w.installCmd, tool, mc)
+	if w.kind == "choco" {
+		if prerelease, _ := mc.Config["prerelease"].(bool); prerelease {
+			cmd = append(cmd[:len(cmd)-1], append([]string{"--pre"}, cmd[len(cmd)-1:]...)...)
+		}
+	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return run.CheckResult(res, w.kind+": install")
 }

@@ -3,9 +3,11 @@ package exec
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/native"
+	"github.com/Khorea1/depengine/pkg/source"
 )
 
 // ExplainTool evaluates all methods for a single tool WITHOUT installing.
@@ -66,6 +68,22 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 
 		// Method is ready and would be attempted.
 		attempt.Status = "would_install"
+		var prerequisites []string
+		if len(method.Requires) > 0 {
+			prerequisites = append(prerequisites, "requires "+strings.Join(method.Requires, ", "))
+		}
+		if len(method.Sources) > 0 {
+			missing, err := source.NewManager(ex.rn, true).Ensure(ctx, method.Sources)
+			if err != nil {
+				prerequisites = append(prerequisites, "source check failed: "+err.Error())
+			}
+			for _, item := range missing {
+				prerequisites = append(prerequisites, "missing source "+item.Kind+":"+item.Name)
+			}
+		}
+		if len(prerequisites) > 0 {
+			attempt.Error = strings.Join(prerequisites, "; ")
+		}
 		attempts = append(attempts, attempt)
 	}
 

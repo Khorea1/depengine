@@ -177,49 +177,65 @@ func filteredByTags(tools map[string]*config.Tool, profile string) map[string]*c
 
 // filterTools applies --only, --skip, and --profile filters to the tool map.
 func filterTools(tools map[string]*config.Tool, only, skip, profile string) map[string]*config.Tool {
-	if only == "" && skip == "" && profile == "" {
-		return tools
-	}
 	skipSet := make(map[string]bool)
 	for _, name := range strings.Split(skip, ",") {
 		skipSet[strings.TrimSpace(name)] = true
 	}
-	filtered := make(map[string]*config.Tool, len(tools))
+	roots := make(map[string]bool, len(tools))
 	for name, tool := range tools {
 		if skipSet[name] {
+			continue
+		}
+		if tool.DependencyOnly && only != name {
 			continue
 		}
 		if only != "" && name != only {
 			continue
 		}
-		filtered[name] = tool
-	}
-	if only != "" {
-		queue := []string{only}
-		visited := map[string]bool{only: true}
-		for len(queue) > 0 {
-			name := queue[0]
-			queue = queue[1:]
-			if skipSet[name] {
-				// The skipped tool is a required dependency of --only; still add it
-				// to filtered so graph.Sort doesn't reject the partial graph.
-				if t, ok := tools[name]; ok {
-					filtered[name] = t
+		if profile != "" {
+			matched := false
+			for _, tag := range tool.Tags {
+				if strings.EqualFold(tag, profile) {
+					matched = true
+					break
 				}
+			}
+			if !matched {
 				continue
 			}
-			if t, ok := tools[name]; ok {
-				filtered[name] = t
-				for _, req := range t.Requires {
-					if !visited[req] {
-						visited[req] = true
-						queue = append(queue, req)
-					}
+		}
+		roots[name] = true
+	}
+	filtered := make(map[string]*config.Tool, len(tools))
+	queue := make([]string, 0, len(roots))
+	for name := range roots {
+		queue = append(queue, name)
+	}
+	visited := map[string]bool{}
+	for len(queue) > 0 {
+		name := queue[0]
+		queue = queue[1:]
+		if visited[name] {
+			continue
+		}
+		visited[name] = true
+		if t, ok := tools[name]; ok {
+			if only == name && t.DependencyOnly {
+				clone := *t
+				clone.DependencyOnly = false
+				t = &clone
+			}
+			filtered[name] = t
+			for _, req := range t.Requires {
+				queue = append(queue, req)
+			}
+			for _, method := range t.Methods {
+				for _, req := range method.Requires {
+					queue = append(queue, req)
 				}
 			}
 		}
 	}
-	filtered = filteredByTags(filtered, profile)
 	return filtered
 }
 
@@ -274,7 +290,7 @@ func saveLockfile(ctx context.Context, s *config.Schema, lockPath string, oldLoc
 func hasLatestPlaceholders(s *config.Schema) bool {
 	for _, tool := range s.Tools {
 		for _, method := range tool.Methods {
-			if method.Kind == "github" {
+			if _, hasRepo := method.Config["repo"]; method.Kind == "github" || hasRepo {
 				branch, _ := method.Config["branch"].(string)
 				release, _ := method.Config["release"].(string)
 				if branch == "" && (release == "" || release == "latest") {

@@ -4,11 +4,13 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/engine"
 	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/source"
 )
 
 // Executor orchestrates the installation of all tools in a schema.
@@ -41,6 +43,17 @@ type Executor struct {
 	schemaModTime time.Time
 
 	color bool // whether to emit ANSI color codes in status output
+
+	schema       *config.Schema
+	report       *ExecReport
+	sources      *source.Manager
+	dependencyMu sync.Mutex
+	dependencies map[string]*dependencyRun
+}
+
+type dependencyRun struct {
+	done   chan struct{}
+	result ToolResult
 }
 
 // Option configures the executor.
