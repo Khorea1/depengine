@@ -18,7 +18,7 @@ import (
 const appImageDesktopDir = "~/.local/share/applications"
 
 // AppImageAdapter implements exec.Adapter for the "appimage" method kind:
-// resolves a URL exactly like "http" does ({latest}/{version}/{arch}/{os}
+// resolves a URL exactly like "http" does ({latest}/{arch}/{os}
 // placeholders, checksum verification, retry/cache), then does the
 // AppImage-specific part HTTPAdapter doesn't know about — installing under
 // a STABLE name (not the versioned filename the release asset ships with)
@@ -26,7 +26,10 @@ const appImageDesktopDir = "~/.local/share/applications"
 //
 // Config fields:
 //
-//	url         (required) same meaning as on "http"
+//	url         (required) same meaning as on "http". Not {version}/
+//	             {arch_any}/{os_any} — those are only resolved by the
+//	             "github" method's asset-matching (see
+//	             docs/schema-reference.md#placeholders).
 //	install_dir (optional) destination directory; default ~/.local/bin
 //	             (user-scope). Pointing this at a system path (e.g.
 //	             /usr/local/bin) is how a system-wide install is requested —

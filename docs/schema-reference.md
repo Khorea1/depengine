@@ -223,7 +223,7 @@ for tools you exec via `docker run`/`podman run` yourself, not for a CLI
 tool you expect to just call by name afterward.
 
 ```toml
-[packages.obsidian.container]
+[tools.obsidian.container]
 manager = "podman"
 source  = "lscr.io/linuxserver/obsidian"
 tag     = "latest"
@@ -244,16 +244,17 @@ means the image is already pulled. `Remove` runs `<manager> rmi
 ### AppImage: portable `.AppImage` binaries
 
 `appimage` resolves and downloads a `.AppImage` URL exactly like `http`
-does ({latest}/{version}/{arch}/{os}, checksum verification, retries,
+does (`{latest}`/`{arch}`/`{os}`, checksum verification, retries,
 caching — same fields, same behavior), then does the AppImage-specific
 part `http` doesn't: installing under a **stable** name instead of the
 versioned filename the release asset ships with (e.g.
 `Obsidian-1.5.3.AppImage` → `obsidian`), and optionally writing a
-`.desktop` launcher.
+`.desktop` launcher. **Not** `{version}`/`{arch_any}`/`{os_any}` — see the
+field table below.
 
 ```toml
-[packages.obsidian.appimage]
-url     = "https://github.com/obsidianmd/obsidian-releases/releases/download/{latest}/Obsidian-{version}.AppImage"
+[tools.obsidian.appimage]
+url     = "https://github.com/obsidianmd/obsidian-releases/releases/download/{latest}/Obsidian-{latest}.AppImage"
 desktop = true
 # install_dir defaults to ~/.local/bin (user-scope)
 ```
@@ -287,7 +288,7 @@ too). Runs entirely inside [Termux](https://termux.dev/); see
 
 ```toml
 [tools.obsidian.android]
-url = "https://github.com/obsidianmd/obsidian-releases/releases/download/{latest}/obsidian-{version}-android.apk"
+url = "https://github.com/obsidianmd/obsidian-releases/releases/download/{latest}/obsidian-{latest}-android.apk"
 when = { is_android = true }
 ```
 
@@ -417,6 +418,29 @@ requires_when = { fontconfig = { target_family = ["unix"] } }
 `fontconfig` participates in the install graph only on unix; on Windows the
 edge disappears (no dangling-ref error, no blocking).
 
+### Virtual tools: grouping with no methods of their own
+
+A tool entry needs no method blocks at all — `requires` alone is a valid,
+complete declaration:
+
+```toml
+[tools.devenv]
+requires = ["zsh", "tmux", "fzf"]
+```
+
+`devenv` installs nothing itself; `depengine install`/`why` report it as a
+**dependency group** (no methods declared) and it succeeds once every tool
+it requires does. This is the supported way to declare a meta-tool — a
+profile, a "workstation" bundle, a language toolchain group — without
+inventing a fake install method for it. `depengine why devenv` shows this
+explicitly:
+
+```
+Why devenv?  1 candidate method, first available wins
+
+  ?   dependency group (no methods declared)
+```
+
 `post_install` accepts the same string, table, and list forms, including
 per-command `when` conditions:
 
@@ -434,7 +458,7 @@ The plain-string form stays valid and is unconditional.
 
 ```toml
 [tools.DepartureMono]
-postinstall = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
+post_install = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
 
   [tools.DepartureMono.aur]
   pkg  = "otf-departure-mono-nerd"
@@ -450,7 +474,7 @@ postinstall = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
   when       = { target_family = ["unix"] }
 ```
 
-> **Golden rule:** tool-level fields (`requires`, `postinstall`,
+> **Golden rule:** tool-level fields (`requires`, `post_install`,
 > `pre_install`) go _outside_ the method block. Method-specific fields
 > (`kind`, `when`, `url`, `build`, `checksum`, `extract_to`, `pkg`, `git`) go
 > _inside_.
@@ -576,7 +600,7 @@ legacy = { method_only = ["aur", "git"], aur = { pkg = "legacy" }, git = { url =
   `method_order`; methods not listed are still tried as fallbacks.
 - **`method_only`** restricts the tool to exactly these methods, in this
   order — the global `method_order` is ignored for this tool.
-- Both live at tool level (same level as `requires`, `tags`, `postinstall`),
+- Both live at tool level (same level as `requires`, `tags`, `post_install`),
   not inside a method block.
 
 ---
@@ -584,7 +608,7 @@ legacy = { method_only = ["aur", "git"], aur = { pkg = "legacy" }, git = { url =
 ## Placeholders
 
 Placeholders are `{name}` tokens expanded in every string field before
-installation. `depengine validate` checks them two ways:
+installation. `depengine validate` only checks one thing about them:
 
 - **Unknown name** — a typo like `{archh}` isn't in the table below, so it's
   left untouched by `Expand` and flagged as `W_UNKNOWN_PLACEHOLDER`. This
@@ -592,12 +616,16 @@ installation. `depengine validate` checks them two ways:
   `{Arch}`, `{ARCH}`, or `{arch-name}` — placeholder names are matched
   case-sensitively, so any of those are "unknown" even though `{arch}` is
   valid.
-- **Wrong method kind** — `{pkg}` and `{latest}` are only ever substituted
-  by specific adapters (see the "Valid for" column). Using either inside a
-  method `Kind` its adapter doesn't run for is a known name in the wrong
-  place, flagged separately as `W_MISPLACED_PLACEHOLDER` — the token is
-  never rejected outright, but it will stay literal in the resolved URL or
-  command at runtime, so treat the warning as a real bug in the schema.
+
+There is currently **no separate check for a known placeholder used on the
+wrong method kind.** Putting `{pkg}` on an `http` method, or `{latest}` on a
+`native` method, passes `depengine validate` cleanly — the name is
+recognized, so `W_UNKNOWN_PLACEHOLDER` doesn't fire — and the token then
+stays **literal** in the resolved URL or command at install time, because
+the one adapter that knows how to substitute it never runs for that method
+kind. Read the "Valid for" column below carefully; a misplaced-but-known
+placeholder is a silent runtime bug, not something depengine will warn you
+about today.
 
 | Placeholder | Source | Valid for | Example |
 |-------------|--------|-----------|---------|
@@ -615,28 +643,30 @@ installation. `depengine validate` checks them two ways:
 | `{confidence}` | `detect_os.sh` | any method | `high`, `medium` |
 | `{is_wsl}` / `{is_container}` / `{is_android}` | `detect_os.sh` | any method | `true`, `false` |
 | `{pkg}` | Adapter-owned — substituted at install time | **`native` only** (or a manager name used directly as `kind`, e.g. `kind = "apt"`) | package name |
-| `{latest}` | Adapter-owned — resolved via GitHub API | **`git` and `http` only** | `v1.2.3` |
+| `{latest}` | Adapter-owned — resolved via GitHub API | **`git`, `http`, `appimage` and `android`** — the last two delegate their download to the same backend as `http` and inherit `{latest}` resolution from it | `v1.2.3` |
 | `{arch_any}` | Adapter-owned — matched (not substituted) against real asset names | **`github` only**, `asset` field | matches `x86_64`/`amd64`/`x64`, etc. |
 | `{os_any}` | Adapter-owned — matched (not substituted) against real asset names | **`github` only**, `asset` field | matches `darwin`/`macos`/`osx`, etc. |
+| `{version}` | Adapter-owned — matched (not substituted) against real asset names | **`github` only**, `asset` field | matches the resolved release tag with or without a leading `v` |
 
 The `detect_os.sh`-sourced placeholders (everything above `{pkg}`/`{latest}`)
 are expanded for every method `Kind` — they come from facts gathered once
 per run, not from a specific adapter, so there's no wrong place to use them.
-`{pkg}` and `{latest}` are different: each is substituted by exactly one
-adapter, so putting `{pkg}` on a `git`/`http` method, or `{latest}` on a
-`native` method, produces a schema that validates other fields fine but
-never gets that token replaced.
+The five adapter-owned tokens below them are different: each is only ever
+resolved by the specific adapter(s) named in "Valid for", so putting `{pkg}`
+on a `git`/`http` method, or `{latest}` on a `native` method, produces a
+schema that validates other fields fine but never gets that token replaced
+(see the callout above the table).
 
 ```toml
 # {arch}/{os} expand from detect_os.sh before installation:
 fastfetch = { http = { url = "https://example.com/{os}/{arch}/fastfetch.deb" } }
 
-# {latest} is resolved by the http/git adapter via GitHub's API:
+# {latest} is resolved by the http/git/appimage/android adapters via GitHub's API:
 fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb" } }
 
-# WRONG: {pkg} on an http method is never substituted — it ships as a
-# literal "{pkg}" in the URL. depengine validate flags this as
-# W_MISPLACED_PLACEHOLDER. {pkg} only works on a native method:
+# WRONG: {pkg} on an http method is never substituted — depengine validate
+# has no check for this, so it ships as a literal "{pkg}" in the URL, only
+# discovered when the download 404s. {pkg} only works on a native method:
 # broken:  sometool = { http = { url = "https://example.com/{pkg}.deb" } }
 # correct: sometool = { apt = "sometool-bin" }  # native, {pkg} substituted internally
 ```

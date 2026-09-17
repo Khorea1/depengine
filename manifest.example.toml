@@ -37,7 +37,9 @@ schema_version = 1
 #
 # ATTRIBUTES AVAILABLE PER METHOD:
 #
-#   git:   url, build, branch, depth, binary, checksum, signature_url
+#   git:   url, build, branch, depth, extract_to, artifact, binary
+#          (no checksum/signature_url — verification isn't defined for a
+#          git clone; use it only on http/github/appimage/android)
 #   http:  url, checksum, checksum_url, checksum_file_format, signature_url,
 #          signing_key, extract_to, binary
 #   native/aur/cargo/go/pip/pipx/uv/npm/bun/pnpm/gem:

@@ -19,7 +19,7 @@ import (
 const androidAPKDir = "~/.cache/depengine/android-apks"
 
 // AndroidAdapter implements exec.Adapter for the "android" method kind:
-// resolves a URL exactly like "http"/"appimage" do ({latest}/{version}
+// resolves a URL exactly like "http"/"appimage" do ({latest}/{arch}/{os}
 // placeholders, checksum verification, retry/cache) via HTTPAdapter, then
 // does the one thing HTTPAdapter can't: hand the downloaded .apk to
 // Android's own package installer through `termux-open` (part of the
@@ -28,7 +28,8 @@ const androidAPKDir = "~/.cache/depengine/android-apks"
 //
 // Config fields:
 //
-//	url (required) same meaning as on "http"/"appimage".
+//	url (required) same meaning as on "http"/"appimage". Not {version} —
+//	     see docs/schema-reference.md#placeholders.
 //
 // Every other "http" field (checksum, checksum_url, signing_key, ...) has
 // the exact same meaning, because the download itself is delegated to

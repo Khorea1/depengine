@@ -52,10 +52,10 @@ Full flag list: [cli-reference.md](cli-reference.md).
     [tools.NAME.method]  # one sub-table per candidate method
 ```
 
-**Golden rule:** tool-level fields (`requires`, `pre_install`, `postinstall`,
+**Golden rule:** tool-level fields (`requires`, `pre_install`, `post_install`,
 `tags`) live outside methods; method-level fields (`kind`, `when`, `url`,
 `build`, `checksum`, `pkg`, `git`) live inside.
-Tool-level fields can carry conditions: `postinstall = { cmd = "...", when =
+Tool-level fields can carry conditions: `post_install = { cmd = "...", when =
 { target_family = ["unix"] } }` skips the hook when it can't apply, and
 `requires_when = { fontconfig = { target_family = ["unix"] } }` drops the
 dependency from the graph when its condition fails.

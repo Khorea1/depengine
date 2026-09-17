@@ -273,7 +273,7 @@ fields before installation:
 yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }
 ```
 
-Full list of all 17 placeholders: [schema-reference.md#placeholders](docs/schema-reference.md#placeholders).
+Full list of all 20 placeholders: [schema-reference.md#placeholders](docs/schema-reference.md#placeholders).
 
 ## Editor support
 

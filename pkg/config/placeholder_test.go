@@ -169,3 +169,40 @@ func TestExpandAllMutatesInput(t *testing.T) {
 		t.Fatal("BUG REPRODUCED: ExpandAll mutated nested value in place")
 	}
 }
+
+// TestKnownPlaceholdersIncludesVersion guards against a regression where
+// "version" — the third github-asset-matching token alongside "arch_any"/
+// "os_any" (see ghrelease.ResolveAssetURL and docs/schema-reference.md's
+// GitHub method section) — was missing from KnownPlaceholders. Without it,
+// a schema author writing `asset = "tool-{version}-{arch_any}"` exactly as
+// documented got a spurious W_UNKNOWN_PLACEHOLDER warning from
+// pkg/validate, which derives its known-token set from this function.
+func TestKnownPlaceholdersIncludesVersion(t *testing.T) {
+	found := false
+	for _, name := range KnownPlaceholders() {
+		if name == "version" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal(`KnownPlaceholders() is missing "version" — github asset patterns using {version} would be flagged as unknown`)
+	}
+}
+
+// TestKnownPlaceholdersIncludesGitHubAssetTokens locks in all three
+// adapter-owned, matched-not-substituted tokens the "github" method's
+// asset pattern accepts, so a future refactor of KnownPlaceholders can't
+// silently drop one again.
+func TestKnownPlaceholdersIncludesGitHubAssetTokens(t *testing.T) {
+	want := []string{"arch_any", "os_any", "version"}
+	known := make(map[string]bool)
+	for _, name := range KnownPlaceholders() {
+		known[name] = true
+	}
+	for _, name := range want {
+		if !known[name] {
+			t.Errorf("KnownPlaceholders() missing github asset-matching token %q", name)
+		}
+	}
+}
