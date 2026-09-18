@@ -22,12 +22,26 @@ const (
 	StringStringMap FieldType = "string_string_map"
 )
 
-// Field describes one adapter-facing config field.
+// FieldEffect identifies the runtime phase in which a declared field must
+// have observable semantics. Effects are intentionally coarse: they are a
+// conformance contract, not an execution plan.
+type FieldEffect uint8
+
+const (
+	EffectResolve FieldEffect = 1 << iota
+	EffectValidate
+	EffectExecute
+	EffectVerify
+)
+
+// Field describes one adapter-facing config field. Effects must be non-zero
+// for every field in Contracts; the conformance test enforces that invariant.
 type Field struct {
 	Type     FieldType
 	Required bool
 	NonEmpty bool
 	Enum     []string
+	Effects  FieldEffect
 }
 
 // Contract is the declarative schema contract for one adapter kind.
@@ -45,7 +59,7 @@ type Contract struct {
 	Artifact             *artifact.Contract
 }
 
-var pkgField = map[string]Field{"pkg": {Type: String}}
+var pkgField = map[string]Field{"pkg": {Type: String, Effects: EffectExecute | EffectVerify}}
 
 func packageContract(kind string, order int, canRemove bool) Contract {
 	return Contract{Kind: kind, DefaultOrder: order, Fields: pkgField, AllowString: true, AllowTrue: true, CanRemove: canRemove}
@@ -80,25 +94,25 @@ func withoutFields(entry map[string]Field, excluded ...string) map[string]Field 
 }
 
 var artifactFields = map[string]Field{
-	"url":                  {Type: String, NonEmpty: true},
-	"repo":                 {Type: String, NonEmpty: true},
-	"asset":                {Type: String, NonEmpty: true},
-	"release":              {Type: String},
-	"branch":               {Type: String, NonEmpty: true},
-	"checksum":             {Type: String},
-	"checksum_url":         {Type: String},
-	"checksum_file_format": {Type: String, Enum: []string{"sha256sum", "bsd", "raw"}},
-	"signature_url":        {Type: String},
-	"signing_key":          {Type: String},
+	"url":                  {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+	"repo":                 {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+	"asset":                {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+	"release":              {Type: String, Effects: EffectResolve},
+	"branch":               {Type: String, NonEmpty: true, Effects: EffectResolve},
+	"checksum":             {Type: String, Effects: EffectValidate | EffectExecute},
+	"checksum_url":         {Type: String, Effects: EffectValidate | EffectExecute},
+	"checksum_file_format": {Type: String, Enum: []string{"sha256sum", "bsd", "raw"}, Effects: EffectValidate | EffectExecute},
+	"signature_url":        {Type: String, Effects: EffectValidate | EffectExecute},
+	"signing_key":          {Type: String, Effects: EffectValidate | EffectExecute},
 }
 
 var downloadFields = fields(artifactFields, map[string]Field{
-	"extract_to":       {Type: String},
-	"binary":           {Type: String},
-	"sudo_required":    {Type: Boolean},
-	"strip_components": {Type: Integer},
-	"entrypoints":      {Type: StringStringMap},
-	"link_dir":         {Type: String},
+	"extract_to":       {Type: String, Effects: EffectExecute | EffectVerify},
+	"binary":           {Type: String, Effects: EffectExecute | EffectVerify},
+	"sudo_required":    {Type: Boolean, Effects: EffectExecute},
+	"strip_components": {Type: Integer, Effects: EffectValidate | EffectExecute},
+	"entrypoints":      {Type: StringStringMap, Effects: EffectExecute | EffectVerify},
+	"link_dir":         {Type: String, Effects: EffectExecute | EffectVerify},
 })
 
 var artifactSourceAlternatives = [][]string{{"url"}, {"repo", "asset"}}
@@ -128,10 +142,10 @@ var msiArtifactContract = &artifact.Contract{
 // adapter-facing schema fields. Keep entries in default preference order;
 // kinds with DefaultOrder zero are valid but never injected as blind fallbacks.
 var Contracts = []Contract{
-	{Kind: "native", DefaultOrder: 1, Fields: fields(pkgField, map[string]Field{"pkg_overrides": {Type: StringMap}}), AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "native", DefaultOrder: 1, Fields: fields(pkgField, map[string]Field{"pkg_overrides": {Type: StringMap, Effects: EffectResolve | EffectExecute | EffectVerify}}), AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "scoop", DefaultOrder: 2, Fields: pkgField, ImplicitDistroFamily: []string{"windows"}, AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "choco", DefaultOrder: 3, Fields: fields(pkgField, map[string]Field{"prerelease": {Type: Boolean}}), ImplicitDistroFamily: []string{"windows"}, AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "cargo", DefaultOrder: 4, Fields: fields(pkgField, map[string]Field{"git": {Type: String}}), AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "choco", DefaultOrder: 3, Fields: fields(pkgField, map[string]Field{"prerelease": {Type: Boolean, Effects: EffectExecute}}), ImplicitDistroFamily: []string{"windows"}, AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "cargo", DefaultOrder: 4, Fields: fields(pkgField, map[string]Field{"git": {Type: String, Effects: EffectExecute}}), AllowString: true, AllowTrue: true, CanRemove: true},
 	packageContract("go", 5, true),
 	packageContract("pipx", 6, true),
 	packageContract("uv", 7, true),
@@ -148,48 +162,48 @@ var Contracts = []Contract{
 	packageContract("vscodium", 18, false),
 	packageContract("flatpak", 19, true),
 	{Kind: "snap", DefaultOrder: 20, Fields: fields(pkgField, map[string]Field{
-		"confinement": {Type: String, Enum: []string{"strict", "classic", "devmode"}},
-		"channel":     {Type: String, Enum: []string{"stable", "candidate", "beta", "edge"}},
+		"confinement": {Type: String, Enum: []string{"strict", "classic", "devmode"}, Effects: EffectExecute},
+		"channel":     {Type: String, Enum: []string{"stable", "candidate", "beta", "edge"}, Effects: EffectExecute},
 	}), AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "cask", DefaultOrder: 21, Fields: pkgField, ImplicitDistroFamily: []string{"macos"}, AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "mas", DefaultOrder: 22, Fields: pkgField, ImplicitDistroFamily: []string{"macos"}, AllowString: true, AllowTrue: true},
 	packageContract("appman", 23, true),
-	{Kind: "sdkman", DefaultOrder: 24, Fields: fields(pkgField, map[string]Field{"version": {Type: String}}), AllowString: true, AllowTrue: true},
+	{Kind: "sdkman", DefaultOrder: 24, Fields: fields(pkgField, map[string]Field{"version": {Type: String, Effects: EffectExecute | EffectVerify}}), AllowString: true, AllowTrue: true},
 	packageContract("steamcmd", 25, false),
 	packageContract("pacstall", 26, false),
 	{Kind: "aur", Aliases: []string{"paru", "yay"}, DefaultOrder: 27, Fields: pkgField, ImplicitDistroFamily: []string{"arch"}, AllowString: true, AllowTrue: true, CanRemove: true},
 	packageContract("conda", 28, true),
-	{Kind: "asdf", DefaultOrder: 29, Fields: fields(pkgField, map[string]Field{"version": {Type: String}}), AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "asdf", DefaultOrder: 29, Fields: fields(pkgField, map[string]Field{"version": {Type: String, Effects: EffectExecute | EffectVerify}}), AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "container", DefaultOrder: 30, Fields: map[string]Field{
-		"manager": {Type: String, Required: true, NonEmpty: true, Enum: []string{"docker", "podman"}},
-		"source":  {Type: String, Required: true, NonEmpty: true},
-		"tag":     {Type: String},
+		"manager": {Type: String, Required: true, NonEmpty: true, Enum: []string{"docker", "podman"}, Effects: EffectExecute | EffectVerify},
+		"source":  {Type: String, Required: true, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"tag":     {Type: String, Effects: EffectExecute | EffectVerify},
 	}, CanRemove: true},
 	{Kind: "appimage", DefaultOrder: 31, Fields: fields(withoutField(downloadFields, "extract_to"), map[string]Field{
-		"install_dir": {Type: String},
-		"desktop":     {Type: Boolean},
+		"install_dir": {Type: String, Effects: EffectExecute | EffectVerify},
+		"desktop":     {Type: Boolean, Effects: EffectExecute},
 	}), SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract},
 	{Kind: "android", DefaultOrder: 32, Fields: withoutFields(downloadFields, "extract_to", "binary"), SourceAlternatives: artifactSourceAlternatives, Artifact: downloadArtifactContract},
 	{Kind: "git", DefaultOrder: 33, Fields: map[string]Field{
-		"url":           {Type: String, Required: true, NonEmpty: true},
-		"branch":        {Type: String},
-		"depth":         {Type: IntegerOrString},
-		"build":         {Type: Command},
-		"extract_to":    {Type: String},
-		"artifact":      {Type: String},
-		"binary":        {Type: String},
-		"managed_paths": {Type: StringList},
+		"url":           {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"branch":        {Type: String, Effects: EffectResolve | EffectExecute},
+		"depth":         {Type: IntegerOrString, Effects: EffectExecute},
+		"build":         {Type: Command, Effects: EffectExecute},
+		"extract_to":    {Type: String, Effects: EffectExecute | EffectVerify},
+		"artifact":      {Type: String, Effects: EffectExecute},
+		"binary":        {Type: String, Effects: EffectExecute | EffectVerify},
+		"managed_paths": {Type: StringList, Effects: EffectValidate | EffectExecute | EffectVerify},
 	}, CanRemove: true},
 	{Kind: "github", DefaultOrder: 34, Fields: fields(withoutField(downloadFields, "url"), map[string]Field{
-		"repo":    {Type: String, Required: true, NonEmpty: true},
-		"asset":   {Type: String, Required: true, NonEmpty: true},
-		"release": {Type: String},
-		"branch":  {Type: String, NonEmpty: true},
+		"repo":    {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"asset":   {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"release": {Type: String, Effects: EffectResolve},
+		"branch":  {Type: String, NonEmpty: true, Effects: EffectResolve},
 	}), SourceAlternatives: [][]string{{"repo", "asset"}}, Artifact: githubArtifactContract, MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true},
 	{Kind: "http", DefaultOrder: 35, Fields: downloadFields, SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract},
 	{Kind: "msi", DefaultOrder: 36, Fields: fields(artifactFields, map[string]Field{
-		"product_name": {Type: String, Required: true, NonEmpty: true},
-		"publisher":    {Type: String},
+		"product_name": {Type: String, Required: true, NonEmpty: true, Effects: EffectVerify | EffectExecute},
+		"publisher":    {Type: String, Effects: EffectVerify | EffectExecute},
 	}), SourceAlternatives: artifactSourceAlternatives, Artifact: msiArtifactContract, MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, ImplicitDistroFamily: []string{"windows"}, CanRemove: true},
 }
 

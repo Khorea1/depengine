@@ -160,3 +160,13 @@ func TestArtifactSpecializedContractsDoNotExposeOverriddenPlacementFields(t *tes
 		})
 	}
 }
+
+func TestEveryContractFieldDeclaresSemanticEffects(t *testing.T) {
+	for _, contract := range methodkind.Contracts {
+		for name, field := range contract.Fields {
+			if field.Effects == 0 {
+				t.Errorf("%s.%s has no semantic effect declaration", contract.Kind, name)
+			}
+		}
+	}
+}

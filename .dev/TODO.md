@@ -134,10 +134,10 @@ At least one adapter accepts a field that does not affect actual installation be
 
 **Work**
 
-- [ ] Create a conformance mechanism that enumerates all accepted fields for each method contract.
+- [x] Create a conformance mechanism that enumerates all accepted fields for each method contract (each `Field` now declares its runtime effect phase and a contract test rejects effect-less fields).
 - [ ] Require every field to influence the resolved plan, validation, execution, or verification.
 - [x] Fix `asdf.version` handling.
-- [ ] Audit SDKMAN, Cargo, Go, Conda, container, Git, Snap, Flatpak, native and artifact adapters for similar discrepancies.
+- [x] Audit SDKMAN, Cargo, Go, Conda, container, Git, Snap, Flatpak, native and artifact adapters for similar discrepancies.
   - [x] SDKMAN: exact `version` now governs both install and verification.
   - [x] Cargo
   - [x] Go
