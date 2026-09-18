@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -641,6 +642,70 @@ func TestExecutorDryRun(t *testing.T) {
 	}
 	if report.Success != 0 {
 		t.Fatalf("expected 0 success in dry-run, got %d", report.Success)
+	}
+}
+
+func TestExecutorDryRunHooksArePlanOnly(t *testing.T) {
+	preSentinel := filepath.Join(t.TempDir(), "pre-created")
+	postSentinel := filepath.Join(t.TempDir(), "post-created")
+
+	mock := &testMockAdapter{
+		kindValue:     "native",
+		availableFunc: func() bool { return true },
+		checkFunc:     func(string) bool { return false },
+	}
+
+	var output bytes.Buffer
+	ex := New()
+	WithRunner(run.OSExecRunner{})(ex)
+	WithAdapters(mock)(ex)
+	WithAllowArbitraryCode()(ex)
+	WithDryRun()(ex)
+	WithOutput(&output)(ex)
+
+	s := mockSchema("tool1")
+	s.Tools["tool1"].PreInstall = []config.Hook{{Run: []string{"sh", "-c", "touch " + preSentinel}}}
+	s.Tools["tool1"].PostInstall = []config.Hook{{Run: []string{"sh", "-c", "touch " + postSentinel}}}
+
+	report, err := ex.Execute(context.Background(), s, "arch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.WouldInstall != 1 {
+		t.Fatalf("expected one planned install, got report: %+v", report)
+	}
+	for _, path := range []string{preSentinel, postSentinel} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("dry-run hook mutated host state: %s exists (stat err=%v)", path, err)
+		}
+	}
+	got := output.String()
+	if !strings.Contains(got, "pre-install: would run") || !strings.Contains(got, "post-install: would run") {
+		t.Fatalf("dry-run output must render planned hooks, got:\n%s", got)
+	}
+}
+
+func TestExecutorDryRunDoesNotSyncNativeIndex(t *testing.T) {
+	fr := &run.FakeRunner{ExitCode: 0}
+	mock := &testMockAdapter{
+		kindValue:     "native",
+		availableFunc: func() bool { return true },
+		checkFunc:     func(string) bool { return false },
+	}
+
+	ex := New()
+	WithRunner(fr)(ex)
+	WithAdapters(mock)(ex)
+	WithDryRun()(ex)
+
+	if _, err := ex.Execute(context.Background(), mockSchema("tool1"), "debian"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, call := range fr.Calls {
+		joined := call.Name + " " + strings.Join(call.Args, " ")
+		if strings.Contains(joined, "apt-get update") {
+			t.Fatalf("dry-run executed native package index sync: %s", joined)
+		}
 	}
 }
 

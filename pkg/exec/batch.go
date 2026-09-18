@@ -95,10 +95,7 @@ func (ex *Executor) batchNativeInstall(ctx context.Context, candidates []batchCa
 	batchCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	runner := ex.rn
-	if loggingRunner, ok := runner.(*run.LoggingRunner); ok {
-		runner = loggingRunner.WithContext(run.Context{Tool: "batch", Method: "native"})
-	}
+	runner := ex.mutationRunner("batch", "native")
 	ex.outputf("  ⚡  batch installing %d packages via %s (1 elevation)\n", len(pkgs), ex.nativeManagerName)
 	ex.logDebug(ctx, "batch", "clan", ex.clan, "packages", strings.Join(pkgs, " "), "status", "started")
 	result := runner.Run(batchCtx, cmd[0], cmd[1:]...)

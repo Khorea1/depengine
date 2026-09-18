@@ -51,6 +51,18 @@ func TestManagerDryRunDoesNotMutate(t *testing.T) {
 	}
 }
 
+func TestManagerDryRunMutationBoundaryBlocksAdd(t *testing.T) {
+	runner := &scriptedRunner{}
+	manager := NewManager(runner, true)
+	err := manager.add(context.Background(), config.Source{Kind: "brew-tap", Name: "user/tap"})
+	if err == nil {
+		t.Fatal("expected dry-run mutation boundary to reject source add")
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("underlying runner must not be reached, calls=%v", runner.calls)
+	}
+}
+
 func TestManagerRejectsUnsupportedSourceKind(t *testing.T) {
 	runner := &scriptedRunner{}
 	_, err := NewManager(runner, false).Ensure(context.Background(), []config.Source{{Kind: "unknown", Name: "x"}})

@@ -102,19 +102,24 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 
 	// Only sync native package index if at least one tool uses a native method.
 	if ex.hasApplicableNativeMethod(s, clan) {
-		syncMgr := NewSyncManager(ex.rn, clan)
+		syncMgr := NewSyncManager(ex.mutationRunner("native-index", "sync"), clan)
 		if syncMgr.NeedsSync() {
-			ex.outputf("  syncing package index...\n")
-			ex.logDebug(ctx, "sync", "status", "syncing")
-			// Sync() never returns a fatal error (see its doc comment): a
-			// failed index sync is a soft failure, already logged at WARN
-			// by the runner. Installation proceeds regardless — either
-			// against a stale-but-usable native cache, or via tools whose
-			// method never depended on this sync in the first place. See
-			// findings.md, Achado 1: aborting the whole run here used to
-			// veto every tool over one unrelated broken repo.
-			_ = syncMgr.Sync(ctx)
-			ex.logDebug(ctx, "sync", "status", "done")
+			if ex.dryRun {
+				ex.outputf("  package index: would sync via %s\n", ex.nativeManagerName)
+				ex.logDebug(ctx, "sync", "status", "would_sync")
+			} else {
+				ex.outputf("  syncing package index...\n")
+				ex.logDebug(ctx, "sync", "status", "syncing")
+				// Sync() never returns a fatal error (see its doc comment): a
+				// failed index sync is a soft failure, already logged at WARN
+				// by the runner. Installation proceeds regardless — either
+				// against a stale-but-usable native cache, or via tools whose
+				// method never depended on this sync in the first place. See
+				// findings.md, Achado 1: aborting the whole run here used to
+				// veto every tool over one unrelated broken repo.
+				_ = syncMgr.Sync(ctx)
+				ex.logDebug(ctx, "sync", "status", "done")
+			}
 		}
 	}
 
@@ -217,7 +222,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 				}, report)
 				preinstallFailed[toolName] = true
 				ex.logWarn(ctx, "preinstall", "tool", toolName, "error", err.Error())
-			} else {
+			} else if !ex.dryRun {
 				preinstallDone[toolName] = true
 			}
 		}
@@ -241,6 +246,11 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 				}
 				ex.outputf("  ⚡  would batch native install: %s via %s\n", strings.Join(names, ", "), ex.nativeManagerName)
 				for _, c := range candidates {
+					if len(c.tool.PostInstall) > 0 {
+						postCtx, postCancel := context.WithTimeout(ctx, ex.methodTimeout)
+						_ = ex.runPostinstall(postCtx, c.tool)
+						postCancel()
+					}
 					ex.recordToolResult(ctx, &ToolResult{
 						Tool: c.toolName, Status: StatusWouldInstall, Method: "native",
 					}, report)
@@ -513,15 +523,17 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			attempt.Status = "success"
 			result.Methods = append(result.Methods, attempt)
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "would_install")
+			if len(tool.PostInstall) > 0 {
+				postCtx, postCancel := context.WithTimeout(toolCtx, ex.methodTimeout)
+				_ = ex.runPostinstall(postCtx, tool)
+				postCancel()
+			}
 			result.Duration = time.Since(toolStart).String()
 			return
 		}
 
 		ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "installing")
-		runner := ex.rn
-		if lr, ok := runner.(*run.LoggingRunner); ok {
-			runner = lr.WithContext(run.Context{Tool: tool.Name, Method: displayKind})
-		}
+		runner := ex.mutationRunner(tool.Name, displayKind)
 
 		// method-timeout applies to each individual attempt.
 		methodCtx, methodCancel := context.WithTimeout(toolCtx, ex.methodTimeout)

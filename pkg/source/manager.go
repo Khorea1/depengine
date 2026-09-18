@@ -14,12 +14,19 @@ import (
 // Manager checks and adds candidate-scoped package sources.
 type Manager struct {
 	rn       run.Runner
+	mutator  run.Runner
 	dryRun   bool
 	mu       sync.Mutex
 	aptDirty bool
 }
 
-func NewManager(rn run.Runner, dryRun bool) *Manager { return &Manager{rn: rn, dryRun: dryRun} }
+func NewManager(rn run.Runner, dryRun bool) *Manager {
+	mutator := rn
+	if dryRun {
+		mutator = run.BlockedRunner{Reason: "dry-run: source mutation is disabled"}
+	}
+	return &Manager{rn: rn, mutator: mutator, dryRun: dryRun}
+}
 
 // Ensure makes sources available idempotently. It returns missing sources in
 // dry-run mode without mutating the machine.
@@ -47,7 +54,7 @@ func (m *Manager) Ensure(ctx context.Context, sources []config.Source) ([]config
 		}
 	}
 	if !m.dryRun && m.aptDirty {
-		res := run.RunElevated(ctx, m.rn, "apt-get", "update")
+		res := run.RunElevated(ctx, m.mutator, "apt-get", "update")
 		if err := run.CheckResult(res, "apt source update"); err != nil {
 			return missing, err
 		}
@@ -101,9 +108,9 @@ func (m *Manager) add(ctx context.Context, source config.Source) error {
 	}
 	var result run.Result
 	if source.Kind == "apt-ppa" || source.Kind == "dnf-copr" {
-		result = run.RunElevated(ctx, m.rn, cmd[0], cmd[1:]...)
+		result = run.RunElevated(ctx, m.mutator, cmd[0], cmd[1:]...)
 	} else {
-		result = m.rn.Run(ctx, cmd[0], cmd[1:]...)
+		result = m.mutator.Run(ctx, cmd[0], cmd[1:]...)
 	}
 	return run.CheckResult(result, "source add")
 }

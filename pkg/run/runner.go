@@ -37,6 +37,35 @@ type Runner interface {
 	Run(ctx context.Context, name string, args ...string) Result
 }
 
+// BlockedRunner is an execution boundary for plans that must be observational
+// only. Every subprocess execution attempt is rejected before a process can be
+// spawned. LookPath remains available because executable lookup itself does not
+// execute the target or mutate host state.
+type BlockedRunner struct {
+	Reason string
+}
+
+func (r BlockedRunner) blocked() Result {
+	reason := r.Reason
+	if reason == "" {
+		reason = "subprocess execution is disabled"
+	}
+	return Result{Err: errors.New(reason)}
+}
+
+func (r BlockedRunner) Run(context.Context, string, ...string) Result {
+	return r.blocked()
+}
+
+func (r BlockedRunner) RunInDir(context.Context, string, string, ...string) Result {
+	return r.blocked()
+}
+
+func (BlockedRunner) LookPath(_ context.Context, name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
+
 // DirectoryRunner extends Runner for commands that must execute in a specific
 // working directory.
 type DirectoryRunner interface {
@@ -181,3 +210,5 @@ func CheckResult(res Result, prefix string) error {
 
 var _ DirectoryRunner = OSExecRunner{}
 var _ PathLookupRunner = OSExecRunner{}
+var _ DirectoryRunner = BlockedRunner{}
+var _ PathLookupRunner = BlockedRunner{}

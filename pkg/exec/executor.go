@@ -243,6 +243,21 @@ func (ex *Executor) probeRunner(tool, method string) run.Runner {
 	return ex.rn
 }
 
+// mutationRunner is the only runner an executor mutation path should receive.
+// In dry-run mode it refuses every subprocess execution, so a future adapter
+// cannot turn a planning path into a host mutation merely by forgetting a
+// local dry-run check. Availability and state probes intentionally use
+// probeRunner instead.
+func (ex *Executor) mutationRunner(tool, method string) run.Runner {
+	if ex.dryRun {
+		return run.BlockedRunner{Reason: "dry-run: mutating command execution is disabled"}
+	}
+	if lr, ok := ex.rn.(*run.LoggingRunner); ok {
+		return lr.WithContext(run.Context{Tool: tool, Method: method})
+	}
+	return ex.rn
+}
+
 // DefaultMethodOrder returns the effective default method order for the
 // executor. Used by callers that need to resolve method ordering outside
 // the normal Execute path (e.g. upgrade).
