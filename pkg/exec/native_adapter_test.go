@@ -487,3 +487,54 @@ func TestNativeByManagerAdapterInstall(t *testing.T) {
 		}
 	})
 }
+
+func TestNativeDeclaredFieldsGovernRuntimeCommands(t *testing.T) {
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"pkg":           "fd",
+		"pkg_overrides": map[string]any{"apt": "fd-find"},
+	}}
+	tool := &config.Tool{Name: "tool-name-must-not-win"}
+	adapter := NewNativeAdapter("debian")
+
+	assertUsesOverride := func(t *testing.T, calls []run.FakeCall) {
+		t.Helper()
+		found := false
+		for _, call := range calls {
+			for _, arg := range call.Args {
+				if arg == "fd-find" {
+					found = true
+				}
+				if arg == "fd" {
+					t.Fatalf("runtime command used fallback pkg despite matching pkg_overrides: %s %v", call.Name, call.Args)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("runtime command did not use matching pkg_overrides; calls: %v", calls)
+		}
+	}
+
+	checkRunner := &run.FakeRunner{ExitCode: 0}
+	if !adapter.Check(context.Background(), checkRunner, tool, mc) {
+		t.Fatal("Check should succeed with fake runner")
+	}
+	assertUsesOverride(t, checkRunner.Calls)
+
+	availableRunner := &run.FakeRunner{ExitCode: 0}
+	if !adapter.CheckAvailable(context.Background(), availableRunner, tool, mc) {
+		t.Fatal("CheckAvailable should succeed with fake runner")
+	}
+	assertUsesOverride(t, availableRunner.Calls)
+
+	installRunner := &run.FakeRunner{ExitCode: 0}
+	if err := adapter.Install(context.Background(), installRunner, tool, mc); err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	assertUsesOverride(t, installRunner.Calls)
+
+	removeRunner := &run.FakeRunner{ExitCode: 0}
+	if err := adapter.Remove(context.Background(), removeRunner, tool, mc); err != nil {
+		t.Fatalf("Remove returned error: %v", err)
+	}
+	assertUsesOverride(t, removeRunner.Calls)
+}
