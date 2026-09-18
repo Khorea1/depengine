@@ -141,7 +141,7 @@ At least one adapter accepts a field that does not affect actual installation be
   - [x] SDKMAN: exact `version` now governs both install and verification.
   - [x] Cargo
   - [x] Go
-  - [ ] Conda
+  - [x] Conda
   - [ ] container
   - [ ] Git
   - [ ] Snap

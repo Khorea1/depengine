@@ -2,6 +2,7 @@ package ecosystem
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/config"
@@ -162,5 +163,40 @@ func TestCondaAdapterRemoveNoPkg(t *testing.T) {
 	mc := &config.MethodCandidate{Kind: "conda"}
 	if err := a.Remove(context.Background(), fr, tool, mc); err == nil {
 		t.Fatal("expected error for missing package name")
+	}
+}
+
+func TestCondaPkgFieldOverridesToolNameAcrossOperations(t *testing.T) {
+	ctx := context.Background()
+	adapter := NewCondaAdapter()
+	tool, mc := condaTool("friendly-name", "actual-package")
+
+	checkRunner := &run.FakeRunner{Stdout: "actual-package 1.2.3 py_0\n", ExitCode: 0}
+	if !adapter.Check(ctx, checkRunner, tool, mc) {
+		t.Fatal("Check should use conda.pkg instead of tool.Name")
+	}
+	assertCondaCall(t, checkRunner, []string{"list", "actual-package"})
+
+	installRunner := &run.FakeRunner{ExitCode: 0}
+	if err := adapter.Install(ctx, installRunner, tool, mc); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	assertCondaCall(t, installRunner, []string{"install", "-y", "actual-package"})
+
+	removeRunner := &run.FakeRunner{ExitCode: 0}
+	if err := adapter.Remove(ctx, removeRunner, tool, mc); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	assertCondaCall(t, removeRunner, []string{"remove", "-y", "actual-package"})
+}
+
+func assertCondaCall(t *testing.T, fr *run.FakeRunner, want []string) {
+	t.Helper()
+	if len(fr.Calls) != 1 {
+		t.Fatalf("conda calls = %d, want 1: %#v", len(fr.Calls), fr.Calls)
+	}
+	got := fr.Calls[0]
+	if got.Name != "conda" || !reflect.DeepEqual(got.Args, want) {
+		t.Fatalf("conda call = %s %#v, want conda %#v", got.Name, got.Args, want)
 	}
 }
