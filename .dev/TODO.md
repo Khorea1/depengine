@@ -157,14 +157,14 @@ The Go HTTP downloader can attach GitHub authentication without exposing the tok
 **Work**
 
 - [ ] Make authentication requirements part of planning/capability selection.
-- [ ] Do not select a downloader that cannot satisfy required auth semantics.
+- [x] Do not select a downloader that cannot satisfy required auth semantics.
 - [ ] Ensure credentials are not passed in argv, logs, error text, lockfiles, or state files.
 - [ ] Define explicit secure secret references for future private registries/sources rather than literal secrets in manifests.
-- [ ] Add private GitHub release tests using fake servers/runners.
+- [x] Add private GitHub release tests using fake servers/runners.
 
 **Acceptance criteria**
 
-- [ ] Presence of `curl`/`wget` cannot cause a private GitHub install to lose authentication support.
+- [x] Presence of `curl`/`wget` cannot cause a private GitHub install to lose authentication support.
 - [ ] Tokens/secrets never appear in logged commands or serialized project state.
 - [ ] Downloader capability mismatches fail during planning with a clear explanation.
 

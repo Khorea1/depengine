@@ -144,7 +144,7 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 
 	if !fromCache {
 		// Download from remote.
-		dl := SelectDownloader(ctx, rn)
+		dl := SelectDownloaderForURL(ctx, rn, resolvedURL)
 		if err := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
 			return dl.Download(retryCtx, resolvedURL, tmpFile)
 		}); err != nil {
@@ -159,7 +159,7 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 			if fromCache {
 				log.Default.Warn("cached copy failed checksum, re-downloading", "tool", tool.Name)
 				downloadcache.Remove(resolvedURL)
-				dl := SelectDownloader(ctx, rn)
+				dl := SelectDownloaderForURL(ctx, rn, resolvedURL)
 				if err2 := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
 					return dl.Download(retryCtx, resolvedURL, tmpFile)
 				}); err2 != nil {
@@ -348,7 +348,7 @@ func (a *HTTPAdapter) fetchChecksumFromURL(ctx context.Context, rn run.Runner, c
 	defer os.RemoveAll(tmpDir)
 
 	checksumFile := tmpDir + "/checksum"
-	dl := SelectDownloader(ctx, rn)
+	dl := SelectDownloaderForURL(ctx, rn, checksumURL)
 	if err := dl.Download(ctx, checksumURL, checksumFile); err != nil {
 		return "", fmt.Errorf("downloading %s: %w", checksumURL, err)
 	}
@@ -357,7 +357,8 @@ func (a *HTTPAdapter) fetchChecksumFromURL(ctx context.Context, rn run.Runner, c
 	if sigURL, ok := config["signature_url"].(string); ok && sigURL != "" {
 		signingKey, _ := config["signing_key"].(string)
 		sigFile := tmpDir + "/checksum.sig"
-		if err := dl.Download(ctx, sigURL, sigFile); err != nil {
+		sigDownloader := SelectDownloaderForURL(ctx, rn, sigURL)
+		if err := sigDownloader.Download(ctx, sigURL, sigFile); err != nil {
 			return "", fmt.Errorf("downloading signature %s: %w", sigURL, err)
 		}
 		if err := GPGVerify(ctx, rn, checksumFile, sigFile, signingKey); err != nil {

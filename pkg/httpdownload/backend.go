@@ -132,21 +132,30 @@ func (d *WgetDownloader) Download(ctx context.Context, url, dest string) error {
 	return run.CheckResult(res, "wget")
 }
 
-// SelectDownloader returns the best available download backend.
-// curl is tried first (handles redirects, SSL, and progress display well);
-// wget is the first fallback; Go net/http is the universal fallback
-// (always available in Go binaries).
+// SelectDownloader returns the best available download backend when no URL-
+// specific capability is required. curl is preferred, then wget, with Go's
+// net/http as the universal fallback.
 func SelectDownloader(ctx context.Context, rn run.Runner) Downloader {
-	// Try curl first (handles redirects, SSL, etc. well).
 	if run.LookPath(ctx, rn, "curl") {
 		return NewCurlDownloader(rn)
 	}
-	// Fall back to wget.
 	if run.LookPath(ctx, rn, "wget") {
 		return NewWgetDownloader(rn)
 	}
-	// Go net/http is always available.
 	return NewGoDownloader(rn)
+}
+
+// SelectDownloaderForURL chooses a backend that can satisfy the security
+// requirements of a concrete URL. When a GitHub credential is available,
+// downloads from github.com must use GoDownloader because it can attach the
+// Authorization header in-process. Passing the token to curl/wget would expose
+// it in argv/process listings, while choosing curl/wget without the header can
+// silently turn an authenticated private-release request into an anonymous one.
+func SelectDownloaderForURL(ctx context.Context, rn run.Runner, rawURL string) Downloader {
+	if rn != nil && ghrelease.IsGitHubURL(rawURL) && ghrelease.GithubToken(ctx, rn) != "" {
+		return NewGoDownloader(rn)
+	}
+	return SelectDownloader(ctx, rn)
 }
 
 // downloadErrorWithHint appends the arch_map/os_map hint to a download
