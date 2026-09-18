@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Khorea1/depengine/pkg/artifact"
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/downloadcache"
 	"github.com/Khorea1/depengine/pkg/exec"
@@ -111,8 +112,11 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	// Determine file extension.
 	ext := fileExtension(resolvedURL)
 	allowInstaller, _ := mc.Config["_allow_installer"].(bool)
-	if installerExtension(resolvedURL) != "" && !allowInstaller {
-		return fmt.Errorf("http: %s is an installer; use its dedicated method kind", installerExtension(resolvedURL))
+	if installerExt := artifact.InstallerExtension(resolvedURL); installerExt != "" && !allowInstaller {
+		if installerExt == ".msi" {
+			return fmt.Errorf("http: %s is a platform installer; use the msi method", installerExt)
+		}
+		return fmt.Errorf("http: %s is a platform installer; no dedicated installer method is available for this format", installerExt)
 	}
 	tmpDir, err := os.MkdirTemp("", "depengine-http-*")
 	if err != nil {

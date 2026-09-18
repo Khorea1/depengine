@@ -4,6 +4,7 @@ package methodkind
 import (
 	"sort"
 
+	"github.com/Khorea1/depengine/pkg/artifact"
 	"github.com/Khorea1/depengine/pkg/native"
 )
 
@@ -41,6 +42,7 @@ type Contract struct {
 	AllowString          bool
 	AllowTrue            bool
 	CanRemove            bool
+	Artifact             *artifact.Contract
 }
 
 var pkgField = map[string]Field{"pkg": {Type: String}}
@@ -93,6 +95,27 @@ var downloadFields = fields(artifactFields, map[string]Field{
 
 var artifactSourceAlternatives = [][]string{{"url"}, {"repo", "asset"}}
 
+var downloadArtifactContract = &artifact.Contract{
+	URLFields:           []string{"url", "checksum_url", "signature_url"},
+	AllowedSchemes:      []string{"http", "https"},
+	ArtifactFields:      []string{"url", "asset"},
+	ForbiddenExtensions: artifact.PlatformInstallerExtensions,
+}
+
+var githubArtifactContract = &artifact.Contract{
+	URLFields:           []string{"checksum_url", "signature_url"},
+	AllowedSchemes:      []string{"http", "https"},
+	ArtifactFields:      []string{"asset"},
+	ForbiddenExtensions: artifact.PlatformInstallerExtensions,
+}
+
+var msiArtifactContract = &artifact.Contract{
+	URLFields:          []string{"url", "checksum_url", "signature_url"},
+	AllowedSchemes:     []string{"http", "https"},
+	ArtifactFields:     []string{"url", "asset"},
+	RequiredExtensions: []string{".msi"},
+}
+
 // Contracts is the single source of truth for method kinds, ordering and
 // adapter-facing schema fields. Keep entries in default preference order;
 // kinds with DefaultOrder zero are valid but never injected as blind fallbacks.
@@ -137,8 +160,8 @@ var Contracts = []Contract{
 	{Kind: "appimage", DefaultOrder: 31, Fields: fields(downloadFields, map[string]Field{
 		"install_dir": {Type: String},
 		"desktop":     {Type: Boolean},
-	}), SourceAlternatives: artifactSourceAlternatives, CanRemove: true},
-	{Kind: "android", DefaultOrder: 32, Fields: downloadFields, SourceAlternatives: artifactSourceAlternatives},
+	}), SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract},
+	{Kind: "android", DefaultOrder: 32, Fields: downloadFields, SourceAlternatives: artifactSourceAlternatives, Artifact: downloadArtifactContract},
 	{Kind: "git", DefaultOrder: 33, Fields: map[string]Field{
 		"url":           {Type: String, Required: true, NonEmpty: true},
 		"branch":        {Type: String},
@@ -154,12 +177,12 @@ var Contracts = []Contract{
 		"asset":   {Type: String, Required: true, NonEmpty: true},
 		"release": {Type: String},
 		"branch":  {Type: String, NonEmpty: true},
-	}), SourceAlternatives: [][]string{{"repo", "asset"}}, MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true},
-	{Kind: "http", DefaultOrder: 35, Fields: downloadFields, SourceAlternatives: artifactSourceAlternatives, CanRemove: true},
+	}), SourceAlternatives: [][]string{{"repo", "asset"}}, Artifact: githubArtifactContract, MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true},
+	{Kind: "http", DefaultOrder: 35, Fields: downloadFields, SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract},
 	{Kind: "msi", DefaultOrder: 36, Fields: fields(artifactFields, map[string]Field{
 		"product_name": {Type: String, Required: true, NonEmpty: true},
 		"publisher":    {Type: String},
-	}), SourceAlternatives: artifactSourceAlternatives, MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, ImplicitDistroFamily: []string{"windows"}, CanRemove: true},
+	}), SourceAlternatives: artifactSourceAlternatives, Artifact: msiArtifactContract, MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, ImplicitDistroFamily: []string{"windows"}, CanRemove: true},
 }
 
 var (

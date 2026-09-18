@@ -341,3 +341,81 @@ func TestValidateSignatureSecurity_NoSigURL(t *testing.T) {
 		t.Errorf("expected no warnings when signature_url is absent, got: %v", r.Warnings)
 	}
 }
+
+func TestValidateArtifactContractsRejectUnsupportedSchemes(t *testing.T) {
+	for _, kind := range []string{"http", "appimage", "android", "msi"} {
+		t.Run(kind, func(t *testing.T) {
+			configMap := map[string]any{"url": "ftp://example.com/tool.bin"}
+			if kind == "msi" {
+				configMap["url"] = "ftp://example.com/tool.msi"
+				configMap["product_name"] = "Tool"
+			}
+			s := &config.Schema{Tools: map[string]*config.Tool{
+				"app": tool("app", []*config.MethodCandidate{mc(kind, nil, configMap)}, nil),
+			}}
+			r := validateMalformedURLs(s)
+			if !r.HasErrors() {
+				t.Fatalf("expected %s to reject ftp artifact URL", kind)
+			}
+			if r.Errors[0].Code != ErrMalformedURL {
+				t.Fatalf("code = %s, want %s", r.Errors[0].Code, ErrMalformedURL)
+			}
+		})
+	}
+}
+
+func TestValidateArtifactContractsRejectHTTPPlatformInstallers(t *testing.T) {
+	for _, ext := range []string{".msi", ".exe", ".pkg", ".dmg", ".msix", ".appx"} {
+		t.Run(ext, func(t *testing.T) {
+			s := &config.Schema{Tools: map[string]*config.Tool{
+				"app": tool("app", []*config.MethodCandidate{mc("http", nil, map[string]any{"url": "https://example.com/tool" + ext})}, nil),
+			}}
+			r := validateMalformedURLs(s)
+			if !r.HasErrors() {
+				t.Fatalf("expected http %s artifact to be rejected", ext)
+			}
+			if r.Errors[0].Code != ErrInvalidValue {
+				t.Fatalf("code = %s, want %s", r.Errors[0].Code, ErrInvalidValue)
+			}
+		})
+	}
+}
+
+func TestValidateArtifactContractsRejectGitHubInstallerAsset(t *testing.T) {
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"app": tool("app", []*config.MethodCandidate{mc("github", nil, map[string]any{
+			"repo": "owner/repo", "asset": "tool-{version}.dmg",
+		})}, nil),
+	}}
+	r := validateMalformedURLs(s)
+	if !r.HasErrors() {
+		t.Fatal("expected github .dmg asset to be rejected")
+	}
+}
+
+func TestValidateArtifactContractsMSIRequiresMSIArtifact(t *testing.T) {
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"app": tool("app", []*config.MethodCandidate{mc("msi", nil, map[string]any{
+			"url": "https://example.com/tool.exe", "product_name": "Tool",
+		})}, nil),
+	}}
+	r := validateMalformedURLs(s)
+	if !r.HasErrors() {
+		t.Fatal("expected msi method to reject non-msi artifact")
+	}
+}
+
+func TestValidateArtifactContractsValidateAuxiliaryURLs(t *testing.T) {
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"app": tool("app", []*config.MethodCandidate{mc("http", nil, map[string]any{
+			"url": "https://example.com/tool.tar.gz", "checksum_url": "file:///tmp/checksums.txt",
+		})}, nil),
+	}}
+	r := validateMalformedURLs(s)
+	if !r.HasErrors() {
+		t.Fatal("expected non-http checksum_url to be rejected")
+	}
+	if got := r.Errors[0].Field; got != "tools.app.methods[0].checksum_url" {
+		t.Fatalf("field = %q, want checksum_url", got)
+	}
+}

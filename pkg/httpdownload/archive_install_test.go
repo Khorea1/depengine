@@ -156,7 +156,7 @@ func TestArchiveRemoveRefusesRedirectedLauncher(t *testing.T) {
 }
 
 func TestHTTPRejectsAllPlatformInstallerArtifacts(t *testing.T) {
-	for _, ext := range []string{".msi", ".exe", ".pkg", ".dmg"} {
+	for _, ext := range []string{".msi", ".exe", ".pkg", ".dmg", ".msix", ".appx"} {
 		t.Run(ext, func(t *testing.T) {
 			mc := &config.MethodCandidate{Config: map[string]any{"url": "https://example.invalid/tool" + ext}}
 			err := NewHTTPAdapter().Install(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "tool"}, mc)

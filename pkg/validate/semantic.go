@@ -7,8 +7,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Khorea1/depengine/pkg/artifact"
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/graph"
+	"github.com/Khorea1/depengine/pkg/methodkind"
 )
 
 // validateCycles detects dependency cycles using graph.Sort.
@@ -82,39 +84,68 @@ func toolsWithConditionalDependencies(tools map[string]*config.Tool) map[string]
 	return out
 }
 
-// validateMalformedURLs checks URL fields for basic syntactic validity.
+// validateMalformedURLs applies the artifact contract for every download-backed
+// method, then preserves git's separate repository-URL validation. Keeping the
+// download rules on methodkind.Contract prevents validate and runtime adapters
+// from drifting on supported schemes and installer formats.
 func validateMalformedURLs(s *config.Schema) *Result {
 	r := &Result{}
 
 	for toolName, tool := range s.Tools {
 		for i, mc := range tool.Methods {
-			var urlStr string
-			switch mc.Kind {
-			case "git", "http", "appimage":
-				if v, ok := mc.Config["url"]; ok {
-					urlStr, _ = v.(string)
-				}
+			contract, ok := methodkind.Lookup(mc.Kind)
+			if ok && contract.Artifact != nil {
+				validateArtifactContract(toolName, i, mc, contract.Artifact, r)
+				continue
 			}
+			if mc.Kind != "git" {
+				continue
+			}
+			urlStr, _ := mc.Config["url"].(string)
 			if urlStr == "" {
 				continue
 			}
-
-			// Replace placeholders with a safe token so URL parsing
-			// doesn't choke on {latest} etc.
 			checkURL := config.PlaceholderRe.ReplaceAllString(urlStr, "_")
-
 			parsed, err := url.Parse(checkURL)
 			if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-				r.Add(ValidationError{
-					Code:    ErrMalformedURL,
-					Field:   fieldPath(toolName, i, "url"),
-					Message: fmt.Sprintf("malformed URL %q", urlStr),
-				})
+				r.Add(ValidationError{Code: ErrMalformedURL, Field: fieldPath(toolName, i, "url"), Message: fmt.Sprintf("malformed URL %q", urlStr)})
 			}
 		}
 	}
 
 	return r
+}
+
+func validateArtifactContract(toolName string, methodIdx int, mc *config.MethodCandidate, contract *artifact.Contract, r *Result) {
+	for _, field := range contract.URLFields {
+		raw, _ := mc.Config[field].(string)
+		if raw == "" {
+			continue
+		}
+		checkURL := config.PlaceholderRe.ReplaceAllString(raw, "_")
+		if err := artifact.ValidateURL(checkURL, contract.AllowedSchemes); err != nil {
+			r.Add(ValidationError{Code: ErrMalformedURL, Field: fieldPath(toolName, methodIdx, field), Message: fmt.Sprintf("%s: %v", mc.Kind, err)})
+		}
+	}
+
+	for _, field := range contract.ArtifactFields {
+		raw, _ := mc.Config[field].(string)
+		if raw == "" {
+			continue
+		}
+		if ext := artifact.Extension(raw, contract.ForbiddenExtensions); ext != "" {
+			message := fmt.Sprintf("%s method does not support platform installer artifact %s", mc.Kind, ext)
+			if ext == ".msi" {
+				message += "; use the msi method"
+			} else {
+				message += "; no dedicated installer method is available for this format"
+			}
+			r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, methodIdx, field), Message: message})
+		}
+		if len(contract.RequiredExtensions) > 0 && artifact.Extension(raw, contract.RequiredExtensions) == "" {
+			r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, methodIdx, field), Message: fmt.Sprintf("%s method requires an artifact ending in %s", mc.Kind, strings.Join(contract.RequiredExtensions, " or "))})
+		}
+	}
 }
 
 // validateUnknownDistroFamily checks that when.distro_family values are
