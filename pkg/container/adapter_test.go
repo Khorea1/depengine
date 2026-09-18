@@ -191,3 +191,42 @@ func equalArgs(a, b []string) bool {
 	}
 	return true
 }
+
+func TestContainerAdapterDeclaredFieldsGovernRuntimeCommands(t *testing.T) {
+	adapter := NewContainerAdapter()
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"manager": "podman",
+		"source":  "registry.example.test/team/tool",
+		"tag":     "1.2.3",
+	}}
+
+	checkRunner := &nameAwareRunner{
+		exitByName: map[string]int{"podman": 0},
+		stdout:     "sha256:deadbeef\n",
+	}
+	if !adapter.Check(context.Background(), checkRunner, tool("ignored-name"), mc) {
+		t.Fatal("Check should find the configured image")
+	}
+	checkCall := checkRunner.calls[len(checkRunner.calls)-1]
+	if checkCall.Name != "podman" || !equalArgs(checkCall.Args, []string{"images", "-q", "registry.example.test/team/tool:1.2.3"}) {
+		t.Fatalf("Check ran %v %v; declared manager/source/tag were not all honored", checkCall.Name, checkCall.Args)
+	}
+
+	installRunner := &nameAwareRunner{exitByName: map[string]int{"podman": 0}}
+	if err := adapter.Install(context.Background(), installRunner, tool("ignored-name"), mc); err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	installCall := installRunner.calls[len(installRunner.calls)-1]
+	if installCall.Name != "podman" || !equalArgs(installCall.Args, []string{"pull", "registry.example.test/team/tool:1.2.3"}) {
+		t.Fatalf("Install ran %v %v; declared manager/source/tag were not all honored", installCall.Name, installCall.Args)
+	}
+
+	removeRunner := &nameAwareRunner{exitByName: map[string]int{"podman": 0}}
+	if err := adapter.Remove(context.Background(), removeRunner, tool("ignored-name"), mc); err != nil {
+		t.Fatalf("Remove returned error: %v", err)
+	}
+	removeCall := removeRunner.calls[len(removeRunner.calls)-1]
+	if removeCall.Name != "podman" || !equalArgs(removeCall.Args, []string{"rmi", "registry.example.test/team/tool:1.2.3"}) {
+		t.Fatalf("Remove ran %v %v; declared manager/source/tag were not all honored", removeCall.Name, removeCall.Args)
+	}
+}
