@@ -136,13 +136,13 @@ At least one adapter accepts a field that does not affect actual installation be
 
 - [ ] Create a conformance mechanism that enumerates all accepted fields for each method contract.
 - [ ] Require every field to influence the resolved plan, validation, execution, or verification.
-- [ ] Fix `asdf.version` handling.
+- [x] Fix `asdf.version` handling.
 - [ ] Audit SDKMAN, Cargo, Go, Conda, container, Git, Snap, Flatpak, native and artifact adapters for similar discrepancies.
 - [ ] Prevent future contract additions without corresponding semantic tests.
 
 **Acceptance criteria**
 
-- [ ] `asdf.version = "X"` installs/checks X rather than silently using latest.
+- [x] `asdf.version = "X"` installs/checks X rather than silently using latest.
 - [ ] Contract tests fail when a schema field is accepted but ignored.
 - [ ] Every adapter has at least one behavior test per non-trivial declared field.
 
@@ -682,7 +682,7 @@ ______________________________________________________________________
 
 **Work**
 
-- [ ] Fix asdf version installation immediately under P0.4.
+- [x] Fix asdf version installation immediately under P0.4.
 - [ ] Evaluate a shared version-manager contract for asdf/mise overlap.
 - [ ] Model plugin/provider installation separately from tool-version installation where needed.
 - [ ] Make “current/global/local” selection explicit rather than environment-dependent.

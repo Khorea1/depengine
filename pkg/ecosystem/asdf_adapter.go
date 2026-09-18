@@ -29,10 +29,18 @@ func (a *AsdfAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 	if len(pkg) == 0 || pkg[0] == "" {
 		return false
 	}
+	desired := asdfVersion(mc)
 	for _, cmd := range []string{"asdf", "mise"} {
 		if run.LookPath(ctx, rn, cmd) {
 			res := rn.Run(ctx, cmd, "list", pkg[0])
-			if res.Err == nil && res.ExitCode == 0 && hasWord(string(res.Stdout), pkg[0]) {
+			if res.Err != nil || res.ExitCode != 0 {
+				continue
+			}
+			out := strings.TrimSpace(string(res.Stdout))
+			if desired == "latest" {
+				return out != ""
+			}
+			if hasWord(out, desired) {
 				return true
 			}
 		}
@@ -45,6 +53,7 @@ func (a *AsdfAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	if len(pkg) == 0 || pkg[0] == "" {
 		return fmt.Errorf("asdf: no package name")
 	}
+	desired := asdfVersion(mc)
 	for _, cmd := range []string{"asdf", "mise"} {
 		if !run.LookPath(ctx, rn, cmd) {
 			continue
@@ -78,16 +87,18 @@ func (a *AsdfAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 			}
 		}
 
-		if res := rn.Run(ctx, cmd, "install", pkg[0]); res.Err != nil {
-			return fmt.Errorf("%s: install failed: %w", cmd, res.Err)
-		}
-
 		if cmd == "mise" {
-			if res := rn.Run(ctx, cmd, "use", "-g", pkg[0]+"@latest"); res.Err != nil {
+			if res := rn.Run(ctx, cmd, "install", pkg[0]+"@"+desired); res.Err != nil {
+				return fmt.Errorf("mise: install failed: %w", res.Err)
+			}
+			if res := rn.Run(ctx, cmd, "use", "-g", pkg[0]+"@"+desired); res.Err != nil {
 				return fmt.Errorf("mise: global set failed: %w", res.Err)
 			}
 		} else {
-			if res := rn.Run(ctx, cmd, "global", pkg[0], "latest"); res.Err != nil {
+			if res := rn.Run(ctx, cmd, "install", pkg[0], desired); res.Err != nil {
+				return fmt.Errorf("asdf: install failed: %w", res.Err)
+			}
+			if res := rn.Run(ctx, cmd, "global", pkg[0], desired); res.Err != nil {
 				return fmt.Errorf("asdf: global set failed: %w", res.Err)
 			}
 		}
@@ -97,14 +108,23 @@ func (a *AsdfAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	return fmt.Errorf("asdf: neither asdf nor mise found")
 }
 
+func asdfVersion(mc *config.MethodCandidate) string {
+	if mc != nil {
+		if version, ok := mc.Config["version"].(string); ok && strings.TrimSpace(version) != "" {
+			return strings.TrimSpace(version)
+		}
+	}
+	return "latest"
+}
+
 // CanRemove reports whether this adapter supports removal. Removal is
 // possible when an explicit version is known (see Remove).
 func (a *AsdfAdapter) CanRemove() bool { return true }
 
 // Remove uninstalls a specific version of a tool via asdf or mise.
 //
-// asdf/mise uninstall are version-dependent: unlike Install (which resolves
-// "latest"), `asdf uninstall <plugin> <version>` and `mise uninstall
+// asdf/mise uninstall are version-dependent: `asdf uninstall <plugin> <version>`
+// and `mise uninstall
 // <plugin>@<version>` require an exact installed version. The version is read
 // from mc.Config["version"]; when absent, removal cannot proceed and a manual
 // command is suggested.

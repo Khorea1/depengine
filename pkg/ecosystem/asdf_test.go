@@ -53,13 +53,30 @@ func TestAsdfAdapterCheck(t *testing.T) {
 
 func TestAsdfAdapterCheckNotInstalled(t *testing.T) {
 	t.Parallel()
-	// Stdout doesn't contain the package name → Check fails.
-	fr := &run.FakeRunner{Stdout: "python\n3.11.0\n", ExitCode: 0}
+	// No installed versions reported → Check fails.
+	fr := &run.FakeRunner{Stdout: "", ExitCode: 0}
 
 	a := &AsdfAdapter{}
 	tool, mc := asdfTool("nodejs", "nodejs")
 	if a.Check(context.Background(), fr, tool, mc) {
 		t.Fatal("expected Check=false when tool is not installed")
+	}
+}
+
+func TestAsdfAdapterCheckHonorsConfiguredVersion(t *testing.T) {
+	t.Parallel()
+	a := &AsdfAdapter{}
+	tool, mc := asdfTool("nodejs", "nodejs")
+	mc.Config["version"] = "18.20.4"
+
+	installed := &run.FakeRunner{Stdout: "  18.20.4\n  20.17.0\n", ExitCode: 0}
+	if !a.Check(context.Background(), installed, tool, mc) {
+		t.Fatal("expected Check=true when configured version is installed")
+	}
+
+	otherVersion := &run.FakeRunner{Stdout: "  20.17.0\n", ExitCode: 0}
+	if a.Check(context.Background(), otherVersion, tool, mc) {
+		t.Fatal("expected Check=false when only a different version is installed")
 	}
 }
 
@@ -99,11 +116,76 @@ func TestAsdfAdapterInstall(t *testing.T) {
 	if got[2].Name != "asdf" || got[2].Args[0] != "plugin-add" {
 		t.Errorf("expected 'asdf plugin-add nodejs', got %v", got[2])
 	}
-	if got[3].Name != "asdf" || got[3].Args[0] != "install" {
-		t.Errorf("expected 'asdf install', got %v", got[3])
+	if got[3].Name != "asdf" || len(got[3].Args) != 3 || got[3].Args[0] != "install" || got[3].Args[1] != "nodejs" || got[3].Args[2] != "latest" {
+		t.Errorf("expected 'asdf install nodejs latest', got %v", got[3])
 	}
-	if got[4].Name != "asdf" || got[4].Args[0] != "global" {
+	if got[4].Name != "asdf" || len(got[4].Args) != 3 || got[4].Args[0] != "global" || got[4].Args[1] != "nodejs" || got[4].Args[2] != "latest" {
 		t.Errorf("expected 'asdf global nodejs latest', got %v", got[4])
+	}
+}
+
+func TestAsdfAdapterInstallHonorsConfiguredVersion(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{ExitCode: 0}
+
+	a := &AsdfAdapter{}
+	tool, mc := asdfTool("nodejs", "nodejs")
+	mc.Config["version"] = "18.20.4"
+	if err := a.Install(context.Background(), fr, tool, mc); err != nil {
+		t.Fatalf("unexpected Install error: %v", err)
+	}
+
+	var install, global *run.FakeCall
+	for i := range fr.Calls {
+		call := &fr.Calls[i]
+		if call.Name == "asdf" && len(call.Args) > 0 {
+			switch call.Args[0] {
+			case "install":
+				install = call
+			case "global":
+				global = call
+			}
+		}
+	}
+	if install == nil || len(install.Args) != 3 || install.Args[1] != "nodejs" || install.Args[2] != "18.20.4" {
+		t.Fatalf("expected 'asdf install nodejs 18.20.4', got %v", install)
+	}
+	if global == nil || len(global.Args) != 3 || global.Args[1] != "nodejs" || global.Args[2] != "18.20.4" {
+		t.Fatalf("expected 'asdf global nodejs 18.20.4', got %v", global)
+	}
+}
+
+func TestMiseInstallHonorsConfiguredVersion(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{
+		ExitCode:  0,
+		LookPaths: map[string]bool{"asdf": false, "mise": true},
+	}
+
+	a := &AsdfAdapter{}
+	tool, mc := asdfTool("nodejs", "nodejs")
+	mc.Config["version"] = "18.20.4"
+	if err := a.Install(context.Background(), fr, tool, mc); err != nil {
+		t.Fatalf("unexpected Install error: %v", err)
+	}
+
+	var install, use *run.FakeCall
+	for i := range fr.Calls {
+		call := &fr.Calls[i]
+		if call.Name == "mise" && len(call.Args) > 0 {
+			switch call.Args[0] {
+			case "install":
+				install = call
+			case "use":
+				use = call
+			}
+		}
+	}
+	if install == nil || len(install.Args) != 2 || install.Args[1] != "nodejs@18.20.4" {
+		t.Fatalf("expected 'mise install nodejs@18.20.4', got %v", install)
+	}
+	if use == nil || len(use.Args) != 3 || use.Args[1] != "-g" || use.Args[2] != "nodejs@18.20.4" {
+		t.Fatalf("expected 'mise use -g nodejs@18.20.4', got %v", use)
 	}
 }
 
