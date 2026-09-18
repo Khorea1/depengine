@@ -672,3 +672,57 @@ func equalArgs(a, b []string) bool {
 	}
 	return true
 }
+
+func TestSnapDeclaredFieldsGovernRuntimeCommands(t *testing.T) {
+	adapter := NewBaseAdapter(Configs["snap"])
+	tool := &config.Tool{Name: "tool-name-must-not-win"}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"pkg":         "actual-snap",
+		"confinement": "devmode",
+		"channel":     "edge",
+	}}
+
+	checkRunner := &run.FakeRunner{ExitCode: 0}
+	if !adapter.Check(context.Background(), checkRunner, tool, mc) {
+		t.Fatal("Check should succeed for configured snap package")
+	}
+	checkCall := checkRunner.Calls[len(checkRunner.Calls)-1]
+	if checkCall.Name != "snap" || strings.Join(checkCall.Args, " ") != "list actual-snap" {
+		t.Fatalf("Check call = %s %v, want snap list actual-snap", checkCall.Name, checkCall.Args)
+	}
+
+	installRunner := &run.FakeRunner{ExitCode: 0}
+	if err := adapter.Install(context.Background(), installRunner, tool, mc); err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	installCall := installRunner.Calls[len(installRunner.Calls)-1]
+	if installCall.Name != "snap" || strings.Join(installCall.Args, " ") != "install actual-snap --devmode --channel=edge" {
+		t.Fatalf("Install call = %s %v; declared pkg/confinement/channel were not all honored", installCall.Name, installCall.Args)
+	}
+
+	removeRunner := &run.FakeRunner{ExitCode: 0}
+	if err := adapter.Remove(context.Background(), removeRunner, tool, mc); err != nil {
+		t.Fatalf("Remove returned error: %v", err)
+	}
+	removeCall := removeRunner.Calls[len(removeRunner.Calls)-1]
+	if removeCall.Name != "snap" || strings.Join(removeCall.Args, " ") != "remove actual-snap" {
+		t.Fatalf("Remove call = %s %v, want snap remove actual-snap", removeCall.Name, removeCall.Args)
+	}
+}
+
+func TestSnapExplicitDefaultOptionsDoNotInventFlags(t *testing.T) {
+	adapter := NewBaseAdapter(Configs["snap"])
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"pkg":         "actual-snap",
+		"confinement": "strict",
+		"channel":     "stable",
+	}}
+	fr := &run.FakeRunner{ExitCode: 0}
+	if err := adapter.Install(context.Background(), fr, &config.Tool{Name: "ignored"}, mc); err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	call := fr.Calls[len(fr.Calls)-1]
+	if got := strings.Join(call.Args, " "); got != "install actual-snap" {
+		t.Fatalf("explicit snap defaults should use native defaults; argv=%q", got)
+	}
+}

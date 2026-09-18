@@ -144,7 +144,7 @@ At least one adapter accepts a field that does not affect actual installation be
   - [x] Conda
   - [x] container
   - [x] Git
-  - [ ] Snap
+  - [x] Snap
   - [ ] Flatpak
   - [ ] native
   - [ ] artifact adapters
