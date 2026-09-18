@@ -6,17 +6,34 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/methodkind"
 )
 
+// hasDangerousMethod reports whether any selected method contains a field whose
+// schema contract is executable code. The decision is based on method semantics
+// (methodkind.Command), not on the raw TOML representation of the value. This
+// keeps string commands, structured argv commands, aliases, and future command
+// fields behind the same --allow-arbitrary-code gate.
 func (ex *Executor) hasDangerousMethod(tool *config.Tool) bool {
 	for _, method := range config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName) {
-		for _, key := range []string{"build", "build_cmd", "build_command"} {
-			if value, ok := method.Config[key].(string); ok && value != "" {
+		contract, ok := methodkind.Lookup(method.Kind)
+		if !ok {
+			continue
+		}
+		for fieldName, field := range contract.Fields {
+			if field.Type != methodkind.Command {
+				continue
+			}
+			if _, configured := method.Config[fieldName]; configured {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func (ex *Executor) hasArbitraryCode(tool *config.Tool) bool {
+	return len(tool.PreInstall) > 0 || len(tool.PostInstall) > 0 || ex.hasDangerousMethod(tool)
 }
 
 func (ex *Executor) runPreinstall(ctx context.Context, tool *config.Tool) error {

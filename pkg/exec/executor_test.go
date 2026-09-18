@@ -12,6 +12,7 @@ import (
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/engine"
+	"github.com/Khorea1/depengine/pkg/methodkind"
 	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/state"
 )
@@ -1168,61 +1169,106 @@ func TestExecutorBlocksDangerous(t *testing.T) {
 	}
 }
 
-func TestHasDangerousMethod(t *testing.T) {
+func TestHasDangerousMethodUsesCommandFieldSemantics(t *testing.T) {
 	ex := &Executor{}
-	tool := &config.Tool{Name: "test"}
 
-	// No methods → not dangerous.
+	commandFields := 0
+	forms := []struct {
+		name  string
+		value any
+	}{
+		{name: "shell-string", value: "make install"},
+		{name: "argv-table", value: map[string]any{"run": []any{"make", "install"}}},
+		{name: "command-list", value: []any{map[string]any{"run": []any{"make"}}}},
+	}
+
+	for _, contract := range methodkind.Contracts {
+		for fieldName, field := range contract.Fields {
+			if field.Type != methodkind.Command {
+				continue
+			}
+			commandFields++
+			for _, form := range forms {
+				t.Run(contract.Kind+"/"+fieldName+"/"+form.name, func(t *testing.T) {
+					tool := &config.Tool{
+						Name: "test",
+						Methods: []*config.MethodCandidate{{
+							Kind:   contract.Kind,
+							Config: map[string]any{fieldName: form.value},
+						}},
+					}
+					if !ex.hasDangerousMethod(tool) {
+						t.Fatalf("%s.%s must require --allow-arbitrary-code", contract.Kind, fieldName)
+					}
+				})
+			}
+		}
+	}
+	if commandFields == 0 {
+		t.Fatal("method contracts declare no command-bearing fields; test would be vacuous")
+	}
+
+	tool := &config.Tool{Name: "safe", Methods: []*config.MethodCandidate{{Kind: "aur", Config: map[string]any{"pkg": "foo"}}}}
 	if ex.hasDangerousMethod(tool) {
-		t.Error("tool with no methods should not be dangerous")
+		t.Error("non-command method fields must not be classified as arbitrary code")
 	}
+}
 
-	// Method with build config key → dangerous.
-	tool.Methods = []*config.MethodCandidate{
-		{Config: map[string]any{"build": "make"}},
+func TestHasArbitraryCodeCoversHooks(t *testing.T) {
+	ex := &Executor{}
+	for _, tc := range []struct {
+		name string
+		tool *config.Tool
+	}{
+		{name: "pre-install", tool: &config.Tool{Name: "x", PreInstall: []config.Hook{{Run: []string{"echo", "pre"}}}}},
+		{name: "post-install", tool: &config.Tool{Name: "x", PostInstall: []config.Hook{{Run: []string{"echo", "post"}}}}},
+		{name: "structured-build", tool: &config.Tool{Name: "x", Methods: []*config.MethodCandidate{{Kind: "git", Config: map[string]any{"build": map[string]any{"run": []any{"make"}}}}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if !ex.hasArbitraryCode(tc.tool) {
+				t.Fatal("expected arbitrary-code surface to be gated")
+			}
+		})
 	}
-	if !ex.hasDangerousMethod(tool) {
-		t.Error("tool with build config should be dangerous")
-	}
+}
 
-	// Method with build_cmd → dangerous.
-	tool.Methods = []*config.MethodCandidate{
-		{Config: map[string]any{"build_cmd": "ninja"}},
+func TestExecutorBlocksStructuredBuildWithoutPermission(t *testing.T) {
+	installed := false
+	gitAdapter := &testMockAdapter{
+		kindValue:     "git",
+		availableFunc: func() bool { return true },
+		checkFunc:     func(string) bool { return false },
+		installFunc: func(string) error {
+			installed = true
+			return nil
+		},
 	}
-	if !ex.hasDangerousMethod(tool) {
-		t.Error("tool with build_cmd should be dangerous")
-	}
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex)
+	WithAdapters(gitAdapter)(ex)
 
-	// Method with build_command → dangerous.
-	tool.Methods = []*config.MethodCandidate{
-		{Config: map[string]any{"build_command": "cmake --build"}},
-	}
-	if !ex.hasDangerousMethod(tool) {
-		t.Error("tool with build_command should be dangerous")
-	}
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"tool": {
+			Name: "tool",
+			Methods: []*config.MethodCandidate{{
+				Kind: "git",
+				Config: map[string]any{
+					"url":   "https://example.invalid/tool.git",
+					"build": map[string]any{"run": []any{"make"}},
+				},
+			}},
+		},
+	}}
 
-	// Method with non-string build value → not dangerous.
-	tool.Methods = []*config.MethodCandidate{
-		{Config: map[string]any{"build": true}},
+	report, err := ex.Execute(context.Background(), s, "")
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
 	}
-	if ex.hasDangerousMethod(tool) {
-		t.Error("tool with non-string build should not be dangerous")
+	if installed {
+		t.Fatal("structured build bypassed --allow-arbitrary-code gate")
 	}
-
-	// Method with empty string build value → not dangerous.
-	tool.Methods = []*config.MethodCandidate{
-		{Config: map[string]any{"build": ""}},
-	}
-	if ex.hasDangerousMethod(tool) {
-		t.Error("tool with empty build should not be dangerous")
-	}
-
-	// AUR/Pacstall methods are NOT flagged (explicit user choice).
-	tool.Methods = []*config.MethodCandidate{
-		{Kind: "aur", Config: map[string]any{"pkg": "foo"}},
-	}
-	if ex.hasDangerousMethod(tool) {
-		t.Error("AUR method should not be flagged as dangerous")
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusSkippedUnavailable {
+		t.Fatalf("blocked result = %+v", report.Tools)
 	}
 }
 

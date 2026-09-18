@@ -192,7 +192,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 				continue
 			}
 			if !ex.allowArbitraryCode {
-				hasDanger := ex.hasDangerousMethod(tool) || len(tool.PostInstall) > 0 || len(tool.PreInstall) > 0
+				hasDanger := ex.hasArbitraryCode(tool)
 				if hasDanger {
 					ex.outputf("  ⚠  %s: has hooks or build scripts that may execute arbitrary code. Use --allow-arbitrary-code to suppress this warning.\n", toolName)
 					ex.logWarn(ctx, "security", "tool", toolName, "warning", "has dangerous hooks")
@@ -377,26 +377,13 @@ func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResu
 		return result
 	}
 
-	// Security warnings for tools with arbitrary code execution surfaces.
-	type dangerCheck struct {
-		has    func(*config.Tool) bool
-		detail string
-	}
-	checks := []dangerCheck{
-		{ex.hasDangerousMethod, "config includes build scripts that may execute arbitrary code"},
-		{func(t *config.Tool) bool { return len(t.PostInstall) > 0 }, "has a post-install hook (arbitrary code execution)"},
-		{func(t *config.Tool) bool { return len(t.PreInstall) > 0 }, "has a pre-install hook (arbitrary code execution)"},
-	}
+	// Security gate for every arbitrary-code execution surface. Keep this as a
+	// defensive duplicate of Execute's phase-1 gate for direct callers.
 	if !ex.allowArbitraryCode {
-		hasDanger := false
-		for _, c := range checks {
-			if c.has(tool) {
-				hasDanger = true
-				ex.outputf("  ⚠  %s: %s. Use --allow-arbitrary-code to suppress this warning.\n", tool.Name, c.detail)
-				ex.logWarn(ctx, "security", "tool", tool.Name, "warning", c.detail)
-			}
-		}
-		if hasDanger {
+		if ex.hasArbitraryCode(tool) {
+			detail := "config includes commands that may execute arbitrary code"
+			ex.outputf("  ⚠  %s: %s. Use --allow-arbitrary-code to suppress this warning.\n", tool.Name, detail)
+			ex.logWarn(ctx, "security", "tool", tool.Name, "warning", detail)
 			// Defensive duplicate of the PHASE 1 gate in Execute: this path is
 			// unreachable from Execute (Phase 1 pre-filters every dangerous
 			// tool), but if any future caller reaches executeTool directly,
