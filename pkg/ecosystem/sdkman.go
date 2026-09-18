@@ -47,8 +47,15 @@ func (a *SDKManAdapter) Check(ctx context.Context, rn run.Runner, tool *config.T
 	if err != nil {
 		return false
 	}
-	current := filepath.Join(home, ".sdkman", "candidates", candidate[0], "current")
-	_, err = os.Stat(current)
+	base := filepath.Join(home, ".sdkman", "candidates", candidate[0])
+	if version, ok := mc.Config["version"].(string); ok && version != "" {
+		// Exact-version intent is satisfied only when that version is actually
+		// installed. Checking only the `current` symlink would silently accept
+		// a different SDK version.
+		_, err = os.Stat(filepath.Join(base, version))
+		return err == nil
+	}
+	_, err = os.Stat(filepath.Join(base, "current"))
 	return err == nil
 }
 

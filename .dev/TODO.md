@@ -138,6 +138,16 @@ At least one adapter accepts a field that does not affect actual installation be
 - [ ] Require every field to influence the resolved plan, validation, execution, or verification.
 - [x] Fix `asdf.version` handling.
 - [ ] Audit SDKMAN, Cargo, Go, Conda, container, Git, Snap, Flatpak, native and artifact adapters for similar discrepancies.
+  - [x] SDKMAN: exact `version` now governs both install and verification.
+  - [ ] Cargo
+  - [ ] Go
+  - [ ] Conda
+  - [ ] container
+  - [ ] Git
+  - [ ] Snap
+  - [ ] Flatpak
+  - [ ] native
+  - [ ] artifact adapters
 - [ ] Prevent future contract additions without corresponding semantic tests.
 
 **Acceptance criteria**
