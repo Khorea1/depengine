@@ -39,7 +39,19 @@ method_order = ["native", "cargo", "github", "http"]
 # CASE 1 — "Simple" tool: package name is the same on every relevant distro.
 # No table needed, just list the name. Uses `defaults.manager`.
 # ------------------------------------------------------------------------
-simple = ["zsh", "zathura", "w3m", "rofi", "mpv", "kitty", "tmux", "rclone", "docker-compose", "bat", "lsd"]
+simple = [
+  "zsh",
+  "zathura",
+  "w3m",
+  "rofi",
+  "mpv",
+  "kitty",
+  "tmux",
+  "rclone",
+  "docker-compose",
+  "bat",
+  "lsd",
+]
 
 
 # ------------------------------------------------------------------------
@@ -67,15 +79,17 @@ python-pip = { pacman = "python-pip", apt = "python3-pip", dnf = "python3-pip", 
 # from the final binary name.
 # ------------------------------------------------------------------------
 organize = { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" } # or { python = "organize-tool" }
-fzf      = { go = "github.com/junegunn/fzf" }
-lf       = { go = "github.com/gokcehan/lf" }
+fzf = { go = "github.com/junegunn/fzf" }
+lf = { go = "github.com/gokcehan/lf" }
 
 
 # ------------------------------------------------------------------------
 # CASE 4 — cargo installing directly from a git repository instead of
 # crates.io. Sub-key `git` within the cargo method.
-aichat = { aur = { pkg = "aichat", when = { distro_family = ["arch"] } }, cargo = { git = "https://github.com/sigoden/aichat" } }
-matugen    = { cargo = { git = "https://github.com/InioX/matugen" } }
+aichat = { aur = { pkg = "aichat", when = { distro_family = [
+  "arch",
+] } }, cargo = { git = "https://github.com/sigoden/aichat" } }
+matugen = { cargo = { git = "https://github.com/InioX/matugen" } }
 
 
 # ------------------------------------------------------------------------
@@ -88,8 +102,21 @@ matugen    = { cargo = { git = "https://github.com/InioX/matugen" } }
 #   extract_to, artifact, binary  = copied output and executable identity
 #   managed_paths                 = exact absolute paths owned by the recipe
 # ------------------------------------------------------------------------
-ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = [{ run = ["make"] }, { run = ["sudo", "make", "install"] }], when = { target_family = ["unix"] } } }
-fasd = { git = { url = "https://github.com/clvv/fasd",        build = "PREFIX=$HOME/.local make install", when = { target_family = ["unix"] } } }
+ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = [
+  { run = [
+    "make",
+  ] },
+  { run = [
+    "sudo",
+    "make",
+    "install",
+  ] },
+], when = { target_family = [
+  "unix",
+] } } }
+fasd = { git = { url = "https://github.com/clvv/fasd", build = "PREFIX=$HOME/.local make install", when = { target_family = [
+  "unix",
+] } } }
 
 
 # ------------------------------------------------------------------------
@@ -101,7 +128,9 @@ fasd = { git = { url = "https://github.com/clvv/fasd",        build = "PREFIX=$H
 #   checksum_url        → explicit URL of the checksums file
 #   checksum_file_format → "sha256sum" (default), "bsd", or "raw"
 #   signature_url       → GPG verification of the checksum signature
-fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb", checksum = "sha256:auto", when = { os = ["linux"] } } }
+fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb", checksum = "sha256:auto", when = { os = [
+  "linux",
+] } } }
 
 # Example with SHA-512 and explicit checksum_url:
 "tool-example" = { http = { url = "https://example.com/tool-{latest}.tar.gz", checksum = "sha512:auto", checksum_url = "https://example.com/SHA512SUMS" } }
@@ -116,7 +145,7 @@ zathura-pdf-mupdf = { requires = ["zathura"], pacman = "zathura-pdf-mupdf" }
 # the HTTP zip payload; `fc-cache` (provided by fontconfig) runs as post_install
 # to register the fonts. On Termux fc-cache ships in `fontconfig-utils` (pkg),
 # hence the per-manager override.
-unzip      = { native = "unzip" }
+unzip = { native = "unzip" }
 fontconfig = { native = { pkg = "fontconfig", pkg_overrides = { pkg = "fontconfig-utils" } } }
 
 
@@ -170,40 +199,41 @@ fontconfig = { native = { pkg = "fontconfig", pkg_overrides = { pkg = "fontconfi
 # both places here — contrast with the restic/node_exporter case further
 # below, where that is NOT true.
 [tools.fd]
-  [tools.fd.native]
-  pkg_overrides = { apt = "fd-find" }   # everywhere else: "fd" (tool name)
+[tools.fd.native]
+pkg_overrides = { apt = "fd-find" } # everywhere else: "fd" (tool name)
 
-  [tools.fd.github]
-  repo       = "sharkdp/fd"
-  asset      = "fd-{version}-{arch_any}-unknown-linux-gnu.tar.gz"
-  checksum   = "sha256:auto"
-  strip_components = 1
-  extract_to = "~/.local/opt/fd"
-  entrypoints = { fd = "fd" }
-  link_dir = "~/.local/bin"
-  when = { os = ["linux"], libc = ["glibc"] }
+[tools.fd.github]
+repo = "sharkdp/fd"
+asset = "fd-{version}-{arch_any}-unknown-linux-gnu.tar.gz"
+checksum = "sha256:auto"
+strip_components = 1                  # discard the archive's top-level directory
+extract_to = "~/.local/opt/fd"        # own the complete extracted payload here
+entrypoints = { fd = "fd" }           # expose this payload-relative executable
+link_dir = "~/.local/bin"             # create launchers here without flattening the payload
+when = { os = ["linux"], libc = ["glibc"] }
 
-  # musl build (Alpine, distroless/scratch containers)
-  [tools.fd.github-musl]
-  kind       = "github"
-  repo       = "sharkdp/fd"
-  asset      = "fd-{version}-{arch_any}-unknown-linux-musl.tar.gz"
-  checksum   = "sha256:auto"
-  strip_components = 1
-  extract_to = "~/.local/opt/fd"
-  entrypoints = { fd = "fd" }
-  link_dir = "~/.local/bin"
-  when = { os = ["linux"], libc = ["musl"] }
+# musl build (Alpine, distroless/scratch containers)
+[tools.fd.github-musl]
+kind = "github"
+repo = "sharkdp/fd"
+asset = "fd-{version}-{arch_any}-unknown-linux-musl.tar.gz"
+checksum = "sha256:auto"
+strip_components = 1
+extract_to = "~/.local/opt/fd"
+entrypoints = { fd = "fd" }
+link_dir = "~/.local/bin"
+when = { os = ["linux"], libc = ["musl"] }
 
 
 # --- GitHub releases: match the real asset list across OS/arch naming
 # conventions and pin the resolved release in depengine.lock. A raw asset
 # defaults to the tool name, so binary = "yq" is unnecessary. ---
 [tools.yq.github]
-repo       = "mikefarah/yq"
-asset      = "yq_{os_any}_{arch_any}"
-checksum   = "sha256:auto"
+repo = "mikefarah/yq"
+asset = "yq_{os_any}_{arch_any}"
+checksum = "sha256:auto"
 extract_to = "~/.local/bin"
+when = { target_family = ["unix"] } # ~/.local/bin is a Unix-specific destination
 
 
 # --- Two mismatches stacked at once: restic and node_exporter tag their
@@ -214,25 +244,25 @@ extract_to = "~/.local/bin"
 # can't safely use {latest} twice. These blocks demonstrate explicit HTTP
 # pins; for new GitHub release declarations, prefer the `github` method above. ---
 [tools.restic]
-  [tools.restic.http]
-  url        = "https://github.com/restic/restic/releases/download/v0.17.3/restic_0.17.3_linux_amd64.bz2"
-  checksum   = "sha256:auto"
-  extract_to = "~/.local/bin"
-  binary     = "restic"
-  when       = { arch = ["x86_64"], os = ["linux"] }
+[tools.restic.http]
+url = "https://github.com/restic/restic/releases/download/v0.17.3/restic_0.17.3_linux_amd64.bz2"
+checksum = "sha256:auto"
+extract_to = "~/.local/bin"
+binary = "restic"
+when = { arch = ["x86_64"], os = ["linux"] }
 
-  [tools.restic.http-arm64]
-  kind       = "http"
-  url        = "https://github.com/restic/restic/releases/download/v0.17.3/restic_0.17.3_linux_arm64.bz2"
-  checksum   = "sha256:auto"
-  extract_to = "~/.local/bin"
-  binary     = "restic"
-  when       = { arch = ["aarch64"], os = ["linux"] }
+[tools.restic.http-arm64]
+kind = "http"
+url = "https://github.com/restic/restic/releases/download/v0.17.3/restic_0.17.3_linux_arm64.bz2"
+checksum = "sha256:auto"
+extract_to = "~/.local/bin"
+binary = "restic"
+when = { arch = ["aarch64"], os = ["linux"] }
 
 [tools.node_exporter.github]
-repo       = "prometheus/node_exporter"
-asset      = "node_exporter-{version}.{os_any}-{arch_any}.tar.gz"
-checksum   = "sha256:auto"
+repo = "prometheus/node_exporter"
+asset = "node_exporter-{version}.{os_any}-{arch_any}.tar.gz"
+checksum = "sha256:auto"
 strip_components = 1
 extract_to = "~/.local/opt/node_exporter"
 entrypoints = { node_exporter = "node_exporter" }
@@ -246,84 +276,84 @@ link_dir = "~/.local/bin"
 # package there — a second native-kind method candidate is declared with an
 # explicit `kind = "native"` override and its own `when`. ---
 [tools.gnu-make]
-  [tools.gnu-make.native]
-  pkg = "make"
-  when = { os = ["linux"] }
+[tools.gnu-make.native]
+pkg = "make"
+when = { os = ["linux"] }
 
-  [tools.gnu-make.native-bsd]
-  kind = "native"
-  pkg  = "gmake"
-  when = { distro_family = ["freebsd", "openbsd", "netbsd"] }
+[tools.gnu-make.native-bsd]
+kind = "native"
+pkg = "gmake"
+when = { distro_family = ["freebsd", "openbsd", "netbsd"] }
 
 
 # --- WSL vs native Linux ---
 [tools.podman]
-  [tools.podman.native]
-  when = { is_wsl = false }
+[tools.podman.native]
+when = { is_wsl = false }
 
-  [tools.podman.http]
-  url = "https://github.com/containers/podman/releases/download/{latest}/podman-wsl-{arch}.zip"
-  when = { is_wsl = true }
+[tools.podman.http]
+url = "https://github.com/containers/podman/releases/download/{latest}/podman-wsl-{arch}.zip"
+when = { is_wsl = true }
 
 
 # --- One Neovim identity, with real package IDs and owned release payloads ---
 [tools.neovim]
-  [tools.neovim.native]
-  pkg = "neovim"
-  pkg_overrides = { winget = "Neovim.Neovim" }
+[tools.neovim.native]
+pkg = "neovim"
+pkg_overrides = { winget = "Neovim.Neovim" }
 
-  [tools.neovim.scoop]
-  pkg = "neovim"
+[tools.neovim.scoop]
+pkg = "neovim"
 
-  [tools.neovim.choco]
-  pkg = "neovim"
+[tools.neovim.choco]
+pkg = "neovim"
 
-  [tools.neovim.github]
-  repo = "neovim/neovim"
-  asset = "nvim-{os_any}-{arch_any}.tar.gz"
-  checksum = "sha256:auto"
-  strip_components = 1
-  extract_to = "~/.local/opt/neovim"
-  entrypoints = { nvim = "bin/nvim" }
-  link_dir = "~/.local/bin"
-  when = { target_family = ["unix"] }
+[tools.neovim.github]
+repo = "neovim/neovim"
+asset = "nvim-{os_any}-{arch_any}.tar.gz"
+checksum = "sha256:auto"
+strip_components = 1
+extract_to = "~/.local/opt/neovim"
+entrypoints = { nvim = "bin/nvim" }
+link_dir = "~/.local/bin"
+when = { target_family = ["unix"] }
 
-  # Windows installer: exact product identity is required for check/remove.
-  [tools.neovim.msi]
-  repo = "neovim/neovim"
-  asset = "nvim-win64.msi"
-  product_name = "Neovim"
-  publisher = "neovim.io"
-  when = { target_family = ["windows"] }
+# Windows installer: exact product identity is required for check/remove.
+[tools.neovim.msi]
+repo = "neovim/neovim"
+asset = "nvim-win64.msi"
+product_name = "Neovim"
+publisher = "neovim.io"
+when = { target_family = ["windows"] }
 
 
 # --- Kernel-specific DKMS package ---
 [tools.v4l2loopback]
-  [tools.v4l2loopback.aur]
-  pkg = "v4l2loopback-dkms"
-  when = { distro_family = ["arch"], kernel = ["6.7", "6.8", "6.9"] }
+[tools.v4l2loopback.aur]
+pkg = "v4l2loopback-dkms"
+when = { distro_family = ["arch"], kernel = ["6.7", "6.8", "6.9"] }
 
 
 # --- macOS vs Linux: completely different platform ---
 [tools.skhd]
-  [tools.skhd.brew]
-  pkg = "koekeishiya/formulae/skhd"
-  when = { os = ["darwin"] }
+[tools.skhd.brew]
+pkg = "koekeishiya/formulae/skhd"
+when = { os = ["darwin"] }
 
 [tools.bspwm]
-  [tools.bspwm.native]
-  when = { os = ["linux"], distro_family = ["arch", "debian", "fedora"] }
+[tools.bspwm.native]
+when = { os = ["linux"], distro_family = ["arch", "debian", "fedora"] }
 
 
 # --- Exact distro ID (not family) for distros with specific packages ---
 [tools.ulauncher]
-  [tools.ulauncher.aur]
-  pkg = "ulauncher"
-  when = { distro_id = ["arch"] }
+[tools.ulauncher.aur]
+pkg = "ulauncher"
+when = { distro_id = ["arch"] }
 
-  [tools.ulauncher.apt]
-  pkg = "ulauncher"
-  when = { distro_id = ["ubuntu", "debian"] }
+[tools.ulauncher.apt]
+pkg = "ulauncher"
+when = { distro_id = ["ubuntu", "debian"] }
 
 
 # --- Termux renamed the CLI tool package away from the library package:
@@ -332,9 +362,9 @@ link_dir = "~/.local/bin"
 # expressible via distro_family (termux is its own clan already), but shown
 # here for contrast with a "normal" Linux distro where the split doesn't exist. ---
 [tools.openssl]
-  [tools.openssl.native]
-  pkg_overrides = { pkg = "openssl-tool" }   # pkg = Termux's manager binary name
-  when = { distro_family = ["termux", "debian", "arch", "fedora", "alpine"] }
+[tools.openssl.native]
+pkg_overrides = { pkg = "openssl-tool" }                                    # pkg = Termux's manager binary name
+when = { distro_family = ["termux", "debian", "arch", "fedora", "alpine"] }
 
 # ------------------------------------------------------------------------
 # CASE 10 — Ecosystem buckets: python, node.
@@ -354,35 +384,52 @@ link_dir = "~/.local/bin"
 # Each `true` uses the tool name as pkg (SubstitutePkg fallback).
 # ------------------------------------------------------------------------
 [tools.ruff]
-python = true               # ≡ { pipx = "ruff", uv = "ruff" }
+python = true # ≡ { pipx = "ruff", uv = "ruff" }
 [tools.prettier]
-node = true                 # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
+node = true # ≡ { npm = "prettier", pnpm = "prettier", bun = "prettier" }
 [tools.organize-bucket]
-python = "organize-tool"   # ≡ { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }
+python = "organize-tool" # ≡ { pip = "organize-tool", pipx = "organize-tool", uv = "organize-tool" }
 [tools.httpie]
-python = true               # pip + pipx + uv (pkg=httpie for all)
+python = true # pip + pipx + uv (pkg=httpie for all)
 
 # Can mix bucket with explicit method: the explicit method is NOT overwritten.
 # organize = { pip = "organize-tool", python = true } keeps the explicit pip.
 [tools.DepartureMono]
-post_install = { run = ["fc-cache", "-fv"], when = { target_family = ["unix"] } }
+post_install = { run = [
+  "fc-cache",
+  "-fv",
+], when = { target_family = [
+  "unix",
+] } }
 requires = ["unzip", "fontconfig"]
-requires_when = { unzip = { target_family = ["unix"] }, fontconfig = { target_family = ["unix"] } }
-method_only = ["aur", "scoop", "http"]   # aur on Arch, scoop on Windows, http elsewhere. Never fall back to native (no such package outside Arch).
+requires_when = { unzip = { target_family = [
+  "unix",
+] }, fontconfig = { target_family = [
+  "unix",
+] } }
+method_only = [
+  "aur",
+  "scoop",
+  "http",
+] # aur on Arch, scoop on Windows, http elsewhere. Never fall back to native (no such package outside Arch).
 
-  [tools.DepartureMono.aur]
-  pkg  = "otf-departure-mono-nerd"
-  when = { distro_family = ["arch"] }
+[tools.DepartureMono.aur]
+pkg = "otf-departure-mono-nerd"
+when = { distro_family = ["arch"] }
 
-  [tools.DepartureMono.http]
-  url           = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/DepartureMono.zip"
-  checksum      = "sha256:e186890efcae31b72e9f2abc860360123ec1b3ae03bc79bb2a9fec388ebade8a" # literal pin (lockfile pins v3.4.0; nerd-fonts publishes no checksum file, so sha256:auto 404s)
-  extract_to    = "~/.local/share/fonts/DepartureMono"
-  when          = { target_family = ["unix"] } # zip + $HOME fonts path + fc-cache post_install are unix-only assumptions
+[tools.DepartureMono.http]
+url = "https://github.com/ryanoasis/nerd-fonts/releases/download/{latest}/DepartureMono.zip"
+checksum = "sha256:e186890efcae31b72e9f2abc860360123ec1b3ae03bc79bb2a9fec388ebade8a" # literal pin (lockfile pins v3.4.0; nerd-fonts publishes no checksum file, so sha256:auto 404s)
+extract_to = "~/.local/share/fonts/DepartureMono"
+when = { target_family = [
+  "unix",
+] } # zip + $HOME fonts path + fc-cache post_install are unix-only assumptions
 
-  [tools.DepartureMono.scoop]
-  pkg  = "nerd-fonts/DepartureMono-NF"
-  when = { target_family = ["windows"] } # scoop extras bucket; fontconfig is Windows-incompatible
+[tools.DepartureMono.scoop]
+pkg = "nerd-fonts/DepartureMono-NF"
+when = { target_family = [
+  "windows",
+] } # scoop extras bucket; fontconfig is Windows-incompatible
 
 
 # ------------------------------------------------------------------------
