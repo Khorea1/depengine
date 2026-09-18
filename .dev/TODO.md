@@ -145,7 +145,7 @@ At least one adapter accepts a field that does not affect actual installation be
   - [x] container
   - [x] Git
   - [x] Snap
-  - [ ] Flatpak
+  - [x] Flatpak
   - [ ] native
   - [ ] artifact adapters
 - [ ] Prevent future contract additions without corresponding semantic tests.

@@ -726,3 +726,36 @@ func TestSnapExplicitDefaultOptionsDoNotInventFlags(t *testing.T) {
 		t.Fatalf("explicit snap defaults should use native defaults; argv=%q", got)
 	}
 }
+
+func TestFlatpakPkgFieldGovernsRuntimeCommands(t *testing.T) {
+	adapter := NewBaseAdapter(Configs["flatpak"])
+	tool := &config.Tool{Name: "tool-name-must-not-win"}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "com.example.Actual"}}
+
+	checkRunner := &run.FakeRunner{ExitCode: 0}
+	if !adapter.Check(context.Background(), checkRunner, tool, mc) {
+		t.Fatal("Check should succeed for configured flatpak package")
+	}
+	checkCall := checkRunner.Calls[len(checkRunner.Calls)-1]
+	if checkCall.Name != "flatpak" || strings.Join(checkCall.Args, " ") != "info com.example.Actual" {
+		t.Fatalf("Check call = %s %v, want flatpak info com.example.Actual", checkCall.Name, checkCall.Args)
+	}
+
+	installRunner := &run.FakeRunner{ExitCode: 0}
+	if err := adapter.Install(context.Background(), installRunner, tool, mc); err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	installCall := installRunner.Calls[len(installRunner.Calls)-1]
+	if installCall.Name != "flatpak" || strings.Join(installCall.Args, " ") != "install -y flathub com.example.Actual" {
+		t.Fatalf("Install call = %s %v, want configured flatpak pkg", installCall.Name, installCall.Args)
+	}
+
+	removeRunner := &run.FakeRunner{ExitCode: 0}
+	if err := adapter.Remove(context.Background(), removeRunner, tool, mc); err != nil {
+		t.Fatalf("Remove returned error: %v", err)
+	}
+	removeCall := removeRunner.Calls[len(removeRunner.Calls)-1]
+	if removeCall.Name != "flatpak" || strings.Join(removeCall.Args, " ") != "uninstall -y com.example.Actual" {
+		t.Fatalf("Remove call = %s %v, want configured flatpak pkg", removeCall.Name, removeCall.Args)
+	}
+}
