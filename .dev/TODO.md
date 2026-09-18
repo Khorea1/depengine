@@ -140,7 +140,7 @@ At least one adapter accepts a field that does not affect actual installation be
 - [ ] Audit SDKMAN, Cargo, Go, Conda, container, Git, Snap, Flatpak, native and artifact adapters for similar discrepancies.
   - [x] SDKMAN: exact `version` now governs both install and verification.
   - [x] Cargo
-  - [ ] Go
+  - [x] Go
   - [ ] Conda
   - [ ] container
   - [ ] Git

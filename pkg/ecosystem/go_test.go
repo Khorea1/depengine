@@ -4,9 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 func TestGoBinaryName(t *testing.T) {
@@ -154,4 +156,91 @@ func TestGoAdapterRemoveDoesNotTouchUnrelatedBinaries(t *testing.T) {
 	if _, err := os.Stat(unrelated); err != nil {
 		t.Fatalf("unrelated binary %s was affected by Remove: %v", unrelated, err)
 	}
+}
+
+func TestGoPkgFieldControlsInstallAndCheck(t *testing.T) {
+	ctx := context.Background()
+	adapter := NewGoAdapter()
+	tool := &config.Tool{Name: "friendly-name"}
+	mc := &config.MethodCandidate{Kind: "go", Config: map[string]any{"pkg": "example.com/project/cmd/realbin"}}
+
+	installRunner := &run.FakeRunner{LookPaths: map[string]bool{"go": true}}
+	if err := adapter.Install(ctx, installRunner, tool, mc); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	assertLastGoCall(t, installRunner, []string{"install", "example.com/project/cmd/realbin@latest"})
+
+	checkRunner := &run.FakeRunner{LookPaths: map[string]bool{"go": true, "realbin": true}}
+	if !adapter.Check(ctx, checkRunner, tool, mc) {
+		t.Fatal("Check should look for the binary derived from go.pkg")
+	}
+	assertGoLookup(t, checkRunner, "realbin")
+}
+
+func TestGoInstalledVersionUsesPkgField(t *testing.T) {
+	adapter := NewGoAdapter()
+	fr := &run.FakeRunner{Stdout: "realbin version 1.2.3\n"}
+	tool := &config.Tool{Name: "friendly-name"}
+	mc := &config.MethodCandidate{Kind: "go", Config: map[string]any{"pkg": "example.com/project/cmd/realbin"}}
+
+	got, err := adapter.InstalledVersion(context.Background(), fr, tool, mc)
+	if err != nil {
+		t.Fatalf("InstalledVersion: %v", err)
+	}
+	if got != "1.2.3" {
+		t.Fatalf("InstalledVersion = %q, want %q", got, "1.2.3")
+	}
+	assertLastGoCall(t, fr, []string{"--version"})
+	if fr.Calls[len(fr.Calls)-1].Name != "realbin" {
+		t.Fatalf("version command binary = %q, want %q", fr.Calls[len(fr.Calls)-1].Name, "realbin")
+	}
+}
+
+func TestGoPkgFieldControlsRemoveTarget(t *testing.T) {
+	binDir := t.TempDir()
+	t.Setenv("GOBIN", binDir)
+	realBin := filepath.Join(binDir, "realbin")
+	friendlyBin := filepath.Join(binDir, "friendly-name")
+	if err := os.WriteFile(realBin, []byte("x"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(friendlyBin, []byte("keep"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := NewGoAdapter()
+	tool := &config.Tool{Name: "friendly-name"}
+	mc := &config.MethodCandidate{Kind: "go", Config: map[string]any{"pkg": "example.com/project/cmd/realbin"}}
+	if err := adapter.Remove(context.Background(), nil, tool, mc); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if _, err := os.Stat(realBin); !os.IsNotExist(err) {
+		t.Fatalf("pkg-derived binary %s still present after Remove (err=%v)", realBin, err)
+	}
+	if _, err := os.Stat(friendlyBin); err != nil {
+		t.Fatalf("tool-name binary %s should not be removed: %v", friendlyBin, err)
+	}
+}
+
+func assertLastGoCall(t *testing.T, fr *run.FakeRunner, want []string) {
+	t.Helper()
+	for i := len(fr.Calls) - 1; i >= 0; i-- {
+		if fr.Calls[i].Name == "go" || fr.Calls[i].Name == "realbin" {
+			if !reflect.DeepEqual(fr.Calls[i].Args, want) {
+				t.Fatalf("%s argv = %#v, want %#v", fr.Calls[i].Name, fr.Calls[i].Args, want)
+			}
+			return
+		}
+	}
+	t.Fatal("no go-related invocation recorded")
+}
+
+func assertGoLookup(t *testing.T, fr *run.FakeRunner, want string) {
+	t.Helper()
+	for _, call := range fr.Calls {
+		if call.Name == "which" && len(call.Args) == 1 && call.Args[0] == want {
+			return
+		}
+	}
+	t.Fatalf("no lookup recorded for %q; calls=%#v", want, fr.Calls)
 }
