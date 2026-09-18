@@ -143,7 +143,7 @@ At least one adapter accepts a field that does not affect actual installation be
   - [x] Go
   - [x] Conda
   - [x] container
-  - [ ] Git
+  - [x] Git
   - [ ] Snap
   - [ ] Flatpak
   - [ ] native

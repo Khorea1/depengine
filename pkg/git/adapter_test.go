@@ -576,3 +576,98 @@ func TestGitAdapterInstallResolvesLatestTagInBranch(t *testing.T) {
 		t.Fatalf("clone URL should not contain {latest}: %q", cloneURL)
 	}
 }
+
+type clonePopulatingRunner struct {
+	calls []run.FakeCall
+}
+
+func (r *clonePopulatingRunner) Run(_ context.Context, name string, args ...string) run.Result {
+	r.calls = append(r.calls, run.FakeCall{Name: name, Args: append([]string(nil), args...)})
+	if name == "git" && len(args) > 0 && args[0] == "clone" {
+		cloneDir := args[len(args)-1]
+		artifactDir := filepath.Join(cloneDir, "dist")
+		if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+			return run.Result{Err: err}
+		}
+		if err := os.WriteFile(filepath.Join(artifactDir, "tool"), []byte("artifact"), 0o755); err != nil {
+			return run.Result{Err: err}
+		}
+	}
+	return run.Result{ExitCode: 0}
+}
+
+func TestGitAdapterDeclaredCloneFieldsGovernRuntimeCommand(t *testing.T) {
+	fr := &run.FakeRunner{ExitCode: 0}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"url":    "https://example.test/team/tool.git",
+		"branch": "release-1",
+		"depth":  int64(7),
+	}}
+
+	if err := NewGitAdapter().Install(context.Background(), fr, &config.Tool{Name: "different-name"}, mc); err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	if len(fr.Calls) == 0 {
+		t.Fatal("expected git clone call")
+	}
+	call := fr.Calls[0]
+	if call.Name != "git" {
+		t.Fatalf("clone executable = %q, want git", call.Name)
+	}
+	wantPrefix := []string{"clone", "--depth", "7", "--branch", "release-1", "https://example.test/team/tool.git"}
+	if len(call.Args) < len(wantPrefix)+1 {
+		t.Fatalf("clone args = %v, want prefix %v plus destination", call.Args, wantPrefix)
+	}
+	for i, want := range wantPrefix {
+		if call.Args[i] != want {
+			t.Fatalf("clone args[%d] = %q, want %q; full args: %v", i, call.Args[i], want, call.Args)
+		}
+	}
+}
+
+func TestGitAdapterArtifactAndExtractToGovernCopiedOutput(t *testing.T) {
+	rn := &clonePopulatingRunner{}
+	dst := t.TempDir()
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"url":        "https://example.test/team/tool.git",
+		"artifact":   "dist/tool",
+		"extract_to": dst,
+	}}
+
+	if err := NewGitAdapter().Install(context.Background(), rn, &config.Tool{Name: "tool"}, mc); err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dst, "tool"))
+	if err != nil {
+		t.Fatalf("configured artifact was not copied to extract_to: %v", err)
+	}
+	if string(got) != "artifact" {
+		t.Fatalf("copied artifact = %q, want %q", got, "artifact")
+	}
+}
+
+func TestGitAdapterManagedPathsGovernCheckAndRemove(t *testing.T) {
+	root := t.TempDir()
+	first := filepath.Join(root, "owned-a")
+	second := filepath.Join(root, "owned-b")
+	for _, path := range []string{first, second} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"managed_paths": []any{first, second},
+	}}
+	adapter := NewGitAdapter()
+	if !adapter.Check(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "tool"}, mc) {
+		t.Fatal("Check should require all configured managed_paths to exist")
+	}
+	if err := adapter.Remove(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "tool"}, mc); err != nil {
+		t.Fatalf("Remove returned error: %v", err)
+	}
+	for _, path := range []string{first, second} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("managed path %q still exists after Remove", path)
+		}
+	}
+}
