@@ -137,3 +137,26 @@ func TestArtifactContractsDeclareSourcesAndChecksums(t *testing.T) {
 		})
 	}
 }
+
+func TestArtifactSpecializedContractsDoNotExposeOverriddenPlacementFields(t *testing.T) {
+	tests := []struct {
+		kind   string
+		absent []string
+	}{
+		{kind: "appimage", absent: []string{"extract_to"}},
+		{kind: "android", absent: []string{"extract_to", "binary"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.kind, func(t *testing.T) {
+			contract, ok := methodkind.Lookup(tt.kind)
+			if !ok {
+				t.Fatalf("missing contract for %q", tt.kind)
+			}
+			for _, field := range tt.absent {
+				if _, ok := contract.Fields[field]; ok {
+					t.Errorf("%s contract exposes %q even though the adapter overrides it", tt.kind, field)
+				}
+			}
+		})
+	}
+}

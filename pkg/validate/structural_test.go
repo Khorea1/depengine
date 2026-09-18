@@ -1292,3 +1292,38 @@ func TestValidatePackageNames_ValidateSchema(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateRequiredFields_RejectsArtifactPlacementFieldsOverriddenByAdapter(t *testing.T) {
+	tests := []struct {
+		kind  string
+		field string
+	}{
+		{kind: "appimage", field: "extract_to"},
+		{kind: "android", field: "extract_to"},
+		{kind: "android", field: "binary"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.kind+"/"+tt.field, func(t *testing.T) {
+			config := map[string]any{
+				"url":    "https://example.com/tool.bin",
+				tt.field: "ignored-value",
+			}
+			s := &cfg.Schema{Tools: map[string]*cfg.Tool{"tool": tool("tool", []*cfg.MethodCandidate{mc(tt.kind, nil, config)}, nil)}}
+			r := validateRequiredFields(s)
+			if !r.HasErrors() {
+				t.Fatalf("expected %s.%s to be rejected", tt.kind, tt.field)
+			}
+			wantField := fieldPath("tool", 0, tt.field)
+			found := false
+			for _, err := range r.Errors {
+				if err.Field == wantField && err.Code == ErrInvalidValue {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("missing invalid-value error for %s: %+v", wantField, r.Errors)
+			}
+		})
+	}
+}

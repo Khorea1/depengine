@@ -341,9 +341,6 @@
               "minLength": 1,
               "type": "string"
             },
-            "binary": {
-              "type": "string"
-            },
             "branch": {
               "minLength": 1,
               "type": "string"
@@ -367,9 +364,6 @@
                 "type": "string"
               },
               "type": "object"
-            },
-            "extract_to": {
-              "type": "string"
             },
             "kind": {
               "const": "android"
@@ -667,9 +661,6 @@
                 "type": "string"
               },
               "type": "object"
-            },
-            "extract_to": {
-              "type": "string"
             },
             "install_dir": {
               "type": "string"
@@ -4585,9 +4576,6 @@
               "minLength": 1,
               "type": "string"
             },
-            "binary": {
-              "type": "string"
-            },
             "branch": {
               "minLength": 1,
               "type": "string"
@@ -4611,9 +4599,6 @@
                 "type": "string"
               },
               "type": "object"
-            },
-            "extract_to": {
-              "type": "string"
             },
             "link_dir": {
               "type": "string"
@@ -4841,9 +4826,6 @@
                 "type": "string"
               },
               "type": "object"
-            },
-            "extract_to": {
-              "type": "string"
             },
             "install_dir": {
               "type": "string"

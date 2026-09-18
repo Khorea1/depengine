@@ -147,7 +147,7 @@ At least one adapter accepts a field that does not affect actual installation be
   - [x] Snap
   - [x] Flatpak
   - [x] native
-  - [ ] artifact adapters
+  - [x] artifact adapters: removed always-overridden placement fields from AppImage/Android contracts and covered MSI identity fields.
 - [ ] Prevent future contract additions without corresponding semantic tests.
 
 **Acceptance criteria**

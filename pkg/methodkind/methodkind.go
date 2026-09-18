@@ -62,9 +62,17 @@ func fields(entries ...map[string]Field) map[string]Field {
 }
 
 func withoutField(entry map[string]Field, excluded string) map[string]Field {
-	out := make(map[string]Field, len(entry)-1)
+	return withoutFields(entry, excluded)
+}
+
+func withoutFields(entry map[string]Field, excluded ...string) map[string]Field {
+	skip := make(map[string]bool, len(excluded))
+	for _, key := range excluded {
+		skip[key] = true
+	}
+	out := make(map[string]Field, len(entry))
 	for key, value := range entry {
-		if key != excluded {
+		if !skip[key] {
 			out[key] = value
 		}
 	}
@@ -157,11 +165,11 @@ var Contracts = []Contract{
 		"source":  {Type: String, Required: true, NonEmpty: true},
 		"tag":     {Type: String},
 	}, CanRemove: true},
-	{Kind: "appimage", DefaultOrder: 31, Fields: fields(downloadFields, map[string]Field{
+	{Kind: "appimage", DefaultOrder: 31, Fields: fields(withoutField(downloadFields, "extract_to"), map[string]Field{
 		"install_dir": {Type: String},
 		"desktop":     {Type: Boolean},
 	}), SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract},
-	{Kind: "android", DefaultOrder: 32, Fields: downloadFields, SourceAlternatives: artifactSourceAlternatives, Artifact: downloadArtifactContract},
+	{Kind: "android", DefaultOrder: 32, Fields: withoutFields(downloadFields, "extract_to", "binary"), SourceAlternatives: artifactSourceAlternatives, Artifact: downloadArtifactContract},
 	{Kind: "git", DefaultOrder: 33, Fields: map[string]Field{
 		"url":           {Type: String, Required: true, NonEmpty: true},
 		"branch":        {Type: String},

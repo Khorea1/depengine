@@ -314,10 +314,9 @@ means the image is already pulled. `Remove` runs `<manager> rmi
 
 ### AppImage: portable `.AppImage` binaries
 
-`appimage` resolves and downloads a `.AppImage` artifact exactly like `http`
-does (runtime placeholders in literal URLs, GitHub matching placeholders in
-`repo` + `asset`, checksum verification, retries,
-caching — same fields, same behavior), then does the AppImage-specific
+`appimage` resolves and downloads a `.AppImage` artifact using the same
+artifact-source, checksum, signature, retry, and cache semantics as `http`,
+then does the AppImage-specific
 part `http` doesn't: installing under a **stable** name instead of the
 versioned filename the release asset ships with (e.g.
 `Obsidian-1.5.3.AppImage` → `obsidian`), and optionally writing a
@@ -338,9 +337,11 @@ desktop = true
 | `binary` | no | Final executable name. Defaults to the tool's name. |
 | `desktop` | no | When `true`, also writes `~/.local/share/applications/<binary>.desktop` (a minimal, valid launcher pointing at the installed binary). Always user-scope, regardless of `install_dir`. |
 
-Every other `http` field (`checksum`, `checksum_url`, `signature_url`,
-`signing_key`, `sudo_required`, ...) has the exact same meaning here,
-because the download itself is delegated to the `http` adapter unchanged.
+Shared artifact fields such as `checksum`, `checksum_url`, `signature_url`,
+`signing_key`, and `sudo_required` keep the same meaning because the download
+is delegated to the `http` adapter. `extract_to` is intentionally not accepted:
+`install_dir` is the AppImage destination contract and accepting both would make
+`extract_to` appear configurable while the adapter overrides it.
 
 `Check` looks for `install_dir/<binary>` — the resolved *stable* name, not
 the downloaded filename. `Remove` deletes that file and, if `desktop` was
@@ -350,10 +351,9 @@ set, its `.desktop` entry.
 
 ### Android: hand a `.apk` to Termux's package installer
 
-`android` resolves and downloads a `.apk` artifact exactly like `http`/`appimage`
-do (runtime placeholders such as `{latest}` in literal URLs, GitHub matching
-placeholders in `repo` + `asset`, checksum verification, retries, caching —
-same fields, same behavior), then does the one thing neither of those can:
+`android` resolves and downloads a `.apk` artifact with the same artifact-source,
+checksum, signature, retry, and cache semantics as `http`/`appimage`, then does
+the one thing neither of those can:
 hand the file to Android's own package installer via `termux-open` (from
 the `termux-api` package — needs the companion **Termux:API** app installed
 too). Runs entirely inside [Termux](https://termux.dev/); see
@@ -370,8 +370,8 @@ when = { is_android = true }
 |-------|----------|--------------|
 | `url` or `repo` + `asset` | yes | Exactly one artifact source; GitHub matching composes with Android dispatch. |
 
-Every other `http` field (`checksum`, `checksum_url`, `signature_url`,
-`signing_key`, ...) has the exact same meaning. There is no
+Shared artifact fields (`checksum`, `checksum_url`, `signature_url`,
+`signing_key`, ...) keep the same meaning. There is no
 `install_dir`/`binary`/`extract_to` field here, unlike `appimage` — the
 `.apk` always lands under a fixed, depengine-owned cache directory named
 `<tool>.apk`; it's never meant to end up on `PATH`.
