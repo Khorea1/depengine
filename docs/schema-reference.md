@@ -529,6 +529,19 @@ Supported source kinds are `apt-ppa`, `dnf-copr`, `scoop-bucket`, and
 `brew-tap`. They are checked before mutation. `dependency_only` tools are not
 normal roots, but remain selectable with `--only`.
 
+### Virtual tools: dependency groups with no methods
+
+A tool may contain only `requires`, with no install methods:
+
+```toml
+[tools.devenv]
+requires = ["zsh", "tmux", "fzf"]
+```
+
+Such a tool is a dependency group. Installing it installs its requirements and
+then reports the group as virtual; it does not invent or execute an install
+candidate of its own.
+
 `post_install` accepts the same string, table, and list forms, including
 per-command `when` conditions:
 

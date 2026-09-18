@@ -91,6 +91,37 @@ func TestValidate_ValidSchema(t *testing.T) {
 	}
 }
 
+// manifestPath returns the project's manifest.example.toml.
+func manifestPath() string {
+	return filepath.Join(findModuleRoot(), "manifest.example.toml")
+}
+
+// TestValidate_ExampleSchemaAndManifestCombineCleanly proves the contract
+// D1 exists to guard: the two files new users are told to copy
+// (schema.example.toml and manifest.example.toml) parse AND
+// semantically validate together, with strict mode on, without any
+// E_* error. jsonschema_test.go already covers bare parsing; this covers
+// the full semantic validate pass the CLI actually runs, exercising both
+// layers merged (schema-wins-on-conflict, tools-only-in-manifest dropped,
+// etc.) exactly as `depengine validate` does for a real user. Warnings
+// (e.g. W_AUTO_CHECKSUM on the deliberate ":auto" examples) are expected
+// and are not failures on their own — only --strict would turn those into
+// exit 1, so this test intentionally does NOT pass --strict.
+func TestValidate_ExampleSchemaAndManifestCombineCleanly(t *testing.T) {
+	output, code := runDepengine("validate",
+		"--schema", schemaPath(),
+		"--manifest", manifestPath())
+	if code != 0 {
+		t.Fatalf("schema.example.toml + manifest.example.toml must validate cleanly together; exit %d, output:\n%s", code, output)
+	}
+	if !strings.Contains(output, "✓ schema is valid") {
+		t.Errorf("expected success message, got:\n%s", output)
+	}
+	if strings.Contains(output, "E_") {
+		t.Errorf("expected zero E_* errors, got:\n%s", output)
+	}
+}
+
 func TestValidate_AllValidEdgeCases(t *testing.T) {
 	files := []string{
 		"valid_minimal.toml",
