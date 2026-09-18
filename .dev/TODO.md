@@ -139,7 +139,7 @@ At least one adapter accepts a field that does not affect actual installation be
 - [x] Fix `asdf.version` handling.
 - [ ] Audit SDKMAN, Cargo, Go, Conda, container, Git, Snap, Flatpak, native and artifact adapters for similar discrepancies.
   - [x] SDKMAN: exact `version` now governs both install and verification.
-  - [ ] Cargo
+  - [x] Cargo
   - [ ] Go
   - [ ] Conda
   - [ ] container
