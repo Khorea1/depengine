@@ -1,7 +1,7 @@
 # Architecture
 
-This is internal documentation for contributors. If you just want to use
-depengine, you don't need any of this — see [the README](../README.md).
+This document describes depengine internals. Usage documentation starts in the
+[README](../README.md).
 
 ```mermaid
 flowchart TB

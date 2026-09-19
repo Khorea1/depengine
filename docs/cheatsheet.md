@@ -1,6 +1,6 @@
 # depengine cheatsheet
 
-One-page copy-paste reference. For explanations, see
+Copy-paste reference. For explanations, see
 [the README](../README.md), [schema-reference.md](schema-reference.md), and
 [cli-reference.md](cli-reference.md).
 
@@ -56,7 +56,7 @@ document also requires `schema_version = 1`; project declarations live under
     [tools.NAME.method]  # one sub-table per candidate method
 ```
 
-**Golden rule:** tool-level fields (`requires`, `pre_install`, `post_install`,
+**Field ownership:** tool-level fields (`requires`, `pre_install`, `post_install`,
 `tags`) live outside methods; method-level fields (`kind`, `when`, `url`,
 `build`, `checksum`, `pkg`, `git`) live inside.
 Tool-level fields can carry conditions: `post_install = { cmd = "...", when =
@@ -73,7 +73,7 @@ method_prefer = ["native", "cargo", "github", "http"] # preferred prefix; defaul
 
 ---
 
-## Declaration forms at a glance
+## Declaration forms
 
 | Form | Syntax |
 |------|--------|
@@ -92,7 +92,7 @@ method_prefer = ["native", "cargo", "github", "http"] # preferred prefix; defaul
 | Ecosystem bucket | `ruff = { python = true }` |
 | Full block | multiple methods + `when` + hooks — see [schema-reference.md#platform-targeting](schema-reference.md#platform-targeting) |
 
-Full explanations and more examples: [schema-reference.md#naming-a-tool](schema-reference.md#naming-a-tool).
+Details: [schema-reference.md#naming-a-tool](schema-reference.md#naming-a-tool).
 
 ---
 
@@ -106,7 +106,7 @@ when = { distro_family = ["arch"] }
 
 `distro_family`, `distro_id`, `arch`, `os`, `kernel`, `libc`, `init_system`, `target_family`
 (string-list, AND across fields, OR within); `is_wsl`, `is_container`,
-`is_android` (bool). Full table: [schema-reference.md#platform-targeting](schema-reference.md#platform-targeting).
+`is_android` (bool). See [platform targeting](schema-reference.md#platform-targeting).
 
 ---
 
@@ -148,7 +148,7 @@ Other:       git, github, http
 ## Placeholders
 
 Runtime URL placeholders and GitHub asset-matching placeholders have different
-owners. See the full table: [schema-reference.md#placeholders](schema-reference.md#placeholders).
+owners. See [placeholders](schema-reference.md#placeholders).
 
 ---
 
@@ -156,5 +156,5 @@ owners. See the full table: [schema-reference.md#placeholders](schema-reference.
 
 `schema.toml` (project, shared) always wins on conflict over
 `manifest.toml` (personal, `~/.config/depengine/`). Manifest-only tools are
-silently dropped unless `allow_new_tools = true`. Full merge rules:
-[schema-reference.md#manifest-merge-rules](schema-reference.md#manifest-merge-rules).
+silently dropped unless `allow_new_tools = true`. See
+[manifest merge rules](schema-reference.md#manifest-merge-rules).

@@ -1,4 +1,4 @@
-# schema.toml — full syntax reference
+# `schema.toml` reference
 
 Only the latest pre-freeze contract (`schema_version = 1`) is supported today.
 `schema_version` identifies the manifest format major; it is not the depengine
@@ -242,7 +242,7 @@ For GitHub authentication, use `GITHUB_TOKEN`, `GH_TOKEN`, or an authenticated
 GitHub CLI; authenticated asset downloads use the in-process HTTP backend so the
 token is sent as an `Authorization` header rather than as a subprocess argument.
 
-### GitHub: the recommended method for GitHub release assets
+### GitHub release assets
 
 Some projects publish a different asset filename convention per architecture
 (`amd64` vs `x86_64` vs `x64`, `arm64` vs `aarch64`, ...). Writing one `http`
@@ -629,7 +629,7 @@ post_install = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
   when       = { target_family = ["unix"] }
 ```
 
-> **Golden rule:** tool-level fields (`requires`, `post_install`,
+> **Field ownership:** tool-level fields (`requires`, `post_install`,
 > `pre_install`) go _outside_ the method block. Method-specific fields
 > (`kind`, `when`, `requires`, `sources`, `url`, `build`, `checksum`, `extract_to`, `pkg`, `git`) go
 > _inside_.

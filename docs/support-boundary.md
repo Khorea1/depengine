@@ -1,9 +1,8 @@
 # Support boundary
 
 depengine models installation intent; it does not make every installer or
-package manager equally reproducible. The preferred path is a typed method
-whose fields describe the identity, source, target and verification semantics
-that the underlying tool actually supports.
+package manager equally reproducible. Typed methods describe only the identity,
+source, target, and verification semantics supported by the underlying tool.
 
 ## Preferred models
 
@@ -14,9 +13,9 @@ can carry them through resolution, execution and/or verification. A configured
 capability that a candidate cannot honor is rejected before execution.
 
 Generic artifact methods (`http`, `github`, `appimage`, `android`, `msi`) are
-supported when ownership and verification can be made explicit. Checksums,
-signatures, managed paths and method-specific identity should be preferred over
-"a binary with this name exists" checks.
+supported when ownership and verification can be made explicit. Use checksums,
+signatures, managed paths, and method-specific identity instead of checks that
+only test whether a binary name exists.
 
 Opaque vendor scripts, EXE installers and arbitrary build/hooks are escape
 hatches. They may be necessary, but they are not equivalent to a fully modeled
@@ -40,8 +39,7 @@ A declaration can contain several different identities:
 
 A method that supports exact versions is stronger than one that only tests
 package presence. A digest or commit is stronger than a mutable tag or branch.
-The method capability metadata and `depengine why` are intended to expose these
-differences rather than imply a universal guarantee.
+Method capability metadata and `depengine why` report these differences.
 
 ## Scope, environments and profiles
 
@@ -67,7 +65,7 @@ For container methods, `source` is the complete repository identity including
 an optional registry host/port (for example
 `registry.example:5000/team/tool`); tags and digests are separate fields.
 
-## Deliberate non-goals
+## Non-goals
 
 depengine does not promise that every external package manager offers immutable
 resolution, transactional rollback, uniform version syntax, or equivalent

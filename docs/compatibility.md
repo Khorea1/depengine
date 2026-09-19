@@ -25,8 +25,7 @@ While a format is pre-freeze:
 - breaking changes may still happen, but examples, documentation and tests must
   move with the contract.
 
-This is stricter than pretending to support compatibility paths that have not
-been designed or tested.
+Unimplemented compatibility paths are not documented as supported.
 
 ## Meaning of a frozen format version
 

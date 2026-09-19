@@ -1,8 +1,7 @@
-# Neovim installation matrix: resolved capability audit
+# Neovim installation capability matrix
 
-The original matrix exposed seven structural gaps. They are now represented by
-reusable schema primitives; the parseable companion file is
-[`nvim-install-matrix.toml`](nvim-install-matrix.toml).
+The original matrix identified the requirements below. See the parseable
+companion file, [`nvim-install-matrix.toml`](nvim-install-matrix.toml).
 
 | Requirement | Current contract |
 |---|---|
@@ -15,17 +14,17 @@ reusable schema primitives; the parseable companion file is
 | Custom-build removal | validated `managed_paths` ownership |
 | GitHub asset + specialized post-processing | shared `url` or `repo + asset` reference for GitHub, AppImage, Android and MSI |
 
-The dangerous silent cases now fail closed: `http` rejects platform installer
-extensions, archive entrypoints must exist before commit, asset matching rejects
-zero or multiple results, and a failed source or lazy dependency discards only
-the candidate so fallback remains possible.
+These cases fail closed: `http` rejects platform installer extensions, archive
+entrypoints must exist before commit, and asset matching rejects zero or
+multiple results. A failed source or lazy dependency discards its candidate and
+allows fallback to continue.
 
 One correction from the original research: Scoop tracks the `main` bucket and
 uses it by default. `scoop bucket add main` is not a general prerequisite.
 `scoop-bucket` remains useful for optional and custom buckets. See the
 [official Scoop bucket documentation](https://github.com/ScoopInstaller/Scoop/wiki/Buckets).
 
-The design deliberately does not expose arbitrary manager arguments. The
-engine owns non-interactive flags. It also never edits shell profiles or
-Windows PATH silently: when a launcher directory is absent from `PATH`,
-installation prints the exact directory the operator must add.
+The schema does not expose arbitrary manager arguments; the engine owns
+non-interactive flags. depengine does not edit shell profiles or Windows
+`PATH`. When a launcher directory is absent from `PATH`, installation prints
+the directory to add.

@@ -2,7 +2,7 @@
 
 <p align="center">
   <b>Distro-agnostic dependency installer</b><br>
-  Declare <i>what</i> to install — the engine figures out <i>how</i>.
+  Declare the tools you need; depengine selects an available install method.
 </p>
 
 <p align="center">
@@ -13,10 +13,10 @@
 
 ---
 
-Write a `schema.toml` listing your tools. depengine tries every available
-installation method — native package manager, cargo, go, pip, git, http,
-flatpak, and more — until one succeeds. Single static Go binary, no runtime
-dependencies.
+Write a `schema.toml` listing your tools. For each tool, depengine tries the
+configured installation methods in order until one succeeds. Methods include
+native package managers, cargo, go, pip, git, HTTP downloads, and flatpak.
+depengine is a static Go binary with no runtime dependencies.
 
 ```sh
 depengine init --add "zsh,bat,nvim,ruff"   # → creates schema.toml
@@ -25,21 +25,20 @@ depengine install                           # → 4 installed, 0 failed
 depengine status                            # → list what's installed
 ```
 
-> **Platform support:** Linux and macOS are the primary targets and are
-> battle-tested. Windows builds are provided (winget/scoop/choco), including
-> full file locking and state management, but are newer and less
-> battle-tested than Linux/macOS.
+> **Platform support:** Linux and macOS receive the most testing. Windows
+> builds support winget, Scoop, Chocolatey, file locking, and state management,
+> but the Windows implementation is newer.
 
 ## Documentation map
 
-This README covers the essentials. For everything else:
+This README covers setup and common workflows. Detailed references:
 
 | Document | What's in it |
 |----------|---------------|
-| [`docs/schema-reference.md`](docs/schema-reference.md) | Every `schema.toml` syntax case, `when` conditions, buckets, method control — the full spec |
+| [`docs/schema-reference.md`](docs/schema-reference.md) | `schema.toml` syntax, conditions, buckets, and method control |
 | [`docs/cli-reference.md`](docs/cli-reference.md) | Every command and flag, with defaults |
-| [`docs/cheatsheet.md`](docs/cheatsheet.md) | One-page copy-paste reference: commands, flags, placeholders |
-| [`docs/architecture.md`](docs/architecture.md) | Internal package layout and install flow — for contributors |
+| [`docs/cheatsheet.md`](docs/cheatsheet.md) | Copyable commands, flags, and placeholders |
+| [`docs/architecture.md`](docs/architecture.md) | Internal package layout and install flow |
 | [`docs/support-boundary.md`](docs/support-boundary.md) | What depengine models, capability/reproducibility limits, scope and source semantics |
 | [`docs/security.md`](docs/security.md) | Threat model, arbitrary code, credentials, verification and lockfile expectations |
 | [`docs/compatibility.md`](docs/compatibility.md) | Manifest, lock and state format-version policy and v1 freeze status |
@@ -59,7 +58,7 @@ schema_version = 1
 
 [tools]
 
-# Package name is the same everywhere — the common case.
+# Package name is the same on every native manager.
 simple = ["zsh", "bat", "kitty", "mpv"]
 
 # Package name differs per distro's native manager.
@@ -75,19 +74,14 @@ depengine install      # try every tool's methods in order
 depengine status       # see what actually got installed, and how
 ```
 
-That covers the majority of real-world schemas. When you need something more
-specific — a git build, an HTTP download with checksum, a platform-specific
-condition, a tool-to-tool dependency — see the
-**[full schema reference](docs/schema-reference.md)**, which walks through
-all eleven syntax cases with real examples.
+For git builds, verified downloads, platform conditions, and tool dependencies,
+see the [schema reference](docs/schema-reference.md).
 
 ---
 
 ## The sharing workflow
 
-depengine works like a `requirements.txt` or `package.json`, but for system
-tools. Write `schema.toml`, commit it, and everyone on the team gets the same
-tools.
+Commit `schema.toml` so each checkout declares the same system tools.
 
 ```mermaid
 flowchart LR
@@ -131,32 +125,26 @@ depengine install                    # same declared tools; locked artifact pins
 ```
 
 > **Note on filenames:** `depengine init` creates `schema.toml` by default.
-> `depengine.toml` and `depends.toml` are also auto-detected if present
-> (useful if you're migrating from another tool or just prefer the name),
-> but `schema.toml` is the recommended default — that's what every example
-> in this repo uses.
+> `depengine.toml` and `depends.toml` are also auto-detected. This repository's
+> examples use `schema.toml`.
 
 ---
 
-## `schema.toml` vs `manifest.toml` — two layers, one merged config
+## `schema.toml` and `manifest.toml`
 
-depengine merges two layers per field: the **project schema** and your
-**personal manifest**. Neither replaces the other — they complement.
+depengine merges the project schema with a personal manifest, field by field.
 
 | File | Lives in | Purpose | Shared? |
 |------|----------|---------|---------|
 | `schema.toml` | Project root | **What** to install — the project's dependency list | Yes, commit it |
 | `manifest.toml` | `~/.config/depengine/manifest.toml` | **Your personal install catalog** — how you install things, plus personal defaults | No, stays on your machine |
 
-The manifest does two jobs:
+The manifest provides:
 
-1. **Reusable knowledge base** — your accumulated recipes for how to install
-   each tool (cargo vs git vs http, package name per distro, custom build
-   steps). Build it once, carry it across every project — no need to repeat
-   complex configs in every schema.toml.
-2. **Machine-specific defaults** — package names and installation candidates
-   that fill gaps in the project schema. They never override a conflicting
-   project declaration.
+1. Installation recipes shared across your local projects, such as per-distro
+   package names, candidate methods, and build steps.
+2. Machine-specific defaults that fill gaps in the project schema. They do not
+   override project declarations.
 
 ```sh
 cp manifest.example.toml ~/.config/depengine/manifest.toml
@@ -164,7 +152,7 @@ cp manifest.example.toml ~/.config/depengine/manifest.toml
 ```
 
 When you run `install` or `validate`, your manifest merges with the
-project's schema. Three rules to remember:
+project's schema. The merge follows these rules:
 
 1. **The schema always wins on conflict.** Your manifest fills in gaps; it
    never overrides what the project declares.
@@ -176,11 +164,11 @@ project's schema. Three rules to remember:
    `build`). Your manifest can set defaults for these, but the
    schema still overrides them.
 
-Full breakdown: [manifest merge rules](docs/schema-reference.md#manifest-merge-rules).
+See [manifest merge rules](docs/schema-reference.md#manifest-merge-rules).
 
 ---
 
-## Commands at a glance
+## Commands
 
 | Command | Does |
 |---------|------|
