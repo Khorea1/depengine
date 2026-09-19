@@ -251,6 +251,38 @@ func TestExecutorMethodOnlyExcludesDeclaredFallback(t *testing.T) {
 	}
 }
 
+func TestExplainToolRejectsUnavailableCandidateLikeExecute(t *testing.T) {
+	adapter := &availabilityMockAdapter{
+		testMockAdapter: testMockAdapter{
+			kindValue: "native",
+			checkFunc: func(string) bool { return false },
+		},
+		checkAvailableFunc: func(string) bool { return false },
+	}
+
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithAdapters(adapter)(ex)
+	tool := &config.Tool{
+		Name:       "phantom",
+		MethodOnly: []string{"native"},
+		Methods: []*config.MethodCandidate{
+			{Kind: "native", Config: map[string]any{"pkg": "phantom"}},
+		},
+	}
+
+	attempts := ex.ExplainTool(context.Background(), tool, "unknown")
+	if len(attempts) != 1 {
+		t.Fatalf("attempt count = %d, want 1: %+v", len(attempts), attempts)
+	}
+	if attempts[0].Status != "skip_unavailable" {
+		t.Fatalf("status = %q, want skip_unavailable: %+v", attempts[0].Status, attempts[0])
+	}
+	if !strings.Contains(attempts[0].Error, "package not found in repo/index") {
+		t.Fatalf("reason = %q, want repo/index availability failure", attempts[0].Error)
+	}
+}
+
 func TestExplainToolPrefersCandidateLabel(t *testing.T) {
 	ex := New()
 	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
@@ -618,6 +650,7 @@ func TestExecutorAdapterUnavailable(t *testing.T) {
 
 func TestExecutorDryRun(t *testing.T) {
 	installCalled := false
+	sentinel := filepath.Join(t.TempDir(), "adapter-install-created")
 	mock := &testMockAdapter{
 		kindValue:     "native",
 		availableFunc: func() bool { return true },
@@ -625,7 +658,7 @@ func TestExecutorDryRun(t *testing.T) {
 	}
 	mock.installFunc = func(string) error {
 		installCalled = true
-		return nil
+		return os.WriteFile(sentinel, []byte("mutated"), 0o600)
 	}
 
 	ex := New()
@@ -640,6 +673,9 @@ func TestExecutorDryRun(t *testing.T) {
 	}
 	if installCalled {
 		t.Fatal("Install should not be called in dry-run")
+	}
+	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
+		t.Fatalf("dry-run called adapter Install and mutated host state: sentinel stat err=%v", err)
 	}
 	if report.Success != 0 {
 		t.Fatalf("expected 0 success in dry-run, got %d", report.Success)
@@ -1404,6 +1440,63 @@ func TestWriteState(t *testing.T) {
 	}
 }
 
+func TestWriteStatePreservesInstalledMetadataWhenAlreadySatisfied(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", dir)
+
+	const installedAt = "2024-02-03T04:05:06Z"
+	initial := &state.State{
+		Version: 1,
+		Tools: map[string]state.ToolState{
+			"tool1": {
+				Method:          "native",
+				MethodKind:      "native",
+				InstalledAt:     installedAt,
+				PostinstallDone: true,
+				DefinitionHash:  "old-definition",
+				Config:          map[string]any{"pkg": "tool1"},
+			},
+		},
+	}
+	if err := state.Save(initial); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+
+	mock := &testMockAdapter{
+		kindValue:     "native",
+		availableFunc: func() bool { return true },
+		checkFunc:     func(string) bool { return true },
+	}
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithAdapters(mock)(ex)
+	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
+
+	s := mockSchema("tool1")
+	report, err := ex.Execute(context.Background(), s, "arch")
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusAlready {
+		t.Fatalf("report = %+v, want already-satisfied tool", report.Tools)
+	}
+
+	got, err := state.Load()
+	if err != nil {
+		t.Fatalf("reload state: %v", err)
+	}
+	toolState := got.Tools["tool1"]
+	if toolState.InstalledAt != installedAt {
+		t.Fatalf("InstalledAt = %q, want preserved %q", toolState.InstalledAt, installedAt)
+	}
+	if !toolState.PostinstallDone {
+		t.Fatal("PostinstallDone was cleared for an already-satisfied tool")
+	}
+	if toolState.DefinitionHash != state.DefinitionHash(s.Tools["tool1"]) {
+		t.Fatalf("DefinitionHash = %q, want current definition hash", toolState.DefinitionHash)
+	}
+}
+
 func TestFormatToolResult(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -1567,5 +1660,144 @@ func TestExplainToolRespectsExpandedOrder(t *testing.T) {
 		if a.Kind != expectedOrder[i] {
 			t.Fatalf("at index %d: expected kind %q, got %q; full: %+v", i, expectedOrder[i], a.Kind, attempts)
 		}
+	}
+}
+
+func TestExplainToolShowsMethodOnlyExclusionsAndInferredCandidates(t *testing.T) {
+	nativeAdapter := &testMockAdapter{kindValue: "native"}
+	cargoAdapter := &testMockAdapter{kindValue: "cargo"}
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex)
+	WithAdapters(nativeAdapter, cargoAdapter)(ex)
+	WithDefaultMethodOrder([]string{"native", "cargo"})(ex)
+
+	tool := &config.Tool{
+		Name:       "demo",
+		MethodOnly: []string{"cargo"},
+		Methods: []*config.MethodCandidate{
+			{Kind: "native", Inferred: true, Config: map[string]any{"pkg": "demo"}},
+			{Kind: "cargo", Config: map[string]any{"pkg": "demo"}},
+		},
+	}
+	attempts := ex.ExplainTool(context.Background(), tool, "unknown")
+	if len(attempts) != 2 {
+		t.Fatalf("attempts = %+v, want selected + disallowed candidates", attempts)
+	}
+	if attempts[0].Kind != "cargo" || attempts[0].Status != "would_install" {
+		t.Fatalf("selected attempt = %+v, want cargo would_install", attempts[0])
+	}
+	if attempts[1].Kind != "native" || attempts[1].Status != "skip_policy" {
+		t.Fatalf("policy attempt = %+v, want native skip_policy", attempts[1])
+	}
+	if !strings.Contains(attempts[1].Error, "excluded by method_only") || !strings.Contains(attempts[1].Error, "inferred candidate") {
+		t.Fatalf("policy reason = %q, want policy + inferred annotations", attempts[1].Error)
+	}
+}
+
+func TestExplainToolDoesNotCallAllCandidatesVirtualWhenPolicyExcludesAll(t *testing.T) {
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex)
+	tool := &config.Tool{
+		Name:       "demo",
+		MethodOnly: []string{"github"},
+		Methods: []*config.MethodCandidate{
+			{Kind: "native", Inferred: true, Config: map[string]any{"pkg": "demo"}},
+		},
+	}
+	attempts := ex.ExplainTool(context.Background(), tool, "unknown")
+	if len(attempts) != 1 || attempts[0].Status != "skip_policy" {
+		t.Fatalf("attempts = %+v, want one skip_policy result", attempts)
+	}
+}
+
+func TestCapabilityMismatchSkipsCandidateBeforeAdapterProbe(t *testing.T) {
+	probes := 0
+	adapter := &testMockAdapter{
+		kindValue: "native",
+		availableFunc: func() bool {
+			probes++
+			return true
+		},
+	}
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex)
+	WithAdapters(adapter)(ex)
+	tool := &config.Tool{
+		Name: "demo",
+		Methods: []*config.MethodCandidate{{
+			Kind:   "native",
+			Config: map[string]any{"pkg": "demo", "version": "1.2.3"},
+		}},
+	}
+
+	result := ex.executeTool(context.Background(), tool)
+	if probes != 0 {
+		t.Fatalf("adapter probed %d times; capability mismatch must be rejected first", probes)
+	}
+	if result.Status != StatusSkippedUnavailable {
+		t.Fatalf("status=%v want %v: %+v", result.Status, StatusSkippedUnavailable, result)
+	}
+	if len(result.Methods) != 1 || result.Methods[0].Status != "skip_capability" {
+		t.Fatalf("methods=%+v want one skip_capability", result.Methods)
+	}
+	if !strings.Contains(result.Methods[0].Error, "exact-version") {
+		t.Fatalf("missing capability reason: %q", result.Methods[0].Error)
+	}
+}
+
+func TestExplainToolShowsCapabilityMismatch(t *testing.T) {
+	probes := 0
+	adapter := &testMockAdapter{
+		kindValue: "native",
+		availableFunc: func() bool {
+			probes++
+			return true
+		},
+	}
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex)
+	WithAdapters(adapter)(ex)
+	tool := &config.Tool{
+		Name: "demo",
+		Methods: []*config.MethodCandidate{{
+			Kind:   "native",
+			Config: map[string]any{"pkg": "demo", "version": "1.2.3"},
+		}},
+	}
+
+	attempts := ex.ExplainTool(context.Background(), tool, "unknown")
+	if probes != 0 {
+		t.Fatalf("adapter probed %d times; capability mismatch must be rejected first", probes)
+	}
+	if len(attempts) != 1 || attempts[0].Status != "skip_capability" {
+		t.Fatalf("attempts=%+v want one skip_capability", attempts)
+	}
+	if !strings.Contains(attempts[0].Error, "exact-version") {
+		t.Fatalf("missing capability reason: %q", attempts[0].Error)
+	}
+}
+
+func TestExplainIntentSurfacesIdentityFieldsAndRedactsSecrets(t *testing.T) {
+	method := &config.MethodCandidate{Kind: "conda", Config: map[string]any{
+		"pkg":         "numpy",
+		"version":     "2.1.0",
+		"environment": "data",
+		"channels":    []string{"conda-forge", "https://user:secret@example.test/private"},
+		"build":       "py312_0",
+		"ignored":     "must-not-appear",
+	}}
+	got := explainIntent(method)
+	for key, want := range map[string]string{
+		"pkg": "numpy", "version": "2.1.0", "environment": "data", "build": "py312_0",
+	} {
+		if got[key] != want {
+			t.Fatalf("intent[%q]=%q want %q; full=%v", key, got[key], want, got)
+		}
+	}
+	if strings.Contains(got["channels"], "secret") || !strings.Contains(got["channels"], "***") {
+		t.Fatalf("channels not redacted: %q", got["channels"])
+	}
+	if _, ok := got["ignored"]; ok {
+		t.Fatalf("arbitrary config leaked into explain intent: %v", got)
 	}
 }

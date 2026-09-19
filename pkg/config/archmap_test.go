@@ -24,7 +24,7 @@ fastfetch = { http = { url = "https://x.com/{os}/{arch}/fastfetch-{arch}.tar.gz"
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
-	mc := s.Tools["fastfetch"].Methods[1] // native[0] + http[1]
+	mc := s.Tools["fastfetch"].Methods[0] // explicit table: http is the only candidate
 	if mc.Kind != "http" {
 		t.Fatalf("expected http, got %q", mc.Kind)
 	}
@@ -49,7 +49,7 @@ fastfetch = { http = { url = "https://x.com/{arch}/fastfetch.tar.gz" } }
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
-	mc := s.Tools["fastfetch"].Methods[1]
+	mc := s.Tools["fastfetch"].Methods[0]
 	want := "https://x.com/arm64_v2/fastfetch.tar.gz"
 	if got := mc.Config["url"]; got != want {
 		t.Fatalf("url:\n got: %v\nwant: %v", got, want)
@@ -76,19 +76,19 @@ other = { http = { url = "https://x.com/{arch}/other.tar.gz" } }
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
-	got := s.Tools["fastfetch"].Methods[1].Config["url"]
+	got := s.Tools["fastfetch"].Methods[0].Config["url"]
 	want := "https://x.com/aarch64_be/fastfetch.tar.gz"
 	if got != want {
 		t.Fatalf("fastfetch url:\n got: %v\nwant: %v", got, want)
 	}
-	got2 := s.Tools["other"].Methods[1].Config["url"]
+	got2 := s.Tools["other"].Methods[0].Config["url"]
 	want2 := "https://x.com/arm64_v2/other.tar.gz"
 	if got2 != want2 {
 		t.Fatalf("other url:\n got: %v\nwant: %v", got2, want2)
 	}
 	// arch_map must never leak into the adapter-facing Config.
-	if _, ok := s.Tools["fastfetch"].Methods[1].Config["arch_map"]; ok {
-		t.Fatalf("arch_map leaked into Config: %#v", s.Tools["fastfetch"].Methods[1].Config)
+	if _, ok := s.Tools["fastfetch"].Methods[0].Config["arch_map"]; ok {
+		t.Fatalf("arch_map leaked into Config: %#v", s.Tools["fastfetch"].Methods[0].Config)
 	}
 }
 
@@ -106,7 +106,7 @@ fastfetch = { http = { url = "https://x.com/{os}/fastfetch.tar.gz", os_map = { D
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
-	mc := s.Tools["fastfetch"].Methods[1]
+	mc := s.Tools["fastfetch"].Methods[0]
 	want := "https://x.com/macOS/fastfetch.tar.gz"
 	if got := mc.Config["url"]; got != want {
 		t.Fatalf("value case not preserved:\n got: %v\nwant: %v", got, want)
@@ -132,7 +132,7 @@ fastfetch = { http = { url = "https://x.com/{arch}/fastfetch.tar.gz" } }
 		t.Fatalf("ParseSchema: %v", err)
 	}
 	want := "https://x.com/x86_64/fastfetch.tar.gz"
-	if got := s.Tools["fastfetch"].Methods[1].Config["url"]; got != want {
+	if got := s.Tools["fastfetch"].Methods[0].Config["url"]; got != want {
 		t.Fatalf("url:\n got: %v\nwant: %v", got, want)
 	}
 }
@@ -154,7 +154,7 @@ fastfetch = { github = { repo = "fastfetch-cli/fastfetch", asset = "fastfetch-{o
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
-	mc := s.Tools["fastfetch"].Methods[1]
+	mc := s.Tools["fastfetch"].Methods[0]
 	if mc.Kind != "github" {
 		t.Fatalf("expected github, got %q", mc.Kind)
 	}
@@ -194,7 +194,7 @@ post_install = "echo installed on {os}"
 		t.Fatalf("PostInstall:\n got: %v\nwant: %v", tool.PostInstall, want)
 	}
 	// Meanwhile the sibling http method's url DID get the alias applied.
-	mc := tool.Methods[1]
+	mc := tool.Methods[0]
 	if want := "https://x.com/arm64/fastfetch.tar.gz"; mc.Config["url"] != want {
 		t.Fatalf("url:\n got: %v\nwant: %v", mc.Config["url"], want)
 	}
@@ -219,7 +219,7 @@ fastfetch = { http = { url = "https://x.com/{arch}/{os}/fastfetch.tar.gz" } }
 		t.Fatalf("ParseSchema: %v", err)
 	}
 	want := "https://x.com/{arch}/{os}/fastfetch.tar.gz"
-	if got := s.Tools["fastfetch"].Methods[1].Config["url"]; got != want {
+	if got := s.Tools["fastfetch"].Methods[0].Config["url"]; got != want {
 		t.Fatalf("validate-mode url:\n got: %v\nwant: %v", got, want)
 	}
 }

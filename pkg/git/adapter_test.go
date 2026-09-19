@@ -2,8 +2,10 @@ package git
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -116,6 +118,26 @@ func TestGitAdapterInstallGeneratesCloneCommand(t *testing.T) {
 	}
 	if len(call.Args) < 4 || call.Args[0] != "clone" || call.Args[1] != "--depth" {
 		t.Fatalf("expected 'git clone --depth ...', got %v", call.Args)
+	}
+}
+
+func TestGitAdapterRejectsEmbeddedCredentialsBeforeClone(t *testing.T) {
+	fr := &run.FakeRunner{ExitCode: 0}
+	adapter := NewGitAdapter()
+	tool := &config.Tool{Name: "mytool"}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"url": "https://secret-token@example.com/repo.git",
+	}}
+
+	err := adapter.Install(context.Background(), fr, tool, mc)
+	if err == nil {
+		t.Fatal("expected embedded credentials to be rejected")
+	}
+	if strings.Contains(err.Error(), "secret-token") {
+		t.Fatalf("error leaked credential: %v", err)
+	}
+	if len(fr.Calls) != 0 {
+		t.Fatalf("credential-bearing URL reached subprocess argv: %+v", fr.Calls)
 	}
 }
 
@@ -669,5 +691,170 @@ func TestGitAdapterManagedPathsGovernCheckAndRemove(t *testing.T) {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("managed path %q still exists after Remove", path)
 		}
+	}
+}
+
+func TestGitAdapterExplicitTagUsesCloneBranch(t *testing.T) {
+	fr := &run.FakeRunner{}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"url": "https://example.test/repo.git",
+		"tag": "v1.2.3",
+	}}
+	if err := NewGitAdapter().Install(context.Background(), fr, &config.Tool{Name: "tool"}, mc); err != nil {
+		t.Fatal(err)
+	}
+	call := fr.Calls[0]
+	wantPrefix := []string{"clone", "--depth", "1", "--branch", "v1.2.3", "https://example.test/repo.git"}
+	if len(call.Args) < len(wantPrefix) || !reflect.DeepEqual(call.Args[:len(wantPrefix)], wantPrefix) {
+		t.Fatalf("clone argv=%v want prefix=%v", call.Args, wantPrefix)
+	}
+}
+
+func TestGitAdapterExactRevisionFetchesAndDetaches(t *testing.T) {
+	fr := &run.FakeRunner{}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"url": "https://example.test/repo.git",
+		"rev": "0123456789abcdef",
+	}}
+	if err := NewGitAdapter().Install(context.Background(), fr, &config.Tool{Name: "tool"}, mc); err != nil {
+		t.Fatal(err)
+	}
+	if len(fr.Calls) != 3 {
+		t.Fatalf("calls=%d want 3: %+v", len(fr.Calls), fr.Calls)
+	}
+	clone := fr.Calls[0]
+	if clone.Name != "git" || !containsArg(clone.Args, "--no-checkout") {
+		t.Fatalf("clone must use --no-checkout: %+v", clone)
+	}
+	cloneDir := clone.Args[len(clone.Args)-1]
+	fetchWant := []string{"-C", cloneDir, "fetch", "--depth", "1", "origin", "0123456789abcdef"}
+	if got := fr.Calls[1]; got.Name != "git" || !reflect.DeepEqual(got.Args, fetchWant) {
+		t.Fatalf("fetch=%+v want git %v", got, fetchWant)
+	}
+	checkoutWant := []string{"-C", cloneDir, "checkout", "--detach", "FETCH_HEAD"}
+	if got := fr.Calls[2]; got.Name != "git" || !reflect.DeepEqual(got.Args, checkoutWant) {
+		t.Fatalf("checkout=%+v want git %v", got, checkoutWant)
+	}
+}
+
+func TestGitAdapterDepthZeroOmitsDepthFlag(t *testing.T) {
+	fr := &run.FakeRunner{}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"url":   "https://example.test/repo.git",
+		"depth": int64(0),
+	}}
+	if err := NewGitAdapter().Install(context.Background(), fr, &config.Tool{Name: "tool"}, mc); err != nil {
+		t.Fatal(err)
+	}
+	if containsArg(fr.Calls[0].Args, "--depth") {
+		t.Fatalf("depth=0 must omit --depth: %v", fr.Calls[0].Args)
+	}
+}
+
+func TestGitAdapterRejectsLatestWithExplicitRevision(t *testing.T) {
+	fr := &run.FakeRunner{}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"url": "https://example.test/{latest}/repo.git",
+		"tag": "v1.2.3",
+	}}
+	if err := NewGitAdapter().Install(context.Background(), fr, &config.Tool{Name: "tool"}, mc); err == nil {
+		t.Fatal("expected {latest} plus explicit tag to be rejected")
+	}
+	if len(fr.Calls) != 0 {
+		t.Fatalf("conflicting revision intent reached runner: %+v", fr.Calls)
+	}
+}
+
+func containsArg(args []string, want string) bool {
+	for _, arg := range args {
+		if arg == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestGitAdapterCheckVerifiesRequestedRevisionWhenRepoIsOwned(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"extract_to": dir,
+		"rev":        "deadbeef",
+	}}
+
+	fr := &run.FakeRunner{Stdout: "0123456789abcdef\n0123456789abcdef\n"}
+	if !NewGitAdapter().Check(context.Background(), fr, nil, mc) {
+		t.Fatal("Check should accept matching HEAD and requested revision")
+	}
+	if len(fr.Calls) != 1 || fr.Calls[0].Name != "git" {
+		t.Fatalf("unexpected calls: %+v", fr.Calls)
+	}
+	want := []string{"-C", dir, "rev-parse", "HEAD", "deadbeef"}
+	if !reflect.DeepEqual(fr.Calls[0].Args, want) {
+		t.Fatalf("argv=%v want=%v", fr.Calls[0].Args, want)
+	}
+
+	fr = &run.FakeRunner{Stdout: "0123456789abcdef\nffffffffffffffff\n"}
+	if NewGitAdapter().Check(context.Background(), fr, nil, mc) {
+		t.Fatal("Check should reject revision drift")
+	}
+}
+
+func TestGitAdapterInstalledVersionReportsOwnedRepoHEAD(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"url":        "https://example.test/repo.git",
+		"extract_to": dir,
+		"branch":     "main",
+	}}
+	fr := &run.FakeRunner{Stdout: "0123456789abcdef\n"}
+	got, err := NewGitAdapter().InstalledVersion(context.Background(), fr, nil, mc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "0123456789abcdef" {
+		t.Fatalf("InstalledVersion=%q want commit HEAD", got)
+	}
+}
+
+func TestGitAdapterSubmodulesAreExplicitTypedStep(t *testing.T) {
+	fr := &run.FakeRunner{}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"url":        "https://example.test/repo.git",
+		"submodules": true,
+	}}
+	if err := NewGitAdapter().Install(context.Background(), fr, &config.Tool{Name: "tool"}, mc); err != nil {
+		t.Fatal(err)
+	}
+	if len(fr.Calls) != 2 {
+		t.Fatalf("calls=%d want clone + submodule: %+v", len(fr.Calls), fr.Calls)
+	}
+	cloneDir := fr.Calls[0].Args[len(fr.Calls[0].Args)-1]
+	want := []string{"-C", cloneDir, "submodule", "update", "--init", "--recursive"}
+	if got := fr.Calls[1]; got.Name != "git" || !reflect.DeepEqual(got.Args, want) {
+		t.Fatalf("submodule call=%+v want git %v", got, want)
+	}
+}
+
+func TestGitAdapterRejectsInvalidDepthBeforeClone(t *testing.T) {
+	for _, depth := range []any{int64(-1), "-1", "shallow"} {
+		t.Run(fmt.Sprint(depth), func(t *testing.T) {
+			fr := &run.FakeRunner{}
+			mc := &config.MethodCandidate{Config: map[string]any{
+				"url":   "https://example.test/repo.git",
+				"depth": depth,
+			}}
+			if err := NewGitAdapter().Install(context.Background(), fr, &config.Tool{Name: "tool"}, mc); err == nil {
+				t.Fatalf("expected invalid depth %v to fail", depth)
+			}
+			if len(fr.Calls) != 0 {
+				t.Fatalf("invalid depth reached runner: %+v", fr.Calls)
+			}
+		})
 	}
 }

@@ -3,6 +3,7 @@ package exec
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/config"
@@ -537,4 +538,58 @@ func TestNativeDeclaredFieldsGovernRuntimeCommands(t *testing.T) {
 		t.Fatalf("Remove returned error: %v", err)
 	}
 	assertUsesOverride(t, removeRunner.Calls)
+}
+
+func TestWingetTypedSelectionAndDesiredState(t *testing.T) {
+	a := &NativeByManagerAdapter{managerName: "winget"}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"pkg": "Git.Git", "version": "2.53.0", "source": "winget", "scope": "machine", "architecture": "x64", "installer_type": "msi",
+	}}
+	tool := &config.Tool{Name: "git"}
+
+	install := &run.FakeRunner{}
+	if err := a.Install(context.Background(), install, tool, mc); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if len(install.Calls) != 1 {
+		t.Fatalf("install calls = %#v", install.Calls)
+	}
+	wantInstall := []string{"install", "--id", "Git.Git", "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity", "--version", "2.53.0", "--source", "winget", "--scope", "machine", "--architecture", "x64", "--installer-type", "msi"}
+	if got := install.Calls[0].Args; !slices.Equal(got, wantInstall) {
+		t.Fatalf("install args = %v, want %v", got, wantInstall)
+	}
+
+	check := &run.FakeRunner{Stdout: "Git Git.Git 2.53.0 winget\n"}
+	if !a.Check(context.Background(), check, tool, mc) {
+		t.Fatal("Check should accept matching exact version")
+	}
+	wantCheck := []string{"list", "--id", "Git.Git", "--exact", "--accept-source-agreements", "--disable-interactivity", "--source", "winget"}
+	if got := check.Calls[0].Args; !slices.Equal(got, wantCheck) {
+		t.Fatalf("check args = %v, want %v", got, wantCheck)
+	}
+
+	drift := &run.FakeRunner{Stdout: "Git Git.Git 2.52.0 winget\n"}
+	if a.Check(context.Background(), drift, tool, mc) {
+		t.Fatal("Check should reject version drift")
+	}
+
+	remove := &run.FakeRunner{}
+	if err := a.Remove(context.Background(), remove, tool, mc); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	wantRemove := []string{"uninstall", "--id", "Git.Git", "--exact", "--silent", "--disable-interactivity", "--version", "2.53.0", "--source", "winget", "--scope", "machine"}
+	if got := remove.Calls[0].Args; !slices.Equal(got, wantRemove) {
+		t.Fatalf("remove args = %v, want %v", got, wantRemove)
+	}
+}
+
+func TestWingetInstalledVersion(t *testing.T) {
+	a := &NativeByManagerAdapter{managerName: "winget"}
+	v, err := a.InstalledVersion(context.Background(), &run.FakeRunner{Stdout: "Git Git.Git 2.53.0 winget\n"}, &config.Tool{Name: "git"}, &config.MethodCandidate{Config: map[string]any{"pkg": "Git.Git"}})
+	if err != nil {
+		t.Fatalf("InstalledVersion: %v", err)
+	}
+	if v != "2.53.0" {
+		t.Fatalf("InstalledVersion = %q, want 2.53.0", v)
+	}
 }

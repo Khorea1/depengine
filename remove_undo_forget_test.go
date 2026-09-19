@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -21,8 +22,7 @@ import (
 // network, no real package managers.
 func runCommand(t *testing.T, cmd string, extraEnv []string, args ...string) (exitCode int, output string) {
 	t.Helper()
-	cmdArgs := append([]string{"-test.run=^TestCommandHelperSubprocess$"}, args...)
-	c := osexec.Command(os.Args[0], cmdArgs...)
+	c := osexec.Command(os.Args[0], "-test.run=^TestCommandHelperSubprocess$")
 
 	scrubbed := map[string]bool{
 		"XDG_STATE_HOME":     true,
@@ -46,6 +46,7 @@ func runCommand(t *testing.T, cmd string, extraEnv []string, args ...string) (ex
 	}
 	env = append(env, "DEPENGINE_TEST_HELPER=1")
 	env = append(env, "DEPENGINE_TEST_HELPER_CMD="+cmd)
+	env = append(env, "DEPENGINE_TEST_ARGS="+strings.Join(args, "\x1f"))
 	env = append(env, extraEnv...)
 	c.Env = env
 
@@ -72,7 +73,10 @@ func TestCommandHelperSubprocess(t *testing.T) {
 	if os.Getenv("DEPENGINE_TEST_HELPER") != "1" {
 		t.Skip("subprocess entry point; run indirectly via runCommand")
 	}
-	args := os.Args[2:] // skip binary name and the -test.run flag
+	var args []string
+	if encoded := os.Getenv("DEPENGINE_TEST_ARGS"); encoded != "" {
+		args = strings.Split(encoded, "\x1f")
+	}
 	switch cmd := os.Getenv("DEPENGINE_TEST_HELPER_CMD"); cmd {
 	case "remove":
 		runViaCobra(newRemoveCmd(), args)
@@ -81,13 +85,7 @@ func TestCommandHelperSubprocess(t *testing.T) {
 	case "forget":
 		runViaCobra(newForgetCmd(), args)
 	case "upgrade":
-		// Upgrade flags are passed via DEPENGINE_TEST_ARGS to avoid
-		// collision with the Go test binary's own flag parser.
-		var upgradeArgs []string
-		if a := os.Getenv("DEPENGINE_TEST_ARGS"); a != "" {
-			upgradeArgs = strings.Split(a, "\x1f")
-		}
-		runViaCobra(newUpgradeCmd(), upgradeArgs)
+		runViaCobra(newUpgradeCmd(), args)
 	default:
 		os.Exit(99)
 	}
@@ -335,5 +333,39 @@ func TestForgetGoTool(t *testing.T) {
 	st := loadTestState(t, stateHome)
 	if _, ok := st.Tools["gostr"]; ok {
 		t.Fatalf("state still contains gostr after forget: %+v", st.Tools)
+	}
+}
+
+func TestRemoveDryRunDoesNotWriteStateOrCreateLock(t *testing.T) {
+	stateHome := t.TempDir()
+	homeDir := t.TempDir()
+	writeTestState(t, stateHome, map[string]state.ToolState{"gostr": goToolState()})
+
+	statePath := filepath.Join(stateHome, "depengine", "state.json")
+	before, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	code, out := runCommand(t, "remove",
+		[]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir},
+		"--dry-run", "gostr",
+	)
+	if code != 0 {
+		t.Fatalf("remove dry-run exit = %d, want 0 (output: %s)", code, out)
+	}
+	if !strings.Contains(out, "would remove") {
+		t.Fatalf("output should describe planned removal, got: %s", out)
+	}
+
+	after, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("remove --dry-run rewrote state.json")
+	}
+	if _, err := os.Stat(statePath + ".lock"); !os.IsNotExist(err) {
+		t.Fatalf("remove --dry-run created state lock file (err=%v)", err)
 	}
 }

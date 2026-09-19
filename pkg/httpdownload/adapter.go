@@ -2,6 +2,7 @@ package httpdownload
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/Khorea1/depengine/pkg/downloadcache"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/methodkind"
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
@@ -108,15 +110,32 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	if err != nil {
 		return fmt.Errorf("http: resolve artifact: %w", err)
 	}
+	// Re-enforce the shared artifact URL contract at the runtime boundary.
+	// Normal CLI flows validate before execution, but adapters are also public
+	// package APIs and must not leak embedded credentials when called directly.
+	if err := artifact.ValidateURL(resolvedURL, []string{"http", "https"}); err != nil {
+		return fmt.Errorf("http: artifact URL: %w", err)
+	}
 
-	// Determine file extension.
+	// Determine file extension and re-enforce the same artifact-format contract
+	// semantic validation uses. _allow_installer is reserved for dedicated
+	// adapters that intentionally delegate transport to HTTPAdapter.
 	ext := fileExtension(resolvedURL)
 	allowInstaller, _ := mc.Config["_allow_installer"].(bool)
-	if installerExt := artifact.InstallerExtension(resolvedURL); installerExt != "" && !allowInstaller {
-		if installerExt == ".msi" {
-			return fmt.Errorf("http: %s is a platform installer; use the msi method", installerExt)
+	if contract, ok := methodkind.Lookup("http"); ok && contract.Artifact != nil {
+		if err := contract.Artifact.ValidateArtifact(resolvedURL); err != nil {
+			var forbidden *artifact.ForbiddenExtensionError
+			if errors.As(err, &forbidden) && allowInstaller {
+				// Dedicated installer adapter owns the execution semantics.
+			} else if errors.As(err, &forbidden) {
+				if forbidden.Extension == ".msi" {
+					return fmt.Errorf("http: %s is a platform installer; use the msi method", forbidden.Extension)
+				}
+				return fmt.Errorf("http: %s is a platform installer; no dedicated installer method is available for this format", forbidden.Extension)
+			} else {
+				return fmt.Errorf("http: artifact: %w", err)
+			}
 		}
-		return fmt.Errorf("http: %s is a platform installer; no dedicated installer method is available for this format", installerExt)
 	}
 	tmpDir, err := os.MkdirTemp("", "depengine-http-*")
 	if err != nil {

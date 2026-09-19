@@ -116,7 +116,7 @@ var Configs = map[string]BaseConfig{
 		KindName:    "flatpak",
 		Binary:      "flatpak",
 		CheckTmpl:   []string{"flatpak", "info", "{pkg}"},
-		InstallTmpl: []string{"flatpak", "install", "-y", "flathub", "{pkg}"},
+		InstallTmpl: []string{"flatpak", "install", "-y", "{pkg}"},
 		RemoveTmpl:  []string{"flatpak", "uninstall", "-y", "{pkg}"},
 	},
 	"snap": {

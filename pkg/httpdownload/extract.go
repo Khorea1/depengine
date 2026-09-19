@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -99,12 +98,37 @@ func extract(ctx context.Context, src, dest, ext, binaryName string, rn run.Runn
 		return extractTar(ctx, src, dest, []string{"xf"}, rn, sudoRequired, toolName)
 	case ".zip":
 		return extractZip(ctx, src, dest, rn, sudoRequired, toolName)
+	case ".bz2":
+		return extractBzip2(ctx, src, dest, binaryName, rn, sudoRequired, toolName)
 	case ".deb":
 		return installDeb(ctx, src, rn, sudoRequired, toolName)
 	default:
 		// Treat as a plain binary — copy and chmod.
 		return copyBinary(ctx, src, dest, binaryName, rn, sudoRequired, toolName)
 	}
+}
+
+func extractBzip2(ctx context.Context, src, dest, binaryName string, rn run.Runner, sudoRequired bool, toolName string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("bzip2: open %s: %w", src, err)
+	}
+	defer in.Close()
+
+	tmp, err := os.CreateTemp("", ".depengine-bzip2-*")
+	if err != nil {
+		return fmt.Errorf("bzip2: create temporary file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err := io.Copy(tmp, bzip2.NewReader(in)); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("bzip2: decompress %s: %w", src, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("bzip2: close temporary file: %w", err)
+	}
+	return copyBinary(ctx, tmpName, dest, binaryName, rn, sudoRequired, toolName)
 }
 
 func extractTar(ctx context.Context, src, dest string, flags []string, rn run.Runner, sudoRequired bool, toolName string) error {
@@ -148,7 +172,7 @@ func extractZip(ctx context.Context, src, dest string, rn run.Runner, sudoRequir
 
 func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired bool, toolName string) error {
 	// Guard: dpkg must exist on the system.
-	if _, err := exec.LookPath("dpkg"); err != nil {
+	if !run.LookPath(ctx, rn, "dpkg") {
 		return fmt.Errorf("cannot install .deb package: dpkg not found (this system is not Debian-based; consider adding a native method fallback)")
 	}
 	var sudoBin string
@@ -174,8 +198,8 @@ func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired boo
 	// to fix them, then try dpkg -i again.
 	// Check which apt variant is available (apt-get preferred, apt fallback).
 	aptCmd := "apt-get"
-	if _, err := exec.LookPath("apt-get"); err != nil {
-		if _, err2 := exec.LookPath("apt"); err2 != nil {
+	if !run.LookPath(ctx, rn, "apt-get") {
+		if !run.LookPath(ctx, rn, "apt") {
 			return fmt.Errorf("neither apt-get nor apt found to fix dependencies")
 		}
 		aptCmd = "apt"

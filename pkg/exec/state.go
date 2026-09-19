@@ -72,6 +72,17 @@ func (ex *Executor) writeState(ctx context.Context, schema *config.Schema, repor
 			DefinitionHash:  depstate.DefinitionHash(tool),
 			Config:          result.Config,
 		}
+		// A successful Check means depengine did not install anything during this
+		// run. Preserve historical installation metadata instead of rewriting the
+		// original timestamp (and completed postinstall state) as though a fresh
+		// installation had occurred. The definition/config are still refreshed so
+		// state tracks the currently satisfied manifest intent.
+		if result.Status == StatusAlready && hadExisting {
+			if existing.InstalledAt != "" {
+				toolState.InstalledAt = existing.InstalledAt
+			}
+			toolState.PostinstallDone = existing.PostinstallDone || result.PostinstallDone
+		}
 		if version := ex.installedVersion(ctx, tool, result); version != "" {
 			toolState.Version = version
 		} else if hadExisting {

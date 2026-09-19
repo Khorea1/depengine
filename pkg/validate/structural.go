@@ -76,12 +76,23 @@ func validateRequiredFields(s *config.Schema) *Result {
 					r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, present[0]), Message: fmt.Sprintf("%s method for tool %q sets mutually exclusive fields %s", contract.Kind, toolName, strings.Join(present, " and "))})
 				}
 			}
+			for key, required := range contract.Requires {
+				if _, configured := method.Config[key]; !configured {
+					continue
+				}
+				for _, dependency := range required {
+					if _, ok := method.Config[dependency]; !ok {
+						r.Add(ValidationError{Code: ErrRequiredField, Field: fieldPath(toolName, i, key), Message: fmt.Sprintf("%s method for tool %q: %s requires %s", contract.Kind, toolName, key, dependency)})
+					}
+				}
+			}
 			validateSourceAlternatives(toolName, i, method, contract, r)
 			if strip, ok := method.Config["strip_components"].(int64); ok && strip < 0 {
 				r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, "strip_components"), Message: "strip_components must be non-negative"})
 			}
 			if method.Kind == "git" {
 				validateManagedPaths(toolName, i, method.Config["managed_paths"], r)
+				validateGitDepth(toolName, i, method.Config["depth"], r)
 			}
 			validateChecksum(toolName, i, method, contract, r)
 		}
@@ -265,6 +276,24 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func validateGitDepth(toolName string, methodIdx int, raw any, r *Result) {
+	if raw == nil {
+		return
+	}
+	valid := false
+	switch value := raw.(type) {
+	case int64:
+		valid = value >= 0
+	case string:
+		if parsed, err := strconv.ParseInt(value, 10, 64); err == nil {
+			valid = parsed >= 0
+		}
+	}
+	if !valid {
+		r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, methodIdx, "depth"), Message: "git depth must be a non-negative integer"})
+	}
 }
 
 func validateChecksum(toolName string, methodIdx int, method *config.MethodCandidate, contract *methodkind.Contract, r *Result) {

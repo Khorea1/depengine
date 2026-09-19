@@ -31,29 +31,60 @@ func NewGoAdapter() *GoAdapter {
 	}
 }
 
+// Install honors an exact module/package version when declared. If pkg already
+// carries an @version suffix (legacy shorthand), it is preserved rather than
+// appending @latest a second time.
+func (a *GoAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+	if !a.Available(ctx, rn) {
+		return fmt.Errorf("go: binary %q not available on PATH", "go")
+	}
+	pkg := importPathFromTool(tool, mc)
+	version, _ := mc.Config["version"].(string)
+	if version != "" && strings.Contains(pkg, "@") {
+		return fmt.Errorf("go: pkg %q already contains a version; do not also set version", pkg)
+	}
+	target := pkg
+	if version != "" {
+		target += "@" + version
+	} else if !strings.Contains(pkg, "@") {
+		target += "@latest"
+	}
+	res := rn.Run(ctx, "go", "install", target)
+	return run.CheckResult(res, "go: install")
+}
+
 // Check runs `which {bin}` where {bin} is derived from the import path
 // (last path element, or the element after /cmd/). Checking the import path
 // itself could never pass. Falls back to tool.Name as the binary name when
 // it differs from both the import path and the derived binary name (some
 // manifests key the tool by its binary name).
 func (a *GoAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
-	// which {bin} — the binary name derived from the import path.
-	if a.BaseAdapter.Check(ctx, rn, tool, mc) {
+	present := a.BaseAdapter.Check(ctx, rn, tool, mc)
+	if !present {
+		// Fallback: tool.Name may be the actual binary name (e.g. the manifest
+		// key doubles as the installed binary while the import path ends in a
+		// different name). Never run `which` on the import path itself.
+		importPath := importPathFromTool(tool, mc)
+		if tool.Name != importPath && tool.Name != goBinaryName(importPath) {
+			fallbackMC := &config.MethodCandidate{
+				Kind:   mc.Kind,
+				Config: map[string]any{"pkg": tool.Name},
+			}
+			present = a.BaseAdapter.Check(ctx, rn, tool, fallbackMC)
+		}
+	}
+	if !present {
+		return false
+	}
+	version, _ := mc.Config["version"].(string)
+	if version == "" {
 		return true
 	}
-
-	// Fallback: tool.Name may be the actual binary name (e.g. the manifest
-	// key doubles as the installed binary while the import path ends in a
-	// different name). Never run `which` on the import path itself.
-	importPath := importPathFromTool(tool, mc)
-	if tool.Name != importPath && tool.Name != goBinaryName(importPath) {
-		fallbackMC := &config.MethodCandidate{
-			Kind:   mc.Kind,
-			Config: map[string]any{"pkg": tool.Name},
-		}
-		return a.BaseAdapter.Check(ctx, rn, tool, fallbackMC)
+	installed, err := a.InstalledVersion(ctx, rn, tool, mc)
+	if err != nil || installed == "" {
+		return false
 	}
-	return false
+	return strings.TrimPrefix(installed, "v") == strings.TrimPrefix(version, "v")
 }
 
 // importPathFromTool returns the Go import path for a tool, mirroring how
@@ -72,6 +103,9 @@ func importPathFromTool(tool *config.Tool, mc *config.MethodCandidate) string {
 // following /cmd/ (e.g. golang.org/x/tools/cmd/stringer → stringer), so the
 // element after /cmd/ is preferred when present.
 func goBinaryName(importPath string) string {
+	if idx := strings.LastIndex(importPath, "@"); idx >= 0 {
+		importPath = importPath[:idx]
+	}
 	trimmed := strings.Trim(importPath, "/")
 	if trimmed == "" {
 		return importPath

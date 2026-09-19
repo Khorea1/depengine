@@ -24,6 +24,7 @@ type Facts struct {
 	TargetArch      string `json:"target_arch"`
 	DistroID        string `json:"distro_id"`
 	DistroName      string `json:"distro_name"`
+	DistroVersion   string `json:"distro_version"`
 	DistroIDLike    string `json:"distro_id_like"`
 	TargetFamily    string `json:"target_family"` // unix | windows | unknown
 	DetectionMethod string `json:"detection_method"`
@@ -89,7 +90,7 @@ func locateDetectScript() (string, bool, error) {
 
 // gatherFactsGo builds a minimal Facts from Go runtime info.
 // Used as fallback when detect_os.sh cannot execute (e.g. on Windows).
-func gatherFactsGo() *Facts {
+func gatherFactsGo(r run.Runner) *Facts {
 	tf := "unknown"
 	switch runtime.GOOS {
 	case "windows":
@@ -97,16 +98,113 @@ func gatherFactsGo() *Facts {
 	case "linux", "darwin":
 		tf = "unix"
 	}
-	return &Facts{
+	facts := &Facts{
 		OS:              runtime.GOOS,
 		TargetFamily:    tf,
 		TargetArch:      runtime.GOARCH,
 		Kernel:          "unknown",
 		DetectionMethod: "go-builtin",
 		Confidence:      "low",
-		DistroID:        "",
-		DistroName:      "",
 	}
+
+	switch runtime.GOOS {
+	case "windows":
+		facts.DistroID = "windows"
+		facts.DistroName = "Windows"
+		if version := detectWindowsVersion(r); version != "" {
+			facts.DistroVersion = version
+			facts.DistroName = "Windows " + version
+			facts.DetectionMethod = "go-builtin+cmd-ver"
+			facts.Confidence = "medium"
+		}
+	case "darwin":
+		facts.DistroID = "macos"
+		facts.DistroName = "macOS"
+		if version := detectDarwinVersion(r); version != "" {
+			facts.DistroVersion = version
+			facts.DistroName = "macOS " + version
+			facts.DetectionMethod = "go-builtin+sw-vers"
+			facts.Confidence = "medium"
+		}
+	}
+
+	return facts
+}
+
+func detectDarwinVersion(r run.Runner) string {
+	if r == nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	res := r.Run(ctx, "sw_vers", "-productVersion")
+	if res.Err != nil || res.ExitCode != 0 {
+		return ""
+	}
+	return strings.TrimSpace(string(res.Stdout))
+}
+
+func detectWindowsVersion(r run.Runner) string {
+	if r == nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	res := r.Run(ctx, "cmd.exe", "/d", "/c", "ver")
+	if res.Err != nil || res.ExitCode != 0 {
+		return ""
+	}
+	return parseWindowsVersion(string(res.Stdout))
+}
+
+// parseWindowsVersion extracts the numeric NT version/build tuple from the
+// output of cmd.exe's built-in `ver` command. The surrounding text is
+// localized on some Windows installations, so only the dotted numeric token
+// is relied upon (for example 10.0.26100.4652).
+func parseWindowsVersion(output string) string {
+	for i := 0; i < len(output); i++ {
+		if output[i] < '0' || output[i] > '9' {
+			continue
+		}
+		start := i
+		dots := 0
+		for i < len(output) {
+			c := output[i]
+			if c >= '0' && c <= '9' {
+				i++
+				continue
+			}
+			if c == '.' {
+				dots++
+				i++
+				continue
+			}
+			break
+		}
+		candidate := strings.TrimSuffix(output[start:i], ".")
+		if dots >= 2 && validWindowsVersion(candidate) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func validWindowsVersion(version string) bool {
+	parts := strings.Split(version, ".")
+	if len(parts) < 3 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" {
+			return false
+		}
+		for i := 0; i < len(part); i++ {
+			if part[i] < '0' || part[i] > '9' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // GatherFacts runs the fetcher via the injected Runner and returns the
@@ -122,7 +220,7 @@ func GatherFacts(r run.Runner) (*Facts, error) {
 	script, clean, err := locateDetectScript()
 	if err != nil {
 		log.Default.Warn("OS detection script not available, using Go runtime fallback", "error", err)
-		return gatherFactsGo(), nil
+		return gatherFactsGo(r), nil
 	}
 	if clean {
 		defer os.Remove(script)
@@ -139,7 +237,7 @@ func GatherFacts(r run.Runner) (*Facts, error) {
 			// Script couldn't start (no shell, .sh not executable on Windows, etc.)
 			log.Default.Warn("OS detection script failed, using Go runtime fallback",
 				"error", res.Err, "stderr", string(res.Stderr))
-			return gatherFactsGo(), nil
+			return gatherFactsGo(r), nil
 		}
 		if res.Err != nil {
 			return nil, fmt.Errorf("detect_os.sh failed (exit %d): %s",
@@ -152,6 +250,7 @@ func GatherFacts(r run.Runner) (*Facts, error) {
 	log.Default.Debug("gathered facts",
 		"distro_id", facts.DistroID,
 		"distro_name", facts.DistroName,
+		"distro_version", facts.DistroVersion,
 		"arch", facts.TargetArch,
 		"kernel", facts.Kernel,
 		"libc", facts.Libc,

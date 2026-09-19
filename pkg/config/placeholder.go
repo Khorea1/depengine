@@ -52,6 +52,7 @@ func BuildMap(f *engine.Facts, clan string) map[string]string {
 	m := map[string]string{
 		"id":             f.DistroID,
 		"distro_name":    f.DistroName,
+		"distro_version": f.DistroVersion,
 		"distro_id_like": f.DistroIDLike,
 		"distro_family":  clan,
 		"target_family":  f.TargetFamily,

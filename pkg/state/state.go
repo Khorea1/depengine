@@ -75,6 +75,9 @@ func Load() (*State, error) {
 // Save writes the state to DefaultPath atomically: write to a temp file,
 // fsync, then rename. This prevents corruption if the process crashes mid-write.
 func Save(s *State) error {
+	if err := ValidateNoSecrets(s); err != nil {
+		return err
+	}
 	path := DefaultPath()
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {

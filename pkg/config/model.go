@@ -151,6 +151,7 @@ func cloneMethod(method *MethodCandidate) *MethodCandidate {
 type MethodCandidate struct {
 	Kind     string
 	Label    string
+	Inferred bool // synthesized by depengine rather than explicitly declared
 	When     *Condition
 	Config   map[string]any
 	Err      error

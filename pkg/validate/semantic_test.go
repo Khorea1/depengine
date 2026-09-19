@@ -1,6 +1,8 @@
 package validate
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/config"
@@ -364,6 +366,44 @@ func TestValidateArtifactContractsRejectUnsupportedSchemes(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsEmbeddedHTTPCredentials(t *testing.T) {
+	for _, kind := range []string{"http", "git"} {
+		t.Run(kind, func(t *testing.T) {
+			s := &config.Schema{Tools: map[string]*config.Tool{
+				"app": tool("app", []*config.MethodCandidate{mc(kind, nil, map[string]any{
+					"url": "https://secret-token@example.com/tool.git",
+				})}, nil),
+			}}
+			r := validateMalformedURLs(s)
+			if !r.HasErrors() {
+				t.Fatalf("expected %s URL credentials to be rejected", kind)
+			}
+			if strings.Contains(r.Errors[0].Message, "secret-token") {
+				t.Fatalf("validation error leaked credential: %q", r.Errors[0].Message)
+			}
+		})
+	}
+}
+
+func TestValidateRejectsEmbeddedCredentialsInSigningKeyURL(t *testing.T) {
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"app": tool("app", []*config.MethodCandidate{mc("http", nil, map[string]any{
+			"url":         "https://example.com/tool.tar.gz",
+			"signing_key": "https://secret-token@example.com/key.asc",
+		})}, nil),
+	}}
+	r := validateMalformedURLs(s)
+	if !r.HasErrors() {
+		t.Fatal("expected signing_key URL credentials to be rejected")
+	}
+	if r.Errors[0].Field != "tools.app.methods[0].signing_key" {
+		t.Fatalf("field = %q, want signing_key", r.Errors[0].Field)
+	}
+	if strings.Contains(r.Errors[0].Message, "secret-token") {
+		t.Fatalf("validation error leaked credential: %q", r.Errors[0].Message)
+	}
+}
+
 func TestValidateArtifactContractsRejectHTTPPlatformInstallers(t *testing.T) {
 	for _, ext := range []string{".msi", ".exe", ".pkg", ".dmg", ".msix", ".appx"} {
 		t.Run(ext, func(t *testing.T) {
@@ -376,6 +416,14 @@ func TestValidateArtifactContractsRejectHTTPPlatformInstallers(t *testing.T) {
 			}
 			if r.Errors[0].Code != ErrInvalidValue {
 				t.Fatalf("code = %s, want %s", r.Errors[0].Code, ErrInvalidValue)
+			}
+			message := r.Errors[0].Message
+			if ext == ".msi" {
+				if !strings.Contains(message, "use the msi method") {
+					t.Fatalf("MSI diagnostic should name the existing msi method: %q", message)
+				}
+			} else if !strings.Contains(message, "no dedicated installer method is available") {
+				t.Fatalf("%s diagnostic must not recommend a nonexistent method: %q", ext, message)
 			}
 		})
 	}
@@ -417,5 +465,130 @@ func TestValidateArtifactContractsValidateAuxiliaryURLs(t *testing.T) {
 	}
 	if got := r.Errors[0].Field; got != "tools.app.methods[0].checksum_url" {
 		t.Fatalf("field = %q, want checksum_url", got)
+	}
+}
+
+func TestValidateArtifactContractsRequireMethodSpecificArtifactTypes(t *testing.T) {
+	tests := []struct {
+		kind string
+		cfg  map[string]any
+		want string
+	}{
+		{kind: "appimage", cfg: map[string]any{"url": "https://example.com/tool.tar.gz"}, want: ".AppImage"},
+		{kind: "android", cfg: map[string]any{"url": "https://example.com/tool.zip"}, want: ".apk"},
+		{kind: "appimage", cfg: map[string]any{"repo": "owner/repo", "asset": "tool-{version}.tar.gz"}, want: ".AppImage"},
+		{kind: "android", cfg: map[string]any{"repo": "owner/repo", "asset": "tool-{version}.zip"}, want: ".apk"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.kind+"/"+tt.want, func(t *testing.T) {
+			s := &config.Schema{Tools: map[string]*config.Tool{
+				"app": tool("app", []*config.MethodCandidate{mc(tt.kind, nil, tt.cfg)}, nil),
+			}}
+			r := validateMalformedURLs(s)
+			if !r.HasErrors() {
+				t.Fatalf("expected %s artifact type to be rejected", tt.kind)
+			}
+			if !strings.Contains(r.Errors[0].Message, tt.want) {
+				t.Fatalf("diagnostic = %q, want required extension %q", r.Errors[0].Message, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateContainerReferences(t *testing.T) {
+	tests := []struct {
+		name  string
+		cfg   map[string]any
+		field string
+	}{
+		{name: "tag embedded in source", cfg: map[string]any{"manager": "docker", "source": "redis:7"}, field: "source"},
+		{name: "digest embedded in source", cfg: map[string]any{"manager": "podman", "source": "ghcr.io/owner/tool@sha256:deadbeef"}, field: "source"},
+		{name: "source is URL", cfg: map[string]any{"manager": "docker", "source": "https://ghcr.io/owner/tool"}, field: "source"},
+		{name: "invalid tag", cfg: map[string]any{"manager": "docker", "source": "redis", "tag": "team/release"}, field: "tag"},
+		{name: "invalid platform", cfg: map[string]any{"manager": "docker", "source": "redis", "platform": "linux"}, field: "platform"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &config.Schema{Tools: map[string]*config.Tool{
+				"app": tool("app", []*config.MethodCandidate{mc("container", nil, tt.cfg)}, nil),
+			}}
+			r := validateContainerReferences(s)
+			if !r.HasErrors() {
+				t.Fatal("expected invalid container reference to be rejected")
+			}
+			if got := r.Errors[0].Field; !strings.HasSuffix(got, "."+tt.field) {
+				t.Fatalf("field = %q, want suffix .%s", got, tt.field)
+			}
+		})
+	}
+}
+
+func TestValidateContainerReferencesAllowsRegistryPort(t *testing.T) {
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"app": tool("app", []*config.MethodCandidate{mc("container", nil, map[string]any{
+			"manager": "docker", "source": "registry.example:5000/team/tool", "tag": "1.2.3",
+		})}, nil),
+	}}
+	if r := validateContainerReferences(s); r.HasErrors() {
+		t.Fatalf("valid registry port rejected: %+v", r.Errors)
+	}
+}
+
+func TestValidateArtifactContractsRejectUnsupportedArchives(t *testing.T) {
+	for _, ext := range []string{".7z", ".rar", ".tar.lz", ".gz", ".xz", ".zst"} {
+		t.Run(ext, func(t *testing.T) {
+			s := &config.Schema{Tools: map[string]*config.Tool{
+				"app": tool("app", []*config.MethodCandidate{mc("http", nil, map[string]any{"url": "https://example.com/tool" + ext})}, nil),
+			}}
+			r := validateMalformedURLs(s)
+			if !r.HasErrors() {
+				t.Fatalf("expected unsupported archive %s to be rejected", ext)
+			}
+			if !strings.Contains(r.Errors[0].Message, "archive extension") {
+				t.Fatalf("diagnostic = %q, want archive extension error", r.Errors[0].Message)
+			}
+		})
+	}
+}
+
+func TestValidateContainerDigest(t *testing.T) {
+	good := "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	tests := []struct {
+		name   string
+		config map[string]any
+		valid  bool
+	}{
+		{"valid digest", map[string]any{"manager": "docker", "source": "redis", "digest": good}, true},
+		{"bad digest", map[string]any{"manager": "docker", "source": "redis", "digest": "sha256:abcd"}, false},
+		{"tag and digest", map[string]any{"manager": "docker", "source": "redis", "tag": "7", "digest": good}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &config.Schema{Tools: map[string]*config.Tool{"redis": {Name: "redis", Methods: []*config.MethodCandidate{{Kind: "container", Config: tt.config}}}}}
+			r := validateContainerReferences(s)
+			if tt.valid && len(r.Errors) != 0 {
+				t.Fatalf("unexpected errors: %v", r.Errors)
+			}
+			if !tt.valid && len(r.Errors) == 0 {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
+func TestValidateSourceLikeURLsRejectEmbeddedCredentials(t *testing.T) {
+	for _, tc := range []struct{ kind, field string }{
+		{"pipx", "index_url"}, {"uv", "index"}, {"choco", "source"},
+	} {
+		t.Run(tc.kind+"/"+tc.field, func(t *testing.T) {
+			s := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{{Kind: tc.kind, Config: map[string]any{"pkg": "tool", tc.field: "https://user:supersecret@example.invalid/simple"}}}}}}
+			got := validateMalformedURLs(s)
+			if !got.HasErrors() {
+				t.Fatal("expected embedded credentials to be rejected")
+			}
+			if strings.Contains(fmt.Sprint(got.Errors), "supersecret") {
+				t.Fatal("validation error leaked credential")
+			}
+		})
 	}
 }

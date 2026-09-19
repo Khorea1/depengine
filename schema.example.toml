@@ -27,7 +27,7 @@ aur_helper = "paru"
 # When a tool declares MORE THAN ONE candidate method (e.g., cargo, go, aur, git),
 # this prefix defines the preferred trial order. Unlisted defaults remain as
 # fallbacks; use a tool's method_only when the list must be exclusive.
-method_order = ["native", "cargo", "github", "http"]
+method_prefer = ["native", "cargo", "github", "http"]
 
 
 # ==============================================================================
@@ -85,17 +85,19 @@ lf = { go = "github.com/gokcehan/lf" }
 
 # ------------------------------------------------------------------------
 # CASE 4 — cargo installing directly from a git repository instead of
-# crates.io. Sub-key `git` within the cargo method.
+# crates.io. `branch`, `tag`, or `rev` can pin the Git source; `registry`
+# selects a named Cargo registry for registry-backed installs.
 aichat = { aur = { pkg = "aichat", when = { distro_family = [
   "arch",
 ] } }, cargo = { git = "https://github.com/sigoden/aichat" } }
-matugen = { cargo = { git = "https://github.com/InioX/matugen" } }
+matugen = { cargo = { git = "https://github.com/InioX/matugen", rev = "0123456789abcdef" } }
 
 
 # ------------------------------------------------------------------------
 # CASE 5 — "git" method: clones the repo and runs a manual build command.
 # Fields:
-#   url, branch, depth             = clone source and history selection
+#   url, branch/tag/rev, depth     = clone source and revision/history selection
+#   submodules                     = initialize recursive Git submodules
 #   build                          = command argv (or sequential command list)
 #                                    executed inside the clone; legacy strings
 #                                    use POSIX sh -c
@@ -164,7 +166,7 @@ fontconfig = { native = { pkg = "fontconfig", pkg_overrides = { pkg = "fontconfi
 #                                 trial order explicitly, use the tool-level
 #                                 `method_prefer`/`method_only` fields, or set
 #                                 the engine-wide default in
-#                                 [defaults].method_order.
+#                                 [defaults].method_prefer.
 #   - `when`                    → applicability condition WITHIN the method
 #                                 (never its own nesting level, never becomes
 #                                 a "manager" name). If the condition doesn't
@@ -302,11 +304,16 @@ when = { is_wsl = true }
 pkg = "neovim"
 pkg_overrides = { winget = "Neovim.Neovim" }
 
+[tools.neovim.winget]
+pkg = "Neovim.Neovim"
+when = { target_family = ["windows"] }
+
 [tools.neovim.scoop]
 pkg = "neovim"
 
 [tools.neovim.choco]
 pkg = "neovim"
+version = "0.10.4" # optional exact package version
 
 [tools.neovim.github]
 repo = "neovim/neovim"

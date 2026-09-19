@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -79,9 +80,10 @@ func (lr *LoggingRunner) LookPath(ctx context.Context, name string) bool {
 }
 
 func (lr *LoggingRunner) run(ctx context.Context, dir, name string, args ...string) Result {
+	loggedArgs := formatArgsForLog(args)
 	baseAttrs := []any{
 		"cmd", name,
-		"args", strings.Join(args, " "),
+		"args", loggedArgs,
 	}
 	if dir != "" {
 		baseAttrs = append(baseAttrs, "dir", dir)
@@ -107,7 +109,7 @@ func (lr *LoggingRunner) run(ctx context.Context, dir, name string, args ...stri
 	// Build structured log with duration, exit code.
 	attrs := append([]any{
 		"cmd", name,
-		"args", strings.Join(args, " "),
+		"args", loggedArgs,
 		"exit", result.ExitCode,
 		"duration", elapsed.String(),
 	}, baseAttrs[4:]...) // skip cmd and args from baseAttrs (already included)
@@ -153,7 +155,7 @@ func (lr *LoggingRunner) StartElevationSession(ctx context.Context) (func(), err
 // massive compiler errors or apt-get wall text. Full stderr is still
 // available via Result.Stderr for programmatic inspection.
 func truncateStderr(data []byte) string {
-	s := strings.TrimSpace(string(data))
+	s := RedactSensitiveText(strings.TrimSpace(string(data)))
 	if len(s) > 1024 {
 		return s[:1024] + "... (truncated)"
 	}
@@ -162,3 +164,85 @@ func truncateStderr(data []byte) string {
 
 var _ DirectoryRunner = (*LoggingRunner)(nil)
 var _ PathLookupRunner = (*LoggingRunner)(nil)
+
+// formatArgsForLog returns a display-only argv with common credential forms
+// redacted. The original args are still passed unchanged to the subprocess.
+// This is defense in depth: adapters should avoid putting secrets in argv at
+// all, but logging must not turn one adapter mistake into a persistent leak.
+func formatArgsForLog(args []string) string {
+	redacted := append([]string(nil), args...)
+	secretNext := false
+	headerNext := false
+	for i, arg := range redacted {
+		lower := strings.ToLower(arg)
+		if secretNext {
+			redacted[i] = "***"
+			secretNext = false
+			continue
+		}
+		if headerNext {
+			if isSensitiveHeader(arg) {
+				redacted[i] = redactHeader(arg)
+			}
+			headerNext = false
+			continue
+		}
+		if isSecretFlag(lower) {
+			secretNext = true
+			continue
+		}
+		if lower == "-h" || lower == "--header" {
+			headerNext = true
+			continue
+		}
+		if key, _, ok := strings.Cut(arg, "="); ok && isSecretFlag(strings.ToLower(key)) {
+			redacted[i] = key + "=***"
+			continue
+		}
+		if isSensitiveHeader(arg) {
+			redacted[i] = redactHeader(arg)
+			continue
+		}
+		redacted[i] = redactURLUserinfo(arg)
+	}
+	return strings.Join(redacted, " ")
+}
+
+func isSecretFlag(arg string) bool {
+	switch arg {
+	case "--token", "--password", "--passwd", "--secret", "--auth-token", "--access-token", "--api-key", "--apikey":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSensitiveHeader(arg string) bool {
+	name, _, ok := strings.Cut(arg, ":")
+	if !ok {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "authorization", "proxy-authorization", "cookie", "set-cookie":
+		return true
+	default:
+		return false
+	}
+}
+
+func redactHeader(arg string) string {
+	name, _, ok := strings.Cut(arg, ":")
+	if !ok {
+		return "***"
+	}
+	return name + ": ***"
+}
+
+func redactURLUserinfo(arg string) string {
+	u, err := url.Parse(arg)
+	if err != nil || u.Scheme == "" || u.Host == "" || u.User == nil {
+		return arg
+	}
+	u.User = url.User("***")
+	return u.String()
+}

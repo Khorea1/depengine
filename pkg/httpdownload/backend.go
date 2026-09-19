@@ -182,7 +182,7 @@ func downloadErrorWithHint(err error) error {
 func fileExtension(url string) string {
 	url = strings.Split(url, "?")[0] // strip query params
 	url = strings.Split(url, "#")[0] // strip fragment
-	for _, ext := range []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tgz", ".zip", ".deb", ".tar"} {
+	for _, ext := range []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tgz", ".zip", ".deb", ".tar", ".bz2"} {
 		if strings.HasSuffix(url, ext) {
 			return ext
 		}

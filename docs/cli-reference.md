@@ -131,7 +131,7 @@ Install tools from schema.toml
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
-| `--allow-arbitrary-code` | local | `false` | suppress security warnings for build scripts / arbitrary code |
+| `--allow-arbitrary-code` | local | `false` | permit hooks, build scripts, and other arbitrary code execution |
 | `--diagnose` | local | `false` | diagnostic mode: DEBUG + dry-run + verbose |
 | `--dry-run` | local | `false` | show what would be installed |
 | `--frozen-lockfile` | local | `false` | fail if depengine.lock does not exist or needs update |
@@ -217,7 +217,7 @@ Upgrade installed tools to pinned versions
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
-| `--allow-arbitrary-code` | local | `false` | suppress security warnings for build scripts / arbitrary code |
+| `--allow-arbitrary-code` | local | `false` | permit hooks, build scripts, and other arbitrary code execution |
 | `--dry-run` | local | `false` | show what would be upgraded without making changes |
 | `--force` | local | `false` | skip confirmation prompt |
 | `-h, --help` | local | `false` | help for upgrade |

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Khorea1/depengine/pkg/artifact"
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
@@ -103,6 +104,9 @@ func importSigningKey(ctx context.Context, rn run.Runner, homedir, signingKey st
 // importSigningKeyFromURL downloads a key file, extracts its primary
 // fingerprint, and imports it into the isolated homedir.
 func importSigningKeyFromURL(ctx context.Context, rn run.Runner, homedir, signingKey string) (string, error) {
+	if err := artifact.ValidateURL(signingKey, []string{"http", "https", "file"}); err != nil {
+		return "", fmt.Errorf("gpg: signing key URL: %w", err)
+	}
 	tmpDir, err := os.MkdirTemp("", "depengine-gpg-key-*")
 	if err != nil {
 		return "", fmt.Errorf("gpg: temp dir for key download: %w", err)

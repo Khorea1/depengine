@@ -108,6 +108,10 @@ func (a *AppImageAdapter) Check(ctx context.Context, rn run.Runner, tool *config
 // Install downloads the AppImage under its stable binary name via HTTPAdapter
 // and optionally writes a .desktop launcher.
 func (a *AppImageAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+	if err := requireMethodArtifact("appimage", mc); err != nil {
+		return err
+	}
+
 	installDir, name := binaryTarget(tool, mc)
 	if name == "" {
 		return fmt.Errorf("appimage: tool %q has no name and no binary field to install under", tool.Name)

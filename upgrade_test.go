@@ -178,10 +178,13 @@ func TestUpgradeDryRun(t *testing.T) {
 		t.Fatalf("output should mention dry-run/would_upgrade, got: %s", out)
 	}
 
-	// State must be unchanged.
+	// State must be unchanged and dry-run must not create the state lock file.
 	st := loadTestState(t, stateHome)
 	if ts, ok := st.Tools["gostr"]; !ok || ts.Version != "v0.1.0" {
 		t.Fatalf("state changed after dry-run: %+v", st.Tools)
+	}
+	if _, err := os.Stat(filepath.Join(stateHome, "depengine", "state.json.lock")); !os.IsNotExist(err) {
+		t.Fatalf("upgrade --dry-run created state lock file (err=%v)", err)
 	}
 }
 

@@ -102,3 +102,45 @@ func TestSDKManInstallUsesExactVersion(t *testing.T) {
 		t.Fatalf("install command = %s %v, want sdk install java 21.0.4-tem", got.Name, got.Args)
 	}
 }
+
+func TestSDKManInstalledVersionExact(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("SDKMAN layout is Unix-specific")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	version := "21.0.4-tem"
+	if err := os.MkdirAll(filepath.Join(home, ".sdkman", "candidates", "java", version), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := NewSDKManAdapter().InstalledVersion(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "java"}, &config.MethodCandidate{Kind: "sdkman", Config: map[string]any{"pkg": "java", "version": version}})
+	if err != nil {
+		t.Fatalf("InstalledVersion: %v", err)
+	}
+	if got != version {
+		t.Fatalf("InstalledVersion = %q, want %q", got, version)
+	}
+}
+
+func TestSDKManInstalledVersionCurrentSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("SDKMAN layout is Unix-specific")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	version := "17.0.12-tem"
+	versionDir := filepath.Join(home, ".sdkman", "candidates", "java", version)
+	if err := os.MkdirAll(versionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(versionDir, filepath.Join(home, ".sdkman", "candidates", "java", "current")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := NewSDKManAdapter().InstalledVersion(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "java"}, &config.MethodCandidate{Kind: "sdkman", Config: map[string]any{"pkg": "java"}})
+	if err != nil {
+		t.Fatalf("InstalledVersion: %v", err)
+	}
+	if got != version {
+		t.Fatalf("InstalledVersion = %q, want %q", got, version)
+	}
+}

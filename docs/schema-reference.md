@@ -145,7 +145,29 @@ prettier = { node = true }     # ≡ { npm = "prettier", pnpm = "prettier", bun 
 For when you need a fork or a source other than the official registry:
 
 ```toml
-matugen = { cargo = { git = "https://github.com/InioX/matugen" } }
+matugen = { cargo = { git = "https://github.com/InioX/matugen", rev = "0123456789abcdef" } }
+```
+
+Cargo Git installs accept exactly one of `branch`, `tag`, or `rev`; each of
+those fields requires `git`. Registry installs can select a registry and exact
+crate version:
+
+```toml
+ripgrep = { cargo = { pkg = "ripgrep", registry = "corp", version = "14.1.1" } }
+```
+
+`cargo.git` is mutually exclusive with `cargo.version` and `cargo.registry`.
+
+Cargo also accepts typed build/profile options: `features = ["..."]`,
+`no_default_features = true`, `bins = ["..."]`, `target = "<triple>"`, and
+`root = "<path>"`. `root` is used consistently by install, check, and remove;
+selected bins are verified from `cargo install --list`.
+
+For Go tools, `version` selects the suffix passed to `go install` instead of
+the default `@latest`:
+
+```toml
+stringer = { go = { pkg = "golang.org/x/tools/cmd/stringer", version = "v0.36.0" } }
 ```
 
 ### Git: clone + manual build
@@ -158,8 +180,11 @@ ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = [{ run =
 |-------|----------|--------------|
 | `url` | yes | Git repository URL |
 | `build` | no | Command `{ run = ["program", "arg", ...] }`, or a list of commands, run in the cloned directory. Legacy strings remain POSIX `sh -c` shorthand. |
-| `branch` | no | Branch or tag to clone (default: repo's default branch) |
-| `depth` | no | Clone depth as an integer or string — `1` is the default; `0` requests full history |
+| `branch` | no | Branch to clone; mutually exclusive with `tag` and `rev` |
+| `tag` | no | Tag to clone; mutually exclusive with `branch` and `rev` |
+| `rev` | no | Exact Git revision/commit to fetch and check out detached |
+| `depth` | no | Non-negative clone/fetch depth as an integer or numeric string — `1` is the default; `0` requests full history |
+| `submodules` | no | Run `git submodule update --init --recursive` after the selected revision is checked out |
 | `extract_to` | no | Directory to copy build artifacts into |
 | `artifact` | no | File or directory inside the clone to copy to `extract_to`; defaults to the clone root |
 | `binary` | no | Binary name for check/remove; required for removal from shared directories |
@@ -205,6 +230,13 @@ Archives are extracted into private staging, validated, then committed as one
 owned payload. `Check` verifies payload files and launchers directly; `Remove`
 deletes only declared launchers and the owned payload. `.msi`, `.exe`, `.pkg`
 and `.dmg` are rejected by `http` instead of being mistaken for binaries.
+
+Do not embed credentials in HTTP(S) URLs (for example,
+`https://token@example.com/file`). depengine rejects credential-bearing URLs so
+secrets cannot leak through command arguments, diagnostics, state, or lock data.
+For GitHub authentication, use `GITHUB_TOKEN`, `GH_TOKEN`, or an authenticated
+GitHub CLI; authenticated asset downloads use the in-process HTTP backend so the
+token is sent as an `Authorization` header rather than as a subprocess argument.
 
 ### GitHub: the recommended method for GitHub release assets
 
@@ -305,6 +337,10 @@ tag     = "latest"
 | `manager` | yes | `"docker"` or `"podman"` — picks which binary to drive. Not auto-detected: both can be installed on the same host at once, so guessing which one a given tool wants isn't safe. |
 | `source` | yes | The image reference (registry/repo), without the tag. |
 | `tag` | no | Defaults to `"latest"`. |
+| `digest` | no | Immutable `sha256:<64 hex>` identity; mutually exclusive with `tag`. |
+| `platform` | no | OCI platform selector `os/arch[/variant]`, e.g. `linux/amd64` or `linux/arm64/v8`. Applied to pull and verified from image metadata. |
+
+`source` is the repository only: tags and digests belong to separate resolved identity fields and are rejected when embedded in `source`. Registry ports such as `registry.example:5000/team/tool` remain valid. Invalid tag syntax is rejected before invoking Docker/Podman.
 
 `Check` looks at `<manager> images -q <source>:<tag>` — non-empty output
 means the image is already pulled. `Remove` runs `<manager> rmi
@@ -336,6 +372,8 @@ desktop = true
 | `install_dir` | no | Destination directory. Defaults to `~/.local/bin` (user-scope). There is no separate `system = true` boolean — pointing this at a system path (e.g. `/usr/local/bin`) is how a system-wide install is requested, and `sudo_required` is derived from the path the same way `http` derives it from `extract_to`. |
 | `binary` | no | Final executable name. Defaults to the tool's name. |
 | `desktop` | no | When `true`, also writes `~/.local/share/applications/<binary>.desktop` (a minimal, valid launcher pointing at the installed binary). Always user-scope, regardless of `install_dir`. |
+
+The artifact source must resolve to a filename ending in `.AppImage`; other formats are rejected during validation and again at the adapter boundary.
 
 Shared artifact fields such as `checksum`, `checksum_url`, `signature_url`,
 `signing_key`, and `sudo_required` keep the same meaning because the download
@@ -370,6 +408,8 @@ when = { is_android = true }
 |-------|----------|--------------|
 | `url` or `repo` + `asset` | yes | Exactly one artifact source; GitHub matching composes with Android dispatch. |
 
+The artifact source must resolve to a filename ending in `.apk`; other formats are rejected before download/dispatch.
+
 Shared artifact fields (`checksum`, `checksum_url`, `signature_url`,
 `signing_key`, ...) keep the same meaning. There is no
 `install_dir`/`binary`/`extract_to` field here, unlike `appimage` — the
@@ -390,15 +430,20 @@ did.
 
 ## Method reference
 
-Manager options are typed: Snap accepts `confinement = "strict" | "classic" |
-"devmode"` and `channel = "stable" | "candidate" | "beta" | "edge"`;
-Chocolatey accepts `prerelease = true`. Arbitrary manager arguments are not a
-schema feature, so depengine retains control of non-interactive/safety flags.
+Manager options are typed: WinGet accepts exact `version`, `source`, `scope = "user" | "machine"`, `architecture = "x86" | "x64" | "arm" | "arm64"`, and an allow-listed `installer_type`; Scoop accepts exact `version`, `bucket`, `scope = "user" | "global"`, and `architecture = "32bit" | "64bit" | "arm64"`. Snap accepts `confinement = "strict" | "classic" | "devmode"`; risk-only `channel = "stable" | "candidate" | "beta" | "edge"` remains shorthand, while `track`, `risk`, and `branch` model a full tracking channel;
+Chocolatey accepts exact `version`, `prerelease = true`, typed `source`, and `architecture = "x86" | "x64"`. `x86` maps to Chocolatey's explicit `--forcex86`; `x64` uses the client's native architecture. Arbitrary manager arguments are not a schema feature, so depengine retains control of non-interactive/safety flags.
 
 `git` custom installs may declare `managed_paths = ["/absolute/path", ...]`.
 All paths must be absolute after `~` expansion. Filesystem roots, the whole
 home directory, and broad shared directories are rejected. `Check` requires
 every path and `Remove` deletes only those exact targets.
+
+`container` keeps the repository in `source` and accepts either `tag` (default `latest`) or an immutable `digest`. `tag` and `digest` are mutually exclusive; digests currently use `sha256:<64 hex characters>`. Optional `platform = "os/arch[/variant]"` is passed to the pull operation and verified against local image metadata.
+
+`flatpak` no longer assumes Flathub. `remote` selects and verifies the origin, `branch` is appended to the application ref (`APP//BRANCH`), and `scope = "user" | "system"` is applied consistently to check/install/remove. If `remote` is omitted, depengine leaves remote resolution to Flatpak rather than silently forcing `flathub`.
+
+`snap` keeps `channel = "edge"`-style shorthand for risk-only selection. For full channel identity, use `track`, optional `risk` (default `stable`), and optional `branch`; depengine composes `track/risk[/branch]` and verifies the installed tracking channel from `snap list`. `channel` cannot be combined with the structured fields.
+
 
 `msi` accepts exactly one artifact source (`url`, or `repo` + `asset`) plus
 required `product_name` and optional `publisher`. Registry matching is exact;
@@ -412,12 +457,12 @@ are described above or alongside their examples.
 | Method | What it installs | Example |
 |--------|-------------------|---------|
 | `native` | Auto-detected distro manager (apt/pacman/dnf/brew/...) | `fd = { apt = "fd-find" }` |
-| `cargo` | crates.io (or a git repo via `git` sub-key) | `ripgrep = { cargo = "ripgrep" }` |
-| `go` | Go module path via `go install` | `fzf = { go = "github.com/junegunn/fzf" }` |
-| `pip` | Python packages | `organize = { pip = "organize-tool" }` |
+| `cargo` | Cargo crates; exact `version`, named `registry`, or Git source with `branch`/`tag`/`rev` | `ripgrep = { cargo = { pkg = "ripgrep", registry = "corp", version = "14.1.1" } }` |
+| `go` | Go package path via `go install`; exact `version` avoids `@latest` | `stringer = { go = { pkg = "golang.org/x/tools/cmd/stringer", version = "v0.36.0" } }` |
+| `pip` | Python packages; optional exact `version`, verified with `pip show` | `ruff = { pip = { pkg = "ruff", version = "0.13.1" } }` |
 | `pipx` | Python CLI tools, isolated environments | `organize = { pipx = "organize-tool" }` |
 | `uv` | Python packages via `uv tool` | `organize = { uv = "organize-tool" }` |
-| `npm` | Global npm packages | `prettier = { npm = "prettier" }` |
+| `npm` | Global npm packages; optional exact `version`, verified from `npm ls --json` | `typescript = { npm = { pkg = "typescript", version = "5.9.2" } }` |
 | `pnpm` | Global pnpm packages | `prettier = { pnpm = "prettier" }` |
 | `bun` | Global bun packages | `tsx = { bun = "tsx" }` |
 | `gem` | Ruby gems | `sass = { gem = "sass" }` |
@@ -427,12 +472,12 @@ are described above or alongside their examples.
 | `apm` | Atom package manager (legacy) | `atom-beautify = { apm = "atom-beautify" }` |
 | `vscode` | VS Code extensions | `golang = { vscode = "golang.go" }` |
 | `vscodium` | VSCodium extensions | `golang = { vscodium = "golang.go" }` |
-| `flatpak` | Flathub apps | `spotify = { flatpak = "com.spotify.Client" }` |
-| `snap` | Snap packages | `hello = { snap = "hello" }` |
+| `flatpak` | Flatpak apps; optional `remote`, `branch`, and `scope` (`user` or `system`) | `spotify = { flatpak = { pkg = "com.spotify.Client", remote = "flathub", branch = "stable", scope = "user" } }` |
+| `snap` | Snap packages; risk shorthand or structured `track`/`risk`/`branch` | `hello = { snap = { pkg = "hello", track = "2.0", risk = "stable" } }` |
 | `cask` | macOS Homebrew casks | `docker = { cask = "docker" }` |
 | `mas` | Mac App Store, by app ID | `xcode = { mas = "497799835" }` |
 | `appman` | AppImage packages via "AM"/"AppMan" (ivan-hc/AM) | `obsidian = { appman = "obsidian" }` |
-| `container` | Container images via `docker`/`podman pull` | `obsidian = { container = { manager = "podman", source = "lscr.io/linuxserver/obsidian", tag = "latest" } }` |
+| `container` | Container images via `docker`/`podman pull`; `tag` or immutable `digest`, optional OCI `platform` | `redis = { container = { manager = "podman", source = "redis", platform = "linux/amd64" } }` |
 | `appimage` | Portable `.AppImage` binaries, installed under a stable name | `obsidian = { appimage = { url = "https://…/Obsidian-{latest}.AppImage" } }` |
 | `android` | Download a `.apk` and hand it to Termux's package installer | `obsidian = { android = { url = "https://…/obsidian-{latest}-android.apk" }, when = { is_android = true } }` |
 | `msi` | Install/remove a Windows Installer product by exact registry identity | `nvim = { msi = { repo = "neovim/neovim", asset = "nvim-win64.msi", product_name = "Neovim" } }` |
@@ -440,10 +485,15 @@ are described above or alongside their examples.
 | `steamcmd` | SteamCMD game server tools | `cs2 = { steamcmd = "730" }` |
 | `pacstall` | Pacstall packages (Debian-based AUR-like) | `neofetch = { pacstall = "neofetch" }` |
 | `aur` | Arch User Repository (via configured `aur_helper`) | `google-chrome = { aur = "google-chrome" }` |
-| `winget` | Windows Package Manager | `git = { winget = "Git.Git" }` |
-| `scoop` | Windows, via Scoop | `git = { scoop = "git" }` |
-| `choco` | Windows, via Chocolatey | `firefox = { choco = "firefox" }` |
-| `conda` | Conda packages | `numpy = { conda = "numpy" }` |
+| `winget` | Windows Package Manager; typed `version`, `source`, `scope`, `architecture`, and `installer_type` | `git = { winget = { pkg = "Git.Git", version = "2.53.0", source = "winget", scope = "machine" } }` |
+| `scoop` | Windows via Scoop; optional exact `version`, `bucket`, `scope` (`user` or `global`), and architecture (`32bit`, `64bit`, `arm64`) | `git = { scoop = { pkg = "git", bucket = "main", version = "2.53.0.2" } }` |
+| `choco` | Windows, via Chocolatey; exact `version`, `prerelease`, typed `source`, and `architecture` | `firefox = { choco = { pkg = "firefox", version = "128.0.0", source = "https://community.chocolatey.org/api/v2/" } }` |
+
+### Ecosystem desired-state coverage
+
+The ecosystem methods do not yet provide uniform fidelity. `pip`, `npm`, `pipx`, `uv`, `gem`, `composer`, `bun`, `pnpm`, and Yarn Classic support exact `version` intent and verify the installed version using manager-native queries. Source selection is typed for `pip.index_url`, `npm.registry`, `pipx.index_url`, `uv.index`, `gem.source`, and `bun.registry`; `pipx` additionally supports `scope = "user" | "global"`, while `gem` supports `scope = "default" | "user"`. Composer, pnpm, and Yarn Classic currently model exact version but not an explicit registry/source in depengine. These methods are not yet universally lockable to immutable package identities, and authenticated registries must use out-of-band credential mechanisms rather than URL userinfo.
+
+| `conda` | Conda packages; deterministic `environment`/`prefix`, exact `version`/`build`, ordered `channels` | `numpy = { conda = { pkg = "numpy", environment = "data", version = "2.1.0", channels = ["conda-forge"] } }` |
 | `asdf` | asdf version manager plugins | `nodejs = { asdf = "nodejs" }` |
 | `git` | Clone + build (see field table above) | `ctpv = { git = { url = "...", build = "make install" } }` |
 | `github` | Recommended for GitHub Releases; matches an asset *pattern* against the real asset list (see above) | `yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }` |
@@ -599,6 +649,9 @@ engine evaluates all non-empty fields against the detected system facts:
 |-------|------|------------|-----------------|
 | `distro_family` | `string[]` | Exact (case-insensitive) | `arch`, `debian`, `fedora`, `alpine`, `gentoo`, `macos`, `freebsd`... |
 | `distro_id` | `string[]` | Exact (case-insensitive) | `ubuntu`, `arch`, `fedora`, `debian`, `alpine`... |
+| `distro_version` | `string[]` | Exact normalized version | `22.04`, `24.04`, `14.6.1` |
+| `distro_version_min` | `string` | Inclusive minimum | `22.04` |
+| `distro_version_max` | `string` | Inclusive maximum | `24.04` |
 | `arch` | `string[]` | Exact (case-insensitive) | `x86_64`, `aarch64`, `armv7l`... |
 | `os` | `string[]` | Exact (case-insensitive) | `linux`, `darwin`, `windows`, `freebsd`, `openbsd`, `netbsd` |
 | `target_family` | `string[]` | Exact (case-insensitive) | `unix` (linux, darwin, BSDs, termux), `windows` |
@@ -608,6 +661,8 @@ engine evaluates all non-empty fields against the detected system facts:
 | `is_wsl` | `bool` | Three-state | Detected via `/proc/version` or `WSL_DISTRO_NAME` |
 | `is_container` | `bool` | Three-state | Detected via `.dockerenv`, cgroup, etc. |
 | `is_android` | `bool` | Three-state | Detected via Termux env vars. Needed because `os` reports `linux` on Termux — `os = ["android"]` never matches there |
+
+Version conditions compare numeric and textual runs rather than applying SemVer rules, because OS release identifiers are not uniformly SemVer. Numeric runs ignore leading zeroes (`24.04` equals `24.4`); minimum and maximum bounds are inclusive. A host with no detected distro version does not satisfy a version condition.
 
 ```toml
 # AUR only on Arch, HTTP fallback everywhere else
@@ -680,13 +735,28 @@ engine evaluates all non-empty fields against the detected system facts:
 ```
 
 > **Tip:** run `depengine why <tool>` to see which method applies on your
-> current machine and why the others were skipped.
+> current machine and why the others were skipped. Inferred native fallback
+> candidates are identified explicitly, and candidates excluded by `method_only`
+> are reported as policy exclusions rather than as unavailable methods.
+>
+> **Native fallback rule:** shorthand scalar/bool declarations are convenience
+> syntax and implicitly include a native fallback. For example,
+> `fzf = { go = "github.com/junegunn/fzf" }` yields `native` + `go` candidates.
+> An explicit method table means exactly what it declares: `[tools.fzf.go]` does
+> **not** inject a hidden native candidate. Declare `native` explicitly when a
+> full-table tool should retain native fallback. Native-manager shorthand such
+> as `apt = "fd-find"` or `brew = "ripgrep"` is itself explicit native intent.
 
 ---
 
 ## Per-tool method control
 
-Override the method order for a single tool with `method_prefer` (prefix) or
+Global and per-tool preference use the same term: `[defaults].method_prefer`
+and tool-level `method_prefer` are preference prefixes. The older
+`[defaults].method_order` spelling remains a compatibility alias for now; do
+not set both global fields. Use `method_only` for an exhaustive allow-list.
+
+Override the preference for a single tool with `method_prefer` (prefix) or
 `method_only` (exclusive list):
 
 ```toml
@@ -698,9 +768,9 @@ legacy = { method_only = ["aur", "git"], aur = { pkg = "legacy" }, git = { url =
 ```
 
 - **`method_prefer`** prepends the listed methods before the global
-  `method_order`; methods not listed are still tried as fallbacks.
+  `method_prefer`; methods not listed are still tried as fallbacks.
 - **`method_only`** restricts the tool to exactly these methods, in this
-  order — the global `method_order` is ignored for this tool.
+  order — the global `method_prefer` is ignored for this tool.
 - Both live at tool level (same level as `requires`, `tags`, `post_install`),
   not inside a method block.
 
@@ -708,7 +778,7 @@ legacy = { method_only = ["aur", "git"], aur = { pkg = "legacy" }, git = { url =
 only when it is a known method name; otherwise it is a label and the subtable
 must set `kind` explicitly. Order selectors match either a kind or an exact
 candidate label. TOML declaration order is never an order control, and
-`[defaults].method_order` plus `method_prefer` are prefixes: unlisted default
+`[defaults].method_prefer` plus per-tool `method_prefer` are prefixes: unlisted default
 methods remain available. Only `method_only` removes the remainder.
 
 ---
@@ -736,8 +806,9 @@ later by the adapter that owns their field.
 | `{distro_family}` | Resolved clan | any method | `debian`, `arch`, `fedora` |
 | `{id}` | `detect_os.sh` | any method | `ubuntu`, `arch` |
 | `{distro_name}` | `detect_os.sh` | any method | `Ubuntu 24.04 LTS` |
+| `{distro_version}` | `detect_os.sh` | any method | `24.04`, `14.6.1` |
 | `{distro_id_like}` | `detect_os.sh` | any method | `debian` |
-| `{target_family}` | `detect_os.sh` | any method | `linux` |
+| `{target_family}` | `detect_os.sh` | any method | `unix`, `windows` |
 | `{kernel}` | `detect_os.sh` | any method | `5.15.0` |
 | `{libc}` | `detect_os.sh` | any method | `glibc`, `musl` |
 | `{init_system}` | `detect_os.sh` | any method | `systemd`, `openrc` |
@@ -798,5 +869,8 @@ according to a declared strategy per field:
    validation/merge — `depengine validate`/`install` neither errors nor
    warns, they simply don't participate in the run.
 
-Run `depengine why <tool> --fields` to see exactly which layer contributed
-each field for a given tool.
+Run `depengine why <tool>` to see candidate status together with normalized
+non-secret identity fields (for example version/revision, registry/source,
+scope, environment/prefix, and architecture). Add `--fields` to see exactly
+which layer contributed each field for a given tool; `--json` exposes identity
+metadata under `intent`.

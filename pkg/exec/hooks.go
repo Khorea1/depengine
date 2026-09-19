@@ -20,13 +20,8 @@ func (ex *Executor) hasDangerousMethod(tool *config.Tool) bool {
 		if !ok {
 			continue
 		}
-		for fieldName, field := range contract.Fields {
-			if field.Type != methodkind.Command {
-				continue
-			}
-			if _, configured := method.Config[fieldName]; configured {
-				return true
-			}
+		if contract.RequestedCapabilities(method.Config)&methodkind.CapabilityArbitraryCode != 0 {
+			return true
 		}
 	}
 	return false

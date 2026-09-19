@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/ecosystem"
@@ -138,6 +140,22 @@ func newWhyCmd() *cobra.Command {
 	return cmd
 }
 
+func formatWhyIntent(intent map[string]string) string {
+	if len(intent) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(intent))
+	for key := range intent {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+intent[key])
+	}
+	return strings.Join(parts, ", ")
+}
+
 // runWhy shows why a tool would be installed via each candidate method,
 // without actually installing anything. Useful for debugging complex
 // schemas. Body unchanged from the pre-Cobra version — Cobra's
@@ -201,13 +219,14 @@ func runWhy(toolName string, whySchema, whyManifest *string, whyNoManifest, whyJ
 	attempts := ex.ExplainTool(context.Background(), tool, clan)
 	if *whyJSON {
 		type jsonAttempt struct {
-			Kind   string `json:"kind"`
-			Status string `json:"status"`
-			Reason string `json:"reason,omitempty"`
+			Kind   string            `json:"kind"`
+			Status string            `json:"status"`
+			Reason string            `json:"reason,omitempty"`
+			Intent map[string]string `json:"intent,omitempty"`
 		}
 		out := make([]jsonAttempt, 0, len(attempts))
 		for _, a := range attempts {
-			out = append(out, jsonAttempt{Kind: a.Kind, Status: a.Status, Reason: a.Error})
+			out = append(out, jsonAttempt{Kind: a.Kind, Status: a.Status, Reason: a.Error, Intent: a.Intent})
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -231,16 +250,23 @@ func runWhy(toolName string, whySchema, whyManifest *string, whyNoManifest, whyJ
 		if reason == "" {
 			reason = "ready to install"
 		}
+		if intent := formatWhyIntent(a.Intent); intent != "" {
+			reason += " [" + intent + "]"
+		}
 		kind := padRight(a.Kind, kindW)
 		switch a.Status {
 		case "would_install":
 			fmt.Fprintf(c.w, "  %s %s  %s\n", c.green("✓"), kind, c.dim("→ "+reason))
 		case "already_installed":
-			fmt.Fprintf(c.w, "  %s %s  %s\n", c.green("✓"), kind, c.dim("already installed"))
+			fmt.Fprintf(c.w, "  %s %s  %s\n", c.green("✓"), kind, c.dim("already installed: "+reason))
 		case "skip_when":
 			fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("skipped: "+reason))
 		case "skip_unavailable":
 			fmt.Fprintf(c.w, "  %s %s  %s\n", c.red("✗"), c.dim(kind), c.dim("unavailable: "+reason))
+		case "skip_policy":
+			fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("disallowed: "+reason))
+		case "skip_capability":
+			fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("capability mismatch: "+reason))
 		default:
 			fmt.Fprintf(c.w, "  %s %s  %s\n", c.dim("?"), kind, c.dim(reason))
 		}

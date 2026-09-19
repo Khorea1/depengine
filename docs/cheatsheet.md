@@ -48,7 +48,7 @@ document also requires `schema_version = 1`; project declarations live under
 `[tools]`, while personal manifests use `[packages]`.
 
 ```toml
-[defaults]          # global defaults (manager, aur_helper, method_order)
+[defaults]          # global defaults (manager, aur_helper, method_prefer)
 [tools]             # all dependencies live here
   simple = [...]    #   shorthand list
   name = { ... }    #   inline table
@@ -68,7 +68,7 @@ dependency from the graph when its condition fails.
 [defaults]
 manager = "native"
 aur_helper = "paru"                        # or "yay"
-method_order = ["native", "cargo", "github", "http"] # preferred prefix; defaults remain
+method_prefer = ["native", "cargo", "github", "http"] # preferred prefix; defaults remain
 ```
 
 ---
@@ -80,11 +80,15 @@ method_order = ["native", "cargo", "github", "http"] # preferred prefix; default
 | Simple list | `simple = ["zsh", "bat", "kitty"]` |
 | Per-manager name | `fd = { apt = "fd-find" }` |
 | Language manager | `fzf = { go = "github.com/junegunn/fzf" }` |
-| git sub-key | `matugen = { cargo = { git = "https://github.com/InioX/matugen" } }` |
+| Cargo Git revision | `matugen = { cargo = { git = "https://github.com/InioX/matugen", rev = "0123456789abcdef" } }` |
+| Cargo registry/version | `ripgrep = { cargo = { pkg = "ripgrep", registry = "corp", version = "14.1.1" } }` |
+| Cargo root/target/bins | `tool = { cargo = { pkg = "tool", root = "~/.local/cargo-tools", target = "x86_64-unknown-linux-musl", bins = ["tool"] } }` |
+| Conda target/version | `numpy = { conda = { pkg = "numpy", environment = "data", version = "2.1.0", channels = ["conda-forge"] } }` |
 | GitHub release | `yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }` |
 | Owned archive | `nvim = { github = { repo = "neovim/neovim", asset = "nvim-{os_any}-{arch_any}.tar.gz", strip_components = 1, extract_to = "~/.local/opt/nvim", entrypoints = { nvim = "bin/nvim" } } }` |
-| Snap options | `nvim = { snap = { pkg = "nvim", confinement = "classic", channel = "stable" } }` |
-| Chocolatey prerelease | `nvim = { choco = { pkg = "neovim", prerelease = true } }` |
+| Snap options | `nvim = { snap = { pkg = "nvim", confinement = "classic", track = "latest", risk = "stable" } }` |
+| Chocolatey exact/source/arch | `nvim = { choco = { pkg = "neovim", version = "0.10.4", source = "https://community.chocolatey.org/api/v2/", architecture = "x64", prerelease = true } }` |
+| Flatpak remote/branch/scope | `spotify = { flatpak = { pkg = "com.spotify.Client", remote = "flathub", branch = "stable", scope = "user" } }` |
 | Ecosystem bucket | `ruff = { python = true }` |
 | Full block | multiple methods + `when` + hooks — see [schema-reference.md#platform-targeting](schema-reference.md#platform-targeting) |
 
@@ -106,7 +110,7 @@ when = { distro_family = ["arch"] }
 
 ---
 
-## Method order & control
+## Method preference & control
 
 ```toml
 myapp  = { method_prefer = ["cargo"], cargo = true }   # try cargo first, fall back
@@ -117,7 +121,9 @@ Details: [schema-reference.md#per-tool-method-control](schema-reference.md#per-t
 
 `kind` selects the adapter. A custom subtable name is only a candidate label,
 and TOML declaration order never sets execution priority. `method_prefer` is a
-prefix with fallbacks; `method_only` is exclusive.
+prefix with fallbacks; `method_only` is exclusive. Scalar/bool method shorthand
+implicitly adds native fallback; explicit method subtables do not. Add a
+`native` method explicitly when a full-table declaration should also try native.
 
 ---
 

@@ -63,7 +63,7 @@ func newUpgradeCmd() *cobra.Command {
 	f.BoolVar(upgradeForce, "force", false, "skip confirmation prompt")
 	f.BoolVar(upgradeJSON, "json", false, "JSON output")
 	f.BoolVar(upgradeQuiet, "quiet", false, "suppress per-tool status lines")
-	f.BoolVar(upgradeAllowArbitrary, "allow-arbitrary-code", false, "suppress security warnings for build scripts / arbitrary code")
+	f.BoolVar(upgradeAllowArbitrary, "allow-arbitrary-code", false, "permit hooks, build scripts, and other arbitrary code execution")
 	return cmd
 }
 
@@ -114,14 +114,27 @@ func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgra
 		os.Exit(1)
 	}
 
-	// Acquire state lock.
-	ls, err := state.LoadLocked()
+	// Upgrade dry-run only needs a stable snapshot of state and must not create
+	// the state lock file. State saves use atomic rename, so an unlocked read
+	// observes a complete old or new file. Real upgrades keep the exclusive
+	// lock for the read-modify-write transaction.
+	var (
+		st *state.State
+		ls *state.LockedState
+	)
+	if *upgradeDryRun {
+		st, err = state.Load()
+	} else {
+		ls, err = state.LoadLocked()
+		if err == nil {
+			defer ls.Close()
+			st = ls.State()
+		}
+	}
 	if err != nil {
-		lg.Error("state lock", "error", err)
+		lg.Error("load state", "error", err)
 		os.Exit(3)
 	}
-	defer ls.Close()
-	st := ls.State()
 
 	// Build executor for Install calls.
 	schemaFile, err := os.Stat(*upgradeSchema)

@@ -40,6 +40,8 @@ This README covers the essentials. For everything else:
 | [`docs/cli-reference.md`](docs/cli-reference.md) | Every command and flag, with defaults |
 | [`docs/cheatsheet.md`](docs/cheatsheet.md) | One-page copy-paste reference: commands, flags, placeholders |
 | [`docs/architecture.md`](docs/architecture.md) | Internal package layout and install flow — for contributors |
+| [`docs/support-boundary.md`](docs/support-boundary.md) | What depengine models, capability/reproducibility limits, scope and source semantics |
+| [`docs/security.md`](docs/security.md) | Threat model, arbitrary code, credentials, verification and lockfile expectations |
 | [`docs/depengine.1`](docs/depengine.1) | Man page (`depengine help --man`, or `man depengine` if installed) |
 | [`schema/depengine.schema.json`](schema/depengine.schema.json) | JSON Schema for editor autocomplete (taplo, VSCode) |
 
@@ -102,13 +104,22 @@ git add schema.toml depengine.lock && git commit
 
 # --- Everyone else ---
 git clone <project> && cd <project>
-depengine install                    # same tools, same versions
+depengine install                    # same declared tools; locked artifact pins where supported
 
-# --- Optional: pin exact versions ---
+# --- Optional: pin supported mutable artifact identities ---
 ./depengine update                   # resolves {latest}, writes depengine.lock
 ./depengine update --dry-run         # preview what would be pinned
 ./depengine update --frozen-lockfile # abort if depengine.lock doesn't exist
 ./depengine install --frozen-lockfile
+
+# `install --dry-run` is planning mode: it may perform read-only resolution
+# and availability probes (including network reads), but it does not invoke
+# install hooks/adapters, mutate package sources/indexes, write state/lock data,
+# or populate the download cache.
+
+# depengine.lock currently pins supported release/artifact placeholders and
+# checksums. Package-manager and ecosystem installs are not universally locked
+# to concrete versions yet; schema.toml still preserves the declared tool set.
 
 # --- Everyday commands ---
 ./depengine status                   # what's installed
@@ -255,6 +266,11 @@ a trusted source (the engine logs a warning and suggests pinning the hash in
   - `checksum_file_format` — layout of that file: `sha256sum` (hash +
     filename), `bsd` (BSD extended), or `raw` (the whole file is the hash).
     Defaults to auto-detection.
+
+Credential-bearing HTTP(S) URLs are rejected. For private GitHub assets, provide
+`GITHUB_TOKEN` / `GH_TOKEN` or authenticate `gh`; depengine keeps the token out
+of downloader subprocess arguments and sends it only in the HTTP authorization
+header.
 
 ```toml
 [tools.yq.github]

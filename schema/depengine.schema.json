@@ -94,6 +94,20 @@
           },
           "type": "array"
         },
+        "distro_version": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "distro_version_max": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "distro_version_min": {
+          "minLength": 1,
+          "type": "string"
+        },
         "init_system": {
           "items": {
             "type": "string"
@@ -138,6 +152,16 @@
     },
     "defaults": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "method_prefer",
+              "method_order"
+            ]
+          }
+        }
+      ],
       "properties": {
         "arch_map": {
           "additionalProperties": {
@@ -156,6 +180,12 @@
           "type": "string"
         },
         "method_order": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "method_prefer": {
           "items": {
             "type": "string"
           },
@@ -885,6 +915,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -941,6 +972,7 @@
               "type": "array"
             },
             "version": {
+              "minLength": 1,
               "type": "string"
             },
             "when": {
@@ -1092,6 +1124,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1111,6 +1144,10 @@
             "pkg": {
               "type": "string"
             },
+            "registry": {
+              "minLength": 1,
+              "type": "string"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -1146,6 +1183,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -1158,6 +1199,70 @@
         },
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "git",
+                  "version"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "git",
+                  "registry"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "branch",
+                  "tag",
+                  "rev"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "branch"
+                ]
+              },
+              "then": {
+                "required": [
+                  "git"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "rev"
+                ]
+              },
+              "then": {
+                "required": [
+                  "git"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "tag"
+                ]
+              },
+              "then": {
+                "required": [
+                  "git"
+                ]
+              }
+            }
+          ],
+          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1165,11 +1270,31 @@
               },
               "type": "object"
             },
+            "bins": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "branch": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "features": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "git": {
+              "minLength": 1,
               "type": "string"
             },
             "kind": {
               "const": "cargo"
+            },
+            "no_default_features": {
+              "type": "boolean"
             },
             "os_map": {
               "additionalProperties": {
@@ -1180,11 +1305,23 @@
             "pkg": {
               "type": "string"
             },
+            "registry": {
+              "minLength": 1,
+              "type": "string"
+            },
             "requires": {
               "items": {
                 "type": "string"
               },
               "type": "array"
+            },
+            "rev": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "root": {
+              "minLength": 1,
+              "type": "string"
             },
             "sources": {
               "items": {
@@ -1215,6 +1352,18 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "tag": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "target": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -1293,12 +1442,20 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection, architecture.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "architecture": {
+              "enum": [
+                "x86",
+                "x64"
+              ],
+              "type": "string"
             },
             "kind": {
               "const": "choco"
@@ -1320,6 +1477,10 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "source": {
+              "minLength": 1,
+              "type": "string"
             },
             "sources": {
               "items": {
@@ -1351,6 +1512,10 @@
               "minItems": 1,
               "type": "array"
             },
+            "version": {
+              "minLength": 1,
+              "type": "string"
+            },
             "when": {
               "$ref": "#/definitions/condition"
             }
@@ -1362,6 +1527,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1417,6 +1583,10 @@
               "minItems": 1,
               "type": "array"
             },
+            "version": {
+              "minLength": 1,
+              "type": "string"
+            },
             "when": {
               "$ref": "#/definitions/condition"
             }
@@ -1428,12 +1598,49 @@
         },
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "environment",
+                  "prefix"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "build"
+                ]
+              },
+              "then": {
+                "required": [
+                  "version"
+                ]
+              }
+            }
+          ],
+          "description": "Method capabilities: exact-version, source-selection, environment-profile.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "build": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "channels": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "environment": {
+              "minLength": 1,
+              "type": "string"
             },
             "kind": {
               "const": "conda"
@@ -1445,6 +1652,10 @@
               "type": "object"
             },
             "pkg": {
+              "type": "string"
+            },
+            "prefix": {
+              "minLength": 1,
               "type": "string"
             },
             "requires": {
@@ -1483,6 +1694,10 @@
               "minItems": 1,
               "type": "array"
             },
+            "version": {
+              "minLength": 1,
+              "type": "string"
+            },
             "when": {
               "$ref": "#/definitions/condition"
             }
@@ -1494,12 +1709,27 @@
         },
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "tag",
+                  "digest"
+                ]
+              }
+            }
+          ],
+          "description": "Method capabilities: immutable-identity, source-selection, architecture.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "digest": {
+              "minLength": 1,
+              "type": "string"
             },
             "kind": {
               "const": "container"
@@ -1517,6 +1747,10 @@
                 "type": "string"
               },
               "type": "object"
+            },
+            "platform": {
+              "minLength": 1,
+              "type": "string"
             },
             "requires": {
               "items": {
@@ -1790,12 +2024,17 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: source-selection, scope, revision.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "branch": {
+              "minLength": 1,
+              "type": "string"
             },
             "kind": {
               "const": "flatpak"
@@ -1809,11 +2048,22 @@
             "pkg": {
               "type": "string"
             },
+            "remote": {
+              "minLength": 1,
+              "type": "string"
+            },
             "requires": {
               "items": {
                 "type": "string"
               },
               "type": "array"
+            },
+            "scope": {
+              "enum": [
+                "user",
+                "system"
+              ],
+              "type": "string"
             },
             "sources": {
               "items": {
@@ -1856,6 +2106,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection, scope.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1881,6 +2132,17 @@
               },
               "type": "array"
             },
+            "scope": {
+              "enum": [
+                "default",
+                "user"
+              ],
+              "type": "string"
+            },
+            "source": {
+              "minLength": 1,
+              "type": "string"
+            },
             "sources": {
               "items": {
                 "additionalProperties": false,
@@ -1911,6 +2173,10 @@
               "minItems": 1,
               "type": "array"
             },
+            "version": {
+              "minLength": 1,
+              "type": "string"
+            },
             "when": {
               "$ref": "#/definitions/condition"
             }
@@ -1922,6 +2188,18 @@
         },
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "branch",
+                  "tag",
+                  "rev"
+                ]
+              }
+            }
+          ],
+          "description": "Method capabilities: arbitrary-code, revision.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1936,6 +2214,7 @@
               "type": "string"
             },
             "branch": {
+              "minLength": 1,
               "type": "string"
             },
             "build": {
@@ -2017,6 +2296,10 @@
               },
               "type": "array"
             },
+            "rev": {
+              "minLength": 1,
+              "type": "string"
+            },
             "sources": {
               "items": {
                 "additionalProperties": false,
@@ -2046,6 +2329,13 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "submodules": {
+              "type": "boolean"
+            },
+            "tag": {
+              "minLength": 1,
+              "type": "string"
             },
             "url": {
               "minLength": 1,
@@ -2202,6 +2492,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2256,6 +2547,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -2729,6 +3024,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2746,6 +3042,10 @@
               "type": "object"
             },
             "pkg": {
+              "type": "string"
+            },
+            "registry": {
+              "minLength": 1,
               "type": "string"
             },
             "requires": {
@@ -2783,6 +3083,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -3071,12 +3375,17 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "index_url": {
+              "minLength": 1,
+              "type": "string"
             },
             "kind": {
               "const": "pip"
@@ -3126,6 +3435,10 @@
               "minItems": 1,
               "type": "array"
             },
+            "version": {
+              "minLength": 1,
+              "type": "string"
+            },
             "when": {
               "$ref": "#/definitions/condition"
             }
@@ -3137,12 +3450,17 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection, scope.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "index_url": {
+              "minLength": 1,
+              "type": "string"
             },
             "kind": {
               "const": "pipx"
@@ -3161,6 +3479,13 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "scope": {
+              "enum": [
+                "user",
+                "global"
+              ],
+              "type": "string"
             },
             "sources": {
               "items": {
@@ -3191,6 +3516,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -3419,6 +3748,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3473,6 +3803,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -3557,12 +3891,25 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection, architecture, scope.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "architecture": {
+              "enum": [
+                "32bit",
+                "64bit",
+                "arm64"
+              ],
+              "type": "string"
+            },
+            "bucket": {
+              "minLength": 1,
+              "type": "string"
             },
             "kind": {
               "const": "scoop"
@@ -3581,6 +3928,13 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "scope": {
+              "enum": [
+                "user",
+                "global"
+              ],
+              "type": "string"
             },
             "sources": {
               "items": {
@@ -3612,6 +3966,10 @@
               "minItems": 1,
               "type": "array"
             },
+            "version": {
+              "minLength": 1,
+              "type": "string"
+            },
             "when": {
               "$ref": "#/definitions/condition"
             }
@@ -3623,6 +3981,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3679,6 +4038,7 @@
               "type": "array"
             },
             "version": {
+              "minLength": 1,
               "type": "string"
             },
             "when": {
@@ -3692,12 +4052,43 @@
         },
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "channel",
+                  "track"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "channel",
+                  "risk"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "channel",
+                  "branch"
+                ]
+              }
+            }
+          ],
+          "description": "Method capabilities: channel.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "branch": {
+              "minLength": 1,
+              "type": "string"
             },
             "channel": {
               "enum": [
@@ -3734,6 +4125,15 @@
               },
               "type": "array"
             },
+            "risk": {
+              "enum": [
+                "stable",
+                "candidate",
+                "beta",
+                "edge"
+              ],
+              "type": "string"
+            },
             "sources": {
               "items": {
                 "additionalProperties": false,
@@ -3763,6 +4163,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "track": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -3841,12 +4245,17 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "index": {
+              "minLength": 1,
+              "type": "string"
             },
             "kind": {
               "const": "uv"
@@ -3895,6 +4304,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -4039,12 +4452,39 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection, architecture, scope.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "architecture": {
+              "enum": [
+                "x86",
+                "x64",
+                "arm",
+                "arm64"
+              ],
+              "type": "string"
+            },
+            "installer_type": {
+              "enum": [
+                "appx",
+                "burn",
+                "exe",
+                "font",
+                "inno",
+                "msi",
+                "msix",
+                "msstore",
+                "nullsoft",
+                "portable",
+                "wix",
+                "zip"
+              ],
+              "type": "string"
             },
             "kind": {
               "const": "winget"
@@ -4058,17 +4498,22 @@
             "pkg": {
               "type": "string"
             },
-            "pkg_overrides": {
-              "additionalProperties": {
-                "type": "string"
-              },
-              "type": "object"
-            },
             "requires": {
               "items": {
                 "type": "string"
               },
               "type": "array"
+            },
+            "scope": {
+              "enum": [
+                "user",
+                "machine"
+              ],
+              "type": "string"
+            },
+            "source": {
+              "minLength": 1,
+              "type": "string"
             },
             "sources": {
               "items": {
@@ -4099,6 +4544,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -4183,6 +4632,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4237,6 +4687,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -4986,6 +5440,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5039,6 +5494,7 @@
               "type": "array"
             },
             "version": {
+              "minLength": 1,
               "type": "string"
             },
             "when": {
@@ -5129,6 +5585,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5143,6 +5600,10 @@
               "type": "object"
             },
             "pkg": {
+              "type": "string"
+            },
+            "registry": {
+              "minLength": 1,
               "type": "string"
             },
             "requires": {
@@ -5180,6 +5641,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -5199,6 +5664,70 @@
         },
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "git",
+                  "version"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "git",
+                  "registry"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "branch",
+                  "tag",
+                  "rev"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "branch"
+                ]
+              },
+              "then": {
+                "required": [
+                  "git"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "rev"
+                ]
+              },
+              "then": {
+                "required": [
+                  "git"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "tag"
+                ]
+              },
+              "then": {
+                "required": [
+                  "git"
+                ]
+              }
+            }
+          ],
+          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5206,8 +5735,28 @@
               },
               "type": "object"
             },
-            "git": {
+            "bins": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "branch": {
+              "minLength": 1,
               "type": "string"
+            },
+            "features": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "git": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "no_default_features": {
+              "type": "boolean"
             },
             "os_map": {
               "additionalProperties": {
@@ -5218,11 +5767,23 @@
             "pkg": {
               "type": "string"
             },
+            "registry": {
+              "minLength": 1,
+              "type": "string"
+            },
             "requires": {
               "items": {
                 "type": "string"
               },
               "type": "array"
+            },
+            "rev": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "root": {
+              "minLength": 1,
+              "type": "string"
             },
             "sources": {
               "items": {
@@ -5253,6 +5814,18 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "tag": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "target": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -5342,12 +5915,20 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection, architecture.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "architecture": {
+              "enum": [
+                "x86",
+                "x64"
+              ],
+              "type": "string"
             },
             "os_map": {
               "additionalProperties": {
@@ -5367,6 +5948,10 @@
               },
               "type": "array"
             },
+            "source": {
+              "minLength": 1,
+              "type": "string"
+            },
             "sources": {
               "items": {
                 "additionalProperties": false,
@@ -5396,6 +5981,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -5415,6 +6004,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5466,6 +6056,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -5485,12 +6079,49 @@
         },
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "environment",
+                  "prefix"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "build"
+                ]
+              },
+              "then": {
+                "required": [
+                  "version"
+                ]
+              }
+            }
+          ],
+          "description": "Method capabilities: exact-version, source-selection, environment-profile.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "build": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "channels": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "environment": {
+              "minLength": 1,
+              "type": "string"
             },
             "os_map": {
               "additionalProperties": {
@@ -5499,6 +6130,10 @@
               "type": "object"
             },
             "pkg": {
+              "type": "string"
+            },
+            "prefix": {
+              "minLength": 1,
               "type": "string"
             },
             "requires": {
@@ -5537,6 +6172,10 @@
               "minItems": 1,
               "type": "array"
             },
+            "version": {
+              "minLength": 1,
+              "type": "string"
+            },
             "when": {
               "$ref": "#/definitions/condition"
             }
@@ -5549,12 +6188,27 @@
       "oneOf": [
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "tag",
+                  "digest"
+                ]
+              }
+            }
+          ],
+          "description": "Method capabilities: immutable-identity, source-selection, architecture.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "digest": {
+              "minLength": 1,
+              "type": "string"
             },
             "manager": {
               "enum": [
@@ -5569,6 +6223,10 @@
                 "type": "string"
               },
               "type": "object"
+            },
+            "platform": {
+              "minLength": 1,
+              "type": "string"
             },
             "requires": {
               "items": {
@@ -5635,12 +6293,17 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: source-selection, scope, revision.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "branch": {
+              "minLength": 1,
+              "type": "string"
             },
             "os_map": {
               "additionalProperties": {
@@ -5651,11 +6314,22 @@
             "pkg": {
               "type": "string"
             },
+            "remote": {
+              "minLength": 1,
+              "type": "string"
+            },
             "requires": {
               "items": {
                 "type": "string"
               },
               "type": "array"
+            },
+            "scope": {
+              "enum": [
+                "user",
+                "system"
+              ],
+              "type": "string"
             },
             "sources": {
               "items": {
@@ -5705,6 +6379,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection, scope.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5726,6 +6401,17 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "scope": {
+              "enum": [
+                "default",
+                "user"
+              ],
+              "type": "string"
+            },
+            "source": {
+              "minLength": 1,
+              "type": "string"
             },
             "sources": {
               "items": {
@@ -5757,6 +6443,10 @@
               "minItems": 1,
               "type": "array"
             },
+            "version": {
+              "minLength": 1,
+              "type": "string"
+            },
             "when": {
               "$ref": "#/definitions/condition"
             }
@@ -5769,6 +6459,18 @@
       "oneOf": [
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "branch",
+                  "tag",
+                  "rev"
+                ]
+              }
+            }
+          ],
+          "description": "Method capabilities: arbitrary-code, revision.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5783,6 +6485,7 @@
               "type": "string"
             },
             "branch": {
+              "minLength": 1,
               "type": "string"
             },
             "build": {
@@ -5861,6 +6564,10 @@
               },
               "type": "array"
             },
+            "rev": {
+              "minLength": 1,
+              "type": "string"
+            },
             "sources": {
               "items": {
                 "additionalProperties": false,
@@ -5890,6 +6597,13 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "submodules": {
+              "type": "boolean"
+            },
+            "tag": {
+              "minLength": 1,
+              "type": "string"
             },
             "url": {
               "minLength": 1,
@@ -6055,6 +6769,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6106,6 +6821,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -6592,6 +7311,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6606,6 +7326,10 @@
               "type": "object"
             },
             "pkg": {
+              "type": "string"
+            },
+            "registry": {
+              "minLength": 1,
               "type": "string"
             },
             "requires": {
@@ -6643,6 +7367,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -6732,12 +7460,17 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "index_url": {
+              "minLength": 1,
+              "type": "string"
             },
             "os_map": {
               "additionalProperties": {
@@ -6783,6 +7516,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -6802,12 +7539,17 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection, scope.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "index_url": {
+              "minLength": 1,
+              "type": "string"
             },
             "os_map": {
               "additionalProperties": {
@@ -6823,6 +7565,13 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "scope": {
+              "enum": [
+                "user",
+                "global"
+              ],
+              "type": "string"
             },
             "sources": {
               "items": {
@@ -6853,6 +7602,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -6872,146 +7625,7 @@
         },
         {
           "additionalProperties": false,
-          "properties": {
-            "arch_map": {
-              "additionalProperties": {
-                "type": "string"
-              },
-              "type": "object"
-            },
-            "os_map": {
-              "additionalProperties": {
-                "type": "string"
-              },
-              "type": "object"
-            },
-            "pkg": {
-              "type": "string"
-            },
-            "requires": {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            "sources": {
-              "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "kind": {
-                    "enum": [
-                      "apt-ppa",
-                      "dnf-copr",
-                      "scoop-bucket",
-                      "brew-tap"
-                    ]
-                  },
-                  "name": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "url": {
-                    "minLength": 1,
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "kind",
-                  "name"
-                ],
-                "type": "object"
-              },
-              "minItems": 1,
-              "type": "array"
-            },
-            "when": {
-              "$ref": "#/definitions/condition"
-            }
-          },
-          "type": "object"
-        }
-      ]
-    },
-    "method_scoop": {
-      "oneOf": [
-        {
-          "type": "string"
-        },
-        {
-          "const": true
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "arch_map": {
-              "additionalProperties": {
-                "type": "string"
-              },
-              "type": "object"
-            },
-            "os_map": {
-              "additionalProperties": {
-                "type": "string"
-              },
-              "type": "object"
-            },
-            "pkg": {
-              "type": "string"
-            },
-            "requires": {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            "sources": {
-              "items": {
-                "additionalProperties": false,
-                "properties": {
-                  "kind": {
-                    "enum": [
-                      "apt-ppa",
-                      "dnf-copr",
-                      "scoop-bucket",
-                      "brew-tap"
-                    ]
-                  },
-                  "name": {
-                    "minLength": 1,
-                    "type": "string"
-                  },
-                  "url": {
-                    "minLength": 1,
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "kind",
-                  "name"
-                ],
-                "type": "object"
-              },
-              "minItems": 1,
-              "type": "array"
-            },
-            "when": {
-              "$ref": "#/definitions/condition"
-            }
-          },
-          "type": "object"
-        }
-      ]
-    },
-    "method_sdkman": {
-      "oneOf": [
-        {
-          "type": "string"
-        },
-        {
-          "const": true
-        },
-        {
-          "additionalProperties": false,
+          "description": "Method capabilities: exact-version.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7065,6 +7679,7 @@
               "type": "array"
             },
             "version": {
+              "minLength": 1,
               "type": "string"
             },
             "when": {
@@ -7075,7 +7690,7 @@
         }
       ]
     },
-    "method_snap": {
+    "method_scoop": {
       "oneOf": [
         {
           "type": "string"
@@ -7085,6 +7700,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection, architecture, scope.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7092,22 +7708,99 @@
               },
               "type": "object"
             },
-            "channel": {
+            "architecture": {
               "enum": [
-                "stable",
-                "candidate",
-                "beta",
-                "edge"
+                "32bit",
+                "64bit",
+                "arm64"
               ],
               "type": "string"
             },
-            "confinement": {
+            "bucket": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "requires": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "scope": {
               "enum": [
-                "strict",
-                "classic",
-                "devmode"
+                "user",
+                "global"
               ],
               "type": "string"
+            },
+            "sources": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "apt-ppa",
+                      "dnf-copr",
+                      "scoop-bucket",
+                      "brew-tap"
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "url": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_sdkman": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "description": "Method capabilities: exact-version.",
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
             },
             "os_map": {
               "additionalProperties": {
@@ -7153,6 +7846,141 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "method_snap": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "channel",
+                  "track"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "channel",
+                  "risk"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "channel",
+                  "branch"
+                ]
+              }
+            }
+          ],
+          "description": "Method capabilities: channel.",
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "branch": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "channel": {
+              "enum": [
+                "stable",
+                "candidate",
+                "beta",
+                "edge"
+              ],
+              "type": "string"
+            },
+            "confinement": {
+              "enum": [
+                "strict",
+                "classic",
+                "devmode"
+              ],
+              "type": "string"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "requires": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "risk": {
+              "enum": [
+                "stable",
+                "candidate",
+                "beta",
+                "edge"
+              ],
+              "type": "string"
+            },
+            "sources": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "apt-ppa",
+                      "dnf-copr",
+                      "scoop-bucket",
+                      "brew-tap"
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "url": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "track": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -7242,12 +8070,17 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "index": {
+              "minLength": 1,
+              "type": "string"
             },
             "os_map": {
               "additionalProperties": {
@@ -7293,6 +8126,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -7442,6 +8279,118 @@
         }
       ]
     },
+    "method_winget": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "const": true
+        },
+        {
+          "additionalProperties": false,
+          "description": "Method capabilities: exact-version, source-selection, architecture, scope.",
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "architecture": {
+              "enum": [
+                "x86",
+                "x64",
+                "arm",
+                "arm64"
+              ],
+              "type": "string"
+            },
+            "installer_type": {
+              "enum": [
+                "appx",
+                "burn",
+                "exe",
+                "font",
+                "inno",
+                "msi",
+                "msix",
+                "msstore",
+                "nullsoft",
+                "portable",
+                "wix",
+                "zip"
+              ],
+              "type": "string"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "requires": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "enum": [
+                "user",
+                "machine"
+              ],
+              "type": "string"
+            },
+            "source": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "sources": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "apt-ppa",
+                      "dnf-copr",
+                      "scoop-bucket",
+                      "brew-tap"
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "url": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
     "method_yarn": {
       "oneOf": [
         {
@@ -7452,6 +8401,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: exact-version.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7503,6 +8453,10 @@
               },
               "minItems": 1,
               "type": "array"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
             },
             "when": {
               "$ref": "#/definitions/condition"
@@ -7806,7 +8760,7 @@
           "$ref": "#/definitions/method_vscodium"
         },
         "winget": {
-          "$ref": "#/definitions/method_native"
+          "$ref": "#/definitions/method_winget"
         },
         "xbps": {
           "$ref": "#/definitions/method_native"

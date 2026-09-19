@@ -34,6 +34,116 @@ const (
 	EffectVerify
 )
 
+// Capability describes a semantic feature a method can honor. Capabilities
+// are planner-facing metadata: they answer whether a candidate can represent
+// requested intent without weakening it or branching on method names.
+type Capability uint64
+
+const (
+	CapabilityExactVersion Capability = 1 << iota
+	CapabilityChannel
+	CapabilityImmutableIdentity
+	CapabilityArbitraryCode
+	CapabilitySourceSelection
+	CapabilityArchitecture
+	CapabilityScope
+	CapabilityRevision
+	CapabilityEnvironmentTarget
+)
+
+// Supports reports whether every requested capability is declared by the
+// contract. A zero request is always satisfied.
+func (c Contract) Supports(requested Capability) bool {
+	return c.Capabilities&requested == requested
+}
+
+// RequestedCapabilities derives the semantic capabilities exercised by one
+// concrete method configuration. This deliberately keys off contract fields,
+// not method names, so candidate filtering can stay generic. Validation owns
+// value-shape checks; this function only records configured intent and fails
+// closed for command-bearing fields.
+func (c Contract) RequestedCapabilities(config map[string]any) Capability {
+	var requested Capability
+	if configuredNonEmpty(config, "version") {
+		requested |= CapabilityExactVersion
+	}
+	if configuredNonEmpty(config, "channel") || (c.Supports(CapabilityChannel) && (configuredNonEmpty(config, "track") || configuredNonEmpty(config, "risk") || configuredNonEmpty(config, "branch"))) {
+		requested |= CapabilityChannel
+	}
+	if configuredNonEmpty(config, "digest") {
+		requested |= CapabilityImmutableIdentity
+	}
+	if (configuredNonEmpty(config, "source") || configuredNonEmpty(config, "registry") || configuredNonEmpty(config, "remote") || configuredNonEmpty(config, "channels") || configuredNonEmpty(config, "bucket") || configuredNonEmpty(config, "index") || configuredNonEmpty(config, "index_url")) && c.Supports(CapabilitySourceSelection) {
+		requested |= CapabilitySourceSelection
+	}
+	if (configuredNonEmpty(config, "architecture") || configuredNonEmpty(config, "target") || configuredNonEmpty(config, "platform")) && c.Supports(CapabilityArchitecture) {
+		requested |= CapabilityArchitecture
+	}
+	if configuredNonEmpty(config, "scope") && c.Supports(CapabilityScope) {
+		requested |= CapabilityScope
+	}
+	if (configuredNonEmpty(config, "branch") || configuredNonEmpty(config, "tag") || configuredNonEmpty(config, "rev")) && c.Supports(CapabilityRevision) {
+		requested |= CapabilityRevision
+	}
+	if (configuredNonEmpty(config, "environment") || configuredNonEmpty(config, "prefix") || configuredNonEmpty(config, "root")) && c.Supports(CapabilityEnvironmentTarget) {
+		requested |= CapabilityEnvironmentTarget
+	}
+	for name, field := range c.Fields {
+		if field.Type != Command {
+			continue
+		}
+		if _, configured := config[name]; configured {
+			requested |= CapabilityArbitraryCode
+		}
+	}
+	return requested
+}
+
+// MissingCapabilities reports semantic intent present in config that the
+// method contract cannot honor. It is primarily a planner safety net: normal
+// schema validation should reject unsupported fields earlier, but execution
+// must not silently weaken intent when handed a programmatically constructed
+// candidate.
+func (c Contract) MissingCapabilities(config map[string]any) Capability {
+	return c.RequestedCapabilities(config) &^ c.Capabilities
+}
+
+// CapabilityNames returns stable human-readable names for a capability mask.
+func CapabilityNames(capabilities Capability) []string {
+	known := []struct {
+		cap  Capability
+		name string
+	}{
+		{CapabilityExactVersion, "exact-version"},
+		{CapabilityChannel, "channel"},
+		{CapabilityImmutableIdentity, "immutable-identity"},
+		{CapabilityArbitraryCode, "arbitrary-code"},
+		{CapabilitySourceSelection, "source-selection"},
+		{CapabilityArchitecture, "architecture"},
+		{CapabilityScope, "scope"},
+		{CapabilityRevision, "revision"},
+		{CapabilityEnvironmentTarget, "environment-profile"},
+	}
+	out := make([]string, 0, len(known))
+	for _, item := range known {
+		if capabilities&item.cap != 0 {
+			out = append(out, item.name)
+		}
+	}
+	return out
+}
+
+func configuredNonEmpty(config map[string]any, key string) bool {
+	value, ok := config[key]
+	if !ok {
+		return false
+	}
+	if text, ok := value.(string); ok {
+		return text != ""
+	}
+	return value != nil
+}
+
 // Field describes one adapter-facing config field. Effects must be non-zero
 // for every field in Contracts; the conformance test enforces that invariant.
 type Field struct {
@@ -52,10 +162,12 @@ type Contract struct {
 	Fields               map[string]Field
 	SourceAlternatives   [][]string // exactly one alternative; every field in it is required
 	MutuallyExclusive    [][]string
+	Requires             map[string][]string // when key is configured, all listed fields must also be configured
 	ImplicitDistroFamily []string
 	AllowString          bool
 	AllowTrue            bool
 	CanRemove            bool
+	Capabilities         Capability
 	Artifact             *artifact.Contract
 }
 
@@ -63,6 +175,20 @@ var pkgField = map[string]Field{"pkg": {Type: String, Effects: EffectExecute | E
 
 func packageContract(kind string, order int, canRemove bool) Contract {
 	return Contract{Kind: kind, DefaultOrder: order, Fields: pkgField, AllowString: true, AllowTrue: true, CanRemove: canRemove}
+}
+
+func exactVersionPackageContract(kind string, order int, canRemove bool) Contract {
+	return Contract{
+		Kind:         kind,
+		DefaultOrder: order,
+		Capabilities: CapabilityExactVersion,
+		Fields: fields(pkgField, map[string]Field{
+			"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		}),
+		AllowString: true,
+		AllowTrue:   true,
+		CanRemove:   canRemove,
+	}
 }
 
 func fields(entries ...map[string]Field) map[string]Field {
@@ -118,17 +244,33 @@ var downloadFields = fields(artifactFields, map[string]Field{
 var artifactSourceAlternatives = [][]string{{"url"}, {"repo", "asset"}}
 
 var downloadArtifactContract = &artifact.Contract{
-	URLFields:           []string{"url", "checksum_url", "signature_url"},
-	AllowedSchemes:      []string{"http", "https"},
-	ArtifactFields:      []string{"url", "asset"},
-	ForbiddenExtensions: artifact.PlatformInstallerExtensions,
+	URLFields:                    []string{"url", "checksum_url", "signature_url"},
+	AllowedSchemes:               []string{"http", "https"},
+	ArtifactFields:               []string{"url", "asset"},
+	ForbiddenExtensions:          artifact.PlatformInstallerExtensions,
+	UnsupportedArchiveExtensions: artifact.UnsupportedArchiveExtensions,
 }
 
 var githubArtifactContract = &artifact.Contract{
-	URLFields:           []string{"checksum_url", "signature_url"},
-	AllowedSchemes:      []string{"http", "https"},
-	ArtifactFields:      []string{"asset"},
-	ForbiddenExtensions: artifact.PlatformInstallerExtensions,
+	URLFields:                    []string{"checksum_url", "signature_url"},
+	AllowedSchemes:               []string{"http", "https"},
+	ArtifactFields:               []string{"asset"},
+	ForbiddenExtensions:          artifact.PlatformInstallerExtensions,
+	UnsupportedArchiveExtensions: artifact.UnsupportedArchiveExtensions,
+}
+
+var appImageArtifactContract = &artifact.Contract{
+	URLFields:          []string{"url", "checksum_url", "signature_url"},
+	AllowedSchemes:     []string{"http", "https"},
+	ArtifactFields:     []string{"url", "asset"},
+	RequiredExtensions: []string{".AppImage"},
+}
+
+var androidArtifactContract = &artifact.Contract{
+	URLFields:          []string{"url", "checksum_url", "signature_url"},
+	AllowedSchemes:     []string{"http", "https"},
+	ArtifactFields:     []string{"url", "asset"},
+	RequiredExtensions: []string{".apk"},
 }
 
 var msiArtifactContract = &artifact.Contract{
@@ -143,57 +285,136 @@ var msiArtifactContract = &artifact.Contract{
 // kinds with DefaultOrder zero are valid but never injected as blind fallbacks.
 var Contracts = []Contract{
 	{Kind: "native", DefaultOrder: 1, Fields: fields(pkgField, map[string]Field{"pkg_overrides": {Type: StringMap, Effects: EffectResolve | EffectExecute | EffectVerify}}), AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "scoop", DefaultOrder: 2, Fields: pkgField, ImplicitDistroFamily: []string{"windows"}, AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "choco", DefaultOrder: 3, Fields: fields(pkgField, map[string]Field{"prerelease": {Type: Boolean, Effects: EffectExecute}}), ImplicitDistroFamily: []string{"windows"}, AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "cargo", DefaultOrder: 4, Fields: fields(pkgField, map[string]Field{"git": {Type: String, Effects: EffectExecute}}), AllowString: true, AllowTrue: true, CanRemove: true},
-	packageContract("go", 5, true),
-	packageContract("pipx", 6, true),
-	packageContract("uv", 7, true),
-	packageContract("pip", 8, true),
-	packageContract("npm", 9, true),
-	packageContract("pnpm", 10, true),
-	packageContract("bun", 11, true),
-	packageContract("gem", 12, true),
-	packageContract("yarn", 13, true),
+	{Kind: "winget", Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityScope | CapabilityArchitecture, Fields: fields(pkgField, map[string]Field{
+		"version":        {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"source":         {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute | EffectVerify},
+		"scope":          {Type: String, Enum: []string{"user", "machine"}, Effects: EffectExecute},
+		"architecture":   {Type: String, Enum: []string{"x86", "x64", "arm", "arm64"}, Effects: EffectExecute},
+		"installer_type": {Type: String, Enum: []string{"appx", "burn", "exe", "font", "inno", "msi", "msix", "msstore", "nullsoft", "portable", "wix", "zip"}, Effects: EffectExecute},
+	}), ImplicitDistroFamily: []string{"windows"}, AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "scoop", DefaultOrder: 2, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityScope | CapabilityArchitecture, Fields: fields(pkgField, map[string]Field{
+		"version":      {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"bucket":       {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"scope":        {Type: String, Enum: []string{"user", "global"}, Effects: EffectExecute | EffectVerify},
+		"architecture": {Type: String, Enum: []string{"32bit", "64bit", "arm64"}, Effects: EffectExecute},
+	}), ImplicitDistroFamily: []string{"windows"}, AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "choco", DefaultOrder: 3, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityArchitecture, Fields: fields(pkgField, map[string]Field{
+		"version":      {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"prerelease":   {Type: Boolean, Effects: EffectExecute},
+		"source":       {Type: String, NonEmpty: true, Effects: EffectExecute},
+		"architecture": {Type: String, Enum: []string{"x86", "x64"}, Effects: EffectExecute},
+	}), ImplicitDistroFamily: []string{"windows"}, AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "cargo", DefaultOrder: 4, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityRevision | CapabilityArchitecture | CapabilityEnvironmentTarget, Fields: fields(pkgField, map[string]Field{
+		"git":                 {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"version":             {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"registry":            {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"branch":              {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"tag":                 {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"rev":                 {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"features":            {Type: StringList, Effects: EffectExecute},
+		"no_default_features": {Type: Boolean, Effects: EffectExecute},
+		"bins":                {Type: StringList, Effects: EffectExecute | EffectVerify},
+		"target":              {Type: String, NonEmpty: true, Effects: EffectExecute},
+		"root":                {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+	}), MutuallyExclusive: [][]string{{"git", "version"}, {"git", "registry"}, {"branch", "tag", "rev"}}, Requires: map[string][]string{
+		"branch": {"git"},
+		"tag":    {"git"},
+		"rev":    {"git"},
+	}, AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "go", DefaultOrder: 5, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{
+		"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+	}), AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "pipx", DefaultOrder: 6, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityScope, Fields: fields(pkgField, map[string]Field{
+		"version":   {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"index_url": {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"scope":     {Type: String, Enum: []string{"user", "global"}, Effects: EffectExecute | EffectVerify},
+	}), AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "uv", DefaultOrder: 7, Capabilities: CapabilityExactVersion | CapabilitySourceSelection, Fields: fields(pkgField, map[string]Field{
+		"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"index":   {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+	}), AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "pip", DefaultOrder: 8, Capabilities: CapabilityExactVersion | CapabilitySourceSelection, Fields: fields(pkgField, map[string]Field{
+		"version":   {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"index_url": {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+	}), AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "npm", DefaultOrder: 9, Capabilities: CapabilityExactVersion | CapabilitySourceSelection, Fields: fields(pkgField, map[string]Field{
+		"version":  {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"registry": {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+	}), AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "pnpm", DefaultOrder: 10, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{
+		"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+	}), AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "bun", DefaultOrder: 11, Capabilities: CapabilityExactVersion | CapabilitySourceSelection, Fields: fields(pkgField, map[string]Field{
+		"version":  {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"registry": {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+	}), AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "gem", DefaultOrder: 12, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityScope, Fields: fields(pkgField, map[string]Field{
+		"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"source":  {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"scope":   {Type: String, Enum: []string{"default", "user"}, Effects: EffectExecute},
+	}), AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "yarn", DefaultOrder: 13, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{
+		"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+	}), AllowString: true, AllowTrue: true, CanRemove: true},
 	packageContract("yarn-berry", 14, false),
-	packageContract("composer", 15, true),
+	{Kind: "composer", DefaultOrder: 15, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{
+		"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+	}), AllowString: true, AllowTrue: true, CanRemove: true},
 	packageContract("apm", 16, false),
 	packageContract("vscode", 17, false),
 	packageContract("vscodium", 18, false),
-	packageContract("flatpak", 19, true),
-	{Kind: "snap", DefaultOrder: 20, Fields: fields(pkgField, map[string]Field{
-		"confinement": {Type: String, Enum: []string{"strict", "classic", "devmode"}, Effects: EffectExecute},
-		"channel":     {Type: String, Enum: []string{"stable", "candidate", "beta", "edge"}, Effects: EffectExecute},
+	{Kind: "flatpak", DefaultOrder: 19, Capabilities: CapabilitySourceSelection | CapabilityScope | CapabilityRevision, Fields: fields(pkgField, map[string]Field{
+		"remote": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"branch": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"scope":  {Type: String, Enum: []string{"user", "system"}, Effects: EffectExecute | EffectVerify},
 	}), AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "snap", DefaultOrder: 20, Capabilities: CapabilityChannel, Fields: fields(pkgField, map[string]Field{
+		"confinement": {Type: String, Enum: []string{"strict", "classic", "devmode"}, Effects: EffectExecute},
+		"channel":     {Type: String, Enum: []string{"stable", "candidate", "beta", "edge"}, Effects: EffectExecute | EffectVerify},
+		"track":       {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"risk":        {Type: String, Enum: []string{"stable", "candidate", "beta", "edge"}, Effects: EffectExecute | EffectVerify},
+		"branch":      {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+	}), MutuallyExclusive: [][]string{{"channel", "track"}, {"channel", "risk"}, {"channel", "branch"}}, AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "cask", DefaultOrder: 21, Fields: pkgField, ImplicitDistroFamily: []string{"macos"}, AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "mas", DefaultOrder: 22, Fields: pkgField, ImplicitDistroFamily: []string{"macos"}, AllowString: true, AllowTrue: true},
 	packageContract("appman", 23, true),
-	{Kind: "sdkman", DefaultOrder: 24, Fields: fields(pkgField, map[string]Field{"version": {Type: String, Effects: EffectExecute | EffectVerify}}), AllowString: true, AllowTrue: true},
+	{Kind: "sdkman", DefaultOrder: 24, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify}}), AllowString: true, AllowTrue: true},
 	packageContract("steamcmd", 25, false),
 	packageContract("pacstall", 26, false),
 	{Kind: "aur", Aliases: []string{"paru", "yay"}, DefaultOrder: 27, Fields: pkgField, ImplicitDistroFamily: []string{"arch"}, AllowString: true, AllowTrue: true, CanRemove: true},
-	packageContract("conda", 28, true),
-	{Kind: "asdf", DefaultOrder: 29, Fields: fields(pkgField, map[string]Field{"version": {Type: String, Effects: EffectExecute | EffectVerify}}), AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "container", DefaultOrder: 30, Fields: map[string]Field{
-		"manager": {Type: String, Required: true, NonEmpty: true, Enum: []string{"docker", "podman"}, Effects: EffectExecute | EffectVerify},
-		"source":  {Type: String, Required: true, NonEmpty: true, Effects: EffectExecute | EffectVerify},
-		"tag":     {Type: String, Effects: EffectExecute | EffectVerify},
-	}, CanRemove: true},
+	{Kind: "conda", DefaultOrder: 28, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityEnvironmentTarget, Fields: fields(pkgField, map[string]Field{
+		"version":     {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"build":       {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"channels":    {Type: StringList, Effects: EffectResolve | EffectExecute},
+		"environment": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"prefix":      {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+	}), MutuallyExclusive: [][]string{{"environment", "prefix"}}, Requires: map[string][]string{"build": {"version"}}, AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "asdf", DefaultOrder: 29, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify}}), AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "container", DefaultOrder: 30, Capabilities: CapabilityImmutableIdentity | CapabilityArchitecture | CapabilitySourceSelection, Fields: map[string]Field{
+		"manager":  {Type: String, Required: true, NonEmpty: true, Enum: []string{"docker", "podman"}, Effects: EffectExecute | EffectVerify},
+		"source":   {Type: String, Required: true, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"tag":      {Type: String, Effects: EffectExecute | EffectVerify},
+		"digest":   {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"platform": {Type: String, NonEmpty: true, Effects: EffectValidate | EffectExecute | EffectVerify},
+	}, MutuallyExclusive: [][]string{{"tag", "digest"}}, CanRemove: true},
 	{Kind: "appimage", DefaultOrder: 31, Fields: fields(withoutField(downloadFields, "extract_to"), map[string]Field{
 		"install_dir": {Type: String, Effects: EffectExecute | EffectVerify},
 		"desktop":     {Type: Boolean, Effects: EffectExecute},
-	}), SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract},
-	{Kind: "android", DefaultOrder: 32, Fields: withoutFields(downloadFields, "extract_to", "binary"), SourceAlternatives: artifactSourceAlternatives, Artifact: downloadArtifactContract},
-	{Kind: "git", DefaultOrder: 33, Fields: map[string]Field{
+	}), SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: appImageArtifactContract},
+	{Kind: "android", DefaultOrder: 32, Fields: withoutFields(downloadFields, "extract_to", "binary"), SourceAlternatives: artifactSourceAlternatives, Artifact: androidArtifactContract},
+	{Kind: "git", DefaultOrder: 33, Capabilities: CapabilityArbitraryCode | CapabilityRevision, Fields: map[string]Field{
 		"url":           {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
-		"branch":        {Type: String, Effects: EffectResolve | EffectExecute},
-		"depth":         {Type: IntegerOrString, Effects: EffectExecute},
+		"branch":        {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"tag":           {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"rev":           {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"depth":         {Type: IntegerOrString, Effects: EffectValidate | EffectExecute},
+		"submodules":    {Type: Boolean, Effects: EffectExecute},
 		"build":         {Type: Command, Effects: EffectExecute},
 		"extract_to":    {Type: String, Effects: EffectExecute | EffectVerify},
 		"artifact":      {Type: String, Effects: EffectExecute},
 		"binary":        {Type: String, Effects: EffectExecute | EffectVerify},
 		"managed_paths": {Type: StringList, Effects: EffectValidate | EffectExecute | EffectVerify},
-	}, CanRemove: true},
+	}, MutuallyExclusive: [][]string{{"branch", "tag", "rev"}}, CanRemove: true},
 	{Kind: "github", DefaultOrder: 34, Fields: fields(withoutField(downloadFields, "url"), map[string]Field{
 		"repo":    {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 		"asset":   {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},

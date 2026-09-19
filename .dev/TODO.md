@@ -35,22 +35,22 @@ ______________________________________________________________________
 
 **Work**
 
-- [ ] Centralize dry-run behavior at the execution boundary; do not rely on every adapter/hook remembering to check it.
-- [ ] Prevent `pre_install` from executing in dry-run mode.
-- [ ] Prevent `post_install` from executing in dry-run mode.
-- [ ] Prevent native package-manager sync (`apt-get update`, equivalent operations) in dry-run mode.
-- [ ] Prevent source setup/removal in dry-run mode.
-- [ ] Prevent prerequisite installation in dry-run mode.
-- [ ] Audit download/cache behavior and define whether dry-run may perform network reads. Prefer no host mutations; if cache writes are allowed, document them explicitly. Stronger target: no writes at all.
-- [ ] Audit all runner entrypoints so a future adapter cannot accidentally mutate during dry-run.
-- [ ] Make output distinguish between “would resolve/check” and “would mutate”.
+- [x] Centralize dry-run behavior at the execution boundary; do not rely on every adapter/hook remembering to check it.
+- [x] Prevent `pre_install` from executing in dry-run mode.
+- [x] Prevent `post_install` from executing in dry-run mode.
+- [x] Prevent native package-manager sync (`apt-get update`, equivalent operations) in dry-run mode.
+- [x] Prevent source setup/removal in dry-run mode.
+- [x] Prevent prerequisite installation in dry-run mode.
+- [x] Audit download/cache behavior and define whether dry-run may perform network reads. Policy: read-only network resolution/probes are allowed; downloads/cache writes and other host mutations are not.
+- [x] Audit subprocess runner entrypoints so a future adapter cannot bypass the dry-run boundary (execution-layer packages are regression-tested against direct `os/exec` imports).
+- [x] Make output distinguish between “would resolve/check” and “would mutate”.
 
 **Acceptance criteria**
 
 - [ ] A dry-run over a manifest containing hooks, sources, prerequisites, native sync, HTTP/GitHub artifacts, Git builds, MSI, ecosystem managers, and containers causes zero externally visible host mutations.
-- [ ] A regression test proves a sentinel file is not created by any hook during dry-run.
-- [ ] A fake runner test proves no mutating package-manager command is invoked during dry-run.
-- [ ] CLI wording never claims “no changes” unless this invariant is actually enforced.
+- [x] A regression test proves a sentinel file is not created by any hook during dry-run.
+- [x] A fake runner test proves no mutating package-manager command is invoked during dry-run.
+- [x] CLI wording never claims “no changes” unless this invariant is actually enforced.
 
 **Likely areas**
 
@@ -72,18 +72,18 @@ are accepted by the schema but are not always detected by the arbitrary-code gat
 
 **Work**
 
-- [ ] Replace type-specific dangerous-field detection with one canonical semantic predicate.
-- [ ] Mark every executable form of `build`, hooks, custom commands, installer scripts, or future command-bearing fields as arbitrary code.
-- [ ] Make the gate operate on resolved method semantics, not raw TOML representation.
-- [ ] Ensure aliases/shorthands cannot bypass the gate.
-- [ ] Define whether shell-string commands and argv-form commands have different risk labels; both must require explicit permission when arbitrary code is executed.
+- [x] Replace type-specific dangerous-field detection with one canonical semantic predicate.
+- [x] Mark every executable form of `build`, hooks, custom commands, installer scripts, or future command-bearing fields as arbitrary code.
+- [x] Make the gate operate on resolved method semantics, not raw TOML representation.
+- [x] Ensure aliases/shorthands cannot bypass the gate.
+- [x] Define whether shell-string commands and argv-form commands have different risk labels; both must require explicit permission when arbitrary code is executed.
 
 **Acceptance criteria**
 
-- [ ] String-form `build` requires `--allow-arbitrary-code`.
-- [ ] Structured `build.run` requires `--allow-arbitrary-code`.
-- [ ] All hook forms require the same gate.
-- [ ] A table-driven test enumerates every command-bearing field and fails if any one is not gated.
+- [x] String-form `build` requires `--allow-arbitrary-code`.
+- [x] Structured `build.run` requires `--allow-arbitrary-code`.
+- [x] All hook forms require the same gate.
+- [x] A table-driven test enumerates every command-bearing field and fails if any one is not gated.
 
 **Likely areas**
 
@@ -108,10 +108,10 @@ Examples reproduced during the stress-test:
 - [ ] Make structural/semantic validation verify every invariant needed before execution.
 - [x] Move shared artifact validation into shared artifact contracts rather than hard-coded method-name switches.
 - [x] Validate URI schemes consistently for every download-backed method.
-- [ ] Reject unsupported installer/container/archive formats before execution.
-- [ ] Make `why` use the same availability/resolution result as installation planning.
+- [x] Reject unsupported installer/container/archive formats before execution.
+- [x] Make `why` use the same availability/resolution result as installation planning.
 - [ ] Make dry-run render the exact executable plan, not a best-effort approximation.
-- [ ] Audit error messages so they never recommend a non-existent method.
+- [x] Audit error messages so they never recommend a non-existent method.
 
 **Acceptance criteria**
 
@@ -168,14 +168,14 @@ The Go HTTP downloader can attach GitHub authentication without exposing the tok
 
 - [ ] Make authentication requirements part of planning/capability selection.
 - [x] Do not select a downloader that cannot satisfy required auth semantics.
-- [ ] Ensure credentials are not passed in argv, logs, error text, lockfiles, or state files.
+- [x] Ensure credentials are not passed in argv, logs, error text, lockfiles, or state files (credential-bearing URLs are rejected; command/error logging is redacted; state persistence rejects obvious secret material; the current lock schema stores pins/checksums only, not method config).
 - [ ] Define explicit secure secret references for future private registries/sources rather than literal secrets in manifests.
 - [x] Add private GitHub release tests using fake servers/runners.
 
 **Acceptance criteria**
 
 - [x] Presence of `curl`/`wget` cannot cause a private GitHub install to lose authentication support.
-- [ ] Tokens/secrets never appear in logged commands or serialized project state.
+- [x] Tokens/secrets never appear in logged commands or serialized project state.
 - [ ] Downloader capability mismatches fail during planning with a clear explanation.
 
 ______________________________________________________________________
@@ -238,7 +238,7 @@ ______________________________________________________________________
   - rolling/latest intent.
 - [ ] Decide which forms are portable across methods and which remain method-specific.
 - [ ] Define normalization rules so `latest`, channels, constraints, revisions and exact versions are unambiguous.
-- [ ] Define method capability declarations for supported version modes.
+- [~] Define method capability declarations for supported version modes. Contracts now expose exact-version, channel, immutable-identity and arbitrary-code capabilities; constraints/revisions and broader planner consumption remain TODO.
 - [ ] Define behavior when a preferred method cannot satisfy the requested version semantics: eliminate candidate rather than silently weakening intent.
 - [ ] Update verification to compare actual state against requested/resolved state.
 
@@ -269,7 +269,7 @@ Several adapters effectively answer “is something with this name installed?”
 
 - [ ] Installing version A while version B is present is not reported as satisfied.
 - [ ] SDKMAN/asdf/mise checks verify the requested candidate/version.
-- [ ] Container checks can distinguish mutable tag identity from pinned digest identity.
+- [x] Container checks can distinguish mutable tag identity from pinned digest identity.
 - [ ] Status output explains drift rather than collapsing it to installed/not-installed.
 
 ______________________________________________________________________
@@ -364,16 +364,16 @@ Conditions distinguish OS, distro, family, arch, libc, kernel/init, WSL/containe
 
 **Work**
 
-- [ ] Add normalized OS/distro version facts from existing detection sources (`VERSION_ID`, `sw_vers`, Windows version/build information).
-- [ ] Define comparison semantics for versions that are not strict SemVer.
-- [ ] Support at least exact/min/max or a clearly constrained version expression.
-- [ ] Keep the condition DSL bounded; do not introduce an arbitrary expression language unnecessarily.
-- [ ] Test Ubuntu/Fedora/macOS/Windows version conditions.
+- [x] Add normalized OS/distro version facts from existing detection sources (`VERSION_ID`, `sw_vers`, Windows version/build information). Linux/macOS/Android/POSIX-Windows-layer facts are emitted, and native Go fallbacks query `sw_vers`/`cmd.exe ver` when the shell detector cannot run.
+- [x] Define comparison semantics for versions that are not strict SemVer.
+- [x] Support at least exact/min/max or a clearly constrained version expression.
+- [x] Keep the condition DSL bounded; do not introduce an arbitrary expression language unnecessarily (exact/min/max fields only; no expression evaluator).
+- [x] Test Ubuntu/Fedora/macOS/Windows version conditions.
 
 **Acceptance criteria**
 
-- [ ] Manifests can distinguish e.g. Ubuntu 22.04 vs 24.04, macOS major versions, and Windows build ranges without hooks.
-- [ ] Version comparison rules are documented and deterministic.
+- [x] Manifests can distinguish e.g. Ubuntu 22.04 vs 24.04, macOS major versions, and Windows build ranges without hooks.
+- [x] Version comparison rules are documented and deterministic.
 
 ______________________________________________________________________
 
@@ -457,7 +457,7 @@ Adding cross-cutting fields manually to every method contract will become brittl
 
 **Work**
 
-- [ ] Extend method contracts with capabilities such as:
+- [~] Extend method contracts with capabilities such as (exact version, channel, immutable identity, arbitrary-code execution, source selection, architecture, scope and revision selection are now represented):
   - exact version / constraints / channels / revisions;
   - source/registry selection;
   - user/system scope;
@@ -468,13 +468,13 @@ Adding cross-cutting fields manually to every method contract will become brittl
   - arbitrary-code execution;
   - offline/local artifact support;
   - auth support.
-- [ ] Use capabilities during candidate filtering/planning.
-- [ ] Expose capability mismatch reasons in `why`.
-- [ ] Generate relevant JSON Schema/docs from the same contract data where practical.
+- [x] Use capabilities during candidate filtering/planning (defensive planner boundary rejects capability mismatches before probes/execution).
+- [x] Expose capability mismatch reasons in `why` (`skip_capability` with named missing capabilities).
+- [~] Generate relevant JSON Schema/docs from the same contract data where practical (JSON Schema now embeds capability metadata generated from method contracts; prose docs remain partly manual).
 
 **Acceptance criteria**
 
-- [ ] Requesting a capability unsupported by one candidate eliminates it deterministically.
+- [x] Requesting a capability unsupported by one candidate eliminates it deterministically.
 - [ ] There is no growing collection of method-name conditionals for cross-cutting semantics.
 
 ______________________________________________________________________
@@ -487,16 +487,16 @@ Declaring a non-native method can implicitly inject a native candidate, so “me
 
 **Work**
 
-- [ ] Decide and document one principle for implicit native fallback.
-- [ ] Strong option: allow native inference only for simple shorthand declarations; full method tables mean exactly what they declare.
+- [x] Decide and document one principle for implicit native fallback: only shorthand scalar/bool declarations infer native; explicit method tables mean exactly what they declare.
+- [x] Strong option: allow native inference only for simple shorthand declarations; full method tables mean exactly what they declare.
 - [ ] Alternative: make fallback behavior a visible defaults setting.
-- [ ] Ensure `why` clearly identifies inferred versus explicitly declared candidates.
-- [ ] Add tests for `brew`, Go/Cargo shorthand, explicit method subtables, and `method_only`.
+- [x] Ensure `why` clearly identifies inferred versus explicitly declared candidates.
+- [x] Add tests for `brew`, Go/Cargo shorthand, explicit method subtables, and `method_only`.
 
 **Acceptance criteria**
 
-- [ ] Authors can predict the candidate set from the manifest without hidden method injection rules.
-- [ ] Existing convenience remains available explicitly if desired.
+- [x] Authors can predict the candidate set from the manifest without hidden method injection rules.
+- [x] Existing convenience remains available explicitly if desired.
 
 ______________________________________________________________________
 
@@ -508,15 +508,15 @@ ______________________________________________________________________
 
 **Work**
 
-- [ ] Rename or document global ordering so “order” cannot reasonably be read as exhaustive.
-- [ ] Consider `method_prefer` as the canonical term globally as well as per-tool.
-- [ ] Keep `method_only` as the explicit allow-list.
-- [ ] Make `why` show whether a method is lower-priority versus disallowed.
+- [x] Rename or document global ordering so “order” cannot reasonably be read as exhaustive.
+- [x] Use `method_prefer` as the canonical term globally as well as per-tool; `defaults.method_order` remains a compatibility alias and cannot be combined with it.
+- [x] Keep `method_only` as the explicit allow-list.
+- [x] Make `why` show whether a method is lower-priority versus disallowed (`skip_policy` is distinct from availability/condition skips).
 
 **Acceptance criteria**
 
-- [ ] Documentation and examples make preference vs eligibility unambiguous.
-- [ ] Tests cover omitted methods remaining eligible under preference-only configuration.
+- [x] Documentation and examples make preference vs eligibility unambiguous.
+- [x] Tests cover omitted methods remaining eligible under preference-only configuration.
 
 ______________________________________________________________________
 
@@ -589,12 +589,12 @@ ______________________________________________________________________
 
 **Work**
 
-- [ ] Add typed version selection.
-- [ ] Add source selection.
-- [ ] Add user/machine scope.
-- [ ] Add architecture selection where meaningful.
-- [ ] Represent installer-type/override only if it can be modeled safely without generic arbitrary args.
-- [ ] Verify installed package identity/version using WinGet data rather than executable presence alone.
+- [x] Add typed version selection.
+- [x] Add source selection.
+- [x] Add user/machine scope.
+- [x] Add architecture selection where meaningful.
+- [x] Represent installer type as a typed allow-list (`installer_type`); generic override/argument bags remain intentionally unsupported.
+- [x] Verify installed package identity/version using WinGet `list --id --exact` data rather than executable presence alone.
 
 ______________________________________________________________________
 
@@ -602,11 +602,11 @@ ______________________________________________________________________
 
 **Work**
 
-- [ ] Add exact/package version.
-- [ ] Add source selection.
-- [ ] Model x86/architecture if needed.
+- [x] Add exact/package version.
+- [x] Add source selection.
+- [x] Model x86/architecture (`architecture = "x86" | "x64"`; x86 maps to `--forcex86`).
 - [ ] Evaluate typed package parameters and installer parameters; do not expose arbitrary argument bags by default.
-- [ ] Verify actual installed package version/source.
+- [~] Verify actual installed package version/source (exact version is verified from `choco list --limit-output`; Chocolatey does not expose durable installed-source identity through this check, so source verification remains TODO).
 
 ______________________________________________________________________
 
@@ -614,11 +614,11 @@ ______________________________________________________________________
 
 **Work**
 
-- [ ] Add version support where Scoop semantics permit it.
-- [ ] Model bucket/source identity consistently with generalized sources.
-- [ ] Support user/global scope where safe.
-- [ ] Model architecture selection where needed.
-- [ ] Verify package version and bucket/source where available.
+- [x] Add version support where Scoop semantics permit it.
+- [x] Model bucket/source identity consistently with generalized sources.
+- [x] Support user/global scope where safe.
+- [x] Model architecture selection where needed.
+- [x] Verify package version and bucket/source where available.
 
 ______________________________________________________________________
 
@@ -637,7 +637,7 @@ ______________________________________________________________________
 
 **Work**
 
-- [ ] Add version/constraint.
+- [~] Add version/constraint. Exact Cargo `version` is supported; general constraints remain TODO.
 - [ ] Add registry selection.
 - [ ] Add `git`, branch/tag/rev semantics without conflating with generic Git build method.
 - [ ] Add feature selection, `--no-default-features`, selected bins, target and install root only as typed fields with clear portability.
@@ -650,8 +650,8 @@ ______________________________________________________________________
 
 **Work**
 
-- [ ] Stop forcing `@latest` when exact version is requested.
-- [ ] Add explicit module/package version field.
+- [x] Stop forcing `@latest` when exact version is requested.
+- [x] Add explicit module/package version field.
 - [ ] Define tool package path vs module identity semantics.
 - [ ] Lock concrete module version.
 - [ ] Verify installed version where discoverable; define limitations when binary metadata cannot prove it.
@@ -666,11 +666,11 @@ pip, pipx, uv, npm, pnpm, bun, yarn, gem, composer and related adapters.
 
 **Work**
 
-- [ ] For each adapter, document supported desired-state dimensions.
-- [ ] Add exact version/constraint where native tooling supports it.
-- [ ] Add registry/index/source selection where needed.
-- [ ] Distinguish global/user/project/environment installation.
-- [ ] Make checks verify requested package version/environment.
+- [~] For each adapter, document supported desired-state dimensions (coverage notes now identify version/source/scope support for pip/npm/pipx/uv/gem/composer/bun/pnpm/yarn and remaining lower-fidelity adapters).
+- [~] Add exact version/constraint where native tooling supports it (pip, npm, pipx, uv, gem, composer, bun, pnpm and yarn exact versions implemented; remaining adapters TODO).
+- [~] Add registry/index/source selection where needed (pip index URL, npm registry, pipx index URL, uv index, RubyGems source and Bun registry implemented; remaining adapters TODO).
+- [~] Distinguish global/user/project/environment installation (pipx user/global and RubyGems default/user scope implemented; remaining adapters TODO).
+- [~] Make checks verify requested package version/environment (pip, npm, pipx, uv, gem, composer, bun, pnpm and yarn verify requested versions; remaining adapters TODO).
 - [ ] Add lock semantics or explicitly mark adapters non-lockable until implemented.
 
 ______________________________________________________________________
@@ -696,7 +696,7 @@ ______________________________________________________________________
 - [ ] Evaluate a shared version-manager contract for asdf/mise overlap.
 - [ ] Model plugin/provider installation separately from tool-version installation where needed.
 - [ ] Make “current/global/local” selection explicit rather than environment-dependent.
-- [ ] SDKMAN checks must verify the requested candidate/version, not merely any current version.
+- [x] SDKMAN checks verify the requested candidate/version, not merely any current version.
 - [ ] Lock exact resolved tool versions.
 
 ______________________________________________________________________
@@ -709,10 +709,10 @@ Snap channel semantics are richer than the four risk names; tracks and branches 
 
 **Work**
 
-- [ ] Model channel as track/risk/branch or another structure matching Snap semantics.
-- [ ] Preserve simple shorthand for `stable`, `candidate`, `beta`, `edge` if desired.
-- [ ] Include confinement/classic requirements separately.
-- [ ] Verify installed tracking channel/revision where available.
+- [x] Model channel as track/risk/branch matching Snap tracking semantics.
+- [x] Preserve simple shorthand for `stable`, `candidate`, `beta`, `edge`.
+- [x] Include confinement/classic requirements separately.
+- [~] Verify installed tracking channel/revision where available (tracking channel is verified from `snap list`; revision pinning is not modeled).
 
 ______________________________________________________________________
 
@@ -720,11 +720,11 @@ ______________________________________________________________________
 
 **Work**
 
-- [ ] Remove hard-coded assumption that every install comes from Flathub.
-- [ ] Add remote selection and ownership.
-- [ ] Add branch selection.
-- [ ] Add user/system scope.
-- [ ] Verify application ref + branch + origin.
+- [x] Remove hard-coded assumption that every install comes from Flathub.
+- [~] Add remote selection and ownership (selection + origin verification implemented; remote lifecycle/ownership remains TODO).
+- [x] Add branch selection.
+- [x] Add user/system scope.
+- [x] Verify application ref + branch + origin.
 
 ______________________________________________________________________
 
@@ -746,12 +746,12 @@ ______________________________________________________________________
 
 **Work**
 
-- [ ] Add immutable digest representation.
-- [ ] Add registry/source selection.
-- [ ] Add platform/architecture selection.
+- [x] Add immutable digest representation.
+- [x] Add registry/source selection.
+- [x] Add platform/architecture selection.
 - [ ] Add secure auth references.
 - [ ] Lock tags to digests when reproducibility is requested.
-- [ ] Verify local image identity by digest where possible.
+- [x] Verify local image identity by digest where possible.
 
 ______________________________________________________________________
 
@@ -951,13 +951,13 @@ ______________________________________________________________________
 
 The docs should state what depengine intends to model and what it intentionally does not.
 
-- [ ] Typed package managers and ecosystems are the preferred path.
-- [ ] Generic artifact installation is supported with explicit ownership and verification.
-- [ ] Opaque vendor installers/scripts are an explicit unsafe escape hatch, not equivalent to a fully modeled method.
-- [ ] Not every package manager can guarantee the same level of reproducibility; expose capability differences.
-- [ ] Explain the distinction between desired version, resolved version, and locked immutable identity.
-- [ ] Explain scope vs environment/profile.
-- [ ] Explain sources/registries vs host source mutation.
+- [x] Typed package managers and ecosystems are the preferred path.
+- [x] Generic artifact installation is supported with explicit ownership and verification.
+- [x] Opaque vendor installers/scripts are an explicit unsafe escape hatch, not equivalent to a fully modeled method.
+- [x] Not every package manager can guarantee the same level of reproducibility; expose capability differences.
+- [x] Explain the distinction between desired version, resolved version, and locked immutable identity.
+- [x] Explain scope vs environment/profile.
+- [x] Explain sources/registries vs host source mutation.
 
 ______________________________________________________________________
 
@@ -965,9 +965,9 @@ ______________________________________________________________________
 
 Audit README/docs/CLI text for statements such as “same tools, same versions”.
 
-- [ ] Until universal locking exists, qualify claims to the methods actually pinned.
+- [x] Until universal locking exists, qualify claims to the methods actually pinned.
 - [ ] Once universal locking exists, add tests that enforce the promise.
-- [ ] Ensure dry-run wording matches real side-effect guarantees.
+- [x] Ensure dry-run wording matches real side-effect guarantees.
 - [ ] Ensure “installed” means desired state satisfied, not merely executable found.
 
 ______________________________________________________________________
@@ -976,16 +976,16 @@ ______________________________________________________________________
 
 Cover:
 
-- [ ] arbitrary code and hooks/builds;
-- [ ] package/source trust;
-- [ ] checksums/signatures;
-- [ ] private registry/artifact credentials;
-- [ ] secret redaction;
-- [ ] downloader selection;
-- [ ] installer elevation;
-- [ ] source/key ownership;
-- [ ] unsafe EXE/script installers;
-- [ ] lockfile integrity expectations.
+- [x] arbitrary code and hooks/builds;
+- [x] package/source trust;
+- [x] checksums/signatures;
+- [x] private registry/artifact credentials;
+- [x] secret redaction;
+- [x] downloader selection;
+- [x] installer elevation;
+- [x] source/key ownership;
+- [x] unsafe EXE/script installers;
+- [x] lockfile integrity expectations.
 
 ______________________________________________________________________
 

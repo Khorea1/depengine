@@ -6,21 +6,25 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Khorea1/depengine/pkg/engine"
 	"github.com/Khorea1/depengine/pkg/methodkind"
 )
 
 var conditionFields = map[string]string{
-	"distro_family": "strings",
-	"target_family": "strings",
-	"distro_id":     "strings",
-	"arch":          "strings",
-	"os":            "strings",
-	"kernel":        "strings",
-	"libc":          "strings",
-	"init_system":   "strings",
-	"is_wsl":        "bool",
-	"is_container":  "bool",
-	"is_android":    "bool",
+	"distro_family":      "strings",
+	"target_family":      "strings",
+	"distro_id":          "strings",
+	"distro_version":     "strings",
+	"distro_version_min": "string",
+	"distro_version_max": "string",
+	"arch":               "strings",
+	"os":                 "strings",
+	"kernel":             "strings",
+	"libc":               "strings",
+	"init_system":        "strings",
+	"is_wsl":             "bool",
+	"is_container":       "bool",
+	"is_android":         "bool",
 }
 
 func validateRawSchema(raw map[string]any, section string) error {
@@ -75,12 +79,17 @@ func validateDefaults(raw any, errs *[]string) {
 		*errs = append(*errs, fmt.Sprintf("defaults: expected table, got %T", raw))
 		return
 	}
+	if _, hasPrefer := m["method_prefer"]; hasPrefer {
+		if _, hasOrder := m["method_order"]; hasOrder {
+			*errs = append(*errs, "defaults: method_prefer and method_order are mutually exclusive; use method_prefer")
+		}
+	}
 	for _, key := range sortedMapKeys(m) {
 		path := "defaults." + key
 		switch key {
 		case "manager", "aur_helper":
 			validateNonEmptyString(m[key], path, errs)
-		case "method_order":
+		case "method_prefer", "method_order":
 			validateStringList(m[key], path, errs)
 		case "arch_map", "os_map":
 			validateStringMap(m[key], path, errs)
@@ -275,6 +284,16 @@ func validateMethodValue(raw any, path, declaredKind string, errs *[]string) {
 					*errs = append(*errs, path+": fields "+strings.Join(group, " and ")+" are mutually exclusive")
 				}
 			}
+			for key, required := range contract.Requires {
+				if _, configured := v[key]; !configured {
+					continue
+				}
+				for _, dependency := range required {
+					if _, ok := v[dependency]; !ok {
+						*errs = append(*errs, path+"."+key+": requires "+dependency)
+					}
+				}
+			}
 		}
 	default:
 		*errs = append(*errs, fmt.Sprintf("%s: expected string, true, or table, got %T", path, raw))
@@ -426,6 +445,14 @@ func validateCondition(raw any, path string, errs *[]string) {
 			if values, valid := stringList(m[key], fieldPath, errs); valid && len(values) > 0 {
 				meaningful = true
 			}
+		case "string":
+			if value, ok := m[key].(string); !ok {
+				*errs = append(*errs, fmt.Sprintf("%s: expected string, got %T", fieldPath, m[key]))
+			} else if strings.TrimSpace(value) == "" {
+				*errs = append(*errs, fieldPath+": must not be empty")
+			} else {
+				meaningful = true
+			}
 		case "bool":
 			if _, ok := m[key].(bool); !ok {
 				*errs = append(*errs, fmt.Sprintf("%s: expected boolean, got %T", fieldPath, m[key]))
@@ -434,6 +461,11 @@ func validateCondition(raw any, path string, errs *[]string) {
 			}
 		default:
 			*errs = append(*errs, fieldPath+": unknown condition field")
+		}
+	}
+	if min, minOK := m["distro_version_min"].(string); minOK && strings.TrimSpace(min) != "" {
+		if max, maxOK := m["distro_version_max"].(string); maxOK && strings.TrimSpace(max) != "" && engine.CompareVersion(min, max) > 0 {
+			*errs = append(*errs, path+": distro_version_min must not be greater than distro_version_max")
 		}
 	}
 	if !meaningful {

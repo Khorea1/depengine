@@ -244,3 +244,51 @@ func assertGoLookup(t *testing.T, fr *run.FakeRunner, want string) {
 	}
 	t.Fatalf("no lookup recorded for %q; calls=%#v", want, fr.Calls)
 }
+
+func TestGoVersionControlsInstallAndCheck(t *testing.T) {
+	ctx := context.Background()
+	adapter := NewGoAdapter()
+	tool := &config.Tool{Name: "friendly-name"}
+	mc := &config.MethodCandidate{Kind: "go", Config: map[string]any{
+		"pkg": "example.com/project/cmd/realbin", "version": "v1.2.3",
+	}}
+
+	installRunner := &run.FakeRunner{LookPaths: map[string]bool{"go": true}}
+	if err := adapter.Install(ctx, installRunner, tool, mc); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	assertLastGoCall(t, installRunner, []string{"install", "example.com/project/cmd/realbin@v1.2.3"})
+
+	checkRunner := &run.FakeRunner{LookPaths: map[string]bool{"go": true, "realbin": true}, Stdout: "realbin version 1.2.3\n"}
+	if !adapter.Check(ctx, checkRunner, tool, mc) {
+		t.Fatal("Check should accept the requested Go tool version when discoverable")
+	}
+	checkRunner.Stdout = "realbin version 1.2.4\n"
+	if adapter.Check(ctx, checkRunner, tool, mc) {
+		t.Fatal("Check should reject a different installed Go tool version")
+	}
+}
+
+func TestGoLegacyPkgVersionSuffixIsNotDoubleSuffixed(t *testing.T) {
+	adapter := NewGoAdapter()
+	fr := &run.FakeRunner{LookPaths: map[string]bool{"go": true}}
+	mc := &config.MethodCandidate{Kind: "go", Config: map[string]any{"pkg": "example.com/project/cmd/realbin@v1.2.3"}}
+	if err := adapter.Install(context.Background(), fr, &config.Tool{Name: "realbin"}, mc); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	assertLastGoCall(t, fr, []string{"install", "example.com/project/cmd/realbin@v1.2.3"})
+	if got := goBinaryName("example.com/project/cmd/realbin@v1.2.3"); got != "realbin" {
+		t.Fatalf("goBinaryName versioned pkg = %q, want realbin", got)
+	}
+}
+
+func TestGoRejectsPkgVersionSuffixAndVersionFieldTogether(t *testing.T) {
+	adapter := NewGoAdapter()
+	fr := &run.FakeRunner{LookPaths: map[string]bool{"go": true}}
+	mc := &config.MethodCandidate{Kind: "go", Config: map[string]any{
+		"pkg": "example.com/project/cmd/realbin@v1.2.3", "version": "v1.2.4",
+	}}
+	if err := adapter.Install(context.Background(), fr, &config.Tool{Name: "realbin"}, mc); err == nil {
+		t.Fatal("Install should reject duplicate Go version declarations")
+	}
+}

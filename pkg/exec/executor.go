@@ -117,7 +117,7 @@ func WithMaxJobs(n int) Option {
 	}
 }
 
-// WithAllowArbitraryCode suppresses security warnings about dangerous methods
+// WithAllowArbitraryCode permits execution of dangerous method fields and hooks
 // (build scripts, arbitrary shell execution, etc.).
 func WithAllowArbitraryCode() Option {
 	return func(e *Executor) {

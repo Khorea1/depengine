@@ -45,6 +45,7 @@ const detectionJSON = `{
   "target_arch": "x86_64",
   "distro_id": "arch",
   "distro_name": "Arch Linux",
+  "distro_version": "2026.09",
   "distro_id_like": "",
   "target_family": "unix",
   "detection_method": "os-release",
@@ -76,6 +77,9 @@ func TestGatherFactsParsesJSONAndLeavesFactsImmutable(t *testing.T) {
 
 	if facts.DistroID != "arch" {
 		t.Fatalf("DistroID = %q, want arch", facts.DistroID)
+	}
+	if facts.DistroVersion != "2026.09" {
+		t.Fatalf("DistroVersion = %q, want 2026.09", facts.DistroVersion)
 	}
 	if facts.DistroIDLike != "" {
 		t.Fatalf("DistroIDLike = %q, want empty", facts.DistroIDLike)
@@ -267,5 +271,54 @@ func TestDetectOSScriptsAreInSync(t *testing.T) {
 	if string(got) != string(detectScriptContent) {
 		t.Fatalf("scripts/detect_os.sh differs from pkg/engine/detect_os.sh\n" +
 			"Edit pkg/engine/detect_os.sh, then copy to scripts/detect_os.sh")
+	}
+}
+
+func TestParseWindowsVersion(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "windows 11 build", in: "Microsoft Windows [Version 10.0.26100.4652]", want: "10.0.26100.4652"},
+		{name: "localized label", in: "Microsoft Windows [Versão 10.0.22631.4169]", want: "10.0.22631.4169"},
+		{name: "crlf", in: "\r\nMicrosoft Windows [Version 10.0.19045.4780]\r\n", want: "10.0.19045.4780"},
+		{name: "no version", in: "Microsoft Windows", want: ""},
+		{name: "not enough components", in: "Windows 11.0", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := parseWindowsVersion(tt.in); got != tt.want {
+				t.Fatalf("parseWindowsVersion(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDetectWindowsVersionUsesReadOnlyVerCommand(t *testing.T) {
+	fr := &fakeRunner{stdout: "Microsoft Windows [Version 10.0.26100.4652]"}
+	if got := detectWindowsVersion(fr); got != "10.0.26100.4652" {
+		t.Fatalf("detectWindowsVersion = %q", got)
+	}
+	if len(fr.calls) != 1 {
+		t.Fatalf("calls = %d, want 1", len(fr.calls))
+	}
+	call := fr.calls[0]
+	if call.name != "cmd.exe" || strings.Join(call.args, " ") != "/d /c ver" {
+		t.Fatalf("unexpected command: %s %v", call.name, call.args)
+	}
+}
+
+func TestDetectDarwinVersionUsesReadOnlySwVers(t *testing.T) {
+	fr := &fakeRunner{stdout: "15.6.1\n"}
+	if got := detectDarwinVersion(fr); got != "15.6.1" {
+		t.Fatalf("detectDarwinVersion = %q", got)
+	}
+	if len(fr.calls) != 1 {
+		t.Fatalf("calls = %d, want 1", len(fr.calls))
+	}
+	call := fr.calls[0]
+	if call.name != "sw_vers" || strings.Join(call.args, " ") != "-productVersion" {
+		t.Fatalf("unexpected command: %s %v", call.name, call.args)
 	}
 }

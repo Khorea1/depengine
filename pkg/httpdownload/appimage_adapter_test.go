@@ -166,7 +166,7 @@ func TestAppImageAdapterInstallSameName(t *testing.T) {
 
 	installDir := t.TempDir()
 	mc := &config.MethodCandidate{Config: map[string]any{
-		"url":           ts.URL + "/obsidian",
+		"url":           ts.URL + "/obsidian.AppImage",
 		"install_dir":   installDir,
 		"sudo_required": false,
 	}}
@@ -298,5 +298,17 @@ func TestAppImageAdapterRemoveWithoutDesktopLeavesNothingToDelete(t *testing.T) 
 	}
 	if _, err := os.Stat(binPath); !os.IsNotExist(err) {
 		t.Error("expected binary to be removed")
+	}
+}
+
+func TestAppImageInstallRejectsNonAppImageBeforeDownload(t *testing.T) {
+	fr := &run.FakeRunner{}
+	mc := &config.MethodCandidate{Config: map[string]any{"url": "https://example.com/tool.tar.gz"}}
+	err := NewAppImageAdapter().Install(context.Background(), fr, appImageTool("tool"), mc)
+	if err == nil || !strings.Contains(err.Error(), ".AppImage") {
+		t.Fatalf("Install() error = %v, want .AppImage requirement", err)
+	}
+	if len(fr.Calls) != 0 {
+		t.Fatalf("invalid artifact triggered subprocesses: %#v", fr.Calls)
 	}
 }

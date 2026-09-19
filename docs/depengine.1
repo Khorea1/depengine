@@ -209,7 +209,7 @@ path to write (default: schema.toml) Scope: local. Default: .
 .SS "depengine install flags"
 .TP
 .B "\-\-allow\-arbitrary\-code"
-suppress security warnings for build scripts / arbitrary code Scope: local. Default: false.
+permit hooks, build scripts, and other arbitrary code execution Scope: local. Default: false.
 .TP
 .B "\-\-diagnose"
 diagnostic mode: DEBUG + dry\-run + verbose Scope: local. Default: false.
@@ -347,7 +347,7 @@ detailed output Scope: local. Default: false.
 .SS "depengine upgrade flags"
 .TP
 .B "\-\-allow\-arbitrary\-code"
-suppress security warnings for build scripts / arbitrary code Scope: local. Default: false.
+permit hooks, build scripts, and other arbitrary code execution Scope: local. Default: false.
 .TP
 .B "\-\-dry\-run"
 show what would be upgraded without making changes Scope: local. Default: false.
@@ -423,9 +423,9 @@ path to schema.toml Scope: local. Default: schema.toml.
 .\" END GENERATED CLI REFERENCE
 .SS "schema-level method control"
 .TP
-.B defaults.method_order
+.B defaults.method_prefer
 Global, engine-wide preference order for install methods, set once under
-\fB[defaults]\fR. There is no per-tool \fBmethod_order\fR alias — use
+\fB[defaults]\fR. The older global \fBdefaults.method_order\fR spelling is a compatibility alias; there is no per-tool \fBmethod_order\fR alias — use
 \fBmethod_prefer\fR/\fBmethod_only\fR below to override the order for a
 single tool.
 .TP
@@ -436,8 +436,12 @@ Example: \fBmethod_prefer = ["cargo"]\fR tries cargo before native.
 .B method_only
 Filters the tool's candidate methods: only the listed methods are tried,
 in this order, and the native method is NOT attempted unless explicitly
-listed — there is no native fallback. \fBdefaults.method_order\fR is
+listed — there is no native fallback. \fBdefaults.method_prefer\fR is
 ignored for this tool.
+.PP
+Scalar/bool method shorthand may infer a native fallback. Explicit method
+subtables do not; declare a native method explicitly when full-table syntax
+should retain native fallback.
 
 .SS "kind field (adapter dispatch override)"
 .PP

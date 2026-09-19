@@ -82,3 +82,16 @@ func TestLoggingRunnerNilLoggerDefaults(t *testing.T) {
 		t.Fatalf("exit = %d, want 0", res.ExitCode)
 	}
 }
+
+func TestLoggingRunnerRedactsSensitiveStderr(t *testing.T) {
+	inner := &FakeRunner{ExitCode: 1, Stderr: "request failed for https://alice:secret@example.com/api\nAuthorization: Bearer hidden"}
+	cap := log.NewTestLogger(t)
+	runner := NewLoggingRunner(inner, cap.Logger)
+
+	runner.Run(context.Background(), "fetch", "--token", "argvsecret")
+
+	for _, secret := range []string{"secret", "hidden", "argvsecret"} {
+		cap.AssertNotContains(t, secret)
+	}
+	cap.AssertContains(t, "Authorization: ***")
+}

@@ -3,6 +3,7 @@ package exec
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/config"
@@ -79,10 +80,10 @@ func TestWinAdapterCheck(t *testing.T) {
 	tool := &config.Tool{Name: "fd"}
 
 	t.Run("scoop installed", func(t *testing.T) {
-		fr := &run.FakeRunner{ExitCode: 0}
+		fr := &run.FakeRunner{ExitCode: 0, Stdout: "fd 10.2.0 main 2026-01-01 10:00:00\n"}
 		a := lookupWinAdapter("scoop")
 		if !a.Check(ctx, fr, tool, mc) {
-			t.Fatal("Check() should be true with exit 0")
+			t.Fatal("Check() should be true when scoop list reports the package")
 		}
 	})
 
@@ -95,7 +96,7 @@ func TestWinAdapterCheck(t *testing.T) {
 	})
 
 	t.Run("scoop check command uses package name", func(t *testing.T) {
-		fr := &run.FakeRunner{ExitCode: 0}
+		fr := &run.FakeRunner{ExitCode: 0, Stdout: "fd 10.2.0 main 2026-01-01 10:00:00\n"}
 		a := lookupWinAdapter("scoop")
 		a.Check(ctx, fr, tool, mc)
 		if len(fr.Calls) != 1 {
@@ -110,7 +111,7 @@ func TestWinAdapterCheck(t *testing.T) {
 	})
 
 	t.Run("choco installed", func(t *testing.T) {
-		fr := &run.FakeRunner{ExitCode: 0}
+		fr := &run.FakeRunner{ExitCode: 0, Stdout: "fd|1.0.0\n"}
 		a := lookupWinAdapter("choco")
 		if !a.Check(ctx, fr, tool, mc) {
 			t.Fatal("Check() should be true with exit 0")
@@ -118,14 +119,15 @@ func TestWinAdapterCheck(t *testing.T) {
 	})
 
 	t.Run("choco check command structure", func(t *testing.T) {
-		fr := &run.FakeRunner{ExitCode: 0}
+		fr := &run.FakeRunner{ExitCode: 0, Stdout: "fd|1.0.0\n"}
 		a := lookupWinAdapter("choco")
 		a.Check(ctx, fr, tool, mc)
 		if len(fr.Calls) != 1 {
 			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
 		}
-		if fr.Calls[0].Name != "cmd" {
-			t.Fatalf("expected 'cmd', got %q", fr.Calls[0].Name)
+		want := []string{"list", "--local-only", "--exact", "--limit-output", "fd"}
+		if fr.Calls[0].Name != "choco" || fmt.Sprint(fr.Calls[0].Args) != fmt.Sprint(want) {
+			t.Fatalf("unexpected choco check call: %s %v", fr.Calls[0].Name, fr.Calls[0].Args)
 		}
 	})
 
@@ -316,5 +318,146 @@ func TestWinAdapterImplementsRemover(t *testing.T) {
 	b := lookupWinAdapter("choco")
 	if _, ok := any(b).(Remover); !ok {
 		t.Fatal("winAdapter must implement Remover")
+	}
+}
+
+func TestChocoExactVersion(t *testing.T) {
+	ctx := context.Background()
+	tool := &config.Tool{Name: "nvim"}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "neovim", "version": "0.10.4"}}
+
+	t.Run("install pins version", func(t *testing.T) {
+		fr := &run.FakeRunner{}
+		if err := lookupWinAdapter("choco").Install(ctx, fr, tool, mc); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"install", "neovim", "--version", "0.10.4", "-y"}
+		if got := fr.Calls[0].Args; fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Fatalf("argv=%v want=%v", got, want)
+		}
+	})
+
+	t.Run("check requires exact installed version", func(t *testing.T) {
+		fr := &run.FakeRunner{ExitCode: 0, Stdout: "neovim|0.10.4\n"}
+		if !lookupWinAdapter("choco").Check(ctx, fr, tool, mc) {
+			t.Fatal("Check() should accept matching exact version")
+		}
+		fr.Stdout = "neovim|0.10.3\n"
+		if lookupWinAdapter("choco").Check(ctx, fr, tool, mc) {
+			t.Fatal("Check() should reject a different installed version")
+		}
+	})
+}
+
+func TestChocoInstalledVersion(t *testing.T) {
+	fr := &run.FakeRunner{Stdout: "neovim|0.10.4\r\n"}
+	versioner := lookupWinAdapter("choco")
+	got, err := versioner.InstalledVersion(context.Background(), fr, &config.Tool{Name: "nvim"}, &config.MethodCandidate{Config: map[string]any{"pkg": "neovim"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "0.10.4" {
+		t.Fatalf("InstalledVersion=%q want 0.10.4", got)
+	}
+}
+
+func TestChocoSourceAndArchitectureArgv(t *testing.T) {
+	ctx := context.Background()
+	tool := &config.Tool{Name: "nvim"}
+
+	t.Run("source is structured argv", func(t *testing.T) {
+		fr := &run.FakeRunner{}
+		mc := &config.MethodCandidate{Config: map[string]any{
+			"pkg":    "neovim",
+			"source": "https://packages.example.test/api/v2/",
+		}}
+		if err := lookupWinAdapter("choco").Install(ctx, fr, tool, mc); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"install", "neovim", "--source", "https://packages.example.test/api/v2/", "-y"}
+		if got := fr.Calls[0].Args; fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Fatalf("argv=%v want=%v", got, want)
+		}
+	})
+
+	t.Run("x86 uses forcex86", func(t *testing.T) {
+		fr := &run.FakeRunner{}
+		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "neovim", "architecture": "x86"}}
+		if err := lookupWinAdapter("choco").Install(ctx, fr, tool, mc); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"install", "neovim", "--forcex86", "-y"}
+		if got := fr.Calls[0].Args; fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Fatalf("argv=%v want=%v", got, want)
+		}
+	})
+
+	t.Run("x64 uses native architecture without unsafe override", func(t *testing.T) {
+		fr := &run.FakeRunner{}
+		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "neovim", "architecture": "x64"}}
+		if err := lookupWinAdapter("choco").Install(ctx, fr, tool, mc); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"install", "neovim", "-y"}
+		if got := fr.Calls[0].Args; fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Fatalf("argv=%v want=%v", got, want)
+		}
+	})
+}
+
+func TestScoopTypedIdentityAndDesiredState(t *testing.T) {
+	a := lookupWinAdapter("scoop")
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"pkg": "git", "version": "2.53.0.2", "bucket": "main", "scope": "global", "architecture": "64bit",
+	}}
+	tool := &config.Tool{Name: "git"}
+
+	install := &run.FakeRunner{}
+	if err := a.Install(context.Background(), install, tool, mc); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if len(install.Calls) != 1 || install.Calls[0].Name != "scoop" {
+		t.Fatalf("install calls = %#v", install.Calls)
+	}
+	wantInstall := []string{"install", "main/git@2.53.0.2", "--global", "--arch", "64bit"}
+	if !slices.Equal(install.Calls[0].Args, wantInstall) {
+		t.Fatalf("install args = %v, want %v", install.Calls[0].Args, wantInstall)
+	}
+
+	check := &run.FakeRunner{Stdout: "git 2.53.0.2 main 2026-03-26 11:58:42\n"}
+	if !a.Check(context.Background(), check, tool, mc) {
+		t.Fatal("Check should accept matching version/source")
+	}
+	if !slices.Equal(check.Calls[0].Args, []string{"list", "git", "--global"}) {
+		t.Fatalf("check args = %v", check.Calls[0].Args)
+	}
+
+	drift := &run.FakeRunner{Stdout: "git 2.52.0 main 2026-03-26 11:58:42\n"}
+	if a.Check(context.Background(), drift, tool, mc) {
+		t.Fatal("Check should reject version drift")
+	}
+
+	sourceDrift := &run.FakeRunner{Stdout: "git 2.53.0.2 extras 2026-03-26 11:58:42\n"}
+	if a.Check(context.Background(), sourceDrift, tool, mc) {
+		t.Fatal("Check should reject bucket drift")
+	}
+
+	remove := &run.FakeRunner{}
+	if err := a.Remove(context.Background(), remove, tool, mc); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if !slices.Equal(remove.Calls[0].Args, []string{"uninstall", "git", "--global"}) {
+		t.Fatalf("remove args = %v", remove.Calls[0].Args)
+	}
+}
+
+func TestScoopInstalledVersion(t *testing.T) {
+	a := lookupWinAdapter("scoop")
+	v, err := a.InstalledVersion(context.Background(), &run.FakeRunner{Stdout: "fd 10.2.0 main 2026-01-01 10:00:00\n"}, &config.Tool{Name: "fd"}, &config.MethodCandidate{Config: map[string]any{"pkg": "fd"}})
+	if err != nil {
+		t.Fatalf("InstalledVersion: %v", err)
+	}
+	if v != "10.2.0" {
+		t.Fatalf("InstalledVersion = %q, want 10.2.0", v)
 	}
 }

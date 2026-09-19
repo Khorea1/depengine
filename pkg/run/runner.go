@@ -200,13 +200,28 @@ func LookPath(ctx context.Context, rn Runner, name string) bool {
 // (e.g. asdf plugin-add, best-effort version probes), handle Result inline.
 func CheckResult(res Result, prefix string) error {
 	if res.Err != nil {
-		return fmt.Errorf("%s: failed: %w", prefix, res.Err)
+		return &redactedWrappedError{
+			message: fmt.Sprintf("%s: failed: %s", prefix, RedactSensitiveText(res.Err.Error())),
+			cause:   res.Err,
+		}
 	}
 	if res.ExitCode != 0 {
-		return fmt.Errorf("%s: exited %d: %s", prefix, res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+		stderr := RedactSensitiveText(strings.TrimSpace(string(res.Stderr)))
+		return fmt.Errorf("%s: exited %d: %s", prefix, res.ExitCode, stderr)
 	}
 	return nil
 }
+
+// redactedWrappedError preserves errors.Is/errors.As semantics while ensuring
+// the displayed error text cannot re-expose credentials from the wrapped
+// process error.
+type redactedWrappedError struct {
+	message string
+	cause   error
+}
+
+func (e *redactedWrappedError) Error() string { return e.message }
+func (e *redactedWrappedError) Unwrap() error { return e.cause }
 
 var _ DirectoryRunner = OSExecRunner{}
 var _ PathLookupRunner = OSExecRunner{}

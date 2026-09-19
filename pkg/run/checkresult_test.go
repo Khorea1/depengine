@@ -76,3 +76,27 @@ func TestCheckResultErrPrecedenceOverExitCode(t *testing.T) {
 		t.Fatalf("error = %q, should not mention exit code when Err is set", err.Error())
 	}
 }
+
+func TestCheckResultRedactsSensitiveStderr(t *testing.T) {
+	res := Result{ExitCode: 1, Stderr: []byte("request failed: https://alice:secret@example.com/api --token abc Authorization: Bearer hidden")}
+	err := CheckResult(res, "fetch")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	for _, secret := range []string{"secret", "abc", "hidden"} {
+		if strings.Contains(err.Error(), secret) {
+			t.Fatalf("error leaked %q: %q", secret, err.Error())
+		}
+	}
+}
+
+func TestCheckResultRedactsSpawnErrorAndPreservesCause(t *testing.T) {
+	spawnErr := errors.New("exec https://alice:secret@example.com: permission denied")
+	err := CheckResult(Result{Err: spawnErr}, "run")
+	if strings.Contains(err.Error(), "secret") {
+		t.Fatalf("error leaked credential: %q", err.Error())
+	}
+	if !errors.Is(err, spawnErr) {
+		t.Fatalf("expected wrapped cause to remain discoverable")
+	}
+}

@@ -3,6 +3,7 @@ package exec
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/Khorea1/depengine/pkg/config"
@@ -221,8 +222,26 @@ func (a *NativeByManagerAdapter) Check(ctx context.Context, rn run.Runner, tool 
 	}
 	// Use the actual manager binary name (e.g. "dnf5" instead of "dnf").
 	cmd = replaceManagerBinary(cmd, a.managerName, clan)
+	if a.managerName == "winget" {
+		if source, _ := mc.Config["source"].(string); source != "" {
+			cmd = append(cmd, "--source", source)
+		}
+	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	return res.Err == nil && res.ExitCode == 0
+	if res.Err != nil || res.ExitCode != 0 {
+		return false
+	}
+	if a.managerName != "winget" {
+		return true
+	}
+	version, _, ok := wingetPackageFromOutput(res.Stdout, pkg)
+	if !ok {
+		return false
+	}
+	if want, _ := mc.Config["version"].(string); want != "" && version != want {
+		return false
+	}
+	return true
 }
 
 // CheckAvailable mirrors NativeAdapter.CheckAvailable but resolves the
@@ -243,6 +262,9 @@ func (a *NativeByManagerAdapter) CheckAvailable(ctx context.Context, rn run.Runn
 		return true
 	}
 	cmd = replaceManagerBinary(cmd, a.managerName, clan)
+	if a.managerName == "winget" {
+		cmd = append(cmd, wingetSelectionArgs(mc, true)...)
+	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return res.Err == nil && res.ExitCode == 0
 }
@@ -262,6 +284,9 @@ func (a *NativeByManagerAdapter) Install(ctx context.Context, rn run.Runner, too
 	}
 	// Use the actual manager binary name (e.g. "dnf5" instead of "dnf").
 	cmd = replaceManagerBinary(cmd, a.managerName, clan)
+	if a.managerName == "winget" {
+		cmd = append(cmd, wingetSelectionArgs(mc, true)...)
+	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return run.CheckResult(res, "native("+a.managerName+"): install")
 }
@@ -271,8 +296,86 @@ func (a *NativeByManagerAdapter) Remove(ctx context.Context, rn run.Runner, tool
 	if clan == "" {
 		return fmt.Errorf("native(%s): no clan found for manager", a.managerName)
 	}
-	nativeAdapter := NewNativeAdapter(clan)
-	return nativeAdapter.Remove(ctx, rn, tool, mc)
+	if a.managerName != "winget" {
+		nativeAdapter := NewNativeAdapter(clan)
+		return nativeAdapter.Remove(ctx, rn, tool, mc)
+	}
+	pkg := pkgFromConfig(mc, clan)
+	if pkg == "" && tool != nil {
+		pkg = tool.Name
+	}
+	cmd := native.BuildRemoveCmd(clan, pkg)
+	if cmd == nil {
+		return fmt.Errorf("native(winget): no remove command")
+	}
+	for _, item := range []struct{ field, flag string }{{"version", "--version"}, {"source", "--source"}, {"scope", "--scope"}} {
+		if value, _ := mc.Config[item.field].(string); value != "" {
+			cmd = append(cmd, item.flag, value)
+		}
+	}
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	return run.CheckResult(res, "native(winget): remove")
+}
+
+func (a *NativeByManagerAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (string, error) {
+	if a.managerName != "winget" {
+		return "", nil
+	}
+	clan := findClanByManager(a.managerName)
+	pkg := pkgFromConfig(mc, clan)
+	if pkg == "" && tool != nil {
+		pkg = tool.Name
+	}
+	cmd := native.BuildCheckCmd(clan, pkg)
+	if source, _ := mc.Config["source"].(string); source != "" {
+		cmd = append(cmd, "--source", source)
+	}
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	if err := run.CheckResult(res, "winget: version check"); err != nil {
+		return "", err
+	}
+	version, _, ok := wingetPackageFromOutput(res.Stdout, pkg)
+	if !ok {
+		return "", fmt.Errorf("winget: package %q not present in list output", pkg)
+	}
+	return version, nil
+}
+
+func wingetSelectionArgs(mc *config.MethodCandidate, includeInstaller bool) []string {
+	if mc == nil {
+		return nil
+	}
+	var args []string
+	for _, item := range []struct{ field, flag string }{
+		{"version", "--version"}, {"source", "--source"}, {"scope", "--scope"}, {"architecture", "--architecture"},
+	} {
+		if value, _ := mc.Config[item.field].(string); value != "" {
+			args = append(args, item.flag, value)
+		}
+	}
+	if includeInstaller {
+		if value, _ := mc.Config["installer_type"].(string); value != "" {
+			args = append(args, "--installer-type", value)
+		}
+	}
+	return args
+}
+
+func wingetPackageFromOutput(stdout []byte, pkg string) (version, source string, ok bool) {
+	for _, line := range strings.Split(string(stdout), "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		for i, field := range fields {
+			if field != pkg || i+1 >= len(fields) {
+				continue
+			}
+			version = fields[i+1]
+			if len(fields) > i+3 {
+				source = fields[len(fields)-1]
+			}
+			return version, source, version != ""
+		}
+	}
+	return "", "", false
 }
 
 func (a *NativeByManagerAdapter) CanRemove() bool { return true }
@@ -303,6 +406,7 @@ var _ Remover = (*NativeAdapter)(nil)
 var _ Remover = (*NativeByManagerAdapter)(nil)
 var _ AvailabilityChecker = (*NativeAdapter)(nil)
 var _ AvailabilityChecker = (*NativeByManagerAdapter)(nil)
+var _ Versioner = (*NativeByManagerAdapter)(nil)
 
 // replaceManagerBinary replaces the binary name in a native manager command
 // with the actual binary name (e.g. "dnf5" instead of "dnf"). This handles

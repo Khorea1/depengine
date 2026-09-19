@@ -9,6 +9,7 @@ import (
 
 	"github.com/Khorea1/depengine/pkg/artifact"
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/containerref"
 	"github.com/Khorea1/depengine/pkg/graph"
 	"github.com/Khorea1/depengine/pkg/methodkind"
 )
@@ -93,6 +94,7 @@ func validateMalformedURLs(s *config.Schema) *Result {
 
 	for toolName, tool := range s.Tools {
 		for i, mc := range tool.Methods {
+			validateSourceLikeURLs(toolName, i, mc, r)
 			contract, ok := methodkind.Lookup(mc.Kind)
 			if ok && contract.Artifact != nil {
 				validateArtifactContract(toolName, i, mc, contract.Artifact, r)
@@ -109,11 +111,28 @@ func validateMalformedURLs(s *config.Schema) *Result {
 			parsed, err := url.Parse(checkURL)
 			if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 				r.Add(ValidationError{Code: ErrMalformedURL, Field: fieldPath(toolName, i, "url"), Message: fmt.Sprintf("malformed URL %q", urlStr)})
+				continue
+			}
+			if (strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https")) && parsed.User != nil {
+				r.Add(ValidationError{Code: ErrMalformedURL, Field: fieldPath(toolName, i, "url"), Message: "git: embedded URL credentials are not allowed; use an external credential helper"})
 			}
 		}
 	}
 
 	return r
+}
+
+func validateSourceLikeURLs(toolName string, methodIdx int, mc *config.MethodCandidate, r *Result) {
+	for _, field := range []string{"source", "registry", "remote", "index", "index_url"} {
+		raw, _ := mc.Config[field].(string)
+		if raw == "" || !strings.Contains(raw, "://") {
+			continue
+		}
+		checkURL := config.PlaceholderRe.ReplaceAllString(raw, "_")
+		if err := artifact.ValidateURL(checkURL, []string{"http", "https"}); err != nil {
+			r.Add(ValidationError{Code: ErrMalformedURL, Field: fieldPath(toolName, methodIdx, field), Message: fmt.Sprintf("%s: %v", mc.Kind, err)})
+		}
+	}
 }
 
 func validateArtifactContract(toolName string, methodIdx int, mc *config.MethodCandidate, contract *artifact.Contract, r *Result) {
@@ -128,22 +147,33 @@ func validateArtifactContract(toolName string, methodIdx int, mc *config.MethodC
 		}
 	}
 
+	// signing_key is either an opaque fingerprint or a URL. When it is a URL,
+	// validate it with the same credential-safe URL contract while retaining
+	// file:// support for local public-key files.
+	if signingKey, _ := mc.Config["signing_key"].(string); strings.Contains(signingKey, "://") {
+		checkURL := config.PlaceholderRe.ReplaceAllString(signingKey, "_")
+		if err := artifact.ValidateURL(checkURL, []string{"http", "https", "file"}); err != nil {
+			r.Add(ValidationError{Code: ErrMalformedURL, Field: fieldPath(toolName, methodIdx, "signing_key"), Message: fmt.Sprintf("%s: %v", mc.Kind, err)})
+		}
+	}
+
 	for _, field := range contract.ArtifactFields {
 		raw, _ := mc.Config[field].(string)
 		if raw == "" {
 			continue
 		}
-		if ext := artifact.Extension(raw, contract.ForbiddenExtensions); ext != "" {
-			message := fmt.Sprintf("%s method does not support platform installer artifact %s", mc.Kind, ext)
-			if ext == ".msi" {
-				message += "; use the msi method"
-			} else {
-				message += "; no dedicated installer method is available for this format"
+		if err := contract.ValidateArtifact(raw); err != nil {
+			message := fmt.Sprintf("%s: %v", mc.Kind, err)
+			var forbidden *artifact.ForbiddenExtensionError
+			if errors.As(err, &forbidden) {
+				message = fmt.Sprintf("%s method does not support platform installer artifact %s", mc.Kind, forbidden.Extension)
+				if forbidden.Extension == ".msi" {
+					message += "; use the msi method"
+				} else {
+					message += "; no dedicated installer method is available for this format"
+				}
 			}
 			r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, methodIdx, field), Message: message})
-		}
-		if len(contract.RequiredExtensions) > 0 && artifact.Extension(raw, contract.RequiredExtensions) == "" {
-			r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, methodIdx, field), Message: fmt.Sprintf("%s method requires an artifact ending in %s", mc.Kind, strings.Join(contract.RequiredExtensions, " or "))})
 		}
 	}
 }
@@ -209,5 +239,44 @@ func validateSignatureSecurity(s *config.Schema) *Result {
 		}
 	}
 
+	return r
+}
+
+// validateContainerReferences rejects container identities that cannot be
+// represented by the container adapter's canonical source + tag/digest model.
+func validateContainerReferences(s *config.Schema) *Result {
+	r := &Result{}
+	for toolName, tool := range s.Tools {
+		for i, mc := range tool.Methods {
+			if mc.Kind != "container" {
+				continue
+			}
+			if source, _ := mc.Config["source"].(string); source != "" {
+				if err := containerref.ValidateRepository(source); err != nil {
+					r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, "source"), Message: err.Error()})
+				}
+			}
+			tag, _ := mc.Config["tag"].(string)
+			digest, _ := mc.Config["digest"].(string)
+			if tag != "" {
+				if err := containerref.ValidateTag(tag); err != nil {
+					r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, "tag"), Message: err.Error()})
+				}
+			}
+			if digest != "" {
+				if err := containerref.ValidateDigest(digest); err != nil {
+					r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, "digest"), Message: err.Error()})
+				}
+			}
+			if tag != "" && digest != "" {
+				r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, "digest"), Message: "container tag and digest are mutually exclusive"})
+			}
+			if platform, _ := mc.Config["platform"].(string); platform != "" {
+				if _, err := containerref.NormalizePlatform(platform); err != nil {
+					r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, "platform"), Message: err.Error()})
+				}
+			}
+		}
+	}
 	return r
 }

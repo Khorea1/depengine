@@ -198,6 +198,7 @@ POR_EOF
 TARGET_ARCH=""
 DISTRO_ID=""
 DISTRO_NAME=""
+DISTRO_VERSION=""
 DISTRO_ID_LIKE=""
 TARGET_FAMILY="unknown"
 DETECTION_METHOD=""
@@ -265,6 +266,7 @@ if [ "$DETECTED" -eq 0 ]; then
         if [ "$_proot_guest" -eq 0 ]; then
             DISTRO_ID="termux"
             DISTRO_NAME="Termux"
+            DISTRO_VERSION="${TERMUX_VERSION:-}"
             TARGET_FAMILY="unix"
             DETECTION_METHOD="termux"
             IS_ANDROID=1
@@ -300,6 +302,7 @@ if [ "$DETECTED" -eq 0 ]; then
             _andver=$(run_cmd_safe 2 getprop ro.build.version.release)
             if [ -n "$_andver" ]; then
                 DISTRO_NAME="Android $_andver"
+                DISTRO_VERSION="$_andver"
             else
                 DISTRO_NAME="Android"
             fi
@@ -337,6 +340,7 @@ if [ "$DETECTED" -eq 0 ]; then
                 DISTRO_NAME="$DISTRO_ID"
             fi
             DISTRO_ID_LIKE="$ENV_ID_LIKE"
+            DISTRO_VERSION="$ENV_VERSION_ID"
             TARGET_FAMILY="unix"
             DETECTION_METHOD="os-release"
             CONFIDENCE="high"
@@ -357,6 +361,7 @@ if [ "$DETECTED" -eq 0 ]; then
         _pver=$(run_cmd_safe 2 sw_vers -productVersion)
         if [ -n "$_pname" ] && [ -n "$_pver" ]; then
             DISTRO_NAME="$_pname $_pver"
+            DISTRO_VERSION="$_pver"
         elif [ -n "$_pname" ]; then
             DISTRO_NAME="$_pname"
         else
@@ -378,6 +383,7 @@ if [ "$DETECTED" -eq 0 ]; then
             DISTRO_ID=$(printf '%s' "$_kernel" | tr '[:upper:]' '[:lower:]')
             if [ -n "$_kver" ]; then
                 DISTRO_NAME="$_kernel $_kver"
+                DISTRO_VERSION="$_kver"
             else
                 DISTRO_NAME="$_kernel"
             fi
@@ -396,6 +402,7 @@ if [ "$DETECTED" -eq 0 ] && [ -n "$_kernel" ]; then
         *MINGW*|*CYGWIN*|*MSYS*)
             DISTRO_ID="windows"
             DISTRO_NAME="Windows (via $_kernel)"
+            DISTRO_VERSION=$(run_fast_cmd uname -r)
             TARGET_FAMILY="windows"
             DETECTION_METHOD="windows-posix-layer"
             CONFIDENCE="high"
@@ -529,6 +536,7 @@ case "$OUT_FORMAT" in
         printf '  "target_arch": "%s",\n'      "$(jsonescape "$TARGET_ARCH")"
         printf '  "distro_id": "%s",\n'        "$(jsonescape "$DISTRO_ID")"
         printf '  "distro_name": "%s",\n'      "$(jsonescape "$DISTRO_NAME")"
+        printf '  "distro_version": "%s",\n'   "$(jsonescape "$DISTRO_VERSION")"
         printf '  "distro_id_like": "%s",\n'   "$(jsonescape "$DISTRO_ID_LIKE")"
         printf '  "target_family": "%s",\n'    "$(jsonescape "$TARGET_FAMILY")"
         printf '  "detection_method": "%s",\n' "$(jsonescape "$DETECTION_METHOD")"
@@ -546,6 +554,7 @@ case "$OUT_FORMAT" in
         printf 'TARGET_ARCH=%s\n'       "$(shquote "$TARGET_ARCH")"
         printf 'DISTRO_ID=%s\n'         "$(shquote "$DISTRO_ID")"
         printf 'DISTRO_NAME=%s\n'       "$(shquote "$DISTRO_NAME")"
+        printf 'DISTRO_VERSION=%s\n'    "$(shquote "$DISTRO_VERSION")"
         printf 'DISTRO_ID_LIKE=%s\n'    "$(shquote "$DISTRO_ID_LIKE")"
         printf 'TARGET_FAMILY=%s\n'     "$(shquote "$TARGET_FAMILY")"
         printf 'DETECTION_METHOD=%s\n'  "$(shquote "$DETECTION_METHOD")"

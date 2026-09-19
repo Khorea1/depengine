@@ -137,3 +137,39 @@ func TestBlockedRunnerRejectsExecution(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatArgsForLogRedactsCredentials(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "token separate", args: []string{"--token", "supersecret", "repo"}, want: "--token *** repo"},
+		{name: "password equals", args: []string{"--password=hunter2"}, want: "--password=***"},
+		{name: "authorization header", args: []string{"-H", "Authorization: Bearer abc123"}, want: "-H Authorization: ***"},
+		{name: "credential URL", args: []string{"https://user:pass@example.com/file"}, want: "https://%2A%2A%2A@example.com/file"},
+		{name: "ordinary args", args: []string{"install", "pkg"}, want: "install pkg"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := formatArgsForLog(tc.args); got != tc.want {
+				t.Fatalf("formatArgsForLog(%q) = %q, want %q", tc.args, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRedactSensitiveText(t *testing.T) {
+	input := "fetch https://alice:s3cr3t@example.com/x --token abc123\nAuthorization: Bearer topsecret\nCookie: session=xyz"
+	got := RedactSensitiveText(input)
+	for _, secret := range []string{"s3cr3t", "abc123", "topsecret", "session=xyz"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("redacted text still contains %q: %q", secret, got)
+		}
+	}
+	for _, marker := range []string{"https://***@example.com/x", "--token=***", "Authorization: ***", "Cookie: ***"} {
+		if !strings.Contains(got, marker) {
+			t.Fatalf("redacted text missing %q: %q", marker, got)
+		}
+	}
+}

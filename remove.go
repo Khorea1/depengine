@@ -55,14 +55,27 @@ func runRemove(removeArgs []string, removeAll, removeDryRun *bool, removeSchema,
 		os.Exit(2)
 	}
 
-	ls, err := state.LoadLocked()
+	var (
+		st  *state.State
+		ls  *state.LockedState
+		err error
+	)
+	if *removeDryRun {
+		// Dry-run must not create a state lock file or rewrite state merely to
+		// render a removal plan. State writes are atomic, so an unlocked read
+		// safely observes either the previous or next complete state file.
+		st, err = state.Load()
+	} else {
+		ls, err = state.LoadLocked()
+		if err == nil {
+			defer ls.Close()
+			st = ls.State()
+		}
+	}
 	if err != nil {
-		log.Default.Error("state lock", "error", err)
+		log.Default.Error("load state", "error", err)
 		os.Exit(3)
 	}
-	defer ls.Close()
-
-	st := ls.State()
 
 	// Optionally load schema for validation.
 	var schemaTools map[string]*config.Tool
@@ -176,18 +189,24 @@ func runRemove(removeArgs []string, removeAll, removeDryRun *bool, removeSchema,
 		}
 	} else {
 		log.Default.Error("usage: depengine remove [--all | --only=<tool> | <tool>...] [--schema=<path>]")
-		ls.Close()
+		if ls != nil {
+			_ = ls.Close()
+		}
 		os.Exit(1)
 	}
 
-	if err := ls.Save(); err != nil {
-		log.Default.Error("failed to update state", "error", err)
-		ls.Close()
-		os.Exit(3)
+	if !*removeDryRun {
+		if err := ls.Save(); err != nil {
+			log.Default.Error("failed to update state", "error", err)
+			_ = ls.Close()
+			os.Exit(3)
+		}
 	}
 
 	if hadFailure {
-		ls.Close()
+		if ls != nil {
+			_ = ls.Close()
+		}
 		os.Exit(1)
 	}
 }

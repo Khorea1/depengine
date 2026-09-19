@@ -194,7 +194,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 			if !ex.allowArbitraryCode {
 				hasDanger := ex.hasArbitraryCode(tool)
 				if hasDanger {
-					ex.outputf("  ⚠  %s: has hooks or build scripts that may execute arbitrary code. Use --allow-arbitrary-code to suppress this warning.\n", toolName)
+					ex.outputf("  ⚠  %s: has hooks or build scripts that may execute arbitrary code. Use --allow-arbitrary-code to permit execution.\n", toolName)
 					ex.logWarn(ctx, "security", "tool", toolName, "warning", "has dangerous hooks")
 					ex.recordBlockedTool(ctx, toolName, report)
 					continue
@@ -382,7 +382,7 @@ func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResu
 	if !ex.allowArbitraryCode {
 		if ex.hasArbitraryCode(tool) {
 			detail := "config includes commands that may execute arbitrary code"
-			ex.outputf("  ⚠  %s: %s. Use --allow-arbitrary-code to suppress this warning.\n", tool.Name, detail)
+			ex.outputf("  ⚠  %s: %s. Use --allow-arbitrary-code to permit execution.\n", tool.Name, detail)
 			ex.logWarn(ctx, "security", "tool", tool.Name, "warning", detail)
 			// Defensive duplicate of the PHASE 1 gate in Execute: this path is
 			// unreachable from Execute (Phase 1 pre-filters every dangerous
@@ -433,6 +433,14 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		}
 
 		attempt := MethodAttempt{Kind: displayKind}
+
+		if mismatch := methodCapabilityMismatch(method); mismatch != "" {
+			attempt.Status = "skip_capability"
+			attempt.Error = mismatch
+			result.Methods = append(result.Methods, attempt)
+			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_capability", "reason", mismatch)
+			continue
+		}
 
 		if method.When != nil && !method.When.Match(ex.facts) {
 			attempt.Status = "skip_when"

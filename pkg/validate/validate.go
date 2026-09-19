@@ -235,6 +235,7 @@ func ValidateSchema(s *config.Schema, knownKinds []string) *Result {
 	r.Merge(validateCycles(s))
 	r.Merge(validateDanglingReferences(s))
 	r.Merge(validateMalformedURLs(s))
+	r.Merge(validateContainerReferences(s))
 	r.Merge(validateUnknownDistroFamily(s))
 	r.Merge(validateMethodOrderConflicts(s))
 	r.Merge(validateSignatureSecurity(s))

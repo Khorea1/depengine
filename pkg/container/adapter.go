@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/containerref"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/run"
 )
@@ -37,42 +38,73 @@ func (a *ContainerAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	return run.LookPath(ctx, rn, "docker") || run.LookPath(ctx, rn, "podman")
 }
 
-// containerRef extracts manager/source/tag from mc.Config. ok is false when
-// manager or source is missing — the two fields this method cannot function
-// without. tag defaults to "latest", matching every other tag-based
-// container tool (docker, podman, skopeo, ...).
-func containerRef(mc *config.MethodCandidate) (manager, source, tag string, ok bool) {
-	manager, _ = mc.Config["manager"].(string)
-	source, _ = mc.Config["source"].(string)
-	tag, _ = mc.Config["tag"].(string)
-	if tag == "" {
-		tag = "latest"
+// containerRef resolves the configured container identity into one canonical
+// reference. tag defaults to latest; digest selects immutable identity and is
+// mutually exclusive with tag.
+func containerRef(mc *config.MethodCandidate) (manager, reference, platform string, err error) {
+	if mc == nil {
+		return "", "", "", fmt.Errorf("container: missing method configuration")
 	}
-	return manager, source, tag, manager != "" && source != ""
+	manager, _ = mc.Config["manager"].(string)
+	source, _ := mc.Config["source"].(string)
+	tag, _ := mc.Config["tag"].(string)
+	digest, _ := mc.Config["digest"].(string)
+	if manager == "" || source == "" {
+		return "", "", "", fmt.Errorf("container: requires both manager and source fields")
+	}
+	ref, err := containerref.Reference(source, tag, digest)
+	if err != nil {
+		return "", "", "", fmt.Errorf("container: %w", err)
+	}
+	platform, err = containerref.NormalizePlatform(stringConfig(mc, "platform"))
+	if err != nil {
+		return "", "", "", fmt.Errorf("container: %w", err)
+	}
+	return manager, ref, platform, nil
 }
 
-// Check reports whether the image is already present in the local image
-// store. `<manager> images -q <source>:<tag>` always exits 0 — even when no
-// image matches — so presence is decided by non-empty stdout, not exit code.
+// Check reports whether the requested image identity is present locally.
+// Mutable tag references use `images -q`, whose exit code alone is not useful
+// because Docker/Podman return success even when no image matches. Immutable
+// digest references instead use `image inspect source@digest`: success proves
+// that exact content identity exists rather than merely some image under the
+// same repository/tag.
 func (a *ContainerAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) bool {
-	manager, source, tag, ok := containerRef(mc)
-	if !ok {
+	manager, reference, platform, err := containerRef(mc)
+	if err != nil {
 		return false
 	}
-	res := rn.Run(ctx, manager, "images", "-q", source+":"+tag)
+	if platform != "" {
+		res := rn.Run(ctx, manager, "image", "inspect", "--format", "{{.Os}}/{{.Architecture}}{{if .Variant}}/{{.Variant}}{{end}}", reference)
+		if res.Err != nil || res.ExitCode != 0 {
+			return false
+		}
+		observed, normalizeErr := containerref.NormalizePlatform(strings.TrimSpace(string(res.Stdout)))
+		return normalizeErr == nil && observed == platform
+	}
+	if digest, _ := mc.Config["digest"].(string); strings.TrimSpace(digest) != "" {
+		res := rn.Run(ctx, manager, "image", "inspect", reference)
+		return res.Err == nil && res.ExitCode == 0
+	}
+	res := rn.Run(ctx, manager, "images", "-q", reference)
 	if res.Err != nil || res.ExitCode != 0 {
 		return false
 	}
 	return strings.TrimSpace(string(res.Stdout)) != ""
 }
 
-// Install pulls the image via `<manager> pull <source>:<tag>`.
+// Install pulls the image via `<manager> pull <reference>`.
 func (a *ContainerAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
-	manager, source, tag, ok := containerRef(mc)
-	if !ok {
-		return fmt.Errorf("container: tool %q requires both manager and source fields", tool.Name)
+	manager, reference, platform, err := containerRef(mc)
+	if err != nil {
+		return fmt.Errorf("container: tool %q: %w", tool.Name, err)
 	}
-	res := rn.Run(ctx, manager, "pull", source+":"+tag)
+	args := []string{"pull"}
+	if platform != "" {
+		args = append(args, "--platform", platform)
+	}
+	args = append(args, reference)
+	res := rn.Run(ctx, manager, args...)
 	return run.CheckResult(res, "container: pull")
 }
 
@@ -80,14 +112,19 @@ func (a *ContainerAdapter) Install(ctx context.Context, rn run.Runner, tool *con
 // on both docker and podman.
 func (a *ContainerAdapter) CanRemove() bool { return true }
 
-// Remove deletes the local image via `<manager> rmi <source>:<tag>`.
+// Remove deletes the local image via `<manager> rmi <reference>`.
 func (a *ContainerAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
-	manager, source, tag, ok := containerRef(mc)
-	if !ok {
-		return fmt.Errorf("container: tool %q requires both manager and source fields", tool.Name)
+	manager, reference, _, err := containerRef(mc)
+	if err != nil {
+		return fmt.Errorf("container: tool %q: %w", tool.Name, err)
 	}
-	res := rn.Run(ctx, manager, "rmi", source+":"+tag)
+	res := rn.Run(ctx, manager, "rmi", reference)
 	return run.CheckResult(res, "container: rmi")
+}
+
+func stringConfig(mc *config.MethodCandidate, key string) string {
+	value, _ := mc.Config[key].(string)
+	return value
 }
 
 // Compile-time interface checks.

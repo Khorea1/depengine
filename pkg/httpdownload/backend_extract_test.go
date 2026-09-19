@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"slices"
@@ -178,6 +179,28 @@ func TestExtractCopyBinary(t *testing.T) {
 	data, _ := os.ReadFile(dest)
 	if string(data) != "binary-content" {
 		t.Fatalf("unexpected content: %s", data)
+	}
+}
+
+func TestExtractBzip2Binary(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "tool.bz2")
+	compressed, err := base64.StdEncoding.DecodeString("QlpoOTFBWSZTWQDaM14AAAERgAACOiGUICAAMQDTTQQAYi5VGAEkMvF3JFOFCQANozXg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, compressed, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dest := t.TempDir()
+	if err := extract(context.Background(), src, dest, ".bz2", "tool", nil, false, "tool"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dest, "tool"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "binary-content" {
+		t.Fatalf("decompressed content = %q", got)
 	}
 }
 

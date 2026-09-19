@@ -76,7 +76,7 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    A[For each tool\nin topological order] --> B[For each method\nin method_order]
+    A[For each tool\nin topological order] --> B[For each method\nby method preference]
     B --> C{when matches?}
     C -->|no| B
     C -->|yes| D{Adapter\navailable?}

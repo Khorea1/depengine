@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/config"
@@ -197,5 +198,17 @@ func TestAndroidAdapterInstallTermuxOpenFailure(t *testing.T) {
 func TestAndroidAdapterIsNotARemover(t *testing.T) {
 	if _, ok := any(NewAndroidAdapter()).(interface{ CanRemove() bool }); ok {
 		t.Fatal("android adapter should not implement Remover — see the doc comment on why removal stays manual")
+	}
+}
+
+func TestAndroidInstallRejectsNonAPKBeforeDownload(t *testing.T) {
+	fr := &run.FakeRunner{}
+	mc := &config.MethodCandidate{Config: map[string]any{"url": "https://example.com/tool.zip"}}
+	err := NewAndroidAdapter().Install(context.Background(), fr, androidTool("tool"), mc)
+	if err == nil || !strings.Contains(err.Error(), ".apk") {
+		t.Fatalf("Install() error = %v, want .apk requirement", err)
+	}
+	if len(fr.Calls) != 0 {
+		t.Fatalf("invalid artifact triggered subprocesses: %#v", fr.Calls)
 	}
 }

@@ -90,6 +90,10 @@ func (a *AndroidAdapter) Check(ctx context.Context, rn run.Runner, tool *config.
 // Install downloads the .apk under the stable "<tool>.apk" name via
 // HTTPAdapter, then dispatches it to Android's package installer.
 func (a *AndroidAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+	if err := requireMethodArtifact("android", mc); err != nil {
+		return err
+	}
+
 	dir, name := apkTarget(tool)
 	if name == "" {
 		return fmt.Errorf("android: tool has no name to derive the .apk filename from")

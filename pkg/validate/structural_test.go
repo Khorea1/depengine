@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1323,6 +1324,63 @@ func TestValidateRequiredFields_RejectsArtifactPlacementFieldsOverriddenByAdapte
 			}
 			if !found {
 				t.Fatalf("missing invalid-value error for %s: %+v", wantField, r.Errors)
+			}
+		})
+	}
+}
+
+func TestValidateRequiredFields_CargoGitRefsRequireGit(t *testing.T) {
+	for _, field := range []string{"branch", "tag", "rev"} {
+		t.Run(field, func(t *testing.T) {
+			s := &cfg.Schema{Tools: map[string]*cfg.Tool{
+				"crate": tool("crate", []*cfg.MethodCandidate{
+					mc("cargo", nil, map[string]any{"pkg": "crate", field: "value"}),
+				}, nil),
+			}}
+			r := validateRequiredFields(s)
+			if !r.HasErrors() {
+				t.Fatalf("expected %s without git to fail", field)
+			}
+			if !strings.Contains(r.Errors[0].Message, "requires git") {
+				t.Fatalf("unexpected error: %+v", r.Errors)
+			}
+		})
+	}
+}
+
+func TestValidateRequiredFields_CargoGitRefValid(t *testing.T) {
+	s := &cfg.Schema{Tools: map[string]*cfg.Tool{
+		"crate": tool("crate", []*cfg.MethodCandidate{
+			mc("cargo", nil, map[string]any{"git": "https://example.test/repo.git", "rev": "deadbeef"}),
+		}, nil),
+	}}
+	if r := validateRequiredFields(s); r.HasErrors() {
+		t.Fatalf("valid cargo git ref rejected: %+v", r.Errors)
+	}
+}
+
+func TestValidateRequiredFields_GitDepthMustBeNonNegativeInteger(t *testing.T) {
+	for _, depth := range []any{int64(-1), "-1", "shallow"} {
+		t.Run(fmt.Sprint(depth), func(t *testing.T) {
+			s := &cfg.Schema{Tools: map[string]*cfg.Tool{
+				"repo": tool("repo", []*cfg.MethodCandidate{
+					mc("git", nil, map[string]any{"url": "https://example.test/repo.git", "depth": depth}),
+				}, nil),
+			}}
+			if r := validateRequiredFields(s); !r.HasErrors() {
+				t.Fatalf("expected invalid depth %v to fail", depth)
+			}
+		})
+	}
+	for _, depth := range []any{int64(0), int64(1), "0", "5"} {
+		t.Run("valid-"+fmt.Sprint(depth), func(t *testing.T) {
+			s := &cfg.Schema{Tools: map[string]*cfg.Tool{
+				"repo": tool("repo", []*cfg.MethodCandidate{
+					mc("git", nil, map[string]any{"url": "https://example.test/repo.git", "depth": depth}),
+				}, nil),
+			}}
+			if r := validateRequiredFields(s); r.HasErrors() {
+				t.Fatalf("valid depth %v rejected: %+v", depth, r.Errors)
 			}
 		})
 	}

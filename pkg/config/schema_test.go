@@ -78,12 +78,12 @@ fastfetch = { http = { url = "https://x.com/{os}/{arch}/{libc}/fastfetch-{arch}.
 		t.Fatalf("ParseSchema: %v", err)
 	}
 	methods := s.Tools["fastfetch"].Methods
-	if len(methods) != 2 {
-		t.Fatalf("expected 2 methods (native + http), got %d", len(methods))
+	if len(methods) != 1 {
+		t.Fatalf("expected explicit http method only, got %d", len(methods))
 	}
-	mc := methods[1] // native[0] + http[1]
+	mc := methods[0]
 	if mc.Kind != "http" {
-		t.Fatalf("methods[1] expected http, got %q", mc.Kind)
+		t.Fatalf("methods[0] expected http, got %q", mc.Kind)
 	}
 	want := "https://x.com/linux/x86_64/glibc/fastfetch-x86_64.deb"
 	if got := mc.Config["url"]; got != want {
@@ -147,12 +147,12 @@ post_install = "echo installed on {os}/{arch} via {init_system}"
 	if got := tool.PostInstall[0].Run[2]; got != "echo installed on linux/x86_64 via systemd" {
 		t.Fatalf("postinstall not expanded: %q", got)
 	}
-	if len(tool.Methods) != 2 {
-		t.Fatalf("expected 2 methods (native + git), got %d", len(tool.Methods))
+	if len(tool.Methods) != 1 {
+		t.Fatalf("expected explicit git method only, got %d", len(tool.Methods))
 	}
-	git := tool.Methods[1] // native[0] + git[1]
+	git := tool.Methods[0]
 	if git.Kind != "git" {
-		t.Fatalf("methods[1] expected git, got %q", git.Kind)
+		t.Fatalf("methods[0] expected git, got %q", git.Kind)
 	}
 	if git.Config["url"] != "https://github.com/x/linux/x86_64.git" {
 		t.Fatalf("git url not expanded: %v", git.Config["url"])
@@ -171,7 +171,7 @@ tool = { git = { url = "https://example.com/tool.git", build = [{ run = ["go", "
 	if err != nil {
 		t.Fatalf("ParseSchema: %v", err)
 	}
-	build := s.Tools["tool"].Methods[1].Config["build"].([]any)
+	build := s.Tools["tool"].Methods[0].Config["build"].([]any)
 	first := build[0].(map[string]any)["run"].([]any)
 	second := build[1].(map[string]any)["run"].([]any)
 	if first[3] != "tool-x86_64" || second[1] != "tool-x86_64" {
@@ -194,12 +194,12 @@ ff = { http = { url = "https://x.com/{latest}/ff-{arch}.deb" } }
 		t.Fatalf("ParseSchema: %v", err)
 	}
 	methods := s.Tools["ff"].Methods
-	if len(methods) != 2 {
-		t.Fatalf("expected 2 methods (native + http), got %d", len(methods))
+	if len(methods) != 1 {
+		t.Fatalf("expected explicit http method only, got %d", len(methods))
 	}
-	mc := methods[1] // native[0] + http[1]
+	mc := methods[0]
 	if mc.Kind != "http" {
-		t.Fatalf("methods[1] expected http, got %q", mc.Kind)
+		t.Fatalf("methods[0] expected http, got %q", mc.Kind)
 	}
 	want := "https://x.com/{latest}/ff-x86_64.deb"
 	if got := mc.Config["url"]; got != want {
@@ -222,12 +222,12 @@ ff = { http = { url = "https://x.com/{archh}/x" } }
 		t.Fatalf("ParseSchema: %v", err)
 	}
 	methods := s.Tools["ff"].Methods
-	if len(methods) != 2 {
-		t.Fatalf("expected 2 methods (native + http), got %d", len(methods))
+	if len(methods) != 1 {
+		t.Fatalf("expected explicit http method only, got %d", len(methods))
 	}
-	mc := methods[1] // native[0] + http[1]
+	mc := methods[0]
 	if mc.Kind != "http" {
-		t.Fatalf("methods[1] expected http, got %q", mc.Kind)
+		t.Fatalf("methods[0] expected http, got %q", mc.Kind)
 	}
 	if got := mc.Config["url"]; got != "https://x.com/{archh}/x" {
 		t.Fatalf("unknown placeholder was altered: %v", got)
@@ -304,8 +304,8 @@ mytool = { apt = "foo-apt", cargo = "foo-cargo" }
 }
 
 func TestParseSchemaBlockSyntaxNativeKeysNotCollapsed(t *testing.T) {
-	// Block-style CASO 8 with when clause → "apt" not collapsed (explicit method).
-	// A native method is auto-injected before it as fallback.
+	// Block-style declaration is explicit: "apt" stays a distinct method and
+	// does not receive an implicit native fallback.
 	p := writeSchema(t, `
 [defaults]
 manager = "native"
@@ -320,16 +320,10 @@ manager = "native"
 		t.Fatalf("ParseSchema: %v", err)
 	}
 	methods := s.Tools["foo"].Methods
-	if len(methods) != 2 {
-		t.Fatalf("expected 2 methods (native + apt), got %d", len(methods))
+	if len(methods) != 1 {
+		t.Fatalf("expected explicit apt method only, got %d", len(methods))
 	}
-	if methods[0].Kind != "native" {
-		t.Fatalf("methods[0] expected native (injected), got %q", methods[0].Kind)
-	}
-	if methods[0].Config["pkg"] != "foo" {
-		t.Fatalf("injected native pkg should be tool name, got %v", methods[0].Config["pkg"])
-	}
-	mc := methods[1]
+	mc := methods[0]
 	if mc.Kind != "apt" {
 		t.Fatalf("block-style should keep kind=%q, got %q", "apt", mc.Kind)
 	}
@@ -365,23 +359,17 @@ simple = ["zsh", "bat"]
 		t.Fatalf("zsh should be IsSimple")
 	}
 	foo := s.Tools["foo"]
-	if len(foo.Methods) != 2 {
-		t.Fatalf("expected 2 methods (native + aur), got %d", len(foo.Methods))
+	if len(foo.Methods) != 1 {
+		t.Fatalf("expected explicit aur method only, got %d", len(foo.Methods))
 	}
-	if foo.Methods[0].Kind != "native" {
-		t.Fatalf("foo method[0] = %v, want native (injected)", foo.Methods[0].Kind)
+	if foo.Methods[0].Kind != "aur" {
+		t.Fatalf("foo method[0] = %v, want aur", foo.Methods[0].Kind)
 	}
-	if foo.Methods[0].Config["pkg"] != "foo" {
-		t.Fatalf("injected native pkg should be tool name, got %v", foo.Methods[0].Config["pkg"])
+	if foo.Methods[0].When == nil || len(foo.Methods[0].When.DistroFamily) != 1 || foo.Methods[0].When.DistroFamily[0] != "arch" {
+		t.Fatalf("foo when not parsed: %+v", foo.Methods[0].When)
 	}
-	if foo.Methods[1].Kind != "aur" {
-		t.Fatalf("foo method[1] = %v, want aur", foo.Methods[1].Kind)
-	}
-	if foo.Methods[1].When == nil || len(foo.Methods[1].When.DistroFamily) != 1 || foo.Methods[1].When.DistroFamily[0] != "arch" {
-		t.Fatalf("foo when not parsed: %+v", foo.Methods[1].When)
-	}
-	if foo.Methods[1].Config["pkg"] != "foo-x86_64" {
-		t.Fatalf("pkg not expanded: %v", foo.Methods[1].Config["pkg"])
+	if foo.Methods[0].Config["pkg"] != "foo-x86_64" {
+		t.Fatalf("pkg not expanded: %v", foo.Methods[0].Config["pkg"])
 	}
 }
 
@@ -1008,20 +996,44 @@ func methodKindSet(methods []*MethodCandidate) map[string]bool {
 	return set
 }
 
+func TestConditionDistroVersionsAcrossPlatforms(t *testing.T) {
+	tests := []struct {
+		name  string
+		facts *engine.Facts
+		cond  *Condition
+		want  bool
+	}{
+		{"ubuntu exact", &engine.Facts{OS: "linux", DistroID: "ubuntu", DistroVersion: "24.04"}, &Condition{DistroID: []string{"ubuntu"}, DistroVersion: []string{"24.4"}}, true},
+		{"ubuntu older rejected", &engine.Facts{OS: "linux", DistroID: "ubuntu", DistroVersion: "22.04"}, &Condition{DistroVersionMin: "24.04"}, false},
+		{"fedora range", &engine.Facts{OS: "linux", DistroID: "fedora", DistroVersion: "42"}, &Condition{DistroID: []string{"fedora"}, DistroVersionMin: "41", DistroVersionMax: "43"}, true},
+		{"macos major", &engine.Facts{OS: "darwin", DistroID: "macos", DistroVersion: "15.6.1"}, &Condition{OS: []string{"darwin"}, DistroVersionMin: "15", DistroVersionMax: "15.99"}, true},
+		{"windows build range", &engine.Facts{OS: "windows", DistroID: "windows", DistroVersion: "10.0.26100.4652"}, &Condition{OS: []string{"windows"}, DistroVersionMin: "10.0.26100", DistroVersionMax: "10.0.26100.9999"}, true},
+		{"windows future build rejected", &engine.Facts{OS: "windows", DistroID: "windows", DistroVersion: "10.0.26200"}, &Condition{DistroVersionMax: "10.0.26199"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cond.Match(tt.facts); got != tt.want {
+				t.Fatalf("Match() = %v, want %v for facts=%+v condition=%+v", got, tt.want, tt.facts, tt.cond)
+			}
+		})
+	}
+}
+
 func TestConditionMatches(t *testing.T) {
 	// Build a baseline Facts that would match a debian system.
 	facts := &engine.Facts{
-		DistroID:     "ubuntu",
-		DistroIDLike: "debian",
-		TargetFamily: "unix",
-		TargetArch:   "x86_64",
-		OS:           "linux",
-		Kernel:       "6.7.0-generic",
-		Libc:         "glibc 2.35",
-		InitSystem:   "systemd",
-		IsWSL:        false,
-		IsContainer:  false,
-		IsAndroid:    false,
+		DistroID:      "ubuntu",
+		DistroVersion: "24.04",
+		DistroIDLike:  "debian",
+		TargetFamily:  "unix",
+		TargetArch:    "x86_64",
+		OS:            "linux",
+		Kernel:        "6.7.0-generic",
+		Libc:          "glibc 2.35",
+		InitSystem:    "systemd",
+		IsWSL:         false,
+		IsContainer:   false,
+		IsAndroid:     false,
 	}
 
 	// nil condition always matches
@@ -1067,6 +1079,26 @@ func TestConditionMatches(t *testing.T) {
 	c4 := &Condition{DistroID: []string{"debian"}}
 	if c4.Match(facts) {
 		t.Error("DistroID debian should not match ubuntu")
+	}
+
+	// Distro version exact/range matching. Comparisons are numeric/textual, not SemVer.
+	if !(&Condition{DistroVersion: []string{"24.4"}}).Match(facts) {
+		t.Error("distro_version 24.4 should match 24.04")
+	}
+	if (&Condition{DistroVersion: []string{"22.04"}}).Match(facts) {
+		t.Error("distro_version 22.04 should not match 24.04")
+	}
+	if !(&Condition{DistroVersionMin: "22.04", DistroVersionMax: "24.04"}).Match(facts) {
+		t.Error("24.04 should match inclusive distro version range 22.04..24.04")
+	}
+	if (&Condition{DistroVersionMin: "24.10"}).Match(facts) {
+		t.Error("24.04 should not match distro_version_min 24.10")
+	}
+	if (&Condition{DistroVersionMax: "22.04"}).Match(facts) {
+		t.Error("24.04 should not match distro_version_max 22.04")
+	}
+	if (&Condition{DistroVersionMin: "1"}).Match(&engine.Facts{DistroID: "ubuntu"}) {
+		t.Error("missing distro version must not satisfy a version bound")
 	}
 
 	// Arch match
@@ -1746,5 +1778,57 @@ manager = "native"
 		if strings.Contains(w, "http") && !strings.Contains(w, "method_order") {
 			t.Fatalf("unexpected warning: %s", w)
 		}
+	}
+}
+
+func TestBuildMethodsMarksImplicitNativeCandidate(t *testing.T) {
+	methods := buildMethods("fzf", map[string]any{
+		"go": "github.com/junegunn/fzf",
+	})
+	if len(methods) != 2 {
+		t.Fatalf("buildMethods returned %d methods, want 2: %+v", len(methods), methods)
+	}
+	var nativeMethod, goMethod *MethodCandidate
+	for _, method := range methods {
+		switch method.Kind {
+		case "native":
+			nativeMethod = method
+		case "go":
+			goMethod = method
+		}
+	}
+	if nativeMethod == nil || !nativeMethod.Inferred {
+		t.Fatalf("implicit native candidate = %+v, want Inferred=true", nativeMethod)
+	}
+	if goMethod == nil || goMethod.Inferred {
+		t.Fatalf("explicit go candidate = %+v, want Inferred=false", goMethod)
+	}
+}
+
+func TestBuildMethodsMarksExplicitNativeCandidate(t *testing.T) {
+	for name, values := range map[string]map[string]any{
+		"native block":     {"native": map[string]any{"pkg": "fzf"}},
+		"manager override": {"apt": "fzf"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			methods := buildMethods("fzf", values)
+			if len(methods) != 1 || methods[0].Kind != "native" {
+				t.Fatalf("methods = %+v, want one native candidate", methods)
+			}
+			if methods[0].Inferred {
+				t.Fatalf("explicit native candidate unexpectedly marked inferred: %+v", methods[0])
+			}
+		})
+	}
+}
+
+func TestNormalizeSimpleToolMarksCandidateInferred(t *testing.T) {
+	tools, err := normalizeTools("", map[string]any{"simple": []any{"jq"}}, Defaults{Manager: "native"})
+	if err != nil {
+		t.Fatalf("normalizeTools: %v", err)
+	}
+	tool := tools["jq"]
+	if tool == nil || len(tool.Methods) != 1 || !tool.Methods[0].Inferred {
+		t.Fatalf("simple tool candidate = %+v, want one inferred method", tool)
 	}
 }

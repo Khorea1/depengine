@@ -7,9 +7,11 @@ package git
 import (
 	"context"
 	"fmt"
+	urlpkg "net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
@@ -49,6 +51,14 @@ func (a *GitAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, m
 	if extractTo, ok := mc.Config["extract_to"].(string); ok && extractTo != "" {
 		extractTo = config.ExpandHomeDir(extractTo)
 		if info, err := os.Stat(filepath.Join(extractTo, ".git")); err == nil && info.IsDir() {
+			if ref := configuredRevision(mc); ref != "" {
+				res := rn.Run(ctx, "git", "-C", extractTo, "rev-parse", "HEAD", ref)
+				if res.Err != nil || res.ExitCode != 0 {
+					return false
+				}
+				lines := nonEmptyLines(string(res.Stdout))
+				return len(lines) >= 2 && lines[0] == lines[1]
+			}
 			return true
 		}
 	}
@@ -64,6 +74,17 @@ func (a *GitAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, m
 // the resolved `{latest}` tag when the URL still contains the placeholder, or
 // the configured branch. Returns "" when no version is knowable.
 func (a *GitAdapter) InstalledVersion(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) (string, error) {
+	if extractTo, ok := mc.Config["extract_to"].(string); ok && extractTo != "" {
+		extractTo = config.ExpandHomeDir(extractTo)
+		if info, err := os.Stat(filepath.Join(extractTo, ".git")); err == nil && info.IsDir() {
+			res := rn.Run(ctx, "git", "-C", extractTo, "rev-parse", "HEAD")
+			if res.Err == nil && res.ExitCode == 0 {
+				if lines := nonEmptyLines(string(res.Stdout)); len(lines) > 0 {
+					return lines[0], nil
+				}
+			}
+		}
+	}
 	urlRaw, ok := mc.Config["url"].(string)
 	if !ok || urlRaw == "" {
 		return "", nil
@@ -71,10 +92,58 @@ func (a *GitAdapter) InstalledVersion(ctx context.Context, rn run.Runner, _ *con
 	if tag, err := ghrelease.VersionTag(ctx, urlRaw, rn); err == nil && tag != "" && tag != "latest" {
 		return tag, nil
 	}
-	if branch, ok := mc.Config["branch"].(string); ok && branch != "" {
-		return branch, nil
+	if ref := configuredRevision(mc); ref != "" {
+		return ref, nil
 	}
 	return "", nil
+}
+
+func normalizedGitDepth(raw any) (string, error) {
+	if raw == nil {
+		return "1", nil
+	}
+	var value int64
+	switch depth := raw.(type) {
+	case int64:
+		value = depth
+	case string:
+		if depth == "" {
+			return "1", nil
+		}
+		parsed, err := strconv.ParseInt(depth, 10, 64)
+		if err != nil {
+			return "", fmt.Errorf("git: depth must be a non-negative integer, got %q", depth)
+		}
+		value = parsed
+	default:
+		return "", fmt.Errorf("git: depth must be an integer or numeric string, got %T", raw)
+	}
+	if value < 0 {
+		return "", fmt.Errorf("git: depth must be non-negative")
+	}
+	return strconv.FormatInt(value, 10), nil
+}
+
+func configuredRevision(mc *config.MethodCandidate) string {
+	if mc == nil {
+		return ""
+	}
+	for _, field := range []string{"rev", "tag", "branch"} {
+		if value, ok := mc.Config[field].(string); ok && value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func nonEmptyLines(output string) []string {
+	var lines []string
+	for _, line := range strings.Split(output, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 // Install clones the repository, optionally builds, and optionally copies
@@ -88,7 +157,27 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 		return fmt.Errorf("git: no url configured for tool %q", tool.Name)
 	}
 
+	if parsed, err := urlpkg.Parse(url); err == nil && (strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https")) && parsed.User != nil {
+		return fmt.Errorf("git: embedded URL credentials are not allowed; use an external credential helper")
+	}
+
 	origURL := url
+	branch, _ := mc.Config["branch"].(string)
+	tag, _ := mc.Config["tag"].(string)
+	rev, _ := mc.Config["rev"].(string)
+	configuredRefs := 0
+	for _, ref := range []string{branch, tag, rev} {
+		if ref != "" {
+			configuredRefs++
+		}
+	}
+	if configuredRefs > 1 {
+		return fmt.Errorf("git: branch, tag, and rev are mutually exclusive")
+	}
+	if strings.Contains(origURL, "{latest}") && configuredRefs > 0 {
+		return fmt.Errorf("git: {latest} URL resolution cannot be combined with branch, tag, or rev")
+	}
+
 	resolvedURL, err := ghrelease.ResolveLatest(ctx, url, rn)
 	if err != nil {
 		return fmt.Errorf("git: resolve latest: %w", err)
@@ -109,16 +198,10 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 		url = resolvedURL
 	}
 
-	// Determine clone depth (default: shallow).
-	// The schema accepts both integer (0 for full history) and string ("1") values.
-	depth := "1"
-	switch d := mc.Config["depth"].(type) {
-	case string:
-		if d != "" {
-			depth = d
-		}
-	case int64:
-		depth = fmt.Sprintf("%d", d)
+	// Determine clone depth (default: shallow). 0 means full history.
+	depth, err := normalizedGitDepth(mc.Config["depth"])
+	if err != nil {
+		return err
 	}
 
 	// Determine clone directory — use MkdirTemp for auto-cleanup.
@@ -128,15 +211,23 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 	}
 	defer os.RemoveAll(cloneDir)
 
-	// Build clone args.
-	cloneArgs := []string{"clone", "--depth", depth}
-	// If {latest} was resolved, use the resolved tag as --branch.
-	// If the user also specified an explicit branch, resolvedTag wins
-	// (it's the concrete latest release, which is more specific).
+	// Build clone args. depth=0 means full history and therefore omits
+	// --depth entirely; git rejects --depth 0.
+	cloneArgs := []string{"clone"}
+	if depth != "0" {
+		cloneArgs = append(cloneArgs, "--depth", depth)
+	}
+	if rev != "" {
+		cloneArgs = append(cloneArgs, "--no-checkout")
+	}
+	// Branches and tags can both use clone --branch. Exact revs are fetched
+	// and detached below because arbitrary commits need not be branch tips.
 	if resolvedTag != "" {
 		cloneArgs = append(cloneArgs, "--branch", resolvedTag)
-	} else if branch, ok := mc.Config["branch"].(string); ok && branch != "" {
+	} else if branch != "" {
 		cloneArgs = append(cloneArgs, "--branch", branch)
+	} else if tag != "" {
+		cloneArgs = append(cloneArgs, "--branch", tag)
 	}
 
 	cloneArgs = append(cloneArgs, url, cloneDir)
@@ -145,6 +236,24 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 	res := rn.Run(ctx, "git", cloneArgs...)
 	if err := run.CheckResult(res, "git: clone"); err != nil {
 		return err
+	}
+	if rev != "" {
+		fetchArgs := []string{"-C", cloneDir, "fetch"}
+		if depth != "0" {
+			fetchArgs = append(fetchArgs, "--depth", depth)
+		}
+		fetchArgs = append(fetchArgs, "origin", rev)
+		if err := run.CheckResult(rn.Run(ctx, "git", fetchArgs...), "git: fetch revision"); err != nil {
+			return err
+		}
+		if err := run.CheckResult(rn.Run(ctx, "git", "-C", cloneDir, "checkout", "--detach", "FETCH_HEAD"), "git: checkout revision"); err != nil {
+			return err
+		}
+	}
+	if submodules, _ := mc.Config["submodules"].(bool); submodules {
+		if err := run.CheckResult(rn.Run(ctx, "git", "-C", cloneDir, "submodule", "update", "--init", "--recursive"), "git: submodules"); err != nil {
+			return err
+		}
 	}
 
 	// Run build step if configured.

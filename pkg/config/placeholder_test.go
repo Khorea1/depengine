@@ -74,6 +74,7 @@ func TestBuildMapCoversAllFactsPlusClan(t *testing.T) {
 		TargetArch:      "x86_64",
 		DistroID:        "arch",
 		DistroName:      "Arch Linux",
+		DistroVersion:   "rolling",
 		DistroIDLike:    "",
 		TargetFamily:    "unix",
 		DetectionMethod: "os-release",
@@ -93,6 +94,7 @@ func TestBuildMapCoversAllFactsPlusClan(t *testing.T) {
 		"distro_name":    "Arch Linux",
 		"distro_id_like": "",
 		"distro_family":  "arch",
+		"distro_version": "rolling",
 		"target_family":  "unix",
 		"arch":           "x86_64",
 		"detection":      "os-release",
@@ -204,5 +206,12 @@ func TestKnownPlaceholdersIncludesGitHubAssetTokens(t *testing.T) {
 		if !known[name] {
 			t.Errorf("KnownPlaceholders() missing github asset-matching token %q", name)
 		}
+	}
+}
+
+func TestBuildMapIncludesDistroVersion(t *testing.T) {
+	m := BuildMap(&engine.Facts{DistroVersion: "24.04"}, "debian")
+	if got := m["distro_version"]; got != "24.04" {
+		t.Fatalf("distro_version placeholder = %q, want 24.04", got)
 	}
 }

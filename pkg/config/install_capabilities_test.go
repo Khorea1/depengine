@@ -27,7 +27,7 @@ sources = [{ kind = "apt-ppa", name = "ppa:neovim-ppa/stable" }]
 	if !schema.Tools["helper"].DependencyOnly {
 		t.Fatal("dependency_only was not parsed")
 	}
-	method := schema.Tools["nvim"].Methods[1]
+	method := schema.Tools["nvim"].Methods[0]
 	if len(method.Requires) != 1 || method.Requires[0] != "helper" {
 		t.Fatalf("requires = %v", method.Requires)
 	}

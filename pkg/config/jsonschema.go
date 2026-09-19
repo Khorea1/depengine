@@ -78,11 +78,15 @@ func defaultsJSONSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"manager":      map[string]any{"type": "string", "minLength": 1, "default": "native"},
-			"aur_helper":   map[string]any{"type": "string", "minLength": 1, "default": "paru"},
-			"method_order": stringArrayJSONSchema(),
-			"arch_map":     stringMapJSONSchema(),
-			"os_map":       stringMapJSONSchema(),
+			"manager":       map[string]any{"type": "string", "minLength": 1, "default": "native"},
+			"aur_helper":    map[string]any{"type": "string", "minLength": 1, "default": "paru"},
+			"method_prefer": stringArrayJSONSchema(),
+			"method_order":  stringArrayJSONSchema(), // compatibility alias
+			"arch_map":      stringMapJSONSchema(),
+			"os_map":        stringMapJSONSchema(),
+		},
+		"allOf": []any{
+			map[string]any{"not": map[string]any{"required": []string{"method_prefer", "method_order"}}},
 		},
 		"additionalProperties": false,
 	}
@@ -196,14 +200,30 @@ func methodObjectJSONSchema(contract *methodkind.Contract, variantKind string) m
 		"properties":           properties,
 		"additionalProperties": false,
 	}
+	if capabilities := methodkind.CapabilityNames(contract.Capabilities); len(capabilities) > 0 {
+		schema["description"] = "Method capabilities: " + strings.Join(capabilities, ", ") + "."
+	}
 	if len(required) > 0 {
 		schema["required"] = required
 	}
-	if len(contract.MutuallyExclusive) > 0 {
-		allOf := make([]any, 0, len(contract.MutuallyExclusive))
-		for _, group := range contract.MutuallyExclusive {
-			allOf = append(allOf, map[string]any{"not": map[string]any{"required": group}})
+	allOf := make([]any, 0, len(contract.MutuallyExclusive)+len(contract.Requires))
+	for _, group := range contract.MutuallyExclusive {
+		allOf = append(allOf, map[string]any{"not": map[string]any{"required": group}})
+	}
+	if len(contract.Requires) > 0 {
+		keys := make([]string, 0, len(contract.Requires))
+		for key := range contract.Requires {
+			keys = append(keys, key)
 		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			allOf = append(allOf, map[string]any{
+				"if":   map[string]any{"required": []string{key}},
+				"then": map[string]any{"required": contract.Requires[key]},
+			})
+		}
+	}
+	if len(allOf) > 0 {
 		schema["allOf"] = allOf
 	}
 	if len(contract.SourceAlternatives) > 0 {
@@ -276,9 +296,12 @@ func methodFieldJSONSchema(field methodkind.Field) map[string]any {
 func conditionJSONSchema() map[string]any {
 	properties := make(map[string]any, len(conditionFields))
 	for name, fieldType := range conditionFields {
-		if fieldType == "bool" {
+		switch fieldType {
+		case "bool":
 			properties[name] = map[string]any{"type": "boolean"}
-		} else {
+		case "string":
+			properties[name] = map[string]any{"type": "string", "minLength": 1}
+		default:
 			properties[name] = stringArrayJSONSchema()
 		}
 	}

@@ -230,3 +230,130 @@ func TestContainerAdapterDeclaredFieldsGovernRuntimeCommands(t *testing.T) {
 		t.Fatalf("Remove ran %v %v; declared manager/source/tag were not all honored", removeCall.Name, removeCall.Args)
 	}
 }
+
+func TestContainerAdapterRejectsTaggedSourceBeforeRunner(t *testing.T) {
+	rn := &nameAwareRunner{exitByName: map[string]int{"docker": 0}}
+	mc := &config.MethodCandidate{Config: map[string]any{"manager": "docker", "source": "redis:7"}}
+	if err := NewContainerAdapter().Install(context.Background(), rn, tool("redis"), mc); err == nil {
+		t.Fatal("Install should reject a tag embedded in source")
+	}
+	if len(rn.calls) != 0 {
+		t.Fatalf("invalid container reference reached runner: %#v", rn.calls)
+	}
+}
+
+func TestContainerAdapterAllowsRegistryPort(t *testing.T) {
+	rn := &nameAwareRunner{exitByName: map[string]int{"docker": 0}}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"manager": "docker", "source": "registry.example:5000/team/tool", "tag": "1.2.3",
+	}}
+	if err := NewContainerAdapter().Install(context.Background(), rn, tool("tool"), mc); err != nil {
+		t.Fatalf("Install rejected valid registry port: %v", err)
+	}
+	last := rn.calls[len(rn.calls)-1]
+	if !equalArgs(last.Args, []string{"pull", "registry.example:5000/team/tool:1.2.3"}) {
+		t.Fatalf("Install args = %v", last.Args)
+	}
+}
+
+func TestContainerAdapterUsesDigestIdentity(t *testing.T) {
+	digest := "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"manager": "podman", "source": "ghcr.io/owner/tool", "digest": digest,
+	}}
+	adapter := NewContainerAdapter()
+
+	checkRunner := &nameAwareRunner{exitByName: map[string]int{"podman": 0}}
+	if !adapter.Check(context.Background(), checkRunner, tool("tool"), mc) {
+		t.Fatal("Check should use immutable digest identity")
+	}
+	if got := checkRunner.calls[len(checkRunner.calls)-1].Args; !equalArgs(got, []string{"image", "inspect", "ghcr.io/owner/tool@" + digest}) {
+		t.Fatalf("Check argv = %v", got)
+	}
+
+	installRunner := &nameAwareRunner{exitByName: map[string]int{"podman": 0}}
+	if err := adapter.Install(context.Background(), installRunner, tool("tool"), mc); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if got := installRunner.calls[len(installRunner.calls)-1].Args; !equalArgs(got, []string{"pull", "ghcr.io/owner/tool@" + digest}) {
+		t.Fatalf("Install argv = %v", got)
+	}
+}
+
+func TestContainerAdapterRejectsTagAndDigestTogether(t *testing.T) {
+	digest := "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	rn := &nameAwareRunner{exitByName: map[string]int{"docker": 0}}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"manager": "docker", "source": "redis", "tag": "7", "digest": digest,
+	}}
+	if err := NewContainerAdapter().Install(context.Background(), rn, tool("redis"), mc); err == nil {
+		t.Fatal("Install should reject tag and digest together")
+	}
+	if len(rn.calls) != 0 {
+		t.Fatalf("invalid identity should fail before runner, got %v", rn.calls)
+	}
+}
+
+func TestContainerAdapterDigestCheckDoesNotFallBackToTagPresence(t *testing.T) {
+	digest := "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"manager": "docker", "source": "redis", "digest": digest,
+	}}
+	// The runner reports inspect failure. A tag-based `images -q` implementation
+	// could incorrectly treat another redis image as satisfying the pin, so the
+	// exact digest check must return false without issuing a tag-presence query.
+	rn := &nameAwareRunner{exitByName: map[string]int{"docker": 1}, stdout: "sha256:some-other-image\n"}
+	if NewContainerAdapter().Check(context.Background(), rn, tool("redis"), mc) {
+		t.Fatal("Check must reject a missing exact digest even if another repository image could be present")
+	}
+	if len(rn.calls) != 1 || rn.calls[0].Name != "docker" || !equalArgs(rn.calls[0].Args, []string{"image", "inspect", "redis@" + digest}) {
+		t.Fatalf("digest check calls = %#v", rn.calls)
+	}
+}
+
+func TestContainerAdapterInstallUsesPlatform(t *testing.T) {
+	rn := &nameAwareRunner{exitByName: map[string]int{"docker": 0}}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"manager": "docker", "source": "redis", "tag": "7", "platform": "LINUX/ARM64/V8",
+	}}
+	if err := NewContainerAdapter().Install(context.Background(), rn, tool("redis"), mc); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	last := rn.calls[len(rn.calls)-1]
+	want := []string{"pull", "--platform", "linux/arm64/v8", "redis:7"}
+	if last.Name != "docker" || !equalArgs(last.Args, want) {
+		t.Fatalf("Install ran %v %v, want docker %v", last.Name, last.Args, want)
+	}
+}
+
+func TestContainerAdapterCheckVerifiesPlatform(t *testing.T) {
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"manager": "podman", "source": "redis", "tag": "7", "platform": "linux/arm64/v8",
+	}}
+	match := &nameAwareRunner{exitByName: map[string]int{"podman": 0}, stdout: "linux/arm64/v8\n"}
+	if !NewContainerAdapter().Check(context.Background(), match, tool("redis"), mc) {
+		t.Fatal("Check should accept matching platform")
+	}
+	want := []string{"image", "inspect", "--format", "{{.Os}}/{{.Architecture}}{{if .Variant}}/{{.Variant}}{{end}}", "redis:7"}
+	if got := match.calls[len(match.calls)-1].Args; !equalArgs(got, want) {
+		t.Fatalf("Check argv = %v, want %v", got, want)
+	}
+
+	drift := &nameAwareRunner{exitByName: map[string]int{"podman": 0}, stdout: "linux/amd64\n"}
+	if NewContainerAdapter().Check(context.Background(), drift, tool("redis"), mc) {
+		t.Fatal("Check should reject platform drift")
+	}
+}
+
+func TestContainerAdapterRejectsInvalidPlatformBeforeRunner(t *testing.T) {
+	rn := &nameAwareRunner{exitByName: map[string]int{"docker": 0}}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"manager": "docker", "source": "redis", "platform": "linux",
+	}}
+	if err := NewContainerAdapter().Install(context.Background(), rn, tool("redis"), mc); err == nil {
+		t.Fatal("Install should reject invalid platform")
+	}
+	if len(rn.calls) != 0 {
+		t.Fatalf("invalid platform reached runner: %#v", rn.calls)
+	}
+}

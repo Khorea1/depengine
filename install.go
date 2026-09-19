@@ -67,7 +67,7 @@ func newInstallCmd() *cobra.Command {
 	f.StringVar(installLogLevel, "log-level", "", "log level: debug, info, warn, error")
 	f.StringVar(installSortBy, "sort-by", "", "sort output by: name, status, method")
 	f.IntVar(installJobs, "jobs", 1, "max concurrent installations (default 1 = sequential)")
-	f.BoolVar(installAllowArbitrary, "allow-arbitrary-code", false, "suppress security warnings for build scripts / arbitrary code")
+	f.BoolVar(installAllowArbitrary, "allow-arbitrary-code", false, "permit hooks, build scripts, and other arbitrary code execution")
 	f.BoolVar(installQuiet, "quiet", false, "suppress per-tool status lines; show only final summary")
 	return cmd
 }
@@ -140,7 +140,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	cs := newCLIStyle(os.Stderr)
 	title := "depengine install"
 	if *installDryRun {
-		title = "depengine install — dry run (no changes will be made)"
+		title = "depengine install — dry run (planning only)"
 	}
 	pairs := [][2]string{
 		{"schema", *installSchema},
@@ -244,7 +244,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 
 	if *installDryRun && !*installJSON {
 		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, cs.cyan("Dry run — no changes were made. Remove --dry-run to install."))
+		fmt.Fprintln(os.Stderr, cs.cyan("Dry run — read-only resolution/checks may run; mutation steps were not executed. Remove --dry-run to install."))
 	}
 
 	if !*installDryRun {

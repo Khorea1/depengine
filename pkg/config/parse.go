@@ -281,13 +281,19 @@ func extractDefaults(raw any) Defaults {
 	if v, ok := rm["os_map"]; ok {
 		d.OSMap = normalizeAliasMap(v)
 	}
-	if v, ok := rm["method_order"].([]any); ok {
+	rawOrder := rm["method_prefer"]
+	fieldName := "method_prefer"
+	if rawOrder == nil {
+		rawOrder = rm["method_order"] // compatibility alias; method_prefer is canonical
+		fieldName = "method_order"
+	}
+	if v, ok := rawOrder.([]any); ok {
 		order := make([]string, 0, len(v))
 		for _, item := range v {
 			if s, ok := item.(string); ok {
 				order = append(order, s)
 			} else {
-				log.Default.Debug("extractDefaults: ignoring non-string method_order item", "value", item)
+				log.Default.Debug("extractDefaults: ignoring non-string method preference item", "field", fieldName, "value", item)
 			}
 		}
 		if len(order) > 0 {
@@ -331,8 +337,9 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 				Name:     name,
 				IsSimple: true,
 				Methods: []*MethodCandidate{{
-					Kind:   defaults.Manager,
-					Config: map[string]any{"pkg": name},
+					Kind:     defaults.Manager,
+					Inferred: true,
+					Config:   map[string]any{"pkg": name},
 				}},
 			}
 		}
@@ -543,13 +550,12 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 // collapses native-manager overrides into a single "native" method
 // with a pkg_overrides map, while keeping non-native keys as separate methods.
 //
-// When a tool declares only non-native methods (go, cargo, pip, etc.) without
-// any native manager overrides, a "native" method is automatically injected
-// with the tool name as the default package name.
-//
-// A native candidate is injected so the native method is available for every
-// tool. SelectMethods later removes it when method_only excludes native; the
-// raw candidate set stays intact so layer merging cannot discard information.
+// Native fallback inference is deliberately limited to shorthand declarations.
+// Scalar/bool method forms such as `go = "example.org/tool"` or `cargo = true`
+// are convenience syntax and implicitly gain a native fallback. Explicit method
+// tables mean exactly what they declare and do not receive a hidden native
+// candidate. Native manager overrides (for example `apt = "fd-find"`) remain
+// explicit native intent rather than inferred fallback.
 //
 // If native is in the effective method_order (user list or canonical
 // remainder), it will be tried in that position. If the tool also declares
@@ -579,6 +585,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	nativeOverrides := map[string]any{}
 	var nonNativeKeys []string
 	var nativeBlockConfig map[string]any
+	hasShorthandNonNative := false
 
 	for _, k := range sortedKeys(valMap, "requires", "requires_when", "dependency_only", "pre_install", "post_install", "tags", "method_prefer", "method_only", "when", "kind") {
 		if k == "native" {
@@ -595,12 +602,17 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 			nativeOverrides[k] = valMap[k]
 		} else {
 			nonNativeKeys = append(nonNativeKeys, k)
+			switch valMap[k].(type) {
+			case string, bool:
+				hasShorthandNonNative = true
+			}
 		}
 	}
 
-	// Inject a native method when there are any relevant keys.
-	// With overrides if native manager names are present, plain otherwise.
-	if len(nativeOverrides) > 0 || len(nonNativeKeys) > 0 || nativeBlockConfig != nil {
+	// Create a native method for explicit native intent, or infer one only when
+	// a non-native shorthand is present. Explicit method tables do not trigger
+	// hidden native fallback.
+	if len(nativeOverrides) > 0 || hasShorthandNonNative || nativeBlockConfig != nil {
 		cfg := map[string]any{"pkg": name}
 		if len(nativeOverrides) > 0 {
 			cfg["pkg_overrides"] = nativeOverrides
@@ -640,6 +652,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 		delete(cfg, "sources")
 		methods = append(methods, &MethodCandidate{
 			Kind:     "native",
+			Inferred: len(nativeOverrides) == 0 && nativeBlockConfig == nil,
 			When:     when,
 			Config:   cfg,
 			ArchMap:  archMap,

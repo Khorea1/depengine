@@ -292,7 +292,7 @@ func TestRegistryChecksParseDirectCommandOutput(t *testing.T) {
 	}{
 		{"cargo", "bat", "bat v0.25.0:\n    bat\n", true},
 		{"cargo", "bat", "bat-extra v1.0.0:\n", false},
-		{"pipx", "black", "black 25.1.0, installed using Python 3.13\n", true},
+		{"pipx", "black", `{"venvs":{"black":{"main_package":{"package":"black","package_version":"25.1.0"}}}}`, true},
 		{"uv", "ruff", "ruff v0.11.0\n- ruff\n", true},
 		{"bun", "typescript", "└── typescript@5.8.2\n", true},
 		{"gem", "rake", "rake (13.2.1)\n", true},
@@ -682,7 +682,7 @@ func TestSnapDeclaredFieldsGovernRuntimeCommands(t *testing.T) {
 		"channel":     "edge",
 	}}
 
-	checkRunner := &run.FakeRunner{ExitCode: 0}
+	checkRunner := &run.FakeRunner{ExitCode: 0, Stdout: "Name Version Rev Tracking Publisher Notes\nactual-snap 1.0 42 latest/edge vendor -\n"}
 	if !adapter.Check(context.Background(), checkRunner, tool, mc) {
 		t.Fatal("Check should succeed for configured snap package")
 	}
@@ -746,7 +746,7 @@ func TestFlatpakPkgFieldGovernsRuntimeCommands(t *testing.T) {
 		t.Fatalf("Install returned error: %v", err)
 	}
 	installCall := installRunner.Calls[len(installRunner.Calls)-1]
-	if installCall.Name != "flatpak" || strings.Join(installCall.Args, " ") != "install -y flathub com.example.Actual" {
+	if installCall.Name != "flatpak" || strings.Join(installCall.Args, " ") != "install -y com.example.Actual" {
 		t.Fatalf("Install call = %s %v, want configured flatpak pkg", installCall.Name, installCall.Args)
 	}
 
@@ -757,5 +757,400 @@ func TestFlatpakPkgFieldGovernsRuntimeCommands(t *testing.T) {
 	removeCall := removeRunner.Calls[len(removeRunner.Calls)-1]
 	if removeCall.Name != "flatpak" || strings.Join(removeCall.Args, " ") != "uninstall -y com.example.Actual" {
 		t.Fatalf("Remove call = %s %v, want configured flatpak pkg", removeCall.Name, removeCall.Args)
+	}
+}
+
+func TestFlatpakRemoteBranchAndScope(t *testing.T) {
+	adapter := NewBaseAdapter(Configs["flatpak"])
+	tool := &config.Tool{Name: "demo"}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"pkg":    "com.example.App",
+		"remote": "corp",
+		"branch": "stable",
+		"scope":  "user",
+	}}
+
+	t.Run("check verifies origin and full ref", func(t *testing.T) {
+		fr := &run.FakeRunner{ExitCode: 0, Stdout: "corp\n"}
+		if !adapter.Check(context.Background(), fr, tool, mc) {
+			t.Fatal("Check should accept matching origin")
+		}
+		call := fr.Calls[len(fr.Calls)-1]
+		want := "info --user --show-origin com.example.App//stable"
+		if call.Name != "flatpak" || strings.Join(call.Args, " ") != want {
+			t.Fatalf("check=%s %v want flatpak %s", call.Name, call.Args, want)
+		}
+
+		fr = &run.FakeRunner{ExitCode: 0, Stdout: "flathub\n"}
+		if adapter.Check(context.Background(), fr, tool, mc) {
+			t.Fatal("Check should reject a package from the wrong remote")
+		}
+	})
+
+	t.Run("install uses typed remote branch and scope", func(t *testing.T) {
+		fr := &run.FakeRunner{ExitCode: 0}
+		if err := adapter.Install(context.Background(), fr, tool, mc); err != nil {
+			t.Fatal(err)
+		}
+		call := fr.Calls[len(fr.Calls)-1]
+		want := "install -y --user corp com.example.App//stable"
+		if call.Name != "flatpak" || strings.Join(call.Args, " ") != want {
+			t.Fatalf("install=%s %v want flatpak %s", call.Name, call.Args, want)
+		}
+	})
+
+	t.Run("remove uses same branch and scope identity", func(t *testing.T) {
+		fr := &run.FakeRunner{ExitCode: 0}
+		if err := adapter.Remove(context.Background(), fr, tool, mc); err != nil {
+			t.Fatal(err)
+		}
+		call := fr.Calls[len(fr.Calls)-1]
+		want := "uninstall -y --user com.example.App//stable"
+		if call.Name != "flatpak" || strings.Join(call.Args, " ") != want {
+			t.Fatalf("remove=%s %v want flatpak %s", call.Name, call.Args, want)
+		}
+	})
+}
+
+func TestSnapStructuredChannelAndTrackingCheck(t *testing.T) {
+	adapter := NewBaseAdapter(Configs["snap"])
+	tool := &config.Tool{Name: "demo"}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"pkg":    "demo-snap",
+		"track":  "2.0",
+		"risk":   "candidate",
+		"branch": "hotfix",
+	}}
+
+	t.Run("install composes track risk branch", func(t *testing.T) {
+		fr := &run.FakeRunner{ExitCode: 0}
+		if err := adapter.Install(context.Background(), fr, tool, mc); err != nil {
+			t.Fatal(err)
+		}
+		call := fr.Calls[len(fr.Calls)-1]
+		want := "install demo-snap --channel=2.0/candidate/hotfix"
+		if call.Name != "snap" || strings.Join(call.Args, " ") != want {
+			t.Fatalf("install=%s %v want snap %s", call.Name, call.Args, want)
+		}
+	})
+
+	t.Run("check verifies tracking channel", func(t *testing.T) {
+		fr := &run.FakeRunner{ExitCode: 0, Stdout: "Name Version Rev Tracking Publisher Notes\ndemo-snap 2.0 77 2.0/candidate/hotfix vendor -\n"}
+		if !adapter.Check(context.Background(), fr, tool, mc) {
+			t.Fatal("Check should accept matching tracking channel")
+		}
+		fr.Stdout = "Name Version Rev Tracking Publisher Notes\ndemo-snap 2.0 77 latest/stable vendor -\n"
+		if adapter.Check(context.Background(), fr, tool, mc) {
+			t.Fatal("Check should reject a different tracking channel")
+		}
+	})
+
+	t.Run("risk shorthand verifies implicit latest track", func(t *testing.T) {
+		short := &config.MethodCandidate{Config: map[string]any{"pkg": "demo-snap", "channel": "beta"}}
+		fr := &run.FakeRunner{ExitCode: 0, Stdout: "Name Version Rev Tracking Publisher Notes\ndemo-snap 2.0 77 latest/beta vendor -\n"}
+		if !adapter.Check(context.Background(), fr, tool, short) {
+			t.Fatal("risk shorthand should match latest/beta tracking")
+		}
+	})
+}
+
+func TestPipExactVersionInstallAndCheck(t *testing.T) {
+	adapter := NewBaseAdapter(Configs["pip"])
+	tool := &config.Tool{Name: "ruff"}
+	mc := &config.MethodCandidate{Kind: "pip", Config: map[string]any{"pkg": "ruff", "version": "0.13.1"}}
+
+	installRunner := &run.FakeRunner{LookPaths: map[string]bool{"pip": true}}
+	if err := adapter.Install(context.Background(), installRunner, tool, mc); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	last := installRunner.Calls[len(installRunner.Calls)-1]
+	if got := strings.Join(append([]string{last.Name}, last.Args...), " "); got != "pip install ruff==0.13.1" {
+		t.Fatalf("install argv = %q", got)
+	}
+
+	checkRunner := &run.FakeRunner{LookPaths: map[string]bool{"pip": true}, Stdout: "Name: ruff\nVersion: 0.13.1\n"}
+	if !adapter.Check(context.Background(), checkRunner, tool, mc) {
+		t.Fatal("Check should accept the requested installed version")
+	}
+	checkRunner.Stdout = "Name: ruff\nVersion: 0.12.0\n"
+	if adapter.Check(context.Background(), checkRunner, tool, mc) {
+		t.Fatal("Check should reject version drift")
+	}
+}
+
+func TestPipInstalledVersion(t *testing.T) {
+	adapter := NewBaseAdapter(Configs["pip"])
+	fr := &run.FakeRunner{Stdout: "Name: ruff\nVersion: 0.13.1\n"}
+	got, err := adapter.InstalledVersion(context.Background(), fr, &config.Tool{Name: "ruff"}, &config.MethodCandidate{Kind: "pip", Config: map[string]any{"pkg": "ruff"}})
+	if err != nil {
+		t.Fatalf("InstalledVersion: %v", err)
+	}
+	if got != "0.13.1" {
+		t.Fatalf("InstalledVersion = %q, want 0.13.1", got)
+	}
+}
+
+func TestNPMExactVersionInstallAndCheck(t *testing.T) {
+	adapter := NewBaseAdapter(Configs["npm"])
+	tool := &config.Tool{Name: "typescript"}
+	mc := &config.MethodCandidate{Kind: "npm", Config: map[string]any{"pkg": "typescript", "version": "5.9.2"}}
+
+	installRunner := &run.FakeRunner{LookPaths: map[string]bool{"npm": true}}
+	if err := adapter.Install(context.Background(), installRunner, tool, mc); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	last := installRunner.Calls[len(installRunner.Calls)-1]
+	if got := strings.Join(append([]string{last.Name}, last.Args...), " "); got != "npm install -g typescript@5.9.2" {
+		t.Fatalf("install argv = %q", got)
+	}
+
+	checkRunner := &run.FakeRunner{LookPaths: map[string]bool{"npm": true}, Stdout: `{"dependencies":{"typescript":{"version":"5.9.2"}}}`}
+	if !adapter.Check(context.Background(), checkRunner, tool, mc) {
+		t.Fatal("Check should accept the requested installed version")
+	}
+	checkRunner.Stdout = `{"dependencies":{"typescript":{"version":"5.8.0"}}}`
+	if adapter.Check(context.Background(), checkRunner, tool, mc) {
+		t.Fatal("Check should reject version drift")
+	}
+}
+
+func TestNPMInstalledVersion(t *testing.T) {
+	adapter := NewBaseAdapter(Configs["npm"])
+	fr := &run.FakeRunner{Stdout: `{"dependencies":{"typescript":{"version":"5.9.2"}}}`}
+	got, err := adapter.InstalledVersion(context.Background(), fr, &config.Tool{Name: "typescript"}, &config.MethodCandidate{Kind: "npm", Config: map[string]any{"pkg": "typescript"}})
+	if err != nil {
+		t.Fatalf("InstalledVersion: %v", err)
+	}
+	if got != "5.9.2" {
+		t.Fatalf("InstalledVersion = %q, want 5.9.2", got)
+	}
+}
+
+func TestPipxTypedVersionScopeAndIndex(t *testing.T) {
+	fr := &run.FakeRunner{}
+	adapter := NewBaseAdapter(Configs["pipx"])
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"pkg": "black", "version": "24.3.0", "scope": "global", "index_url": "https://packages.example/simple",
+	}}
+	if err := adapter.Install(context.Background(), fr, &config.Tool{Name: "black"}, mc); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(fr.Calls[len(fr.Calls)-1].Args, " ")
+	want := "install --global --index-url https://packages.example/simple black==24.3.0"
+	if got != want {
+		t.Fatalf("argv=%q want %q", got, want)
+	}
+}
+
+func TestPipxCheckExactVersionAndScope(t *testing.T) {
+	fr := &run.FakeRunner{Stdout: `{"pipx_spec_version":"0.1","venvs":{"black":{"main_package":{"package":"black","package_version":"24.3.0"}}}}`}
+	adapter := NewBaseAdapter(Configs["pipx"])
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "black", "version": "24.3.0", "scope": "global"}}
+	if !adapter.Check(context.Background(), fr, &config.Tool{Name: "black"}, mc) {
+		t.Fatal("expected exact pipx version to be satisfied")
+	}
+	last := fr.Calls[len(fr.Calls)-1]
+	if got := strings.Join(last.Args, " "); got != "list --output json --global black" {
+		t.Fatalf("check argv=%q", got)
+	}
+	mc.Config["version"] = "25.0.0"
+	if adapter.Check(context.Background(), fr, &config.Tool{Name: "black"}, mc) {
+		t.Fatal("version drift should not be satisfied")
+	}
+}
+
+func TestPipxInstalledVersion(t *testing.T) {
+	fr := &run.FakeRunner{Stdout: `{"venvs":{"black":{"main_package":{"package":"black","package_version":"24.3.0"}}}}`}
+	adapter := NewBaseAdapter(Configs["pipx"])
+	got, err := adapter.InstalledVersion(context.Background(), fr, &config.Tool{Name: "black"}, &config.MethodCandidate{Config: map[string]any{"pkg": "black"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "24.3.0" {
+		t.Fatalf("version=%q", got)
+	}
+}
+
+func TestUVTypedVersionAndIndex(t *testing.T) {
+	fr := &run.FakeRunner{}
+	adapter := NewBaseAdapter(Configs["uv"])
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "ruff", "version": "0.11.0", "index": "https://packages.example/simple"}}
+	if err := adapter.Install(context.Background(), fr, &config.Tool{Name: "ruff"}, mc); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(fr.Calls[len(fr.Calls)-1].Args, " ")
+	want := "tool install --index https://packages.example/simple ruff==0.11.0"
+	if got != want {
+		t.Fatalf("argv=%q want %q", got, want)
+	}
+}
+
+func TestUVCheckExactVersion(t *testing.T) {
+	fr := &run.FakeRunner{Stdout: "ruff v0.11.0\n- ruff\n"}
+	adapter := NewBaseAdapter(Configs["uv"])
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "ruff", "version": "0.11.0"}}
+	if !adapter.Check(context.Background(), fr, &config.Tool{Name: "ruff"}, mc) {
+		t.Fatal("expected exact uv version")
+	}
+	mc.Config["version"] = "0.12.0"
+	if adapter.Check(context.Background(), fr, &config.Tool{Name: "ruff"}, mc) {
+		t.Fatal("uv version drift should fail")
+	}
+}
+
+func TestGemTypedVersionSourceAndScope(t *testing.T) {
+	fr := &run.FakeRunner{}
+	adapter := NewBaseAdapter(Configs["gem"])
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "rake", "version": "13.2.1", "source": "https://gems.example", "scope": "user"}}
+	if err := adapter.Install(context.Background(), fr, &config.Tool{Name: "rake"}, mc); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(fr.Calls[len(fr.Calls)-1].Args, " ")
+	want := "install rake --version 13.2.1 --clear-sources --source https://gems.example --user-install"
+	if got != want {
+		t.Fatalf("argv=%q want %q", got, want)
+	}
+}
+
+func TestGemCheckExactInstalledVersion(t *testing.T) {
+	fr := &run.FakeRunner{Stdout: "rake (13.2.1, 13.1.0)\n"}
+	adapter := NewBaseAdapter(Configs["gem"])
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "rake", "version": "13.1.0"}}
+	if !adapter.Check(context.Background(), fr, &config.Tool{Name: "rake"}, mc) {
+		t.Fatal("requested installed gem version should satisfy")
+	}
+	mc.Config["version"] = "12.0.0"
+	if adapter.Check(context.Background(), fr, &config.Tool{Name: "rake"}, mc) {
+		t.Fatal("missing gem version should not satisfy")
+	}
+}
+
+func TestPipTypedIndexURL(t *testing.T) {
+	fr := &run.FakeRunner{}
+	adapter := NewBaseAdapter(Configs["pip"])
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "black", "version": "24.3.0", "index_url": "https://packages.example/simple"}}
+	if err := adapter.Install(context.Background(), fr, &config.Tool{Name: "black"}, mc); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(fr.Calls[len(fr.Calls)-1].Args, " ")
+	want := "install black==24.3.0 --index-url https://packages.example/simple"
+	if got != want {
+		t.Fatalf("argv=%q want %q", got, want)
+	}
+}
+
+func TestNPMTypedRegistry(t *testing.T) {
+	fr := &run.FakeRunner{}
+	adapter := NewBaseAdapter(Configs["npm"])
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "typescript", "version": "5.8.2", "registry": "https://registry.example"}}
+	if err := adapter.Install(context.Background(), fr, &config.Tool{Name: "typescript"}, mc); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(fr.Calls[len(fr.Calls)-1].Args, " ")
+	want := "install -g typescript@5.8.2 --registry https://registry.example"
+	if got != want {
+		t.Fatalf("argv=%q want %q", got, want)
+	}
+}
+
+func TestComposerTypedExactVersion(t *testing.T) {
+	fr := &run.FakeRunner{}
+	adapter := NewBaseAdapter(Configs["composer"])
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "phpstan/phpstan", "version": "1.12.0"}}
+	if err := adapter.Install(context.Background(), fr, &config.Tool{Name: "phpstan"}, mc); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(fr.Calls[len(fr.Calls)-1].Args, " ")
+	want := "global require --no-interaction phpstan/phpstan:1.12.0"
+	if got != want {
+		t.Fatalf("argv=%q want %q", got, want)
+	}
+}
+
+func TestComposerCheckExactVersion(t *testing.T) {
+	fr := &run.FakeRunner{Stdout: "name     : phpstan/phpstan\nversions : * 1.12.0\n"}
+	adapter := NewBaseAdapter(Configs["composer"])
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "phpstan/phpstan", "version": "1.12.0"}}
+	if !adapter.Check(context.Background(), fr, &config.Tool{Name: "phpstan"}, mc) {
+		t.Fatal("expected composer version to satisfy")
+	}
+	mc.Config["version"] = "1.11.0"
+	if adapter.Check(context.Background(), fr, &config.Tool{Name: "phpstan"}, mc) {
+		t.Fatal("composer version drift should fail")
+	}
+}
+
+func TestBunTypedVersionAndRegistry(t *testing.T) {
+	fr := &run.FakeRunner{}
+	adapter := NewBaseAdapter(Configs["bun"])
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "typescript", "version": "5.8.2", "registry": "https://registry.example"}}
+	if err := adapter.Install(context.Background(), fr, &config.Tool{Name: "typescript"}, mc); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(fr.Calls[len(fr.Calls)-1].Args, " ")
+	want := "add -g --registry https://registry.example typescript@5.8.2"
+	if got != want {
+		t.Fatalf("argv=%q want %q", got, want)
+	}
+}
+
+func TestBunCheckExactVersionIncludingScopedPackage(t *testing.T) {
+	fr := &run.FakeRunner{Stdout: "├── typescript@5.8.2\n└── @scope/tool@1.4.0\n"}
+	adapter := NewBaseAdapter(Configs["bun"])
+	for _, tc := range []struct{ pkg, version string }{{"typescript", "5.8.2"}, {"@scope/tool", "1.4.0"}} {
+		mc := &config.MethodCandidate{Config: map[string]any{"pkg": tc.pkg, "version": tc.version}}
+		if !adapter.Check(context.Background(), fr, &config.Tool{Name: tc.pkg}, mc) {
+			t.Fatalf("expected %s@%s to satisfy", tc.pkg, tc.version)
+		}
+	}
+}
+
+func TestPNPMTypedExactVersion(t *testing.T) {
+	fr := &run.FakeRunner{}
+	adapter := NewBaseAdapter(Configs["pnpm"])
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "typescript", "version": "5.8.2"}}
+	if err := adapter.Install(context.Background(), fr, &config.Tool{Name: "typescript"}, mc); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(fr.Calls[len(fr.Calls)-1].Args, " "); got != "add -g typescript@5.8.2" {
+		t.Fatalf("argv=%q", got)
+	}
+}
+
+func TestPNPMCheckExactVersion(t *testing.T) {
+	fr := &run.FakeRunner{Stdout: `[{"dependencies":{"typescript":{"version":"5.8.2"}}}]`}
+	adapter := NewBaseAdapter(Configs["pnpm"])
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "typescript", "version": "5.8.2"}}
+	if !adapter.Check(context.Background(), fr, &config.Tool{Name: "typescript"}, mc) {
+		t.Fatal("expected pnpm exact version")
+	}
+	mc.Config["version"] = "5.7.0"
+	if adapter.Check(context.Background(), fr, &config.Tool{Name: "typescript"}, mc) {
+		t.Fatal("pnpm version drift should fail")
+	}
+}
+
+func TestYarnTypedExactVersion(t *testing.T) {
+	fr := &run.FakeRunner{}
+	adapter := NewBaseAdapter(Configs["yarn"])
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "typescript", "version": "5.8.2"}}
+	if err := adapter.Install(context.Background(), fr, &config.Tool{Name: "typescript"}, mc); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(fr.Calls[len(fr.Calls)-1].Args, " "); got != "global add typescript@5.8.2" {
+		t.Fatalf("argv=%q", got)
+	}
+}
+
+func TestYarnCheckExactVersion(t *testing.T) {
+	fr := &run.FakeRunner{Stdout: `info "typescript@5.8.2" has binaries:` + "\n"}
+	adapter := NewBaseAdapter(Configs["yarn"])
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "typescript", "version": "5.8.2"}}
+	if !adapter.Check(context.Background(), fr, &config.Tool{Name: "typescript"}, mc) {
+		t.Fatal("expected yarn exact version")
+	}
+	mc.Config["version"] = "5.7.0"
+	if adapter.Check(context.Background(), fr, &config.Tool{Name: "typescript"}, mc) {
+		t.Fatal("yarn version drift should fail")
 	}
 }

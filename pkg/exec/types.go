@@ -61,8 +61,9 @@ type ToolResult struct {
 // MethodAttempt records one method attempt for a tool.
 type MethodAttempt struct {
 	Kind   string
-	Status string // "skip_when" | "skip_unavailable" | "skip_already" | "success" | "failed" | "virtual"
-	Error  string // populated only if failed
+	Status string            // "skip_when" | "skip_unavailable" | "skip_policy" | "skip_capability" | "skip_already" | "success" | "failed" | "virtual"
+	Error  string            // explanation/reason for explain and failures
+	Intent map[string]string // normalized, non-secret identity fields for explain/why
 }
 
 // ExecReport is the complete execution summary produced by the executor.

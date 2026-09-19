@@ -16,7 +16,7 @@ import (
 
 func isArchive(ext string) bool {
 	switch ext {
-	case ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tar", ".zip":
+	case ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tar", ".zip", ".bz2":
 		return true
 	}
 	return false

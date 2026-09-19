@@ -10,16 +10,19 @@ import (
 // Condition is the parsed form of `when = { ... }`. All fields are honored by
 // Match with AND semantics across fields and OR semantics within slices.
 type Condition struct {
-	DistroFamily []string `cfg:"distro_family"`
-	TargetFamily []string `cfg:"target_family"`
-	DistroID     []string `cfg:"distro_id"`
-	Arch         []string `cfg:"arch"`
-	OS           []string `cfg:"os"`
-	Kernel       []string `cfg:"kernel"`
-	Libc         []string `cfg:"libc"`
-	InitSystem   []string `cfg:"init_system"`
-	IsWSL        *bool    `cfg:"is_wsl"`
-	IsContainer  *bool    `cfg:"is_container"`
+	DistroFamily     []string `cfg:"distro_family"`
+	TargetFamily     []string `cfg:"target_family"`
+	DistroID         []string `cfg:"distro_id"`
+	DistroVersion    []string `cfg:"distro_version"`
+	DistroVersionMin string   `cfg:"distro_version_min"`
+	DistroVersionMax string   `cfg:"distro_version_max"`
+	Arch             []string `cfg:"arch"`
+	OS               []string `cfg:"os"`
+	Kernel           []string `cfg:"kernel"`
+	Libc             []string `cfg:"libc"`
+	InitSystem       []string `cfg:"init_system"`
+	IsWSL            *bool    `cfg:"is_wsl"`
+	IsContainer      *bool    `cfg:"is_container"`
 	// Facts.OS reports "linux" on Termux, so IsAndroid is the reliable way
 	// to target Android.
 	IsAndroid *bool `cfg:"is_android"`
@@ -29,6 +32,9 @@ func (c *Condition) IsZero() bool {
 	return len(c.DistroFamily) == 0 &&
 		len(c.TargetFamily) == 0 &&
 		len(c.DistroID) == 0 &&
+		len(c.DistroVersion) == 0 &&
+		c.DistroVersionMin == "" &&
+		c.DistroVersionMax == "" &&
 		len(c.Arch) == 0 &&
 		len(c.OS) == 0 &&
 		len(c.Kernel) == 0 &&
@@ -56,6 +62,15 @@ func (c *Condition) Match(facts *engine.Facts) bool {
 		}
 	}
 	if len(c.DistroID) > 0 && !matchExact(c.DistroID, facts.DistroID) {
+		return false
+	}
+	if len(c.DistroVersion) > 0 && !matchVersion(c.DistroVersion, facts.DistroVersion) {
+		return false
+	}
+	if c.DistroVersionMin != "" && (facts.DistroVersion == "" || engine.CompareVersion(facts.DistroVersion, c.DistroVersionMin) < 0) {
+		return false
+	}
+	if c.DistroVersionMax != "" && (facts.DistroVersion == "" || engine.CompareVersion(facts.DistroVersion, c.DistroVersionMax) > 0) {
 		return false
 	}
 	if len(c.TargetFamily) > 0 && !matchExact(c.TargetFamily, facts.TargetFamily) {
@@ -91,6 +106,18 @@ func (c *Condition) Match(facts *engine.Facts) bool {
 func matchExact(allowed []string, actual string) bool {
 	for _, value := range allowed {
 		if strings.EqualFold(value, actual) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchVersion(allowed []string, actual string) bool {
+	if actual == "" {
+		return false
+	}
+	for _, value := range allowed {
+		if engine.CompareVersion(actual, value) == 0 {
 			return true
 		}
 	}

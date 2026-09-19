@@ -180,6 +180,22 @@ func TestHTTPAdapterCheckNotFound(t *testing.T) {
 	}
 }
 
+func TestHTTPAdapterRejectsEmbeddedCredentialsWithoutLeakingThem(t *testing.T) {
+	adapter := NewHTTPAdapter()
+	tool := &config.Tool{Name: "mytool"}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"url": "https://secret-token@example.com/tool.tar.gz",
+	}}
+
+	err := adapter.Install(context.Background(), &run.FakeRunner{ExitCode: 0}, tool, mc)
+	if err == nil {
+		t.Fatal("expected embedded credentials to be rejected")
+	}
+	if strings.Contains(err.Error(), "secret-token") {
+		t.Fatalf("error leaked credential: %v", err)
+	}
+}
+
 func TestHTTPAdapterInstallNoURL(t *testing.T) {
 	adapter := NewHTTPAdapter()
 	tool := &config.Tool{Name: "mytool"}
@@ -202,6 +218,7 @@ func TestFileExtension(t *testing.T) {
 		{"https://example.com/file.tar.gz", ".tar.gz"},
 		{"https://example.com/file.tgz", ".tgz"},
 		{"https://example.com/file.tar.bz2", ".tar.bz2"},
+		{"https://example.com/file.bz2", ".bz2"},
 		{"https://example.com/file.tar.xz", ".tar.xz"},
 		{"https://example.com/file.zip", ".zip"},
 		{"https://example.com/file.deb", ".deb"},
@@ -938,6 +955,20 @@ func TestIsSharedDir(t *testing.T) {
 	for _, tt := range tests {
 		if got := isSharedDir(tt.path); got != tt.want {
 			t.Errorf("isSharedDir(%q) = %v, want %v", tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestHTTPInstallRejectsUnsupportedArchiveBeforeDownload(t *testing.T) {
+	fr := &run.FakeRunner{}
+	mc := &config.MethodCandidate{Config: map[string]any{"url": "https://example.com/tool.7z"}}
+	err := NewHTTPAdapter().Install(context.Background(), fr, &config.Tool{Name: "tool"}, mc)
+	if err == nil || !strings.Contains(err.Error(), "archive extension .7z is not supported") {
+		t.Fatalf("Install() error = %v, want unsupported archive error", err)
+	}
+	for _, call := range fr.Calls {
+		if call.Name == "curl" || call.Name == "wget" {
+			t.Fatalf("unsupported archive reached downloader: %#v", fr.Calls)
 		}
 	}
 }
