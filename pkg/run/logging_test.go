@@ -1,7 +1,11 @@
 package run
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/log"
@@ -70,6 +74,20 @@ func TestLoggingRunnerLogsError(t *testing.T) {
 	cap.AssertContains(t, "deadline exceeded")
 }
 
+func TestLoggingRunnerRedactsSensitiveSpawnError(t *testing.T) {
+	inner := &FakeRunner{Err: errors.New("spawn failed for https://alice:secret@example.com/api --token argvsecret")}
+	cap := log.NewTestLogger(t)
+	runner := NewLoggingRunner(inner, cap.Logger)
+
+	runner.Run(context.Background(), "fetch")
+
+	for _, secret := range []string{"secret", "argvsecret"} {
+		cap.AssertNotContains(t, secret)
+	}
+	cap.AssertContains(t, "https://***@example.com/api")
+	cap.AssertContains(t, "--token=***")
+}
+
 func TestLoggingRunnerNilLoggerDefaults(t *testing.T) {
 	inner := &FakeRunner{ExitCode: 0}
 	runner := NewLoggingRunner(inner, nil)
@@ -94,4 +112,22 @@ func TestLoggingRunnerRedactsSensitiveStderr(t *testing.T) {
 		cap.AssertNotContains(t, secret)
 	}
 	cap.AssertContains(t, "Authorization: ***")
+}
+
+func TestLoggingRunnerRedactsSensitiveURLQuery(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	inner := &FakeRunner{}
+	lr := NewLoggingRunner(inner, logger)
+
+	lr.Run(context.Background(), "curl", "https://example.com/file?token=topsecret&keep=yes&sig=signed")
+	out := buf.String()
+	for _, secret := range []string{"topsecret", "signed"} {
+		if strings.Contains(out, secret) {
+			t.Fatalf("log leaked %q: %s", secret, out)
+		}
+	}
+	if !strings.Contains(out, "token=***") || !strings.Contains(out, "sig=***") {
+		t.Fatalf("log missing redaction markers: %s", out)
+	}
 }

@@ -247,6 +247,17 @@ func GatherFacts(r run.Runner) (*Facts, error) {
 			jsonErr, string(res.Stdout))
 	}
 
+	// A process-level execution failure (timeout, cancellation, signal, spawn
+	// failure) means the detector did not complete successfully even if it
+	// happened to emit syntactically valid JSON before dying. Normal exit code
+	// 1 remains accepted above because detect_os.sh deliberately uses it for
+	// partial-but-complete detection and Runner reports that via ExitCode only.
+	if res.Err != nil {
+		log.Default.Warn("OS detection script did not complete, using Go runtime fallback",
+			"error", res.Err, "stderr", string(res.Stderr))
+		return gatherFactsGo(r), nil
+	}
+
 	log.Default.Debug("gathered facts",
 		"distro_id", facts.DistroID,
 		"distro_name", facts.DistroName,

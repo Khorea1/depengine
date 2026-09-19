@@ -67,7 +67,9 @@ func evict(dir string, max int64) int {
 	items := make([]item, 0, len(entries))
 	var total int64
 	for _, e := range entries {
-		if e.IsDir() {
+		// Only finalized cache entries participate in eviction. Staging files
+		// created by a concurrent Store must never be removed mid-copy.
+		if !isCacheEntryName(e.Name()) || e.Type()&os.ModeSymlink != 0 {
 			continue
 		}
 		info, err := e.Info()
@@ -126,12 +128,25 @@ func Path(url string) string {
 // recently used.
 func Lookup(url string) string {
 	p := Path(url)
-	if _, err := os.Stat(p); err == nil {
-		now := time.Now()
-		os.Chtimes(p, now, now) // best-effort LRU refresh
-		return p
+	info, err := os.Lstat(p)
+	if err != nil || !info.Mode().IsRegular() {
+		return ""
 	}
-	return ""
+	now := time.Now()
+	os.Chtimes(p, now, now) // best-effort LRU refresh
+	return p
+}
+
+func isCacheEntryName(name string) bool {
+	if len(name) != sha256.Size*2 {
+		return false
+	}
+	for _, r := range name {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 // Store moves src into the download cache under a key derived from url.
@@ -154,14 +169,49 @@ func Store(url, src string) (string, error) {
 		return dst, nil
 	}
 
-	// Cross-device or other failure — fall back to copy.
-	if err := CopyFile(src, dst); err != nil {
+	// Cross-device or other failure — fall back to an atomic copy within the
+	// cache directory. Writing directly to dst would let a concurrent Lookup
+	// observe a partial file, and a failed copy could leave a corrupt entry
+	// that later looks like a cache hit.
+	if err := copyFileAtomic(src, dst); err != nil {
 		return "", fmt.Errorf("downloadcache: store: %w", err)
 	}
 	os.Remove(src) // best-effort cleanup
 	os.Chtimes(dst, now, now)
 	evict(dir, maxCacheBytes())
 	return dst, nil
+}
+
+func copyFileAtomic(src, dst string) error {
+	dir := filepath.Dir(dst)
+	tmp, err := os.CreateTemp(dir, ".depengine-download-*")
+	if err != nil {
+		return fmt.Errorf("create temp: %w", err)
+	}
+	tmpPath := tmp.Name()
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("close temp: %w", err)
+	}
+	defer os.Remove(tmpPath)
+
+	if err := CopyFile(src, tmpPath); err != nil {
+		return err
+	}
+
+	// os.Rename replaces an existing regular file atomically on Unix. On
+	// platforms where replacement is not supported, retry after removing the
+	// old cache entry; callers may observe a miss, but never a partial entry.
+	if err := os.Rename(tmpPath, dst); err == nil {
+		return nil
+	}
+	if err := os.Remove(dst); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("replace dest: %w", err)
+	}
+	if err := os.Rename(tmpPath, dst); err != nil {
+		return fmt.Errorf("commit temp: %w", err)
+	}
+	return nil
 }
 
 // Remove deletes a single cache entry for the given URL. No error is returned
@@ -188,12 +238,17 @@ func Clear() (int, error) {
 	}
 	var count int
 	for _, e := range entries {
-		if !e.IsDir() {
-			if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
-				return count, fmt.Errorf("downloadcache: clear: remove %s: %w", e.Name(), err)
-			}
-			count++
+		if !isCacheEntryName(e.Name()) || e.Type()&os.ModeSymlink != 0 {
+			continue
 		}
+		info, err := e.Info()
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+			return count, fmt.Errorf("downloadcache: clear: remove %s: %w", e.Name(), err)
+		}
+		count++
 	}
 	return count, nil
 }
@@ -216,6 +271,15 @@ func CopyFile(src, dst string) error {
 		return fmt.Errorf("create dest: %w", err)
 	}
 	defer d.Close()
+
+	// OpenFile's perm argument only applies when dst is newly created. Atomic
+	// cache staging creates the destination first with mode 0600, and ordinary
+	// callers may also overwrite an existing file with stale permissions. Apply
+	// the source mode explicitly so CopyFile actually fulfills its documented
+	// permission-preservation contract in both cases.
+	if err := d.Chmod(fi.Mode().Perm()); err != nil {
+		return fmt.Errorf("chmod dest: %w", err)
+	}
 
 	if _, err := io.Copy(d, s); err != nil {
 		return fmt.Errorf("copy: %w", err)

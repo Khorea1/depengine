@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "lock_version": 1,
+      "tool": {
+        "name": "example-tool"
+      },
+      "candidate": {
+        "method": "git",
+        "explicit": true
+      },
+      "requested_mode": "git_revision",
+      "stability": "immutable",
+      "identity": {
+        "revision": "abc123def4567890",
+        "source": "https://example.test/org/tool.git",
+        "platform": "linux"
+      }
+    },
+    {
+      "lock_version": 1,
+      "tool": {
+        "name": "jq"
+      },
+      "candidate": {
+        "method": "native",
+        "explicit": false
+      },
+      "requested_mode": "exact",
+      "stability": "immutable",
+      "identity": {
+        "version": "1.7.1",
+        "source": "debian",
+        "architecture": "amd64",
+        "platform": "linux"
+      }
+    },
+    {
+      "lock_version": 1,
+      "tool": {
+        "name": "ripgrep"
+      },
+      "candidate": {
+        "method": "github",
+        "explicit": true
+      },
+      "requested_mode": "exact",
+      "stability": "immutable",
+      "identity": {
+        "version": "14.1.1",
+        "revision": "14.1.1",
+        "source": "https://github.com/BurntSushi/ripgrep",
+        "architecture": "x86_64",
+        "platform": "linux",
+        "artifacts": [
+          {
+            "url": "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep.tar.gz",
+            "checksum": "sha256:0123456789abcdef"
+          }
+        ]
+      }
+    }
+  ]
+}

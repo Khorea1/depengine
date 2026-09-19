@@ -1,6 +1,7 @@
 package native
 
 import (
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -130,7 +131,7 @@ func TestBuildSearchCmd(t *testing.T) {
 // name/ID/moniker, so a bare "{pkg}" risks resolving to the wrong package;
 // every command below must pin an exact --id match and run fully
 // non-interactively (no license/source prompt can block with no TTY to
-// answer it). See W1 in .dev/TODO.md.
+// answer it).
 func TestWinGetCommandsAreExactIDBasedAndNonInteractive(t *testing.T) {
 	const pkg = "Some.Package"
 
@@ -320,5 +321,15 @@ func TestIsBatchCapable_NonAtomic(t *testing.T) {
 	}
 	if !IsBatchCapable("arch") {
 		t.Error("IsBatchCapable(arch) = false, want true (pacman is atomic)")
+	}
+}
+
+func TestManagerNamesForClanDeterministicPrimaryThenAliases(t *testing.T) {
+	want := []string{"dnf", "dnf5", "yum"}
+	for i := 0; i < 100; i++ {
+		got := ManagerNamesForClan("fedora")
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("ManagerNamesForClan(fedora) = %v, want %v", got, want)
+		}
 	}
 }

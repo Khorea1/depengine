@@ -322,3 +322,25 @@ func TestDetectDarwinVersionUsesReadOnlySwVers(t *testing.T) {
 		t.Fatalf("unexpected command: %s %v", call.name, call.args)
 	}
 }
+
+func TestGatherFactsRejectsValidJSONFromKilledDetector(t *testing.T) {
+	fr := &fakeRunner{
+		stdout:   detectionJSON,
+		stderr:   "timed out after writing output",
+		exitCode: -1,
+		err:      context.DeadlineExceeded,
+	}
+	tmp := tmpFile(t, "")
+	t.Setenv("DEPENGINE_DETECT_SCRIPT", tmp)
+
+	facts, err := GatherFacts(fr)
+	if err != nil {
+		t.Fatalf("expected runtime fallback, got error: %v", err)
+	}
+	if facts.DetectionMethod != "go-builtin" {
+		t.Fatalf("DetectionMethod = %q, want go-builtin fallback", facts.DetectionMethod)
+	}
+	if facts.DistroID == "arch" {
+		t.Fatalf("accepted facts emitted by killed detector: %+v", facts)
+	}
+}

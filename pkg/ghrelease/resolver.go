@@ -11,8 +11,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -29,8 +29,7 @@ const UserAgent = "github.com/Khorea1/depengine/0.1"
 
 // GitHub URL patterns for release/tag resolution.
 var (
-	githubRepoRe = regexp.MustCompile(`^https?://github\.com/([^/]+)/([^/]+)`)
-	cache        = sync.Map{}
+	cache = sync.Map{}
 
 	// httpClient is an HTTP client with a 30s timeout used for GitHub API calls.
 	httpClient   = &http.Client{Timeout: 30 * time.Second}
@@ -68,13 +67,13 @@ func ResolveLatest(ctx context.Context, urlStr string, rn run.Runner) (string, e
 		return urlStr, nil
 	}
 
-	matches := githubRepoRe.FindStringSubmatch(urlStr)
-	if len(matches) < 3 {
+	owner, repo, ok := githubRepoFromURL(urlStr)
+	if !ok {
 		// Can't resolve {latest} for non-GitHub URLs — leave it for v0.2.
 		return strings.ReplaceAll(urlStr, "{latest}", "latest"), nil
 	}
 
-	tag, err := fetchLatestTag(ctx, matches[1], matches[2], rn)
+	tag, err := fetchLatestTag(ctx, owner, repo, rn)
 	if err != nil {
 		return urlStr, err
 	}
@@ -108,11 +107,11 @@ func VersionTag(ctx context.Context, urlStr string, rn run.Runner) (string, erro
 // what schema.toml declares. It mirrors how Cargo.lock/package-lock.json pin
 // versions rather than resolved download URLs.
 func ResolveLatestTag(ctx context.Context, urlStr string, rn run.Runner) (string, error) {
-	matches := githubRepoRe.FindStringSubmatch(urlStr)
-	if len(matches) < 3 {
+	owner, repo, ok := githubRepoFromURL(urlStr)
+	if !ok {
 		return "latest", nil
 	}
-	return fetchLatestTag(ctx, matches[1], matches[2], rn)
+	return fetchLatestTag(ctx, owner, repo, rn)
 }
 
 // ResolveLatestReleaseTag returns the latest release tag for an owner/repo
@@ -239,7 +238,7 @@ func fetchReleaseByTag(ctx context.Context, owner, repo, tag string, rn run.Runn
 		return v.(*release), nil
 	}
 
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, tag)
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, url.PathEscape(tag))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("resolve release %s: request: %w", tag, err)
@@ -366,12 +365,26 @@ func ResolveAssetURL(ctx context.Context, repo, assetPattern, targetArch, target
 // splitRepo parses an "owner/repo" reference, also accepting a full
 // "https://github.com/owner/repo" URL for convenience/copy-paste.
 func splitRepo(repo string) (owner, name string, ok bool) {
+	repo = strings.TrimSpace(repo)
+	if strings.Contains(repo, "://") {
+		u, err := url.Parse(repo)
+		if err != nil || !strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https") || !strings.EqualFold(u.Host, "github.com") {
+			return "", "", false
+		}
+		if u.RawQuery != "" || u.Fragment != "" {
+			return "", "", false
+		}
+		repo = strings.Trim(u.Path, "/")
+	} else if len(repo) >= len("github.com/") && strings.EqualFold(repo[:len("github.com/")], "github.com/") {
+		repo = repo[len("github.com/"):]
+	}
 	repo = strings.TrimSuffix(repo, "/")
-	repo = strings.TrimPrefix(repo, "https://github.com/")
-	repo = strings.TrimPrefix(repo, "http://github.com/")
-	repo = strings.TrimPrefix(repo, "github.com/")
 	parts := strings.Split(repo, "/")
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
+	}
+	parts[1] = strings.TrimSuffix(parts[1], ".git")
+	if parts[1] == "" {
 		return "", "", false
 	}
 	return parts[0], parts[1], true
@@ -399,6 +412,9 @@ func githubToken(ctx context.Context, rn run.Runner) string {
 	}
 	if t := os.Getenv("GH_TOKEN"); t != "" {
 		return t
+	}
+	if rn == nil {
+		return ""
 	}
 	return ghCLIToken(ctx, rn)
 }
@@ -430,7 +446,35 @@ func ResetGhTokenCache() {
 	ghTokenValue = ""
 }
 
-// IsGitHubURL checks whether a URL points to a GitHub repository.
+// IsGitHubURL checks whether a URL points to a GitHub repository on the
+// standard HTTP(S) endpoint. Parsing the hostname instead of matching the raw
+// string keeps casing and an explicit default port (github.com:443) from
+// changing authentication capability selection.
 func IsGitHubURL(rawURL string) bool {
-	return githubRepoRe.MatchString(rawURL)
+	_, _, ok := githubRepoFromURL(rawURL)
+	return ok
+}
+
+func githubRepoFromURL(rawURL string) (owner, repo string, ok bool) {
+	u, err := url.Parse(rawURL)
+	if err != nil || (!strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https")) || !strings.EqualFold(u.Hostname(), "github.com") {
+		return "", "", false
+	}
+	if port := u.Port(); port != "" {
+		if strings.EqualFold(u.Scheme, "https") && port != "443" {
+			return "", "", false
+		}
+		if strings.EqualFold(u.Scheme, "http") && port != "80" {
+			return "", "", false
+		}
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
+	}
+	repo = strings.TrimSuffix(parts[1], ".git")
+	if repo == "" {
+		return "", "", false
+	}
+	return parts[0], repo, true
 }

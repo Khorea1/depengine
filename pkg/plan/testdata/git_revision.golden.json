@@ -1,0 +1,52 @@
+{
+  "plan_version": 1,
+  "tool": {
+    "name": "example-tool"
+  },
+  "candidate": {
+    "method": "git",
+    "explicit": true
+  },
+  "identity": {
+    "requested_version": {
+      "mode": "git_revision",
+      "value": "abc123def456"
+    },
+    "revision": "abc123def4567890",
+    "source": "https://example.test/org/tool.git",
+    "platform": "linux"
+  },
+  "owned_paths": [
+    "/opt/depengine/example-tool"
+  ],
+  "operations": [
+    {
+      "kind": "resolve-revision",
+      "effect": "read_only"
+    },
+    {
+      "kind": "clone",
+      "description": "clone source",
+      "effect": "mutation"
+    },
+    {
+      "kind": "build",
+      "description": "run declared build",
+      "effect": "mutation",
+      "command": [
+        "make",
+        "install",
+        "--token",
+        "***"
+      ],
+      "arbitrary_code": true
+    }
+  ],
+  "removal": {
+    "supported": true,
+    "owned_paths": [
+      "/opt/depengine/example-tool"
+    ],
+    "identity": "git:abc123def4567890"
+  }
+}

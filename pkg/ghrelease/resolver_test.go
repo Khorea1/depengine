@@ -2,6 +2,7 @@ package ghrelease
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -260,6 +261,27 @@ func TestResolveAssetURLRejectsMultipleMatches(t *testing.T) {
 	}
 }
 
+func TestResolveAssetURLWithSlashInRefEscapesTagPath(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wantEscaped := "/repos/slash-owner/slash-repo/releases/tags/release%2Fv1"
+		if got := r.URL.EscapedPath(); got != wantEscaped {
+			t.Errorf("escaped path = %q, want %q", got, wantEscaped)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"tag_name":"release/v1","assets":[{"name":"tool-linux-x86_64","browser_download_url":"https://example.com/tool"}]}`))
+	}))
+	t.Cleanup(ts.Close)
+	swapHTTPClient(t, ts.URL)
+
+	gotURL, tag, err := ResolveAssetURL(context.Background(), "slash-owner/slash-repo", "tool-linux-{arch_any}", "x86_64", "linux", "release/v1", run.OSExecRunner{})
+	if err != nil {
+		t.Fatalf("ResolveAssetURL: %v", err)
+	}
+	if tag != "release/v1" || gotURL != "https://example.com/tool" {
+		t.Fatalf("ResolveAssetURL = (%q, %q), want asset URL and slash tag", gotURL, tag)
+	}
+}
+
 func TestResolveAssetURLWithRef(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		want := "/repos/ref-owner/ref-repo/releases/tags/nightly"
@@ -351,4 +373,81 @@ func swapHTTPClient(t *testing.T, testURL string) {
 		httpClient = orig
 		httpClientMu.Unlock()
 	})
+}
+
+func TestIsGitHubURLCaseInsensitive(t *testing.T) {
+	for _, raw := range []string{
+		"HTTPS://GITHUB.COM/owner/repo/releases/download/v1/tool",
+		"https://GitHub.Com/owner/repo",
+	} {
+		if !IsGitHubURL(raw) {
+			t.Errorf("IsGitHubURL(%q) = false, want true", raw)
+		}
+	}
+}
+
+func TestSplitRepoAcceptsCanonicalGitForms(t *testing.T) {
+	for _, input := range []string{
+		"owner/repo",
+		"github.com/owner/repo",
+		"HTTPS://GITHUB.COM/owner/repo",
+		"https://github.com/owner/repo.git",
+	} {
+		owner, repo, ok := splitRepo(input)
+		if !ok || owner != "owner" || repo != "repo" {
+			t.Errorf("splitRepo(%q) = (%q, %q, %v), want owner/repo", input, owner, repo, ok)
+		}
+	}
+}
+
+func TestGithubTokenNilRunnerWithoutEnvIsSafe(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GH_TOKEN", "")
+	ResetGhTokenCache()
+	if got := GithubToken(context.Background(), nil); got != "" {
+		t.Fatalf("GithubToken(nil) = %q, want empty", got)
+	}
+}
+
+func TestIsGitHubURLHandlesDefaultPortWithoutTrustingOtherPorts(t *testing.T) {
+	for _, raw := range []string{
+		"https://github.com/owner/repo/releases/download/v1/tool",
+		"HTTPS://GITHUB.COM:443/owner/repo/releases/download/v1/tool",
+		"http://github.com:80/owner/repo",
+	} {
+		if !IsGitHubURL(raw) {
+			t.Errorf("IsGitHubURL(%q) = false, want true", raw)
+		}
+	}
+	for _, raw := range []string{
+		"https://github.com:444/owner/repo",
+		"https://github.com.evil.example/owner/repo",
+		"https://example.com/github.com/owner/repo",
+	} {
+		if IsGitHubURL(raw) {
+			t.Errorf("IsGitHubURL(%q) = true, want false", raw)
+		}
+	}
+}
+
+func TestResolveLatestTagHandlesExplicitDefaultGitHubPort(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"tag_name":"v9.8.7"}`)
+	}))
+	defer server.Close()
+	swapHTTPClient(t, server.URL)
+
+	tag, err := ResolveLatestTag(context.Background(), "https://github.com:443/owner/repo/releases/download/{latest}/tool", &run.FakeRunner{ExitCode: 1})
+	if err != nil {
+		t.Fatalf("ResolveLatestTag: %v", err)
+	}
+	if tag != "v9.8.7" {
+		t.Fatalf("tag = %q, want v9.8.7", tag)
+	}
+	if gotPath != "/repos/owner/repo/releases/latest" {
+		t.Fatalf("API path = %q", gotPath)
+	}
 }

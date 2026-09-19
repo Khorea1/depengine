@@ -42,6 +42,7 @@ This README covers the essentials. For everything else:
 | [`docs/architecture.md`](docs/architecture.md) | Internal package layout and install flow — for contributors |
 | [`docs/support-boundary.md`](docs/support-boundary.md) | What depengine models, capability/reproducibility limits, scope and source semantics |
 | [`docs/security.md`](docs/security.md) | Threat model, arbitrary code, credentials, verification and lockfile expectations |
+| [`docs/compatibility.md`](docs/compatibility.md) | Manifest, lock and state format-version policy and v1 freeze status |
 | [`docs/depengine.1`](docs/depengine.1) | Man page (`depengine help --man`, or `man depengine` if installed) |
 | [`schema/depengine.schema.json`](schema/depengine.schema.json) | JSON Schema for editor autocomplete (taplo, VSCode) |
 

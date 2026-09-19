@@ -2,6 +2,7 @@ package run
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -147,7 +148,7 @@ func TestFormatArgsForLogRedactsCredentials(t *testing.T) {
 		{name: "token separate", args: []string{"--token", "supersecret", "repo"}, want: "--token *** repo"},
 		{name: "password equals", args: []string{"--password=hunter2"}, want: "--password=***"},
 		{name: "authorization header", args: []string{"-H", "Authorization: Bearer abc123"}, want: "-H Authorization: ***"},
-		{name: "credential URL", args: []string{"https://user:pass@example.com/file"}, want: "https://%2A%2A%2A@example.com/file"},
+		{name: "credential URL", args: []string{"https://user:pass@example.com/file"}, want: "https://***@example.com/file"},
 		{name: "ordinary args", args: []string{"install", "pkg"}, want: "install pkg"},
 	}
 	for _, tc := range tests {
@@ -160,16 +161,78 @@ func TestFormatArgsForLogRedactsCredentials(t *testing.T) {
 }
 
 func TestRedactSensitiveText(t *testing.T) {
-	input := "fetch https://alice:s3cr3t@example.com/x --token abc123\nAuthorization: Bearer topsecret\nCookie: session=xyz"
+	input := "fetch https://alice:s3cr3t@example.com/x?token=querysecret&keep=yes&sig=signed --token abc123\nAuthorization: Bearer topsecret\nCookie: session=xyz"
 	got := RedactSensitiveText(input)
-	for _, secret := range []string{"s3cr3t", "abc123", "topsecret", "session=xyz"} {
+	for _, secret := range []string{"s3cr3t", "querysecret", "signed", "abc123", "topsecret", "session=xyz"} {
 		if strings.Contains(got, secret) {
 			t.Fatalf("redacted text still contains %q: %q", secret, got)
 		}
 	}
-	for _, marker := range []string{"https://***@example.com/x", "--token=***", "Authorization: ***", "Cookie: ***"} {
+	for _, marker := range []string{"https://***@example.com/x?token=***&keep=yes&sig=***", "--token=***", "Authorization: ***", "Cookie: ***"} {
 		if !strings.Contains(got, marker) {
 			t.Fatalf("redacted text missing %q: %q", marker, got)
 		}
+	}
+}
+
+func TestOSExecRunnerTimeoutSetsErr(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	name := "sleep"
+	args := []string{"5"}
+	if runtime.GOOS == "windows" {
+		name = "cmd.exe"
+		args = []string{"/d", "/c", "ping -n 6 127.0.0.1 >NUL"}
+	}
+	res := OSExecRunner{}.Run(ctx, name, args...)
+	if res.Err == nil {
+		t.Fatalf("timed-out process returned nil Err: %+v", res)
+	}
+	if !errors.Is(res.Err, context.DeadlineExceeded) {
+		t.Fatalf("timed-out process Err = %v, want DeadlineExceeded", res.Err)
+	}
+}
+
+func TestOSExecRunnerNormalNonZeroExitStillUsesExitCode(t *testing.T) {
+	name := "sh"
+	args := []string{"-c", "exit 7"}
+	if runtime.GOOS == "windows" {
+		name = "cmd.exe"
+		args = []string{"/d", "/c", "exit /b 7"}
+	}
+	res := OSExecRunner{}.Run(context.Background(), name, args...)
+	if res.Err != nil {
+		t.Fatalf("ordinary non-zero exit set Err: %v", res.Err)
+	}
+	if res.ExitCode != 7 {
+		t.Fatalf("ExitCode = %d, want 7", res.ExitCode)
+	}
+}
+
+func TestOSExecRunnerSignalTerminationSetsErr(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX signal semantics")
+	}
+	res := OSExecRunner{}.Run(context.Background(), "sh", "-c", "kill -TERM $$")
+	if res.Err == nil {
+		t.Fatalf("signal-terminated process returned nil Err: %+v", res)
+	}
+	if res.ExitCode != -1 {
+		t.Fatalf("signal-terminated ExitCode = %d, want -1", res.ExitCode)
+	}
+}
+
+func TestRedactErrorPreservesCauseAndHidesSecret(t *testing.T) {
+	cause := errors.New("GET https://example.com/file?token=topsecret: failed")
+	err := RedactError(cause)
+	if !errors.Is(err, cause) {
+		t.Fatal("RedactError did not preserve cause")
+	}
+	if strings.Contains(err.Error(), "topsecret") {
+		t.Fatalf("RedactError leaked secret: %q", err)
+	}
+	if !strings.Contains(err.Error(), "token=***") {
+		t.Fatalf("RedactError missing marker: %q", err)
 	}
 }

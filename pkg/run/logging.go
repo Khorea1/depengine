@@ -125,7 +125,7 @@ func (lr *LoggingRunner) run(ctx context.Context, dir, name string, args ...stri
 	if result.Err != nil {
 		// Process failed to start or was killed (timeout, signal).
 		lr.logger.Log(ctx, failLevel, "run failed", append(attrs,
-			"error", result.Err.Error(),
+			"error", RedactSensitiveText(result.Err.Error()),
 			"stderr", truncateStderr(result.Stderr),
 		)...)
 	} else if result.ExitCode != 0 {
@@ -203,7 +203,7 @@ func formatArgsForLog(args []string) string {
 			redacted[i] = redactHeader(arg)
 			continue
 		}
-		redacted[i] = redactURLUserinfo(arg)
+		redacted[i] = RedactSensitiveText(redactURLUserinfo(arg))
 	}
 	return strings.Join(redacted, " ")
 }

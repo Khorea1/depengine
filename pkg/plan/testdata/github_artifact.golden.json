@@ -1,0 +1,63 @@
+{
+  "plan_version": 1,
+  "tool": {
+    "name": "ripgrep"
+  },
+  "candidate": {
+    "method": "github",
+    "explicit": true
+  },
+  "identity": {
+    "requested_version": {
+      "mode": "exact",
+      "value": "14.1.1"
+    },
+    "version": "14.1.1",
+    "revision": "14.1.1",
+    "source": "https://github.com/BurntSushi/ripgrep",
+    "architecture": "x86_64",
+    "platform": "linux"
+  },
+  "artifacts": [
+    {
+      "url": "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep.tar.gz?token=***",
+      "checksum": "sha256:0123456789abcdef"
+    }
+  ],
+  "owned_paths": [
+    "/opt/depengine/ripgrep"
+  ],
+  "entrypoints": {
+    "rg": "/opt/depengine/ripgrep/bin/rg"
+  },
+  "operations": [
+    {
+      "kind": "resolve-release",
+      "description": "resolve GitHub release 14.1.1",
+      "effect": "read_only"
+    },
+    {
+      "kind": "download-artifact",
+      "description": "download authenticated release asset",
+      "effect": "read_only"
+    },
+    {
+      "kind": "install-artifact",
+      "description": "install resolved archive",
+      "effect": "mutation"
+    }
+  ],
+  "removal": {
+    "supported": true,
+    "owned_paths": [
+      "/opt/depengine/ripgrep"
+    ],
+    "identity": "ripgrep@14.1.1"
+  },
+  "secret_refs": [
+    {
+      "provider": "env",
+      "name": "GITHUB_TOKEN"
+    }
+  ]
+}

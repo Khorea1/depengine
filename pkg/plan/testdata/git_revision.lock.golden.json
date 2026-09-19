@@ -1,0 +1,17 @@
+{
+  "lock_version": 1,
+  "tool": {
+    "name": "example-tool"
+  },
+  "candidate": {
+    "method": "git",
+    "explicit": true
+  },
+  "requested_mode": "git_revision",
+  "stability": "immutable",
+  "identity": {
+    "revision": "abc123def4567890",
+    "source": "https://example.test/org/tool.git",
+    "platform": "linux"
+  }
+}

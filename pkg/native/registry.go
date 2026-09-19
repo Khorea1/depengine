@@ -458,13 +458,23 @@ func IsNativeManagerName(name string) bool {
 // pkg_overrides keys against the current clan.
 func ManagerNamesForClan(clan string) []string {
 	var names []string
-	if mgr, ok := Lookup(clan); ok {
+	seen := map[string]bool{}
+	if mgr, ok := Lookup(clan); ok && mgr.Name != "" {
 		names = append(names, mgr.Name)
+		seen[mgr.Name] = true
 	}
+
+	// Aliases come from a map, so collect and sort them before appending. The
+	// order is semantically observable: pkgFromConfig uses the first matching
+	// pkg_override. Keeping the primary Manager.Name first and aliases sorted
+	// makes conflicting alias overrides deterministic across processes.
+	var aliases []string
 	for binName, c := range managerNameToClan {
-		if c == clan {
-			names = append(names, binName)
+		if c == clan && !seen[binName] {
+			aliases = append(aliases, binName)
 		}
 	}
+	sort.Strings(aliases)
+	names = append(names, aliases...)
 	return names
 }

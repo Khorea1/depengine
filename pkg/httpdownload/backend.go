@@ -52,7 +52,7 @@ func NewGoDownloader(rn run.Runner) *GoDownloader {
 func (d *GoDownloader) Download(ctx context.Context, url, dest string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return fmt.Errorf("http: request: %w", err)
+		return fmt.Errorf("http: request: %w", run.RedactError(err))
 	}
 
 	// Without a User-Agent, some CDNs (GitHub releases, Cloudflare, etc.)
@@ -74,15 +74,16 @@ func (d *GoDownloader) Download(ctx context.Context, url, dest string) error {
 
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("http: get: %w", err)
+		return fmt.Errorf("http: get: %w", run.RedactError(err))
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		safeURL := run.RedactSensitiveText(url)
 		if resp.StatusCode == http.StatusNotFound {
-			return fmt.Errorf("http: %s returned %s (hint: check this tool's arch_map/os_map — the upstream release asset may use a different spelling of arch/os than this machine's own)", url, resp.Status)
+			return fmt.Errorf("http: %s returned %s (hint: check this tool's arch_map/os_map — the upstream release asset may use a different spelling of arch/os than this machine's own)", safeURL, resp.Status)
 		}
-		return fmt.Errorf("http: %s returned %s", url, resp.Status)
+		return fmt.Errorf("http: %s returned %s", safeURL, resp.Status)
 	}
 
 	out, err := os.Create(dest)
@@ -93,10 +94,10 @@ func (d *GoDownloader) Download(ctx context.Context, url, dest string) error {
 
 	written, err := io.Copy(out, resp.Body)
 	if err != nil {
-		return fmt.Errorf("http: download %s: %w", url, err)
+		return fmt.Errorf("http: download %s: %w", run.RedactSensitiveText(url), run.RedactError(err))
 	}
 	if written == 0 {
-		return fmt.Errorf("http: empty response from %s", url)
+		return fmt.Errorf("http: empty response from %s", run.RedactSensitiveText(url))
 	}
 
 	return nil

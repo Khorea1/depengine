@@ -1,7 +1,11 @@
 # schema.toml — full syntax reference
 
-Only the latest contract (`schema_version = 1`) is supported. The version is a
-fail-closed identifier, not a selector for legacy parsers or migrations.
+Only the latest pre-freeze contract (`schema_version = 1`) is supported today.
+`schema_version` identifies the manifest format major; it is not the depengine
+release version. Until the v1 freeze gate is complete, readers fail closed on
+all other versions and do not dispatch legacy parsers or migrations. See
+[Compatibility and format versioning](compatibility.md) for the freeze and
+future-major policy.
 
 This is the complete reference for every way to declare a tool in
 `schema.toml`. If you're just getting started, read

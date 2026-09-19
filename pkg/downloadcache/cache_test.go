@@ -223,3 +223,184 @@ func TestStoreCreatesParentDirs(t *testing.T) {
 		t.Fatal("entry missing after Store with dir creation")
 	}
 }
+
+func TestCopyFileAtomicPreservesExistingEntryOnCopyFailure(t *testing.T) {
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "cached")
+	if err := os.WriteFile(dst, []byte("known-good"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Opening a directory succeeds on Unix, but copying bytes from it fails.
+	// The failed staging copy must not truncate or replace the existing cache
+	// entry. On platforms that reject opening the directory earlier, the same
+	// preservation invariant still applies.
+	if err := copyFileAtomic(t.TempDir(), dst); err == nil {
+		t.Fatal("copyFileAtomic(directory, dst) = nil, want error")
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "known-good" {
+		t.Fatalf("existing cache entry changed after failed copy: %q", got)
+	}
+
+	matches, err := filepath.Glob(filepath.Join(dir, ".depengine-download-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("staging files leaked after failed copy: %v", matches)
+	}
+}
+
+func TestCopyFileAtomicCommitsCompleteFile(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src")
+	dst := filepath.Join(dir, "dst")
+	if err := os.WriteFile(src, []byte("new-complete-content"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyFileAtomic(src, dst); err != nil {
+		t.Fatalf("copyFileAtomic: %v", err)
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "new-complete-content" {
+		t.Fatalf("committed content = %q", got)
+	}
+}
+
+func TestLookupRejectsNonRegularEntries(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	url := testURL + "#non-regular"
+	p := Path(url)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(p, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := Lookup(url); got != "" {
+		t.Fatalf("Lookup(directory) = %q, want miss", got)
+	}
+
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "target")
+	if err := os.WriteFile(target, []byte("not cache-owned"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, p); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	if got := Lookup(url); got != "" {
+		t.Fatalf("Lookup(symlink) = %q, want miss", got)
+	}
+}
+
+func TestEvictIgnoresStagingFiles(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	if err := os.MkdirAll(CacheDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	staging := filepath.Join(CacheDir(), ".depengine-download-active")
+	if err := os.WriteFile(staging, []byte("in-progress"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	url := testURL + "#evict-real-entry"
+	entry := Path(url)
+	if err := os.WriteFile(entry, []byte("cached"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if removed := evict(CacheDir(), 1); removed != 1 {
+		t.Fatalf("evict removed %d finalized entries, want 1", removed)
+	}
+	if _, err := os.Stat(staging); err != nil {
+		t.Fatalf("staging file was removed by eviction: %v", err)
+	}
+}
+
+func TestClearIgnoresStagingFiles(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	if err := os.MkdirAll(CacheDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	staging := filepath.Join(CacheDir(), ".depengine-download-active")
+	if err := os.WriteFile(staging, []byte("in-progress"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	entry := Path(testURL + "#clear-real-entry")
+	if err := os.WriteFile(entry, []byte("cached"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	count, err := Clear()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("Clear removed %d cache entries, want 1", count)
+	}
+	if _, err := os.Stat(staging); err != nil {
+		t.Fatalf("staging file was removed by Clear: %v", err)
+	}
+}
+
+func TestCopyFilePreservesPermissionsWhenDestinationExists(t *testing.T) {
+	if os.Getenv("GOOS") == "windows" {
+		t.Skip("POSIX permission bits are not meaningful on Windows")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src")
+	dst := filepath.Join(dir, "dst")
+	if err := os.WriteFile(src, []byte("executable"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := CopyFile(src, dst); err != nil {
+		t.Fatalf("CopyFile: %v", err)
+	}
+	info, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o755 {
+		t.Fatalf("destination mode = %o, want 755", got)
+	}
+}
+
+func TestCopyFileAtomicPreservesPermissions(t *testing.T) {
+	if os.Getenv("GOOS") == "windows" {
+		t.Skip("POSIX permission bits are not meaningful on Windows")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src")
+	dst := filepath.Join(dir, "dst")
+	if err := os.WriteFile(src, []byte("executable"), 0o751); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyFileAtomic(src, dst); err != nil {
+		t.Fatalf("copyFileAtomic: %v", err)
+	}
+	info, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o751 {
+		t.Fatalf("destination mode = %o, want 751", got)
+	}
+}

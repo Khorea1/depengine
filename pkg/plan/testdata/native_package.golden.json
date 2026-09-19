@@ -1,0 +1,52 @@
+{
+  "plan_version": 1,
+  "tool": {
+    "name": "jq"
+  },
+  "candidate": {
+    "method": "native",
+    "explicit": false
+  },
+  "identity": {
+    "requested_version": {
+      "mode": "exact",
+      "value": "1.7.1"
+    },
+    "version": "1.7.1",
+    "source": "debian",
+    "architecture": "amd64",
+    "platform": "linux"
+  },
+  "prerequisites": [
+    {
+      "name": "apt-transport-https",
+      "method": "native"
+    }
+  ],
+  "source_mutations": [
+    {
+      "kind": "add-source",
+      "description": "configure package source",
+      "effect": "mutation"
+    }
+  ],
+  "entrypoints": {
+    "jq": "/usr/bin/jq"
+  },
+  "operations": [
+    {
+      "kind": "sync-index",
+      "description": "refresh package metadata",
+      "effect": "mutation"
+    },
+    {
+      "kind": "install-package",
+      "description": "install jq=1.7.1",
+      "effect": "mutation"
+    }
+  ],
+  "removal": {
+    "supported": true,
+    "identity": "jq"
+  }
+}

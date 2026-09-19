@@ -156,7 +156,16 @@ func runCommand(ctx context.Context, dir, name string, args ...string) Result {
 	// signal, context deadline/cancellation, etc.
 	var exitErr *exec.ExitError
 	if runErr != nil && errors.As(runErr, &exitErr) {
-		runErr = nil
+		if exit >= 0 {
+			// A normal process exit, even when non-zero, belongs exclusively
+			// in ExitCode.
+			runErr = nil
+		} else if ctxErr := ctx.Err(); ctxErr != nil {
+			// CommandContext commonly reports a killed process as ExitError.
+			// Preserve the execution-boundary distinction by exposing the
+			// cancellation/deadline as Err instead of a synthetic exit code.
+			runErr = ctxErr
+		}
 	}
 
 	return Result{
