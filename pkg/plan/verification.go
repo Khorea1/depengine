@@ -39,6 +39,7 @@ const (
 type IdentityField string
 
 const (
+	FieldPackage      IdentityField = "package"
 	FieldVersion      IdentityField = "version"
 	FieldRevision     IdentityField = "revision"
 	FieldDigest       IdentityField = "digest"
@@ -51,6 +52,7 @@ const (
 )
 
 var identityFields = []IdentityField{
+	FieldPackage,
 	FieldVersion,
 	FieldRevision,
 	FieldDigest,
@@ -66,6 +68,7 @@ var identityFields = []IdentityField{
 // authoritative when it also appears in Observation.KnownFields; an empty
 // value can itself be a known value for dimensions where that is meaningful.
 type ObservedIdentity struct {
+	Package      string             `json:"package,omitempty"`
 	Version      string             `json:"version,omitempty"`
 	Revision     string             `json:"revision,omitempty"`
 	Digest       string             `json:"digest,omitempty"`
@@ -274,6 +277,8 @@ func validIdentityField(field IdentityField) bool {
 
 func desiredField(identity ResolvedIdentity, field IdentityField) string {
 	switch field {
+	case FieldPackage:
+		return identity.Package
 	case FieldVersion:
 		return identity.Version
 	case FieldRevision:
@@ -302,6 +307,8 @@ func desiredField(identity ResolvedIdentity, field IdentityField) string {
 
 func observedField(identity ObservedIdentity, field IdentityField) string {
 	switch field {
+	case FieldPackage:
+		return identity.Package
 	case FieldVersion:
 		return identity.Version
 	case FieldRevision:

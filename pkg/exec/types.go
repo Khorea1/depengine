@@ -3,6 +3,8 @@ package exec
 import (
 	"sync"
 	"time"
+
+	"github.com/Khorea1/depengine/pkg/plan"
 )
 
 // SortField controls the sort order of tools in the output report.
@@ -55,15 +57,17 @@ type ToolResult struct {
 	RebootRequired  bool
 
 	// Config stores the method's configuration (e.g., pkg override).
-	Config map[string]any
+	Config     map[string]any
+	PlanIntent *plan.ResolvedInstallPlan
 }
 
 // MethodAttempt records one method attempt for a tool.
 type MethodAttempt struct {
-	Kind   string
-	Status string            // "skip_when" | "skip_unavailable" | "skip_policy" | "skip_capability" | "skip_already" | "success" | "failed" | "virtual"
-	Error  string            // explanation/reason for explain and failures
-	Intent map[string]string // normalized, non-secret identity fields for explain/why
+	Kind       string
+	Status     string                    // "skip_when" | "skip_unavailable" | "skip_policy" | "skip_capability" | "skip_already" | "success" | "failed" | "virtual"
+	Error      string                    // explanation/reason for explain and failures
+	Intent     map[string]string         // normalized, non-secret identity fields for explain/why
+	PlanIntent *plan.ResolvedInstallPlan // static adapter-neutral projection before host resolution
 }
 
 // ExecReport is the complete execution summary produced by the executor.

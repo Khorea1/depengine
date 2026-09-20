@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/Khorea1/depengine/pkg/plan"
 )
 
 // SortBy sorts the Tools slice in-place by the given criterion.
@@ -208,10 +210,11 @@ func (r *ExecReport) Detail() string {
 // JSON returns the report as a JSON string.
 func (r *ExecReport) JSON() string {
 	type jsonTool struct {
-		Tool   string `json:"tool"`
-		Status string `json:"status"`
-		Method string `json:"method,omitempty"`
-		Error  string `json:"error,omitempty"`
+		Tool       string                    `json:"tool"`
+		Status     string                    `json:"status"`
+		Method     string                    `json:"method,omitempty"`
+		Error      string                    `json:"error,omitempty"`
+		PlanIntent *plan.ResolvedInstallPlan `json:"plan_intent,omitempty"`
 	}
 	out := struct {
 		Tools        []jsonTool `json:"tools"`
@@ -233,10 +236,11 @@ func (r *ExecReport) JSON() string {
 	}
 	for _, tr := range r.Tools {
 		out.Tools = append(out.Tools, jsonTool{
-			Tool:   tr.Tool,
-			Status: statusLabel(tr.Status),
-			Method: tr.Method,
-			Error:  tr.Error,
+			Tool:       tr.Tool,
+			Status:     statusLabel(tr.Status),
+			Method:     tr.Method,
+			Error:      tr.Error,
+			PlanIntent: tr.PlanIntent,
 		})
 	}
 	b, _ := json.MarshalIndent(out, "", "  ")

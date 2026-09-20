@@ -8,6 +8,7 @@ package validate
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
@@ -89,6 +90,23 @@ func (r *Result) All() []ValidationError {
 	out = append(out, r.Warnings...)
 	out = append(out, r.Errors...)
 	return out
+}
+
+// sort orders findings by location so output is stable across runs; the
+// individual checks iterate maps and would otherwise reorder every run.
+func (r *Result) sort() {
+	for _, list := range [][]ValidationError{r.Errors, r.Warnings} {
+		sort.SliceStable(list, func(i, j int) bool {
+			a, b := list[i], list[j]
+			if a.Field != b.Field {
+				return a.Field < b.Field
+			}
+			if a.Code != b.Code {
+				return a.Code < b.Code
+			}
+			return a.Message < b.Message
+		})
+	}
 }
 
 // knownPlaceholderLookup is built once from config.KnownPlaceholders(),
@@ -239,5 +257,9 @@ func ValidateSchema(s *config.Schema, knownKinds []string) *Result {
 	r.Merge(validateUnknownDistroFamily(s))
 	r.Merge(validateMethodOrderConflicts(s))
 	r.Merge(validateSignatureSecurity(s))
+
+	// Plan checks reuse the executor's static planning boundary.
+	r.Merge(validatePlanIntents(s))
+	r.sort()
 	return r
 }

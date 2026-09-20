@@ -89,29 +89,14 @@ func TestProjectLockArtifactRequiresChecksum(t *testing.T) {
 	}
 }
 
-func TestProjectLockDoesNotStoreCredentials(t *testing.T) {
+func TestProjectLockRejectsCredentialBearingResolvedPlan(t *testing.T) {
 	p := plan.New("private", "http", true)
 	p.Identity.Version = "1.0.0"
-	p.Identity.Source = "https://user:password@example.test/repo?token=source-secret"
-	p.Identity.Registry = "https://registry.test/index?api_key=registry-secret"
-	p.Artifacts = []plan.Artifact{{
-		URL:      "https://example.test/tool?sig=artifact-secret",
-		Checksum: "sha256:abc",
-	}}
+	p.Identity.Source = "https://user:password@example.test/repo"
+	p.Artifacts = []plan.Artifact{{URL: "https://example.test/tool.tar.gz", Checksum: "sha256:abc"}}
 
-	got, err := plan.ProjectLock(p)
-	if err != nil {
-		t.Fatalf("ProjectLock() error: %v", err)
-	}
-	data, err := json.Marshal(got)
-	if err != nil {
-		t.Fatalf("Marshal() error: %v", err)
-	}
-	text := string(data)
-	for _, secret := range []string{"password", "source-secret", "registry-secret", "artifact-secret"} {
-		if strings.Contains(text, secret) {
-			t.Fatalf("lock projection leaked %q: %s", secret, text)
-		}
+	if _, err := plan.ProjectLock(p); err == nil || !strings.Contains(err.Error(), "credentials") {
+		t.Fatalf("ProjectLock() error = %v, want credential rejection", err)
 	}
 }
 

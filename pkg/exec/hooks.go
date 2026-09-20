@@ -16,12 +16,36 @@ import (
 // fields behind the same --allow-arbitrary-code gate.
 func (ex *Executor) hasDangerousMethod(tool *config.Tool) bool {
 	for _, method := range config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName) {
-		contract, ok := methodkind.Lookup(method.Kind)
-		if !ok {
-			continue
-		}
-		if contract.RequestedCapabilities(method.Config)&methodkind.CapabilityArbitraryCode != 0 {
+		if methodRunsArbitraryCode(tool, method) {
 			return true
+		}
+	}
+	return false
+}
+
+// methodRunsArbitraryCode derives the arbitrary-code gate from the shared
+// plan. If static planning rejects the candidate (malformed programmatic
+// input) it fails closed to the schema-level command predicate, so an
+// invalid extra field cannot bypass the security gate.
+func methodRunsArbitraryCode(tool *config.Tool, method *config.MethodCandidate) bool {
+	if intent, _ := candidatePlanIntent(tool, method); intent != nil {
+		if capabilities, err := methodkind.PlanCapabilities(*intent); err == nil {
+			return capabilities&methodkind.CapabilityArbitraryCode != 0
+		}
+	}
+	return configuredCommand(method)
+}
+
+func configuredCommand(method *config.MethodCandidate) bool {
+	contract, ok := methodkind.Lookup(method.Kind)
+	if !ok {
+		return false
+	}
+	for name, field := range contract.Fields {
+		if field.Type == methodkind.Command {
+			if _, configured := method.Config[name]; configured {
+				return true
+			}
 		}
 	}
 	return false

@@ -122,18 +122,19 @@ func (lr *LoggingRunner) run(ctx context.Context, dir, name string, args ...stri
 		failLevel = slog.LevelDebug
 	}
 
-	if result.Err != nil {
+	switch {
+	case result.Err != nil:
 		// Process failed to start or was killed (timeout, signal).
 		lr.logger.Log(ctx, failLevel, "run failed", append(attrs,
 			"error", RedactSensitiveText(result.Err.Error()),
 			"stderr", truncateStderr(result.Stderr),
 		)...)
-	} else if result.ExitCode != 0 {
+	case result.ExitCode != 0:
 		// Process ran but exited non-zero.
 		lr.logger.Log(ctx, failLevel, "run exited non-zero", append(attrs,
 			"stderr", truncateStderr(result.Stderr),
 		)...)
-	} else {
+	default:
 		lr.logger.Debug("run ok", attrs...)
 	}
 

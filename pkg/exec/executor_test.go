@@ -1788,7 +1788,7 @@ func TestExplainIntentSurfacesIdentityFieldsAndRedactsSecrets(t *testing.T) {
 	}}
 	got := explainIntent(method)
 	for key, want := range map[string]string{
-		"pkg": "numpy", "version": "2.1.0", "environment": "data", "build": "py312_0",
+		"pkg": "numpy", "version": "2.1.0", "environment": "data",
 	} {
 		if got[key] != want {
 			t.Fatalf("intent[%q]=%q want %q; full=%v", key, got[key], want, got)
@@ -1799,5 +1799,8 @@ func TestExplainIntentSurfacesIdentityFieldsAndRedactsSecrets(t *testing.T) {
 	}
 	if _, ok := got["ignored"]; ok {
 		t.Fatalf("arbitrary config leaked into explain intent: %v", got)
+	}
+	if _, ok := got["build"]; ok {
+		t.Fatalf("command-bearing config leaked into explain intent: %v", got)
 	}
 }

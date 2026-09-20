@@ -35,15 +35,13 @@ func runForget(toolName string) {
 	st := ls.State()
 	if _, ok := st.Tools[toolName]; !ok {
 		log.Default.Error("tool not found in state", "tool", toolName)
-		ls.Close()
-		os.Exit(1)
+		closeStateAndExit(ls, 1)
 	}
 
 	delete(st.Tools, toolName)
 	if err := ls.Save(); err != nil {
 		log.Default.Error("save state", "error", err)
-		ls.Close()
-		os.Exit(3)
+		closeStateAndExit(ls, 3)
 	}
 
 	log.Default.Info("forgotten", "tool", toolName)

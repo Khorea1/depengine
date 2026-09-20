@@ -133,14 +133,14 @@ func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgra
 	}
 	if err != nil {
 		lg.Error("load state", "error", err)
-		os.Exit(3)
+		closeStateAndExit(ls, 3)
 	}
 
 	// Build executor for Install calls.
 	schemaFile, err := os.Stat(*upgradeSchema)
 	if err != nil {
 		lg.Error("stat schema", "error", err)
-		os.Exit(1)
+		closeStateAndExit(ls, 1)
 	}
 	ex := exec.New()
 	exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
@@ -265,7 +265,7 @@ func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgra
 		input = strings.TrimSpace(strings.ToLower(input))
 		if input != "y" && input != "yes" {
 			fmt.Fprintln(os.Stderr, "Aborted.")
-			os.Exit(0)
+			closeStateAndExit(ls, 0)
 		}
 	}
 
@@ -399,7 +399,7 @@ func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgra
 	if !*upgradeDryRun {
 		if err := ls.Save(); err != nil {
 			lg.Error("state save failed", "error", err)
-			os.Exit(3)
+			closeStateAndExit(ls, 3)
 		}
 	}
 
@@ -440,7 +440,7 @@ func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgra
 	}
 
 	if failed > 0 {
-		os.Exit(1)
+		closeStateAndExit(ls, 1)
 	}
 }
 

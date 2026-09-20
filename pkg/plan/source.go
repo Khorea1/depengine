@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -132,11 +133,26 @@ func sourceSortKey(s SourceReference) string {
 	return string(s.Role) + "\x00" + strings.ToLower(s.Name) + "\x00" + sanitizeLockReference(s.URL)
 }
 
+// scpLikeReference matches the scp-style git remote "user@host:path", which is
+// not a URL and never carries a password.
+// placeholderToken matches unexpanded {name} placeholders, which are legal
+// anywhere in a manifest URL (including the host) before expansion.
+var placeholderToken = regexp.MustCompile(`\{[A-Za-z_][A-Za-z0-9_]*\}`)
+
+var scpLikeReference = regexp.MustCompile(`^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:[^/\\:]`)
+
+// validateCredentialFreeReference rejects references that embed secrets.
+// A password is always forbidden. A bare username is a login name, not a
+// secret, for SSH transports (ssh://git@host); for every other scheme it can
+// be a token (https://<token>@host) and is forbidden too.
 func validateCredentialFreeReference(raw string) error {
 	if strings.TrimSpace(raw) != raw {
 		return errors.New("reference must not contain leading or trailing whitespace")
 	}
-	u, err := url.Parse(raw)
+	if !strings.Contains(raw, "://") && scpLikeReference.MatchString(raw) {
+		return nil
+	}
+	u, err := url.Parse(placeholderToken.ReplaceAllString(raw, "x"))
 	if err != nil {
 		return fmt.Errorf("invalid reference: %w", err)
 	}
@@ -146,7 +162,9 @@ func validateCredentialFreeReference(raw string) error {
 		return nil
 	}
 	if u.User != nil {
-		return errors.New("literal URL credentials are forbidden; use secret_ref")
+		if _, hasPassword := u.User.Password(); hasPassword || !isSSHScheme(u.Scheme) {
+			return errors.New("literal URL credentials are forbidden; use secret_ref")
+		}
 	}
 	for key := range u.Query() {
 		if _, sensitive := sensitiveLockQueryKeys[strings.ToLower(key)]; sensitive {
@@ -154,4 +172,9 @@ func validateCredentialFreeReference(raw string) error {
 		}
 	}
 	return nil
+}
+
+func isSSHScheme(scheme string) bool {
+	scheme = strings.ToLower(scheme)
+	return scheme == "ssh" || strings.HasSuffix(scheme, "+ssh")
 }

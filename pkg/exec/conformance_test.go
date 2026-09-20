@@ -51,14 +51,14 @@ func TestBatchDoesNotChangeMethodSelection(t *testing.T) {
 				Name: "fd",
 				Methods: []*config.MethodCandidate{
 					{Kind: "native", Config: map[string]any{"pkg": "fd"}},
-					{Kind: "git", Config: map[string]any{"pkg": "fd"}},
+					{Kind: "git", Config: map[string]any{"url": "https://example.test/fd.git"}},
 				},
 			},
 			"bat": {
 				Name: "bat",
 				Methods: []*config.MethodCandidate{
 					{Kind: "native", Config: map[string]any{"pkg": "bat"}},
-					{Kind: "git", Config: map[string]any{"pkg": "bat"}},
+					{Kind: "git", Config: map[string]any{"url": "https://example.test/bat.git"}},
 				},
 			},
 		},
@@ -200,7 +200,7 @@ func TestBatchFallbackAlreadyInstalled(t *testing.T) {
 			"toolC": {
 				Name: "toolC",
 				Methods: []*config.MethodCandidate{
-					{Kind: "git", Config: map[string]any{"pkg": "toolC"}},
+					{Kind: "git", Config: map[string]any{"url": "https://example.test/toolC.git"}},
 				},
 			},
 		},

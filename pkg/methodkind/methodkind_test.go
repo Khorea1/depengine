@@ -8,9 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/methodkind"
 	"github.com/Khorea1/depengine/pkg/native"
 	"github.com/Khorea1/depengine/pkg/plan"
+	"github.com/Khorea1/depengine/pkg/planner"
 )
 
 // TestKnownKindsIncludesNativeManagers verifies that every native manager
@@ -253,7 +255,7 @@ func TestKnownCapabilityDeclarations(t *testing.T) {
 	}
 }
 
-func TestRequestedCapabilitiesAreDerivedFromConfiguredFields(t *testing.T) {
+func TestPlanCapabilitiesAreDerivedFromConfiguredFields(t *testing.T) {
 	tests := []struct {
 		kind   string
 		config map[string]any
@@ -264,57 +266,66 @@ func TestRequestedCapabilitiesAreDerivedFromConfiguredFields(t *testing.T) {
 		{kind: "pipx", config: map[string]any{"pkg": "black", "index_url": "https://packages.example/simple"}, want: methodkind.CapabilitySourceSelection},
 		{kind: "uv", config: map[string]any{"pkg": "ruff", "index": "https://packages.example/simple"}, want: methodkind.CapabilitySourceSelection},
 		{kind: "gem", config: map[string]any{"pkg": "rake", "source": "https://gems.example"}, want: methodkind.CapabilitySourceSelection},
-		{kind: "cargo", config: map[string]any{"git": "https://example.test/repo", "rev": "deadbeef"}, want: methodkind.CapabilityRevision},
+		{kind: "cargo", config: map[string]any{"git": "https://example.test/repo", "rev": "deadbeef"}, want: methodkind.CapabilityRevision | methodkind.CapabilitySourceSelection},
 		{kind: "cargo", config: map[string]any{"pkg": "crate", "target": "x86_64-unknown-linux-musl"}, want: methodkind.CapabilityArchitecture},
 		{kind: "cargo", config: map[string]any{"pkg": "crate", "root": "~/.local/cargo-tools"}, want: methodkind.CapabilityEnvironmentTarget},
 		{kind: "conda", config: map[string]any{"pkg": "numpy", "channels": []string{"conda-forge"}}, want: methodkind.CapabilitySourceSelection},
 		{kind: "conda", config: map[string]any{"pkg": "numpy", "environment": "data"}, want: methodkind.CapabilityEnvironmentTarget},
 		{kind: "snap", config: map[string]any{"pkg": "foo", "channel": "edge"}, want: methodkind.CapabilityChannel},
-		{kind: "container", config: map[string]any{"source": "foo", "digest": "sha256:abc"}, want: methodkind.CapabilityImmutableIdentity | methodkind.CapabilitySourceSelection},
+		{kind: "snap", config: map[string]any{"pkg": "foo", "branch": "edge/fix"}, want: methodkind.CapabilityChannel},
+		{kind: "container", config: map[string]any{"source": "foo", "digest": "sha256:" + strings.Repeat("a", 64)}, want: methodkind.CapabilityImmutableIdentity | methodkind.CapabilitySourceSelection},
 		{kind: "git", config: map[string]any{"url": "https://example.test/repo", "build": map[string]any{"run": []any{"make"}}}, want: methodkind.CapabilityArbitraryCode},
 		{kind: "git", config: map[string]any{"url": "https://example.test/repo"}, want: 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.kind, func(t *testing.T) {
-			contract, ok := methodkind.Lookup(tt.kind)
-			if !ok {
-				t.Fatalf("missing contract %q", tt.kind)
-			}
-			if got := contract.RequestedCapabilities(tt.config); got != tt.want {
-				t.Fatalf("RequestedCapabilities() = %d, want %d", got, tt.want)
+			if got := planCapabilities(t, tt.kind, tt.config); got != tt.want {
+				t.Fatalf("PlanCapabilities() = %v, want %v", methodkind.CapabilityNames(got), methodkind.CapabilityNames(tt.want))
 			}
 		})
 	}
 }
 
-func TestMissingCapabilitiesFailsClosedForProgrammaticConfig(t *testing.T) {
+func planCapabilities(t *testing.T, kind string, cfg map[string]any) methodkind.Capability {
+	t.Helper()
+	p, err := planner.BuildCandidateIntent(&config.Tool{Name: "demo"}, &config.MethodCandidate{Kind: kind, Config: cfg})
+	if err != nil {
+		t.Fatalf("BuildCandidateIntent(%s) error: %v", kind, err)
+	}
+	got, err := methodkind.PlanCapabilities(p)
+	if err != nil {
+		t.Fatalf("PlanCapabilities(%s) error: %v", kind, err)
+	}
+	return got
+}
+
+func TestMissingPlanCapabilitiesFailsClosedForProgrammaticConfig(t *testing.T) {
 	contract, ok := methodkind.Lookup("native")
 	if !ok {
 		t.Fatal("native contract missing")
 	}
-
-	config := map[string]any{
+	cfg := map[string]any{
 		"source":       "internal",
 		"architecture": "x64",
 		"scope":        "user",
 		"environment":  "tools",
 		"rev":          "deadbeef",
 	}
+	p, err := planner.BuildCandidateIntent(&config.Tool{Name: "demo"}, &config.MethodCandidate{Kind: "native", Config: cfg})
+	if err != nil {
+		t.Fatalf("BuildCandidateIntent() error: %v", err)
+	}
+	got, err := contract.MissingPlanCapabilities(p)
+	if err != nil {
+		t.Fatalf("MissingPlanCapabilities() error: %v", err)
+	}
 	want := methodkind.CapabilitySourceSelection |
 		methodkind.CapabilityArchitecture |
 		methodkind.CapabilityScope |
 		methodkind.CapabilityEnvironmentTarget |
 		methodkind.CapabilityRevision
-	if got := contract.MissingCapabilities(config); got != want {
-		t.Fatalf("MissingCapabilities() = %v, want %v", methodkind.CapabilityNames(got), methodkind.CapabilityNames(want))
-	}
-
-	snap, ok := methodkind.Lookup("snap")
-	if !ok {
-		t.Fatal("snap contract missing")
-	}
-	if got := snap.RequestedCapabilities(map[string]any{"branch": "edge/fix"}); got != methodkind.CapabilityChannel {
-		t.Fatalf("snap branch RequestedCapabilities() = %v, want [channel]", methodkind.CapabilityNames(got))
+	if got != want {
+		t.Fatalf("MissingPlanCapabilities() = %v, want %v", methodkind.CapabilityNames(got), methodkind.CapabilityNames(want))
 	}
 }
 
@@ -337,13 +348,17 @@ func TestExactVersionManagerContractsRejectEmptyVersionIntent(t *testing.T) {
 }
 
 func TestCapabilityNamesAndMismatch(t *testing.T) {
-	contract, ok := methodkind.Lookup("native")
+	native, ok := methodkind.Lookup("native")
 	if !ok {
 		t.Fatal("native contract missing")
 	}
-	missing := contract.MissingCapabilities(map[string]any{"pkg": "foo", "version": "1.2.3"})
-	if missing != methodkind.CapabilityExactVersion {
-		t.Fatalf("MissingCapabilities=%d want exact-version", missing)
+	p, err := planner.BuildCandidateIntent(&config.Tool{Name: "demo"}, &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "foo", "version": "1.2.3"}})
+	if err != nil {
+		t.Fatalf("BuildCandidateIntent() error: %v", err)
+	}
+	missing, err := native.MissingPlanCapabilities(p)
+	if err != nil || missing != methodkind.CapabilityExactVersion {
+		t.Fatalf("MissingPlanCapabilities = %d, %v; want exact-version", missing, err)
 	}
 	if got := methodkind.CapabilityNames(missing); fmt.Sprint(got) != "[exact-version]" {
 		t.Fatalf("CapabilityNames=%v", got)
@@ -353,15 +368,17 @@ func TestCapabilityNamesAndMismatch(t *testing.T) {
 	if !ok {
 		t.Fatal("choco contract missing")
 	}
-	requested := choco.RequestedCapabilities(map[string]any{
-		"version": "1.2.3", "source": "internal", "architecture": "x86",
-	})
+	cfg := map[string]any{"version": "1.2.3", "source": "internal", "architecture": "x86"}
 	want := methodkind.CapabilityExactVersion | methodkind.CapabilitySourceSelection | methodkind.CapabilityArchitecture
-	if requested != want {
-		t.Fatalf("RequestedCapabilities=%d want %d", requested, want)
+	if got := planCapabilities(t, "choco", cfg); got != want {
+		t.Fatalf("PlanCapabilities=%v want %v", methodkind.CapabilityNames(got), methodkind.CapabilityNames(want))
 	}
-	if missing := choco.MissingCapabilities(map[string]any{"version": "1.2.3", "source": "internal", "architecture": "x86"}); missing != 0 {
-		t.Fatalf("unexpected choco capability mismatch: %v", methodkind.CapabilityNames(missing))
+	p, err = planner.BuildCandidateIntent(&config.Tool{Name: "demo"}, &config.MethodCandidate{Kind: "choco", Config: cfg})
+	if err != nil {
+		t.Fatalf("BuildCandidateIntent() error: %v", err)
+	}
+	if missing, err := choco.MissingPlanCapabilities(p); err != nil || missing != 0 {
+		t.Fatalf("unexpected choco capability mismatch: %v, %v", methodkind.CapabilityNames(missing), err)
 	}
 }
 
@@ -855,4 +872,22 @@ func minimalResolvedPlan(t *testing.T) plan.ResolvedInstallPlan {
 		t.Fatalf("minimal plan invalid: %v", err)
 	}
 	return p
+}
+
+func TestScopeNormalizeIsDeterministicWhenVocabulariesOverlap(t *testing.T) {
+	overlap := &methodkind.ScopeContract{AdapterValues: map[plan.Scope]string{
+		plan.ScopeUser: "system", plan.ScopeSystem: "user",
+	}}
+	for i := 0; i < 50; i++ {
+		got, err := overlap.Normalize("user")
+		if err != nil || got != plan.ScopeUser {
+			t.Fatalf("Normalize(user) = %q, %v; canonical spelling must win", got, err)
+		}
+	}
+	dup := &methodkind.ScopeContract{AdapterValues: map[plan.Scope]string{
+		plan.ScopeUser: "shared", plan.ScopeSystem: "shared",
+	}}
+	if _, err := dup.Normalize("shared"); err == nil {
+		t.Fatal("ambiguous native spelling must be rejected")
+	}
 }

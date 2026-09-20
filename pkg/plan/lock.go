@@ -54,6 +54,7 @@ type LockedSource struct {
 // RequestedVersion is intentionally excluded: locks consume concrete identity,
 // not the mutable intent that produced it.
 type LockIdentity struct {
+	Package      string             `json:"package,omitempty"`
 	Version      string             `json:"version,omitempty"`
 	Revision     string             `json:"revision,omitempty"`
 	Digest       string             `json:"digest,omitempty"`
@@ -122,6 +123,7 @@ func ProjectLock(p ResolvedInstallPlan) (LockProjection, error) {
 		Tool:      p.Tool,
 		Candidate: p.Candidate,
 		Identity: LockIdentity{
+			Package:      p.Identity.Package,
 			Version:      p.Identity.Version,
 			Revision:     p.Identity.Revision,
 			Digest:       p.Identity.Digest,

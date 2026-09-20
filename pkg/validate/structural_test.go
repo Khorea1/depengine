@@ -1086,11 +1086,12 @@ func TestValidateFromFile_EdgeSSH(t *testing.T) {
 	// file:/// (tool e) is flagged. ssh://, git://, https:// (b,c,d) pass.
 	gotA := false
 	for _, err := range r.Errors {
-		if strings.Contains(err.Field, "tools.a") {
+		switch {
+		case strings.Contains(err.Field, "tools.a"):
 			gotA = true
-		} else if strings.Contains(err.Field, "tools.e") {
+		case strings.Contains(err.Field, "tools.e"):
 			continue // expected
-		} else {
+		default:
 			t.Errorf("unexpected error for %s: %v", err.Field, err)
 		}
 	}

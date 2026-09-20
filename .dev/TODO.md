@@ -104,7 +104,7 @@ Examples reproduced during the stress-test:
 
 **Work**
 
-- [ ] Introduce one canonical resolved plan representation; see P1.1.
+- [~] Introduce one canonical resolved plan representation; see P1.1. (`pkg/planner.BuildCandidateIntent` now creates the host-independent `ResolvedInstallPlan` used by validation, explanation, and executor capability gating; runtime resolution still needs to enrich the same object.)
 - [ ] Make structural/semantic validation verify every invariant needed before execution.
 - [x] Move shared artifact validation into shared artifact contracts rather than hard-coded method-name switches.
 - [x] Validate URI schemes consistently for every download-backed method.
@@ -135,7 +135,7 @@ At least one adapter accepts a field that does not affect actual installation be
 **Work**
 
 - [x] Create a conformance mechanism that enumerates all accepted fields for each method contract (each `Field` now declares its runtime effect phase and a contract test rejects effect-less fields).
-- [ ] Require every field to influence the resolved plan, validation, execution, or verification.
+- [~] Require every field to influence the resolved plan, validation, execution, or verification. (The static planner is fail-closed for unknown fields and projects cross-cutting identity/source/artifact/command semantics; remaining adapter-specific fields still need plan-effect conformance coverage.)
 - [x] Fix `asdf.version` handling.
 - [x] Audit SDKMAN, Cargo, Go, Conda, container, Git, Snap, Flatpak, native and artifact adapters for similar discrepancies.
   - [x] SDKMAN: exact `version` now governs both install and verification.
@@ -166,7 +166,7 @@ The Go HTTP downloader can attach GitHub authentication without exposing the tok
 
 **Work**
 
-- [~] Make authentication requirements part of planning/capability selection. (`ResolvedInstallPlan` source requirements now derive a distinct `auth` capability and fail closed at the shared contract boundary; integration into the production candidate planner remains TODO.)
+- [~] Make authentication requirements part of planning/capability selection. (`ResolvedInstallPlan` source requirements derive a distinct `auth` capability and the production candidate planner is now the shared pre-probe capability boundary; schema/runtime wiring for explicit secret references remains TODO.)
 - [x] Do not select a downloader that cannot satisfy required auth semantics.
 - [x] Ensure credentials are not passed in argv, logs, error text, lockfiles, or state files (credential-bearing URLs are rejected; command/error logging is redacted; state persistence rejects obvious secret material; the current lock schema stores pins/checksums only, not method config).
 - [x] Define explicit secure secret references for future private registries/sources rather than literal secrets in manifests. (`pkg/plan.SecretReference` is reference-only; typed sources reject literal URL credentials and lock projection omits secret references.)
@@ -207,9 +207,9 @@ manifest intent
 - [x] Include tool identity, selected candidate/method, resolved version/revision/digest, source/registry, scope, environment/profile, architecture/platform, artifacts/checksums, prerequisites, source mutations, owned paths, executable entrypoints, arbitrary-code steps, and removal metadata as applicable.
 - [x] Distinguish read-only resolution operations from mutating execution operations.
 - [x] Make planner output serializable for tests/debugging, while avoiding secrets.
-- [ ] Refactor `validate` to build/check the plan where possible.
-- [ ] Refactor `why` to explain candidate elimination and selected plan.
-- [ ] Refactor dry-run to print the exact plan.
+- [~] Refactor `validate` to build/check the plan where possible. (`validatePlanIntents` now builds and capability-checks the host-independent candidate plan; runtime-only resolution remains outside validation.)
+- [~] Refactor `why` to explain candidate elimination and selected plan. (`ExplainTool` now uses the same candidate plan/capability boundary and `why --json` exposes `plan_intent`; runtime-resolved identity is not yet unified.)
+- [~] Refactor dry-run to print the exact plan. (Execution reports now carry serialized `plan_intent`; runtime artifact/version resolution still needs to enrich that object before this can be exact.)
 - [ ] Refactor install/upgrade/status/remove around the same semantic object.
 - [x] Define planner error classes: invalid manifest, unsupported capability, unavailable candidate, resolution failure, auth requirement, host incompatibility.
 
@@ -238,8 +238,8 @@ ______________________________________________________________________
   - rolling/latest intent.
 - [x] Decide which forms are portable across methods and which remain method-specific.
 - [x] Define normalization rules so `latest`, channels, constraints, revisions and exact versions are unambiguous.
-- [~] Define method capability declarations for supported version modes. Contracts now expose exact-version, channel, revision, immutable-identity and mutable-tag capabilities, and every shared version-intent mode maps fail-closed to a required capability; per-manager constraint declarations and broader planner consumption remain TODO.
-- [ ] Define behavior when a preferred method cannot satisfy the requested version semantics: eliminate candidate rather than silently weakening intent.
+- [~] Define method capability declarations for supported version modes. Contracts expose exact-version, channel, revision, immutable-identity and mutable-tag capabilities; `BuildCandidateIntent` maps configured version/tag/branch/channel/digest semantics into the shared model and executor/why/validate consume the resulting capability requirements. Per-manager constraint declarations remain TODO.
+- [~] Define behavior when a preferred method cannot satisfy the requested version semantics: eliminate candidate rather than silently weakening intent. (The executor now rejects the candidate at the shared plan-capability boundary before probes; broader adapter/runtime resolution still needs the same resolved identity.)
 - [ ] Update verification to compare actual state against requested/resolved state.
 
 **Acceptance criteria**
@@ -1005,9 +1005,9 @@ Do not implement the backlog strictly by adapter. The architectural work should 
 
 ## Phase B — establish the semantic core
 
-- [ ] P1.1 `ResolvedInstallPlan`
-- [ ] P1.11 method capabilities
-- [ ] P1.2 version/revision model
+- [~] P1.1 `ResolvedInstallPlan`
+- [~] P1.11 method capabilities
+- [~] P1.2 version/revision model
 - [ ] P1.3 desired-state verification
 - [ ] P1.5 scope
 - [ ] P1.6 environment/profile

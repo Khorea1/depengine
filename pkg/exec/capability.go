@@ -6,23 +6,30 @@ import (
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/methodkind"
+	"github.com/Khorea1/depengine/pkg/plan"
+	"github.com/Khorea1/depengine/pkg/planner"
 )
 
-// methodCapabilityMismatch is a defensive planner boundary. Parsed schemas
-// normally reject fields a method does not understand, but programmatic callers
-// can construct MethodCandidate values directly. Execution must never silently
-// weaken semantic intent in that case.
-func methodCapabilityMismatch(method *config.MethodCandidate) string {
+// candidatePlanIntent is the shared static planning boundary for execution and
+// explain. It deliberately performs no host probes or mutations.
+func candidatePlanIntent(tool *config.Tool, method *config.MethodCandidate) (*plan.ResolvedInstallPlan, string) {
 	if method == nil {
-		return ""
+		return nil, ""
 	}
 	contract, ok := methodkind.Lookup(method.Kind)
 	if !ok {
-		return ""
+		return nil, ""
 	}
-	missing := contract.MissingCapabilities(method.Config)
+	intent, err := planner.BuildCandidateIntent(tool, method)
+	if err != nil {
+		return nil, fmt.Sprintf("method %q has invalid plan intent: %v", method.Kind, err)
+	}
+	missing, err := contract.MissingPlanCapabilities(intent)
+	if err != nil {
+		return &intent, fmt.Sprintf("method %q has invalid plan intent: %v", method.Kind, err)
+	}
 	if missing == 0 {
-		return ""
+		return &intent, ""
 	}
-	return fmt.Sprintf("method %q cannot honor requested capabilities: %s", method.Kind, strings.Join(methodkind.CapabilityNames(missing), ", "))
+	return &intent, fmt.Sprintf("method %q cannot honor requested capabilities: %s", method.Kind, strings.Join(methodkind.CapabilityNames(missing), ", "))
 }

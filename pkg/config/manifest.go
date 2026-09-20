@@ -290,15 +290,16 @@ func mergeTools(lower, upper *Tool, pc *provenanceCollector) *Tool {
 
 		case MergeLocalOnly:
 			// Only set from upper (schema) layer; ignore lower layer values.
-			if fieldIsSet(upperField) {
+			switch {
+			case fieldIsSet(upperField):
 				assignField(dstField, upperField)
 				pc.record(tf.name, "schema", schemeVal, manifestVal, dstField.Interface())
-			} else if fieldIsSet(lowerField) {
+			case fieldIsSet(lowerField):
 				// Lower had it but MergeLocalOnly means propagate only if upper also has it.
 				// But we clear it because lower shouldn't have set it.
 				dstField.Set(reflect.Zero(dstField.Type()))
 				pc.record(tf.name, "schema", schemeVal, manifestVal, nil)
-			} else {
+			default:
 				pc.record(tf.name, "manifest", schemeVal, manifestVal, "-")
 			}
 

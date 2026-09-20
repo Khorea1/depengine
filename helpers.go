@@ -15,8 +15,20 @@ import (
 	"github.com/Khorea1/depengine/pkg/lock"
 	"github.com/Khorea1/depengine/pkg/log"
 	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/state"
 	"github.com/Khorea1/depengine/pkg/validate"
 )
+
+// closeStateAndExit releases a held state lock explicitly before terminating
+// the process. os.Exit skips deferred calls; the OS would drop the flock at
+// exit anyway, so this is about deterministic teardown (and keeping the exit
+// paths uniform), not about preventing a stuck lock.
+func closeStateAndExit(ls *state.LockedState, code int) {
+	if ls != nil {
+		_ = ls.Close()
+	}
+	os.Exit(code)
+}
 
 // schemaCandidateNames are the filenames auto-detected as a project schema,
 // in priority order. Keep this in sync with docs/*.md mentions of
@@ -150,29 +162,6 @@ func exitCodeForError(err error) int {
 		return 2
 	}
 	return 3
-}
-
-// filteredByTags applies profile filtering: if profile is non-empty,
-// only include tools that have no tags (universal) OR have the
-// specified profile tag in their Tags slice.
-func filteredByTags(tools map[string]*config.Tool, profile string) map[string]*config.Tool {
-	if profile == "" {
-		return tools
-	}
-	result := make(map[string]*config.Tool, len(tools))
-	for name, tool := range tools {
-		if len(tool.Tags) == 0 {
-			result[name] = tool
-			continue
-		}
-		for _, tag := range tool.Tags {
-			if strings.EqualFold(tag, profile) {
-				result[name] = tool
-				break
-			}
-		}
-	}
-	return result
 }
 
 // filterTools applies --only, --skip, and --profile filters to the tool map.

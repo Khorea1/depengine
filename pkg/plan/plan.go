@@ -79,6 +79,7 @@ type CandidateIdentity struct {
 // ResolvedIdentity is the normalized desired-state identity shared across
 // method implementations. Empty fields mean that dimension is not applicable.
 type ResolvedIdentity struct {
+	Package          string             `json:"package,omitempty"`
 	RequestedVersion *VersionIntent     `json:"requested_version,omitempty"`
 	Version          string             `json:"version,omitempty"`
 	Revision         string             `json:"revision,omitempty"`
@@ -169,6 +170,19 @@ func (p ResolvedInstallPlan) Validate() error {
 	}
 	if p.Candidate.Method == "" {
 		return errors.New("plan candidate method is required")
+	}
+	if strings.TrimSpace(p.Identity.Package) != p.Identity.Package {
+		return errors.New("identity package must not contain surrounding whitespace")
+	}
+	if p.Identity.Source != "" {
+		if err := validateCredentialFreeReference(p.Identity.Source); err != nil {
+			return fmt.Errorf("identity source: %w", err)
+		}
+	}
+	if p.Identity.Registry != "" {
+		if err := validateCredentialFreeReference(p.Identity.Registry); err != nil {
+			return fmt.Errorf("identity registry: %w", err)
+		}
 	}
 	if p.Identity.RequestedVersion != nil {
 		if err := p.Identity.RequestedVersion.Validate(); err != nil {

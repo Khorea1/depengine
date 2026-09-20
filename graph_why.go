@@ -14,6 +14,7 @@ import (
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/graph"
 	"github.com/Khorea1/depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/plan"
 	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/spf13/cobra"
 )
@@ -219,14 +220,15 @@ func runWhy(toolName string, whySchema, whyManifest *string, whyNoManifest, whyJ
 	attempts := ex.ExplainTool(context.Background(), tool, clan)
 	if *whyJSON {
 		type jsonAttempt struct {
-			Kind   string            `json:"kind"`
-			Status string            `json:"status"`
-			Reason string            `json:"reason,omitempty"`
-			Intent map[string]string `json:"intent,omitempty"`
+			Kind       string                    `json:"kind"`
+			Status     string                    `json:"status"`
+			Reason     string                    `json:"reason,omitempty"`
+			Intent     map[string]string         `json:"intent,omitempty"`
+			PlanIntent *plan.ResolvedInstallPlan `json:"plan_intent,omitempty"`
 		}
 		out := make([]jsonAttempt, 0, len(attempts))
 		for _, a := range attempts {
-			out = append(out, jsonAttempt{Kind: a.Kind, Status: a.Status, Reason: a.Error, Intent: a.Intent})
+			out = append(out, jsonAttempt{Kind: a.Kind, Status: a.Status, Reason: a.Error, Intent: a.Intent, PlanIntent: a.PlanIntent})
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")

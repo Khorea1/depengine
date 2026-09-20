@@ -18,7 +18,7 @@ func explainIntent(method *config.MethodCandidate) map[string]string {
 	// Only declarative identity/target fields are surfaced. Command-bearing
 	// fields and arbitrary config are deliberately excluded. Values are still
 	// passed through the shared redactor for defensive programmatic callers.
-	keys := []string{"pkg", "version", "build", "registry", "git", "branch", "tag", "rev", "channel", "track", "risk", "digest", "source", "remote", "scope", "environment", "prefix", "architecture", "target", "root", "manager"}
+	keys := []string{"pkg", "version", "registry", "git", "branch", "tag", "rev", "channel", "track", "risk", "digest", "source", "remote", "scope", "environment", "prefix", "architecture", "target", "root", "manager"}
 	intent := make(map[string]string)
 	for _, key := range keys {
 		if value, ok := method.Config[key].(string); ok && value != "" {
@@ -84,11 +84,13 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 			displayKind = method.Label
 		}
 		attempt := MethodAttempt{Kind: displayKind}
+		planIntent, mismatch := candidatePlanIntent(tool, method)
+		attempt.PlanIntent = planIntent
 
 		// Reject semantic intent this method contract cannot honor before any
 		// availability probe. Parsed schemas normally catch this earlier, but
 		// ExplainTool also supports programmatically constructed candidates.
-		if mismatch := methodCapabilityMismatch(method); mismatch != "" {
+		if mismatch != "" {
 			attempt.Status = "skip_capability"
 			attempt.Error = mismatch
 			appendAttempt(attempt, method)
@@ -173,11 +175,13 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 			if method.Label != "" {
 				displayKind = method.Label
 			}
-			appendAttempt(MethodAttempt{
+			attempt := MethodAttempt{
 				Kind:   displayKind,
 				Status: "skip_policy",
 				Error:  "excluded by method_only",
-			}, method)
+			}
+			attempt.PlanIntent, _ = candidatePlanIntent(tool, method)
+			appendAttempt(attempt, method)
 		}
 	}
 

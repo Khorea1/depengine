@@ -239,7 +239,8 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 		candidates, remaining := ex.identifyBatchCandidates(ctx, survivorLevel, s, report)
 
 		if len(candidates) > 0 && ex.clan != "" {
-			if ex.dryRun {
+			switch {
+			case ex.dryRun:
 				names := make([]string, len(candidates))
 				for i, c := range candidates {
 					names[i] = c.toolName
@@ -255,7 +256,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 						Tool: c.toolName, Status: StatusWouldInstall, Method: "native",
 					}, report)
 				}
-			} else if ex.batchNativeInstall(ctx, candidates) {
+			case ex.batchNativeInstall(ctx, candidates):
 				// The manager returning exit 0 does not guarantee every package
 				// landed (some managers silently skip unknown package names).
 				// Verify per tool: only tools whose Check passes are marked
@@ -285,7 +286,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 						remaining = append(remaining, c.toolName)
 					}
 				}
-			} else {
+			default:
 				// Batch failed — transparent fallback to per-tool.
 				// remaining already excludes tools recorded as StatusAlready by
 				// identifyBatchCandidates; we just add the candidates back so they
@@ -433,8 +434,10 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		}
 
 		attempt := MethodAttempt{Kind: displayKind}
+		planIntent, mismatch := candidatePlanIntent(tool, method)
+		attempt.PlanIntent = planIntent
 
-		if mismatch := methodCapabilityMismatch(method); mismatch != "" {
+		if mismatch != "" {
 			attempt.Status = "skip_capability"
 			attempt.Error = mismatch
 			result.Methods = append(result.Methods, attempt)
@@ -471,6 +474,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			result.Method = displayKind
 			result.MethodKind = method.Kind
 			result.Config = method.Config
+			result.PlanIntent = planIntent
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "already_installed")
 			result.Duration = time.Since(toolStart).String()
 			return
@@ -515,6 +519,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			result.Status = StatusWouldInstall
 			result.Method = displayKind
 			result.MethodKind = method.Kind
+			result.PlanIntent = planIntent
 			attempt.Status = "success"
 			result.Methods = append(result.Methods, attempt)
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "would_install")
@@ -540,6 +545,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			result.Method = displayKind
 			result.MethodKind = method.Kind
 			result.Config = method.Config
+			result.PlanIntent = planIntent
 			result.RebootRequired, _ = method.Config["_reboot_required"].(bool)
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "installed")
 			if len(tool.PostInstall) > 0 {
@@ -772,9 +778,6 @@ func (ex *Executor) log(ctx context.Context, level slog.Level, msg string, attrs
 
 func (ex *Executor) logDebug(ctx context.Context, msg string, attrs ...any) {
 	ex.log(ctx, slog.LevelDebug, msg, attrs...)
-}
-func (ex *Executor) logInfo(ctx context.Context, msg string, attrs ...any) {
-	ex.log(ctx, slog.LevelInfo, msg, attrs...)
 }
 func (ex *Executor) logWarn(ctx context.Context, msg string, attrs ...any) {
 	ex.log(ctx, slog.LevelWarn, msg, attrs...)

@@ -188,9 +188,7 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 	// for git clone — the tag must be passed as a separate argument.
 	var resolvedTag string
 	if strings.Contains(origURL, "{latest}") && resolvedURL != origURL {
-		pos := strings.Index(origURL, "{latest}")
-		prefix := origURL[:pos]
-		suffix := origURL[pos+len("{latest}"):]
+		prefix, suffix, _ := strings.Cut(origURL, "{latest}")
 		url = prefix + suffix
 		resolvedTag = strings.TrimPrefix(resolvedURL, prefix)
 		resolvedTag = strings.TrimSuffix(resolvedTag, suffix)
@@ -222,11 +220,12 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 	}
 	// Branches and tags can both use clone --branch. Exact revs are fetched
 	// and detached below because arbitrary commits need not be branch tips.
-	if resolvedTag != "" {
+	switch {
+	case resolvedTag != "":
 		cloneArgs = append(cloneArgs, "--branch", resolvedTag)
-	} else if branch != "" {
+	case branch != "":
 		cloneArgs = append(cloneArgs, "--branch", branch)
-	} else if tag != "" {
+	case tag != "":
 		cloneArgs = append(cloneArgs, "--branch", tag)
 	}
 

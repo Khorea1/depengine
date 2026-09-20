@@ -125,15 +125,15 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	if contract, ok := methodkind.Lookup("http"); ok && contract.Artifact != nil {
 		if err := contract.Artifact.ValidateArtifact(resolvedURL); err != nil {
 			var forbidden *artifact.ForbiddenExtensionError
-			if errors.As(err, &forbidden) && allowInstaller {
-				// Dedicated installer adapter owns the execution semantics.
-			} else if errors.As(err, &forbidden) {
-				if forbidden.Extension == ".msi" {
-					return fmt.Errorf("http: %s is a platform installer; use the msi method", forbidden.Extension)
-				}
-				return fmt.Errorf("http: %s is a platform installer; no dedicated installer method is available for this format", forbidden.Extension)
-			} else {
+			switch {
+			case !errors.As(err, &forbidden):
 				return fmt.Errorf("http: artifact: %w", err)
+			case allowInstaller:
+				// Dedicated installer adapter owns the execution semantics.
+			case forbidden.Extension == ".msi":
+				return fmt.Errorf("http: %s is a platform installer; use the msi method", forbidden.Extension)
+			default:
+				return fmt.Errorf("http: %s is a platform installer; no dedicated installer method is available for this format", forbidden.Extension)
 			}
 		}
 	}
@@ -216,17 +216,11 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	}
 
 	// Store in cache after extraction (Store may move tmpFile via os.Rename).
-	if !fromCache {
-		if _, err := downloadcache.Store(resolvedURL, tmpFile); err != nil {
-			// Cache write failure is non-fatal; the install continues.
-			log.Default.Warn("cache write failed", "error", err, "url", resolvedURL)
-		}
-	} else {
-		// Cache invalidation: we removed the old entry and re-downloaded.
-		// Restock the cache with the freshly verified file.
-		if _, err := downloadcache.Store(resolvedURL, tmpFile); err != nil {
-			log.Default.Warn("cache write failed", "error", err, "url", resolvedURL)
-		}
+	// Re-storing a cache hit is intentional: checksum recovery may have removed
+	// the stale entry and downloaded a fresh copy while fromCache remains true.
+	if _, err := downloadcache.Store(resolvedURL, tmpFile); err != nil {
+		// Cache write failure is non-fatal; the install continues.
+		log.Default.Warn("cache write failed", "error", err, "url", resolvedURL)
 	}
 
 	return nil

@@ -103,20 +103,10 @@ func (c *cliStyle) warn(format string, args ...any)  { c.status("⚠", ansiYello
 func (c *cliStyle) skip(format string, args ...any)  { c.status("–", ansiYellow, format, args...) }
 func (c *cliStyle) arrow(format string, args ...any) { c.status("→", ansiCyan, format, args...) }
 
-// heading prints a section header ("Name (N):" style handled by the caller)
-// in bold, preceded by a blank line when not first in the output.
-func (c *cliStyle) heading(s string) { fmt.Fprintln(c.w, c.bold(s)) }
-
 // plural returns "1 <s>" / "N <s>s" — keeps summary lines terse.
 func plural(n int, s string) string {
 	if n == 1 {
 		return fmt.Sprintf("%d %s", n, s)
 	}
 	return fmt.Sprintf("%d %ss", n, s)
-}
-
-// joinCountParts renders a "3 installed · 1 outdated" footer, skipping
-// zero counts.
-func joinCountParts(parts []string) string {
-	return strings.Join(parts, " · ")
 }

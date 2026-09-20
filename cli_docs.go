@@ -57,14 +57,6 @@ func generateCLIDocs(root *cobra.Command) ([]byte, []byte, error) {
 	return markdown, man, nil
 }
 
-func renderCLIReference(root *cobra.Command) ([]byte, error) {
-	return renderCLIReferenceDocs(normalizeCLI(root))
-}
-
-func renderManPage(root *cobra.Command) ([]byte, error) {
-	return renderManPageDocs(normalizeCLI(root))
-}
-
 // documentedCommands returns Cobra's stable command order, including the root,
 // generated completion tree, help command, and the compatibility version command.
 func documentedCommands(root *cobra.Command) []*cobra.Command {

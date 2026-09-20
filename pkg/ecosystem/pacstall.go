@@ -59,7 +59,7 @@ func (a *PacstallAdapter) Install(ctx context.Context, rn run.Runner, tool *conf
 	if isElevated() {
 		cmd = []string{"pacstall", "-I", pkg[0]}
 	} else if prefix := run.ElevationPrefix(); prefix != nil {
-		cmd = append(prefix, "pacstall", "-I", pkg[0])
+		cmd = append(append([]string(nil), prefix...), "pacstall", "-I", pkg[0])
 	} else {
 		// No working elevation — try with bare sudo anyway for a clear error.
 		cmd = []string{"sudo", "pacstall", "-I", pkg[0]}

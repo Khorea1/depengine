@@ -263,14 +263,12 @@ func runUndo(undoList *bool, undoSpecific *string) {
 
 	if err := ls.Save(); err != nil {
 		log.Default.Error("save state after undo", "error", err)
-		ls.Close()
-		os.Exit(3)
+		closeStateAndExit(ls, 3)
 	}
 
 	if hadFailure {
 		log.Default.Error("undo: some removals failed, manual cleanup may be needed")
-		ls.Close()
-		os.Exit(1)
+		closeStateAndExit(ls, 1)
 	}
 
 	log.Default.Info("undo complete", "tools_removed", len(toRemove))

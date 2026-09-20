@@ -548,11 +548,9 @@ func TestElevationGuardNoMethod(t *testing.T) {
 		if !strings.Contains(err.Error(), "elevation method") {
 			t.Errorf("error should mention 'elevation method', got: %v", err)
 		}
-	} else {
+	} else if err != nil {
 		// Elevation is available — guard must pass.
-		if err != nil {
-			t.Fatalf("expected no error when elevation available, got: %v", err)
-		}
+		t.Fatalf("expected no error when elevation available, got: %v", err)
 	}
 }
 

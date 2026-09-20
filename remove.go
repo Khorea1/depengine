@@ -74,7 +74,7 @@ func runRemove(removeArgs []string, removeAll, removeDryRun *bool, removeSchema,
 	}
 	if err != nil {
 		log.Default.Error("load state", "error", err)
-		os.Exit(3)
+		closeStateAndExit(ls, 3)
 	}
 
 	// Optionally load schema for validation.
@@ -83,7 +83,7 @@ func runRemove(removeArgs []string, removeAll, removeDryRun *bool, removeSchema,
 		s, _, _, err := loadSchema(*removeSchema)
 		if err != nil {
 			log.Default.Error("load schema", "error", err)
-			os.Exit(2)
+			closeStateAndExit(ls, 2)
 		}
 		schemaTools = s.Tools
 	}
@@ -158,56 +158,50 @@ func runRemove(removeArgs []string, removeAll, removeDryRun *bool, removeSchema,
 	if *removeAll && !*removeForce {
 		if !isInteractive() {
 			log.Default.Error("stdin is not a terminal; use --force to confirm, or run in an interactive terminal")
-			os.Exit(2)
+			closeStateAndExit(ls, 2)
 		}
 		fmt.Fprint(os.Stderr, "WARNING: This will remove ALL installed tools tracked by depengine.\nAre you sure? [y/N] ")
 		input, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 		input = strings.TrimSpace(strings.ToLower(input))
 		if input != "y" && input != "yes" {
 			fmt.Fprintln(os.Stderr, "Aborted.")
-			os.Exit(0)
+			closeStateAndExit(ls, 0)
 		}
 	}
 
 	hadFailure := false
 
-	if *removeAll {
+	switch {
+	case *removeAll:
 		for toolName := range st.Tools {
 			if !removeTool(toolName) {
 				hadFailure = true
 			}
 		}
-	} else if *removeOnly != "" {
+	case *removeOnly != "":
 		if !removeTool(*removeOnly) {
 			hadFailure = true
 		}
-	} else if len(removeArgs) > 0 {
+	case len(removeArgs) > 0:
 		for _, toolName := range removeArgs {
 			if !removeTool(toolName) {
 				hadFailure = true
 			}
 		}
-	} else {
+	default:
 		log.Default.Error("usage: depengine remove [--all | --only=<tool> | <tool>...] [--schema=<path>]")
-		if ls != nil {
-			_ = ls.Close()
-		}
-		os.Exit(1)
+		closeStateAndExit(ls, 1)
 	}
 
 	if !*removeDryRun {
 		if err := ls.Save(); err != nil {
 			log.Default.Error("failed to update state", "error", err)
-			_ = ls.Close()
-			os.Exit(3)
+			closeStateAndExit(ls, 3)
 		}
 	}
 
 	if hadFailure {
-		if ls != nil {
-			_ = ls.Close()
-		}
-		os.Exit(1)
+		closeStateAndExit(ls, 1)
 	}
 }
 

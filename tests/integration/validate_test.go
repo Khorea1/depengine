@@ -21,7 +21,6 @@ func TestMain(m *testing.M) {
 		os.Stderr.WriteString("integration: MkdirTemp: " + err.Error() + "\n")
 		os.Exit(1)
 	}
-	defer os.RemoveAll(tmp)
 
 	binary = filepath.Join(tmp, "depengine")
 	cmd := exec.Command("go", "build", "-o", binary, ".")
@@ -29,10 +28,13 @@ func TestMain(m *testing.M) {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		os.Stderr.WriteString("integration: build failed:\n" + string(out) + "\n")
+		_ = os.RemoveAll(tmp)
 		os.Exit(1)
 	}
 
-	os.Exit(m.Run())
+	exitCode := m.Run()
+	_ = os.RemoveAll(tmp)
+	os.Exit(exitCode)
 }
 
 // findModuleRoot walks up to find go.mod.

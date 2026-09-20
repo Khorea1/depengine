@@ -59,7 +59,7 @@ func githubArtifactPlan() plan.ResolvedInstallPlan {
 		Platform:         "linux",
 	}
 	p.Artifacts = []plan.Artifact{{
-		URL:      "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep.tar.gz?token=fixture-secret",
+		URL:      "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep.tar.gz",
 		Checksum: "sha256:0123456789abcdef",
 	}}
 	p.Entrypoints = map[string]string{"rg": "/opt/depengine/ripgrep/bin/rg"}

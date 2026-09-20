@@ -64,7 +64,7 @@ func writeTestSchema(t *testing.T, dir string, tools map[string]string) {
 // the Go test binary's own flag parser.
 func runUpgradeCommand(t *testing.T, extraEnv []string, flags ...string) (int, string) {
 	t.Helper()
-	upgradeEnv := append(extraEnv, "DEPENGINE_TEST_ARGS="+strings.Join(flags, "\x1f"))
+	upgradeEnv := append(append([]string(nil), extraEnv...), "DEPENGINE_TEST_ARGS="+strings.Join(flags, "\x1f"))
 	return runCommand(t, "upgrade", upgradeEnv)
 }
 

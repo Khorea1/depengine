@@ -38,6 +38,7 @@ func newDiffCmd() *cobra.Command {
 func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) {
 	var aPath, bPath string
 	var aState, bState *state.State
+	var ls *state.LockedState
 	var err error
 
 	switch len(diffArgs) {
@@ -65,7 +66,7 @@ func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) {
 	}
 
 	if len(diffArgs) != 2 {
-		ls, err := state.LoadShared()
+		ls, err = state.LoadShared()
 		if err != nil {
 			log.Default.Error("load current state", "error", err)
 			os.Exit(3)
@@ -75,7 +76,7 @@ func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) {
 		bState, err = state.LoadFrom(bPath)
 		if err != nil {
 			log.Default.Error("load other state", "path", bPath, "error", err)
-			os.Exit(3)
+			closeStateAndExit(ls, 3)
 		}
 	}
 
@@ -94,7 +95,7 @@ func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) {
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(items); err != nil {
 			log.Default.Error("encode JSON", "error", err)
-			os.Exit(3)
+			closeStateAndExit(ls, 3)
 		}
 	} else {
 		c := newCLIStyle(os.Stderr)

@@ -228,9 +228,10 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		os.Exit(2)
 	}
 
-	if *installJSON {
+	switch {
+	case *installJSON:
 		fmt.Println(report.JSON())
-	} else if *installQuiet || *installVerbose {
+	case *installQuiet || *installVerbose:
 		// --quiet showed no live per-tool lines, so the table is the only
 		// place detail (and failure reasons) surface. --verbose is an
 		// explicit ask for the same recap in addition to what already
@@ -238,7 +239,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		// hit this branch: the live ✓/✗/→ lines already told the whole
 		// story, and reprinting them as a table would just be noise.
 		fmt.Fprint(os.Stderr, report.Detail())
-	} else {
+	default:
 		fmt.Fprintln(os.Stderr, report.Summary())
 	}
 

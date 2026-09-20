@@ -132,7 +132,7 @@ func extractBzip2(ctx context.Context, src, dest, binaryName string, rn run.Runn
 }
 
 func extractTar(ctx context.Context, src, dest string, flags []string, rn run.Runner, sudoRequired bool, toolName string) error {
-	args := append(flags, src, "-C", dest)
+	args := append(append([]string(nil), flags...), src, "-C", dest)
 	if sudoRequired && os.Geteuid() != 0 {
 		if err := elevationGuard(sudoRequired, toolName); err != nil {
 			return fmt.Errorf("tar: %w", err)

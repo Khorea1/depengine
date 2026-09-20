@@ -54,6 +54,16 @@ func (a Artifact) Validate() error {
 	if err := a.Kind.Validate(); err != nil {
 		return err
 	}
+	if a.URL != "" {
+		if err := validateCredentialFreeReference(a.URL); err != nil {
+			return fmt.Errorf("artifact URL: %w", err)
+		}
+	}
+	if a.SignatureURL != "" {
+		if err := validateCredentialFreeReference(a.SignatureURL); err != nil {
+			return fmt.Errorf("artifact signature URL: %w", err)
+		}
+	}
 	if a.URL != "" && a.LocalPath != "" {
 		return fmt.Errorf("artifact cannot specify both url and local_path")
 	}

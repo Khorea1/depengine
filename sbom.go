@@ -65,12 +65,12 @@ func runSBOM(sbomFormat *string) {
 	default:
 		log.Default.Error("unsupported format", "format", *sbomFormat)
 		fmt.Fprintf(os.Stderr, "Formatos suportados: cyclonedx, spdx\n")
-		os.Exit(2)
+		closeStateAndExit(ls, 2)
 	}
 
 	if err != nil {
 		log.Default.Error("generate sbom", "error", err)
-		os.Exit(3)
+		closeStateAndExit(ls, 3)
 	}
 
 	fmt.Println(string(data))

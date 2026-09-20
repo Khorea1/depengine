@@ -179,7 +179,7 @@ func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, sta
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(tools); err != nil {
 			log.Default.Error("json output", "error", err)
-			os.Exit(3)
+			closeStateAndExit(ls, 3)
 		}
 		return
 	}
