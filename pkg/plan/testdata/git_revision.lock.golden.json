@@ -8,6 +8,10 @@
     "explicit": true
   },
   "requested_mode": "git_revision",
+  "requested_intent": {
+    "mode": "git_revision",
+    "value": "abc123def456"
+  },
   "stability": "immutable",
   "identity": {
     "revision": "abc123def4567890",

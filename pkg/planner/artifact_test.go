@@ -9,7 +9,7 @@ import (
 
 func TestBuildCandidateIntentProjectsArtifact(t *testing.T) {
 	tool, method := candidate("rg", "http", map[string]any{
-		"url": "https://example.test/rg.tar.gz", "checksum": "sha256:abc",
+		"url": "https://example.test/rg.tar.gz", "checksum": "sha256:" + strings.Repeat("a", 64),
 		"signature_url": "https://example.test/rg.tar.gz.sig",
 	})
 	p, err := planner.BuildCandidateIntent(tool, method)

@@ -1832,3 +1832,25 @@ func TestNormalizeSimpleToolMarksCandidateInferred(t *testing.T) {
 		t.Fatalf("simple tool candidate = %+v, want one inferred method", tool)
 	}
 }
+
+func TestParseProjectSchemaBindsProjectRootToMethods(t *testing.T) {
+	path := writeSchema(t, `
+[tools.demo.local]
+local_path = "vendor/demo"
+`)
+	s, err := ParseProjectSchema(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Dir(path)
+	if s.ProjectRoot != want {
+		t.Fatalf("ProjectRoot = %q, want %q", s.ProjectRoot, want)
+	}
+	tool := s.Tools["demo"]
+	if tool == nil || len(tool.Methods) != 1 {
+		t.Fatalf("demo methods = %#v", tool)
+	}
+	if got := tool.Methods[0].ProjectRoot; got != want {
+		t.Fatalf("method ProjectRoot = %q, want %q", got, want)
+	}
+}

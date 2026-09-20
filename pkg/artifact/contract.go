@@ -47,10 +47,10 @@ func ValidateURL(raw string, allowedSchemes []string) error {
 	if err != nil || parsed.Scheme == "" {
 		return fmt.Errorf("malformed URL %q", raw)
 	}
+	if requiresNetworkHost(parsed.Scheme) && parsed.Host == "" {
+		return fmt.Errorf("malformed URL %q", raw)
+	}
 	if strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https") {
-		if parsed.Host == "" {
-			return fmt.Errorf("malformed URL %q", raw)
-		}
 		// Credentials embedded in a URL are unsafe for a declarative artifact
 		// contract: URLs are routinely surfaced in diagnostics, lock metadata,
 		// and downloader command lines. Authentication must be supplied through
@@ -66,6 +66,15 @@ func ValidateURL(raw string, allowedSchemes []string) error {
 		}
 	}
 	return fmt.Errorf("unsupported URL scheme %q", parsed.Scheme)
+}
+
+func requiresNetworkHost(scheme string) bool {
+	switch strings.ToLower(scheme) {
+	case "http", "https", "ssh", "git":
+		return true
+	default:
+		return false
+	}
 }
 
 // Extension returns a recognized extension from a URL or asset name while

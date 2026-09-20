@@ -1,6 +1,7 @@
 package plan_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/plan"
@@ -20,7 +21,10 @@ func TestVersionIntentValidation(t *testing.T) {
 		{name: "git branch", intent: plan.VersionIntent{Mode: plan.VersionGitBranch, Value: "release/1.x"}},
 		{name: "git revision", intent: plan.VersionIntent{Mode: plan.VersionGitRevision, Value: "abc123"}},
 		{name: "container tag", intent: plan.VersionIntent{Mode: plan.VersionContainerTag, Value: "1.2-alpine"}},
-		{name: "digest", intent: plan.VersionIntent{Mode: plan.VersionDigest, Value: "sha256:abcdef"}},
+		{name: "digest", intent: plan.VersionIntent{Mode: plan.VersionDigest, Value: "sha256:" + strings.Repeat("a", 64)}},
+		{name: "digest auto", intent: plan.VersionIntent{Mode: plan.VersionDigest, Value: "sha256:auto"}, wantErr: true},
+		{name: "digest short", intent: plan.VersionIntent{Mode: plan.VersionDigest, Value: "sha256:abcd"}, wantErr: true},
+		{name: "digest malformed algorithm", intent: plan.VersionIntent{Mode: plan.VersionDigest, Value: "sha 256:" + strings.Repeat("a", 64)}, wantErr: true},
 		{name: "exact missing value", intent: plan.VersionIntent{Mode: plan.VersionExact}, wantErr: true},
 		{name: "latest with value", intent: plan.VersionIntent{Mode: plan.VersionLatest, Value: "1.2.3"}, wantErr: true},
 		{name: "channel missing selector", intent: plan.VersionIntent{Mode: plan.VersionChannel}, wantErr: true},
@@ -63,5 +67,33 @@ func TestPlanValidatesRequestedVersion(t *testing.T) {
 	p.Identity.Version = "1.2.3"
 	if err := p.Validate(); err != nil {
 		t.Fatalf("Validate() error: %v", err)
+	}
+}
+
+func TestVersionIntentRejectsNUL(t *testing.T) {
+	for _, intent := range []plan.VersionIntent{
+		{Mode: plan.VersionExact, Value: "1.2\x003"},
+		{Mode: plan.VersionGitBranch, Value: "main\x00other"},
+		{Mode: plan.VersionChannel, Channel: &plan.ChannelSelector{Name: "stable\x00edge"}},
+		{Mode: plan.VersionChannel, Channel: &plan.ChannelSelector{Track: "latest\x00"}},
+		{Mode: plan.VersionChannel, Channel: &plan.ChannelSelector{Risk: "stable\x00"}},
+	} {
+		if err := intent.Validate(); err == nil {
+			t.Fatalf("Validate(%+v) unexpectedly accepted NUL", intent)
+		}
+	}
+}
+
+func TestPlanRejectsResolvedDigestDifferentFromRequestedDigest(t *testing.T) {
+	p := plan.New("demo", "container", true)
+	p.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionDigest, Value: "sha256:" + strings.Repeat("a", 64)}
+	p.Identity.Digest = "sha256:" + strings.Repeat("b", 64)
+	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "requested digest does not match") {
+		t.Fatalf("Validate() error = %v, want requested/resolved digest mismatch", err)
+	}
+
+	p.Identity.Digest = "SHA256:" + strings.Repeat("A", 64)
+	if err := p.Validate(); err != nil {
+		t.Fatalf("Validate() equivalent digest spelling error = %v", err)
 	}
 }

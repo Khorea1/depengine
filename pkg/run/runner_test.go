@@ -161,16 +161,42 @@ func TestFormatArgsForLogRedactsCredentials(t *testing.T) {
 }
 
 func TestRedactSensitiveText(t *testing.T) {
-	input := "fetch https://alice:s3cr3t@example.com/x?token=querysecret&keep=yes&sig=signed --token abc123\nAuthorization: Bearer topsecret\nCookie: session=xyz"
+	input := "fetch https://alice:s3cr3t@example.com/x?token=querysecret&keep=yes&sig=signed&X-Amz-Credential=AKIA/thing&X-Goog-Signature=googsecret --token abc123 --client-secret cli-secret\nAuthorization: Bearer topsecret\nCookie: session=xyz"
 	got := RedactSensitiveText(input)
-	for _, secret := range []string{"s3cr3t", "querysecret", "signed", "abc123", "topsecret", "session=xyz"} {
+	for _, secret := range []string{"s3cr3t", "querysecret", "signed", "AKIA/thing", "googsecret", "abc123", "cli-secret", "topsecret", "session=xyz"} {
 		if strings.Contains(got, secret) {
 			t.Fatalf("redacted text still contains %q: %q", secret, got)
 		}
 	}
-	for _, marker := range []string{"https://***@example.com/x?token=***&keep=yes&sig=***", "--token=***", "Authorization: ***", "Cookie: ***"} {
+	for _, marker := range []string{"token=***", "sig=***", "X-Amz-Credential=***", "X-Goog-Signature=***", "--token=***", "--client-secret=***", "Authorization: ***", "Cookie: ***"} {
 		if !strings.Contains(got, marker) {
 			t.Fatalf("redacted text missing %q: %q", marker, got)
+		}
+	}
+}
+
+func TestSensitiveQueryKeyClassification(t *testing.T) {
+	for _, key := range []string{"token", "refresh_token", "client_secret", "X-Amz-Credential", "x-amz-security-token", "X-Goog-Signature"} {
+		if !IsSensitiveQueryKey(key) {
+			t.Fatalf("IsSensitiveQueryKey(%q) = false", key)
+		}
+	}
+	for _, key := range []string{"page", "version", "channel", "arch"} {
+		if IsSensitiveQueryKey(key) {
+			t.Fatalf("IsSensitiveQueryKey(%q) = true", key)
+		}
+	}
+}
+
+func TestSensitiveFlagClassification(t *testing.T) {
+	for _, flag := range []string{"--token", "--client-secret", "--refresh-token", "--API-KEY"} {
+		if !IsSensitiveFlag(flag) {
+			t.Fatalf("IsSensitiveFlag(%q) = false", flag)
+		}
+	}
+	for _, flag := range []string{"--version", "--channel", "-v"} {
+		if IsSensitiveFlag(flag) {
+			t.Fatalf("IsSensitiveFlag(%q) = true", flag)
 		}
 	}
 }
@@ -234,5 +260,28 @@ func TestRedactErrorPreservesCauseAndHidesSecret(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "token=***") {
 		t.Fatalf("RedactError missing marker: %q", err)
+	}
+}
+
+func TestExecutionAllowedFailsClosedThroughBlockedRunner(t *testing.T) {
+	blocked := BlockedRunner{Reason: "dry-run"}
+	if ExecutionAllowed(blocked) {
+		t.Fatal("BlockedRunner unexpectedly allows execution")
+	}
+	if !ExecutionAllowed(&FakeRunner{}) {
+		t.Fatal("runner without explicit execution policy should remain executable")
+	}
+	if ExecutionAllowed(nil) {
+		t.Fatal("nil runner unexpectedly allows execution")
+	}
+}
+
+func TestRedactSensitiveTextRedactsSecretURLFragments(t *testing.T) {
+	got := RedactSensitiveText("https://example.test/tool#access_token=supersecret&section=install")
+	if strings.Contains(got, "supersecret") {
+		t.Fatalf("fragment secret leaked: %q", got)
+	}
+	if !strings.Contains(got, "section=install") {
+		t.Fatalf("benign fragment content was lost: %q", got)
 	}
 }

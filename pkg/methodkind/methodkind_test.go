@@ -414,7 +414,7 @@ func TestVersionIntentCapabilities(t *testing.T) {
 		{name: "git-branch", in: plan.VersionIntent{Mode: plan.VersionGitBranch, Value: "main"}, want: methodkind.CapabilityRevision},
 		{name: "git-revision", in: plan.VersionIntent{Mode: plan.VersionGitRevision, Value: "abc123"}, want: methodkind.CapabilityRevision},
 		{name: "container-tag", in: plan.VersionIntent{Mode: plan.VersionContainerTag, Value: "1.2"}, want: methodkind.CapabilityMutableTag},
-		{name: "digest", in: plan.VersionIntent{Mode: plan.VersionDigest, Value: "sha256:abc"}, want: methodkind.CapabilityImmutableIdentity},
+		{name: "digest", in: plan.VersionIntent{Mode: plan.VersionDigest, Value: "sha256:" + strings.Repeat("a", 64)}, want: methodkind.CapabilityImmutableIdentity},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -452,7 +452,7 @@ func TestVersionIntentCapabilityFiltering(t *testing.T) {
 		{name: "snap-channel", kind: "snap", intent: plan.VersionIntent{Mode: plan.VersionChannel, Channel: &plan.ChannelSelector{Name: "stable"}}},
 		{name: "git-revision", kind: "git", intent: plan.VersionIntent{Mode: plan.VersionGitRevision, Value: "abc123"}},
 		{name: "container-tag", kind: "container", intent: plan.VersionIntent{Mode: plan.VersionContainerTag, Value: "latest"}},
-		{name: "container-digest", kind: "container", intent: plan.VersionIntent{Mode: plan.VersionDigest, Value: "sha256:abc"}},
+		{name: "container-digest", kind: "container", intent: plan.VersionIntent{Mode: plan.VersionDigest, Value: "sha256:" + strings.Repeat("a", 64)}},
 		{name: "constraint-fails-closed-until-declared", kind: "npm", intent: plan.VersionIntent{Mode: plan.VersionConstraint, Value: "^1.2.0"}, missing: methodkind.CapabilityVersionConstraint},
 	}
 
@@ -727,10 +727,12 @@ func TestImmutableLockCapabilityIsConservativeAndDerivedFromPinMechanisms(t *tes
 	}
 }
 
-func TestLocalArtifactCapabilityIsNotAdvertisedBeforeP217(t *testing.T) {
+func TestLocalArtifactCapabilityIsAdvertisedOnlyByLocalMethod(t *testing.T) {
 	for _, contract := range methodkind.Contracts {
-		if contract.Supports(methodkind.CapabilityLocalArtifact) {
-			t.Errorf("%s advertises local-artifact before local path sources are implemented", contract.Kind)
+		got := contract.Supports(methodkind.CapabilityLocalArtifact)
+		want := contract.Kind == "local"
+		if got != want {
+			t.Errorf("%s local-artifact capability = %t, want %t", contract.Kind, got, want)
 		}
 	}
 }
@@ -759,7 +761,7 @@ func TestCapabilityNamesIncludeLifecycleAndReproducibility(t *testing.T) {
 
 func TestPlanCapabilitiesRequireLocalArtifactExplicitly(t *testing.T) {
 	p := minimalResolvedPlan(t)
-	p.Artifacts = []plan.Artifact{{LocalPath: "vendor/tool.tar.gz", Checksum: "sha256:abc"}}
+	p.Artifacts = []plan.Artifact{{LocalPath: "vendor/tool.tar.gz", Checksum: "sha256:" + strings.Repeat("a", 64)}}
 	got, err := methodkind.PlanCapabilities(p)
 	if err != nil {
 		t.Fatal(err)
@@ -773,7 +775,15 @@ func TestPlanCapabilitiesRequireLocalArtifactExplicitly(t *testing.T) {
 		t.Fatal(err)
 	}
 	if missing&methodkind.CapabilityLocalArtifact == 0 {
-		t.Fatalf("http missing = %v; local artifact must fail closed until P2.17", methodkind.CapabilityNames(missing))
+		t.Fatalf("http missing = %v; local artifacts must stay isolated from HTTP", methodkind.CapabilityNames(missing))
+	}
+	localContract, _ := methodkind.Lookup("local")
+	missing, err = localContract.MissingPlanCapabilities(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missing != 0 {
+		t.Fatalf("local missing = %v, want none", methodkind.CapabilityNames(missing))
 	}
 }
 

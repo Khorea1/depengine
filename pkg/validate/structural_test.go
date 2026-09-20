@@ -230,6 +230,27 @@ func TestValidateRequiredFields_ArtifactChecksums(t *testing.T) {
 	}
 }
 
+func TestValidateRequiredFields_LocalChecksumPolicy(t *testing.T) {
+	valid := "sha256:6ca13d52ca70c883e0f0bb101e425a89e8624de51db2d2392593af6a84118090"
+	for _, tt := range []struct {
+		name     string
+		checksum string
+		wantErr  bool
+	}{
+		{name: "sha256", checksum: valid},
+		{name: "auto", checksum: "sha256:auto", wantErr: true},
+		{name: "md5", checksum: "md5:6ca13d52ca70c883e0f0bb101e425a89", wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &cfg.Schema{Tools: map[string]*cfg.Tool{"app": tool("app", []*cfg.MethodCandidate{mc("local", nil, map[string]any{"local_path": "vendor/app", "checksum": tt.checksum})}, nil)}}
+			r := validateRequiredFields(s)
+			if got := r.HasErrors(); got != tt.wantErr {
+				t.Fatalf("HasErrors() = %t, want %t: %+v", got, tt.wantErr, r.Errors)
+			}
+		})
+	}
+}
+
 func TestValidateRequiredFields_ContainerValid(t *testing.T) {
 	s := &cfg.Schema{
 		Tools: map[string]*cfg.Tool{

@@ -200,7 +200,7 @@ Every flag and default lives in **[`docs/cli-reference.md`](docs/cli-reference.m
 | **Desktop** | `flatpak`, `snap`, `vscode`, `vscodium`, `cask` (macOS), `mas` (Mac App Store), `appman` (AppImages) |
 | **Windows** | `winget`, `scoop`, `choco`, `msi` |
 | **Specialized** | `sdkman`, `steamcmd`, `pacstall`, `aur` (configurable helper), `conda`, `asdf`, `container` (docker/podman pull), `appimage` (portable `.AppImage` under a stable name), `android` (`.apk` via Termux's package installer) |
-| **Other** | `git` (clone + build), `github` (recommended for GitHub release assets), `http` (download + extract + checksum) |
+| **Other** | `git` (clone + build), `local` (vendored/offline file or archive), `github` (recommended for GitHub release assets), `http` (download + extract + checksum) |
 
 Auto-detected native managers, by distro family:
 
@@ -228,6 +228,29 @@ asset = "yq_{os_any}_{arch_any}"
 Both `repo` and `asset` are required. The pattern must match exactly one asset;
 depengine reports zero or multiple matches instead of guessing. `github` is the
 canonical method name—there is no global `gh` alias.
+
+## Local/offline artifacts
+
+Use `local` for artifacts committed or vendored alongside `schema.toml`. `local_path`
+is always project-relative; absolute paths, `..`, backslashes, and symlink traversal
+are rejected. The adapter does not invoke a downloader or subprocess.
+
+```toml
+[tools.mytool.local]
+local_path  = "vendor/mytool"
+checksum    = "sha256:<64 hex characters>"
+install_dir = "~/.local/bin"
+```
+
+Raw files are installed as `install_dir/<tool>` (default `~/.local/bin/<tool>`).
+ZIP, TAR, TAR.GZ and TGZ archives are extracted to a tool-owned child directory
+`install_dir/<tool>` (default parent `~/.local/opt`), so removal never deletes a
+shared parent directory. Archive roots reserve
+`.depengine-local-artifact.sha256` for depengine's content-identity marker.
+Local checksums are optional but, when present, must be a fixed SHA-256 digest;
+`:auto` is intentionally unavailable offline. When omitted, the resolved SHA-256
+is frozen for the install attempt and persisted in state/lock identity without
+persisting the machine-specific project root.
 
 ## Download security
 

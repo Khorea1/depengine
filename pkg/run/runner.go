@@ -41,9 +41,30 @@ type Runner interface {
 // only. Every subprocess execution attempt is rejected before a process can be
 // spawned. LookPath remains available because executable lookup itself does not
 // execute the target or mutate host state.
+// ExecutionPolicy is implemented by runner boundaries that can declare that
+// subprocess execution is intentionally disabled. It lets callers avoid
+// preparatory host mutations (for example materializing an embedded helper)
+// when execution could not happen anyway.
+type ExecutionPolicy interface {
+	ExecutionAllowed() bool
+}
+
+// ExecutionAllowed reports whether rn permits subprocess execution. Runners
+// that do not expose an explicit policy are assumed executable for backwards
+// compatibility; BlockedRunner and wrappers around it fail closed.
+func ExecutionAllowed(rn Runner) bool {
+	if rn == nil {
+		return false
+	}
+	policy, ok := rn.(ExecutionPolicy)
+	return !ok || policy.ExecutionAllowed()
+}
+
 type BlockedRunner struct {
 	Reason string
 }
+
+func (BlockedRunner) ExecutionAllowed() bool { return false }
 
 func (r BlockedRunner) blocked() Result {
 	reason := r.Reason

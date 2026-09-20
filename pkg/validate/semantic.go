@@ -3,7 +3,6 @@ package validate
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"sort"
 	"strings"
 
@@ -108,13 +107,8 @@ func validateMalformedURLs(s *config.Schema) *Result {
 				continue
 			}
 			checkURL := config.PlaceholderRe.ReplaceAllString(urlStr, "_")
-			parsed, err := url.Parse(checkURL)
-			if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-				r.Add(ValidationError{Code: ErrMalformedURL, Field: fieldPath(toolName, i, "url"), Message: fmt.Sprintf("malformed URL %q", urlStr)})
-				continue
-			}
-			if (strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https")) && parsed.User != nil {
-				r.Add(ValidationError{Code: ErrMalformedURL, Field: fieldPath(toolName, i, "url"), Message: "git: embedded URL credentials are not allowed; use an external credential helper"})
+			if err := artifact.ValidateURL(checkURL, []string{"http", "https", "ssh", "git"}); err != nil {
+				r.Add(ValidationError{Code: ErrMalformedURL, Field: fieldPath(toolName, i, "url"), Message: fmt.Sprintf("git: %v", err)})
 			}
 		}
 	}

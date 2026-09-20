@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/config"
@@ -735,5 +736,64 @@ func TestMethodHashDetectsSameKindReordering(t *testing.T) {
 
 	if computeMethodsHash(before) == computeMethodsHash(after) {
 		t.Error("swapping same-kind methods with different labels should change the hash")
+	}
+}
+
+func TestResolveAllPinsLocalArtifactContentWithoutAbsolutePath(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "vendor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "vendor", "demo"), []byte("payload"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := &config.Schema{
+		ProjectRoot: root,
+		Tools: map[string]*config.Tool{
+			"demo": {
+				Name: "demo",
+				Methods: []*config.MethodCandidate{{
+					Kind:        "local",
+					ProjectRoot: root,
+					Config:      map[string]any{"local_path": "vendor/demo"},
+				}},
+			},
+		},
+	}
+
+	l, err := ResolveAll(context.Background(), s, &run.FakeRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin, ok := l.Tools["demo/local/0"]
+	if !ok || pin.Checksum == "" {
+		t.Fatalf("local pin = %#v, present=%t", pin, ok)
+	}
+	if filepath.IsAbs(pin.Checksum) || bytes.Contains([]byte(pin.Checksum), []byte(root)) {
+		t.Fatalf("local pin leaked project root: %#v", pin)
+	}
+
+	Apply(s, l)
+	got, _ := s.Tools["demo"].Methods[0].Config["checksum"].(string)
+	if got != pin.Checksum {
+		t.Fatalf("applied checksum = %q, want %q", got, pin.Checksum)
+	}
+}
+
+func TestApplyLocalPinDoesNotOverrideExplicitChecksum(t *testing.T) {
+	explicit := "sha256:" + strings.Repeat("a", 64)
+	locked := "sha256:" + strings.Repeat("b", 64)
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"demo": {
+			Name: "demo",
+			Methods: []*config.MethodCandidate{{
+				Kind:   "local",
+				Config: map[string]any{"local_path": "vendor/demo", "checksum": explicit},
+			}},
+		},
+	}}
+	Apply(s, &Lock{Version: 1, Tools: map[string]ToolPin{"demo/local/0": {Checksum: locked}}})
+	if got := s.Tools["demo"].Methods[0].Config["checksum"]; got != explicit {
+		t.Fatalf("explicit checksum overridden: got %v want %s", got, explicit)
 	}
 }

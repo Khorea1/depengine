@@ -1,25 +1,58 @@
 package planner
 
 import (
+	"fmt"
+
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/localartifact"
 	"github.com/Khorea1/depengine/pkg/methodkind"
 	"github.com/Khorea1/depengine/pkg/plan"
 )
 
-func applyArtifact(p *plan.ResolvedInstallPlan, method *config.MethodCandidate, contract *methodkind.Contract) {
+func applyArtifact(p *plan.ResolvedInstallPlan, method *config.MethodCandidate, contract *methodkind.Contract) error {
+	checksum := stringValue(method.Config, "checksum")
+	if err := contract.ValidateChecksum(checksum); err != nil {
+		return fmt.Errorf("checksum: %w", err)
+	}
+	if _, declared := contract.Fields["local_path"]; declared {
+		raw := stringValue(method.Config, "local_path")
+		if raw == "" {
+			return fmt.Errorf("local_path is required")
+		}
+		localPath, err := plan.NormalizeProjectPath(raw)
+		if err != nil {
+			return err
+		}
+		kind, err := localartifact.ClassifyProjectPath(localPath)
+		if err != nil {
+			return err
+		}
+		p.Artifacts = append(p.Artifacts, plan.Artifact{
+			Kind:      kind,
+			LocalPath: localPath,
+			Checksum:  checksum,
+		})
+		p.Operations = append(p.Operations, plan.Operation{
+			Kind:        "resolve-local-artifact",
+			Description: localPath,
+			Effect:      plan.EffectReadOnly,
+		})
+		return nil
+	}
 	if contract.Artifact == nil {
-		return
+		return nil
 	}
 	url := stringValue(method.Config, "url")
 	if url == "" {
 		if asset := stringValue(method.Config, "asset"); asset != "" {
 			p.Operations = append(p.Operations, plan.Operation{Kind: "resolve-artifact", Description: asset, Effect: plan.EffectReadOnly})
 		}
-		return
+		return nil
 	}
 	p.Artifacts = append(p.Artifacts, plan.Artifact{
 		URL:          url,
-		Checksum:     stringValue(method.Config, "checksum"),
+		Checksum:     checksum,
 		SignatureURL: stringValue(method.Config, "signature_url"),
 	})
+	return nil
 }

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -46,7 +45,7 @@ type Facts struct {
 //
 // The second return value, clean, is true when the returned path is a
 // temp file that the caller should remove after use.
-func locateDetectScript() (string, bool, error) {
+func locateDetectScript(r run.Runner) (string, bool, error) {
 	// 1. DEPENGINE_DETECT_SCRIPT env var (explicit override, highest priority).
 	if p := os.Getenv("DEPENGINE_DETECT_SCRIPT"); p != "" {
 		if _, err := os.Stat(p); err == nil {
@@ -80,9 +79,10 @@ func locateDetectScript() (string, bool, error) {
 		}
 	}
 
-	// 4. detect_os.sh on PATH.
-	if p, err := exec.LookPath("detect_os.sh"); err == nil {
-		return p, false, nil
+	// 4. detect_os.sh on PATH. Executable lookup stays behind pkg/run so
+	// dry-run/test/remote runners observe the same process boundary.
+	if r != nil && run.LookPath(context.Background(), r, "detect_os.sh") {
+		return "detect_os.sh", false, nil
 	}
 
 	return "", false, fmt.Errorf("detect_os.sh not found (try setting DEPENGINE_DETECT_SCRIPT=/path/to/script)")
@@ -217,7 +217,14 @@ func validWindowsVersion(version string) bool {
 // fail when we cannot parse the stdout; then we prefer the script's own
 // stderr as the actionable message.
 func GatherFacts(r run.Runner) (*Facts, error) {
-	script, clean, err := locateDetectScript()
+	if !run.ExecutionAllowed(r) {
+		// In observational/dry-run mode, do not materialize the embedded shell
+		// detector or invoke the runner through platform-version fallbacks. A
+		// blocked execution policy means zero runner calls, not merely calls that
+		// are expected to reject execution.
+		return gatherFactsGo(nil), nil
+	}
+	script, clean, err := locateDetectScript(r)
 	if err != nil {
 		log.Default.Warn("OS detection script not available, using Go runtime fallback", "error", err)
 		return gatherFactsGo(r), nil

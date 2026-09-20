@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
+	"reflect"
 	"strings"
 
 	"github.com/Khorea1/depengine/pkg/run"
@@ -50,10 +52,15 @@ func (e *PlannerError) Error() string {
 	if e == nil {
 		return "<nil>"
 	}
-	if e.Op == "" {
-		return fmt.Sprintf("%s: %v", e.Class, e.Err)
+	detail := "<nil>"
+	if e.Err != nil {
+		detail = run.RedactSensitiveText(e.Err.Error())
 	}
-	return fmt.Sprintf("%s (%s): %v", e.Class, e.Op, e.Err)
+	op := run.RedactSensitiveText(e.Op)
+	if op == "" {
+		return fmt.Sprintf("%s: %s", e.Class, detail)
+	}
+	return fmt.Sprintf("%s (%s): %s", e.Class, op, detail)
 }
 
 func (e *PlannerError) Unwrap() error { return e.Err }
@@ -92,6 +99,65 @@ type ResolvedIdentity struct {
 	Platform         string             `json:"platform,omitempty"`
 }
 
+// Validate checks adapter-neutral desired identity invariants. Keeping this on
+// ResolvedIdentity itself lets planning, locking, and direct reconciliation use
+// exactly the same structural contract instead of trusting callers to have run
+// ResolvedInstallPlan.Validate first.
+func (i ResolvedIdentity) Validate() error {
+	if strings.TrimSpace(i.Package) != i.Package {
+		return errors.New("package must not contain surrounding whitespace")
+	}
+	if strings.ContainsRune(i.Package, '\x00') {
+		return errors.New("package contains NUL")
+	}
+	for label, value := range map[string]string{
+		"version": i.Version, "revision": i.Revision,
+		"architecture": i.Architecture, "platform": i.Platform,
+	} {
+		if strings.TrimSpace(value) != value {
+			return fmt.Errorf("%s must not contain surrounding whitespace", label)
+		}
+		if strings.ContainsRune(value, '\x00') {
+			return fmt.Errorf("%s contains NUL", label)
+		}
+	}
+	if i.Digest != "" {
+		if err := validateConcreteDigestSyntax(i.Digest); err != nil {
+			return fmt.Errorf("digest: %w", err)
+		}
+	}
+	if i.Source != "" {
+		if err := validateIdentityReference(i.Source); err != nil {
+			return fmt.Errorf("source: %w", err)
+		}
+	}
+	if i.Registry != "" {
+		if err := validateIdentityReference(i.Registry); err != nil {
+			return fmt.Errorf("registry: %w", err)
+		}
+	}
+	if i.RequestedVersion != nil {
+		if err := i.RequestedVersion.Validate(); err != nil {
+			return fmt.Errorf("requested version: %w", err)
+		}
+		if i.RequestedVersion.Mode == VersionDigest && i.Digest != "" &&
+			canonicalDigest(i.RequestedVersion.Value) != canonicalDigest(i.Digest) {
+			return errors.New("requested digest does not match resolved identity digest")
+		}
+	}
+	if i.Scope != "" {
+		if _, err := ParseScope(i.Scope); err != nil {
+			return fmt.Errorf("scope: %w", err)
+		}
+	}
+	if i.Environment != nil {
+		if err := i.Environment.Validate(); err != nil {
+			return fmt.Errorf("environment: %w", err)
+		}
+	}
+	return nil
+}
+
 // Artifact describes a resolved install artifact without embedding credentials.
 type Artifact struct {
 	Kind         ArtifactKind `json:"kind,omitempty"`
@@ -105,6 +171,28 @@ type Artifact struct {
 type Prerequisite struct {
 	Name   string `json:"name"`
 	Method string `json:"method,omitempty"`
+}
+
+// Validate checks the stable prerequisite identity carried by a resolved
+// plan. Method may be empty when candidate selection for the prerequisite is
+// intentionally deferred, but an explicitly supplied method must itself be a
+// canonical identifier.
+func (p Prerequisite) Validate() error {
+	if strings.TrimSpace(p.Name) != p.Name || p.Name == "" {
+		return errors.New("prerequisite name is required and must not contain surrounding whitespace")
+	}
+	if strings.ContainsRune(p.Name, '\x00') {
+		return errors.New("prerequisite name contains NUL")
+	}
+	if p.Method != "" {
+		if strings.TrimSpace(p.Method) != p.Method {
+			return errors.New("prerequisite method must not contain surrounding whitespace")
+		}
+		if strings.ContainsRune(p.Method, '\x00') {
+			return errors.New("prerequisite method contains NUL")
+		}
+	}
+	return nil
 }
 
 // SecretReference identifies external secret material by reference only. Value
@@ -121,6 +209,35 @@ type Operation struct {
 	Effect        OperationEffect `json:"effect"`
 	Command       []string        `json:"command,omitempty"`
 	ArbitraryCode bool            `json:"arbitrary_code,omitempty"`
+}
+
+// Validate enforces operation-level safety invariants independently of the
+// adapter that produced the plan. Any explicit argv is executable user intent
+// and therefore must be classified as arbitrary code so capability gating
+// cannot be bypassed by a malformed or future planner path.
+func (o Operation) Validate() error {
+	if strings.TrimSpace(o.Kind) != o.Kind || o.Kind == "" {
+		return errors.New("operation kind is required and must not contain surrounding whitespace")
+	}
+	switch o.Effect {
+	case EffectReadOnly, EffectMutation:
+	default:
+		return fmt.Errorf("operation %q has invalid effect %q", o.Kind, o.Effect)
+	}
+	if len(o.Command) > 0 && !o.ArbitraryCode {
+		return fmt.Errorf("operation %q has a command but is not marked arbitrary code", o.Kind)
+	}
+	if len(o.Command) > 0 {
+		if strings.TrimSpace(o.Command[0]) == "" {
+			return fmt.Errorf("operation %q command executable is empty", o.Kind)
+		}
+		for i, arg := range o.Command {
+			if strings.ContainsRune(arg, '\x00') {
+				return fmt.Errorf("operation %q command argument %d contains NUL", o.Kind, i)
+			}
+		}
+	}
+	return nil
 }
 
 // RemovalMetadata records enough ownership identity for future removal logic.
@@ -165,44 +282,41 @@ func (p ResolvedInstallPlan) Validate() error {
 	if p.Version != CurrentVersion {
 		return fmt.Errorf("unsupported plan version %d (want %d)", p.Version, CurrentVersion)
 	}
-	if p.Tool.Name == "" {
-		return errors.New("plan tool name is required")
+	if strings.TrimSpace(p.Tool.Name) != p.Tool.Name || p.Tool.Name == "" {
+		return errors.New("plan tool name is required and must not contain surrounding whitespace")
 	}
-	if p.Candidate.Method == "" {
-		return errors.New("plan candidate method is required")
+	if strings.ContainsRune(p.Tool.Name, '\x00') {
+		return errors.New("plan tool name contains NUL")
 	}
-	if strings.TrimSpace(p.Identity.Package) != p.Identity.Package {
-		return errors.New("identity package must not contain surrounding whitespace")
+	if strings.TrimSpace(p.Candidate.Method) != p.Candidate.Method || p.Candidate.Method == "" {
+		return errors.New("plan candidate method is required and must not contain surrounding whitespace")
 	}
-	if p.Identity.Source != "" {
-		if err := validateCredentialFreeReference(p.Identity.Source); err != nil {
-			return fmt.Errorf("identity source: %w", err)
-		}
+	if strings.ContainsRune(p.Candidate.Method, '\x00') {
+		return errors.New("plan candidate method contains NUL")
 	}
-	if p.Identity.Registry != "" {
-		if err := validateCredentialFreeReference(p.Identity.Registry); err != nil {
-			return fmt.Errorf("identity registry: %w", err)
-		}
+	if err := p.Identity.Validate(); err != nil {
+		return fmt.Errorf("identity: %w", err)
 	}
-	if p.Identity.RequestedVersion != nil {
-		if err := p.Identity.RequestedVersion.Validate(); err != nil {
-			return fmt.Errorf("requested version: %w", err)
-		}
-	}
-	if p.Identity.Scope != "" {
-		if _, err := ParseScope(p.Identity.Scope); err != nil {
-			return fmt.Errorf("identity scope: %w", err)
-		}
-	}
-	if p.Identity.Environment != nil {
-		if err := p.Identity.Environment.Validate(); err != nil {
-			return fmt.Errorf("identity environment: %w", err)
-		}
-	}
+	seenArtifacts := make(map[string]struct{}, len(p.Artifacts))
 	for i, artifact := range p.Artifacts {
 		if err := artifact.Validate(); err != nil {
 			return fmt.Errorf("artifact %d: %w", i, err)
 		}
+		key := artifactIdentityKey(artifact.Kind, artifact.URL, artifact.LocalPath)
+		if _, duplicate := seenArtifacts[key]; duplicate {
+			return fmt.Errorf("duplicate artifact location %q", key)
+		}
+		seenArtifacts[key] = struct{}{}
+	}
+	seenPrerequisites := make(map[Prerequisite]struct{}, len(p.Prerequisites))
+	for i, prerequisite := range p.Prerequisites {
+		if err := prerequisite.Validate(); err != nil {
+			return fmt.Errorf("prerequisite %d: %w", i, err)
+		}
+		if _, duplicate := seenPrerequisites[prerequisite]; duplicate {
+			return fmt.Errorf("duplicate prerequisite %q via method %q", prerequisite.Name, prerequisite.Method)
+		}
+		seenPrerequisites[prerequisite] = struct{}{}
 	}
 	if _, err := CanonicalSources(p.Sources); err != nil {
 		return err
@@ -218,17 +332,34 @@ func (p ResolvedInstallPlan) Validate() error {
 	if err := validateEnsures(p.Ensures); err != nil {
 		return err
 	}
+	for name, target := range p.Entrypoints {
+		if strings.TrimSpace(name) != name || name == "" {
+			return errors.New("entrypoint name is required and must not contain surrounding whitespace")
+		}
+		if strings.ContainsRune(name, '\x00') {
+			return fmt.Errorf("entrypoint %q name contains NUL", name)
+		}
+		if target == "" {
+			return fmt.Errorf("entrypoint %q target is required", name)
+		}
+		if strings.ContainsRune(target, '\x00') {
+			return fmt.Errorf("entrypoint %q target contains NUL", name)
+		}
+	}
+	seenSecrets := make(map[SecretReference]struct{}, len(p.Secrets))
 	for i := range p.Secrets {
 		if err := p.Secrets[i].Validate(); err != nil {
 			return fmt.Errorf("secret reference %d: %w", i, err)
 		}
+		if _, duplicate := seenSecrets[p.Secrets[i]]; duplicate {
+			return fmt.Errorf("duplicate secret reference %q/%q", p.Secrets[i].Provider, p.Secrets[i].Name)
+		}
+		seenSecrets[p.Secrets[i]] = struct{}{}
 	}
 	for _, group := range [][]Operation{p.SourceMutations, p.Operations} {
 		for _, op := range group {
-			switch op.Effect {
-			case EffectReadOnly, EffectMutation:
-			default:
-				return fmt.Errorf("operation %q has invalid effect %q", op.Kind, op.Effect)
+			if err := op.Validate(); err != nil {
+				return err
 			}
 		}
 	}
@@ -237,7 +368,82 @@ func (p ResolvedInstallPlan) Validate() error {
 			return fmt.Errorf("source mutation %q must be classified as mutation", op.Kind)
 		}
 	}
+	if err := validateRemovalOwnership(p.OwnedPaths, p.Removal); err != nil {
+		return err
+	}
 	return nil
+}
+
+func artifactIdentityKey(kind ArtifactKind, rawURL, localPath string) string {
+	location := rawURL
+	if localPath != "" {
+		location = localPath
+	} else if rawURL != "" {
+		// Artifact URL identity is transport-semantic, not spelling-semantic.
+		// Use the same credential-free canonical form persisted by locks so the
+		// plan rejects aliases before execution rather than discovering the
+		// duplicate only during lock projection.
+		location = sanitizeLockReference(rawURL)
+	}
+	return string(kind) + "\x00" + location
+}
+
+func validateRemovalOwnership(ownedPaths []string, removal RemovalMetadata) error {
+	if !removal.Supported && (removal.Identity != "" || len(removal.OwnedPaths) != 0) {
+		return errors.New("unsupported removal must not declare removal identity or owned paths")
+	}
+	if strings.TrimSpace(removal.Identity) != removal.Identity {
+		return errors.New("removal identity must not contain surrounding whitespace")
+	}
+	if strings.ContainsRune(removal.Identity, '\x00') {
+		return errors.New("removal identity contains NUL")
+	}
+	owned := make(map[string]struct{}, len(ownedPaths))
+	for i, ownedPath := range ownedPaths {
+		key, err := ownershipPathKey(ownedPath)
+		if err != nil {
+			return fmt.Errorf("owned path %d: %w", i, err)
+		}
+		if _, duplicate := owned[key]; duplicate {
+			return fmt.Errorf("duplicate owned path %q", ownedPath)
+		}
+		owned[key] = struct{}{}
+	}
+	seenRemoval := make(map[string]struct{}, len(removal.OwnedPaths))
+	for i, removalPath := range removal.OwnedPaths {
+		key, err := ownershipPathKey(removalPath)
+		if err != nil {
+			return fmt.Errorf("removal owned path %d: %w", i, err)
+		}
+		if _, duplicate := seenRemoval[key]; duplicate {
+			return fmt.Errorf("duplicate removal owned path %q", removalPath)
+		}
+		seenRemoval[key] = struct{}{}
+		if _, ok := owned[key]; !ok {
+			return fmt.Errorf("removal path %q is not declared as owned by the plan", removalPath)
+		}
+	}
+	return nil
+}
+
+func ownershipPathKey(value string) (string, error) {
+	if value == "" || strings.TrimSpace(value) != value || strings.ContainsRune(value, '\x00') {
+		return "", errors.New("path must be non-empty and must not contain surrounding whitespace or NUL")
+	}
+	if validWindowsAbsolutePath(value) {
+		// Windows path spelling has multiple aliases for the same destination.
+		// Normalize separators and case so ownership/removal cannot bypass the
+		// declared set by switching drive/path spelling.
+		return "windows\x00" + strings.ToLower(strings.ReplaceAll(value, "/", `\`)), nil
+	}
+	if validUnixAbsolutePath(value) {
+		clean := path.Clean(value)
+		if clean != value {
+			return "", fmt.Errorf("Unix path is not canonical; use %q", clean)
+		}
+		return "unix\x00" + value, nil
+	}
+	return "", errors.New("path must be an absolute canonical Unix or Windows path")
 }
 
 // HasMutations reports whether execution of the plan can alter host state.
@@ -265,10 +471,73 @@ func (p ResolvedInstallPlan) HasMutations() bool {
 func (p ResolvedInstallPlan) MarshalJSON() ([]byte, error) {
 	type plain ResolvedInstallPlan
 	safe := p.redacted()
-	return json.Marshal(plain(safe))
+	// Final defensive boundary: redact every string in a deep typed copy so a
+	// future plan field cannot bypass credential filtering. Keeping the concrete
+	// struct type preserves the stable JSON field order used by golden tests.
+	return json.Marshal(plain(redactAllStrings(safe)))
+}
+
+func redactAllStrings[T any](value T) T {
+	return redactStrings(reflect.ValueOf(value)).Interface().(T)
+}
+
+func redactStrings(value reflect.Value) reflect.Value {
+	if !value.IsValid() {
+		return value
+	}
+	switch value.Kind() {
+	case reflect.String:
+		out := reflect.New(value.Type()).Elem()
+		out.SetString(run.RedactSensitiveText(value.String()))
+		return out
+	case reflect.Pointer:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		out := reflect.New(value.Type().Elem())
+		out.Elem().Set(redactStrings(value.Elem()))
+		return out
+	case reflect.Interface:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		item := redactStrings(value.Elem())
+		out := reflect.New(value.Type()).Elem()
+		out.Set(item)
+		return out
+	case reflect.Struct:
+		out := reflect.New(value.Type()).Elem()
+		for i := 0; i < value.NumField(); i++ {
+			out.Field(i).Set(redactStrings(value.Field(i)))
+		}
+		return out
+	case reflect.Slice:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		out := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
+		for i := 0; i < value.Len(); i++ {
+			out.Index(i).Set(redactStrings(value.Index(i)))
+		}
+		return out
+	case reflect.Map:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		out := reflect.MakeMapWithSize(value.Type(), value.Len())
+		iter := value.MapRange()
+		for iter.Next() {
+			out.SetMapIndex(redactStrings(iter.Key()), redactStrings(iter.Value()))
+		}
+		return out
+	default:
+		return value
+	}
 }
 
 func (p ResolvedInstallPlan) redacted() ResolvedInstallPlan {
+	p.Artifacts = append([]Artifact(nil), p.Artifacts...)
+	p.Sources = append([]SourceReference(nil), p.Sources...)
 	p.Identity.Source = run.RedactSensitiveText(p.Identity.Source)
 	p.Identity.Registry = run.RedactSensitiveText(p.Identity.Registry)
 	for i := range p.Artifacts {
@@ -313,6 +582,11 @@ func (p ResolvedInstallPlan) redacted() ResolvedInstallPlan {
 	return p
 }
 
+func cloneOperation(op Operation) Operation {
+	op.Command = append([]string(nil), op.Command...)
+	return op
+}
+
 func redactOperations(in []Operation) []Operation {
 	if len(in) == 0 {
 		return in
@@ -331,9 +605,7 @@ func redactOperations(in []Operation) []Operation {
 func redactCommand(in []string) []string {
 	out := append([]string(nil), in...)
 	for i := range out {
-		lower := strings.ToLower(out[i])
-		switch lower {
-		case "--token", "--password", "--passwd", "--secret", "--auth-token", "--access-token", "--api-key", "--apikey":
+		if run.IsSensitiveFlag(out[i]) {
 			if i+1 < len(out) {
 				out[i+1] = "***"
 			}

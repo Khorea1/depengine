@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/plan"
@@ -60,7 +61,7 @@ func githubArtifactPlan() plan.ResolvedInstallPlan {
 	}
 	p.Artifacts = []plan.Artifact{{
 		URL:      "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep.tar.gz",
-		Checksum: "sha256:0123456789abcdef",
+		Checksum: "sha256:" + strings.Repeat("0", 64),
 	}}
 	p.Entrypoints = map[string]string{"rg": "/opt/depengine/ripgrep/bin/rg"}
 	p.Operations = []plan.Operation{

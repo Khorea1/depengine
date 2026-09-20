@@ -8,6 +8,10 @@
     "explicit": true
   },
   "requested_mode": "exact",
+  "requested_intent": {
+    "mode": "exact",
+    "value": "14.1.1"
+  },
   "stability": "immutable",
   "identity": {
     "version": "14.1.1",
@@ -18,7 +22,7 @@
     "artifacts": [
       {
         "url": "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep.tar.gz",
-        "checksum": "sha256:0123456789abcdef"
+        "checksum": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
       }
     ]
   }

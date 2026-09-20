@@ -27,6 +27,7 @@ import (
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/ghrelease"
+	"github.com/Khorea1/depengine/pkg/localartifact"
 	"github.com/Khorea1/depengine/pkg/log"
 	"github.com/Khorea1/depengine/pkg/run"
 
@@ -215,6 +216,19 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 				pin.Checksum = checksum
 			}
 
+			// Local artifacts are content-addressed during lock resolution even when
+			// the schema omitted an explicit checksum. The absolute project root is
+			// execution-local and never enters the lock; only the resulting digest
+			// is persisted.
+			if localPath, ok := method.Config["local_path"].(string); ok && localPath != "" {
+				expected, _ := method.Config["checksum"].(string)
+				resolved, err := localartifact.Resolve(method.ProjectRoot, localPath, expected)
+				if err != nil {
+					return nil, fmt.Errorf("lock: resolve %s/local artifact: %w", name, err)
+				}
+				pin.Checksum = resolved.Artifact.Checksum
+			}
+
 			if pin.Latest != "" || pin.Checksum != "" {
 				l.Tools[key] = pin
 			}
@@ -271,10 +285,16 @@ func Apply(s *config.Schema, l *Lock) {
 				}
 			}
 
-			// Apply pinned checksum — replace :auto with concrete hash.
+			// Apply pinned checksum. Remote :auto values are replaced as before;
+			// an unpinned local declaration receives the lock's content digest so
+			// later install/check resolution verifies exactly the locked bytes.
 			if pin.Checksum != "" {
 				if v, ok := method.Config["checksum"].(string); ok && strings.HasSuffix(v, ":auto") {
 					method.Config["checksum"] = pin.Checksum
+				} else if _, local := method.Config["local_path"]; local {
+					if v, _ := method.Config["checksum"].(string); v == "" {
+						method.Config["checksum"] = pin.Checksum
+					}
 				}
 			}
 		}

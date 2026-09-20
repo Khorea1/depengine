@@ -61,6 +61,12 @@ func (lr *LoggingRunner) WithContext(ctx Context) *LoggingRunner {
 	}
 }
 
+// ExecutionAllowed preserves an explicit execution policy exposed by the
+// wrapped runner. This matters for dry-run boundaries wrapped in logging.
+func (lr *LoggingRunner) ExecutionAllowed() bool {
+	return ExecutionAllowed(lr.inner)
+}
+
 // Run executes the command via the inner runner, logging the call and
 // result. The result is passed through unchanged.
 func (lr *LoggingRunner) Run(ctx context.Context, name string, args ...string) Result {
@@ -210,12 +216,7 @@ func formatArgsForLog(args []string) string {
 }
 
 func isSecretFlag(arg string) bool {
-	switch arg {
-	case "--token", "--password", "--passwd", "--secret", "--auth-token", "--access-token", "--api-key", "--apikey":
-		return true
-	default:
-		return false
-	}
+	return IsSensitiveFlag(arg)
 }
 
 func isSensitiveHeader(arg string) bool {

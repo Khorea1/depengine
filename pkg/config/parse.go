@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -34,6 +35,7 @@ var MethodConfigFieldStrategy = map[string]MergeStrategy{
 	"checksum":      MergeOverwrite,
 	"checksum_url":  MergeOverwrite,
 	"extract_to":    MergeOverwrite,
+	"install_dir":   MergeOverwrite,
 	"git":           MergeOverwrite,
 	"binary":        MergeOverwrite,
 }
@@ -248,7 +250,24 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 		}
 	}
 
-	return &Schema{Version: 1, Defaults: defaults, Tools: tools, AllowNewTools: allowNewTools}, nil
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, &ParseSchemaError{Err: fmt.Errorf("resolve schema path %s: %w", path, err)}
+	}
+	projectRoot := filepath.Dir(absPath)
+	bindProjectRoot(tools, projectRoot)
+
+	return &Schema{Version: 1, Defaults: defaults, Tools: tools, AllowNewTools: allowNewTools, ProjectRoot: projectRoot}, nil
+}
+
+func bindProjectRoot(tools map[string]*Tool, projectRoot string) {
+	for _, tool := range tools {
+		for _, method := range tool.Methods {
+			if method != nil {
+				method.ProjectRoot = projectRoot
+			}
+		}
+	}
 }
 
 // DefaultMethodOrder is the engine-wide canonical preference order for

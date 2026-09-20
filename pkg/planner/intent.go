@@ -33,10 +33,16 @@ func BuildCandidateIntent(tool *config.Tool, method *config.MethodCandidate) (pl
 		return plan.ResolvedInstallPlan{}, invalid("candidate", err)
 	}
 	applySources(&p, method)
-	applyArtifact(&p, method, contract)
+	if err := applyArtifact(&p, method, contract); err != nil {
+		return plan.ResolvedInstallPlan{}, invalid("candidate", err)
+	}
 	applyPrerequisites(&p, method)
 	applyMethodOperations(&p, method, contract)
-	p.Removal = plan.RemovalMetadata{Supported: contract.CanRemove, Identity: removalIdentity(p)}
+	if contract.CanRemove {
+		p.Removal = plan.RemovalMetadata{Supported: true, Identity: removalIdentity(p)}
+	} else {
+		p.Removal = plan.RemovalMetadata{Supported: false}
+	}
 	if err := p.Validate(); err != nil {
 		return plan.ResolvedInstallPlan{}, invalid("candidate", err)
 	}

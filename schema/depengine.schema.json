@@ -2736,6 +2736,81 @@
         },
         {
           "additionalProperties": false,
+          "description": "Method capabilities: check, remove, upgrade, immutable-lock, local-artifact.",
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "checksum": {
+              "type": "string"
+            },
+            "install_dir": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "local"
+            },
+            "local_path": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "requires": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "sources": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "apt-ppa",
+                      "dnf-copr",
+                      "scoop-bucket",
+                      "brew-tap"
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "url": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind",
+            "local_path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
           "description": "Method capabilities: check.",
           "properties": {
             "arch_map": {
@@ -7032,6 +7107,81 @@
         }
       ]
     },
+    "method_local": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Method capabilities: check, remove, upgrade, immutable-lock, local-artifact.",
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "checksum": {
+              "type": "string"
+            },
+            "install_dir": {
+              "type": "string"
+            },
+            "local_path": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "requires": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "sources": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "apt-ppa",
+                      "dnf-copr",
+                      "scoop-bucket",
+                      "brew-tap"
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "url": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "local_path"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "method_mas": {
       "oneOf": [
         {
@@ -8699,6 +8849,9 @@
         },
         "http": {
           "$ref": "#/definitions/method_http"
+        },
+        "local": {
+          "$ref": "#/definitions/method_local"
         },
         "mas": {
           "$ref": "#/definitions/method_mas"

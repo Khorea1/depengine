@@ -131,3 +131,10 @@ func TestLoggingRunnerRedactsSensitiveURLQuery(t *testing.T) {
 		t.Fatalf("log missing redaction markers: %s", out)
 	}
 }
+
+func TestLoggingRunnerPreservesBlockedExecutionPolicy(t *testing.T) {
+	lr := NewLoggingRunner(BlockedRunner{Reason: "dry-run"}, log.NewTestLogger(t).Logger)
+	if ExecutionAllowed(lr) {
+		t.Fatal("LoggingRunner hid blocked execution policy")
+	}
+}

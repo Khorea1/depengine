@@ -43,6 +43,7 @@ type Field struct {
 	NonEmpty bool
 	Enum     []string
 	Effects  FieldEffect
+	Semantic FieldSemantic
 }
 
 // ScopeContract maps depengine's portable scope vocabulary to the concrete
@@ -69,6 +70,7 @@ type Contract struct {
 	Capabilities         Capability
 	Scopes               *ScopeContract
 	Artifact             *artifact.Contract
+	Checksum             *ChecksumContract
 }
 
 var pkgField = map[string]Field{"pkg": {Type: String, Effects: EffectExecute | EffectVerify}}
@@ -128,6 +130,13 @@ var downloadFields = fields(artifactFields, map[string]Field{
 })
 
 var artifactSourceAlternatives = [][]string{{"url"}, {"repo", "asset"}}
+
+var remoteChecksumContract = &ChecksumContract{
+	Algorithms: []string{"sha256", "sha512", "sha1", "md5"},
+	AllowAuto:  true,
+}
+
+var localChecksumContract = &ChecksumContract{Algorithms: []string{"sha256"}}
 
 var downloadArtifactContract = &artifact.Contract{
 	URLFields:                    []string{"url", "checksum_url", "signature_url"},
@@ -286,8 +295,8 @@ var Contracts = finalizeContracts([]Contract{
 	{Kind: "appimage", DefaultOrder: 31, Fields: fields(withoutField(downloadFields, "extract_to"), map[string]Field{
 		"install_dir": {Type: String, Effects: EffectExecute | EffectVerify},
 		"desktop":     {Type: Boolean, Effects: EffectExecute},
-	}), SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: appImageArtifactContract},
-	{Kind: "android", DefaultOrder: 32, Fields: withoutFields(downloadFields, "extract_to", "binary"), SourceAlternatives: artifactSourceAlternatives, Artifact: androidArtifactContract},
+	}), SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: appImageArtifactContract, Checksum: remoteChecksumContract},
+	{Kind: "android", DefaultOrder: 32, Fields: withoutFields(downloadFields, "extract_to", "binary"), SourceAlternatives: artifactSourceAlternatives, Artifact: androidArtifactContract, Checksum: remoteChecksumContract},
 	{Kind: "git", DefaultOrder: 33, Capabilities: CapabilityArbitraryCode | CapabilityRevision, Fields: map[string]Field{
 		"url":           {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 		"branch":        {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
@@ -301,17 +310,22 @@ var Contracts = finalizeContracts([]Contract{
 		"binary":        {Type: String, Effects: EffectExecute | EffectVerify},
 		"managed_paths": {Type: StringList, Effects: EffectValidate | EffectExecute | EffectVerify},
 	}, MutuallyExclusive: [][]string{{"branch", "tag", "rev"}}, CanRemove: true},
-	{Kind: "github", DefaultOrder: 34, Fields: fields(withoutField(downloadFields, "url"), map[string]Field{
+	{Kind: "local", DefaultOrder: 34, Capabilities: CapabilityLocalArtifact, Fields: map[string]Field{
+		"local_path":  {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"checksum":    {Type: String, Effects: EffectValidate | EffectResolve | EffectExecute | EffectVerify},
+		"install_dir": {Type: String, Effects: EffectExecute | EffectVerify},
+	}, CanRemove: true, Checksum: localChecksumContract},
+	{Kind: "github", DefaultOrder: 35, Fields: fields(withoutField(downloadFields, "url"), map[string]Field{
 		"repo":    {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 		"asset":   {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 		"release": {Type: String, Effects: EffectResolve},
 		"branch":  {Type: String, NonEmpty: true, Effects: EffectResolve},
-	}), SourceAlternatives: [][]string{{"repo", "asset"}}, Artifact: githubArtifactContract, MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true},
-	{Kind: "http", DefaultOrder: 35, Fields: downloadFields, SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract},
-	{Kind: "msi", DefaultOrder: 36, Fields: fields(artifactFields, map[string]Field{
+	}), SourceAlternatives: [][]string{{"repo", "asset"}}, Artifact: githubArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true},
+	{Kind: "http", DefaultOrder: 36, Fields: downloadFields, SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract, Checksum: remoteChecksumContract},
+	{Kind: "msi", DefaultOrder: 37, Fields: fields(artifactFields, map[string]Field{
 		"product_name": {Type: String, Required: true, NonEmpty: true, Effects: EffectVerify | EffectExecute},
 		"publisher":    {Type: String, Effects: EffectVerify | EffectExecute},
-	}), SourceAlternatives: artifactSourceAlternatives, Artifact: msiArtifactContract, MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, ImplicitDistroFamily: []string{"windows"}, CanRemove: true},
+	}), SourceAlternatives: artifactSourceAlternatives, Artifact: msiArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, ImplicitDistroFamily: []string{"windows"}, CanRemove: true},
 })
 
 // finalizeContracts adds capabilities implied by the adapter interface and by
@@ -321,6 +335,15 @@ var Contracts = finalizeContracts([]Contract{
 // method names or CanRemove.
 func finalizeContracts(contracts []Contract) []Contract {
 	for i := range contracts {
+		for name, field := range contracts[i].Fields {
+			semantic := semanticForField(name)
+			if semantic == SemanticUnknown {
+				panic("methodkind: field " + contracts[i].Kind + "." + name + " has no semantic classification")
+			}
+			field.Semantic = semantic
+			contracts[i].Fields[name] = field
+		}
+
 		// Check is mandatory on exec.Adapter, so every registered method can at
 		// least observe whether its target is installed.
 		contracts[i].Capabilities |= CapabilityCheck

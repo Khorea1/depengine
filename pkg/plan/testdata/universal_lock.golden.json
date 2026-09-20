@@ -11,6 +11,10 @@
         "explicit": true
       },
       "requested_mode": "git_revision",
+      "requested_intent": {
+        "mode": "git_revision",
+        "value": "abc123def456"
+      },
       "stability": "immutable",
       "identity": {
         "revision": "abc123def4567890",
@@ -28,6 +32,10 @@
         "explicit": false
       },
       "requested_mode": "exact",
+      "requested_intent": {
+        "mode": "exact",
+        "value": "1.7.1"
+      },
       "stability": "immutable",
       "identity": {
         "version": "1.7.1",
@@ -46,6 +54,10 @@
         "explicit": true
       },
       "requested_mode": "exact",
+      "requested_intent": {
+        "mode": "exact",
+        "value": "14.1.1"
+      },
       "stability": "immutable",
       "identity": {
         "version": "14.1.1",
@@ -56,7 +68,7 @@
         "artifacts": [
           {
             "url": "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep.tar.gz",
-            "checksum": "sha256:0123456789abcdef"
+            "checksum": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
           }
         ]
       }

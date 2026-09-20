@@ -80,7 +80,11 @@ type PreparationPlan struct {
 // Validate enforces the transactional boundary independently of adapters.
 func (p PreparationPlan) Validate() error {
 	ids := make(map[string]struct{}, len(p.Prepare))
+	resources := make(map[ResourceIdentity]string, len(p.Prepare))
 	for i, op := range p.Probe {
+		if err := op.Validate(); err != nil {
+			return fmt.Errorf("probe operation %d: %w", i, err)
+		}
 		if op.Effect != EffectReadOnly {
 			return fmt.Errorf("probe operation %d (%q) must be read-only", i, op.Kind)
 		}
@@ -93,8 +97,15 @@ func (p PreparationPlan) Validate() error {
 			return fmt.Errorf("duplicate preparation mutation id %q", m.ID)
 		}
 		ids[m.ID] = struct{}{}
+		if firstID, exists := resources[m.Resource]; exists {
+			return fmt.Errorf("preparation mutations %q and %q target the same resource %q/%q", firstID, m.ID, m.Resource.Kind, m.Resource.Key)
+		}
+		resources[m.Resource] = m.ID
 	}
 	for i, op := range p.Commit {
+		if err := op.Validate(); err != nil {
+			return fmt.Errorf("commit operation %d: %w", i, err)
+		}
 		if op.Effect != EffectMutation {
 			return fmt.Errorf("commit operation %d (%q) must be a mutation", i, op.Kind)
 		}
@@ -104,7 +115,7 @@ func (p PreparationPlan) Validate() error {
 
 // Validate checks one preparation mutation.
 func (m PreparationMutation) Validate() error {
-	if strings.TrimSpace(m.ID) != m.ID || m.ID == "" {
+	if strings.TrimSpace(m.ID) != m.ID || m.ID == "" || strings.ContainsRune(m.ID, '\x00') {
 		return errors.New("mutation id is required and must not contain surrounding whitespace")
 	}
 	if err := m.Resource.Validate(); err != nil {
@@ -118,6 +129,9 @@ func (m PreparationMutation) Validate() error {
 	if m.Apply.Effect != EffectMutation {
 		return errors.New("apply operation must be classified as mutation")
 	}
+	if err := m.Apply.Validate(); err != nil {
+		return fmt.Errorf("apply operation: %w", err)
+	}
 	switch m.Policy {
 	case RollbackSafe:
 		if m.Ownership != OwnershipDepengine {
@@ -128,6 +142,9 @@ func (m PreparationMutation) Validate() error {
 		}
 		if m.Rollback.Effect != EffectMutation {
 			return errors.New("rollback operation must be classified as mutation")
+		}
+		if err := m.Rollback.Validate(); err != nil {
+			return fmt.Errorf("rollback operation: %w", err)
 		}
 	case RollbackRetain:
 		if m.Rollback != nil {
@@ -152,6 +169,11 @@ func (r ResourceIdentity) Validate() error {
 	if err := validateCredentialFreeReference(r.Key); err != nil {
 		return fmt.Errorf("resource key: %w", err)
 	}
+	if strings.Contains(r.Key, "://") {
+		if canonical := sanitizeLockReference(r.Key); canonical != r.Key {
+			return fmt.Errorf("resource key is not canonical; use %q", canonical)
+		}
+	}
 	return nil
 }
 
@@ -168,28 +190,24 @@ func (p PreparationPlan) RollbackFor(appliedIDs []string) (RollbackDecision, err
 	if err := p.Validate(); err != nil {
 		return RollbackDecision{}, err
 	}
-	byID := make(map[string]PreparationMutation, len(p.Prepare))
-	for _, m := range p.Prepare {
-		byID[m.ID] = m
+	if len(appliedIDs) > len(p.Prepare) {
+		return RollbackDecision{}, fmt.Errorf("rollback records %d applied mutations, plan has %d", len(appliedIDs), len(p.Prepare))
 	}
-	seen := make(map[string]struct{}, len(appliedIDs))
-	ordered := make([]PreparationMutation, 0, len(appliedIDs))
-	for _, id := range appliedIDs {
-		if _, duplicate := seen[id]; duplicate {
-			return RollbackDecision{}, fmt.Errorf("duplicate applied mutation id %q", id)
+	// Prepare mutations are applied strictly in plan order. Rollback therefore
+	// accepts only the exact applied prefix that a valid PreparationJournal can
+	// represent. Accepting arbitrary subsets/reordering here would allow an
+	// executor to roll back a mutation that could not have been applied alone
+	// while silently omitting earlier owned state.
+	for i, id := range appliedIDs {
+		if id != p.Prepare[i].ID {
+			return RollbackDecision{}, fmt.Errorf("rollback mutation %d is %q, want applied prefix %q", i, id, p.Prepare[i].ID)
 		}
-		seen[id] = struct{}{}
-		m, ok := byID[id]
-		if !ok {
-			return RollbackDecision{}, fmt.Errorf("unknown applied mutation id %q", id)
-		}
-		ordered = append(ordered, m)
 	}
 	var out RollbackDecision
-	for i := len(ordered) - 1; i >= 0; i-- {
-		m := ordered[i]
+	for i := len(appliedIDs) - 1; i >= 0; i-- {
+		m := p.Prepare[i]
 		if m.Policy == RollbackSafe {
-			out.Operations = append(out.Operations, *m.Rollback)
+			out.Operations = append(out.Operations, cloneOperation(*m.Rollback))
 		} else {
 			out.Retained = append(out.Retained, m.Resource)
 		}
@@ -223,6 +241,9 @@ func (s OwnedResourceState) Validate() error {
 		if strings.TrimSpace(dep) != dep || dep == "" {
 			return fmt.Errorf("dependent %d is empty or has surrounding whitespace", i)
 		}
+		if strings.ContainsRune(dep, '\x00') {
+			return fmt.Errorf("dependent %d contains NUL", i)
+		}
 		if i > 0 && dep <= last {
 			return errors.New("dependents must be sorted and unique")
 		}
@@ -238,6 +259,9 @@ func ClaimResource(state OwnedResourceState, dependent string) (OwnedResourceSta
 	}
 	if strings.TrimSpace(dependent) != dependent || dependent == "" {
 		return OwnedResourceState{}, errors.New("dependent is required and must not contain surrounding whitespace")
+	}
+	if strings.ContainsRune(dependent, '\x00') {
+		return OwnedResourceState{}, errors.New("dependent contains NUL")
 	}
 	out := state
 	out.Dependents = append([]string(nil), state.Dependents...)
@@ -257,8 +281,11 @@ func ReleaseResource(state OwnedResourceState, dependent string) (next OwnedReso
 	if err := state.Validate(); err != nil {
 		return OwnedResourceState{}, false, err
 	}
-	if dependent == "" {
-		return OwnedResourceState{}, false, errors.New("dependent is required")
+	if strings.TrimSpace(dependent) != dependent || dependent == "" {
+		return OwnedResourceState{}, false, errors.New("dependent is required and must not contain surrounding whitespace")
+	}
+	if strings.ContainsRune(dependent, '\x00') {
+		return OwnedResourceState{}, false, errors.New("dependent contains NUL")
 	}
 	out := state
 	out.Dependents = append([]string(nil), state.Dependents...)
@@ -294,11 +321,57 @@ func NewPreparationJournal() PreparationJournal {
 	return PreparationJournal{Status: PreparationPending}
 }
 
+// Validate checks that a persisted preparation journal is a valid prefix of
+// the current plan and that its lifecycle status agrees with that prefix. This
+// prevents crash recovery from silently accepting reordered, duplicated, or
+// stale mutation identities.
+func (j PreparationJournal) Validate(p PreparationPlan) error {
+	if err := p.Validate(); err != nil {
+		return err
+	}
+	status := j.Status
+	if status == "" {
+		status = PreparationPending
+	}
+	if len(j.Applied) > len(p.Prepare) {
+		return fmt.Errorf("preparation journal records %d mutations, plan has %d", len(j.Applied), len(p.Prepare))
+	}
+	for i, id := range j.Applied {
+		if id != p.Prepare[i].ID {
+			return fmt.Errorf("preparation journal mutation %d is %q, want %q", i, id, p.Prepare[i].ID)
+		}
+	}
+
+	switch status {
+	case PreparationPending:
+		if len(j.Applied) != 0 {
+			return errors.New("pending preparation journal cannot contain applied mutations")
+		}
+	case PreparationPreparing:
+		if len(j.Applied) == 0 || len(j.Applied) >= len(p.Prepare) {
+			return errors.New("preparing journal requires a non-empty partial mutation prefix")
+		}
+	case PreparationReady:
+		if len(j.Applied) != len(p.Prepare) {
+			return errors.New("ready preparation journal must contain every prepare mutation")
+		}
+	case PreparationCommitted:
+		if len(j.Applied) != len(p.Prepare) {
+			return errors.New("committed preparation journal must contain every prepare mutation")
+		}
+	case PreparationRolledBack:
+		// Rollback may follow failure after any valid prefix, including none.
+	default:
+		return fmt.Errorf("invalid preparation journal status %q", j.Status)
+	}
+	return nil
+}
+
 // RecordApplied advances the journal after one successful prepare mutation.
 // Mutations must be recorded in plan order so rollback is deterministic and a
 // crash-recovered journal cannot claim a mutation that was skipped.
 func (j PreparationJournal) RecordApplied(p PreparationPlan, id string) (PreparationJournal, error) {
-	if err := p.Validate(); err != nil {
+	if err := j.Validate(p); err != nil {
 		return PreparationJournal{}, err
 	}
 	if j.Status == "" {
@@ -330,6 +403,9 @@ func (j PreparationJournal) RecordApplied(p PreparationPlan, id string) (Prepara
 // recorded successfully. A plan with no preparation mutations is immediately
 // ready to commit.
 func (j PreparationJournal) ReadyForCommit(p PreparationPlan) bool {
+	if err := j.Validate(p); err != nil {
+		return false
+	}
 	if len(p.Prepare) == 0 {
 		return j.Status == "" || j.Status == PreparationPending || j.Status == PreparationReady
 	}
@@ -340,7 +416,7 @@ func (j PreparationJournal) ReadyForCommit(p PreparationPlan) bool {
 // this point preparation rollback is no longer automatic; ownership/refcount
 // state governs future removal.
 func (j PreparationJournal) MarkCommitted(p PreparationPlan) (PreparationJournal, error) {
-	if err := p.Validate(); err != nil {
+	if err := j.Validate(p); err != nil {
 		return PreparationJournal{}, err
 	}
 	if !j.ReadyForCommit(p) {
@@ -356,6 +432,9 @@ func (j PreparationJournal) MarkCommitted(p PreparationPlan) (PreparationJournal
 // journal rolled back. A committed candidate must instead use normal
 // ownership-aware removal semantics.
 func (j PreparationJournal) PlanRollback(p PreparationPlan) (PreparationJournal, RollbackDecision, error) {
+	if err := j.Validate(p); err != nil {
+		return PreparationJournal{}, RollbackDecision{}, err
+	}
 	if j.Status == PreparationCommitted {
 		return PreparationJournal{}, RollbackDecision{}, errors.New("committed preparation cannot use candidate rollback")
 	}

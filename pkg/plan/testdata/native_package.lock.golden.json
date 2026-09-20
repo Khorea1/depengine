@@ -8,6 +8,10 @@
     "explicit": false
   },
   "requested_mode": "exact",
+  "requested_intent": {
+    "mode": "exact",
+    "value": "1.7.1"
+  },
   "stability": "immutable",
   "identity": {
     "version": "1.7.1",

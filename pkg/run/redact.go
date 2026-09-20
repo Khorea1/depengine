@@ -1,13 +1,77 @@
 package run
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
+
+var sensitiveQueryKeys = []string{
+	"token",
+	"access_token",
+	"auth_token",
+	"refresh_token",
+	"id_token",
+	"api_key",
+	"apikey",
+	"password",
+	"passwd",
+	"secret",
+	"client_secret",
+	"credential",
+	"signature",
+	"sig",
+	"x-amz-signature",
+	"x-amz-credential",
+	"x-amz-security-token",
+	"x-goog-signature",
+	"x-goog-credential",
+}
+
+var sensitiveFlagNames = []string{
+	"--token",
+	"--password",
+	"--passwd",
+	"--secret",
+	"--client-secret",
+	"--auth-token",
+	"--access-token",
+	"--refresh-token",
+	"--api-key",
+	"--apikey",
+}
 
 var (
 	urlUserinfoPattern     = regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.-]*://)[^/@\s]+@`)
 	sensitiveHeaderPattern = regexp.MustCompile(`(?im)\b(authorization|proxy-authorization|cookie|set-cookie)\s*:\s*[^\r\n]+`)
-	secretFlagPattern      = regexp.MustCompile(`(?i)(--(?:token|password|passwd|secret|auth-token|access-token|api-key|apikey))(?:=|\s+)([^\s]+)`)
-	secretQueryPattern     = regexp.MustCompile(`(?i)([?&](?:token|access_token|auth_token|api_key|apikey|password|passwd|secret|signature|sig|x-amz-signature)=)[^&#\s]+`)
+	secretFlagPattern      = regexp.MustCompile(`(?i)(` + strings.Join(sensitiveFlagNames, "|") + `)(?:=|\s+)([^\s]+)`)
+	secretQueryPattern     = regexp.MustCompile(`(?i)([?&#](?:` + strings.Join(sensitiveQueryKeys, "|") + `)=)[^&#\s]+`)
 )
+
+// IsSensitiveQueryKey reports whether a URL query parameter conventionally
+// carries credential/signature material that must not be persisted or logged.
+// Keeping this classification next to diagnostic redaction prevents the lock
+// and plan validators from drifting to a weaker secret vocabulary.
+func IsSensitiveQueryKey(key string) bool {
+	key = strings.ToLower(key)
+	for _, sensitive := range sensitiveQueryKeys {
+		if key == sensitive {
+			return true
+		}
+	}
+	return false
+}
+
+// IsSensitiveFlag reports whether a CLI flag conventionally carries a secret
+// value in either --flag=value or --flag value form.
+func IsSensitiveFlag(flag string) bool {
+	flag = strings.ToLower(flag)
+	for _, sensitive := range sensitiveFlagNames {
+		if flag == sensitive {
+			return true
+		}
+	}
+	return false
+}
 
 // RedactSensitiveText removes common credential forms from diagnostic text.
 // It is intended for logs and user-facing error messages, not for command

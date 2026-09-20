@@ -344,3 +344,38 @@ func TestGatherFactsRejectsValidJSONFromKilledDetector(t *testing.T) {
 		t.Fatalf("accepted facts emitted by killed detector: %+v", facts)
 	}
 }
+
+func TestGatherFactsBlockedRunnerAvoidsDetectorExecution(t *testing.T) {
+	facts, err := GatherFacts(run.BlockedRunner{Reason: "dry-run"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts.DetectionMethod != "go-builtin" {
+		t.Fatalf("DetectionMethod = %q, want go-builtin", facts.DetectionMethod)
+	}
+}
+
+type denyExecutionRecordingRunner struct {
+	calls int
+}
+
+func (*denyExecutionRecordingRunner) ExecutionAllowed() bool { return false }
+
+func (r *denyExecutionRecordingRunner) Run(context.Context, string, ...string) run.Result {
+	r.calls++
+	return run.Result{}
+}
+
+func TestGatherFactsExecutionPolicyFalseMakesZeroRunnerCalls(t *testing.T) {
+	runner := &denyExecutionRecordingRunner{}
+	facts, err := GatherFacts(runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts == nil || facts.DetectionMethod != "go-builtin" {
+		t.Fatalf("facts = %#v, want go-builtin fallback", facts)
+	}
+	if runner.calls != 0 {
+		t.Fatalf("blocked GatherFacts invoked runner %d times", runner.calls)
+	}
+}

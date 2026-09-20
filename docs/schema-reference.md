@@ -240,6 +240,43 @@ For GitHub authentication, use `GITHUB_TOKEN`, `GH_TOKEN`, or an authenticated
 GitHub CLI; authenticated asset downloads use the in-process HTTP backend so the
 token is sent as an `Authorization` header rather than as a subprocess argument.
 
+
+### Local/offline: install a vendored artifact
+
+Use `local` when the payload lives inside the project rather than behind a
+network URL:
+
+```toml
+[tools.mytool.local]
+local_path  = "vendor/mytool"
+checksum    = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+install_dir = "~/.local/bin"
+```
+
+`local_path` is required and is resolved against the directory containing the
+project `schema.toml`, including when the method configuration originated in a
+personal manifest layer. The portable plan/lock identity keeps only the
+normalized project-relative path and checksum; the machine-specific absolute
+project root is runtime metadata and is not persisted. Absolute paths, `..`,
+backslashes, Windows drive prefixes, and any symlink component are rejected.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `local_path` | yes | Project-relative vendored file. Raw files and `.zip`, `.tar`, `.tar.gz`, `.tgz` are supported offline. Platform installers and archive formats requiring external extraction backends are rejected. |
+| `checksum` | no | Fixed `sha256:<64 hex>` digest. It is checked while resolving and rechecked immediately before materialization. `:auto` is not supported for local artifacts. |
+| `install_dir` | no | Parent directory. The adapter owns only the child named after the tool. Defaults to `~/.local/bin` for raw files and `~/.local/opt` for archives. |
+
+A raw file becomes `install_dir/<tool>`. An archive is extracted into
+`install_dir/<tool>`, not directly into the shared parent. `remove` deletes only
+that owned child. Archive installs reserve `.depengine-local-artifact.sha256`
+at the archive root as a transactional provenance marker; an archive containing
+that path is rejected. `Check` uses the marker to ensure the installed directory
+came from the currently resolved vendored bytes. The adapter uses only Go's
+standard-library filesystem and archive support; it does not perform network I/O
+or invoke a subprocess. Archive recipes currently do not create PATH launchers
+automatically, so choose an `install_dir`/payload layout appropriate for how the
+tool will be invoked.
+
 ### GitHub release assets
 
 Some projects publish a different asset filename convention per architecture
@@ -490,6 +527,7 @@ are described above or alongside their examples.
 | `conda` | Conda packages; deterministic `environment`/`prefix`, exact `version`/`build`, ordered `channels` | `numpy = { conda = { pkg = "numpy", environment = "data", version = "2.1.0", channels = ["conda-forge"] } }` |
 | `asdf` | asdf version manager plugins | `nodejs = { asdf = "nodejs" }` |
 | `git` | Clone + build (see field table above) | `ctpv = { git = { url = "...", build = "make install" } }` |
+| `local` | Install a project-vendored raw file or stdlib-supported archive without network access | `mytool = { local = { local_path = "vendor/mytool", checksum = "sha256:..." } }` |
 | `github` | Recommended for GitHub Releases; matches an asset *pattern* against the real asset list (see above) | `yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }` |
 | `http` | Download + extract + checksum (see field table above) | `fastfetch = { http = { url = "...", checksum = "sha256:auto" } }` |
 

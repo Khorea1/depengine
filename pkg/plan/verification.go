@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/Khorea1/depengine/pkg/run"
 )
@@ -112,11 +113,28 @@ type VerificationResult struct {
 // satisfaction belongs in the resolver, which must place the concrete desired
 // identity in ResolvedIdentity before verification.
 func Reconcile(desired ResolvedIdentity, observation Observation) VerificationResult {
+	observed := observation.Identity
+	if observation.Identity.Environment != nil {
+		environment := *observation.Identity.Environment
+		observed.Environment = &environment
+	}
+	if err := desired.Validate(); err != nil {
+		return VerificationResult{
+			State:    StateBroken,
+			Observed: observed,
+			Detail:   "invalid desired identity: " + err.Error(),
+		}
+	}
 	result := VerificationResult{
-		Observed: observation.Identity,
+		Observed: observed,
 		Detail:   observation.Detail,
 	}
 	if err := validateFieldSet("observation known", observation.KnownFields); err != nil {
+		result.State = StateBroken
+		result.Detail = err.Error()
+		return result
+	}
+	if err := validateKnownObservedIdentity(observation.Identity, observation.KnownFields); err != nil {
 		result.State = StateBroken
 		result.Detail = err.Error()
 		return result
@@ -125,18 +143,34 @@ func Reconcile(desired ResolvedIdentity, observation Observation) VerificationRe
 
 	switch observation.Presence {
 	case PresenceAbsent:
+		// An absent target has no authoritative installed identity. Backends may
+		// still return stale cache data, but it must not survive as known state.
+		result.KnownFields = nil
 		result.State = StateAbsent
 		return result
 	case PresenceUnknown:
+		// Presence is not established, so identity fields cannot be treated as
+		// authoritative even if a backend happened to return stale/partial data.
+		result.KnownFields = nil
 		result.State = StateUnknown
 		result.Unverifiable = desiredIdentityFields(desired)
+		if len(result.Unverifiable) == 0 && result.Detail == "" {
+			result.Detail = "target presence could not be determined"
+		}
 		return result
 	case PresenceBroken:
+		// Probe failure means any partial identity returned alongside the error is
+		// non-authoritative. Keep Observed for diagnostics, but not KnownFields.
+		result.KnownFields = nil
 		result.State = StateBroken
+		if result.Detail == "" {
+			result.Detail = "verification probe failed"
+		}
 		return result
 	case PresencePresent:
 		// Continue with identity reconciliation.
 	default:
+		result.KnownFields = nil
 		result.State = StateBroken
 		result.Detail = fmt.Sprintf("invalid presence state %q", observation.Presence)
 		return result
@@ -153,7 +187,7 @@ func Reconcile(desired ResolvedIdentity, observation Observation) VerificationRe
 		}
 		want := desiredField(desired, field)
 		got := observedField(observation.Identity, field)
-		if want != got {
+		if comparableIdentityValue(field, want) != comparableIdentityValue(field, got) {
 			result.Drift = append(result.Drift, IdentityDrift{Field: field, Desired: want, Observed: got})
 		}
 	}
@@ -175,6 +209,7 @@ func Reconcile(desired ResolvedIdentity, observation Observation) VerificationRe
 func (r VerificationResult) MarshalJSON() ([]byte, error) {
 	type plain VerificationResult
 	safe := r
+	safe.Drift = append([]IdentityDrift(nil), r.Drift...)
 	safe.Observed.Source = run.RedactSensitiveText(safe.Observed.Source)
 	safe.Observed.Registry = run.RedactSensitiveText(safe.Observed.Registry)
 	safe.Detail = run.RedactSensitiveText(safe.Detail)
@@ -182,7 +217,7 @@ func (r VerificationResult) MarshalJSON() ([]byte, error) {
 		safe.Drift[i].Desired = run.RedactSensitiveText(safe.Drift[i].Desired)
 		safe.Drift[i].Observed = run.RedactSensitiveText(safe.Drift[i].Observed)
 	}
-	return json.Marshal(plain(safe))
+	return json.Marshal(plain(redactAllStrings(safe)))
 }
 
 // Validate checks invariants on a verification result before it is persisted,
@@ -199,12 +234,37 @@ func (r VerificationResult) Validate() error {
 	if err := validateFieldSet("unverifiable", r.Unverifiable); err != nil {
 		return err
 	}
+	if err := validateKnownObservedIdentity(r.Observed, r.KnownFields); err != nil {
+		return err
+	}
+	known := make(map[IdentityField]struct{}, len(r.KnownFields))
+	for _, field := range r.KnownFields {
+		known[field] = struct{}{}
+	}
+	unverifiable := make(map[IdentityField]struct{}, len(r.Unverifiable))
+	for _, field := range r.Unverifiable {
+		if _, ok := known[field]; ok {
+			return fmt.Errorf("identity field %q cannot be both known and unverifiable", field)
+		}
+		unverifiable[field] = struct{}{}
+	}
+	seenDrift := make(map[IdentityField]struct{}, len(r.Drift))
 	for _, drift := range r.Drift {
 		if !validIdentityField(drift.Field) {
 			return fmt.Errorf("invalid drift field %q", drift.Field)
 		}
-		if drift.Desired == drift.Observed {
-			return fmt.Errorf("drift field %q has identical desired and observed values", drift.Field)
+		if _, duplicate := seenDrift[drift.Field]; duplicate {
+			return fmt.Errorf("duplicate drift field %q", drift.Field)
+		}
+		seenDrift[drift.Field] = struct{}{}
+		if _, ok := known[drift.Field]; !ok {
+			return fmt.Errorf("drift field %q must be present in known fields", drift.Field)
+		}
+		if _, ok := unverifiable[drift.Field]; ok {
+			return fmt.Errorf("drift field %q cannot also be unverifiable", drift.Field)
+		}
+		if comparableIdentityValue(drift.Field, drift.Desired) == comparableIdentityValue(drift.Field, drift.Observed) {
+			return fmt.Errorf("drift field %q has equivalent desired and observed values", drift.Field)
 		}
 	}
 
@@ -218,16 +278,61 @@ func (r VerificationResult) Validate() error {
 			return errors.New("drifted verification requires at least one drift field")
 		}
 	case StateUnknown:
+		if len(r.Drift) != 0 {
+			return errors.New("unknown verification cannot contain known identity drift")
+		}
 		if len(r.Unverifiable) == 0 && r.Detail == "" {
 			return errors.New("unknown verification requires unverifiable fields or detail")
 		}
 	case StateAbsent:
-		if len(r.Drift) != 0 {
-			return errors.New("absent verification cannot contain identity drift")
+		if len(r.KnownFields) != 0 || len(r.Drift) != 0 || len(r.Unverifiable) != 0 {
+			return errors.New("absent verification cannot contain authoritative identity state")
 		}
 	case StateBroken:
+		if len(r.KnownFields) != 0 || len(r.Drift) != 0 || len(r.Unverifiable) != 0 {
+			return errors.New("broken verification cannot contain authoritative identity state")
+		}
 		if r.Detail == "" {
 			return errors.New("broken verification requires detail")
+		}
+	}
+	return nil
+}
+
+func validateKnownObservedIdentity(identity ObservedIdentity, fields []IdentityField) error {
+	for _, field := range fields {
+		switch field {
+		case FieldPackage, FieldVersion, FieldRevision, FieldArchitecture, FieldPlatform:
+			value := observedField(identity, field)
+			if strings.TrimSpace(value) != value || strings.ContainsRune(value, '\x00') {
+				return fmt.Errorf("observed %s must not contain surrounding whitespace or NUL", field)
+			}
+		case FieldDigest:
+			value := observedField(identity, field)
+			if value != "" {
+				if err := validateConcreteDigestSyntax(value); err != nil {
+					return fmt.Errorf("observed digest: %w", err)
+				}
+			}
+		case FieldSource, FieldRegistry:
+			value := observedField(identity, field)
+			if value != "" {
+				if err := validateIdentityReference(value); err != nil {
+					return fmt.Errorf("observed %s: %w", field, err)
+				}
+			}
+		case FieldScope:
+			if identity.Scope != "" {
+				if _, err := ParseScope(identity.Scope); err != nil {
+					return fmt.Errorf("observed scope: %w", err)
+				}
+			}
+		case FieldEnvironment:
+			if identity.Environment != nil {
+				if err := identity.Environment.Validate(); err != nil {
+					return fmt.Errorf("observed environment: %w", err)
+				}
+			}
 		}
 	}
 	return nil
@@ -273,6 +378,20 @@ func validateFieldSet(name string, fields []IdentityField) error {
 
 func validIdentityField(field IdentityField) bool {
 	return slices.Contains(identityFields, field)
+}
+
+func comparableIdentityValue(field IdentityField, value string) string {
+	switch field {
+	case FieldSource, FieldRegistry:
+		return sanitizeLockReference(value)
+	case FieldDigest:
+		// Digest algorithm names and hexadecimal encodings are case-insensitive.
+		// Concrete syntax is validated at the resolved-plan/lock boundaries; the
+		// reconciler should not report drift for spelling alone.
+		return strings.ToLower(value)
+	default:
+		return value
+	}
 }
 
 func desiredField(identity ResolvedIdentity, field IdentityField) string {

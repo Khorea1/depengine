@@ -50,7 +50,7 @@ type LifecycleHook struct {
 
 // Validate enforces hook lifecycle semantics independent of adapters.
 func (h LifecycleHook) Validate() error {
-	if strings.TrimSpace(h.ID) != h.ID || h.ID == "" {
+	if strings.TrimSpace(h.ID) != h.ID || h.ID == "" || strings.ContainsRune(h.ID, '\x00') {
 		return errors.New("hook id is required and must not contain surrounding whitespace")
 	}
 	if !h.Transition.Valid() {
@@ -68,6 +68,9 @@ func (h LifecycleHook) Validate() error {
 	}
 	if h.Operation.Effect != EffectMutation {
 		return errors.New("hook operation must be classified as mutation")
+	}
+	if err := h.Operation.Validate(); err != nil {
+		return fmt.Errorf("hook operation: %w", err)
 	}
 	if !h.Operation.ArbitraryCode {
 		return errors.New("hook operation must be marked arbitrary code")
@@ -104,6 +107,7 @@ func (p ResolvedInstallPlan) HookSchedule(transition TransitionKind, timing Hook
 	out := make([]LifecycleHook, 0)
 	for _, hook := range p.Hooks {
 		if hook.Transition == transition && hook.Timing == timing {
+			hook.Operation = cloneOperation(hook.Operation)
 			out = append(out, hook)
 		}
 	}
@@ -161,7 +165,7 @@ type EnsureAction struct {
 
 // Validate enforces the check-before-apply contract for durable ensure state.
 func (e EnsureAction) Validate() error {
-	if strings.TrimSpace(e.ID) != e.ID || e.ID == "" {
+	if strings.TrimSpace(e.ID) != e.ID || e.ID == "" || strings.ContainsRune(e.ID, '\x00') {
 		return errors.New("ensure id is required and must not contain surrounding whitespace")
 	}
 	if strings.TrimSpace(e.Resource) != e.Resource || e.Resource == "" {
@@ -170,14 +174,25 @@ func (e EnsureAction) Validate() error {
 	if err := validateCredentialFreeReference(e.Resource); err != nil {
 		return fmt.Errorf("ensure resource: %w", err)
 	}
+	if strings.Contains(e.Resource, "://") {
+		if canonical := sanitizeLockReference(e.Resource); canonical != e.Resource {
+			return fmt.Errorf("ensure resource is not canonical; use %q", canonical)
+		}
+	}
 	if e.Check.Effect != EffectReadOnly {
 		return errors.New("ensure check must be read-only")
+	}
+	if err := e.Check.Validate(); err != nil {
+		return fmt.Errorf("ensure check: %w", err)
 	}
 	if len(e.Check.Command) == 0 && e.Check.Kind == "" {
 		return errors.New("ensure check is required")
 	}
 	if e.Apply.Effect != EffectMutation {
 		return errors.New("ensure apply must be classified as mutation")
+	}
+	if err := e.Apply.Validate(); err != nil {
+		return fmt.Errorf("ensure apply: %w", err)
 	}
 	if len(e.Apply.Command) == 0 && e.Apply.Kind == "" {
 		return errors.New("ensure apply is required")
@@ -211,6 +226,10 @@ func CanonicalEnsures(in []EnsureAction) ([]EnsureAction, error) {
 		return nil, err
 	}
 	out := append([]EnsureAction(nil), in...)
+	for i := range out {
+		out[i].Check = cloneOperation(out[i].Check)
+		out[i].Apply = cloneOperation(out[i].Apply)
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }

@@ -304,25 +304,13 @@ func validateChecksum(toolName string, methodIdx int, method *config.MethodCandi
 	if !ok || checksum == "" {
 		return
 	}
+	if err := contract.ValidateChecksum(checksum); err != nil {
+		r.Add(ValidationError{Code: ErrInvalidChecksum, Field: fieldPath(toolName, methodIdx, "checksum"), Message: err.Error()})
+		return
+	}
 	if strings.HasSuffix(checksum, ":auto") {
 		r.Add(ValidationError{Code: WarnAutoChecksum, Field: fieldPath(toolName, methodIdx, "checksum"), Message: fmt.Sprintf("checksum %q uses :auto — TOFU (Trust On First Use) applies, hash is NOT verified", checksum)})
-		return
 	}
-	algorithms := []struct {
-		prefix string
-		length int
-	}{{"sha256:", 64}, {"sha512:", 128}, {"sha1:", 40}, {"md5:", 32}}
-	for _, algorithm := range algorithms {
-		if !strings.HasPrefix(checksum, algorithm.prefix) {
-			continue
-		}
-		hexPart := checksum[len(algorithm.prefix):]
-		if len(hexPart) != algorithm.length || !isHexString(hexPart) {
-			r.Add(ValidationError{Code: ErrInvalidChecksum, Field: fieldPath(toolName, methodIdx, "checksum"), Message: fmt.Sprintf("checksum %q has invalid format: expected %d hex characters after %s", checksum, algorithm.length, algorithm.prefix)})
-		}
-		return
-	}
-	r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, methodIdx, "checksum"), Message: fmt.Sprintf("checksum %q does not use a recognized prefix (sha256:, sha512:, sha1:, md5:)", checksum)})
 }
 
 // validateWhenDirectives checks that when clauses only use known keys.

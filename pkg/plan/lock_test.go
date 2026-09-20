@@ -3,6 +3,7 @@ package plan_test
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -56,7 +57,7 @@ func TestProjectLockMutableContainerTagRequiresDigest(t *testing.T) {
 		t.Fatalf("RequireImmutable() = %v, want ErrLockUnavailable", err)
 	}
 
-	p.Identity.Digest = "sha256:0123456789abcdef"
+	p.Identity.Digest = "sha256:" + strings.Repeat("0", 64)
 	got, err = plan.ProjectLock(p)
 	if err != nil {
 		t.Fatalf("ProjectLock() with digest error: %v", err)
@@ -79,7 +80,7 @@ func TestProjectLockArtifactRequiresChecksum(t *testing.T) {
 		t.Fatalf("projection = %+v, want unavailable checksum reason", got)
 	}
 
-	p.Artifacts[0].Checksum = "sha256:abc"
+	p.Artifacts[0].Checksum = "sha256:" + strings.Repeat("a", 64)
 	got, err = plan.ProjectLock(p)
 	if err != nil {
 		t.Fatalf("ProjectLock() with checksum error: %v", err)
@@ -93,7 +94,7 @@ func TestProjectLockRejectsCredentialBearingResolvedPlan(t *testing.T) {
 	p := plan.New("private", "http", true)
 	p.Identity.Version = "1.0.0"
 	p.Identity.Source = "https://user:password@example.test/repo"
-	p.Artifacts = []plan.Artifact{{URL: "https://example.test/tool.tar.gz", Checksum: "sha256:abc"}}
+	p.Artifacts = []plan.Artifact{{URL: "https://example.test/tool.tar.gz", Checksum: "sha256:" + strings.Repeat("a", 64)}}
 
 	if _, err := plan.ProjectLock(p); err == nil || !strings.Contains(err.Error(), "credentials") {
 		t.Fatalf("ProjectLock() error = %v, want credential rejection", err)
@@ -139,7 +140,7 @@ func TestLockProjectionMarshalRedactsManualValues(t *testing.T) {
 			Registry: "https://registry.test/x?api_key=registry-secret",
 			Artifacts: []plan.LockedArtifact{{
 				URL:      "https://example.test/tool?sig=artifact-secret",
-				Checksum: "sha256:abc",
+				Checksum: "sha256:" + strings.Repeat("a", 64),
 			}},
 		},
 	}
@@ -252,5 +253,859 @@ func TestProjectLockPreservesPortableLocalArtifactIdentity(t *testing.T) {
 	}
 	if path := got.Identity.Artifacts[0].LocalPath; path != "vendor/tool" {
 		t.Fatalf("locked local path = %q", path)
+	}
+}
+
+func TestLockProjectionMarshalDoesNotMutateInput(t *testing.T) {
+	secret := "lock-mutation-secret-42"
+	p := plan.LockProjection{
+		Version:   plan.CurrentLockVersion,
+		Tool:      plan.ToolIdentity{Name: "tool"},
+		Candidate: plan.CandidateIdentity{Method: "http"},
+		Stability: plan.LockUnavailable,
+		Reason:    "https://user:" + secret + "@example.test/reason",
+		Identity: plan.LockIdentity{
+			Artifacts: []plan.LockedArtifact{{URL: "https://example.test/a?token=" + secret}},
+			Sources: []plan.LockedSource{{
+				Role:  plan.SourceSelection,
+				URL:   "https://user:" + secret + "@example.test/source",
+				Trust: &plan.SourceTrust{KeyReference: "https://example.test/key?token=" + secret},
+			}},
+		},
+	}
+	originalArtifactURL := p.Identity.Artifacts[0].URL
+	originalSourceURL := p.Identity.Sources[0].URL
+	originalKey := p.Identity.Sources[0].Trust.KeyReference
+
+	data, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), secret) {
+		t.Fatalf("serialized lock leaked secret: %s", data)
+	}
+	if p.Identity.Artifacts[0].URL != originalArtifactURL || p.Identity.Sources[0].URL != originalSourceURL || p.Identity.Sources[0].Trust.KeyReference != originalKey {
+		t.Fatal("MarshalJSON mutated lock projection")
+	}
+}
+
+func TestVerifyResolvedPlanAgainstLockRejectsMutableReresolution(t *testing.T) {
+	base := plan.New("redis", "container", true)
+	base.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionContainerTag, Value: "7"}
+	base.Identity.Version = "7"
+	base.Identity.Digest = "sha256:" + strings.Repeat("a", 64)
+	locked, err := plan.ProjectLock(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := locked.RequireImmutable(); err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.VerifyResolvedPlanAgainstLock(locked, base); err != nil {
+		t.Fatalf("unchanged plan rejected: %v", err)
+	}
+
+	reresolved := base
+	reresolved.Identity.Digest = "sha256:" + strings.Repeat("b", 64)
+	if err := plan.VerifyResolvedPlanAgainstLock(locked, reresolved); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("digest re-resolution error = %v, want ErrLockMismatch", err)
+	}
+}
+
+func TestVerifyResolvedPlanAgainstLockRejectsGitAndArtifactIdentityDrift(t *testing.T) {
+	gitPlan := plan.New("tool", "git", true)
+	gitPlan.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionGitBranch, Value: "main"}
+	gitPlan.Identity.Revision = "abc123"
+	gitLock, err := plan.ProjectLock(gitPlan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedGit := gitPlan
+	changedGit.Identity.Revision = "def456"
+	if err := plan.VerifyResolvedPlanAgainstLock(gitLock, changedGit); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("git re-resolution error = %v, want ErrLockMismatch", err)
+	}
+
+	artifactPlan := plan.New("tool", "http", true)
+	artifactPlan.Artifacts = []plan.Artifact{{URL: "https://example.test/tool.tar.gz", Checksum: "sha256:" + strings.Repeat("a", 64)}}
+	artifactLock, err := plan.ProjectLock(artifactPlan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedArtifact := artifactPlan
+	changedArtifact.Artifacts = append([]plan.Artifact(nil), artifactPlan.Artifacts...)
+	changedArtifact.Artifacts[0].Checksum = "sha256:" + strings.Repeat("b", 64)
+	if err := plan.VerifyResolvedPlanAgainstLock(artifactLock, changedArtifact); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("artifact re-resolution error = %v, want ErrLockMismatch", err)
+	}
+}
+
+func TestVerifyResolvedPlanAgainstLockRejectsUnavailableExpectedLock(t *testing.T) {
+	p := plan.New("tool", "native", true)
+	locked, err := plan.ProjectLock(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.VerifyResolvedPlanAgainstLock(locked, p); !errors.Is(err, plan.ErrLockUnavailable) {
+		t.Fatalf("VerifyResolvedPlanAgainstLock() = %v, want ErrLockUnavailable", err)
+	}
+}
+
+func TestVerifyResolvedPlansAgainstLockRequiresExactToolSet(t *testing.T) {
+	plans := []plan.ResolvedInstallPlan{gitRevisionPlan(), nativePackagePlan(), githubArtifactPlan()}
+	doc, err := plan.BuildLockDocument(plans)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.VerifyResolvedPlansAgainstLock(doc, []plan.ResolvedInstallPlan{plans[2], plans[0], plans[1]}); err != nil {
+		t.Fatalf("reordered equivalent plan set rejected: %v", err)
+	}
+	if err := plan.VerifyResolvedPlansAgainstLock(doc, plans[:2]); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("missing plan error = %v, want ErrLockMismatch", err)
+	}
+
+	extra := plan.New("extra", "local", true)
+	extra.Artifacts = []plan.Artifact{{LocalPath: "vendor/extra", Checksum: "sha256:" + strings.Repeat("c", 64)}}
+	withExtra := append(append([]plan.ResolvedInstallPlan(nil), plans...), extra)
+	if err := plan.VerifyResolvedPlansAgainstLock(doc, withExtra); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("extra plan error = %v, want ErrLockMismatch", err)
+	}
+
+	duplicate := []plan.ResolvedInstallPlan{plans[0], plans[0], plans[2]}
+	if err := plan.VerifyResolvedPlansAgainstLock(doc, duplicate); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("duplicate plan error = %v, want ErrLockMismatch", err)
+	}
+}
+
+func TestLockDocumentUsesSharedFormatVersionPolicy(t *testing.T) {
+	doc := plan.LockDocument{Version: plan.CurrentLockVersion + 1}
+	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), "lock format version") {
+		t.Fatalf("Validate() error = %v, want shared lock format-version diagnostic", err)
+	}
+}
+
+func FuzzBuildLockDocumentOrderAndPurity(f *testing.F) {
+	f.Add(uint8(0))
+	f.Add(uint8(1))
+	f.Add(uint8(5))
+	f.Fuzz(func(t *testing.T, selector uint8) {
+		base := []plan.ResolvedInstallPlan{gitRevisionPlan(), nativePackagePlan(), githubArtifactPlan()}
+		original := append([]plan.ResolvedInstallPlan(nil), base...)
+		permutations := [][]int{
+			{0, 1, 2}, {0, 2, 1}, {1, 0, 2},
+			{1, 2, 0}, {2, 0, 1}, {2, 1, 0},
+		}
+		order := permutations[int(selector)%len(permutations)]
+		input := []plan.ResolvedInstallPlan{base[order[0]], base[order[1]], base[order[2]]}
+
+		doc, err := plan.BuildLockDocument(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		canonical, err := plan.BuildLockDocument(base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := json.Marshal(canonical)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != string(want) {
+			t.Fatalf("input order changed lock bytes:\n got %s\nwant %s", got, want)
+		}
+		if !reflect.DeepEqual(base, original) {
+			t.Fatal("BuildLockDocument mutated source plans")
+		}
+	})
+}
+
+func TestProjectLockCanonicalizesDigestRequestedIntent(t *testing.T) {
+	digestUpper := "SHA256:" + strings.Repeat("A", 64)
+	p := plan.New("tool", "container", true)
+	p.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionDigest, Value: digestUpper}
+	p.Identity.Digest = digestUpper
+
+	locked, err := plan.ProjectLock(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "sha256:" + strings.Repeat("a", 64)
+	if locked.RequestedIntent == nil || locked.RequestedIntent.Value != want {
+		t.Fatalf("requested digest intent = %#v, want %q", locked.RequestedIntent, want)
+	}
+}
+
+func TestVerifyResolvedPlanAgainstLockTreatsDigestIntentSpellingAsEquivalent(t *testing.T) {
+	digestLower := "sha256:" + strings.Repeat("a", 64)
+	digestUpper := "SHA256:" + strings.Repeat("A", 64)
+
+	base := plan.New("tool", "container", true)
+	base.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionDigest, Value: digestLower}
+	base.Identity.Digest = digestLower
+	locked, err := plan.ProjectLock(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked.RequestedIntent.Value = digestUpper // simulate equivalent legacy spelling
+
+	if err := plan.VerifyResolvedPlanAgainstLock(locked, base); err != nil {
+		t.Fatalf("equivalent digest intent caused lock mismatch: %v", err)
+	}
+}
+
+func TestVerifyResolvedPlanAgainstLockTreatsTrustFingerprintSpacingAsEquivalent(t *testing.T) {
+	base := plan.New("tool", "native", true)
+	base.Identity.Version = "1.0.0"
+	base.Sources = []plan.SourceReference{{
+		Role:  plan.SourceRegistry,
+		Name:  "corp",
+		Trust: &plan.SourceTrust{Fingerprint: "ABCD EFGH"},
+	}}
+	locked, err := plan.ProjectLock(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := locked.Identity.Sources[0].Trust.Fingerprint; got != "ABCDEFGH" {
+		t.Fatalf("canonical fingerprint = %q, want ABCDEFGH", got)
+	}
+	legacy := locked
+	trust := *legacy.Identity.Sources[0].Trust
+	trust.Fingerprint = "abcd efgh"
+	legacy.Identity.Sources[0].Trust = &trust
+
+	if err := plan.VerifyResolvedPlanAgainstLock(legacy, base); err != nil {
+		t.Fatalf("equivalent trust fingerprint caused lock mismatch: %v", err)
+	}
+}
+
+func TestVerifyResolvedPlanAgainstLockRejectsRequestedIntentChangeAtSameResolution(t *testing.T) {
+	base := plan.New("tool", "git", true)
+	base.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionGitBranch, Value: "main"}
+	base.Identity.Revision = "abc123"
+	locked, err := plan.ProjectLock(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if locked.RequestedIntent == nil || locked.RequestedIntent.Value != "main" {
+		t.Fatalf("requested intent not preserved: %#v", locked.RequestedIntent)
+	}
+
+	changed := base
+	changed.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionGitBranch, Value: "develop"}
+	changed.Identity.Revision = "abc123" // same concrete commit must not hide changed manifest intent
+	if err := plan.VerifyResolvedPlanAgainstLock(locked, changed); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("intent change error = %v, want ErrLockMismatch", err)
+	}
+}
+
+func TestLockProjectionValidatesRequestedIntentConsistency(t *testing.T) {
+	p := plan.LockProjection{
+		Version:         plan.CurrentLockVersion,
+		Tool:            plan.ToolIdentity{Name: "tool"},
+		Candidate:       plan.CandidateIdentity{Method: "git"},
+		RequestedMode:   plan.VersionGitBranch,
+		RequestedIntent: &plan.VersionIntent{Mode: plan.VersionGitTag, Value: "v1"},
+		Stability:       plan.LockImmutable,
+		Identity:        plan.LockIdentity{Revision: "abc123"},
+	}
+	if err := p.Validate(); err == nil {
+		t.Fatal("lock accepted inconsistent requested mode/intent")
+	}
+}
+
+func TestImmutableLockProjectionRequiresConcreteIdentity(t *testing.T) {
+	base := plan.LockProjection{
+		Version:   plan.CurrentLockVersion,
+		Tool:      plan.ToolIdentity{Name: "tool"},
+		Candidate: plan.CandidateIdentity{Method: "native"},
+		Stability: plan.LockImmutable,
+	}
+	tests := []struct {
+		name string
+		edit func(*plan.LockProjection)
+	}{
+		{name: "empty identity", edit: func(*plan.LockProjection) {}},
+		{name: "artifact without checksum", edit: func(p *plan.LockProjection) {
+			p.Candidate.Method = "http"
+			p.Identity.Artifacts = []plan.LockedArtifact{{URL: "https://example.test/tool"}}
+		}},
+		{name: "git branch without revision", edit: func(p *plan.LockProjection) {
+			p.Candidate.Method = "git"
+			p.RequestedMode = plan.VersionGitBranch
+			p.RequestedIntent = &plan.VersionIntent{Mode: plan.VersionGitBranch, Value: "main"}
+		}},
+		{name: "container tag without digest", edit: func(p *plan.LockProjection) {
+			p.Candidate.Method = "container"
+			p.RequestedMode = plan.VersionContainerTag
+			p.RequestedIntent = &plan.VersionIntent{Mode: plan.VersionContainerTag, Value: "latest"}
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := base
+			tc.edit(&p)
+			if err := p.Validate(); err == nil {
+				t.Fatal("Validate() accepted immutable lock without a concrete pin")
+			}
+		})
+	}
+}
+
+func TestLockProjectionRejectsUnsafePersistedIdentity(t *testing.T) {
+	base := plan.LockProjection{
+		Version:   plan.CurrentLockVersion,
+		Tool:      plan.ToolIdentity{Name: "tool"},
+		Candidate: plan.CandidateIdentity{Method: "native"},
+		Stability: plan.LockImmutable,
+		Identity:  plan.LockIdentity{Version: "1.0.0"},
+	}
+	tests := []struct {
+		name string
+		edit func(*plan.LockProjection)
+	}{
+		{name: "tool NUL", edit: func(p *plan.LockProjection) { p.Tool.Name = "tool\x00bad" }},
+		{name: "candidate whitespace", edit: func(p *plan.LockProjection) { p.Candidate.Method = " native" }},
+		{name: "source credentials", edit: func(p *plan.LockProjection) { p.Identity.Source = "https://token@example.test/repo" }},
+		{name: "registry query secret", edit: func(p *plan.LockProjection) { p.Identity.Registry = "https://example.test/index?token=secret" }},
+		{name: "artifact credentials", edit: func(p *plan.LockProjection) {
+			p.Identity.Version = ""
+			p.Identity.Artifacts = []plan.LockedArtifact{{URL: "https://token@example.test/tool", Checksum: "sha256:" + strings.Repeat("a", 64)}}
+		}},
+		{name: "source trust NUL", edit: func(p *plan.LockProjection) {
+			p.Identity.Sources = []plan.LockedSource{{Role: plan.SourceRegistry, Name: "corp", Trust: &plan.SourceTrust{Fingerprint: "ABCD\x00EF"}}}
+		}},
+		{name: "environment NUL", edit: func(p *plan.LockProjection) {
+			p.Identity.Environment = &plan.EnvironmentTarget{Kind: plan.EnvironmentNamed, Value: "prod\x00bad"}
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := base
+			tc.edit(&p)
+			if err := p.Validate(); err == nil {
+				t.Fatal("Validate() accepted unsafe persisted lock identity")
+			}
+		})
+	}
+}
+
+func TestProjectLockDoesNotAliasPlanPointers(t *testing.T) {
+	p := plan.New("tool", "native", true)
+	p.Identity.Version = "1.0.0"
+	p.Identity.Environment = &plan.EnvironmentTarget{Kind: plan.EnvironmentNamed, Value: "prod"}
+
+	locked, err := plan.ProjectLock(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if locked.Identity.Environment == nil {
+		t.Fatal("projected environment is nil")
+	}
+	locked.Identity.Environment.Value = "changed-through-lock"
+	if p.Identity.Environment.Value != "prod" {
+		t.Fatalf("mutating projected lock changed source plan environment: %q", p.Identity.Environment.Value)
+	}
+
+	p.Identity.Environment.Value = "changed-through-plan"
+	if locked.Identity.Environment.Value != "changed-through-lock" {
+		t.Fatalf("mutating source plan changed projected lock environment: %q", locked.Identity.Environment.Value)
+	}
+}
+
+func TestLockProjectionRejectsUnresolvedOrMalformedArtifactChecksums(t *testing.T) {
+	base := plan.LockProjection{
+		Version:   plan.CurrentLockVersion,
+		Tool:      plan.ToolIdentity{Name: "tool"},
+		Candidate: plan.CandidateIdentity{Method: "http"},
+		Stability: plan.LockImmutable,
+		Identity: plan.LockIdentity{Artifacts: []plan.LockedArtifact{{
+			URL: "https://example.test/tool.tar.gz",
+		}}},
+	}
+	for _, checksum := range []string{"garbage", "sha256:", "sha256:auto", "sha256:not-hex", "sha256:abcd", " sha256:abcd", "sha 256:" + strings.Repeat("a", 64), "-sha256:" + strings.Repeat("a", 64)} {
+		t.Run(checksum, func(t *testing.T) {
+			p := base
+			p.Identity.Artifacts = append([]plan.LockedArtifact(nil), base.Identity.Artifacts...)
+			p.Identity.Artifacts[0].Checksum = checksum
+			if err := p.Validate(); err == nil {
+				t.Fatalf("immutable lock accepted checksum %q", checksum)
+			}
+		})
+	}
+
+	p := base
+	p.Identity.Artifacts = append([]plan.LockedArtifact(nil), base.Identity.Artifacts...)
+	p.Identity.Artifacts[0].Checksum = "sha256:" + strings.Repeat("a", 64)
+	if err := p.Validate(); err != nil {
+		t.Fatalf("concrete checksum rejected: %v", err)
+	}
+}
+
+func TestLockProjectionRejectsMalformedResolvedDigest(t *testing.T) {
+	base := plan.LockProjection{
+		Version:         plan.CurrentLockVersion,
+		Tool:            plan.ToolIdentity{Name: "image"},
+		Candidate:       plan.CandidateIdentity{Method: "container"},
+		RequestedMode:   plan.VersionContainerTag,
+		RequestedIntent: &plan.VersionIntent{Mode: plan.VersionContainerTag, Value: "latest"},
+		Stability:       plan.LockImmutable,
+	}
+	for _, digest := range []string{"garbage", "sha256:", "sha256:auto", "sha256:not-hex", "sha256:abcd", " sha256:abcd", "sha 256:" + strings.Repeat("a", 64), ".sha256:" + strings.Repeat("a", 64)} {
+		t.Run(digest, func(t *testing.T) {
+			p := base
+			p.Identity.Digest = digest
+			if err := p.Validate(); err == nil {
+				t.Fatalf("immutable lock accepted digest %q", digest)
+			}
+		})
+	}
+	p := base
+	p.Identity.Digest = "sha256:" + strings.Repeat("a", 64)
+	if err := p.Validate(); err != nil {
+		t.Fatalf("concrete digest rejected: %v", err)
+	}
+}
+
+func TestLockProjectionRequiresCanonicalSourceOrderAndUniqueness(t *testing.T) {
+	base := plan.LockProjection{
+		Version:   plan.CurrentLockVersion,
+		Tool:      plan.ToolIdentity{Name: "tool"},
+		Candidate: plan.CandidateIdentity{Method: "native"},
+		Stability: plan.LockImmutable,
+		Identity: plan.LockIdentity{
+			Version: "1.0.0",
+			Sources: []plan.LockedSource{
+				{Role: plan.SourceRegistry, Name: "alpha", URL: "https://alpha.example.test"},
+				{Role: plan.SourceRegistry, Name: "beta", URL: "https://beta.example.test"},
+			},
+		},
+	}
+	if err := base.Validate(); err != nil {
+		t.Fatalf("canonical sources rejected: %v", err)
+	}
+
+	reordered := base
+	reordered.Identity.Sources = []plan.LockedSource{base.Identity.Sources[1], base.Identity.Sources[0]}
+	if err := reordered.Validate(); err == nil {
+		t.Fatal("Validate() accepted non-canonical lock source order")
+	}
+
+	duplicate := base
+	duplicate.Identity.Sources = []plan.LockedSource{base.Identity.Sources[0], base.Identity.Sources[0]}
+	if err := duplicate.Validate(); err == nil {
+		t.Fatal("Validate() accepted duplicate lock source identity")
+	}
+}
+
+func TestLockProjectionRejectsDuplicateArtifactLocation(t *testing.T) {
+	sumA := "sha256:" + strings.Repeat("a", 64)
+	sumB := "sha256:" + strings.Repeat("b", 64)
+	p := plan.LockProjection{
+		Version:   plan.CurrentLockVersion,
+		Tool:      plan.ToolIdentity{Name: "tool"},
+		Candidate: plan.CandidateIdentity{Method: "http"},
+		Stability: plan.LockImmutable,
+		Identity: plan.LockIdentity{Artifacts: []plan.LockedArtifact{
+			{Kind: plan.ArtifactArchive, URL: "https://example.test/tool.tar.gz", Checksum: sumA},
+			{Kind: plan.ArtifactArchive, URL: "https://example.test/tool.tar.gz", Checksum: sumB},
+		}},
+	}
+	if err := p.Validate(); err == nil {
+		t.Fatal("Validate() accepted duplicate lock artifact location")
+	}
+}
+
+func TestProjectLockCanonicalizesArtifactOrder(t *testing.T) {
+	sumA := "sha256:" + strings.Repeat("a", 64)
+	sumB := "sha256:" + strings.Repeat("b", 64)
+	p := plan.New("tool", "http", true)
+	p.Artifacts = []plan.Artifact{
+		{Kind: plan.ArtifactArchive, URL: "https://example.test/z.tar.gz", Checksum: sumB},
+		{Kind: plan.ArtifactArchive, URL: "https://example.test/a.tar.gz", Checksum: sumA},
+	}
+
+	first, err := plan.ProjectLock(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Artifacts[0], p.Artifacts[1] = p.Artifacts[1], p.Artifacts[0]
+	second, err := plan.ProjectLock(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(first.Identity.Artifacts, second.Identity.Artifacts) {
+		t.Fatalf("artifact lock identity depends on plan order:\nfirst=%+v\nsecond=%+v", first.Identity.Artifacts, second.Identity.Artifacts)
+	}
+	if got := first.Identity.Artifacts[0].URL; got != "https://example.test/a.tar.gz" {
+		t.Fatalf("first canonical artifact = %q", got)
+	}
+}
+
+func TestProjectLockPreservesNonSecretSSHUsernameIdentity(t *testing.T) {
+	p := plan.New("tool", "git", true)
+	p.Identity.Revision = "0123456789abcdef"
+	p.Identity.Source = "ssh://git@example.test/org/repo.git"
+
+	locked, err := plan.ProjectLock(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := locked.Identity.Source; got != p.Identity.Source {
+		t.Fatalf("locked SSH source = %q, want %q", got, p.Identity.Source)
+	}
+
+	changed := p
+	changed.Identity.Source = "ssh://deploy@example.test/org/repo.git"
+	if err := plan.VerifyResolvedPlanAgainstLock(locked, changed); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("VerifyResolvedPlanAgainstLock() error = %v, want ErrLockMismatch", err)
+	}
+}
+
+func TestProjectLockCanonicalizesPersistedURLs(t *testing.T) {
+	p := plan.New("tool", "http", true)
+	p.Identity.Source = "HTTPS://EXAMPLE.TEST/index?z=2&a=1"
+	p.Artifacts = []plan.Artifact{{
+		Kind:     plan.ArtifactArchive,
+		URL:      "HTTPS://EXAMPLE.TEST/tool.tar.gz?z=2&a=1",
+		Checksum: "sha256:" + strings.Repeat("a", 64),
+	}}
+
+	locked, err := plan.ProjectLock(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := locked.Identity.Source; got != "https://example.test/index?a=1&z=2" {
+		t.Fatalf("canonical source = %q", got)
+	}
+	if got := locked.Identity.Artifacts[0].URL; got != "https://example.test/tool.tar.gz?a=1&z=2" {
+		t.Fatalf("canonical artifact URL = %q", got)
+	}
+}
+
+func TestProjectLockPreservesIPv6ZoneSpelling(t *testing.T) {
+	p := plan.New("tool", "git", true)
+	p.Identity.Revision = "0123456789abcdef"
+	p.Identity.Source = "ssh://git@[fe80::1%25ETH0]/repo.git"
+
+	locked, err := plan.ProjectLock(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := locked.Identity.Source; got != p.Identity.Source {
+		t.Fatalf("zone-bearing source = %q, want %q", got, p.Identity.Source)
+	}
+}
+
+func TestLockProjectionRejectsNonCanonicalPersistedURLs(t *testing.T) {
+	base := plan.LockProjection{
+		Version:   plan.CurrentLockVersion,
+		Tool:      plan.ToolIdentity{Name: "tool"},
+		Candidate: plan.CandidateIdentity{Method: "http"},
+		Stability: plan.LockImmutable,
+		Identity: plan.LockIdentity{Artifacts: []plan.LockedArtifact{{
+			Kind:     plan.ArtifactArchive,
+			URL:      "https://example.test/tool.tar.gz",
+			Checksum: "sha256:" + strings.Repeat("a", 64),
+		}},
+		},
+	}
+
+	artifact := base
+	artifact.Identity.Artifacts = append([]plan.LockedArtifact(nil), base.Identity.Artifacts...)
+	artifact.Identity.Artifacts[0].URL = "HTTPS://EXAMPLE.TEST/tool.tar.gz"
+	if err := artifact.Validate(); err == nil || !strings.Contains(err.Error(), "canonical") {
+		t.Fatalf("non-canonical artifact URL error = %v", err)
+	}
+
+	source := base
+	source.Identity.Artifacts = append([]plan.LockedArtifact(nil), base.Identity.Artifacts...)
+	source.Identity.Sources = []plan.LockedSource{{Role: plan.SourceRegistry, URL: "HTTPS://EXAMPLE.TEST/index"}}
+	if err := source.Validate(); err == nil || !strings.Contains(err.Error(), "canonical") {
+		t.Fatalf("non-canonical source URL error = %v", err)
+	}
+
+	identity := base
+	identity.Identity.Artifacts = append([]plan.LockedArtifact(nil), base.Identity.Artifacts...)
+	identity.Identity.Registry = "HTTPS://EXAMPLE.TEST/index"
+	if err := identity.Validate(); err == nil || !strings.Contains(err.Error(), "canonical") {
+		t.Fatalf("non-canonical registry URL error = %v", err)
+	}
+}
+
+func TestLockProjectionRejectsNonCanonicalArtifactOrder(t *testing.T) {
+	sumA := "sha256:" + strings.Repeat("a", 64)
+	sumB := "sha256:" + strings.Repeat("b", 64)
+	p := plan.LockProjection{
+		Version:   plan.CurrentLockVersion,
+		Tool:      plan.ToolIdentity{Name: "tool"},
+		Candidate: plan.CandidateIdentity{Method: "http"},
+		Stability: plan.LockImmutable,
+		Identity: plan.LockIdentity{Artifacts: []plan.LockedArtifact{
+			{Kind: plan.ArtifactArchive, URL: "https://example.test/z.tar.gz", Checksum: sumB},
+			{Kind: plan.ArtifactArchive, URL: "https://example.test/a.tar.gz", Checksum: sumA},
+		}},
+	}
+	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "canonical order") {
+		t.Fatalf("Validate() error = %v, want canonical artifact order rejection", err)
+	}
+}
+
+func TestProjectLockStripsSensitiveURLFragmentParameters(t *testing.T) {
+	p := plan.New("tool", "http", true)
+	p.Identity = plan.ResolvedIdentity{Version: "1.0.0"}
+	// A credential-bearing resolved plan is intentionally invalid. Construct the
+	// persisted projection directly to exercise its defense-in-depth sanitizer.
+	projection := plan.LockProjection{
+		Version:   plan.CurrentLockVersion,
+		Tool:      p.Tool,
+		Candidate: p.Candidate,
+		Stability: plan.LockImmutable,
+		Identity: plan.LockIdentity{Version: "1.0.0", Artifacts: []plan.LockedArtifact{{
+			Kind:     plan.ArtifactRaw,
+			URL:      "https://example.test/tool#access_token=secret&section=install",
+			Checksum: "sha256:" + strings.Repeat("a", 64),
+		}}},
+	}
+	data, err := json.Marshal(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "secret") {
+		t.Fatalf("lock JSON leaked fragment secret: %s", data)
+	}
+	if !strings.Contains(string(data), "section%3Dinstall") && !strings.Contains(string(data), "section=install") {
+		t.Fatalf("lock JSON lost benign fragment identity: %s", data)
+	}
+}
+
+func TestLockSerializationPreservesBenignURLFragmentSpelling(t *testing.T) {
+	projection := plan.LockProjection{
+		Version:   plan.CurrentLockVersion,
+		Tool:      plan.ToolIdentity{Name: "tool"},
+		Candidate: plan.CandidateIdentity{Method: "http", Explicit: true},
+		Stability: plan.LockImmutable,
+		Identity: plan.LockIdentity{Version: "1.0.0", Artifacts: []plan.LockedArtifact{{
+			Kind:     plan.ArtifactRaw,
+			URL:      "https://example.test/tool#v1.2.3",
+			Checksum: "sha256:" + strings.Repeat("a", 64),
+		}}},
+	}
+	data, err := json.Marshal(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "#v1.2.3") {
+		t.Fatalf("lock JSON rewrote benign fragment: %s", data)
+	}
+}
+
+func TestProjectLockPinsArtifactSignatureURL(t *testing.T) {
+	p := plan.New("tool", "http", true)
+	p.Artifacts = []plan.Artifact{{
+		Kind:         plan.ArtifactArchive,
+		URL:          "HTTPS://EXAMPLE.TEST/tool.tar.gz?z=2&a=1",
+		Checksum:     "sha256:" + strings.Repeat("a", 64),
+		SignatureURL: "HTTPS://EXAMPLE.TEST/tool.tar.gz.sig?z=2&a=1",
+	}}
+
+	locked, err := plan.ProjectLock(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := locked.Identity.Artifacts[0].SignatureURL; got != "https://example.test/tool.tar.gz.sig?a=1&z=2" {
+		t.Fatalf("canonical signature URL = %q", got)
+	}
+
+	changed := p
+	changed.Artifacts = append([]plan.Artifact(nil), p.Artifacts...)
+	changed.Artifacts[0].SignatureURL = "https://example.test/other.sig?a=1&z=2"
+	if err := plan.VerifyResolvedPlanAgainstLock(locked, changed); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("VerifyResolvedPlanAgainstLock() error = %v, want ErrLockMismatch", err)
+	}
+}
+
+func TestLockProjectionRejectsCredentialBearingArtifactSignatureURL(t *testing.T) {
+	p := plan.LockProjection{
+		Version:   plan.CurrentLockVersion,
+		Tool:      plan.ToolIdentity{Name: "tool"},
+		Candidate: plan.CandidateIdentity{Method: "http"},
+		Stability: plan.LockImmutable,
+		Identity: plan.LockIdentity{Artifacts: []plan.LockedArtifact{{
+			Kind:         plan.ArtifactArchive,
+			URL:          "https://example.test/tool.tar.gz",
+			Checksum:     "sha256:" + strings.Repeat("a", 64),
+			SignatureURL: "https://token@example.test/tool.sig",
+		}}},
+	}
+	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "signature URL") {
+		t.Fatalf("Validate() error = %v, want signature URL rejection", err)
+	}
+}
+
+func TestLockVerificationUsesSemanticDigestAndTrustIdentity(t *testing.T) {
+	p := plan.New("tool", "http", true)
+	p.Identity.Digest = "SHA256:" + strings.Repeat("A", 64)
+	p.Sources = []plan.SourceReference{{
+		Role: plan.SourceRegistry,
+		URL:  "https://example.test/index",
+		Trust: &plan.SourceTrust{
+			KeyReference: "HTTPS://KEYS.EXAMPLE.TEST/root.asc?z=2&a=1",
+			Fingerprint:  strings.Repeat("AB", 20),
+		},
+	}}
+	locked, err := plan.ProjectLock(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := locked.Identity.Digest, "sha256:"+strings.Repeat("a", 64); got != want {
+		t.Fatalf("canonical digest = %q, want %q", got, want)
+	}
+	if got, want := locked.Identity.Sources[0].Trust.KeyReference, "https://keys.example.test/root.asc?a=1&z=2"; got != want {
+		t.Fatalf("canonical trust key = %q, want %q", got, want)
+	}
+
+	legacy := locked
+	legacy.Identity.Digest = "SHA256:" + strings.Repeat("A", 64)
+	legacy.Identity.Sources = append([]plan.LockedSource(nil), locked.Identity.Sources...)
+	trust := *legacy.Identity.Sources[0].Trust
+	trust.KeyReference = "HTTPS://KEYS.EXAMPLE.TEST/root.asc?z=2&a=1"
+	trust.Fingerprint = strings.ToLower(trust.Fingerprint)
+	legacy.Identity.Sources[0].Trust = &trust
+	// Older/manual lock projections may contain equivalent non-canonical trust
+	// spelling. Verification compares semantic identity instead of reporting
+	// drift solely because of URL/fingerprint casing.
+	if err := plan.VerifyResolvedPlanAgainstLock(legacy, p); err != nil {
+		t.Fatalf("semantic equivalent lock rejected: %v", err)
+	}
+}
+
+func TestLockVerificationTreatsChecksumHexCaseAsEquivalent(t *testing.T) {
+	p := plan.New("tool", "http", true)
+	p.Artifacts = []plan.Artifact{{
+		Kind:     plan.ArtifactArchive,
+		URL:      "https://example.test/tool.tar.gz",
+		Checksum: "SHA256:" + strings.Repeat("A", 64),
+	}}
+	locked, err := plan.ProjectLock(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := locked.Identity.Artifacts[0].Checksum; got != "sha256:"+strings.Repeat("a", 64) {
+		t.Fatalf("canonical checksum = %q", got)
+	}
+	legacy := locked
+	legacy.Identity.Artifacts = append([]plan.LockedArtifact(nil), locked.Identity.Artifacts...)
+	legacy.Identity.Artifacts[0].Checksum = "SHA256:" + strings.Repeat("A", 64)
+	if err := plan.VerifyResolvedPlanAgainstLock(legacy, p); err != nil {
+		t.Fatalf("checksum casing caused false mismatch: %v", err)
+	}
+}
+
+func TestLockProjectionRejectsMalformedURLLikeIdentityReferences(t *testing.T) {
+	for field, value := range map[string]string{"source": "https://", "registry": "https:///registry"} {
+		t.Run(field, func(t *testing.T) {
+			p := plan.LockProjection{
+				Version:   plan.CurrentLockVersion,
+				Tool:      plan.ToolIdentity{Name: "tool"},
+				Candidate: plan.CandidateIdentity{Method: "native"},
+				Stability: plan.LockImmutable,
+				Identity:  plan.LockIdentity{Version: "1.0.0"},
+			}
+			if field == "source" {
+				p.Identity.Source = value
+			} else {
+				p.Identity.Registry = value
+			}
+			if err := p.Validate(); err == nil {
+				t.Fatalf("Validate() accepted malformed %s URL", field)
+			}
+		})
+	}
+}
+
+func TestLockProjectionRejectsIntentWithoutRequestedMode(t *testing.T) {
+	p := plan.LockProjection{
+		Version:         plan.CurrentLockVersion,
+		Tool:            plan.ToolIdentity{Name: "tool"},
+		Candidate:       plan.CandidateIdentity{Method: "native"},
+		RequestedIntent: &plan.VersionIntent{Mode: plan.VersionExact, Value: "1.0.0"},
+		Stability:       plan.LockImmutable,
+		Identity:        plan.LockIdentity{Version: "1.0.0"},
+	}
+	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "requires requested_mode") {
+		t.Fatalf("Validate() error = %v, want requested_mode requirement", err)
+	}
+}
+
+func TestProjectLockCanonicalizesSCPStyleRemoteHostOnly(t *testing.T) {
+	p := plan.New("tool", "git", true)
+	p.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionGitRevision, Value: "abc123"}
+	p.Identity.Revision = "abc123"
+	p.Identity.Source = "Deploy@GIT.EXAMPLE.TEST:Org/Repo.git"
+	locked, err := plan.ProjectLock(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := locked.Identity.Source, "Deploy@git.example.test:Org/Repo.git"; got != want {
+		t.Fatalf("canonical scp-style source = %q, want %q", got, want)
+	}
+
+	equivalent := p
+	equivalent.Identity.Source = "Deploy@git.example.test:Org/Repo.git"
+	if err := plan.VerifyResolvedPlanAgainstLock(locked, equivalent); err != nil {
+		t.Fatalf("equivalent scp-style remote rejected: %v", err)
+	}
+
+	changedPath := p
+	changedPath.Identity.Source = "Deploy@git.example.test:org/repo.git"
+	if err := plan.VerifyResolvedPlanAgainstLock(locked, changedPath); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("path case change error = %v, want ErrLockMismatch", err)
+	}
+}
+
+func TestProjectLockCanonicalizesCaseInsensitiveSourceNameIdentity(t *testing.T) {
+	p := plan.New("tool", "native", true)
+	p.Identity.Version = "1.0.0"
+	p.Sources = []plan.SourceReference{{Role: plan.SourceSelection, Name: "CratesIO"}}
+	locked, err := plan.ProjectLock(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := locked.Identity.Sources[0].Name; got != "cratesio" {
+		t.Fatalf("canonical source name = %q, want cratesio", got)
+	}
+
+	legacy := locked
+	legacy.Identity.Sources = append([]plan.LockedSource(nil), locked.Identity.Sources...)
+	legacy.Identity.Sources[0].Name = "CratesIO"
+	if err := plan.VerifyResolvedPlanAgainstLock(legacy, p); err != nil {
+		t.Fatalf("case-equivalent source name caused lock mismatch: %v", err)
+	}
+}
+
+func TestLockProjectionRejectsRequestedDigestDifferentFromResolvedDigest(t *testing.T) {
+	p := plan.LockProjection{
+		Version:       plan.CurrentLockVersion,
+		Tool:          plan.ToolIdentity{Name: "demo"},
+		Candidate:     plan.CandidateIdentity{Method: "container", Explicit: true},
+		RequestedMode: plan.VersionDigest,
+		RequestedIntent: &plan.VersionIntent{
+			Mode:  plan.VersionDigest,
+			Value: "sha256:" + strings.Repeat("a", 64),
+		},
+		Stability: plan.LockImmutable,
+		Identity:  plan.LockIdentity{Digest: "sha256:" + strings.Repeat("b", 64)},
+	}
+	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "requested lock digest does not match") {
+		t.Fatalf("Validate() error = %v, want requested/resolved digest mismatch", err)
+	}
+
+	p.Identity.Digest = "SHA256:" + strings.Repeat("A", 64)
+	if err := p.Validate(); err != nil {
+		t.Fatalf("Validate() equivalent digest spelling error = %v", err)
 	}
 }

@@ -60,11 +60,17 @@ func (v VersionIntent) Validate() error {
 	if v.Value != strings.TrimSpace(v.Value) {
 		return errors.New("version value must not have surrounding whitespace")
 	}
+	if strings.ContainsRune(v.Value, '\x00') {
+		return errors.New("version value must not contain NUL")
+	}
 	if v.Channel != nil {
 		if v.Channel.Name != strings.TrimSpace(v.Channel.Name) ||
 			v.Channel.Track != strings.TrimSpace(v.Channel.Track) ||
 			v.Channel.Risk != strings.TrimSpace(v.Channel.Risk) {
 			return errors.New("channel fields must not have surrounding whitespace")
+		}
+		if strings.ContainsRune(v.Channel.Name, '\x00') || strings.ContainsRune(v.Channel.Track, '\x00') || strings.ContainsRune(v.Channel.Risk, '\x00') {
+			return errors.New("channel fields must not contain NUL")
 		}
 	}
 
@@ -79,6 +85,11 @@ func (v VersionIntent) Validate() error {
 		}
 		if v.Channel != nil {
 			return fmt.Errorf("%s version intent must not include channel fields", v.Mode)
+		}
+		if v.Mode == VersionDigest {
+			if err := validateConcreteDigestSyntax(v.Value); err != nil {
+				return fmt.Errorf("digest version intent: %w", err)
+			}
 		}
 	case VersionChannel:
 		if v.Value != "" {

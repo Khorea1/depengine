@@ -120,7 +120,7 @@ func TestLifecycleSerializationRedactsSecrets(t *testing.T) {
 		ID:       "state",
 		Resource: "state:tool",
 		Check:    Operation{Kind: "check", Effect: EffectReadOnly, Description: "https://example.test/?token=check-secret"},
-		Apply:    Operation{Kind: "apply", Effect: EffectMutation, Command: []string{"tool", "--token", "apply-secret"}},
+		Apply:    Operation{Kind: "apply", Effect: EffectMutation, Command: []string{"tool", "--token", "apply-secret"}, ArbitraryCode: true},
 	}}
 	b, err := json.Marshal(p)
 	if err != nil {
@@ -145,5 +145,71 @@ func TestDuplicateHookAndEnsureIDsFail(t *testing.T) {
 	p.Ensures = []EnsureAction{e, e}
 	if err := p.Validate(); err == nil {
 		t.Fatal("expected duplicate ensure id to fail")
+	}
+}
+
+func TestLifecycleIDsRejectNUL(t *testing.T) {
+	h := hook("hook\x00id", TransitionInstall, HookBefore)
+	if err := h.Validate(); err == nil {
+		t.Fatal("hook ID containing NUL unexpectedly accepted")
+	}
+
+	e := EnsureAction{
+		ID:       "ensure\x00id",
+		Resource: "state:tool",
+		Check:    Operation{Kind: "check", Effect: EffectReadOnly},
+		Apply:    Operation{Kind: "apply", Effect: EffectMutation},
+	}
+	if err := e.Validate(); err == nil {
+		t.Fatal("ensure ID containing NUL unexpectedly accepted")
+	}
+}
+
+func TestLifecycleProjectionsDoNotAliasOperationCommands(t *testing.T) {
+	p := New("tool", "git", true)
+	p.Hooks = []LifecycleHook{hook("before-install", TransitionInstall, HookBefore)}
+	p.Ensures = []EnsureAction{{
+		ID:       "config",
+		Resource: "state:tool",
+		Check:    Operation{Kind: "check", Effect: EffectReadOnly, Command: []string{"check-tool"}, ArbitraryCode: true},
+		Apply:    Operation{Kind: "apply", Effect: EffectMutation, Command: []string{"apply-tool"}, ArbitraryCode: true},
+	}}
+
+	hooks, err := p.HookSchedule(TransitionInstall, HookBefore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalHook := p.Hooks[0].Operation.Command[0]
+	hooks[0].Operation.Command[0] = "mutated-hook"
+	if p.Hooks[0].Operation.Command[0] != originalHook {
+		t.Fatal("HookSchedule output aliases plan hook command")
+	}
+
+	ensures, err := CanonicalEnsures(p.Ensures)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalCheck := p.Ensures[0].Check.Command[0]
+	originalApply := p.Ensures[0].Apply.Command[0]
+	ensures[0].Check.Command[0] = "mutated-check"
+	ensures[0].Apply.Command[0] = "mutated-apply"
+	if p.Ensures[0].Check.Command[0] != originalCheck || p.Ensures[0].Apply.Command[0] != originalApply {
+		t.Fatal("CanonicalEnsures output aliases plan ensure commands")
+	}
+}
+
+func TestEnsureActionRequiresCanonicalURLResource(t *testing.T) {
+	ensure := EnsureAction{
+		ID:       "repo",
+		Resource: "HTTPS://EXAMPLE.TEST/index?z=2&a=1",
+		Check:    Operation{Kind: "check", Effect: EffectReadOnly},
+		Apply:    Operation{Kind: "apply", Effect: EffectMutation},
+	}
+	if err := ensure.Validate(); err == nil || !strings.Contains(err.Error(), "canonical") {
+		t.Fatalf("Validate() error = %v, want canonical ensure resource rejection", err)
+	}
+	ensure.Resource = "https://example.test/index?a=1&z=2"
+	if err := ensure.Validate(); err != nil {
+		t.Fatalf("canonical ensure resource rejected: %v", err)
 	}
 }

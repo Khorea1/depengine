@@ -36,3 +36,30 @@ func TestValidateCredentialFreeReference(t *testing.T) {
 		}
 	}
 }
+
+func TestSourceRejectsSensitiveURLFragment(t *testing.T) {
+	s := SourceReference{Role: SourceRegistry, URL: "https://example.test/index#access_token=secret"}
+	if err := s.Validate(); err == nil {
+		t.Fatal("expected sensitive URL fragment to be rejected")
+	}
+}
+
+func TestSourceRejectsSensitiveFragmentWithSemicolonOrEscapedKey(t *testing.T) {
+	for _, raw := range []string{
+		"https://example.test/index#section=install;access_token=secret",
+		"https://example.test/index#access%5ftoken=secret",
+	} {
+		s := SourceReference{Role: SourceRegistry, URL: raw}
+		if err := s.Validate(); err == nil {
+			t.Fatalf("expected sensitive fragment %q to be rejected", raw)
+		}
+	}
+}
+
+func TestSanitizeURLFragmentPreservesBenignFragmentSpelling(t *testing.T) {
+	for _, raw := range []string{"v1.2.3", "section=install", "a=1&b=2"} {
+		if got := sanitizeURLFragment(raw); got != raw {
+			t.Fatalf("sanitizeURLFragment(%q) = %q", raw, got)
+		}
+	}
+}

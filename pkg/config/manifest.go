@@ -129,10 +129,11 @@ func MergeLayersWithOpts(opts *mergeConfig, layers ...*Schema) *Schema {
 
 	// Defaults from the most specific layer.
 	result := &Schema{
-		Version:    layers[len(layers)-1].Version,
-		Defaults:   layers[len(layers)-1].Defaults,
-		Tools:      make(map[string]*Tool),
-		Provenance: make(map[string][]FieldSource),
+		Version:     layers[len(layers)-1].Version,
+		Defaults:    layers[len(layers)-1].Defaults,
+		Tools:       make(map[string]*Tool),
+		Provenance:  make(map[string][]FieldSource),
+		ProjectRoot: layers[len(layers)-1].ProjectRoot,
 	}
 
 	// Iterate layers in order; later layers overwrite earlier ones field-by-field.
@@ -159,6 +160,11 @@ func MergeLayersWithOpts(opts *mergeConfig, layers ...*Schema) *Schema {
 		}
 	}
 
+	// Local/project-relative resources always resolve against the project
+	// schema directory, even when a lower-priority personal manifest supplied
+	// the field. This keeps one portable root for the final merged project and
+	// avoids persisting per-machine manifest locations into method semantics.
+	bindProjectRoot(result.Tools, result.ProjectRoot)
 	return result
 }
 

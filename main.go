@@ -8,6 +8,7 @@ import (
 	"github.com/Khorea1/depengine/pkg/exec"
 	gitadapter "github.com/Khorea1/depengine/pkg/git"
 	"github.com/Khorea1/depengine/pkg/httpdownload"
+	"github.com/Khorea1/depengine/pkg/localartifactadapter"
 	"github.com/Khorea1/depengine/pkg/msi"
 )
 
@@ -45,6 +46,7 @@ func initAdapters() {
 	exec.RegisterNativeManagerAliases()
 	ecosystem.RegisterAll("paru")
 	exec.Register(gitadapter.NewGitAdapter())
+	exec.Register(localartifactadapter.NewAdapter())
 	exec.Register(httpdownload.NewHTTPAdapter())
 	exec.Register(httpdownload.NewGitHubAdapter())
 	exec.Register(httpdownload.NewAppImageAdapter())

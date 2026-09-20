@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/Khorea1/depengine/pkg/run"
 )
 
 // SourceRole describes how a named source participates in resolution. Keeping
@@ -55,11 +57,14 @@ func (s SourceReference) Validate() error {
 	if strings.TrimSpace(s.Name) != s.Name {
 		return errors.New("source name must not contain leading or trailing whitespace")
 	}
+	if strings.ContainsRune(s.Name, '\x00') {
+		return errors.New("source name contains NUL")
+	}
 	if s.Name == "" && s.URL == "" {
 		return errors.New("source requires name or URL")
 	}
 	if s.URL != "" {
-		if err := validateCredentialFreeReference(s.URL); err != nil {
+		if err := validateSourceURL(s.URL); err != nil {
 			return fmt.Errorf("source URL: %w", err)
 		}
 	}
@@ -82,6 +87,9 @@ func (t SourceTrust) Validate() error {
 	if strings.TrimSpace(t.KeyReference) != t.KeyReference || strings.TrimSpace(t.Fingerprint) != t.Fingerprint {
 		return errors.New("trust fields must not contain leading or trailing whitespace")
 	}
+	if strings.ContainsRune(t.KeyReference, '\x00') || strings.ContainsRune(t.Fingerprint, '\x00') {
+		return errors.New("trust fields must not contain NUL")
+	}
 	if t.KeyReference == "" && t.Fingerprint == "" {
 		return errors.New("trust metadata requires key reference or fingerprint")
 	}
@@ -99,6 +107,9 @@ func (s SecretReference) Validate() error {
 	if strings.TrimSpace(s.Provider) != s.Provider || strings.TrimSpace(s.Name) != s.Name {
 		return errors.New("secret reference fields must not contain leading or trailing whitespace")
 	}
+	if strings.ContainsRune(s.Provider, '\x00') || strings.ContainsRune(s.Name, '\x00') {
+		return errors.New("secret reference fields must not contain NUL")
+	}
 	if s.Provider == "" {
 		return errors.New("secret reference provider is required")
 	}
@@ -114,6 +125,14 @@ func (s SecretReference) Validate() error {
 func CanonicalSources(in []SourceReference) ([]SourceReference, error) {
 	out := append([]SourceReference(nil), in...)
 	for i := range out {
+		if out[i].Trust != nil {
+			trust := *out[i].Trust
+			out[i].Trust = &trust
+		}
+		if out[i].SecretRef != nil {
+			secret := *out[i].SecretRef
+			out[i].SecretRef = &secret
+		}
 		if err := out[i].Validate(); err != nil {
 			return nil, fmt.Errorf("source %d: %w", i, err)
 		}
@@ -167,8 +186,86 @@ func validateCredentialFreeReference(raw string) error {
 		}
 	}
 	for key := range u.Query() {
-		if _, sensitive := sensitiveLockQueryKeys[strings.ToLower(key)]; sensitive {
+		if run.IsSensitiveQueryKey(key) {
 			return fmt.Errorf("sensitive query parameter %q is forbidden; use secret_ref", key)
+		}
+	}
+	if key, ok := firstSensitiveURLParameter(u.Fragment); ok {
+		return fmt.Errorf("sensitive URL fragment parameter %q is forbidden; use secret_ref", key)
+	}
+	return nil
+}
+
+func firstSensitiveURLParameter(raw string) (string, bool) {
+	for _, part := range strings.FieldsFunc(raw, func(r rune) bool { return r == '&' || r == ';' }) {
+		key := part
+		if i := strings.IndexByte(key, '='); i >= 0 {
+			key = key[:i]
+		}
+		if decoded, err := url.QueryUnescape(key); err == nil {
+			key = decoded
+		}
+		if run.IsSensitiveQueryKey(key) {
+			return key, true
+		}
+	}
+	return "", false
+}
+
+func sanitizeURLFragment(raw string) string {
+	if _, ok := firstSensitiveURLParameter(raw); !ok {
+		return raw
+	}
+	parts := strings.FieldsFunc(raw, func(r rune) bool { return r == '&' || r == ';' })
+	out := parts[:0]
+	for _, part := range parts {
+		key := part
+		if i := strings.IndexByte(key, '='); i >= 0 {
+			key = key[:i]
+		}
+		if decoded, err := url.QueryUnescape(key); err == nil {
+			key = decoded
+		}
+		if run.IsSensitiveQueryKey(key) {
+			continue
+		}
+		out = append(out, part)
+	}
+	return strings.Join(out, "&")
+}
+
+func validateIdentityReference(raw string) error {
+	if err := validateCredentialFreeReference(raw); err != nil {
+		return err
+	}
+	if strings.Contains(raw, "://") {
+		return validateCredentialFreeURL(raw)
+	}
+	return nil
+}
+
+func validateSourceURL(raw string) error {
+	if strings.TrimSpace(raw) != raw || strings.ContainsRune(raw, '\x00') {
+		return errors.New("URL must not contain surrounding whitespace or NUL")
+	}
+	if scpLikeReference.MatchString(raw) {
+		return nil
+	}
+	return validateCredentialFreeURL(raw)
+}
+
+func validateCredentialFreeURL(raw string) error {
+	if err := validateCredentialFreeReference(raw); err != nil {
+		return err
+	}
+	u, err := url.Parse(placeholderToken.ReplaceAllString(raw, "x"))
+	if err != nil || u.Scheme == "" {
+		return errors.New("URL must be absolute")
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https", "ssh", "git":
+		if u.Host == "" {
+			return errors.New("network URL requires a host")
 		}
 	}
 	return nil

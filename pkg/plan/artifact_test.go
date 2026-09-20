@@ -16,6 +16,8 @@ func TestNormalizeProjectPath(t *testing.T) {
 		{in: "vendor/./tool", want: "vendor/tool"},
 		{in: "../tool", wantErr: true},
 		{in: "/tmp/tool", wantErr: true},
+		{in: "C:/vendor/tool", wantErr: true},
+		{in: "c:vendor/tool", wantErr: true},
 		{in: `vendor\\tool`, wantErr: true},
 		{in: " tool", wantErr: true},
 	} {
@@ -44,5 +46,27 @@ func TestArtifactValidateRequiresExclusivePortableSource(t *testing.T) {
 	}
 	if err := (plan.Artifact{Kind: plan.ArtifactRaw, LocalPath: "vendor/tool", Checksum: "sha256:abc"}).Validate(); err != nil {
 		t.Fatalf("portable local artifact rejected: %v", err)
+	}
+}
+
+func TestArtifactRejectsMalformedResolvedURLsAndChecksum(t *testing.T) {
+	tests := []plan.Artifact{
+		{URL: "tool.tar.gz"},
+		{URL: "https:///tool.tar.gz"},
+		{URL: "https://example.test/tool.tar.gz", SignatureURL: "tool.sig"},
+		{URL: "https://example.test/tool.tar.gz", Checksum: " sha256:abc"},
+		{URL: "https://example.test/tool.tar.gz", Checksum: "sha256:abc\x00bad"},
+	}
+	for i, artifact := range tests {
+		if err := artifact.Validate(); err == nil {
+			t.Fatalf("case %d: Validate() accepted malformed resolved artifact %#v", i, artifact)
+		}
+	}
+}
+
+func TestArtifactAllowsAbsoluteNonNetworkURL(t *testing.T) {
+	artifact := plan.Artifact{URL: "file:///opt/vendor/tool.tar.gz"}
+	if err := artifact.Validate(); err != nil {
+		t.Fatalf("Validate() rejected absolute file URL: %v", err)
 	}
 }

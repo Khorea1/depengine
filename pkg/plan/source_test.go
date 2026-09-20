@@ -13,6 +13,11 @@ func TestSourceReferenceRejectsLiteralCredentials(t *testing.T) {
 		"https://user:password@example.test/simple",
 		"https://example.test/simple?token=secret",
 		"https://example.test/simple?X-Amz-Signature=secret",
+		"https://example.test/simple?X-Amz-Credential=credential",
+		"https://example.test/simple?X-Amz-Security-Token=session",
+		"https://example.test/simple?X-Goog-Signature=signature",
+		"https://example.test/simple?client_secret=secret",
+		"https://example.test/simple?refresh_token=secret",
 	}
 	for _, raw := range cases {
 		s := plan.SourceReference{Role: plan.SourceIndex, URL: raw}
@@ -93,5 +98,83 @@ func TestSecretReferenceValidation(t *testing.T) {
 	}
 	if err := (plan.SecretReference{Provider: "env", Name: "TOKEN"}).Validate(); err != nil {
 		t.Fatalf("valid secret reference rejected: %v", err)
+	}
+}
+
+func TestSourceMetadataRejectsNUL(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "source name", err: (plan.SourceReference{Role: plan.SourceSelection, Name: "stable\x00repo"}).Validate()},
+		{name: "trust key", err: (plan.SourceTrust{KeyReference: "key\x00ref"}).Validate()},
+		{name: "trust fingerprint", err: (plan.SourceTrust{Fingerprint: "ABCD\x00EF"}).Validate()},
+		{name: "secret provider", err: (plan.SecretReference{Provider: "env\x00bad", Name: "TOKEN"}).Validate()},
+		{name: "secret name", err: (plan.SecretReference{Provider: "env", Name: "TOKEN\x00BAD"}).Validate()},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.err == nil {
+				t.Fatal("Validate() accepted NUL-bearing metadata")
+			}
+		})
+	}
+}
+
+func TestCanonicalSourcesReturnsIndependentCopy(t *testing.T) {
+	trust := &plan.SourceTrust{KeyReference: "keyring:vendor", Fingerprint: "ABCD"}
+	secret := &plan.SecretReference{Provider: "env", Name: "TOKEN"}
+	input := []plan.SourceReference{{
+		Role:      plan.SourceRegistry,
+		Name:      "registry",
+		URL:       "https://registry.example.test",
+		Trust:     trust,
+		SecretRef: secret,
+	}}
+	got, err := plan.CanonicalSources(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got[0].Trust.KeyReference = "mutated"
+	got[0].SecretRef.Name = "MUTATED"
+	if input[0].Trust.KeyReference != "keyring:vendor" {
+		t.Fatal("CanonicalSources output aliases input trust metadata")
+	}
+	if input[0].SecretRef.Name != "TOKEN" {
+		t.Fatal("CanonicalSources output aliases input secret reference")
+	}
+}
+
+func TestSourceReferenceURLRequiresRemoteURLShape(t *testing.T) {
+	for _, raw := range []string{
+		"registry-name",
+		"https://",
+		"https:///missing-host",
+		"ssh:///missing-host/repo",
+		" source://example.test/repo",
+		"https://example.test/repo\x00bad",
+	} {
+		t.Run(strings.ReplaceAll(raw, "/", "_"), func(t *testing.T) {
+			s := plan.SourceReference{Role: plan.SourceRemote, URL: raw}
+			if err := s.Validate(); err == nil {
+				t.Fatalf("SourceReference.URL %q unexpectedly accepted", raw)
+			}
+		})
+	}
+
+	for _, raw := range []string{
+		"https://example.test/org/repo.git",
+		"ssh://git@example.test/org/repo.git",
+		"git@example.test:org/repo.git",
+	} {
+		s := plan.SourceReference{Role: plan.SourceRemote, URL: raw}
+		if err := s.Validate(); err != nil {
+			t.Fatalf("valid remote source URL %q rejected: %v", raw, err)
+		}
+	}
+
+	// Symbolic manager/source identities belong in Name rather than URL.
+	if err := (plan.SourceReference{Role: plan.SourceRegistry, Name: "crates-io"}).Validate(); err != nil {
+		t.Fatalf("symbolic source name rejected: %v", err)
 	}
 }

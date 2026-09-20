@@ -12,6 +12,10 @@ type Schema struct {
 	Tools         map[string]*Tool
 	AllowNewTools bool                     `json:"-"`
 	Provenance    map[string][]FieldSource `json:"-"`
+	// ProjectRoot is the absolute directory containing the project schema.
+	// It is runtime-only metadata used to resolve project-relative inputs such
+	// as vendored/local artifacts; it is never serialized into plans or state.
+	ProjectRoot string `json:"-"`
 }
 
 // Defaults mirrors the [defaults] table. Omitted fields keep engine-safe
@@ -152,13 +156,17 @@ type MethodCandidate struct {
 	Kind     string
 	Label    string
 	Inferred bool // synthesized by depengine rather than explicitly declared
-	When     *Condition
-	Config   map[string]any
-	Err      error
-	ArchMap  map[string]string
-	OSMap    map[string]string
-	Requires []string
-	Sources  []Source
+	// ProjectRoot is inherited from the final project schema after layering.
+	// Adapters may use it for project-relative resources, but must never persist
+	// the machine-specific absolute value.
+	ProjectRoot string `json:"-"`
+	When        *Condition
+	Config      map[string]any
+	Err         error
+	ArchMap     map[string]string
+	OSMap       map[string]string
+	Requires    []string
+	Sources     []Source
 }
 
 // Source is repository configuration scoped to a single method candidate.

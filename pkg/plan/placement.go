@@ -59,24 +59,44 @@ type UnixXDGPaths struct {
 // home. This mirrors the XDG rule that relative values are invalid and should
 // not be used.
 func ResolveUnixXDGPaths(roots ScopeRoots) (UnixXDGPaths, error) {
-	if roots.HomeDir == "" || !path.IsAbs(roots.HomeDir) {
+	if !validUnixAbsolutePath(roots.HomeDir) {
 		return UnixXDGPaths{}, fmt.Errorf("unix user scope requires an absolute HomeDir root")
 	}
 
+	dataHome, err := xdgOrDefault("XDGDataHome", roots.XDGDataHome, path.Join(roots.HomeDir, ".local", "share"))
+	if err != nil {
+		return UnixXDGPaths{}, err
+	}
+	stateHome, err := xdgOrDefault("XDGStateHome", roots.XDGStateHome, path.Join(roots.HomeDir, ".local", "state"))
+	if err != nil {
+		return UnixXDGPaths{}, err
+	}
+	cacheHome, err := xdgOrDefault("XDGCacheHome", roots.XDGCacheHome, path.Join(roots.HomeDir, ".cache"))
+	if err != nil {
+		return UnixXDGPaths{}, err
+	}
+	configHome, err := xdgOrDefault("XDGConfigHome", roots.XDGConfigHome, path.Join(roots.HomeDir, ".config"))
+	if err != nil {
+		return UnixXDGPaths{}, err
+	}
+
 	return UnixXDGPaths{
-		DataHome:   xdgOrDefault(roots.XDGDataHome, path.Join(roots.HomeDir, ".local", "share")),
-		StateHome:  xdgOrDefault(roots.XDGStateHome, path.Join(roots.HomeDir, ".local", "state")),
-		CacheHome:  xdgOrDefault(roots.XDGCacheHome, path.Join(roots.HomeDir, ".cache")),
-		ConfigHome: xdgOrDefault(roots.XDGConfigHome, path.Join(roots.HomeDir, ".config")),
+		DataHome:   dataHome,
+		StateHome:  stateHome,
+		CacheHome:  cacheHome,
+		ConfigHome: configHome,
 		UserBin:    path.Join(roots.HomeDir, ".local", "bin"),
 	}, nil
 }
 
-func xdgOrDefault(value, fallback string) string {
-	if value != "" && path.IsAbs(value) {
-		return path.Clean(value)
+func xdgOrDefault(name, value, fallback string) (string, error) {
+	if value == "" || !path.IsAbs(value) {
+		return fallback, nil
 	}
-	return fallback
+	if !validUnixAbsolutePath(value) {
+		return "", fmt.Errorf("%s must be a well-formed absolute Unix path", name)
+	}
+	return path.Clean(value), nil
 }
 
 // ResolveScopePlacement maps portable scope into deterministic target-native
@@ -93,15 +113,18 @@ func ResolveScopePlacement(scope Scope, goos, tool string, roots ScopeRoots, ove
 	var placement ScopePlacement
 	switch goos {
 	case "windows":
+		if err := validateWindowsPathComponent(tool); err != nil {
+			return ScopePlacement{}, fmt.Errorf("tool: %w", err)
+		}
 		switch scope {
 		case ScopeUser:
-			if roots.LocalAppData == "" {
+			if !validWindowsAbsolutePath(roots.LocalAppData) {
 				return ScopePlacement{}, fmt.Errorf("windows user scope requires LocalAppData root")
 			}
 			placement.InstallRoot = windowsJoin(roots.LocalAppData, "depengine", "tools", tool)
 			placement.LinkDir = windowsJoin(roots.LocalAppData, "depengine", "bin")
 		case ScopeSystem:
-			if roots.ProgramFiles == "" {
+			if !validWindowsAbsolutePath(roots.ProgramFiles) {
 				return ScopePlacement{}, fmt.Errorf("windows system scope requires ProgramFiles root")
 			}
 			placement.InstallRoot = windowsJoin(roots.ProgramFiles, "depengine", "tools", tool)
@@ -131,12 +154,90 @@ func ResolveScopePlacement(scope Scope, goos, tool string, roots ScopeRoots, ove
 	}
 
 	if overrides.InstallRoot != "" {
+		if err := validateTargetAbsolutePath(goos, overrides.InstallRoot); err != nil {
+			return ScopePlacement{}, fmt.Errorf("install root override: %w", err)
+		}
 		placement.InstallRoot = overrides.InstallRoot
 	}
 	if overrides.LinkDir != "" {
+		if err := validateTargetAbsolutePath(goos, overrides.LinkDir); err != nil {
+			return ScopePlacement{}, fmt.Errorf("link dir override: %w", err)
+		}
 		placement.LinkDir = overrides.LinkDir
 	}
 	return placement, nil
+}
+
+func validateTargetAbsolutePath(goos, value string) error {
+	switch goos {
+	case "windows":
+		if !validWindowsAbsolutePath(value) {
+			return fmt.Errorf("path %q must be an absolute Windows path", value)
+		}
+	case "linux", "darwin", "freebsd", "openbsd", "netbsd", "dragonfly":
+		if !validUnixAbsolutePath(value) {
+			return fmt.Errorf("path %q must be an absolute Unix path", value)
+		}
+	default:
+		return fmt.Errorf("unsupported target OS %q", goos)
+	}
+	return nil
+}
+
+func validUnixAbsolutePath(value string) bool {
+	return value != "" &&
+		strings.TrimSpace(value) == value &&
+		!strings.ContainsRune(value, '\x00') &&
+		path.IsAbs(value) &&
+		path.Clean(value) == value
+}
+
+// validWindowsAbsolutePath is intentionally host-independent: planning a
+// Windows target on Unix must not reinterpret C:\\... as a relative Unix path.
+func validWindowsAbsolutePath(value string) bool {
+	if value == "" || strings.TrimSpace(value) != value || strings.ContainsRune(value, '\x00') {
+		return false
+	}
+	normalized := strings.ReplaceAll(value, "/", `\`)
+	if len(normalized) >= 3 && normalized[1] == ':' && normalized[2] == '\\' {
+		c := normalized[0]
+		if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+			return false
+		}
+		return validWindowsPathTail(strings.TrimPrefix(normalized[3:], `\`))
+	}
+	if strings.HasPrefix(normalized, `\\`) {
+		parts := strings.Split(strings.TrimPrefix(normalized, `\\`), `\`)
+		if len(parts) < 2 || !validWindowsUNCHead(parts[0]) || !validWindowsUNCHead(parts[1]) {
+			return false
+		}
+		return validWindowsPathParts(parts[2:])
+	}
+	return false
+}
+
+func validWindowsPathTail(tail string) bool {
+	if tail == "" {
+		return true
+	}
+	return validWindowsPathParts(strings.Split(tail, `\`))
+}
+
+func validWindowsPathParts(parts []string) bool {
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return false
+		}
+		if err := validateWindowsPathComponent(part); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func validWindowsUNCHead(value string) bool {
+	return value != "" && value != "." && value != ".." &&
+		!strings.ContainsRune(value, ':') && !strings.HasSuffix(value, ".") && !strings.HasSuffix(value, " ")
 }
 
 func validateToolPathComponent(tool string) error {
@@ -145,6 +246,23 @@ func validateToolPathComponent(tool string) error {
 	}
 	if strings.ContainsAny(tool, `/\\\x00`) {
 		return fmt.Errorf("invalid tool path component %q", tool)
+	}
+	return nil
+}
+
+func validateWindowsPathComponent(value string) error {
+	if strings.ContainsRune(value, ':') || strings.HasSuffix(value, ".") || strings.HasSuffix(value, " ") {
+		return fmt.Errorf("invalid Windows path component %q", value)
+	}
+	base := value
+	if i := strings.IndexByte(base, '.'); i >= 0 {
+		base = base[:i]
+	}
+	switch strings.ToUpper(base) {
+	case "CON", "PRN", "AUX", "NUL",
+		"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+		"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9":
+		return fmt.Errorf("reserved Windows path component %q", value)
 	}
 	return nil
 }

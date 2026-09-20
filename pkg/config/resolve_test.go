@@ -826,3 +826,37 @@ func applyMergeStrategy(s MergeStrategy, lower, upper any) any {
 		return lower
 	}
 }
+
+func TestMergeLayersRebindsMethodProjectRootToProjectSchema(t *testing.T) {
+	manifestRoot := filepath.Join(t.TempDir(), "manifest")
+	projectRoot := filepath.Join(t.TempDir(), "project")
+	manifest := &Schema{
+		Version:     1,
+		ProjectRoot: manifestRoot,
+		Tools: map[string]*Tool{
+			"demo": {
+				Name: "demo",
+				Methods: []*MethodCandidate{{
+					Kind:        "local",
+					ProjectRoot: manifestRoot,
+					Config:      map[string]any{"local_path": "vendor/demo"},
+				}},
+			},
+		},
+	}
+	project := &Schema{
+		Version:     1,
+		ProjectRoot: projectRoot,
+		Tools: map[string]*Tool{
+			"demo": {Name: "demo"},
+		},
+	}
+
+	merged := MergeLayers(manifest, project)
+	if merged.ProjectRoot != projectRoot {
+		t.Fatalf("merged ProjectRoot = %q, want %q", merged.ProjectRoot, projectRoot)
+	}
+	if got := merged.Tools["demo"].Methods[0].ProjectRoot; got != projectRoot {
+		t.Fatalf("merged local method ProjectRoot = %q, want project root %q", got, projectRoot)
+	}
+}

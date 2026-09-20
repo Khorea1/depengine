@@ -137,6 +137,12 @@ fastfetch = { http = { url = "https://github.com/fastfetch-cli/fastfetch/release
 # Example with SHA-512 and explicit checksum_url:
 "tool-example" = { http = { url = "https://example.com/tool-{latest}.tar.gz", checksum = "sha512:auto", checksum_url = "https://example.com/SHA512SUMS" } }
 
+# --- Local artifact: install from a file already present in the project ---
+# The "local" method installs a binary/archive from a project-relative path
+# without downloading anything. Useful for vendored binaries, proprietary
+# tools, or offline-capable deployments.
+my-internal-tool = { local = { local_path = "vendor/bin/my-tool-{os_any}-{arch_any}", checksum = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" } }
+
 # ------------------------------------------------------------------------
 # CASE 7 — Tool dependency and simultaneous package override.
 # `requires` is a TOOL-LEVEL field (not method-level): it applies no matter

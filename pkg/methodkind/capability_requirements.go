@@ -1,6 +1,11 @@
 package methodkind
 
-import "github.com/Khorea1/depengine/pkg/plan"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/Khorea1/depengine/pkg/plan"
+)
 
 // CandidateRequirements carries requirements that are not intrinsic fields of
 // ResolvedInstallPlan.
@@ -35,4 +40,29 @@ func (c Contract) MissingRequirements(p plan.ResolvedInstallPlan, requirements C
 		return 0, err
 	}
 	return required &^ c.Capabilities, nil
+}
+
+// CheckRequirements validates that the contract can honor the complete
+// adapter-neutral candidate intent. Authentication mismatch is classified
+// separately so planners can explain that a candidate is structurally usable
+// but lacks the required secure credential transport rather than silently
+// weakening the request or falling through to a downloader chosen by host
+// tooling.
+func (c Contract) CheckRequirements(p plan.ResolvedInstallPlan, requirements CandidateRequirements) error {
+	missing, err := c.MissingRequirements(p, requirements)
+	if err != nil {
+		return err
+	}
+	if missing == 0 {
+		return nil
+	}
+	class := plan.ErrorUnsupportedCapability
+	if missing&CapabilityAuth != 0 {
+		class = plan.ErrorAuthRequirement
+	}
+	return &plan.PlannerError{
+		Class: class,
+		Op:    "candidate capabilities",
+		Err:   fmt.Errorf("method %q is missing required capabilities: %s", c.Kind, strings.Join(CapabilityNames(missing), ", ")),
+	}
 }

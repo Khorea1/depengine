@@ -1,10 +1,12 @@
 package plan
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -30,13 +32,19 @@ const (
 // selected manager/resolver could not provide one.
 var ErrLockUnavailable = errors.New("immutable lock identity unavailable")
 
+// ErrLockMismatch is returned when a newly resolved plan does not reproduce an
+// immutable lock identity. Callers must require an explicit lock update rather
+// than silently accepting the new mutable resolution.
+var ErrLockMismatch = errors.New("resolved plan does not match immutable lock")
+
 // LockedArtifact is the reproducibility identity of one resolved artifact.
 // Credentials are never part of this identity.
 type LockedArtifact struct {
-	Kind      ArtifactKind `json:"kind,omitempty"`
-	URL       string       `json:"url,omitempty"`
-	LocalPath string       `json:"local_path,omitempty"`
-	Checksum  string       `json:"checksum,omitempty"`
+	Kind         ArtifactKind `json:"kind,omitempty"`
+	URL          string       `json:"url,omitempty"`
+	LocalPath    string       `json:"local_path,omitempty"`
+	Checksum     string       `json:"checksum,omitempty"`
+	SignatureURL string       `json:"signature_url,omitempty"`
 }
 
 // LockedSource is the persistence-safe identity of a source used during
@@ -68,17 +76,205 @@ type LockIdentity struct {
 	Sources      []LockedSource     `json:"sources,omitempty"`
 }
 
+func (a LockedArtifact) validate() error {
+	if err := a.Kind.Validate(); err != nil {
+		return err
+	}
+	if a.URL != "" && a.LocalPath != "" {
+		return errors.New("artifact cannot specify both url and local_path")
+	}
+	if a.URL == "" && a.LocalPath == "" {
+		return errors.New("artifact requires url or local_path")
+	}
+	if a.URL != "" {
+		if err := validateCredentialFreeURL(a.URL); err != nil {
+			return fmt.Errorf("artifact URL: %w", err)
+		}
+		if canonical := sanitizeLockReference(a.URL); canonical != a.URL {
+			return fmt.Errorf("artifact URL is not canonical; use %q", canonical)
+		}
+	}
+	if a.SignatureURL != "" {
+		if a.LocalPath != "" {
+			return errors.New("local artifact cannot persist a remote signature URL")
+		}
+		if err := validateCredentialFreeURL(a.SignatureURL); err != nil {
+			return fmt.Errorf("artifact signature URL: %w", err)
+		}
+		if canonical := sanitizeLockReference(a.SignatureURL); canonical != a.SignatureURL {
+			return fmt.Errorf("artifact signature URL is not canonical; use %q", canonical)
+		}
+	}
+	if a.LocalPath != "" {
+		clean, err := NormalizeProjectPath(a.LocalPath)
+		if err != nil {
+			return err
+		}
+		if clean != a.LocalPath {
+			return fmt.Errorf("local path %q is not canonical; use %q", a.LocalPath, clean)
+		}
+	}
+	if err := validateLockedChecksum(a.Checksum); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateLockedChecksum(value string) error {
+	if value == "" {
+		return nil
+	}
+	if err := validateConcreteDigestSyntax(value); err != nil {
+		return fmt.Errorf("artifact checksum: %w", err)
+	}
+	return nil
+}
+
+func validateConcreteDigestSyntax(value string) error {
+	if strings.TrimSpace(value) != value || strings.ContainsRune(value, '\x00') {
+		return errors.New("must not contain surrounding whitespace or NUL")
+	}
+	parts := strings.SplitN(value, ":", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return errors.New("must use algorithm:hex syntax")
+	}
+	if strings.EqualFold(parts[1], "auto") {
+		return errors.New("must be concrete in a lock; :auto is unresolved")
+	}
+	if strings.TrimSpace(parts[0]) != parts[0] {
+		return errors.New("algorithm is malformed")
+	}
+	if !validDigestAlgorithm(parts[0]) {
+		return errors.New("algorithm is malformed")
+	}
+	decoded, err := hex.DecodeString(parts[1])
+	if err != nil {
+		return errors.New("value must be hexadecimal")
+	}
+	wantBytes := map[string]int{
+		"md5":    16,
+		"sha1":   20,
+		"sha256": 32,
+		"sha512": 64,
+	}[strings.ToLower(parts[0])]
+	if wantBytes != 0 && len(decoded) != wantBytes {
+		return fmt.Errorf("%s digest must contain %d hexadecimal bytes", strings.ToLower(parts[0]), wantBytes)
+	}
+	return nil
+}
+
+func validDigestAlgorithm(value string) bool {
+	for i, r := range value {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			continue
+		}
+		if i > 0 && (r == '-' || r == '_' || r == '.' || r == '+') {
+			continue
+		}
+		return false
+	}
+	return value != ""
+}
+
+func (s LockedSource) validate() error {
+	source := SourceReference{
+		Role:  s.Role,
+		Name:  s.Name,
+		URL:   s.URL,
+		Owned: s.Owned,
+		Trust: s.Trust,
+	}
+	if err := source.Validate(); err != nil {
+		return err
+	}
+	if s.URL != "" {
+		if canonical := sanitizeLockReference(s.URL); canonical != s.URL {
+			return fmt.Errorf("source URL is not canonical; use %q", canonical)
+		}
+	}
+	return nil
+}
+
+func (i LockIdentity) validate() error {
+	if strings.TrimSpace(i.Package) != i.Package || strings.ContainsRune(i.Package, '\x00') {
+		return errors.New("lock package identity must not contain surrounding whitespace or NUL")
+	}
+	for label, raw := range map[string]string{"source": i.Source, "registry": i.Registry} {
+		if raw == "" {
+			continue
+		}
+		if err := validateIdentityReference(raw); err != nil {
+			return fmt.Errorf("lock %s: %w", label, err)
+		}
+		if strings.Contains(raw, "://") {
+			if canonical := sanitizeLockReference(raw); canonical != raw {
+				return fmt.Errorf("lock %s is not canonical; use %q", label, canonical)
+			}
+		}
+	}
+	if i.Scope != "" {
+		if _, err := ParseScope(i.Scope); err != nil {
+			return fmt.Errorf("lock scope: %w", err)
+		}
+	}
+	if i.Environment != nil {
+		if err := i.Environment.Validate(); err != nil {
+			return fmt.Errorf("lock environment: %w", err)
+		}
+	}
+	for label, value := range map[string]string{"version": i.Version, "revision": i.Revision, "digest": i.Digest, "architecture": i.Architecture, "platform": i.Platform} {
+		if strings.TrimSpace(value) != value || strings.ContainsRune(value, '\x00') {
+			return fmt.Errorf("lock %s must not contain surrounding whitespace or NUL", label)
+		}
+	}
+	if i.Digest != "" {
+		if err := validateConcreteDigestSyntax(i.Digest); err != nil {
+			return fmt.Errorf("lock digest: %w", err)
+		}
+	}
+	previousArtifactKey := ""
+	for idx, artifact := range i.Artifacts {
+		if err := artifact.validate(); err != nil {
+			return fmt.Errorf("lock artifact %d: %w", idx, err)
+		}
+		key := artifactIdentityKey(artifact.Kind, artifact.URL, artifact.LocalPath)
+		if idx > 0 && key <= previousArtifactKey {
+			if key == previousArtifactKey {
+				return fmt.Errorf("duplicate lock artifact location %q", key)
+			}
+			return errors.New("lock artifacts are not in canonical order")
+		}
+		previousArtifactKey = key
+	}
+	previousSourceKey := ""
+	for idx, source := range i.Sources {
+		if err := source.validate(); err != nil {
+			return fmt.Errorf("lock source %d: %w", idx, err)
+		}
+		key := sourceSortKey(SourceReference{Role: source.Role, Name: source.Name, URL: source.URL})
+		if idx > 0 && key <= previousSourceKey {
+			if key == previousSourceKey {
+				return fmt.Errorf("duplicate lock source identity %q", key)
+			}
+			return fmt.Errorf("lock sources are not in canonical order")
+		}
+		previousSourceKey = key
+	}
+	return nil
+}
+
 // LockProjection is the versioned, adapter-neutral lock representation for one
 // resolved installation candidate. An unavailable projection is diagnostic and
 // must not be consumed as if it pinned the install.
 type LockProjection struct {
-	Version       int               `json:"lock_version"`
-	Tool          ToolIdentity      `json:"tool"`
-	Candidate     CandidateIdentity `json:"candidate"`
-	RequestedMode VersionMode       `json:"requested_mode,omitempty"`
-	Stability     LockStability     `json:"stability"`
-	Reason        string            `json:"reason,omitempty"`
-	Identity      LockIdentity      `json:"identity"`
+	Version         int               `json:"lock_version"`
+	Tool            ToolIdentity      `json:"tool"`
+	Candidate       CandidateIdentity `json:"candidate"`
+	RequestedMode   VersionMode       `json:"requested_mode,omitempty"`
+	RequestedIntent *VersionIntent    `json:"requested_intent,omitempty"`
+	Stability       LockStability     `json:"stability"`
+	Reason          string            `json:"reason,omitempty"`
+	Identity        LockIdentity      `json:"identity"`
 }
 
 // MarshalJSON is the persistence/debugging safety boundary for lock projections.
@@ -87,15 +283,18 @@ type LockProjection struct {
 func (p LockProjection) MarshalJSON() ([]byte, error) {
 	type plain LockProjection
 	safe := p.redacted()
-	return json.Marshal(plain(safe))
+	return json.Marshal(plain(redactAllStrings(safe)))
 }
 
 func (p LockProjection) redacted() LockProjection {
+	p.Identity.Artifacts = append([]LockedArtifact(nil), p.Identity.Artifacts...)
+	p.Identity.Sources = append([]LockedSource(nil), p.Identity.Sources...)
 	p.Reason = run.RedactSensitiveText(p.Reason)
 	p.Identity.Source = sanitizeLockReference(p.Identity.Source)
 	p.Identity.Registry = sanitizeLockReference(p.Identity.Registry)
 	for i := range p.Identity.Artifacts {
 		p.Identity.Artifacts[i].URL = sanitizeLockReference(p.Identity.Artifacts[i].URL)
+		p.Identity.Artifacts[i].SignatureURL = sanitizeLockReference(p.Identity.Artifacts[i].SignatureURL)
 		p.Identity.Artifacts[i].Checksum = run.RedactSensitiveText(p.Identity.Artifacts[i].Checksum)
 	}
 	for i := range p.Identity.Sources {
@@ -126,26 +325,45 @@ func ProjectLock(p ResolvedInstallPlan) (LockProjection, error) {
 			Package:      p.Identity.Package,
 			Version:      p.Identity.Version,
 			Revision:     p.Identity.Revision,
-			Digest:       p.Identity.Digest,
+			Digest:       canonicalDigest(p.Identity.Digest),
 			Source:       sanitizeLockReference(p.Identity.Source),
 			Registry:     sanitizeLockReference(p.Identity.Registry),
 			Scope:        p.Identity.Scope,
-			Environment:  p.Identity.Environment,
 			Architecture: p.Identity.Architecture,
 			Platform:     p.Identity.Platform,
 		},
 	}
+	if p.Identity.Environment != nil {
+		environment := *p.Identity.Environment
+		projection.Identity.Environment = &environment
+	}
 	if p.Identity.RequestedVersion != nil {
 		projection.RequestedMode = p.Identity.RequestedVersion.Mode
+		intent := *p.Identity.RequestedVersion
+		if intent.Mode == VersionDigest {
+			intent.Value = canonicalDigest(intent.Value)
+		}
+		if intent.Channel != nil {
+			channel := *intent.Channel
+			intent.Channel = &channel
+		}
+		projection.RequestedIntent = &intent
 	}
 	for _, artifact := range p.Artifacts {
 		projection.Identity.Artifacts = append(projection.Identity.Artifacts, LockedArtifact{
-			Kind:      artifact.Kind,
-			URL:       sanitizeLockReference(artifact.URL),
-			LocalPath: artifact.LocalPath,
-			Checksum:  run.RedactSensitiveText(artifact.Checksum),
+			Kind:         artifact.Kind,
+			URL:          sanitizeLockReference(artifact.URL),
+			LocalPath:    artifact.LocalPath,
+			Checksum:     canonicalDigest(run.RedactSensitiveText(artifact.Checksum)),
+			SignatureURL: sanitizeLockReference(artifact.SignatureURL),
 		})
 	}
+	slices.SortFunc(projection.Identity.Artifacts, func(a, b LockedArtifact) int {
+		return strings.Compare(
+			artifactIdentityKey(a.Kind, a.URL, a.LocalPath),
+			artifactIdentityKey(b.Kind, b.URL, b.LocalPath),
+		)
+	})
 	canonicalSources, err := CanonicalSources(p.Sources)
 	if err != nil {
 		return LockProjection{}, fmt.Errorf("project lock: %w", err)
@@ -153,13 +371,14 @@ func ProjectLock(p ResolvedInstallPlan) (LockProjection, error) {
 	for _, source := range canonicalSources {
 		locked := LockedSource{
 			Role:  source.Role,
-			Name:  source.Name,
+			Name:  strings.ToLower(source.Name),
 			URL:   sanitizeLockReference(source.URL),
 			Owned: source.Owned,
 		}
 		if source.Trust != nil {
 			trust := *source.Trust
 			trust.KeyReference = sanitizeLockReference(trust.KeyReference)
+			trust.Fingerprint = canonicalTrustFingerprint(trust.Fingerprint)
 			locked.Trust = &trust
 		}
 		projection.Identity.Sources = append(projection.Identity.Sources, locked)
@@ -190,17 +409,139 @@ func (p LockProjection) RequireImmutable() error {
 	return nil
 }
 
+// VerifyResolvedPlanAgainstLock projects an already-resolved plan and proves
+// that it reproduces the supplied immutable lock identity. It never performs
+// resolution itself. A mismatch requires an explicit lock update; mutable
+// intent must not silently replace the pinned revision/digest/version.
+func VerifyResolvedPlanAgainstLock(expected LockProjection, resolved ResolvedInstallPlan) error {
+	if err := expected.RequireImmutable(); err != nil {
+		return fmt.Errorf("expected lock: %w", err)
+	}
+	actual, err := ProjectLock(resolved)
+	if err != nil {
+		return err
+	}
+	if err := actual.RequireImmutable(); err != nil {
+		return fmt.Errorf("resolved plan: %w", err)
+	}
+	if expected.Tool != actual.Tool {
+		return fmt.Errorf("%w: tool identity changed", ErrLockMismatch)
+	}
+	if expected.Candidate != actual.Candidate {
+		return fmt.Errorf("%w: selected candidate changed", ErrLockMismatch)
+	}
+	if expected.RequestedMode != actual.RequestedMode {
+		return fmt.Errorf("%w: requested version mode changed", ErrLockMismatch)
+	}
+	if expected.RequestedIntent != nil && !versionIntentEqual(expected.RequestedIntent, actual.RequestedIntent) {
+		return fmt.Errorf("%w: requested version intent changed", ErrLockMismatch)
+	}
+	if field := lockIdentityMismatchField(expected.Identity, actual.Identity); field != "" {
+		return fmt.Errorf("%w: %s identity changed", ErrLockMismatch, field)
+	}
+	return nil
+}
+
+func versionIntentEqual(expected, actual *VersionIntent) bool {
+	if expected == nil || actual == nil {
+		return expected == actual
+	}
+	if expected.Mode != actual.Mode {
+		return false
+	}
+	if expected.Mode == VersionDigest {
+		return canonicalDigest(expected.Value) == canonicalDigest(actual.Value) && reflect.DeepEqual(expected.Channel, actual.Channel)
+	}
+	return reflect.DeepEqual(expected, actual)
+}
+
+func lockIdentityMismatchField(expected, actual LockIdentity) string {
+	switch {
+	case expected.Package != actual.Package:
+		return "package"
+	case expected.Version != actual.Version:
+		return "version"
+	case expected.Revision != actual.Revision:
+		return "revision"
+	case canonicalDigest(expected.Digest) != canonicalDigest(actual.Digest):
+		return "digest"
+	case sanitizeLockReference(expected.Source) != sanitizeLockReference(actual.Source):
+		return "source"
+	case sanitizeLockReference(expected.Registry) != sanitizeLockReference(actual.Registry):
+		return "registry"
+	case expected.Scope != actual.Scope:
+		return "scope"
+	case !reflect.DeepEqual(expected.Environment, actual.Environment):
+		return "environment"
+	case expected.Architecture != actual.Architecture:
+		return "architecture"
+	case expected.Platform != actual.Platform:
+		return "platform"
+	case !lockedArtifactsEqual(expected.Artifacts, actual.Artifacts):
+		return "artifact"
+	case !lockedSourcesEqual(expected.Sources, actual.Sources):
+		return "source"
+	default:
+		return ""
+	}
+}
+
+func canonicalDigest(value string) string {
+	parts := strings.SplitN(value, ":", 2)
+	if len(parts) != 2 {
+		return value
+	}
+	return strings.ToLower(parts[0]) + ":" + strings.ToLower(parts[1])
+}
+
+func lockedArtifactsEqual(expected, actual []LockedArtifact) bool {
+	if len(expected) != len(actual) {
+		return false
+	}
+	for i := range expected {
+		a, b := expected[i], actual[i]
+		if a.Kind != b.Kind || sanitizeLockReference(a.URL) != sanitizeLockReference(b.URL) || a.LocalPath != b.LocalPath || canonicalDigest(a.Checksum) != canonicalDigest(b.Checksum) || sanitizeLockReference(a.SignatureURL) != sanitizeLockReference(b.SignatureURL) {
+			return false
+		}
+	}
+	return true
+}
+
+func lockedSourcesEqual(expected, actual []LockedSource) bool {
+	if len(expected) != len(actual) {
+		return false
+	}
+	for i := range expected {
+		a, b := expected[i], actual[i]
+		if a.Role != b.Role || !strings.EqualFold(a.Name, b.Name) || sanitizeLockReference(a.URL) != sanitizeLockReference(b.URL) || a.Owned != b.Owned || !sourceTrustEqual(a.Trust, b.Trust) {
+			return false
+		}
+	}
+	return true
+}
+
+func sourceTrustEqual(a, b *SourceTrust) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return sanitizeLockReference(a.KeyReference) == sanitizeLockReference(b.KeyReference) && canonicalTrustFingerprint(a.Fingerprint) == canonicalTrustFingerprint(b.Fingerprint)
+}
+
+func canonicalTrustFingerprint(value string) string {
+	return strings.ToUpper(strings.ReplaceAll(value, " ", ""))
+}
+
 // Validate checks lock schema and stability invariants without consulting an
 // adapter or the host.
 func (p LockProjection) Validate() error {
 	if err := formatversion.ValidateReadVersion(formatversion.Lock, p.Version); err != nil {
 		return err
 	}
-	if p.Tool.Name == "" {
-		return errors.New("lock tool name is required")
+	if strings.TrimSpace(p.Tool.Name) != p.Tool.Name || p.Tool.Name == "" || strings.ContainsRune(p.Tool.Name, '\x00') {
+		return errors.New("lock tool name is required and must not contain surrounding whitespace or NUL")
 	}
-	if p.Candidate.Method == "" {
-		return errors.New("lock candidate method is required")
+	if strings.TrimSpace(p.Candidate.Method) != p.Candidate.Method || p.Candidate.Method == "" || strings.ContainsRune(p.Candidate.Method, '\x00') {
+		return errors.New("lock candidate method is required and must not contain surrounding whitespace or NUL")
 	}
 	switch p.Stability {
 	case LockImmutable:
@@ -214,25 +555,8 @@ func (p LockProjection) Validate() error {
 	default:
 		return fmt.Errorf("invalid lock stability %q", p.Stability)
 	}
-	for i, artifact := range p.Identity.Artifacts {
-		if err := artifact.Kind.Validate(); err != nil {
-			return fmt.Errorf("lock artifact %d: %w", i, err)
-		}
-		if artifact.URL != "" && artifact.LocalPath != "" {
-			return fmt.Errorf("lock artifact %d cannot specify both url and local_path", i)
-		}
-		if artifact.URL == "" && artifact.LocalPath == "" {
-			return fmt.Errorf("lock artifact %d requires url or local_path", i)
-		}
-		if artifact.LocalPath != "" {
-			clean, err := NormalizeProjectPath(artifact.LocalPath)
-			if err != nil {
-				return fmt.Errorf("lock artifact %d: %w", i, err)
-			}
-			if clean != artifact.LocalPath {
-				return fmt.Errorf("lock artifact %d local path %q is not canonical; use %q", i, artifact.LocalPath, clean)
-			}
-		}
+	if err := p.Identity.validate(); err != nil {
+		return err
 	}
 	if p.RequestedMode != "" {
 		intent := VersionIntent{Mode: p.RequestedMode}
@@ -250,12 +574,40 @@ func (p LockProjection) Validate() error {
 			return fmt.Errorf("invalid requested lock mode %q", p.RequestedMode)
 		}
 	}
+	if p.RequestedIntent != nil {
+		if err := p.RequestedIntent.Validate(); err != nil {
+			return fmt.Errorf("requested lock intent: %w", err)
+		}
+		if p.RequestedMode == "" {
+			return errors.New("requested lock intent requires requested_mode")
+		}
+		if p.RequestedMode != p.RequestedIntent.Mode {
+			return fmt.Errorf("requested lock mode %q does not match requested intent mode %q", p.RequestedMode, p.RequestedIntent.Mode)
+		}
+		if p.RequestedIntent.Mode == VersionDigest && p.Identity.Digest != "" &&
+			canonicalDigest(p.RequestedIntent.Value) != canonicalDigest(p.Identity.Digest) {
+			return errors.New("requested lock digest does not match resolved identity digest")
+		}
+	}
+	if p.Stability == LockImmutable {
+		requested := p.RequestedIntent
+		if requested == nil && p.RequestedMode != "" {
+			requested = &VersionIntent{Mode: p.RequestedMode}
+		}
+		if reason := lockIdentityUnavailabilityReason(requested, p.Identity); reason != "" {
+			return fmt.Errorf("immutable lock identity is incomplete: %s", reason)
+		}
+	}
 	return nil
 }
 
 func lockUnavailabilityReason(p ResolvedInstallPlan, identity LockIdentity) string {
-	if p.Identity.RequestedVersion != nil {
-		switch p.Identity.RequestedVersion.Mode {
+	return lockIdentityUnavailabilityReason(p.Identity.RequestedVersion, identity)
+}
+
+func lockIdentityUnavailabilityReason(requested *VersionIntent, identity LockIdentity) string {
+	if requested != nil {
+		switch requested.Mode {
 		case VersionGitTag, VersionGitBranch, VersionGitRevision:
 			if identity.Revision == "" {
 				return "git version intent did not resolve to a concrete revision"
@@ -269,7 +621,7 @@ func lockUnavailabilityReason(p ResolvedInstallPlan, identity LockIdentity) stri
 				return "version intent did not resolve to a concrete version, revision, or digest"
 			}
 		default:
-			return fmt.Sprintf("unsupported requested version mode %q", p.Identity.RequestedVersion.Mode)
+			return fmt.Sprintf("unsupported requested version mode %q", requested.Mode)
 		}
 	}
 
@@ -282,15 +634,10 @@ func lockUnavailabilityReason(p ResolvedInstallPlan, identity LockIdentity) stri
 		}
 	}
 
-	if p.Identity.RequestedVersion == nil && identity.Version == "" && identity.Revision == "" && identity.Digest == "" && len(identity.Artifacts) == 0 {
+	if requested == nil && identity.Version == "" && identity.Revision == "" && identity.Digest == "" && len(identity.Artifacts) == 0 {
 		return "manager did not expose a stable resolved identity"
 	}
 	return ""
-}
-
-var sensitiveLockQueryKeys = map[string]struct{}{
-	"token": {}, "access_token": {}, "auth_token": {}, "api_key": {}, "apikey": {},
-	"password": {}, "passwd": {}, "secret": {}, "signature": {}, "sig": {}, "x-amz-signature": {},
 }
 
 // sanitizeLockReference removes credential material rather than replacing it
@@ -300,19 +647,56 @@ func sanitizeLockReference(raw string) string {
 	if raw == "" {
 		return ""
 	}
+	if scpLikeReference.MatchString(raw) {
+		return canonicalSCPReference(raw)
+	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return run.RedactSensitiveText(raw)
 	}
-	u.User = nil
+	u.Scheme = strings.ToLower(u.Scheme)
+	// DNS names and IPv6 hexadecimal digits are case-insensitive, but an IPv6
+	// zone identifier (the %eth0 portion) may name a case-sensitive local
+	// interface. Preserve zone-bearing hosts exactly rather than changing
+	// transport identity while canonicalizing display spelling.
+	if !strings.Contains(u.Host, "%") {
+		u.Host = strings.ToLower(u.Host)
+	}
+	if u.User != nil {
+		username := u.User.Username()
+		_, hasPassword := u.User.Password()
+		if isSSHScheme(u.Scheme) && !hasPassword && username != "" {
+			// SSH usernames such as git@host are transport identity, not secret
+			// material. Preserve them so the lock can distinguish remotes that use
+			// different server-side principals. Password-bearing or non-SSH
+			// userinfo is always removed defensively.
+			u.User = url.User(username)
+		} else {
+			u.User = nil
+		}
+	}
 	query := u.Query()
 	for key := range query {
-		if _, sensitive := sensitiveLockQueryKeys[strings.ToLower(key)]; sensitive {
+		if run.IsSensitiveQueryKey(key) {
 			query.Del(key)
 		}
 	}
 	u.RawQuery = query.Encode()
+	u.Fragment = sanitizeURLFragment(u.Fragment)
 	return u.String()
+}
+
+func canonicalSCPReference(raw string) string {
+	at := strings.IndexByte(raw, '@')
+	if at <= 0 || at+1 >= len(raw) {
+		return raw
+	}
+	rest := raw[at+1:]
+	colon := strings.IndexByte(rest, ':')
+	if colon <= 0 {
+		return raw
+	}
+	return raw[:at+1] + strings.ToLower(rest[:colon]) + rest[colon:]
 }
 
 // LockDocument is the universal adapter-neutral lock model. Entries are sorted
@@ -359,9 +743,42 @@ func BuildLockDocument(plans []ResolvedInstallPlan) (LockDocument, error) {
 }
 
 // Validate enforces the persisted universal-lock invariants.
+// VerifyResolvedPlansAgainstLock verifies an exact resolved plan set against a
+// persisted immutable lock document. Tool membership is part of the contract:
+// missing, extra, or duplicate plans are mismatches rather than opportunities
+// to resolve new mutable identity implicitly.
+func VerifyResolvedPlansAgainstLock(doc LockDocument, plans []ResolvedInstallPlan) error {
+	if err := doc.Validate(); err != nil {
+		return fmt.Errorf("lock document: %w", err)
+	}
+	if len(plans) != len(doc.Entries) {
+		return fmt.Errorf("%w: resolved tool set size changed", ErrLockMismatch)
+	}
+	byTool := make(map[string]LockProjection, len(doc.Entries))
+	for _, entry := range doc.Entries {
+		byTool[entry.Tool.Name] = entry
+	}
+	seen := make(map[string]struct{}, len(plans))
+	for _, resolved := range plans {
+		name := resolved.Tool.Name
+		if _, duplicate := seen[name]; duplicate {
+			return fmt.Errorf("%w: duplicate resolved tool %q", ErrLockMismatch, name)
+		}
+		seen[name] = struct{}{}
+		expected, ok := byTool[name]
+		if !ok {
+			return fmt.Errorf("%w: resolved tool %q is not present in lock", ErrLockMismatch, name)
+		}
+		if err := VerifyResolvedPlanAgainstLock(expected, resolved); err != nil {
+			return fmt.Errorf("tool %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
 func (d LockDocument) Validate() error {
-	if d.Version != CurrentLockVersion {
-		return fmt.Errorf("unsupported lock document version %d (want %d)", d.Version, CurrentLockVersion)
+	if err := formatversion.ValidateReadVersion(formatversion.Lock, d.Version); err != nil {
+		return err
 	}
 	seen := make(map[string]struct{}, len(d.Entries))
 	previous := ""

@@ -27,6 +27,24 @@ func TestValidateURL(t *testing.T) {
 	}
 }
 
+func TestValidateURLNetworkSchemesRequireHost(t *testing.T) {
+	for _, tc := range []struct {
+		raw     string
+		wantErr bool
+	}{
+		{raw: "ssh://git@example.com/owner/repo.git"},
+		{raw: "git://example.com/owner/repo.git"},
+		{raw: "ssh:///owner/repo.git", wantErr: true},
+		{raw: "git:///owner/repo.git", wantErr: true},
+		{raw: "file:///tmp/key.asc"},
+	} {
+		err := ValidateURL(tc.raw, []string{"ssh", "git", "file"})
+		if (err != nil) != tc.wantErr {
+			t.Fatalf("ValidateURL(%q) error = %v, wantErr %v", tc.raw, err, tc.wantErr)
+		}
+	}
+}
+
 func TestInstallerExtension(t *testing.T) {
 	for _, ext := range PlatformInstallerExtensions {
 		if got := InstallerExtension("https://example.com/Tool" + ext + "?download=1#asset"); got != ext {
