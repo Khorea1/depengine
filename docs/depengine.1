@@ -667,6 +667,32 @@ Path to the personal manifest file, overriding the default XDG discovery
 (\fB$XDG_CONFIG_HOME/depengine/manifest.toml\fR, or
 \fB~/.config/depengine/manifest.toml\fR if unset).
 .TP
+.B DEPENGINE_CACHE_MAX_BYTES
+Maximum download-cache size in bytes. Defaults to 1 GiB; set to \fB0\fR
+to disable automatic eviction. Invalid values fall back to the default.
+.TP
+.B XDG_CONFIG_HOME
+Base directory for the personal manifest. The default manifest path is
+\fB$XDG_CONFIG_HOME/depengine/manifest.toml\fR, falling back to
+\fB~/.config/depengine/manifest.toml\fR.
+.TP
+.B XDG_CACHE_HOME
+Base directory for downloaded artifact cache entries. The cache is stored at
+\fB$XDG_CACHE_HOME/depengine/downloads\fR, falling back to
+\fB~/.cache/depengine/downloads\fR.
+.TP
+.B GITHUB_TOKEN, GH_TOKEN
+GitHub authentication token used for API resolution and private release-asset
+downloads. \fBGITHUB_TOKEN\fR takes precedence over \fBGH_TOKEN\fR. If neither
+is set, depengine may use an authenticated GitHub CLI.
+.TP
+.B NO_COLOR
+Disable ANSI styling when set to a non-empty value.
+.TP
+.B FORCE_COLOR
+Force ANSI styling for color-capable output when set, unless \fBNO_COLOR\fR
+is non-empty or \fBTERM=dumb\fR.
+.TP
 .B DEPENGINE_TRACE_ID
 Trace ID propagated to subprocesses for correlated logging.
 .TP

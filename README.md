@@ -2,7 +2,7 @@
 
 <p align="center">
   <b>Distro-agnostic dependency installer</b><br>
-  Declare the tools you need; depengine selects an available install method.
+  Declare required tools; depengine selects an available install method.
 </p>
 
 <p align="center">
@@ -13,9 +13,9 @@
 
 ---
 
-Write a `schema.toml` listing your tools. For each tool, depengine tries the
-configured installation methods in order until one succeeds. Methods include
-native package managers, cargo, go, pip, git, HTTP downloads, and flatpak.
+Write a `schema.toml` listing the required tools. For each tool, depengine
+tries the configured installation methods in order until one succeeds. Methods
+include native package managers, cargo, go, pip, git, HTTP downloads, and flatpak.
 depengine is a static Go binary with no runtime dependencies.
 
 ```sh
@@ -47,9 +47,9 @@ This README covers setup and common workflows. Detailed references:
 
 ---
 
-## Your first `schema.toml`
+## First `schema.toml`
 
-A schema describes **tools** (what you want) and, per tool, **methods** (how
+A schema describes **tools** (what to install) and, per tool, **methods** (how
 to get it). The engine tries methods in order until one succeeds.
 
 ```toml
@@ -69,7 +69,7 @@ ruff = { python = true }   # expands to pip + pipx + uv, pkg name = "ruff"
 ```
 
 ```sh
-depengine validate     # check the schema before touching your system
+depengine validate     # check the schema before modifying the system
 depengine install      # try every tool's methods in order
 depengine status       # see what actually got installed, and how
 ```
@@ -137,31 +137,30 @@ depengine merges the project schema with a personal manifest, field by field.
 | File | Lives in | Purpose | Shared? |
 |------|----------|---------|---------|
 | `schema.toml` | Project root | **What** to install — the project's dependency list | Yes, commit it |
-| `manifest.toml` | `~/.config/depengine/manifest.toml` | **Your personal install catalog** — how you install things, plus personal defaults | No, stays on your machine |
+| `manifest.toml` | `~/.config/depengine/manifest.toml` | **Personal install catalog** — installation recipes and machine-specific defaults | No, stays local |
 
 The manifest provides:
 
-1. Installation recipes shared across your local projects, such as per-distro
+1. Installation recipes shared across local projects, such as per-distro
    package names, candidate methods, and build steps.
 2. Machine-specific defaults that fill gaps in the project schema. They do not
    override project declarations.
 
 ```sh
 cp manifest.example.toml ~/.config/depengine/manifest.toml
-# then edit: add your tools, set per-distro package names, define custom methods
+# then edit: add tools, set per-distro package names, define custom methods
 ```
 
-When you run `install` or `validate`, your manifest merges with the
+When `install` or `validate` runs, the personal manifest merges with the
 project's schema. The merge follows these rules:
 
-1. **The schema always wins on conflict.** Your manifest fills in gaps; it
+1. **The schema always wins on conflict.** The manifest fills in gaps; it
    never overrides what the project declares.
-2. **Tools that only exist in your manifest are silently dropped by default**
-   — not an error, just excluded from the run. This stops you from
-   accidentally injecting a personal tool into a shared project. Opt in with
+2. **Tools that only exist in the personal manifest are silently dropped by default.**
+   They are excluded from the project run unless explicitly enabled. Opt in with
    `[manifest] allow_new_tools = true`.
 3. **A few fields can run arbitrary code** (`pre_install`, `post_install`,
-   `build`). Your manifest can set defaults for these, but the
+   `build`). The manifest can set defaults for these, but the
    schema still overrides them.
 
 See [manifest merge rules](docs/schema-reference.md#manifest-merge-rules).
@@ -250,8 +249,8 @@ checksum file on first use. This is **TOFU (Trust On First Use)**: the hash
 comes from the same server as the binary, so it is **not** verified against
 a trusted source (the engine logs a warning and suggests pinning the hash in
 `depengine.lock`). Two fields tune `:auto` resolution:
-  - `checksum_url` — explicit URL of the checksum file, when you host it
-    separately from the download.
+  - `checksum_url` — explicit URL of a checksum file hosted separately from
+    the download.
   - `checksum_file_format` — layout of that file: `sha256sum` (hash +
     filename), `bsd` (BSD extended), or `raw` (the whole file is the hash).
     Defaults to auto-detection.
@@ -302,9 +301,15 @@ VSCode) use it for autocomplete, inline validation, and hover docs. Add to
 
 | Variable | Effect |
 |----------|--------|
-| `DEPENGINE_DETECT_SCRIPT` | Path to `detect_os.sh` (default: next to the binary) |
+| `DEPENGINE_DETECT_SCRIPT` | Override path to `detect_os.sh`; otherwise the embedded script is used |
 | `DEPENGINE_MANIFEST` | Path to the personal manifest, overriding XDG discovery |
-| `XDG_STATE_HOME` | Base directory for the state file (default: `~/.local/state/depengine/state.json`) |
+| `DEPENGINE_CACHE_MAX_BYTES` | Download-cache size limit in bytes (default: 1 GiB; `0` disables eviction) |
+| `XDG_CONFIG_HOME` | Base directory for the personal manifest (default: `~/.config`) |
+| `XDG_CACHE_HOME` | Base directory for the download cache (default: `~/.cache`) |
+| `XDG_STATE_HOME` | Base directory for the state file (default: `~/.local/state`) |
+| `GITHUB_TOKEN` / `GH_TOKEN` | GitHub authentication token for API resolution and private release assets (`GITHUB_TOKEN` takes precedence) |
+| `NO_COLOR` | Disable ANSI styling when set to a non-empty value |
+| `FORCE_COLOR` | Force ANSI styling for color-capable output, unless `NO_COLOR` is set or `TERM=dumb` |
 | `DEPENGINE_TRACE_ID` | Trace ID propagated to subprocesses |
 | `DEPENGINE_LOG_JSON` | `=1` enables JSON log output |
 

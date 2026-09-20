@@ -7,11 +7,9 @@ all other versions and do not dispatch legacy parsers or migrations. See
 [Compatibility and format versioning](compatibility.md) for the freeze and
 future-major policy.
 
-This is the complete reference for every way to declare a tool in
-`schema.toml`. If you're just getting started, read
-[the README](../README.md#your-first-schematoml) first — it covers the
-~80% case in three lines. Come back here when you need something more
-specific.
+This document defines the supported tool declaration forms for
+`schema.toml`. For setup and common workflows, start with
+[the README](../README.md#first-schematoml).
 
 A schema describes **tools** (dependencies) and **methods** (how to install
 each one). The engine tries candidates in the effective configured method
@@ -146,7 +144,7 @@ prettier = { node = true }     # ≡ { npm = "prettier", pnpm = "prettier", bun 
 
 ### Cargo with a custom git source
 
-For when you need a fork or a source other than the official registry:
+For forks or sources outside the official registry:
 
 ```toml
 matugen = { cargo = { git = "https://github.com/InioX/matugen", rev = "0123456789abcdef" } }
@@ -205,13 +203,13 @@ fastfetch = { http = {
 
 > `checksum` accepts a literal hash (`sha256:...`) or `:auto` (automatic
 > resolution — this is Trust On First Use, not offline-verified; prefer a
-> literal hash when you can pin one). Use `checksum_url` for a separate
+> literal hash when available). Use `checksum_url` for a separate
 > source, `sudo_required = false` if root isn't needed, and
 > `signing_key`/`signature_url` for GPG verification.
 >
-> **If you omit `checksum` entirely, the file is installed with no
+> **If `checksum` is omitted entirely, the file is installed with no
 > integrity check at all.** Treat that the same as any other
-> arbitrary-code-execution risk in your schema.
+> arbitrary-code-execution risk in the schema.
 
 | Field | Required | Description |
 |-------|----------|--------------|
@@ -246,15 +244,13 @@ token is sent as an `Authorization` header rather than as a subprocess argument.
 
 Some projects publish a different asset filename convention per architecture
 (`amd64` vs `x86_64` vs `x64`, `arm64` vs `aarch64`, ...). Writing one `http`
-method per spelling works, but doesn't scale — a single tool can need 3+
-near-identical method blocks just to cover the archs you care about, one per
-spelling the upstream project happened to choose.
+method per spelling can require several near-identical blocks for a single
+tool, one for each naming convention used by the upstream project.
 
 `github` takes a repo and an asset filename **pattern** instead of a fixed
 URL, resolves the latest release via the GitHub API, and matches the pattern
-against the *actual* list of asset names in that release — so it works
-regardless of which spelling convention was used, without you having to
-enumerate it:
+against the release's asset names. This avoids enumerating architecture
+naming conventions in separate methods:
 
 ```toml
 [tools.yq.github]
@@ -283,7 +279,7 @@ chooses the first result heuristically.
 | `repo` | yes | `"owner/repo"` (or a full `https://github.com/owner/repo` URL) |
 | `asset` | yes | Filename pattern matched against the release's real asset names (see placeholders below) |
 | `release` | no | Named release tag to resolve instead of the latest release (e.g. `"nightly"` for a project's rolling pre-release). Defaults to `"latest"`. Mutually exclusive with `branch`. |
-| `branch` | no | Literal branch name, for projects that tag a release identically to a branch (e.g. an `"unstable"` rolling build). **Does not query git branches/commits** — it resolves the same way as `release` (GitHub's "get a release by tag" API), just documenting a different intent. Mutually exclusive with `release`. |
+| `branch` | no | Literal branch name, for projects that tag a release identically to a branch (e.g. an `"unstable"` rolling build). **Does not query git branches/commits** — it resolves through the same GitHub release-by-tag API as `release`, while recording branch intent. Mutually exclusive with `release`. |
 
 Every other field (`checksum`, `checksum_url`, `checksum_file_format`,
 `signature_url`, `signing_key`, `extract_to`, `binary`, `sudo_required`,
@@ -316,18 +312,17 @@ the [Placeholders](#placeholders) section):
   leading `v` (covers both `v1.2.3` tags and `1.2.3`-named assets).
 
 If no asset in the release matches the pattern, `depengine install` fails
-with an error listing every asset that *was* found in that release, so you
-can see exactly what's available and adjust `asset` — it never silently
-downloads the wrong file.
+with an error listing the assets found in that release. Adjust `asset` to a
+matching pattern; depengine does not silently select a non-matching file.
 
 ---
 
 ### Container: pull an image via docker/podman
 
-`container` pulls an image into the local image store — no shim, no
-command created on PATH, nothing added to your shell. It's the right fit
-for tools you exec via `docker run`/`podman run` yourself, not for a CLI
-tool you expect to just call by name afterward.
+`container` pulls an image into the local image store. It does not create a
+PATH shim or modify shell configuration. Use it for images invoked through
+`docker run` or `podman run`, not for commands expected to exist directly on
+PATH.
 
 ```toml
 [tools.obsidian.container]
@@ -492,16 +487,15 @@ are described above or alongside their examples.
 | `winget` | Windows Package Manager; typed `version`, `source`, `scope`, `architecture`, and `installer_type` | `git = { winget = { pkg = "Git.Git", version = "2.53.0", source = "winget", scope = "machine" } }` |
 | `scoop` | Windows via Scoop; optional exact `version`, `bucket`, `scope` (`user` or `global`), and architecture (`32bit`, `64bit`, `arm64`) | `git = { scoop = { pkg = "git", bucket = "main", version = "2.53.0.2" } }` |
 | `choco` | Windows, via Chocolatey; exact `version`, `prerelease`, typed `source`, and `architecture` | `firefox = { choco = { pkg = "firefox", version = "128.0.0", source = "https://community.chocolatey.org/api/v2/" } }` |
-
-### Ecosystem desired-state coverage
-
-The ecosystem methods do not yet provide uniform fidelity. `pip`, `npm`, `pipx`, `uv`, `gem`, `composer`, `bun`, `pnpm`, and Yarn Classic support exact `version` intent and verify the installed version using manager-native queries. Source selection is typed for `pip.index_url`, `npm.registry`, `pipx.index_url`, `uv.index`, `gem.source`, and `bun.registry`; `pipx` additionally supports `scope = "user" | "global"`, while `gem` supports `scope = "default" | "user"`. Composer, pnpm, and Yarn Classic currently model exact version but not an explicit registry/source in depengine. These methods are not yet universally lockable to immutable package identities, and authenticated registries must use out-of-band credential mechanisms rather than URL userinfo.
-
 | `conda` | Conda packages; deterministic `environment`/`prefix`, exact `version`/`build`, ordered `channels` | `numpy = { conda = { pkg = "numpy", environment = "data", version = "2.1.0", channels = ["conda-forge"] } }` |
 | `asdf` | asdf version manager plugins | `nodejs = { asdf = "nodejs" }` |
 | `git` | Clone + build (see field table above) | `ctpv = { git = { url = "...", build = "make install" } }` |
 | `github` | Recommended for GitHub Releases; matches an asset *pattern* against the real asset list (see above) | `yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }` |
 | `http` | Download + extract + checksum (see field table above) | `fastfetch = { http = { url = "...", checksum = "sha256:auto" } }` |
+
+### Ecosystem desired-state coverage
+
+The ecosystem methods do not yet provide uniform fidelity. `pip`, `npm`, `pipx`, `uv`, `gem`, `composer`, `bun`, `pnpm`, and Yarn Classic support exact `version` intent and verify the installed version using manager-native queries. Source selection is typed for `pip.index_url`, `npm.registry`, `pipx.index_url`, `uv.index`, `gem.source`, and `bun.registry`; `pipx` additionally supports `scope = "user" | "global"`, while `gem` supports `scope = "default" | "user"`. Composer, pnpm, and Yarn Classic currently model exact version but not an explicit registry/source in depengine. These methods are not yet universally lockable to immutable package identities, and authenticated registries must use out-of-band credential mechanisms rather than URL userinfo.
 
 ---
 
@@ -639,12 +633,12 @@ post_install = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
 A method's `when` clause can specify **multiple platform dimensions**. The
 engine evaluates all non-empty fields against the detected system facts:
 
-- **AND between fields** — if you specify `arch` + `libc` + `os`, all three
+- **AND between fields** — when `arch` + `libc` + `os` are specified, all three
   must match.
 - **OR within a field** — `arch = ["x86_64", "aarch64"]` is satisfied by
   either.
 - **Empty fields are ignored** — a condition with only `arch` set doesn't
-  care about libc.
+  require libc matching.
 - **Nil / absent `when` always matches.**
 - **`distro_family`** is the resolved *clan* (e.g. Ubuntu → `debian`), not
   the raw distro ID — use `distro_id` for exact-distro matching.
@@ -738,7 +732,7 @@ Version conditions compare numeric and textual runs rather than applying SemVer 
   when = { distro_family = ["arch"], kernel = ["6.7", "6.8", "6.9"] }
 ```
 
-> **Tip:** run `depengine why <tool>` to see which method applies on your
+> Run `depengine why <tool>` to inspect which method applies on the
 > current machine and why the others were skipped. Inferred native fallback
 > candidates are identified explicitly, and candidates excluded by `method_only`
 > are reported as policy exclusions rather than as unavailable methods.
@@ -850,8 +844,8 @@ yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }
 
 ## Manifest merge rules
 
-*(See [the README](../README.md#schematoml-vs-manifesttoml--two-layers-one-merged-config)
-for a high-level overview of the two layers.)*
+See [the README](../README.md#schematoml-and-manifesttoml) for an overview
+of the two layers.
 
 `schema.toml` and `~/.config/depengine/manifest.toml` merge per field,
 according to a declared strategy per field:
@@ -866,12 +860,12 @@ according to a declared strategy per field:
    `method_prefer`, `method_only`): the manifest may set
    these as defaults, but the schema layer wins on conflict — the
    manifest's value is replaced, not merged.
-5. **Tools only in the manifest** are silently dropped by default — your
-   personal manifest doesn't silently add tools to a project you're working
-   on. Set `[manifest] allow_new_tools = true` in your manifest to allow it
-   explicitly. Without it, manifest-only tools are stripped before
-   validation/merge — `depengine validate`/`install` neither errors nor
-   warns, they simply don't participate in the run.
+5. **Tools only in the manifest** are silently dropped by default. The
+   personal manifest does not add tools to a project unless
+   `[manifest] allow_new_tools = true` is set explicitly. Without it,
+   manifest-only tools are stripped before
+   validation/merge. `depengine validate` and `depengine install` do not
+   report an error or warning for those excluded tools.
 
 Run `depengine why <tool>` to see candidate status together with normalized
 non-secret identity fields (for example version/revision, registry/source,

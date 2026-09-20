@@ -2,6 +2,7 @@ package methodkind_test
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -783,6 +784,67 @@ func TestMissingRequirementsEliminatesLifecycleMismatch(t *testing.T) {
 	}
 	if missing&methodkind.CapabilityUpgrade == 0 {
 		t.Fatalf("missing = %v, want upgrade", methodkind.CapabilityNames(missing))
+	}
+}
+
+func TestSchemaReferenceMethodTableMatchesContracts(t *testing.T) {
+	data, err := os.ReadFile("../../docs/schema-reference.md")
+	if err != nil {
+		t.Fatalf("read schema reference: %v", err)
+	}
+
+	const tableHeader = "| Method | What it installs | Example |"
+	const nextHeading = "### Ecosystem desired-state coverage"
+	doc := string(data)
+	start := strings.Index(doc, tableHeader)
+	if start < 0 {
+		t.Fatalf("schema reference is missing method table header %q", tableHeader)
+	}
+	section := doc[start+len(tableHeader):]
+	end := strings.Index(section, nextHeading)
+	if end < 0 {
+		t.Fatalf("schema reference is missing heading %q after method table", nextHeading)
+	}
+	section = section[:end]
+
+	documented := map[string]int{}
+	for _, line := range strings.Split(section, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "| `") {
+			continue
+		}
+		rest := strings.TrimPrefix(line, "| `")
+		cut := strings.Index(rest, "`")
+		if cut <= 0 {
+			continue
+		}
+		documented[rest[:cut]]++
+	}
+
+	want := make(map[string]bool, len(methodkind.Contracts))
+	for _, contract := range methodkind.Contracts {
+		want[contract.Kind] = true
+	}
+
+	var missing, extra, duplicate []string
+	for kind := range want {
+		if documented[kind] == 0 {
+			missing = append(missing, kind)
+		}
+	}
+	for kind, count := range documented {
+		if !want[kind] {
+			extra = append(extra, kind)
+		}
+		if count > 1 {
+			duplicate = append(duplicate, kind)
+		}
+	}
+	slices.Sort(missing)
+	slices.Sort(extra)
+	slices.Sort(duplicate)
+	if len(missing) > 0 || len(extra) > 0 || len(duplicate) > 0 {
+		t.Fatalf("schema-reference method table drift: missing=%v extra=%v duplicate=%v", missing, extra, duplicate)
 	}
 }
 
