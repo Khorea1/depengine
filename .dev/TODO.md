@@ -856,7 +856,7 @@ ______________________________________________________________________
 
 - [ ] Document precisely when a table name is a method, a label, or a native-manager override.
 - [ ] Evaluate whether syntax can make these cases structurally distinct without losing concise shorthands.
-- [ ] Ensure diagnostics print both label and resolved method kind.
+- [x] Ensure diagnostics print both label and resolved method kind. (`MethodAttempt` now carries resolved `Kind` plus `Label`; `why` renders `label (kind)` in human output and exposes both in `--json`. `ToolResult` already separated `Method`/`MethodKind`.)
 - [ ] Add parser tests for ambiguous-looking declarations (`apt`, `brew`, `gh`, arbitrary labels, `kind = ...`).
 
 ______________________________________________________________________
