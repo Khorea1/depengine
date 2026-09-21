@@ -88,63 +88,13 @@ func newUndoCmd() *cobra.Command {
 }
 
 func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
-
 	if *undoList {
-		snapshots, err := state.ListSnapshots()
-		if err != nil {
-			log.Default.Error("list snapshots", "error", err)
-			return exitWithCode(3)
-		}
-		if len(snapshots) == 0 {
-			fmt.Fprintln(os.Stderr, "No snapshots available.")
-			return nil
-		}
-		c := newCLIStyle(os.Stderr)
-		fmt.Fprintln(c.w, c.bold("Available snapshots:"))
-		idxW := len(fmt.Sprintf("%d", len(snapshots)))
-		for i, s := range snapshots {
-			idx := i + 1
-			// Column order answers the choosing question left to right: which
-			// index do I pass, how old is it, what's inside. The full path is
-			// noise in the common case — the filename alone identifies it.
-			fmt.Fprintf(c.w, "  %s  %s  %s  %s\n",
-				c.cyan(padRight(fmt.Sprintf("%d", idx), idxW)),
-				padRight(relativeTime(s.Timestamp), 14),
-				c.dim(filepath.Base(s.Path)),
-				c.dim(fmt.Sprintf("(%s)", plural(s.ToolCount, "tool"))))
-		}
-		return nil
+		return listUndoSnapshots()
 	}
 
-	var snapPath string
-	if *undoSpecific != "" {
-		if n, err := strconv.Atoi(*undoSpecific); err == nil {
-			// Treat as index (1-based)
-			snapshots, listErr := state.ListSnapshots()
-			if listErr != nil {
-				log.Default.Error("list snapshots", "error", listErr)
-				return exitWithCode(3)
-			}
-			if n < 1 || n > len(snapshots) {
-				log.Default.Error("invalid snapshot index", "index", n, "max", len(snapshots))
-				return exitWithCode(2)
-			}
-			snapPath = snapshots[n-1].Path
-		} else {
-			// Treat as file path (backward compat)
-			snapPath = *undoSpecific
-		}
-	} else {
-		snapshots, err := state.ListSnapshots()
-		if err != nil {
-			log.Default.Error("list snapshots", "error", err)
-			return exitWithCode(3)
-		}
-		if len(snapshots) == 0 {
-			log.Default.Error("no snapshot available for undo")
-			return exitWithCode(1)
-		}
-		snapPath = snapshots[0].Path
+	snapPath, err := resolveUndoSnapshot(*undoSpecific)
+	if err != nil {
+		return err
 	}
 
 	snapState, err := state.LoadSnapshot(snapPath)
@@ -162,12 +112,7 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
 
 	curState := ls.State()
 
-	var toRemove []string
-	for name := range curState.Tools {
-		if _, ok := snapState.Tools[name]; !ok {
-			toRemove = append(toRemove, name)
-		}
-	}
+	toRemove := undoRemovals(curState, snapState)
 
 	if len(toRemove) == 0 {
 		// Do not restore snapshot state here: tools the user deliberately
@@ -177,68 +122,9 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
 		return nil
 	}
 
-	// The global "native" adapter (registered in main.go) is constructed
-	// with an empty clan and falls back to PATH-probing, which is ambiguous
-	// for manager binaries shared across clans (e.g. "pkg" on both termux
-	// and freebsd — same install command, different check/remove commands).
-	// Resolve the real clan from OS facts and make it authoritative here,
-	// the same way install/upgrade already do, so removal always uses the
-	// correct check/remove commands for this machine.
-	if facts, err := engine.GatherFacts(run.OSExecRunner{}); err == nil {
-		exec.Replace(exec.NewNativeAdapter(engine.ResolveFamily(facts)))
-	} else {
-		log.Default.Warn("could not gather OS facts; falling back to PATH-probing for native manager detection", "error", err)
-	}
-
-	// Capture original state before removal, so failed tools can be preserved.
-	originalTools := make(map[string]state.ToolState, len(curState.Tools))
-	for k, v := range curState.Tools {
-		originalTools[k] = v
-	}
-	succeeded := make(map[string]bool)
-	hadFailure := false
-	for _, name := range toRemove {
-		toolState := curState.Tools[name]
-
-		log.Default.Info("removing tool added after snapshot", "tool", name, "method", toolState.Method)
-
-		methodKind := toolState.MethodKind
-		if methodKind == "" {
-			methodKind = toolState.Method // fallback for old state files
-		}
-
-		adapter := exec.Lookup(methodKind)
-		if adapter == nil {
-			log.Default.Warn("adapter not found — manual removal may be needed", "tool", name, "method", toolState.Method, "methodKind", methodKind)
-			hadFailure = true
-			continue
-		}
-
-		if !exec.CanRemove(adapter) {
-			log.Default.Warn("adapter does not support automated removal — manual removal needed", "tool", name, "method", toolState.Method, "methodKind", methodKind)
-			hadFailure = true
-			continue
-		}
-
-		remover := adapter.(exec.Remover)
-		mc := &config.MethodCandidate{
-			Kind:   methodKind,
-			Config: toolState.Config,
-		}
-		tool := &config.Tool{Name: name}
-
-		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-		if err := remover.Remove(ctx, run.OSExecRunner{}, tool, mc); err != nil {
-			log.Default.Error("remove failed during undo", "tool", name, "error", err)
-			hadFailure = true
-			cancel()
-			continue
-		}
-		cancel()
-
-		log.Default.Info("removed during undo", "tool", name)
-		succeeded[name] = true
-	}
+	configureUndoNativeAdapter()
+	originalTools := cloneToolStates(curState.Tools)
+	succeeded, hadFailure := removeUndoTools(ctx, curState, toRemove)
 	if hadFailure {
 		log.Default.Error("undo: some removals failed — saving partial state")
 	}
@@ -272,4 +158,122 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
 
 	log.Default.Info("undo complete", "tools_removed", len(toRemove))
 	return nil
+}
+
+func listUndoSnapshots() error {
+	snapshots, err := state.ListSnapshots()
+	if err != nil {
+		log.Default.Error("list snapshots", "error", err)
+		return exitWithCode(3)
+	}
+	if len(snapshots) == 0 {
+		fmt.Fprintln(os.Stderr, "No snapshots available.")
+		return nil
+	}
+	c := newCLIStyle(os.Stderr)
+	fmt.Fprintln(c.w, c.bold("Available snapshots:"))
+	idxW := len(fmt.Sprintf("%d", len(snapshots)))
+	for i, snapshot := range snapshots {
+		fmt.Fprintf(c.w, "  %s  %s  %s  %s\n",
+			c.cyan(padRight(fmt.Sprintf("%d", i+1), idxW)),
+			padRight(relativeTime(snapshot.Timestamp), 14),
+			c.dim(filepath.Base(snapshot.Path)),
+			c.dim(fmt.Sprintf("(%s)", plural(snapshot.ToolCount, "tool"))))
+	}
+	return nil
+}
+
+func resolveUndoSnapshot(request string) (string, error) {
+	if request == "" {
+		snapshots, err := state.ListSnapshots()
+		if err != nil {
+			log.Default.Error("list snapshots", "error", err)
+			return "", exitWithCode(3)
+		}
+		if len(snapshots) == 0 {
+			log.Default.Error("no snapshot available for undo")
+			return "", exitWithCode(1)
+		}
+		return snapshots[0].Path, nil
+	}
+	index, err := strconv.Atoi(request)
+	if err != nil {
+		return request, nil // Backward-compatible explicit snapshot path.
+	}
+	snapshots, err := state.ListSnapshots()
+	if err != nil {
+		log.Default.Error("list snapshots", "error", err)
+		return "", exitWithCode(3)
+	}
+	if index < 1 || index > len(snapshots) {
+		log.Default.Error("invalid snapshot index", "index", index, "max", len(snapshots))
+		return "", exitWithCode(2)
+	}
+	return snapshots[index-1].Path, nil
+}
+
+func undoRemovals(current, snapshot *state.State) []string {
+	tools := make([]string, 0)
+	for name := range current.Tools {
+		if _, exists := snapshot.Tools[name]; !exists {
+			tools = append(tools, name)
+		}
+	}
+	return tools
+}
+
+func configureUndoNativeAdapter() {
+	if facts, err := engine.GatherFacts(run.OSExecRunner{}); err == nil {
+		exec.Replace(exec.NewNativeAdapter(engine.ResolveFamily(facts)))
+		return
+	} else {
+		log.Default.Warn("could not gather OS facts; falling back to PATH-probing for native manager detection", "error", err)
+	}
+}
+
+func cloneToolStates(tools map[string]state.ToolState) map[string]state.ToolState {
+	clone := make(map[string]state.ToolState, len(tools))
+	for name, tool := range tools {
+		clone[name] = tool
+	}
+	return clone
+}
+
+func removeUndoTools(ctx context.Context, current *state.State, names []string) (map[string]bool, bool) {
+	succeeded := make(map[string]bool, len(names))
+	hadFailure := false
+	for _, name := range names {
+		if !removeUndoTool(ctx, name, current.Tools[name]) {
+			hadFailure = true
+			continue
+		}
+		succeeded[name] = true
+	}
+	return succeeded, hadFailure
+}
+
+func removeUndoTool(ctx context.Context, name string, toolState state.ToolState) bool {
+	log.Default.Info("removing tool added after snapshot", "tool", name, "method", toolState.Method)
+	methodKind := toolState.MethodKind
+	if methodKind == "" {
+		methodKind = toolState.Method
+	}
+	adapter := exec.Lookup(methodKind)
+	if adapter == nil {
+		log.Default.Warn("adapter not found — manual removal may be needed", "tool", name, "method", toolState.Method, "methodKind", methodKind)
+		return false
+	}
+	if !exec.CanRemove(adapter) {
+		log.Default.Warn("adapter does not support automated removal — manual removal needed", "tool", name, "method", toolState.Method, "methodKind", methodKind)
+		return false
+	}
+	removeCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	err := adapter.(exec.Remover).Remove(removeCtx, run.OSExecRunner{}, &config.Tool{Name: name}, &config.MethodCandidate{Kind: methodKind, Config: toolState.Config})
+	if err != nil {
+		log.Default.Error("remove failed during undo", "tool", name, "error", err)
+		return false
+	}
+	log.Default.Info("removed during undo", "tool", name)
+	return true
 }
