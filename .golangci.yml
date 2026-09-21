@@ -7,5 +7,14 @@ linters:
   enable:
     - govet
     - ineffassign
+    - errcheck
+    - staticcheck
+    - unused
+    - gosec
+    - errorlint
 issues:
   max-same-issues: 50
+  # Baseline: only issues in code changed since master block CI. The
+  # pre-existing backlog (unchecked errors, gosec findings, dead code)
+  # is triaged incrementally instead of blocking unrelated work.
+  new-from-rev: master
