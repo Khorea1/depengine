@@ -153,7 +153,7 @@ At least one adapter accepts a field that does not affect actual installation be
 **Acceptance criteria**
 
 - [x] `asdf.version = "X"` installs/checks X rather than silently using latest.
-- [ ] Contract tests fail when a schema field is accepted but ignored.
+- [x] Contract tests fail when a schema field is accepted but ignored. (`TestResolveEffectFieldsMoveStaticIntent` differentially probes every `EffectResolve` field across all contracts: distinct values must move `BuildCandidateIntent` or fail validation. Triage exclusions are runtime-resolved dimensions pending P1.1 static enrichment: `release`/`branch` on artifact methods, `git.url`, `native.pkg_overrides`. Execute/verify-phase fields remain covered by per-adapter behavior tests.)
 - [ ] Every adapter has at least one behavior test per non-trivial declared field.
 
 ______________________________________________________________________
