@@ -221,6 +221,7 @@ func runWhy(toolName string, whySchema, whyManifest *string, whyNoManifest, whyJ
 	if *whyJSON {
 		type jsonAttempt struct {
 			Kind       string                    `json:"kind"`
+			Label      string                    `json:"label,omitempty"`
 			Status     string                    `json:"status"`
 			Reason     string                    `json:"reason,omitempty"`
 			Intent     map[string]string         `json:"intent,omitempty"`
@@ -228,7 +229,7 @@ func runWhy(toolName string, whySchema, whyManifest *string, whyNoManifest, whyJ
 		}
 		out := make([]jsonAttempt, 0, len(attempts))
 		for _, a := range attempts {
-			out = append(out, jsonAttempt{Kind: a.Kind, Status: a.Status, Reason: a.Error, Intent: a.Intent, PlanIntent: a.PlanIntent})
+			out = append(out, jsonAttempt{Kind: a.Kind, Label: a.Label, Status: a.Status, Reason: a.Error, Intent: a.Intent, PlanIntent: a.PlanIntent})
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -242,12 +243,17 @@ func runWhy(toolName string, whySchema, whyManifest *string, whyNoManifest, whyJ
 	c := newCLIStyle(os.Stdout)
 	fmt.Fprintf(c.w, "%s  %s\n\n", c.bold(fmt.Sprintf("Why %s?", toolName)), c.dim(plural(len(attempts), "candidate method")+", first available wins"))
 	kindW := 0
-	for _, a := range attempts {
-		if len(a.Kind) > kindW {
-			kindW = len(a.Kind)
+	names := make([]string, len(attempts))
+	for i, a := range attempts {
+		names[i] = a.DisplayName()
+		if a.Label != "" {
+			names[i] += " (" + a.Kind + ")"
+		}
+		if len(names[i]) > kindW {
+			kindW = len(names[i])
 		}
 	}
-	for _, a := range attempts {
+	for i, a := range attempts {
 		reason := a.Error
 		if reason == "" {
 			reason = "ready to install"
@@ -255,7 +261,7 @@ func runWhy(toolName string, whySchema, whyManifest *string, whyNoManifest, whyJ
 		if intent := formatWhyIntent(a.Intent); intent != "" {
 			reason += " [" + intent + "]"
 		}
-		kind := padRight(a.Kind, kindW)
+		kind := padRight(names[i], kindW)
 		switch a.Status {
 		case "would_install":
 			fmt.Fprintf(c.w, "  %s %s  %s\n", c.green("✓"), kind, c.dim("→ "+reason))

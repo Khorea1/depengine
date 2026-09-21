@@ -199,12 +199,11 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 				}
 				pin.Latest = tag
 			}
-			_, hasRepo := method.Config["repo"]
-			if (method.Kind == "github" || hasRepo) && githubUsesLatest(method.Config) {
+			if usesGitHubReleasePin(method) && githubUsesLatest(method.Config) {
 				repo, _ := method.Config["repo"].(string)
 				tag, err := resolveLatestReleaseTag(ctx, repo, rn)
 				if err != nil {
-					return nil, fmt.Errorf("lock: resolve %s/github: %w", name, err)
+					return nil, fmt.Errorf("lock: resolve %s/%s release: %w", name, method.Kind, err)
 				}
 				pin.Latest = tag
 			}
@@ -276,8 +275,7 @@ func Apply(s *config.Schema, l *Lock) {
 			// Substitute {latest} in the current URL template with the
 			// pinned version tag.
 			if pin.Latest != "" {
-				_, hasRepo := method.Config["repo"]
-				if (method.Kind == "github" || hasRepo) && githubUsesLatest(method.Config) {
+				if usesGitHubReleasePin(method) && githubUsesLatest(method.Config) {
 					method.Config["release"] = pin.Latest
 				}
 				if urlRaw, ok := method.Config["url"].(string); ok && strings.Contains(urlRaw, "{latest}") {
@@ -307,4 +305,18 @@ func githubUsesLatest(cfg map[string]any) bool {
 	}
 	release, _ := cfg["release"].(string)
 	return release == "" || release == "latest"
+}
+
+// usesGitHubReleasePin reports whether a method resolves its release through
+// the GitHub releases API. Every method carrying a repo reference does: the
+// github method requires repo, and url-less http/msi/appimage/android methods
+// address their asset the same way. Dispatching on the repo reference instead
+// of the method kind keeps release resolution open to every current and
+// future repo-backed method without a kind switch.
+func usesGitHubReleasePin(method *config.MethodCandidate) bool {
+	if method == nil {
+		return false
+	}
+	_, hasRepo := method.Config["repo"]
+	return hasRepo
 }

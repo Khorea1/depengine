@@ -83,7 +83,7 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 		if method.Label != "" {
 			displayKind = method.Label
 		}
-		attempt := MethodAttempt{Kind: displayKind}
+		attempt := MethodAttempt{Kind: method.Kind, Label: method.Label}
 		planIntent, mismatch := candidatePlanIntent(tool, method)
 		attempt.PlanIntent = planIntent
 
@@ -171,12 +171,9 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 			if selected[method] {
 				continue
 			}
-			displayKind := method.Kind
-			if method.Label != "" {
-				displayKind = method.Label
-			}
 			attempt := MethodAttempt{
-				Kind:   displayKind,
+				Kind:   method.Kind,
+				Label:  method.Label,
 				Status: "skip_policy",
 				Error:  "excluded by method_only",
 			}

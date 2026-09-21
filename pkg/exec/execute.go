@@ -480,7 +480,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		default:
 		}
 
-		attempt := MethodAttempt{Kind: displayKind}
+		attempt := MethodAttempt{Kind: method.Kind, Label: method.Label}
 		planIntent, mismatch := candidatePlanIntent(tool, method)
 		attempt.PlanIntent = planIntent
 

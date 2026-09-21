@@ -47,7 +47,7 @@ ______________________________________________________________________
 
 **Acceptance criteria**
 
-- [ ] A dry-run over a manifest containing hooks, sources, prerequisites, native sync, HTTP/GitHub artifacts, Git builds, MSI, ecosystem managers, and containers causes zero externally visible host mutations.
+- [x] A dry-run over a manifest containing hooks, sources, prerequisites, native sync, HTTP/GitHub artifacts, Git builds, MSI, ecosystem managers, and containers causes zero externally visible host mutations. (`TestDryRunMatrixLeavesZeroHostMutations` runs all of these through mocked adapters + fake runner and asserts zero adapter Install calls, no hook sentinels, no mutating runner argv, an untouched state dir, and all-would-install status; the same test with dry-run disabled installs everything, proving the tripwires are live.)
 - [x] A regression test proves a sentinel file is not created by any hook during dry-run.
 - [x] A fake runner test proves no mutating package-manager command is invoked during dry-run.
 - [x] CLI wording never claims “no changes” unless this invariant is actually enforced.
@@ -153,7 +153,7 @@ At least one adapter accepts a field that does not affect actual installation be
 **Acceptance criteria**
 
 - [x] `asdf.version = "X"` installs/checks X rather than silently using latest.
-- [ ] Contract tests fail when a schema field is accepted but ignored.
+- [x] Contract tests fail when a schema field is accepted but ignored. (`TestResolveEffectFieldsMoveStaticIntent` differentially probes every `EffectResolve` field across all contracts: distinct values must move `BuildCandidateIntent` or fail validation. Triage exclusions are runtime-resolved dimensions pending P1.1 static enrichment: `release`/`branch` on artifact methods, `git.url`, `native.pkg_overrides`. Execute/verify-phase fields remain covered by per-adapter behavior tests.)
 - [ ] Every adapter has at least one behavior test per non-trivial declared field.
 
 ______________________________________________________________________
@@ -176,7 +176,7 @@ The Go HTTP downloader can attach GitHub authentication without exposing the tok
 
 - [x] Presence of `curl`/`wget` cannot cause a private GitHub install to lose authentication support.
 - [x] Tokens/secrets never appear in logged commands or serialized project state.
-- [ ] Downloader capability mismatches fail during planning with a clear explanation. (The adapter-neutral contract boundary now emits typed `auth_requirement` vs `unsupported_capability` planner errors with stable missing-capability names; production planner wiring still needs to consume this helper everywhere.)
+- [x] Downloader capability mismatches fail during planning with a clear explanation. (The adapter-neutral contract boundary emits typed `auth_requirement` vs `unsupported_capability` planner errors with stable missing-capability names; the executor static-planning boundary and `validate` now consume `CheckRequirements`, so `CandidatePlanIntent`, `why`/`dry-run` skip reasons, upgrade preflight, and validation messages all carry the class. Schema/runtime wiring for explicit secret references remains TODO.)
 
 ______________________________________________________________________
 
@@ -856,7 +856,7 @@ ______________________________________________________________________
 
 - [ ] Document precisely when a table name is a method, a label, or a native-manager override.
 - [ ] Evaluate whether syntax can make these cases structurally distinct without losing concise shorthands.
-- [ ] Ensure diagnostics print both label and resolved method kind.
+- [x] Ensure diagnostics print both label and resolved method kind. (`MethodAttempt` now carries resolved `Kind` plus `Label`; `why` renders `label (kind)` in human output and exposes both in `--json`. `ToolResult` already separated `Method`/`MethodKind`.)
 - [ ] Add parser tests for ambiguous-looking declarations (`apt`, `brew`, `gh`, arbitrary labels, `kind = ...`).
 
 ______________________________________________________________________

@@ -188,12 +188,38 @@ func TestResolveAllPinsGitHubLatestReleases(t *testing.T) {
 	}
 }
 
+func TestReleasePinDispatchIsKindAgnostic(t *testing.T) {
+	original := resolveLatestReleaseTag
+	resolveLatestReleaseTag = func(_ context.Context, repo string, _ run.Runner) (string, error) {
+		return "v9.9.9-" + filepath.Base(repo), nil
+	}
+	t.Cleanup(func() { resolveLatestReleaseTag = original })
+
+	// An http method addressing its asset by repo must pin through the same
+	// GitHub release path as a github method: dispatch keys on the repo
+	// reference, never on the method kind.
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"httprepo": {Name: "httprepo", Methods: []*config.MethodCandidate{{Kind: "http", Config: map[string]any{"repo": "owner/httprepo", "asset": "tool.tar.gz"}}}},
+	}}
+	l, err := ResolveAll(context.Background(), s, &run.FakeRunner{})
+	if err != nil {
+		t.Fatalf("ResolveAll: %v", err)
+	}
+	if got := l.Tools["httprepo/http/0"].Latest; got != "v9.9.9-httprepo" {
+		t.Fatalf("repo-backed http pin = %q, want v9.9.9-httprepo", got)
+	}
+	Apply(s, l)
+	if got := s.Tools["httprepo"].Methods[0].Config["release"]; got != "v9.9.9-httprepo" {
+		t.Fatalf("applied release = %v, want v9.9.9-httprepo", got)
+	}
+}
+
 func TestApplyPinsGitHubReleaseWithoutOverwritingExplicitRefs(t *testing.T) {
 	s := &config.Schema{Tools: map[string]*config.Tool{
-		"implicit": {Name: "implicit", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{}}}},
-		"latest":   {Name: "latest", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{"release": "latest"}}}},
-		"release":  {Name: "release", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{"release": "nightly"}}}},
-		"branch":   {Name: "branch", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{"branch": "edge"}}}},
+		"implicit": {Name: "implicit", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{"repo": "owner/implicit", "asset": "tool.tar.gz"}}}},
+		"latest":   {Name: "latest", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{"repo": "owner/latest", "asset": "tool.tar.gz", "release": "latest"}}}},
+		"release":  {Name: "release", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{"repo": "owner/release", "asset": "tool.tar.gz", "release": "nightly"}}}},
+		"branch":   {Name: "branch", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{"repo": "owner/branch", "asset": "tool.tar.gz", "branch": "edge"}}}},
 	}}
 	l := &Lock{Version: 1, Tools: map[string]ToolPin{
 		"implicit/github/0": {Latest: "v1.0.0"},
