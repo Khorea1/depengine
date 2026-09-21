@@ -36,6 +36,25 @@ establish the trustworthiness of a supplied key.
 Signing-key URLs and artifact URLs reject embedded HTTP(S) credentials. Secret
 material must not be stored in a manifest merely to make a download work.
 
+## Release artifact verification
+
+Release archives ship four independent integrity signals; checksums alone
+are not the whole story:
+
+- `depengine_<version>_checksums.txt` — SHA-256 over every archive.
+- Keyless cosign signatures (`.sig` + `.pem`) over the checksum file,
+  issued via Fulcio/Rekor through GitHub OIDC. No long-lived keys exist
+  to steal. Verify with
+  `cosign verify-blob --certificate <file>.pem --signature <file>.sig --certificate-identity-regexp '.*' --certificate-oidc-issuer https://token.actions.githubusercontent.com <checksums>`.
+- GitHub build provenance attestation over the checksum file, binding the
+  artifacts to the exact workflow run that produced them
+  (`gh attestation verify <checksums> --repo Khorea1/depengine`).
+- SPDX SBOMs per archive, derived from the Go module graph.
+
+A release is trustworthy only when the checksum matches, the cosign
+signature validates against the repository's workflow identity, and the
+provenance attestation pins the same commit.
+
 ## Credentials and redaction
 
 Private registry/artifact authentication should use the authentication

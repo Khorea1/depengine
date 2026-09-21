@@ -96,6 +96,25 @@ checksum:
   name_template: "depengine_{{ .Version }}_checksums.txt"
   algorithm: sha256
 
+# SPDX SBOMs for every published archive, derived from the module graph.
+sboms:
+  - id: depengine-sboms
+    artifacts: archive
+
+# Keyless cosign signatures over the checksum file (Fulcio + Rekor via
+# GitHub OIDC; no long-lived keys). Requires `id-token: write` on the
+# release job and cosign on PATH.
+signs:
+  - id: depengine-signs
+    cmd: cosign
+    args:
+      - sign-blob
+      - "--yes"
+      - "--output-certificate=${signature}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+    artifacts: checksum
+
 changelog:
   sort: asc
   filters:
