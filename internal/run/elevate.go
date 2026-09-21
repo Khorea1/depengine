@@ -9,10 +9,34 @@ import (
 	"sync"
 )
 
+// Elevator owns privilege-elevation detection state: the probed method,
+// whether probing happened, and any test override. It replaces the former
+// package globals so the state can live in an instance (injected by callers
+// in the future) instead of process-wide mutable variables. The
+// package-level functions below delegate to Default, preserving behavior
+// for existing callers.
+//
+// An Elevator must not be copied after first use.
+type Elevator struct {
+	mu        sync.Mutex
+	method    string // "" = unprobed/not-found, "sudo"|"doas"|"pkexec"|"run0" = detected
+	probed    bool   // true once detectElevation has been called
+	overridden bool   // true when Override forced a method, bypassing euid/probing
+}
+
+// NewElevator returns an unprobed Elevator.
+func NewElevator() *Elevator {
+	return &Elevator{}
+}
+
+// Default is the process-wide Elevator backing the package-level functions.
+// New code that needs isolation should construct its own Elevator.
+var Default = NewElevator()
+
 // RunElevated runs one argv command through the selected elevation method.
 // It never invokes a shell.
-func RunElevated(ctx context.Context, rn Runner, name string, args ...string) Result {
-	prefix := ElevationPrefix()
+func (e *Elevator) RunElevated(ctx context.Context, rn Runner, name string, args ...string) Result {
+	prefix := e.Prefix()
 	if len(prefix) == 0 {
 		return rn.Run(ctx, name, args...)
 	}
@@ -21,12 +45,11 @@ func RunElevated(ctx context.Context, rn Runner, name string, args ...string) Re
 	return rn.Run(ctx, prefix[0], argv...)
 }
 
-var (
-	elevationMu         sync.Mutex
-	elevationMethod     string // "" = unprobed/not-found, "sudo"|"doas"|"pkexec"|"run0" = detected
-	elevationProbed     bool   // true once detectElevation has been called
-	elevationOverridden bool   // true when OverrideElevation forced a method, bypassing euid/probing
-)
+// RunElevated runs one argv command through the selected elevation method.
+// It never invokes a shell.
+func RunElevated(ctx context.Context, rn Runner, name string, args ...string) Result {
+	return Default.RunElevated(ctx, rn, name, args...)
+}
 
 // elevationCandidates is the ordered list of elevation binaries to probe.
 // Each entry is checked in order; the first that works is cached.
@@ -84,16 +107,44 @@ func detectElevation() string {
 	return ""
 }
 
+// Method returns the detected elevation method, probing once
+// and caching the result on the Elevator.
+func (e *Elevator) Method() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if !e.probed {
+		e.method = detectElevation()
+		e.probed = true
+	}
+	return e.method
+}
+
 // ElevationMethod returns the detected elevation method, probing once
 // and caching the result for the lifetime of the process.
 func ElevationMethod() string {
-	elevationMu.Lock()
-	defer elevationMu.Unlock()
-	if !elevationProbed {
-		elevationMethod = detectElevation()
-		elevationProbed = true
+	return Default.Method()
+}
+
+// Prefix returns a command prefix to elevate privileges.
+// Returns ["sudo"], ["doas"], ["pkexec"], or ["run0"] when elevation is
+// available and needed, or nil when already root or no method works.
+//
+// A method forced via Override always wins: tests that simulate a
+// non-root environment must get the forced prefix back even when the test
+// process itself happens to run as root (e.g. inside a container).
+func (e *Elevator) Prefix() []string {
+	e.mu.Lock()
+	forced := e.overridden
+	e.mu.Unlock()
+
+	if !forced && os.Geteuid() == 0 {
+		return nil
 	}
-	return elevationMethod
+	method := e.Method()
+	if method == "" {
+		return nil
+	}
+	return []string{method}
 }
 
 // ElevationPrefix returns a command prefix to elevate privileges.
@@ -104,18 +155,7 @@ func ElevationMethod() string {
 // non-root environment must get the forced prefix back even when the test
 // process itself happens to run as root (e.g. inside a container).
 func ElevationPrefix() []string {
-	elevationMu.Lock()
-	forced := elevationOverridden
-	elevationMu.Unlock()
-
-	if !forced && os.Geteuid() == 0 {
-		return nil
-	}
-	method := ElevationMethod()
-	if method == "" {
-		return nil
-	}
-	return []string{method}
+	return Default.Prefix()
 }
 
 // IsElevationPrefix reports whether name is a known privilege-elevation command.
@@ -125,13 +165,20 @@ func IsElevationPrefix(name string) bool {
 	return name == "sudo" || name == "doas" || name == "pkexec" || name == "run0"
 }
 
+// Override forces a specific elevation method on the Elevator.
+// Pass "sudo", "doas", "pkexec", or "run0" to simulate a particular environment.
+// Pass "" to restore auto-detection (re-detects on next call).
+func (e *Elevator) Override(method string) {
+	e.mu.Lock()
+	e.method = method
+	e.probed = method != "" // "" means "re-probe on next call"
+	e.overridden = method != ""
+	e.mu.Unlock()
+}
+
 // OverrideElevation forces a specific elevation method for testing.
 // Pass "sudo", "doas", "pkexec", or "run0" to simulate a particular environment.
 // Pass "" to restore auto-detection (re-detects on next call).
 func OverrideElevation(method string) {
-	elevationMu.Lock()
-	elevationMethod = method
-	elevationProbed = method != "" // "" means "re-probe on next call"
-	elevationOverridden = method != ""
-	elevationMu.Unlock()
+	Default.Override(method)
 }
