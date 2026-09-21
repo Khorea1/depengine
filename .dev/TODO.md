@@ -47,7 +47,7 @@ ______________________________________________________________________
 
 **Acceptance criteria**
 
-- [ ] A dry-run over a manifest containing hooks, sources, prerequisites, native sync, HTTP/GitHub artifacts, Git builds, MSI, ecosystem managers, and containers causes zero externally visible host mutations.
+- [x] A dry-run over a manifest containing hooks, sources, prerequisites, native sync, HTTP/GitHub artifacts, Git builds, MSI, ecosystem managers, and containers causes zero externally visible host mutations. (`TestDryRunMatrixLeavesZeroHostMutations` runs all of these through mocked adapters + fake runner and asserts zero adapter Install calls, no hook sentinels, no mutating runner argv, an untouched state dir, and all-would-install status; the same test with dry-run disabled installs everything, proving the tripwires are live.)
 - [x] A regression test proves a sentinel file is not created by any hook during dry-run.
 - [x] A fake runner test proves no mutating package-manager command is invoked during dry-run.
 - [x] CLI wording never claims “no changes” unless this invariant is actually enforced.
