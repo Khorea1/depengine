@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/plan"
 )
 
 func TestValidatePlanIntentsRejectsUnsupportedVersionSemantics(t *testing.T) {
@@ -12,6 +13,20 @@ func TestValidatePlanIntentsRejectsUnsupportedVersionSemantics(t *testing.T) {
 	r := validatePlanIntents(s)
 	if !r.HasErrors() || !strings.Contains(r.Errors[0].Message, "exact-version") {
 		t.Fatalf("result = %+v, want exact-version capability error", r)
+	}
+}
+
+func TestValidatePlanIntentsExplainsCapabilityClass(t *testing.T) {
+	s := schemaWithMethod("native", map[string]any{"pkg": "demo", "version": "1.2.3"})
+	r := validatePlanIntents(s)
+	if !r.HasErrors() {
+		t.Fatalf("result = %+v, want capability error", r)
+	}
+	if !strings.Contains(r.Errors[0].Message, string(plan.ErrorUnsupportedCapability)) {
+		t.Fatalf("message = %q, want stable error class", r.Errors[0].Message)
+	}
+	if !strings.Contains(r.Errors[0].Message, "exact-version") {
+		t.Fatalf("message = %q, want stable missing-capability name", r.Errors[0].Message)
 	}
 }
 

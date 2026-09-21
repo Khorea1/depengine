@@ -1,7 +1,6 @@
 package validate
 
 import (
-	"fmt"
 	"sort"
 
 	"github.com/Khorea1/depengine/pkg/config"
@@ -30,16 +29,16 @@ func validatePlanIntents(s *config.Schema) *Result {
 				r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, ""), Message: err.Error()})
 				continue
 			}
-			missing, err := contract.MissingPlanCapabilities(intent)
-			if err != nil {
-				r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, ""), Message: err.Error()})
-				continue
-			}
-			if missing != 0 {
+			// Capability mismatches fail here with the same typed boundary
+			// used by execution planning, so validation explains auth
+			// requirements distinctly from unsupported capabilities.
+			// The typed error already names the method, the missing
+			// capabilities, and the stable error class.
+			if err := contract.CheckRequirements(intent, methodkind.CandidateRequirements{}); err != nil {
 				r.Add(ValidationError{
 					Code:    ErrInvalidValue,
 					Field:   fieldPath(toolName, i, ""),
-					Message: fmt.Sprintf("method %q cannot honor requested capabilities: %v", method.Kind, methodkind.CapabilityNames(missing)),
+					Message: err.Error(),
 				})
 			}
 		}

@@ -176,7 +176,7 @@ The Go HTTP downloader can attach GitHub authentication without exposing the tok
 
 - [x] Presence of `curl`/`wget` cannot cause a private GitHub install to lose authentication support.
 - [x] Tokens/secrets never appear in logged commands or serialized project state.
-- [ ] Downloader capability mismatches fail during planning with a clear explanation. (The adapter-neutral contract boundary now emits typed `auth_requirement` vs `unsupported_capability` planner errors with stable missing-capability names; production planner wiring still needs to consume this helper everywhere.)
+- [x] Downloader capability mismatches fail during planning with a clear explanation. (The adapter-neutral contract boundary emits typed `auth_requirement` vs `unsupported_capability` planner errors with stable missing-capability names; the executor static-planning boundary and `validate` now consume `CheckRequirements`, so `CandidatePlanIntent`, `why`/`dry-run` skip reasons, upgrade preflight, and validation messages all carry the class. Schema/runtime wiring for explicit secret references remains TODO.)
 
 ______________________________________________________________________
 

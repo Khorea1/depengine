@@ -2,7 +2,6 @@ package exec
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/methodkind"
@@ -10,17 +9,15 @@ import (
 	"github.com/Khorea1/depengine/pkg/planner"
 )
 
-// candidatePlanIntent is the shared static planning boundary for execution and
-// explain. It deliberately performs no host probes or mutations.
 // CandidatePlanIntent exposes the executor's static planning boundary to
 // composition-root commands that must validate one already-selected candidate
 // before performing a destructive transition. It performs no host probes or
-// mutations and returns an error for every capability mismatch the normal
-// executor would skip.
+// mutations and returns the typed planner error for every capability mismatch
+// the normal executor would skip.
 func CandidatePlanIntent(tool *config.Tool, method *config.MethodCandidate) (*plan.ResolvedInstallPlan, error) {
-	intent, mismatch := candidatePlanIntent(tool, method)
-	if mismatch != "" {
-		return intent, fmt.Errorf("%s", mismatch)
+	intent, err := candidatePlanIntentErr(tool, method)
+	if err != nil {
+		return intent, err
 	}
 	if intent == nil {
 		if method == nil {
@@ -31,24 +28,41 @@ func CandidatePlanIntent(tool *config.Tool, method *config.MethodCandidate) (*pl
 	return intent, nil
 }
 
+// candidatePlanIntent is the shared static planning boundary for execution and
+// explain. It deliberately performs no host probes or mutations. The mismatch
+// text is the typed planner error rendered as a string, so reasons shown by
+// `why`, dry-run, and execution reports carry the same stable error class.
 func candidatePlanIntent(tool *config.Tool, method *config.MethodCandidate) (*plan.ResolvedInstallPlan, string) {
-	if method == nil {
+	intent, err := candidatePlanIntentErr(tool, method)
+	if err != nil {
+		return intent, err.Error()
+	}
+	if intent == nil {
 		return nil, ""
+	}
+	return intent, ""
+}
+
+// candidatePlanIntentErr resolves the static plan intent and enforces the
+// adapter-neutral capability boundary. Capability mismatches — including
+// authentication requirements — surface as typed *plan.PlannerError values
+// (auth_requirement vs unsupported_capability) from the single
+// CheckRequirements helper, so planning failures carry a stable,
+// machine-readable class everywhere instead of only in methodkind unit tests.
+func candidatePlanIntentErr(tool *config.Tool, method *config.MethodCandidate) (*plan.ResolvedInstallPlan, error) {
+	if method == nil {
+		return nil, nil
 	}
 	contract, ok := methodkind.Lookup(method.Kind)
 	if !ok {
-		return nil, ""
+		return nil, nil
 	}
 	intent, err := planner.BuildCandidateIntent(tool, method)
 	if err != nil {
-		return nil, fmt.Sprintf("method %q has invalid plan intent: %v", method.Kind, err)
+		return nil, fmt.Errorf("method %q has invalid plan intent: %w", method.Kind, err)
 	}
-	missing, err := contract.MissingPlanCapabilities(intent)
-	if err != nil {
-		return &intent, fmt.Sprintf("method %q has invalid plan intent: %v", method.Kind, err)
+	if err := contract.CheckRequirements(intent, methodkind.CandidateRequirements{}); err != nil {
+		return &intent, err
 	}
-	if missing == 0 {
-		return &intent, ""
-	}
-	return &intent, fmt.Sprintf("method %q cannot honor requested capabilities: %s", method.Kind, strings.Join(methodkind.CapabilityNames(missing), ", "))
+	return &intent, nil
 }
