@@ -32,8 +32,8 @@ func newUpdateCmd() *cobra.Command {
 		Short:   ifPT("Resolver e fixar versões em depengine.lock", "Resolve and pin versions into depengine.lock"),
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
-			runUpdate(updateSchema, updateManifest, updateNoManifest, updateLock, updateProfile, updateFrozen, updateDryRun, updateVerbose)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runUpdate(cmd.Context(), updateSchema, updateManifest, updateNoManifest, updateLock, updateProfile, updateFrozen, updateDryRun, updateVerbose)
 			return nil
 		},
 	}
@@ -49,8 +49,7 @@ func newUpdateCmd() *cobra.Command {
 	return cmd
 }
 
-func runUpdate(updateSchema, updateManifest *string, updateNoManifest *bool, updateLock, updateProfile *string, updateFrozen, updateDryRun, updateVerbose *bool) {
-	ctx := context.Background()
+func runUpdate(ctx context.Context, updateSchema, updateManifest *string, updateNoManifest *bool, updateLock, updateProfile *string, updateFrozen, updateDryRun, updateVerbose *bool) {
 	lg := log.Default
 
 	noManifest := *updateNoManifest

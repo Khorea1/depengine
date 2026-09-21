@@ -17,6 +17,7 @@ import (
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/log"
 	"github.com/Khorea1/depengine/pkg/methodkind"
+	"github.com/Khorea1/depengine/pkg/plan"
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
@@ -31,6 +32,38 @@ func NewHTTPAdapter() *HTTPAdapter {
 }
 
 func (a *HTTPAdapter) Kind() string { return "http" }
+
+// ResolvePlan performs the same artifact resolution Install uses, but without
+// downloading or mutating anything. This makes dry-run an auditable resolved
+// plan rather than only a method-selection preview.
+func (a *HTTPAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	return resolveDownloadPlan(ctx, rn, mc, intent)
+}
+
+func resolveDownloadPlan(ctx context.Context, rn run.Runner, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent == nil {
+		return nil, nil
+	}
+	resolvedURL, version, err := ResolveArtifactDetails(ctx, mc, rn)
+	if err != nil {
+		return intent, err
+	}
+	resolved := *intent
+	resolved.Identity = intent.Identity
+	if version == "" {
+		version, _ = mc.Config["_resolved_version"].(string)
+	}
+	if version != "" && resolved.Identity.Version == "" {
+		resolved.Identity.Version = version
+	}
+	artifact := plan.Artifact{URL: resolvedURL}
+	if len(intent.Artifacts) > 0 {
+		artifact = intent.Artifacts[0]
+		artifact.URL = resolvedURL
+	}
+	resolved.Artifacts = []plan.Artifact{artifact}
+	return &resolved, nil
+}
 
 // RequiresElevation applies the same path-derived default and explicit
 // sudo_required override used by Install.

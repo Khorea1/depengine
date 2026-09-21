@@ -29,15 +29,23 @@ func stringConfig(mc *config.MethodCandidate, key string) string {
 
 // ResolveArtifact resolves URL templates or an exact GitHub release asset.
 func ResolveArtifact(ctx context.Context, mc *config.MethodCandidate, rn run.Runner) (string, error) {
+	url, _, err := ResolveArtifactDetails(ctx, mc, rn)
+	return url, err
+}
+
+// ResolveArtifactDetails resolves the concrete artifact URL and, when the
+// resolution source exposes one, the release/version tag used to select it.
+func ResolveArtifactDetails(ctx context.Context, mc *config.MethodCandidate, rn run.Runner) (string, string, error) {
 	ref := artifactRef(mc)
 	if ref.URL != "" {
 		if ref.Repo != "" || ref.Asset != "" {
-			return "", fmt.Errorf("artifact: url and repo+asset are mutually exclusive")
+			return "", "", fmt.Errorf("artifact: url and repo+asset are mutually exclusive")
 		}
-		return ResolveLatest(ctx, ref.URL, rn)
+		resolved, err := ResolveLatest(ctx, ref.URL, rn)
+		return resolved, "", err
 	}
 	if ref.Repo == "" || ref.Asset == "" {
-		return "", fmt.Errorf("artifact: no url or complete repo+asset configured")
+		return "", "", fmt.Errorf("artifact: no url or complete repo+asset configured")
 	}
 	release := ref.Release
 	if ref.Branch != "" {
@@ -46,11 +54,11 @@ func ResolveArtifact(ctx context.Context, mc *config.MethodCandidate, rn run.Run
 	if release == "latest" {
 		release = ""
 	}
-	url, _, err := ghrelease.ResolveAssetURL(ctx, ref.Repo, ref.Asset, ref.Arch, ref.OS, release, rn)
+	url, tag, err := ghrelease.ResolveAssetURL(ctx, ref.Repo, ref.Asset, ref.Arch, ref.OS, release, rn)
 	if err != nil {
-		return "", fmt.Errorf("artifact: %w", err)
+		return "", "", fmt.Errorf("artifact: %w", err)
 	}
-	return url, nil
+	return url, tag, nil
 }
 
 // ResolveLatest replaces `{latest}` in a URL with the resolved version from

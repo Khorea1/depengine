@@ -96,7 +96,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		lg = log.New(os.Stderr, log.LevelFromString(*installLogLevel))
 	}
 
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	if *installSortBy != "" {
 		if _, ok := exec.ParseSortField(*installSortBy); !ok {

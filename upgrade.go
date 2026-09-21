@@ -51,8 +51,8 @@ func newUpgradeCmd() *cobra.Command {
 		Short:   ifPT("Atualizar ferramentas para as versões do depengine.lock", "Upgrade installed tools to pinned versions"),
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
-			runUpgrade(upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runUpgrade(cmd.Context(), upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary)
 			return nil
 		},
 	}
@@ -74,8 +74,7 @@ func newUpgradeCmd() *cobra.Command {
 // it calls adapter.Remove followed by adapter.Install, then updates state.
 // Body unchanged from the pre-Cobra version — only the flag declarations
 // above it moved.
-func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool) {
-	ctx := context.Background()
+func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool) {
 	lg := log.Default
 
 	noManifest := *upgradeNoManifest
@@ -405,7 +404,7 @@ func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgra
 		}
 
 		// Step 3: Probe version.
-		newVer := probeVersion(adapter, tr, ot.tool, installMC)
+		newVer := probeVersion(ctx, adapter, tr, ot.tool, installMC)
 
 		// Step 4: Update state.
 		newTS := upgradedToolState(ot.ts, ot.methodKind, ot.tool, installMC, newVer, ot.pinnedVer, time.Now().UTC())
@@ -610,12 +609,12 @@ func findTrackedMethodCandidate(tool *config.Tool, ts state.ToolState, defaultOr
 }
 
 // probeVersion calls the adapter's InstalledVersion if it implements Versioner.
-func probeVersion(adapter exec.Adapter, runner run.Runner, tool *config.Tool, mc *config.MethodCandidate) string {
+func probeVersion(ctx context.Context, adapter exec.Adapter, runner run.Runner, tool *config.Tool, mc *config.MethodCandidate) string {
 	v, ok := adapter.(exec.Versioner)
 	if !ok {
 		return ""
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	ver, err := v.InstalledVersion(ctx, runner, tool, mc)
 	if err != nil || ver == "" {

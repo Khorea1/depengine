@@ -44,7 +44,8 @@ const (
 type ToolResult struct {
 	Tool       string
 	Status     StatusEnum
-	Method     string          // method that succeeded (or last one that failed)
+	Method     string          // schema/display method that succeeded (or last one that failed)
+	Provider   string          // concrete runtime provider when it differs (e.g. apt/xbps for native)
 	MethodKind string          // technical kind (e.g. "http"), not display label
 	Error      string          // populated only if StatusFailed
 	Methods    []MethodAttempt // history of attempts (for --verbose)

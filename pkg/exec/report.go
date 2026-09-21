@@ -160,7 +160,7 @@ func (r *ExecReport) Detail() string {
 	sep := strings.Repeat("─", toolWidth+statusWidth+methodWidth+2)
 
 	var b strings.Builder
-	header := fmt.Sprintf(format, "Tool", "Status", "Method")
+	header := fmt.Sprintf(format, "Tool", "Status", "Via")
 	b.WriteString(header)
 	b.WriteByte('\n')
 	b.WriteString(sep)
@@ -168,6 +168,9 @@ func (r *ExecReport) Detail() string {
 
 	for _, tr := range r.Tools {
 		method := tr.Method
+		if tr.Provider != "" {
+			method = tr.Provider
+		}
 		if method == "" {
 			method = "—"
 		}
@@ -190,12 +193,24 @@ func (r *ExecReport) Detail() string {
 			methodWidth, method,
 		)
 		b.WriteString(row)
+		// Error and plan-detail lines live on their own indented row and
+		// do not participate in column alignment: never truncate them.
+		// Truncating the tail drops exactly the informative suffix
+		// (asset filename, version, arch, root-cause) a dry-run must show.
 		if tr.Status == StatusFailed && tr.Error != "" {
-			errLine := "    ↳ " + truncate(tr.Error, toolWidth+statusWidth+methodWidth-4)
+			errLine := "    ↳ " + tr.Error
 			if color {
 				errLine = "\033[31m" + errLine + "\033[0m"
 			}
 			b.WriteString(errLine)
+			b.WriteByte('\n')
+		}
+		for _, detail := range planDetailLines(tr) {
+			detailLine := "    ↳ " + detail
+			if color {
+				detailLine = "\033[2m" + detailLine + "\033[0m"
+			}
+			b.WriteString(detailLine)
 			b.WriteByte('\n')
 		}
 	}
@@ -207,12 +222,80 @@ func (r *ExecReport) Detail() string {
 	return b.String()
 }
 
+func planDetailLines(tr ToolResult) []string {
+	if tr.PlanIntent == nil {
+		return nil
+	}
+	p := tr.PlanIntent
+	lines := make([]string, 0, 5+len(p.Artifacts))
+	if p.Identity.Package != "" && (tr.Provider != "" || p.Identity.Package != tr.Tool) {
+		lines = append(lines, "package: "+p.Identity.Package)
+	}
+	if p.Identity.Version != "" {
+		lines = append(lines, "version: "+p.Identity.Version)
+	} else if p.Identity.Revision != "" {
+		lines = append(lines, "revision: "+p.Identity.Revision)
+	} else if detail := requestedVersionDetail(p.Identity.RequestedVersion); detail != "" {
+		lines = append(lines, detail)
+	}
+	if p.Identity.Source != "" {
+		lines = append(lines, "source: "+p.Identity.Source)
+	}
+	if p.Identity.Registry != "" && p.Identity.Registry != p.Identity.Source {
+		lines = append(lines, "registry: "+p.Identity.Registry)
+	}
+	for _, artifact := range p.Artifacts {
+		switch {
+		case artifact.URL != "":
+			lines = append(lines, "url: "+artifact.URL)
+		case artifact.LocalPath != "":
+			lines = append(lines, "artifact: "+artifact.LocalPath)
+		}
+	}
+	return lines
+}
+
+func requestedVersionDetail(intent *plan.VersionIntent) string {
+	if intent == nil {
+		return ""
+	}
+	switch intent.Mode {
+	case plan.VersionGitBranch:
+		return "branch: " + intent.Value
+	case plan.VersionGitTag:
+		return "tag: " + intent.Value
+	case plan.VersionGitRevision:
+		return "revision: " + intent.Value
+	case plan.VersionConstraint:
+		return "version constraint: " + intent.Value
+	case plan.VersionChannel:
+		if intent.Channel == nil {
+			return ""
+		}
+		parts := make([]string, 0, 3)
+		if intent.Channel.Name != "" {
+			parts = append(parts, intent.Channel.Name)
+		}
+		if intent.Channel.Track != "" {
+			parts = append(parts, "track="+intent.Channel.Track)
+		}
+		if intent.Channel.Risk != "" {
+			parts = append(parts, "risk="+intent.Channel.Risk)
+		}
+		if len(parts) > 0 {
+			return "channel: " + strings.Join(parts, ", ")
+		}
+	}
+	return ""
+}
+
 // JSON returns the report as a JSON string.
 func (r *ExecReport) JSON() string {
 	type jsonTool struct {
 		Tool       string                    `json:"tool"`
 		Status     string                    `json:"status"`
 		Method     string                    `json:"method,omitempty"`
+		Provider   string                    `json:"provider,omitempty"`
 		Error      string                    `json:"error,omitempty"`
 		PlanIntent *plan.ResolvedInstallPlan `json:"plan_intent,omitempty"`
 	}
@@ -239,6 +322,7 @@ func (r *ExecReport) JSON() string {
 			Tool:       tr.Tool,
 			Status:     statusLabel(tr.Status),
 			Method:     tr.Method,
+			Provider:   tr.Provider,
 			Error:      tr.Error,
 			PlanIntent: tr.PlanIntent,
 		})

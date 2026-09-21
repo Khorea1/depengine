@@ -197,7 +197,8 @@ ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = [{ run =
 ```toml
 fastfetch = { http = {
   url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb",
-  checksum = "sha256:auto"
+  checksum = "sha256:auto",
+  when = { distro_family = ["debian", "mint"], arch = ["x86_64"] }
 } }
 ```
 
@@ -210,6 +211,21 @@ fastfetch = { http = {
 > **If `checksum` is omitted entirely, the file is installed with no
 > integrity check at all.** Treat that the same as any other
 > arbitrary-code-execution risk in the schema.
+>
+> `.deb` is a distribution-specific package format, not a portable Linux
+> binary. depengine accepts a generic `.deb` automatically on Debian-family
+> targets (including the separate `mint` clan). On native Termux, a `.deb`
+> built specifically for Termux is valid, but must be scoped explicitly with
+> `when = { distro_family = ["termux"] }` or `distro_id = ["termux"]` so a
+> Debian/Ubuntu package is not mistaken for a Termux package merely because
+> both environments provide `apt`/`dpkg`. A `proot-distro` Debian/Ubuntu guest
+> is detected as that guest distro and follows the normal Debian-family rule.
+> Other non-Debian targets reject `.deb` by default; an exact
+> `distro_family`/`distro_id` condition acts as an explicit author override for
+> a package known to be built for that target. CPU architecture remains a
+> separate compatibility requirement; hard-coded `amd64`/`arm64` artifacts
+> should also be gated with `when.arch` (or expressed through the appropriate
+> architecture mapping/placeholders).
 
 | Field | Required | Description |
 |-------|----------|--------------|

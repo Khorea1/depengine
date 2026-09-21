@@ -17,6 +17,7 @@ import (
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/ghrelease"
+	"github.com/Khorea1/depengine/pkg/plan"
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
@@ -146,55 +147,100 @@ func nonEmptyLines(output string) []string {
 	return lines
 }
 
+type resolvedCloneSource struct {
+	URL         string
+	Branch      string
+	Tag         string
+	Revision    string
+	ResolvedTag string
+}
+
+// resolveCloneSource performs the read-only part of Install's git source
+// resolution. Keeping it shared with ResolvePlan prevents dry-run from
+// presenting a URL/ref different from the one Install will consume.
+func resolveCloneSource(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (resolvedCloneSource, error) {
+	url, ok := mc.Config["url"].(string)
+	if !ok || url == "" {
+		name := ""
+		if tool != nil {
+			name = tool.Name
+		}
+		return resolvedCloneSource{}, fmt.Errorf("git: no url configured for tool %q", name)
+	}
+	if parsed, err := urlpkg.Parse(url); err == nil && (strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https")) && parsed.User != nil {
+		return resolvedCloneSource{}, fmt.Errorf("git: embedded URL credentials are not allowed; use an external credential helper")
+	}
+
+	source := resolvedCloneSource{URL: url}
+	source.Branch, _ = mc.Config["branch"].(string)
+	source.Tag, _ = mc.Config["tag"].(string)
+	source.Revision, _ = mc.Config["rev"].(string)
+	configuredRefs := 0
+	for _, ref := range []string{source.Branch, source.Tag, source.Revision} {
+		if ref != "" {
+			configuredRefs++
+		}
+	}
+	if configuredRefs > 1 {
+		return resolvedCloneSource{}, fmt.Errorf("git: branch, tag, and rev are mutually exclusive")
+	}
+	origURL := source.URL
+	if strings.Contains(origURL, "{latest}") && configuredRefs > 0 {
+		return resolvedCloneSource{}, fmt.Errorf("git: {latest} URL resolution cannot be combined with branch, tag, or rev")
+	}
+
+	resolvedURL, err := ghrelease.ResolveLatest(ctx, source.URL, rn)
+	if err != nil {
+		return resolvedCloneSource{}, fmt.Errorf("git: resolve latest: %w", err)
+	}
+	if strings.Contains(origURL, "{latest}") && resolvedURL != origURL {
+		prefix, suffix, _ := strings.Cut(origURL, "{latest}")
+		source.URL = prefix + suffix
+		source.ResolvedTag = strings.TrimPrefix(resolvedURL, prefix)
+		source.ResolvedTag = strings.TrimSuffix(source.ResolvedTag, suffix)
+	} else {
+		source.URL = resolvedURL
+	}
+	return source, nil
+}
+
+// ResolvePlan exposes the concrete clone URL and resolved/requested ref without
+// cloning or otherwise mutating host state.
+func (a *GitAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent == nil {
+		return nil, nil
+	}
+	source, err := resolveCloneSource(ctx, rn, tool, mc)
+	if err != nil {
+		return intent, err
+	}
+	resolved := *intent
+	resolved.Identity = intent.Identity
+	resolved.Identity.Source = source.URL
+	switch {
+	case source.ResolvedTag != "":
+		resolved.Identity.Version = source.ResolvedTag
+	case source.Revision != "":
+		resolved.Identity.Revision = source.Revision
+	}
+	return &resolved, nil
+}
+
 // Install clones the repository, optionally builds, and optionally copies
 // artifacts to the configured extract_to directory.
 func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	if _, err := managedPaths(mc); err != nil {
 		return err
 	}
-	url, ok := mc.Config["url"].(string)
-	if !ok || url == "" {
-		return fmt.Errorf("git: no url configured for tool %q", tool.Name)
-	}
-
-	if parsed, err := urlpkg.Parse(url); err == nil && (strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https")) && parsed.User != nil {
-		return fmt.Errorf("git: embedded URL credentials are not allowed; use an external credential helper")
-	}
-
-	origURL := url
-	branch, _ := mc.Config["branch"].(string)
-	tag, _ := mc.Config["tag"].(string)
-	rev, _ := mc.Config["rev"].(string)
-	configuredRefs := 0
-	for _, ref := range []string{branch, tag, rev} {
-		if ref != "" {
-			configuredRefs++
-		}
-	}
-	if configuredRefs > 1 {
-		return fmt.Errorf("git: branch, tag, and rev are mutually exclusive")
-	}
-	if strings.Contains(origURL, "{latest}") && configuredRefs > 0 {
-		return fmt.Errorf("git: {latest} URL resolution cannot be combined with branch, tag, or rev")
-	}
-
-	resolvedURL, err := ghrelease.ResolveLatest(ctx, url, rn)
+	source, err := resolveCloneSource(ctx, rn, tool, mc)
 	if err != nil {
-		return fmt.Errorf("git: resolve latest: %w", err)
+		return err
 	}
-
-	// If {latest} was resolved, extract the tag and use it as --branch.
-	// Embedding the tag in the clone URL (e.g. repo.gitv1.2.3) is invalid
-	// for git clone — the tag must be passed as a separate argument.
-	var resolvedTag string
-	if strings.Contains(origURL, "{latest}") && resolvedURL != origURL {
-		prefix, suffix, _ := strings.Cut(origURL, "{latest}")
-		url = prefix + suffix
-		resolvedTag = strings.TrimPrefix(resolvedURL, prefix)
-		resolvedTag = strings.TrimSuffix(resolvedTag, suffix)
-	} else {
-		url = resolvedURL
-	}
+	url := source.URL
+	branch := source.Branch
+	tag := source.Tag
+	rev := source.Revision
+	resolvedTag := source.ResolvedTag
 
 	// Determine clone depth (default: shallow). 0 means full history.
 	depth, err := normalizedGitDepth(mc.Config["depth"])
@@ -452,4 +498,5 @@ func (a *GitAdapter) CanRemove() bool { return true }
 
 // Ensure GitAdapter implements exec.Adapter at compile time.
 var _ exec.Adapter = (*GitAdapter)(nil)
+var _ exec.PlanResolver = (*GitAdapter)(nil)
 var _ exec.Remover = (*GitAdapter)(nil)

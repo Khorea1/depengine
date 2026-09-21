@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/Khorea1/depengine/pkg/container"
 	"github.com/Khorea1/depengine/pkg/ecosystem"
@@ -16,9 +19,15 @@ var version = "dev"
 
 func main() {
 	initAdapters()
+	// SIGINT/SIGTERM cancel in-flight work instead of killing the
+	// process mid-mutation: adapter subprocesses receive SIGTERM as a
+	// group (see pkg/run) and the preparation journal stays in a
+	// recoverable state for the next run.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	root := newRootCmd()
 	root.SetArgs(normalizeArgs(os.Args[1:]))
-	if err := root.Execute(); err != nil {
+	if err := root.ExecuteContext(ctx); err != nil {
 		os.Exit(1)
 	}
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/plan"
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
@@ -54,6 +55,12 @@ func NewAndroidAdapter() *AndroidAdapter {
 }
 
 func (a *AndroidAdapter) Kind() string { return "android" }
+
+// ResolvePlan reuses HTTP artifact resolution so dry-run reports the concrete
+// URL/version consumed by the delegated downloader.
+func (a *AndroidAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	return resolveDownloadPlan(ctx, rn, mc, intent)
+}
 
 // Available requires both the Termux environment itself (cheap, dependency-
 // free signal: $PREFIX is set by every Termux shell and essentially never
@@ -121,3 +128,4 @@ func (a *AndroidAdapter) Install(ctx context.Context, rn run.Runner, tool *confi
 
 // Compile-time interface check.
 var _ exec.Adapter = (*AndroidAdapter)(nil)
+var _ exec.PlanResolver = (*AndroidAdapter)(nil)

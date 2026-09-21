@@ -127,8 +127,8 @@ func newWhyCmd() *cobra.Command {
 		Short:   ifPT("Explicar como uma ferramenta seria instalada", "Explain how a tool would be installed"),
 		GroupID: groupInspect,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			runWhy(args[0], whySchema, whyManifest, whyNoManifest, whyJSON, whyFields)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runWhy(cmd.Context(), args[0], whySchema, whyManifest, whyNoManifest, whyJSON, whyFields)
 			return nil
 		},
 	}
@@ -163,7 +163,7 @@ func formatWhyIntent(intent map[string]string) string {
 // cobra.ExactArgs(1) now enforces the argument count that the old manual
 // length check did, and toolName arrives as a plain argument instead of
 // remain[0].
-func runWhy(toolName string, whySchema, whyManifest *string, whyNoManifest, whyJSON, whyFields *bool) {
+func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string, whyNoManifest, whyJSON, whyFields *bool) {
 	s, err := config.ParseProjectSchema(*whySchema, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -217,7 +217,7 @@ func runWhy(toolName string, whySchema, whyManifest *string, whyNoManifest, whyJ
 	ex := exec.New()
 	exec.WithRunner(run.OSExecRunner{})(ex)
 	exec.WithFacts(facts)(ex)
-	attempts := ex.ExplainTool(context.Background(), tool, clan)
+	attempts := ex.ExplainTool(ctx, tool, clan)
 	if *whyJSON {
 		type jsonAttempt struct {
 			Kind       string                    `json:"kind"`

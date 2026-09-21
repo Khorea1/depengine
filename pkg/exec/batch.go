@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/methodkind"
 	"github.com/Khorea1/depengine/pkg/native"
 	"github.com/Khorea1/depengine/pkg/plan"
 	"github.com/Khorea1/depengine/pkg/run"
@@ -39,6 +40,7 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 				continue
 			}
 			planIntent, mismatch := candidatePlanIntent(tool, method)
+			planIntent = ex.hostResolvedPlanIntent(method, planIntent)
 			if mismatch != "" {
 				// Batch is only an optimization. A candidate rejected by the static
 				// planning boundary must fall back to the serial path, which records
@@ -89,6 +91,31 @@ func displayMethodKind(method *config.MethodCandidate) string {
 		return ""
 	}
 	return method.Kind
+}
+
+func (ex *Executor) providerForMethodKind(kind string) string {
+	if kind == "native" {
+		return ex.nativeManagerName
+	}
+	if native.IsNativeManagerName(kind) || methodkind.IsKnownKind(kind) {
+		return kind
+	}
+	return ""
+}
+
+func (ex *Executor) hostResolvedPlanIntent(method *config.MethodCandidate, intent *plan.ResolvedInstallPlan) *plan.ResolvedInstallPlan {
+	if intent == nil || method == nil {
+		return intent
+	}
+	if method.Kind != "native" && !native.IsNativeManagerName(method.Kind) {
+		return intent
+	}
+	resolved := *intent
+	resolved.Identity = intent.Identity
+	if pkg := pkgFromConfig(method, ex.clan); pkg != "" {
+		resolved.Identity.Package = pkg
+	}
+	return &resolved
 }
 
 var pkgNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9.+-_]*$`)

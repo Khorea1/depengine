@@ -8,6 +8,7 @@ import (
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/plan"
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
@@ -52,6 +53,12 @@ func NewAppImageAdapter() *AppImageAdapter {
 }
 
 func (a *AppImageAdapter) Kind() string { return "appimage" }
+
+// ResolvePlan reuses HTTP artifact resolution so dry-run reports the concrete
+// URL/version consumed by the delegated downloader.
+func (a *AppImageAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	return resolveDownloadPlan(ctx, rn, mc, intent)
+}
 
 func (a *AppImageAdapter) RequiresElevation(tool *config.Tool, mc *config.MethodCandidate) bool {
 	installDir, name := binaryTarget(tool, mc)
@@ -188,4 +195,5 @@ func (a *AppImageAdapter) CanRemove() bool { return a.http.CanRemove() }
 
 // Compile-time interface checks.
 var _ exec.Adapter = (*AppImageAdapter)(nil)
+var _ exec.PlanResolver = (*AppImageAdapter)(nil)
 var _ exec.Remover = (*AppImageAdapter)(nil)

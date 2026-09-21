@@ -2,6 +2,7 @@ package planner
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/localartifact"
@@ -18,6 +19,9 @@ func applyArtifact(p *plan.ResolvedInstallPlan, method *config.MethodCandidate, 
 		raw := stringValue(method.Config, "local_path")
 		if raw == "" {
 			return fmt.Errorf("local_path is required")
+		}
+		if matches := config.PlaceholderRe.FindAllString(raw, -1); len(matches) > 0 {
+			return fmt.Errorf("local_path must be fully resolved before planning; unresolved placeholder(s): %s", strings.Join(matches, ", "))
 		}
 		localPath, err := plan.NormalizeProjectPath(raw)
 		if err != nil {
