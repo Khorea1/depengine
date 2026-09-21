@@ -14,8 +14,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/Khorea1/depengine/internal/run"
 )
@@ -26,15 +24,6 @@ import (
 // release asset itself rather than resolving {latest}) can present as the
 // same client instead of drifting out of sync with a copy-pasted literal.
 const UserAgent = "github.com/Khorea1/depengine/0.1"
-
-// GitHub URL patterns for release/tag resolution.
-var (
-	cache = sync.Map{}
-
-	// httpClient is an HTTP client with a 30s timeout used for GitHub API calls.
-	httpClient   = &http.Client{Timeout: 30 * time.Second}
-	httpClientMu sync.RWMutex
-)
 
 // release represents a GitHub release API response.
 type release struct {
@@ -48,21 +37,16 @@ type asset struct {
 	BrowserDownloadURL string `json:"browser_download_url"`
 }
 
-// releaseCache caches full release payloads (tag + asset list), separately
-// from the tag-only cache above, since most callers of fetchLatestTag never
-// need the asset list and we don't want to force a heavier decode on them.
-var releaseCache = sync.Map{}
-
 // ResolveLatest replaces `{latest}` in a URL with the resolved version from
-// GitHub's releases API. Uses an in-memory cache so the same owner/repo is
-// only resolved once per process lifecycle.
+// GitHub's releases API. Uses the Resolver's in-memory cache so the same
+// owner/repo is only resolved once per Resolver.
 //
 // For non-GitHub URLs, {latest} is replaced with the literal string "latest"
 // as a best-effort fallback (some hosting services accept this as a version).
 //
 // Authentication: If GITHUB_TOKEN or GH_TOKEN environment variable is set, it
 // is used as a Bearer token in the Authorization header. This raises the
-func ResolveLatest(ctx context.Context, urlStr string, rn run.Runner) (string, error) {
+func (r *Resolver) ResolveLatest(ctx context.Context, urlStr string, rn run.Runner) (string, error) {
 	if !strings.Contains(urlStr, "{latest}") {
 		return urlStr, nil
 	}
@@ -73,7 +57,7 @@ func ResolveLatest(ctx context.Context, urlStr string, rn run.Runner) (string, e
 		return strings.ReplaceAll(urlStr, "{latest}", "latest"), nil
 	}
 
-	tag, err := fetchLatestTag(ctx, owner, repo, rn)
+	tag, err := r.fetchLatestTag(ctx, owner, repo, rn)
 	if err != nil {
 		return urlStr, err
 	}
@@ -86,11 +70,11 @@ func ResolveLatest(ctx context.Context, urlStr string, rn run.Runner) (string, e
 // for URLs without the placeholder (e.g. pins already baked in by
 // depengine.lock) it returns "" since the tag cannot be recovered
 // generically from an arbitrary URL.
-func VersionTag(ctx context.Context, urlStr string, rn run.Runner) (string, error) {
+func (r *Resolver) VersionTag(ctx context.Context, urlStr string, rn run.Runner) (string, error) {
 	if !strings.Contains(urlStr, "{latest}") {
 		return "", nil
 	}
-	return ResolveLatestTag(ctx, urlStr, rn)
+	return r.ResolveLatestTag(ctx, urlStr, rn)
 }
 
 // ResolveLatestTag resolves the bare version tag that `{latest}` would
@@ -106,32 +90,32 @@ func VersionTag(ctx context.Context, urlStr string, rn run.Runner) (string, erro
 // silently re-extracting a stale, fully-baked URL that no longer matches
 // what schema.toml declares. It mirrors how Cargo.lock/package-lock.json pin
 // versions rather than resolved download URLs.
-func ResolveLatestTag(ctx context.Context, urlStr string, rn run.Runner) (string, error) {
+func (r *Resolver) ResolveLatestTag(ctx context.Context, urlStr string, rn run.Runner) (string, error) {
 	owner, repo, ok := githubRepoFromURL(urlStr)
 	if !ok {
 		return "latest", nil
 	}
-	return fetchLatestTag(ctx, owner, repo, rn)
+	return r.fetchLatestTag(ctx, owner, repo, rn)
 }
 
 // ResolveLatestReleaseTag returns the latest release tag for an owner/repo
 // reference. Unlike ResolveLatestTag, it does not require a URL template.
-func ResolveLatestReleaseTag(ctx context.Context, repo string, rn run.Runner) (string, error) {
+func (r *Resolver) ResolveLatestReleaseTag(ctx context.Context, repo string, rn run.Runner) (string, error) {
 	owner, name, ok := splitRepo(repo)
 	if !ok {
 		return "", fmt.Errorf("resolve latest: %q is not an owner/repo GitHub reference", repo)
 	}
-	return fetchLatestTag(ctx, owner, name, rn)
+	return r.fetchLatestTag(ctx, owner, name, rn)
 }
 
 // fetchLatestTag calls GitHub's releases API for owner/repo and returns the
-// latest release's tag name, using the shared in-memory cache so the same
-// repo is only fetched once per process lifecycle.
-func fetchLatestTag(ctx context.Context, owner, repo string, rn run.Runner) (string, error) {
+// latest release's tag name, using the Resolver's in-memory cache so the same
+// repo is only fetched once per Resolver.
+func (r *Resolver) fetchLatestTag(ctx context.Context, owner, repo string, rn run.Runner) (string, error) {
 	cacheKey := owner + "/" + repo
 
 	// Check cache.
-	if v, ok := cache.Load(cacheKey); ok {
+	if v, ok := r.tags.Load(cacheKey); ok {
 		return v.(string), nil
 	}
 
@@ -145,14 +129,14 @@ func fetchLatestTag(ctx context.Context, owner, repo string, rn run.Runner) (str
 	req.Header.Set("User-Agent", UserAgent)
 
 	// Add GitHub token if available to raise rate limit from 60 to 5000 req/h.
-	if token := githubToken(ctx, rn); token != "" {
+	if token := r.githubToken(ctx, rn); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := func() (*http.Response, error) {
-		httpClientMu.RLock()
-		client := httpClient
-		httpClientMu.RUnlock()
+		r.httpMu.RLock()
+		client := r.http
+		r.httpMu.RUnlock()
 		return client.Do(req)
 	}()
 	if err != nil {
@@ -172,18 +156,18 @@ func fetchLatestTag(ctx context.Context, owner, repo string, rn run.Runner) (str
 		return "", fmt.Errorf("resolve latest: empty tag_name from GitHub")
 	}
 
-	cache.Store(cacheKey, rel.TagName)
+	r.tags.Store(cacheKey, rel.TagName)
 	return rel.TagName, nil
 }
 
 // fetchLatestRelease calls GitHub's releases API for owner/repo and returns
 // the full latest release payload (tag name + asset list), using its own
 // in-memory cache (separate from fetchLatestTag's) so the same repo is only
-// fetched once per process lifecycle even when both tag-only and
+// fetched once per Resolver even when both tag-only and
 // asset-matching callers are in play during the same run.
-func fetchLatestRelease(ctx context.Context, owner, repo string, rn run.Runner) (*release, error) {
+func (r *Resolver) fetchLatestRelease(ctx context.Context, owner, repo string, rn run.Runner) (*release, error) {
 	cacheKey := owner + "/" + repo
-	if v, ok := releaseCache.Load(cacheKey); ok {
+	if v, ok := r.releases.Load(cacheKey); ok {
 		return v.(*release), nil
 	}
 
@@ -194,14 +178,14 @@ func fetchLatestRelease(ctx context.Context, owner, repo string, rn run.Runner) 
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", UserAgent)
-	if token := githubToken(ctx, rn); token != "" {
+	if token := r.githubToken(ctx, rn); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := func() (*http.Response, error) {
-		httpClientMu.RLock()
-		client := httpClient
-		httpClientMu.RUnlock()
+		r.httpMu.RLock()
+		client := r.http
+		r.httpMu.RUnlock()
 		return client.Do(req)
 	}()
 	if err != nil {
@@ -221,7 +205,7 @@ func fetchLatestRelease(ctx context.Context, owner, repo string, rn run.Runner) 
 		return nil, fmt.Errorf("resolve release: empty tag_name from GitHub")
 	}
 
-	releaseCache.Store(cacheKey, &rel)
+	r.releases.Store(cacheKey, &rel)
 	return &rel, nil
 }
 
@@ -232,9 +216,9 @@ func fetchLatestRelease(ctx context.Context, owner, repo string, rn run.Runner) 
 // instead of defaulting to the latest release. Cached separately from
 // fetchLatestRelease under a tag-qualified key so "latest" and a pinned tag
 // for the same repo don't collide in the cache.
-func fetchReleaseByTag(ctx context.Context, owner, repo, tag string, rn run.Runner) (*release, error) {
+func (r *Resolver) fetchReleaseByTag(ctx context.Context, owner, repo, tag string, rn run.Runner) (*release, error) {
 	cacheKey := owner + "/" + repo + "@" + tag
-	if v, ok := releaseCache.Load(cacheKey); ok {
+	if v, ok := r.releases.Load(cacheKey); ok {
 		return v.(*release), nil
 	}
 
@@ -245,14 +229,14 @@ func fetchReleaseByTag(ctx context.Context, owner, repo, tag string, rn run.Runn
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", UserAgent)
-	if token := githubToken(ctx, rn); token != "" {
+	if token := r.githubToken(ctx, rn); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := func() (*http.Response, error) {
-		httpClientMu.RLock()
-		client := httpClient
-		httpClientMu.RUnlock()
+		r.httpMu.RLock()
+		client := r.http
+		r.httpMu.RUnlock()
 		return client.Do(req)
 	}()
 	if err != nil {
@@ -272,7 +256,7 @@ func fetchReleaseByTag(ctx context.Context, owner, repo, tag string, rn run.Runn
 		rel.TagName = tag
 	}
 
-	releaseCache.Store(cacheKey, &rel)
+	r.releases.Store(cacheKey, &rel)
 	return &rel, nil
 }
 
@@ -313,7 +297,7 @@ func fetchReleaseByTag(ctx context.Context, owner, repo, tag string, rn run.Runn
 // GitHub Release tagged with that literal name (common for rolling/nightly
 // builds), because GitHub's Releases API has no concept of "the release
 // currently built from branch X" to resolve automatically.
-func ResolveAssetURL(ctx context.Context, repo, assetPattern, targetArch, targetOS, ref string, rn run.Runner) (url, tag string, err error) {
+func (r *Resolver) ResolveAssetURL(ctx context.Context, repo, assetPattern, targetArch, targetOS, ref string, rn run.Runner) (url, tag string, err error) {
 	owner, name, ok := splitRepo(repo)
 	if !ok {
 		return "", "", fmt.Errorf("resolve asset: %q is not an owner/repo GitHub reference", repo)
@@ -321,9 +305,9 @@ func ResolveAssetURL(ctx context.Context, repo, assetPattern, targetArch, target
 
 	var rel *release
 	if ref == "" {
-		rel, err = fetchLatestRelease(ctx, owner, name, rn)
+		rel, err = r.fetchLatestRelease(ctx, owner, name, rn)
 	} else {
-		rel, err = fetchReleaseByTag(ctx, owner, name, ref, rn)
+		rel, err = r.fetchReleaseByTag(ctx, owner, name, ref, rn)
 	}
 	if err != nil {
 		return "", "", err
@@ -399,14 +383,14 @@ func splitRepo(repo string) (owner, name string, ok bool) {
 // httpdownload's GoDownloader, which needs the token to fetch private-repo
 // release assets, not just resolve {latest}) can reuse the same resolution
 // order and the same `gh auth token` cache instead of re-implementing it.
-func GithubToken(ctx context.Context, rn run.Runner) string {
-	return githubToken(ctx, rn)
+func (r *Resolver) GithubToken(ctx context.Context, rn run.Runner) string {
+	return r.githubToken(ctx, rn)
 }
 
 // githubToken returns a GitHub personal access token from environment.
 // Checks GITHUB_TOKEN first, then GH_TOKEN (common aliases used by gh CLI and CI).
 // Falls back to `gh auth token` if the GitHub CLI is authenticated.
-func githubToken(ctx context.Context, rn run.Runner) string {
+func (r *Resolver) githubToken(ctx context.Context, rn run.Runner) string {
 	if t := os.Getenv("GITHUB_TOKEN"); t != "" {
 		return t
 	}
@@ -416,34 +400,26 @@ func githubToken(ctx context.Context, rn run.Runner) string {
 	if rn == nil {
 		return ""
 	}
-	return ghCLIToken(ctx, rn)
+	return r.ghCLIToken(ctx, rn)
 }
-
-var (
-	ghTokenOnce  sync.Once
-	ghTokenValue string
-)
 
 // ghCLIToken runs `gh auth token` to retrieve the GitHub CLI's authenticated
-// token. The result is cached so the subprocess runs at most once per process
-// lifecycle.
-func ghCLIToken(ctx context.Context, rn run.Runner) string {
-	ghTokenOnce.Do(func() {
-		res := rn.Run(ctx, "gh", "auth", "token")
-		if res.Err != nil || res.ExitCode != 0 {
-			ghTokenValue = ""
-			return
-		}
-		ghTokenValue = strings.TrimSpace(string(res.Stdout))
-	})
-	return ghTokenValue
-}
-
-// ResetGhTokenCache resets the cached gh CLI token result. Intended for
-// use in tests that manipulate the gh authentication state.
-func ResetGhTokenCache() {
-	ghTokenOnce = sync.Once{}
-	ghTokenValue = ""
+// token. The result is cached so the subprocess runs at most once per
+// Resolver.
+func (r *Resolver) ghCLIToken(ctx context.Context, rn run.Runner) string {
+	r.tokMu.Lock()
+	defer r.tokMu.Unlock()
+	if r.tokCached {
+		return r.tokValue
+	}
+	r.tokCached = true
+	res := rn.Run(ctx, "gh", "auth", "token")
+	if res.Err != nil || res.ExitCode != 0 {
+		r.tokValue = ""
+		return ""
+	}
+	r.tokValue = strings.TrimSpace(string(res.Stdout))
+	return r.tokValue
 }
 
 // IsGitHubURL checks whether a URL points to a GitHub repository on the
