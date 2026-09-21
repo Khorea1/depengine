@@ -47,3 +47,20 @@ func TestBuildCandidateIntentProjectsHostSources(t *testing.T) {
 		t.Fatalf("host-source plan unexpectedly rejected by method capability boundary: %v", methodkind.CapabilityNames(missing))
 	}
 }
+
+func TestBuildCandidateIntentProjectsGitCloneURLAsSourceIdentity(t *testing.T) {
+	tool, method := candidate("demo", "git", map[string]any{
+		"url": "https://github.com/example/demo.git",
+		"tag": "v1.2.3",
+	})
+	got, err := planner.BuildCandidateIntent(tool, method)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Identity.Source != "https://github.com/example/demo.git" {
+		t.Fatalf("source = %q", got.Identity.Source)
+	}
+	if got.Identity.RequestedVersion == nil || got.Identity.RequestedVersion.Mode != plan.VersionGitTag || got.Identity.RequestedVersion.Value != "v1.2.3" {
+		t.Fatalf("requested version = %+v", got.Identity.RequestedVersion)
+	}
+}

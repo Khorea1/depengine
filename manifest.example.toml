@@ -221,9 +221,11 @@ tpm         = { git = { url = "https://github.com/tmux-plugins/tpm", depth = 1 }
 
 
 [packages.fastfetch]
-  [packages.fastfetch.http]
-  url      = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb"
+  [packages.fastfetch.github]
+  repo     = "fastfetch-cli/fastfetch"
+  asset    = "fastfetch-linux-{arch_any}.deb"
   checksum = "sha256:auto"
+  when     = { distro_family = ["debian", "mint"] }
 
 
 # With explicit checksum_url and sha256sum format
@@ -275,6 +277,7 @@ tpm         = { git = { url = "https://github.com/tmux-plugins/tpm", depth = 1 }
   [packages.slack-deb.http]
   url      = "https://downloads.slack-edge.com/desktop-releases/linux/{latest}/slack-desktop-{latest}-amd64.deb"
   checksum = "sha256:auto"
+  when     = { distro_family = ["debian", "mint"], arch = ["x86_64"] }
 
 # ==============================================================================
 # SECTION 4 — Full block with conditional method + hooks

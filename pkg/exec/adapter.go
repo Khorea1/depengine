@@ -31,6 +31,8 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/engine"
+	"github.com/Khorea1/depengine/pkg/plan"
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
@@ -56,6 +58,29 @@ type Adapter interface {
 	// nil on success, an error describing what went wrong on failure.
 	// The executor handles fallback when Install fails.
 	Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error
+}
+
+// PlanResolver is an optional read-only adapter capability used by dry-run to
+// turn a static candidate intent into the concrete plan that would be consumed
+// by Install (for example a GitHub release asset URL). Implementations must not
+// mutate host state.
+type PlanResolver interface {
+	Adapter
+	ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error)
+}
+
+// HostCompatibilityChecker is an optional adapter capability for candidates
+// whose installability depends on more than the presence of the adapter's
+// runtime. A download method, for example, may be available everywhere while
+// the resolved artifact is a distribution-specific installer such as .deb.
+//
+// Returning an error rejects only this candidate and lets normal method
+// fallback continue. Implementations must be read-only and deterministic for
+// the supplied facts/plan; expensive source resolution belongs in
+// PlanResolver instead.
+type HostCompatibilityChecker interface {
+	Adapter
+	CheckHostCompatibility(tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan, facts *engine.Facts, clan string) error
 }
 
 // Remover is an optional interface that adapters can implement to support

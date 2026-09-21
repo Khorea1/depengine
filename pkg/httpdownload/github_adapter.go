@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/plan"
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
@@ -51,6 +52,10 @@ func NewGitHubAdapter() *GitHubAdapter {
 }
 
 func (a *GitHubAdapter) Kind() string { return "github" }
+
+func (a *GitHubAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	return resolveDownloadPlan(ctx, rn, mc, intent)
+}
 
 func (a *GitHubAdapter) RequiresElevation(tool *config.Tool, mc *config.MethodCandidate) bool {
 	return a.http.RequiresElevation(tool, mc)

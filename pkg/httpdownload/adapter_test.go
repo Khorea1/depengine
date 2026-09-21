@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/plan"
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
@@ -970,5 +971,25 @@ func TestHTTPInstallRejectsUnsupportedArchiveBeforeDownload(t *testing.T) {
 		if call.Name == "curl" || call.Name == "wget" {
 			t.Fatalf("unsupported archive reached downloader: %#v", fr.Calls)
 		}
+	}
+}
+
+func TestResolvePlanProjectsConcreteURLAndPinnedVersion(t *testing.T) {
+	intent := plan.New("demo", "http", true)
+	intent.Artifacts = []plan.Artifact{{URL: "https://example.test/demo.tar.gz", Checksum: "sha256:abc"}}
+	mc := &config.MethodCandidate{Kind: "http", Config: map[string]any{
+		"url":               "https://example.test/demo.tar.gz",
+		"_resolved_version": "v1.2.3",
+	}}
+
+	got, err := NewHTTPAdapter().ResolvePlan(context.Background(), nil, &config.Tool{Name: "demo"}, mc, &intent)
+	if err != nil {
+		t.Fatalf("ResolvePlan() error: %v", err)
+	}
+	if got.Identity.Version != "v1.2.3" {
+		t.Fatalf("version = %q, want v1.2.3", got.Identity.Version)
+	}
+	if len(got.Artifacts) != 1 || got.Artifacts[0].URL != "https://example.test/demo.tar.gz" || got.Artifacts[0].Checksum != "sha256:abc" {
+		t.Fatalf("artifacts = %+v", got.Artifacts)
 	}
 }

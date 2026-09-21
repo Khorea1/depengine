@@ -276,6 +276,10 @@ func Apply(s *config.Schema, l *Lock) {
 			// Substitute {latest} in the current URL template with the
 			// pinned version tag.
 			if pin.Latest != "" {
+				// Preserve the concrete version as internal resolved metadata so
+				// dry-run/reporting can expose the pin even after {latest} has been
+				// substituted out of the URL template.
+				method.Config["_resolved_version"] = pin.Latest
 				_, hasRepo := method.Config["repo"]
 				if (method.Kind == "github" || hasRepo) && githubUsesLatest(method.Config) {
 					method.Config["release"] = pin.Latest

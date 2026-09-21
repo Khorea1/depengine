@@ -11,6 +11,7 @@ import (
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
+	"github.com/Khorea1/depengine/pkg/plan"
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
@@ -856,5 +857,20 @@ func TestGitAdapterRejectsInvalidDepthBeforeClone(t *testing.T) {
 				t.Fatalf("invalid depth reached runner: %+v", fr.Calls)
 			}
 		})
+	}
+}
+
+func TestGitAdapterResolvePlanProjectsSourceAndRevision(t *testing.T) {
+	mc := &config.MethodCandidate{Kind: "git", Config: map[string]any{
+		"url": "https://example.test/repo.git",
+		"rev": "deadbeef",
+	}}
+	intent := plan.New("demo", "git", true)
+	got, err := NewGitAdapter().ResolvePlan(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "demo"}, mc, &intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Identity.Source != "https://example.test/repo.git" || got.Identity.Revision != "deadbeef" {
+		t.Fatalf("identity = %+v", got.Identity)
 	}
 }

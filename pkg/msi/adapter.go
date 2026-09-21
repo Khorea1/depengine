@@ -11,6 +11,7 @@ import (
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/httpdownload"
+	"github.com/Khorea1/depengine/pkg/plan"
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
@@ -27,6 +28,12 @@ func NewAdapter() *Adapter {
 	return &Adapter{http: httpdownload.NewHTTPAdapter(), products: newProductFinder()}
 }
 func (a *Adapter) Kind() string { return "msi" }
+
+// ResolvePlan delegates read-only artifact resolution to the HTTP transport
+// used by Install, so MSI dry-runs expose the concrete package URL/version.
+func (a *Adapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	return a.http.ResolvePlan(ctx, rn, tool, mc, intent)
+}
 func (a *Adapter) Available(ctx context.Context, rn run.Runner) bool {
 	return run.LookPath(ctx, rn, "msiexec")
 }
@@ -93,4 +100,5 @@ func stringValue(mc *config.MethodCandidate, key string) string {
 }
 
 var _ exec.Adapter = (*Adapter)(nil)
+var _ exec.PlanResolver = (*Adapter)(nil)
 var _ exec.Remover = (*Adapter)(nil)

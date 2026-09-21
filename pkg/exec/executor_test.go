@@ -102,6 +102,15 @@ type availabilityMockAdapter struct {
 	checkAvailableFunc func(string) bool
 }
 
+type compatibilityMockAdapter struct {
+	testMockAdapter
+	err error
+}
+
+func (m *compatibilityMockAdapter) CheckHostCompatibility(_ *config.Tool, _ *config.MethodCandidate, _ *plan.ResolvedInstallPlan, _ *engine.Facts, _ string) error {
+	return m.err
+}
+
 type elevationMockAdapter struct {
 	testMockAdapter
 	required bool
@@ -188,6 +197,48 @@ func TestExecutorFallback(t *testing.T) {
 	}
 	if report.Tools[0].Method != "succeeder" {
 		t.Fatalf("expected fallback to succeeder, got %s", report.Tools[0].Method)
+	}
+}
+
+func TestExecutorSkipsHostIncompatibleCandidateAndFallsBack(t *testing.T) {
+	blocked := &compatibilityMockAdapter{
+		testMockAdapter: testMockAdapter{kindValue: "blocked"},
+		err:             &installError{msg: "artifact is incompatible with this host"},
+	}
+	fallback := &testMockAdapter{kindValue: "fallback"}
+	s := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"blocked", "fallback"}},
+		Tools: map[string]*config.Tool{
+			"demo": {
+				Name: "demo",
+				Methods: []*config.MethodCandidate{
+					{Kind: "blocked", Config: map[string]any{}},
+					{Kind: "fallback", Config: map[string]any{}},
+				},
+			},
+		},
+	}
+
+	ex := New()
+	WithAdapters(blocked, fallback)(ex)
+	WithDryRun()(ex)
+	WithFacts(&engine.Facts{DistroID: "void", OS: "linux"})(ex)
+	report, err := ex.Execute(context.Background(), s, "void")
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(report.Tools) != 1 {
+		t.Fatalf("tools = %+v", report.Tools)
+	}
+	got := report.Tools[0]
+	if got.Status != StatusWouldInstall || got.Method != "fallback" {
+		t.Fatalf("result = %+v, want fallback would-install", got)
+	}
+	if len(got.Methods) != 2 || got.Methods[0].Status != "skip_unavailable" || got.Methods[1].Status != "success" {
+		t.Fatalf("attempts = %+v", got.Methods)
+	}
+	if !strings.Contains(got.Methods[0].Error, "incompatible") {
+		t.Fatalf("first error = %q", got.Methods[0].Error)
 	}
 }
 

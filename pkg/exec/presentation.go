@@ -71,6 +71,13 @@ func formatToolResult(tool string, status StatusEnum, method, errMsg string) str
 }
 
 func (ex *Executor) recordToolResult(ctx context.Context, result *ToolResult, report *ExecReport) {
+	if result.Provider == "" {
+		result.Provider = ex.providerForMethodKind(result.MethodKind)
+	}
+	presentedMethod := result.Method
+	if result.Provider != "" {
+		presentedMethod = result.Provider
+	}
 	report.mu.Lock()
 	defer report.mu.Unlock()
 	report.Tools = append(report.Tools, *result)
@@ -97,7 +104,7 @@ func (ex *Executor) recordToolResult(ctx context.Context, result *ToolResult, re
 		ex.logDebug(ctx, "tool", "tool", result.Tool, "status", "virtual")
 	}
 	if !ex.quiet {
-		ex.outputf("%s", ex.colorizeStatusSymbol(formatToolResult(result.Tool, result.Status, result.Method, result.Error)))
+		ex.outputf("%s", ex.colorizeStatusSymbol(formatToolResult(result.Tool, result.Status, presentedMethod, result.Error)))
 		if result.RebootRequired {
 			ex.outputf("    reboot required to complete %s\n", result.Tool)
 		}

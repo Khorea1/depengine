@@ -1,8 +1,11 @@
 version = 1
 
 [tools]
-[tools.'DepartureMono/http']
+[tools.'DepartureMono/http/0']
 latest = 'v3.4.0'
 
-[tools.'fastfetch/http']
+[tools.'fastfetch/http/0']
 latest = '2.66.0'
+
+[methods_hash]
+DepartureMono = '91ad6487c138018609b8b95ac85a59541ce6e633c442c4241d58798cfbc1763e'

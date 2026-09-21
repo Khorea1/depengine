@@ -171,9 +171,12 @@ func extractZip(ctx context.Context, src, dest string, rn run.Runner, sudoRequir
 }
 
 func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired bool, toolName string) error {
-	// Guard: dpkg must exist on the system.
+	// Guard: dpkg must exist on the system. Host/distribution compatibility is
+	// enforced by the executor before this mutation boundary; this check remains
+	// necessary for minimal Debian-family/Termux environments where the package
+	// format is compatible but dpkg itself is unavailable.
 	if !run.LookPath(ctx, rn, "dpkg") {
-		return fmt.Errorf("cannot install .deb package: dpkg not found (this system is not Debian-based; consider adding a native method fallback)")
+		return fmt.Errorf("cannot install .deb package: dpkg not found (a compatible dpkg-based target is required; consider adding a native method fallback)")
 	}
 	var sudoBin string
 	if sudoRequired && os.Geteuid() != 0 {

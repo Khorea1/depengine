@@ -111,6 +111,14 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 			appendAttempt(attempt, method)
 			continue
 		}
+		if checker, ok := adapter.(HostCompatibilityChecker); ok {
+			if compatibilityErr := checker.CheckHostCompatibility(tool, method, planIntent, ex.facts, clan); compatibilityErr != nil {
+				attempt.Status = "skip_unavailable"
+				attempt.Error = compatibilityErr.Error()
+				appendAttempt(attempt, method)
+				continue
+			}
+		}
 
 		// Check if the adapter is available on this system.
 		if !adapter.Available(ctx, ex.rn) {

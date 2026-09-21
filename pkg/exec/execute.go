@@ -482,6 +482,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 
 		attempt := MethodAttempt{Kind: displayKind}
 		planIntent, mismatch := candidatePlanIntent(tool, method)
+		planIntent = ex.hostResolvedPlanIntent(method, planIntent)
 		attempt.PlanIntent = planIntent
 
 		if mismatch != "" {
@@ -506,6 +507,16 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			result.Methods = append(result.Methods, attempt)
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_no_adapter")
 			continue
+		}
+
+		if checker, ok := adapter.(HostCompatibilityChecker); ok {
+			if compatibilityErr := checker.CheckHostCompatibility(tool, method, planIntent, ex.facts, ex.clan); compatibilityErr != nil {
+				attempt.Status = "skip_unavailable"
+				attempt.Error = compatibilityErr.Error()
+				result.Methods = append(result.Methods, attempt)
+				ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_incompatible_host", "reason", compatibilityErr.Error())
+				continue
+			}
 		}
 
 		if !adapter.Available(toolCtx, ex.probeRunner(tool.Name, displayKind)) {
@@ -621,8 +632,28 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 
 		if ex.dryRun {
 			dryRunIntent := planIntent
-			if planIntent != nil && preparedSources.preparationPlan != nil {
-				projected := *planIntent
+			if resolver, ok := adapter.(PlanResolver); ok {
+				resolved, resolveErr := resolver.ResolvePlan(toolCtx, ex.probeRunner(tool.Name, displayKind), tool, method, planIntent)
+				if resolveErr != nil {
+					attempt.Status = "failed"
+					attempt.Error = fmt.Sprintf("%s: resolve plan: %v", displayKind, resolveErr)
+					result.Methods = append(result.Methods, attempt)
+					continue
+				}
+				dryRunIntent = resolved
+			}
+			if checker, ok := adapter.(HostCompatibilityChecker); ok {
+				if compatibilityErr := checker.CheckHostCompatibility(tool, method, dryRunIntent, ex.facts, ex.clan); compatibilityErr != nil {
+					attempt.Status = "skip_unavailable"
+					attempt.Error = compatibilityErr.Error()
+					attempt.PlanIntent = dryRunIntent
+					result.Methods = append(result.Methods, attempt)
+					ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_incompatible_host", "reason", compatibilityErr.Error())
+					continue
+				}
+			}
+			if dryRunIntent != nil && preparedSources.preparationPlan != nil {
+				projected := *dryRunIntent
 				projected.Preparation = preparedSources.preparationPlan
 				dryRunIntent = &projected
 			}
@@ -767,6 +798,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		result.Error = last.Error
 		result.Method = last.Kind
 		result.MethodKind = lastMethodKind
+		result.PlanIntent = last.PlanIntent
 	}
 	result.Duration = time.Since(toolStart).String()
 }
