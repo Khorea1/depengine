@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	osexec "os/exec"
@@ -19,8 +20,7 @@ import (
 )
 
 // runCommand executes a depengine command in a child process of the test
-// binary. runRemove/runUndo/runForget call os.Exit on failure, so they can
-// only be exercised out-of-process. The child env is scrubbed of the
+// binary. The child env is scrubbed of the
 // state/Go/home variables the tests control and re-set from `extraEnv`, so
 // every scenario is hermetic: temp XDG_STATE_HOME, fake GOBIN dir, no
 // network, no real package managers.
@@ -93,7 +93,7 @@ func TestCommandHelperSubprocess(t *testing.T) {
 	default:
 		os.Exit(99)
 	}
-	// A successful command returns here (failure paths call os.Exit).
+	// A successful command returns here.
 	os.Exit(0)
 }
 
@@ -103,8 +103,12 @@ func TestCommandHelperSubprocess(t *testing.T) {
 func runViaCobra(cmd *cobra.Command, args []string) {
 	cmd.SetArgs(normalizeArgs(args))
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		var exitErr *ExitError
+		if !errors.As(err, &exitErr) {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		os.Exit(exitErr.Code)
 	}
 }
 

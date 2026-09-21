@@ -78,8 +78,7 @@ func newUndoCmd() *cobra.Command {
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runUndo(cmd.Context(), undoList, undoSpecific)
-			return nil
+			return runUndo(cmd.Context(), undoList, undoSpecific)
 		},
 	}
 	f := cmd.Flags()
@@ -88,17 +87,17 @@ func newUndoCmd() *cobra.Command {
 	return cmd
 }
 
-func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) {
+func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
 
 	if *undoList {
 		snapshots, err := state.ListSnapshots()
 		if err != nil {
 			log.Default.Error("list snapshots", "error", err)
-			os.Exit(3)
+			return exitWithCode(3)
 		}
 		if len(snapshots) == 0 {
 			fmt.Fprintln(os.Stderr, "No snapshots available.")
-			return
+			return nil
 		}
 		c := newCLIStyle(os.Stderr)
 		fmt.Fprintln(c.w, c.bold("Available snapshots:"))
@@ -114,7 +113,7 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) {
 				c.dim(filepath.Base(s.Path)),
 				c.dim(fmt.Sprintf("(%s)", plural(s.ToolCount, "tool"))))
 		}
-		return
+		return nil
 	}
 
 	var snapPath string
@@ -124,11 +123,11 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) {
 			snapshots, listErr := state.ListSnapshots()
 			if listErr != nil {
 				log.Default.Error("list snapshots", "error", listErr)
-				os.Exit(3)
+				return exitWithCode(3)
 			}
 			if n < 1 || n > len(snapshots) {
 				log.Default.Error("invalid snapshot index", "index", n, "max", len(snapshots))
-				os.Exit(2)
+				return exitWithCode(2)
 			}
 			snapPath = snapshots[n-1].Path
 		} else {
@@ -139,11 +138,11 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) {
 		snapshots, err := state.ListSnapshots()
 		if err != nil {
 			log.Default.Error("list snapshots", "error", err)
-			os.Exit(3)
+			return exitWithCode(3)
 		}
 		if len(snapshots) == 0 {
 			log.Default.Error("no snapshot available for undo")
-			os.Exit(1)
+			return exitWithCode(1)
 		}
 		snapPath = snapshots[0].Path
 	}
@@ -151,13 +150,13 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) {
 	snapState, err := state.LoadSnapshot(snapPath)
 	if err != nil {
 		log.Default.Error("load snapshot", "error", err)
-		os.Exit(3)
+		return exitWithCode(3)
 	}
 
 	ls, err := state.LoadLocked()
 	if err != nil {
 		log.Default.Error("state lock", "error", err)
-		os.Exit(3)
+		return exitWithCode(3)
 	}
 	defer ls.Close()
 
@@ -175,7 +174,7 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) {
 		// removed after the snapshot exist in snapState but not in curState;
 		// restoring snapState.Tools would reintroduce phantom entries.
 		log.Default.Info("nothing to undo (no tools were added since snapshot)")
-		return
+		return nil
 	}
 
 	// The global "native" adapter (registered in main.go) is constructed
@@ -263,14 +262,14 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) {
 
 	if err := ls.Save(); err != nil {
 		log.Default.Error("save state after undo", "error", err)
-		closeStateAndExit(ls, 3)
+		return exitWithCode(3)
 	}
 
 	if hadFailure {
 		log.Default.Error("undo: some removals failed, manual cleanup may be needed")
-		closeStateAndExit(ls, 1)
+		return exitWithCode(1)
 	}
 
 	log.Default.Info("undo complete", "tools_removed", len(toRemove))
-
+	return nil
 }

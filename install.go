@@ -47,8 +47,7 @@ func newInstallCmd() *cobra.Command {
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(installCmd *cobra.Command, args []string) error {
-			runInstall(installCmd, installSchema, installManifest, installNoManifest, installDryRun, installVerbose, installJSON, installOnly, installSkip, installProfile, installFrozen, installDiagnose, installLogLevel, installSortBy, installJobs, installAllowArbitrary, installQuiet)
-			return nil
+			return runInstall(installCmd, installSchema, installManifest, installNoManifest, installDryRun, installVerbose, installJSON, installOnly, installSkip, installProfile, installFrozen, installDiagnose, installLogLevel, installSortBy, installJobs, installAllowArbitrary, installQuiet)
 		},
 	}
 	f := cmd.Flags()
@@ -73,7 +72,7 @@ func newInstallCmd() *cobra.Command {
 
 // runInstall installs tools from schema.toml. Body unchanged from the
 // pre-Cobra version — only the flag declarations above it moved.
-func runInstall(cmd *cobra.Command, installSchema, installManifest *string, installNoManifest, installDryRun, installVerbose, installJSON *bool, installOnly, installSkip, installProfile *string, installFrozen, installDiagnose *bool, installLogLevel, installSortBy *string, installJobs *int, installAllowArbitrary, installQuiet *bool) {
+func runInstall(cmd *cobra.Command, installSchema, installManifest *string, installNoManifest, installDryRun, installVerbose, installJSON *bool, installOnly, installSkip, installProfile *string, installFrozen, installDiagnose *bool, installLogLevel, installSortBy *string, installJobs *int, installAllowArbitrary, installQuiet *bool) error {
 	lg := log.Default
 
 	if *installDiagnose {
@@ -101,7 +100,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	if *installSortBy != "" {
 		if _, ok := exec.ParseSortField(*installSortBy); !ok {
 			lg.Error("invalid --sort-by value", "value", *installSortBy, "valid", "name, status, method")
-			os.Exit(2)
+			return exitWithCode(2)
 		}
 	}
 
@@ -120,10 +119,10 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		if os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "error: %s not found\n", *installSchema)
 			fmt.Fprintf(os.Stderr, "Run 'depengine init' to create one, or point --schema to an existing file.\n")
-			os.Exit(1)
+			return exitWithCode(1)
 		}
 		lg.Error("load schema", "error", err)
-		os.Exit(exitCodeForError(err))
+		return exitWithCode(exitCodeForError(err))
 	}
 	if helper := s.Defaults.AurHelper; helper != "" {
 		ecosystem.ReconfigureAUR(helper)
@@ -156,7 +155,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	schemaFile, err := os.Stat(*installSchema)
 	if err != nil {
 		lg.Error("stat schema", "error", err)
-		os.Exit(exitCodeForError(err))
+		return exitWithCode(exitCodeForError(err))
 	}
 
 	ex := exec.New()
@@ -192,7 +191,10 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	}
 
 	lockPath := lock.DefaultPath(*installSchema)
-	lk := loadLockfile(*installSchema, s, *installFrozen, lg)
+	lk, err := loadLockfile(*installSchema, s, *installFrozen, lg)
+	if err != nil {
+		return err
+	}
 
 	// Auto-resolve {latest} if no lockfile exists — makes first install work
 	// like npm/pip: no explicit 'depengine update' needed.
@@ -224,7 +226,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	report, err := ex.Execute(ctx, s, clan)
 	if err != nil {
 		lg.Error("execute failed", "error", err)
-		os.Exit(2)
+		return exitWithCode(2)
 	}
 
 	switch {
@@ -264,8 +266,9 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	}
 
 	if report.Failed > 0 {
-		os.Exit(1)
+		return exitWithCode(1)
 	}
+	return nil
 }
 
 // syncInstalledVersions reconciles recorded versions with lock pins after an

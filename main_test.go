@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"testing"
 
@@ -10,6 +11,16 @@ import (
 func TestMain(m *testing.M) {
 	initAdapters()
 	os.Exit(m.Run())
+}
+
+func TestCommandReturnsTypedExitErrorWithoutTerminatingProcess(t *testing.T) {
+	cmd := newGraphCmd()
+	cmd.SetArgs([]string{"--format", "invalid"})
+	err := cmd.Execute()
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("Execute() error = %v, want ExitError code 2", err)
+	}
 }
 
 func TestHasLatestPlaceholdersRecognizesGitHubMethods(t *testing.T) {

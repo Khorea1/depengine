@@ -30,8 +30,7 @@ func newStatusCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
-			runStatus(statusSchema, statusManifest, statusNoManifest, statusFormat, statusJSON, statusOrphans)
-			return nil
+			return runStatus(statusSchema, statusManifest, statusNoManifest, statusFormat, statusJSON, statusOrphans)
 		},
 	}
 	f := cmd.Flags()
@@ -48,7 +47,7 @@ func newStatusCmd() *cobra.Command {
 // file against the schema. It reports installed, missing, and outdated tools.
 // Body unchanged from the pre-Cobra version — only the flag declarations
 // above it moved.
-func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, statusFormat *string, statusJSON, statusOrphans *bool) {
+func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, statusFormat *string, statusJSON, statusOrphans *bool) error {
 	if *statusJSON {
 		if *statusFormat == "text" {
 			*statusFormat = "json"
@@ -59,7 +58,7 @@ func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, sta
 	ls, err := state.LoadShared()
 	if err != nil {
 		log.Default.Error("state lock", "error", err)
-		os.Exit(3)
+		return exitWithCode(3)
 	}
 	defer ls.Close()
 
@@ -72,7 +71,7 @@ func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, sta
 	if schemaPath == "" {
 		if len(st.Tools) == 0 {
 			fmt.Fprintln(os.Stderr, "No tools in state (nothing installed yet). Use --schema to compare against a schema.")
-			return
+			return nil
 		}
 	}
 
@@ -179,9 +178,9 @@ func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, sta
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(tools); err != nil {
 			log.Default.Error("json output", "error", err)
-			closeStateAndExit(ls, 3)
+			return exitWithCode(3)
 		}
-		return
+		return nil
 	}
 
 	if len(tools) == 0 {
@@ -190,7 +189,7 @@ func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, sta
 		} else {
 			fmt.Fprintln(os.Stderr, "No tools in state. Run 'depengine install' first.")
 		}
-		return
+		return nil
 	}
 
 	// Actionable states first: outdated tools need attention, missing ones
@@ -256,6 +255,7 @@ func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, sta
 		}
 	}
 	fmt.Fprintf(c.w, "  %s\n", c.dim(strings.Join(parts, "  ·  ")))
+	return nil
 }
 
 func statusRank(s string) int {
