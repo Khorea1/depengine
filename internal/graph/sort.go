@@ -11,9 +11,11 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
-
-	"github.com/Khorea1/depengine/internal/config"
 )
+
+type node interface {
+	GraphDependencies() []string
+}
 
 // SortOption configures Sort behavior.
 type SortOption func(*sortConfig)
@@ -36,7 +38,7 @@ func WithLogger(l *slog.Logger) SortOption {
 // Uses a single Kahn's algorithm pass for both cycle detection and level
 // computation. Returns an error if a cycle is detected (CycleError) or if
 // a required tool is missing.
-func Sort(tools map[string]*config.Tool, opts ...SortOption) ([][]string, error) {
+func Sort[T node](tools map[string]T, opts ...SortOption) ([][]string, error) {
 	if len(tools) == 0 {
 		return [][]string{}, nil
 	}
@@ -47,7 +49,7 @@ func Sort(tools map[string]*config.Tool, opts ...SortOption) ([][]string, error)
 
 	// Validate that all required tools exist.
 	for name, tool := range tools {
-		for _, req := range tool.Requires {
+		for _, req := range tool.GraphDependencies() {
 			if _, ok := tools[req]; !ok {
 				return nil, fmt.Errorf("graph: tool %q requires %q, which is not in schema", name, req)
 			}
@@ -58,8 +60,8 @@ func Sort(tools map[string]*config.Tool, opts ...SortOption) ([][]string, error)
 	inDegree := make(map[string]int, len(tools))
 	children := make(map[string][]string, len(tools))
 	for name, tool := range tools {
-		inDegree[name] = len(tool.Requires)
-		for _, dep := range tool.Requires {
+		inDegree[name] = len(tool.GraphDependencies())
+		for _, dep := range tool.GraphDependencies() {
 			children[dep] = append(children[dep], name)
 		}
 	}
@@ -110,7 +112,7 @@ func Sort(tools map[string]*config.Tool, opts ...SortOption) ([][]string, error)
 // along Requires edges inside remaining never dead-ends and the path must
 // revisit a node. Start nodes are tried in sorted order so the reported
 // cycle is deterministic for a given schema.
-func extractCycle(remaining map[string]bool, tools map[string]*config.Tool) []string {
+func extractCycle[T node](remaining map[string]bool, tools map[string]T) []string {
 	starts := make([]string, 0, len(remaining))
 	for name := range remaining {
 		starts = append(starts, name)
@@ -129,7 +131,7 @@ func extractCycle(remaining map[string]bool, tools map[string]*config.Tool) []st
 			path = append(path, cur)
 			// Follow the first requirement that's also in remaining.
 			// At least one exists (Kahn's invariant above).
-			for _, req := range tools[cur].Requires {
+			for _, req := range tools[cur].GraphDependencies() {
 				if remaining[req] {
 					cur = req
 					break

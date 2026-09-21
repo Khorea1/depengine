@@ -51,8 +51,8 @@ func TestKnownKindsIncludesNativeManagers(t *testing.T) {
 
 	if len(missing) > 0 {
 		t.Fatalf(
-			"KnownKinds() is missing native manager names that are registered in pkg/native:\n%s\n\n"+
-				"Add each missing name to knownKinds in pkg/methodkind/methodkind.go, "+
+			"KnownKinds() is missing native manager names that are registered in internal/native:\n%s\n\n"+
+				"Add each missing name to knownKinds in internal/methodkind/methodkind.go, "+
 				"keeping them alphabetically among the existing native manager entries.",
 			strings.Join(missing, "\n"),
 		)

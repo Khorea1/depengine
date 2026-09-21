@@ -20,52 +20,52 @@ import (
 // Deliberate exclusions (runtime-resolved dimensions whose static projection
 // is P1.1 work, not ignored fields):
 //   - release + branch on github/http/msi/appimage/android: consumed by the
-//     runtime download resolver (pkg/httpdownload/resolver.go), which enriches
+//     runtime download resolver (internal/httpdownload/resolver.go), which enriches
 //     the resolved plan after static planning.
 //   - git.url: consumed by the git adapter at clone time
-//     (pkg/git/adapter.go); the static plan carries only version selectors.
+//     (internal/git/adapter.go); the static plan carries only version selectors.
 //   - native.pkg_overrides: resolved per-clan by the executor
-//     (pkg/exec/native_adapter.go), invisible to host-independent planning.
+//     (internal/exec/native_adapter.go), invisible to host-independent planning.
 var resolveEffectExclusions = map[string]bool{
-	"github.release": true,
-	"http.release":   true,
-	"msi.release":    true,
-	"appimage.release": true,
-	"android.release":  true,
-	"github.branch":  true,
-	"http.branch":    true,
-	"msi.branch":     true,
-	"appimage.branch": true,
-	"android.branch":  true,
-	"git.url": true,
+	"github.release":       true,
+	"http.release":         true,
+	"msi.release":          true,
+	"appimage.release":     true,
+	"android.release":      true,
+	"github.branch":        true,
+	"http.branch":          true,
+	"msi.branch":           true,
+	"appimage.branch":      true,
+	"android.branch":       true,
+	"git.url":              true,
 	"native.pkg_overrides": true,
 }
 
 // resolveEffectBases provides minimal valid configs with zero version
 // selectors set, so each single-field probe is unambiguous.
 var resolveEffectBases = map[string]map[string]any{
-	"native":    {"pkg": "demo"},
-	"winget":    {"pkg": "demo"},
-	"cargo":     {"pkg": "demo"},
-	"cargo+git": {"pkg": "demo", "git": "https://example.test/demo.git"},
-	"pipx":      {"pkg": "demo"},
-	"uv":        {"pkg": "demo"},
-	"pip":       {"pkg": "demo"},
-	"npm":       {"pkg": "demo"},
-	"bun":       {"pkg": "demo"},
-	"gem":       {"pkg": "demo"},
-	"conda":     {"pkg": "demo"},
-	"git":       {"url": "https://example.test/demo.git"},
-	"local":     {"local_path": "vendor/tool.tar.gz"},
-	"github":    {"repo": "org/demo", "asset": "demo.tar.gz"},
-	"appimage":    {"url": "https://example.test/tool.AppImage"},
+	"native":        {"pkg": "demo"},
+	"winget":        {"pkg": "demo"},
+	"cargo":         {"pkg": "demo"},
+	"cargo+git":     {"pkg": "demo", "git": "https://example.test/demo.git"},
+	"pipx":          {"pkg": "demo"},
+	"uv":            {"pkg": "demo"},
+	"pip":           {"pkg": "demo"},
+	"npm":           {"pkg": "demo"},
+	"bun":           {"pkg": "demo"},
+	"gem":           {"pkg": "demo"},
+	"conda":         {"pkg": "demo"},
+	"git":           {"url": "https://example.test/demo.git"},
+	"local":         {"local_path": "vendor/tool.tar.gz"},
+	"github":        {"repo": "org/demo", "asset": "demo.tar.gz"},
+	"appimage":      {"url": "https://example.test/tool.AppImage"},
 	"appimage+repo": {"repo": "org/demo", "asset": "demo.tar.gz"},
-	"android":     {"url": "https://example.test/tool.apk"},
-	"android+repo": {"repo": "org/demo", "asset": "demo.tar.gz"},
-	"http":      {"url": "https://example.test/tool.tar.gz"},
-	"http+repo": {"repo": "org/demo", "asset": "demo.tar.gz"},
-	"msi":       {"url": "https://example.test/tool.msi", "product_name": "Demo"},
-	"msi+repo":  {"repo": "org/demo", "asset": "demo.tar.gz", "product_name": "Demo"},
+	"android":       {"url": "https://example.test/tool.apk"},
+	"android+repo":  {"repo": "org/demo", "asset": "demo.tar.gz"},
+	"http":          {"url": "https://example.test/tool.tar.gz"},
+	"http+repo":     {"repo": "org/demo", "asset": "demo.tar.gz"},
+	"msi":           {"url": "https://example.test/tool.msi", "product_name": "Demo"},
+	"msi+repo":      {"repo": "org/demo", "asset": "demo.tar.gz", "product_name": "Demo"},
 }
 
 func TestResolveEffectFieldsMoveStaticIntent(t *testing.T) {
@@ -96,11 +96,11 @@ func TestResolveEffectFieldsMoveStaticIntent(t *testing.T) {
 	}
 	// Base overrides for probes that need companion fields.
 	bases := map[string]string{
-		"cargo.branch": "cargo+git",
-		"cargo.tag":    "cargo+git",
-		"cargo.rev":    "cargo+git",
-		"http.asset":   "http+repo",
-		"msi.asset":    "msi+repo",
+		"cargo.branch":   "cargo+git",
+		"cargo.tag":      "cargo+git",
+		"cargo.rev":      "cargo+git",
+		"http.asset":     "http+repo",
+		"msi.asset":      "msi+repo",
 		"appimage.asset": "appimage+repo",
 		"android.asset":  "android+repo",
 	}

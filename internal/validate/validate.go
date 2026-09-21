@@ -1,6 +1,6 @@
 // Package validate implements structural, semantic, and environmental
 // validation for depengine schema.toml files. It complements the basic
-// method-kind checks in pkg/config.Validate with field-level scrutiny:
+// method-kind checks in internal/config.Validate with field-level scrutiny:
 // required fields per method, placeholder validity, dependency cycles,
 // dangling references, URL correctness, and environment readiness.
 package validate
@@ -27,7 +27,7 @@ const (
 	ErrInvalidValue      ErrorCode = "E_INVALID_VALUE"
 	ErrInvalidChecksum   ErrorCode = "E_INVALID_CHECKSUM"
 	ErrUnsafePackageName ErrorCode = "E_UNSAFE_PACKAGE_NAME"
-	// ErrDupeTool is produced by pkg/config.SchemaCodeError when a tool is
+	// ErrDupeTool is produced by internal/config.SchemaCodeError when a tool is
 	// redeclared (simple list + inline table). It is emitted before
 	// ValidateSchema runs, so it surfaces via schema parse error handling
 	// rather than as a ValidationError.

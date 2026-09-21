@@ -78,7 +78,7 @@ func TestRenderTextSortsLevels(t *testing.T) {
 }
 
 func TestRenderTextEmpty(t *testing.T) {
-	got := RenderText(nil, nil)
+	got := RenderText[*config.Tool](nil, nil)
 	if got != "" {
 		t.Errorf("RenderText(nil) should be empty, got: %q", got)
 	}

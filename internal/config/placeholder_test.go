@@ -178,7 +178,7 @@ func TestExpandAllMutatesInput(t *testing.T) {
 // GitHub method section) — was missing from KnownPlaceholders. Without it,
 // a schema author writing `asset = "tool-{version}-{arch_any}"` exactly as
 // documented got a spurious W_UNKNOWN_PLACEHOLDER warning from
-// pkg/validate, which derives its known-token set from this function.
+// internal/validate, which derives its known-token set from this function.
 func TestKnownPlaceholdersIncludesVersion(t *testing.T) {
 	found := false
 	for _, name := range KnownPlaceholders() {

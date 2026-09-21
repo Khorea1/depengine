@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -12,7 +13,7 @@ import (
 )
 
 // fakeRunner records the last call and returns canned stdout, with a
-// definable exit code. Distinct from pkg/run's FakeRunner because this
+// definable exit code. Distinct from internal/run's FakeRunner because this
 // one lives in the engine package and proves GatherFacts' handling of
 // detect_os.sh's exit-1-means-partial convention specifically.
 type call struct {
@@ -263,14 +264,18 @@ func TestMatchesDistroFamilyNilSlice(t *testing.T) {
 // binary as a fallback). These MUST stay in sync — edit the engine copy,
 // then replicate to scripts/.
 func TestDetectOSScriptsAreInSync(t *testing.T) {
-	const scriptsPath = "../../scripts/detect_os.sh"
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate engine test source")
+	}
+	scriptsPath := filepath.Join(filepath.Dir(filename), "..", "..", "scripts", "detect_os.sh")
 	got, err := os.ReadFile(scriptsPath)
 	if err != nil {
 		t.Fatalf("reading scripts/detect_os.sh: %v", err)
 	}
 	if string(got) != string(detectScriptContent) {
-		t.Fatalf("scripts/detect_os.sh differs from pkg/engine/detect_os.sh\n" +
-			"Edit pkg/engine/detect_os.sh, then copy to scripts/detect_os.sh")
+		t.Fatalf("scripts/detect_os.sh differs from internal/engine/detect_os.sh\n" +
+			"Edit internal/engine/detect_os.sh, then copy to scripts/detect_os.sh")
 	}
 }
 

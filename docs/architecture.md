@@ -55,7 +55,8 @@ flowchart TB
 | Package | Responsibility |
 |---------|----------------|
 | `internal/run` | `Runner` interface — seam for subprocess execution. Production: `OSExecRunner`. Tests: `FakeRunner`. |
-| `internal/engine` | Invokes `detect_os.sh`, parses its JSON output into `Facts`, resolves the distro clan via `ResolveFamily` |
+| `internal/engine` | Invokes `detect_os.sh` and parses its JSON output; retains compatibility wrappers over platform semantics |
+| `internal/platform` | Neutral host facts, distro-family resolution, and host-version comparison shared by parsing and execution |
 | `internal/native` | Declarative registry of native package managers per distro clan. Manager lookup, install command building |
 | `internal/config` | TOML parser for both `schema.toml` and `manifest.toml` (shared grammar), placeholder expansion, layer merging (`MergeLayers`), kind validation |
 | `internal/methodkind` | Compile-time list of known method kind names (ecosystem + native manager aliases). A sanity boundary, not the runtime registry — see `internal/exec.RegisteredKinds()` for that |

@@ -14,7 +14,7 @@ import (
 // output (the default, non-JSON mode). It drops the timestamp and the raw
 // "level=INFO" key/value noise of slog's built-in TextHandler in favor of a
 // short, left-aligned, optionally-colored level tag — the same 2-space
-// indented visual language as pkg/exec's ✓/✗/→ status lines, so structured
+// indented visual language as internal/exec's ✓/✗/→ status lines, so structured
 // log output ("no lockfile found — resolving latest versions") and per-tool
 // status output don't read as two unrelated tools bolted together.
 //
@@ -37,7 +37,7 @@ type prettyHandler struct {
 // newPrettyHandler creates a prettyHandler writing to out at the given
 // level. Color is auto-detected: enabled only when out is a real terminal
 // (os.Stderr/os.Stdout connected to a character device) and not disabled via
-// NO_COLOR/TERM=dumb, matching the convention pkg/exec's status lines use.
+// NO_COLOR/TERM=dumb, matching the convention internal/exec's status lines use.
 func newPrettyHandler(out io.Writer, level slog.Leveler) *prettyHandler {
 	return &prettyHandler{
 		mu:    &sync.Mutex{},
@@ -48,7 +48,7 @@ func newPrettyHandler(out io.Writer, level slog.Leveler) *prettyHandler {
 }
 
 // shouldUseColor reports whether ANSI color codes should be emitted for
-// writer w. It mirrors pkg/exec's shouldUseColor convention (NO_COLOR,
+// writer w. It mirrors internal/exec's shouldUseColor convention (NO_COLOR,
 // TERM=dumb, FORCE_COLOR, character-device check) so structured logs and
 // tool-status lines make the same choice in the same process.
 func shouldUseColor(w io.Writer) bool {

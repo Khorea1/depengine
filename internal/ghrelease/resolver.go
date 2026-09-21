@@ -98,7 +98,7 @@ func VersionTag(ctx context.Context, urlStr string, rn run.Runner) (string, erro
 // returns the same literal fallback ("latest") that ResolveLatest substitutes,
 // so callers can treat the return value uniformly as "the placeholder value".
 //
-// This exists for pkg/lock: depengine.lock pins a resolved *version*, not a
+// This exists for internal/lock: depengine.lock pins a resolved *version*, not a
 // fully-resolved URL. Storing just the tag means that if the URL template in
 // schema.toml later changes (a corrected asset filename, a new architecture
 // suffix, etc.) between `depengine update` runs, `depengine install` still
@@ -306,7 +306,7 @@ func fetchReleaseByTag(ctx context.Context, owner, repo, tag string, rn run.Runn
 // (/releases/tags/{ref}). This is the same underlying call regardless of
 // whether the schema author calls the field `release` (a named release,
 // e.g. a project's "nightly" rolling tag) or `branch` (a literal branch
-// name) — see the "github" case in pkg/validate/structural.go and
+// name) — see the "github" case in internal/validate/structural.go and
 // GitHubAdapter.resolve for how those two mutually-exclusive schema fields
 // both funnel into this one ref parameter. Neither spelling queries git
 // branches/commits directly: both assume the upstream project publishes a

@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/methodkind"
-	"github.com/Khorea1/depengine/internal/native"
 
 	"github.com/Khorea1/depengine/internal/log"
 	"github.com/pelletier/go-toml/v2"
@@ -74,7 +73,7 @@ type mergeConfig struct {
 }
 
 // ErrorCode is a stable identifier for a class of validation or schema error.
-// This duplicates pkg/validate.ErrorCode to avoid an import cycle.
+// This duplicates internal/validate.ErrorCode to avoid an import cycle.
 type ErrorCode string
 
 // ParseSchemaError is returned when a project schema or manifest is invalid
@@ -122,7 +121,7 @@ func ParseManifest(path string, m map[string]string) (*Schema, error) {
 //
 // Behavior notes:
 //   - placeholder expansion runs AFTER TOML decoding and BEFORE ordering,
-//     so method_order, when.distro_family and every pkg/url/build field get
+//     so method_order, when.distro_family and every internal/url/build field get
 //     the same treatment uniformly.
 //   - placeholders unknown to m are left untouched; validation layer is
 //     responsible for flagging them, not the parser.
@@ -617,7 +616,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 				continue
 			}
 		}
-		if _, isStr := valMap[k].(string); isStr && native.IsNativeManagerName(k) {
+		if _, isStr := valMap[k].(string); isStr && methodkind.IsNativeKind(k) {
 			nativeOverrides[k] = valMap[k]
 		} else {
 			nonNativeKeys = append(nonNativeKeys, k)
@@ -799,8 +798,8 @@ func findLineInFile(path, key string) (int, error) {
 // MethodCandidate.Kind cause a tool whose only candidates are unknown to
 // be silently skipped by the executor at runtime — Validate surfaces that
 // at parse time instead. knownKinds is typically exec.RegisteredKinds();
-// it is a parameter rather than an import so pkg/config stays free of a
-// circular dependency on pkg/exec.
+// it is a parameter rather than an import so internal/config stays free of a
+// circular dependency on internal/exec.
 //
 // Unknown declared method kinds are hard errors even when another candidate
 // could succeed: silently skipping a typo makes the effective schema harder
@@ -818,7 +817,7 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 
 	// Check Defaults.MethodOrder entries first.
 	for _, kind := range s.Defaults.MethodOrder {
-		if native.IsNativeManagerName(kind) {
+		if methodkind.IsNativeKind(kind) {
 			continue // valid: native manager name, resolved at execution time
 		}
 		if _, isBucket := DefaultBuckets[kind]; isBucket {
@@ -907,7 +906,7 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 		// Part B: warn if some method kinds are absent from method_order.
 		var inOrder, notInOrder []string
 		for _, mc := range tool.Methods {
-			if native.IsNativeManagerName(mc.Kind) {
+			if methodkind.IsNativeKind(mc.Kind) {
 				continue // native manager aliases resolve to "native" at runtime
 			}
 			if _, ok := orderSet[mc.Kind]; ok {
@@ -933,7 +932,7 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 		// Every selector must match a declared candidate by label or kind.
 		checkOrderSlice := func(slice []string, fieldName string) {
 			for _, selector := range ExpandBuckets(slice) {
-				if native.IsNativeManagerName(selector) {
+				if methodkind.IsNativeKind(selector) {
 					selector = "native"
 				}
 				matched := false

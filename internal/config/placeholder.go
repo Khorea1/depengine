@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 )
 
 // PlaceholderRe matches `{name}` tokens used throughout schema.toml string
@@ -48,7 +48,7 @@ func Expand(s string, m map[string]string) string {
 // `when = { distro_family = [...] }` style values and any URL/pkg field can
 // reference it. Adding a new placeholder later means: (1) extend Facts in
 // facts.go, (2) emit it from detect_os.sh, (3) add one line here. That's it.
-func BuildMap(f *engine.Facts, clan string) map[string]string {
+func BuildMap(f *platform.Facts, clan string) map[string]string {
 	m := map[string]string{
 		"id":             f.DistroID,
 		"distro_name":    f.DistroName,
@@ -80,7 +80,7 @@ func BuildMap(f *engine.Facts, clan string) map[string]string {
 // extends the known-placeholder set — the validate package never duplicates
 // this list.
 func KnownPlaceholders() []string {
-	m := BuildMap(&engine.Facts{}, "")
+	m := BuildMap(&platform.Facts{}, "")
 	out := make([]string, 0, len(m)+5)
 	for k := range m {
 		out = append(out, k)

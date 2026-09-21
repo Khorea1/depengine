@@ -11,7 +11,7 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// NativeAdapter wraps pkg/native to implement the Adapter interface.
+// NativeAdapter wraps internal/native to implement the Adapter interface.
 // It auto-detects the distro clan on first use by probing each known
 // native manager binary. This avoids needing the clan at construction.
 //

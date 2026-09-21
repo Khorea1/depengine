@@ -21,7 +21,7 @@ func TestGeneratedJSONSchemaIsCurrent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(got, want) {
-		t.Fatal("schema/depengine.schema.json is stale; run go generate ./pkg/config")
+		t.Fatal("schema/depengine.schema.json is stale; run go generate ./internal/config")
 	}
 }
 

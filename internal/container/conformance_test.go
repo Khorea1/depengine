@@ -13,6 +13,6 @@ func TestConformance(t *testing.T) {
 
 func TestImportDoesNotRegisterAdapter(t *testing.T) {
 	if exec.Lookup("container") != nil {
-		t.Fatal("importing pkg/container registered an adapter")
+		t.Fatal("importing internal/container registered an adapter")
 	}
 }

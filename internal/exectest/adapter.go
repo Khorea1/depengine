@@ -1,4 +1,4 @@
-// Package exectest provides test helpers for pkg/exec: a mock adapter and
+// Package exectest provides test helpers for internal/exec: a mock adapter and
 // a helper to build minimal schemas inline.
 package exectest
 

@@ -5,7 +5,7 @@
 //
 //	Executor.execute(schema, facts, clan)
 //	  │
-//	  ├─ 1. Resolve topological order of tools (pkg/graph)
+//	  ├─ 1. Resolve topological order of tools (internal/graph)
 //	  │
 //	  ├─ 2. For each tool (in graph order):
 //	  │     │

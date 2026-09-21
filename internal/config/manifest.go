@@ -422,9 +422,9 @@ func mergeMethodConfigs(lower, upper *MethodCandidate, pc *provenanceCollector) 
 // tools are excluded by default, not errored.
 //
 // This is intentionally always nil today (kept for call-site/API stability
-// across pkg/config and its callers: helpers.go, status_remove_forget.go,
+// across internal/config and its callers: helpers.go, status_remove_forget.go,
 // graph_why.go). Deleting it outright would require touching those files too,
-// which is outside the pkg/config-only scope of this change.
+// which is outside the internal/config-only scope of this change.
 func ValidateManifestNewTools(schema, manifest *Schema) error {
 	_ = schema // kept for signature compatibility; filtering is handled by FilterManifestTools
 	return nil

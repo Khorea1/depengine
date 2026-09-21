@@ -1,8 +1,8 @@
 package config
 
 import (
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/methodkind"
+	"github.com/Khorea1/depengine/internal/platform"
 )
 
 // Schema is the fully-normalized in-memory form of schema.toml after parsing.
@@ -58,7 +58,7 @@ type Hook struct {
 
 // FilteredTools clones tools with Requires reduced to the dependencies that
 // apply under facts. Tools without gated dependencies are reused.
-func FilteredTools(tools map[string]*Tool, facts *engine.Facts) map[string]*Tool {
+func FilteredTools(tools map[string]*Tool, facts *platform.Facts) map[string]*Tool {
 	if tools == nil || facts == nil {
 		return tools
 	}
@@ -77,7 +77,7 @@ func FilteredTools(tools map[string]*Tool, facts *engine.Facts) map[string]*Tool
 
 // EffectiveRequires returns dependencies whose conditions match facts. Nil
 // facts disable filtering.
-func (t *Tool) EffectiveRequires(facts *engine.Facts) []string {
+func (t *Tool) EffectiveRequires(facts *platform.Facts) []string {
 	if facts == nil || len(t.RequiresWhen) == 0 {
 		return t.Requires
 	}
@@ -174,4 +174,22 @@ type Source struct {
 	Kind string
 	Name string
 	URL  string
+}
+
+func (t *Tool) GraphDependencies() []string { return t.Requires }
+
+func (t *Tool) GraphTags() []string { return t.Tags }
+
+func (t *Tool) GraphConditionalDependencies() map[string][]string {
+	dependencies := make(map[string][]string)
+	for _, method := range t.Methods {
+		label := method.Kind
+		if method.Label != "" {
+			label = method.Label
+		}
+		for _, dependency := range method.Requires {
+			dependencies[label] = append(dependencies[label], dependency)
+		}
+	}
+	return dependencies
 }

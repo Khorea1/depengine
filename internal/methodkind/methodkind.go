@@ -469,6 +469,12 @@ func KnownKinds() []string { return append([]string(nil), knownKinds...) }
 // IsKnownKind reports whether k is a method kind or native manager alias.
 func IsKnownKind(k string) bool { return knownKindSet[k] }
 
+// IsNativeKind reports whether kind names the generic native method or a
+// registered native package-manager alias.
+func IsNativeKind(kind string) bool {
+	return kind == "native" || native.IsNativeManagerName(kind)
+}
+
 // ExpandBuckets replaces bucket names with their concrete method kinds.
 func ExpandBuckets(order []string) []string {
 	var expanded []string

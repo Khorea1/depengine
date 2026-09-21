@@ -13,6 +13,6 @@ func TestConformance(t *testing.T) {
 
 func TestImportDoesNotRegisterAdapter(t *testing.T) {
 	if exec.Lookup("git") != nil {
-		t.Fatal("importing pkg/git registered an adapter")
+		t.Fatal("importing internal/git registered an adapter")
 	}
 }

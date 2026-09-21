@@ -8,7 +8,7 @@ import "strings"
 // build, git, ...), used whenever neither the method's own arch_map/os_map
 // nor [defaults].arch_map/os_map has an entry for the current value.
 //
-// This is the http-method sibling of pkg/ghrelease's archSynonyms/
+// This is the http-method sibling of internal/ghrelease's archSynonyms/
 // osSynonyms (see assetmatch.go): same rationale — the engine's canonical
 // spelling (uname/GOOS-style) doesn't always match what upstream release
 // artifacts use — but 1:1 instead of 1:N. The http method builds a URL

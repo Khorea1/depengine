@@ -174,7 +174,7 @@ func TestResolveLatestTagWithHTTPMock(t *testing.T) {
 	}
 
 	// The same tag, applied by the caller, must reproduce what ResolveLatest
-	// would have returned directly — this is the invariant pkg/lock relies on.
+	// would have returned directly — this is the invariant internal/lock relies on.
 	viaResolveLatest, err := ResolveLatest(context.Background(), url, run.OSExecRunner{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

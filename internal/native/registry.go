@@ -49,7 +49,7 @@ type Manager struct {
 	// distinguish "not installed yet" from "does not exist at all" (e.g.
 	// an AUR-only or cargo-only tool that a `simple = [...]` entry
 	// otherwise turns into a phantom native candidate — see schema.go
-	// normalizeTools and pkg/exec's CheckAvailable).
+	// normalizeTools and internal/exec's CheckAvailable).
 	//
 	// Left empty for managers where no exit-code-only, shell-free query
 	// is known to be reliable; CheckAvailable then fails open (assumes
@@ -398,7 +398,7 @@ func KnownClans() []string {
 			out = append(out, clan)
 		}
 	}
-	// Deterministic order: pkg/exec's detectClan probes clans in this order
+	// Deterministic order: internal/exec's detectClan probes clans in this order
 	// via LookPath and stops at the first match. Two clans can share the
 	// same manager binary name (e.g. "pkg" for both termux and freebsd),
 	// so an unordered, per-process-random iteration could resolve to a
@@ -425,7 +425,7 @@ func AllClans() []string {
 // nativeManagerNames holds every Manager.Name value, precomputed once so
 // IsNativeManagerName doesn't rescan the managers map on every call (it's
 // invoked once per method kind during schema validation). Mirrors the
-// knownKindSet pattern in pkg/methodkind for the same kind of lookup.
+// knownKindSet pattern in internal/methodkind for the same kind of lookup.
 var nativeManagerNames = buildNativeManagerNames()
 
 func buildNativeManagerNames() map[string]bool {

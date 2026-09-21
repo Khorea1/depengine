@@ -14,7 +14,7 @@ func TestConformance(t *testing.T) {
 func TestImportDoesNotRegisterAdapters(t *testing.T) {
 	for _, kind := range []string{"http", "github", "appimage", "android"} {
 		if exec.Lookup(kind) != nil {
-			t.Errorf("importing pkg/httpdownload registered %q", kind)
+			t.Errorf("importing internal/httpdownload registered %q", kind)
 		}
 	}
 }

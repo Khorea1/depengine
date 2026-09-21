@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -19,23 +20,7 @@ import (
 // Derived notions (clan, native manager) are separate return values or
 // local vars at their use sites — keeps Facts cheap to test and honest
 // about what the script actually produced.
-type Facts struct {
-	TargetArch      string `json:"target_arch"`
-	DistroID        string `json:"distro_id"`
-	DistroName      string `json:"distro_name"`
-	DistroVersion   string `json:"distro_version"`
-	DistroIDLike    string `json:"distro_id_like"`
-	TargetFamily    string `json:"target_family"` // unix | windows | unknown
-	DetectionMethod string `json:"detection_method"`
-	Confidence      string `json:"confidence"` // high | medium | low | manual | none
-	IsWSL           bool   `json:"is_wsl"`
-	IsContainer     bool   `json:"is_container"`
-	IsAndroid       bool   `json:"is_android"`
-	Kernel          string `json:"kernel"`
-	Libc            string `json:"libc"`
-	InitSystem      string `json:"init_system"`
-	OS              string `json:"os"`
-}
+type Facts = platform.Facts
 
 //  1. the DEPENGINE_DETECT_SCRIPT env var (explicit override)
 //  2. embedded content → write to a temp file, return its path
@@ -79,7 +64,7 @@ func locateDetectScript(r run.Runner) (string, bool, error) {
 		}
 	}
 
-	// 4. detect_os.sh on PATH. Executable lookup stays behind pkg/run so
+	// 4. detect_os.sh on PATH. Executable lookup stays behind internal/run so
 	// dry-run/test/remote runners observe the same process boundary.
 	if r != nil && run.LookPath(context.Background(), r, "detect_os.sh") {
 		return "detect_os.sh", false, nil

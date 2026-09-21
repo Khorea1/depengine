@@ -3,8 +3,8 @@ package config
 import (
 	"strings"
 
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/platform"
 )
 
 // Condition is the parsed form of `when = { ... }`. All fields are honored by
@@ -47,7 +47,7 @@ func (c *Condition) IsZero() bool {
 
 // Match reports whether this condition is satisfied by the given system facts.
 // A nil condition always matches; a non-empty condition cannot match nil facts.
-func (c *Condition) Match(facts *engine.Facts) bool {
+func (c *Condition) Match(facts *platform.Facts) bool {
 	if c == nil {
 		return true
 	}
@@ -56,8 +56,8 @@ func (c *Condition) Match(facts *engine.Facts) bool {
 	}
 
 	if len(c.DistroFamily) > 0 {
-		clan := engine.ResolveFamily(facts)
-		if !engine.MatchesDistroFamily(clan, c.DistroFamily) {
+		clan := platform.ResolveFamily(facts)
+		if !platform.MatchesDistroFamily(clan, c.DistroFamily) {
 			return false
 		}
 	}
@@ -67,10 +67,10 @@ func (c *Condition) Match(facts *engine.Facts) bool {
 	if len(c.DistroVersion) > 0 && !matchVersion(c.DistroVersion, facts.DistroVersion) {
 		return false
 	}
-	if c.DistroVersionMin != "" && (facts.DistroVersion == "" || engine.CompareVersion(facts.DistroVersion, c.DistroVersionMin) < 0) {
+	if c.DistroVersionMin != "" && (facts.DistroVersion == "" || platform.CompareVersion(facts.DistroVersion, c.DistroVersionMin) < 0) {
 		return false
 	}
-	if c.DistroVersionMax != "" && (facts.DistroVersion == "" || engine.CompareVersion(facts.DistroVersion, c.DistroVersionMax) > 0) {
+	if c.DistroVersionMax != "" && (facts.DistroVersion == "" || platform.CompareVersion(facts.DistroVersion, c.DistroVersionMax) > 0) {
 		return false
 	}
 	if len(c.TargetFamily) > 0 && !matchExact(c.TargetFamily, facts.TargetFamily) {
@@ -117,7 +117,7 @@ func matchVersion(allowed []string, actual string) bool {
 		return false
 	}
 	for _, value := range allowed {
-		if engine.CompareVersion(actual, value) == 0 {
+		if platform.CompareVersion(actual, value) == 0 {
 			return true
 		}
 	}

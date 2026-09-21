@@ -4,9 +4,13 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/Khorea1/depengine/internal/config"
 )
+
+type renderNode interface {
+	node
+	GraphTags() []string
+	GraphConditionalDependencies() map[string][]string
+}
 
 // RenderMermaid returns a Mermaid flowchart string from the tool dependency
 // map. It produces:
@@ -17,7 +21,7 @@ import (
 //
 // Arrows point from dependencies to the tools that require them,
 // showing the installation order (dependencies first).
-func RenderMermaid(tools map[string]*config.Tool) string {
+func RenderMermaid[T renderNode](tools map[string]T) string {
 	var b strings.Builder
 	b.WriteString("graph TD\n")
 
@@ -41,7 +45,7 @@ func RenderMermaid(tools map[string]*config.Tool) string {
 //	}
 //
 // Arrows point from dependencies to the tools that require them.
-func RenderDOT(tools map[string]*config.Tool) string {
+func RenderDOT[T renderNode](tools map[string]T) string {
 	var b strings.Builder
 	b.WriteString("digraph depengine {\n")
 
@@ -66,15 +70,15 @@ func RenderDOT(tools map[string]*config.Tool) string {
 //
 // Tools within each level are sorted alphabetically.
 // When tools map is provided and a tool has tags, they are shown in parentheses.
-func RenderText(levels [][]string, tools map[string]*config.Tool) string {
+func RenderText[T renderNode](levels [][]string, tools map[string]T) string {
 	var b strings.Builder
 	for i, level := range levels {
 		sorted := make([]string, len(level))
 		copy(sorted, level)
 		sort.Strings(sorted)
 		for j, name := range sorted {
-			if t, ok := tools[name]; ok && len(t.Tags) > 0 {
-				sorted[j] = name + " (" + strings.Join(t.Tags, ",") + ")"
+			if t, ok := tools[name]; ok && len(t.GraphTags()) > 0 {
+				sorted[j] = name + " (" + strings.Join(t.GraphTags(), ",") + ")"
 			}
 		}
 		fmt.Fprintf(&b, "level %d: %s\n", i, strings.Join(sorted, ", "))
@@ -96,19 +100,15 @@ type edge struct {
 
 // collectEdges builds a sorted list of edges from the tools map.
 // Each edge represents "tool requires dep", rendered as dep --> tool.
-func collectEdges(tools map[string]*config.Tool) []edge {
+func collectEdges[T renderNode](tools map[string]T) []edge {
 	var edges []edge
 	for name, tool := range tools {
-		for _, dep := range tool.Requires {
+		for _, dep := range tool.GraphDependencies() {
 			edges = append(edges, edge{tool: name, dep: dep})
 		}
-		for _, method := range tool.Methods {
-			label := method.Kind
-			if method.Label != "" {
-				label = method.Label
-			}
-			for _, dep := range method.Requires {
-				edges = append(edges, edge{tool: name, dep: dep, conditional: true, method: label})
+		for method, dependencies := range tool.GraphConditionalDependencies() {
+			for _, dependency := range dependencies {
+				edges = append(edges, edge{tool: name, dep: dependency, conditional: true, method: method})
 			}
 		}
 	}

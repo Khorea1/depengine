@@ -62,7 +62,7 @@ func ResolveArtifactDetails(ctx context.Context, mc *config.MethodCandidate, rn 
 }
 
 // ResolveLatest replaces `{latest}` in a URL with the resolved version from
-// GitHub's releases API. Delegates to depengine/pkg/ghrelease.
+// GitHub's releases API. Delegates to depengine/internal/ghrelease.
 func ResolveLatest(ctx context.Context, urlStr string, rn run.Runner) (string, error) {
 	return ghrelease.ResolveLatest(ctx, urlStr, rn)
 }

@@ -124,7 +124,7 @@ func (a *AndroidAdapter) Install(ctx context.Context, rn run.Runner, tool *confi
 // outside this process, and no am/pm command reliably uninstalls an app
 // from Termux without root/adb. Deleting the cached .apk here would not
 // uninstall the app and would misleadingly suggest it did. Kept manual,
-// same policy as "vscode"/"mas"/"apm" (see pkg/ecosystem/registry.go).
+// same policy as "vscode"/"mas"/"apm" (see internal/ecosystem/registry.go).
 
 // Compile-time interface check.
 var _ exec.Adapter = (*AndroidAdapter)(nil)

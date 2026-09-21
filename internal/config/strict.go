@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/methodkind"
+	"github.com/Khorea1/depengine/internal/platform"
 )
 
 var conditionFields = map[string]string{
@@ -464,7 +464,7 @@ func validateCondition(raw any, path string, errs *[]string) {
 		}
 	}
 	if min, minOK := m["distro_version_min"].(string); minOK && strings.TrimSpace(min) != "" {
-		if max, maxOK := m["distro_version_max"].(string); maxOK && strings.TrimSpace(max) != "" && engine.CompareVersion(min, max) > 0 {
+		if max, maxOK := m["distro_version_max"].(string); maxOK && strings.TrimSpace(max) != "" && platform.CompareVersion(min, max) > 0 {
 			*errs = append(*errs, path+": distro_version_min must not be greater than distro_version_max")
 		}
 	}

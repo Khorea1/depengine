@@ -11,8 +11,8 @@ import (
 )
 
 // TestExecutionPackagesDoNotBypassRunner protects the dry-run execution
-// boundary. Production code under pkg/ must never spawn subprocesses directly
-// via os/exec outside pkg/run; doing so would bypass BlockedRunner,
+// boundary. Production code under internal/ must never spawn subprocesses directly
+// via os/exec outside internal/run; doing so would bypass BlockedRunner,
 // logging/redaction, timeouts and fake runners. Executable lookup belongs behind
 // run.LookPath for the same reason: tests and remote runners must observe the
 // same capability probe. Walking all packages makes this fail closed for future
@@ -49,12 +49,12 @@ func TestExecutionPackagesDoNotBypassRunner(t *testing.T) {
 				if relErr != nil {
 					rel = path
 				}
-				t.Errorf("pkg/%s imports os/exec; route subprocesses and executable lookup through pkg/run", filepath.ToSlash(rel))
+				t.Errorf("internal/%s imports os/exec; route subprocesses and executable lookup through internal/run", filepath.ToSlash(rel))
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("walk pkg tree: %v", err)
+		t.Fatalf("walk internal tree: %v", err)
 	}
 }

@@ -38,7 +38,7 @@ type GoDownloader struct {
 // takes longer to transfer than that value — regardless of network speed or
 // whether the transfer is still making progress. Deadline policy for the
 // whole install (this download included) is already centralized in
-// pkg/exec's per-method timeout and propagated via ctx down to
+// internal/exec's per-method timeout and propagated via ctx down to
 // http.NewRequestWithContext; that's the single source of truth. Only ctx
 // cancellation/timeout bounds this request.
 //
