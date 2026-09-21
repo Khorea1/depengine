@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"bytes"
@@ -101,7 +101,7 @@ func TestCommandHelperSubprocess(t *testing.T) {
 // does (parse args, then RunE), so these tests exercise the exact code path
 // `depengine remove|undo|forget|upgrade ...` runs, flag parsing included.
 func runViaCobra(cmd *cobra.Command, args []string) {
-	cmd.SetArgs(normalizeArgs(args))
+	cmd.SetArgs(NormalizeArgs(args))
 	if err := cmd.Execute(); err != nil {
 		var exitErr *ExitError
 		if !errors.As(err, &exitErr) {
