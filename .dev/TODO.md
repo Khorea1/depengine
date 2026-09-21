@@ -29,67 +29,15 @@ ______________________________________________________________________
 
 ## P0.1 — Make `--dry-run` strictly side-effect-free
 
-**Observed gap**
+> Done: dry-run is side-effect-free at the execution boundary — hooks, sync, sources, prerequisites, downloads, and arbitrary code are blocked (`TestDryRunMatrixLeavesZeroHostMutations`).
 
-`pre_install` currently executes during `install --dry-run --allow-arbitrary-code`. Native package-manager sync can also run before tool execution even in dry-run mode. This contradicts the CLI promise that no changes are made.
 
-**Work**
-
-- [x] Centralize dry-run behavior at the execution boundary; do not rely on every adapter/hook remembering to check it.
-- [x] Prevent `pre_install` from executing in dry-run mode.
-- [x] Prevent `post_install` from executing in dry-run mode.
-- [x] Prevent native package-manager sync (`apt-get update`, equivalent operations) in dry-run mode.
-- [x] Prevent source setup/removal in dry-run mode.
-- [x] Prevent prerequisite installation in dry-run mode.
-- [x] Audit download/cache behavior and define whether dry-run may perform network reads. Policy: read-only network resolution/probes are allowed; downloads/cache writes and other host mutations are not.
-- [x] Audit subprocess runner entrypoints so a future adapter cannot bypass the dry-run boundary (all production packages under `pkg/` are regression-tested fail-closed against direct `os/exec` imports; executable lookup and execution are routed through `pkg/run`; blocked execution policy is preserved through logging wrappers, and OS fact detection makes zero runner calls (including platform-version fallbacks) and does not materialize its embedded helper when execution is disabled).
-- [x] Make output distinguish between “would resolve/check” and “would mutate”.
-
-**Acceptance criteria**
-
-- [x] A dry-run over a manifest containing hooks, sources, prerequisites, native sync, HTTP/GitHub artifacts, Git builds, MSI, ecosystem managers, and containers causes zero externally visible host mutations. (`TestDryRunMatrixLeavesZeroHostMutations` runs all of these through mocked adapters + fake runner and asserts zero adapter Install calls, no hook sentinels, no mutating runner argv, an untouched state dir, and all-would-install status; the same test with dry-run disabled installs everything, proving the tripwires are live.)
-- [x] A regression test proves a sentinel file is not created by any hook during dry-run.
-- [x] A fake runner test proves no mutating package-manager command is invoked during dry-run.
-- [x] CLI wording never claims “no changes” unless this invariant is actually enforced.
-
-**Likely areas**
-
-`install.go`, `pkg/exec/*`, `pkg/exec/hooks.go`, `pkg/exec/sync.go`, `pkg/source/*`, adapter conformance tests.
-
-______________________________________________________________________
 
 ## P0.2 — Close the structured `build` arbitrary-code gate bypass
 
-**Observed gap**
+> Done: one canonical arbitrary-code predicate over resolved semantics; every build/hook/command form requires `--allow-arbitrary-code`.
 
-Structured build declarations such as:
 
-```toml
-build = { run = ["make"] }
-```
-
-are accepted by the schema but are not always detected by the arbitrary-code gate, because the dangerous-method check handles the string form differently from the structured form.
-
-**Work**
-
-- [x] Replace type-specific dangerous-field detection with one canonical semantic predicate.
-- [x] Mark every executable form of `build`, hooks, custom commands, installer scripts, or future command-bearing fields as arbitrary code. (`plan.Operation.Validate` also rejects any explicit argv that is not classified as arbitrary code, closing the invariant at the resolved-plan boundary.)
-- [x] Make the gate operate on resolved method semantics, not raw TOML representation.
-- [x] Ensure aliases/shorthands cannot bypass the gate.
-- [x] Define whether shell-string commands and argv-form commands have different risk labels; both must require explicit permission when arbitrary code is executed.
-
-**Acceptance criteria**
-
-- [x] String-form `build` requires `--allow-arbitrary-code`.
-- [x] Structured `build.run` requires `--allow-arbitrary-code`.
-- [x] All hook forms require the same gate.
-- [x] A table-driven test enumerates every command-bearing field and fails if any one is not gated.
-
-**Likely areas**
-
-`pkg/exec/hooks.go`, method contracts, semantic validation, Git adapter tests, conformance tests.
-
-______________________________________________________________________
 
 ## P0.3 — Eliminate semantic divergence between `validate`, `why`, `dry-run`, and real installation
 
@@ -351,24 +299,9 @@ ______________________________________________________________________
 
 ## P1.7 — Extend host conditions with OS/distro version facts
 
-**Problem**
+> Done: normalized OS/distro version facts with exact/min/max conditions (Ubuntu/Fedora/macOS/Windows tested).
 
-Conditions distinguish OS, distro, family, arch, libc, kernel/init, WSL/container/Android, but cannot directly express package availability tied to OS release versions.
 
-**Work**
-
-- [x] Add normalized OS/distro version facts from existing detection sources (`VERSION_ID`, `sw_vers`, Windows version/build information). Linux/macOS/Android/POSIX-Windows-layer facts are emitted, and native Go fallbacks query `sw_vers`/`cmd.exe ver` when the shell detector cannot run.
-- [x] Define comparison semantics for versions that are not strict SemVer.
-- [x] Support at least exact/min/max or a clearly constrained version expression.
-- [x] Keep the condition DSL bounded; do not introduce an arbitrary expression language unnecessarily (exact/min/max fields only; no expression evaluator).
-- [x] Test Ubuntu/Fedora/macOS/Windows version conditions.
-
-**Acceptance criteria**
-
-- [x] Manifests can distinguish e.g. Ubuntu 22.04 vs 24.04, macOS major versions, and Windows build ranges without hooks.
-- [x] Version comparison rules are documented and deterministic.
-
-______________________________________________________________________
 
 ## P1.8 — Generalize package/source/registry modeling
 
@@ -495,44 +428,15 @@ ______________________________________________________________________
 
 ## P1.13 — Clarify preference ordering versus allow-list semantics
 
-**Problem**
+> Done: `method_prefer` is canonical, `method_only` the allow-list, `skip_policy` distinct from availability skips in `why`.
 
-`method_order`/`method_prefer` behave as preference prefixes; omitted methods remain eligible. `method_only` is the actual allow-list. The distinction is valid but easy to misread.
 
-**Work**
-
-- [x] Rename or document global ordering so “order” cannot reasonably be read as exhaustive.
-- [x] Use `method_prefer` as the canonical term globally as well as per-tool; `defaults.method_order` remains a compatibility alias and cannot be combined with it.
-- [x] Keep `method_only` as the explicit allow-list.
-- [x] Make `why` show whether a method is lower-priority versus disallowed (`skip_policy` is distinct from availability/condition skips).
-
-**Acceptance criteria**
-
-- [x] Documentation and examples make preference vs eligibility unambiguous.
-- [x] Tests cover omitted methods remaining eligible under preference-only configuration.
-
-______________________________________________________________________
 
 ## P1.14 — Decide schema compatibility/freeze policy only after semantic stabilization
 
-**Problem**
+> Done: breakable pre-v1 policy kept; `schema_version` semantics and separate lock/state compat policy defined (state v2/v3/v4).
 
-Current specs explicitly say only the latest schema contract is supported and schema changes may break older files. That is reasonable during DSL formation, but it is not a future-proof public compatibility promise.
 
-**Work**
-
-- [x] Keep current breakable policy while P0/P1 work is underway.
-- [x] Define what `schema_version` will mean once v1 freezes.
-- [x] Decide whether v2+ will use parser dispatch, migration tooling, deprecation windows, or only explicit manual migration.
-- [x] Define backwards-compatibility policy for lock/state formats separately from manifest schema. (`pkg/state` now enforces the centralized pre-freeze state-format policy on both read and write: missing files are created at `CurrentStateVersion`, while omitted/older/future on-disk versions are rejected rather than silently reinterpreted; state format v2 made the integrity checksum mandatory, v3 persists the exact preparation plan required by every active WAL journal, and v4 adds durable `root_requested` intent required for safe prerequisite garbage collection; older formats cannot masquerade as current state and snapshot restore inherits the same reader policy.)
-- [x] Do not promise compatibility before the freeze gate is met.
-
-**Acceptance criteria**
-
-- [x] The public documentation accurately states compatibility guarantees.
-- [x] `schema_version` has a stable semantic purpose rather than being a constant-only validator.
-
-______________________________________________________________________
 
 # P2 — method fidelity and missing installation primitives
 
@@ -584,16 +488,9 @@ ______________________________________________________________________
 
 ## P2.3 — Improve WinGet fidelity
 
-**Work**
+> Done: WinGet typed version/source/scope/arch/installer-type with `list --id --exact` verification.
 
-- [x] Add typed version selection.
-- [x] Add source selection.
-- [x] Add user/machine scope.
-- [x] Add architecture selection where meaningful.
-- [x] Represent installer type as a typed allow-list (`installer_type`); generic override/argument bags remain intentionally unsupported.
-- [x] Verify installed package identity/version using WinGet `list --id --exact` data rather than executable presence alone.
 
-______________________________________________________________________
 
 ## P2.4 — Improve Chocolatey fidelity
 
@@ -609,15 +506,9 @@ ______________________________________________________________________
 
 ## P2.5 — Improve Scoop fidelity
 
-**Work**
+> Done: Scoop version/bucket/source/scope/arch with package version and source verification.
 
-- [x] Add version support where Scoop semantics permit it.
-- [x] Model bucket/source identity consistently with generalized sources.
-- [x] Support user/global scope where safe.
-- [x] Model architecture selection where needed.
-- [x] Verify package version and bucket/source where available.
 
-______________________________________________________________________
 
 ## P2.6 — Improve Homebrew/cask fidelity
 
@@ -949,17 +840,9 @@ ______________________________________________________________________
 
 ## P3.5 — Document the support boundary explicitly
 
-The docs should state what depengine intends to model and what it intentionally does not.
+> Done: support boundary documented in `docs/support-boundary.md`.
 
-- [x] Typed package managers and ecosystems are the preferred path.
-- [x] Generic artifact installation is supported with explicit ownership and verification.
-- [x] Opaque vendor installers/scripts are an explicit unsafe escape hatch, not equivalent to a fully modeled method.
-- [x] Not every package manager can guarantee the same level of reproducibility; expose capability differences.
-- [x] Explain the distinction between desired version, resolved version, and locked immutable identity.
-- [x] Explain scope vs environment/profile.
-- [x] Explain sources/registries vs host source mutation.
 
-______________________________________________________________________
 
 ## P3.6 — Update product claims to match actual guarantees
 
