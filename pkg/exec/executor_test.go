@@ -564,8 +564,40 @@ func TestExplainToolPrefersCandidateLabel(t *testing.T) {
 		},
 	}
 	attempts := ex.ExplainTool(context.Background(), tool, "unknown")
-	if len(attempts) != 3 || attempts[0].Kind != "gh_linux" {
+	if len(attempts) != 3 || attempts[0].DisplayName() != "gh_linux" {
 		t.Fatalf("attempt order = %+v, want gh_linux first with fallbacks retained", attempts)
+	}
+	if attempts[0].Kind != "github" || attempts[0].Label != "gh_linux" {
+		t.Fatalf("attempt = %+v, want resolved kind github with label gh_linux", attempts[0])
+	}
+	if attempts[2].Kind != "native" || attempts[2].Label != "" {
+		t.Fatalf("attempt = %+v, want unlabeled native kind", attempts[2])
+	}
+}
+
+func TestExecuteAttemptCarriesResolvedKindForLabeledCandidate(t *testing.T) {
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithAdapters(&testMockAdapter{kindValue: "github", availableFunc: func() bool { return true }, checkFunc: func(string) bool { return false }})(ex)
+	WithDryRun()(ex)
+	s := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"github"}},
+		Tools: map[string]*config.Tool{
+			"tool": {Name: "tool", Methods: []*config.MethodCandidate{
+				{Kind: "github", Label: "gh_custom", Config: map[string]any{"repo": "org/demo", "asset": "demo.tar.gz"}},
+			}},
+		},
+	}
+	report, err := ex.Execute(context.Background(), s, "unknown")
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(report.Tools) != 1 || len(report.Tools[0].Methods) != 1 {
+		t.Fatalf("report = %+v, want one tool with one attempt", report)
+	}
+	got := report.Tools[0].Methods[0]
+	if got.Kind != "github" || got.Label != "gh_custom" || got.DisplayName() != "gh_custom" {
+		t.Fatalf("attempt = %+v, want kind github with label gh_custom", got)
 	}
 }
 
