@@ -11,18 +11,18 @@ flowchart TB
     end
 
     subgraph Engine
-        PARSER[pkg/config.ParseSchema]
-        GRAPH[pkg/graph\nTopological sort]
-        EXEC[pkg/exec.Executor]
+        PARSER[internal/config.ParseSchema]
+        GRAPH[internal/graph\nTopological sort]
+        EXEC[internal/exec.Executor]
     end
 
     subgraph Adapters
-        NATIVE[pkg/native\n15 distro families]
-        ECOSYSTEM[pkg/ecosystem\nlanguage/tool adapters]
-        GIT[pkg/git\nClone + build]
-        HTTP[pkg/httpdownload\nDownload + checksum]
-        SOURCE[pkg/source\nCandidate-scoped sources]
-        MSI[pkg/msi\nWindows Installer]
+        NATIVE[internal/native\n15 distro families]
+        ECOSYSTEM[internal/ecosystem\nlanguage/tool adapters]
+        GIT[internal/git\nClone + build]
+        HTTP[internal/httpdownload\nDownload + checksum]
+        SOURCE[internal/source\nCandidate-scoped sources]
+        MSI[internal/msi\nWindows Installer]
     end
 
     subgraph Output
@@ -54,23 +54,23 @@ flowchart TB
 
 | Package | Responsibility |
 |---------|----------------|
-| `pkg/run` | `Runner` interface — seam for subprocess execution. Production: `OSExecRunner`. Tests: `FakeRunner`. |
-| `pkg/engine` | Invokes `detect_os.sh`, parses its JSON output into `Facts`, resolves the distro clan via `ResolveFamily` |
-| `pkg/native` | Declarative registry of native package managers per distro clan. Manager lookup, install command building |
-| `pkg/config` | TOML parser for both `schema.toml` and `manifest.toml` (shared grammar), placeholder expansion, layer merging (`MergeLayers`), kind validation |
-| `pkg/methodkind` | Compile-time list of known method kind names (ecosystem + native manager aliases). A sanity boundary, not the runtime registry — see `pkg/exec.RegisteredKinds()` for that |
-| `pkg/exec` | Central executor + `Adapter` interface + registry + sync manager + install/report logic |
-| `pkg/ecosystem` | Language/tool ecosystem adapters (cargo, go, pip, npm, sdkman, steamcmd, ...) |
-| `pkg/git` | `GitAdapter`: shallow clone + build |
-| `pkg/httpdownload` | `HTTPAdapter`: download + extraction + checksum/GPG verification + `{latest}` resolution |
-| `pkg/source` | Idempotent candidate-scoped PPA/COPR/Scoop bucket/Brew tap management |
-| `pkg/msi` | MSI installation and exact uninstall-registry ownership |
-| `pkg/graph` | Topological sort (Kahn's algorithm) with cycle detection |
-| `pkg/lock` | `depengine.lock` — resolves and pins `{latest}` placeholders |
-| `pkg/state` | Installed-tool state file, with cross-platform file locking (`flock` on Unix, `LockFileEx` on Windows) |
-| `pkg/log` | Structured logger via `log/slog`, with trace ID and DEBUG–ERROR levels |
-| `pkg/validate` | Structural + semantic + environmental validation |
-| `pkg/sbom` | SBOM export (CycloneDX 1.5 / SPDX 2.3) |
+| `internal/run` | `Runner` interface — seam for subprocess execution. Production: `OSExecRunner`. Tests: `FakeRunner`. |
+| `internal/engine` | Invokes `detect_os.sh`, parses its JSON output into `Facts`, resolves the distro clan via `ResolveFamily` |
+| `internal/native` | Declarative registry of native package managers per distro clan. Manager lookup, install command building |
+| `internal/config` | TOML parser for both `schema.toml` and `manifest.toml` (shared grammar), placeholder expansion, layer merging (`MergeLayers`), kind validation |
+| `internal/methodkind` | Compile-time list of known method kind names (ecosystem + native manager aliases). A sanity boundary, not the runtime registry — see `internal/exec.RegisteredKinds()` for that |
+| `internal/exec` | Central executor + `Adapter` interface + registry + sync manager + install/report logic |
+| `internal/ecosystem` | Language/tool ecosystem adapters (cargo, go, pip, npm, sdkman, steamcmd, ...) |
+| `internal/git` | `GitAdapter`: shallow clone + build |
+| `internal/httpdownload` | `HTTPAdapter`: download + extraction + checksum/GPG verification + `{latest}` resolution |
+| `internal/source` | Idempotent candidate-scoped PPA/COPR/Scoop bucket/Brew tap management |
+| `internal/msi` | MSI installation and exact uninstall-registry ownership |
+| `internal/graph` | Topological sort (Kahn's algorithm) with cycle detection |
+| `internal/lock` | `depengine.lock` — resolves and pins `{latest}` placeholders |
+| `internal/state` | Installed-tool state file, with cross-platform file locking (`flock` on Unix, `LockFileEx` on Windows) |
+| `internal/log` | Structured logger via `log/slog`, with trace ID and DEBUG–ERROR levels |
+| `internal/validate` | Structural + semantic + environmental validation |
+| `internal/sbom` | SBOM export (CycloneDX 1.5 / SPDX 2.3) |
 
 ## Installation flow
 

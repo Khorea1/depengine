@@ -1,1 +1,1 @@
-../pkg/engine/detect_os.sh
+../internal/engine/detect_os.sh

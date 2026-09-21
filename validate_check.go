@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Khorea1/depengine/pkg/config"
-	"github.com/Khorea1/depengine/pkg/engine"
-	"github.com/Khorea1/depengine/pkg/exec"
-	"github.com/Khorea1/depengine/pkg/log"
-	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/validate"
+	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/run"
+	"github.com/Khorea1/depengine/internal/validate"
 	"github.com/spf13/cobra"
 )
 

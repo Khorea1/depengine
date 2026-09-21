@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Khorea1/depengine/pkg/config"
-	"github.com/Khorea1/depengine/pkg/exec"
-	"github.com/Khorea1/depengine/pkg/methodkind"
-	"github.com/Khorea1/depengine/pkg/validate"
+	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/methodkind"
+	"github.com/Khorea1/depengine/internal/validate"
 )
 
 const (

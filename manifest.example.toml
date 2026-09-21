@@ -472,14 +472,14 @@ yarn = "gtop"   # real npm package: system monitor dashboard, htop-alike
 # --- apm: Atom's package manager. Atom itself was discontinued by GitHub in
 # December 2022; apm is kept here only as a worked example of a fully
 # deprecated ecosystem the engine still knows how to drive (uninstall is
-# manual — see pkg/ecosystem/registry.go's comment on why). ---
+# manual — see internal/ecosystem/registry.go's comment on why). ---
 [packages.minimap]
   [packages.minimap.apm]
   pkg = "minimap"   # real, once-ubiquitous Atom package (sidebar code minimap)
 
 # --- vscode / vscodium: editor extensions, installed by publisher.name ID.
 # Extension (un)install is inherently manual bookkeeping (see
-# pkg/ecosystem/registry.go) — Check just looks for the ID in
+# internal/ecosystem/registry.go) — Check just looks for the ID in
 # `code --list-extensions`. ---
 [packages.python-vscode-ext]
   [packages.python-vscode-ext.vscode]
@@ -539,7 +539,7 @@ pacstall = "google-chrome-stable-deb"
 
 # --- asdf: version manager plugins (mise is a drop-in-compatible
 # reimplementation — the adapter checks for either binary, see
-# pkg/ecosystem/asdf_adapter.go). Plugin names usually match the runtime name. ---
+# internal/ecosystem/asdf_adapter.go). Plugin names usually match the runtime name. ---
 [packages.nodejs-asdf]
 asdf = "nodejs"
 [packages.erlang-asdf]

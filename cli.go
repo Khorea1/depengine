@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Khorea1/depengine/pkg/i18n"
+	"github.com/Khorea1/depengine/internal/i18n"
 	"github.com/spf13/cobra"
 )
 

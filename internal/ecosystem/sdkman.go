@@ -1,0 +1,109 @@
+package ecosystem
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/run"
+)
+
+// SDKManAdapter manages SDKs via SDKMAN (https://sdkman.io). Install is
+// `sdk install {candidate}`; check probes whether the candidate directory
+// exists under ~/.sdkman/candidates/.
+//
+// Removal is intentionally manual: `sdk uninstall` requires a candidate plus
+// an exact installed version (SDKMAN keeps multiple versions per candidate),
+// and depengine does not track which version was installed.
+type SDKManAdapter struct{}
+
+func NewSDKManAdapter() *SDKManAdapter {
+	return &SDKManAdapter{}
+}
+
+func (a *SDKManAdapter) Kind() string { return "sdkman" }
+
+func (a *SDKManAdapter) Available(ctx context.Context, rn run.Runner) bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	sdk := filepath.Join(home, ".sdkman", "bin", "sdk")
+	if _, err := os.Stat(sdk); err == nil {
+		return true
+	}
+	return run.LookPath(ctx, rn, "sdk")
+}
+
+func (a *SDKManAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
+	candidate := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
+	if len(candidate) == 0 {
+		return false
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	base := filepath.Join(home, ".sdkman", "candidates", candidate[0])
+	if version, ok := mc.Config["version"].(string); ok && version != "" {
+		// Exact-version intent is satisfied only when that version is actually
+		// installed. Checking only the `current` symlink would silently accept
+		// a different SDK version.
+		_, err = os.Stat(filepath.Join(base, version))
+		return err == nil
+	}
+	_, err = os.Stat(filepath.Join(base, "current"))
+	return err == nil
+}
+
+// InstalledVersion reports the SDKMAN candidate version represented by the
+// current method intent. Exact-version installs can be reported without
+// invoking SDKMAN because their owned candidate directory is deterministic.
+// For unpinned intent, resolve the `current` symlink when possible; failure is
+// deliberately non-fatal because state persistence treats version reporting as
+// best-effort.
+func (a *SDKManAdapter) InstalledVersion(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate) (string, error) {
+	candidate := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
+	if len(candidate) == 0 || candidate[0] == "" {
+		return "", fmt.Errorf("sdkman: no package name")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	base := filepath.Join(home, ".sdkman", "candidates", candidate[0])
+	if version, ok := mc.Config["version"].(string); ok && version != "" {
+		if _, err := os.Stat(filepath.Join(base, version)); err != nil {
+			return "", err
+		}
+		return version, nil
+	}
+	resolved, err := filepath.EvalSymlinks(filepath.Join(base, "current"))
+	if err != nil {
+		return "", err
+	}
+	version := filepath.Base(resolved)
+	if version == "." || version == string(filepath.Separator) || version == "" {
+		return "", fmt.Errorf("sdkman: could not determine current version for %s", candidate[0])
+	}
+	return version, nil
+}
+
+func (a *SDKManAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
+	if len(pkg) == 0 {
+		return fmt.Errorf("sdkman: no package name")
+	}
+	cmd := []string{"sdk", "install", pkg[0]}
+	if v, ok := mc.Config["version"].(string); ok && v != "" {
+		cmd = append(cmd, v)
+	}
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	return run.CheckResult(res, "sdkman: install")
+}
+
+var _ exec.Adapter = (*SDKManAdapter)(nil)
+var _ exec.Versioner = (*SDKManAdapter)(nil)

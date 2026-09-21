@@ -3,8 +3,8 @@ package main
 import (
 	"os"
 
-	"github.com/Khorea1/depengine/pkg/log"
-	"github.com/Khorea1/depengine/pkg/state"
+	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
 )
 

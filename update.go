@@ -7,12 +7,12 @@ import (
 	"sort"
 	"time"
 
-	"github.com/Khorea1/depengine/pkg/config"
-	"github.com/Khorea1/depengine/pkg/ecosystem"
-	"github.com/Khorea1/depengine/pkg/lock"
-	"github.com/Khorea1/depengine/pkg/log"
-	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/state"
+	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/ecosystem"
+	"github.com/Khorea1/depengine/internal/lock"
+	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/run"
+	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
 )
 

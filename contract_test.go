@@ -4,8 +4,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/Khorea1/depengine/pkg/exec"
-	"github.com/Khorea1/depengine/pkg/methodkind"
+	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/methodkind"
 )
 
 func TestRegisteredAdaptersMatchMethodContracts(t *testing.T) {

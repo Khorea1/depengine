@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/internal/config"
 )
 
 func TestFilterToolsPreservesRequiredDependencies(t *testing.T) {

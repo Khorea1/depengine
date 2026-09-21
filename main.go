@@ -6,13 +6,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/Khorea1/depengine/pkg/container"
-	"github.com/Khorea1/depengine/pkg/ecosystem"
-	"github.com/Khorea1/depengine/pkg/exec"
-	gitadapter "github.com/Khorea1/depengine/pkg/git"
-	"github.com/Khorea1/depengine/pkg/httpdownload"
-	"github.com/Khorea1/depengine/pkg/localartifactadapter"
-	"github.com/Khorea1/depengine/pkg/msi"
+	"github.com/Khorea1/depengine/internal/container"
+	"github.com/Khorea1/depengine/internal/ecosystem"
+	"github.com/Khorea1/depengine/internal/exec"
+	gitadapter "github.com/Khorea1/depengine/internal/git"
+	"github.com/Khorea1/depengine/internal/httpdownload"
+	"github.com/Khorea1/depengine/internal/localartifactadapter"
+	"github.com/Khorea1/depengine/internal/msi"
 )
 
 var version = "dev"
@@ -21,7 +21,7 @@ func main() {
 	initAdapters()
 	// SIGINT/SIGTERM cancel in-flight work instead of killing the
 	// process mid-mutation: adapter subprocesses receive SIGTERM as a
-	// group (see pkg/run) and the preparation journal stays in a
+	// group (see internal/run) and the preparation journal stays in a
 	// recoverable state for the next run.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
