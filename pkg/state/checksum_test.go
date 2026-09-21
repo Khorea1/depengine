@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +16,7 @@ func TestSaveWritesIntegrityChecksum(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", td)
 
 	st := &State{
-		Version:          1,
+		Version:          currentStateVersion,
 		SchemaPath:       "/tmp/schema.toml",
 		SchemaModifiedAt: "2024-01-01T00:00:00Z",
 		Tools: map[string]ToolState{
@@ -72,7 +73,7 @@ func TestSaveLoadRoundTripWithChecksum(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", td)
 
 	original := &State{
-		Version:          1,
+		Version:          currentStateVersion,
 		SchemaPath:       "/tmp/schema.toml",
 		SchemaModifiedAt: "2024-01-01T00:00:00Z",
 		Tools: map[string]ToolState{
@@ -128,7 +129,7 @@ func TestLoadFromDetectsCorruptedState(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", td)
 
 	st := &State{
-		Version: 1,
+		Version: currentStateVersion,
 		Tools: map[string]ToolState{
 			"nvim": {
 				Method:          "native",
@@ -175,35 +176,32 @@ func TestLoadFromDetectsCorruptedState(t *testing.T) {
 	}
 }
 
-func TestLoadFromLegacyFileWithoutChecksum(t *testing.T) {
+func TestLoadFromRejectsLegacyFileWithoutChecksum(t *testing.T) {
 	td := t.TempDir()
 	path := filepath.Join(td, "legacy-state.json")
 
-	// A state file written before the checksum field existed: no "checksum"
-	// key, must load normally without any integrity error.
+	// State v1 predates the mandatory checksum invariant and must not be
+	// reinterpreted as current state.
 	data := `{"version":1,"schema_path":"/tmp/schema.toml","schema_modified_at":"2024-01-01T00:00:00Z","tools":{"fd":{"method":"cargo","installed_at":"2024-01-01T00:00:00Z","postinstall_done":false,"definition_hash":"abc","config":{"pkg":"fd-find"}}}}`
 	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	s, err := LoadFrom(path)
-	if err != nil {
-		t.Fatalf("LoadFrom() on legacy file without checksum: %v", err)
+	_, err := LoadFrom(path)
+	if err == nil || !strings.Contains(err.Error(), "unsupported state format version 1") {
+		t.Fatalf("LoadFrom() error = %v, want unsupported v1 state", err)
 	}
-	if s.Checksum != "" {
-		t.Fatalf("legacy file: expected empty Checksum, got %q", s.Checksum)
+}
+
+func TestLoadFromRejectsCurrentStateWithoutChecksum(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	data := fmt.Sprintf(`{"version":%d,"tools":{}}`, currentStateVersion)
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+		t.Fatal(err)
 	}
-	if s.Version != 1 {
-		t.Fatalf("Version: got %d, want 1", s.Version)
-	}
-	tool, ok := s.Tools["fd"]
-	if !ok {
-		t.Fatal("tool 'fd' not loaded from legacy file")
-	}
-	if tool.Method != "cargo" {
-		t.Fatalf("Method: got %q, want %q", tool.Method, "cargo")
-	}
-	if tool.Config == nil {
-		t.Fatal("Config should not be nil after loading legacy file")
+
+	_, err := LoadFrom(path)
+	if err == nil || !strings.Contains(err.Error(), "missing integrity checksum") {
+		t.Fatalf("LoadFrom() error = %v, want missing checksum rejection", err)
 	}
 }

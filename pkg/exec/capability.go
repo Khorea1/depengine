@@ -12,6 +12,25 @@ import (
 
 // candidatePlanIntent is the shared static planning boundary for execution and
 // explain. It deliberately performs no host probes or mutations.
+// CandidatePlanIntent exposes the executor's static planning boundary to
+// composition-root commands that must validate one already-selected candidate
+// before performing a destructive transition. It performs no host probes or
+// mutations and returns an error for every capability mismatch the normal
+// executor would skip.
+func CandidatePlanIntent(tool *config.Tool, method *config.MethodCandidate) (*plan.ResolvedInstallPlan, error) {
+	intent, mismatch := candidatePlanIntent(tool, method)
+	if mismatch != "" {
+		return intent, fmt.Errorf("%s", mismatch)
+	}
+	if intent == nil {
+		if method == nil {
+			return nil, fmt.Errorf("method candidate is required")
+		}
+		return nil, fmt.Errorf("unknown method kind %q", method.Kind)
+	}
+	return intent, nil
+}
+
 func candidatePlanIntent(tool *config.Tool, method *config.MethodCandidate) (*plan.ResolvedInstallPlan, string) {
 	if method == nil {
 		return nil, ""

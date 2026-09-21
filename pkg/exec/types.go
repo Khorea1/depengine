@@ -56,9 +56,20 @@ type ToolResult struct {
 	PostinstallDone bool
 	RebootRequired  bool
 
+	// InstallCommitted records that the adapter install mutation completed even
+	// if a later post-install hook failed. State persistence must still track the
+	// host installation and its owned resources so removal/recovery stay sound.
+	InstallCommitted bool
+
 	// Config stores the method's configuration (e.g., pkg override).
 	Config     map[string]any
 	PlanIntent *plan.ResolvedInstallPlan
+
+	// ResourceUses records shared host resources used by a successfully
+	// committed candidate and whether depengine created them during this run.
+	// It is projected into durable ownership/refcount state by writeState and
+	// intentionally omitted from user-facing report JSON.
+	ResourceUses []plan.ResourceUse
 }
 
 // MethodAttempt records one method attempt for a tool.

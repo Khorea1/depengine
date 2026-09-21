@@ -140,9 +140,15 @@ func (i ResolvedIdentity) Validate() error {
 		if err := i.RequestedVersion.Validate(); err != nil {
 			return fmt.Errorf("requested version: %w", err)
 		}
-		if i.RequestedVersion.Mode == VersionDigest && i.Digest != "" &&
-			canonicalDigest(i.RequestedVersion.Value) != canonicalDigest(i.Digest) {
-			return errors.New("requested digest does not match resolved identity digest")
+		switch i.RequestedVersion.Mode {
+		case VersionExact:
+			if i.Version != "" && i.Version != i.RequestedVersion.Value {
+				return errors.New("requested exact version does not match resolved identity version")
+			}
+		case VersionDigest:
+			if i.Digest != "" && canonicalDigest(i.RequestedVersion.Value) != canonicalDigest(i.Digest) {
+				return errors.New("requested digest does not match resolved identity digest")
+			}
 		}
 	}
 	if i.Scope != "" {
@@ -160,11 +166,14 @@ func (i ResolvedIdentity) Validate() error {
 
 // Artifact describes a resolved install artifact without embedding credentials.
 type Artifact struct {
-	Kind         ArtifactKind `json:"kind,omitempty"`
-	URL          string       `json:"url,omitempty"`
-	LocalPath    string       `json:"local_path,omitempty"`
-	Checksum     string       `json:"checksum,omitempty"`
-	SignatureURL string       `json:"signature_url,omitempty"`
+	Kind               ArtifactKind `json:"kind,omitempty"`
+	URL                string       `json:"url,omitempty"`
+	LocalPath          string       `json:"local_path,omitempty"`
+	Checksum           string       `json:"checksum,omitempty"`
+	ChecksumURL        string       `json:"checksum_url,omitempty"`
+	ChecksumFileFormat string       `json:"checksum_file_format,omitempty"`
+	SignatureURL       string       `json:"signature_url,omitempty"`
+	SigningKey         string       `json:"signing_key,omitempty"`
 }
 
 // Prerequisite describes a dependency required by the selected plan.
@@ -542,7 +551,9 @@ func (p ResolvedInstallPlan) redacted() ResolvedInstallPlan {
 	p.Identity.Registry = run.RedactSensitiveText(p.Identity.Registry)
 	for i := range p.Artifacts {
 		p.Artifacts[i].URL = run.RedactSensitiveText(p.Artifacts[i].URL)
+		p.Artifacts[i].ChecksumURL = run.RedactSensitiveText(p.Artifacts[i].ChecksumURL)
 		p.Artifacts[i].SignatureURL = run.RedactSensitiveText(p.Artifacts[i].SignatureURL)
+		p.Artifacts[i].SigningKey = run.RedactSensitiveText(p.Artifacts[i].SigningKey)
 	}
 	for i := range p.Sources {
 		p.Sources[i].URL = run.RedactSensitiveText(p.Sources[i].URL)
@@ -585,6 +596,86 @@ func (p ResolvedInstallPlan) redacted() ResolvedInstallPlan {
 func cloneOperation(op Operation) Operation {
 	op.Command = append([]string(nil), op.Command...)
 	return op
+}
+
+// cloneResolvedInstallPlan returns a deep copy of the mutable composite state
+// carried by a resolved plan. Plans cross lifecycle/lock boundaries and are
+// routinely handed to code that may adapt them for execution; sharing slices,
+// maps, or pointer-backed identity with the caller would let those adaptations
+// silently rewrite the original intent.
+func cloneResolvedInstallPlan(in ResolvedInstallPlan) ResolvedInstallPlan {
+	out := in
+	if in.Identity.RequestedVersion != nil {
+		requested := *in.Identity.RequestedVersion
+		if in.Identity.RequestedVersion.Channel != nil {
+			channel := *in.Identity.RequestedVersion.Channel
+			requested.Channel = &channel
+		}
+		out.Identity.RequestedVersion = &requested
+	}
+	if in.Identity.Environment != nil {
+		environment := *in.Identity.Environment
+		out.Identity.Environment = &environment
+	}
+
+	out.Artifacts = append([]Artifact(nil), in.Artifacts...)
+	out.Prerequisites = append([]Prerequisite(nil), in.Prerequisites...)
+	out.Sources = append([]SourceReference(nil), in.Sources...)
+	for i := range out.Sources {
+		if in.Sources[i].Trust != nil {
+			trust := *in.Sources[i].Trust
+			out.Sources[i].Trust = &trust
+		}
+		if in.Sources[i].SecretRef != nil {
+			secret := *in.Sources[i].SecretRef
+			out.Sources[i].SecretRef = &secret
+		}
+	}
+
+	if in.Preparation != nil {
+		preparation := *in.Preparation
+		preparation.Probe = cloneOperations(in.Preparation.Probe)
+		preparation.Commit = cloneOperations(in.Preparation.Commit)
+		preparation.Prepare = append([]PreparationMutation(nil), in.Preparation.Prepare...)
+		for i := range preparation.Prepare {
+			preparation.Prepare[i].Apply = cloneOperation(in.Preparation.Prepare[i].Apply)
+			if in.Preparation.Prepare[i].Rollback != nil {
+				rollback := cloneOperation(*in.Preparation.Prepare[i].Rollback)
+				preparation.Prepare[i].Rollback = &rollback
+			}
+		}
+		out.Preparation = &preparation
+	}
+
+	out.Hooks = append([]LifecycleHook(nil), in.Hooks...)
+	for i := range out.Hooks {
+		out.Hooks[i].Operation = cloneOperation(in.Hooks[i].Operation)
+	}
+	out.Ensures = append([]EnsureAction(nil), in.Ensures...)
+	for i := range out.Ensures {
+		out.Ensures[i].Check = cloneOperation(in.Ensures[i].Check)
+		out.Ensures[i].Apply = cloneOperation(in.Ensures[i].Apply)
+	}
+	out.SourceMutations = cloneOperations(in.SourceMutations)
+	out.OwnedPaths = append([]string(nil), in.OwnedPaths...)
+	if in.Entrypoints != nil {
+		out.Entrypoints = make(map[string]string, len(in.Entrypoints))
+		for name, target := range in.Entrypoints {
+			out.Entrypoints[name] = target
+		}
+	}
+	out.Operations = cloneOperations(in.Operations)
+	out.Removal.OwnedPaths = append([]string(nil), in.Removal.OwnedPaths...)
+	out.Secrets = append([]SecretReference(nil), in.Secrets...)
+	return out
+}
+
+func cloneOperations(in []Operation) []Operation {
+	out := append([]Operation(nil), in...)
+	for i := range out {
+		out[i] = cloneOperation(out[i])
+	}
+	return out
 }
 
 func redactOperations(in []Operation) []Operation {

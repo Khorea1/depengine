@@ -70,3 +70,45 @@ func TestArtifactAllowsAbsoluteNonNetworkURL(t *testing.T) {
 		t.Fatalf("Validate() rejected absolute file URL: %v", err)
 	}
 }
+
+func TestArtifactValidatesRemoteIntegrityMetadata(t *testing.T) {
+	valid := plan.Artifact{
+		URL:                "https://example.test/tool.tar.gz",
+		ChecksumURL:        "https://example.test/tool.tar.gz.sha256",
+		ChecksumFileFormat: "sha256sum",
+		SignatureURL:       "https://example.test/tool.tar.gz.sig",
+		SigningKey:         "release-key-2026",
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() rejected remote integrity metadata: %v", err)
+	}
+
+	for name, artifact := range map[string]plan.Artifact{
+		"checksum URL": {
+			URL:         "https://example.test/tool.tar.gz",
+			ChecksumURL: "https://user:secret@example.test/tool.sha256",
+		},
+		"checksum format": {
+			URL:                "https://example.test/tool.tar.gz",
+			ChecksumFileFormat: "unknown",
+		},
+		"signing key whitespace": {
+			URL:        "https://example.test/tool.tar.gz",
+			SigningKey: " release-key",
+		},
+		"signing key URL credentials": {
+			URL:        "https://example.test/tool.tar.gz",
+			SigningKey: "https://user:secret@example.test/key.asc",
+		},
+		"local checksum URL": {
+			LocalPath:   "vendor/tool.tar.gz",
+			ChecksumURL: "https://example.test/tool.sha256",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := artifact.Validate(); err == nil {
+				t.Fatalf("Validate() accepted invalid artifact: %+v", artifact)
+			}
+		})
+	}
+}

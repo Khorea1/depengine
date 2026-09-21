@@ -191,6 +191,7 @@ func TestProjectLockPersistsSourceIdentityWithoutSecretReference(t *testing.T) {
 	p.Identity.Version = "1.2.3"
 	p.Sources = []plan.SourceReference{{
 		Role:  plan.SourceRegistry,
+		Kind:  "cargo-registry",
 		Name:  "corp",
 		URL:   "https://packages.example.test/index",
 		Owned: false,
@@ -208,7 +209,7 @@ func TestProjectLockPersistsSourceIdentityWithoutSecretReference(t *testing.T) {
 	if len(got.Identity.Sources) != 1 {
 		t.Fatalf("len(Sources) = %d, want 1", len(got.Identity.Sources))
 	}
-	if got.Identity.Sources[0].Name != "corp" || got.Identity.Sources[0].Role != plan.SourceRegistry {
+	if got.Identity.Sources[0].Name != "corp" || got.Identity.Sources[0].Role != plan.SourceRegistry || got.Identity.Sources[0].Kind != "cargo-registry" {
 		t.Fatalf("locked source = %+v", got.Identity.Sources[0])
 	}
 	data, err := json.Marshal(got)
@@ -1107,5 +1108,273 @@ func TestLockProjectionRejectsRequestedDigestDifferentFromResolvedDigest(t *test
 	p.Identity.Digest = "SHA256:" + strings.Repeat("A", 64)
 	if err := p.Validate(); err != nil {
 		t.Fatalf("Validate() equivalent digest spelling error = %v", err)
+	}
+}
+
+func TestLockDocumentEntryForPlanReturnsCompatibleImmutableResolution(t *testing.T) {
+	resolved := githubArtifactPlan()
+	doc, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{resolved})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	intent := resolved
+	intent.Identity.Version = ""
+	intent.Identity.Revision = ""
+	intent.Artifacts = nil
+
+	entry, err := doc.EntryForPlan(intent)
+	if err != nil {
+		t.Fatalf("EntryForPlan() error: %v", err)
+	}
+	if got, want := entry.Identity.Version, "14.1.1"; got != want {
+		t.Fatalf("locked version = %q, want %q", got, want)
+	}
+	if got, want := entry.Identity.Revision, "14.1.1"; got != want {
+		t.Fatalf("locked revision = %q, want %q", got, want)
+	}
+	if len(entry.Identity.Artifacts) != 1 || entry.Identity.Artifacts[0].Checksum == "" {
+		t.Fatalf("locked artifact = %+v, want concrete artifact checksum", entry.Identity.Artifacts)
+	}
+
+	entry.Identity.Artifacts[0].URL = "https://mutated.invalid/tool.tar.gz"
+	entry.RequestedIntent.Value = "mutated"
+	if doc.Entries[0].Identity.Artifacts[0].URL == entry.Identity.Artifacts[0].URL {
+		t.Fatal("EntryForPlan returned artifact storage aliased with lock document")
+	}
+	if doc.Entries[0].RequestedIntent.Value == entry.RequestedIntent.Value {
+		t.Fatal("EntryForPlan returned requested intent aliased with lock document")
+	}
+}
+
+func TestLockDocumentEntryForPlanRejectsChangedIntent(t *testing.T) {
+	resolved := nativePackagePlan()
+	doc, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{resolved})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name string
+		edit func(*plan.ResolvedInstallPlan)
+	}{
+		{name: "candidate", edit: func(p *plan.ResolvedInstallPlan) { p.Candidate.Method = "apt" }},
+		{name: "requested version", edit: func(p *plan.ResolvedInstallPlan) {
+			p.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: "2.0.0"}
+			p.Identity.Version = "2.0.0"
+		}},
+		{name: "source", edit: func(p *plan.ResolvedInstallPlan) { p.Identity.Source = "other-repo" }},
+		{name: "architecture", edit: func(p *plan.ResolvedInstallPlan) { p.Identity.Architecture = "arm64" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			intent := resolved
+			intent.Identity.Version = ""
+			tt.edit(&intent)
+			if _, err := doc.EntryForPlan(intent); !errors.Is(err, plan.ErrLockMismatch) {
+				t.Fatalf("EntryForPlan() error = %v, want ErrLockMismatch", err)
+			}
+		})
+	}
+}
+
+func TestLockDocumentEntryForPlanRejectsMissingTool(t *testing.T) {
+	doc, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{nativePackagePlan()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent := plan.New("missing", "native", true)
+	if _, err := doc.EntryForPlan(intent); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("EntryForPlan() error = %v, want ErrLockMismatch", err)
+	}
+}
+
+func TestLockDocumentPinnedPlanForHydratesImmutableIdentityWithoutResolution(t *testing.T) {
+	resolved := nativePackagePlan()
+	resolved.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionLatest}
+	resolved.Identity.Version = "2.4.1"
+	resolved.Sources = []plan.SourceReference{{Role: plan.SourceRegistry, Name: "stable", SecretRef: &plan.SecretReference{Provider: "env", Name: "TOKEN"}}}
+	doc, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{resolved})
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent := resolved
+	intent.Identity.Version = ""
+	intent.Artifacts = nil
+	pinned, err := doc.PinnedPlanFor(intent)
+	if err != nil {
+		t.Fatalf("PinnedPlanFor() error: %v", err)
+	}
+	if pinned.Identity.Version != "2.4.1" {
+		t.Fatalf("version = %q", pinned.Identity.Version)
+	}
+	if len(pinned.Sources) != 1 || pinned.Sources[0].SecretRef == nil || pinned.Sources[0].SecretRef.Name != "TOKEN" {
+		t.Fatalf("source secret reference not preserved: %#v", pinned.Sources)
+	}
+	pinned.Sources[0].SecretRef.Name = "CHANGED"
+	if intent.Sources[0].SecretRef.Name != "TOKEN" {
+		t.Fatal("PinnedPlanFor aliased intent secret reference")
+	}
+	if doc.Entries[0].Identity.Version != "2.4.1" {
+		t.Fatal("PinnedPlanFor mutated lock document")
+	}
+}
+
+func TestLockDocumentPinnedPlanForDoesNotAliasIntentOperationalState(t *testing.T) {
+	resolved := nativePackagePlan()
+	resolved.Sources = []plan.SourceReference{{
+		Role:      plan.SourceRegistry,
+		Name:      "stable",
+		Trust:     &plan.SourceTrust{Fingerprint: "ABC123"},
+		SecretRef: &plan.SecretReference{Provider: "env", Name: "TOKEN"},
+	}}
+	doc, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{resolved})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rollback := plan.Operation{Kind: "remove-source", Effect: plan.EffectMutation, Command: []string{"remove-source", "stable"}, ArbitraryCode: true}
+	intent := resolved
+	intent.Identity.Version = ""
+	intent.Preparation = &plan.PreparationPlan{
+		Probe: []plan.Operation{{Kind: "probe-source", Effect: plan.EffectReadOnly}},
+		Prepare: []plan.PreparationMutation{{
+			ID:        "source",
+			Resource:  plan.ResourceIdentity{Kind: plan.ResourceSource, Key: "stable"},
+			Ownership: plan.OwnershipDepengine,
+			Apply:     plan.Operation{Kind: "add-source", Effect: plan.EffectMutation, Command: []string{"add-source", "stable"}, ArbitraryCode: true},
+			Rollback:  &rollback,
+			Policy:    plan.RollbackSafe,
+		}},
+		Commit: []plan.Operation{{Kind: "commit-source", Effect: plan.EffectMutation}},
+	}
+	intent.Hooks = []plan.LifecycleHook{{
+		ID:            "before-install",
+		Transition:    plan.TransitionInstall,
+		Timing:        plan.HookBefore,
+		Operation:     plan.Operation{Kind: "hook", Effect: plan.EffectMutation, Command: []string{"hook", "before"}, ArbitraryCode: true},
+		FailurePolicy: plan.HookFailAbort,
+	}}
+	intent.Ensures = []plan.EnsureAction{{
+		ID:       "config",
+		Resource: "config-file",
+		Check:    plan.Operation{Kind: "check-config", Effect: plan.EffectReadOnly, Command: []string{"check-config"}, ArbitraryCode: true},
+		Apply:    plan.Operation{Kind: "write-config", Effect: plan.EffectMutation, Command: []string{"write-config"}, ArbitraryCode: true},
+	}}
+	intent.SourceMutations = []plan.Operation{{Kind: "source-mutation", Effect: plan.EffectMutation, Command: []string{"source", "stable"}, ArbitraryCode: true}}
+	intent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation, Command: []string{"install", "jq"}, ArbitraryCode: true}}
+	intent.OwnedPaths = []string{"/opt/depengine/jq"}
+	intent.Removal.OwnedPaths = []string{"/opt/depengine/jq"}
+	intent.Entrypoints = map[string]string{"jq": "/opt/depengine/jq/bin/jq"}
+	intent.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
+	intent.Prerequisites = []plan.Prerequisite{{Name: "ca-certificates", Method: "native"}}
+
+	pinned, err := doc.PinnedPlanFor(intent)
+	if err != nil {
+		t.Fatalf("PinnedPlanFor() error: %v", err)
+	}
+
+	pinned.Identity.RequestedVersion.Value = "changed"
+	pinned.Sources[0].Trust.Fingerprint = "CHANGED"
+	pinned.Sources[0].SecretRef.Name = "CHANGED"
+	pinned.Prerequisites[0].Name = "changed"
+	pinned.Preparation.Probe[0].Kind = "changed"
+	pinned.Preparation.Prepare[0].Apply.Command[0] = "changed"
+	pinned.Preparation.Prepare[0].Rollback.Command[0] = "changed"
+	pinned.Preparation.Commit[0].Kind = "changed"
+	pinned.Hooks[0].Operation.Command[0] = "changed"
+	pinned.Ensures[0].Check.Command[0] = "changed"
+	pinned.Ensures[0].Apply.Command[0] = "changed"
+	pinned.SourceMutations[0].Command[0] = "changed"
+	pinned.Operations[0].Command[0] = "changed"
+	pinned.OwnedPaths[0] = "/changed"
+	pinned.Removal.OwnedPaths[0] = "/changed"
+	pinned.Entrypoints["jq"] = "/changed"
+	pinned.Secrets[0].Name = "CHANGED"
+
+	if intent.Identity.RequestedVersion.Value != "1.7.1" {
+		t.Fatal("PinnedPlanFor aliased requested version intent")
+	}
+	if intent.Sources[0].Trust.Fingerprint != "ABC123" || intent.Sources[0].SecretRef.Name != "TOKEN" {
+		t.Fatal("PinnedPlanFor aliased source metadata")
+	}
+	if intent.Prerequisites[0].Name != "ca-certificates" {
+		t.Fatal("PinnedPlanFor aliased prerequisites")
+	}
+	if intent.Preparation.Probe[0].Kind != "probe-source" || intent.Preparation.Prepare[0].Apply.Command[0] != "add-source" || intent.Preparation.Prepare[0].Rollback.Command[0] != "remove-source" || intent.Preparation.Commit[0].Kind != "commit-source" {
+		t.Fatal("PinnedPlanFor aliased preparation state")
+	}
+	if intent.Hooks[0].Operation.Command[0] != "hook" || intent.Ensures[0].Check.Command[0] != "check-config" || intent.Ensures[0].Apply.Command[0] != "write-config" {
+		t.Fatal("PinnedPlanFor aliased lifecycle operations")
+	}
+	if intent.SourceMutations[0].Command[0] != "source" || intent.Operations[0].Command[0] != "install" {
+		t.Fatal("PinnedPlanFor aliased executable operations")
+	}
+	if intent.OwnedPaths[0] != "/opt/depengine/jq" || intent.Removal.OwnedPaths[0] != "/opt/depengine/jq" || intent.Entrypoints["jq"] != "/opt/depengine/jq/bin/jq" {
+		t.Fatal("PinnedPlanFor aliased ownership or entrypoint state")
+	}
+	if intent.Secrets[0].Name != "TOKEN" {
+		t.Fatal("PinnedPlanFor aliased secret reference list")
+	}
+}
+
+func TestLockDocumentPinnedPlanForRejectsIntentDrift(t *testing.T) {
+	resolved := nativePackagePlan()
+	resolved.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionLatest}
+	resolved.Identity.Version = "2.4.1"
+	doc, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{resolved})
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent := resolved
+	intent.Identity.Version = ""
+	intent.Identity.Architecture = "arm64"
+	if _, err := doc.PinnedPlanFor(intent); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("PinnedPlanFor() error = %v, want ErrLockMismatch", err)
+	}
+}
+
+func TestLockPreservesArtifactIntegritySemantics(t *testing.T) {
+	resolved := plan.New("demo", "http", true)
+	resolved.Identity.Version = "1.0.0"
+	resolved.Artifacts = []plan.Artifact{{
+		Kind:               plan.ArtifactArchive,
+		URL:                "https://example.test/tool.tar.gz",
+		Checksum:           "sha256:" + strings.Repeat("a", 64),
+		ChecksumURL:        "https://example.test/tool.tar.gz.sha256",
+		ChecksumFileFormat: "sha256sum",
+		SignatureURL:       "https://example.test/tool.tar.gz.sig",
+		SigningKey:         "https://example.test/release-key.asc",
+	}}
+
+	doc, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{resolved})
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked := doc.Entries[0].Identity.Artifacts[0]
+	if locked.ChecksumURL != resolved.Artifacts[0].ChecksumURL || locked.ChecksumFileFormat != "sha256sum" || locked.SigningKey != resolved.Artifacts[0].SigningKey {
+		t.Fatalf("locked integrity metadata = %+v", locked)
+	}
+
+	intent := resolved
+	intent.Identity.Version = ""
+	intent.Artifacts = nil
+	pinned, err := doc.PinnedPlanFor(intent)
+	if err != nil {
+		t.Fatalf("PinnedPlanFor() error: %v", err)
+	}
+	if len(pinned.Artifacts) != 1 {
+		t.Fatalf("pinned artifacts = %d, want 1", len(pinned.Artifacts))
+	}
+	got := pinned.Artifacts[0]
+	if got.ChecksumURL != resolved.Artifacts[0].ChecksumURL || got.ChecksumFileFormat != "sha256sum" || got.SigningKey != resolved.Artifacts[0].SigningKey {
+		t.Fatalf("pinned integrity metadata = %+v", got)
+	}
+
+	changed := resolved
+	changed.Artifacts = append([]plan.Artifact(nil), resolved.Artifacts...)
+	changed.Artifacts[0].SigningKey = "https://example.test/other-key.asc"
+	if err := plan.VerifyResolvedPlanAgainstLock(doc.Entries[0], changed); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("VerifyResolvedPlanAgainstLock() error = %v, want ErrLockMismatch", err)
 	}
 }

@@ -77,6 +77,27 @@ func TestCanonicalSourcesDeterministicAndRejectsDuplicates(t *testing.T) {
 	}
 }
 
+func TestHostSourceKindsRemainDistinct(t *testing.T) {
+	got, err := plan.CanonicalSources([]plan.SourceReference{
+		{Role: plan.SourceHostConfiguration, Kind: "brew-tap", Name: "corp/tools", Owned: true},
+		{Role: plan.SourceHostConfiguration, Kind: "scoop-bucket", Name: "corp/tools", Owned: true},
+	})
+	if err != nil {
+		t.Fatalf("CanonicalSources() error: %v", err)
+	}
+	if len(got) != 2 || got[0].Kind == got[1].Kind {
+		t.Fatalf("host source kinds collapsed: %+v", got)
+	}
+}
+
+func TestSourceReferenceRejectsMalformedKind(t *testing.T) {
+	for _, kind := range []string{" brew-tap", "brew-tap ", "brew\x00tap"} {
+		if err := (plan.SourceReference{Role: plan.SourceHostConfiguration, Kind: kind, Name: "corp/tools"}).Validate(); err == nil {
+			t.Fatalf("Validate() accepted malformed source kind %q", kind)
+		}
+	}
+}
+
 func TestSourceTrustRequiresDeclarativeIdentity(t *testing.T) {
 	if err := (plan.SourceTrust{}).Validate(); err == nil {
 		t.Fatal("empty SourceTrust accepted")

@@ -60,7 +60,7 @@ func formatToolResult(tool string, status StatusEnum, method, errMsg string) str
 		}
 		return fmt.Sprintf("  – %s: skipped (no method available)\n", tool)
 	case StatusWouldInstall:
-		return fmt.Sprintf("  → %s: would install via %s (dry-run)\n", tool, method)
+		return fmt.Sprintf("  → %s: commit: would install via %s (dry-run)\n", tool, method)
 	case StatusVirtual:
 		return fmt.Sprintf("  • %s: dependency group\n", tool)
 	case StatusFailed:

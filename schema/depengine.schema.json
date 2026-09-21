@@ -324,7 +324,7 @@
       "oneOf": [
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, immutable-lock.",
+          "description": "Method capabilities: source-mutation, check, immutable-lock.",
           "oneOf": [
             {
               "not": {
@@ -478,7 +478,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -551,7 +551,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check.",
+          "description": "Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -618,7 +618,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
           "oneOf": [
             {
               "not": {
@@ -781,7 +781,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -848,7 +848,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -921,7 +921,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -992,7 +992,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1059,7 +1059,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1132,7 +1132,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1270,7 +1270,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1384,7 +1384,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1451,7 +1451,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1536,7 +1536,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1629,7 +1629,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, environment-profile, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, environment-profile, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1728,7 +1728,7 @@
               }
             }
           ],
-          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1817,7 +1817,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1890,7 +1890,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1963,7 +1963,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2036,7 +2036,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, scope, revision, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: source-selection, scope, revision, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2118,7 +2118,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, scope, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2211,7 +2211,7 @@
               }
             }
           ],
-          "description": "Method capabilities: arbitrary-code, revision, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: arbitrary-code, revision, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2375,7 +2375,7 @@
               }
             }
           ],
-          "description": "Method capabilities: check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
           "oneOf": [
             {
               "required": [
@@ -2505,7 +2505,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2576,7 +2576,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
           "oneOf": [
             {
               "not": {
@@ -2736,7 +2736,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade, immutable-lock, local-artifact.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock, local-artifact.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2811,7 +2811,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check.",
+          "description": "Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2896,7 +2896,7 @@
               }
             }
           ],
-          "description": "Method capabilities: check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
           "oneOf": [
             {
               "not": {
@@ -3043,7 +3043,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3116,7 +3116,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3191,7 +3191,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3264,7 +3264,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3337,7 +3337,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check.",
+          "description": "Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3404,7 +3404,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3471,7 +3471,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3546,7 +3546,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, scope, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3628,7 +3628,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3701,7 +3701,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3774,7 +3774,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3847,7 +3847,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3918,7 +3918,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3991,7 +3991,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, scope, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4081,7 +4081,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, check, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4178,7 +4178,7 @@
               }
             }
           ],
-          "description": "Method capabilities: channel, check, remove, upgrade.",
+          "description": "Method capabilities: channel, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4279,7 +4279,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check.",
+          "description": "Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4346,7 +4346,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4421,7 +4421,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check.",
+          "description": "Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4488,7 +4488,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check.",
+          "description": "Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4555,7 +4555,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, scope, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4663,7 +4663,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4736,7 +4736,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4807,7 +4807,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check.",
+          "description": "Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4874,7 +4874,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4941,7 +4941,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5014,7 +5014,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5091,7 +5091,7 @@
       "oneOf": [
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, immutable-lock.",
+          "description": "Method capabilities: source-mutation, check, immutable-lock.",
           "oneOf": [
             {
               "not": {
@@ -5249,7 +5249,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check.",
+          "description": "Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5314,7 +5314,7 @@
       "oneOf": [
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
           "oneOf": [
             {
               "not": {
@@ -5481,7 +5481,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5552,7 +5552,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5627,7 +5627,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5698,7 +5698,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5840,7 +5840,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5958,7 +5958,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6029,7 +6029,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6118,7 +6118,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6215,7 +6215,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, environment-profile, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, environment-profile, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6312,7 +6312,7 @@
               }
             }
           ],
-          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6407,7 +6407,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, scope, revision, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: source-selection, scope, revision, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6493,7 +6493,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, scope, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6584,7 +6584,7 @@
               }
             }
           ],
-          "description": "Method capabilities: arbitrary-code, revision, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: arbitrary-code, revision, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6748,7 +6748,7 @@
               }
             }
           ],
-          "description": "Method capabilities: check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
           "oneOf": [
             {
               "required": [
@@ -6884,7 +6884,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6953,7 +6953,7 @@
       "oneOf": [
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
           "oneOf": [
             {
               "not": {
@@ -7111,7 +7111,7 @@
       "oneOf": [
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade, immutable-lock, local-artifact.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock, local-artifact.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7192,7 +7192,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check.",
+          "description": "Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7275,7 +7275,7 @@
               }
             }
           ],
-          "description": "Method capabilities: check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
           "oneOf": [
             {
               "not": {
@@ -7428,7 +7428,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7505,7 +7505,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7584,7 +7584,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check.",
+          "description": "Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7655,7 +7655,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7734,7 +7734,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, scope, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7820,7 +7820,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7895,7 +7895,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, scope, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7989,7 +7989,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, check, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8090,7 +8090,7 @@
               }
             }
           ],
-          "description": "Method capabilities: channel, check, remove, upgrade.",
+          "description": "Method capabilities: channel, source-mutation, check, remove, upgrade.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8195,7 +8195,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check.",
+          "description": "Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8266,7 +8266,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8345,7 +8345,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check.",
+          "description": "Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8416,7 +8416,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check.",
+          "description": "Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8487,7 +8487,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, scope, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8599,7 +8599,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8674,7 +8674,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: check.",
+          "description": "Method capabilities: source-mutation, check.",
           "properties": {
             "arch_map": {
               "additionalProperties": {

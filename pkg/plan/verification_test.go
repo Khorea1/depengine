@@ -26,6 +26,48 @@ func TestReconcileSatisfiedExactIdentity(t *testing.T) {
 	}
 }
 
+func TestReconcileUsesExactRequestedVersionBeforeConcreteResolution(t *testing.T) {
+	desired := ResolvedIdentity{RequestedVersion: &VersionIntent{Mode: VersionExact, Value: "2.0.0"}}
+
+	satisfied := Reconcile(desired, Observation{
+		Presence:    PresencePresent,
+		Identity:    ObservedIdentity{Version: "2.0.0"},
+		KnownFields: []IdentityField{FieldVersion},
+	})
+	if satisfied.State != StateSatisfied {
+		t.Fatalf("matching exact request state = %q, want %q: %#v", satisfied.State, StateSatisfied, satisfied)
+	}
+
+	drifted := Reconcile(desired, Observation{
+		Presence:    PresencePresent,
+		Identity:    ObservedIdentity{Version: "1.9.0"},
+		KnownFields: []IdentityField{FieldVersion},
+	})
+	if drifted.State != StateDrifted {
+		t.Fatalf("mismatched exact request state = %q, want %q: %#v", drifted.State, StateDrifted, drifted)
+	}
+	want := []IdentityDrift{{Field: FieldVersion, Desired: "2.0.0", Observed: "1.9.0"}}
+	if !reflect.DeepEqual(drifted.Drift, want) {
+		t.Fatalf("drift = %#v, want %#v", drifted.Drift, want)
+	}
+}
+
+func TestReconcileUsesRequestedDigestBeforeConcreteResolution(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	desired := ResolvedIdentity{RequestedVersion: &VersionIntent{Mode: VersionDigest, Value: digest}}
+
+	got := Reconcile(desired, Observation{
+		Presence: PresencePresent,
+		Identity: ObservedIdentity{
+			Digest: "SHA256:" + strings.Repeat("A", 64),
+		},
+		KnownFields: []IdentityField{FieldDigest},
+	})
+	if got.State != StateSatisfied {
+		t.Fatalf("equivalent requested digest state = %q, want %q: %#v", got.State, StateSatisfied, got)
+	}
+}
+
 func TestReconcileVersionDriftIsNotSatisfied(t *testing.T) {
 	got := Reconcile(ResolvedIdentity{Version: "2.0.0"}, Observation{
 		Presence:    PresencePresent,
@@ -250,6 +292,92 @@ func TestVerificationValidateRejectsInconsistentFieldKnowledge(t *testing.T) {
 				t.Fatalf("Validate() accepted inconsistent result: %#v", tt.in)
 			}
 		})
+	}
+}
+
+func TestVerificationValidateBindsDriftToAuthoritativeObservedIdentity(t *testing.T) {
+	tests := []struct {
+		name string
+		in   VerificationResult
+	}{
+		{
+			name: "forged version drift",
+			in: VerificationResult{
+				State:       StateDrifted,
+				Observed:    ObservedIdentity{Version: "2"},
+				KnownFields: []IdentityField{FieldVersion},
+				Drift:       []IdentityDrift{{Field: FieldVersion, Desired: "3", Observed: "1"}},
+			},
+		},
+		{
+			name: "forged source drift",
+			in: VerificationResult{
+				State:       StateDrifted,
+				Observed:    ObservedIdentity{Source: "https://example.test/stable"},
+				KnownFields: []IdentityField{FieldSource},
+				Drift: []IdentityDrift{{
+					Field:    FieldSource,
+					Desired:  "https://example.test/edge",
+					Observed: "https://example.test/other",
+				}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.in.Validate(); err == nil || !strings.Contains(err.Error(), "authoritative observed identity") {
+				t.Fatalf("Validate() error = %v, want authoritative observation mismatch", err)
+			}
+			if _, err := TransitionForVerification(tt.in); err == nil {
+				t.Fatal("TransitionForVerification accepted forged drift")
+			}
+		})
+	}
+}
+
+func TestVerificationValidateAcceptsCanonicalEquivalentObservedDriftSpelling(t *testing.T) {
+	result := VerificationResult{
+		State: StateDrifted,
+		Observed: ObservedIdentity{
+			Source: "HTTPS://EXAMPLE.TEST/index?z=2&a=1",
+		},
+		KnownFields: []IdentityField{FieldSource},
+		Drift: []IdentityDrift{{
+			Field:    FieldSource,
+			Desired:  "https://example.test/other",
+			Observed: "https://example.test/index?a=1&z=2",
+		}},
+	}
+	if err := result.Validate(); err != nil {
+		t.Fatalf("Validate() rejected semantically identical observed spelling: %v", err)
+	}
+}
+
+func TestVerificationValidateRejectsMalformedDesiredDriftIdentity(t *testing.T) {
+	tests := []VerificationResult{
+		{
+			State:       StateDrifted,
+			Observed:    ObservedIdentity{Digest: "sha256:" + strings.Repeat("b", 64)},
+			KnownFields: []IdentityField{FieldDigest},
+			Drift:       []IdentityDrift{{Field: FieldDigest, Desired: "sha256:abcd", Observed: "sha256:" + strings.Repeat("b", 64)}},
+		},
+		{
+			State:       StateDrifted,
+			Observed:    ObservedIdentity{Scope: "user"},
+			KnownFields: []IdentityField{FieldScope},
+			Drift:       []IdentityDrift{{Field: FieldScope, Desired: "planet", Observed: "user"}},
+		},
+		{
+			State:       StateDrifted,
+			Observed:    ObservedIdentity{Environment: &EnvironmentTarget{Kind: EnvironmentNamed, Value: "dev"}},
+			KnownFields: []IdentityField{FieldEnvironment},
+			Drift:       []IdentityDrift{{Field: FieldEnvironment, Desired: "unknown:prod", Observed: "named:dev"}},
+		},
+	}
+	for i, result := range tests {
+		if err := result.Validate(); err == nil {
+			t.Fatalf("case %d: Validate() accepted malformed desired drift identity: %#v", i, result)
+		}
 	}
 }
 

@@ -12,11 +12,13 @@ import (
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/container"
 	"github.com/Khorea1/depengine/pkg/ecosystem"
+	"github.com/Khorea1/depengine/pkg/engine"
 	"github.com/Khorea1/depengine/pkg/exec"
 	"github.com/Khorea1/depengine/pkg/git"
 	"github.com/Khorea1/depengine/pkg/httpdownload"
 	"github.com/Khorea1/depengine/pkg/lock"
 	"github.com/Khorea1/depengine/pkg/log"
+	"github.com/Khorea1/depengine/pkg/plan"
 	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/state"
 	"github.com/spf13/cobra"
@@ -174,9 +176,13 @@ func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgra
 		ts         state.ToolState
 		pinnedVer  string
 		tool       *config.Tool
+		method     *config.MethodCandidate
 		methodKind string
 	}
-	var outdated []outdatedTool
+	var (
+		outdated          []outdatedTool
+		discoveryFailures []upgradeResult
+	)
 
 	for name, ts := range st.Tools {
 		// Filter by --only.
@@ -196,8 +202,20 @@ func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgra
 			methodKind = ts.Method
 		}
 
-		// Look up pinned version.
-		pin, ok := lockPinFor(lk, name, methodKind)
+		// Resolve the exact schema candidate represented by state before looking
+		// up its pin. Same-kind candidates have independent lock identities; an
+		// arbitrary first match can upgrade from/to the wrong artifact.
+		method, methodErr := findTrackedMethodCandidate(tool, ts, ex.DefaultMethodOrder(), ex.NativeManagerName())
+		if methodErr != nil {
+			if hasPinnedVersionForKind(lk, name, methodKind) {
+				discoveryFailures = append(discoveryFailures, upgradeResult{
+					Tool: name, Status: "failed", OldVer: ts.Version, Method: ts.Method,
+					Error: fmt.Sprintf("cannot resolve tracked candidate: %v", methodErr),
+				})
+			}
+			continue
+		}
+		pin, ok := lockPinForCandidate(lk, name, tool, method)
 		if !ok || pin.Latest == "" {
 			continue
 		}
@@ -216,11 +234,12 @@ func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgra
 			ts:         ts,
 			pinnedVer:  pin.Latest,
 			tool:       tool,
+			method:     method,
 			methodKind: methodKind,
 		})
 	}
 
-	if len(outdated) == 0 {
+	if len(outdated) == 0 && len(discoveryFailures) == 0 {
 		if *upgradeJSON {
 			fmt.Println(`{"upgraded":0,"skipped":0,"failed":0,"would_upgrade":0,"results":[]}`)
 		} else {
@@ -269,9 +288,15 @@ func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgra
 		}
 	}
 
-	// Upgrade each outdated tool: Remove then Install.
-	var results []upgradeResult
-	upgraded, failed, skipped, wouldUpgrade := 0, 0, 0, 0
+	// Upgrade each outdated tool: preflight, then Remove and Install. Candidate
+	// discovery failures are already terminal and participate in the same report.
+	results := append([]upgradeResult(nil), discoveryFailures...)
+	upgraded, failed, skipped, wouldUpgrade := 0, len(discoveryFailures), 0, 0
+	for _, res := range discoveryFailures {
+		if !*upgradeQuiet {
+			c.fail("%s: %s", res.Tool, res.Error)
+		}
+	}
 
 	for _, ot := range outdated {
 		res := upgradeResult{
@@ -284,6 +309,20 @@ func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgra
 		if adapter == nil {
 			res.Status = "failed"
 			res.Error = fmt.Sprintf("no adapter for method %q", ot.methodKind)
+			if !*upgradeQuiet {
+				c.fail("%s: %s", ot.name, res.Error)
+			}
+			results = append(results, res)
+			failed++
+			continue
+		}
+
+		// The legacy upgrade path calls Remove/Install directly. Fail closed on
+		// semantics it cannot yet preserve instead of removing a working tool and
+		// discovering the mismatch during reinstall.
+		if err := preflightDirectUpgrade(ctx, runner, facts, ot.tool, ot.method, adapter, *upgradeAllowArbitrary); err != nil {
+			res.Status = "failed"
+			res.Error = fmt.Sprintf("upgrade preflight failed: %v", err)
 			if !*upgradeQuiet {
 				c.fail("%s: %s", ot.name, res.Error)
 			}
@@ -341,13 +380,9 @@ func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgra
 			continue
 		}
 
-		// Step 2: Install.
-		// Find the method candidate from the schema for this kind.
-		installMC := findMethodCandidate(ot.tool, ot.methodKind, ex.DefaultMethodOrder(), ex.NativeManagerName())
-		if installMC == nil {
-			// Fallback: use the state config.
-			installMC = mc
-		}
+		// Step 2: Install the exact candidate resolved before the destructive
+		// transition. Never fall back to another candidate of the same kind.
+		installMC := ot.method
 
 		installCtx, installCancel := context.WithTimeout(ctx, 10*time.Minute)
 		err = adapter.Install(installCtx, tr, ot.tool, installMC)
@@ -360,8 +395,12 @@ func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgra
 			}
 			results = append(results, res)
 			failed++
-			// Tool was removed but reinstall failed — update state to reflect removal.
-			delete(st.Tools, ot.name)
+			// Tool was removed but reinstall failed. Release its shared-resource
+			// claims so state does not pretend a missing tool still holds refs; keep
+			// newly zero-ref resources on the host for explicit retry/cleanup.
+			if releaseErr := recordFailedUpgradeRemoval(st, ot.name); releaseErr != nil {
+				lg.Error("release failed-upgrade resources", "tool", ot.name, "error", releaseErr)
+			}
 			continue
 		}
 
@@ -369,18 +408,7 @@ func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgra
 		newVer := probeVersion(adapter, tr, ot.tool, installMC)
 
 		// Step 4: Update state.
-		newTS := state.ToolState{
-			Method:          ot.ts.Method,
-			MethodKind:      ot.methodKind,
-			InstalledAt:     time.Now().UTC().Format(time.RFC3339),
-			PostinstallDone: ot.ts.PostinstallDone,
-			DefinitionHash:  state.DefinitionHash(ot.tool),
-			Version:         newVer,
-			Config:          installMC.Config,
-		}
-		if newVer == "" {
-			newTS.Version = ot.pinnedVer
-		}
+		newTS := upgradedToolState(ot.ts, ot.methodKind, ot.tool, installMC, newVer, ot.pinnedVer, time.Now().UTC())
 		st.Tools[ot.name] = newTS
 
 		res.Status = "upgraded"
@@ -444,6 +472,98 @@ func runUpgrade(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgra
 	}
 }
 
+func hasPinnedVersionForKind(l *lock.Lock, toolName, kind string) bool {
+	if l == nil || kind == "" {
+		return false
+	}
+	prefix := toolName + "/" + kind + "/"
+	for key, pin := range l.Tools {
+		if strings.HasPrefix(key, prefix) && pin.Latest != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func upgradedToolState(previous state.ToolState, methodKind string, tool *config.Tool, method *config.MethodCandidate, observedVersion, pinnedVersion string, installedAt time.Time) state.ToolState {
+	version := observedVersion
+	if version == "" {
+		version = pinnedVersion
+	}
+	return state.ToolState{
+		Method:          previous.Method,
+		MethodKind:      methodKind,
+		InstalledAt:     installedAt.UTC().Format(time.RFC3339),
+		PostinstallDone: previous.PostinstallDone,
+		DefinitionHash:  state.DefinitionHash(tool),
+		Version:         version,
+		RootRequested:   previous.RootRequested,
+		Config:          method.Config,
+	}
+}
+
+// recordFailedUpgradeRemoval updates durable ownership after a destructive
+// upgrade removed the tracked tool but reinstall failed. Shared resources are
+// released from the missing dependent, but last-reference resources are kept
+// as explicit zero-ref state instead of triggering more host mutation from an
+// already-failed upgrade.
+func recordFailedUpgradeRemoval(st *state.State, toolName string) error {
+	if st == nil {
+		return fmt.Errorf("state is required")
+	}
+	release, err := plan.ReleaseDependentResources(st.OwnedResources, toolName)
+	if err != nil {
+		return err
+	}
+	st.OwnedResources = release.Updated
+	delete(st.Tools, toolName)
+	return nil
+}
+
+func preflightDirectUpgrade(ctx context.Context, runner run.Runner, facts *engine.Facts, tool *config.Tool, method *config.MethodCandidate, adapter exec.Adapter, allowArbitrary bool) error {
+	if tool == nil || method == nil || adapter == nil {
+		return fmt.Errorf("tool, method, and adapter are required")
+	}
+	if method.When != nil && !method.When.Match(facts) {
+		return fmt.Errorf("tracked candidate no longer matches its when condition")
+	}
+	if _, err := exec.CandidatePlanIntent(tool, method); err != nil {
+		return err
+	}
+	if len(method.Sources) > 0 {
+		return fmt.Errorf("candidate declares sources; transactional upgrade preparation is required")
+	}
+	if len(method.Requires) > 0 {
+		return fmt.Errorf("candidate declares method.requires; transactional upgrade preparation is required")
+	}
+	if len(tool.EffectiveRequires(facts)) > 0 {
+		return fmt.Errorf("tool declares requires; transactional upgrade dependency handling is required")
+	}
+	if len(tool.PreInstall) > 0 || len(tool.PostInstall) > 0 {
+		return fmt.Errorf("candidate has lifecycle hooks; direct upgrade cannot preserve hook semantics")
+	}
+	if !allowArbitrary && exec.CandidateRunsArbitraryCode(tool, method) {
+		return fmt.Errorf("candidate may execute arbitrary code; pass --allow-arbitrary-code to permit it")
+	}
+	probeRunner := runner
+	if lr, ok := runner.(*run.LoggingRunner); ok {
+		probeRunner = lr.WithContext(run.Context{Tool: tool.Name, Method: method.Kind, Probe: true})
+	}
+	if !adapter.Available(ctx, probeRunner) {
+		return fmt.Errorf("adapter %q is unavailable", method.Kind)
+	}
+	if !adapter.Check(ctx, probeRunner, tool, method) {
+		return fmt.Errorf("tracked installation is not present; run install/repair instead of destructive upgrade")
+	}
+	if checker, ok := adapter.(exec.AvailabilityChecker); ok && !checker.CheckAvailable(ctx, probeRunner, tool, method) {
+		return fmt.Errorf("target is not available from configured repositories")
+	}
+	if !exec.CanRemove(adapter) {
+		return fmt.Errorf("adapter %q does not support removal", method.Kind)
+	}
+	return nil
+}
+
 // findMethodConfig extracts the config map for the first method matching kind.
 func findMethodConfig(tool *config.Tool, kind string) map[string]any {
 	for _, m := range tool.Methods {
@@ -454,7 +574,10 @@ func findMethodConfig(tool *config.Tool, kind string) map[string]any {
 	return nil
 }
 
-// findMethodCandidate returns the MethodCandidate from the tool's methods
+// findMethodCandidate returns the first selected MethodCandidate of kind. It is
+// retained for non-stateful callers; destructive state reconciliation must use
+// findTrackedMethodCandidate so duplicate same-kind candidates cannot be picked
+// arbitrarily.
 func findMethodCandidate(tool *config.Tool, kind string, defaultOrder []string, nativeManagerName string) *config.MethodCandidate {
 	ordered := config.SelectMethods(tool, defaultOrder, nativeManagerName)
 	for _, m := range ordered {
@@ -463,6 +586,27 @@ func findMethodCandidate(tool *config.Tool, kind string, defaultOrder []string, 
 		}
 	}
 	return nil
+}
+
+// findTrackedMethodCandidate resolves the exact currently-selected schema
+// candidate represented by durable ToolState. Candidate identity comes from
+// findStateMethodCandidate; this additional gate ensures the current method
+// policy still selects it before a destructive upgrade.
+func findTrackedMethodCandidate(tool *config.Tool, ts state.ToolState, defaultOrder []string, nativeManagerName string) (*config.MethodCandidate, error) {
+	candidate, err := findStateMethodCandidate(tool, ts)
+	if err != nil {
+		return nil, err
+	}
+	for _, selected := range config.SelectMethods(tool, defaultOrder, nativeManagerName) {
+		if selected == candidate {
+			return candidate, nil
+		}
+	}
+	display := candidate.Kind
+	if candidate.Label != "" {
+		display = candidate.Label
+	}
+	return nil, fmt.Errorf("tracked candidate %q (kind %q) is not selected by the current schema", display, candidate.Kind)
 }
 
 // probeVersion calls the adapter's InstalledVersion if it implements Versioner.

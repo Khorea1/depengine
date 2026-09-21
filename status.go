@@ -145,7 +145,7 @@ func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, sta
 				}
 				// Version drift: the installed version differs from the pinned one.
 				if !outdated && ts.Version != "" {
-					if pin, ok := lockPinFor(lk, name, ts.MethodKind); ok && state.VersionOutdated(ts.Version, pin.Latest) {
+					if pin, ok := lockPinForToolState(lk, name, stTool, ts); ok && state.VersionOutdated(ts.Version, pin.Latest) {
 						outdated = true
 					}
 				}

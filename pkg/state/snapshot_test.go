@@ -11,7 +11,7 @@ func TestSaveSnapshotCreatesFile(t *testing.T) {
 
 	// Save a state first.
 	st := &State{
-		Version: 1,
+		Version: currentStateVersion,
 		Tools: map[string]ToolState{
 			"test": {Method: "native"},
 		},
@@ -65,7 +65,7 @@ func TestListSnapshotsOrder(t *testing.T) {
 
 	// Save initial state.
 	st := &State{
-		Version: 1,
+		Version: currentStateVersion,
 		Tools: map[string]ToolState{
 			"a": {Method: "native"},
 		},
@@ -111,7 +111,7 @@ func TestLoadSnapshot(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", td)
 
 	st := &State{
-		Version: 1,
+		Version: currentStateVersion,
 		Tools: map[string]ToolState{
 			"test": {Method: "native"},
 		},

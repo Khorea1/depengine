@@ -127,18 +127,11 @@ func ListSnapshots() ([]SnapshotInfo, error) {
 
 // LoadSnapshot reads a snapshot file into a State.
 func LoadSnapshot(path string) (*State, error) {
-	data, err := os.ReadFile(path)
+	s, err := LoadFrom(path)
 	if err != nil {
-		return nil, fmt.Errorf("read snapshot: %w", err)
+		return nil, fmt.Errorf("load snapshot: %w", err)
 	}
-	var s State
-	if err := json.Unmarshal(data, &s); err != nil {
-		return nil, fmt.Errorf("parse snapshot: %w", err)
-	}
-	if s.Tools == nil {
-		s.Tools = make(map[string]ToolState)
-	}
-	return &s, nil
+	return s, nil
 }
 
 // DefaultMaxSnapshots is the default maximum number of snapshots to retain.

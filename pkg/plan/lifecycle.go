@@ -233,3 +233,83 @@ func CanonicalEnsures(in []EnsureAction) ([]EnsureAction, error) {
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }
+
+// ReconciliationDecision is the adapter-neutral lifecycle decision derived
+// from a validated verification result. Required is false only when desired
+// state is already satisfied. Unknown or broken verification never produces a
+// mutating transition because doing so would turn missing evidence into an
+// implicit install/upgrade policy.
+type ReconciliationDecision struct {
+	Required   bool              `json:"required"`
+	Transition TransitionKind    `json:"transition,omitempty"`
+	State      VerificationState `json:"state"`
+}
+
+// LockedReconciliation is the immutable desired-state handoff for lifecycle
+// execution. Plan is hydrated from the validated lock before Verification and
+// Decision are derived, so a mutable manifest intent cannot silently select a
+// newer version/source while install or upgrade is deciding what to do.
+//
+// When reconciliation is unknown or broken, ReconcileLockedPlan returns this
+// value with Plan and Verification populated alongside an error; Decision stays
+// zero so callers can report the probe result without treating it as permission
+// to mutate the host.
+type LockedReconciliation struct {
+	Plan         ResolvedInstallPlan    `json:"plan"`
+	Verification VerificationResult     `json:"verification"`
+	Decision     ReconciliationDecision `json:"decision"`
+}
+
+// ReconcileLockedPlan composes the universal lock boundary with desired-state
+// verification and lifecycle selection. It performs no host I/O. The immutable
+// identity is materialized first; the observation is then compared against that
+// pinned identity, and only a validated reconciliation result may select an
+// install/upgrade transition.
+func ReconcileLockedPlan(doc LockDocument, intent ResolvedInstallPlan, observation Observation) (LockedReconciliation, error) {
+	pinned, err := doc.PinnedPlanFor(intent)
+	if err != nil {
+		return LockedReconciliation{}, fmt.Errorf("locked reconciliation: %w", err)
+	}
+
+	verification := Reconcile(pinned.Identity, observation)
+	out := LockedReconciliation{Plan: pinned, Verification: verification}
+	decision, err := TransitionForVerification(verification)
+	if err != nil {
+		return out, fmt.Errorf("locked reconciliation: %w", err)
+	}
+	out.Decision = decision
+	return out, nil
+}
+
+// TransitionForVerification converts desired-state reconciliation into a
+// lifecycle decision without re-resolving manifest intent. Absent state needs
+// installation; concrete identity drift needs upgrade; satisfied state is a
+// no-op. Unknown and broken results fail closed until the caller can obtain an
+// authoritative observation or explicitly choose a recovery policy.
+func TransitionForVerification(result VerificationResult) (ReconciliationDecision, error) {
+	if err := result.Validate(); err != nil {
+		return ReconciliationDecision{}, fmt.Errorf("verification result: %w", err)
+	}
+
+	decision := ReconciliationDecision{State: result.State}
+	switch result.State {
+	case StateSatisfied:
+		return decision, nil
+	case StateAbsent:
+		decision.Required = true
+		decision.Transition = TransitionInstall
+		return decision, nil
+	case StateDrifted:
+		decision.Required = true
+		decision.Transition = TransitionUpgrade
+		return decision, nil
+	case StateUnknown:
+		return ReconciliationDecision{}, fmt.Errorf("verification state %q cannot select a mutating transition: desired state is unverifiable", result.State)
+	case StateBroken:
+		return ReconciliationDecision{}, fmt.Errorf("verification state %q cannot select a mutating transition: verification probe failed", result.State)
+	default:
+		// result.Validate already rejects this, but retain a fail-closed default
+		// so this boundary stays safe if VerificationState grows in the future.
+		return ReconciliationDecision{}, fmt.Errorf("verification state %q cannot select a lifecycle transition", result.State)
+	}
+}

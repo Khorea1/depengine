@@ -27,6 +27,13 @@ func (ex *Executor) hasDangerousMethod(tool *config.Tool) bool {
 // plan. If static planning rejects the candidate (malformed programmatic
 // input) it fails closed to the schema-level command predicate, so an
 // invalid extra field cannot bypass the security gate.
+// CandidateRunsArbitraryCode reports whether executing one selected method
+// crosses the arbitrary-code capability boundary. Composition-root commands
+// that execute adapters directly must use the same gate as Executor.Execute.
+func CandidateRunsArbitraryCode(tool *config.Tool, method *config.MethodCandidate) bool {
+	return methodRunsArbitraryCode(tool, method)
+}
+
 func methodRunsArbitraryCode(tool *config.Tool, method *config.MethodCandidate) bool {
 	if intent, _ := candidatePlanIntent(tool, method); intent != nil {
 		if capabilities, err := methodkind.PlanCapabilities(*intent); err == nil {

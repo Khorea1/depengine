@@ -12,18 +12,32 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/Khorea1/depengine/pkg/formatversion"
+	"github.com/Khorea1/depengine/pkg/plan"
 )
+
+// CurrentVersion is the on-disk state format emitted by this build. Callers
+// that construct State values directly should use this constant rather than a
+// literal; persistence rejects every other version while the format is
+// pre-freeze.
+const CurrentVersion = formatversion.CurrentStateVersion
+
+const currentStateVersion = CurrentVersion
 
 // State is the on-disk schema for the depengine state file.
 type State struct {
-	Version          int                  `json:"version"`
-	SchemaPath       string               `json:"schema_path"`
-	SchemaModifiedAt string               `json:"schema_modified_at"`
-	Tools            map[string]ToolState `json:"tools"`
+	Version             int                                `json:"version"`
+	SchemaPath          string                             `json:"schema_path"`
+	SchemaModifiedAt    string                             `json:"schema_modified_at"`
+	Tools               map[string]ToolState               `json:"tools"`
+	OwnedResources      []plan.OwnedResourceState          `json:"owned_resources,omitempty"`
+	PreparationPlans    map[string]plan.PreparationPlan    `json:"preparation_plans,omitempty"`
+	PreparationJournals map[string]plan.PreparationJournal `json:"preparation_journals,omitempty"`
 	// Checksum is the SHA256 hex digest of the canonical JSON of the state
 	// with this field zeroed. It is written by Save and verified by LoadFrom
-	// to detect corrupted or tampered state files. Empty on legacy files
-	// written before this field existed (they load without verification).
+	// to detect corrupted or tampered state files. Current state formats require this field
+	// on every persisted document; older checksum-less formats are rejected.
 	Checksum string `json:"checksum,omitempty"`
 }
 
@@ -41,8 +55,12 @@ type ToolState struct {
 	DefinitionHash string `json:"definition_hash"`
 	// Version is the installed tool version when the adapter can determine it
 	// (e.g. the resolved/pinned tag at install time). Empty when unknown.
-	Version string         `json:"version,omitempty"`
-	Config  map[string]any `json:"config"`
+	Version string `json:"version,omitempty"`
+	// RootRequested is durable user/root intent, as opposed to a tool installed
+	// only to satisfy a dependency edge. Remove uses it to avoid garbage-
+	// collecting a zero-ref prerequisite that the user also requested directly.
+	RootRequested bool           `json:"root_requested,omitempty"`
+	Config        map[string]any `json:"config"`
 }
 
 // DefaultPath returns the platform-appropriate state file path.
@@ -59,22 +77,18 @@ func DefaultPath() string {
 	return filepath.Join(xdgState, "depengine", "state.json")
 }
 
-// Load reads the state file from DefaultPath. Delegates to LoadFrom,
-// then initialises Version to 1 if this is a fresh state (no file existed).
+// Load reads the state file from DefaultPath. LoadFrom creates missing state
+// directly at the current format version and rejects unknown on-disk versions.
 func Load() (*State, error) {
-	s, err := LoadFrom(DefaultPath())
-	if err != nil {
-		return nil, err
-	}
-	if s.Version == 0 {
-		s.Version = 1
-	}
-	return s, nil
+	return LoadFrom(DefaultPath())
 }
 
 // Save writes the state to DefaultPath atomically: write to a temp file,
 // fsync, then rename. This prevents corruption if the process crashes mid-write.
 func Save(s *State) error {
+	if err := validateStateSemantics(s); err != nil {
+		return err
+	}
 	if err := ValidateNoSecrets(s); err != nil {
 		return err
 	}
@@ -211,8 +225,10 @@ func LoadFrom(path string) (*State, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &State{
-				Version: 1,
-				Tools:   make(map[string]ToolState),
+				Version:             currentStateVersion,
+				Tools:               make(map[string]ToolState),
+				PreparationPlans:    make(map[string]plan.PreparationPlan),
+				PreparationJournals: make(map[string]plan.PreparationJournal),
 			}, nil
 		}
 		return nil, fmt.Errorf("read state: %w", err)
@@ -221,28 +237,83 @@ func LoadFrom(path string) (*State, error) {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return nil, fmt.Errorf("parse state: %w", err)
 	}
-
-	// Verify integrity when the file carries a checksum. Legacy files written
-	// before this feature was added have no checksum and load unchanged.
-	// Re-marshal with the checksum field zeroed must reproduce the exact
-	// canonical JSON that Save hashed, so any data corruption or tampering
-	// surfaces as a digest mismatch.
-	if s.Checksum != "" {
-		want := s.Checksum
-		s.Checksum = ""
-		canonical, err := json.Marshal(&s)
-		if err != nil {
-			return nil, fmt.Errorf("marshal state for checksum: %w", err)
-		}
-		sum := sha256.Sum256(canonical)
-		if got := hex.EncodeToString(sum[:]); got != want {
-			return nil, fmt.Errorf("corrupted state file %s: checksum mismatch", path)
-		}
-		s.Checksum = want
+	if err := formatversion.ValidateReadVersion(formatversion.State, s.Version); err != nil {
+		return nil, fmt.Errorf("invalid state file %s: %w", path, err)
 	}
+
+	// Current state formats require an integrity checksum on every persisted document.
+	// Omitting the field must not provide a bypass around checksum validation.
+	if s.Checksum == "" {
+		return nil, fmt.Errorf("corrupted state file %s: missing integrity checksum", path)
+	}
+	want := s.Checksum
+	s.Checksum = ""
+	canonical, err := json.Marshal(&s)
+	if err != nil {
+		return nil, fmt.Errorf("marshal state for checksum: %w", err)
+	}
+	sum := sha256.Sum256(canonical)
+	if got := hex.EncodeToString(sum[:]); got != want {
+		return nil, fmt.Errorf("corrupted state file %s: checksum mismatch", path)
+	}
+	s.Checksum = want
 
 	if s.Tools == nil {
 		s.Tools = make(map[string]ToolState)
 	}
+	if s.PreparationPlans == nil {
+		s.PreparationPlans = make(map[string]plan.PreparationPlan)
+	}
+	if s.PreparationJournals == nil {
+		s.PreparationJournals = make(map[string]plan.PreparationJournal)
+	}
+	if err := validateStateSemantics(&s); err != nil {
+		return nil, fmt.Errorf("invalid state file %s: %w", path, err)
+	}
+	if err := ValidateNoSecrets(&s); err != nil {
+		return nil, fmt.Errorf("invalid state file %s: %w", path, err)
+	}
 	return &s, nil
+}
+
+func validateStateSemantics(s *State) error {
+	if s == nil {
+		return nil
+	}
+	if err := formatversion.ValidateReadVersion(formatversion.State, s.Version); err != nil {
+		return err
+	}
+	if err := plan.ValidateOwnedResourceSnapshot(s.OwnedResources); err != nil {
+		return fmt.Errorf("owned resources: %w", err)
+	}
+	if len(s.PreparationPlans) != len(s.PreparationJournals) {
+		return fmt.Errorf("preparation transactions: %d plans for %d journals", len(s.PreparationPlans), len(s.PreparationJournals))
+	}
+	for key, journal := range s.PreparationJournals {
+		if err := validatePreparationJournalKey(key); err != nil {
+			return err
+		}
+		preparationPlan, exists := s.PreparationPlans[key]
+		if !exists {
+			return fmt.Errorf("preparation journal %q has no persisted plan", key)
+		}
+		if err := preparationPlan.Validate(); err != nil {
+			return fmt.Errorf("preparation plan %q: %w", key, err)
+		}
+		if err := journal.Validate(preparationPlan); err != nil {
+			return fmt.Errorf("preparation journal %q: %w", key, err)
+		}
+		if journal.Status == plan.PreparationCommitted || journal.Status == plan.PreparationRolledBack {
+			return fmt.Errorf("preparation journal %q is terminal and must not be persisted as active", key)
+		}
+	}
+	for key := range s.PreparationPlans {
+		if err := validatePreparationJournalKey(key); err != nil {
+			return err
+		}
+		if _, exists := s.PreparationJournals[key]; !exists {
+			return fmt.Errorf("preparation plan %q has no active journal", key)
+		}
+	}
+	return nil
 }

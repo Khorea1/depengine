@@ -2,6 +2,7 @@ package plan
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -211,5 +212,169 @@ func TestEnsureActionRequiresCanonicalURLResource(t *testing.T) {
 	ensure.Resource = "https://example.test/index?a=1&z=2"
 	if err := ensure.Validate(); err != nil {
 		t.Fatalf("canonical ensure resource rejected: %v", err)
+	}
+}
+
+func TestTransitionForVerificationConsumesReconciliationState(t *testing.T) {
+	tests := []struct {
+		name     string
+		result   VerificationResult
+		want     TransitionKind
+		required bool
+		wantErr  bool
+	}{
+		{
+			name:   "satisfied is a no-op",
+			result: VerificationResult{State: StateSatisfied},
+		},
+		{
+			name:     "absent installs",
+			result:   VerificationResult{State: StateAbsent},
+			want:     TransitionInstall,
+			required: true,
+		},
+		{
+			name: "drift upgrades",
+			result: VerificationResult{
+				State:       StateDrifted,
+				Observed:    ObservedIdentity{Version: "1"},
+				KnownFields: []IdentityField{FieldVersion},
+				Drift:       []IdentityDrift{{Field: FieldVersion, Desired: "2", Observed: "1"}},
+			},
+			want:     TransitionUpgrade,
+			required: true,
+		},
+		{
+			name: "unknown fails closed",
+			result: VerificationResult{
+				State:        StateUnknown,
+				Unverifiable: []IdentityField{FieldVersion},
+			},
+			wantErr: true,
+		},
+		{
+			name:    "broken fails closed",
+			result:  VerificationResult{State: StateBroken, Detail: "probe failed"},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := TransitionForVerification(tt.result)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("TransitionForVerification() = %#v, want error", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("TransitionForVerification() error: %v", err)
+			}
+			if got.Required != tt.required || got.Transition != tt.want || got.State != tt.result.State {
+				t.Fatalf("TransitionForVerification() = %#v, want required=%v transition=%q state=%q", got, tt.required, tt.want, tt.result.State)
+			}
+		})
+	}
+}
+
+func TestTransitionForVerificationRejectsInvalidResult(t *testing.T) {
+	result := VerificationResult{State: StateDrifted}
+	if _, err := TransitionForVerification(result); err == nil {
+		t.Fatal("TransitionForVerification accepted invalid reconciliation result")
+	}
+}
+
+func TestReconcileLockedPlanUsesPinnedIdentityForLifecycleDecision(t *testing.T) {
+	resolved := New("tool", "native", true)
+	resolved.Identity = ResolvedIdentity{
+		RequestedVersion: &VersionIntent{Mode: VersionLatest},
+		Version:          "2.0.0",
+		Source:           "stable",
+	}
+	doc, err := BuildLockDocument([]ResolvedInstallPlan{resolved})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	intent := resolved
+	intent.Identity.Version = ""
+	got, err := ReconcileLockedPlan(doc, intent, Observation{
+		Presence: PresencePresent,
+		Identity: ObservedIdentity{
+			Version: "1.9.0",
+			Source:  "stable",
+		},
+		KnownFields: []IdentityField{FieldVersion, FieldSource},
+	})
+	if err != nil {
+		t.Fatalf("ReconcileLockedPlan() error: %v", err)
+	}
+	if got.Plan.Identity.Version != "2.0.0" {
+		t.Fatalf("pinned version = %q, want 2.0.0", got.Plan.Identity.Version)
+	}
+	if got.Verification.State != StateDrifted {
+		t.Fatalf("verification state = %q, want %q", got.Verification.State, StateDrifted)
+	}
+	if len(got.Verification.Drift) != 1 || got.Verification.Drift[0].Desired != "2.0.0" {
+		t.Fatalf("verification drift = %#v, want pinned desired version 2.0.0", got.Verification.Drift)
+	}
+	if !got.Decision.Required || got.Decision.Transition != TransitionUpgrade {
+		t.Fatalf("decision = %#v, want required upgrade", got.Decision)
+	}
+}
+
+func TestReconcileLockedPlanRejectsMutableIntentDriftBeforeLifecycleSelection(t *testing.T) {
+	resolved := New("tool", "native", true)
+	resolved.Identity = ResolvedIdentity{
+		RequestedVersion: &VersionIntent{Mode: VersionLatest},
+		Version:          "2.0.0",
+		Source:           "stable",
+	}
+	doc, err := BuildLockDocument([]ResolvedInstallPlan{resolved})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	intent := resolved
+	intent.Identity.Version = ""
+	intent.Identity.Source = "edge"
+	got, err := ReconcileLockedPlan(doc, intent, Observation{Presence: PresenceAbsent})
+	if !errors.Is(err, ErrLockMismatch) {
+		t.Fatalf("ReconcileLockedPlan() error = %v, want ErrLockMismatch", err)
+	}
+	if got.Decision.Required || got.Decision.Transition != "" || got.Verification.State != "" {
+		t.Fatalf("ReconcileLockedPlan() returned lifecycle output after lock mismatch: %#v", got)
+	}
+}
+
+func TestReconcileLockedPlanFailsClosedButPreservesUnknownVerification(t *testing.T) {
+	resolved := New("tool", "native", true)
+	resolved.Identity = ResolvedIdentity{
+		RequestedVersion: &VersionIntent{Mode: VersionLatest},
+		Version:          "2.0.0",
+	}
+	doc, err := BuildLockDocument([]ResolvedInstallPlan{resolved})
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent := resolved
+	intent.Identity.Version = ""
+
+	got, err := ReconcileLockedPlan(doc, intent, Observation{
+		Presence: PresenceUnknown,
+		Detail:   "manager cannot report installed version",
+	})
+	if err == nil {
+		t.Fatal("ReconcileLockedPlan() accepted unverifiable desired state")
+	}
+	if got.Plan.Identity.Version != "2.0.0" {
+		t.Fatalf("pinned version = %q, want 2.0.0", got.Plan.Identity.Version)
+	}
+	if got.Verification.State != StateUnknown {
+		t.Fatalf("verification state = %q, want %q", got.Verification.State, StateUnknown)
+	}
+	if got.Decision.Required || got.Decision.Transition != "" {
+		t.Fatalf("unknown verification selected mutation: %#v", got.Decision)
 	}
 }

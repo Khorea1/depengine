@@ -70,6 +70,15 @@ func TestPlanValidatesRequestedVersion(t *testing.T) {
 	}
 }
 
+func TestPlanRejectsResolvedExactVersionDifferentFromRequestedVersion(t *testing.T) {
+	p := plan.New("tool", "native", true)
+	p.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: "1.2.3"}
+	p.Identity.Version = "1.2.4"
+	if err := p.Validate(); err == nil || !strings.Contains(err.Error(), "requested exact version does not match") {
+		t.Fatalf("Validate() error = %v, want requested/resolved exact version mismatch", err)
+	}
+}
+
 func TestVersionIntentRejectsNUL(t *testing.T) {
 	for _, intent := range []plan.VersionIntent{
 		{Mode: plan.VersionExact, Value: "1.2\x003"},

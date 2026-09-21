@@ -40,11 +40,14 @@ var ErrLockMismatch = errors.New("resolved plan does not match immutable lock")
 // LockedArtifact is the reproducibility identity of one resolved artifact.
 // Credentials are never part of this identity.
 type LockedArtifact struct {
-	Kind         ArtifactKind `json:"kind,omitempty"`
-	URL          string       `json:"url,omitempty"`
-	LocalPath    string       `json:"local_path,omitempty"`
-	Checksum     string       `json:"checksum,omitempty"`
-	SignatureURL string       `json:"signature_url,omitempty"`
+	Kind               ArtifactKind `json:"kind,omitempty"`
+	URL                string       `json:"url,omitempty"`
+	LocalPath          string       `json:"local_path,omitempty"`
+	Checksum           string       `json:"checksum,omitempty"`
+	ChecksumURL        string       `json:"checksum_url,omitempty"`
+	ChecksumFileFormat string       `json:"checksum_file_format,omitempty"`
+	SignatureURL       string       `json:"signature_url,omitempty"`
+	SigningKey         string       `json:"signing_key,omitempty"`
 }
 
 // LockedSource is the persistence-safe identity of a source used during
@@ -52,6 +55,7 @@ type LockedArtifact struct {
 // remains external to committed lockfiles.
 type LockedSource struct {
 	Role  SourceRole   `json:"role"`
+	Kind  string       `json:"kind,omitempty"`
 	Name  string       `json:"name,omitempty"`
 	URL   string       `json:"url,omitempty"`
 	Owned bool         `json:"owned,omitempty"`
@@ -94,6 +98,22 @@ func (a LockedArtifact) validate() error {
 			return fmt.Errorf("artifact URL is not canonical; use %q", canonical)
 		}
 	}
+	if a.ChecksumURL != "" {
+		if a.LocalPath != "" {
+			return errors.New("local artifact cannot persist a remote checksum URL")
+		}
+		if err := validateCredentialFreeURL(a.ChecksumURL); err != nil {
+			return fmt.Errorf("artifact checksum URL: %w", err)
+		}
+		if canonical := sanitizeLockReference(a.ChecksumURL); canonical != a.ChecksumURL {
+			return fmt.Errorf("artifact checksum URL is not canonical; use %q", canonical)
+		}
+	}
+	switch a.ChecksumFileFormat {
+	case "", "sha256sum", "bsd", "raw":
+	default:
+		return fmt.Errorf("unsupported checksum file format %q", a.ChecksumFileFormat)
+	}
 	if a.SignatureURL != "" {
 		if a.LocalPath != "" {
 			return errors.New("local artifact cannot persist a remote signature URL")
@@ -103,6 +123,17 @@ func (a LockedArtifact) validate() error {
 		}
 		if canonical := sanitizeLockReference(a.SignatureURL); canonical != a.SignatureURL {
 			return fmt.Errorf("artifact signature URL is not canonical; use %q", canonical)
+		}
+	}
+	if strings.TrimSpace(a.SigningKey) != a.SigningKey || strings.ContainsRune(a.SigningKey, '\x00') {
+		return errors.New("artifact signing key must not contain surrounding whitespace or NUL")
+	}
+	if strings.Contains(a.SigningKey, "://") {
+		if err := validateCredentialFreeURL(a.SigningKey); err != nil {
+			return fmt.Errorf("artifact signing key URL: %w", err)
+		}
+		if canonical := sanitizeLockReference(a.SigningKey); canonical != a.SigningKey {
+			return fmt.Errorf("artifact signing key URL is not canonical; use %q", canonical)
 		}
 	}
 	if a.LocalPath != "" {
@@ -179,6 +210,7 @@ func validDigestAlgorithm(value string) bool {
 func (s LockedSource) validate() error {
 	source := SourceReference{
 		Role:  s.Role,
+		Kind:  s.Kind,
 		Name:  s.Name,
 		URL:   s.URL,
 		Owned: s.Owned,
@@ -251,7 +283,7 @@ func (i LockIdentity) validate() error {
 		if err := source.validate(); err != nil {
 			return fmt.Errorf("lock source %d: %w", idx, err)
 		}
-		key := sourceSortKey(SourceReference{Role: source.Role, Name: source.Name, URL: source.URL})
+		key := sourceSortKey(SourceReference{Role: source.Role, Kind: source.Kind, Name: source.Name, URL: source.URL})
 		if idx > 0 && key <= previousSourceKey {
 			if key == previousSourceKey {
 				return fmt.Errorf("duplicate lock source identity %q", key)
@@ -294,7 +326,9 @@ func (p LockProjection) redacted() LockProjection {
 	p.Identity.Registry = sanitizeLockReference(p.Identity.Registry)
 	for i := range p.Identity.Artifacts {
 		p.Identity.Artifacts[i].URL = sanitizeLockReference(p.Identity.Artifacts[i].URL)
+		p.Identity.Artifacts[i].ChecksumURL = sanitizeLockReference(p.Identity.Artifacts[i].ChecksumURL)
 		p.Identity.Artifacts[i].SignatureURL = sanitizeLockReference(p.Identity.Artifacts[i].SignatureURL)
+		p.Identity.Artifacts[i].SigningKey = sanitizeSigningKeyReference(p.Identity.Artifacts[i].SigningKey)
 		p.Identity.Artifacts[i].Checksum = run.RedactSensitiveText(p.Identity.Artifacts[i].Checksum)
 	}
 	for i := range p.Identity.Sources {
@@ -351,11 +385,14 @@ func ProjectLock(p ResolvedInstallPlan) (LockProjection, error) {
 	}
 	for _, artifact := range p.Artifacts {
 		projection.Identity.Artifacts = append(projection.Identity.Artifacts, LockedArtifact{
-			Kind:         artifact.Kind,
-			URL:          sanitizeLockReference(artifact.URL),
-			LocalPath:    artifact.LocalPath,
-			Checksum:     canonicalDigest(run.RedactSensitiveText(artifact.Checksum)),
-			SignatureURL: sanitizeLockReference(artifact.SignatureURL),
+			Kind:               artifact.Kind,
+			URL:                sanitizeLockReference(artifact.URL),
+			LocalPath:          artifact.LocalPath,
+			Checksum:           canonicalDigest(run.RedactSensitiveText(artifact.Checksum)),
+			ChecksumURL:        sanitizeLockReference(artifact.ChecksumURL),
+			ChecksumFileFormat: artifact.ChecksumFileFormat,
+			SignatureURL:       sanitizeLockReference(artifact.SignatureURL),
+			SigningKey:         sanitizeSigningKeyReference(artifact.SigningKey),
 		})
 	}
 	slices.SortFunc(projection.Identity.Artifacts, func(a, b LockedArtifact) int {
@@ -371,6 +408,7 @@ func ProjectLock(p ResolvedInstallPlan) (LockProjection, error) {
 	for _, source := range canonicalSources {
 		locked := LockedSource{
 			Role:  source.Role,
+			Kind:  strings.ToLower(source.Kind),
 			Name:  strings.ToLower(source.Name),
 			URL:   sanitizeLockReference(source.URL),
 			Owned: source.Owned,
@@ -500,7 +538,7 @@ func lockedArtifactsEqual(expected, actual []LockedArtifact) bool {
 	}
 	for i := range expected {
 		a, b := expected[i], actual[i]
-		if a.Kind != b.Kind || sanitizeLockReference(a.URL) != sanitizeLockReference(b.URL) || a.LocalPath != b.LocalPath || canonicalDigest(a.Checksum) != canonicalDigest(b.Checksum) || sanitizeLockReference(a.SignatureURL) != sanitizeLockReference(b.SignatureURL) {
+		if a.Kind != b.Kind || sanitizeLockReference(a.URL) != sanitizeLockReference(b.URL) || a.LocalPath != b.LocalPath || canonicalDigest(a.Checksum) != canonicalDigest(b.Checksum) || sanitizeLockReference(a.ChecksumURL) != sanitizeLockReference(b.ChecksumURL) || a.ChecksumFileFormat != b.ChecksumFileFormat || sanitizeLockReference(a.SignatureURL) != sanitizeLockReference(b.SignatureURL) || sanitizeSigningKeyReference(a.SigningKey) != sanitizeSigningKeyReference(b.SigningKey) {
 			return false
 		}
 	}
@@ -513,7 +551,7 @@ func lockedSourcesEqual(expected, actual []LockedSource) bool {
 	}
 	for i := range expected {
 		a, b := expected[i], actual[i]
-		if a.Role != b.Role || !strings.EqualFold(a.Name, b.Name) || sanitizeLockReference(a.URL) != sanitizeLockReference(b.URL) || a.Owned != b.Owned || !sourceTrustEqual(a.Trust, b.Trust) {
+		if a.Role != b.Role || !strings.EqualFold(a.Kind, b.Kind) || !strings.EqualFold(a.Name, b.Name) || sanitizeLockReference(a.URL) != sanitizeLockReference(b.URL) || a.Owned != b.Owned || !sourceTrustEqual(a.Trust, b.Trust) {
 			return false
 		}
 	}
@@ -643,6 +681,13 @@ func lockIdentityUnavailabilityReason(requested *VersionIntent, identity LockIde
 // sanitizeLockReference removes credential material rather than replacing it
 // with display placeholders. The resulting value can serve as canonical
 // persisted identity while authentication remains external to the lockfile.
+func sanitizeSigningKeyReference(raw string) string {
+	if strings.Contains(raw, "://") {
+		return sanitizeLockReference(raw)
+	}
+	return run.RedactSensitiveText(raw)
+}
+
 func sanitizeLockReference(raw string) string {
 	if raw == "" {
 		return ""
@@ -743,6 +788,111 @@ func BuildLockDocument(plans []ResolvedInstallPlan) (LockDocument, error) {
 }
 
 // Validate enforces the persisted universal-lock invariants.
+// EntryForPlan returns the immutable lock entry that a resolver may consume for
+// an unresolved/static plan intent. It validates the document, selected
+// candidate, requested version semantics, and every identity dimension already
+// known by the plan. Concrete fields that are still empty are intentionally not
+// compared: those are the values the resolver is expected to consume from the
+// returned lock entry rather than re-resolve from a mutable source.
+//
+// The returned entry is a deep copy. Callers may adapt it for resolver-local
+// use without mutating the persisted lock document.
+func (d LockDocument) EntryForPlan(intent ResolvedInstallPlan) (LockProjection, error) {
+	if err := d.Validate(); err != nil {
+		return LockProjection{}, fmt.Errorf("lock document: %w", err)
+	}
+	if err := intent.Validate(); err != nil {
+		return LockProjection{}, fmt.Errorf("plan intent: %w", err)
+	}
+
+	idx, found := slices.BinarySearchFunc(d.Entries, intent.Tool.Name, func(entry LockProjection, name string) int {
+		return strings.Compare(entry.Tool.Name, name)
+	})
+	if !found {
+		return LockProjection{}, fmt.Errorf("%w: tool %q is not present in lock", ErrLockMismatch, intent.Tool.Name)
+	}
+	expected := d.Entries[idx]
+	if expected.Candidate != intent.Candidate {
+		return LockProjection{}, fmt.Errorf("%w: selected candidate changed", ErrLockMismatch)
+	}
+
+	requestedMode := VersionMode("")
+	var requestedIntent *VersionIntent
+	if intent.Identity.RequestedVersion != nil {
+		requestedMode = intent.Identity.RequestedVersion.Mode
+		requestedIntent = intent.Identity.RequestedVersion
+	}
+	if expected.RequestedMode != requestedMode {
+		return LockProjection{}, fmt.Errorf("%w: requested version mode changed", ErrLockMismatch)
+	}
+	if expected.RequestedIntent != nil && !versionIntentEqual(expected.RequestedIntent, requestedIntent) {
+		return LockProjection{}, fmt.Errorf("%w: requested version intent changed", ErrLockMismatch)
+	}
+	if expected.RequestedIntent == nil && requestedIntent != nil {
+		return LockProjection{}, fmt.Errorf("%w: requested version intent changed", ErrLockMismatch)
+	}
+
+	if field := knownLockIdentityMismatchField(intent.Identity, expected.Identity); field != "" {
+		return LockProjection{}, fmt.Errorf("%w: known %s identity changed", ErrLockMismatch, field)
+	}
+	return cloneLockProjection(expected), nil
+}
+
+// knownLockIdentityMismatchField compares only identity dimensions already
+// known in a static plan. Empty concrete values are unresolved, not wildcards
+// for values that the manifest explicitly configured elsewhere.
+func knownLockIdentityMismatchField(intent ResolvedIdentity, expected LockIdentity) string {
+	switch {
+	case intent.Package != "" && intent.Package != expected.Package:
+		return "package"
+	case intent.Version != "" && intent.Version != expected.Version:
+		return "version"
+	case intent.Revision != "" && intent.Revision != expected.Revision:
+		return "revision"
+	case intent.Digest != "" && canonicalDigest(intent.Digest) != canonicalDigest(expected.Digest):
+		return "digest"
+	case intent.Source != "" && sanitizeLockReference(intent.Source) != sanitizeLockReference(expected.Source):
+		return "source"
+	case intent.Registry != "" && sanitizeLockReference(intent.Registry) != sanitizeLockReference(expected.Registry):
+		return "registry"
+	case intent.Scope != "" && intent.Scope != expected.Scope:
+		return "scope"
+	case intent.Environment != nil && !reflect.DeepEqual(intent.Environment, expected.Environment):
+		return "environment"
+	case intent.Architecture != "" && intent.Architecture != expected.Architecture:
+		return "architecture"
+	case intent.Platform != "" && intent.Platform != expected.Platform:
+		return "platform"
+	default:
+		return ""
+	}
+}
+
+func cloneLockProjection(in LockProjection) LockProjection {
+	out := in
+	if in.RequestedIntent != nil {
+		intent := *in.RequestedIntent
+		if intent.Channel != nil {
+			channel := *intent.Channel
+			intent.Channel = &channel
+		}
+		out.RequestedIntent = &intent
+	}
+	if in.Identity.Environment != nil {
+		environment := *in.Identity.Environment
+		out.Identity.Environment = &environment
+	}
+	out.Identity.Artifacts = append([]LockedArtifact(nil), in.Identity.Artifacts...)
+	out.Identity.Sources = append([]LockedSource(nil), in.Identity.Sources...)
+	for i := range out.Identity.Sources {
+		if in.Identity.Sources[i].Trust != nil {
+			trust := *in.Identity.Sources[i].Trust
+			out.Identity.Sources[i].Trust = &trust
+		}
+	}
+	return out
+}
+
 // VerifyResolvedPlansAgainstLock verifies an exact resolved plan set against a
 // persisted immutable lock document. Tool membership is part of the contract:
 // missing, extra, or duplicate plans are mismatches rather than opportunities
@@ -798,6 +948,79 @@ func (d LockDocument) Validate() error {
 			return fmt.Errorf("lock entries are not in canonical tool order: %q before %q", previous, name)
 		}
 		previous = name
+	}
+	return nil
+}
+
+// PinnedPlanFor materializes the immutable identity recorded in the lock into
+// a static plan intent. It performs no resolution or host I/O. Operational
+// semantics (operations, prerequisites, hooks, preparation, ownership) remain
+// those of the current intent; only reproducibility identity comes from the
+// validated lock entry. Source secret references are preserved from the
+// in-memory intent and are never loaded from the persisted lock.
+func (d LockDocument) PinnedPlanFor(intent ResolvedInstallPlan) (ResolvedInstallPlan, error) {
+	entry, err := d.EntryForPlan(intent)
+	if err != nil {
+		return ResolvedInstallPlan{}, err
+	}
+	out := cloneResolvedInstallPlan(intent)
+	out.Identity.Package = entry.Identity.Package
+	out.Identity.Version = entry.Identity.Version
+	out.Identity.Revision = entry.Identity.Revision
+	out.Identity.Digest = entry.Identity.Digest
+	out.Identity.Source = entry.Identity.Source
+	out.Identity.Registry = entry.Identity.Registry
+	out.Identity.Scope = entry.Identity.Scope
+	out.Identity.Architecture = entry.Identity.Architecture
+	out.Identity.Platform = entry.Identity.Platform
+	if entry.Identity.Environment != nil {
+		environment := *entry.Identity.Environment
+		out.Identity.Environment = &environment
+	} else {
+		out.Identity.Environment = nil
+	}
+
+	out.Artifacts = make([]Artifact, len(entry.Identity.Artifacts))
+	for i, artifact := range entry.Identity.Artifacts {
+		out.Artifacts[i] = Artifact{
+			Kind:               artifact.Kind,
+			URL:                artifact.URL,
+			LocalPath:          artifact.LocalPath,
+			Checksum:           artifact.Checksum,
+			ChecksumURL:        artifact.ChecksumURL,
+			ChecksumFileFormat: artifact.ChecksumFileFormat,
+			SignatureURL:       artifact.SignatureURL,
+			SigningKey:         artifact.SigningKey,
+		}
+	}
+	out.Sources = make([]SourceReference, len(entry.Identity.Sources))
+	for i, source := range entry.Identity.Sources {
+		out.Sources[i] = SourceReference{Role: source.Role, Kind: source.Kind, Name: source.Name, URL: source.URL, Owned: source.Owned}
+		if source.Trust != nil {
+			trust := *source.Trust
+			out.Sources[i].Trust = &trust
+		}
+		out.Sources[i].SecretRef = secretRefForLockedSource(intent.Sources, source)
+	}
+	if err := out.Validate(); err != nil {
+		return ResolvedInstallPlan{}, fmt.Errorf("pinned plan: %w", err)
+	}
+	if err := VerifyResolvedPlanAgainstLock(entry, out); err != nil {
+		return ResolvedInstallPlan{}, fmt.Errorf("pinned plan: %w", err)
+	}
+	return out, nil
+}
+
+func secretRefForLockedSource(sources []SourceReference, locked LockedSource) *SecretReference {
+	for _, source := range sources {
+		if source.Role != locked.Role || !strings.EqualFold(source.Kind, locked.Kind) || !strings.EqualFold(source.Name, locked.Name) || sanitizeLockReference(source.URL) != sanitizeLockReference(locked.URL) || source.Owned != locked.Owned || !sourceTrustEqual(source.Trust, locked.Trust) {
+			continue
+		}
+		if source.SecretRef == nil {
+			return nil
+		}
+		secret := *source.SecretRef
+		return &secret
 	}
 	return nil
 }

@@ -263,8 +263,15 @@ func (r VerificationResult) Validate() error {
 		if _, ok := unverifiable[drift.Field]; ok {
 			return fmt.Errorf("drift field %q cannot also be unverifiable", drift.Field)
 		}
+		if err := validateDesiredDriftValue(drift.Field, drift.Desired); err != nil {
+			return fmt.Errorf("drift field %q desired value: %w", drift.Field, err)
+		}
 		if comparableIdentityValue(drift.Field, drift.Desired) == comparableIdentityValue(drift.Field, drift.Observed) {
 			return fmt.Errorf("drift field %q has equivalent desired and observed values", drift.Field)
+		}
+		reported := observedField(r.Observed, drift.Field)
+		if comparableIdentityValue(drift.Field, drift.Observed) != comparableIdentityValue(drift.Field, reported) {
+			return fmt.Errorf("drift field %q observed value does not match authoritative observed identity", drift.Field)
 		}
 	}
 
@@ -294,6 +301,38 @@ func (r VerificationResult) Validate() error {
 		}
 		if r.Detail == "" {
 			return errors.New("broken verification requires detail")
+		}
+	}
+	return nil
+}
+
+func validateDesiredDriftValue(field IdentityField, value string) error {
+	if value == "" {
+		return errors.New("value is required")
+	}
+	if strings.TrimSpace(value) != value || strings.ContainsRune(value, '\x00') {
+		return errors.New("value must not contain surrounding whitespace or NUL")
+	}
+
+	switch field {
+	case FieldDigest:
+		return validateConcreteDigestSyntax(value)
+	case FieldSource, FieldRegistry:
+		return validateIdentityReference(value)
+	case FieldScope:
+		_, err := ParseScope(value)
+		return err
+	case FieldEnvironment:
+		kind, target, ok := strings.Cut(value, ":")
+		if !ok {
+			return errors.New("environment identity must use kind:value form")
+		}
+		environment := EnvironmentTarget{Kind: EnvironmentKind(kind), Value: target}
+		if err := environment.Validate(); err != nil {
+			return err
+		}
+		if environment.CanonicalKey() != value {
+			return errors.New("environment identity is not canonical")
 		}
 	}
 	return nil
@@ -399,11 +438,23 @@ func desiredField(identity ResolvedIdentity, field IdentityField) string {
 	case FieldPackage:
 		return identity.Package
 	case FieldVersion:
-		return identity.Version
+		if identity.Version != "" {
+			return identity.Version
+		}
+		if identity.RequestedVersion != nil && identity.RequestedVersion.Mode == VersionExact {
+			return identity.RequestedVersion.Value
+		}
+		return ""
 	case FieldRevision:
 		return identity.Revision
 	case FieldDigest:
-		return identity.Digest
+		if identity.Digest != "" {
+			return identity.Digest
+		}
+		if identity.RequestedVersion != nil && identity.RequestedVersion.Mode == VersionDigest {
+			return identity.RequestedVersion.Value
+		}
+		return ""
 	case FieldSource:
 		return identity.Source
 	case FieldRegistry:

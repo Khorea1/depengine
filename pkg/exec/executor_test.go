@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -13,9 +14,26 @@ import (
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/engine"
 	"github.com/Khorea1/depengine/pkg/methodkind"
+	"github.com/Khorea1/depengine/pkg/plan"
 	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/pkg/source"
 	"github.com/Khorea1/depengine/pkg/state"
 )
+
+type sequenceRunner struct {
+	calls   []run.FakeCall
+	results []run.Result
+}
+
+func (r *sequenceRunner) Run(_ context.Context, name string, args ...string) run.Result {
+	r.calls = append(r.calls, run.FakeCall{Name: name, Args: append([]string(nil), args...)})
+	if len(r.results) == 0 {
+		return run.Result{}
+	}
+	result := r.results[0]
+	r.results = r.results[1:]
+	return result
+}
 
 type testMockAdapter struct {
 	kindValue     string
@@ -280,6 +298,254 @@ func TestExplainToolRejectsUnavailableCandidateLikeExecute(t *testing.T) {
 	}
 	if !strings.Contains(attempts[0].Error, "package not found in repo/index") {
 		t.Fatalf("reason = %q, want repo/index availability failure", attempts[0].Error)
+	}
+}
+
+func TestExecutorDoesNotMutatePreexistingSourcesForUnavailableCandidate(t *testing.T) {
+	runner := &sequenceRunner{results: []run.Result{{Stdout: []byte("vendor/tools\n")}}}
+	adapter := &availabilityMockAdapter{
+		testMockAdapter: testMockAdapter{
+			kindValue: "cargo",
+			checkFunc: func(string) bool { return false },
+		},
+		checkAvailableFunc: func(string) bool { return false },
+	}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(adapter)(ex)
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"cargo"}},
+		Tools: map[string]*config.Tool{
+			"phantom": {
+				Name:       "phantom",
+				MethodOnly: []string{"cargo"},
+				Methods: []*config.MethodCandidate{{
+					Kind:    "cargo",
+					Config:  map[string]any{"pkg": "phantom"},
+					Sources: []config.Source{{Kind: "brew-tap", Name: "vendor/tools"}},
+				}},
+			},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), schema, "unknown")
+	if err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusSkippedUnavailable {
+		t.Fatalf("report = %+v, want unavailable candidate", report.Tools)
+	}
+	if len(report.Tools[0].Methods) != 1 || report.Tools[0].Methods[0].Status != "skip_unavailable" {
+		t.Fatalf("methods = %+v, want availability rejection after capability gating", report.Tools[0].Methods)
+	}
+	if len(runner.calls) != 1 || runner.calls[0].Name != "brew" || len(runner.calls[0].Args) != 1 || runner.calls[0].Args[0] != "tap" {
+		t.Fatalf("unavailable candidate source calls=%v, want one read-only presence probe", runner.calls)
+	}
+}
+
+func TestExecutorRechecksAvailabilityAfterMissingSourcePreparation(t *testing.T) {
+	runner := &sequenceRunner{results: []run.Result{{}, {}}}
+	availabilityChecks := 0
+	installs := 0
+	adapter := &availabilityMockAdapter{
+		testMockAdapter: testMockAdapter{
+			kindValue: "cargo",
+			checkFunc: func(string) bool { return false },
+			installFunc: func(string) error {
+				installs++
+				return nil
+			},
+		},
+		checkAvailableFunc: func(string) bool {
+			availabilityChecks++
+			// The repository/index answer is authoritative only after the declared
+			// source has been added. The old ordering called this before either
+			// source operation and therefore rejected the candidate.
+			return len(runner.calls) >= 2
+		},
+	}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(adapter)(ex)
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"cargo"}},
+		Tools: map[string]*config.Tool{
+			"from-extra-repo": {
+				Name:       "from-extra-repo",
+				MethodOnly: []string{"cargo"},
+				Methods: []*config.MethodCandidate{{
+					Kind:    "cargo",
+					Config:  map[string]any{"pkg": "from-extra-repo"},
+					Sources: []config.Source{{Kind: "brew-tap", Name: "vendor/tools"}},
+				}},
+			},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), schema, "unknown")
+	if err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusInstalled {
+		t.Fatalf("report = %+v, want source-backed install", report.Tools)
+	}
+	if availabilityChecks != 1 {
+		t.Fatalf("availability checks = %d, want one post-prepare check", availabilityChecks)
+	}
+	if installs != 1 {
+		t.Fatalf("installs = %d, want 1", installs)
+	}
+	if len(runner.calls) != 2 || runner.calls[0].Name != "brew" || runner.calls[1].Name != "brew" || len(runner.calls[1].Args) < 2 || runner.calls[1].Args[0] != "tap" || runner.calls[1].Args[1] != "vendor/tools" {
+		t.Fatalf("source calls=%v, want probe then add before availability check", runner.calls)
+	}
+}
+
+func TestExecutorRollsBackMissingSourceWhenPostPrepareAvailabilityFails(t *testing.T) {
+	runner := &sequenceRunner{results: []run.Result{
+		{},
+		{},
+		{Stdout: []byte("vendor/tools\n")},
+		{},
+	}}
+	fallbackInstalls := 0
+	primary := &availabilityMockAdapter{
+		testMockAdapter:    testMockAdapter{kindValue: "cargo", checkFunc: func(string) bool { return false }},
+		checkAvailableFunc: func(string) bool { return false },
+	}
+	fallback := &testMockAdapter{
+		kindValue: "http",
+		checkFunc: func(string) bool { return false },
+		installFunc: func(string) error {
+			fallbackInstalls++
+			return nil
+		},
+	}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(primary, fallback)(ex)
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"cargo", "http"}},
+		Tools: map[string]*config.Tool{
+			"demo": {
+				Name: "demo",
+				Methods: []*config.MethodCandidate{
+					{Kind: "cargo", Config: map[string]any{"pkg": "demo"}, Sources: []config.Source{{Kind: "brew-tap", Name: "vendor/tools"}}},
+					{Kind: "http", Config: map[string]any{"url": "https://demo"}},
+				},
+			},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), schema, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusInstalled || report.Tools[0].MethodKind != "http" {
+		t.Fatalf("report=%+v, want fallback http install", report.Tools)
+	}
+	if fallbackInstalls != 1 {
+		t.Fatalf("fallback installs=%d, want 1", fallbackInstalls)
+	}
+	if len(runner.calls) != 4 {
+		t.Fatalf("source calls=%v, want probe/add/rollback-probe/remove", runner.calls)
+	}
+	if got := runner.calls[3]; got.Name != "brew" || len(got.Args) != 2 || got.Args[0] != "untap" || got.Args[1] != "vendor/tools" {
+		t.Fatalf("rollback call=%v", got)
+	}
+}
+
+func TestExecutorRollsBackAddedSourcesBeforeFallback(t *testing.T) {
+	runner := &sequenceRunner{results: []run.Result{
+		{},
+		{},
+		{Stdout: []byte("vendor/tools\n")},
+		{},
+	}}
+	primary := &testMockAdapter{
+		kindValue:   "cargo",
+		checkFunc:   func(string) bool { return false },
+		installFunc: func(string) error { return &installError{msg: "primary failed"} },
+	}
+	fallback := &testMockAdapter{
+		kindValue:   "http",
+		checkFunc:   func(string) bool { return false },
+		installFunc: func(string) error { return nil },
+	}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(primary, fallback)(ex)
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"cargo", "http"}},
+		Tools: map[string]*config.Tool{
+			"demo": {
+				Name: "demo",
+				Methods: []*config.MethodCandidate{
+					{Kind: "cargo", Config: map[string]any{"pkg": "demo"}, Sources: []config.Source{{Kind: "brew-tap", Name: "vendor/tools"}}},
+					{Kind: "http", Config: map[string]any{"url": "https://demo"}},
+				},
+			},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), schema, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusInstalled || report.Tools[0].MethodKind != "http" {
+		t.Fatalf("report=%+v, want fallback http install", report.Tools)
+	}
+	if len(runner.calls) != 4 {
+		t.Fatalf("source calls=%v, want check/add/check/remove", runner.calls)
+	}
+	if got := runner.calls[3]; got.Name != "brew" || len(got.Args) != 2 || got.Args[0] != "untap" || got.Args[1] != "vendor/tools" {
+		t.Fatalf("rollback call=%v", got)
+	}
+}
+
+func TestExecutorStopsFallbackWhenSourceAddOutcomeIsAmbiguous(t *testing.T) {
+	runner := &sequenceRunner{results: []run.Result{
+		{},
+		{Err: context.DeadlineExceeded, ExitCode: 1},
+		{Err: context.DeadlineExceeded, ExitCode: 1},
+	}}
+	fallbackInstalls := 0
+	primary := &testMockAdapter{kindValue: "cargo", checkFunc: func(string) bool { return false }}
+	fallback := &testMockAdapter{
+		kindValue: "http",
+		checkFunc: func(string) bool { return false },
+		installFunc: func(string) error {
+			fallbackInstalls++
+			return nil
+		},
+	}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(primary, fallback)(ex)
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"cargo", "http"}},
+		Tools: map[string]*config.Tool{
+			"demo": {
+				Name: "demo",
+				Methods: []*config.MethodCandidate{
+					{Kind: "cargo", Config: map[string]any{"pkg": "demo"}, Sources: []config.Source{{Kind: "brew-tap", Name: "vendor/tools"}}},
+					{Kind: "http", Config: map[string]any{"url": "https://demo"}},
+				},
+			},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), schema, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusFailed {
+		t.Fatalf("report=%+v, want failed ambiguous preparation", report.Tools)
+	}
+	if !strings.Contains(report.Tools[0].Error, "source preparation outcome is ambiguous") {
+		t.Fatalf("error=%q", report.Tools[0].Error)
+	}
+	if fallbackInstalls != 0 {
+		t.Fatalf("fallback installs=%d; ambiguous host mutation must stop fallback", fallbackInstalls)
 	}
 }
 
@@ -1425,8 +1691,8 @@ func TestWriteState(t *testing.T) {
 	if err := json.Unmarshal(data, &st); err != nil {
 		t.Fatalf("failed to parse state file: %v", err)
 	}
-	if st.Version != 1 {
-		t.Errorf("expected state version 1, got %d", st.Version)
+	if st.Version != state.CurrentVersion {
+		t.Errorf("expected state version %d, got %d", state.CurrentVersion, st.Version)
 	}
 	if st.SchemaPath != "/test/schema.yaml" {
 		t.Errorf("expected schema path /test/schema.yaml, got %s", st.SchemaPath)
@@ -1446,7 +1712,7 @@ func TestWriteStatePreservesInstalledMetadataWhenAlreadySatisfied(t *testing.T) 
 
 	const installedAt = "2024-02-03T04:05:06Z"
 	initial := &state.State{
-		Version: 1,
+		Version: state.CurrentVersion,
 		Tools: map[string]state.ToolState{
 			"tool1": {
 				Method:          "native",
@@ -1802,5 +2068,162 @@ func TestExplainIntentSurfacesIdentityFieldsAndRedactsSecrets(t *testing.T) {
 	}
 	if _, ok := got["build"]; ok {
 		t.Fatalf("command-bearing config leaked into explain intent: %v", got)
+	}
+}
+
+func TestWriteStateTracksSharedSourceOwnershipAndRefcounts(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", dir)
+
+	runner := &sequenceRunner{results: []run.Result{
+		{},                                 // tool-a: brew tap -> source absent
+		{},                                 // tool-a: brew tap vendor/tools -> added
+		{Stdout: []byte("vendor/tools\n")}, // tool-b: source already present
+	}}
+	adapter := &testMockAdapter{
+		kindValue:   "cargo",
+		checkFunc:   func(string) bool { return false },
+		installFunc: func(string) error { return nil },
+	}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
+
+	method := func() *config.MethodCandidate {
+		return &config.MethodCandidate{
+			Kind:    "cargo",
+			Config:  map[string]any{"pkg": "demo"},
+			Sources: []config.Source{{Kind: "brew-tap", Name: "vendor/tools"}},
+		}
+	}
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"cargo"}},
+		Tools: map[string]*config.Tool{
+			"tool-a": {Name: "tool-a", MethodOnly: []string{"cargo"}, Methods: []*config.MethodCandidate{method()}},
+			"tool-b": {Name: "tool-b", MethodOnly: []string{"cargo"}, Methods: []*config.MethodCandidate{method()}},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), schema, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Success != 2 {
+		t.Fatalf("success = %d, want 2; tools=%+v", report.Success, report.Tools)
+	}
+	st, err := state.LoadFrom(state.DefaultPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := source.ResourceIdentity(config.Source{Kind: "brew-tap", Name: "vendor/tools"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []plan.OwnedResourceState{{
+		Resource:   identity,
+		Ownership:  plan.OwnershipDepengine,
+		Dependents: []string{"tool-a", "tool-b"},
+	}}
+	if !reflect.DeepEqual(st.OwnedResources, want) {
+		t.Fatalf("owned resources = %#v, want %#v", st.OwnedResources, want)
+	}
+}
+
+func TestWriteStateMarksPreexistingSourceExternal(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", dir)
+
+	runner := &sequenceRunner{results: []run.Result{{Stdout: []byte("vendor/tools\n")}}}
+	adapter := &testMockAdapter{kindValue: "cargo", checkFunc: func(string) bool { return false }, installFunc: func(string) error { return nil }}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"cargo"}},
+		Tools: map[string]*config.Tool{
+			"tool-a": {
+				Name:       "tool-a",
+				MethodOnly: []string{"cargo"},
+				Methods: []*config.MethodCandidate{{
+					Kind: "cargo", Config: map[string]any{"pkg": "demo"},
+					Sources: []config.Source{{Kind: "brew-tap", Name: "vendor/tools"}},
+				}},
+			},
+		},
+	}
+
+	if _, err := ex.Execute(context.Background(), schema, ""); err != nil {
+		t.Fatal(err)
+	}
+	st, err := state.LoadFrom(state.DefaultPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.OwnedResources) != 1 || st.OwnedResources[0].Ownership != plan.OwnershipExternal {
+		t.Fatalf("owned resources = %#v, want one external source", st.OwnedResources)
+	}
+}
+
+func TestExecutorRetainsCommittedSourcesWhenPostInstallFails(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	runner := &sequenceRunner{results: []run.Result{
+		{},
+		{},
+		{ExitCode: 1, Stderr: []byte("hook failed")},
+	}}
+	adapter := &testMockAdapter{kindValue: "cargo", checkFunc: func(string) bool { return false }, installFunc: func(string) error { return nil }}
+	ex := New()
+	WithAllowArbitraryCode()(ex)
+	WithRunner(runner)(ex)
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"cargo"}},
+		Tools: map[string]*config.Tool{
+			"demo": {
+				Name:        "demo",
+				MethodOnly:  []string{"cargo"},
+				PostInstall: []config.Hook{{Run: []string{"hook-command"}}},
+				Methods: []*config.MethodCandidate{{
+					Kind: "cargo", Config: map[string]any{"pkg": "demo"},
+					Sources: []config.Source{{Kind: "brew-tap", Name: "vendor/tools"}},
+				}},
+			},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), schema, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusFailed {
+		t.Fatalf("report = %+v, want failed post-install", report.Tools)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("calls = %#v, want source check/add and hook only", runner.calls)
+	}
+	for _, call := range runner.calls {
+		if call.Name == "brew" && reflect.DeepEqual(call.Args, []string{"untap", "vendor/tools"}) {
+			t.Fatalf("committed install source must not be rolled back after post-install failure: %#v", runner.calls)
+		}
+	}
+	st, err := state.LoadFrom(state.DefaultPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolState, ok := st.Tools["demo"]
+	if !ok {
+		t.Fatalf("committed install missing from state after post-install failure: %#v", st.Tools)
+	}
+	if toolState.PostinstallDone {
+		t.Fatal("failed post-install must not be recorded as completed")
+	}
+	if len(st.OwnedResources) != 1 || st.OwnedResources[0].Ownership != plan.OwnershipDepengine || !reflect.DeepEqual(st.OwnedResources[0].Dependents, []string{"demo"}) {
+		t.Fatalf("source ownership = %#v, want depengine-owned by demo", st.OwnedResources)
+	}
+	if len(st.PreparationPlans) != 0 || len(st.PreparationJournals) != 0 {
+		t.Fatalf("committed preparation remained active: plans=%#v journals=%#v", st.PreparationPlans, st.PreparationJournals)
 	}
 }

@@ -179,7 +179,7 @@ var msiArtifactContract = &artifact.Contract{
 // adapter-facing schema fields. Keep entries in default preference order;
 // kinds with DefaultOrder zero are valid but never injected as blind fallbacks.
 var Contracts = finalizeContracts([]Contract{
-	{Kind: "native", DefaultOrder: 1, Fields: fields(pkgField, map[string]Field{"pkg_overrides": {Type: StringMap, Effects: EffectResolve | EffectExecute | EffectVerify}}), AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "native", DefaultOrder: 1, Capabilities: CapabilitySourceSelection, Fields: fields(pkgField, map[string]Field{"pkg_overrides": {Type: StringMap, Effects: EffectResolve | EffectExecute | EffectVerify}}), AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "winget", Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityScope | CapabilityArchitecture, Scopes: &ScopeContract{AdapterValues: map[plan.Scope]string{plan.ScopeUser: "user", plan.ScopeSystem: "machine"}}, Fields: fields(pkgField, map[string]Field{
 		"version":        {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"source":         {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute | EffectVerify},
@@ -343,6 +343,12 @@ func finalizeContracts(contracts []Contract) []Contract {
 			field.Semantic = semantic
 			contracts[i].Fields[name] = field
 		}
+
+		// Candidate-scoped host-source mutation is performed by the shared
+		// executor source layer rather than by individual adapters. Any
+		// method can therefore participate in a candidate that declares one of
+		// the supported host source kinds without weakening intent.
+		contracts[i].Capabilities |= CapabilitySourceMutation
 
 		// Check is mandatory on exec.Adapter, so every registered method can at
 		// least observe whether its target is installed.

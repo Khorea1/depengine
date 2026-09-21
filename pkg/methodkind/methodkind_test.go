@@ -319,8 +319,7 @@ func TestMissingPlanCapabilitiesFailsClosedForProgrammaticConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MissingPlanCapabilities() error: %v", err)
 	}
-	want := methodkind.CapabilitySourceSelection |
-		methodkind.CapabilityArchitecture |
+	want := methodkind.CapabilityArchitecture |
 		methodkind.CapabilityScope |
 		methodkind.CapabilityEnvironmentTarget |
 		methodkind.CapabilityRevision

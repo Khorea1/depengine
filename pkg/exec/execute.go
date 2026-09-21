@@ -12,6 +12,7 @@ import (
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/graph"
 	"github.com/Khorea1/depengine/pkg/native"
+	"github.com/Khorea1/depengine/pkg/plan"
 	"github.com/Khorea1/depengine/pkg/run"
 	"github.com/Khorea1/depengine/pkg/source"
 )
@@ -42,6 +43,9 @@ func (ex *Executor) hasApplicableNativeMethod(s *config.Schema, clan string) boo
 
 // needsElevation reports whether any applicable method will need root.
 func (ex *Executor) needsElevation(s *config.Schema, clan string) bool {
+	if ex.preparationRecoveryNeedsElevation() {
+		return true
+	}
 	mgr, ok := native.Lookup(clan)
 	if ok && mgr.SudoRequired && ex.hasApplicableNativeMethod(s, clan) {
 		return true
@@ -51,6 +55,11 @@ func (ex *Executor) needsElevation(s *config.Schema, clan string) bool {
 		for _, mc := range config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName) {
 			if mc.When != nil && !mc.When.Match(ex.facts) {
 				continue
+			}
+			for _, configuredSource := range mc.Sources {
+				if configuredSource.Kind == "apt-ppa" || configuredSource.Kind == "dnf-copr" {
+					return true
+				}
 			}
 			adapter := ex.LookupAdapter(mc.Kind)
 			requirer, ok := adapter.(ElevationRequirer)
@@ -68,6 +77,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 	ex.schema = s
 	ex.report = report
 	ex.sources = source.NewManager(ex.rn, ex.dryRun)
+	ex.recoveredCommits = make(map[string]recoveredCandidateCommit)
 	ex.dependencies = make(map[string]*dependencyRun)
 
 	ex.clan = clan
@@ -98,6 +108,29 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 		if stop != nil {
 			defer stop()
 		}
+	}
+
+	// Resolve any durable candidate-preparation transaction before allowing
+	// unrelated new host mutations. Source-only transactions can be recovered
+	// automatically from source presence; ambiguous candidate commits remain
+	// fail-closed.
+	if err := ex.recoverPreparationTransactions(ctx); err != nil {
+		return nil, fmt.Errorf("preparation recovery: %w", err)
+	}
+
+	// A reconciled commit is already a completed host transition. Record every
+	// recovered result exactly once before graph execution, including
+	// DependencyOnly tools that may not appear in the root graph at all. The
+	// root and lazy-dependency paths below treat these entries as terminal and
+	// must not probe, replay hooks, or invoke an installer again.
+	recoveredNames := make([]string, 0, len(ex.recoveredCommits))
+	for name := range ex.recoveredCommits {
+		recoveredNames = append(recoveredNames, name)
+	}
+	sort.Strings(recoveredNames)
+	for _, name := range recoveredNames {
+		result := ex.recoveredCommits[name].result()
+		ex.recordToolResult(ctx, &result, report)
 	}
 
 	// Only sync native package index if at least one tool uses a native method.
@@ -158,12 +191,23 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 	failedTools := make(map[string]string) // toolName -> reason
 
 	for _, level := range levels {
+		// Reconciled commits were recorded before graph execution and are terminal
+		// for this run. Exclude them before dependency/security/hook/batch phases
+		// so no transient second probe or host mutation can replay the transition.
+		executionLevel := make([]string, 0, len(level))
+		for _, toolName := range level {
+			if _, ok := ex.recoveredCommits[toolName]; ok {
+				continue
+			}
+			executionLevel = append(executionLevel, toolName)
+		}
+
 		// PHASE 0: requires — a tool whose dependency failed must not attempt
 		// to install (its runtime prerequisite is absent). It is marked failed
 		// so the run exits non-zero and its own dependents are blocked
 		// transitively.
 		blockedByRequires := make(map[string]string) // toolName -> failure message
-		for _, toolName := range level {
+		for _, toolName := range executionLevel {
 			tool, ok := s.Tools[toolName]
 			if !ok {
 				continue
@@ -177,8 +221,8 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 		}
 
 		// PHASE 1: Dangerous-code filter (BEFORE any execution — including PreInstall).
-		filteredLevel := make([]string, 0, len(level))
-		for _, toolName := range level {
+		filteredLevel := make([]string, 0, len(executionLevel))
+		for _, toolName := range executionLevel {
 			if msg, blocked := blockedByRequires[toolName]; blocked {
 				failedTools[toolName] = msg
 				ex.recordToolResult(ctx, &ToolResult{
@@ -245,7 +289,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 				for i, c := range candidates {
 					names[i] = c.toolName
 				}
-				ex.outputf("  ⚡  would batch native install: %s via %s\n", strings.Join(names, ", "), ex.nativeManagerName)
+				ex.outputf("  ⚡  commit: would batch native install: %s via %s\n", strings.Join(names, ", "), ex.nativeManagerName)
 				for _, c := range candidates {
 					if len(c.tool.PostInstall) > 0 {
 						postCtx, postCancel := context.WithTimeout(ctx, ex.methodTimeout)
@@ -253,7 +297,8 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 						postCancel()
 					}
 					ex.recordToolResult(ctx, &ToolResult{
-						Tool: c.toolName, Status: StatusWouldInstall, Method: "native",
+						Tool: c.toolName, Status: StatusWouldInstall, Method: displayMethodKind(c.method),
+						MethodKind: c.method.Kind, Config: c.method.Config, PlanIntent: c.planIntent,
 					}, report)
 				}
 			case ex.batchNativeInstall(ctx, candidates):
@@ -266,8 +311,10 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 					adapter := ex.LookupAdapter(c.method.Kind)
 					if adapter != nil && adapter.Check(ctx, ex.probeRunner(c.toolName, c.method.Kind), c.tool, c.method) {
 						tr := ToolResult{
-							Tool: c.toolName, Status: StatusInstalled, Method: "native", Config: c.method.Config,
+							Tool: c.toolName, Status: StatusInstalled, Method: displayMethodKind(c.method),
+							MethodKind: c.method.Kind, Config: c.method.Config, PlanIntent: c.planIntent, InstallCommitted: true,
 						}
+						tr.RebootRequired, _ = c.method.Config["_reboot_required"].(bool)
 						if preinstallDone[c.toolName] {
 							tr.PreinstallDone = true
 						}
@@ -480,34 +527,22 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			return
 		}
 
-		if err := ex.ensureMethodDependencies(toolCtx, tool, method); err != nil {
+		// Source presence is a read-only part of candidate selection. A package
+		// backed by a source that is currently absent cannot be judged by the
+		// manager's current repository index: "not found" may be exactly what the
+		// declared source is meant to change. Probe source presence first, then
+		// either validate availability immediately (all sources already present)
+		// or prepare the selected candidate transactionally and revalidate before
+		// installing any lazy prerequisites or the target itself.
+		sourceProbe, err := ex.probeCandidateSources(toolCtx, method.Sources)
+		if err != nil {
 			attempt.Status = "failed"
 			attempt.Error = err.Error()
 			result.Methods = append(result.Methods, attempt)
 			continue
 		}
-		if len(method.Sources) > 0 {
-			missing, err := ex.sources.Ensure(toolCtx, method.Sources)
-			if err != nil {
-				attempt.Status = "failed"
-				attempt.Error = err.Error()
-				result.Methods = append(result.Methods, attempt)
-				continue
-			}
-			if ex.dryRun && len(missing) > 0 {
-				for _, source := range missing {
-					ex.outputf("    source: would add %s %s\n", source.Kind, source.Name)
-				}
-			}
-		}
-
-		// Not installed — but is it actually installable via this method?
-		// Check()==false alone can't tell "not installed yet" apart from
-		// "not a real package for this manager" (see AvailabilityChecker
-		// doc). Without this, a `simple = [...]` tool with no real native
-		// package would be reported as "would install" and then fail a
-		// real install, instead of falling through to the next method.
-		if !checkAvailable(toolCtx, ex.probeRunner(tool.Name, displayKind), adapter, tool, method) {
+		availabilityDeferred := len(sourceProbe.missing) > 0
+		if !availabilityDeferred && !checkAvailable(toolCtx, ex.probeRunner(tool.Name, displayKind), adapter, tool, method) {
 			attempt.Status = "skip_unavailable"
 			attempt.Error = fmt.Sprintf("%s: package not found in repo/index", displayKind)
 			result.Methods = append(result.Methods, attempt)
@@ -515,11 +550,87 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			continue
 		}
 
+		preparedSources, err := ex.prepareCandidateSources(toolCtx, tool.Name, method.Kind, planIntent, sourceProbe)
+		if err != nil {
+			attempt.Status = "failed"
+			attempt.Error = err.Error()
+			result.Methods = append(result.Methods, attempt)
+			if preparationBlocked(err) {
+				result.Status = StatusFailed
+				result.Error = err.Error()
+				result.Method = displayKind
+				result.MethodKind = method.Kind
+				result.Duration = time.Since(toolStart).String()
+				return
+			}
+			continue
+		}
+
+		// A missing host source makes pre-prepare repository availability
+		// inconclusive. Once the source exists, re-run the read-only repository
+		// check before any method.requires installation. If the target is still
+		// unavailable, compensate the source transaction and allow fallback. A
+		// dry-run cannot materialize the source, so it intentionally reports the
+		// selected prepare+commit plan without pretending the old index is
+		// authoritative for the post-prepare state.
+		if availabilityDeferred && !ex.dryRun && !checkAvailable(toolCtx, ex.probeRunner(tool.Name, displayKind), adapter, tool, method) {
+			if rollbackErr := preparedSources.rollback(toolCtx, ex); rollbackErr != nil {
+				detail := fmt.Sprintf("%s: package not found after source preparation; source rollback failed: %v", displayKind, rollbackErr)
+				attempt.Status = "failed"
+				attempt.Error = detail
+				result.Methods = append(result.Methods, attempt)
+				result.Status = StatusFailed
+				result.Error = detail
+				result.Method = displayKind
+				result.MethodKind = method.Kind
+				result.Duration = time.Since(toolStart).String()
+				return
+			}
+			attempt.Status = "skip_unavailable"
+			attempt.Error = fmt.Sprintf("%s: package not found in repo/index after source preparation", displayKind)
+			result.Methods = append(result.Methods, attempt)
+			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_not_in_repo_after_prepare")
+			continue
+		}
+
+		// Lazy prerequisites are mutations too. Defer them until the selected
+		// candidate has survived every availability gate that can be answered
+		// before the target install.
+		prerequisiteUses, err := ex.ensureMethodDependencies(toolCtx, tool, method)
+		if err != nil {
+			rollbackErr := preparedSources.rollback(toolCtx, ex)
+			detail := err.Error()
+			if rollbackErr != nil {
+				detail = fmt.Sprintf("%s; source rollback failed: %v", detail, rollbackErr)
+			}
+			attempt.Status = "failed"
+			attempt.Error = detail
+			result.Methods = append(result.Methods, attempt)
+			if rollbackErr != nil {
+				result.Status = StatusFailed
+				result.Error = detail
+				result.Method = displayKind
+				result.MethodKind = method.Kind
+				result.Duration = time.Since(toolStart).String()
+				return
+			}
+			continue
+		}
+		resourceUses := append([]plan.ResourceUse(nil), preparedSources.resourceUses...)
+		resourceUses = append(resourceUses, prerequisiteUses...)
+
 		if ex.dryRun {
+			dryRunIntent := planIntent
+			if planIntent != nil && preparedSources.preparationPlan != nil {
+				projected := *planIntent
+				projected.Preparation = preparedSources.preparationPlan
+				dryRunIntent = &projected
+			}
 			result.Status = StatusWouldInstall
 			result.Method = displayKind
 			result.MethodKind = method.Kind
-			result.PlanIntent = planIntent
+			result.PlanIntent = dryRunIntent
+			attempt.PlanIntent = dryRunIntent
 			attempt.Status = "success"
 			result.Methods = append(result.Methods, attempt)
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "would_install")
@@ -535,17 +646,51 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "installing")
 		runner := ex.mutationRunner(tool.Name, displayKind)
 
+		// Persist the commit boundary before the adapter can mutate the target. If
+		// the install process dies after this point, recovery must reconcile the
+		// target instead of assuming candidate preparation is safe to undo.
+		if err := preparedSources.planCommit(); err != nil {
+			rollbackErr := preparedSources.rollback(toolCtx, ex)
+			detail := err.Error()
+			if rollbackErr != nil {
+				detail = fmt.Sprintf("%s; source rollback failed: %v", detail, rollbackErr)
+			}
+			attempt.Status = "failed"
+			attempt.Error = detail
+			result.Methods = append(result.Methods, attempt)
+			result.Status = StatusFailed
+			result.Error = detail
+			result.Method = displayKind
+			result.MethodKind = method.Kind
+			result.Duration = time.Since(toolStart).String()
+			return
+		}
+
 		// method-timeout applies to each individual attempt.
 		methodCtx, methodCancel := context.WithTimeout(toolCtx, ex.methodTimeout)
-		err := adapter.Install(methodCtx, runner, tool, method)
+		err = adapter.Install(methodCtx, runner, tool, method)
 		methodCancel()
 
 		if err == nil {
+			if finalizeErr := preparedSources.finalizeCommit(tool.Name); finalizeErr != nil {
+				result.Status = StatusFailed
+				result.Error = finalizeErr.Error()
+				result.Method = displayKind
+				result.MethodKind = method.Kind
+				result.Config = method.Config
+				result.PlanIntent = planIntent
+				result.InstallCommitted = true
+				result.ResourceUses = append([]plan.ResourceUse(nil), resourceUses...)
+				result.Duration = time.Since(toolStart).String()
+				return
+			}
 			result.Status = StatusInstalled
+			result.InstallCommitted = true
 			result.Method = displayKind
 			result.MethodKind = method.Kind
 			result.Config = method.Config
 			result.PlanIntent = planIntent
+			result.ResourceUses = append([]plan.ResourceUse(nil), resourceUses...)
 			result.RebootRequired, _ = method.Config["_reboot_required"].(bool)
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "installed")
 			if len(tool.PostInstall) > 0 {
@@ -560,6 +705,9 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 				if perr != nil {
 					result.Status = StatusFailed
 					result.Error = fmt.Sprintf("post-install: %v", perr)
+					// The adapter commit already succeeded. Keep source ownership bound
+					// to the installed tool instead of removing a repository that the
+					// installed package may still depend on for upgrades/removal.
 					result.Duration = time.Since(toolStart).String()
 					return
 				}
@@ -569,6 +717,33 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			return
 		}
 
+		if preparedSources.tx != nil {
+			_ = preparedSources.leaveCommitUnresolved()
+			detail := fmt.Sprintf("install failed after transactional preparation: %v; commit outcome is unresolved and recovery is required", err)
+			attempt.Status = "failed"
+			attempt.Error = detail
+			result.Methods = append(result.Methods, attempt)
+			result.Status = StatusFailed
+			result.Error = detail
+			result.Method = displayKind
+			result.MethodKind = method.Kind
+			result.Duration = time.Since(toolStart).String()
+			ex.logWarn(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "commit_unresolved", "error", detail)
+			return
+		}
+		if rollbackErr := preparedSources.rollback(toolCtx, ex); rollbackErr != nil {
+			detail := fmt.Sprintf("install failed: %v; source rollback failed: %v", err, rollbackErr)
+			attempt.Status = "failed"
+			attempt.Error = detail
+			result.Methods = append(result.Methods, attempt)
+			result.Status = StatusFailed
+			result.Error = detail
+			result.Method = displayKind
+			result.MethodKind = method.Kind
+			result.Duration = time.Since(toolStart).String()
+			ex.logWarn(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "rollback_failed", "error", detail)
+			return
+		}
 		attempt.Status = "failed"
 		attempt.Error = err.Error()
 		result.Methods = append(result.Methods, attempt)
@@ -594,6 +769,32 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		result.MethodKind = lastMethodKind
 	}
 	result.Duration = time.Since(toolStart).String()
+}
+
+func sourceResourceUses(sources, added []config.Source) ([]plan.ResourceUse, error) {
+	created := make(map[plan.ResourceIdentity]struct{}, len(added))
+	for i, configured := range added {
+		identity, err := source.ResourceIdentity(configured)
+		if err != nil {
+			return nil, fmt.Errorf("added source %d: %w", i, err)
+		}
+		created[identity] = struct{}{}
+	}
+	uses := make([]plan.ResourceUse, 0, len(sources))
+	seen := make(map[plan.ResourceIdentity]struct{}, len(sources))
+	for i, configured := range sources {
+		identity, err := source.ResourceIdentity(configured)
+		if err != nil {
+			return nil, fmt.Errorf("source %d: %w", i, err)
+		}
+		if _, duplicate := seen[identity]; duplicate {
+			return nil, fmt.Errorf("source %d duplicates resource %q", i, identity.Key)
+		}
+		seen[identity] = struct{}{}
+		_, wasCreated := created[identity]
+		uses = append(uses, plan.ResourceUse{Resource: identity, Created: wasCreated})
+	}
+	return uses, nil
 }
 
 func allDependencyEdges(tools map[string]*config.Tool) map[string]*config.Tool {
@@ -642,20 +843,44 @@ func rootTools(tools map[string]*config.Tool) map[string]*config.Tool {
 	return out
 }
 
-func (ex *Executor) ensureMethodDependencies(ctx context.Context, owner *config.Tool, method *config.MethodCandidate) error {
+func (ex *Executor) ensureMethodDependencies(ctx context.Context, owner *config.Tool, method *config.MethodCandidate) ([]plan.ResourceUse, error) {
+	uses := make([]plan.ResourceUse, 0, len(method.Requires))
+	seen := make(map[plan.ResourceIdentity]struct{}, len(method.Requires))
 	for _, name := range method.Requires {
 		result, err := ex.executeDependency(ctx, name)
 		if err != nil {
-			return fmt.Errorf("%s: method %s requires %s: %w", owner.Name, method.Kind, name, err)
+			return nil, fmt.Errorf("%s: method %s requires %s: %w", owner.Name, method.Kind, name, err)
 		}
 		if result.Status != StatusInstalled && result.Status != StatusAlready && result.Status != StatusWouldInstall && result.Status != StatusVirtual {
-			return fmt.Errorf("%s: method %s requires %s: %s", owner.Name, method.Kind, name, result.Error)
+			return nil, fmt.Errorf("%s: method %s requires %s: %s", owner.Name, method.Kind, name, result.Error)
 		}
+		if result.Status == StatusVirtual {
+			continue
+		}
+		resource, err := plan.PrerequisiteResource(name)
+		if err != nil {
+			return nil, fmt.Errorf("%s: method %s prerequisite %s: %w", owner.Name, method.Kind, name, err)
+		}
+		if _, duplicate := seen[resource]; duplicate {
+			return nil, fmt.Errorf("%s: method %s declares duplicate prerequisite %s", owner.Name, method.Kind, name)
+		}
+		seen[resource] = struct{}{}
+		uses = append(uses, plan.ResourceUse{
+			Resource: resource,
+			Created:  result.Status == StatusInstalled,
+		})
 	}
-	return nil
+	return uses, nil
 }
 
 func (ex *Executor) executeDependency(ctx context.Context, name string) (ToolResult, error) {
+	// Startup recovery has already reconciled and recorded this exact candidate.
+	// A lazy method.requires edge must consume that terminal result rather than
+	// probing or installing the dependency a second time.
+	if recovered, ok := ex.recoveredCommits[name]; ok {
+		return recovered.result(), nil
+	}
+
 	ex.dependencyMu.Lock()
 	if existing := ex.dependencies[name]; existing != nil {
 		ex.dependencyMu.Unlock()

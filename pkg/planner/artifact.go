@@ -50,9 +50,12 @@ func applyArtifact(p *plan.ResolvedInstallPlan, method *config.MethodCandidate, 
 		return nil
 	}
 	p.Artifacts = append(p.Artifacts, plan.Artifact{
-		URL:          url,
-		Checksum:     checksum,
-		SignatureURL: stringValue(method.Config, "signature_url"),
+		URL:                url,
+		Checksum:           checksum,
+		ChecksumURL:        stringValue(method.Config, "checksum_url"),
+		ChecksumFileFormat: stringValue(method.Config, "checksum_file_format"),
+		SignatureURL:       stringValue(method.Config, "signature_url"),
+		SigningKey:         stringValue(method.Config, "signing_key"),
 	})
 	return nil
 }

@@ -121,7 +121,7 @@ func runUpdate(updateSchema, updateManifest *string, updateNoManifest *bool, upd
 	// Warn about installed tools whose versions no longer match the pins
 	// that were just resolved. Warn-only: applying the new versions is a
 	// separate install step.
-	reportVersionDrift(newLock)
+	reportVersionDrift(s, newLock)
 
 	if *updateVerbose {
 		// Sorted so reruns are diffable; aligned so the eye scans the
@@ -155,7 +155,7 @@ func runUpdate(updateSchema, updateManifest *string, updateNoManifest *bool, upd
 // recorded in state and warns about installed tools that are now out of date.
 // Warn-only by design: `depengine update` refreshes the lock; applying the new
 // versions is a separate install step.
-func reportVersionDrift(newLock *lock.Lock) {
+func reportVersionDrift(schema *config.Schema, newLock *lock.Lock) {
 	if newLock == nil || len(newLock.Tools) == 0 {
 		return
 	}
@@ -174,7 +174,8 @@ func reportVersionDrift(newLock *lock.Lock) {
 		if ts.Version == "" {
 			continue
 		}
-		pin, ok := lockPinFor(newLock, name, ts.MethodKind)
+		tool := schema.Tools[name]
+		pin, ok := lockPinForToolState(newLock, name, tool, ts)
 		if !ok || pin.Latest == "" {
 			continue
 		}

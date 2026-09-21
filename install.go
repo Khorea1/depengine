@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/container"
@@ -254,7 +253,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		// adapter could not determine (e.g. {latest} pins baked into URLs)
 		// and surface installed-vs-pinned mismatches instead of a silent
 		// "already installed".
-		syncInstalledVersions(ctx, lockPath, report, lg)
+		syncInstalledVersions(ctx, s, lockPath, report, lg)
 	}
 
 	// After successful install, guide the user to share.
@@ -269,31 +268,6 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	}
 }
 
-// lockPinFor looks up a tool's canonical "<tool>/<kind>/<idx>" pin. When kind
-// is empty, any pin for the tool is accepted.
-func lockPinFor(l *lock.Lock, tool, kind string) (lock.ToolPin, bool) {
-	if l == nil {
-		return lock.ToolPin{}, false
-	}
-	if kind != "" {
-		exact := tool + "/" + kind
-		prefix := exact + "/"
-		for k, pin := range l.Tools {
-			if strings.HasPrefix(k, prefix) && pin.Latest != "" {
-				return pin, true
-			}
-		}
-		return lock.ToolPin{}, false
-	}
-	prefix := tool + "/"
-	for k, pin := range l.Tools {
-		if strings.HasPrefix(k, prefix) && pin.Latest != "" {
-			return pin, true
-		}
-	}
-	return lock.ToolPin{}, false
-}
-
 // syncInstalledVersions reconciles recorded versions with lock pins after an
 // install run. Two jobs:
 //  1. Tools that were installed this run but whose adapter could not
@@ -303,7 +277,7 @@ func lockPinFor(l *lock.Lock, tool, kind string) (lock.ToolPin, bool) {
 //  2. Already-installed tools whose recorded version differs from the
 //     current pin get a visible mismatch warning instead of a silent
 //     "already installed".
-func syncInstalledVersions(ctx context.Context, lockPath string, report *exec.ExecReport, lg *slog.Logger) {
+func syncInstalledVersions(ctx context.Context, schema *config.Schema, lockPath string, report *exec.ExecReport, lg *slog.Logger) {
 	lk, err := lock.Load(lockPath)
 	if err != nil {
 		lg.Warn("load lock for version sync", "error", err)
@@ -321,13 +295,6 @@ func syncInstalledVersions(ctx context.Context, lockPath string, report *exec.Ex
 	defer ls.Close()
 	st := ls.State()
 
-	lookupPin := func(name, kind string) (lock.ToolPin, bool) {
-		if pin, ok := lockPinFor(lk, name, kind); ok {
-			return pin, true
-		}
-		return lockPinFor(lk, name, "")
-	}
-
 	installed := make(map[string]bool, len(report.Tools))
 	for _, tr := range report.Tools {
 		if tr.Status == exec.StatusInstalled || tr.Status == exec.StatusAlready {
@@ -341,7 +308,8 @@ func syncInstalledVersions(ctx context.Context, lockPath string, report *exec.Ex
 		if ts.Version != "" || !installed[name] {
 			continue
 		}
-		if pin, ok := lookupPin(name, ts.MethodKind); ok && pin.Latest != "" {
+		tool := schema.Tools[name]
+		if pin, ok := lockPinForToolState(lk, name, tool, ts); ok && pin.Latest != "" {
 			ts.Version = pin.Latest
 			st.Tools[name] = ts
 			changed = true
@@ -358,7 +326,7 @@ func syncInstalledVersions(ctx context.Context, lockPath string, report *exec.Ex
 		if !ok || ts.Version == "" {
 			continue
 		}
-		pin, ok := lookupPin(tr.Tool, tr.MethodKind)
+		pin, ok := lockPinForToolState(lk, tr.Tool, schema.Tools[tr.Tool], ts)
 		if !ok || pin.Latest == "" {
 			continue
 		}

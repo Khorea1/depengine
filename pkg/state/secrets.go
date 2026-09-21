@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/Khorea1/depengine/pkg/plan"
 )
 
 // ValidateNoSecrets rejects state payloads that contain obvious credential
@@ -20,7 +22,82 @@ func ValidateNoSecrets(s *State) error {
 			return err
 		}
 	}
+	for i, resource := range s.OwnedResources {
+		path := fmt.Sprintf("owned_resources[%d]", i)
+		if err := validateValueNoSecrets(resource.Resource.Key, path+".resource.key"); err != nil {
+			return err
+		}
+		for j, dependent := range resource.Dependents {
+			if err := validateValueNoSecrets(dependent, fmt.Sprintf("%s.dependents[%d]", path, j)); err != nil {
+				return err
+			}
+		}
+	}
+	for key, preparationPlan := range s.PreparationPlans {
+		path := "preparation_plans." + key
+		if err := validateValueNoSecrets(key, "preparation_plans.key"); err != nil {
+			return err
+		}
+		for i, operation := range preparationPlan.Probe {
+			if err := validatePreparationOperationNoSecrets(operation, fmt.Sprintf("%s.probe[%d]", path, i)); err != nil {
+				return err
+			}
+		}
+		for i, mutation := range preparationPlan.Prepare {
+			mutationPath := fmt.Sprintf("%s.prepare[%d]", path, i)
+			if err := validateValueNoSecrets(mutation.ID, mutationPath+".id"); err != nil {
+				return err
+			}
+			if err := validateValueNoSecrets(mutation.Resource.Key, mutationPath+".resource.key"); err != nil {
+				return err
+			}
+			if err := validatePreparationOperationNoSecrets(mutation.Apply, mutationPath+".apply"); err != nil {
+				return err
+			}
+			if mutation.Rollback != nil {
+				if err := validatePreparationOperationNoSecrets(*mutation.Rollback, mutationPath+".rollback"); err != nil {
+					return err
+				}
+			}
+		}
+		for i, operation := range preparationPlan.Commit {
+			if err := validatePreparationOperationNoSecrets(operation, fmt.Sprintf("%s.commit[%d]", path, i)); err != nil {
+				return err
+			}
+		}
+	}
+	for key, journal := range s.PreparationJournals {
+		if err := validateValueNoSecrets(key, "preparation_journals.key"); err != nil {
+			return err
+		}
+		for i, id := range journal.Applied {
+			if err := validateValueNoSecrets(id, fmt.Sprintf("preparation_journals.applied[%d]", i)); err != nil {
+				return err
+			}
+		}
+		if err := validateValueNoSecrets(journal.Applying, "preparation_journals.applying"); err != nil {
+			return err
+		}
+		for i, id := range journal.RollbackApplied {
+			if err := validateValueNoSecrets(id, fmt.Sprintf("preparation_journals.rollback_applied[%d]", i)); err != nil {
+				return err
+			}
+		}
+		if err := validateValueNoSecrets(journal.RollbackApplying, "preparation_journals.rollback_applying"); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func validatePreparationOperationNoSecrets(operation plan.Operation, path string) error {
+	if err := validateValueNoSecrets(operation.Kind, path+".kind"); err != nil {
+		return err
+	}
+	if err := validateValueNoSecrets(operation.Description, path+".description"); err != nil {
+		return err
+	}
+	return validateValueNoSecrets(operation.Command, path+".command")
 }
 
 var diagnosticSecretPattern = regexp.MustCompile(`(?i)(--(?:token|password|passwd|secret|auth-token|access-token|api-key|apikey))(?:=|\s+)([^\s]+)|\b(authorization|proxy-authorization|cookie|set-cookie)\s*:\s*[^\r\n]+`)
@@ -34,6 +111,15 @@ func validateValueNoSecrets(value any, path string) error {
 				return fmt.Errorf("state: refusing to persist sensitive field %s", childPath)
 			}
 			if err := validateValueNoSecrets(child, childPath); err != nil {
+				return err
+			}
+		}
+	case []string:
+		if diagnosticSecretPattern.MatchString(strings.Join(v, " ")) {
+			return fmt.Errorf("state: refusing to persist credential-bearing command at %s", path)
+		}
+		for i, child := range v {
+			if err := validateValueNoSecrets(child, fmt.Sprintf("%s[%d]", path, i)); err != nil {
 				return err
 			}
 		}

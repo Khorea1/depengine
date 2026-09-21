@@ -27,7 +27,12 @@ const (
 const (
 	CurrentManifestVersion = 1
 	CurrentLockVersion     = 1
-	CurrentStateVersion    = 1
+	// State v4 records whether a tracked tool has durable root intent. That bit,
+	// together with prerequisite ownership/refcounts, is required before remove
+	// can safely garbage-collect depengine-created lazy prerequisites. v3 files
+	// predate that invariant and are rejected rather than guessed/migrated.
+	// State v3 also introduced exact preparation plans beside active WAL journals.
+	CurrentStateVersion = 4
 )
 
 // Policy is the compatibility contract for one document family.

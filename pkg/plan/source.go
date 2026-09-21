@@ -39,6 +39,7 @@ type SourceTrust struct {
 // material through SecretRef.
 type SourceReference struct {
 	Role      SourceRole       `json:"role"`
+	Kind      string           `json:"kind,omitempty"`
 	Name      string           `json:"name,omitempty"`
 	URL       string           `json:"url,omitempty"`
 	Owned     bool             `json:"owned,omitempty"`
@@ -53,6 +54,9 @@ func (s SourceReference) Validate() error {
 	case SourceHostConfiguration, SourceSelection, SourceRegistry, SourceIndex, SourceChannel, SourceRemote:
 	default:
 		return fmt.Errorf("invalid source role %q", s.Role)
+	}
+	if strings.TrimSpace(s.Kind) != s.Kind || strings.ContainsRune(s.Kind, '\x00') {
+		return errors.New("source kind must not contain surrounding whitespace or NUL")
 	}
 	if strings.TrimSpace(s.Name) != s.Name {
 		return errors.New("source name must not contain leading or trailing whitespace")
@@ -149,7 +153,7 @@ func CanonicalSources(in []SourceReference) ([]SourceReference, error) {
 }
 
 func sourceSortKey(s SourceReference) string {
-	return string(s.Role) + "\x00" + strings.ToLower(s.Name) + "\x00" + sanitizeLockReference(s.URL)
+	return string(s.Role) + "\x00" + strings.ToLower(s.Kind) + "\x00" + strings.ToLower(s.Name) + "\x00" + sanitizeLockReference(s.URL)
 }
 
 // scpLikeReference matches the scp-style git remote "user@host:path", which is

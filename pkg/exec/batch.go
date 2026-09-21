@@ -9,14 +9,16 @@ import (
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/native"
+	"github.com/Khorea1/depengine/pkg/plan"
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
 type batchCandidate struct {
-	toolName string
-	tool     *config.Tool
-	method   *config.MethodCandidate
-	pkg      string
+	toolName   string
+	tool       *config.Tool
+	method     *config.MethodCandidate
+	planIntent *plan.ResolvedInstallPlan
+	pkg        string
 }
 
 func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string, s *config.Schema, report *ExecReport) (candidates []batchCandidate, remaining []string) {
@@ -36,6 +38,13 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 			if method.When != nil && !method.When.Match(ex.facts) {
 				continue
 			}
+			planIntent, mismatch := candidatePlanIntent(tool, method)
+			if mismatch != "" {
+				// Batch is only an optimization. A candidate rejected by the static
+				// planning boundary must fall back to the serial path, which records
+				// the capability failure and may try later methods in order.
+				break
+			}
 			adapter := ex.LookupAdapter(method.Kind)
 			if adapter == nil || !adapter.Available(ctx, ex.probeRunner(toolName, method.Kind)) {
 				continue
@@ -47,7 +56,10 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 				break
 			}
 			if adapter.Check(ctx, ex.probeRunner(toolName, method.Kind), tool, method) {
-				ex.recordToolResult(ctx, &ToolResult{Tool: toolName, Status: StatusAlready, Method: method.Kind}, report)
+				ex.recordToolResult(ctx, &ToolResult{
+					Tool: toolName, Status: StatusAlready, Method: displayMethodKind(method),
+					MethodKind: method.Kind, Config: method.Config, PlanIntent: planIntent,
+				}, report)
 				foundNative = true
 				break
 			}
@@ -58,7 +70,7 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 			if pkg == "" || !validBatchPkgName(pkg) || !native.IsBatchCapable(ex.clan) {
 				break
 			}
-			candidates = append(candidates, batchCandidate{toolName: toolName, tool: tool, method: method, pkg: pkg})
+			candidates = append(candidates, batchCandidate{toolName: toolName, tool: tool, method: method, planIntent: planIntent, pkg: pkg})
 			foundNative = true
 			break
 		}
@@ -67,6 +79,16 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 		}
 	}
 	return candidates, remaining
+}
+
+func displayMethodKind(method *config.MethodCandidate) string {
+	if method != nil && method.Label != "" {
+		return method.Label
+	}
+	if method == nil {
+		return ""
+	}
+	return method.Kind
 }
 
 var pkgNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9.+-_]*$`)

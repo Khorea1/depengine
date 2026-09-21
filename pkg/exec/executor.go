@@ -44,11 +44,12 @@ type Executor struct {
 
 	color bool // whether to emit ANSI color codes in status output
 
-	schema       *config.Schema
-	report       *ExecReport
-	sources      *source.Manager
-	dependencyMu sync.Mutex
-	dependencies map[string]*dependencyRun
+	schema           *config.Schema
+	report           *ExecReport
+	sources          *source.Manager
+	recoveredCommits map[string]recoveredCandidateCommit
+	dependencyMu     sync.Mutex
+	dependencies     map[string]*dependencyRun
 }
 
 type dependencyRun struct {

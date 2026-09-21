@@ -27,8 +27,8 @@ func TestLoadReturnsEmptyOnMissingFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() on missing file: %v", err)
 	}
-	if s.Version != 1 {
-		t.Fatalf("expected Version=1, got %d", s.Version)
+	if s.Version != currentStateVersion {
+		t.Fatalf("expected Version=%d, got %d", currentStateVersion, s.Version)
 	}
 	if s.Tools == nil {
 		t.Fatal("Load() returned nil Tools map")
@@ -43,7 +43,7 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", td)
 
 	original := &State{
-		Version:          1,
+		Version:          currentStateVersion,
 		SchemaPath:       "/tmp/test.toml",
 		SchemaModifiedAt: "2024-01-01T00:00:00Z",
 		Tools: map[string]ToolState{
@@ -110,9 +110,10 @@ func TestLoadPrexistingFile(t *testing.T) {
 	// Write a valid state file manually.
 	path := filepath.Join(td, "depengine", "state.json")
 	_ = os.MkdirAll(filepath.Dir(path), 0755)
-	if err := os.WriteFile(path, []byte(`{"version":1,"tools":{"fd":{"method":"cargo","adapter_kind":"cargo"}}}`), 0644); err != nil {
-		t.Fatal(err)
-	}
+	writeChecksummedStateForTest(t, path, State{
+		Version: currentStateVersion,
+		Tools:   map[string]ToolState{"fd": {Method: "cargo"}},
+	})
 
 	s, err := Load()
 	if err != nil {
@@ -362,7 +363,7 @@ func TestLoadSharedReadOnly(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", td)
 
 	// First, save something with exclusive lock.
-	initial := &State{Version: 1, Tools: map[string]ToolState{"test": {Method: "native"}}}
+	initial := &State{Version: currentStateVersion, Tools: map[string]ToolState{"test": {Method: "native"}}}
 	if err := SaveLocked(initial); err != nil {
 		t.Fatalf("SaveLocked(): %v", err)
 	}
@@ -390,8 +391,8 @@ func TestLoadFromCustomPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFrom on missing file: %v", err)
 	}
-	if s.Version != 1 {
-		t.Fatalf("expected Version=1, got %d", s.Version)
+	if s.Version != currentStateVersion {
+		t.Fatalf("expected Version=%d, got %d", currentStateVersion, s.Version)
 	}
 	if len(s.Tools) != 0 {
 		t.Fatalf("expected empty Tools, got %d entries", len(s.Tools))
@@ -414,16 +415,18 @@ func TestLoadFromCustomPath(t *testing.T) {
 	}
 
 	// Write to the custom path directly.
-	data := `{"version":1,"tools":{"bar":{"method":"native","config":{"pkg":"bar"}}}}`
-	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
-		t.Fatal(err)
-	}
+	writeChecksummedStateForTest(t, path, State{
+		Version: currentStateVersion,
+		Tools: map[string]ToolState{
+			"bar": {Method: "native", Config: map[string]any{"pkg": "bar"}},
+		},
+	})
 	s3, err := LoadFrom(path)
 	if err != nil {
 		t.Fatalf("LoadFrom after write: %v", err)
 	}
-	if s3.Version != 1 {
-		t.Fatalf("expected Version=1, got %d", s3.Version)
+	if s3.Version != currentStateVersion {
+		t.Fatalf("expected Version=%d, got %d", currentStateVersion, s3.Version)
 	}
 	ts, ok := s3.Tools["bar"]
 	if !ok {
@@ -444,8 +447,8 @@ func TestLoadLockedExclusive(t *testing.T) {
 	}
 
 	st := ls.State()
-	if st.Version != 1 {
-		t.Fatalf("expected Version=1, got %d", st.Version)
+	if st.Version != currentStateVersion {
+		t.Fatalf("expected Version=%d, got %d", currentStateVersion, st.Version)
 	}
 
 	// Add a tool and save while locked.
@@ -473,7 +476,7 @@ func TestSaveLocked(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", td)
 
 	st := &State{
-		Version: 1,
+		Version: currentStateVersion,
 		Tools: map[string]ToolState{
 			"foo": {Method: "native"},
 		},
@@ -494,8 +497,8 @@ func TestSaveLocked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(): %v", err)
 	}
-	if loaded.Version != 1 {
-		t.Fatalf("Version: got %d, want 1", loaded.Version)
+	if loaded.Version != currentStateVersion {
+		t.Fatalf("Version: got %d, want %d", loaded.Version, currentStateVersion)
 	}
 	ts, ok := loaded.Tools["foo"]
 	if !ok {

@@ -73,9 +73,27 @@ func (a Artifact) Validate() error {
 			return fmt.Errorf("artifact URL: %w", err)
 		}
 	}
+	if a.ChecksumURL != "" {
+		if err := validateCredentialFreeURL(a.ChecksumURL); err != nil {
+			return fmt.Errorf("artifact checksum URL: %w", err)
+		}
+	}
 	if a.SignatureURL != "" {
 		if err := validateCredentialFreeURL(a.SignatureURL); err != nil {
 			return fmt.Errorf("artifact signature URL: %w", err)
+		}
+	}
+	switch a.ChecksumFileFormat {
+	case "", "sha256sum", "bsd", "raw":
+	default:
+		return fmt.Errorf("unsupported checksum file format %q", a.ChecksumFileFormat)
+	}
+	if strings.TrimSpace(a.SigningKey) != a.SigningKey || strings.ContainsRune(a.SigningKey, '\x00') {
+		return fmt.Errorf("artifact signing key must not contain surrounding whitespace or NUL")
+	}
+	if strings.Contains(a.SigningKey, "://") {
+		if err := validateCredentialFreeURL(a.SigningKey); err != nil {
+			return fmt.Errorf("artifact signing key URL: %w", err)
 		}
 	}
 	if strings.TrimSpace(a.Checksum) != a.Checksum || strings.ContainsRune(a.Checksum, '\x00') {
@@ -94,6 +112,9 @@ func (a Artifact) Validate() error {
 		}
 		if clean != a.LocalPath {
 			return fmt.Errorf("local artifact path %q is not canonical; use %q", a.LocalPath, clean)
+		}
+		if a.ChecksumURL != "" {
+			return fmt.Errorf("local artifact cannot use checksum_url; use a concrete checksum")
 		}
 		if a.SignatureURL != "" {
 			return fmt.Errorf("local artifact cannot use signature_url; use a local signature reference")
