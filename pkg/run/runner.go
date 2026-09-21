@@ -9,13 +9,14 @@
 package run
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Result captures everything a caller needs to decide what happened:
@@ -131,7 +132,27 @@ func DefaultEnv() []string {
 // The child environment is always the parent env plus DEPENGINE_TRACE_ID
 // (when set) via DefaultEnv; injecting it here is what lets trace id
 // flow into detect_os.sh and later into every adapter install.
-type OSExecRunner struct{}
+type OSExecRunner struct {
+	// Stream optionally receives a live copy of the child's stdout and
+	// stderr while the command runs. Capture into Result is unaffected.
+	// The zero value (nil) preserves the historical capture-only
+	// behavior. A non-nil Stream must be safe for concurrent use
+	// (stdout and stderr are copied concurrently) and must not block
+	// indefinitely.
+	Stream io.Writer
+}
+
+// killGracePeriod bounds how long Run waits for grandchildren holding the
+// child's pipes after the direct child exits. Without it, a grandchild
+// that inherits stdout (e.g. a daemonized helper) makes cmd.Run block
+// until the grandchild exits, even after a timeout already fired.
+const killGracePeriod = 5 * time.Second
+
+// maxCapturedOutput caps how much of each of stdout/stderr is retained in
+// Result. Output beyond the cap is dropped from the head (the tail is
+// what diagnostics need); see cappedBuffer. Long installs already surface
+// nothing live, so unbounded capture was pure memory risk.
+const maxCapturedOutput = 1 << 20 // 1 MiB per stream
 
 // LookPath reports whether name resolves through the child process PATH.
 func (OSExecRunner) LookPath(_ context.Context, name string) bool {
@@ -141,23 +162,66 @@ func (OSExecRunner) LookPath(_ context.Context, name string) bool {
 
 // Run executes name with args under ctx, capturing stdout and stderr.
 // A non-zero exit is reported in Result.ExitCode, not Result.Err.
-func (OSExecRunner) Run(ctx context.Context, name string, args ...string) Result {
-	return runCommand(ctx, "", name, args...)
+func (r OSExecRunner) Run(ctx context.Context, name string, args ...string) Result {
+	return runCommand(ctx, r.Stream, "", name, args...)
 }
 
 // RunInDir executes name with dir as the child process working directory.
-func (OSExecRunner) RunInDir(ctx context.Context, dir, name string, args ...string) Result {
-	return runCommand(ctx, dir, name, args...)
+func (r OSExecRunner) RunInDir(ctx context.Context, dir, name string, args ...string) Result {
+	return runCommand(ctx, r.Stream, dir, name, args...)
 }
 
-func runCommand(ctx context.Context, dir, name string, args ...string) Result {
+// cappedBuffer is an io.Writer that retains at most max bytes: the tail.
+// Writes past the cap evict from the head, so peak memory stays O(max)
+// no matter how much a child emits. Embedded credentials are redacted at
+// the CheckResult/logging layer, not here, so the retained tail is exact.
+type cappedBuffer struct {
+	max int
+	buf []byte
+}
+
+func newCappedBuffer(max int) *cappedBuffer {
+	return &cappedBuffer{max: max}
+}
+
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	if len(p) >= b.max {
+		b.buf = append(b.buf[:0], p[len(p)-b.max:]...)
+		return len(p), nil
+	}
+	if overflow := len(b.buf) + len(p) - b.max; overflow > 0 {
+		copy(b.buf, b.buf[overflow:])
+		b.buf = b.buf[:len(b.buf)-overflow]
+	}
+	b.buf = append(b.buf, p...)
+	return len(p), nil
+}
+
+// Bytes returns the retained tail. The caller must not mutate it.
+func (b *cappedBuffer) Bytes() []byte { return b.buf }
+
+func runCommand(ctx context.Context, stream io.Writer, dir, name string, args ...string) Result {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = DefaultEnv()
 	cmd.Dir = dir
+	// Own process group so cancellation signals the whole tree, and a
+	// bounded WaitDelay so a grandchild holding the pipes cannot block
+	// Wait indefinitely after a timeout or SIGTERM.
+	setupChild(cmd)
+	cmd.Cancel = func() error { return terminateTree(cmd) }
+	cmd.WaitDelay = killGracePeriod
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	stdout := newCappedBuffer(maxCapturedOutput)
+	stderr := newCappedBuffer(maxCapturedOutput)
+	if stream != nil {
+		// One copying goroutine per pipe inside os/exec; MultiWriter
+		// itself needs no extra synchronization for this use.
+		cmd.Stdout = io.MultiWriter(stdout, stream)
+		cmd.Stderr = io.MultiWriter(stderr, stream)
+	} else {
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
+	}
 
 	runErr := cmd.Run()
 	exit := 0
