@@ -631,3 +631,106 @@ func TestExecutorRollsBackDurableSourceWhenPostPrepareAvailabilityFails(t *testi
 		t.Fatalf("source calls=%v, want durable add followed by compensating remove", runner.calls)
 	}
 }
+
+// cancelSignallingAdapter wraps blockingMockAdapter and closes entered
+// when Install starts, so the test cancels exactly mid-install instead of
+// guessing with a sleep.
+type cancelSignallingAdapter struct {
+	blockingMockAdapter
+	entered chan struct{}
+}
+
+func (m *cancelSignallingAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+	close(m.entered)
+	return m.blockingMockAdapter.Install(ctx, rn, tool, mc)
+}
+
+// Cancelling mid-install (SIGINT/SIGTERM under the P0 lifecycle) must
+// leave the same recoverable committing journal as any other interrupted
+// install: the child tree is SIGTERMed, the commit stays unresolved, and
+// the next run reconciles it through PreparationRecovery instead of
+// replaying the mutation blindly.
+func TestExecutorCancellationLeavesRecoverableJournal(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	runner := &sequenceRunner{results: []run.Result{{}, {}}}
+	adapter := &cancelSignallingAdapter{
+		blockingMockAdapter: blockingMockAdapter{kindValue: "cargo", block: make(chan struct{})},
+		entered:             make(chan struct{}),
+	}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	type outcome struct {
+		report *ExecReport
+		err    error
+	}
+	outCh := make(chan outcome, 1)
+	go func() {
+		report, err := ex.Execute(ctx, sourceBackedSchema(), "")
+		outCh <- outcome{report, err}
+	}()
+
+	select {
+	case <-adapter.entered:
+	case <-time.After(30 * time.Second):
+		t.Fatal("Execute did not reach Install")
+	}
+	cancel()
+
+	var out outcome
+	select {
+	case out = <-outCh:
+	case <-time.After(30 * time.Second):
+		t.Fatal("cancelled Execute did not return")
+	}
+	if out.err != nil {
+		t.Fatal(out.err)
+	}
+	if len(out.report.Tools) != 1 || out.report.Tools[0].Status != StatusFailed {
+		t.Fatalf("report = %+v, want failed", out.report.Tools)
+	}
+	if !strings.Contains(out.report.Tools[0].Error, "unresolved") {
+		t.Fatalf("error = %q, want unresolved commit", out.report.Tools[0].Error)
+	}
+
+	st, err := state.LoadFrom(state.DefaultPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.PreparationPlans) != 1 || len(st.PreparationJournals) != 1 {
+		t.Fatalf("cancelled transaction = plans=%#v journals=%#v, want exactly one", st.PreparationPlans, st.PreparationJournals)
+	}
+	for key, journal := range st.PreparationJournals {
+		if journal.Status != plan.PreparationCommitting {
+			t.Fatalf("journal %q status = %q, want %q", key, journal.Status, plan.PreparationCommitting)
+		}
+	}
+
+	// The next run must reconcile the cancelled commit through
+	// PreparationRecovery: with the target now present, it finalizes
+	// without replaying the install.
+	second := New()
+	WithRunner(&sequenceRunner{})(second)
+	WithAdapters(&testMockAdapter{
+		kindValue: "cargo",
+		checkFunc: func(string) bool { return true },
+	})(second)
+	WithSchemaInfo("/test/schema.toml", time.Now())(second)
+	report, err := second.Execute(context.Background(), sourceBackedSchema(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusInstalled || !report.Tools[0].InstallCommitted {
+		t.Fatalf("report = %+v, want terminal recovered install", report.Tools)
+	}
+	st, err = state.LoadFrom(state.DefaultPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.PreparationPlans) != 0 || len(st.PreparationJournals) != 0 {
+		t.Fatalf("reconciled cancelled commit remained active: plans=%#v journals=%#v", st.PreparationPlans, st.PreparationJournals)
+	}
+}
