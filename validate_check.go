@@ -35,8 +35,8 @@ func newValidateCmd() *cobra.Command {
 		Short:   ifPT("Validar schema.toml", "Validate schema.toml"),
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
-			runValidate(validateSchema, validateManifest, validateNoManifest, validateCheckEnv, validateFormat, validateStrict)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runValidate(cmd.Context(), validateSchema, validateManifest, validateNoManifest, validateCheckEnv, validateFormat, validateStrict)
 			return nil
 		},
 	}
@@ -50,8 +50,7 @@ func newValidateCmd() *cobra.Command {
 	return cmd
 }
 
-func runValidate(validateSchema, validateManifest *string, validateNoManifest, validateCheckEnv *bool, validateFormat *string, validateStrict *bool) {
-	ctx := context.Background()
+func runValidate(ctx context.Context, validateSchema, validateManifest *string, validateNoManifest, validateCheckEnv *bool, validateFormat *string, validateStrict *bool) {
 
 	s, err := config.ParseProjectSchema(*validateSchema, map[string]string{})
 	if err != nil {
@@ -176,8 +175,8 @@ func newCheckCmd() *cobra.Command {
 		Short:   ifPT("Verificar se uma ferramenta está instalada", "Check whether a tool is installed"),
 		GroupID: groupInspect,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			runCheck(args[0], checkSchema, checkManifest, checkNoManifest, checkJSON, checkFormat, checkLive)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runCheck(cmd.Context(), args[0], checkSchema, checkManifest, checkNoManifest, checkJSON, checkFormat, checkLive)
 			return nil
 		},
 	}
@@ -195,7 +194,7 @@ func newCheckCmd() *cobra.Command {
 // the pre-Cobra version — Cobra's cobra.ExactArgs(1) now enforces the
 // argument count that the old manual length check did, and toolName arrives
 // as a plain argument instead of remain[0].
-func runCheck(toolName string, checkSchema, checkManifest *string, checkNoManifest, checkJSON *bool, checkFormat *string, checkLive *bool) {
+func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *string, checkNoManifest, checkJSON *bool, checkFormat *string, checkLive *bool) {
 	noManifest := *checkNoManifest
 	manifestPath := *checkManifest
 	manifestAuto := false
@@ -232,10 +231,10 @@ func runCheck(toolName string, checkSchema, checkManifest *string, checkNoManife
 		if adapter == nil {
 			continue
 		}
-		if !*checkLive && !adapter.Available(context.Background(), run.OSExecRunner{}) {
+		if !*checkLive && !adapter.Available(ctx, run.OSExecRunner{}) {
 			continue
 		}
-		if adapter.Check(context.Background(), run.OSExecRunner{}, tool, method) {
+		if adapter.Check(ctx, run.OSExecRunner{}, tool, method) {
 			if useJSON {
 				json.NewEncoder(os.Stdout).Encode(map[string]string{
 					"tool":   toolName,

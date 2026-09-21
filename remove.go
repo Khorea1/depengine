@@ -32,8 +32,8 @@ func newRemoveCmd() *cobra.Command {
 		Short:   ifPT("Remover ferramentas do sistema", "Remove tools from the system"),
 		GroupID: groupManage,
 		Args:    cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
-			runRemove(args, removeAll, removeDryRun, removeSchema, removeOnly, removeForce)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runRemove(cmd.Context(), args, removeAll, removeDryRun, removeSchema, removeOnly, removeForce)
 			return nil
 		},
 	}
@@ -50,7 +50,7 @@ func newRemoveCmd() *cobra.Command {
 // Supports --all, --dry-run, --schema, and --only flags. Body unchanged
 // from the pre-Cobra version — only the flag declarations above it moved,
 // and removeArgs is now the positional args Cobra already separated out.
-func runRemove(removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce *bool) {
+func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce *bool) {
 	// Validate mutually exclusive flags.
 	if *removeAll && *removeOnly != "" {
 		log.Default.Error("cannot use both --all and --only")
@@ -372,7 +372,7 @@ func runRemove(removeArgs []string, removeAll, removeDryRun *bool, removeSchema,
 			return true
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()
 		return removeTrackedTool(ctx, toolName, false)
 	}

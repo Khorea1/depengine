@@ -77,8 +77,8 @@ func newUndoCmd() *cobra.Command {
 		Short:   ifPT("Reverter para um snapshot anterior do estado", "Revert to a previous state snapshot"),
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
-			runUndo(undoList, undoSpecific)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runUndo(cmd.Context(), undoList, undoSpecific)
 			return nil
 		},
 	}
@@ -88,7 +88,7 @@ func newUndoCmd() *cobra.Command {
 	return cmd
 }
 
-func runUndo(undoList *bool, undoSpecific *string) {
+func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) {
 
 	if *undoList {
 		snapshots, err := state.ListSnapshots()
@@ -228,7 +228,7 @@ func runUndo(undoList *bool, undoSpecific *string) {
 		}
 		tool := &config.Tool{Name: name}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		if err := remover.Remove(ctx, run.OSExecRunner{}, tool, mc); err != nil {
 			log.Default.Error("remove failed during undo", "tool", name, "error", err)
 			hadFailure = true
