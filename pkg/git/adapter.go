@@ -214,8 +214,7 @@ func (a *GitAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *confi
 	if err != nil {
 		return intent, err
 	}
-	resolved := *intent
-	resolved.Identity = intent.Identity
+	resolved := intent.Clone()
 	resolved.Identity.Source = source.URL
 	switch {
 	case source.ResolvedTag != "":

@@ -993,3 +993,26 @@ func TestResolvePlanProjectsConcreteURLAndPinnedVersion(t *testing.T) {
 		t.Fatalf("artifacts = %+v", got.Artifacts)
 	}
 }
+
+func TestResolvePlanPreservesAdditionalArtifactsAndDoesNotAliasIntent(t *testing.T) {
+	intent := plan.New("demo", "http", true)
+	intent.Artifacts = []plan.Artifact{
+		{URL: "https://example.test/unresolved", Checksum: "sha256:abc"},
+		{URL: "https://example.test/demo.sig", SigningKey: "keyring:demo"},
+	}
+	intent.Entrypoints = map[string]string{"demo": "/opt/demo"}
+	mc := &config.MethodCandidate{Kind: "http", Config: map[string]any{"url": "https://example.test/demo.tar.gz"}}
+
+	got, err := NewHTTPAdapter().ResolvePlan(context.Background(), nil, nil, mc, &intent)
+	if err != nil {
+		t.Fatalf("ResolvePlan() error: %v", err)
+	}
+	if len(got.Artifacts) != 2 || got.Artifacts[1] != intent.Artifacts[1] {
+		t.Fatalf("artifacts = %+v, want both input artifacts preserved", got.Artifacts)
+	}
+	got.Artifacts[1].URL = "mutated"
+	got.Entrypoints["demo"] = "mutated"
+	if intent.Artifacts[1].URL == "mutated" || intent.Entrypoints["demo"] == "mutated" {
+		t.Fatal("resolved plan aliases input intent")
+	}
+}

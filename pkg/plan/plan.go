@@ -286,6 +286,11 @@ func New(tool, method string, explicit bool) ResolvedInstallPlan {
 	}
 }
 
+// Clone returns a deep copy safe for adapter-specific resolution.
+func (p ResolvedInstallPlan) Clone() ResolvedInstallPlan {
+	return cloneResolvedInstallPlan(p)
+}
+
 // Validate checks invariants that are independent of any adapter.
 func (p ResolvedInstallPlan) Validate() error {
 	if p.Version != CurrentVersion {

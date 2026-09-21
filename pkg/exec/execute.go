@@ -508,9 +508,28 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_no_adapter")
 			continue
 		}
+		if !adapter.Available(toolCtx, ex.probeRunner(tool.Name, displayKind)) {
+			attempt.Status = "skip_unavailable"
+			attempt.Error = fmt.Sprintf("adapter %q not available", displayKind)
+			result.Methods = append(result.Methods, attempt)
+			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_unavailable")
+			continue
+		}
+		resolvedIntent := planIntent
+		if resolver, ok := adapter.(PlanResolver); ok {
+			resolved, resolveErr := resolver.ResolvePlan(toolCtx, ex.probeRunner(tool.Name, displayKind), tool, method, planIntent)
+			if resolveErr != nil {
+				attempt.Status = "failed"
+				attempt.Error = fmt.Sprintf("%s: resolve plan: %v", displayKind, resolveErr)
+				result.Methods = append(result.Methods, attempt)
+				continue
+			}
+			resolvedIntent = resolved
+			attempt.PlanIntent = resolvedIntent
+		}
 
 		if checker, ok := adapter.(HostCompatibilityChecker); ok {
-			if compatibilityErr := checker.CheckHostCompatibility(tool, method, planIntent, ex.facts, ex.clan); compatibilityErr != nil {
+			if compatibilityErr := checker.CheckHostCompatibility(tool, method, resolvedIntent, ex.facts, ex.clan); compatibilityErr != nil {
 				attempt.Status = "skip_unavailable"
 				attempt.Error = compatibilityErr.Error()
 				result.Methods = append(result.Methods, attempt)
@@ -519,20 +538,12 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			}
 		}
 
-		if !adapter.Available(toolCtx, ex.probeRunner(tool.Name, displayKind)) {
-			attempt.Status = "skip_unavailable"
-			attempt.Error = fmt.Sprintf("adapter %q not available", displayKind)
-			result.Methods = append(result.Methods, attempt)
-			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_unavailable")
-			continue
-		}
-
 		if adapter.Check(toolCtx, ex.probeRunner(tool.Name, displayKind), tool, method) {
 			result.Status = StatusAlready
 			result.Method = displayKind
 			result.MethodKind = method.Kind
 			result.Config = method.Config
-			result.PlanIntent = planIntent
+			result.PlanIntent = resolvedIntent
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "already_installed")
 			result.Duration = time.Since(toolStart).String()
 			return
@@ -561,7 +572,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			continue
 		}
 
-		preparedSources, err := ex.prepareCandidateSources(toolCtx, tool.Name, method.Kind, planIntent, sourceProbe)
+		preparedSources, err := ex.prepareCandidateSources(toolCtx, tool.Name, method.Kind, resolvedIntent, sourceProbe)
 		if err != nil {
 			attempt.Status = "failed"
 			attempt.Error = err.Error()
@@ -631,27 +642,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		resourceUses = append(resourceUses, prerequisiteUses...)
 
 		if ex.dryRun {
-			dryRunIntent := planIntent
-			if resolver, ok := adapter.(PlanResolver); ok {
-				resolved, resolveErr := resolver.ResolvePlan(toolCtx, ex.probeRunner(tool.Name, displayKind), tool, method, planIntent)
-				if resolveErr != nil {
-					attempt.Status = "failed"
-					attempt.Error = fmt.Sprintf("%s: resolve plan: %v", displayKind, resolveErr)
-					result.Methods = append(result.Methods, attempt)
-					continue
-				}
-				dryRunIntent = resolved
-			}
-			if checker, ok := adapter.(HostCompatibilityChecker); ok {
-				if compatibilityErr := checker.CheckHostCompatibility(tool, method, dryRunIntent, ex.facts, ex.clan); compatibilityErr != nil {
-					attempt.Status = "skip_unavailable"
-					attempt.Error = compatibilityErr.Error()
-					attempt.PlanIntent = dryRunIntent
-					result.Methods = append(result.Methods, attempt)
-					ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_incompatible_host", "reason", compatibilityErr.Error())
-					continue
-				}
-			}
+			dryRunIntent := resolvedIntent
 			if dryRunIntent != nil && preparedSources.preparationPlan != nil {
 				projected := *dryRunIntent
 				projected.Preparation = preparedSources.preparationPlan
@@ -709,7 +700,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 				result.Method = displayKind
 				result.MethodKind = method.Kind
 				result.Config = method.Config
-				result.PlanIntent = planIntent
+				result.PlanIntent = resolvedIntent
 				result.InstallCommitted = true
 				result.ResourceUses = append([]plan.ResourceUse(nil), resourceUses...)
 				result.Duration = time.Since(toolStart).String()
@@ -720,7 +711,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			result.Method = displayKind
 			result.MethodKind = method.Kind
 			result.Config = method.Config
-			result.PlanIntent = planIntent
+			result.PlanIntent = resolvedIntent
 			result.ResourceUses = append([]plan.ResourceUse(nil), resourceUses...)
 			result.RebootRequired, _ = method.Config["_reboot_required"].(bool)
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "installed")

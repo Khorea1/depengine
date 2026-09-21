@@ -48,20 +48,18 @@ func resolveDownloadPlan(ctx context.Context, rn run.Runner, mc *config.MethodCa
 	if err != nil {
 		return intent, err
 	}
-	resolved := *intent
-	resolved.Identity = intent.Identity
+	resolved := intent.Clone()
 	if version == "" {
 		version, _ = mc.Config["_resolved_version"].(string)
 	}
 	if version != "" && resolved.Identity.Version == "" {
 		resolved.Identity.Version = version
 	}
-	artifact := plan.Artifact{URL: resolvedURL}
-	if len(intent.Artifacts) > 0 {
-		artifact = intent.Artifacts[0]
-		artifact.URL = resolvedURL
+	if len(resolved.Artifacts) == 0 {
+		resolved.Artifacts = []plan.Artifact{{URL: resolvedURL}}
+	} else {
+		resolved.Artifacts[0].URL = resolvedURL
 	}
-	resolved.Artifacts = []plan.Artifact{artifact}
 	return &resolved, nil
 }
 

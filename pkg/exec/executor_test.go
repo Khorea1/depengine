@@ -107,6 +107,28 @@ type compatibilityMockAdapter struct {
 	err error
 }
 
+type resolvingCompatibilityMockAdapter struct {
+	testMockAdapter
+	resolvedURL string
+}
+
+func (m *resolvingCompatibilityMockAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	resolved := intent.Clone()
+	if len(resolved.Artifacts) == 0 {
+		resolved.Artifacts = []plan.Artifact{{URL: m.resolvedURL}}
+	} else {
+		resolved.Artifacts[0].URL = m.resolvedURL
+	}
+	return &resolved, nil
+}
+
+func (m *resolvingCompatibilityMockAdapter) CheckHostCompatibility(_ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan, _ *engine.Facts, _ string) error {
+	if strings.HasSuffix(intent.Artifacts[0].URL, ".deb") {
+		return &installError{msg: "resolved .deb is incompatible with this host"}
+	}
+	return nil
+}
+
 func (m *compatibilityMockAdapter) CheckHostCompatibility(_ *config.Tool, _ *config.MethodCandidate, _ *plan.ResolvedInstallPlan, _ *engine.Facts, _ string) error {
 	return m.err
 }
@@ -239,6 +261,45 @@ func TestExecutorSkipsHostIncompatibleCandidateAndFallsBack(t *testing.T) {
 	}
 	if !strings.Contains(got.Methods[0].Error, "incompatible") {
 		t.Fatalf("first error = %q", got.Methods[0].Error)
+	}
+}
+
+func TestExecutorChecksResolvedArtifactCompatibilityInDryRunAndInstall(t *testing.T) {
+	for _, dryRun := range []bool{false, true} {
+		t.Run(map[bool]string{false: "install", true: "dry-run"}[dryRun], func(t *testing.T) {
+			blocked := &resolvingCompatibilityMockAdapter{
+				testMockAdapter: testMockAdapter{kindValue: "github"},
+				resolvedURL:     "https://example.test/releases/tool.deb",
+			}
+			fallback := &testMockAdapter{kindValue: "fallback"}
+			schema := &config.Schema{
+				Defaults: config.Defaults{MethodOrder: []string{"github", "fallback"}},
+				Tools: map[string]*config.Tool{"tool": {
+					Name: "tool",
+					Methods: []*config.MethodCandidate{
+						{Kind: "github", Config: map[string]any{"repo": "owner/repo", "asset": "tool"}},
+						{Kind: "fallback", Config: map[string]any{}},
+					},
+				}},
+			}
+			ex := New()
+			WithAdapters(blocked, fallback)(ex)
+			WithFacts(&engine.Facts{DistroID: "arch", OS: "linux"})(ex)
+			if dryRun {
+				WithDryRun()(ex)
+			}
+			report, err := ex.Execute(context.Background(), schema, "arch")
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			got := report.Tools[0]
+			if got.Method != "fallback" || len(got.Methods) == 0 || got.Methods[0].Status != "skip_unavailable" {
+				t.Fatalf("result = %+v, want resolved github candidate rejected before fallback", got)
+			}
+			if gotURL := got.Methods[0].PlanIntent.Artifacts[0].URL; !strings.HasSuffix(gotURL, ".deb") {
+				t.Fatalf("compatibility plan URL = %q, want resolved .deb", gotURL)
+			}
+		})
 	}
 }
 

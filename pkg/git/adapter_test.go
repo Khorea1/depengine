@@ -866,11 +866,18 @@ func TestGitAdapterResolvePlanProjectsSourceAndRevision(t *testing.T) {
 		"rev": "deadbeef",
 	}}
 	intent := plan.New("demo", "git", true)
+	intent.Artifacts = []plan.Artifact{{LocalPath: "bin/demo"}}
+	intent.Entrypoints = map[string]string{"demo": "/usr/local/bin/demo"}
 	got, err := NewGitAdapter().ResolvePlan(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "demo"}, mc, &intent)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.Identity.Source != "https://example.test/repo.git" || got.Identity.Revision != "deadbeef" {
 		t.Fatalf("identity = %+v", got.Identity)
+	}
+	got.Artifacts[0].LocalPath = "mutated"
+	got.Entrypoints["demo"] = "mutated"
+	if intent.Artifacts[0].LocalPath == "mutated" || intent.Entrypoints["demo"] == "mutated" {
+		t.Fatal("resolved plan aliases input intent")
 	}
 }
