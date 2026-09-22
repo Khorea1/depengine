@@ -5,15 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/graph"
 	"github.com/Khorea1/depengine/internal/native"
 	"github.com/Khorea1/depengine/internal/plan"
-	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/source"
 )
 
@@ -74,344 +71,35 @@ func (ex *Executor) needsElevation(s *config.Schema, clan string) bool {
 func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) (*ExecReport, error) {
 	start := time.Now()
 	report := &ExecReport{}
-	ex.schema = s
-	ex.report = report
-	ex.sources = source.NewManager(ex.rn, ex.dryRun)
-	ex.recoveredCommits = make(map[string]recoveredCandidateCommit)
-	ex.dependencies = make(map[string]*dependencyRun)
 
-	ex.clan = clan
-
-	// Resolve native manager name from clan for method_order expansion.
-	if mgr, ok := native.Lookup(clan); ok {
-		ex.nativeManagerName = mgr.Name
-	}
-	if len(s.Defaults.MethodOrder) > 0 {
-		ex.defaultMethodOrder = s.Defaults.MethodOrder
-	}
-
-	ex.logDebug(ctx, "executor", "phase", "init", "clan", clan, "tools", len(s.Tools))
-
-	// Ask the production runner to obtain elevation once, upfront, with the
-	// real terminal attached, and keep it alive for the rest of the
-	// run. Without this, every individual elevated command (native.
-	// withSudo) would rely on sudo's own prompt, which OSExecRunner can
-	// never deliver (its Stdin/Stdout/Stderr are buffers, not the real
-	// terminal): elevation would silently fail on every run that isn't
-	// already NOPASSWD. This is skipped in dry-run: a plan should never
-	// prompt for credentials it won't use.
-	if session, ok := ex.rn.(run.ElevationSession); !ex.dryRun && ex.needsElevation(s, clan) && ok {
-		stop, err := session.StartElevationSession(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("elevation: %w", err)
-		}
-		if stop != nil {
-			defer stop()
-		}
-	}
-
-	// Resolve any durable candidate-preparation transaction before allowing
-	// unrelated new host mutations. Source-only transactions can be recovered
-	// automatically from source presence; ambiguous candidate commits remain
-	// fail-closed.
-	if err := ex.recoverPreparationTransactions(ctx); err != nil {
-		return nil, fmt.Errorf("preparation recovery: %w", err)
-	}
-
-	// A reconciled commit is already a completed host transition. Record every
-	// recovered result exactly once before graph execution, including
-	// DependencyOnly tools that may not appear in the root graph at all. The
-	// root and lazy-dependency paths below treat these entries as terminal and
-	// must not probe, replay hooks, or invoke an installer again.
-	recoveredNames := make([]string, 0, len(ex.recoveredCommits))
-	for name := range ex.recoveredCommits {
-		recoveredNames = append(recoveredNames, name)
-	}
-	sort.Strings(recoveredNames)
-	for _, name := range recoveredNames {
-		result := ex.recoveredCommits[name].result()
-		ex.recordToolResult(ctx, &result, report)
-	}
-
-	// Only sync native package index if at least one tool uses a native method.
-	if ex.hasApplicableNativeMethod(s, clan) {
-		syncMgr := NewSyncManager(ex.mutationRunner("native-index", "sync"), clan)
-		if syncMgr.NeedsSync() {
-			if ex.dryRun {
-				ex.outputf("  package index: would sync via %s\n", ex.nativeManagerName)
-				ex.logDebug(ctx, "sync", "status", "would_sync")
-			} else {
-				ex.outputf("  syncing package index...\n")
-				ex.logDebug(ctx, "sync", "status", "syncing")
-				// Sync() never returns a fatal error (see its doc comment): a
-				// failed index sync is a soft failure, already logged at WARN
-				// by the runner. Installation proceeds regardless — either
-				// against a stale-but-usable native cache, or via tools whose
-				// method never depended on this sync in the first place. See
-				// findings.md, Achado 1: aborting the whole run here used to
-				// veto every tool over one unrelated broken repo.
-				_ = syncMgr.Sync(ctx)
-				ex.logDebug(ctx, "sync", "status", "done")
-			}
-		}
-	}
-
-	// Graph sees facts-filtered requires: a gated dep (requires_when) is an
-	// edge only on platforms where its condition matches.
-	if _, err := graph.Sort(allDependencyEdges(config.FilteredTools(s.Tools, ex.facts))); err != nil {
-		return nil, fmt.Errorf("dependency resolution: %w", err)
-	}
-	toolsForGraph := config.FilteredTools(rootTools(s.Tools), ex.facts)
-	levels, err := graph.Sort(toolsForGraph, graph.WithLogger(ex.logger))
+	stop, err := ex.initializeRun(ctx, s, clan, report)
 	if err != nil {
-		return nil, fmt.Errorf("dependency resolution: %w", err)
+		return nil, err
+	}
+	if stop != nil {
+		defer stop()
 	}
 
-	ex.logDebug(ctx, "executor", "phase", "graph", "levels", len(levels))
-	// Log dependency levels in debug mode (even without --dry-run).
-	for i, level := range levels {
-		ex.logDebug(ctx, "graph", "level", i, "tools", strings.Join(level, ", "))
+	if err := ex.recoverAndRecord(ctx, report); err != nil {
+		return nil, err
 	}
-	// The level-by-level graph breakdown is internal decision-making detail
-	// (why the engine picked this order) rather than "what will happen to
-	// my system" — the per-tool ✓/✗/→ lines right below already answer
-	// that. Keep it out of the default dry-run so a plain `install
-	// --dry-run` reads as a plan, not a debugger dump; --diagnose still
-	// gets the full picture.
-	if ex.dryRun && ex.diagnose {
-		ex.outputf("  dependency order (%d levels):\n", len(levels))
-		for i, level := range levels {
-			ex.outputf("    level %d: %s\n", i, strings.Join(level, ", "))
-		}
+
+	ex.syncNativeIndex(ctx, s, clan)
+
+	levels, err := ex.sortExecutionLevels(ctx, s)
+	if err != nil {
+		return nil, err
 	}
 
 	// failedTools accumulates tools that did not get installed (failed or
 	// unavailable), so dependents in later levels (requires) are blocked
 	// instead of silently proceeding and reporting themselves installed.
-	failedTools := make(map[string]string) // toolName -> reason
-
+	rc := &runContext{ctx: ctx, schema: s, report: report, failed: make(map[string]string)}
 	for _, level := range levels {
-		// Reconciled commits were recorded before graph execution and are terminal
-		// for this run. Exclude them before dependency/security/hook/batch phases
-		// so no transient second probe or host mutation can replay the transition.
-		executionLevel := make([]string, 0, len(level))
-		for _, toolName := range level {
-			if _, ok := ex.recoveredCommits[toolName]; ok {
-				continue
-			}
-			executionLevel = append(executionLevel, toolName)
-		}
-
-		// PHASE 0: requires — a tool whose dependency failed must not attempt
-		// to install (its runtime prerequisite is absent). It is marked failed
-		// so the run exits non-zero and its own dependents are blocked
-		// transitively.
-		blockedByRequires := make(map[string]string) // toolName -> failure message
-		for _, toolName := range executionLevel {
-			tool, ok := s.Tools[toolName]
-			if !ok {
-				continue
-			}
-			for _, dep := range tool.EffectiveRequires(ex.facts) {
-				if reason, bad := failedTools[dep]; bad {
-					blockedByRequires[toolName] = fmt.Sprintf("requires failed dependency: %s (%s)", dep, reason)
-					break
-				}
-			}
-		}
-
-		// PHASE 1: Dangerous-code filter (BEFORE any execution — including PreInstall).
-		filteredLevel := make([]string, 0, len(executionLevel))
-		for _, toolName := range executionLevel {
-			if msg, blocked := blockedByRequires[toolName]; blocked {
-				failedTools[toolName] = msg
-				ex.recordToolResult(ctx, &ToolResult{
-					Tool: toolName, Status: StatusFailed, Error: msg,
-				}, report)
-				continue
-			}
-			tool, ok := s.Tools[toolName]
-			if !ok {
-				filteredLevel = append(filteredLevel, toolName)
-				continue
-			}
-			if !ex.allowArbitraryCode {
-				hasDanger := ex.hasArbitraryCode(tool)
-				if hasDanger {
-					ex.outputf("  ⚠  %s: has hooks or build scripts that may execute arbitrary code. Use --allow-arbitrary-code to permit execution.\n", toolName)
-					ex.logWarn(ctx, "security", "tool", toolName, "warning", "has dangerous hooks")
-					ex.recordBlockedTool(ctx, toolName, report)
-					continue
-				}
-			}
-			filteredLevel = append(filteredLevel, toolName)
-		}
-
-		// PHASE 2: PreInstall hooks (only for tools that passed the security gate).
-		preinstallFailed := make(map[string]bool)
-		preinstallDone := make(map[string]bool)
-		for _, toolName := range filteredLevel {
-			tool, ok := s.Tools[toolName]
-			if !ok || len(tool.PreInstall) == 0 {
-				continue
-			}
-			preCtx, preCancel := context.WithTimeout(ctx, ex.methodTimeout)
-			err := ex.runPreinstall(preCtx, tool)
-			preCancel()
-			if err != nil {
-				ex.recordToolResult(ctx, &ToolResult{
-					Tool:   toolName,
-					Status: StatusFailed,
-					Error:  fmt.Sprintf("pre-install: %v", err),
-				}, report)
-				preinstallFailed[toolName] = true
-				ex.logWarn(ctx, "preinstall", "tool", toolName, "error", err.Error())
-			} else if !ex.dryRun {
-				preinstallDone[toolName] = true
-			}
-		}
-
-		// PHASE 3: Further filter out tools that failed preinstall.
-		survivorLevel := make([]string, 0, len(filteredLevel))
-		for _, toolName := range filteredLevel {
-			if !preinstallFailed[toolName] {
-				survivorLevel = append(survivorLevel, toolName)
-			}
-		}
-
-		// PHASE 4: Optimistic batch native install.
-		candidates, remaining := ex.identifyBatchCandidates(ctx, survivorLevel, s, report)
-
-		if len(candidates) > 0 && ex.clan != "" {
-			switch {
-			case ex.dryRun:
-				names := make([]string, len(candidates))
-				for i, c := range candidates {
-					names[i] = c.toolName
-				}
-				ex.outputf("  ⚡  commit: would batch native install: %s via %s\n", strings.Join(names, ", "), ex.nativeManagerName)
-				for _, c := range candidates {
-					if len(c.tool.PostInstall) > 0 {
-						postCtx, postCancel := context.WithTimeout(ctx, ex.methodTimeout)
-						_ = ex.runPostinstall(postCtx, c.tool)
-						postCancel()
-					}
-					ex.recordToolResult(ctx, &ToolResult{
-						Tool: c.toolName, Status: StatusWouldInstall, Method: displayMethodKind(c.method),
-						MethodKind: c.method.Kind, Config: c.method.Config, PlanIntent: c.planIntent,
-					}, report)
-				}
-			case ex.batchNativeInstall(ctx, candidates):
-				// The manager returning exit 0 does not guarantee every package
-				// landed (some managers silently skip unknown package names).
-				// Verify per tool: only tools whose Check passes are marked
-				// installed; the rest fall back to the serial path, which
-				// re-tries native and then any remaining methods.
-				for _, c := range candidates {
-					adapter := ex.LookupAdapter(c.method.Kind)
-					if adapter != nil && adapter.Check(ctx, ex.probeRunner(c.toolName, c.method.Kind), c.tool, c.method) {
-						tr := ToolResult{
-							Tool: c.toolName, Status: StatusInstalled, Method: displayMethodKind(c.method),
-							MethodKind: c.method.Kind, Config: c.method.Config, PlanIntent: c.planIntent, InstallCommitted: true,
-						}
-						tr.RebootRequired, _ = c.method.Config["_reboot_required"].(bool)
-						if preinstallDone[c.toolName] {
-							tr.PreinstallDone = true
-						}
-						if len(c.tool.PostInstall) > 0 {
-							postCtx, postCancel := context.WithTimeout(ctx, ex.methodTimeout)
-							if err := ex.runPostinstall(postCtx, c.tool); err != nil {
-								tr.Status = StatusFailed
-								tr.Error = fmt.Sprintf("post-install: %v", err)
-							} else {
-								tr.PostinstallDone = true
-							}
-							postCancel()
-						}
-						ex.recordToolResult(ctx, &tr, report)
-					} else {
-						remaining = append(remaining, c.toolName)
-					}
-				}
-			default:
-				// Batch failed — transparent fallback to per-tool.
-				// remaining already excludes tools recorded as StatusAlready by
-				// identifyBatchCandidates; we just add the candidates back so they
-				// go through the serial path.
-				for _, c := range candidates {
-					remaining = append(remaining, c.toolName)
-				}
-			}
-		} // else: no candidates — remaining from identifyBatchCandidates is correct
-
-		// PHASE 5: Serial or parallel for remaining.
-		// Set PreinstallDone on executeTool results for tools that had successful PreInstall.
-		if ex.maxJobs <= 1 || len(remaining) <= 1 {
-			for _, toolName := range remaining {
-				tool, ok := s.Tools[toolName]
-				if !ok {
-					continue
-				}
-				result := ex.executeTool(ctx, tool)
-				if preinstallDone[toolName] {
-					result.PreinstallDone = true
-				}
-				ex.recordToolResult(ctx, &result, report)
-			}
-		} else {
-			ex.executeLevelParallel(ctx, s, remaining, report, preinstallDone)
-		}
-
-		// Record this level's failures so dependents in later levels are
-		// blocked. Tools already recorded as blocked by requires above are
-		// skipped here (they were registered at PHASE 0).
-		for _, toolName := range level {
-			if _, blocked := blockedByRequires[toolName]; blocked {
-				continue
-			}
-			tr := recordedResult(report, toolName)
-			if tr == nil {
-				continue
-			}
-			if tr.Status == StatusFailed || tr.Status == StatusSkippedWhen || tr.Status == StatusSkippedUnavailable {
-				reason := tr.Error
-				if reason == "" {
-					reason = "not installed"
-				}
-				failedTools[toolName] = reason
-			}
-		}
+		ex.runLevel(rc, level)
 	}
 
-	if ex.sortBy != "" {
-		report.SortBy(ex.sortBy)
-	}
-
-	report.Duration = time.Since(start)
-	// DEBUG, not INFO: the human-readable Summary()/Detail() (and --json for
-	// programmatic use) already say this right below, in prose instead of
-	// key=value pairs. Logging it again at INFO just doubles up the same
-	// information in two different visual languages back to back.
-	ex.logDebug(ctx, "executor", "phase", "done",
-		"success", report.Success,
-		"failed", report.Failed,
-		"skipped", report.Skipped,
-		"already", report.Already,
-		"would_install", report.WouldInstall,
-		"duration", report.Duration.String())
-	if ex.logger != nil && ex.logger.Enabled(ctx, slog.LevelDebug) {
-		ex.logDebug(ctx, "executor", "phase", "report", "json", report.JSON())
-	}
-
-	if !ex.dryRun {
-		if err := ex.writeState(ctx, s, report); err != nil {
-			// The installs may have succeeded, but the run is not complete:
-			// without state, status/diff/sbom cannot report what happened.
-			return nil, fmt.Errorf("persisting state: %w", err)
-		}
-	}
-
-	return report, nil
+	return ex.finishRun(ctx, s, report, start)
 }
 
 func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResult {
