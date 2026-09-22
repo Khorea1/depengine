@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -51,6 +52,7 @@ func newRemoveCmd() *cobra.Command {
 // runRemove closures did.
 type removeSession struct {
 	ctx              context.Context
+	runner           run.Runner
 	state            *state.State
 	schemaTools      map[string]*config.Tool
 	dryRun           bool
@@ -85,6 +87,7 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 
 	sess := &removeSession{
 		ctx:              ctx,
+		runner:           run.OSExecRunner{},
 		state:            st,
 		schemaTools:      schemaTools,
 		dryRun:           *removeDryRun,
@@ -279,7 +282,7 @@ func (s *removeSession) finalizeRemovedPrerequisite(toolName string) error {
 func (s *removeSession) invokeRemover(ctx context.Context, toolName string, toolState state.ToolState, remover exec.Remover, methodKind string, automatic bool) bool {
 	mc := &config.MethodCandidate{Kind: methodKind, Config: toolState.Config}
 	tool := &config.Tool{Name: toolName}
-	if err := remover.Remove(ctx, run.OSExecRunner{}, tool, mc); err != nil {
+	if err := remover.Remove(ctx, s.runner, tool, mc); err != nil {
 		log.Default.Error("remove failed", "tool", toolName, "error", err)
 		return false
 	}
@@ -517,17 +520,21 @@ func (s *removeSession) removeSingleTool(toolName string) bool {
 // unless --force is given. Returns proceed=false with a nil error when the
 // user aborts at the prompt.
 func confirmRemoveAll(removeAll, removeForce *bool) (bool, error) {
+	return confirmRemoveAllWith(removeAll, removeForce, isInteractive(), os.Stdin)
+}
+
+func confirmRemoveAllWith(removeAll, removeForce *bool, interactive bool, input io.Reader) (bool, error) {
 	if !*removeAll || *removeForce {
 		return true, nil
 	}
-	if !isInteractive() {
+	if !interactive {
 		log.Default.Error("stdin is not a terminal; use --force to confirm, or run in an interactive terminal")
 		return false, exitWithCode(2)
 	}
 	fmt.Fprint(os.Stderr, "WARNING: This will remove ALL installed tools tracked by depengine.\nAre you sure? [y/N] ")
-	input, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-	input = strings.TrimSpace(strings.ToLower(input))
-	if input != "y" && input != "yes" {
+	answer, _ := bufio.NewReader(input).ReadString('\n')
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	if answer != "y" && answer != "yes" {
 		fmt.Fprintln(os.Stderr, "Aborted.")
 		return false, nil
 	}
