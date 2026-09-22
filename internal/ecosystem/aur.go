@@ -90,10 +90,8 @@ func (a *AURAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *conf
 	if resolved == nil {
 		return errors.New("aur: nil resolved plan")
 	}
-	for _, operation := range resolved.Operations {
-		if operation.Kind != "install" {
-			return errors.New("aur: resolved operations are unsupported")
-		}
+	if err := validateResolvedInstallOperation("aur", resolved); err != nil {
+		return err
 	}
 	if resolved.Identity.Package == "" {
 		return errors.New("aur: no package name in resolved plan")
