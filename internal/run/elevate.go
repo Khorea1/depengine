@@ -31,6 +31,10 @@ func NewElevator() *Elevator {
 
 // Default is the process-wide Elevator backing the package-level functions.
 // New code that needs isolation should construct its own Elevator.
+//
+// INTENTIONAL process-global boundary (not tech debt): elevation method
+// selection is process-wide configuration (flag/env override); see
+// "Process-global shims" in docs/architecture.md.
 var Default = NewElevator()
 
 // RunElevated runs one argv command through the selected elevation method.

@@ -85,6 +85,13 @@ func (r *Registry) snapshot() map[string]Adapter {
 
 // defaultRegistry backs the package-level functions. The binary's
 // composition root populates it before constructing commands or executors.
+//
+// INTENTIONAL process-global boundary (not tech debt): the registry needs
+// exactly one populated instance per process, and threading it through
+// every adapter call site adds no isolation (adapters are stateless
+// w.r.t. the registry). Per-instance registries remain available via the
+// Registry type and WithAdapters for tests; see "Process-global shims"
+// in docs/architecture.md.
 var defaultRegistry = NewRegistry()
 
 // Register inserts an adapter into the default registry. Panics if a

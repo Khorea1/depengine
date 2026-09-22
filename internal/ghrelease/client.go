@@ -58,6 +58,10 @@ func (r *Resolver) ResetTokenCache() {
 // functions below. It preserves the previous "once per process" caching
 // behavior for existing callers; new code that needs isolation should
 // construct its own Resolver.
+//
+// INTENTIONAL process-global boundary (not tech debt): the cache exists
+// to avoid repeated GitHub API calls within one run; see
+// "Process-global shims" in docs/architecture.md.
 var Default = NewResolver()
 
 // ResolveLatest replaces `{latest}` in a URL with the resolved version from
