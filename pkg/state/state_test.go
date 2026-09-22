@@ -304,7 +304,12 @@ func TestLockAcquireAndRelease(t *testing.T) {
 	// Lock should be held — try to acquire again from another goroutine.
 	got := make(chan error, 1)
 	go func() {
-		_, err := lock()
+		c2, err := lock()
+		if err == nil {
+			// Close the re-acquired lock: on Windows the open handle
+			// would otherwise block TempDir cleanup.
+			_ = c2.Close()
+		}
 		got <- err
 	}()
 
@@ -344,7 +349,12 @@ func TestLockSharedAcquireAndRelease(t *testing.T) {
 	// Exclusive lock should block while shared is held.
 	got2 := make(chan error, 1)
 	go func() {
-		_, err := lock()
+		c2, err := lock()
+		if err == nil {
+			// Close the re-acquired lock: on Windows the open handle
+			// would otherwise block TempDir cleanup.
+			_ = c2.Close()
+		}
 		got2 <- err
 	}()
 

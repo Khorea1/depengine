@@ -241,16 +241,18 @@ func runCommand(ctx context.Context, stream io.Writer, dir, name string, args ..
 	// signal, context deadline/cancellation, etc.
 	var exitErr *exec.ExitError
 	if runErr != nil && errors.As(runErr, &exitErr) {
-		if exit >= 0 {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			// The operation's context expired: the result is untrustworthy
+			// (partial output, killed tree) so cancellation wins over the
+			// exit code. This also covers Windows, where a killed process
+			// reports a plain non-zero exit indistinguishable from failure.
+			runErr = ctxErr
+		} else if exit >= 0 {
 			// A normal process exit, even when non-zero, belongs exclusively
 			// in ExitCode.
 			runErr = nil
-		} else if ctxErr := ctx.Err(); ctxErr != nil {
-			// CommandContext commonly reports a killed process as ExitError.
-			// Preserve the execution-boundary distinction by exposing the
-			// cancellation/deadline as Err instead of a synthetic exit code.
-			runErr = ctxErr
 		}
+		// Otherwise (signal death with a live context) keep the ExitError.
 	}
 
 	return Result{

@@ -14,7 +14,9 @@ echo "Running cross-platform tests for distro: $DISTRO"
 # In a real CI, we'd likely copy a pre-built binary
 if [ ! -x "$BIN" ] || [ "$BIN" -nt "main.go" ]; then
     echo "Building depengine..."
-    go build -o "$BIN" . || exit 1
+    # -buildvcs=false: the repo is bind-mounted, and container git sees it
+    # as dubious-owned (exit 128), which otherwise fails the build.
+    go build -buildvcs=false -o "$BIN" . || exit 1
 fi
 
 # Install the depengine binary to a temporary location for testing
@@ -33,13 +35,21 @@ fi
 # --- Test Cases ---
 
 echo "Testing install command..."
-$BIN install --schema "$SCHEMA" --dry-run --verbose
+# --allow-arbitrary-code only affects planning here: dry-run never executes
+# hooks or mutations (it is observational by design), but without the flag
+# the hook-guarded tools fail planning and the run exits non-zero.
+$BIN install --schema "$SCHEMA" --dry-run --allow-arbitrary-code
+# Real native-manager install of a single tool (mutates the container).
 $BIN install --schema "$SCHEMA" --only zsh
-$BIN install --schema "$SCHEMA" --skip kitty
+$BIN install --schema "$SCHEMA" --skip kitty --dry-run --allow-arbitrary-code
 
 echo "Testing check command..."
-$BIN check zsh
-$BIN check unknown-tool
+$BIN check --schema "$SCHEMA" zsh
+# Unknown tools must be rejected, not silently reported as missing.
+if $BIN check --schema "$SCHEMA" unknown-tool; then
+    echo "ERROR: check accepted an unknown tool" >&2
+    exit 1
+fi
 
 echo "Testing status command..."
 $BIN status
@@ -103,7 +113,12 @@ echo "Testing removal command again..."
 
 # Validation tests (using existing schema.toml)
 echo "Running validation tests..."
-$BIN validate --schema "$SCHEMA" --strict
+# --strict promotes the :auto-checksum TOFU warnings to errors, so it must
+# fail on this schema: assert the rejection instead of a pass.
+if $BIN validate --schema "$SCHEMA" --strict; then
+    echo "ERROR: strict validation passed despite TOFU checksums" >&2
+    exit 1
+fi
 
 echo "Cross-platform tests completed for $DISTRO."
 exit 0

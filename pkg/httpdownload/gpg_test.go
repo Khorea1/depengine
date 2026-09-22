@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -20,14 +21,41 @@ func skipIfNoGPG(t *testing.T) {
 }
 
 // setupGPGDir creates a temporary GNUPGHOME with proper permissions and
-// sets the GNUPGHOME environment variable for the test.
+// sets the GNUPGHOME environment variable for the test. The homedir is
+// created under a short parent: gpg-agent's socket path is derived from
+// GNUPGHOME and macOS TMPDIR (/var/folders/...) is deep enough to exceed
+// the ~104-char sun_path limit, which makes key generation fail with
+// "can't connect to the gpg-agent".
 func setupGPGDir(t *testing.T) string {
 	t.Helper()
-	gnupgHome := t.TempDir()
+	parent := os.TempDir()
+	if runtime.GOOS == "darwin" {
+		parent = "/tmp"
+	}
+	gnupgHome, err := os.MkdirTemp(parent, "depengine-gpg-*")
+	if err != nil {
+		t.Fatalf("mkdtemp gnupgHome: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(gnupgHome) })
 	if err := os.Chmod(gnupgHome, 0o700); err != nil {
 		t.Fatalf("chmod gnupgHome: %v", err)
 	}
-	t.Setenv("GNUPGHOME", gnupgHome)
+	// Windows CI ships an MSYS2 gpg (via Git), which reads GNUPGHOME with
+	// POSIX semantics: MSYS2 maps the Windows Temp dir onto /tmp, so the
+	// native path must be converted for gpg's benefit (cygpath -u yields
+	// the /tmp/... spelling of the same directory). Go's own operations
+	// above keep the native path — the MSYS spelling is meaningless to
+	// native syscalls, and a native-only gpg setup has no cygpath, in
+	// which case the native path is exported unchanged.
+	envHome := gnupgHome
+	if runtime.GOOS == "windows" {
+		if out, err := exec.Command("cygpath", "-u", gnupgHome).Output(); err == nil {
+			if s := strings.TrimSpace(string(out)); s != "" {
+				envHome = s
+			}
+		}
+	}
+	t.Setenv("GNUPGHOME", envHome)
 	return gnupgHome
 }
 
@@ -174,11 +202,7 @@ func TestGPGVerifyKeyImport(t *testing.T) {
 	signatureFile := signFile(t, checksumFile)
 
 	// Reset GNUPGHOME to a clean one so the key is NOT in the keyring.
-	gnupgHome2 := t.TempDir()
-	if err := os.Chmod(gnupgHome2, 0o700); err != nil {
-		t.Fatalf("chmod gnupgHome2: %v", err)
-	}
-	t.Setenv("GNUPGHOME", gnupgHome2)
+	setupGPGDir(t)
 
 	// Verification should fail since the key is not in the new keyring.
 	rn := &run.OSExecRunner{}
@@ -270,11 +294,7 @@ func TestGPGVerifyWrongSigner(t *testing.T) {
 	}
 
 	// Reset GNUPGHOME to a clean dir — no keys pre-imported.
-	cleanDir := t.TempDir()
-	if err := os.Chmod(cleanDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("GNUPGHOME", cleanDir)
+	setupGPGDir(t)
 
 	// Call GPGVerify with the combined key file as signingKey.
 	// Before the fix: imports both keys into the shared keyring, verifies B's sig using B's key — passes (BUG).
@@ -282,7 +302,14 @@ func TestGPGVerifyWrongSigner(t *testing.T) {
 	//                 verifies B's sig using B's key — passes crypto check (exit 0),
 	//                 then identity comparison fails: expected A, got B.
 	rn := &run.OSExecRunner{}
-	err = GPGVerify(context.Background(), rn, checksumFile, sigFile, "file://"+combinedKeyFile)
+	// Build a well-formed file:// URL: the native path concatenation
+	// ("file://" + backslash path) is malformed on Windows; the canonical
+	// file:/// form (leading slash, forward separators) parses on both.
+	keyURLPath := filepath.ToSlash(combinedKeyFile)
+	if !strings.HasPrefix(keyURLPath, "/") {
+		keyURLPath = "/" + keyURLPath
+	}
+	err = GPGVerify(context.Background(), rn, checksumFile, sigFile, "file://"+keyURLPath)
 	if err == nil {
 		t.Fatal("GPGVerify should fail: signed by key B, expected key A")
 	}

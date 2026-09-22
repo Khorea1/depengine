@@ -1,5 +1,10 @@
 FROM fedora:latest
 
+# Fedora's golang package defaults to GOTOOLCHAIN=local, which pins the
+# distro Go (1.26) and rejects go.mod's go >= 1.27.1. Re-enable automatic
+# toolchain switching so the required toolchain downloads on demand.
+ENV GOTOOLCHAIN=auto
+
 RUN dnf install -y golang git curl ca-certificates && dnf clean all
 
 WORKDIR /depengine
