@@ -2,8 +2,10 @@ package httpdownload
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
@@ -90,6 +92,26 @@ func (a *GitHubAdapter) Install(ctx context.Context, rn run.Runner, tool *config
 	return a.http.Install(ctx, rn, tool, &clone)
 }
 
+// InstallResolved executes the already-resolved concrete asset URL without
+// touching the GitHub release API again. It applies the same binary default
+// as Install, then delegates transport to HTTPAdapter.InstallResolved.
+func (a *GitHubAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if resolved == nil || len(resolved.Artifacts) == 0 || resolved.Artifacts[0].URL == "" {
+		return fmt.Errorf("github: resolved plan has no concrete artifact URL")
+	}
+	asset, _ := mc.Config["asset"].(string)
+	if binary, _ := mc.Config["binary"].(string); binary != "" || isArchive(fileExtension(asset)) {
+		return a.http.InstallResolved(ctx, rn, tool, mc, resolved)
+	}
+	clone := *mc
+	clone.Config = make(map[string]any, len(mc.Config)+1)
+	for key, value := range mc.Config {
+		clone.Config[key] = value
+	}
+	clone.Config["binary"] = tool.Name
+	return a.http.InstallResolved(ctx, rn, tool, &clone, resolved)
+}
+
 // Remove delegates to HTTPAdapter.Remove, which operates on extract_to/
 // binary from the already-recorded install, not on "url" — no resolution
 // needed to uninstall something already on disk.
@@ -98,3 +120,8 @@ func (a *GitHubAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.
 }
 
 func (a *GitHubAdapter) CanRemove() bool { return a.http.CanRemove() }
+
+var _ exec.Adapter = (*GitHubAdapter)(nil)
+var _ exec.PlanResolver = (*GitHubAdapter)(nil)
+var _ exec.ResolvedInstaller = (*GitHubAdapter)(nil)
+var _ exec.Remover = (*GitHubAdapter)(nil)

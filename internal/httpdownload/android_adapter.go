@@ -118,6 +118,30 @@ func (a *AndroidAdapter) Install(ctx context.Context, rn run.Runner, tool *confi
 	return nil
 }
 
+// InstallResolved executes the already-resolved concrete .apk URL without any
+// release/{latest} resolution, then dispatches it to the package installer.
+func (a *AndroidAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if err := requireMethodArtifact("android", mc); err != nil {
+		return err
+	}
+	if resolved == nil || len(resolved.Artifacts) == 0 || resolved.Artifacts[0].URL == "" {
+		return fmt.Errorf("android: resolved plan has no concrete artifact URL")
+	}
+	dir, name := apkTarget(tool)
+	if name == "" {
+		return fmt.Errorf("android: tool has no name to derive the .apk filename from")
+	}
+	if err := a.http.InstallResolved(ctx, rn, tool, httpDelegate(mc, dir, name), resolved); err != nil {
+		return fmt.Errorf("android: %w", err)
+	}
+	apkPath := filepath.Join(dir, name)
+	res := rn.Run(ctx, "termux-open", apkPath)
+	if err := run.CheckResult(res, "termux-open"); err != nil {
+		return fmt.Errorf("android: dispatch %s to package installer: %w", apkPath, err)
+	}
+	return nil
+}
+
 // Remove is deliberately not implemented. depengine only ever handed a
 // downloaded .apk to Android's package installer — whether the app is
 // actually present depends on a human having tapped through that prompt,
@@ -129,3 +153,4 @@ func (a *AndroidAdapter) Install(ctx context.Context, rn run.Runner, tool *confi
 // Compile-time interface check.
 var _ exec.Adapter = (*AndroidAdapter)(nil)
 var _ exec.PlanResolver = (*AndroidAdapter)(nil)
+var _ exec.ResolvedInstaller = (*AndroidAdapter)(nil)

@@ -141,6 +141,20 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	if err != nil {
 		return fmt.Errorf("http: resolve artifact: %w", err)
 	}
+	return a.installResolvedURL(ctx, rn, tool, mc, resolvedURL)
+}
+
+// InstallResolved executes an already-resolved download plan. It never calls
+// ResolveArtifact, ResolveArtifactDetails, ResolveLatest, or any release API:
+// the concrete URL must already be present in resolved.Artifacts[0].URL.
+func (a *HTTPAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if resolved == nil || len(resolved.Artifacts) == 0 || resolved.Artifacts[0].URL == "" {
+		return fmt.Errorf("http: resolved plan has no concrete artifact URL")
+	}
+	return a.installResolvedURL(ctx, rn, tool, mc, resolved.Artifacts[0].URL)
+}
+
+func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolvedURL string) error {
 	// Re-enforce the shared artifact URL contract at the runtime boundary.
 	// Normal CLI flows validate before execution, but adapters are also public
 	// package APIs and must not leak embedded credentials when called directly.
@@ -447,6 +461,8 @@ func (a *HTTPAdapter) fetchChecksumFromURL(ctx context.Context, rn run.Runner, c
 
 // Ensure HTTPAdapter implements exec.Adapter.
 var _ exec.Adapter = (*HTTPAdapter)(nil)
+var _ exec.PlanResolver = (*HTTPAdapter)(nil)
+var _ exec.ResolvedInstaller = (*HTTPAdapter)(nil)
 
 // isSharedDir checks if a directory path is a common shared system directory.
 // We avoid deleting these directories completely during uninstallation.

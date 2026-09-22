@@ -137,6 +137,30 @@ func (a *AppImageAdapter) Install(ctx context.Context, rn run.Runner, tool *conf
 	return nil
 }
 
+// InstallResolved executes the already-resolved concrete URL without any
+// release/{latest} resolution, then writes the optional .desktop launcher.
+func (a *AppImageAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if err := requireMethodArtifact("appimage", mc); err != nil {
+		return err
+	}
+	if resolved == nil || len(resolved.Artifacts) == 0 || resolved.Artifacts[0].URL == "" {
+		return fmt.Errorf("appimage: resolved plan has no concrete artifact URL")
+	}
+	installDir, name := binaryTarget(tool, mc)
+	if name == "" {
+		return fmt.Errorf("appimage: tool %q has no name and no binary field to install under", tool.Name)
+	}
+	if err := a.http.InstallResolved(ctx, rn, tool, httpDelegate(mc, installDir, name), resolved); err != nil {
+		return fmt.Errorf("appimage: %w", err)
+	}
+	if desktop, _ := mc.Config["desktop"].(bool); desktop {
+		if err := writeDesktopEntry(tool, name, filepath.Join(installDir, name)); err != nil {
+			return fmt.Errorf("appimage: desktop entry: %w", err)
+		}
+	}
+	return nil
+}
+
 // desktopEntryTemplate is the minimal valid .desktop file per the
 // freedesktop.org Desktop Entry Specification — just enough for a launcher
 // to appear and run the installed binary.
@@ -196,4 +220,5 @@ func (a *AppImageAdapter) CanRemove() bool { return a.http.CanRemove() }
 // Compile-time interface checks.
 var _ exec.Adapter = (*AppImageAdapter)(nil)
 var _ exec.PlanResolver = (*AppImageAdapter)(nil)
+var _ exec.ResolvedInstaller = (*AppImageAdapter)(nil)
 var _ exec.Remover = (*AppImageAdapter)(nil)
