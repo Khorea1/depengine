@@ -10,6 +10,8 @@ vendor/
 # Schema / manifest
 depengine.toml
 schema.toml
+# Test-suite runs generate locks next to fixture schemas; never commit those.
+tests/**/depengine.lock
 # Build output
 dist/
 
