@@ -23,15 +23,11 @@ func (m *mockAdapter) Install(context.Context, run.Runner, *config.Tool, *config
 }
 
 func TestRegisterAndLookup(t *testing.T) {
-	// Save and restore global registry.
-	saved := adapters
-	adapters = map[string]Adapter{}
-	defer func() { adapters = saved }()
-
+	r := NewRegistry()
 	m := &mockAdapter{kindValue: "test-kind"}
-	Register(m)
+	r.Register(m)
 
-	got := Lookup("test-kind")
+	got := r.Lookup("test-kind")
 	if got == nil {
 		t.Fatal("Lookup returned nil for registered adapter")
 	}
@@ -40,17 +36,14 @@ func TestRegisterAndLookup(t *testing.T) {
 	}
 
 	// Looking up an unregistered kind returns nil.
-	if unreg := Lookup("nope"); unreg != nil {
+	if unreg := r.Lookup("nope"); unreg != nil {
 		t.Fatalf("Lookup for unregistered kind should be nil, got %v", unreg)
 	}
 }
 
 func TestRegisterDuplicatePanics(t *testing.T) {
-	saved := adapters
-	adapters = map[string]Adapter{}
-	defer func() { adapters = saved }()
-
-	Register(&mockAdapter{kindValue: "dup"})
+	r := NewRegistry()
+	r.Register(&mockAdapter{kindValue: "dup"})
 
 	defer func() {
 		if r := recover(); r == nil {
@@ -58,18 +51,15 @@ func TestRegisterDuplicatePanics(t *testing.T) {
 		}
 	}()
 
-	Register(&mockAdapter{kindValue: "dup"})
+	r.Register(&mockAdapter{kindValue: "dup"})
 }
 
 func TestRegisteredKinds(t *testing.T) {
-	saved := adapters
-	adapters = map[string]Adapter{}
-	defer func() { adapters = saved }()
+	r := NewRegistry()
+	r.Register(&mockAdapter{kindValue: "a"})
+	r.Register(&mockAdapter{kindValue: "b"})
 
-	Register(&mockAdapter{kindValue: "a"})
-	Register(&mockAdapter{kindValue: "b"})
-
-	kinds := RegisteredKinds()
+	kinds := r.Kinds()
 	if len(kinds) != 2 {
 		t.Fatalf("expected 2 kinds, got %d: %v", len(kinds), kinds)
 	}
@@ -84,22 +74,19 @@ func TestRegisteredKinds(t *testing.T) {
 }
 
 func TestReplace(t *testing.T) {
-	saved := adapters
-	adapters = map[string]Adapter{}
-	defer func() { adapters = saved }()
-
+	r := NewRegistry()
 	original := &mockAdapter{kindValue: "repl"}
-	Register(original)
+	r.Register(original)
 
-	if got := Lookup("repl"); got == nil {
+	if got := r.Lookup("repl"); got == nil {
 		t.Fatal("Lookup returned nil after Register")
 	}
 
 	// Replace with a new adapter of the same kind (should not panic).
 	replacement := &mockAdapter{kindValue: "repl"}
-	Replace(replacement)
+	r.Replace(replacement)
 
-	got := Lookup("repl")
+	got := r.Lookup("repl")
 	if got == nil {
 		t.Fatal("Lookup returned nil after Replace")
 	}
@@ -107,15 +94,21 @@ func TestReplace(t *testing.T) {
 }
 
 func TestReplaceOnUnregisteredKind(t *testing.T) {
-	saved := adapters
-	adapters = map[string]Adapter{}
-	defer func() { adapters = saved }()
+	r := NewRegistry()
 
 	// Replace on a kind that was never registered should work (silent insert).
 	a := &mockAdapter{kindValue: "new-kind"}
-	Replace(a)
+	r.Replace(a)
 
-	if got := Lookup("new-kind"); got == nil {
+	if got := r.Lookup("new-kind"); got == nil {
 		t.Fatal("Replace should insert when kind is not yet registered")
+	}
+}
+
+func TestRegistriesAreIndependent(t *testing.T) {
+	a, b := NewRegistry(), NewRegistry()
+	a.Register(&mockAdapter{kindValue: "only-a"})
+	if got := b.Lookup("only-a"); got != nil {
+		t.Fatalf("fresh registry sees another instance's adapter: %v", got)
 	}
 }

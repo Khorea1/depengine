@@ -1723,18 +1723,14 @@ func TestExecutorBlocksStructuredBuildWithoutPermission(t *testing.T) {
 }
 
 func TestLookupAdapter(t *testing.T) {
-	// Save and restore global registry.
-	saved := adapters
-	adapters = map[string]Adapter{}
-	defer func() { adapters = saved }()
-
 	mock := &testMockAdapter{
 		kindValue:     "test-adapter",
 		availableFunc: func() bool { return true },
 	}
-	Register(mock)
 
+	// Per-instance registry: no global save/restore needed.
 	ex := New()
+	WithAdapters(mock)(ex)
 
 	// Look up a registered adapter.
 	got := ex.LookupAdapter("test-adapter")

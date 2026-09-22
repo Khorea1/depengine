@@ -73,10 +73,24 @@ flowchart TB
 | `internal/validate` | Structural + semantic + environmental validation |
 | `internal/sbom` | SBOM export (CycloneDX 1.5 / SPDX 2.3) |
 
+## Process-global shims
+
+Four singletons remain deliberately process-global rather than injected:
+
+| Shim | Why global is correct |
+|------|----------------------|
+| `exec.defaultRegistry` | Exactly one populated adapter set per process; adapters are stateless w.r.t. the registry. Per-instance registries exist (`Registry`, `WithAdapters`) for tests. |
+| `run.Default` (Elevator) | Elevation method selection is process-wide configuration (flag/env override). Isolated `Elevator` instances remain available. |
+| `ghrelease.Default` (Resolver) | “Once per process” `{latest}` caching avoids repeated GitHub API calls within a run. Isolated `Resolver` instances remain available. |
+| `log.Default` | There is one stderr per process. |
+
+New code that needs isolation constructs its own instance; the shims are
+the composition-root boundary, not tech debt. Finishing full injection
+everywhere is explicitly deferred (S.6 tail) — not a merge blocker.
+
 ## Installation flow
 
 ```mermaid
-flowchart LR
     A[For each tool\nin topological order] --> B[For each method\nby method preference]
     B --> C{when matches?}
     C -->|no| B

@@ -50,3 +50,45 @@ func TestGoReleaserRepositoryContract(t *testing.T) {
 		t.Error("GoReleaser release repository must be Khorea1/depengine")
 	}
 }
+
+func TestReleaseSigningContract(t *testing.T) {
+	releaser, err := os.ReadFile(".goreleaser.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := string(releaser)
+	for _, invariant := range []struct{ description, value string }{
+		{"distinct signature output", `"--output-signature=${signature}"`},
+		{"distinct certificate output", `"--output-certificate=${certificate}"`},
+		{"certificate filename declaration", `certificate: "${artifact}.pem"`},
+	} {
+		if !strings.Contains(cfg, invariant.value) {
+			t.Errorf("GoReleaser signing config is missing %s", invariant.description)
+		}
+	}
+	if strings.Contains(cfg, `"--output-certificate=${signature}"`) {
+		t.Error("GoReleaser certificate and signature must not share one output")
+	}
+
+	workflow, err := os.ReadFile(".github/workflows/release.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Cosign v3 removed --output-certificate/--output-signature; the split
+	// .sig/.pem format requires a v2 pin.
+	if !strings.Contains(string(workflow), "cosign-release: 'v2") {
+		t.Error("release workflow must pin cosign to v2 for split .sig/.pem signing")
+	}
+
+	security, err := os.ReadFile("docs/security.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs := string(security)
+	if strings.Contains(docs, "certificate-identity-regexp '.*'") {
+		t.Error("verification docs must not trust any OIDC identity")
+	}
+	if !strings.Contains(docs, `Khorea1/depengine/\.github/workflows/release\.yml@refs/tags/`) {
+		t.Error("verification docs must pin the release workflow identity")
+	}
+}
