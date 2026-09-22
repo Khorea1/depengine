@@ -458,22 +458,25 @@ func artifactPath(cloneDir, artifact string) (string, error) {
 
 // isSharedDir checks if a directory path is a common shared system directory.
 // We avoid deleting these directories completely during uninstallation.
+// Separators are folded to "/" after Clean so Unix-style manifests and
+// Windows-style paths evaluate identically on every platform (ToSlash
+// alone is a no-op for literal backslashes on Unix).
 func isSharedDir(path string) bool {
-	p := filepath.Clean(path)
+	p := strings.ReplaceAll(filepath.Clean(path), "\\", "/")
 	if p == "/" || p == "." {
 		return true
 	}
 	shared := []string{
 		"/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin",
 		"/opt", "/usr", "/usr/local", "/lib", "/usr/lib", "/usr/local/lib",
-		"C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)",
+		"C:/Windows", "C:/Program Files", "C:/Program Files (x86)",
 	}
 	for _, s := range shared {
 		if p == s {
 			return true
 		}
 	}
-	if strings.HasSuffix(p, "/bin") || strings.HasSuffix(p, "/sbin") || strings.HasSuffix(p, "\\bin") {
+	if strings.HasSuffix(p, "/bin") || strings.HasSuffix(p, "/sbin") {
 		return true
 	}
 	return false

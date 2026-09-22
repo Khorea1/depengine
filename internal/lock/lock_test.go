@@ -15,7 +15,7 @@ import (
 
 func TestDefaultPath(t *testing.T) {
 	got := DefaultPath("/home/user/dotfiles/schema.toml")
-	want := "/home/user/dotfiles/depengine.lock"
+	want := filepath.Join("/home/user/dotfiles", "depengine.lock")
 	if got != want {
 		t.Fatalf("DefaultPath = %q, want %q", got, want)
 	}
@@ -33,7 +33,7 @@ func TestDefaultPath(t *testing.T) {
 	}
 
 	got4 := DefaultPath("/tmp/foo.yaml")
-	want4 := "/tmp/depengine.lock"
+	want4 := filepath.Join("/tmp", "depengine.lock")
 	if got4 != want4 {
 		t.Fatalf("DefaultPath(/tmp/foo.yaml) = %q, want %q", got4, want4)
 	}

@@ -10,6 +10,7 @@ import (
 	osexec "os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -174,6 +175,11 @@ func writeTestSnapshot(t *testing.T, stateHome string, tools map[string]state.To
 
 func fakeBinary(t *testing.T, binDir, name string) string {
 	t.Helper()
+	// `go install` produces name.exe on Windows and the adapter removes
+	// exactly that; fixtures must carry the suffix.
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
 	path := filepath.Join(binDir, name)
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0755); err != nil {
 		t.Fatal(err)

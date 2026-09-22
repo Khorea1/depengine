@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/exectest"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -16,7 +17,7 @@ func TestSDKManCheckExactVersion(t *testing.T) {
 		t.Skip("SDKMAN layout is Unix-specific")
 	}
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	exectest.SetHome(t, home)
 
 	versionDir := filepath.Join(home, ".sdkman", "candidates", "java", "21.0.4-tem")
 	if err := os.MkdirAll(versionDir, 0o755); err != nil {
@@ -38,7 +39,7 @@ func TestSDKManCheckExactVersionRejectsDifferentInstalledVersion(t *testing.T) {
 		t.Skip("SDKMAN layout is Unix-specific")
 	}
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	exectest.SetHome(t, home)
 
 	otherVersionDir := filepath.Join(home, ".sdkman", "candidates", "java", "17.0.12-tem")
 	if err := os.MkdirAll(otherVersionDir, 0o755); err != nil {
@@ -64,7 +65,7 @@ func TestSDKManCheckWithoutVersionKeepsCurrentSemantics(t *testing.T) {
 		t.Skip("SDKMAN layout is Unix-specific")
 	}
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	exectest.SetHome(t, home)
 
 	versionDir := filepath.Join(home, ".sdkman", "candidates", "java", "17.0.12-tem")
 	if err := os.MkdirAll(versionDir, 0o755); err != nil {
@@ -108,7 +109,7 @@ func TestSDKManInstalledVersionExact(t *testing.T) {
 		t.Skip("SDKMAN layout is Unix-specific")
 	}
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	exectest.SetHome(t, home)
 	version := "21.0.4-tem"
 	if err := os.MkdirAll(filepath.Join(home, ".sdkman", "candidates", "java", version), 0o755); err != nil {
 		t.Fatal(err)
@@ -127,7 +128,7 @@ func TestSDKManInstalledVersionCurrentSymlink(t *testing.T) {
 		t.Skip("SDKMAN layout is Unix-specific")
 	}
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	exectest.SetHome(t, home)
 	version := "17.0.12-tem"
 	versionDir := filepath.Join(home, ".sdkman", "candidates", "java", version)
 	if err := os.MkdirAll(versionDir, 0o755); err != nil {

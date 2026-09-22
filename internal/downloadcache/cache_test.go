@@ -3,6 +3,7 @@ package downloadcache
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -28,7 +29,7 @@ func TestCacheDirRespectsXDG(t *testing.T) {
 	os.Setenv("XDG_CACHE_HOME", "/tmp/xdg-cache")
 	defer os.Unsetenv("XDG_CACHE_HOME")
 	dir := CacheDir()
-	want := "/tmp/xdg-cache/depengine/downloads"
+	want := filepath.Join("/tmp/xdg-cache", "depengine", "downloads")
 	if dir != want {
 		t.Fatalf("CacheDir = %q, want %q", dir, want)
 	}
@@ -357,7 +358,7 @@ func TestClearIgnoresStagingFiles(t *testing.T) {
 }
 
 func TestCopyFilePreservesPermissionsWhenDestinationExists(t *testing.T) {
-	if os.Getenv("GOOS") == "windows" {
+	if runtime.GOOS == "windows" {
 		t.Skip("POSIX permission bits are not meaningful on Windows")
 	}
 	dir := t.TempDir()
@@ -383,7 +384,7 @@ func TestCopyFilePreservesPermissionsWhenDestinationExists(t *testing.T) {
 }
 
 func TestCopyFileAtomicPreservesPermissions(t *testing.T) {
-	if os.Getenv("GOOS") == "windows" {
+	if runtime.GOOS == "windows" {
 		t.Skip("POSIX permission bits are not meaningful on Windows")
 	}
 	dir := t.TempDir()
