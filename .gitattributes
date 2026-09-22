@@ -1,0 +1,4 @@
+# Force LF working trees on every platform. Golden files, generated docs
+# and contract fixtures are byte-compared by tests; a CRLF checkout on
+# Windows would fail them spuriously.
+* text=auto eol=lf
