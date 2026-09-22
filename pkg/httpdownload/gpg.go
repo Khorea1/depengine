@@ -5,9 +5,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/Khorea1/depengine/pkg/artifact"
 	"github.com/Khorea1/depengine/pkg/run"
@@ -16,6 +18,41 @@ import (
 // DefaultKeyServer is the GPG keyserver used to receive signing keys by fingerprint.
 // Override this for air-gapped environments or custom keyservers.
 var DefaultKeyServer = "keys.openpgp.org"
+
+// msysGPG reports whether the gpg on PATH is an MSYS2 build (notably the one
+// bundled with Git for Windows), which interprets paths with POSIX semantics:
+// a native C:\... path is treated as relative and joined onto gpg's cwd.
+// cygpath ships with the same toolchain, so its presence is the probe; a
+// native Windows gpg setup (e.g. Gpg4win alone) has no cygpath and keeps
+// native paths.
+var msysGPG = sync.OnceValue(func() bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	_, err := exec.LookPath("cygpath")
+	return err == nil
+})
+
+// toMSYSPath converts a native Windows path to the MSYS spelling
+// (C:\... → /c/...). Pure function so it is unit-testable on any platform.
+func toMSYSPath(p string) string {
+	if len(p) > 1 && p[1] == ':' {
+		return "/" + strings.ToLower(string(p[0])) + strings.ReplaceAll(p[2:], "\\", "/")
+	}
+	return strings.ReplaceAll(p, "\\", "/")
+}
+
+// gpgPath converts p to the spelling the gpg binary understands: native
+// paths pass through everywhere except on Windows under an MSYS2 gpg, where
+// every explicitly passed path (homedirs, key/checksum/signature files)
+// must use the MSYS form. Callers keep the native path for their own
+// filesystem operations — only the argv handoff is converted.
+func gpgPath(p string) string {
+	if !msysGPG() {
+		return p
+	}
+	return toMSYSPath(p)
+}
 
 // GPGVerify verifies a GPG detached signature on a checksum file.
 // Returns nil if verification succeeds. Returns error if gpg is not
@@ -40,7 +77,7 @@ func GPGVerify(ctx context.Context, rn run.Runner, checksumFile, signatureFile, 
 	}
 
 	// Backward-compatible path: verify using the shared default keyring.
-	res := rn.Run(ctx, "gpg", "--verify", "--batch", signatureFile, checksumFile)
+	res := rn.Run(ctx, "gpg", "--verify", "--batch", gpgPath(signatureFile), gpgPath(checksumFile))
 	if res.Err != nil || res.ExitCode != 0 {
 		return fmt.Errorf("gpg: signature verification failed: %s", strings.TrimSpace(string(res.Stderr)))
 	}
@@ -68,7 +105,7 @@ func gpgVerifyWithIdentityCheck(ctx context.Context, rn run.Runner, checksumFile
 	}
 
 	// Run verification with status output for fingerprint extraction.
-	res := rn.Run(ctx, "gpg", "--homedir", homedir, "--verify", "--batch", "--status-fd=1", signatureFile, checksumFile)
+	res := rn.Run(ctx, "gpg", "--homedir", gpgPath(homedir), "--verify", "--batch", "--status-fd=1", gpgPath(signatureFile), gpgPath(checksumFile))
 	if err := run.CheckResult(res, "gpg: signature verification failed"); err != nil {
 		return err
 	}
@@ -144,7 +181,7 @@ func importSigningKeyFromURL(ctx context.Context, rn run.Runner, homedir, signin
 	}
 
 	// Import into the isolated homedir.
-	res := rn.Run(ctx, "gpg", "--homedir", homedir, "--import", "--batch", keyFile)
+	res := rn.Run(ctx, "gpg", "--homedir", gpgPath(homedir), "--import", "--batch", gpgPath(keyFile))
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", fmt.Errorf("gpg: importing key: %s", strings.TrimSpace(string(res.Stderr)))
 	}
@@ -155,7 +192,7 @@ func importSigningKeyFromURL(ctx context.Context, rn run.Runner, homedir, signin
 // importSigningKeyByFingerprint imports a key from a keyserver by fingerprint
 // and extracts the fingerprint from the imported keyring as a sanity check.
 func importSigningKeyByFingerprint(ctx context.Context, rn run.Runner, homedir, signingKey string) (string, error) {
-	res := rn.Run(ctx, "gpg", "--homedir", homedir, "--batch", "--keyserver", DefaultKeyServer, "--recv-keys", signingKey)
+	res := rn.Run(ctx, "gpg", "--homedir", gpgPath(homedir), "--batch", "--keyserver", DefaultKeyServer, "--recv-keys", signingKey)
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", fmt.Errorf("gpg: failed to import key %s: %v\n%s", signingKey, res.Err, strings.TrimSpace(string(res.Stderr)))
 	}
@@ -172,7 +209,7 @@ func importSigningKeyByFingerprint(ctx context.Context, rn run.Runner, homedir, 
 // extractFingerprintFromKeyFile reads the primary key fingerprint from a key
 // file using gpg --show-key --with-colons.
 func extractFingerprintFromKeyFile(ctx context.Context, rn run.Runner, keyFile string) (string, error) {
-	res := rn.Run(ctx, "gpg", "--show-key", "--with-colons", keyFile)
+	res := rn.Run(ctx, "gpg", "--show-key", "--with-colons", gpgPath(keyFile))
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", fmt.Errorf("gpg: reading key file: %s", strings.TrimSpace(string(res.Stderr)))
 	}
@@ -186,7 +223,7 @@ func extractFingerprintFromKeyFile(ctx context.Context, rn run.Runner, keyFile s
 // extractFingerprintFromKeyring reads the primary key fingerprint from the
 // isolated keyring using gpg --list-public-keys --with-colons --fingerprint.
 func extractFingerprintFromKeyring(ctx context.Context, rn run.Runner, homedir, keyID string) (string, error) {
-	res := rn.Run(ctx, "gpg", "--homedir", homedir, "--with-colons", "--list-public-keys", "--fingerprint", keyID)
+	res := rn.Run(ctx, "gpg", "--homedir", gpgPath(homedir), "--with-colons", "--list-public-keys", "--fingerprint", keyID)
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", fmt.Errorf("gpg: listing keys: %s", strings.TrimSpace(string(res.Stderr)))
 	}
