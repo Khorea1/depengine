@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/Khorea1/depengine/pkg/artifact"
@@ -118,6 +119,10 @@ func importSigningKeyFromURL(ctx context.Context, rn run.Runner, homedir, signin
 	if strings.HasPrefix(signingKey, "file://") {
 		// Handle file:// URLs directly (os.ReadFile).
 		localPath := strings.TrimPrefix(signingKey, "file://")
+		if runtime.GOOS == "windows" && len(localPath) > 2 && localPath[0] == '/' && localPath[2] == ':' {
+			// file:///C:/... decodes to a drive-letter path.
+			localPath = localPath[1:]
+		}
 		data, err := os.ReadFile(localPath)
 		if err != nil {
 			return "", fmt.Errorf("gpg: reading key file: %w", err)

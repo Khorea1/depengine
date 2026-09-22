@@ -302,7 +302,14 @@ func TestGPGVerifyWrongSigner(t *testing.T) {
 	//                 verifies B's sig using B's key — passes crypto check (exit 0),
 	//                 then identity comparison fails: expected A, got B.
 	rn := &run.OSExecRunner{}
-	err = GPGVerify(context.Background(), rn, checksumFile, sigFile, "file://"+combinedKeyFile)
+	// Build a well-formed file:// URL: the native path concatenation
+	// ("file://" + backslash path) is malformed on Windows; the canonical
+	// file:/// form (leading slash, forward separators) parses on both.
+	keyURLPath := filepath.ToSlash(combinedKeyFile)
+	if !strings.HasPrefix(keyURLPath, "/") {
+		keyURLPath = "/" + keyURLPath
+	}
+	err = GPGVerify(context.Background(), rn, checksumFile, sigFile, "file://"+keyURLPath)
 	if err == nil {
 		t.Fatal("GPGVerify should fail: signed by key B, expected key A")
 	}
