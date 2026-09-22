@@ -224,6 +224,14 @@ func GatherFacts(r run.Runner) (*Facts, error) {
 		// are expected to reject execution.
 		return gatherFactsGo(nil), nil
 	}
+	// detect_os.sh is a POSIX shell script: on Windows it cannot execute
+	// (the OS rejects fork/exec of a .sh file), so skip every script
+	// candidate and use the Go runtime fallback directly. An explicit
+	// DEPENGINE_DETECT_SCRIPT override is still honored — the operator may
+	// point it at a Windows-runnable detector.
+	if runtime.GOOS == "windows" && os.Getenv("DEPENGINE_DETECT_SCRIPT") == "" {
+		return gatherFactsGo(r), nil
+	}
 	script, clean, err := locateDetectScript(r)
 	if err != nil {
 		log.Default.Warn("OS detection script not available, using Go runtime fallback", "error", err)
