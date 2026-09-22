@@ -165,18 +165,6 @@ func (a *CondaAdapter) queryPackage(ctx context.Context, rn run.Runner, tool *co
 	return nil, nil
 }
 
-func condaEnvironmentTarget(mc *config.MethodCandidate) *plan.EnvironmentTarget {
-	if mc != nil {
-		if env, _ := mc.Config["environment"].(string); env != "" {
-			return &plan.EnvironmentTarget{Kind: plan.EnvironmentNamed, Value: env}
-		}
-		if prefix, _ := mc.Config["prefix"].(string); prefix != "" {
-			return &plan.EnvironmentTarget{Kind: plan.EnvironmentPrefix, Value: config.ExpandHomeDir(prefix)}
-		}
-	}
-	return &plan.EnvironmentTarget{Kind: plan.EnvironmentNamed, Value: "base"}
-}
-
 func (a *CondaAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
 	if intent == nil {
 		return nil, errors.New("conda: nil plan intent")
