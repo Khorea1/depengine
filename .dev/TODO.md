@@ -35,9 +35,9 @@
 
 ## P1 — AdapterV2 follow-up
 
-- [ ] Remove legacy adapter dispatch and make the registry/executor accept
-  AdapterV2 directly; keep the legacy shim only if a supported compatibility
-  boundary still requires it.
+- [ ] Remove the legacy `Adapter` contract embedded in `AdapterV2` and delete
+  `LegacyAdapterV2` once remaining legacy primitives have been absorbed into
+  the plan-aware contract.
 - [ ] Finish shared resolved-plan and desired-state observation semantics
   across install, upgrade, status, remove, validation, explanation, and
   dry-run.
