@@ -137,10 +137,8 @@ func (a *SDKManAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *confi
 		return nil, errors.New("sdkman: no package name")
 	}
 	resolved := intent.Clone()
-	resolved.Identity.Package = pkg[0]
-	if version := sdkmanVersion(mc); version != "" {
-		resolved.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: version}
-		resolved.Identity.Version = version
+	if resolved.Identity.Package == "" {
+		return nil, errors.New("sdkman: no package name in plan intent")
 	}
 	return &resolved, nil
 }

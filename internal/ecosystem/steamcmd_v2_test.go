@@ -39,6 +39,7 @@ func TestSteamCMDAdapterV2ResolvesAndInstallsResolvedAppID(t *testing.T) {
 	tool := &config.Tool{Name: "cs2"}
 	mc := &config.MethodCandidate{Kind: "steamcmd", Config: map[string]any{"pkg": "730"}}
 	intent := plan.New(tool.Name, mc.Kind, true)
+	intent.Identity.Package = "730"
 
 	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
 	if err != nil {

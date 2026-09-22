@@ -28,6 +28,12 @@ func TestCondaAdapterV2ResolvedPlanIsAuthoritative(t *testing.T) {
 	mc.Config["environment"] = "data"
 	mc.Config["channels"] = []string{"conda-forge"}
 	intent := plan.New(tool.Name, adapter.Kind(), true)
+	intent.Identity.Package = "numpy"
+	intent.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: "2.1.0"}
+	intent.Identity.Version = "2.1.0"
+	intent.Identity.Revision = "py312_0"
+	intent.Identity.Environment = &plan.EnvironmentTarget{Kind: plan.EnvironmentNamed, Value: "data"}
+	intent.Identity.Source = "conda-forge"
 	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
 	if err != nil {
 		t.Fatal(err)

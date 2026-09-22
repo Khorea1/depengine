@@ -26,6 +26,7 @@ func TestYarnBerryAdapterV2Conformance(t *testing.T) {
 	}
 
 	intent := plan.New(tool.Name, mc.Kind, true)
+	intent.Identity.Package = "eslint"
 	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
 	if err != nil {
 		t.Fatalf("ResolvePlan() error = %v", err)

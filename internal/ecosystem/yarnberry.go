@@ -91,8 +91,9 @@ func (a *YarnBerryAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *co
 		return nil, errors.New("yarn-berry: no package name")
 	}
 	resolved := intent.Clone()
-	resolved.Identity.Package = pkg[0]
-	resolved.Removal.Supported = false
+	if resolved.Identity.Package == "" {
+		return nil, errors.New("yarn-berry: no package name in plan intent")
+	}
 	return &resolved, nil
 }
 
