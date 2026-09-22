@@ -45,7 +45,7 @@ are not the whole story:
 - Keyless cosign signatures (`.sig` + `.pem`) over the checksum file,
   issued via Fulcio/Rekor through GitHub OIDC. No long-lived keys exist
   to steal. Verify with
-  `cosign verify-blob --certificate <file>.pem --signature <file>.sig --certificate-identity-regexp '.*' --certificate-oidc-issuer https://token.actions.githubusercontent.com <checksums>`.
+  `cosign verify-blob --certificate <file>.pem --signature <file>.sig --certificate-identity-regexp '^https://github.com/Khorea1/depengine/\.github/workflows/release\.yml@refs/tags/v.+$' --certificate-oidc-issuer https://token.actions.githubusercontent.com <checksums>`.
 - GitHub build provenance attestation over the checksum file, binding the
   artifacts to the exact workflow run that produced them
   (`gh attestation verify <checksums> --repo Khorea1/depengine`).

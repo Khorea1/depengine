@@ -14,6 +14,8 @@ schema.toml
 tests/**/depengine.lock
 # Build output
 dist/
+# Generated at release time by goreleaser before-hooks.
+scripts/depengine-completion.*
 
 # Environment
 .env
