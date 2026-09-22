@@ -9,8 +9,10 @@ import (
 	"github.com/Khorea1/depengine/internal/state"
 )
 
-// exitCodeOf unwraps an ExitError to its code, or -1 when err carries none.
-func exitCodeOf(t *testing.T, err error) int {
+// requireExitCode unwraps an ExitError to its code, failing the test when
+// err carries none. (Named to avoid colliding with undo_phases_test.go's
+// non-fatal exitCodeOf helper in the same package.)
+func requireExitCode(t *testing.T, err error) int {
 	t.Helper()
 	var ee *ExitError
 	if !errors.As(err, &ee) {
@@ -47,7 +49,7 @@ func ownedPrerequisite(t *testing.T, helper string, dependents ...string) plan.O
 
 func TestValidateRemoveFlagsConflict(t *testing.T) {
 	all, only := true, "tool"
-	if err := validateRemoveFlags(&all, &only); exitCodeOf(t, err) != 2 {
+	if err := validateRemoveFlags(&all, &only); requireExitCode(t, err) != 2 {
 		t.Fatalf("expected exit 2, got %v", err)
 	}
 }
