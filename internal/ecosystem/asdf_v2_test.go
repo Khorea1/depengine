@@ -18,6 +18,7 @@ func TestAsdfAdapterV2ResolvesAndInstallsAsdf(t *testing.T) {
 	intent.Identity.Package = "nodejs"
 	intent.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: "20.1.0"}
 	intent.Identity.Version = "20.1.0"
+	intent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
 	a := NewAsdfAdapter()
 	resolved, err := a.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
 	if err != nil || resolved.Identity.Package != "nodejs" || resolved.Identity.Version != "20.1.0" {
@@ -40,6 +41,7 @@ func TestAsdfAdapterV2InstallsMise(t *testing.T) {
 	intent.Identity.Package = "nodejs"
 	intent.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: "20.1.0"}
 	intent.Identity.Version = "20.1.0"
+	intent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
 	a := NewAsdfAdapter()
 	resolved, err := a.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
 	if err != nil {

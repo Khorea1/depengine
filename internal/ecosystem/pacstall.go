@@ -94,8 +94,8 @@ func (a *PacstallAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ 
 	if resolved == nil {
 		return errors.New("pacstall: nil resolved plan")
 	}
-	if len(resolved.Operations) > 0 {
-		return errors.New("pacstall: resolved operations are unsupported")
+	if err := validateResolvedInstallOperation("pacstall", resolved); err != nil {
+		return err
 	}
 	if resolved.Identity.Package == "" {
 		return errors.New("pacstall: no package name in resolved plan")

@@ -166,8 +166,8 @@ func (a *SDKManAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *c
 	if resolved == nil {
 		return errors.New("sdkman: nil resolved plan")
 	}
-	if len(resolved.Operations) > 0 {
-		return errors.New("sdkman: resolved operations are unsupported")
+	if err := validateResolvedInstallOperation("sdkman", resolved); err != nil {
+		return err
 	}
 	return a.install(ctx, rn, resolved.Identity.Package, resolved.Identity.Version)
 }

@@ -3,6 +3,7 @@ package ecosystem
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -16,7 +17,7 @@ func TestAdapterV2ResolversPreservePlannerIntent(t *testing.T) {
 		name    string
 		tool    *config.Tool
 		method  *config.MethodCandidate
-		adapter planResolverAdapter
+		adapter execResolvedInstaller
 	}{
 		{"asdf default version", &config.Tool{Name: "node"}, &config.MethodCandidate{Kind: "asdf", Config: map[string]any{"pkg": "nodejs"}}, NewAsdfAdapter()},
 		{"conda default environment", &config.Tool{Name: "numpy"}, &config.MethodCandidate{Kind: "conda", Config: map[string]any{"pkg": "numpy"}}, NewCondaAdapter()},
@@ -38,6 +39,56 @@ func TestAdapterV2ResolversPreservePlannerIntent(t *testing.T) {
 			if err := plan.ValidateResolution(intent, *resolved); err != nil {
 				t.Fatalf("ValidateResolution() error = %v; resolved = %#v", err, resolved)
 			}
+			runner := &run.FakeRunner{ExitCode: 0, LookPaths: map[string]bool{"asdf": true}}
+			if err := tt.adapter.InstallResolved(context.Background(), runner, tt.tool, tt.method, resolved); err != nil {
+				t.Fatalf("InstallResolved() rejected planner operation: %v", err)
+			}
+		})
+	}
+}
+
+func TestAdapterV2InstallResolvedRejectsNonCanonicalOperations(t *testing.T) {
+	tests := []struct {
+		name    string
+		adapter execResolvedInstaller
+		tool    *config.Tool
+		method  *config.MethodCandidate
+	}{
+		{"asdf", NewAsdfAdapter(), &config.Tool{Name: "node"}, &config.MethodCandidate{Kind: "asdf", Config: map[string]any{"pkg": "nodejs"}}},
+		{"conda", NewCondaAdapter(), &config.Tool{Name: "numpy"}, &config.MethodCandidate{Kind: "conda", Config: map[string]any{"pkg": "numpy"}}},
+		{"sdkman", NewSDKManAdapter(), &config.Tool{Name: "java"}, &config.MethodCandidate{Kind: "sdkman", Config: map[string]any{"pkg": "java"}}},
+		{"yarn-berry", NewYarnBerryAdapter(), &config.Tool{Name: "eslint"}, &config.MethodCandidate{Kind: "yarn-berry", Config: map[string]any{"pkg": "eslint"}}},
+		{"pacstall", NewPacstallAdapter(), &config.Tool{Name: "foo"}, &config.MethodCandidate{Kind: "pacstall", Config: map[string]any{"pkg": "foo-pkg"}}},
+		{"steamcmd", NewSteamCMDAdapter(), &config.Tool{Name: "cs2"}, &config.MethodCandidate{Kind: "steamcmd", Config: map[string]any{"pkg": "730"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			intent, err := planner.BuildCandidateIntent(tt.tool, tt.method)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cases := []struct {
+				name       string
+				operations []plan.Operation
+			}{
+				{"extra", append(append([]plan.Operation(nil), intent.Operations...), plan.Operation{Kind: "arbitrary", Effect: plan.EffectMutation})},
+				{"arbitrary", []plan.Operation{{Kind: "install", Effect: plan.EffectMutation, Command: []string{"sh"}, ArbitraryCode: true}}},
+				{"command", []plan.Operation{{Kind: "install", Effect: plan.EffectMutation, Command: []string{"ignored"}}}},
+				{"non-install", []plan.Operation{{Kind: "remove", Effect: plan.EffectMutation}}},
+				{"wrong-effect", []plan.Operation{{Kind: "install", Effect: plan.EffectReadOnly}}},
+				{"description", []plan.Operation{{Kind: "install", Description: "forged", Effect: plan.EffectMutation}}},
+			}
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					resolved := intent.Clone()
+					resolved.Operations = tc.operations
+					err := tt.adapter.InstallResolved(context.Background(), &run.FakeRunner{}, tt.tool, tt.method, &resolved)
+					want := tt.name + ": resolved operations are unsupported"
+					if err == nil || !strings.Contains(err.Error(), want) {
+						t.Fatalf("InstallResolved() error = %v, want %q", err, want)
+					}
+				})
+			}
 		})
 	}
 }
@@ -47,6 +98,7 @@ func TestCondaInstallResolvedUsesDefaultEnvironmentWithoutRewritingPlan(t *testi
 	method := &config.MethodCandidate{Kind: "conda", Config: map[string]any{"pkg": "numpy"}}
 	intent := plan.New(tool.Name, method.Kind, true)
 	intent.Identity.Package = "numpy"
+	intent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
 	var err error
 	resolved, err := NewCondaAdapter().ResolvePlan(context.Background(), &run.FakeRunner{}, tool, method, &intent)
 	if err != nil {
@@ -65,6 +117,7 @@ func TestCondaInstallResolvedUsesDefaultEnvironmentWithoutRewritingPlan(t *testi
 	}
 }
 
-type planResolverAdapter interface {
+type execResolvedInstaller interface {
 	ResolvePlan(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error)
+	InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error
 }

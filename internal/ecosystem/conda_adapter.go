@@ -228,8 +228,8 @@ func (a *CondaAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool 
 	if resolved == nil {
 		return errors.New("conda: nil resolved plan")
 	}
-	if len(resolved.Operations) > 0 {
-		return errors.New("conda: resolved operations are unsupported")
+	if err := validateResolvedInstallOperation("conda", resolved); err != nil {
+		return err
 	}
 	pkg := resolved.Identity.Package
 	if pkg == "" {
