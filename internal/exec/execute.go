@@ -461,15 +461,16 @@ func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResu
 // tryMethods iterates through all methods of a tool, trying each in order.
 // It modifies result in place — on success the result is terminal; on
 // exhaustion it sets the final status from the attempts that were made.
+//
+// Each candidate flows through the attempt pipeline in order: static
+// gating, adapter availability, concrete-plan resolution, already-installed
+// check, source preparation with availability gates, then commit+install.
+// See candidateAttempt and the phase methods in attempt.go.
 func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, result *ToolResult, toolStart time.Time) {
 	var lastMethodKind string
 	orderedMethods := config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
 	for _, method := range orderedMethods {
 		lastMethodKind = method.Kind
-		displayKind := method.Kind
-		if method.Label != "" {
-			displayKind = method.Label
-		}
 		select {
 		case <-toolCtx.Done():
 			result.Status = StatusFailed
@@ -480,347 +481,42 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		default:
 		}
 
-		attempt := MethodAttempt{Kind: method.Kind, Label: method.Label}
-		planIntent, mismatch := candidatePlanIntent(tool, method)
-		planIntent = ex.hostResolvedPlanIntent(method, planIntent)
-		attempt.PlanIntent = planIntent
-
-		if mismatch != "" {
-			attempt.Status = "skip_capability"
-			attempt.Error = mismatch
-			result.Methods = append(result.Methods, attempt)
-			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_capability", "reason", mismatch)
-			continue
-		}
-
-		if method.When != nil && !method.When.Match(ex.facts) {
-			attempt.Status = "skip_when"
-			result.Methods = append(result.Methods, attempt)
-			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_when", "requires", fmt.Sprintf("%v", method.When))
-			continue
-		}
-
-		adapter := ex.LookupAdapter(method.Kind)
-		if adapter == nil {
-			attempt.Status = "skip_unavailable"
-			attempt.Error = fmt.Sprintf("no adapter for %q", displayKind)
-			result.Methods = append(result.Methods, attempt)
-			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_no_adapter")
-			continue
-		}
-		if !adapter.Available(toolCtx, ex.probeRunner(tool.Name, displayKind)) {
-			attempt.Status = "skip_unavailable"
-			attempt.Error = fmt.Sprintf("adapter %q not available", displayKind)
-			result.Methods = append(result.Methods, attempt)
-			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_unavailable")
-			continue
-		}
-		resolvedPlan := planIntent
-		resolvedPlan, resolveErr := ex.resolveCandidatePlan(toolCtx, tool, method, adapter, planIntent, displayKind)
-		if resolveErr != nil {
-			attempt.Status = "failed"
-			attempt.Error = resolveErr.Error()
-			result.Methods = append(result.Methods, attempt)
-			continue
-		}
-		attempt.PlanIntent = resolvedPlan
-
-		// Fail closed before any mutation: a resolving adapter must execute
-		// the exact plan produced above. Silent fallback to Install() would
-		// resolve a second time and reinstall the A != B divergence.
-		// Dry-run never mutates, so it needs no installer.
-		var resolvedInstaller ResolvedInstaller
-		_, isResolver := adapter.(PlanResolver)
-		if isResolver && !ex.dryRun {
-			var ok bool
-			resolvedInstaller, ok = adapter.(ResolvedInstaller)
-			if !ok {
-				attempt.Status = "failed"
-				attempt.Error = fmt.Sprintf("%s: adapter resolves plans but does not implement ResolvedInstaller", displayKind)
-				result.Methods = append(result.Methods, attempt)
-				continue
-			}
-		}
-
-		if checker, ok := adapter.(HostCompatibilityChecker); ok {
-			if compatibilityErr := checker.CheckHostCompatibility(tool, method, resolvedPlan, ex.facts, ex.clan); compatibilityErr != nil {
-				attempt.Status = "skip_unavailable"
-				attempt.Error = compatibilityErr.Error()
-				result.Methods = append(result.Methods, attempt)
-				ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_incompatible_host", "reason", compatibilityErr.Error())
-				continue
-			}
-		}
-
-		if adapter.Check(toolCtx, ex.probeRunner(tool.Name, displayKind), tool, method) {
-			result.Status = StatusAlready
-			result.Method = displayKind
-			result.MethodKind = method.Kind
-			result.Config = method.Config
-			result.PlanIntent = resolvedPlan
-			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "already_installed")
-			result.Duration = time.Since(toolStart).String()
+		if ex.attemptMethod(toolCtx, tool, method, result, toolStart) {
 			return
 		}
-
-		// Source presence is a read-only part of candidate selection. A package
-		// backed by a source that is currently absent cannot be judged by the
-		// manager's current repository index: "not found" may be exactly what the
-		// declared source is meant to change. Probe source presence first, then
-		// either validate availability immediately (all sources already present)
-		// or prepare the selected candidate transactionally and revalidate before
-		// installing any lazy prerequisites or the target itself.
-		sourceProbe, err := ex.probeCandidateSources(toolCtx, method.Sources)
-		if err != nil {
-			attempt.Status = "failed"
-			attempt.Error = err.Error()
-			result.Methods = append(result.Methods, attempt)
-			continue
-		}
-		availabilityDeferred := len(sourceProbe.missing) > 0
-		if !availabilityDeferred && !checkAvailable(toolCtx, ex.probeRunner(tool.Name, displayKind), adapter, tool, method) {
-			attempt.Status = "skip_unavailable"
-			attempt.Error = fmt.Sprintf("%s: package not found in repo/index", displayKind)
-			result.Methods = append(result.Methods, attempt)
-			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_not_in_repo")
-			continue
-		}
-
-		// The WAL transaction key identifies the stable candidate intent, not a
-		// mutable resolved release. Persisting the resolved plan here would
-		// break recovery identity across runs.
-		preparedSources, err := ex.prepareCandidateSources(toolCtx, tool.Name, method.Kind, planIntent, sourceProbe)
-		if err != nil {
-			attempt.Status = "failed"
-			attempt.Error = err.Error()
-			result.Methods = append(result.Methods, attempt)
-			if preparationBlocked(err) {
-				result.Status = StatusFailed
-				result.Error = err.Error()
-				result.Method = displayKind
-				result.MethodKind = method.Kind
-				result.Duration = time.Since(toolStart).String()
-				return
-			}
-			continue
-		}
-
-		// A missing host source makes pre-prepare repository availability
-		// inconclusive. Once the source exists, re-run the read-only repository
-		// check before any method.requires installation. If the target is still
-		// unavailable, compensate the source transaction and allow fallback. A
-		// dry-run cannot materialize the source, so it intentionally reports the
-		// selected prepare+commit plan without pretending the old index is
-		// authoritative for the post-prepare state.
-		if availabilityDeferred && !ex.dryRun && !checkAvailable(toolCtx, ex.probeRunner(tool.Name, displayKind), adapter, tool, method) {
-			if rollbackErr := preparedSources.rollback(toolCtx, ex); rollbackErr != nil {
-				detail := fmt.Sprintf("%s: package not found after source preparation; source rollback failed: %v", displayKind, rollbackErr)
-				attempt.Status = "failed"
-				attempt.Error = detail
-				result.Methods = append(result.Methods, attempt)
-				result.Status = StatusFailed
-				result.Error = detail
-				result.Method = displayKind
-				result.MethodKind = method.Kind
-				result.Duration = time.Since(toolStart).String()
-				return
-			}
-			attempt.Status = "skip_unavailable"
-			attempt.Error = fmt.Sprintf("%s: package not found in repo/index after source preparation", displayKind)
-			result.Methods = append(result.Methods, attempt)
-			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_not_in_repo_after_prepare")
-			continue
-		}
-
-		// Lazy prerequisites are mutations too. Defer them until the selected
-		// candidate has survived every availability gate that can be answered
-		// before the target install.
-		prerequisiteUses, err := ex.ensureMethodDependencies(toolCtx, tool, method)
-		if err != nil {
-			rollbackErr := preparedSources.rollback(toolCtx, ex)
-			detail := err.Error()
-			if rollbackErr != nil {
-				detail = fmt.Sprintf("%s; source rollback failed: %v", detail, rollbackErr)
-			}
-			attempt.Status = "failed"
-			attempt.Error = detail
-			result.Methods = append(result.Methods, attempt)
-			if rollbackErr != nil {
-				result.Status = StatusFailed
-				result.Error = detail
-				result.Method = displayKind
-				result.MethodKind = method.Kind
-				result.Duration = time.Since(toolStart).String()
-				return
-			}
-			continue
-		}
-		resourceUses := append([]plan.ResourceUse(nil), preparedSources.resourceUses...)
-		resourceUses = append(resourceUses, prerequisiteUses...)
-
-		// Preparation is projected into the same concrete plan in both modes:
-		// dry-run PlanIntent == plan that would be executed,
-		// real PlanIntent == plan that was executed.
-		reportedPlan := resolvedPlan
-		if reportedPlan != nil && preparedSources.preparationPlan != nil {
-			projected := *reportedPlan
-			projected.Preparation = preparedSources.preparationPlan
-			reportedPlan = &projected
-		}
-		attempt.PlanIntent = reportedPlan
-
-		if ex.dryRun {
-			dryRunIntent := reportedPlan
-			result.Status = StatusWouldInstall
-			result.Method = displayKind
-			result.MethodKind = method.Kind
-			result.PlanIntent = dryRunIntent
-			attempt.PlanIntent = dryRunIntent
-			attempt.Status = "success"
-			result.Methods = append(result.Methods, attempt)
-			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "would_install")
-			if len(tool.PostInstall) > 0 {
-				postCtx, postCancel := context.WithTimeout(toolCtx, ex.methodTimeout)
-				_ = ex.runPostinstall(postCtx, tool)
-				postCancel()
-			}
-			result.Duration = time.Since(toolStart).String()
-			return
-		}
-
-		ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "installing")
-		runner := ex.mutationRunner(tool.Name, displayKind)
-
-		// Persist the commit boundary before the adapter can mutate the target. If
-		// the install process dies after this point, recovery must reconcile the
-		// target instead of assuming candidate preparation is safe to undo.
-		if err := preparedSources.planCommit(); err != nil {
-			rollbackErr := preparedSources.rollback(toolCtx, ex)
-			detail := err.Error()
-			if rollbackErr != nil {
-				detail = fmt.Sprintf("%s; source rollback failed: %v", detail, rollbackErr)
-			}
-			attempt.Status = "failed"
-			attempt.Error = detail
-			result.Methods = append(result.Methods, attempt)
-			result.Status = StatusFailed
-			result.Error = detail
-			result.Method = displayKind
-			result.MethodKind = method.Kind
-			result.Duration = time.Since(toolStart).String()
-			return
-		}
-
-		// method-timeout applies to each individual attempt. Resolving
-		// adapters execute exactly the plan resolved above; all others use
-		// the legacy Install entry point.
-		methodCtx, methodCancel := context.WithTimeout(toolCtx, ex.methodTimeout)
-		if resolvedInstaller != nil {
-			err = resolvedInstaller.InstallResolved(methodCtx, runner, tool, method, resolvedPlan)
-		} else {
-			err = adapter.Install(methodCtx, runner, tool, method)
-		}
-		methodCancel()
-
-		if err == nil {
-			if finalizeErr := preparedSources.finalizeCommit(tool.Name); finalizeErr != nil {
-				result.Status = StatusFailed
-				result.Error = finalizeErr.Error()
-				result.Method = displayKind
-				result.MethodKind = method.Kind
-				result.Config = method.Config
-				result.PlanIntent = reportedPlan
-				result.InstallCommitted = true
-				result.ResourceUses = append([]plan.ResourceUse(nil), resourceUses...)
-				result.Duration = time.Since(toolStart).String()
-				return
-			}
-			result.Status = StatusInstalled
-			result.InstallCommitted = true
-			result.Method = displayKind
-			result.MethodKind = method.Kind
-			result.Config = method.Config
-			result.PlanIntent = reportedPlan
-			result.ResourceUses = append([]plan.ResourceUse(nil), resourceUses...)
-			result.RebootRequired, _ = method.Config["_reboot_required"].(bool)
-			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "installed")
-			if len(tool.PostInstall) > 0 {
-				// Postinstall gets a fresh timeout from the tool-level context,
-				// not the cancelled method context. A failing post-install
-				// hook means the tool is not in the state the schema requires,
-				// so the tool is marked failed (and the run exits non-zero)
-				// instead of being silently reported as installed.
-				postCtx, postCancel := context.WithTimeout(toolCtx, ex.methodTimeout)
-				perr := ex.runPostinstall(postCtx, tool)
-				postCancel()
-				if perr != nil {
-					result.Status = StatusFailed
-					result.Error = fmt.Sprintf("post-install: %v", perr)
-					// The adapter commit already succeeded. Keep source ownership bound
-					// to the installed tool instead of removing a repository that the
-					// installed package may still depend on for upgrades/removal.
-					result.Duration = time.Since(toolStart).String()
-					return
-				}
-				result.PostinstallDone = true
-			}
-			result.Duration = time.Since(toolStart).String()
-			return
-		}
-
-		if preparedSources.tx != nil {
-			_ = preparedSources.leaveCommitUnresolved()
-			detail := fmt.Sprintf("install failed after transactional preparation: %v; commit outcome is unresolved and recovery is required", err)
-			attempt.Status = "failed"
-			attempt.Error = detail
-			result.Methods = append(result.Methods, attempt)
-			result.Status = StatusFailed
-			result.Error = detail
-			result.Method = displayKind
-			result.MethodKind = method.Kind
-			result.Duration = time.Since(toolStart).String()
-			ex.logWarn(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "commit_unresolved", "error", detail)
-			return
-		}
-		if rollbackErr := preparedSources.rollback(toolCtx, ex); rollbackErr != nil {
-			detail := fmt.Sprintf("install failed: %v; source rollback failed: %v", err, rollbackErr)
-			attempt.Status = "failed"
-			attempt.Error = detail
-			result.Methods = append(result.Methods, attempt)
-			result.Status = StatusFailed
-			result.Error = detail
-			result.Method = displayKind
-			result.MethodKind = method.Kind
-			result.Duration = time.Since(toolStart).String()
-			ex.logWarn(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "rollback_failed", "error", detail)
-			return
-		}
-		attempt.Status = "failed"
-		attempt.Error = err.Error()
-		result.Methods = append(result.Methods, attempt)
-		ex.logWarn(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "failed", "error", err.Error())
 	}
 
-	// All methods exhausted — distinguish a platform-gated tool from one
-	// whose applicable methods were unavailable.
-	result.Status = StatusSkippedWhen
-	for _, m := range result.Methods {
-		if m.Status == "failed" {
-			result.Status = StatusFailed
-			break
-		}
-		if m.Status != "skip_when" {
-			result.Status = StatusSkippedUnavailable
+	ex.finishExhausted(result, lastMethodKind, toolStart)
+}
+
+// attemptMethod runs one method candidate through the attempt pipeline.
+// It returns true when the tool result is terminal and tryMethods must
+// return, false when the next candidate should be tried.
+func (ex *Executor) attemptMethod(toolCtx context.Context, tool *config.Tool, method *config.MethodCandidate, result *ToolResult, toolStart time.Time) bool {
+	ac := &candidateAttempt{
+		toolCtx:     toolCtx,
+		tool:        tool,
+		method:      method,
+		displayKind: displayMethodKind(method),
+		attempt:     MethodAttempt{Kind: method.Kind, Label: method.Label},
+		toolStart:   toolStart,
+	}
+	for _, phase := range []func(*candidateAttempt, *ToolResult) attemptOutcome{
+		ex.gateStaticIntent,
+		ex.gateAdapterAvailable,
+		ex.resolveConcretePlan,
+		ex.gateAlreadyInstalled,
+		ex.prepareCandidate,
+		ex.installCandidate,
+	} {
+		switch phase(ac, result) {
+		case nextMethod:
+			return false
+		case finishTool:
+			return true
 		}
 	}
-	if len(result.Methods) > 0 {
-		last := result.Methods[len(result.Methods)-1]
-		result.Error = last.Error
-		result.Method = last.Kind
-		result.MethodKind = lastMethodKind
-		result.PlanIntent = last.PlanIntent
-	}
-	result.Duration = time.Since(toolStart).String()
+	return false
 }
 
 func sourceResourceUses(sources, added []config.Source) ([]plan.ResourceUse, error) {
