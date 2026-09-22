@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -141,6 +142,20 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	if err != nil {
 		return fmt.Errorf("http: resolve artifact: %w", err)
 	}
+	return a.installResolvedURL(ctx, rn, tool, mc, resolvedURL)
+}
+
+// InstallResolved executes an already-resolved download plan. It never calls
+// ResolveArtifact, ResolveArtifactDetails, ResolveLatest, or any release API:
+// the concrete URL must already be present in resolved.Artifacts[0].URL.
+func (a *HTTPAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if resolved == nil || len(resolved.Artifacts) == 0 || resolved.Artifacts[0].URL == "" {
+		return fmt.Errorf("http: resolved plan has no concrete artifact URL")
+	}
+	return a.installResolvedURL(ctx, rn, tool, mc, resolved.Artifacts[0].URL)
+}
+
+func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolvedURL string) error {
 	// Re-enforce the shared artifact URL contract at the runtime boundary.
 	// Normal CLI flows validate before execution, but adapters are also public
 	// package APIs and must not leak embedded credentials when called directly.
@@ -259,12 +274,14 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 
 // resolvedFileName derives the downloaded file's name from an already-
 // {latest}-resolved URL, falling back to "download"+ext when the URL has no
-// usable path segment (e.g. a bare host, or a query-only URL).
+// usable path segment (e.g. a bare host, or a query-only URL). URL paths
+// always use "/" separators, so the "path" package (not "path/filepath")
+// is required for correct behavior on Windows.
 func resolvedFileName(resolvedURL, ext string) string {
 	fileName := "download" + ext
 	if parsedURL, err := url.Parse(resolvedURL); err == nil && parsedURL.Path != "" {
-		if base := filepath.Base(parsedURL.Path); base != "" && base != "." && base != "/" {
-			if filepath.Ext(base) == "" {
+		if base := path.Base(parsedURL.Path); base != "" && base != "." && base != "/" {
+			if path.Ext(base) == "" {
 				base += ext
 			}
 			fileName = base
@@ -301,7 +318,7 @@ func extractChecksumConfig(checksum string, config map[string]any) *checksumConf
 // detectAlgorithmFromURL detects the checksum algorithm from a checksum URL
 // filename. Returns empty string if no algorithm can be determined.
 func detectAlgorithmFromURL(checksumURL string) string {
-	base := strings.ToUpper(filepath.Base(checksumURL))
+	base := strings.ToUpper(path.Base(checksumURL))
 	switch {
 	case strings.Contains(base, "SHA256"):
 		return "sha256"
@@ -341,7 +358,7 @@ func (a *HTTPAdapter) resolveAutoChecksum(ctx context.Context, rn run.Runner, fi
 	if err != nil {
 		return fmt.Errorf("%s:auto: invalid download URL %q: %w", cc.algorithm, downloadURL, err)
 	}
-	wantName := filepath.Base(parsedURL.Path)
+	wantName := path.Base(parsedURL.Path)
 	if wantName == "" || wantName == "." || wantName == "/" {
 		return fmt.Errorf("%s:auto: cannot determine filename from URL %q", cc.algorithm, downloadURL)
 	}
@@ -447,25 +464,30 @@ func (a *HTTPAdapter) fetchChecksumFromURL(ctx context.Context, rn run.Runner, c
 
 // Ensure HTTPAdapter implements exec.Adapter.
 var _ exec.Adapter = (*HTTPAdapter)(nil)
+var _ exec.PlanResolver = (*HTTPAdapter)(nil)
+var _ exec.ResolvedInstaller = (*HTTPAdapter)(nil)
 
 // isSharedDir checks if a directory path is a common shared system directory.
 // We avoid deleting these directories completely during uninstallation.
+// Separators are folded to "/" after Clean so Unix-style manifests and
+// Windows-style paths evaluate identically on every platform (ToSlash
+// alone is a no-op for literal backslashes on Unix).
 func isSharedDir(path string) bool {
-	p := filepath.Clean(path)
+	p := strings.ReplaceAll(filepath.Clean(path), "\\", "/")
 	if p == "/" || p == "." {
 		return true
 	}
 	shared := []string{
 		"/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin",
 		"/opt", "/usr", "/usr/local", "/lib", "/usr/lib", "/usr/local/lib",
-		"C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)",
+		"C:/Windows", "C:/Program Files", "C:/Program Files (x86)",
 	}
 	for _, s := range shared {
 		if p == s {
 			return true
 		}
 	}
-	if strings.HasSuffix(p, "/bin") || strings.HasSuffix(p, "/sbin") || strings.HasSuffix(p, "\\bin") {
+	if strings.HasSuffix(p, "/bin") || strings.HasSuffix(p, "/sbin") {
 		return true
 	}
 	return false

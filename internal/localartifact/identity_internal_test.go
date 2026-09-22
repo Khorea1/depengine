@@ -3,6 +3,7 @@ package localartifact
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -26,6 +27,12 @@ func TestChecksumVerifiedRegularFileRejectsDifferentOpenedIdentity(t *testing.T)
 }
 
 func TestInstallRawMaterializesAlreadyVerifiedOpenFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Renaming a file while it is open is a sharing violation on
+		// Windows; the POSIX open-file identity this test exercises
+		// cannot be constructed there.
+		t.Skip("cannot rename an open file on Windows")
+	}
 	dir := t.TempDir()
 	sourcePath := filepath.Join(dir, "source")
 	if err := os.WriteFile(sourcePath, []byte("verified"), 0o755); err != nil {

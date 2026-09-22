@@ -15,20 +15,16 @@ import (
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
 	"github.com/Khorea1/depengine/internal/run"
-	"github.com/Khorea1/depengine/internal/state"
 	"github.com/Khorea1/depengine/internal/validate"
 )
 
-// closeStateAndExit releases a held state lock explicitly before terminating
-// the process. os.Exit skips deferred calls; the OS would drop the flock at
-// exit anyway, so this is about deterministic teardown (and keeping the exit
-// paths uniform), not about preventing a stuck lock.
-func closeStateAndExit(ls *state.LockedState, code int) {
-	if ls != nil {
-		_ = ls.Close()
-	}
-	os.Exit(code)
+type ExitError struct {
+	Code int
 }
+
+func (e *ExitError) Error() string { return fmt.Sprintf("exit status %d", e.Code) }
+
+func exitWithCode(code int) error { return &ExitError{Code: code} }
 
 // schemaCandidateNames are the filenames auto-detected as a project schema,
 // in priority order. Keep this in sync with docs/*.md mentions of
@@ -157,6 +153,10 @@ func mergeManifest(schema *config.Schema, path string, provenance bool) (*config
 }
 
 func exitCodeForError(err error) int {
+	var exitErr *ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.Code
+	}
 	var schemaErr *config.ParseSchemaError
 	if errors.As(err, &schemaErr) {
 		return 2
@@ -230,8 +230,8 @@ func filterTools(tools map[string]*config.Tool, only, skip, profile string) map[
 
 // loadLockfile reads the lockfile for a given schema. Returns nil if no
 // lockfile exists or it's corrupted (logs a warning).
-// Exits with code 2 if --frozen-lockfile is set and no lock exists.
-func loadLockfile(schemaPath string, s *config.Schema, frozen bool, lg *slog.Logger) *lock.Lock {
+// Returns an exit-coded error if --frozen-lockfile is set and no lock exists.
+func loadLockfile(schemaPath string, s *config.Schema, frozen bool, lg *slog.Logger) (*lock.Lock, error) {
 	lockPath := lock.DefaultPath(schemaPath)
 	lk, err := lock.Load(lockPath)
 	if err != nil {
@@ -239,12 +239,12 @@ func loadLockfile(schemaPath string, s *config.Schema, frozen bool, lg *slog.Log
 	}
 	if frozen && lk == nil {
 		lg.Error("--frozen-lockfile requires lockfile — run 'depengine update' first", "path", lockPath)
-		os.Exit(2)
+		return nil, exitWithCode(2)
 	}
 	if lk != nil {
 		lock.Apply(s, lk)
 	}
-	return lk
+	return lk, nil
 }
 
 // saveLockfile resolves version pins, merges with any existing lock, and persists.

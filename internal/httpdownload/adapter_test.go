@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -343,22 +342,7 @@ func TestDownloadFileNameFromURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.url, func(t *testing.T) {
-			u, err := url.Parse(tt.url)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			fileName := "download" + tt.ext
-			if u != nil && u.Path != "" {
-				if base := filepath.Base(u.Path); base != "" && base != "." && base != "/" {
-					if filepath.Ext(base) == "" {
-						base += tt.ext
-					}
-					fileName = base
-				}
-			}
-
-			if fileName != tt.wantName {
+			if fileName := resolvedFileName(tt.url, tt.ext); fileName != tt.wantName {
 				t.Fatalf("got %q, want %q", fileName, tt.wantName)
 			}
 		})

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/exectest"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -185,7 +186,7 @@ func TestAppImageAdapterInstallSameName(t *testing.T) {
 // real machine's XDG applications directory.
 func TestAppImageAdapterInstallWithDesktopEntry(t *testing.T) {
 	fakeHome := t.TempDir()
-	t.Setenv("HOME", fakeHome)
+	exectest.SetHome(t, fakeHome)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("content"))
@@ -222,7 +223,7 @@ func TestAppImageAdapterInstallWithDesktopEntry(t *testing.T) {
 
 func TestAppImageAdapterInstallWithoutDesktopSkipsEntry(t *testing.T) {
 	fakeHome := t.TempDir()
-	t.Setenv("HOME", fakeHome)
+	exectest.SetHome(t, fakeHome)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("content"))
@@ -255,7 +256,7 @@ func TestAppImageAdapterCanRemove(t *testing.T) {
 
 func TestAppImageAdapterRemoveBinaryAndDesktopEntry(t *testing.T) {
 	fakeHome := t.TempDir()
-	t.Setenv("HOME", fakeHome)
+	exectest.SetHome(t, fakeHome)
 
 	installDir := t.TempDir()
 	binPath := filepath.Join(installDir, "obsidian")

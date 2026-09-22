@@ -21,19 +21,18 @@ func newSBOMCmd() *cobra.Command {
 		GroupID: groupExport,
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
-			runSBOM(sbomFormat)
-			return nil
+			return runSBOM(sbomFormat)
 		},
 	}
 	cmd.Flags().StringVar(sbomFormat, "format", "cyclonedx", "output format: cyclonedx or spdx")
 	return cmd
 }
 
-func runSBOM(sbomFormat *string) {
+func runSBOM(sbomFormat *string) error {
 	ls, err := state.LoadShared()
 	if err != nil {
 		log.Default.Error("load state", "error", err)
-		os.Exit(3)
+		return exitWithCode(3)
 	}
 	defer ls.Close()
 
@@ -65,13 +64,14 @@ func runSBOM(sbomFormat *string) {
 	default:
 		log.Default.Error("unsupported format", "format", *sbomFormat)
 		fmt.Fprintf(os.Stderr, "Formatos suportados: cyclonedx, spdx\n")
-		closeStateAndExit(ls, 2)
+		return exitWithCode(2)
 	}
 
 	if err != nil {
 		log.Default.Error("generate sbom", "error", err)
-		closeStateAndExit(ls, 3)
+		return exitWithCode(3)
 	}
 
 	fmt.Println(string(data))
+	return nil
 }

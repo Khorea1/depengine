@@ -30,8 +30,7 @@ func newStatusCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
-			runStatus(statusSchema, statusManifest, statusNoManifest, statusFormat, statusJSON, statusOrphans)
-			return nil
+			return runStatus(statusSchema, statusManifest, statusNoManifest, statusFormat, statusJSON, statusOrphans)
 		},
 	}
 	f := cmd.Flags()
@@ -46,25 +45,59 @@ func newStatusCmd() *cobra.Command {
 
 // runStatus shows the installation status of tools by comparing the state
 // file against the schema. It reports installed, missing, and outdated tools.
-// Body unchanged from the pre-Cobra version — only the flag declarations
-// above it moved.
-func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, statusFormat *string, statusJSON, statusOrphans *bool) {
+// Thin orchestrator over the phase helpers below: normalize flags, load
+// state, load schema, classify, render. Pure state-vs-schema+lock comparison
+// with no adapter calls.
+func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, statusFormat *string, statusJSON, statusOrphans *bool) error {
+	normalizeStatusFormat(statusFormat, statusJSON)
+
+	ls, err := openStatusState()
+	if err != nil {
+		return err
+	}
+	defer ls.Close()
+
+	st := ls.State()
+
+	schemaPath, stop := resolveStatusSchemaPath(st, statusSchema)
+	if stop {
+		return nil
+	}
+
+	s, lk := loadStatusSchema(schemaPath, statusManifest, statusNoManifest)
+
+	tools := classifyStatusTools(st.Tools, s, lk, *statusOrphans)
+
+	if *statusFormat == "json" {
+		return renderStatusJSON(tools)
+	}
+	return renderStatusTable(tools, *statusOrphans)
+}
+
+// normalizeStatusFormat folds the deprecated --json shorthand into --format.
+func normalizeStatusFormat(statusFormat *string, statusJSON *bool) {
 	if *statusJSON {
 		if *statusFormat == "text" {
 			*statusFormat = "json"
 		}
 		fmt.Fprintln(os.Stderr, "depengine: --json is deprecated; use --format=json instead")
 	}
+}
 
+// openStatusState loads the shared state file for reading.
+func openStatusState() (*state.LockedState, error) {
 	ls, err := state.LoadShared()
 	if err != nil {
 		log.Default.Error("state lock", "error", err)
-		os.Exit(3)
+		return nil, exitWithCode(3)
 	}
-	defer ls.Close()
+	return ls, nil
+}
 
-	st := ls.State()
-
+// resolveStatusSchemaPath picks the schema to compare against: the explicit
+// --schema flag, else the path recorded in state. It reports stop=true when
+// there is nothing to compare against (empty state, no schema given).
+func resolveStatusSchemaPath(st *state.State, statusSchema *string) (string, bool) {
 	schemaPath := st.SchemaPath
 	if *statusSchema != "" {
 		schemaPath = *statusSchema
@@ -72,12 +105,17 @@ func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, sta
 	if schemaPath == "" {
 		if len(st.Tools) == 0 {
 			fmt.Fprintln(os.Stderr, "No tools in state (nothing installed yet). Use --schema to compare against a schema.")
-			return
+			return "", true
 		}
 	}
+	return schemaPath, false
+}
 
-	// Load the lockfile alongside the schema for installed-vs-pinned
-	// version comparisons (outdated detection). A missing lock is fine.
+// loadStatusSchema loads the lockfile alongside the schema for
+// installed-vs-pinned version comparisons (outdated detection). A missing
+// lock is fine. A schema that fails to parse (or a manifest that fails to
+// merge) degrades to state-only reporting with a warning.
+func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifest *bool) (*config.Schema, *lock.Lock) {
 	var lk *lock.Lock
 	if schemaPath != "" {
 		lk, _ = lock.Load(lock.DefaultPath(schemaPath))
@@ -115,43 +153,56 @@ func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, sta
 			}
 		}
 	}
+	return s, lk
+}
 
-	type toolStatus struct {
-		Name    string `json:"name"`
-		Status  string `json:"status"`
-		Method  string `json:"method,omitempty"`
-		Version string `json:"version,omitempty"`
-		Updated string `json:"updated,omitempty"`
+// toolStatus is one row of the status report.
+type toolStatus struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Method  string `json:"method,omitempty"`
+	Version string `json:"version,omitempty"`
+	Updated string `json:"updated,omitempty"`
+}
+
+// statusToolOutdated reports whether an installed tool drifted from the
+// schema: either its definition changed since install, or its installed
+// version differs from the pinned one.
+func statusToolOutdated(ts state.ToolState, stTool *config.Tool, lk *lock.Lock, name string) bool {
+	// Definition drift: the schema definition changed since install.
+	if ts.DefinitionHash != "" && state.DefinitionHash(stTool) != ts.DefinitionHash {
+		return true
 	}
+	// Version drift: the installed version differs from the pinned one.
+	if ts.Version != "" {
+		if pin, ok := lockPinForToolState(lk, name, stTool, ts); ok && state.VersionOutdated(ts.Version, pin.Latest) {
+			return true
+		}
+	}
+	return false
+}
 
+// classifyStatusTools compares installed state against the schema (plus lock)
+// and labels every tool as installed, orphaned, outdated, or missing. A nil
+// schema means state-only reporting: everything counts as installed.
+func classifyStatusTools(installed map[string]state.ToolState, s *config.Schema, lk *lock.Lock, orphansOnly bool) []toolStatus {
 	var tools []toolStatus
 
-	for name, ts := range st.Tools {
+	for name, ts := range installed {
 		status := "installed"
 		if s != nil {
 			if _, inSchema := s.Tools[name]; !inSchema {
 				status = "orphaned"
 			}
 		}
-		if *statusOrphans && status != "orphaned" {
+		if orphansOnly && status != "orphaned" {
 			continue
 		}
-		if status == "installed" && s != nil && !*statusOrphans {
-			outdated := false
+		if status == "installed" && s != nil && !orphansOnly {
 			if stTool, inSchema := s.Tools[name]; inSchema {
-				// Definition drift: the schema definition changed since install.
-				if ts.DefinitionHash != "" && state.DefinitionHash(stTool) != ts.DefinitionHash {
-					outdated = true
+				if statusToolOutdated(ts, stTool, lk, name) {
+					status = "outdated"
 				}
-				// Version drift: the installed version differs from the pinned one.
-				if !outdated && ts.Version != "" {
-					if pin, ok := lockPinForToolState(lk, name, stTool, ts); ok && state.VersionOutdated(ts.Version, pin.Latest) {
-						outdated = true
-					}
-				}
-			}
-			if outdated {
-				status = "outdated"
 			}
 		}
 		tools = append(tools, toolStatus{
@@ -163,9 +214,9 @@ func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, sta
 		})
 	}
 
-	if s != nil && !*statusOrphans {
+	if s != nil && !orphansOnly {
 		for name := range s.Tools {
-			if _, inState := st.Tools[name]; !inState {
+			if _, inState := installed[name]; !inState {
 				tools = append(tools, toolStatus{
 					Name:   name,
 					Status: "missing",
@@ -173,29 +224,24 @@ func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, sta
 			}
 		}
 	}
+	return tools
+}
 
-	if *statusFormat == "json" {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(tools); err != nil {
-			log.Default.Error("json output", "error", err)
-			closeStateAndExit(ls, 3)
-		}
-		return
+// renderStatusJSON emits the report as indented JSON on stdout.
+func renderStatusJSON(tools []toolStatus) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(tools); err != nil {
+		log.Default.Error("json output", "error", err)
+		return exitWithCode(3)
 	}
+	return nil
+}
 
-	if len(tools) == 0 {
-		if *statusOrphans {
-			fmt.Fprintln(os.Stderr, "No orphan tools.")
-		} else {
-			fmt.Fprintln(os.Stderr, "No tools in state. Run 'depengine install' first.")
-		}
-		return
-	}
-
-	// Actionable states first: outdated tools need attention, missing ones
-	// block the schema, orphaned ones are cleanup candidates. Installed and
-	// healthy come last — they're the background noise.
+// sortStatusTools orders the report for actionability: outdated tools need
+// attention, missing ones block the schema, orphaned ones are cleanup
+// candidates. Installed and healthy come last — they're the background noise.
+func sortStatusTools(tools []toolStatus) {
 	sort.SliceStable(tools, func(i, j int) bool {
 		pi, pj := statusRank(tools[i].Status), statusRank(tools[j].Status)
 		if pi != pj {
@@ -203,6 +249,21 @@ func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, sta
 		}
 		return tools[i].Name < tools[j].Name
 	})
+}
+
+// renderStatusTable emits the human-readable report table on stderr plus a
+// summary line of per-status counts.
+func renderStatusTable(tools []toolStatus, orphansOnly bool) error {
+	if len(tools) == 0 {
+		if orphansOnly {
+			fmt.Fprintln(os.Stderr, "No orphan tools.")
+		} else {
+			fmt.Fprintln(os.Stderr, "No tools in state. Run 'depengine install' first.")
+		}
+		return nil
+	}
+
+	sortStatusTools(tools)
 
 	c := newCLIStyle(os.Stderr)
 	nameW, stW, methW, verW := len("Tool"), len("Status"), len("Method"), len("Version")
@@ -256,6 +317,7 @@ func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, sta
 		}
 	}
 	fmt.Fprintf(c.w, "  %s\n", c.dim(strings.Join(parts, "  ·  ")))
+	return nil
 }
 
 func statusRank(s string) int {

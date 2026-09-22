@@ -842,6 +842,9 @@ func TestInstallArchiveNormalizesAndVerifiesRootMode(t *testing.T) {
 }
 
 func TestInstallRejectsRawSourcePermissionDriftAfterResolve(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits are not stable desired-state identity on Windows")
+	}
 	root := t.TempDir()
 	source := filepath.Join(root, "tool")
 	if err := os.WriteFile(source, []byte("payload"), 0o755); err != nil {

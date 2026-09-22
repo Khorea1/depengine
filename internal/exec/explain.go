@@ -85,6 +85,7 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 		}
 		attempt := MethodAttempt{Kind: method.Kind, Label: method.Label}
 		planIntent, mismatch := candidatePlanIntent(tool, method)
+		planIntent = ex.hostResolvedPlanIntent(method, planIntent)
 		attempt.PlanIntent = planIntent
 
 		// Reject semantic intent this method contract cannot honor before any
@@ -111,14 +112,6 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 			appendAttempt(attempt, method)
 			continue
 		}
-		if checker, ok := adapter.(HostCompatibilityChecker); ok {
-			if compatibilityErr := checker.CheckHostCompatibility(tool, method, planIntent, ex.facts, clan); compatibilityErr != nil {
-				attempt.Status = "skip_unavailable"
-				attempt.Error = compatibilityErr.Error()
-				appendAttempt(attempt, method)
-				continue
-			}
-		}
 
 		// Check if the adapter is available on this system.
 		if !adapter.Available(ctx, ex.rn) {
@@ -126,6 +119,26 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 			attempt.Error = fmt.Sprintf("adapter %q not available (binary not on PATH)", displayKind)
 			appendAttempt(attempt, method)
 			continue
+		}
+
+		// Same single read-only resolution point as Execute: dry-run, why,
+		// and real install obtain the concrete identity from this function.
+		resolvedPlan, resolveErr := ex.resolveCandidatePlan(ctx, tool, method, adapter, planIntent, displayKind)
+		if resolveErr != nil {
+			attempt.Status = "failed"
+			attempt.Error = resolveErr.Error()
+			appendAttempt(attempt, method)
+			continue
+		}
+		attempt.PlanIntent = resolvedPlan
+
+		if checker, ok := adapter.(HostCompatibilityChecker); ok {
+			if compatibilityErr := checker.CheckHostCompatibility(tool, method, resolvedPlan, ex.facts, clan); compatibilityErr != nil {
+				attempt.Status = "skip_unavailable"
+				attempt.Error = compatibilityErr.Error()
+				appendAttempt(attempt, method)
+				continue
+			}
 		}
 
 		// Check if the tool is already installed via this method.
@@ -137,16 +150,38 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 			continue
 		}
 
-		// Match the real install planner's availability semantics. Check()==false
-		// means only "not currently satisfied"; AvailabilityChecker can further
-		// distinguish that from "this candidate does not exist in the configured
-		// repo/index". Without this check, `why` can call a phantom native
-		// candidate ready even though Execute will deterministically reject it.
-		if !checkAvailable(ctx, probe, adapter, tool, method) {
-			attempt.Status = "skip_unavailable"
-			attempt.Error = fmt.Sprintf("%s: package not found in repo/index", displayKind)
+		// Source presence is read-only candidate selection, mirroring
+		// Execute: a missing declared source makes the repository/index
+		// answer inconclusive, so availability is deferred rather than
+		// rejecting the candidate on a stale index.
+		if ex.sources == nil {
+			ex.sources = source.NewManager(ex.rn, true)
+		}
+		sourceProbe, probeErr := ex.probeCandidateSources(ctx, method.Sources)
+		if probeErr != nil {
+			attempt.Status = "failed"
+			attempt.Error = probeErr.Error()
 			appendAttempt(attempt, method)
 			continue
+		}
+		if len(sourceProbe.missing) == 0 {
+			// Match the real install planner's availability semantics. Check()==false
+			// means only "not currently satisfied"; AvailabilityChecker can further
+			// distinguish that from "this candidate does not exist in the configured
+			// repo/index". Without this check, `why` can call a phantom native
+			// candidate ready even though Execute will deterministically reject it.
+			if !checkAvailable(ctx, probe, adapter, tool, method) {
+				attempt.Status = "skip_unavailable"
+				attempt.Error = fmt.Sprintf("%s: package not found in repo/index", displayKind)
+				appendAttempt(attempt, method)
+				continue
+			}
+		}
+		if sourceProbe.preparationPlan != nil && resolvedPlan != nil {
+			projected := *resolvedPlan
+			projected.Preparation = sourceProbe.preparationPlan
+			resolvedPlan = &projected
+			attempt.PlanIntent = resolvedPlan
 		}
 
 		// Method is ready and would be attempted.
@@ -155,14 +190,8 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 		if len(method.Requires) > 0 {
 			prerequisites = append(prerequisites, "requires "+strings.Join(method.Requires, ", "))
 		}
-		if len(method.Sources) > 0 {
-			missing, err := source.NewManager(ex.rn, true).Ensure(ctx, method.Sources)
-			if err != nil {
-				prerequisites = append(prerequisites, "source check failed: "+err.Error())
-			}
-			for _, item := range missing {
-				prerequisites = append(prerequisites, "missing source "+item.Kind+":"+item.Name)
-			}
+		for _, item := range sourceProbe.missing {
+			prerequisites = append(prerequisites, "missing source "+item.Kind+":"+item.Name)
 		}
 		if len(prerequisites) > 0 {
 			attempt.Error = strings.Join(prerequisites, "; ")

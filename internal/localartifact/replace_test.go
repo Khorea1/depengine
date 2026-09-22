@@ -3,6 +3,7 @@ package localartifact
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -93,11 +94,14 @@ func TestReplacePathRollsBackCommittedDestinationWhenBackupCleanupFails(t *testi
 	if !errors.Is(err, cleanupErr) {
 		t.Fatalf("replacePathWithOps() error = %v, want cleanup error", err)
 	}
+	// The backup path is built with filepath.Join in the product; only the
+	// injected mkdirTemp result is literal, so spell it the same way here.
+	backup := filepath.Join("/parent/backup", "original")
 	want := [][2]string{
-		{"/parent/destination", "/parent/backup/original"},
+		{"/parent/destination", backup},
 		{"/parent/stage", "/parent/destination"},
 		{"/parent/destination", "/parent/stage"},
-		{"/parent/backup/original", "/parent/destination"},
+		{backup, "/parent/destination"},
 	}
 	if len(renameCalls) != len(want) {
 		t.Fatalf("rename calls = %#v, want %#v", renameCalls, want)

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -28,7 +30,13 @@ func main() {
 	root := newRootCmd()
 	root.SetArgs(normalizeArgs(os.Args[1:]))
 	if err := root.ExecuteContext(ctx); err != nil {
-		os.Exit(1)
+		var exitErr *ExitError
+		if errors.As(err, &exitErr) {
+			os.Exit(exitErr.Code)
+		} else {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	}
 }
 

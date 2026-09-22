@@ -3,6 +3,9 @@ FROM alpine:latest
 
 # Go toolchain from distro packages — test.sh runs `go build` inside the
 # container (go.mod requires go 1.27; alpine's `go` package tracks upstream).
+# The distro Go may lag behind go.mod and pin GOTOOLCHAIN=local: re-enable
+# automatic toolchain switching so the required toolchain downloads on demand.
+ENV GOTOOLCHAIN=auto
 RUN apk update && apk add \
     go \
     curl \

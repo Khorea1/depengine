@@ -129,6 +129,10 @@ func (m *resolvingCompatibilityMockAdapter) CheckHostCompatibility(_ *config.Too
 	return nil
 }
 
+func (m *resolvingCompatibilityMockAdapter) InstallResolved(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, _ *plan.ResolvedInstallPlan) error {
+	return nil
+}
+
 func (m *compatibilityMockAdapter) CheckHostCompatibility(_ *config.Tool, _ *config.MethodCandidate, _ *plan.ResolvedInstallPlan, _ *engine.Facts, _ string) error {
 	return m.err
 }
