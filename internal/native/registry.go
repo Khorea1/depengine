@@ -1,0 +1,480 @@
+// Package native describes — purely declaratively — how the engine talks
+// to a distro's package manager. Adding support for a new distro clan is
+// a data edit in this file, never a new function.
+//
+// Two-tier keying (addresses a friction the README itself flags):
+//
+//   - A "clan" is what ResolveFamily returns and what schema clauses
+//     `when = { distro_family = [...] }` compare against. It is a
+//     distro-clan predicate: "debian", "arch", "fedora", "suse"...
+//     Clans evolve slowly — they describe which roots distros descend
+//     from.
+//
+//   - A "manager key" is what the manager map is indexed by. Today it
+//     1:1-collides with the clan, but they are free to diverge: README
+//     already notes that rhel/fedora are forced into one family and that
+//     windows will need winget/choco/scoop. When that happens, the
+//     manager map keys on a finer granule ("windows-winget") while the
+//     clan stays "windows" for `when` matching.
+//
+// Lookup translates clan -> manager entry. Nothing else in the engine
+// should read the manager map directly; that foraging pattern is how
+// main.go got a second path to the same fact.
+package native
+
+import "sort"
+
+// Manager describes one native package manager. All fields are data: no
+// code lives here.
+type Manager struct {
+	Name string // display/log name: "apt", "pacman", "dnf"...
+
+	SudoRequired bool // prefix sudo when the process is not root
+
+	// NeedsSync marks managers that require synchronizing the package
+	// index before the first install of a session (e.g. apt-get update).
+	// The engine runs this once per execution, not per package.
+	NeedsSync bool
+	SyncCmd   []string
+
+	// InstallCmd contains "{pkg}" as a placeholder for the package name.
+	InstallCmd []string
+
+	// CheckCmd uses "{pkg}" as well; exit code 0 means already installed.
+	CheckCmd []string
+
+	// SearchCmd uses "{pkg}" as well; exit code 0 means the package exists
+	// as an installable target in this manager's repo/index — independent
+	// of whether it is already installed. This is what lets the engine
+	// distinguish "not installed yet" from "does not exist at all" (e.g.
+	// an AUR-only or cargo-only tool that a `simple = [...]` entry
+	// otherwise turns into a phantom native candidate — see schema.go
+	// normalizeTools and internal/exec's CheckAvailable).
+	//
+	// Left empty for managers where no exit-code-only, shell-free query
+	// is known to be reliable; CheckAvailable then fails open (assumes
+	// the package is available) rather than guessing.
+	SearchCmd []string
+
+	// RemoveCmd uses "{pkg}" as a placeholder for the package name.
+	// Empty means the manager has no standard remove command and the
+	// engine will fall back to manual-removal instructions.
+	RemoveCmd []string
+
+	// AtomicBatch marks managers whose multi-package install is truly
+	// all-or-nothing — either every package installs or the system state
+	// is unchanged (transactional rollback on failure). When true, the
+	// executor batches same-clan packages into one install step.
+	// Set false for managers that install item-at-a-time without rollback
+	// (brew, emerge), even if they accept multiple package arguments.
+	AtomicBatch bool
+}
+
+// managers maps a manager key (NOT directly a clan — see package doc) to
+// its Manager entry. Use Lookup to go from clan to Manager; never index
+// this map from outside the package.
+var managers = map[string]Manager{
+	"debian": {
+		Name:         "apt",
+		SudoRequired: true,
+		NeedsSync:    true,
+		SyncCmd:      []string{"apt-get", "update"},
+		InstallCmd:   []string{"apt-get", "install", "-y", "{pkg}"},
+		CheckCmd:     []string{"dpkg", "-s", "{pkg}"},
+		// apt-cache show exits non-zero (100) when no package by this
+		// exact name exists in any configured source.
+		SearchCmd:   []string{"apt-cache", "show", "{pkg}"},
+		RemoveCmd:   []string{"apt-get", "remove", "-y", "{pkg}"},
+		AtomicBatch: true,
+	},
+	"arch": {
+		Name:         "pacman",
+		SudoRequired: true,
+		InstallCmd:   []string{"pacman", "-S", "--noconfirm", "--needed", "{pkg}"},
+		CheckCmd:     []string{"pacman", "-Qi", "{pkg}"},
+		// pacman -Si queries the sync (repo) databases, not the local
+		// install db; exits 1 when the package isn't in any repo.
+		SearchCmd:   []string{"pacman", "-Si", "{pkg}"},
+		RemoveCmd:   []string{"pacman", "-R", "--noconfirm", "{pkg}"},
+		AtomicBatch: true,
+	},
+	"fedora": {
+		Name:         "dnf",
+		SudoRequired: true,
+		InstallCmd:   []string{"dnf", "install", "-y", "{pkg}"},
+		CheckCmd:     []string{"rpm", "-q", "{pkg}"},
+		// dnf list exits non-zero ("Error: No matching Packages to
+		// list.") when the package isn't in any enabled repo.
+		SearchCmd:   []string{"dnf", "list", "{pkg}"},
+		RemoveCmd:   []string{"dnf", "remove", "-y", "{pkg}"},
+		AtomicBatch: true,
+	},
+	"suse": {
+		Name:         "zypper",
+		SudoRequired: true,
+		InstallCmd:   []string{"zypper", "--non-interactive", "install", "{pkg}"},
+		CheckCmd:     []string{"rpm", "-q", "{pkg}"},
+		RemoveCmd:    []string{"zypper", "--non-interactive", "remove", "{pkg}"},
+		AtomicBatch:  true,
+	},
+	"alpine": {
+		Name:         "apk",
+		SudoRequired: true,
+		NeedsSync:    true,
+		SyncCmd:      []string{"apk", "update"},
+		InstallCmd:   []string{"apk", "add", "{pkg}"},
+		CheckCmd:     []string{"apk", "info", "-e", "{pkg}"},
+		RemoveCmd:    []string{"apk", "del", "{pkg}"},
+		AtomicBatch:  true,
+	},
+	// void uses xbps-install -Sy (sync + install in one command).
+	// NeedsSync is false because -Sy handles the sync inline.
+	"void": {
+		Name:         "xbps",
+		SudoRequired: true,
+		InstallCmd:   []string{"xbps-install", "-Sy", "{pkg}"},
+		CheckCmd:     []string{"xbps-query", "{pkg}"},
+		// xbps-query -R queries the (synced) repo index rather than the
+		// local install db; exits 1 when the package isn't in any repo
+		// at all. This is what catches AUR/cargo-only tools that a
+		// `simple = [...]` entry would otherwise report as installable.
+		SearchCmd:   []string{"xbps-query", "-R", "{pkg}"},
+		RemoveCmd:   []string{"xbps-remove", "-y", "{pkg}"},
+		AtomicBatch: true,
+	},
+	// gentoo: emerge installs sequentially — if one package fails, earlier ones
+	// are already on disk. Not all-or-nothing, so AtomicBatch is false.
+	"gentoo": {
+		Name:         "emerge",
+		SudoRequired: true,
+		InstallCmd:   []string{"emerge", "--quiet", "{pkg}"},
+		CheckCmd:     []string{"equery", "list", "{pkg}"},
+		RemoveCmd:    []string{"emerge", "--unmerge", "{pkg}"},
+		AtomicBatch:  false,
+	},
+	// macos: brew installs packages sequentially without rollback on failure.
+	// Not atomic, so AtomicBatch is false.
+	"macos": {
+		Name:         "brew",
+		SudoRequired: false,
+		InstallCmd:   []string{"brew", "install", "{pkg}"},
+		CheckCmd:     []string{"brew", "list", "{pkg}"},
+		// brew info exits 1 ("Error: No available formula/cask...") when
+		// no formula or cask by this name exists.
+		SearchCmd:   []string{"brew", "info", "{pkg}"},
+		RemoveCmd:   []string{"brew", "uninstall", "{pkg}"},
+		AtomicBatch: false,
+	},
+	"termux": {
+		Name:         "pkg",
+		SudoRequired: false,
+		NeedsSync:    true,
+		SyncCmd:      []string{"pkg", "update", "-y"},
+		InstallCmd:   []string{"pkg", "install", "-y", "{pkg}"},
+		// CheckCmd: dpkg -s {pkg} — Termux's pkg is a wrapper around apt, which sits on dpkg.
+		// dpkg -s is the only clean exit-0/exit-1 test for "is this package installed?"
+		// (Termux's pkg has no direct equivalent). This mirrors the debian clan.
+		CheckCmd: []string{"dpkg", "-s", "{pkg}"},
+		// Termux's pkg wraps apt, so apt-cache show works the same way
+		// as on debian: non-zero exit when the package isn't in any
+		// configured Termux repo (catches AUR-equivalent/cargo-only tools).
+		SearchCmd:   []string{"apt-cache", "show", "{pkg}"},
+		RemoveCmd:   []string{"pkg", "uninstall", "-y", "{pkg}"},
+		AtomicBatch: true,
+	},
+	"freebsd": {
+		Name:         "pkg",
+		SudoRequired: true,
+		InstallCmd:   []string{"pkg", "install", "-y", "{pkg}"},
+		CheckCmd:     []string{"pkg", "info", "-e", "{pkg}"},
+		RemoveCmd:    []string{"pkg", "delete", "-y", "{pkg}"},
+		AtomicBatch:  true,
+	},
+	"openbsd": {
+		Name:         "pkg_add",
+		SudoRequired: true,
+		InstallCmd:   []string{"pkg_add", "{pkg}"},
+		CheckCmd:     []string{"pkg_info", "-e", "{pkg}"},
+		RemoveCmd:    []string{"pkg_delete", "{pkg}"},
+		AtomicBatch:  true,
+	},
+	"netbsd": {
+		Name:         "pkgin",
+		SudoRequired: true,
+		InstallCmd:   []string{"pkgin", "-y", "install", "{pkg}"},
+		CheckCmd:     []string{"pkg_info", "-e", "{pkg}"},
+		RemoveCmd:    []string{"pkgin", "-y", "remove", "{pkg}"},
+		AtomicBatch:  true,
+	},
+	// Windows managers.
+	// winget is built into Windows 10 1709+ and Windows 11.
+	// choco/scoop are third-party; they use native adapter aliases or exec.Adapter-s.
+	//
+	// Every winget invocation below pairs --id with --exact: winget's
+	// default query matching is a case-insensitive substring against
+	// name/ID/moniker, so an unqualified "{pkg}" can silently install,
+	// report installed, or remove the wrong application. --exact forces
+	// exact, case-sensitive ID matching instead (confirmed against
+	// Microsoft Learn's install/list/show/uninstall command references).
+	//
+	// --disable-interactivity plus the --accept-*-agreements flags keep
+	// every command non-interactive end to end: without them, a first
+	// run against a source can block on a source- or package-license
+	// prompt with no TTY to answer it. --silent additionally suppresses
+	// the install/uninstall installer UI itself; list/show are already
+	// silent (they only print structured results).
+	//
+	// `winget list --id {pkg} --exact` and `winget show --id {pkg}
+	// --exact` are both read-only queries (no privilege, no state
+	// change) that fail with a nonzero exit code when nothing matches
+	// ("No package found matching input criteria" /
+	// APPINSTALLER_CLI_ERROR_NOT_FOUND-class codes) — that's what makes
+	// them usable as CheckCmd/SearchCmd under this package's exit-code
+	// contract (see the SearchCmd field doc). `show` is the id-lookup
+	// counterpart of `list`: it queries the configured source(s)
+	// instead of the local install DB, which is exactly the "does this
+	// exist at all" query CheckAvailable needs, and unlike `search` it
+	// takes the same --id/--exact pair as install/list/uninstall
+	// instead of a fuzzy positional query.
+	//
+	// AtomicBatch stays false and SudoRequired stays false: winget has
+	// no all-or-nothing multi-package transaction, and elevation (UAC)
+	// is each package installer's own decision, not something this
+	// engine should force.
+	"windows-winget": {
+		Name:         "winget",
+		SudoRequired: false,
+		InstallCmd: []string{
+			"winget", "install", "--id", "{pkg}", "--exact",
+			"--silent", "--accept-package-agreements", "--accept-source-agreements",
+			"--disable-interactivity",
+		},
+		CheckCmd: []string{
+			"winget", "list", "--id", "{pkg}", "--exact",
+			"--accept-source-agreements", "--disable-interactivity",
+		},
+		SearchCmd: []string{
+			"winget", "show", "--id", "{pkg}", "--exact",
+			"--accept-source-agreements", "--disable-interactivity",
+		},
+		RemoveCmd: []string{
+			"winget", "uninstall", "--id", "{pkg}", "--exact",
+			"--silent", "--disable-interactivity",
+		},
+		AtomicBatch: false,
+	},
+	"mint": {
+		Name:         "apt",
+		SudoRequired: true,
+		NeedsSync:    true,
+		SyncCmd:      []string{"apt-get", "update"},
+		InstallCmd:   []string{"apt-get", "install", "-y", "{pkg}"},
+		CheckCmd:     []string{"dpkg", "-s", "{pkg}"},
+		// Mint sits on the same apt/dpkg base as debian; apt-cache show
+		// exits non-zero when no package by this exact name exists in
+		// any configured source.
+		SearchCmd:   []string{"apt-cache", "show", "{pkg}"},
+		RemoveCmd:   []string{"apt-get", "remove", "-y", "{pkg}"},
+		AtomicBatch: true,
+	},
+
+	// opkg — embedded Linux package manager (OpenWrt, LEDE, etc).
+	"opkg": {
+		Name:         "opkg",
+		SudoRequired: true,
+		InstallCmd:   []string{"opkg", "install", "{pkg}"},
+		CheckCmd:     []string{"opkg", "status", "{pkg}"},
+		RemoveCmd:    []string{"opkg", "remove", "{pkg}"},
+		AtomicBatch:  true,
+	},
+}
+
+// managerNameToClan maps a manager binary name to its clan. This handles
+// the case where the binary name differs from Manager.Name (e.g. gentoo's
+// Manager.Name is "emerge" but the binary is "emerge"). Only entries that
+// differ from Manager.Name need to be here; everything else falls through to
+// the KnownClans iteration in findClanByManager.
+//
+// Entries here must be UNAMBIGUOUS: the binary name must belong to exactly
+// one clan. Binary names shared across clans (e.g. "pkg" used by both
+// termux and freebsd) are intentionally omitted — findClanByManager's
+// fallback loop resolves them by iterating KnownClans, which is correct
+// (though non-deterministic in ordering, both clans produce valid commands
+// for the shared binary).
+var managerNameToClan = map[string]string{
+	// Disambiguate managers with the same binary name across clans.
+	"apt":     "debian", // debian and mint both use "apt"; debian is the primary
+	"emerge":  "gentoo", // gentoo package manager
+	"portage": "gentoo", // backward compat for schema entries using "portage"
+	"yum":     "fedora", // yum is a symlink to dnf on modern systems
+	"dnf5":    "fedora", // dnf5 is the new default in Fedora 41+
+}
+
+// ManagerNameToClan returns the clan for a given manager binary name. This
+// is the primary lookup for findClanByManager; it checks the explicit map
+// first, falling back to KnownClans iteration.
+func ManagerNameToClan(name string) (string, bool) {
+	clan, ok := managerNameToClan[name]
+	return clan, ok
+}
+
+// ManagerBinaryNames returns the set of all manager binary names registered
+// in the reverse map (managerNameToClan). Used by RegisterNativeManagerAliases
+// to ensure binary-name method kinds (e.g. "emerge", "yum") get adapter
+// registrations even when they differ from Manager.Name.
+func ManagerBinaryNames() []string {
+	out := make([]string, 0, len(managerNameToClan))
+	for name := range managerNameToClan {
+		out = append(out, name)
+	}
+	return out
+}
+
+// clanToManagerKey maps a resolved clan to a manager key. Today identity;
+// the indirection exists so a future windows/rhel-AUR split can re-key the
+// manager map without touching any caller (ResolveFamily, when-clauses).
+var clanToManagerKey = map[string]string{
+	"debian":  "debian",
+	"arch":    "arch",
+	"fedora":  "fedora",
+	"suse":    "suse",
+	"alpine":  "alpine",
+	"void":    "void",
+	"gentoo":  "gentoo",
+	"macos":   "macos",
+	"termux":  "termux",
+	"freebsd": "freebsd",
+	"openbsd": "openbsd",
+	"netbsd":  "netbsd",
+	"windows": "windows-winget",
+	"mint":    "mint",
+	"opkg":    "opkg",
+}
+
+// Lookup returns the Manager for a resolved clan and whether the clan has
+// a known native manager. Unknown clans return the zero Manager and
+// false; the caller then falls through to the next entry in
+// method_order (cargo/go/pip/...).
+func Lookup(clan string) (Manager, bool) {
+	key, ok := clanToManagerKey[clan]
+	if !ok {
+		return Manager{}, false
+	}
+	m, ok := managers[key]
+	if !ok {
+		return Manager{}, false
+	}
+	return m, true
+}
+
+// ManagerNames returns the set of unique manager binary names across all
+// known clans (e.g., "apt", "pacman", "dnf", "brew"). Used by the executor
+// to register manager-specific adapter aliases so that schema method kinds
+// like `apt = "fd-find"` are resolved correctly.
+func ManagerNames() []string {
+	seen := map[string]bool{}
+	for _, m := range managers {
+		seen[m.Name] = true
+	}
+	out := make([]string, 0, len(seen))
+	for name := range seen {
+		out = append(out, name)
+	}
+	// Deterministic order: map iteration is randomized per-process, and
+	// callers (e.g. RegisterNativeManagerAliases) use this order to decide
+	// registration/probing precedence. Without sorting, behavior for
+	// ambiguous cases could vary between runs on the same machine.
+	sort.Strings(out)
+	return out
+}
+
+// KnownClans returns every clan that maps to a functioning native manager (a
+// clan in clanToManagerKey whose key also exists in the managers map).
+// Used by schema validation to warn on unreachable when.distro_family.
+func KnownClans() []string {
+	out := make([]string, 0, len(clanToManagerKey))
+	for clan := range clanToManagerKey {
+		if _, ok := Lookup(clan); ok {
+			out = append(out, clan)
+		}
+	}
+	// Deterministic order: internal/exec's detectClan probes clans in this order
+	// via LookPath and stops at the first match. Two clans can share the
+	// same manager binary name (e.g. "pkg" for both termux and freebsd),
+	// so an unordered, per-process-random iteration could resolve to a
+	// different — and for that binary, behaviorally different — clan
+	// between runs on the same machine.
+	sort.Strings(out)
+	return out
+}
+
+// AllClans returns every clan name — including clans that may not have a
+// functioning native manager (like "windows" with winget, or purely historical
+// entries) — so that when-clause validation can check against the complete set
+// of possible distro_family values rather than only the subset that has a
+// working adapter today.
+func AllClans() []string {
+	out := make([]string, 0, len(clanToManagerKey))
+	for clan := range clanToManagerKey {
+		out = append(out, clan)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// nativeManagerNames holds every Manager.Name value, precomputed once so
+// IsNativeManagerName doesn't rescan the managers map on every call (it's
+// invoked once per method kind during schema validation). Mirrors the
+// knownKindSet pattern in internal/methodkind for the same kind of lookup.
+var nativeManagerNames = buildNativeManagerNames()
+
+func buildNativeManagerNames() map[string]bool {
+	set := make(map[string]bool, len(managers))
+	for _, m := range managers {
+		set[m.Name] = true
+	}
+	return set
+}
+
+// IsNativeManagerName reports whether name is a known native package-manager
+// identifier — either a Manager.Name (apt, pacman, dnf, …) or an entry in
+// the reverse alias map (emerge, portage, yum, …). Used by the schema parser
+// to distinguish native-manager overrides from language/method kinds.
+func IsNativeManagerName(name string) bool {
+	if nativeManagerNames[name] {
+		return true
+	}
+	// Check managerNameToClan binary-name aliases.
+	if _, ok := managerNameToClan[name]; ok {
+		return true
+	}
+	return false
+}
+
+// ManagerNamesForClan returns every binary name that can refer to the given
+// clan's native manager. This is the Manager.Name (e.g. "apt" for debian,
+// "pacman" for arch) plus any aliases from managerNameToClan (e.g. "portage"
+// and "emerge" both mapping to gentoo). Used by exec adapters to match
+// pkg_overrides keys against the current clan.
+func ManagerNamesForClan(clan string) []string {
+	var names []string
+	seen := map[string]bool{}
+	if mgr, ok := Lookup(clan); ok && mgr.Name != "" {
+		names = append(names, mgr.Name)
+		seen[mgr.Name] = true
+	}
+
+	// Aliases come from a map, so collect and sort them before appending. The
+	// order is semantically observable: pkgFromConfig uses the first matching
+	// pkg_override. Keeping the primary Manager.Name first and aliases sorted
+	// makes conflicting alias overrides deterministic across processes.
+	var aliases []string
+	for binName, c := range managerNameToClan {
+		if c == clan && !seen[binName] {
+			aliases = append(aliases, binName)
+		}
+	}
+	sort.Strings(aliases)
+	names = append(names, aliases...)
+	return names
+}

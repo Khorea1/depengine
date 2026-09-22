@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/internal/config"
 )
 
 func TestMain(m *testing.M) {

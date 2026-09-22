@@ -3,9 +3,9 @@ package main
 import (
 	"testing"
 
-	"github.com/Khorea1/depengine/pkg/config"
-	"github.com/Khorea1/depengine/pkg/lock"
-	"github.com/Khorea1/depengine/pkg/state"
+	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/lock"
+	"github.com/Khorea1/depengine/internal/state"
 )
 
 func TestLockPinForToolStateUsesPersistedLabel(t *testing.T) {

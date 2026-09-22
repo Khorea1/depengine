@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Khorea1/depengine/pkg/log"
-	"github.com/Khorea1/depengine/pkg/state"
+	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -21,8 +21,7 @@ func newDiffCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.MaximumNArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
-			runDiff(args, diffOther, diffJSON)
-			return nil
+			return runDiff(args, diffOther, diffJSON)
 		},
 	}
 	f := cmd.Flags()
@@ -35,7 +34,7 @@ func newDiffCmd() *cobra.Command {
 // unchanged from the pre-Cobra version — diffArgs is now the positional
 // args Cobra already separated out, and cobra.MaximumNArgs(2) replaces the
 // old `default:` branch of the length switch below.
-func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) {
+func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) error {
 	var aPath, bPath string
 	var aState, bState *state.State
 	var ls *state.LockedState
@@ -45,7 +44,7 @@ func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) {
 	case 0:
 		if *diffOther == "" {
 			fmt.Fprintf(os.Stderr, "error: --other is required when no arguments are given\n")
-			os.Exit(2)
+			return exitWithCode(2)
 		}
 		bPath = *diffOther
 	case 1:
@@ -56,12 +55,12 @@ func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) {
 		aState, err = state.LoadFrom(aPath)
 		if err != nil {
 			log.Default.Error("load first state", "path", aPath, "error", err)
-			os.Exit(3)
+			return exitWithCode(3)
 		}
 		bState, err = state.LoadFrom(bPath)
 		if err != nil {
 			log.Default.Error("load second state", "path", bPath, "error", err)
-			os.Exit(3)
+			return exitWithCode(3)
 		}
 	}
 
@@ -69,14 +68,14 @@ func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) {
 		ls, err = state.LoadShared()
 		if err != nil {
 			log.Default.Error("load current state", "error", err)
-			os.Exit(3)
+			return exitWithCode(3)
 		}
 		defer ls.Close()
 		aState = ls.State()
 		bState, err = state.LoadFrom(bPath)
 		if err != nil {
 			log.Default.Error("load other state", "path", bPath, "error", err)
-			closeStateAndExit(ls, 3)
+			return exitWithCode(3)
 		}
 	}
 
@@ -87,7 +86,7 @@ func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) {
 		} else {
 			fmt.Fprintln(os.Stderr, "No differences found.")
 		}
-		return
+		return nil
 	}
 
 	if *diffJSON {
@@ -95,7 +94,7 @@ func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) {
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(items); err != nil {
 			log.Default.Error("encode JSON", "error", err)
-			closeStateAndExit(ls, 3)
+			return exitWithCode(3)
 		}
 	} else {
 		c := newCLIStyle(os.Stderr)
@@ -145,4 +144,5 @@ func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) {
 
 		fmt.Fprintf(c.w, "\n%s\n", c.dim(fmt.Sprintf("%s differ.", plural(len(items), "tool"))))
 	}
+	return nil
 }

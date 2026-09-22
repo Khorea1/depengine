@@ -7,12 +7,12 @@ import (
 	"sort"
 	"time"
 
-	"github.com/Khorea1/depengine/pkg/config"
-	"github.com/Khorea1/depengine/pkg/ecosystem"
-	"github.com/Khorea1/depengine/pkg/lock"
-	"github.com/Khorea1/depengine/pkg/log"
-	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/state"
+	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/ecosystem"
+	"github.com/Khorea1/depengine/internal/lock"
+	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/run"
+	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -33,8 +33,7 @@ func newUpdateCmd() *cobra.Command {
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runUpdate(cmd.Context(), updateSchema, updateManifest, updateNoManifest, updateLock, updateProfile, updateFrozen, updateDryRun, updateVerbose)
-			return nil
+			return runUpdate(cmd.Context(), updateSchema, updateManifest, updateNoManifest, updateLock, updateProfile, updateFrozen, updateDryRun, updateVerbose)
 		},
 	}
 	f := cmd.Flags()
@@ -49,7 +48,7 @@ func newUpdateCmd() *cobra.Command {
 	return cmd
 }
 
-func runUpdate(ctx context.Context, updateSchema, updateManifest *string, updateNoManifest *bool, updateLock, updateProfile *string, updateFrozen, updateDryRun, updateVerbose *bool) {
+func runUpdate(ctx context.Context, updateSchema, updateManifest *string, updateNoManifest *bool, updateLock, updateProfile *string, updateFrozen, updateDryRun, updateVerbose *bool) error {
 	lg := log.Default
 
 	noManifest := *updateNoManifest
@@ -65,7 +64,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	s, clan, facts, manifestCount, err := loadSchemaWithManifest(*updateSchema, manifestPath)
 	if err != nil {
 		log.Default.Error("load schema", "error", err)
-		os.Exit(exitCodeForError(err))
+		return exitWithCode(exitCodeForError(err))
 	}
 	if manifestAuto && manifestCount > 0 {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
@@ -91,7 +90,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	if err != nil {
 		done("FAIL")
 		lg.Error("resolve lock", "error", err)
-		os.Exit(1)
+		return exitWithCode(1)
 	}
 
 	lockPath := *updateLock
@@ -101,7 +100,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	if *updateFrozen {
 		if _, err := os.Stat(lockPath); err != nil {
 			lg.Error("frozen-lockfile: lockfile not found", "path", lockPath)
-			os.Exit(2)
+			return exitWithCode(2)
 		}
 	}
 	pinned := len(newLock.Tools)
@@ -112,7 +111,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		if err := lock.Save(lockPath, newLock); err != nil {
 			done("FAIL")
 			lg.Error("save lock", "error", err)
-			os.Exit(1)
+			return exitWithCode(1)
 		}
 		done(fmt.Sprintf("(%d pinned)", pinned))
 	}
@@ -148,6 +147,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	if !*updateDryRun {
 		fmt.Fprintln(c.w, c.dim("Run 'depengine install' to apply."))
 	}
+	return nil
 }
 
 // reportVersionDrift compares freshly-resolved lock pins against the versions

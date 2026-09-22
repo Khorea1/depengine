@@ -19,7 +19,7 @@ const (
 
 // cliColor reports whether ANSI styling should be emitted to f. It honors
 // NO_COLOR and TERM=dumb (off) and FORCE_COLOR (on), and otherwise requires
-// f to be a character device — the same policy as pkg/exec's status lines,
+// f to be a character device — the same policy as internal/exec's status lines,
 // generalized to any stream so stdout-bound output (usage, why) and
 // stderr-bound output (status, validate) each make the right call.
 func cliColor(f *os.File) bool {
@@ -91,7 +91,7 @@ func (c *cliStyle) yellow(s string) string {
 func (c *cliStyle) cyan(s string) string { return styled(c.color, ansiCyan, s) }
 
 // status renders one symbol-prefixed status line in the shared ✓/✗/–/→
-// vocabulary of pkg/exec's status lines, with the symbol colored.
+// vocabulary of internal/exec's status lines, with the symbol colored.
 func (c *cliStyle) status(symbol, color, format string, args ...any) {
 	line := fmt.Sprintf("  %s %s\n", styled(c.color, color, symbol), fmt.Sprintf(format, args...))
 	fmt.Fprint(c.w, line)

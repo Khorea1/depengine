@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/internal/config"
 )
 
 func main() {

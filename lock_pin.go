@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Khorea1/depengine/pkg/config"
-	"github.com/Khorea1/depengine/pkg/lock"
-	"github.com/Khorea1/depengine/pkg/state"
+	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/lock"
+	"github.com/Khorea1/depengine/internal/state"
 )
 
 // lockPinFor looks up a tool's canonical "<tool>/<kind>/<idx>" pin only when
@@ -38,7 +38,7 @@ func lockPinFor(l *lock.Lock, tool, kind string) (lock.ToolPin, bool) {
 }
 
 // lockPinForCandidate resolves the exact lock key for a concrete schema
-// candidate. The index is ordinal within its method kind, matching pkg/lock's
+// candidate. The index is ordinal within its method kind, matching internal/lock's
 // canonical writer. Pointer identity is deliberate: callers resolve the
 // candidate from the same normalized Tool whose Methods slice lock.Apply uses.
 func lockPinForCandidate(l *lock.Lock, toolName string, tool *config.Tool, candidate *config.MethodCandidate) (lock.ToolPin, bool) {

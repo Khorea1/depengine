@@ -5,17 +5,19 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
-	"github.com/Khorea1/depengine/pkg/config"
-	"github.com/Khorea1/depengine/pkg/container"
-	"github.com/Khorea1/depengine/pkg/ecosystem"
-	"github.com/Khorea1/depengine/pkg/exec"
-	"github.com/Khorea1/depengine/pkg/git"
-	"github.com/Khorea1/depengine/pkg/httpdownload"
-	"github.com/Khorea1/depengine/pkg/lock"
-	"github.com/Khorea1/depengine/pkg/log"
-	"github.com/Khorea1/depengine/pkg/run"
-	"github.com/Khorea1/depengine/pkg/state"
+	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/container"
+	"github.com/Khorea1/depengine/internal/ecosystem"
+	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/git"
+	"github.com/Khorea1/depengine/internal/httpdownload"
+	"github.com/Khorea1/depengine/internal/lock"
+	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/run"
+	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -47,8 +49,7 @@ func newInstallCmd() *cobra.Command {
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(installCmd *cobra.Command, args []string) error {
-			runInstall(installCmd, installSchema, installManifest, installNoManifest, installDryRun, installVerbose, installJSON, installOnly, installSkip, installProfile, installFrozen, installDiagnose, installLogLevel, installSortBy, installJobs, installAllowArbitrary, installQuiet)
-			return nil
+			return runInstall(installCmd, installSchema, installManifest, installNoManifest, installDryRun, installVerbose, installJSON, installOnly, installSkip, installProfile, installFrozen, installDiagnose, installLogLevel, installSortBy, installJobs, installAllowArbitrary, installQuiet)
 		},
 	}
 	f := cmd.Flags()
@@ -71,94 +72,128 @@ func newInstallCmd() *cobra.Command {
 	return cmd
 }
 
-// runInstall installs tools from schema.toml. Body unchanged from the
-// pre-Cobra version — only the flag declarations above it moved.
-func runInstall(cmd *cobra.Command, installSchema, installManifest *string, installNoManifest, installDryRun, installVerbose, installJSON *bool, installOnly, installSkip, installProfile *string, installFrozen, installDiagnose *bool, installLogLevel, installSortBy *string, installJobs *int, installAllowArbitrary, installQuiet *bool) {
-	lg := log.Default
+// installPlan is the resolved, value-copied view of the install flags.
+// collectInstallPlan applies --diagnose defaults (mutating only flags the
+// user didn't explicitly set), picks the logger, validates --sort-by, and
+// resolves the manifest path. Everything downstream reads this struct.
+type installPlan struct {
+	schema       string
+	manifestFlag string
+	manifestPath string
+	manifestAuto bool
+	noManifest   bool
+	dryRun       bool
+	verbose      bool
+	json         bool
+	only         string
+	skip         string
+	profile      string
+	frozen       bool
+	diagnose     bool
+	logLevel     string
+	sortBy       string
+	jobs         int
+	allowCode    bool
+	quiet        bool
+}
 
-	if *installDiagnose {
+// collectInstallPlan resolves flags into an installPlan plus the logger.
+// Returns an ExitError(2) when --sort-by is invalid.
+func collectInstallPlan(cmd *cobra.Command, installSchema, installManifest *string, installNoManifest, installDryRun, installVerbose, installJSON *bool, installOnly, installSkip, installProfile *string, installFrozen, installDiagnose *bool, installLogLevel, installSortBy *string, installJobs *int, installAllowArbitrary, installQuiet *bool) (installPlan, *slog.Logger) {
+	lg := log.Default
+	p := installPlan{
+		schema:       *installSchema,
+		manifestFlag: *installManifest,
+		noManifest:   *installNoManifest,
+		dryRun:       *installDryRun,
+		verbose:      *installVerbose,
+		json:         *installJSON,
+		only:         *installOnly,
+		skip:         *installSkip,
+		profile:      *installProfile,
+		frozen:       *installFrozen,
+		diagnose:     *installDiagnose,
+		logLevel:     *installLogLevel,
+		sortBy:       *installSortBy,
+		jobs:         *installJobs,
+		allowCode:    *installAllowArbitrary,
+		quiet:        *installQuiet,
+	}
+
+	if p.diagnose {
 		// Only override flags the user didn't explicitly set.
 		saw := make(map[string]bool)
 		cmd.Flags().Visit(func(f *pflag.Flag) {
 			saw[f.Name] = true
 		})
 		if !saw["dry-run"] {
+			p.dryRun = true
 			*installDryRun = true
 		}
 		if !saw["verbose"] {
+			p.verbose = true
 			*installVerbose = true
 		}
 		if !saw["log-level"] {
 			lg = log.New(os.Stderr, slog.LevelDebug)
 		}
 	}
-	if *installLogLevel != "" {
-		lg = log.New(os.Stderr, log.LevelFromString(*installLogLevel))
+	if p.logLevel != "" {
+		lg = log.New(os.Stderr, log.LevelFromString(p.logLevel))
 	}
 
-	ctx := cmd.Context()
+	p.manifestPath, p.manifestAuto = resolveInstallManifestPath(p.noManifest, p.manifestFlag, config.DefaultManifestPath())
+	return p, lg
+}
 
-	if *installSortBy != "" {
-		if _, ok := exec.ParseSortField(*installSortBy); !ok {
-			lg.Error("invalid --sort-by value", "value", *installSortBy, "valid", "name, status, method")
-			os.Exit(2)
-		}
+// resolveInstallManifestPath maps --no-manifest/--manifest plus the
+// auto-detected default into the effective manifest path. Pure: the default
+// is passed in so tests don't touch XDG env.
+func resolveInstallManifestPath(noManifest bool, flag, def string) (string, bool) {
+	if noManifest || flag != "" {
+		return flag, false
 	}
+	if def != "" {
+		return def, true
+	}
+	return "", false
+}
 
-	noManifest := *installNoManifest
-	manifestPath := *installManifest
-	manifestAuto := false
-	if !noManifest && manifestPath == "" {
-		manifestPath = config.DefaultManifestPath()
-		if manifestPath != "" {
-			manifestAuto = true
-		}
+// validateInstallSortBy rejects unknown --sort-by values with ExitError(2).
+func validateInstallSortBy(sortBy string, lg *slog.Logger) error {
+	if sortBy == "" {
+		return nil
 	}
+	if _, ok := exec.ParseSortField(sortBy); !ok {
+		lg.Error("invalid --sort-by value", "value", sortBy, "valid", "name, status, method")
+		return exitWithCode(2)
+	}
+	return nil
+}
 
-	s, clan, facts, manifestCount, err := loadSchemaWithManifest(*installSchema, manifestPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "error: %s not found\n", *installSchema)
-			fmt.Fprintf(os.Stderr, "Run 'depengine init' to create one, or point --schema to an existing file.\n")
-			os.Exit(1)
-		}
-		lg.Error("load schema", "error", err)
-		os.Exit(exitCodeForError(err))
-	}
-	if helper := s.Defaults.AurHelper; helper != "" {
-		ecosystem.ReconfigureAUR(helper)
-	}
-
-	if *installVerbose {
-		fmt.Fprintln(os.Stderr, "depengine: --verbose is deprecated; output is now verbose by default. Use --quiet for the old summary-only behavior.")
-	}
-
-	// One aligned block instead of several scattered Fprintf calls — a
-	// single glance answers "what schema, what target, how many tools,
-	// is this a dry run" before any per-tool output starts scrolling by.
-	cs := newCLIStyle(os.Stderr)
+// printInstallHeader prints the aligned pre-run block answering "what
+// schema, what target, how many tools, is this a dry run".
+func printInstallHeader(cs *cliStyle, p installPlan, s *config.Schema, clan string, facts *engine.Facts, manifestCount int) {
 	title := "depengine install"
-	if *installDryRun {
+	if p.dryRun {
 		title = "depengine install — dry run (planning only)"
 	}
 	pairs := [][2]string{
-		{"schema", *installSchema},
+		{"schema", p.schema},
 	}
-	if manifestAuto && manifestCount > 0 {
-		pairs = append(pairs, [2]string{"manifest", fmt.Sprintf("%s (%s)", manifestPath, plural(manifestCount, "tool")+" merged")})
+	if p.manifestAuto && manifestCount > 0 {
+		pairs = append(pairs, [2]string{"manifest", fmt.Sprintf("%s (%s)", p.manifestPath, plural(manifestCount, "tool")+" merged")})
 	}
 	pairs = append(pairs,
 		[2]string{"target", fmt.Sprintf("%s (%s) · %s", facts.DistroID, clan, facts.TargetArch)},
 		[2]string{"tools", fmt.Sprintf("%d", len(s.Tools))},
 	)
 	printKV(cs, title, pairs...)
+}
 
-	schemaFile, err := os.Stat(*installSchema)
-	if err != nil {
-		lg.Error("stat schema", "error", err)
-		os.Exit(exitCodeForError(err))
-	}
-
+// newInstallExecutor wires the executor: adapters, schema info, logger,
+// runner, facts, and the install plan's behavior options.
+func newInstallExecutor(p installPlan, s *config.Schema, clan string, facts *engine.Facts, schemaModTime time.Time, lg *slog.Logger) *exec.Executor {
 	ex := exec.New()
 	exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
 	exec.WithAdapters(
@@ -167,36 +202,40 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		container.NewContainerAdapter(),
 		exec.NewNativeAdapter(clan),
 	)(ex)
-	exec.WithSchemaInfo(*installSchema, schemaFile.ModTime())(ex)
+	exec.WithSchemaInfo(p.schema, schemaModTime)(ex)
 	exec.WithLogger(lg)(ex)
 	exec.WithRunner(run.NewLoggingRunner(run.OSExecRunner{}, lg))(ex)
 
 	exec.WithFacts(facts)(ex)
-	if *installDryRun {
+	if p.dryRun {
 		exec.WithDryRun()(ex)
 	}
-	if *installSortBy != "" {
-		exec.WithSortBy(exec.SortField(*installSortBy))(ex)
+	if p.sortBy != "" {
+		exec.WithSortBy(exec.SortField(p.sortBy))(ex)
 	}
-	if *installJobs > 1 {
-		exec.WithMaxJobs(*installJobs)(ex)
+	if p.jobs > 1 {
+		exec.WithMaxJobs(p.jobs)(ex)
 	}
-	if *installAllowArbitrary {
+	if p.allowCode {
 		exec.WithAllowArbitraryCode()(ex)
 	}
-	if *installQuiet {
+	if p.quiet {
 		exec.WithQuiet()(ex)
 	}
-	if *installDiagnose {
+	if p.diagnose {
 		exec.WithDiagnose()(ex)
 	}
+	return ex
+}
 
-	lockPath := lock.DefaultPath(*installSchema)
-	lk := loadLockfile(*installSchema, s, *installFrozen, lg)
-
-	// Auto-resolve {latest} if no lockfile exists — makes first install work
-	// like npm/pip: no explicit 'depengine update' needed.
-	if lk == nil && !*installFrozen {
+// resolveInstallLock loads the lockfile and auto-resolves {latest} pins when
+// no lockfile exists (npm/pip style: first install needs no explicit update).
+func resolveInstallLock(ctx context.Context, p installPlan, s *config.Schema, lg *slog.Logger) (*lock.Lock, error) {
+	lk, err := loadLockfile(p.schema, s, p.frozen, lg)
+	if err != nil {
+		return nil, err
+	}
+	if lk == nil && !p.frozen {
 		if hasLatestPlaceholders(s) {
 			lg.Info("no lockfile found — resolving latest versions")
 			newLock, err := lock.ResolveAll(ctx, s, run.OSExecRunner{})
@@ -208,47 +247,58 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 			}
 		}
 	}
-	s.Tools = filterTools(s.Tools, *installOnly, *installSkip, *installProfile)
+	return lk, nil
+}
 
-	if !*installDryRun {
-		if _, err := state.SaveSnapshot(); err != nil {
-			lg.Warn("could not save pre-install snapshot", "error", err)
-		}
+// installOutputMode selects the report rendering path. Pure.
+func installOutputMode(json, quiet, verbose bool) string {
+	if json {
+		return "json"
 	}
-
-	if *installDiagnose {
-		lg.Debug("facts", "facts", facts)
-		lg.Debug("schema", "tools", len(s.Tools))
+	if quiet || verbose {
+		return "detail"
 	}
+	return "summary"
+}
 
-	report, err := ex.Execute(ctx, s, clan)
-	if err != nil {
-		lg.Error("execute failed", "error", err)
-		os.Exit(2)
-	}
-
-	switch {
-	case *installJSON:
+// renderInstallReport prints the execution report: JSON, the detail table
+// (--quiet needs it as the only detail surface, --verbose asks for the
+// recap), or the one-line summary. Plain and dry-run installs skip the
+// table — the live ✓/✗/→ lines already told the story.
+func renderInstallReport(report *exec.ExecReport, p installPlan, cs *cliStyle) {
+	switch installOutputMode(p.json, p.quiet, p.verbose) {
+	case "json":
 		fmt.Println(report.JSON())
-	case *installQuiet || *installVerbose:
-		// --quiet showed no live per-tool lines, so the table is the only
-		// place detail (and failure reasons) surface. --verbose is an
-		// explicit ask for the same recap in addition to what already
-		// streamed. Plain --dry-run and plain install deliberately do NOT
-		// hit this branch: the live ✓/✗/→ lines already told the whole
-		// story, and reprinting them as a table would just be noise.
+	case "detail":
 		fmt.Fprint(os.Stderr, report.Detail())
 	default:
 		fmt.Fprintln(os.Stderr, report.Summary())
 	}
 
-	if *installDryRun && !*installJSON {
+	if p.dryRun && !p.json {
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, cs.cyan("Dry run — read-only resolution/checks may run; mutation steps were not executed. Remove --dry-run to install."))
 	}
+}
 
-	if !*installDryRun {
-		saveLockfile(ctx, s, lockPath, lk, lg, *installDiagnose)
+// shouldShareInstallHint is true after a successful real install. Pure.
+func shouldShareInstallHint(report *exec.ExecReport, dryRun bool) bool {
+	return report.Failed == 0 && report.Success > 0 && !dryRun
+}
+
+// installExitForReport maps a finished report to the process exit. Pure.
+func installExitForReport(report *exec.ExecReport) error {
+	if report.Failed > 0 {
+		return exitWithCode(1)
+	}
+	return nil
+}
+
+// finishInstallRun persists post-run state (lockfile + version sync),
+// prints the share hint, and maps the report to the exit error.
+func finishInstallRun(ctx context.Context, report *exec.ExecReport, p installPlan, s *config.Schema, lockPath string, lk *lock.Lock, lg *slog.Logger, cs *cliStyle) error {
+	if !p.dryRun {
+		saveLockfile(ctx, s, lockPath, lk, lg, p.diagnose)
 		// Reconcile recorded versions with the lock: backfill versions the
 		// adapter could not determine (e.g. {latest} pins baked into URLs)
 		// and surface installed-vs-pinned mismatches instead of a silent
@@ -257,15 +307,86 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	}
 
 	// After successful install, guide the user to share.
-	if report.Failed == 0 && report.Success > 0 && !*installDryRun {
+	if shouldShareInstallHint(report, p.dryRun) {
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, cs.dim("Share schema.toml in git so others can reproduce your tools:"))
 		fmt.Fprintln(os.Stderr, cs.dim("  git add schema.toml depengine.lock && git commit"))
 	}
 
-	if report.Failed > 0 {
-		os.Exit(1)
+	return installExitForReport(report)
+}
+
+// runInstall installs tools from schema.toml. Thin orchestrator over the
+// phase helpers above — flag resolution, header, executor build, lock,
+// execute, render, finish.
+func runInstall(cmd *cobra.Command, installSchema, installManifest *string, installNoManifest, installDryRun, installVerbose, installJSON *bool, installOnly, installSkip, installProfile *string, installFrozen, installDiagnose *bool, installLogLevel, installSortBy *string, installJobs *int, installAllowArbitrary, installQuiet *bool) error {
+	p, lg := collectInstallPlan(cmd, installSchema, installManifest, installNoManifest, installDryRun, installVerbose, installJSON, installOnly, installSkip, installProfile, installFrozen, installDiagnose, installLogLevel, installSortBy, installJobs, installAllowArbitrary, installQuiet)
+
+	ctx := cmd.Context()
+
+	if err := validateInstallSortBy(p.sortBy, lg); err != nil {
+		return err
 	}
+
+	s, clan, facts, manifestCount, err := loadSchemaWithManifest(p.schema, p.manifestPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "error: %s not found\n", p.schema)
+			fmt.Fprintf(os.Stderr, "Run 'depengine init' to create one, or point --schema to an existing file.\n")
+			return exitWithCode(1)
+		}
+		lg.Error("load schema", "error", err)
+		return exitWithCode(exitCodeForError(err))
+	}
+	if helper := s.Defaults.AurHelper; helper != "" {
+		ecosystem.ReconfigureAUR(helper)
+	}
+
+	if p.verbose {
+		fmt.Fprintln(os.Stderr, "depengine: --verbose is deprecated; output is now verbose by default. Use --quiet for the old summary-only behavior.")
+	}
+
+	// One aligned block instead of several scattered Fprintf calls — a
+	// single glance answers "what schema, what target, how many tools,
+	// is this a dry run" before any per-tool output starts scrolling by.
+	cs := newCLIStyle(os.Stderr)
+	printInstallHeader(cs, p, s, clan, facts, manifestCount)
+
+	schemaFile, err := os.Stat(p.schema)
+	if err != nil {
+		lg.Error("stat schema", "error", err)
+		return exitWithCode(exitCodeForError(err))
+	}
+
+	ex := newInstallExecutor(p, s, clan, facts, schemaFile.ModTime(), lg)
+
+	lockPath := lock.DefaultPath(p.schema)
+	lk, err := resolveInstallLock(ctx, p, s, lg)
+	if err != nil {
+		return err
+	}
+	s.Tools = filterTools(s.Tools, p.only, p.skip, p.profile)
+
+	if !p.dryRun {
+		if _, err := state.SaveSnapshot(); err != nil {
+			lg.Warn("could not save pre-install snapshot", "error", err)
+		}
+	}
+
+	if p.diagnose {
+		lg.Debug("facts", "facts", facts)
+		lg.Debug("schema", "tools", len(s.Tools))
+	}
+
+	report, err := ex.Execute(ctx, s, clan)
+	if err != nil {
+		lg.Error("execute failed", "error", err)
+		return exitWithCode(2)
+	}
+
+	renderInstallReport(report, p, cs)
+
+	return finishInstallRun(ctx, report, p, s, lockPath, lk, lg, cs)
 }
 
 // syncInstalledVersions reconciles recorded versions with lock pins after an

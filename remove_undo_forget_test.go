@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Khorea1/depengine/pkg/plan"
-	"github.com/Khorea1/depengine/pkg/state"
+	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
 )
 

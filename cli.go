@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Khorea1/depengine/pkg/i18n"
+	"github.com/Khorea1/depengine/internal/i18n"
 	"github.com/spf13/cobra"
 )
 
@@ -43,15 +43,12 @@ func newRootCmd() *cobra.Command {
 
 	var showVersion bool
 	root := &cobra.Command{
-		Use:   "depengine",
-		Short: short,
-		// Every runXxx function still prints its own errors and calls
-		// os.Exit directly (unchanged from before this migration), so
-		// RunE never actually returns a real error here — the only
-		// errors Cobra itself prints are unknown command / unknown flag /
-		// wrong argument count, which we want shown (this is strictly
-		// better than the old CLI's plain "unknown command" line: Cobra
-		// also suggests the closest match, e.g. "instal" -> "install").
+		Use:           "depengine",
+		Short:         short,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		// Command handlers return typed exit errors after deferred cleanup;
+		// only main translates those errors into process exit codes.
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if showVersion {
 				printVersion()
@@ -120,19 +117,19 @@ func newHelpCmd(root *cobra.Command) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "help [command]",
 		Short: ifPT("Ajuda sobre qualquer comando", "Help about any command"),
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if man {
 				printManPage()
-				return
+				return nil
 			}
 			target, _, err := root.Find(args)
 			if err != nil || target == nil {
 				fmt.Fprintf(os.Stderr, "Unknown help topic %q\n", args)
 				_ = root.Usage()
-				os.Exit(1)
+				return exitWithCode(1)
 			}
 			target.InitDefaultHelpFlag()
-			_ = target.Help()
+			return target.Help()
 		},
 	}
 	cmd.Flags().BoolVar(&man, "man", false, ifPT("Mostrar a man page", "Show the man page"))

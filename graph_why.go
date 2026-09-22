@@ -8,14 +8,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Khorea1/depengine/pkg/config"
-	"github.com/Khorea1/depengine/pkg/ecosystem"
-	"github.com/Khorea1/depengine/pkg/engine"
-	"github.com/Khorea1/depengine/pkg/exec"
-	"github.com/Khorea1/depengine/pkg/graph"
-	"github.com/Khorea1/depengine/pkg/log"
-	"github.com/Khorea1/depengine/pkg/plan"
-	"github.com/Khorea1/depengine/pkg/run"
+	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/ecosystem"
+	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/graph"
+	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/run"
 	"github.com/spf13/cobra"
 )
 
@@ -35,8 +35,7 @@ func newGraphCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
-			runGraph(graphSchema, graphManifest, graphNoManifest, graphFormat, graphProfile, graphOnly, graphSkip)
-			return nil
+			return runGraph(graphSchema, graphManifest, graphNoManifest, graphFormat, graphProfile, graphOnly, graphSkip)
 		},
 	}
 	f := cmd.Flags()
@@ -50,18 +49,18 @@ func newGraphCmd() *cobra.Command {
 	return cmd
 }
 
-func runGraph(graphSchema, graphManifest *string, graphNoManifest *bool, graphFormat, graphProfile, graphOnly, graphSkip *string) {
+func runGraph(graphSchema, graphManifest *string, graphNoManifest *bool, graphFormat, graphProfile, graphOnly, graphSkip *string) error {
 	switch *graphFormat {
 	case "mermaid", "dot", "text":
 	default:
 		fmt.Fprintf(os.Stderr, "error: unknown format %q (valid: mermaid, dot, text)\n", *graphFormat)
-		os.Exit(2)
+		return exitWithCode(2)
 	}
 
 	s, err := config.ParseProjectSchema(*graphSchema, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(exitCodeForError(err))
+		return exitWithCode(exitCodeForError(err))
 	}
 
 	noManifest := *graphNoManifest
@@ -78,7 +77,7 @@ func runGraph(graphSchema, graphManifest *string, graphNoManifest *bool, graphFo
 		s, count, err = mergeManifest(s, manifestPath, false)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", err)
-			os.Exit(2)
+			return exitWithCode(2)
 		}
 		if count > 0 && manifestAuto {
 			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
@@ -88,13 +87,13 @@ func runGraph(graphSchema, graphManifest *string, graphNoManifest *bool, graphFo
 
 	if len(s.Tools) == 0 {
 		fmt.Fprintln(os.Stderr, "no tools matching filters")
-		os.Exit(0)
+		return nil
 	}
 
 	levels, err := graph.Sort(s.Tools)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(2)
+		return exitWithCode(2)
 	}
 
 	if *graphFormat == "text" {
@@ -112,6 +111,7 @@ func runGraph(graphSchema, graphManifest *string, graphNoManifest *bool, graphFo
 	case "text":
 		fmt.Print(graph.RenderText(levels, s.Tools))
 	}
+	return nil
 }
 
 // newWhyCmd builds `depengine why`.
@@ -128,8 +128,7 @@ func newWhyCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runWhy(cmd.Context(), args[0], whySchema, whyManifest, whyNoManifest, whyJSON, whyFields)
-			return nil
+			return runWhy(cmd.Context(), args[0], whySchema, whyManifest, whyNoManifest, whyJSON, whyFields)
 		},
 	}
 	f := cmd.Flags()
@@ -163,11 +162,11 @@ func formatWhyIntent(intent map[string]string) string {
 // cobra.ExactArgs(1) now enforces the argument count that the old manual
 // length check did, and toolName arrives as a plain argument instead of
 // remain[0].
-func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string, whyNoManifest, whyJSON, whyFields *bool) {
+func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string, whyNoManifest, whyJSON, whyFields *bool) error {
 	s, err := config.ParseProjectSchema(*whySchema, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		return exitWithCode(1)
 	}
 
 	noManifest := *whyNoManifest
@@ -184,7 +183,7 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 		s, count, err = mergeManifest(s, manifestPath, *whyFields)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", err)
-			os.Exit(2)
+			return exitWithCode(2)
 		}
 		if count > 0 && manifestAuto {
 			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
@@ -201,7 +200,7 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 
 	if warnings, verr := config.Validate(s, exec.RegisteredKinds()); verr != nil {
 		log.Default.Error("schema validation", "error", verr)
-		os.Exit(exitCodeForError(verr))
+		return exitWithCode(exitCodeForError(verr))
 	} else if len(warnings) > 0 {
 		for _, w := range warnings {
 			log.Default.Warn(w)
@@ -211,7 +210,7 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 	tool, ok := s.Tools[toolName]
 	if !ok {
 		log.Default.Error("tool not found in schema", "tool", toolName)
-		os.Exit(1)
+		return exitWithCode(1)
 	}
 
 	ex := exec.New()
@@ -235,9 +234,9 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(out); err != nil {
 			log.Default.Error("JSON encode", "error", err)
-			os.Exit(3)
+			return exitWithCode(3)
 		}
-		return
+		return nil
 	}
 
 	c := newCLIStyle(os.Stdout)
@@ -302,4 +301,5 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 			}
 		}
 	}
+	return nil
 }
