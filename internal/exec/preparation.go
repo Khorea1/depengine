@@ -13,6 +13,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/source"
 	depstate "github.com/Khorea1/depengine/internal/state"
 )
@@ -439,31 +440,44 @@ func (ex *Executor) recoveryCandidate(key string) (*config.Tool, *config.MethodC
 	return tool, matched, matchedIntent, adapter, nil
 }
 
-// observeRecoveryCandidate derives only identity facts that the legacy Adapter
-// contract can establish without mutation. A successful candidate-specific
-// Check proves target presence and package identity. Version is authoritative
-// only when the adapter implements Versioner and returns a concrete value.
-// Other identity dimensions remain unverifiable, which deliberately leaves the
-// committing journal blocked rather than guessing.
+// observeRecoveryCandidate derives identity facts without mutation. V2
+// adapters own presence and identity observation; legacy adapters retain their
+// boolean Check semantics. Version is authoritative only when Observe or a
+// Versioner probe returns it. Other identity dimensions remain unverifiable,
+// which deliberately leaves the committing journal blocked rather than
+// guessing.
 func (ex *Executor) observeRecoveryCandidate(ctx context.Context, tool *config.Tool, method *config.MethodCandidate, intent *plan.ResolvedInstallPlan, adapter Adapter) plan.Observation {
 	probeCtx, cancel := context.WithTimeout(ctx, ex.methodTimeout)
 	defer cancel()
-	if !adapter.Check(probeCtx, ex.probeRunner(tool.Name, method.Kind), tool, method) {
-		return plan.Observation{Presence: plan.PresenceAbsent}
+	runner := ex.probeRunner(tool.Name, method.Kind)
+	var observation plan.Observation
+	if observer, ok := adapter.(AdapterV2); ok {
+		var err error
+		observation, err = observer.Observe(probeCtx, runner, tool, method)
+		if err != nil {
+			return plan.Observation{
+				Presence: plan.PresenceBroken,
+				Detail:   "observe recovery candidate failed: " + run.RedactSensitiveText(err.Error()),
+			}
+		}
+	} else {
+		if !adapter.Check(probeCtx, runner, tool, method) {
+			return plan.Observation{Presence: plan.PresenceAbsent}
+		}
+		observation.Presence = plan.PresencePresent
+		if intent.Identity.Package != "" {
+			observation.Identity.Package = intent.Identity.Package
+			observation.KnownFields = append(observation.KnownFields, plan.FieldPackage)
+		}
 	}
 
-	observation := plan.Observation{Presence: plan.PresencePresent}
-	if intent.Identity.Package != "" {
-		observation.Identity.Package = intent.Identity.Package
-		observation.KnownFields = append(observation.KnownFields, plan.FieldPackage)
-	}
-	if intent.Identity.Version != "" {
+	if observation.Presence == plan.PresencePresent && intent.Identity.Version != "" && !containsIdentityField(observation.KnownFields, plan.FieldVersion) {
 		if versioner, ok := adapter.(Versioner); ok {
 			versionCtx, versionCancel := context.WithTimeout(ctx, versionProbeTimeout)
-			version, err := versioner.InstalledVersion(versionCtx, ex.probeRunner(tool.Name, method.Kind), tool, method)
+			version, err := versioner.InstalledVersion(versionCtx, runner, tool, method)
 			versionCancel()
 			if err != nil {
-				observation.Detail = "installed version probe failed: " + err.Error()
+				observation.Detail = "installed version probe failed: " + run.RedactSensitiveText(err.Error())
 			} else if version != "" {
 				observation.Identity.Version = version
 				observation.KnownFields = append(observation.KnownFields, plan.FieldVersion)
@@ -471,6 +485,15 @@ func (ex *Executor) observeRecoveryCandidate(ctx context.Context, tool *config.T
 		}
 	}
 	return observation
+}
+
+func containsIdentityField(fields []plan.IdentityField, wanted plan.IdentityField) bool {
+	for _, field := range fields {
+		if field == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func (ex *Executor) reconcilePreparationCommit(ctx context.Context, locked *depstate.LockedState, key string, preparationPlan plan.PreparationPlan) error {
@@ -502,9 +525,9 @@ func (ex *Executor) reconcilePreparationCommit(ctx context.Context, locked *deps
 
 // recoverPreparationTransactions runs before any new host mutation. Source-only
 // preparations can be reconciled and rolled back from the persisted plan alone.
-// A journal already in commit remains fail-closed until adapter-neutral commit
-// observation is wired: replaying or rolling it back would guess whether the
-// install operation took effect.
+// A journal already in commit remains fail-closed until observation establishes
+// a fully matching installed identity: replaying or rolling it back would
+// guess whether the install operation took effect.
 func (ex *Executor) recoverPreparationTransactions(ctx context.Context) error {
 	if ex.dryRun || ex.schemaPath == "" {
 		return nil
