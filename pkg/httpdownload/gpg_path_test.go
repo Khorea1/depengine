@@ -1,6 +1,11 @@
 package httpdownload
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/Khorea1/depengine/pkg/run"
+)
 
 func TestToMSYSPath(t *testing.T) {
 	tests := []struct{ in, want string }{
@@ -19,12 +24,23 @@ func TestToMSYSPath(t *testing.T) {
 	}
 }
 
-func TestGPGPathPassesThroughOffWindows(t *testing.T) {
-	if msysGPG() {
-		t.Skip("MSYS gpg present: conversion active, passthrough does not apply")
+func TestGPGPathFollowsProbe(t *testing.T) {
+	if got := gpgPath(false, `C:\x`); got != `C:\x` {
+		t.Fatalf("gpgPath(false, ...) = %q, want passthrough", got)
 	}
-	in := `C:\Users\runner\Temp\x`
-	if got := gpgPath(in); got != in {
-		t.Fatalf("gpgPath(%q) = %q, want passthrough", in, got)
+	if got := gpgPath(true, `C:\x`); got != `/c/x` {
+		t.Fatalf("gpgPath(true, ...) = %q, want /c/x", got)
+	}
+}
+
+func TestIsMSYSGPGFalseOffWindows(t *testing.T) {
+	// Off Windows the probe short-circuits before touching the runner:
+	// even a runner that claims everything exists must yield false.
+	fr := &run.FakeRunner{}
+	if isMSYSGPG(context.Background(), fr) {
+		t.Fatal("isMSYSGPG should be false off Windows")
+	}
+	if len(fr.Calls) != 0 {
+		t.Fatalf("off-Windows probe made %d runner calls, want 0", len(fr.Calls))
 	}
 }
