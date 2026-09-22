@@ -56,11 +56,7 @@ func explainIntent(method *config.MethodCandidate) map[string]string {
 //
 // This is the engine behind `depengine why <tool>`.
 func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan string) []MethodAttempt {
-	// Resolve native manager for method_order expansion.
-	if mgr, ok := native.Lookup(clan); ok {
-		ex.nativeManagerName = mgr.Name
-	}
-	orderedMethods := config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
+	orderedMethods := ex.selectedMethods(tool, clan)
 	methods := orderedMethods
 	if len(tool.Methods) == 0 {
 		return []MethodAttempt{{Kind: "", Status: "virtual", Error: "dependency group (no methods declared)"}}
@@ -253,4 +249,53 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 	}
 
 	return attempts
+}
+
+// CheckInstalled probes method candidates in install order and returns the
+// first method that reports the tool present. It shares candidate selection
+// and V2 plan resolution with ExplainTool, but stops after presence probes so
+// `check` never probes package sources or install availability. When live is
+// false, unavailable adapters are skipped; live bypasses that gate.
+func (ex *Executor) CheckInstalled(ctx context.Context, tool *config.Tool, clan string, live bool) (string, bool) {
+	for _, method := range ex.selectedMethods(tool, clan) {
+		if method.When != nil && !method.When.Match(ex.facts) {
+			continue
+		}
+		adapter := ex.LookupAdapter(method.Kind)
+		if adapter == nil {
+			continue
+		}
+		probe := ex.probeRunner(tool.Name, method.Kind)
+		if !live && !adapter.Available(ctx, probe) {
+			continue
+		}
+		intent, mismatch := candidatePlanIntent(tool, method)
+		if mismatch != "" {
+			continue
+		}
+		intent = ex.hostResolvedPlanIntent(method, intent)
+		_, err := ex.resolveCandidatePlan(ctx, tool, method, adapter, intent, method.Kind)
+		if err != nil {
+			continue
+		}
+		if observer, ok := adapter.(AdapterV2); ok {
+			observation, err := observer.Observe(ctx, probe, tool, method)
+			if err == nil && observation.Presence == plan.PresencePresent {
+				return method.Kind, true
+			}
+			continue
+		}
+		if adapter.Check(ctx, probe, tool, method) {
+			return method.Kind, true
+		}
+	}
+	return "", false
+}
+
+func (ex *Executor) selectedMethods(tool *config.Tool, clan string) []*config.MethodCandidate {
+	ex.clan = clan
+	if mgr, ok := native.Lookup(clan); ok {
+		ex.nativeManagerName = mgr.Name
+	}
+	return config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
 }

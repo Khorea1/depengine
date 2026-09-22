@@ -8,10 +8,8 @@ import (
 	"os"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/log"
-	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/validate"
 	"github.com/spf13/cobra"
@@ -189,10 +187,7 @@ func newCheckCmd() *cobra.Command {
 	return cmd
 }
 
-// runCheck reports whether a single tool is installed. Body unchanged from
-// the pre-Cobra version — Cobra's cobra.ExactArgs(1) now enforces the
-// argument count that the old manual length check did, and toolName arrives
-// as a plain argument instead of remain[0].
+// runCheck reports whether a single tool is installed.
 func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *string, checkNoManifest, checkJSON *bool, checkFormat *string, checkLive *bool) error {
 	noManifest := *checkNoManifest
 	manifestPath := *checkManifest
@@ -204,7 +199,7 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 		}
 	}
 
-	s, clan, _, manifestCount, err := loadSchemaWithManifest(*checkSchema, manifestPath)
+	s, clan, facts, manifestCount, err := loadSchemaWithManifest(*checkSchema, manifestPath)
 	if err != nil {
 		log.Default.Error("load schema", "error", err)
 		return exitWithCode(exitCodeForError(err))
@@ -220,31 +215,23 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 	}
 	useJSON := *checkJSON || *checkFormat == "json"
 
-	for _, method := range tool.Methods {
-		if method.When != nil && len(method.When.DistroFamily) > 0 {
-			if !engine.MatchesDistroFamily(clan, method.When.DistroFamily) {
-				continue
-			}
+	ex := exec.New()
+	exec.WithRunner(run.OSExecRunner{})(ex)
+	exec.WithFacts(facts)(ex)
+	exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
+	installedMethod, installed := ex.CheckInstalled(ctx, tool, clan, *checkLive)
+
+	if installed {
+		if useJSON {
+			json.NewEncoder(os.Stdout).Encode(map[string]string{
+				"tool":   toolName,
+				"status": "installed",
+				"method": installedMethod,
+			})
+		} else {
+			newCLIStyle(os.Stderr).ok("%s is installed (via %s)", toolName, installedMethod)
 		}
-		adapter := exec.Lookup(method.Kind)
-		if adapter == nil {
-			continue
-		}
-		if !*checkLive && !adapter.Available(ctx, run.OSExecRunner{}) {
-			continue
-		}
-		if checkAdapterInstalled(ctx, adapter, tool, method) {
-			if useJSON {
-				json.NewEncoder(os.Stdout).Encode(map[string]string{
-					"tool":   toolName,
-					"status": "installed",
-					"method": method.Kind,
-				})
-			} else {
-				newCLIStyle(os.Stderr).ok("%s is installed (via %s)", toolName, method.Kind)
-			}
-			return nil
-		}
+		return nil
 	}
 	if useJSON {
 		json.NewEncoder(os.Stdout).Encode(map[string]string{
@@ -255,30 +242,4 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 		newCLIStyle(os.Stderr).fail("%s is not installed", toolName)
 	}
 	return exitWithCode(1)
-}
-
-func checkAdapterInstalled(ctx context.Context, adapter exec.Adapter, tool *config.Tool, method *config.MethodCandidate) bool {
-	if observer, ok := adapter.(exec.AdapterV2); ok {
-		return checkLiveAdapterV2(ctx, observer, tool, method)
-	}
-	return adapter.Check(ctx, run.OSExecRunner{}, tool, method)
-}
-
-// checkLiveAdapterV2 preserves the direct check command's probe-only
-// semantics while honoring the plan-aware adapter contract. Resolution is
-// performed once before observation; no executor or install path is invoked.
-func checkLiveAdapterV2(ctx context.Context, adapter exec.AdapterV2, tool *config.Tool, method *config.MethodCandidate) bool {
-	intent, err := exec.CandidatePlanIntent(tool, method)
-	if err != nil {
-		return false
-	}
-	resolved, err := adapter.ResolvePlan(ctx, run.OSExecRunner{}, tool, method, intent)
-	if err != nil || resolved == nil {
-		return false
-	}
-	observation, err := adapter.Observe(ctx, run.OSExecRunner{}, tool, method)
-	if err != nil {
-		return false
-	}
-	return observation.Presence == plan.PresencePresent
 }
