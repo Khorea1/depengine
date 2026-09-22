@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -353,6 +354,190 @@ func sourceBackedVersionedSchema(version string) *config.Schema {
 	schema := sourceBackedSchema()
 	schema.Tools["demo"].Methods[0].Config["version"] = version
 	return schema
+}
+
+type recoveryObservationAdapter struct {
+	testMockAdapter
+	observation plan.Observation
+	observeErr  error
+	observeCall int
+	checkCalls  int
+	version     string
+}
+
+func (a *recoveryObservationAdapter) Check(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	a.checkCalls++
+	return false
+}
+
+func (a *recoveryObservationAdapter) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
+	a.observeCall++
+	return a.observation, a.observeErr
+}
+
+func (a *recoveryObservationAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	resolved := intent.Clone()
+	return &resolved, nil
+}
+
+func (a *recoveryObservationAdapter) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
+	return nil
+}
+
+func (a *recoveryObservationAdapter) InstalledVersion(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (string, error) {
+	return a.version, nil
+}
+
+func recoveryObservationIntent(t *testing.T) (*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) {
+	t.Helper()
+	schema := sourceBackedVersionedSchema("1.2.3")
+	tool := schema.Tools["demo"]
+	method := tool.Methods[0]
+	intent, mismatch := candidatePlanIntent(tool, method)
+	if mismatch != "" || intent == nil {
+		t.Fatalf("intent = %#v, mismatch = %q", intent, mismatch)
+	}
+	return tool, method, intent
+}
+
+func TestObserveRecoveryCandidateUsesV2IdentityAndLegacyCheck(t *testing.T) {
+	tests := []struct {
+		name          string
+		adapter       func() *recoveryObservationAdapter
+		wantPresence  plan.PresenceState
+		wantPackage   string
+		wantVersion   string
+		wantKnown     []plan.IdentityField
+		wantCheckCall int
+		wantDetail    string
+	}{
+		{
+			name: "v2 present",
+			adapter: func() *recoveryObservationAdapter {
+				return &recoveryObservationAdapter{
+					testMockAdapter: testMockAdapter{kindValue: "cargo"},
+					observation: plan.Observation{
+						Presence:    plan.PresencePresent,
+						Identity:    plan.ObservedIdentity{Package: "demo"},
+						KnownFields: []plan.IdentityField{plan.FieldPackage},
+					},
+					version: "1.2.3",
+				}
+			},
+			wantPresence: plan.PresencePresent,
+			wantPackage:  "demo",
+			wantVersion:  "1.2.3",
+			wantKnown:    []plan.IdentityField{plan.FieldPackage, plan.FieldVersion},
+		},
+		{
+			name: "v2 absent",
+			adapter: func() *recoveryObservationAdapter {
+				return &recoveryObservationAdapter{testMockAdapter: testMockAdapter{kindValue: "cargo"}, observation: plan.Observation{Presence: plan.PresenceAbsent}}
+			},
+			wantPresence: plan.PresenceAbsent,
+		},
+		{
+			name: "v2 unknown",
+			adapter: func() *recoveryObservationAdapter {
+				return &recoveryObservationAdapter{testMockAdapter: testMockAdapter{kindValue: "cargo"}, observation: plan.Observation{Presence: plan.PresenceUnknown, Detail: "not supported"}}
+			},
+			wantPresence: plan.PresenceUnknown,
+			wantDetail:   "not supported",
+		},
+		{
+			name: "v2 broken",
+			adapter: func() *recoveryObservationAdapter {
+				return &recoveryObservationAdapter{testMockAdapter: testMockAdapter{kindValue: "cargo"}, observation: plan.Observation{Presence: plan.PresenceBroken, Detail: "backend failed"}}
+			},
+			wantPresence: plan.PresenceBroken,
+			wantDetail:   "backend failed",
+		},
+		{
+			name: "v2 observe error",
+			adapter: func() *recoveryObservationAdapter {
+				return &recoveryObservationAdapter{
+					testMockAdapter: testMockAdapter{kindValue: "cargo"},
+					observeErr:      errors.New("request https://user:secret@example.test/?token=topsecret failed"),
+				}
+			},
+			wantPresence: plan.PresenceBroken,
+			wantDetail:   "observe recovery candidate failed:",
+		},
+	}
+
+	tool, method, intent := recoveryObservationIntent(t)
+	ex := New()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adapter := tt.adapter()
+			observation := ex.observeRecoveryCandidate(context.Background(), tool, method, intent, adapter)
+			if observation.Presence != tt.wantPresence || observation.Identity.Package != tt.wantPackage || observation.Identity.Version != tt.wantVersion {
+				t.Fatalf("observation = %#v, want presence=%q package=%q version=%q", observation, tt.wantPresence, tt.wantPackage, tt.wantVersion)
+			}
+			if !reflect.DeepEqual(observation.KnownFields, tt.wantKnown) {
+				t.Fatalf("known fields = %#v, want %#v", observation.KnownFields, tt.wantKnown)
+			}
+			if !strings.Contains(observation.Detail, tt.wantDetail) {
+				t.Fatalf("detail = %q, want substring %q", observation.Detail, tt.wantDetail)
+			}
+			if adapter.observeCall != 1 || adapter.checkCalls != tt.wantCheckCall {
+				t.Fatalf("Observe/Check calls = %d/%d, want 1/%d", adapter.observeCall, adapter.checkCalls, tt.wantCheckCall)
+			}
+			if tt.name == "v2 observe error" && (strings.Contains(observation.Detail, "secret") || strings.Contains(observation.Detail, "topsecret")) {
+				t.Fatalf("observation detail leaked secret: %q", observation.Detail)
+			}
+		})
+	}
+
+	legacyChecks := 0
+	legacy := &testMockAdapter{kindValue: "cargo", checkFunc: func(string) bool {
+		legacyChecks++
+		return true
+	}}
+	observation := ex.observeRecoveryCandidate(context.Background(), tool, method, intent, legacy)
+	if observation.Presence != plan.PresencePresent || observation.Identity.Package != intent.Identity.Package {
+		t.Fatalf("legacy observation = %#v, want present package identity", observation)
+	}
+	if legacyChecks != 1 {
+		t.Fatalf("legacy Check calls = %d, want 1", legacyChecks)
+	}
+}
+
+func TestObserveRecoveryCandidateNeverFinalizesAmbiguousCommit(t *testing.T) {
+	tool, method, intent := recoveryObservationIntent(t)
+	planDocument := plan.PreparationPlan{Commit: []plan.Operation{{Kind: "install-package", Effect: plan.EffectMutation}}}
+	committing, err := plan.NewPreparationJournal().PlanCommit(planDocument)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name        string
+		observation plan.Observation
+		err         error
+		wantAction  plan.PreparationRecoveryAction
+	}{
+		{name: "present", observation: plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: "demo", Version: "1.2.3"}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion}}, wantAction: plan.RecoveryFinalizeCommit},
+		{name: "absent", observation: plan.Observation{Presence: plan.PresenceAbsent}, wantAction: plan.RecoveryBlocked},
+		{name: "unknown", observation: plan.Observation{Presence: plan.PresenceUnknown}, wantAction: plan.RecoveryBlocked},
+		{name: "broken", observation: plan.Observation{Presence: plan.PresenceBroken}, wantAction: plan.RecoveryBlocked},
+		{name: "observe error", err: errors.New("observe failed: https://user:secret@example.test/?token=topsecret"), wantAction: plan.RecoveryBlocked},
+	}
+
+	ex := New()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adapter := &recoveryObservationAdapter{testMockAdapter: testMockAdapter{kindValue: "cargo"}, observation: tt.observation, observeErr: tt.err}
+			observed := ex.observeRecoveryCandidate(context.Background(), tool, method, intent, adapter)
+			decision, err := committing.RecoveryFor(planDocument, nil, &intent.Identity, &observed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if decision.Action != tt.wantAction {
+				t.Fatalf("recovery action = %q, want %q (observation=%#v)", decision.Action, tt.wantAction, observed)
+			}
+		})
+	}
 }
 
 func TestExecutorCommitRecoveryRequiresMatchingVersionEvidence(t *testing.T) {
