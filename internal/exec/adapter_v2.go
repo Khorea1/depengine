@@ -11,11 +11,9 @@ import (
 
 // AdapterV2 is the plan-aware adapter seam.
 //
-// It deliberately lives beside Adapter and is not consumed by Executor yet.
-// The existing Adapter contract remains the compatibility boundary while
-// adapters migrate one at a time. V2 adds an explicit observation result and
-// requires installation to receive the already-resolved plan, so a future
-// executor can keep resolution and reconciliation in the same model.
+// It deliberately lives beside Adapter while adapters migrate one at a time.
+// The serial executor consumes Observe and InstallResolved for adapters that
+// implement V2; other execution paths retain the legacy Adapter contract.
 //
 // AdapterV2 does not define an operation interpreter. In particular,
 // Operation.Command is not a fallback execution mechanism: adapters must give

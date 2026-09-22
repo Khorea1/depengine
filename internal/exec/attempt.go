@@ -136,19 +136,53 @@ func (ex *Executor) resolveConcretePlan(ac *candidateAttempt, result *ToolResult
 }
 
 // gateAlreadyInstalled finishes the tool when the adapter reports the
-// desired state already present. No mutation follows.
+// desired state already present. V2 adapters provide explicit presence
+// semantics; legacy adapters retain their boolean Check contract.
 func (ex *Executor) gateAlreadyInstalled(ac *candidateAttempt, result *ToolResult) attemptOutcome {
+	if observer, ok := ac.adapter.(AdapterV2); ok {
+		observation, err := observer.Observe(ac.toolCtx, ex.probeRunner(ac.tool.Name, ac.displayKind), ac.tool, ac.method)
+		if err != nil {
+			detail := fmt.Sprintf("%s: observe presence: %v", ac.displayKind, err)
+			ex.skipCandidate(ac, result, "failed", detail)
+			ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "observe_failed", "error", detail)
+			return nextMethod
+		}
+		switch observation.Presence {
+		case plan.PresencePresent:
+			return ex.finishAlreadyInstalled(ac, result)
+		case plan.PresenceAbsent, plan.PresenceUnknown:
+			return proceed
+		case plan.PresenceBroken:
+			detail := observation.Detail
+			if detail == "" {
+				detail = "presence observation is broken"
+			}
+			detail = fmt.Sprintf("%s: %s", ac.displayKind, detail)
+			ex.skipCandidate(ac, result, "failed", detail)
+			ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "observe_broken", "error", detail)
+			return nextMethod
+		default:
+			detail := fmt.Sprintf("%s: invalid presence observation %q", ac.displayKind, observation.Presence)
+			ex.skipCandidate(ac, result, "failed", detail)
+			return nextMethod
+		}
+	}
+
 	if ac.adapter.Check(ac.toolCtx, ex.probeRunner(ac.tool.Name, ac.displayKind), ac.tool, ac.method) {
-		result.Status = StatusAlready
-		result.Method = ac.displayKind
-		result.MethodKind = ac.method.Kind
-		result.Config = ac.method.Config
-		result.PlanIntent = ac.resolved
-		ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "already_installed")
-		result.Duration = time.Since(ac.toolStart).String()
-		return finishTool
+		return ex.finishAlreadyInstalled(ac, result)
 	}
 	return proceed
+}
+
+func (ex *Executor) finishAlreadyInstalled(ac *candidateAttempt, result *ToolResult) attemptOutcome {
+	result.Status = StatusAlready
+	result.Method = ac.displayKind
+	result.MethodKind = ac.method.Kind
+	result.Config = ac.method.Config
+	result.PlanIntent = ac.resolved
+	ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "already_installed")
+	result.Duration = time.Since(ac.toolStart).String()
+	return finishTool
 }
 
 // prepareCandidate probes source presence, validates availability, prepares

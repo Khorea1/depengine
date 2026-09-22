@@ -12,7 +12,7 @@
 //	  │     ├─ 2a. For each method (in method_order):
 //	  │     │      ├─ when matches?           → skip
 //	  │     │      ├─ adapter.Available()?    → no → skip
-//	  │     │      ├─ adapter.Check() ok?     → yes → skip (already installed)
+//	  │     │      ├─ adapter Observe()/Check() says present? → yes → skip
 //	  │     │      ├─ adapter.Install()       → ok  → SUCCESS
 //	  │     │      └─ Install() failed        → try next method
 //	  │     │
