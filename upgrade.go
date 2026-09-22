@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -68,79 +69,95 @@ func newUpgradeCmd() *cobra.Command {
 	return cmd
 }
 
-// runUpgrade upgrades installed tools whose recorded version is outdated
-// relative to the pinned version in depengine.lock. For each outdated tool,
-// it calls adapter.Remove followed by adapter.Install, then updates state.
-// Body unchanged from the pre-Cobra version — only the flag declarations
-// above it moved.
-func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool) error {
-	lg := log.Default
+// upgradeOutdatedTool is a state-tracked tool whose installed version lags
+// the lockfile pin, with the exact schema candidate resolved before any
+// destructive transition.
+type upgradeOutdatedTool struct {
+	name       string
+	ts         state.ToolState
+	pinnedVer  string
+	tool       *config.Tool
+	method     *config.MethodCandidate
+	methodKind string
+}
 
-	noManifest := *upgradeNoManifest
-	manifestPath := *upgradeManifest
-	manifestAuto := false
-	if !noManifest && manifestPath == "" {
-		manifestPath = config.DefaultManifestPath()
-		if manifestPath != "" {
-			manifestAuto = true
-		}
+// upgradeOptions carries dereferenced upgrade flag values between phases.
+type upgradeOptions struct {
+	schema         string
+	manifest       string
+	only           string
+	noManifest     bool
+	dryRun         bool
+	force          bool
+	jsonOut        bool
+	quiet          bool
+	allowArbitrary bool
+}
+
+// upgradeCounts tallies per-tool outcomes for the final report.
+type upgradeCounts struct {
+	upgraded     int
+	skipped      int
+	failed       int
+	wouldUpgrade int
+}
+
+// newUpgradeOptions dereferences the CLI flag pointers into one value.
+func newUpgradeOptions(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool) upgradeOptions {
+	return upgradeOptions{
+		schema:         *upgradeSchema,
+		manifest:       *upgradeManifest,
+		only:           *upgradeOnly,
+		noManifest:     *upgradeNoManifest,
+		dryRun:         *upgradeDryRun,
+		force:          *upgradeForce,
+		jsonOut:        *upgradeJSON,
+		quiet:          *upgradeQuiet,
+		allowArbitrary: *upgradeAllowArbitrary,
 	}
+}
 
-	s, clan, facts, manifestCount, err := loadSchemaWithManifest(*upgradeSchema, manifestPath)
+// resolveUpgradeManifestPath mirrors the --manifest/--no-manifest
+// auto-detection: an explicit flag wins, --no-manifest disables lookup,
+// otherwise the default personal manifest path applies when set.
+func resolveUpgradeManifestPath(noManifest bool, flag string) (string, bool) {
+	if noManifest || flag != "" {
+		return flag, false
+	}
+	if def := config.DefaultManifestPath(); def != "" {
+		return def, true
+	}
+	return "", false
+}
+
+// loadUpgradeState snapshots installed-tool state. Dry-runs take an unlocked
+// read (never creating the state lock file — saves use atomic rename, so an
+// unlocked read observes a complete old or new file); real upgrades hold the
+// exclusive lock for the read-modify-write transaction. The caller owns the
+// returned lock and must Close it.
+func loadUpgradeState(dryRun bool) (*state.State, *state.LockedState, error) {
+	if dryRun {
+		st, err := state.Load()
+		if err != nil {
+			return nil, nil, err
+		}
+		return st, nil, nil
+	}
+	ls, err := state.LoadLocked()
 	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "error: %s not found\n", *upgradeSchema)
-			fmt.Fprintf(os.Stderr, "Run 'depengine init' to create one, or point --schema to an existing file.\n")
-			return exitWithCode(1)
-		}
-		lg.Error("load schema", "error", err)
-		return exitWithCode(exitCodeForError(err))
+		return nil, nil, err
 	}
-	if manifestAuto && manifestCount > 0 {
-		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
-	}
-	if helper := s.Defaults.AurHelper; helper != "" {
-		ecosystem.ReconfigureAUR(helper)
-	}
+	return ls.State(), ls, nil
+}
 
-	// Load lockfile.
-	lockPath := lock.DefaultPath(*upgradeSchema)
-	lk, err := lock.Load(lockPath)
-	if err != nil && !os.IsNotExist(err) {
-		lg.Warn("load lock", "error", err)
-	}
-	if lk == nil {
-		fmt.Fprintln(os.Stderr, "No lockfile found. Run 'depengine update' first to resolve and pin versions.")
-		return exitWithCode(1)
-	}
-
-	// Upgrade dry-run only needs a stable snapshot of state and must not create
-	// the state lock file. State saves use atomic rename, so an unlocked read
-	// observes a complete old or new file. Real upgrades keep the exclusive
-	// lock for the read-modify-write transaction.
-	var (
-		st *state.State
-		ls *state.LockedState
-	)
-	if *upgradeDryRun {
-		st, err = state.Load()
-	} else {
-		ls, err = state.LoadLocked()
-		if err == nil {
-			defer ls.Close()
-			st = ls.State()
-		}
-	}
-	if err != nil {
-		lg.Error("load state", "error", err)
-		return exitWithCode(3)
-	}
-
-	// Build executor for Install calls.
-	schemaFile, err := os.Stat(*upgradeSchema)
+// buildUpgradeExecutor wires the executor for reinstall Install calls:
+// default method order, host adapters, schema info, logging runner, and
+// facts, plus the dry-run/arbitrary-code/quiet gates.
+func buildUpgradeExecutor(s *config.Schema, clan string, facts *engine.Facts, schemaPath string, opts upgradeOptions, lg *slog.Logger) (*exec.Executor, *run.LoggingRunner, error) {
+	schemaFile, err := os.Stat(schemaPath)
 	if err != nil {
 		lg.Error("stat schema", "error", err)
-		return exitWithCode(1)
+		return nil, nil, exitWithCode(1)
 	}
 	ex := exec.New()
 	exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
@@ -150,41 +167,52 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		container.NewContainerAdapter(),
 		exec.NewNativeAdapter(clan),
 	)(ex)
-	exec.WithSchemaInfo(*upgradeSchema, schemaFile.ModTime())(ex)
+	exec.WithSchemaInfo(schemaPath, schemaFile.ModTime())(ex)
 	exec.WithLogger(lg)(ex)
 	runner := run.NewLoggingRunner(run.OSExecRunner{}, lg)
 	exec.WithRunner(runner)(ex)
 	exec.WithFacts(facts)(ex)
-	if *upgradeDryRun {
+	if opts.dryRun {
 		exec.WithDryRun()(ex)
 	}
-	if *upgradeAllowArbitrary {
+	if opts.allowArbitrary {
 		exec.WithAllowArbitraryCode()(ex)
 	}
-	if *upgradeQuiet {
+	if opts.quiet {
 		exec.WithQuiet()(ex)
 	}
+	return ex, runner, nil
+}
 
-	// Apply lock pins to the schema so Install sees resolved versions.
-	lock.Apply(s, lk)
-
-	// Identify outdated tools.
-	type outdatedTool struct {
-		name       string
-		ts         state.ToolState
-		pinnedVer  string
-		tool       *config.Tool
-		method     *config.MethodCandidate
-		methodKind string
+// loadUpgradeLock loads the lockfile, warning on corruption. A missing
+// lockfile is fatal: there is nothing to upgrade toward.
+func loadUpgradeLock(schemaPath string, lg *slog.Logger) (*lock.Lock, error) {
+	lockPath := lock.DefaultPath(schemaPath)
+	lk, err := lock.Load(lockPath)
+	if err != nil && !os.IsNotExist(err) {
+		lg.Warn("load lock", "error", err)
 	}
+	if lk == nil {
+		fmt.Fprintln(os.Stderr, "No lockfile found. Run 'depengine update' first to resolve and pin versions.")
+		return nil, exitWithCode(1)
+	}
+	return lk, nil
+}
+
+// collectOutdatedTools compares installed-tool state against lockfile pins.
+// Same-kind candidates have independent lock identities, so each tool is
+// resolved to its exact tracked candidate before looking up its pin — an
+// arbitrary first match could upgrade from/to the wrong artifact. Unresolvable
+// candidates with a pin for their kind are terminal discovery failures that
+// participate in the same report. Output is sorted for determinism.
+func collectOutdatedTools(st *state.State, s *config.Schema, lk *lock.Lock, only string, defaultOrder []string, nativeManager string) ([]upgradeOutdatedTool, []upgradeResult) {
 	var (
-		outdated          []outdatedTool
+		outdated          []upgradeOutdatedTool
 		discoveryFailures []upgradeResult
 	)
-
 	for name, ts := range st.Tools {
 		// Filter by --only.
-		if *upgradeOnly != "" && name != *upgradeOnly {
+		if only != "" && name != only {
 			continue
 		}
 
@@ -200,10 +228,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 			methodKind = ts.Method
 		}
 
-		// Resolve the exact schema candidate represented by state before looking
-		// up its pin. Same-kind candidates have independent lock identities; an
-		// arbitrary first match can upgrade from/to the wrong artifact.
-		method, methodErr := findTrackedMethodCandidate(tool, ts, ex.DefaultMethodOrder(), ex.NativeManagerName())
+		method, methodErr := findTrackedMethodCandidate(tool, ts, defaultOrder, nativeManager)
 		if methodErr != nil {
 			if hasPinnedVersionForKind(lk, name, methodKind) {
 				discoveryFailures = append(discoveryFailures, upgradeResult{
@@ -227,7 +252,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 			continue
 		}
 
-		outdated = append(outdated, outdatedTool{
+		outdated = append(outdated, upgradeOutdatedTool{
 			name:       name,
 			ts:         ts,
 			pinnedVer:  pin.Latest,
@@ -237,227 +262,218 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		})
 	}
 
-	if len(outdated) == 0 && len(discoveryFailures) == 0 {
-		if *upgradeJSON {
-			fmt.Println(`{"upgraded":0,"skipped":0,"failed":0,"would_upgrade":0,"results":[]}`)
-		} else {
-			fmt.Fprintln(os.Stderr, "All installed tools are up to date.")
-		}
-		return nil
-	}
-
-	// Sort for deterministic output.
 	sort.Slice(outdated, func(i, j int) bool {
 		return outdated[i].name < outdated[j].name
 	})
+	return outdated, discoveryFailures
+}
 
-	c := newCLIStyle(os.Stderr)
+// reportUpgradeUpToDate covers the nothing-to-do case.
+func reportUpgradeUpToDate(jsonOut bool) error {
+	if jsonOut {
+		fmt.Println(`{"upgraded":0,"skipped":0,"failed":0,"would_upgrade":0,"results":[]}`)
+	} else {
+		fmt.Fprintln(os.Stderr, "All installed tools are up to date.")
+	}
+	return nil
+}
 
-	printKV(c, "depengine upgrade",
-		[2]string{"schema", *upgradeSchema},
-		[2]string{"target", fmt.Sprintf("%s (%s) · %s", facts.DistroID, clan, facts.TargetArch)},
-		[2]string{"outdated", fmt.Sprintf("%d", len(outdated))},
-	)
+// shouldPromptUpgrade gates the confirmation prompt: --force, --dry-run, and
+// --json runs never prompt, and a non-interactive session cannot answer.
+func shouldPromptUpgrade(force, dryRun, jsonOut, interactive bool) bool {
+	return !force && !dryRun && !jsonOut && interactive
+}
 
-	// Confirmation prompt (unless --force or --dry-run or --json).
-	if !*upgradeForce && !*upgradeDryRun && !*upgradeJSON && isInteractive() {
-		// Aligned name column plus a dimmed old→new version pair: the list
-		// is a risk review ("do I accept these bumps?"), so the decision-
-		// relevant data (name, how big the jump is) must line up.
-		nameW := 0
-		for _, ot := range outdated {
-			if len(ot.name) > nameW {
-				nameW = len(ot.name)
-			}
-		}
-		fmt.Fprintln(os.Stderr, c.bold("The following tools will be upgraded:"))
-		for _, ot := range outdated {
-			fmt.Fprintf(os.Stderr, "  %s  %s → %s\n",
-				c.cyan(padRight(ot.name, nameW)),
-				c.dim(ot.ts.Version), c.green(ot.pinnedVer))
-		}
-		fmt.Fprint(os.Stderr, "\nProceed? [y/N] ")
-		var input string
-		fmt.Fscanln(os.Stdin, &input)
-		input = strings.TrimSpace(strings.ToLower(input))
-		if input != "y" && input != "yes" {
-			fmt.Fprintln(os.Stderr, "Aborted.")
-			return nil
+// confirmUpgradeProceed renders the risk-review list — aligned name column
+// plus dimmed old→new pairs, so the decision-relevant data lines up — and
+// reads the answer. It reports false when the operator aborts.
+func confirmUpgradeProceed(outdated []upgradeOutdatedTool, c *cliStyle) bool {
+	nameW := 0
+	for _, ot := range outdated {
+		if len(ot.name) > nameW {
+			nameW = len(ot.name)
 		}
 	}
+	fmt.Fprintln(os.Stderr, c.bold("The following tools will be upgraded:"))
+	for _, ot := range outdated {
+		fmt.Fprintf(os.Stderr, "  %s  %s → %s\n",
+			c.cyan(padRight(ot.name, nameW)),
+			c.dim(ot.ts.Version), c.green(ot.pinnedVer))
+	}
+	fmt.Fprint(os.Stderr, "\nProceed? [y/N] ")
+	var input string
+	fmt.Fscanln(os.Stdin, &input)
+	input = strings.TrimSpace(strings.ToLower(input))
+	return input == "y" || input == "yes"
+}
 
-	// Upgrade each outdated tool: preflight, then Remove and Install. Candidate
-	// discovery failures are already terminal and participate in the same report.
+// upgradeSingleTool runs the Remove→Install sequencing for one outdated tool:
+// adapter lookup, fail-closed preflight, then remove, reinstall, probe, and
+// state update. Every outcome is a result value; the whole run is never
+// aborted from here.
+func upgradeSingleTool(ctx context.Context, ex *exec.Executor, runner *run.LoggingRunner, facts *engine.Facts, st *state.State, ot upgradeOutdatedTool, opts upgradeOptions, c *cliStyle) upgradeResult {
+	res := upgradeResult{
+		Tool:   ot.name,
+		OldVer: ot.ts.Version,
+		Method: ot.ts.Method,
+	}
+	fail := func(format string, args ...any) upgradeResult {
+		res.Status = "failed"
+		res.Error = fmt.Sprintf(format, args...)
+		if !opts.quiet {
+			c.fail("%s: %s", ot.name, res.Error)
+		}
+		return res
+	}
+
+	adapter := ex.LookupAdapter(ot.methodKind)
+	if adapter == nil {
+		return fail("no adapter for method %q", ot.methodKind)
+	}
+
+	// The legacy upgrade path calls Remove/Install directly. Fail closed on
+	// semantics it cannot yet preserve instead of removing a working tool and
+	// discovering the mismatch during reinstall.
+	if err := preflightDirectUpgrade(ctx, runner, facts, ot.tool, ot.method, adapter, opts.allowArbitrary); err != nil {
+		return fail("upgrade preflight failed: %v", err)
+	}
+
+	if opts.dryRun {
+		res.Status = "would_upgrade"
+		res.NewVer = ot.pinnedVer
+		if !opts.quiet {
+			c.arrow("%s: %s → %s (dry-run)", ot.name, ot.ts.Version, ot.pinnedVer)
+		}
+		return res
+	}
+
+	if !exec.CanRemove(adapter) {
+		// Adapter can't remove — skip with a clear message.
+		res.Status = "skipped"
+		res.Error = fmt.Sprintf("adapter %q does not support removal — remove manually and reinstall", ot.methodKind)
+		if !opts.quiet {
+			c.skip("%s: %s", ot.name, res.Error)
+		}
+		return res
+	}
+
+	remover := adapter.(exec.Remover)
+	tr := runner.WithContext(run.Context{Tool: ot.name, Method: ot.methodKind})
+	if err := removeInstalledTool(ctx, remover, tr, ot); err != nil {
+		return fail("remove failed: %v", err)
+	}
+
+	// Install the exact candidate resolved before the destructive
+	// transition. Never fall back to another candidate of the same kind.
+	newVer, err := reinstallUpgradeTool(ctx, adapter, tr, st, ot)
+	if err != nil {
+		return fail("reinstall failed: %v", err)
+	}
+
+	newTS := upgradedToolState(ot.ts, ot.methodKind, ot.tool, ot.method, newVer, ot.pinnedVer, time.Now().UTC())
+	st.Tools[ot.name] = newTS
+
+	res.Status = "upgraded"
+	res.NewVer = newVer
+	if res.NewVer == "" {
+		res.NewVer = ot.pinnedVer
+	}
+	if !opts.quiet {
+		c.ok("%s: %s → %s", ot.name, ot.ts.Version, res.NewVer)
+	}
+	return res
+}
+
+// removeInstalledTool removes the tracked installation, recovering method
+// config from the schema when state config is empty.
+func removeInstalledTool(ctx context.Context, remover exec.Remover, tr run.Runner, ot upgradeOutdatedTool) error {
+	mc := &config.MethodCandidate{
+		Kind:   ot.methodKind,
+		Config: ot.ts.Config,
+	}
+	if ot.ts.Config == nil {
+		mc.Config = findMethodConfig(ot.tool, ot.methodKind)
+	}
+	removeCtx, removeCancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer removeCancel()
+	return remover.Remove(removeCtx, tr, ot.tool, mc)
+}
+
+// reinstallUpgradeTool installs the already-resolved candidate and probes the
+// installed version. On reinstall failure the tool's shared-resource claims
+// are released so state does not pretend a missing tool still holds refs;
+// newly zero-ref resources stay on the host for explicit retry/cleanup.
+func reinstallUpgradeTool(ctx context.Context, adapter exec.Adapter, tr run.Runner, st *state.State, ot upgradeOutdatedTool) (string, error) {
+	installCtx, installCancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer installCancel()
+	if err := adapter.Install(installCtx, tr, ot.tool, ot.method); err != nil {
+		if releaseErr := recordFailedUpgradeRemoval(st, ot.name); releaseErr != nil {
+			log.Default.Error("release failed-upgrade resources", "tool", ot.name, "error", releaseErr)
+		}
+		return "", err
+	}
+	return probeVersion(ctx, adapter, tr, ot.tool, ot.method), nil
+}
+
+// runUpgradeLoop upgrades each outdated tool in order, seeding the report
+// with the already-terminal candidate discovery failures.
+func runUpgradeLoop(ctx context.Context, ex *exec.Executor, runner *run.LoggingRunner, facts *engine.Facts, st *state.State, outdated []upgradeOutdatedTool, discoveryFailures []upgradeResult, opts upgradeOptions, c *cliStyle) ([]upgradeResult, upgradeCounts) {
 	results := append([]upgradeResult(nil), discoveryFailures...)
-	upgraded, failed, skipped, wouldUpgrade := 0, len(discoveryFailures), 0, 0
+	counts := upgradeCounts{failed: len(discoveryFailures)}
 	for _, res := range discoveryFailures {
-		if !*upgradeQuiet {
+		if !opts.quiet {
 			c.fail("%s: %s", res.Tool, res.Error)
 		}
 	}
 
 	for _, ot := range outdated {
-		res := upgradeResult{
-			Tool:   ot.name,
-			OldVer: ot.ts.Version,
-			Method: ot.ts.Method,
-		}
-
-		adapter := ex.LookupAdapter(ot.methodKind)
-		if adapter == nil {
-			res.Status = "failed"
-			res.Error = fmt.Sprintf("no adapter for method %q", ot.methodKind)
-			if !*upgradeQuiet {
-				c.fail("%s: %s", ot.name, res.Error)
-			}
-			results = append(results, res)
-			failed++
-			continue
-		}
-
-		// The legacy upgrade path calls Remove/Install directly. Fail closed on
-		// semantics it cannot yet preserve instead of removing a working tool and
-		// discovering the mismatch during reinstall.
-		if err := preflightDirectUpgrade(ctx, runner, facts, ot.tool, ot.method, adapter, *upgradeAllowArbitrary); err != nil {
-			res.Status = "failed"
-			res.Error = fmt.Sprintf("upgrade preflight failed: %v", err)
-			if !*upgradeQuiet {
-				c.fail("%s: %s", ot.name, res.Error)
-			}
-			results = append(results, res)
-			failed++
-			continue
-		}
-
-		// Step 1: Remove.
-		if *upgradeDryRun {
-			res.Status = "would_upgrade"
-			res.NewVer = ot.pinnedVer
-			if !*upgradeQuiet {
-				c.arrow("%s: %s → %s (dry-run)", ot.name, ot.ts.Version, ot.pinnedVer)
-			}
-			results = append(results, res)
-			wouldUpgrade++
-			continue
-		}
-
-		if !exec.CanRemove(adapter) {
-			// Adapter can't remove — skip with a clear message.
-			res.Status = "skipped"
-			res.Error = fmt.Sprintf("adapter %q does not support removal — remove manually and reinstall", ot.methodKind)
-			if !*upgradeQuiet {
-				c.skip("%s: %s", ot.name, res.Error)
-			}
-			results = append(results, res)
-			skipped++
-			continue
-		}
-
-		remover := adapter.(exec.Remover)
-		mc := &config.MethodCandidate{
-			Kind:   ot.methodKind,
-			Config: ot.ts.Config,
-		}
-		// Recover method config from the schema if state config is empty.
-		if ot.ts.Config == nil {
-			mc.Config = findMethodConfig(ot.tool, ot.methodKind)
-		}
-
-		tr := runner.WithContext(run.Context{Tool: ot.name, Method: ot.methodKind})
-		removeCtx, removeCancel := context.WithTimeout(ctx, 2*time.Minute)
-		err := remover.Remove(removeCtx, tr, ot.tool, mc)
-		removeCancel()
-		if err != nil {
-			res.Status = "failed"
-			res.Error = fmt.Sprintf("remove failed: %v", err)
-			if !*upgradeQuiet {
-				c.fail("%s: %s", ot.name, res.Error)
-			}
-			results = append(results, res)
-			failed++
-			continue
-		}
-
-		// Step 2: Install the exact candidate resolved before the destructive
-		// transition. Never fall back to another candidate of the same kind.
-		installMC := ot.method
-
-		installCtx, installCancel := context.WithTimeout(ctx, 10*time.Minute)
-		err = adapter.Install(installCtx, tr, ot.tool, installMC)
-		installCancel()
-		if err != nil {
-			res.Status = "failed"
-			res.Error = fmt.Sprintf("reinstall failed: %v", err)
-			if !*upgradeQuiet {
-				c.fail("%s: %s", ot.name, res.Error)
-			}
-			results = append(results, res)
-			failed++
-			// Tool was removed but reinstall failed. Release its shared-resource
-			// claims so state does not pretend a missing tool still holds refs; keep
-			// newly zero-ref resources on the host for explicit retry/cleanup.
-			if releaseErr := recordFailedUpgradeRemoval(st, ot.name); releaseErr != nil {
-				lg.Error("release failed-upgrade resources", "tool", ot.name, "error", releaseErr)
-			}
-			continue
-		}
-
-		// Step 3: Probe version.
-		newVer := probeVersion(ctx, adapter, tr, ot.tool, installMC)
-
-		// Step 4: Update state.
-		newTS := upgradedToolState(ot.ts, ot.methodKind, ot.tool, installMC, newVer, ot.pinnedVer, time.Now().UTC())
-		st.Tools[ot.name] = newTS
-
-		res.Status = "upgraded"
-		res.NewVer = newVer
-		if res.NewVer == "" {
-			res.NewVer = ot.pinnedVer
-		}
-		if !*upgradeQuiet {
-			c.ok("%s: %s → %s", ot.name, ot.ts.Version, res.NewVer)
-		}
+		res := upgradeSingleTool(ctx, ex, runner, facts, st, ot, opts, c)
 		results = append(results, res)
-		upgraded++
-	}
-
-	// Save state (unless dry-run).
-	if !*upgradeDryRun {
-		if err := ls.Save(); err != nil {
-			lg.Error("state save failed", "error", err)
-			return exitWithCode(3)
+		switch res.Status {
+		case "upgraded":
+			counts.upgraded++
+		case "skipped":
+			counts.skipped++
+		case "failed":
+			counts.failed++
+		case "would_upgrade":
+			counts.wouldUpgrade++
 		}
 	}
+	return results, counts
+}
 
-	// Output.
-	if *upgradeJSON {
+// writeUpgradeReport renders the JSON or footer summary and maps failures to
+// the process exit code. The footer mirrors the ✓/✗/–/→ vocabulary of the
+// per-tool lines: a count only gets a colored marker when non-zero, so a
+// clean run is one quiet green line and a failure is impossible to miss.
+func writeUpgradeReport(jsonOut, dryRun bool, counts upgradeCounts, results []upgradeResult) error {
+	if jsonOut {
 		out := map[string]any{
-			"upgraded":      upgraded,
-			"skipped":       skipped,
-			"failed":        failed,
-			"would_upgrade": wouldUpgrade,
+			"upgraded":      counts.upgraded,
+			"skipped":       counts.skipped,
+			"failed":        counts.failed,
+			"would_upgrade": counts.wouldUpgrade,
 			"results":       results,
 		}
 		b, _ := json.MarshalIndent(out, "", "  ")
 		fmt.Println(string(b))
 	} else {
-		// Footer mirrors the ✓/✗/–/→ vocabulary of the per-tool lines: a
-		// count only gets a colored marker when it's non-zero, so a clean run
-		// is one quiet green line and a failure is impossible to miss.
+		c := newCLIStyle(os.Stderr)
 		fmt.Fprintln(os.Stderr)
 		var parts []string
-		if *upgradeDryRun {
-			if wouldUpgrade > 0 {
-				parts = append(parts, c.cyan(fmt.Sprintf("%d would upgrade", wouldUpgrade)))
+		if dryRun {
+			if counts.wouldUpgrade > 0 {
+				parts = append(parts, c.cyan(fmt.Sprintf("%d would upgrade", counts.wouldUpgrade)))
 			}
-		} else if upgraded > 0 {
-			parts = append(parts, c.green(fmt.Sprintf("%d upgraded", upgraded)))
+		} else if counts.upgraded > 0 {
+			parts = append(parts, c.green(fmt.Sprintf("%d upgraded", counts.upgraded)))
 		}
-		if skipped > 0 {
-			parts = append(parts, c.yellow(fmt.Sprintf("%d skipped", skipped)))
+		if counts.skipped > 0 {
+			parts = append(parts, c.yellow(fmt.Sprintf("%d skipped", counts.skipped)))
 		}
-		if failed > 0 {
-			parts = append(parts, c.red(fmt.Sprintf("%d failed", failed)))
+		if counts.failed > 0 {
+			parts = append(parts, c.red(fmt.Sprintf("%d failed", counts.failed)))
 		}
 		if len(parts) == 0 {
 			parts = append(parts, "nothing to do")
@@ -465,10 +481,98 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		fmt.Fprintf(os.Stderr, "  %s\n", strings.Join(parts, "  ·  "))
 	}
 
-	if failed > 0 {
+	if counts.failed > 0 {
 		return exitWithCode(1)
 	}
 	return nil
+}
+
+// runUpgrade upgrades installed tools whose recorded version is outdated
+// relative to the pinned version in depengine.lock. For each outdated tool,
+// it calls adapter.Remove followed by adapter.Install, then updates state.
+// Thin orchestrator over the phase helpers above: flag resolution, schema and
+// lock loading, state snapshot, executor wiring, drift collection,
+// confirmation, per-tool loop, state save, and reporting.
+func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool) error {
+	lg := log.Default
+	opts := newUpgradeOptions(upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary)
+
+	manifestPath, manifestAuto := resolveUpgradeManifestPath(opts.noManifest, opts.manifest)
+
+	s, clan, facts, manifestCount, err := loadSchemaWithManifest(opts.schema, manifestPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "error: %s not found\n", opts.schema)
+			fmt.Fprintf(os.Stderr, "Run 'depengine init' to create one, or point --schema to an existing file.\n")
+			return exitWithCode(1)
+		}
+		lg.Error("load schema", "error", err)
+		return exitWithCode(exitCodeForError(err))
+	}
+	if manifestAuto && manifestCount > 0 {
+		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
+	}
+	if helper := s.Defaults.AurHelper; helper != "" {
+		ecosystem.ReconfigureAUR(helper)
+	}
+
+	// Load lockfile.
+	lk, err := loadUpgradeLock(opts.schema, lg)
+	if err != nil {
+		return err
+	}
+
+	st, ls, err := loadUpgradeState(opts.dryRun)
+	if err != nil {
+		lg.Error("load state", "error", err)
+		return exitWithCode(3)
+	}
+	if ls != nil {
+		defer ls.Close()
+	}
+
+	ex, runner, err := buildUpgradeExecutor(s, clan, facts, opts.schema, opts, lg)
+	if err != nil {
+		return err
+	}
+
+	// Apply lock pins to the schema so Install sees resolved versions.
+	lock.Apply(s, lk)
+
+	outdated, discoveryFailures := collectOutdatedTools(st, s, lk, opts.only, ex.DefaultMethodOrder(), ex.NativeManagerName())
+	if len(outdated) == 0 && len(discoveryFailures) == 0 {
+		return reportUpgradeUpToDate(opts.jsonOut)
+	}
+
+	c := newCLIStyle(os.Stderr)
+
+	printKV(c, "depengine upgrade",
+		[2]string{"schema", opts.schema},
+		[2]string{"target", fmt.Sprintf("%s (%s) · %s", facts.DistroID, clan, facts.TargetArch)},
+		[2]string{"outdated", fmt.Sprintf("%d", len(outdated))},
+	)
+
+	// Confirmation prompt (unless --force or --dry-run or --json).
+	if shouldPromptUpgrade(opts.force, opts.dryRun, opts.jsonOut, isInteractive()) {
+		if !confirmUpgradeProceed(outdated, c) {
+			fmt.Fprintln(os.Stderr, "Aborted.")
+			return nil
+		}
+	}
+
+	// Upgrade each outdated tool: preflight, then Remove and Install. Candidate
+	// discovery failures are already terminal and participate in the same report.
+	results, counts := runUpgradeLoop(ctx, ex, runner, facts, st, outdated, discoveryFailures, opts, c)
+
+	// Save state (unless dry-run).
+	if !opts.dryRun {
+		if err := ls.Save(); err != nil {
+			lg.Error("state save failed", "error", err)
+			return exitWithCode(3)
+		}
+	}
+
+	return writeUpgradeReport(opts.jsonOut, opts.dryRun, counts, results)
 }
 
 func hasPinnedVersionForKind(l *lock.Lock, toolName, kind string) bool {
