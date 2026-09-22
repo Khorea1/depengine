@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -83,6 +84,11 @@ func writeFakeUpgradeBinaries(t *testing.T, names ...string) string {
 	t.Helper()
 	binDir := t.TempDir()
 	for _, name := range names {
+		// Presence is resolved through PATH lookup, which needs the .exe
+		// suffix on Windows.
+		if runtime.GOOS == "windows" {
+			name += ".exe"
+		}
 		path := filepath.Join(binDir, name)
 		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
 			t.Fatal(err)
@@ -422,7 +428,9 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 
 	content := "schema_version = 1\n\n[defaults]\nmethod_order = [\"http\", \"native\"]\n\n" +
 		"[tools.httptool]\n" +
-		"http = {url = \"https://example.invalid/tool.tar.gz\", extract_to = \"" + sharedDir + "\"}\n"
+		// Literal string (single quotes): Windows paths carry backslashes,
+		// which are escapes in TOML basic strings.
+		"http = {url = \"https://example.invalid/tool.tar.gz\", extract_to = '" + sharedDir + "'}\n"
 	if err := os.WriteFile(filepath.Join(schemaDir, "schema.toml"), []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}

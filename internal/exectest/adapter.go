@@ -5,6 +5,7 @@ package exectest
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -210,4 +211,16 @@ func TestAdapterConformance(t *testing.T, a exec.Adapter) {
 		}
 	})
 
+}
+
+// SetHome points the process home at dir for the duration of the test.
+// os.UserHomeDir ignores $HOME on Windows (it reads %USERPROFILE%), so
+// tests that isolate the home directory must set both; otherwise the
+// product resolves the real profile while the test asserts on the fake.
+func SetHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", dir)
+	}
 }

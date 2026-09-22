@@ -61,7 +61,38 @@ func (a *Adapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool,
 	if err := a.http.Install(ctx, rn, tool, &clone); err != nil {
 		return fmt.Errorf("msi: %w", err)
 	}
-	res := rn.Run(ctx, "msiexec", "/package", filepath.Join(tmp, "package.msi"), "/quiet", "/norestart")
+	return a.runMsiexec(ctx, rn, mc, filepath.Join(tmp, "package.msi"))
+}
+
+// InstallResolved executes the already-resolved concrete MSI URL without any
+// release/{latest} resolution: it downloads the staged package via the HTTP
+// transport and only then invokes msiexec.
+func (a *Adapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if resolved == nil || len(resolved.Artifacts) == 0 || resolved.Artifacts[0].URL == "" {
+		return fmt.Errorf("msi: resolved plan has no concrete artifact URL")
+	}
+	tmp, err := os.MkdirTemp("", "depengine-msi-*")
+	if err != nil {
+		return fmt.Errorf("msi: staging: %w", err)
+	}
+	defer os.RemoveAll(tmp)
+	clone := *mc
+	clone.Config = make(map[string]any, len(mc.Config)+3)
+	for key, value := range mc.Config {
+		clone.Config[key] = value
+	}
+	clone.Config["extract_to"] = tmp
+	clone.Config["binary"] = "package.msi"
+	clone.Config["_allow_installer"] = true
+	clone.Config["sudo_required"] = false
+	if err := a.http.InstallResolved(ctx, rn, tool, &clone, resolved); err != nil {
+		return fmt.Errorf("msi: %w", err)
+	}
+	return a.runMsiexec(ctx, rn, mc, filepath.Join(tmp, "package.msi"))
+}
+
+func (a *Adapter) runMsiexec(ctx context.Context, rn run.Runner, mc *config.MethodCandidate, packagePath string) error {
+	res := rn.Run(ctx, "msiexec", "/package", packagePath, "/quiet", "/norestart")
 	if res.Err != nil {
 		return fmt.Errorf("msi: install: %w", res.Err)
 	}
@@ -101,4 +132,5 @@ func stringValue(mc *config.MethodCandidate, key string) string {
 
 var _ exec.Adapter = (*Adapter)(nil)
 var _ exec.PlanResolver = (*Adapter)(nil)
+var _ exec.ResolvedInstaller = (*Adapter)(nil)
 var _ exec.Remover = (*Adapter)(nil)

@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/Khorea1/depengine/internal/formatversion"
 	"github.com/Khorea1/depengine/internal/plan"
@@ -115,22 +116,30 @@ func Save(s *State) error {
 	}
 
 	// Write to a temp file in the same directory (ensures same-filesystem rename).
+	// The handle stays open for writing: Sync requires a writable handle
+	// because Windows FlushFileBuffers needs GENERIC_WRITE, which a
+	// read-only os.Open handle does not provide.
 	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return fmt.Errorf("write state tmp: %w", err)
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("write state tmp: %w", err)
 	}
 
 	// Sync the temp file before renaming.
-	f, err := os.Open(tmpPath)
-	if err != nil {
-		return fmt.Errorf("open tmp for sync: %w", err)
-	}
 	if err := f.Sync(); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("sync state tmp: %w", err)
 	}
-	_ = f.Close()
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("write state tmp: %w", err)
+	}
 
 	// Atomic rename — on Unix this is a single metadata operation; the target
 	// path is never left in a partially-written state.
@@ -140,13 +149,18 @@ func Save(s *State) error {
 	}
 
 	// Sync the directory to ensure the rename is persisted on disk.
-	dirF, err := os.Open(dir)
-	if err != nil {
-		return fmt.Errorf("open state dir for sync: %w", err)
-	}
-	defer dirF.Close()
-	if err := dirF.Sync(); err != nil {
-		return fmt.Errorf("sync state dir: %w", err)
+	// Windows cannot fsync a directory handle (FlushFileBuffers requires a
+	// file object, not a directory), and NTFS journals metadata updates, so
+	// the directory sync is Unix-only.
+	if runtime.GOOS != "windows" {
+		dirF, err := os.Open(dir)
+		if err != nil {
+			return fmt.Errorf("open state dir for sync: %w", err)
+		}
+		defer dirF.Close()
+		if err := dirF.Sync(); err != nil {
+			return fmt.Errorf("sync state dir: %w", err)
+		}
 	}
 
 	return nil

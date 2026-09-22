@@ -208,19 +208,17 @@ func New() *Executor {
 		toolTimeout:        5 * time.Minute,
 		methodTimeout:      2 * time.Minute,
 		maxJobs:            1,
-		adapters:           make(map[string]Adapter, len(adapters)),
+		adapters:           make(map[string]Adapter),
 		outWriter:          os.Stderr,
 		defaultMethodOrder: config.DefaultMethodOrder,
 		color:              shouldUseColor(),
 	}
-	// Pre-populate from the global adapter registry.
+	// Pre-populate from the default adapter registry.
 	// Adapters registered at the composition root are available to every
 	// executor. WithAdapters can override them.
-	adaptersMu.RLock()
-	for k, a := range adapters {
+	for k, a := range defaultRegistry.snapshot() {
 		ex.adapters[k] = a
 	}
-	adaptersMu.RUnlock()
 	return ex
 }
 

@@ -129,6 +129,10 @@ func (m *resolvingCompatibilityMockAdapter) CheckHostCompatibility(_ *config.Too
 	return nil
 }
 
+func (m *resolvingCompatibilityMockAdapter) InstallResolved(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, _ *plan.ResolvedInstallPlan) error {
+	return nil
+}
+
 func (m *compatibilityMockAdapter) CheckHostCompatibility(_ *config.Tool, _ *config.MethodCandidate, _ *plan.ResolvedInstallPlan, _ *engine.Facts, _ string) error {
 	return m.err
 }
@@ -1719,18 +1723,14 @@ func TestExecutorBlocksStructuredBuildWithoutPermission(t *testing.T) {
 }
 
 func TestLookupAdapter(t *testing.T) {
-	// Save and restore global registry.
-	saved := adapters
-	adapters = map[string]Adapter{}
-	defer func() { adapters = saved }()
-
 	mock := &testMockAdapter{
 		kindValue:     "test-adapter",
 		availableFunc: func() bool { return true },
 	}
-	Register(mock)
 
+	// Per-instance registry: no global save/restore needed.
 	ex := New()
+	WithAdapters(mock)(ex)
 
 	// Look up a registered adapter.
 	got := ex.LookupAdapter("test-adapter")

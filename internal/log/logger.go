@@ -89,6 +89,9 @@ func WithContext(l *slog.Logger, lc LogContext) *slog.Logger {
 
 // Default is the package-level logger writing to stderr at INFO level.
 // It picks up DEPENGINE_TRACE_ID from the environment automatically.
+//
+// INTENTIONAL process-global boundary (not tech debt): there is one
+// stderr per process; see "Process-global shims" in docs/architecture.md.
 var Default = New(os.Stderr, slog.LevelInfo)
 
 func init() {

@@ -14,7 +14,7 @@ func printManPage(ctx context.Context) {
 	file, err := os.CreateTemp("", "depengine-man-*.1")
 	if err == nil {
 		path := file.Name()
-		defer os.Remove(path)
+		defer func() { _ = os.Remove(path) }()
 		if _, err = file.WriteString(ManPage); err == nil {
 			err = file.Close()
 		} else {

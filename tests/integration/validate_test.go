@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -23,6 +24,11 @@ func TestMain(m *testing.M) {
 	}
 
 	binary = filepath.Join(tmp, "depengine")
+	if runtime.GOOS == "windows" {
+		// exec.LookPath only resolves extensionless names via PATH
+		// probing; a direct path without .exe fails to start.
+		binary += ".exe"
+	}
 	cmd := exec.Command("go", "build", "-o", binary, ".")
 	cmd.Dir = findModuleRoot()
 	out, err := cmd.CombinedOutput()
@@ -56,7 +62,7 @@ func findModuleRoot() string {
 
 // validatePath returns the path to a testdata file.
 func validatePath(name string) string {
-	return filepath.Join(findModuleRoot(), "pkg", "validate", "testdata", name)
+	return filepath.Join(findModuleRoot(), "internal", "validate", "testdata", name)
 }
 
 // schemaPath returns the project's schema.example.toml.

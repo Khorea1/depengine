@@ -3,12 +3,13 @@ FROM debian:latest
 
 # Go toolchain from distro packages — test.sh runs `go build` inside the
 # container (go.mod requires go 1.27; golang-go is Debian's Go package).
+# NOTE: keep /var/lib/apt/lists — depengine's native availability checks
+# need the package index at test time.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     golang-go \
     curl \
     git \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates
 
 # WORKDIR /app
 # COPY . .

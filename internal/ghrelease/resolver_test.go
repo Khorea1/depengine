@@ -84,20 +84,10 @@ func TestResolveLatestWithHTTPMock(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	httpClientMu.Lock()
-	origClient := httpClient
-	httpClient = &http.Client{
-		Transport: &redirectTripper{testURL: ts.URL},
-	}
-	httpClientMu.Unlock()
-	t.Cleanup(func() {
-		httpClientMu.Lock()
-		httpClient = origClient
-		httpClientMu.Unlock()
-	})
+	r := newTestResolver(ts.URL)
 
 	url := "https://github.com/mock-owner/mock-repo/releases/download/{latest}/file.tar.gz"
-	got, err := ResolveLatest(context.Background(), url, run.OSExecRunner{})
+	got, err := r.ResolveLatest(context.Background(), url, run.OSExecRunner{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -113,20 +103,10 @@ func TestLookupReleaseHTTPError(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	httpClientMu.Lock()
-	origClient := httpClient
-	httpClient = &http.Client{
-		Transport: &redirectTripper{testURL: ts.URL},
-	}
-	httpClientMu.Unlock()
-	t.Cleanup(func() {
-		httpClientMu.Lock()
-		httpClient = origClient
-		httpClientMu.Unlock()
-	})
+	r := newTestResolver(ts.URL)
 
 	url := "https://github.com/error-owner/error-repo/releases/download/{latest}/file.tar.gz"
-	_, err := ResolveLatest(context.Background(), url, run.OSExecRunner{})
+	_, err := r.ResolveLatest(context.Background(), url, run.OSExecRunner{})
 	if err == nil {
 		t.Fatal("expected error from 500 response, got nil")
 	}
@@ -150,22 +130,12 @@ func TestResolveLatestTagWithHTTPMock(t *testing.T) {
 	}))
 	t.Cleanup(ts.Close)
 
-	httpClientMu.Lock()
-	origClient := httpClient
-	httpClient = &http.Client{
-		Transport: &redirectTripper{testURL: ts.URL},
-	}
-	httpClientMu.Unlock()
-	t.Cleanup(func() {
-		httpClientMu.Lock()
-		httpClient = origClient
-		httpClientMu.Unlock()
-	})
+	r := newTestResolver(ts.URL)
 
 	// Distinct owner/repo from other tests so the shared cache can't mask a
 	// broken implementation with a stale hit.
 	url := "https://github.com/tag-owner/tag-repo/releases/download/{latest}/file.tar.gz"
-	got, err := ResolveLatestTag(context.Background(), url, run.OSExecRunner{})
+	got, err := r.ResolveLatestTag(context.Background(), url, run.OSExecRunner{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -175,7 +145,7 @@ func TestResolveLatestTagWithHTTPMock(t *testing.T) {
 
 	// The same tag, applied by the caller, must reproduce what ResolveLatest
 	// would have returned directly — this is the invariant internal/lock relies on.
-	viaResolveLatest, err := ResolveLatest(context.Background(), url, run.OSExecRunner{})
+	viaResolveLatest, err := r.ResolveLatest(context.Background(), url, run.OSExecRunner{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -194,9 +164,9 @@ func TestResolveAssetURLLatest(t *testing.T) {
 		w.Write([]byte(`{"tag_name": "v1.0.0", "assets": [{"name": "tool-linux-x86_64", "browser_download_url": "https://example.com/tool-linux-x86_64"}]}`))
 	}))
 	t.Cleanup(ts.Close)
-	swapHTTPClient(t, ts.URL)
+	r := newTestResolver(ts.URL)
 
-	url, tag, err := ResolveAssetURL(context.Background(), "asset-owner/asset-repo", "tool-linux-{arch_any}", "x86_64", "linux", "", run.OSExecRunner{})
+	url, tag, err := r.ResolveAssetURL(context.Background(), "asset-owner/asset-repo", "tool-linux-{arch_any}", "x86_64", "linux", "", run.OSExecRunner{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -214,9 +184,9 @@ func TestResolveAssetURLMatchesOSSynonyms(t *testing.T) {
 		w.Write([]byte(`{"tag_name":"v1.0.0","assets":[{"name":"tool-macos-amd64","browser_download_url":"https://example.com/tool"}]}`))
 	}))
 	t.Cleanup(ts.Close)
-	swapHTTPClient(t, ts.URL)
+	r := newTestResolver(ts.URL)
 
-	url, _, err := ResolveAssetURL(context.Background(), "synonym-owner/synonym-repo", "tool-{os_any}-{arch_any}", "x86_64", "darwin", "", run.OSExecRunner{})
+	url, _, err := r.ResolveAssetURL(context.Background(), "synonym-owner/synonym-repo", "tool-{os_any}-{arch_any}", "x86_64", "darwin", "", run.OSExecRunner{})
 	if err != nil {
 		t.Fatalf("ResolveAssetURL: %v", err)
 	}
@@ -231,9 +201,9 @@ func TestResolveAssetURLNoMatchListsAvailableAssets(t *testing.T) {
 		w.Write([]byte(`{"tag_name":"v1.0.0","assets":[{"name":"checksums.txt"},{"name":"tool-linux-arm64"}]}`))
 	}))
 	t.Cleanup(ts.Close)
-	swapHTTPClient(t, ts.URL)
+	r := newTestResolver(ts.URL)
 
-	_, _, err := ResolveAssetURL(context.Background(), "zero-owner/zero-repo", "tool-{os_any}-{arch_any}", "x86_64", "linux", "", run.OSExecRunner{})
+	_, _, err := r.ResolveAssetURL(context.Background(), "zero-owner/zero-repo", "tool-{os_any}-{arch_any}", "x86_64", "linux", "", run.OSExecRunner{})
 	if err == nil || !strings.Contains(err.Error(), "available assets: checksums.txt, tool-linux-arm64") {
 		t.Fatalf("error = %v", err)
 	}
@@ -245,9 +215,9 @@ func TestResolveAssetURLRejectsMultipleMatches(t *testing.T) {
 		w.Write([]byte(`{"tag_name":"v1.0.0","assets":[{"name":"tool-linux-x86_64"},{"name":"tool-linux-amd64"},{"name":"tool-linux-arm64"}]}`))
 	}))
 	t.Cleanup(ts.Close)
-	swapHTTPClient(t, ts.URL)
+	r := newTestResolver(ts.URL)
 
-	_, _, err := ResolveAssetURL(context.Background(), "multi-owner/multi-repo", "tool-{os_any}-{arch_any}", "x86_64", "linux", "", run.OSExecRunner{})
+	_, _, err := r.ResolveAssetURL(context.Background(), "multi-owner/multi-repo", "tool-{os_any}-{arch_any}", "x86_64", "linux", "", run.OSExecRunner{})
 	if err == nil {
 		t.Fatal("expected multiple matches to fail")
 	}
@@ -271,9 +241,9 @@ func TestResolveAssetURLWithSlashInRefEscapesTagPath(t *testing.T) {
 		w.Write([]byte(`{"tag_name":"release/v1","assets":[{"name":"tool-linux-x86_64","browser_download_url":"https://example.com/tool"}]}`))
 	}))
 	t.Cleanup(ts.Close)
-	swapHTTPClient(t, ts.URL)
+	r := newTestResolver(ts.URL)
 
-	gotURL, tag, err := ResolveAssetURL(context.Background(), "slash-owner/slash-repo", "tool-linux-{arch_any}", "x86_64", "linux", "release/v1", run.OSExecRunner{})
+	gotURL, tag, err := r.ResolveAssetURL(context.Background(), "slash-owner/slash-repo", "tool-linux-{arch_any}", "x86_64", "linux", "release/v1", run.OSExecRunner{})
 	if err != nil {
 		t.Fatalf("ResolveAssetURL: %v", err)
 	}
@@ -292,9 +262,9 @@ func TestResolveAssetURLWithRef(t *testing.T) {
 		w.Write([]byte(`{"tag_name": "nightly", "assets": [{"name": "tool-linux-aarch64", "browser_download_url": "https://example.com/tool-linux-aarch64"}]}`))
 	}))
 	t.Cleanup(ts.Close)
-	swapHTTPClient(t, ts.URL)
+	r := newTestResolver(ts.URL)
 
-	url, tag, err := ResolveAssetURL(context.Background(), "ref-owner/ref-repo", "tool-linux-{arch_any}", "aarch64", "linux", "nightly", run.OSExecRunner{})
+	url, tag, err := r.ResolveAssetURL(context.Background(), "ref-owner/ref-repo", "tool-linux-{arch_any}", "aarch64", "linux", "nightly", run.OSExecRunner{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -311,9 +281,9 @@ func TestResolveAssetURLRefNotFound(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	t.Cleanup(ts.Close)
-	swapHTTPClient(t, ts.URL)
+	r := newTestResolver(ts.URL)
 
-	_, _, err := ResolveAssetURL(context.Background(), "missing-owner/missing-repo", "tool-linux-{arch_any}", "x86_64", "linux", "does-not-exist", run.OSExecRunner{})
+	_, _, err := r.ResolveAssetURL(context.Background(), "missing-owner/missing-repo", "tool-linux-{arch_any}", "x86_64", "linux", "does-not-exist", run.OSExecRunner{})
 	if err == nil {
 		t.Fatal("expected error for a ref/tag that doesn't exist as a release")
 	}
@@ -335,19 +305,19 @@ func TestFetchReleaseByTagCachesSeparatelyFromLatest(t *testing.T) {
 		}
 	}))
 	t.Cleanup(ts.Close)
-	swapHTTPClient(t, ts.URL)
+	r := newTestResolver(ts.URL)
 
-	if _, err := fetchLatestRelease(context.Background(), "cache-owner", "cache-repo", run.OSExecRunner{}); err != nil {
+	if _, err := r.fetchLatestRelease(context.Background(), "cache-owner", "cache-repo", run.OSExecRunner{}); err != nil {
 		t.Fatalf("fetchLatestRelease: %v", err)
 	}
-	if _, err := fetchReleaseByTag(context.Background(), "cache-owner", "cache-repo", "v1.0.0", run.OSExecRunner{}); err != nil {
+	if _, err := r.fetchReleaseByTag(context.Background(), "cache-owner", "cache-repo", "v1.0.0", run.OSExecRunner{}); err != nil {
 		t.Fatalf("fetchReleaseByTag: %v", err)
 	}
 	// Second calls should hit the cache, not the server again.
-	if _, err := fetchLatestRelease(context.Background(), "cache-owner", "cache-repo", run.OSExecRunner{}); err != nil {
+	if _, err := r.fetchLatestRelease(context.Background(), "cache-owner", "cache-repo", run.OSExecRunner{}); err != nil {
 		t.Fatalf("fetchLatestRelease (cached): %v", err)
 	}
-	if _, err := fetchReleaseByTag(context.Background(), "cache-owner", "cache-repo", "v1.0.0", run.OSExecRunner{}); err != nil {
+	if _, err := r.fetchReleaseByTag(context.Background(), "cache-owner", "cache-repo", "v1.0.0", run.OSExecRunner{}); err != nil {
 		t.Fatalf("fetchReleaseByTag (cached): %v", err)
 	}
 
@@ -359,20 +329,35 @@ func TestFetchReleaseByTagCachesSeparatelyFromLatest(t *testing.T) {
 	}
 }
 
-// swapHTTPClient points the package's httpClient at ts for the duration of
-// the calling test, restoring the original client on cleanup. Shared helper
-// for tests that mock the GitHub API via redirectTripper.
-func swapHTTPClient(t *testing.T, testURL string) {
-	t.Helper()
-	httpClientMu.Lock()
-	orig := httpClient
-	httpClient = &http.Client{Transport: &redirectTripper{testURL: testURL}}
-	httpClientMu.Unlock()
-	t.Cleanup(func() {
-		httpClientMu.Lock()
-		httpClient = orig
-		httpClientMu.Unlock()
-	})
+// newTestResolver returns an isolated Resolver whose HTTP client talks to
+// the test server at testURL. Each test gets its own caches, so cross-test
+// cache collisions are impossible by construction — no distinct owner/repo
+// naming or global restore dance required.
+func newTestResolver(testURL string) *Resolver {
+	r := NewResolver()
+	r.SetHTTPClient(&http.Client{Transport: &redirectTripper{testURL: testURL}})
+	return r
+}
+
+func TestResolversDoNotShareCaches(t *testing.T) {
+	var hits int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tag_name": "v3.0.0"}`))
+	}))
+	t.Cleanup(ts.Close)
+
+	url := "https://github.com/isolated-owner/isolated-repo/releases/download/{latest}/file.tar.gz"
+	if _, err := newTestResolver(ts.URL).ResolveLatest(context.Background(), url, run.OSExecRunner{}); err != nil {
+		t.Fatalf("first resolver: %v", err)
+	}
+	if _, err := newTestResolver(ts.URL).ResolveLatest(context.Background(), url, run.OSExecRunner{}); err != nil {
+		t.Fatalf("second resolver: %v", err)
+	}
+	if hits != 2 {
+		t.Fatalf("server hit %d times, want 2 (a fresh Resolver must not see another instance's cache)", hits)
+	}
 }
 
 func TestIsGitHubURLCaseInsensitive(t *testing.T) {
@@ -403,8 +388,8 @@ func TestSplitRepoAcceptsCanonicalGitForms(t *testing.T) {
 func TestGithubTokenNilRunnerWithoutEnvIsSafe(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")
-	ResetGhTokenCache()
-	if got := GithubToken(context.Background(), nil); got != "" {
+	// Fresh Resolver: no cache reset needed, isolation by construction.
+	if got := NewResolver().GithubToken(context.Background(), nil); got != "" {
 		t.Fatalf("GithubToken(nil) = %q, want empty", got)
 	}
 }
@@ -438,9 +423,9 @@ func TestResolveLatestTagHandlesExplicitDefaultGitHubPort(t *testing.T) {
 		_, _ = io.WriteString(w, `{"tag_name":"v9.8.7"}`)
 	}))
 	defer server.Close()
-	swapHTTPClient(t, server.URL)
+	r := newTestResolver(server.URL)
 
-	tag, err := ResolveLatestTag(context.Background(), "https://github.com:443/owner/repo/releases/download/{latest}/tool", &run.FakeRunner{ExitCode: 1})
+	tag, err := r.ResolveLatestTag(context.Background(), "https://github.com:443/owner/repo/releases/download/{latest}/tool", &run.FakeRunner{ExitCode: 1})
 	if err != nil {
 		t.Fatalf("ResolveLatestTag: %v", err)
 	}

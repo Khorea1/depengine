@@ -235,6 +235,63 @@ func (a *GitAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 	if err != nil {
 		return err
 	}
+	return a.installResolvedSource(ctx, rn, tool, mc, source)
+}
+
+// InstallResolved executes an already-resolved clone plan. The clone identity
+// (URL and ref) comes exclusively from resolved; mc.Config supplies only
+// non-identity execution parameters (depth, submodules, build, extract_to,
+// artifact, managed_paths). It never calls resolveCloneSource, ResolveLatest,
+// or any network resolution.
+func (a *GitAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if _, err := managedPaths(mc); err != nil {
+		return err
+	}
+	source, err := resolvedCloneSourceFromPlan(resolved)
+	if err != nil {
+		return err
+	}
+	return a.installResolvedSource(ctx, rn, tool, mc, source)
+}
+
+// resolvedCloneSourceFromPlan rebuilds the clone identity solely from the
+// resolved plan. RequestedVersion preserves the configured branch/tag/rev
+// selector; Identity carries the concrete URL, resolved {latest} tag
+// (Version), and pinned revision (Revision).
+func resolvedCloneSourceFromPlan(resolved *plan.ResolvedInstallPlan) (resolvedCloneSource, error) {
+	if resolved == nil {
+		return resolvedCloneSource{}, fmt.Errorf("git: resolved plan is required")
+	}
+	source := resolvedCloneSource{URL: resolved.Identity.Source}
+	if source.URL == "" {
+		return resolvedCloneSource{}, fmt.Errorf("git: resolved plan has no concrete clone URL")
+	}
+	if resolved.Identity.Revision != "" {
+		source.Revision = resolved.Identity.Revision
+		return source, nil
+	}
+	if requested := resolved.Identity.RequestedVersion; requested != nil {
+		switch requested.Mode {
+		case plan.VersionGitBranch:
+			source.Branch = requested.Value
+			return source, nil
+		case plan.VersionGitTag:
+			source.Tag = requested.Value
+			return source, nil
+		case plan.VersionGitRevision:
+			source.Revision = requested.Value
+			return source, nil
+		}
+	}
+	// No pinned selector: either a default-branch clone or a resolved
+	// {latest} tag carried in Identity.Version.
+	if resolved.Identity.Version != "" {
+		source.ResolvedTag = resolved.Identity.Version
+	}
+	return source, nil
+}
+
+func (a *GitAdapter) installResolvedSource(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, source resolvedCloneSource) error {
 	url := source.URL
 	branch := source.Branch
 	tag := source.Tag
@@ -401,22 +458,25 @@ func artifactPath(cloneDir, artifact string) (string, error) {
 
 // isSharedDir checks if a directory path is a common shared system directory.
 // We avoid deleting these directories completely during uninstallation.
+// Separators are folded to "/" after Clean so Unix-style manifests and
+// Windows-style paths evaluate identically on every platform (ToSlash
+// alone is a no-op for literal backslashes on Unix).
 func isSharedDir(path string) bool {
-	p := filepath.Clean(path)
+	p := strings.ReplaceAll(filepath.Clean(path), "\\", "/")
 	if p == "/" || p == "." {
 		return true
 	}
 	shared := []string{
 		"/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin",
 		"/opt", "/usr", "/usr/local", "/lib", "/usr/lib", "/usr/local/lib",
-		"C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)",
+		"C:/Windows", "C:/Program Files", "C:/Program Files (x86)",
 	}
 	for _, s := range shared {
 		if p == s {
 			return true
 		}
 	}
-	if strings.HasSuffix(p, "/bin") || strings.HasSuffix(p, "/sbin") || strings.HasSuffix(p, "\\bin") {
+	if strings.HasSuffix(p, "/bin") || strings.HasSuffix(p, "/sbin") {
 		return true
 	}
 	return false
@@ -498,4 +558,5 @@ func (a *GitAdapter) CanRemove() bool { return true }
 // Ensure GitAdapter implements exec.Adapter at compile time.
 var _ exec.Adapter = (*GitAdapter)(nil)
 var _ exec.PlanResolver = (*GitAdapter)(nil)
+var _ exec.ResolvedInstaller = (*GitAdapter)(nil)
 var _ exec.Remover = (*GitAdapter)(nil)

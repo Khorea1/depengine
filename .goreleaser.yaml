@@ -18,7 +18,7 @@ before:
 
 builds:
   - id: depengine
-    main: ./main.go
+    main: .
     binary: depengine
     goos:
       - linux
@@ -52,35 +52,38 @@ nfpms:
       - rpm
       - archlinux
     bindir: /usr/bin
-    files:
-      scripts/detect_os.sh: /usr/lib/depengine/detect_os.sh
-      docs/depengine.1: /usr/share/man/man1/depengine.1
-      scripts/depengine-completion.bash: /usr/share/bash-completion/completions/depengine
-      scripts/depengine-completion.zsh: /usr/share/zsh/site-functions/_depengine
-      scripts/depengine-completion.fish: /usr/share/fish/vendor_completions.d/depengine.fish
+    contents:
+      - src: scripts/detect_os.sh
+        dst: /usr/lib/depengine/detect_os.sh
+      - src: docs/depengine.1
+        dst: /usr/share/man/man1/depengine.1
+      - src: scripts/depengine-completion.bash
+        dst: /usr/share/bash-completion/completions/depengine
+      - src: scripts/depengine-completion.zsh
+        dst: /usr/share/zsh/site-functions/_depengine
+      - src: scripts/depengine-completion.fish
+        dst: /usr/share/fish/vendor_completions.d/depengine.fish
 
-brews:
+# Homebrew Casks (the `brews` formula pipe is deprecated since GoReleaser
+# v2.10 and fails `goreleaser check` on v2.16+). Upload is skipped: publishing
+# needs a homebrew-tap repository and token this project does not have yet.
+homebrew_casks:
   - name: depengine
     homepage: https://github.com/Khorea1/depengine
     description: Distro-agnostic dependency installer
     license: GPL-3.0-or-later
-    repository:
-      owner: depengine
-      name: homebrew-tap
-    commit_author:
-      name: depengine-bot
-      email: bot@depengine.dev
-    install: |
-      bin.install "depengine"
-      (lib/"depengine").install "scripts/detect_os.sh"
-      man1.install "docs/depengine.1"
-      bash_completion.install "scripts/depengine-completion.bash"
-      zsh_completion.install "scripts/depengine-completion.zsh"
-      fish_completion.install "scripts/depengine-completion.fish"
+    skip_upload: "true"
 
-wings:
-  - id: depengine-wings
-    name_template: "depengine_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+# Winget manifests are generated but not published: publishing needs a
+# winget-pkgs fork and token that this repository does not have yet.
+# skip_upload keeps the manifests in dist/ for inspection.
+winget:
+  - name: depengine
+    publisher: Khorea1
+    short_description: "Distro-agnostic dependency installer"
+    license: GPL-3.0-or-later
+    package_identifier: Khorea1.depengine
+    skip_upload: "true"
 
 archives:
   - id: depengine-archives
@@ -95,6 +98,32 @@ archives:
 checksum:
   name_template: "depengine_{{ .Version }}_checksums.txt"
   algorithm: sha256
+
+# SPDX SBOMs for every published archive, derived from the module graph.
+sboms:
+  - id: depengine-sboms
+    artifacts: archive
+
+# Keyless cosign signatures over the checksum file (Fulcio + Rekor via
+# GitHub OIDC; no long-lived keys). Requires `id-token: write` on the
+# release job and cosign on PATH.
+signs:
+  - id: depengine-signs
+    cmd: cosign
+    # Distinct certificate/signature outputs: ${certificate} requires the
+    # certificate field below (it expands empty without it). Cosign v3
+    # removed both flags in favor of --bundle, so the release pins cosign
+    # v2 (see cosign-release in release.yml) to keep the split .sig/.pem
+    # format the verification docs promise.
+    signature: "${artifact}.sig"
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--yes"
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+    artifacts: checksum
 
 changelog:
   sort: asc

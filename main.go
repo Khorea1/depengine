@@ -21,6 +21,10 @@ func main() {
 	app.InitAdapters()
 	app.Version = version
 	app.ManPage = manPage
+	// SIGINT/SIGTERM cancel in-flight work instead of killing the
+	// process mid-mutation: adapter subprocesses receive SIGTERM as a
+	// group (see internal/run) and the preparation journal stays in a
+	// recoverable state for the next run.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

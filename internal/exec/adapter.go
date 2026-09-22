@@ -60,13 +60,29 @@ type Adapter interface {
 	Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error
 }
 
-// PlanResolver is an optional read-only adapter capability used by dry-run to
-// turn a static candidate intent into the concrete plan that would be consumed
-// by Install (for example a GitHub release asset URL). Implementations must not
-// mutate host state.
+// PlanResolver is a read-only adapter capability used by planning and
+// execution to turn a static candidate intent into the concrete plan that
+// will be consumed by Install (for example a GitHub release asset URL).
+// Implementations must not mutate host state. After ResolvePlan returns,
+// no layer below the executor may consult GitHub, {latest}, tags, or asset
+// lists again to decide what to install.
 type PlanResolver interface {
 	Adapter
 	ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error)
+}
+
+// ResolvedInstaller is an optional adapter capability for executing an
+// already-resolved plan. It must not resolve any identity: no GitHub calls,
+// no {latest} expansion, no tag/asset lookups. It executes exactly what is
+// already present in resolved.
+//
+// Fail-closed rule: an adapter implementing PlanResolver must also implement
+// ResolvedInstaller for real installs. The executor never falls back
+// silently to Install() for such adapters, because that would reintroduce
+// the double resolution this contract eliminates.
+type ResolvedInstaller interface {
+	Adapter
+	InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error
 }
 
 // HostCompatibilityChecker is an optional adapter capability for candidates
