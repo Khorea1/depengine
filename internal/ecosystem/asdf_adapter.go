@@ -182,8 +182,8 @@ func (a *AsdfAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *con
 	if resolved == nil {
 		return errors.New("asdf: nil resolved plan")
 	}
-	if len(resolved.Operations) > 0 {
-		return errors.New("asdf: resolved operations are unsupported")
+	if err := validateResolvedInstallOperation("asdf", resolved); err != nil {
+		return err
 	}
 	pkg, version := resolved.Identity.Package, resolved.Identity.Version
 	if pkg == "" {

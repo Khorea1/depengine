@@ -34,6 +34,7 @@ func TestCondaAdapterV2ResolvedPlanIsAuthoritative(t *testing.T) {
 	intent.Identity.Revision = "py312_0"
 	intent.Identity.Environment = &plan.EnvironmentTarget{Kind: plan.EnvironmentNamed, Value: "data"}
 	intent.Identity.Source = "conda-forge"
+	intent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
 	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
 	if err != nil {
 		t.Fatal(err)

@@ -28,6 +28,7 @@ func TestSDKManAdapterV2ResolvesObservesAndInstallsExactVersion(t *testing.T) {
 	intent.Identity.Package = "java"
 	intent.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: version}
 	intent.Identity.Version = version
+	intent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
 
 	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
 	if err != nil {

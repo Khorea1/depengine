@@ -67,6 +67,7 @@ func TestPacstallAdapterV2InstallResolvedUsesElevationAndResolvedPackage(t *test
 	mc := &config.MethodCandidate{Kind: "pacstall", Config: map[string]any{"pkg": "resolved-pkg"}}
 	intent := plan.New(tool.Name, mc.Kind, true)
 	intent.Identity.Package = "resolved-pkg"
+	intent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
 	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
 	if err != nil {
 		t.Fatalf("ResolvePlan() error = %v", err)

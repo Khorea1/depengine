@@ -124,8 +124,8 @@ func (a *YarnBerryAdapter) InstallResolved(ctx context.Context, rn run.Runner, _
 	if resolved == nil {
 		return errors.New("yarn-berry: nil resolved plan")
 	}
-	if len(resolved.Operations) > 0 {
-		return errors.New("yarn-berry: resolved operations are unsupported")
+	if err := validateResolvedInstallOperation("yarn-berry", resolved); err != nil {
+		return err
 	}
 	if resolved.Identity.Package == "" {
 		return errors.New("yarn-berry: no package name in resolved plan")

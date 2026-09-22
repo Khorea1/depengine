@@ -77,8 +77,8 @@ func (a *SteamCMDAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ 
 	if resolved == nil {
 		return errors.New("steamcmd: nil resolved plan")
 	}
-	if len(resolved.Operations) > 0 {
-		return errors.New("steamcmd: resolved operations are unsupported")
+	if err := validateResolvedInstallOperation("steamcmd", resolved); err != nil {
+		return err
 	}
 	if resolved.Identity.Package == "" {
 		return fmt.Errorf("steamcmd: no app id in resolved plan")
