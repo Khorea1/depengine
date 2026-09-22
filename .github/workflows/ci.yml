@@ -35,7 +35,7 @@ jobs:
         govulncheck ./...
 
     - name: Run fuzz tests (short)
-      run: go test -fuzz=FuzzParseSchema -fuzztime=15s -run=^$ ./pkg/config/
+      run: go test -fuzz=FuzzParseSchema -fuzztime=15s -run=^$ ./internal/config/
 
     - name: Derive version
       id: version

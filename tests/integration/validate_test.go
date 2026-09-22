@@ -62,7 +62,7 @@ func findModuleRoot() string {
 
 // validatePath returns the path to a testdata file.
 func validatePath(name string) string {
-	return filepath.Join(findModuleRoot(), "pkg", "validate", "testdata", name)
+	return filepath.Join(findModuleRoot(), "internal", "validate", "testdata", name)
 }
 
 // schemaPath returns the project's schema.example.toml.
