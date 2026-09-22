@@ -64,9 +64,9 @@ Examples reproduced during the stress-test:
 **Acceptance criteria**
 
 - [ ] Any manifest accepted by `validate` either produces a valid resolved plan or fails only because of runtime facts that cannot be known statically.
-- [x] `why` and `dry-run` cannot call a candidate “ready” if the planner has already determined it is unavailable. (`ExplainTool` and `Execute` share availability/capability gating; regression tests cover `skip_unavailable`/zero `WouldInstall` and `skip_capability`.)
+- [x] `why` and `dry-run` cannot call a candidate “ready” if the planner has already determined it is unavailable.
 - [x] Unsupported `.pkg`, `.dmg`, `.exe`, MSIX/AppX, or other installer types fail with accurate, actionable diagnostics.
-- [x] URL/path validation is implemented once and covered by shared contract tests. (`artifact.ValidateURL` owns credential-safe scheme/host validation for download and Git URLs; `plan.SourceReference.URL` now also requires an absolute remote URL or scp-style Git remote rather than accepting symbolic names in the URL slot; `plan.NormalizeProjectPath` owns portable project-relative local paths, with contract tests for both.)
+- [x] URL/path validation is implemented once and covered by shared contract tests.
 
 **Likely areas**
 
@@ -82,7 +82,7 @@ At least one adapter accepts a field that does not affect actual installation be
 
 **Work**
 
-- [x] Create a conformance mechanism that enumerates all accepted fields for each method contract (each `Field` now declares its runtime effect phase and a contract test rejects effect-less fields).
+- [x] Create a conformance mechanism that enumerates all accepted fields for each method contract.
 - [~] Require every field to influence the resolved plan, validation, execution, or verification. (The static planner is fail-closed for unknown fields and projects cross-cutting identity/source/artifact/command semantics; legacy candidate `sources` are now projected as typed host-configuration sources with their source kind preserved through canonicalization/locking; remaining adapter-specific fields still need plan-effect conformance coverage.)
 - [x] Fix `asdf.version` handling.
 - [x] Audit SDKMAN, Cargo, Go, Conda, container, Git, Snap, Flatpak, native and artifact adapters for similar discrepancies.
@@ -96,12 +96,12 @@ At least one adapter accepts a field that does not affect actual installation be
   - [x] Flatpak
   - [x] native
   - [x] artifact adapters: removed always-overridden placement fields from AppImage/Android contracts and covered MSI identity fields.
-- [x] Prevent future contract additions without corresponding semantic tests. (Every public field name must have an explicit `FieldSemantic` classification; contract finalization fails closed for unclassified fields and tests reject stale classifications.)
+- [x] Prevent future contract additions without corresponding semantic tests.
 
 **Acceptance criteria**
 
 - [x] `asdf.version = "X"` installs/checks X rather than silently using latest.
-- [x] Contract tests fail when a schema field is accepted but ignored. (`TestResolveEffectFieldsMoveStaticIntent` differentially probes every `EffectResolve` field across all contracts: distinct values must move `BuildCandidateIntent` or fail validation. Triage exclusions are runtime-resolved dimensions pending P1.1 static enrichment: `release`/`branch` on artifact methods, `git.url`, `native.pkg_overrides`. Execute/verify-phase fields remain covered by per-adapter behavior tests.)
+- [x] Contract tests fail when a schema field is accepted but ignored.
 - [ ] Every adapter has at least one behavior test per non-trivial declared field.
 
 ______________________________________________________________________
@@ -185,7 +185,7 @@ ______________________________________________________________________
   - container tag and immutable digest;
   - rolling/latest intent.
 - [x] Decide which forms are portable across methods and which remain method-specific.
-- [x] Define normalization rules so `latest`, channels, constraints, revisions and exact versions are unambiguous. (`VersionDigest` is validated as a concrete `algorithm:hex` pin rather than an arbitrary string, matching resolved identity/lock semantics; when a digest intent and concrete resolved digest are both present they must identify the same digest, including in persisted lock projections.)
+- [x] Define normalization rules so `latest`, channels, constraints, revisions and exact versions are unambiguous.
 - [~] Define method capability declarations for supported version modes. Contracts expose exact-version, channel, revision, immutable-identity and mutable-tag capabilities; `BuildCandidateIntent` maps configured version/tag/branch/channel/digest semantics into the shared model and executor/why/validate consume the resulting capability requirements. Per-manager constraint declarations remain TODO.
 - [~] Define behavior when a preferred method cannot satisfy the requested version semantics: eliminate candidate rather than silently weakening intent. (The executor now rejects the candidate at the shared plan-capability boundary before probes; broader adapter/runtime resolution still needs the same resolved identity.)
 - [~] Update verification to compare actual state against requested/resolved state. (The shared reconciler compares concrete resolved identity when available and now falls back to immutable `exact` version / `digest` request intent before runtime enrichment; contradictory exact requested-vs-resolved versions fail plan validation. Constraint/channel/tag semantics still require method resolvers and adapter migration.)
@@ -258,14 +258,14 @@ User/system/global behavior is currently encoded through method-specific flags o
 
 **Work**
 
-- [x] Define portable scope vocabulary, initially at least `user` and `system`; add manager-specific/global distinctions only where semantically necessary. (`pkg/plan.Scope` is canonical; adapter aliases are mapped only when semantically equivalent.)
-- [x] Define method capability support for scope. (`CapabilityScope` now has per-method portable mappings and fail-closed `SupportsScope`/`AdapterScope` checks.)
+- [x] Define portable scope vocabulary, initially at least `user` and `system`; add manager-specific/global distinctions only where semantically necessary.
+- [x] Define method capability support for scope.
 - [ ] Resolve scope into platform-native paths/flags in adapters. (The adapter-neutral placement/alias policy is implemented; wiring into blocked adapters remains.)
 - [ ] Remove Unix paths from the normal authoring path whenever scope is sufficient.
 - [ ] Keep `extract_to`, `link_dir`, install root, etc. as advanced overrides.
-- [x] Define precedence between explicit paths and scope. (Scope supplies defaults; non-empty advanced install/link path overrides win independently, but overrides must be absolute in the target OS path model.)
-- [x] Define Windows user/system path behavior explicitly. (Pure planner placement uses explicit `LocalAppData`/`ProgramFiles` roots, validates Windows absolute paths host-independently including UNC roots, rejects drive-relative roots/overrides, dot/dot-dot or duplicate path components, reserved device names and trailing-dot/ADS-like components in target paths, and never borrows Unix defaults.)
-- [x] Define Unix user-scope placement in terms of the XDG Base Directory model. (`XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`, and `XDG_CONFIG_HOME` are explicit target inputs with spec defaults; relative XDG values are ignored, malformed or non-canonical absolute roots/overrides are rejected before placement, and executables use the conventional `~/.local/bin` because XDG defines no `XDG_BIN_HOME`.)
+- [x] Define precedence between explicit paths and scope.
+- [x] Define Windows user/system path behavior explicitly.
+- [x] Define Unix user-scope placement in terms of the XDG Base Directory model.
 
 **Acceptance criteria**
 
@@ -283,9 +283,9 @@ Scope does not identify virtual/project/profile targets such as Conda environmen
 
 **Work**
 
-- [x] Define an environment/profile concept separate from user/system scope. (`pkg/plan.EnvironmentTarget` is distinct from `Scope`.)
-- [x] Avoid a single overloaded string if target semantics differ materially by ecosystem; use typed method fields where appropriate while preserving a common plan representation. (Shared identity distinguishes named environment, prefix, profile, and project targets.)
-- [x] Make the selected environment/profile part of desired-state identity and locking where relevant. (`ResolvedIdentity`, verification, and lock projection carry the typed target; adapter wiring remains.)
+- [x] Define an environment/profile concept separate from user/system scope.
+- [x] Avoid a single overloaded string if target semantics differ materially by ecosystem; use typed method fields where appropriate while preserving a common plan representation.
+- [x] Make the selected environment/profile part of desired-state identity and locking where relevant.
 - [ ] Ensure checks and removal operate in the same target environment.
 - [ ] Do not implicitly depend on whatever environment happens to be active in the invoking shell unless explicitly requested.
 
@@ -316,11 +316,10 @@ Current `sources` support is strong for the previously identified PPA/COPR/Scoop
   - per-install source selection;
   - registry/index/channel selection;
   - trusted signing/key material.
-  (`pkg/plan.SourceReference` has explicit roles and separate trust/auth metadata.)
 - [ ] Add typed source support where required for WinGet, Chocolatey, Cargo registries, Python indexes, Conda channels, Flatpak remotes, apt/dnf arbitrary repositories, etc.
-- [x] Define source identity and ownership. (Typed source identity includes role/name/URL plus explicit depengine ownership for host configuration.)
+- [x] Define source identity and ownership.
 - [~] Define trust/fingerprint/key verification semantics rather than accepting opaque shell snippets. (`SourceTrust` carries declarative key reference/fingerprint and validates shape; adapter-specific cryptographic verification remains TODO.)
-- [x] Add secure secret references for authenticated sources. (Sources can refer to external provider/name pairs; literal URL credentials/sensitive query tokens are rejected.)
+- [x] Add secure secret references for authenticated sources.
 - [~] Make source selection part of desired state and lock identity when it affects resolution. (Resolved plans now carry typed sources and lock projection persists credential-free source/trust identity, including host-source kind so PPA/COPR/tap/bucket identities cannot collapse; runtime ownership and broader adapter population/verification migration remain TODO.)
 
 **Acceptance criteria**
@@ -361,12 +360,12 @@ Hooks are transition events, not durable desired state. A global `pre_install` m
 
 **Work**
 
-- [x] Specify exact hook lifecycle semantics: hooks are candidate-local transition events bound to install/upgrade/repair/remove and before/after timing; they run only for the selected plan and matching transition.
+- [x] Specify exact hook lifecycle semantics.
 - [~] Support candidate/method-local hooks only if there is a strong use case; otherwise prefer declarative primitives. (The resolved-plan model is candidate-local; manifest/parser integration remains TODO.)
-- [x] Introduce a separate concept for durable “ensure this state exists” behavior if required. (`EnsureAction` requires an explicit read-only check plus a mutating apply operation.)
-- [x] Make hooks part of arbitrary-code gating and resolved-plan visibility. (Lifecycle hooks are serialized in the selected plan and always require `CapabilityArbitraryCode`.)
-- [x] Define rollback/error semantics for hook failure. (Pre-hook abort prevents the transition; post-hook failure reports against an already-committed transition and never triggers implicit compensating uninstall/remove.)
-- [x] Ensure hooks never masquerade as idempotent state unless an explicit check is provided. (Hooks are events only; durable ensure state is a separate checked primitive.)
+- [x] Introduce a separate concept for durable “ensure this state exists” behavior if required.
+- [x] Make hooks part of arbitrary-code gating and resolved-plan visibility.
+- [x] Define rollback/error semantics for hook failure.
+- [x] Ensure hooks never masquerade as idempotent state unless an explicit check is provided.
 
 **Acceptance criteria**
 
@@ -392,10 +391,10 @@ Adding cross-cutting fields manually to every method contract will become brittl
   - [x] immutable resolution/locking capability metadata;
   - [x] check/remove/upgrade capability metadata;
   - arbitrary-code execution;
-  - [x] offline/local artifact capability requirement (the production `local` method advertises `local-artifact`; URL-backed methods remain fail-closed for `Artifact.LocalPath`);
+  - [x] offline/local artifact capability requirement;
   - auth support.
-- [x] Use capabilities during candidate filtering/planning (defensive planner boundary rejects capability mismatches before probes/execution). Lifecycle transitions and immutable-lock policy feed the same `CandidateRequirements` boundary; `Artifact.LocalPath` requires `local-artifact` and is accepted only by the production `local` method.
-- [x] Expose capability mismatch reasons in `why` (`skip_capability` with named missing capabilities).
+- [x] Use capabilities during candidate filtering/planning.
+- [x] Expose capability mismatch reasons in `why`.
 - [~] Generate relevant JSON Schema/docs from the same contract data where practical (JSON Schema now embeds capability metadata generated from method contracts; prose docs remain partly manual).
 
 **Acceptance criteria**
@@ -817,12 +816,12 @@ Properties to enforce:
 
 - [ ] Planning never mutates host state.
 - [ ] Dry-run never invokes mutating runner operations.
-- [x] Serializing a resolved plan never exposes secrets. (`ResolvedInstallPlan.MarshalJSON` deep-redacts every string field without mutating the in-memory plan; fuzz/property coverage exercises credential URLs, query secrets, map keys and argv tokens.)
+- [x] Serializing a resolved plan never exposes secrets.
 - [~] An exact locked identity never resolves to a different mutable identity without an explicit update. (`VerifyResolvedPlanAgainstLock` rejects changed version/revision/digest/source/artifact identity with `ErrLockMismatch`; install/CLI consumption of this boundary remains TODO.)
-- [x] Unsupported capabilities cannot silently degrade. (`PlanCapabilities`/`MissingPlanCapabilities` have direct fail-closed coverage for every adapter-neutral semantic dimension and combined requirements; partial contracts report the exact unsatisfied capability mask.)
+- [x] Unsupported capabilities cannot silently degrade.
 - [ ] A schema-accepted field is represented in normalized intent/plan or rejected as irrelevant.
 - [~] Candidate ordering is deterministic. (Universal lock projection/document ordering and local archive destination identity are deterministic; broader planner candidate-order fuzz/conformance remains TODO.)
-- [x] Local archive path extraction never escapes the destination root for accepted names. (`safeArchiveTarget` has fuzz/property coverage for traversal, absolute/drive-qualified names, backslash aliases and arbitrary inputs.)
+- [x] Local archive path extraction never escapes the destination root for accepted names.
 
 ______________________________________________________________________
 
@@ -831,7 +830,7 @@ ______________________________________________________________________
 - [~] Installing an already satisfied plan is idempotent. (`localartifact.Install` now checks desired-state identity before mutation; repeated raw/archive installs preserve the existing destination inode when checksum/provenance already matches. Local source and installed-tree verification also bind metadata and bytes to the same inode to close path-swap races. Adapter/executor-wide idempotency remains TODO.)
 - [~] Drifted state is reported and reconciled according to command semantics. (`VerificationResult` carries explicit per-field drift tied to the authoritative observation, and lifecycle selection consumes only a validated result; CLI status rendering/runtime adapter migration remain TODO.)
 - [~] Removal only removes owned state or explicitly declared external state. (`ResolvedInstallPlan.Validate` now requires absolute canonical Unix/Windows owned paths, collapses Windows case/separator aliases to one ownership identity, rejects duplicate/invalid ownership paths, rejects removal paths not present in the declared owned set, and rejects removal identity/path metadata when removal is declared unsupported; adapter/executor-wide removal conformance remains TODO.)
-- [x] Shared sources/prerequisites use refcounts or equivalent dependency tracking. (`OwnedResourceState` has sorted unique dependents with idempotent claim/release semantics; committed preparation and successful dependency edges claim resources into one canonical snapshot, and removal releases one dependent across the complete snapshot. Last-reference depengine-owned sources use plan-aware cleanup; last-reference depengine-owned lazy prerequisites are recursively uninstalled only after durable root intent proves they are not also directly requested. Shared helpers remain until the final owner is removed, explicit removal is blocked while unscheduled tracked owners still depend on a helper, external resources are never garbage-collected, and ownership records are finalized only after host cleanup succeeds. Canonical ownership/refcount snapshots and root intent are checksum-protected state. Fuzz/property tests cover claim order independence and last-dependent removal; CLI regressions cover shared, transitive, root-retained, and explicit-order prerequisite removal.)
+- [x] Shared sources/prerequisites use refcounts or equivalent dependency tracking.
 - [~] Failed candidate fallback leaves no silent orphan mutation. (The shared preparation journal now distinguishes prepare-mutation-in-progress, commit-in-progress, and rollback-in-progress from confirmed/terminal states. `LockedState` persists `applying` before each prepare mutation and `committing`/`rolling_back` before later host mutations; rollback itself is now incremental, persisting `rollback_applying` before each compensation and `rollback_applied` after success. Automatic replay/rollback is rejected while a prepare, rollback, or commit outcome is ambiguous; restart after confirmed compensations returns only the remaining rollback operations, and either in-flight mutation can leave its WAL marker only through explicit persisted `applied`/`not_applied` evidence for the exact mutation ID. `FinalizeRollback` refuses incomplete/unconfirmed compensation and records every retained source/prerequisite in the ownership snapshot, including zero-ref orphan state that must remain visible for reporting/cleanup. The local-artifact transactional replace path also attempts to roll back a successfully renamed replacement and restore the prior destination if backup cleanup fails; if restoring the old destination itself fails after the new payload was moved back to staging, it best-effort recommits the new payload so the destination is not silently left absent. Executor-wide source/prerequisite fallback persistence/integration remains TODO.)
 - [~] Upgrade does not bypass lock/version/source constraints. (`ReconcileLockedPlan` fails on lock candidate/version/source/target drift before deriving a lifecycle transition and compares observed state against the pinned immutable identity; CLI/runtime upgrade wiring remains TODO.)
 - [~] Undo/state snapshots include all newly introduced mutation types. (`OwnedResources` and active `PreparationJournals` are now serialized in the checksum-protected state file and copied/restored by `LoadSnapshot`; snapshot loading verifies the original state checksum instead of bypassing integrity validation. Journal shape is validated on load, and locked transition helpers bind the journal to the current `PreparationPlan` before every persisted lifecycle change; crash recovery now has a pure/state-level decision boundary for blocked ambiguous `applying` and `rollback_applying`, explicit evidence-driven resolution of those exact in-flight mutations, `committing` reconciliation plus an explicit `not applied` escape only when stronger method-specific evidence proves no commit operation took effect, and incremental `rolling_back` resumption that omits already confirmed compensations; the executor still needs to perform the read-only probe, execute each returned rollback operation through the durable WAL boundary, and surface/resolve blocked recovery states. State/snapshot readers also reject unknown state format versions through the centralized `formatversion` policy rather than attempting implicit migration; state v4 retains the mandatory checksum and exact preparation-plan/WAL pairing while adding root intent for prerequisite cleanup, so older recovery/ownership state cannot be guessed/reconstructed. Mutation-aware undo/executor integration remains TODO.)
