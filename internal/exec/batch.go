@@ -57,7 +57,14 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 			if len(method.Requires) > 0 || len(method.Sources) > 0 {
 				break
 			}
-			if adapter.Check(ctx, ex.probeRunner(toolName, method.Kind), tool, method) {
+			presence, ok := ex.batchPresence(ctx, adapter, toolName, tool, method)
+			if !ok {
+				// A failed or broken V2 observation is not evidence that the
+				// package is absent. Leave the candidate to the serial path,
+				// which records the probe failure using normal method semantics.
+				break
+			}
+			if presence == plan.PresencePresent {
 				ex.recordToolResult(ctx, &ToolResult{
 					Tool: toolName, Status: StatusAlready, Method: displayMethodKind(method),
 					MethodKind: method.Kind, Config: method.Config, PlanIntent: planIntent,
@@ -81,6 +88,33 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 		}
 	}
 	return candidates, remaining
+}
+
+// batchPresence preserves the legacy boolean Check contract while giving V2
+// adapters their explicit observation semantics. The bool is false for a
+// failed, broken, or invalid V2 observation and makes the caller fall back to
+// serial execution.
+func (ex *Executor) batchPresence(ctx context.Context, adapter Adapter, toolName string, tool *config.Tool, method *config.MethodCandidate) (plan.PresenceState, bool) {
+	if adapter == nil {
+		return "", false
+	}
+	runner := ex.probeRunner(toolName, method.Kind)
+	if observer, ok := adapter.(AdapterV2); ok {
+		observation, err := observer.Observe(ctx, runner, tool, method)
+		if err != nil {
+			return "", false
+		}
+		switch observation.Presence {
+		case plan.PresencePresent, plan.PresenceAbsent, plan.PresenceUnknown:
+			return observation.Presence, true
+		default:
+			return "", false
+		}
+	}
+	if adapter.Check(ctx, runner, tool, method) {
+		return plan.PresencePresent, true
+	}
+	return plan.PresenceAbsent, true
 }
 
 func displayMethodKind(method *config.MethodCandidate) string {
