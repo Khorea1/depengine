@@ -3,14 +3,13 @@ FROM fedora:latest
 
 # Go toolchain from distro packages — test.sh runs `go build` inside the
 # container (go.mod requires go 1.27; fedora's `golang` package tracks upstream).
-# Fedora's golang defaults to GOTOOLCHAIN=local: re-enable automatic toolchain
-# switching so the required toolchain downloads on demand.
+# NOTE: keep the metadata cache — depengine's native availability checks
+# need the package index at test time.
 ENV GOTOOLCHAIN=auto
 RUN dnf update -y && dnf install -y \
     golang \
     curl \
-    git \
-    && dnf clean all
+    git
 
 # WORKDIR /app
 # COPY . .

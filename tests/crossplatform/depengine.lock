@@ -1,0 +1,11 @@
+version = 1
+
+[tools]
+[tools.'example-tool/http/0']
+latest = 'latest'
+
+[tools.'fastfetch/http/0']
+latest = '2.68.1'
+
+[methods_hash]
+zsh = '2ebfe68c6e6ae75a65c0f72e94a533e46219a4f0de462602b82eb7c2786589df'
