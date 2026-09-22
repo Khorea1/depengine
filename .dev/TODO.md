@@ -35,17 +35,14 @@
 - [~] Generate docs/schema metadata from capability contracts and eliminate
   cross-cutting method-name conditionals.
 
-## P1 — AdapterV2 cutover
+## P1 — AdapterV2 follow-up
 
-- [~] Active integration is on
-  `agent/coordinator/adapter-v2-wave1-integration`; its successor
-  `agent/w3/adapter-v2-cutover` has uncommitted work. Keep both worktrees and
-  branches until the cutover is integrated and verified.
-- [ ] Migrate remaining adapters with conformance coverage.
-- [ ] Fold legacy check/remove/availability/host-compatibility paths into the
-  AdapterV2 contract, then delete the legacy interfaces.
-- [ ] Prove all lifecycle commands share resolved-plan and observation
-  semantics before merging the cutover.
+- [ ] Remove legacy adapter dispatch and make the registry/executor accept
+  AdapterV2 directly; keep the legacy shim only if a supported compatibility
+  boundary still requires it.
+- [ ] Finish shared resolved-plan and desired-state observation semantics
+  across install, upgrade, status, remove, validation, explanation, and
+  dry-run.
 
 ## P2 — frozen method fidelity
 
