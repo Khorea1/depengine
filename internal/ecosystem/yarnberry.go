@@ -2,12 +2,14 @@ package ecosystem
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -74,6 +76,63 @@ func (a *YarnBerryAdapter) Check(ctx context.Context, rn run.Runner, tool *confi
 	return res.Err == nil && res.ExitCode == 0
 }
 
+// ResolvePlan projects the package selected by the candidate into the plan
+// identity. Berry packages are project-local and cannot be removed by the
+// adapter without changing the project's package.json.
+func (a *YarnBerryAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent == nil {
+		return nil, errors.New("yarn-berry: nil plan intent")
+	}
+	if tool == nil || mc == nil {
+		return nil, errors.New("yarn-berry: tool and method are required")
+	}
+	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
+	if len(pkg) == 0 || pkg[0] == "" {
+		return nil, errors.New("yarn-berry: no package name")
+	}
+	resolved := intent.Clone()
+	if resolved.Identity.Package == "" {
+		return nil, errors.New("yarn-berry: no package name in plan intent")
+	}
+	return &resolved, nil
+}
+
+// Observe uses the existing local-resolution check; it never queries the
+// registry and therefore remains project-local like installation.
+func (a *YarnBerryAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
+	if len(pkg) == 0 || pkg[0] == "" {
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "yarn-berry: no package name"}, nil
+	}
+	if !a.Check(ctx, rn, tool, mc) {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	return plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Package: pkg[0]},
+		KnownFields: []plan.IdentityField{plan.FieldPackage},
+	}, nil
+}
+
+// InstallResolved consumes only the package identity resolved into the plan.
+// Explicit operations are rejected because this adapter has no operation
+// interpreter and must never execute arbitrary plan commands.
+func (a *YarnBerryAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *config.Tool, _ *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if rn == nil {
+		return errors.New("yarn-berry: runner is required")
+	}
+	if resolved == nil {
+		return errors.New("yarn-berry: nil resolved plan")
+	}
+	if err := validateResolvedInstallOperation("yarn-berry", resolved); err != nil {
+		return err
+	}
+	if resolved.Identity.Package == "" {
+		return errors.New("yarn-berry: no package name in resolved plan")
+	}
+	return run.CheckResult(rn.Run(ctx, "yarn", "add", resolved.Identity.Package), "yarn-berry: install")
+}
+
 func (a *YarnBerryAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
 	if len(pkg) == 0 {
@@ -85,3 +144,4 @@ func (a *YarnBerryAdapter) Install(ctx context.Context, rn run.Runner, tool *con
 }
 
 var _ exec.Adapter = (*YarnBerryAdapter)(nil)
+var _ exec.AdapterV2 = (*YarnBerryAdapter)(nil)

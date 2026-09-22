@@ -7,6 +7,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -17,6 +18,66 @@ func condaTool(name, pkg string) (*config.Tool, *config.MethodCandidate) {
 		Config: map[string]any{"pkg": pkg},
 	}
 	return tool, mc
+}
+
+func TestCondaAdapterV2ResolvedPlanIsAuthoritative(t *testing.T) {
+	adapter := NewCondaAdapter()
+	tool, mc := condaTool("friendly", "numpy")
+	mc.Config["version"] = "2.1.0"
+	mc.Config["build"] = "py312_0"
+	mc.Config["environment"] = "data"
+	mc.Config["channels"] = []string{"conda-forge"}
+	intent := plan.New(tool.Name, adapter.Kind(), true)
+	intent.Identity.Package = "numpy"
+	intent.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: "2.1.0"}
+	intent.Identity.Version = "2.1.0"
+	intent.Identity.Revision = "py312_0"
+	intent.Identity.Environment = &plan.EnvironmentTarget{Kind: plan.EnvironmentNamed, Value: "data"}
+	intent.Identity.Source = "conda-forge"
+	intent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
+	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mc.Config["pkg"] = "wrong"
+	mc.Config["version"] = "9.9.9"
+	mc.Config["build"] = "wrong"
+	mc.Config["environment"] = "wrong"
+	runner := &run.FakeRunner{}
+	if err := adapter.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
+		t.Fatal(err)
+	}
+	assertCondaCall(t, runner, []string{"install", "-y", "-n", "data", "-c", "conda-forge", "numpy=2.1.0=py312_0"})
+}
+
+func TestCondaAdapterV2ObserveExactIdentityAndErrors(t *testing.T) {
+	adapter := NewCondaAdapter()
+	tool, mc := condaTool("numpy", "numpy")
+	mc.Config["prefix"] = "/envs/data"
+	observed, err := adapter.Observe(context.Background(), &run.FakeRunner{Stdout: `[{"name":"numpy","version":"2.1.0","build":"py312_0","channel":"conda-forge"}]`}, tool, mc)
+	if err != nil || observed.Presence != plan.PresencePresent || observed.Identity.Version != "2.1.0" || observed.Identity.Revision != "py312_0" || observed.Identity.Source != "conda-forge" {
+		t.Fatalf("Observe() = %#v, error %v", observed, err)
+	}
+	if _, err := adapter.Observe(context.Background(), &run.FakeRunner{ExitCode: 1}, tool, mc); err == nil {
+		t.Fatal("backend failure should return an error")
+	}
+	broken, err := adapter.Observe(context.Background(), &run.FakeRunner{Stdout: "not-json"}, tool, mc)
+	if err == nil || broken.Presence != plan.PresenceBroken {
+		t.Fatalf("invalid JSON = %#v, error %v; want broken with error", broken, err)
+	}
+	missing, err := adapter.Observe(context.Background(), &run.FakeRunner{Stdout: `[]`}, tool, mc)
+	if err != nil || missing.Presence != plan.PresenceAbsent {
+		t.Fatalf("missing package = %#v, error %v; want absent", missing, err)
+	}
+}
+
+func TestCondaAdapterV2RejectsArbitraryOperations(t *testing.T) {
+	resolved := plan.New("numpy", "conda", true)
+	resolved.Identity.Package = "numpy"
+	resolved.Operations = []plan.Operation{{Kind: "arbitrary", Effect: plan.EffectMutation, Command: []string{"sh", "-c", "unsafe"}}}
+	if err := NewCondaAdapter().InstallResolved(context.Background(), &run.FakeRunner{}, nil, nil, &resolved); err == nil {
+		t.Fatal("arbitrary plan operations must be rejected")
+	}
 }
 
 func TestCondaAdapterAvailable(t *testing.T) {

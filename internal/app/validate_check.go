@@ -11,6 +11,7 @@ import (
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/validate"
 	"github.com/spf13/cobra"
@@ -232,7 +233,7 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 		if !*checkLive && !adapter.Available(ctx, run.OSExecRunner{}) {
 			continue
 		}
-		if adapter.Check(ctx, run.OSExecRunner{}, tool, method) {
+		if checkAdapterInstalled(ctx, adapter, tool, method) {
 			if useJSON {
 				json.NewEncoder(os.Stdout).Encode(map[string]string{
 					"tool":   toolName,
@@ -254,4 +255,30 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 		newCLIStyle(os.Stderr).fail("%s is not installed", toolName)
 	}
 	return exitWithCode(1)
+}
+
+func checkAdapterInstalled(ctx context.Context, adapter exec.Adapter, tool *config.Tool, method *config.MethodCandidate) bool {
+	if observer, ok := adapter.(exec.AdapterV2); ok {
+		return checkLiveAdapterV2(ctx, observer, tool, method)
+	}
+	return adapter.Check(ctx, run.OSExecRunner{}, tool, method)
+}
+
+// checkLiveAdapterV2 preserves the direct check command's probe-only
+// semantics while honoring the plan-aware adapter contract. Resolution is
+// performed once before observation; no executor or install path is invoked.
+func checkLiveAdapterV2(ctx context.Context, adapter exec.AdapterV2, tool *config.Tool, method *config.MethodCandidate) bool {
+	intent, err := exec.CandidatePlanIntent(tool, method)
+	if err != nil {
+		return false
+	}
+	resolved, err := adapter.ResolvePlan(ctx, run.OSExecRunner{}, tool, method, intent)
+	if err != nil || resolved == nil {
+		return false
+	}
+	observation, err := adapter.Observe(ctx, run.OSExecRunner{}, tool, method)
+	if err != nil {
+		return false
+	}
+	return observation.Presence == plan.PresencePresent
 }

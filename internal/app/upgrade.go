@@ -627,7 +627,8 @@ func preflightDirectUpgrade(ctx context.Context, runner run.Runner, facts *engin
 	if method.When != nil && !method.When.Match(facts) {
 		return fmt.Errorf("tracked candidate no longer matches its when condition")
 	}
-	if _, err := exec.CandidatePlanIntent(tool, method); err != nil {
+	intent, err := exec.CandidatePlanIntent(tool, method)
+	if err != nil {
 		return err
 	}
 	if len(method.Sources) > 0 {
@@ -652,7 +653,22 @@ func preflightDirectUpgrade(ctx context.Context, runner run.Runner, facts *engin
 	if !adapter.Available(ctx, probeRunner) {
 		return fmt.Errorf("adapter %q is unavailable", method.Kind)
 	}
-	if !adapter.Check(ctx, probeRunner, tool, method) {
+	if v2, ok := adapter.(exec.AdapterV2); ok {
+		resolved, err := v2.ResolvePlan(ctx, probeRunner, tool, method, intent)
+		if err != nil {
+			return err
+		}
+		if resolved == nil {
+			return fmt.Errorf("tracked installation is not present; run install/repair instead of destructive upgrade")
+		}
+		observation, err := v2.Observe(ctx, probeRunner, tool, method)
+		if err != nil {
+			return err
+		}
+		if observation.Presence != plan.PresencePresent {
+			return fmt.Errorf("tracked installation is not present; run install/repair instead of destructive upgrade")
+		}
+	} else if !adapter.Check(ctx, probeRunner, tool, method) {
 		return fmt.Errorf("tracked installation is not present; run install/repair instead of destructive upgrade")
 	}
 	if checker, ok := adapter.(exec.AvailabilityChecker); ok && !checker.CheckAvailable(ctx, probeRunner, tool, method) {

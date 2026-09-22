@@ -2,11 +2,13 @@ package ecosystem
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -47,28 +49,87 @@ func (a *PacstallAdapter) Check(ctx context.Context, rn run.Runner, tool *config
 	return res.Err == nil && res.ExitCode == 0
 }
 
+// ResolvePlan records the package selected by the Pacstall method. Pacstall
+// has no adapter-neutral removal support, so the resolved plan keeps removal
+// disabled even though the package manager exposes a removal command.
+func (a *PacstallAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent == nil {
+		return nil, errors.New("pacstall: nil plan intent")
+	}
+	if tool == nil || mc == nil {
+		return nil, errors.New("pacstall: tool and method are required")
+	}
+	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
+	if len(pkg) == 0 || pkg[0] == "" {
+		return nil, errors.New("pacstall: no package name")
+	}
+	resolved := intent.Clone()
+	if resolved.Identity.Package == "" {
+		return nil, errors.New("pacstall: no package name in plan intent")
+	}
+	return &resolved, nil
+}
+
+// Observe uses Pacstall's existing non-mutating inspection command so the V2
+// path reports the same installed-state result as Check.
+func (a *PacstallAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
+	if len(pkg) == 0 || pkg[0] == "" {
+		return plan.Observation{}, errors.New("pacstall: no package name")
+	}
+	res := rn.Run(ctx, "pacstall", "-Ci", pkg[0])
+	if res.Err == nil && res.ExitCode == 0 {
+		return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg[0]}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
+	}
+	return plan.Observation{Presence: plan.PresenceAbsent, Identity: plan.ObservedIdentity{Package: pkg[0]}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
+}
+
+// InstallResolved executes only the package selected during resolution.
+// Explicit operations have no Pacstall-specific interpretation and are
+// rejected rather than treated as arbitrary commands.
+func (a *PacstallAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *config.Tool, _ *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if rn == nil {
+		return errors.New("pacstall: runner is required")
+	}
+	if resolved == nil {
+		return errors.New("pacstall: nil resolved plan")
+	}
+	if err := validateResolvedInstallOperation("pacstall", resolved); err != nil {
+		return err
+	}
+	if resolved.Identity.Package == "" {
+		return errors.New("pacstall: no package name in resolved plan")
+	}
+	return a.installPackage(ctx, rn, resolved.Identity.Package)
+}
+
 func (a *PacstallAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
 	if len(pkg) == 0 {
 		return fmt.Errorf("pacstall: no package name")
 	}
 
+	return a.installPackage(ctx, rn, pkg[0])
+}
+
+func (a *PacstallAdapter) installPackage(ctx context.Context, rn run.Runner, packageName string) error {
 	// Use elevation (sudo/pkexec) if not running as root.
 	// ElevationPrefix detects the best method at runtime.
 	var cmd []string
 	if isElevated() {
-		cmd = []string{"pacstall", "-I", pkg[0]}
+		cmd = []string{"pacstall", "-I", packageName}
 	} else if prefix := run.ElevationPrefix(); prefix != nil {
-		cmd = append(append([]string(nil), prefix...), "pacstall", "-I", pkg[0])
+		cmd = append(append([]string(nil), prefix...), "pacstall", "-I", packageName)
 	} else {
 		// No working elevation — try with bare sudo anyway for a clear error.
-		cmd = []string{"sudo", "pacstall", "-I", pkg[0]}
+		cmd = []string{"sudo", "pacstall", "-I", packageName}
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return run.CheckResult(res, "pacstall: install")
 }
 
 var _ exec.Adapter = (*PacstallAdapter)(nil)
+var _ exec.AdapterV2 = (*PacstallAdapter)(nil)
 
 // isElevated reports whether the current process is running with
 // root privileges (EUID 0). This is not testable via Runner, so it's

@@ -3,11 +3,13 @@ package ecosystem
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -52,6 +54,16 @@ func condaTargetArgs(mc *config.MethodCandidate) []string {
 		}
 	}
 	return []string{"-n", "base"}
+}
+
+func condaResolvedTargetArgs(target *plan.EnvironmentTarget) []string {
+	if target == nil {
+		return []string{"-n", "base"}
+	}
+	if target.Kind == plan.EnvironmentPrefix {
+		return []string{"-p", target.Value}
+	}
+	return []string{"-n", target.Value}
 }
 
 func condaChannelArgs(mc *config.MethodCandidate) []string {
@@ -136,7 +148,10 @@ func (a *CondaAdapter) queryPackage(ctx context.Context, rn run.Runner, tool *co
 	args = append(args, pkg)
 	res := rn.Run(ctx, "conda", args...)
 	if res.Err != nil || res.ExitCode != 0 {
-		return nil, nil
+		if res.Err != nil {
+			return nil, fmt.Errorf("conda: list query: %w", res.Err)
+		}
+		return nil, fmt.Errorf("conda: list query exited with status %d", res.ExitCode)
 	}
 	var packages []condaPackage
 	if err := json.Unmarshal(res.Stdout, &packages); err != nil {
@@ -148,6 +163,80 @@ func (a *CondaAdapter) queryPackage(ctx context.Context, rn run.Runner, tool *co
 		}
 	}
 	return nil, nil
+}
+
+func (a *CondaAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent == nil {
+		return nil, errors.New("conda: nil plan intent")
+	}
+	pkg := condaPackageName(tool, mc)
+	if pkg == "" {
+		return nil, errors.New("conda: no package name")
+	}
+	resolved := intent.Clone()
+	if resolved.Identity.Package == "" {
+		return nil, errors.New("conda: no package name in plan intent")
+	}
+	if build, _ := mc.Config["build"].(string); build != "" {
+		if resolved.Identity.Version == "" {
+			return nil, errors.New("conda: build requires version")
+		}
+		resolved.Identity.Revision = build
+	}
+	if channels := condaChannels(mc); len(channels) > 0 {
+		resolved.Identity.Source = channels[0]
+	}
+	return &resolved, nil
+}
+
+func (a *CondaAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	pkg := condaPackageName(tool, mc)
+	if pkg == "" {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	installed, err := a.queryPackage(ctx, rn, tool, mc)
+	if err != nil {
+		return plan.Observation{Presence: plan.PresenceBroken, Detail: err.Error()}, err
+	}
+	if installed == nil {
+		return plan.Observation{Presence: plan.PresenceAbsent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
+	}
+	identity := plan.ObservedIdentity{Package: installed.Name, Version: installed.Version, Revision: installed.Build, Source: installed.Channel}
+	known := []plan.IdentityField{plan.FieldPackage, plan.FieldVersion, plan.FieldRevision}
+	if installed.Channel == "" && installed.BaseURL != "" {
+		identity.Source = installed.BaseURL
+	}
+	if identity.Source != "" {
+		known = append(known, plan.FieldSource)
+	}
+	return plan.Observation{Presence: plan.PresencePresent, Identity: identity, KnownFields: known}, nil
+}
+
+func (a *CondaAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if resolved == nil {
+		return errors.New("conda: nil resolved plan")
+	}
+	if err := validateResolvedInstallOperation("conda", resolved); err != nil {
+		return err
+	}
+	pkg := resolved.Identity.Package
+	if pkg == "" {
+		return errors.New("conda: resolved plan has no package name")
+	}
+	spec := pkg
+	if resolved.Identity.Version != "" {
+		spec += "=" + resolved.Identity.Version
+		if resolved.Identity.Revision != "" {
+			spec += "=" + resolved.Identity.Revision
+		}
+	}
+	args := []string{"install", "-y"}
+	args = append(args, condaResolvedTargetArgs(resolved.Identity.Environment)...)
+	if resolved.Identity.Source != "" {
+		args = append(args, "-c", resolved.Identity.Source)
+	}
+	args = append(args, spec)
+	return run.CheckResult(rn.Run(ctx, "conda", args...), "conda: install")
 }
 
 func (a *CondaAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
@@ -215,5 +304,6 @@ func (a *CondaAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.T
 }
 
 var _ exec.Adapter = (*CondaAdapter)(nil)
+var _ exec.AdapterV2 = (*CondaAdapter)(nil)
 var _ exec.Remover = (*CondaAdapter)(nil)
 var _ exec.Versioner = (*CondaAdapter)(nil)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/native"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/source"
 )
@@ -141,9 +142,41 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 			}
 		}
 
-		// Check if the tool is already installed via this method.
+		// Check if the tool is already installed via this method. V2 adapters
+		// provide explicit presence semantics; legacy adapters retain Check.
 		probe := ex.probeRunner(tool.Name, displayKind)
-		if adapter.Check(ctx, probe, tool, method) {
+		if observer, ok := adapter.(AdapterV2); ok {
+			observation, observeErr := observer.Observe(ctx, probe, tool, method)
+			if observeErr != nil {
+				attempt.Status = "failed"
+				attempt.Error = fmt.Sprintf("%s: observe presence: %s", displayKind, run.RedactSensitiveText(observeErr.Error()))
+				appendAttempt(attempt, method)
+				continue
+			}
+			switch observation.Presence {
+			case plan.PresencePresent:
+				attempt.Status = "already_installed"
+				attempt.Error = "presence probe passed — tool appears to be installed"
+				appendAttempt(attempt, method)
+				continue
+			case plan.PresenceAbsent, plan.PresenceUnknown:
+				// Neither state establishes that the candidate is installed.
+			case plan.PresenceBroken:
+				detail := observation.Detail
+				if detail == "" {
+					detail = "presence observation is broken"
+				}
+				attempt.Status = "failed"
+				attempt.Error = fmt.Sprintf("%s: %s", displayKind, run.RedactSensitiveText(detail))
+				appendAttempt(attempt, method)
+				continue
+			default:
+				attempt.Status = "failed"
+				attempt.Error = fmt.Sprintf("%s: invalid presence observation %q", displayKind, observation.Presence)
+				appendAttempt(attempt, method)
+				continue
+			}
+		} else if adapter.Check(ctx, probe, tool, method) {
 			attempt.Status = "already_installed"
 			attempt.Error = "check passed — tool appears to be installed"
 			appendAttempt(attempt, method)

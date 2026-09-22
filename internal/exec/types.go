@@ -32,7 +32,7 @@ type StatusEnum int
 
 const (
 	StatusInstalled          StatusEnum = iota // installed successfully this run
-	StatusAlready                              // was already installed (Check passed)
+	StatusAlready                              // was already installed (observation/check passed)
 	StatusSkippedWhen                          // skipped because when condition didn't match
 	StatusSkippedUnavailable                   // skipped because no adapter was available
 	StatusFailed                               // all methods failed

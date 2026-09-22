@@ -497,6 +497,60 @@ func (a *upgradePreflightAdapter) Remove(context.Context, run.Runner, *config.To
 }
 func (a *upgradePreflightAdapter) CanRemove() bool { return a.canRemove }
 
+type upgradePreflightV2Adapter struct {
+	upgradePreflightAdapter
+	presence plan.PresenceState
+}
+
+func (a *upgradePreflightV2Adapter) ResolvePlan(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	a.calls = append(a.calls, "resolve-plan")
+	return &plan.ResolvedInstallPlan{}, nil
+}
+
+func (a *upgradePreflightV2Adapter) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
+	a.calls = append(a.calls, "observe")
+	return plan.Observation{Presence: a.presence}, nil
+}
+
+func (a *upgradePreflightV2Adapter) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
+	a.calls = append(a.calls, "install-resolved")
+	return nil
+}
+
+func TestPreflightDirectUpgradeUsesV2ResolveAndObserveWithoutCheck(t *testing.T) {
+	adapter := &upgradePreflightV2Adapter{
+		upgradePreflightAdapter: upgradePreflightAdapter{available: true, targetAvailable: true, canRemove: true},
+		presence:                plan.PresencePresent,
+	}
+	method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
+	err := preflightDirectUpgrade(context.Background(), &run.FakeRunner{}, &engine.Facts{}, &config.Tool{Name: "demo"}, method, adapter, false)
+	if err != nil {
+		t.Fatalf("preflightDirectUpgrade: %v", err)
+	}
+	if got, want := strings.Join(adapter.calls, ","), "available,resolve-plan,observe,check-available"; got != want {
+		t.Fatalf("adapter calls = %s, want %s", got, want)
+	}
+}
+
+func TestPreflightDirectUpgradeV2FailsClosedForNonPresent(t *testing.T) {
+	for _, presence := range []plan.PresenceState{plan.PresenceAbsent, plan.PresenceUnknown, plan.PresenceBroken} {
+		t.Run(string(presence), func(t *testing.T) {
+			adapter := &upgradePreflightV2Adapter{
+				upgradePreflightAdapter: upgradePreflightAdapter{available: true, targetAvailable: true, canRemove: true},
+				presence:                presence,
+			}
+			method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
+			err := preflightDirectUpgrade(context.Background(), &run.FakeRunner{}, &engine.Facts{}, &config.Tool{Name: "demo"}, method, adapter, false)
+			if err == nil || !strings.Contains(err.Error(), "tracked installation is not present") {
+				t.Fatalf("preflightDirectUpgrade error = %v, want not-present rejection", err)
+			}
+			if strings.Contains(strings.Join(adapter.calls, ","), "check") {
+				t.Fatalf("V2 path called legacy Check: %v", adapter.calls)
+			}
+		})
+	}
+}
+
 func TestLockPinForRejectsAmbiguousKind(t *testing.T) {
 	lk := &lock.Lock{Tools: map[string]lock.ToolPin{
 		"demo/http/0": {Latest: "v1"},

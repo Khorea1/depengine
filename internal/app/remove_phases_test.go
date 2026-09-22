@@ -3,11 +3,47 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
+	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
 )
+
+type recordingRemoveAdapter struct {
+	run.Runner
+	err       error
+	called    bool
+	gotTool   *config.Tool
+	gotMethod *config.MethodCandidate
+}
+
+func (a *recordingRemoveAdapter) Kind() string { return "test-remove" }
+
+func (a *recordingRemoveAdapter) Available(context.Context, run.Runner) bool { return true }
+
+func (a *recordingRemoveAdapter) Check(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return false
+}
+
+func (a *recordingRemoveAdapter) Install(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
+	return nil
+}
+
+func (a *recordingRemoveAdapter) Remove(_ context.Context, rn run.Runner, tool *config.Tool, method *config.MethodCandidate) error {
+	a.called = true
+	a.Runner = rn
+	a.gotTool = tool
+	a.gotMethod = method
+	return a.err
+}
+
+func (a *recordingRemoveAdapter) CanRemove() bool { return true }
+
+var _ exec.Remover = (*recordingRemoveAdapter)(nil)
 
 // requireExitCode unwraps an ExitError to its code, failing the test when
 // err carries none. (Named to avoid colliding with undo_phases_test.go's
@@ -71,6 +107,25 @@ func TestValidateRemoveFlagsOK(t *testing.T) {
 	}
 }
 
+func TestConfirmRemoveAllAborts(t *testing.T) {
+	all, force := true, false
+	proceed, err := confirmRemoveAllWith(&all, &force, true, strings.NewReader("n\n"))
+	if err != nil {
+		t.Fatalf("abort should not return an error: %v", err)
+	}
+	if proceed {
+		t.Fatal("abort should not proceed")
+	}
+}
+
+func TestConfirmRemoveAllForceSkipsPrompt(t *testing.T) {
+	all, force := true, true
+	proceed, err := confirmRemoveAllWith(&all, &force, false, strings.NewReader(""))
+	if err != nil || !proceed {
+		t.Fatalf("force should proceed without prompting: proceed=%v err=%v", proceed, err)
+	}
+}
+
 func TestCollectRemovalTargets(t *testing.T) {
 	st := &state.State{Tools: map[string]state.ToolState{
 		"a": {}, "b": {},
@@ -104,6 +159,34 @@ func TestResolveRemoverMethodFallback(t *testing.T) {
 	remover, kind, removable := resolveRemover("tool", state.ToolState{Method: "go"})
 	if !removable || remover == nil || kind != "go" {
 		t.Errorf("expected removable go remover, got removable=%v kind=%q remover=%v", removable, kind, remover)
+	}
+}
+
+func TestInvokeRemoverUsesInjectedRunnerAndPropagatesFailure(t *testing.T) {
+	runner := &run.FakeRunner{}
+	wantErr := errors.New("remove failed")
+	adapter := &recordingRemoveAdapter{err: wantErr}
+	sess := testRemoveSession(&state.State{})
+	sess.runner = runner
+	toolState := state.ToolState{Method: "test-remove", Config: map[string]any{"pkg": "example/tool"}}
+
+	if sess.invokeRemover(context.Background(), "tool", toolState, adapter, "test-remove", false) {
+		t.Fatal("failed adapter removal should return false")
+	}
+	if !adapter.called {
+		t.Fatal("Remove was not called through the Remover interface")
+	}
+	if adapter.Runner != runner {
+		t.Fatal("Remove received a different runner than the injected runner")
+	}
+	if adapter.gotTool == nil || adapter.gotTool.Name != "tool" {
+		t.Fatalf("Remove received tool %#v, want tool name %q", adapter.gotTool, "tool")
+	}
+	if adapter.gotMethod == nil || adapter.gotMethod.Kind != "test-remove" || adapter.gotMethod.Config["pkg"] != "example/tool" {
+		t.Fatalf("Remove received method %#v", adapter.gotMethod)
+	}
+	if sess.removedThisRun["tool"] {
+		t.Fatal("failed removal must not be marked successful")
 	}
 }
 
