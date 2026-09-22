@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -301,10 +301,7 @@ func confirmUpgradeProceed(outdated []upgradeOutdatedTool, c *cliStyle) bool {
 			c.dim(ot.ts.Version), c.green(ot.pinnedVer))
 	}
 	fmt.Fprint(os.Stderr, "\nProceed? [y/N] ")
-	var input string
-	fmt.Fscanln(os.Stdin, &input)
-	input = strings.TrimSpace(strings.ToLower(input))
-	return input == "y" || input == "yes"
+	return confirmationAccepted(os.Stdin)
 }
 
 // upgradeSingleTool runs the Remove→Install sequencing for one outdated tool:

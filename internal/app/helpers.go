@@ -1,9 +1,12 @@
-package main
+package app
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -25,6 +28,15 @@ type ExitError struct {
 func (e *ExitError) Error() string { return fmt.Sprintf("exit status %d", e.Code) }
 
 func exitWithCode(code int) error { return &ExitError{Code: code} }
+
+// confirmationAccepted centralizes the non-interactive part of confirmation
+// prompts so command workflows can test it without spawning the CLI binary.
+func confirmationAccepted(input io.Reader) bool {
+	line, _ := bufio.NewReader(input).ReadBytes('\n')
+	answer := bytes.TrimSpace(line)
+	return bytes.Equal(bytes.ToLower(answer), []byte("y")) ||
+		bytes.Equal(bytes.ToLower(answer), []byte("yes"))
+}
 
 // schemaCandidateNames are the filenames auto-detected as a project schema,
 // in priority order. Keep this in sync with docs/*.md mentions of

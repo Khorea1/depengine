@@ -54,6 +54,7 @@ flowchart TB
 
 | Package | Responsibility |
 |---------|----------------|
+| `internal/app` | Cobra command tree and unit-testable CLI application workflows |
 | `internal/run` | `Runner` interface — seam for subprocess execution. Production: `OSExecRunner`. Tests: `FakeRunner`. |
 | `internal/engine` | Invokes `detect_os.sh` and parses its JSON output; retains compatibility wrappers over platform semantics |
 | `internal/platform` | Neutral host facts, distro-family resolution, and host-version comparison shared by parsing and execution |

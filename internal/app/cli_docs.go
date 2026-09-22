@@ -1,4 +1,4 @@
-package main
+package app
 
 //go:generate env LANGUAGE=C LC_ALL=C UPDATE_CLI_DOCS=1 go test . -run ^TestCLIDocsGolden$ -count=1
 
@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	markdownDocsPath = "docs/cli-reference.md"
-	manDocsPath      = "docs/depengine.1"
+	markdownDocsPath = "../../docs/cli-reference.md"
+	manDocsPath      = "../../docs/depengine.1"
 	markdownStart    = "<!-- BEGIN GENERATED CLI REFERENCE -->"
 	markdownEnd      = "<!-- END GENERATED CLI REFERENCE -->"
 	manStart         = `.\" BEGIN GENERATED CLI REFERENCE`

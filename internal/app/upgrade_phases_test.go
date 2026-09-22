@@ -1,4 +1,4 @@
-package main
+package app
 
 // Unit tests for the runUpgrade phase helpers. These run fully in-process:
 // no helper binary is spawned and no test asserts via process exit —

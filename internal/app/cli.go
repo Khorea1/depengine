@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"fmt"
@@ -18,6 +18,8 @@ const (
 	groupInspect = "inspect"
 	groupExport  = "export"
 )
+
+var Version = "dev"
 
 // ifPT picks the PT-BR or EN variant of a short UI label — used for command
 // Short/Long text so `depengine help` reads in the user's language exactly
@@ -89,8 +91,10 @@ func newRootCmd() *cobra.Command {
 	return root
 }
 
+func NewRootCmd() *cobra.Command { return newRootCmd() }
+
 func printVersion() {
-	fmt.Println("depengine " + version)
+	fmt.Println("depengine " + Version)
 	fmt.Println(ifPT(
 		"Motor distro-agnóstico de instalação de dependências",
 		"Distro-agnostic dependency installer",
@@ -119,7 +123,7 @@ func newHelpCmd(root *cobra.Command) *cobra.Command {
 		Short: ifPT("Ajuda sobre qualquer comando", "Help about any command"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if man {
-				printManPage()
+				printManPage(cmd.Context())
 				return nil
 			}
 			target, _, err := root.Find(args)
