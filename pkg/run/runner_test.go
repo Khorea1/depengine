@@ -72,11 +72,13 @@ func TestOSExecRunnerRunInDir(t *testing.T) {
 	if result.Err != nil || result.ExitCode != 0 {
 		t.Fatalf("RunInDir failed: %+v", result)
 	}
-	got, err := filepath.Abs(strings.TrimSpace(string(result.Stdout)))
+	got, err := filepath.EvalSymlinks(strings.TrimSpace(string(result.Stdout)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := filepath.Abs(dir)
+	// Compare canonical paths: on macOS TempDir lives under /var, a
+	// symlink to /private/var, while the shell reports the physical path.
+	want, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
