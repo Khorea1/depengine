@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -244,6 +245,11 @@ func TestExtractArchiveIgnoresBinaryName(t *testing.T) {
 // confirms Extract shells out through the elevation prefix to stage the
 // binary and atomically commit it instead of touching the filesystem directly.
 func TestExtractCopyBinaryElevated(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// The sudo/install/mv staging flow targets Unix paths and
+		// Unix elevation; Windows elevation takes a different path.
+		t.Skip("sudo staging flow is Unix-only")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("test requires non-root: the sudoRequired branch only triggers when Geteuid() != 0")
 	}
@@ -276,6 +282,11 @@ func TestExtractCopyBinaryElevated(t *testing.T) {
 }
 
 func TestExtractCopyBinaryElevatedUsesConfiguredName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// The sudo/install/mv staging flow targets Unix paths and
+		// Unix elevation; Windows elevation takes a different path.
+		t.Skip("sudo staging flow is Unix-only")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("test requires non-root")
 	}
