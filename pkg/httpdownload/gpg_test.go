@@ -36,31 +36,26 @@ func setupGPGDir(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("mkdtemp gnupgHome: %v", err)
 	}
-	// TEMPORARY CI DIAGNOSTIC (Windows GNUPGHOME resolution): remove once
-	// the production path is confirmed on windows-latest.
-	t.Logf("gpg setup: os.TempDir=%q TMP=%q TEMP=%q TMPDIR=%q created=%q",
-		os.TempDir(), os.Getenv("TMP"), os.Getenv("TEMP"), os.Getenv("TMPDIR"), gnupgHome)
-	if runtime.GOOS == "windows" {
-		// Windows CI ships an MSYS2 gpg (via Git), which reads GNUPGHOME
-		// with POSIX semantics: neither backslash nor C:/ spellings
-		// resolve, and gpg joins the value onto its cwd instead. Convert
-		// with cygpath when available (/c/... form); a native Windows gpg
-		// setup has no cygpath, in which case the native path is kept.
-		if out, err := exec.Command("cygpath", "-u", gnupgHome).Output(); err == nil {
-			if s := strings.TrimSpace(string(out)); s != "" {
-				gnupgHome = s
-			}
-		} else {
-			// TEMPORARY CI DIAGNOSTIC: see above.
-			t.Logf("gpg setup: cygpath failed: %v", err)
-		}
-		t.Logf("gpg setup: final gnupgHome=%q", gnupgHome)
-	}
 	t.Cleanup(func() { _ = os.RemoveAll(gnupgHome) })
 	if err := os.Chmod(gnupgHome, 0o700); err != nil {
 		t.Fatalf("chmod gnupgHome: %v", err)
 	}
-	t.Setenv("GNUPGHOME", gnupgHome)
+	// Windows CI ships an MSYS2 gpg (via Git), which reads GNUPGHOME with
+	// POSIX semantics: MSYS2 maps the Windows Temp dir onto /tmp, so the
+	// native path must be converted for gpg's benefit (cygpath -u yields
+	// the /tmp/... spelling of the same directory). Go's own operations
+	// above keep the native path — the MSYS spelling is meaningless to
+	// native syscalls, and a native-only gpg setup has no cygpath, in
+	// which case the native path is exported unchanged.
+	envHome := gnupgHome
+	if runtime.GOOS == "windows" {
+		if out, err := exec.Command("cygpath", "-u", gnupgHome).Output(); err == nil {
+			if s := strings.TrimSpace(string(out)); s != "" {
+				envHome = s
+			}
+		}
+	}
+	t.Setenv("GNUPGHOME", envHome)
 	return gnupgHome
 }
 
