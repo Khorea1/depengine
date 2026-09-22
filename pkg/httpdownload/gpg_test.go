@@ -37,10 +37,16 @@ func setupGPGDir(t *testing.T) string {
 		t.Fatalf("mkdtemp gnupgHome: %v", err)
 	}
 	if runtime.GOOS == "windows" {
-		// Windows CI ships an MSYS2 gpg, which reads GNUPGHOME with POSIX
-		// semantics: a backslash path looks relative and gets joined onto
-		// the process cwd. Forward slashes work for MSYS2 and native gpg.
-		gnupgHome = filepath.ToSlash(gnupgHome)
+		// Windows CI ships an MSYS2 gpg (via Git), which reads GNUPGHOME
+		// with POSIX semantics: neither backslash nor C:/ spellings
+		// resolve, and gpg joins the value onto its cwd instead. Convert
+		// with cygpath when available (/c/... form); a native Windows gpg
+		// setup has no cygpath, in which case the native path is kept.
+		if out, err := exec.Command("cygpath", "-u", gnupgHome).Output(); err == nil {
+			if s := strings.TrimSpace(string(out)); s != "" {
+				gnupgHome = s
+			}
+		}
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(gnupgHome) })
 	if err := os.Chmod(gnupgHome, 0o700); err != nil {
