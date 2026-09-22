@@ -11,6 +11,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/graph"
 	"github.com/Khorea1/depengine/internal/native"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/source"
 )
@@ -331,7 +332,8 @@ func (ex *Executor) reportBatchDryRun(rc *runContext, candidates []batchCandidat
 func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandidate, remaining []string, preinstallDone map[string]bool) []string {
 	for _, c := range candidates {
 		adapter := ex.LookupAdapter(c.method.Kind)
-		if adapter != nil && adapter.Check(rc.ctx, ex.probeRunner(c.toolName, c.method.Kind), c.tool, c.method) {
+		presence, ok := ex.batchPresence(rc.ctx, adapter, c.toolName, c.tool, c.method)
+		if ok && presence == plan.PresencePresent {
 			tr := ToolResult{
 				Tool: c.toolName, Status: StatusInstalled, Method: displayMethodKind(c.method),
 				MethodKind: c.method.Kind, Config: c.method.Config, PlanIntent: c.planIntent, InstallCommitted: true,

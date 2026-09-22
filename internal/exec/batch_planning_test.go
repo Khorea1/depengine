@@ -2,14 +2,133 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
 )
+
+func batchProbeExecutor(adapter Adapter) *Executor {
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex)
+	WithAdapters(adapter)(ex)
+	ex.clan = "arch"
+	ex.nativeManagerName = "native"
+	ex.defaultMethodOrder = []string{"native"}
+	return ex
+}
+
+func batchProbeTool() *config.Tool {
+	return &config.Tool{
+		Name:    "demo",
+		Methods: []*config.MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "demo"}}},
+	}
+}
+
+func TestBatchV2ProbeStatesPreserveSerialFallback(t *testing.T) {
+	tests := []struct {
+		name           string
+		presence       plan.PresenceState
+		observeErr     error
+		wantCandidates int
+		wantRemaining  int
+		wantReport     bool
+	}{
+		{name: "present", presence: plan.PresencePresent, wantReport: true},
+		{name: "absent", presence: plan.PresenceAbsent, wantCandidates: 1},
+		{name: "unknown", presence: plan.PresenceUnknown, wantCandidates: 1},
+		{name: "broken", presence: plan.PresenceBroken, wantRemaining: 1},
+		{name: "error", observeErr: errors.New("probe failed"), wantRemaining: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adapter := &executorAdapterV2Double{
+				testMockAdapter: testMockAdapter{kindValue: "native"},
+				presence:        tt.presence,
+				observeErr:      tt.observeErr,
+			}
+			ex := batchProbeExecutor(adapter)
+			report := &ExecReport{}
+			candidates, remaining := ex.identifyBatchCandidates(context.Background(), []string{"demo"}, &config.Schema{Tools: map[string]*config.Tool{"demo": batchProbeTool()}}, report)
+			if len(candidates) != tt.wantCandidates || len(remaining) != tt.wantRemaining {
+				t.Fatalf("identifyBatchCandidates() = candidates %d, remaining %d; want %d, %d", len(candidates), len(remaining), tt.wantCandidates, tt.wantRemaining)
+			}
+			if tt.wantReport {
+				if len(report.Tools) != 1 || report.Tools[0].Status != StatusAlready {
+					t.Fatalf("report = %+v, want one already result", report.Tools)
+				}
+			}
+			if adapter.checkCalls != 0 {
+				t.Fatalf("Check() calls = %d, want 0 for V2", adapter.checkCalls)
+			}
+		})
+	}
+}
+
+func TestVerifyBatchV2OnlyPresentCommitsBatchResult(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		presence      plan.PresenceState
+		observeErr    error
+		wantRemaining int
+		wantTools     int
+	}{
+		{name: "present", presence: plan.PresencePresent, wantTools: 1},
+		{name: "absent", presence: plan.PresenceAbsent, wantRemaining: 1},
+		{name: "unknown", presence: plan.PresenceUnknown, wantRemaining: 1},
+		{name: "broken", presence: plan.PresenceBroken, wantRemaining: 1},
+		{name: "error", observeErr: errors.New("probe failed"), wantRemaining: 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			adapter := &executorAdapterV2Double{
+				testMockAdapter: testMockAdapter{kindValue: "native"},
+				presence:        tt.presence,
+				observeErr:      tt.observeErr,
+			}
+			ex := batchProbeExecutor(adapter)
+			tool := batchProbeTool()
+			candidate := batchCandidate{toolName: tool.Name, tool: tool, method: tool.Methods[0]}
+			report := &ExecReport{}
+			rc := &runContext{ctx: context.Background(), report: report}
+			remaining := ex.verifyBatchInstall(rc, []batchCandidate{candidate}, nil, map[string]bool{})
+			if len(remaining) != tt.wantRemaining || len(report.Tools) != tt.wantTools {
+				t.Fatalf("verifyBatchInstall() = remaining %d, report tools %d; want %d, %d", len(remaining), len(report.Tools), tt.wantRemaining, tt.wantTools)
+			}
+			if tt.wantTools == 1 && report.Tools[0].Status != StatusInstalled {
+				t.Fatalf("status = %v, want installed", report.Tools[0].Status)
+			}
+			if adapter.checkCalls != 0 {
+				t.Fatalf("Check() calls = %d, want 0 for V2", adapter.checkCalls)
+			}
+		})
+	}
+}
+
+func TestBatchLegacyProbeStillUsesCheck(t *testing.T) {
+	checks := 0
+	adapter := &testMockAdapter{
+		kindValue: "native",
+		checkFunc: func(string) bool {
+			checks++
+			return true
+		},
+	}
+	ex := batchProbeExecutor(adapter)
+	report := &ExecReport{}
+	candidates, remaining := ex.identifyBatchCandidates(context.Background(), []string{"demo"}, &config.Schema{Tools: map[string]*config.Tool{"demo": batchProbeTool()}}, report)
+	if len(candidates) != 0 || len(remaining) != 0 || len(report.Tools) != 1 || report.Tools[0].Status != StatusAlready {
+		t.Fatalf("legacy batch result = candidates %d, remaining %d, report %+v; want already", len(candidates), len(remaining), report.Tools)
+	}
+	if checks != 1 {
+		t.Fatalf("Check() calls = %d, want 1", checks)
+	}
+}
 
 func TestBatchDoesNotBypassCandidateCapabilityBoundary(t *testing.T) {
 	nativeChecks := 0
