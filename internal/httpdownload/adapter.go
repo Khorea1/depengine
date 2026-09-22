@@ -135,6 +135,28 @@ func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 	return false
 }
 
+// Observe reports whether the tool is already installed, reaching the same
+// verdict as Check on every detection strategy (owned-archive entrypoints,
+// extract_to/<binary or tool name> as a regular file, binary on PATH). A
+// present observation carries the tool name as known package identity so it
+// reconciles with the resolved plan. An installed version is deliberately
+// never reported: depengine cannot determine a version from a bare file on
+// disk, so echoing the desired version here would fake verification.
+func (a *HTTPAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if tool == nil || mc == nil {
+		return plan.Observation{}, errors.New("http: tool and method are required")
+	}
+	if !a.Check(ctx, rn, tool, mc) {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	observation := plan.Observation{Presence: plan.PresencePresent}
+	if tool.Name != "" {
+		observation.Identity = plan.ObservedIdentity{Package: tool.Name}
+		observation.KnownFields = []plan.IdentityField{plan.FieldPackage}
+	}
+	return observation, nil
+}
+
 // Install downloads a file from URL, optionally verifies its checksum,
 // and extracts it based on file type.
 func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
@@ -464,6 +486,7 @@ func (a *HTTPAdapter) fetchChecksumFromURL(ctx context.Context, rn run.Runner, c
 
 // Ensure HTTPAdapter implements exec.Adapter.
 var _ exec.Adapter = (*HTTPAdapter)(nil)
+var _ exec.AdapterV2 = (*HTTPAdapter)(nil)
 var _ exec.PlanResolver = (*HTTPAdapter)(nil)
 var _ exec.ResolvedInstaller = (*HTTPAdapter)(nil)
 

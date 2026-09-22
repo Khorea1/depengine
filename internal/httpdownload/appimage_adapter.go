@@ -2,6 +2,7 @@ package httpdownload
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -112,6 +113,21 @@ func (a *AppImageAdapter) Check(ctx context.Context, rn run.Runner, tool *config
 	return a.http.Check(ctx, rn, tool, httpDelegate(mc, installDir, name))
 }
 
+// Observe delegates to HTTPAdapter.Observe against the same resolved
+// install_dir/binary pair as Check, so both agree on every verdict without
+// network resolution. The optional .desktop launcher is not part of
+// presence: it is a convenience shortcut, not proof of installation.
+func (a *AppImageAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if tool == nil || mc == nil {
+		return plan.Observation{}, errors.New("appimage: tool and method are required")
+	}
+	installDir, name := binaryTarget(tool, mc)
+	if name == "" {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	return a.http.Observe(ctx, rn, tool, httpDelegate(mc, installDir, name))
+}
+
 // Install downloads the AppImage under its stable binary name via HTTPAdapter
 // and optionally writes a .desktop launcher.
 func (a *AppImageAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
@@ -219,6 +235,7 @@ func (a *AppImageAdapter) CanRemove() bool { return a.http.CanRemove() }
 
 // Compile-time interface checks.
 var _ exec.Adapter = (*AppImageAdapter)(nil)
+var _ exec.AdapterV2 = (*AppImageAdapter)(nil)
 var _ exec.PlanResolver = (*AppImageAdapter)(nil)
 var _ exec.ResolvedInstaller = (*AppImageAdapter)(nil)
 var _ exec.Remover = (*AppImageAdapter)(nil)

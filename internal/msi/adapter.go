@@ -43,6 +43,24 @@ func (a *Adapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, mc *
 	return ok
 }
 
+// Observe reports whether the Windows product is registered. The registry
+// probe establishes presence only: it cannot verify the download URL or
+// version the plan resolved, so a present observation carries no identity
+// fields and reconciliation treats the install as-is.
+func (a *Adapter) Observe(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if tool == nil || mc == nil {
+		return plan.Observation{}, fmt.Errorf("msi: tool and method are required")
+	}
+	_, ok, err := a.products.Find(stringValue(mc, "product_name"), stringValue(mc, "publisher"))
+	if err != nil {
+		return plan.Observation{Presence: plan.PresenceBroken, Detail: fmt.Sprintf("msi: query installed products: %v", err)}, err
+	}
+	if !ok {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	return plan.Observation{Presence: plan.PresencePresent}, nil
+}
+
 func (a *Adapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	tmp, err := os.MkdirTemp("", "depengine-msi-*")
 	if err != nil {
@@ -131,6 +149,7 @@ func stringValue(mc *config.MethodCandidate, key string) string {
 }
 
 var _ exec.Adapter = (*Adapter)(nil)
+var _ exec.AdapterV2 = (*Adapter)(nil)
 var _ exec.PlanResolver = (*Adapter)(nil)
 var _ exec.ResolvedInstaller = (*Adapter)(nil)
 var _ exec.Remover = (*Adapter)(nil)

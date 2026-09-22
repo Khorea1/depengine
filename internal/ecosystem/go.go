@@ -2,6 +2,7 @@ package ecosystem
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -40,8 +42,21 @@ func (a *GoAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Too
 	}
 	pkg := importPathFromTool(tool, mc)
 	version, _ := mc.Config["version"].(string)
+	target, err := goInstallTarget(pkg, version)
+	if err != nil {
+		return err
+	}
+	res := rn.Run(ctx, "go", "install", target)
+	return run.CheckResult(res, "go: install")
+}
+
+// goInstallTarget resolves the `go install` target from an import path and an
+// exact version. A version already suffixed to pkg (legacy shorthand) is
+// preserved; otherwise an explicit version wins and unpinned installs default
+// to @latest.
+func goInstallTarget(pkg, version string) (string, error) {
 	if version != "" && strings.Contains(pkg, "@") {
-		return fmt.Errorf("go: pkg %q already contains a version; do not also set version", pkg)
+		return "", fmt.Errorf("go: pkg %q already contains a version; do not also set version", pkg)
 	}
 	target := pkg
 	if version != "" {
@@ -49,8 +64,7 @@ func (a *GoAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Too
 	} else if !strings.Contains(pkg, "@") {
 		target += "@latest"
 	}
-	res := rn.Run(ctx, "go", "install", target)
-	return run.CheckResult(res, "go: install")
+	return target, nil
 }
 
 // Check runs `which {bin}` where {bin} is derived from the import path
@@ -85,6 +99,88 @@ func (a *GoAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool,
 		return false
 	}
 	return strings.TrimPrefix(installed, "v") == strings.TrimPrefix(version, "v")
+}
+
+// ResolvePlan records the import path selected by the candidate without
+// rewriting planner intent. The requested version stays exactly as projected;
+// InstallResolved consumes it as authoritative.
+func (a *GoAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent == nil {
+		return nil, errors.New("go: nil plan intent")
+	}
+	if tool == nil || mc == nil {
+		return nil, errors.New("go: tool and method are required")
+	}
+	if importPathFromTool(tool, mc) == "" {
+		return nil, errors.New("go: no package name")
+	}
+	resolved := intent.Clone()
+	if resolved.Identity.Package == "" {
+		return nil, errors.New("go: no package name in plan intent")
+	}
+	return &resolved, nil
+}
+
+// Observe reports the same installed-state result as Check using
+// VerificationResult-compatible semantics. The installed version is read from
+// the host binary when discoverable (mirroring Check's version reconciliation);
+// absence covers both a missing binary and version drift.
+func (a *GoAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if tool == nil || mc == nil {
+		return plan.Observation{}, errors.New("go: tool and method are required")
+	}
+	importPath := importPathFromTool(tool, mc)
+	if importPath == "" {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	absent := plan.Observation{
+		Presence:    plan.PresenceAbsent,
+		Identity:    plan.ObservedIdentity{Package: importPath},
+		KnownFields: []plan.IdentityField{plan.FieldPackage},
+	}
+	if !a.Check(ctx, rn, tool, mc) {
+		return absent, nil
+	}
+	observation := plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Package: importPath},
+		KnownFields: []plan.IdentityField{plan.FieldPackage},
+	}
+	if installed, err := a.InstalledVersion(ctx, rn, tool, mc); err == nil && installed != "" {
+		observation.Identity.Version = installed
+		observation.KnownFields = append(observation.KnownFields, plan.FieldVersion)
+	}
+	return observation, nil
+}
+
+// InstallResolved executes only the identity resolved into the plan. The
+// import path and exact version come from the resolved plan (overriding the
+// candidate config); unpinned plans default to @latest and a legacy @version
+// suffix on the resolved package is preserved. Explicit operations have no
+// go-specific interpretation and are rejected rather than treated as
+// arbitrary commands.
+func (a *GoAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *config.Tool, _ *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if rn == nil {
+		return errors.New("go: runner is required")
+	}
+	if resolved == nil {
+		return errors.New("go: nil resolved plan")
+	}
+	if err := validateResolvedInstallOperation("go", resolved); err != nil {
+		return err
+	}
+	if resolved.Identity.Package == "" {
+		return errors.New("go: no package name in resolved plan")
+	}
+	if !a.Available(ctx, rn) {
+		return fmt.Errorf("go: binary %q not available on PATH", "go")
+	}
+	target, err := goInstallTarget(resolved.Identity.Package, resolvedIdentityVersion(resolved.Identity))
+	if err != nil {
+		return err
+	}
+	res := rn.Run(ctx, "go", "install", target)
+	return run.CheckResult(res, "go: install")
 }
 
 // importPathFromTool returns the Go import path for a tool, mirroring how
@@ -248,4 +344,5 @@ func versionToken(tok string) string {
 
 // Ensure GoAdapter implements exec.Adapter and exec.Remover.
 var _ exec.Adapter = (*GoAdapter)(nil)
+var _ exec.AdapterV2 = (*GoAdapter)(nil)
 var _ exec.Remover = (*GoAdapter)(nil)

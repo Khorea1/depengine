@@ -75,6 +75,13 @@ func (a *GitHubAdapter) Check(ctx context.Context, rn run.Runner, tool *config.T
 	return a.http.Check(ctx, rn, tool, mc)
 }
 
+// Observe delegates directly to HTTPAdapter.Observe for the same reason as
+// Check: presence is established from extract_to/binary on disk, never from
+// the release API, so observation needs no network resolution.
+func (a *GitHubAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	return a.http.Observe(ctx, rn, tool, mc)
+}
+
 // Install resolves {repo, asset} against the GitHub API's real asset list
 // for the latest release, then delegates the actual download/checksum/
 // extract to HTTPAdapter.Install with "url" filled in.
@@ -122,6 +129,7 @@ func (a *GitHubAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.
 func (a *GitHubAdapter) CanRemove() bool { return a.http.CanRemove() }
 
 var _ exec.Adapter = (*GitHubAdapter)(nil)
+var _ exec.AdapterV2 = (*GitHubAdapter)(nil)
 var _ exec.PlanResolver = (*GitHubAdapter)(nil)
 var _ exec.ResolvedInstaller = (*GitHubAdapter)(nil)
 var _ exec.Remover = (*GitHubAdapter)(nil)

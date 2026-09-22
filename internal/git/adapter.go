@@ -6,6 +6,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	urlpkg "net/url"
 	"os"
@@ -69,6 +70,53 @@ func (a *GitAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, m
 		}
 	}
 	return false
+}
+
+// Observe reports whether the tool is already installed via git, using the
+// same three strategies as Check: managed paths on disk, an extract_to
+// checkout (with HEAD pinned against the configured revision when one is
+// set), and a binary on PATH. A revision match additionally carries the
+// pinned revision as known identity; the other strategies establish
+// presence only.
+func (a *GitAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if tool == nil || mc == nil {
+		return plan.Observation{}, errors.New("git: tool and method are required")
+	}
+	if paths, err := managedPaths(mc); err == nil && len(paths) > 0 {
+		for _, path := range paths {
+			if _, err := os.Stat(path); err != nil {
+				return plan.Observation{Presence: plan.PresenceAbsent}, nil
+			}
+		}
+		return plan.Observation{Presence: plan.PresencePresent}, nil
+	}
+	if extractTo, ok := mc.Config["extract_to"].(string); ok && extractTo != "" {
+		extractTo = config.ExpandHomeDir(extractTo)
+		if info, err := os.Stat(filepath.Join(extractTo, ".git")); err == nil && info.IsDir() {
+			if ref := configuredRevision(mc); ref != "" {
+				res := rn.Run(ctx, "git", "-C", extractTo, "rev-parse", "HEAD", ref)
+				if res.Err != nil || res.ExitCode != 0 {
+					return plan.Observation{Presence: plan.PresenceAbsent}, nil
+				}
+				lines := nonEmptyLines(string(res.Stdout))
+				if len(lines) < 2 || lines[0] != lines[1] {
+					return plan.Observation{Presence: plan.PresenceAbsent}, nil
+				}
+				return plan.Observation{
+					Presence:    plan.PresencePresent,
+					Identity:    plan.ObservedIdentity{Revision: ref},
+					KnownFields: []plan.IdentityField{plan.FieldRevision},
+				}, nil
+			}
+			return plan.Observation{Presence: plan.PresencePresent}, nil
+		}
+	}
+	if binary, ok := mc.Config["binary"].(string); ok && binary != "" {
+		if run.LookPath(ctx, rn, binary) {
+			return plan.Observation{Presence: plan.PresencePresent}, nil
+		}
+	}
+	return plan.Observation{Presence: plan.PresenceAbsent}, nil
 }
 
 // InstalledVersion reports the version the git method pinned the tool to:
@@ -557,6 +605,7 @@ func (a *GitAdapter) CanRemove() bool { return true }
 
 // Ensure GitAdapter implements exec.Adapter at compile time.
 var _ exec.Adapter = (*GitAdapter)(nil)
+var _ exec.AdapterV2 = (*GitAdapter)(nil)
 var _ exec.PlanResolver = (*GitAdapter)(nil)
 var _ exec.ResolvedInstaller = (*GitAdapter)(nil)
 var _ exec.Remover = (*GitAdapter)(nil)

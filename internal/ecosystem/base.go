@@ -10,11 +10,13 @@ package ecosystem
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -150,6 +152,135 @@ func (a *BaseAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return run.CheckResult(res, a.config.KindName+": install")
+}
+
+// ResolvePlan records the package selected by the candidate without rewriting
+// planner intent. Version, registry, and other identity dimensions stay
+// exactly as the planner projected them; InstallResolved consumes them as
+// authoritative.
+func (a *BaseAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent == nil {
+		return nil, errors.New(a.config.KindName + ": nil plan intent")
+	}
+	if tool == nil || mc == nil {
+		return nil, errors.New(a.config.KindName + ": tool and method are required")
+	}
+	if resolvedPkg(tool, mc) == "" {
+		return nil, errors.New(a.config.KindName + ": no package name")
+	}
+	resolved := intent.Clone()
+	if resolved.Identity.Package == "" {
+		return nil, errors.New(a.config.KindName + ": no package name in plan intent")
+	}
+	return &resolved, nil
+}
+
+// Observe reports the same installed-state result as Check using
+// VerificationResult-compatible semantics. A requested version is reported as
+// known only because Check verified it: every ExactVersion-capable base kind
+// (pip, pipx, uv, npm, pnpm, bun, gem, yarn, composer) compares the installed
+// version inside Check, and kinds without version support never carry one.
+func (a *BaseAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if tool == nil || mc == nil {
+		return plan.Observation{}, errors.New(a.config.KindName + ": tool and method are required")
+	}
+	pkg := resolvedPkg(tool, mc)
+	if pkg == "" {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	if !a.Check(ctx, rn, tool, mc) {
+		return plan.Observation{
+			Presence:    plan.PresenceAbsent,
+			Identity:    plan.ObservedIdentity{Package: pkg},
+			KnownFields: []plan.IdentityField{plan.FieldPackage},
+		}, nil
+	}
+	observation := plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Package: pkg},
+		KnownFields: []plan.IdentityField{plan.FieldPackage},
+	}
+	if version, _ := mc.Config["version"].(string); version != "" {
+		observation.Identity.Version = version
+		observation.KnownFields = append(observation.KnownFields, plan.FieldVersion)
+	}
+	return observation, nil
+}
+
+// InstallResolved executes only the identity resolved into the plan. Package,
+// version, and registry come from the resolved plan (overriding the candidate
+// config); execution-only flags that carry no plan identity (confinement,
+// channel, index URL, scope, ...) still come from the candidate config.
+// Explicit operations have no generic interpretation and are rejected rather
+// than treated as arbitrary commands.
+func (a *BaseAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if rn == nil {
+		return errors.New(a.config.KindName + ": runner is required")
+	}
+	if resolved == nil {
+		return errors.New(a.config.KindName + ": nil resolved plan")
+	}
+	if err := validateResolvedInstallOperation(a.config.KindName, resolved); err != nil {
+		return err
+	}
+	if resolved.Identity.Package == "" {
+		return errors.New(a.config.KindName + ": no package name in resolved plan")
+	}
+	if !a.Available(ctx, rn) {
+		return fmt.Errorf("%s: binary %q not available on PATH", a.config.KindName, a.config.Binary)
+	}
+	effectiveTool := tool
+	if effectiveTool == nil {
+		effectiveTool = &config.Tool{Name: resolved.Tool.Name}
+	}
+	cmd := a.buildCmd(a.config.InstallTmpl, effectiveTool, resolvedMethodCandidate(mc, resolved))
+	if cmd == nil {
+		return fmt.Errorf("%s: no install command", a.config.KindName)
+	}
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	return run.CheckResult(res, a.config.KindName+": install")
+}
+
+// resolvedMethodCandidate overlays the resolved identity onto a copy of the
+// candidate config so buildCmd renders the authoritative package, version,
+// and registry. Execution-only fields stay as configured. The input mc is
+// never mutated; a nil mc yields a config derived purely from the plan.
+func resolvedMethodCandidate(mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) *config.MethodCandidate {
+	cfg := make(map[string]any)
+	kind := resolved.Candidate.Method
+	if mc != nil {
+		for key, value := range mc.Config {
+			cfg[key] = value
+		}
+		if mc.Kind != "" {
+			kind = mc.Kind
+		}
+	}
+	cfg["pkg"] = resolved.Identity.Package
+	if version := resolvedIdentityVersion(resolved.Identity); version != "" {
+		cfg["version"] = version
+	} else {
+		delete(cfg, "version")
+	}
+	if resolved.Identity.Registry != "" {
+		cfg["registry"] = resolved.Identity.Registry
+	} else {
+		delete(cfg, "registry")
+	}
+	return &config.MethodCandidate{Kind: kind, Config: cfg}
+}
+
+// resolvedIdentityVersion mirrors plan reconciliation: an exact requested
+// version is the desired version even when Identity.Version itself is empty
+// (e.g. hand-built plans that only set RequestedVersion).
+func resolvedIdentityVersion(identity plan.ResolvedIdentity) string {
+	if identity.Version != "" {
+		return identity.Version
+	}
+	if identity.RequestedVersion != nil && identity.RequestedVersion.Mode == plan.VersionExact {
+		return identity.RequestedVersion.Value
+	}
+	return ""
 }
 
 func (a *BaseAdapter) CanRemove() bool {
@@ -994,6 +1125,7 @@ func checkCargoPackage(output, pkg string) bool {
 // Compile-time interface checks.
 var _ exec.Remover = (*BaseAdapter)(nil)
 var _ exec.Versioner = (*BaseAdapter)(nil)
+var _ exec.AdapterV2 = (*BaseAdapter)(nil)
 
 // hasWord reports whether s contains word as a standalone word, using
 // simple boundary matching (space, tab, newline, or start/end of string).

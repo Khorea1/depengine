@@ -2,12 +2,15 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/native"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -109,6 +112,79 @@ func (a *NativeAdapter) Install(ctx context.Context, rn run.Runner, _ *config.To
 		return fmt.Errorf("native: no native manager found")
 	}
 	return runNativeInstall(ctx, rn, "native", clan, mc)
+}
+
+// ResolvePlan validates the static intent without mutating host state. The
+// planner is host-independent, so the clan-specific package override
+// (pkg_overrides) is intentionally NOT projected into the resolved identity:
+// plan.ValidateResolution freezes the package dimension and the override is
+// applied at execution time from mc by InstallResolved/Install.
+func (a *NativeAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent == nil {
+		return nil, errors.New("native: nil plan intent")
+	}
+	if tool == nil || mc == nil {
+		return nil, errors.New("native: tool and method are required")
+	}
+	clan := a.detectClan(ctx, rn)
+	if clan == "" {
+		return nil, errors.New("native: no native manager found")
+	}
+	if pkgFromConfig(mc, clan) == "" {
+		return nil, errors.New("native: no package name")
+	}
+	if intent.Identity.Package == "" {
+		return nil, errors.New("native: no package name in plan intent")
+	}
+	resolved := intent.Clone()
+	return &resolved, nil
+}
+
+// Observe probes the native manager's check command and reports
+// VerificationResult-compatible presence. Native check commands are
+// exit-code-only, so a present package carries package identity alone;
+// version/source dimensions stay unknown for the reconciler.
+func (a *NativeAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if tool == nil || mc == nil {
+		return plan.Observation{}, errors.New("native: tool and method are required")
+	}
+	clan := a.detectClan(ctx, rn)
+	if clan == "" {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	pkg := pkgFromConfig(mc, clan)
+	if pkg == "" {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	cmd := native.BuildCheckCmd(clan, pkg)
+	if cmd == nil {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	if res.Err != nil {
+		return plan.Observation{Presence: plan.PresenceBroken, Detail: res.Err.Error()}, res.Err
+	}
+	if res.ExitCode != 0 {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	return plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Package: pkg},
+		KnownFields: []plan.IdentityField{plan.FieldPackage},
+	}, nil
+}
+
+// InstallResolved executes the resolved plan. The operation shape is
+// fail-closed (exactly one canonical install operation); the effective
+// package stays clan-dependent and is resolved from mc, mirroring Install.
+func (a *NativeAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if resolved == nil {
+		return errors.New("native: nil resolved plan")
+	}
+	if err := validateNativeResolvedInstallOperation("native", resolved); err != nil {
+		return err
+	}
+	return a.Install(ctx, rn, tool, mc)
 }
 
 // Remove uninstalls a package via the native package manager.
@@ -291,6 +367,149 @@ func (a *NativeByManagerAdapter) Install(ctx context.Context, rn run.Runner, too
 	return run.CheckResult(res, "native("+a.managerName+"): install")
 }
 
+// ResolvePlan validates the static intent without mutating host state. Like
+// NativeAdapter.ResolvePlan it is identity-preserving: clan-specific package
+// selection (pkg_overrides, manager binary swaps) is applied at execution
+// time from mc because plan.ValidateResolution freezes the package dimension.
+func (a *NativeByManagerAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent == nil {
+		return nil, fmt.Errorf("native(%s): nil plan intent", a.managerName)
+	}
+	if tool == nil || mc == nil {
+		return nil, fmt.Errorf("native(%s): tool and method are required", a.managerName)
+	}
+	clan := findClanByManager(a.managerName)
+	if clan == "" {
+		return nil, fmt.Errorf("native(%s): no clan found for manager", a.managerName)
+	}
+	if pkgFromConfig(mc, clan) == "" {
+		return nil, fmt.Errorf("native(%s): no package name", a.managerName)
+	}
+	if intent.Identity.Package == "" {
+		return nil, fmt.Errorf("native(%s): no package name in plan intent", a.managerName)
+	}
+	resolved := intent.Clone()
+	return &resolved, nil
+}
+
+// Observe probes the manager's check command and reports
+// VerificationResult-compatible presence. Non-winget managers are
+// exit-code-only (package identity alone); winget additionally reports the
+// observed version and source parsed from list output so the reconciler can
+// distinguish satisfied from drifted instead of collapsing drift to absent.
+func (a *NativeByManagerAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if tool == nil || mc == nil {
+		return plan.Observation{}, fmt.Errorf("native(%s): tool and method are required", a.managerName)
+	}
+	clan := findClanByManager(a.managerName)
+	if clan == "" {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	pkg := pkgFromConfig(mc, clan)
+	if pkg == "" {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	cmd := native.BuildCheckCmd(clan, pkg)
+	if cmd == nil {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	// Use the actual manager binary name (e.g. "dnf5" instead of "dnf").
+	cmd = replaceManagerBinary(cmd, a.managerName, clan)
+	if a.managerName == "winget" {
+		if source, _ := mc.Config["source"].(string); source != "" {
+			cmd = append(cmd, "--source", source)
+		}
+	}
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	if res.Err != nil {
+		return plan.Observation{Presence: plan.PresenceBroken, Detail: res.Err.Error()}, res.Err
+	}
+	if res.ExitCode != 0 {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	if a.managerName != "winget" {
+		return plan.Observation{
+			Presence:    plan.PresencePresent,
+			Identity:    plan.ObservedIdentity{Package: pkg},
+			KnownFields: []plan.IdentityField{plan.FieldPackage},
+		}, nil
+	}
+	version, source, ok := wingetPackageFromOutput(res.Stdout, pkg)
+	if !ok {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	observation := plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Package: pkg, Version: version},
+		KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion},
+	}
+	if source != "" {
+		observation.Identity.Source = source
+		observation.KnownFields = append(observation.KnownFields, plan.FieldSource)
+	}
+	return observation, nil
+}
+
+// InstallResolved executes the resolved plan. The operation shape is
+// fail-closed (exactly one canonical install operation). Winget installs from
+// the resolved identity (package/version/source/scope/architecture); every
+// other manager resolves the effective package from mc at execution time,
+// mirroring Install. installer_type is a pure-execution winget field outside
+// plan identity, so it always comes from mc.
+func (a *NativeByManagerAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if resolved == nil {
+		return fmt.Errorf("native(%s): nil resolved plan", a.managerName)
+	}
+	if err := validateNativeResolvedInstallOperation(a.managerName, resolved); err != nil {
+		return err
+	}
+	if a.managerName == "winget" {
+		return a.installWingetResolved(ctx, rn, mc, resolved)
+	}
+	return a.Install(ctx, rn, tool, mc)
+}
+
+func (a *NativeByManagerAdapter) installWingetResolved(ctx context.Context, rn run.Runner, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	pkg := resolved.Identity.Package
+	if pkg == "" {
+		return fmt.Errorf("native(winget): resolved plan has no package name")
+	}
+	clan := findClanByManager(a.managerName)
+	if clan == "" {
+		return fmt.Errorf("native(%s): no clan found for manager", a.managerName)
+	}
+	cmd := native.BuildInstallCmd(clan, pkg)
+	if cmd == nil {
+		return fmt.Errorf("native(%s): no install command for clan %q", a.managerName, clan)
+	}
+	cmd = replaceManagerBinary(cmd, a.managerName, clan)
+	if resolved.Identity.Version != "" {
+		cmd = append(cmd, "--version", resolved.Identity.Version)
+	}
+	if resolved.Identity.Source != "" {
+		cmd = append(cmd, "--source", resolved.Identity.Source)
+	}
+	if resolved.Identity.Scope != "" {
+		contract, ok := methodkind.Lookup("winget")
+		if !ok {
+			return fmt.Errorf("native(winget): unknown method contract %q", "winget")
+		}
+		scope, err := contract.AdapterScope(plan.Scope(resolved.Identity.Scope))
+		if err != nil {
+			return fmt.Errorf("native(winget): %w", err)
+		}
+		cmd = append(cmd, "--scope", scope)
+	}
+	if resolved.Identity.Architecture != "" {
+		cmd = append(cmd, "--architecture", resolved.Identity.Architecture)
+	}
+	if value, _ := mc.Config["installer_type"].(string); value != "" {
+		cmd = append(cmd, "--installer-type", value)
+	}
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	return run.CheckResult(res, "native("+a.managerName+"): install")
+}
+
 func (a *NativeByManagerAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	clan := findClanByManager(a.managerName)
 	if clan == "" {
@@ -401,12 +620,29 @@ func findClanByManager(name string) string {
 	return ""
 }
 
+// validateNativeResolvedInstallOperation fail-closes on non-canonical
+// resolved operations: exactly one install operation with mutation effect and
+// no description, command, or arbitrary code. It mirrors the ecosystem
+// operation contract so every adapter rejects forged plans the same way.
+func validateNativeResolvedInstallOperation(adapter string, resolved *plan.ResolvedInstallPlan) error {
+	if len(resolved.Operations) != 1 {
+		return fmt.Errorf("%s: resolved operations are unsupported", adapter)
+	}
+	op := resolved.Operations[0]
+	if op.Kind != "install" || op.Effect != plan.EffectMutation || op.Description != "" || op.Command != nil || op.ArbitraryCode {
+		return fmt.Errorf("%s: resolved operations are unsupported", adapter)
+	}
+	return nil
+}
+
 // Compile-time interface checks.
 var _ Remover = (*NativeAdapter)(nil)
 var _ Remover = (*NativeByManagerAdapter)(nil)
 var _ AvailabilityChecker = (*NativeAdapter)(nil)
 var _ AvailabilityChecker = (*NativeByManagerAdapter)(nil)
 var _ Versioner = (*NativeByManagerAdapter)(nil)
+var _ AdapterV2 = (*NativeAdapter)(nil)
+var _ AdapterV2 = (*NativeByManagerAdapter)(nil)
 
 // replaceManagerBinary replaces the binary name in a native manager command
 // with the actual binary name (e.g. "dnf5" instead of "dnf"). This handles

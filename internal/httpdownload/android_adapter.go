@@ -2,6 +2,7 @@ package httpdownload
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -94,6 +95,21 @@ func (a *AndroidAdapter) Check(ctx context.Context, rn run.Runner, tool *config.
 	return a.http.Check(ctx, rn, tool, httpDelegate(mc, dir, name))
 }
 
+// Observe delegates to HTTPAdapter.Observe against the same fixed (dir,
+// name) pair as Check, so both agree on every verdict. Like Check, it can
+// only confirm the .apk was downloaded and dispatched, never that the app
+// is actually present on the system — a documented limitation, not a bug.
+func (a *AndroidAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if tool == nil || mc == nil {
+		return plan.Observation{}, errors.New("android: tool and method are required")
+	}
+	dir, name := apkTarget(tool)
+	if name == "" {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	return a.http.Observe(ctx, rn, tool, httpDelegate(mc, dir, name))
+}
+
 // Install downloads the .apk under the stable "<tool>.apk" name via
 // HTTPAdapter, then dispatches it to Android's package installer.
 func (a *AndroidAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
@@ -152,5 +168,6 @@ func (a *AndroidAdapter) InstallResolved(ctx context.Context, rn run.Runner, too
 
 // Compile-time interface check.
 var _ exec.Adapter = (*AndroidAdapter)(nil)
+var _ exec.AdapterV2 = (*AndroidAdapter)(nil)
 var _ exec.PlanResolver = (*AndroidAdapter)(nil)
 var _ exec.ResolvedInstaller = (*AndroidAdapter)(nil)

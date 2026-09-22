@@ -8,12 +8,14 @@ package container
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/containerref"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -74,23 +76,44 @@ func (a *ContainerAdapter) Check(ctx context.Context, rn run.Runner, _ *config.T
 	if err != nil {
 		return false
 	}
+	present, _ := probeImage(ctx, rn, manager, reference, platform)
+	return present
+}
+
+// probeImage runs the same engine query Check uses and additionally
+// distinguishes "the engine answered no" (absent) from "the probe itself
+// could not run" (unknown detail). Digest pins are recognizable by the `@`
+// separator containerRef produces; tag references never contain one.
+func probeImage(ctx context.Context, rn run.Runner, manager, reference, platform string) (present bool, unknown string) {
 	if platform != "" {
 		res := rn.Run(ctx, manager, "image", "inspect", "--format", "{{.Os}}/{{.Architecture}}{{if .Variant}}/{{.Variant}}{{end}}", reference)
-		if res.Err != nil || res.ExitCode != 0 {
-			return false
+		if res.Err != nil {
+			return false, "container: inspect platform: " + res.Err.Error()
+		}
+		if res.ExitCode != 0 {
+			return false, ""
 		}
 		observed, normalizeErr := containerref.NormalizePlatform(strings.TrimSpace(string(res.Stdout)))
-		return normalizeErr == nil && observed == platform
+		if normalizeErr != nil {
+			return false, "container: inspect platform: " + normalizeErr.Error()
+		}
+		return observed == platform, ""
 	}
-	if digest, _ := mc.Config["digest"].(string); strings.TrimSpace(digest) != "" {
+	if strings.Contains(reference, "@") {
 		res := rn.Run(ctx, manager, "image", "inspect", reference)
-		return res.Err == nil && res.ExitCode == 0
+		if res.Err != nil {
+			return false, "container: inspect image: " + res.Err.Error()
+		}
+		return res.Err == nil && res.ExitCode == 0, ""
 	}
 	res := rn.Run(ctx, manager, "images", "-q", reference)
-	if res.Err != nil || res.ExitCode != 0 {
-		return false
+	if res.Err != nil {
+		return false, "container: list images: " + res.Err.Error()
 	}
-	return strings.TrimSpace(string(res.Stdout)) != ""
+	if res.ExitCode != 0 {
+		return false, ""
+	}
+	return strings.TrimSpace(string(res.Stdout)) != "", ""
 }
 
 // Install pulls the image via `<manager> pull <reference>`.
@@ -99,6 +122,10 @@ func (a *ContainerAdapter) Install(ctx context.Context, rn run.Runner, tool *con
 	if err != nil {
 		return fmt.Errorf("container: tool %q: %w", tool.Name, err)
 	}
+	return a.pull(ctx, rn, manager, reference, platform)
+}
+
+func (a *ContainerAdapter) pull(ctx context.Context, rn run.Runner, manager, reference, platform string) error {
 	args := []string{"pull"}
 	if platform != "" {
 		args = append(args, "--platform", platform)
@@ -106,6 +133,120 @@ func (a *ContainerAdapter) Install(ctx context.Context, rn run.Runner, tool *con
 	args = append(args, reference)
 	res := rn.Run(ctx, manager, args...)
 	return run.CheckResult(res, "container: pull")
+}
+
+// ResolvePlan validates the configured container identity without contacting
+// an engine. The planner already projects source, tag/digest intent, and
+// platform into the intent, so resolution is validation plus an intent clone.
+func (a *ContainerAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent == nil {
+		return nil, errors.New("container: nil plan intent")
+	}
+	if tool == nil || mc == nil {
+		return nil, errors.New("container: tool and method are required")
+	}
+	if _, _, _, err := containerRef(mc); err != nil {
+		return nil, err
+	}
+	resolved := intent.Clone()
+	return &resolved, nil
+}
+
+// Observe reports whether the requested image identity is present locally,
+// using the same probes as Check. A successful probe additionally carries the
+// canonical source identity (plus digest for immutable pins and platform when
+// a platform is pinned) so reconciliation can tell tag drift from absence.
+func (a *ContainerAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if tool == nil || mc == nil {
+		return plan.Observation{}, errors.New("container: tool and method are required")
+	}
+	manager, reference, platform, err := containerRef(mc)
+	if err != nil {
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: err.Error()}, nil
+	}
+	present, unknown := probeImage(ctx, rn, manager, reference, platform)
+	switch {
+	case unknown != "":
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: unknown}, nil
+	case !present:
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	source, _ := mc.Config["source"].(string)
+	identity := plan.ObservedIdentity{Source: source}
+	fields := []plan.IdentityField{plan.FieldSource}
+	if _, digest, found := strings.Cut(reference, "@"); found {
+		identity.Digest = digest
+		fields = append(fields, plan.FieldDigest)
+	}
+	if platform != "" {
+		identity.Platform = platform
+		fields = append(fields, plan.FieldPlatform)
+	}
+	return plan.Observation{Presence: plan.PresencePresent, Identity: identity, KnownFields: fields}, nil
+}
+
+// InstallResolved pulls exactly the image described by the resolved plan. The
+// engine binary stays a method execution parameter, but the image reference
+// (source, tag/digest) and platform come exclusively from resolved identity;
+// mc.Config supplies no identity.
+func (a *ContainerAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if resolved == nil {
+		return errors.New("container: nil resolved plan")
+	}
+	if err := validateResolvedInstallOperation(resolved); err != nil {
+		return err
+	}
+	if mc == nil {
+		return errors.New("container: method configuration is required")
+	}
+	manager := stringConfig(mc, "manager")
+	if manager == "" {
+		return errors.New("container: requires both manager and source fields")
+	}
+	reference, platform, err := resolvedReference(resolved)
+	if err != nil {
+		return err
+	}
+	return a.pull(ctx, rn, manager, reference, platform)
+}
+
+// resolvedReference rebuilds the canonical image reference solely from the
+// resolved plan identity, mirroring containerRef's validation so a tampered
+// plan fails before any engine invocation.
+func resolvedReference(resolved *plan.ResolvedInstallPlan) (reference, platform string, err error) {
+	source := resolved.Identity.Source
+	digest := resolved.Identity.Digest
+	tag := ""
+	if requested := resolved.Identity.RequestedVersion; requested != nil {
+		switch requested.Mode {
+		case plan.VersionDigest:
+			if digest == "" {
+				digest = requested.Value
+			}
+		case plan.VersionContainerTag:
+			tag = requested.Value
+		}
+	}
+	reference, err = containerref.Reference(source, tag, digest)
+	if err != nil {
+		return "", "", fmt.Errorf("container: %w", err)
+	}
+	platform, err = containerref.NormalizePlatform(resolved.Identity.Platform)
+	if err != nil {
+		return "", "", fmt.Errorf("container: %w", err)
+	}
+	return reference, platform, nil
+}
+
+func validateResolvedInstallOperation(resolved *plan.ResolvedInstallPlan) error {
+	if len(resolved.Operations) != 1 {
+		return errors.New("container: resolved operations are unsupported")
+	}
+	op := resolved.Operations[0]
+	if op.Kind != "install" || op.Effect != plan.EffectMutation || op.Description != "" || op.Command != nil || op.ArbitraryCode {
+		return errors.New("container: resolved operations are unsupported")
+	}
+	return nil
 }
 
 // CanRemove is always true — `rmi` is a low-risk, well-supported operation
@@ -129,4 +270,5 @@ func stringConfig(mc *config.MethodCandidate, key string) string {
 
 // Compile-time interface checks.
 var _ exec.Adapter = (*ContainerAdapter)(nil)
+var _ exec.AdapterV2 = (*ContainerAdapter)(nil)
 var _ exec.Remover = (*ContainerAdapter)(nil)

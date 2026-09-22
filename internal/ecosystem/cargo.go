@@ -2,11 +2,13 @@ package ecosystem
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -145,6 +147,13 @@ func (a *CargoAdapter) Check(ctx context.Context, rn run.Runner, tool *config.To
 	if err != nil || version == "" {
 		return false
 	}
+	return cargoEntrySatisfies(version, bins, mc)
+}
+
+// cargoEntrySatisfies reports whether an installed crate entry satisfies the
+// declared version and bins intent. Shared by Check and Observe so both paths
+// agree on what "installed" means.
+func cargoEntrySatisfies(version string, bins []string, mc *config.MethodCandidate) bool {
 	if want, _ := mc.Config["version"].(string); want != "" && strings.TrimPrefix(version, "v") != strings.TrimPrefix(want, "v") {
 		return false
 	}
@@ -160,6 +169,152 @@ func (a *CargoAdapter) Check(ctx context.Context, rn run.Runner, tool *config.To
 		}
 	}
 	return true
+}
+
+// ResolvePlan records the crate selected by the candidate without rewriting
+// planner intent. Source, version, registry, revision, and environment stay
+// exactly as projected; InstallResolved consumes them as authoritative.
+func (a *CargoAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent == nil {
+		return nil, errors.New("cargo: nil plan intent")
+	}
+	if tool == nil || mc == nil {
+		return nil, errors.New("cargo: tool and method are required")
+	}
+	if resolvedPkg(tool, mc) == "" {
+		return nil, errors.New("cargo: no package name")
+	}
+	resolved := intent.Clone()
+	if resolved.Identity.Package == "" {
+		return nil, errors.New("cargo: no package name in plan intent")
+	}
+	return &resolved, nil
+}
+
+// Observe reports the installed crate entry using VerificationResult-compatible
+// semantics. The installed version comes from the host query (not the
+// request), so version or bins drift surfaces as absence — the same verdict
+// Check would give — rather than as a confirmed present.
+func (a *CargoAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if tool == nil || mc == nil {
+		return plan.Observation{}, errors.New("cargo: tool and method are required")
+	}
+	pkg := resolvedPkg(tool, mc)
+	if pkg == "" {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	absent := plan.Observation{
+		Presence:    plan.PresenceAbsent,
+		Identity:    plan.ObservedIdentity{Package: pkg},
+		KnownFields: []plan.IdentityField{plan.FieldPackage},
+	}
+	version, bins, err := a.installedEntry(ctx, rn, tool, mc)
+	if err != nil || version == "" || !cargoEntrySatisfies(version, bins, mc) {
+		return absent, nil
+	}
+	return plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Package: pkg, Version: version},
+		KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion},
+	}, nil
+}
+
+// InstallResolved executes only the identity resolved into the plan. Source,
+// version, registry, git refs, and install root come from the resolved plan
+// (overriding the candidate config); execution-only build options (features,
+// no_default_features, bins, target) still come from the candidate config.
+// Explicit operations have no cargo-specific interpretation and are rejected
+// rather than treated as arbitrary commands.
+func (a *CargoAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if rn == nil {
+		return errors.New("cargo: runner is required")
+	}
+	if resolved == nil {
+		return errors.New("cargo: nil resolved plan")
+	}
+	if err := validateResolvedInstallOperation("cargo", resolved); err != nil {
+		return err
+	}
+	if resolved.Identity.Package == "" {
+		return errors.New("cargo: no package name in resolved plan")
+	}
+	if !a.Available(ctx, rn) {
+		return fmt.Errorf("cargo: binary %q not available on PATH", "cargo")
+	}
+	effectiveTool := tool
+	if effectiveTool == nil {
+		effectiveTool = &config.Tool{Name: resolved.Tool.Name}
+	}
+	cmd, err := cargoInstallCommand(effectiveTool, cargoResolvedConfig(mc, resolved))
+	if err != nil {
+		return err
+	}
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	return run.CheckResult(res, "cargo: install")
+}
+
+// cargoResolvedConfig overlays the resolved identity onto a copy of the
+// candidate config so cargoInstallCommand renders the authoritative source,
+// version, registry, git ref, and root. The input mc is never mutated; a nil
+// mc yields a config derived purely from the plan. In git mode the positional
+// package is kept only when it was explicitly configured, preserving the
+// legacy fallback where cargo selects the repository package itself.
+func cargoResolvedConfig(mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) *config.MethodCandidate {
+	cfg := make(map[string]any)
+	kind := "cargo"
+	if mc != nil {
+		for key, value := range mc.Config {
+			cfg[key] = value
+		}
+		if mc.Kind != "" {
+			kind = mc.Kind
+		}
+	}
+	if resolved.Identity.Source != "" {
+		cfg["git"] = resolved.Identity.Source
+	} else {
+		delete(cfg, "git")
+	}
+	if version := resolvedIdentityVersion(resolved.Identity); version != "" {
+		cfg["version"] = version
+	} else {
+		delete(cfg, "version")
+	}
+	if resolved.Identity.Registry != "" {
+		cfg["registry"] = resolved.Identity.Registry
+	} else {
+		delete(cfg, "registry")
+	}
+	delete(cfg, "branch")
+	delete(cfg, "tag")
+	delete(cfg, "rev")
+	if requested := resolved.Identity.RequestedVersion; requested != nil {
+		switch requested.Mode {
+		case plan.VersionGitBranch:
+			cfg["branch"] = requested.Value
+		case plan.VersionGitTag:
+			cfg["tag"] = requested.Value
+		case plan.VersionGitRevision:
+			cfg["rev"] = requested.Value
+		}
+	}
+	if environment := resolved.Identity.Environment; environment != nil && environment.Kind == plan.EnvironmentPrefix {
+		cfg["root"] = environment.Value
+	} else {
+		delete(cfg, "root")
+	}
+	if gitURL, _ := cfg["git"].(string); gitURL == "" {
+		cfg["pkg"] = resolved.Identity.Package
+	} else if mc != nil {
+		if pkg, _ := mc.Config["pkg"].(string); pkg != "" {
+			cfg["pkg"] = resolved.Identity.Package
+		} else {
+			delete(cfg, "pkg")
+		}
+	} else {
+		delete(cfg, "pkg")
+	}
+	return &config.MethodCandidate{Kind: kind, Config: cfg}
 }
 
 func (a *CargoAdapter) installedEntry(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (string, []string, error) {
@@ -219,5 +374,6 @@ func (a *CargoAdapter) CanRemove() bool { return true }
 
 // Ensure CargoAdapter implements execution capabilities.
 var _ exec.Adapter = (*CargoAdapter)(nil)
+var _ exec.AdapterV2 = (*CargoAdapter)(nil)
 var _ exec.Remover = (*CargoAdapter)(nil)
 var _ exec.Versioner = (*CargoAdapter)(nil)

@@ -2,6 +2,7 @@ package localartifactadapter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,6 +28,13 @@ func (a *Adapter) Check(_ context.Context, _ run.Runner, tool *config.Tool, mc *
 	if err != nil {
 		return false
 	}
+	return verifyDestination(resolved, destination)
+}
+
+// verifyDestination reports whether the installed destination still matches
+// the resolved source content. It is the shared verification core behind
+// Check and Observe.
+func verifyDestination(resolved localartifact.Resolved, destination string) bool {
 	switch resolved.Artifact.Kind {
 	case plan.ArtifactRaw:
 		err := localartifact.VerifyRegularFileState(destination, resolved.Artifact.Checksum, resolved.Mode)
@@ -49,6 +57,121 @@ func (a *Adapter) Install(_ context.Context, rn run.Runner, tool *config.Tool, m
 	}
 	if err := localartifact.Install(resolved, destination); err != nil {
 		return fmt.Errorf("local: install: %w", err)
+	}
+	return nil
+}
+
+// ResolvePlan performs the read-only portion of Install — vendored file
+// resolution and content hashing — without materializing anything. The
+// computed checksum enriches the intent's artifact so InstallResolved and
+// state persistence share one content identity. Unlike resolveCandidate, it
+// never mutates the method candidate: the plan carries the identity.
+func (a *Adapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent == nil {
+		return nil, errors.New("local: nil plan intent")
+	}
+	if tool == nil || mc == nil {
+		return nil, errors.New("local: tool and method are required")
+	}
+	localPath, _ := mc.Config["local_path"].(string)
+	checksum, _ := mc.Config["checksum"].(string)
+	resolved, err := localartifact.Resolve(mc.ProjectRoot, localPath, checksum)
+	if err != nil {
+		return nil, fmt.Errorf("local: %w", err)
+	}
+	out := intent.Clone()
+	if len(out.Artifacts) == 0 {
+		out.Artifacts = []plan.Artifact{resolved.Artifact}
+	} else {
+		out.Artifacts[0] = resolved.Artifact
+	}
+	return &out, nil
+}
+
+// Observe reports whether the installed destination still matches the
+// vendored source content. A present observation carries the verified
+// content digest so reconciliation can distinguish content drift (already
+// absent here) from an inability to resolve the source (unknown).
+func (a *Adapter) Observe(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if tool == nil || mc == nil {
+		return plan.Observation{}, errors.New("local: tool and method are required")
+	}
+	resolved, destination, err := resolveCandidate(tool, mc)
+	if err != nil {
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: fmt.Sprintf("local: %v", err)}, nil
+	}
+	if !verifyDestination(resolved, destination) {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	return plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Digest: resolved.Artifact.Checksum},
+		KnownFields: []plan.IdentityField{plan.FieldDigest},
+	}, nil
+}
+
+// InstallResolved materializes exactly the artifact described by the resolved
+// plan. The project-relative path and checksum come exclusively from
+// resolved; the method candidate supplies only execution-local parameters
+// (project root, install directory). It never re-derives identity from
+// mc.Config local_path/checksum.
+func (a *Adapter) InstallResolved(_ context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if rn == nil {
+		return fmt.Errorf("local: runner is required")
+	}
+	if resolved == nil {
+		return errors.New("local: nil resolved plan")
+	}
+	if err := validateResolvedOperations(resolved); err != nil {
+		return err
+	}
+	if len(resolved.Artifacts) == 0 || resolved.Artifacts[0].LocalPath == "" {
+		return errors.New("local: resolved plan has no concrete local artifact")
+	}
+	if mc == nil {
+		return errors.New("local: method configuration is required")
+	}
+	artifact := resolved.Artifacts[0]
+	settled, err := localartifact.Resolve(mc.ProjectRoot, artifact.LocalPath, artifact.Checksum)
+	if err != nil {
+		return fmt.Errorf("local: %w", err)
+	}
+	destination, err := destinationFor(tool, mc, settled.Artifact.Kind)
+	if err != nil {
+		return fmt.Errorf("local: %w", err)
+	}
+	if err := localartifact.Install(settled, destination); err != nil {
+		return fmt.Errorf("local: install: %w", err)
+	}
+	return nil
+}
+
+// validateResolvedOperations accepts the planner's local operation set — the
+// read-only resolve-local-artifact probe plus the single install mutation —
+// and rejects anything else, in particular arbitrary commands smuggled in as
+// plan operations.
+func validateResolvedOperations(resolved *plan.ResolvedInstallPlan) error {
+	reject := func() error {
+		return errors.New("local: resolved operations are unsupported")
+	}
+	if len(resolved.Operations) == 0 {
+		return reject()
+	}
+	installs := 0
+	for _, op := range resolved.Operations {
+		if op.Command != nil || op.ArbitraryCode {
+			return reject()
+		}
+		switch {
+		case op.Kind == "install" && op.Effect == plan.EffectMutation && op.Description == "":
+			installs++
+		case op.Kind == "resolve-local-artifact" && op.Effect == plan.EffectReadOnly:
+		default:
+			return reject()
+		}
+	}
+	if installs != 1 {
+		return reject()
 	}
 	return nil
 }
@@ -149,4 +272,5 @@ func destinationFor(tool *config.Tool, mc *config.MethodCandidate, kind plan.Art
 }
 
 var _ exec.Adapter = (*Adapter)(nil)
+var _ exec.AdapterV2 = (*Adapter)(nil)
 var _ exec.Remover = (*Adapter)(nil)
