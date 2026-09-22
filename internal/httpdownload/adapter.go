@@ -77,11 +77,17 @@ func (a *HTTPAdapter) RequiresElevation(tool *config.Tool, mc *config.MethodCand
 	}
 	if isArchive(fileExtension(artifactName)) {
 		extractTo = archiveTarget(tool, mc)
+	} else if scopeConfigured(mc) {
+		extractTo = PlacementOrDefault(tool, mc, "/usr/local/bin", "").InstallRoot
 	}
 	extractTo = config.ExpandHomeDir(extractTo)
 	required := defaultSudoRequired(extractTo)
 	if configured, ok := mc.Config["sudo_required"].(bool); ok {
 		required = configured
+	}
+	if isArchive(fileExtension(artifactName)) && len(entrypoints(mc)) > 0 {
+		linkDir := linkTargetDir(mc, extractTo, tool)
+		required = required || defaultSudoRequired(linkDir)
 	}
 	return required
 }
@@ -102,6 +108,12 @@ func (a *HTTPAdapter) Available(ctx context.Context, rn run.Runner) bool {
 //   - binary configured without extract_to → binary must be reachable on PATH.
 func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	extractTo, _ := mc.Config["extract_to"].(string)
+	if extractTo == "" && scopeConfigured(mc) {
+		// A scoped install targets the scope's platform-native install
+		// root, so presence is checked there — never guessed from PATH or a
+		// legacy /usr/local/bin default.
+		extractTo = PlacementOrDefault(tool, mc, "", "").InstallRoot
+	}
 	extractTo = config.ExpandHomeDir(extractTo)
 	binary, _ := mc.Config["binary"].(string)
 	if len(entrypoints(mc)) > 0 {
@@ -110,7 +122,7 @@ func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 			if requirePayloadFile(payload, relative) != nil {
 				return false
 			}
-			if !launcherValid(payload, linkTargetDir(mc, payload), name, relative) {
+			if !launcherValid(payload, linkTargetDir(mc, payload, tool), name, relative) {
 				return false
 			}
 		}
@@ -262,13 +274,6 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 		}
 	}
 
-	// Extract the downloaded file before caching — Store uses os.Rename and
-	// moves tmpFile away, so extraction must happen first.
-	extractTo := "/usr/local/bin" // default
-	if e, ok := mc.Config["extract_to"].(string); ok && e != "" {
-		extractTo = e
-	}
-	extractTo = config.ExpandHomeDir(extractTo)
 	// sudo is path-derived: destinations under $HOME are user-writable and
 	// need no elevation (e.g. ~/.local/share/fonts); everything else (the
 	// /usr/local/bin default, /opt, …) keeps sudo. Explicit sudo_required
@@ -279,8 +284,33 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 		if err := installArchive(ctx, tmpFile, ext, tool, mc, rn); err != nil {
 			return fmt.Errorf("http: extract: %w", err)
 		}
-	} else if err := extract(ctx, tmpFile, extractTo, ext, binary, rn, sudoRequired, tool.Name); err != nil {
-		return fmt.Errorf("http: extract: %w", err)
+	} else {
+		// Raw binary: placement decides the destination. Explicit
+		// extract_to wins; a scoped candidate defaults to the scope's
+		// platform-native install root; otherwise /usr/local/bin.
+		placement, err := ArtifactPlacement(tool, mc, "/usr/local/bin", "")
+		if err != nil {
+			return err
+		}
+		if err := extract(ctx, tmpFile, placement.InstallRoot, ext, binary, rn, sudoRequired, tool.Name); err != nil {
+			return fmt.Errorf("http: extract: %w", err)
+		}
+		// A scoped raw binary needs a link in the scope link dir to be
+		// reachable from PATH, mirroring archive entrypoints. Scope-less
+		// candidates keep the historical behavior (the binary lands
+		// directly in extract_to, which must already be on PATH).
+		if scopeConfigured(mc) && placement.LinkDir != "" {
+			name := binary
+			if name == "" && tool != nil {
+				name = tool.Name
+			}
+			if name != "" {
+				linkElevated := defaultSudoRequired(placement.LinkDir) && os.Geteuid() != 0
+				if _, err := createLaunchers(ctx, rn, placement.InstallRoot, placement.LinkDir, map[string]string{name: name}, linkElevated); err != nil {
+					return fmt.Errorf("http: link: %w", err)
+				}
+			}
+		}
 	}
 
 	// Store in cache after extraction (Store may move tmpFile via os.Rename).
@@ -529,28 +559,33 @@ func isSharedDir(path string) bool {
 func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	if len(entrypoints(mc)) > 0 {
 		payload := archiveTarget(tool, mc)
-		elevated := defaultSudoRequired(payload) && os.Geteuid() != 0
+		payloadElevated := defaultSudoRequired(payload) && os.Geteuid() != 0
+		linkDir := linkTargetDir(mc, payload, tool)
+		linkElevated := defaultSudoRequired(linkDir) && os.Geteuid() != 0
 		for name, relative := range entrypoints(mc) {
-			launcher := filepath.Join(linkTargetDir(mc, payload), name)
+			launcher := filepath.Join(linkDir, name)
 			if runtime.GOOS == "windows" {
 				launcher += ".cmd"
 			}
-			if _, err := os.Lstat(launcher); err == nil && !launcherValid(payload, linkTargetDir(mc, payload), name, relative) {
+			if _, err := os.Lstat(launcher); err == nil && !launcherValid(payload, linkDir, name, relative) {
 				return fmt.Errorf("http: refusing to remove launcher %s because it no longer targets the owned payload", launcher)
 			}
-			if err := removeHTTPPath(ctx, rn, launcher, false, elevated); err != nil {
+			if err := removeHTTPPath(ctx, rn, launcher, false, linkElevated); err != nil {
 				return fmt.Errorf("http: remove launcher: %w", err)
 			}
 		}
 		if isSharedDir(payload) {
 			return fmt.Errorf("http: refusing to remove shared archive destination %s", payload)
 		}
-		if err := removeHTTPPath(ctx, rn, payload, true, elevated); err != nil {
+		if err := removeHTTPPath(ctx, rn, payload, true, payloadElevated); err != nil {
 			return fmt.Errorf("http: remove payload: %w", err)
 		}
 		return nil
 	}
 	extractTo, _ := mc.Config["extract_to"].(string)
+	if extractTo == "" && scopeConfigured(mc) {
+		extractTo = PlacementOrDefault(tool, mc, "/usr/local/bin", "").InstallRoot
+	}
 	extractTo = config.ExpandHomeDir(extractTo)
 	if extractTo == "" {
 		extractTo = "/usr/local/bin" // Install default
@@ -565,16 +600,37 @@ func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 		target = tool.Name
 	}
 
+	// Scope installs also own the PATH link created at install time. Remove
+	// the link before the payload directory so a stale link never outlives
+	// its target.
+	if scopeConfigured(mc) {
+		placement := PlacementOrDefault(tool, mc, "/usr/local/bin", "")
+		if placement.LinkDir != "" {
+			launcher := filepath.Join(placement.LinkDir, target)
+			if runtime.GOOS == "windows" {
+				launcher += ".cmd"
+			}
+			if _, err := os.Lstat(launcher); err == nil && !launcherValid(extractTo, placement.LinkDir, target, target) {
+				return fmt.Errorf("http: refusing to remove launcher %s because it no longer targets the owned payload", launcher)
+			}
+			linkElevated := defaultSudoRequired(placement.LinkDir) && os.Geteuid() != 0
+			if err := removeHTTPPath(ctx, rn, launcher, false, linkElevated); err != nil {
+				return fmt.Errorf("http: remove link: %w", err)
+			}
+		}
+	}
+
+	payloadElevated := defaultSudoRequired(extractTo) && os.Geteuid() != 0
 	if isSharedDir(extractTo) {
 		path := filepath.Join(extractTo, target)
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		if err := removeHTTPPath(ctx, rn, path, false, payloadElevated); err != nil {
 			return fmt.Errorf("http: remove %s: %w", path, err)
 		}
 		return nil
 	}
 
 	// Not a shared directory — safe to delete the whole directory
-	if err := os.RemoveAll(extractTo); err != nil {
+	if err := removeHTTPPath(ctx, rn, extractTo, true, payloadElevated); err != nil {
 		return fmt.Errorf("http: remove directory %s: %w", extractTo, err)
 	}
 	return nil

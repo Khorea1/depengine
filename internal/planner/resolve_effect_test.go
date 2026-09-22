@@ -90,6 +90,7 @@ func TestResolveEffectFieldsMoveStaticIntent(t *testing.T) {
 		"channels":     {[]any{"chan-a"}, []any{"chan-b"}},
 		"local_path":   {"vendor/a.tar.gz", "vendor/b.tar.gz"},
 		"checksum":     {shaA, shaB},
+		"scope":        {"user", "system"},
 		"cargo.branch": {"edge-a", "edge-b"},
 		"cargo.tag":    {"tag-a", "tag-b"},
 		"cargo.rev":    {"rev-a", "rev-b"},

@@ -242,8 +242,8 @@ fastfetch = { http = {
 | `entrypoints` | no | Map stable command names to relative files inside `extract_to`, e.g. `{ nvim = "bin/nvim" }`. |
 | `link_dir` | no | Launcher directory. Defaults to `~/.local/bin` for user payloads and `/usr/local/bin` for system payloads. |
 | `binary` | no | Installed filename for a direct asset, or payload name used by check/remove |
+| `scope` | no | Portable installation scope: `"user"` (default for user placement under XDG) or `"system"`. When set, supplies platform-native install and link defaults (`~/.local/share/depengine/tools/<tool>` + `~/.local/bin` for user scope, `/opt/depengine/tools/<tool>` + `/usr/local/bin` for system scope) without needing Unix paths in manifests. Explicit `extract_to`/`link_dir` override independently. |
 | `sudo_required` | no | Boolean, default is **path-derived**: `false` when `extract_to` is inside the user's home (e.g. `~/.local/share/fonts`), `true` for system paths (e.g. the `/usr/local/bin` default). Set explicitly to override. |
-
 Archives are extracted into private staging, validated, then committed as one
 owned payload. `Check` verifies payload files and launchers directly; `Remove`
 deletes only declared launchers and the owned payload. `.msi`, `.exe`, `.pkg`
@@ -423,8 +423,8 @@ desktop = true
 | `url` or `repo` + `asset` | yes | Exactly one artifact source. `repo` + `asset` supports `{version}`, `{arch_any}` and `{os_any}` and is pinned in `depengine.lock`. |
 | `install_dir` | no | Destination directory. Defaults to `~/.local/bin` (user-scope). There is no separate `system = true` boolean — pointing this at a system path (e.g. `/usr/local/bin`) is how a system-wide install is requested, and `sudo_required` is derived from the path the same way `http` derives it from `extract_to`. |
 | `binary` | no | Final executable name. Defaults to the tool's name. |
+| `scope` | no | Portable installation scope: `"user"` (default) or `"system"`. When set, supplies platform-native install root defaults (`~/.local/share/depengine/tools/<tool>` for user scope) while the adapter creates a PATH link in `~/.local/bin`. |
 | `desktop` | no | When `true`, also writes `~/.local/share/applications/<binary>.desktop` (a minimal, valid launcher pointing at the installed binary). Always user-scope, regardless of `install_dir`. |
-
 The artifact source must resolve to a filename ending in `.AppImage`; other formats are rejected during validation and again at the adapter boundary.
 
 Shared artifact fields such as `checksum`, `checksum_url`, `signature_url`,

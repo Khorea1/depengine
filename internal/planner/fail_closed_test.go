@@ -39,10 +39,11 @@ func TestUnsupportedSelectorsAreNeverDroppedSilently(t *testing.T) {
 		"tag": func(c methodkind.Contract) bool {
 			return c.Supports(methodkind.CapabilityRevision) || c.Supports(methodkind.CapabilityMutableTag)
 		},
+		"scope": func(c methodkind.Contract) bool { return c.Supports(methodkind.CapabilityScope) },
 	}
 	samples := map[string]string{
 		"version": "1.2.3", "digest": "sha256:" + strings.Repeat("a", 64), "rev": "abc123",
-		"channel": "stable", "track": "latest", "risk": "stable", "tag": "v1",
+		"channel": "stable", "track": "latest", "risk": "stable", "tag": "v1", "scope": "user",
 	}
 	for i := range methodkind.Contracts {
 		c := methodkind.Contracts[i]
@@ -89,6 +90,33 @@ func TestInvalidScopeIsRejectedUnlessMethodOwnsScopeVocabulary(t *testing.T) {
 	p, err := planner.BuildCandidateIntent(tool, method)
 	if err != nil || p.Identity.Scope != "system" {
 		t.Fatalf("scope = %q err = %v, want canonical system", p.Identity.Scope, err)
+	}
+
+	// Artifact methods (http/github/appimage) resolve portable scope into
+	// canonical identity and honor the declared capability.
+	for name, tc := range map[string]struct {
+		kind  string
+		cfg   map[string]any
+		scope string
+	}{
+		"http user":      {"http", map[string]any{"url": "https://example.test/x.tar.gz", "scope": "user"}, "user"},
+		"http system":    {"http", map[string]any{"url": "https://example.test/x.tar.gz", "scope": "system"}, "system"},
+		"github user":    {"github", map[string]any{"repo": "org/x", "asset": "x.tar.gz", "scope": "user"}, "user"},
+		"appimage user":  {"appimage", map[string]any{"url": "https://example.test/x.AppImage", "scope": "user"}, "user"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if rejected(t, tc.kind, tc.cfg) {
+				t.Fatalf("%s with portable scope %q must plan", tc.kind, tc.scope)
+			}
+			tool, method := candidate("demo", tc.kind, tc.cfg)
+			p, err := planner.BuildCandidateIntent(tool, method)
+			if err != nil {
+				t.Fatalf("BuildCandidateIntent() error = %v", err)
+			}
+			if p.Identity.Scope != tc.scope {
+				t.Fatalf("scope = %q, want %q", p.Identity.Scope, tc.scope)
+			}
+		})
 	}
 }
 

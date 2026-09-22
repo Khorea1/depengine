@@ -75,6 +75,22 @@ type Contract struct {
 
 var pkgField = map[string]Field{"pkg": {Type: String, Effects: EffectExecute | EffectVerify}}
 
+// artifactScopeContract declares that a download/artifact method resolves
+// portable scope into platform-native placement defaults (see
+// plan.ResolveScopePlacement and docs/design/adr-004-scope-placement.md).
+// The adapter-native spelling of the portable vocabulary is the portable
+// spelling itself: "user" and "system" are the placement defaults, not
+// flags passed to a manager.
+var artifactScopeContract = &ScopeContract{AdapterValues: map[plan.Scope]string{
+	plan.ScopeUser:   "user",
+	plan.ScopeSystem: "system",
+}}
+
+// artifactScopeField is the per-method scope declaration for artifact
+// methods. It participates in resolution (identity + placement), execution
+// (placement defaults), and verification (desired-state identity).
+var artifactScopeField = map[string]Field{"scope": {Type: String, Enum: []string{"user", "system"}, Effects: EffectResolve | EffectExecute | EffectVerify}}
+
 func packageContract(kind string, order int, canRemove bool) Contract {
 	return Contract{Kind: kind, DefaultOrder: order, Fields: pkgField, AllowString: true, AllowTrue: true, CanRemove: canRemove}
 }
@@ -292,9 +308,10 @@ var Contracts = finalizeContracts([]Contract{
 		"digest":   {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"platform": {Type: String, NonEmpty: true, Effects: EffectValidate | EffectExecute | EffectVerify},
 	}, MutuallyExclusive: [][]string{{"tag", "digest"}}, CanRemove: true},
-	{Kind: "appimage", DefaultOrder: 31, Fields: fields(withoutField(downloadFields, "extract_to"), map[string]Field{
+	{Kind: "appimage", DefaultOrder: 31, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(withoutField(downloadFields, "extract_to"), map[string]Field{
 		"install_dir": {Type: String, Effects: EffectExecute | EffectVerify},
 		"desktop":     {Type: Boolean, Effects: EffectExecute},
+		"scope":       artifactScopeField["scope"],
 	}), SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: appImageArtifactContract, Checksum: remoteChecksumContract},
 	{Kind: "android", DefaultOrder: 32, Fields: withoutFields(downloadFields, "extract_to", "binary"), SourceAlternatives: artifactSourceAlternatives, Artifact: androidArtifactContract, Checksum: remoteChecksumContract},
 	{Kind: "git", DefaultOrder: 33, Capabilities: CapabilityArbitraryCode | CapabilityRevision, Fields: map[string]Field{
@@ -315,13 +332,14 @@ var Contracts = finalizeContracts([]Contract{
 		"checksum":    {Type: String, Effects: EffectValidate | EffectResolve | EffectExecute | EffectVerify},
 		"install_dir": {Type: String, Effects: EffectExecute | EffectVerify},
 	}, CanRemove: true, Checksum: localChecksumContract},
-	{Kind: "github", DefaultOrder: 35, Fields: fields(withoutField(downloadFields, "url"), map[string]Field{
+{Kind: "github", DefaultOrder: 35, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(withoutField(downloadFields, "url"), map[string]Field{
 		"repo":    {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 		"asset":   {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 		"release": {Type: String, Effects: EffectResolve},
 		"branch":  {Type: String, NonEmpty: true, Effects: EffectResolve},
+		"scope":   artifactScopeField["scope"],
 	}), SourceAlternatives: [][]string{{"repo", "asset"}}, Artifact: githubArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true},
-	{Kind: "http", DefaultOrder: 36, Fields: downloadFields, SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract, Checksum: remoteChecksumContract},
+{Kind: "http", DefaultOrder: 36, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(downloadFields, artifactScopeField), SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract, Checksum: remoteChecksumContract},
 	{Kind: "msi", DefaultOrder: 37, Fields: fields(artifactFields, map[string]Field{
 		"product_name": {Type: String, Required: true, NonEmpty: true, Effects: EffectVerify | EffectExecute},
 		"publisher":    {Type: String, Effects: EffectVerify | EffectExecute},

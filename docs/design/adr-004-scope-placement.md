@@ -1,7 +1,7 @@
 # ADR-004: Scope supplies platform-native placement; explicit absolute paths override
 
-- Status: decided (2026-09-22)
-- Source: `.dev/TODO.md` P1.5 working notes (condensed here; the backlog keeps only open items)
+- Status: implemented (2026-09-22)
+- Source: `.dev/TODO.md` P1.5 working notes
 
 ## Context
 
@@ -35,8 +35,15 @@ normal manifests to know `~/.local/bin` or `ProgramFiles`.
 - Fully manager-specific scope vocabularies: rejected in favor of one portable
   core, extended only where a manager distinction is semantically real.
 
-## Open work (remains in `.dev/TODO.md` P1.5)
+## Implementation (2026-09-22)
 
-- Adapter wiring for remaining blocked adapters.
-- Removing Unix paths from the normal authoring path once scope suffices.
-- Proving user-scoped raw binary and archive installs resolve consistently.
+- `http`, `github`, and `appimage` method contracts declare `CapabilityScope`
+  with canonical `user`/`system` mappings and `scope` schema fields.
+- `internal/httpdownload/placement.go` implements `ArtifactPlacement`, deriving
+  platform-native install/link roots with ADR-004 precedence.
+- `HTTPAdapter` and `AppImageAdapter` derive install destination, check presence,
+  elevation requirements, and removal symmetrically from resolved placement.
+- Scoped raw binaries create PATH launchers in the scope link directory,
+  achieving layout parity with archive entrypoints.
+- Conformance and behavior test suites cover unit placement, raw-binary
+  lifecycle roundtrip, and archive resolution consistency without Unix paths.

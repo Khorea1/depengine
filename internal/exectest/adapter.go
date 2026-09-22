@@ -223,4 +223,8 @@ func SetHome(t *testing.T, dir string) {
 	if runtime.GOOS == "windows" {
 		t.Setenv("USERPROFILE", dir)
 	}
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_STATE_HOME", "")
+	t.Setenv("XDG_CACHE_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 }

@@ -37,6 +37,13 @@ func archiveTarget(tool *config.Tool, mc *config.MethodCandidate) string {
 	if target, _ := mc.Config["extract_to"].(string); target != "" {
 		return config.ExpandHomeDir(target)
 	}
+	// A scoped archive installs into the scope's platform-native install
+	// root; the entrypoint links make the payload reachable from PATH.
+	if scopeConfigured(mc) {
+		if root := PlacementOrDefault(tool, mc, "", "").InstallRoot; root != "" {
+			return root
+		}
+	}
 	name := "artifact"
 	if tool != nil && tool.Name != "" {
 		name = tool.Name
@@ -44,9 +51,14 @@ func archiveTarget(tool *config.Tool, mc *config.MethodCandidate) string {
 	return config.ExpandHomeDir(filepath.Join("~/.local/opt", name))
 }
 
-func linkTargetDir(mc *config.MethodCandidate, payload string) string {
+func linkTargetDir(mc *config.MethodCandidate, payload string, tool *config.Tool) string {
 	if dir, _ := mc.Config["link_dir"].(string); dir != "" {
 		return config.ExpandHomeDir(dir)
+	}
+	if scopeConfigured(mc) {
+		if link := PlacementOrDefault(tool, mc, "", "").LinkDir; link != "" {
+			return link
+		}
 	}
 	if !defaultSudoRequired(payload) {
 		return config.ExpandHomeDir("~/.local/bin")
@@ -64,9 +76,9 @@ func installArchive(ctx context.Context, src, ext string, tool *config.Tool, mc 
 	if configured, ok := mc.Config["sudo_required"].(bool); ok {
 		requiresElevation = configured
 	}
-	elevated := requiresElevation && os.Geteuid() != 0
+	payloadElevated := requiresElevation && os.Geteuid() != 0
 	stageParent := parent
-	if elevated {
+	if payloadElevated {
 		if err := elevationGuard(true, tool.Name); err != nil {
 			return err
 		}
@@ -125,20 +137,22 @@ func installArchive(ctx context.Context, src, ext string, tool *config.Tool, mc 
 	}
 
 	backup := dest + ".depengine-backup"
-	if err := commitPayload(ctx, rn, payload, dest, backup, elevated); err != nil {
+	if err := commitPayload(ctx, rn, payload, dest, backup, payloadElevated); err != nil {
 		return err
 	}
-	created, err := createLaunchers(ctx, rn, dest, linkTargetDir(mc, dest), points, elevated)
+	linkDir := linkTargetDir(mc, dest, tool)
+	linkElevated := defaultSudoRequired(linkDir) && os.Geteuid() != 0
+	created, err := createLaunchers(ctx, rn, dest, linkDir, points, linkElevated)
 	if err != nil {
-		rollbackPayload(ctx, rn, dest, backup, elevated)
+		rollbackPayload(ctx, rn, dest, backup, payloadElevated)
 		for _, path := range created {
-			removeOwned(ctx, rn, path, elevated)
+			removeOwned(ctx, rn, path, linkElevated)
 		}
 		return err
 	}
-	removeOwned(ctx, rn, backup, elevated)
-	if len(points) > 0 && !pathContains(linkTargetDir(mc, dest)) {
-		fmt.Fprintf(os.Stderr, "depengine: add %s to PATH to use %s\n", linkTargetDir(mc, dest), tool.Name)
+	removeOwned(ctx, rn, backup, payloadElevated)
+	if len(points) > 0 && !pathContains(linkDir) {
+		fmt.Fprintf(os.Stderr, "depengine: add %s to PATH to use %s\n", linkDir, tool.Name)
 	}
 	committed = true
 	return nil

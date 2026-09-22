@@ -11,8 +11,136 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/exectest"
 	"github.com/Khorea1/depengine/internal/run"
 )
+
+type recordingElevationRunner struct {
+	calls []run.FakeCall
+}
+
+func (r *recordingElevationRunner) Run(ctx context.Context, name string, args ...string) run.Result {
+	r.calls = append(r.calls, run.FakeCall{Name: name, Args: append([]string(nil), args...)})
+	if name == "sudo" {
+		if len(args) == 0 {
+			return run.Result{ExitCode: 1}
+		}
+		name, args = args[0], args[1:]
+	}
+	return (run.OSExecRunner{}).Run(ctx, name, args...)
+}
+
+func TestInstallArchiveElevatesPayloadAndLinkIndependently(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX archive and launcher assertion")
+	}
+	for _, tc := range []struct {
+		name           string
+		payloadInHome  bool
+		linkInHome     bool
+		wantElevatedLn bool
+	}{
+		{name: "system link with user payload", payloadInHome: true, linkInHome: false, wantElevatedLn: true},
+		{name: "user link with system payload", payloadInHome: false, linkInHome: true, wantElevatedLn: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			home := filepath.Join(root, "home")
+			if err := os.MkdirAll(home, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			exectest.SetHome(t, home)
+			payloadBase, linkBase := filepath.Join(root, "system"), filepath.Join(root, "system")
+			if tc.payloadInHome {
+				payloadBase = filepath.Join(home, "tools")
+			}
+			if tc.linkInHome {
+				linkBase = filepath.Join(home, "bin")
+			}
+			dest, links := filepath.Join(payloadBase, "demo"), linkBase
+			archive := filepath.Join(root, "demo.tar.gz")
+			writeTestArchive(t, archive, "tar.gz", "bin/demo", []byte("binary"))
+			mc := &config.MethodCandidate{Config: map[string]any{
+				"extract_to":    dest,
+				"link_dir":      links,
+				"entrypoints":   map[string]any{"demo": "bin/demo"},
+				"sudo_required": false,
+			}}
+			// In the second case, payload elevation is explicitly requested by
+			// its system path; the launcher still belongs in the user path.
+			if !tc.payloadInHome {
+				delete(mc.Config, "sudo_required")
+			}
+			run.OverrideElevation("sudo")
+			defer run.OverrideElevation("")
+			rn := &recordingElevationRunner{}
+			if err := installArchive(context.Background(), archive, ".tar.gz", &config.Tool{Name: "demo"}, mc, rn); err != nil {
+				t.Fatalf("installArchive() error = %v", err)
+			}
+
+			gotElevatedLn := false
+			for _, call := range rn.calls {
+				if call.Name == "sudo" && len(call.Args) >= 1 && call.Args[0] == "ln" {
+					gotElevatedLn = true
+				}
+			}
+			if gotElevatedLn != tc.wantElevatedLn {
+				t.Fatalf("elevated ln = %v, want %v; calls: %+v", gotElevatedLn, tc.wantElevatedLn, rn.calls)
+			}
+		})
+	}
+}
+
+func TestArchiveRemoveElevatesLinkIndependently(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission and symlink assertion")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root can remove the protected launcher without elevation")
+	}
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	lockedParent := filepath.Join(root, "system")
+	payload := filepath.Join(home, "tools", "demo")
+	links := filepath.Join(lockedParent, "bin")
+	if err := os.MkdirAll(filepath.Join(payload, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(links, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	exectest.SetHome(t, home)
+	owned := filepath.Join(payload, "bin", "demo")
+	if err := os.WriteFile(owned, []byte("owned"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	launcher := filepath.Join(links, "demo")
+	if err := os.Symlink(owned, launcher); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(links, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(links, 0o755)
+
+	run.OverrideElevation("sudo")
+	defer run.OverrideElevation("")
+	fr := &run.FakeRunner{}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"extract_to":  payload,
+		"link_dir":    links,
+		"entrypoints": map[string]any{"demo": "bin/demo"},
+	}}
+	if err := NewHTTPAdapter().Remove(context.Background(), fr, &config.Tool{Name: "demo"}, mc); err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+	if len(fr.Calls) != 1 || fr.Calls[0].Name != "sudo" || len(fr.Calls[0].Args) < 4 || fr.Calls[0].Args[0] != "rm" || fr.Calls[0].Args[1] != "-f" || fr.Calls[0].Args[3] != launcher {
+		t.Fatalf("elevated launcher removal calls = %+v, want sudo rm -f %s", fr.Calls, launcher)
+	}
+	if _, err := os.Stat(payload); !os.IsNotExist(err) {
+		t.Fatalf("user payload remains: %v", err)
+	}
+}
 
 func TestInstallArchiveStripEntrypointCheckRemove(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -21,9 +149,14 @@ func TestInstallArchiveStripEntrypointCheckRemove(t *testing.T) {
 	for _, format := range []string{"tar.gz", "zip"} {
 		t.Run(format, func(t *testing.T) {
 			root := t.TempDir()
+			home := filepath.Join(root, "home")
+			if err := os.MkdirAll(home, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			exectest.SetHome(t, home)
 			archive := filepath.Join(root, "nvim."+format)
 			writeTestArchive(t, archive, format, "nvim-linux/bin/nvim", []byte("binary"))
-			dest, links := filepath.Join(root, "opt", "nvim"), filepath.Join(root, "bin")
+			dest, links := filepath.Join(home, "opt", "nvim"), filepath.Join(home, "bin")
 			mc := &config.MethodCandidate{Config: map[string]any{"extract_to": dest, "strip_components": int64(1), "entrypoints": map[string]any{"nvim": "bin/nvim"}, "link_dir": links}}
 			mc.Config["sudo_required"] = false
 			tool := &config.Tool{Name: "nvim"}

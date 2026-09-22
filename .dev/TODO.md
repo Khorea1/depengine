@@ -22,8 +22,6 @@
   exact versions must never degrade to `latest`, and status must surface drift.
 - [~] Make lock generation and consumption universal, credential-free, and
   migration-safe, or narrow the public reproducibility promise.
-- [ ] Resolve scope to native platform paths/flags and remove Unix paths from
-  normal manifest authoring.
 - [ ] Make environment/profile targeting explicit and use the same target for
   install, check, and removal.
 - [~] Finish typed source/registry trust, ownership, selection, verification,

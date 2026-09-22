@@ -618,7 +618,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock.",
           "oneOf": [
             {
               "not": {
@@ -723,6 +723,13 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "scope": {
+              "enum": [
+                "user",
+                "system"
+              ],
+              "type": "string"
             },
             "signature_url": {
               "type": "string"
@@ -2375,7 +2382,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock.",
           "oneOf": [
             {
               "required": [
@@ -2449,6 +2456,13 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "scope": {
+              "enum": [
+                "user",
+                "system"
+              ],
+              "type": "string"
             },
             "signature_url": {
               "type": "string"
@@ -2576,7 +2590,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock.",
           "oneOf": [
             {
               "not": {
@@ -2678,6 +2692,13 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "scope": {
+              "enum": [
+                "user",
+                "system"
+              ],
+              "type": "string"
             },
             "signature_url": {
               "type": "string"
@@ -5314,7 +5335,7 @@
       "oneOf": [
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock.",
           "oneOf": [
             {
               "not": {
@@ -5416,6 +5437,13 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "scope": {
+              "enum": [
+                "user",
+                "system"
+              ],
+              "type": "string"
             },
             "signature_url": {
               "type": "string"
@@ -6748,7 +6776,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock.",
           "oneOf": [
             {
               "required": [
@@ -6819,6 +6847,13 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "scope": {
+              "enum": [
+                "user",
+                "system"
+              ],
+              "type": "string"
             },
             "signature_url": {
               "type": "string"
@@ -6953,7 +6988,7 @@
       "oneOf": [
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock.",
           "oneOf": [
             {
               "not": {
@@ -7052,6 +7087,13 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "scope": {
+              "enum": [
+                "user",
+                "system"
+              ],
+              "type": "string"
             },
             "signature_url": {
               "type": "string"

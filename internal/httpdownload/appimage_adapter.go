@@ -74,10 +74,15 @@ func (a *AppImageAdapter) Available(ctx context.Context, rn run.Runner) bool {
 
 // binaryTarget resolves the (install_dir, binary name) pair a config
 // candidate targets, applying the appimage-specific defaults HTTPAdapter
-// doesn't know about (~/.local/bin instead of /usr/local/bin, tool name
-// instead of a URL-derived filename).
+// doesn't know about (scope platform-native install root, else
+// ~/.local/bin; tool name instead of a URL-derived filename). The
+// delegated HTTPAdapter still owns the scope PATH link, so install/check/
+// remove stay consistent through httpDelegate.
 func binaryTarget(tool *config.Tool, mc *config.MethodCandidate) (installDir, name string) {
 	installDir, _ = mc.Config["install_dir"].(string)
+	if installDir == "" && scopeConfigured(mc) {
+		installDir = PlacementOrDefault(tool, mc, "~/.local/bin", "").InstallRoot
+	}
 	if installDir == "" {
 		installDir = "~/.local/bin"
 	}

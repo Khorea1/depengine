@@ -86,6 +86,7 @@ method_prefer = ["native", "cargo", "github", "http"] # preferred prefix; defaul
 | Conda target/version | `numpy = { conda = { pkg = "numpy", environment = "data", version = "2.1.0", channels = ["conda-forge"] } }` |
 | GitHub release | `yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }` |
 | Owned archive | `nvim = { github = { repo = "neovim/neovim", asset = "nvim-{os_any}-{arch_any}.tar.gz", strip_components = 1, extract_to = "~/.local/opt/nvim", entrypoints = { nvim = "bin/nvim" } } }` |
+| User-scoped artifact | `ripgrep = { github = { repo = "BurntSushi/ripgrep", asset = "ripgrep-{version}-{arch_any}.tar.gz", scope = "user", entrypoints = { rg = "ripgrep" } } }` |
 | Snap options | `nvim = { snap = { pkg = "nvim", confinement = "classic", track = "latest", risk = "stable" } }` |
 | Chocolatey exact/source/arch | `nvim = { choco = { pkg = "neovim", version = "0.10.4", source = "https://community.chocolatey.org/api/v2/", architecture = "x64", prerelease = true } }` |
 | Flatpak remote/branch/scope | `spotify = { flatpak = { pkg = "com.spotify.Client", remote = "flathub", branch = "stable", scope = "user" } }` |
