@@ -5,11 +5,22 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/config"
 	"github.com/Khorea1/depengine/pkg/run"
 )
+
+// goFixturePath mirrors the adapter's install target: `go install` produces
+// name.exe on Windows. Fixtures must carry the suffix or Remove (correctly)
+// deletes a different path.
+func goFixturePath(binDir, name string) string {
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return filepath.Join(binDir, name)
+}
 
 func TestGoBinaryName(t *testing.T) {
 	cases := []struct {
@@ -48,7 +59,7 @@ func TestGoAdapterRemoveDeletesBinaryFromGOBIN(t *testing.T) {
 	t.Setenv("GOBIN", binDir)
 	// Explicit pkg config points at the import path; the binary that
 	// `go install` produced is named after the /cmd/ element.
-	binPath := filepath.Join(binDir, "stringer")
+	binPath := goFixturePath(binDir, "stringer")
 	if err := os.WriteFile(binPath, []byte("#!/bin/sh\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +81,7 @@ func TestGoAdapterRemoveFallsBackToToolNameAsImportPath(t *testing.T) {
 	// from tool.Name (which in the schema is the import path itself).
 	binDir := t.TempDir()
 	t.Setenv("GOBIN", binDir)
-	binPath := filepath.Join(binDir, "fzf")
+	binPath := goFixturePath(binDir, "fzf")
 	if err := os.WriteFile(binPath, []byte("x"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +102,7 @@ func TestGoAdapterRemoveUsesGOPATHBinWhenGOBINUnset(t *testing.T) {
 	gopath := t.TempDir()
 	t.Setenv("GOBIN", "")
 	t.Setenv("GOPATH", gopath)
-	binPath := filepath.Join(gopath, "bin", "fzf")
+	binPath := goFixturePath(filepath.Join(gopath, "bin"), "fzf")
 	if err := os.MkdirAll(filepath.Dir(binPath), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -199,8 +210,8 @@ func TestGoInstalledVersionUsesPkgField(t *testing.T) {
 func TestGoPkgFieldControlsRemoveTarget(t *testing.T) {
 	binDir := t.TempDir()
 	t.Setenv("GOBIN", binDir)
-	realBin := filepath.Join(binDir, "realbin")
-	friendlyBin := filepath.Join(binDir, "friendly-name")
+	realBin := goFixturePath(binDir, "realbin")
+	friendlyBin := goFixturePath(binDir, "friendly-name")
 	if err := os.WriteFile(realBin, []byte("x"), 0755); err != nil {
 		t.Fatal(err)
 	}
