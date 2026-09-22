@@ -36,8 +36,7 @@ func newValidateCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runValidate(cmd.Context(), validateSchema, validateManifest, validateNoManifest, validateCheckEnv, validateFormat, validateStrict)
-			return nil
+			return runValidate(cmd.Context(), validateSchema, validateManifest, validateNoManifest, validateCheckEnv, validateFormat, validateStrict)
 		},
 	}
 	f := cmd.Flags()
@@ -50,7 +49,7 @@ func newValidateCmd() *cobra.Command {
 	return cmd
 }
 
-func runValidate(ctx context.Context, validateSchema, validateManifest *string, validateNoManifest, validateCheckEnv *bool, validateFormat *string, validateStrict *bool) {
+func runValidate(ctx context.Context, validateSchema, validateManifest *string, validateNoManifest, validateCheckEnv *bool, validateFormat *string, validateStrict *bool) error {
 
 	s, err := config.ParseProjectSchema(*validateSchema, map[string]string{})
 	if err != nil {
@@ -67,13 +66,13 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 			enc.SetIndent("", "  ")
 			if err := enc.Encode(out); err != nil {
 				fmt.Fprintf(os.Stderr, "error encoding JSON: %v\n", err)
-				os.Exit(3)
+				return exitWithCode(3)
 			}
-			os.Exit(2)
+			return exitWithCode(2)
 		}
 		// Fallback: plain text on stderr (existing behavior)
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(2)
+		return exitWithCode(2)
 	}
 
 	noManifest := *validateNoManifest
@@ -90,7 +89,7 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 		s, count, err = mergeManifest(s, manifestPath, false)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", err)
-			os.Exit(2)
+			return exitWithCode(2)
 		}
 		if count > 0 && manifestAuto {
 			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
@@ -122,7 +121,7 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(out); err != nil {
 			fmt.Fprintf(os.Stderr, "error encoding JSON: %v\n", err)
-			os.Exit(3)
+			return exitWithCode(3)
 		}
 	} else {
 		c := newCLIStyle(os.Stderr)
@@ -158,7 +157,7 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 	} else if *validateStrict && len(result.Warnings) > 0 {
 		exitCode = 1
 	}
-	os.Exit(exitCode)
+	return exitWithCode(exitCode)
 }
 
 // newCheckCmd builds `depengine check`.
@@ -176,8 +175,7 @@ func newCheckCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runCheck(cmd.Context(), args[0], checkSchema, checkManifest, checkNoManifest, checkJSON, checkFormat, checkLive)
-			return nil
+			return runCheck(cmd.Context(), args[0], checkSchema, checkManifest, checkNoManifest, checkJSON, checkFormat, checkLive)
 		},
 	}
 	f := cmd.Flags()
@@ -194,7 +192,7 @@ func newCheckCmd() *cobra.Command {
 // the pre-Cobra version — Cobra's cobra.ExactArgs(1) now enforces the
 // argument count that the old manual length check did, and toolName arrives
 // as a plain argument instead of remain[0].
-func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *string, checkNoManifest, checkJSON *bool, checkFormat *string, checkLive *bool) {
+func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *string, checkNoManifest, checkJSON *bool, checkFormat *string, checkLive *bool) error {
 	noManifest := *checkNoManifest
 	manifestPath := *checkManifest
 	manifestAuto := false
@@ -208,7 +206,7 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 	s, clan, _, manifestCount, err := loadSchemaWithManifest(*checkSchema, manifestPath)
 	if err != nil {
 		log.Default.Error("load schema", "error", err)
-		os.Exit(exitCodeForError(err))
+		return exitWithCode(exitCodeForError(err))
 	}
 	if manifestAuto && manifestCount > 0 {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
@@ -217,7 +215,7 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 	tool, ok := s.Tools[toolName]
 	if !ok {
 		log.Default.Error("tool not found", "tool", toolName)
-		os.Exit(1)
+		return exitWithCode(1)
 	}
 	useJSON := *checkJSON || *checkFormat == "json"
 
@@ -244,7 +242,7 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 			} else {
 				newCLIStyle(os.Stderr).ok("%s is installed (via %s)", toolName, method.Kind)
 			}
-			os.Exit(0)
+			return nil
 		}
 	}
 	if useJSON {
@@ -255,5 +253,5 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 	} else {
 		newCLIStyle(os.Stderr).fail("%s is not installed", toolName)
 	}
-	os.Exit(1)
+	return exitWithCode(1)
 }

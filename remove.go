@@ -33,8 +33,7 @@ func newRemoveCmd() *cobra.Command {
 		GroupID: groupManage,
 		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runRemove(cmd.Context(), args, removeAll, removeDryRun, removeSchema, removeOnly, removeForce)
-			return nil
+			return runRemove(cmd.Context(), args, removeAll, removeDryRun, removeSchema, removeOnly, removeForce)
 		},
 	}
 	f := cmd.Flags()
@@ -50,11 +49,11 @@ func newRemoveCmd() *cobra.Command {
 // Supports --all, --dry-run, --schema, and --only flags. Body unchanged
 // from the pre-Cobra version — only the flag declarations above it moved,
 // and removeArgs is now the positional args Cobra already separated out.
-func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce *bool) {
+func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce *bool) error {
 	// Validate mutually exclusive flags.
 	if *removeAll && *removeOnly != "" {
 		log.Default.Error("cannot use both --all and --only")
-		os.Exit(2)
+		return exitWithCode(2)
 	}
 
 	var (
@@ -76,7 +75,7 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 	}
 	if err != nil {
 		log.Default.Error("load state", "error", err)
-		closeStateAndExit(ls, 3)
+		return exitWithCode(3)
 	}
 
 	// Optionally load schema for validation.
@@ -85,7 +84,7 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 		s, _, _, err := loadSchema(*removeSchema)
 		if err != nil {
 			log.Default.Error("load schema", "error", err)
-			closeStateAndExit(ls, 2)
+			return exitWithCode(2)
 		}
 		schemaTools = s.Tools
 	}
@@ -380,14 +379,14 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 	if *removeAll && !*removeForce {
 		if !isInteractive() {
 			log.Default.Error("stdin is not a terminal; use --force to confirm, or run in an interactive terminal")
-			closeStateAndExit(ls, 2)
+			return exitWithCode(2)
 		}
 		fmt.Fprint(os.Stderr, "WARNING: This will remove ALL installed tools tracked by depengine.\nAre you sure? [y/N] ")
 		input, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 		input = strings.TrimSpace(strings.ToLower(input))
 		if input != "y" && input != "yes" {
 			fmt.Fprintln(os.Stderr, "Aborted.")
-			closeStateAndExit(ls, 0)
+			return nil
 		}
 	}
 
@@ -412,19 +411,20 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 		}
 	default:
 		log.Default.Error("usage: depengine remove [--all | --only=<tool> | <tool>...] [--schema=<path>]")
-		closeStateAndExit(ls, 1)
+		return exitWithCode(1)
 	}
 
 	if !*removeDryRun {
 		if err := ls.Save(); err != nil {
 			log.Default.Error("failed to update state", "error", err)
-			closeStateAndExit(ls, 3)
+			return exitWithCode(3)
 		}
 	}
 
 	if hadFailure {
-		closeStateAndExit(ls, 1)
+		return exitWithCode(1)
 	}
+	return nil
 }
 
 func isInteractive() bool {

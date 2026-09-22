@@ -52,8 +52,7 @@ func newUpgradeCmd() *cobra.Command {
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runUpgrade(cmd.Context(), upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary)
-			return nil
+			return runUpgrade(cmd.Context(), upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary)
 		},
 	}
 	f := cmd.Flags()
@@ -74,7 +73,7 @@ func newUpgradeCmd() *cobra.Command {
 // it calls adapter.Remove followed by adapter.Install, then updates state.
 // Body unchanged from the pre-Cobra version — only the flag declarations
 // above it moved.
-func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool) {
+func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool) error {
 	lg := log.Default
 
 	noManifest := *upgradeNoManifest
@@ -92,10 +91,10 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		if os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "error: %s not found\n", *upgradeSchema)
 			fmt.Fprintf(os.Stderr, "Run 'depengine init' to create one, or point --schema to an existing file.\n")
-			os.Exit(1)
+			return exitWithCode(1)
 		}
 		lg.Error("load schema", "error", err)
-		os.Exit(exitCodeForError(err))
+		return exitWithCode(exitCodeForError(err))
 	}
 	if manifestAuto && manifestCount > 0 {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
@@ -112,7 +111,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 	}
 	if lk == nil {
 		fmt.Fprintln(os.Stderr, "No lockfile found. Run 'depengine update' first to resolve and pin versions.")
-		os.Exit(1)
+		return exitWithCode(1)
 	}
 
 	// Upgrade dry-run only needs a stable snapshot of state and must not create
@@ -134,14 +133,14 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 	}
 	if err != nil {
 		lg.Error("load state", "error", err)
-		closeStateAndExit(ls, 3)
+		return exitWithCode(3)
 	}
 
 	// Build executor for Install calls.
 	schemaFile, err := os.Stat(*upgradeSchema)
 	if err != nil {
 		lg.Error("stat schema", "error", err)
-		closeStateAndExit(ls, 1)
+		return exitWithCode(1)
 	}
 	ex := exec.New()
 	exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
@@ -244,7 +243,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		} else {
 			fmt.Fprintln(os.Stderr, "All installed tools are up to date.")
 		}
-		return
+		return nil
 	}
 
 	// Sort for deterministic output.
@@ -283,7 +282,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		input = strings.TrimSpace(strings.ToLower(input))
 		if input != "y" && input != "yes" {
 			fmt.Fprintln(os.Stderr, "Aborted.")
-			closeStateAndExit(ls, 0)
+			return nil
 		}
 	}
 
@@ -426,7 +425,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 	if !*upgradeDryRun {
 		if err := ls.Save(); err != nil {
 			lg.Error("state save failed", "error", err)
-			closeStateAndExit(ls, 3)
+			return exitWithCode(3)
 		}
 	}
 
@@ -467,8 +466,9 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 	}
 
 	if failed > 0 {
-		closeStateAndExit(ls, 1)
+		return exitWithCode(1)
 	}
+	return nil
 }
 
 func hasPinnedVersionForKind(l *lock.Lock, toolName, kind string) bool {

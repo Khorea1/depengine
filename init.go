@@ -51,8 +51,7 @@ func newInitCmd() *cobra.Command {
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
-			runInit(output, addTools, interactive)
-			return nil
+			return runInit(output, addTools, interactive)
 		},
 	}
 	f := cmd.Flags()
@@ -64,7 +63,7 @@ func newInitCmd() *cobra.Command {
 
 // runInit writes a new schema.toml. Body unchanged from the pre-Cobra
 // version — only the flag declarations above it moved.
-func runInit(output, addTools *string, interactive *bool) {
+func runInit(output, addTools *string, interactive *bool) error {
 	path := *output
 	if path == "" {
 		path = "schema.toml"
@@ -74,30 +73,29 @@ func runInit(output, addTools *string, interactive *bool) {
 		// Don't overwrite existing files.
 		if _, err := os.Stat(path); err == nil {
 			fmt.Fprintf(os.Stderr, "error: %s already exists\n", path)
-			os.Exit(1)
+			return exitWithCode(1)
 		}
 		dir := filepath.Dir(path)
 		if dir != "." {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				fmt.Fprintf(os.Stderr, "error: cannot create directory %s: %v\n", dir, err)
-				os.Exit(1)
+				return exitWithCode(1)
 			}
 		}
-		runInteractiveInit(path)
-		return
+		return runInteractiveInit(path)
 	}
 
 	// Don't overwrite existing files.
 	if _, err := os.Stat(path); err == nil {
 		fmt.Fprintf(os.Stderr, "error: %s already exists\n", path)
-		os.Exit(1)
+		return exitWithCode(1)
 	}
 
 	dir := filepath.Dir(path)
 	if dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			fmt.Fprintf(os.Stderr, "error: cannot create directory %s: %v\n", dir, err)
-			os.Exit(1)
+			return exitWithCode(1)
 		}
 	}
 
@@ -109,11 +107,11 @@ func runInit(output, addTools *string, interactive *bool) {
 			n = strings.TrimSpace(n)
 			if n == "" {
 				fmt.Fprintf(os.Stderr, "error: empty tool name (check for doubled commas or trailing comma)\n")
-				os.Exit(1)
+				return exitWithCode(1)
 			}
 			if !toolNameRegex.MatchString(n) {
 				fmt.Fprintf(os.Stderr, "error: invalid tool name %q: use only letters, digits, underscores, hyphens, and dots\n", n)
-				os.Exit(1)
+				return exitWithCode(1)
 			}
 			quoted = append(quoted, fmt.Sprintf("%q", n))
 		}
@@ -123,7 +121,7 @@ func runInit(output, addTools *string, interactive *bool) {
 	template := fmt.Sprintf(initTemplate, filepath.Base(path), simpleList)
 	if err := os.WriteFile(path, []byte(template), 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "error: cannot write %s: %v\n", path, err)
-		os.Exit(1)
+		return exitWithCode(1)
 	}
 
 	// The ✓ goes to stdout (the created path is the consumable result,
@@ -136,11 +134,12 @@ func runInit(output, addTools *string, interactive *bool) {
 	fmt.Fprintln(c.w, c.green(msg))
 	fmt.Fprintln(os.Stderr, "Next: run 'depengine validate' to verify, or 'depengine install' to install.")
 	fmt.Fprintln(os.Stderr, "Share this file with your team: git add schema.toml && git commit")
+	return nil
 }
 
 // runInteractiveInit runs an interactive wizard that walks the user through
 // adding tools to a new schema.toml.
-func runInteractiveInit(path string) {
+func runInteractiveInit(path string) error {
 	r := bufio.NewReader(os.Stdin)
 	basename := filepath.Base(path)
 
@@ -284,7 +283,7 @@ manager = "native"
 
 	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "error: cannot write %s: %v\n", path, err)
-		os.Exit(1)
+		return exitWithCode(1)
 	}
 
 	toolCount := len(simpleTools) + len(customLines)
@@ -296,6 +295,7 @@ manager = "native"
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Next: run 'depengine validate' to verify, or 'depengine install' to install.")
 	fmt.Fprintln(os.Stderr, "Share this file with your team: git add schema.toml && git commit")
+	return nil
 }
 
 // prompt reads a line from stdin, trimming whitespace. Returns io.EOF on Ctrl+D.
