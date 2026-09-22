@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/config"
+	"github.com/Khorea1/depengine/pkg/exectest"
 	"github.com/Khorea1/depengine/pkg/run"
 )
 
@@ -73,7 +74,7 @@ func TestAndroidAdapterAvailableTrue(t *testing.T) {
 
 func TestAndroidAdapterCheckInstalled(t *testing.T) {
 	fakeHome := t.TempDir()
-	t.Setenv("HOME", fakeHome)
+	exectest.SetHome(t, fakeHome)
 
 	mc := &config.MethodCandidate{Config: map[string]any{"url": "https://example.com/app.apk"}}
 	wantPath := filepath.Join(config.ExpandHomeDir(androidAPKDir), "obsidian.apk")
@@ -94,7 +95,7 @@ func TestAndroidAdapterCheckInstalled(t *testing.T) {
 
 func TestAndroidAdapterCheckNotInstalled(t *testing.T) {
 	fakeHome := t.TempDir()
-	t.Setenv("HOME", fakeHome)
+	exectest.SetHome(t, fakeHome)
 
 	mc := &config.MethodCandidate{Config: map[string]any{"url": "https://example.com/app.apk"}}
 	fr := &run.FakeRunner{}
@@ -127,7 +128,7 @@ func TestAndroidAdapterInstallNoURL(t *testing.T) {
 // "<tool>.apk" target and then handed to termux-open.
 func TestAndroidAdapterInstallStableNameAndDispatches(t *testing.T) {
 	fakeHome := t.TempDir()
-	t.Setenv("HOME", fakeHome)
+	exectest.SetHome(t, fakeHome)
 
 	const body = "fake-apk-bytes"
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -175,7 +176,7 @@ func TestAndroidAdapterInstallStableNameAndDispatches(t *testing.T) {
 // this adapter is the hand-off, so a failed hand-off is a failed Install.
 func TestAndroidAdapterInstallTermuxOpenFailure(t *testing.T) {
 	fakeHome := t.TempDir()
-	t.Setenv("HOME", fakeHome)
+	exectest.SetHome(t, fakeHome)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("content"))
