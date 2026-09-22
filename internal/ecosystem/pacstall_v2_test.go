@@ -16,6 +16,7 @@ func TestPacstallAdapterV2ResolveAndObserve(t *testing.T) {
 	tool := &config.Tool{Name: "foo"}
 	mc := &config.MethodCandidate{Kind: "pacstall", Config: map[string]any{"pkg": "foo-pkg"}}
 	intent := plan.New(tool.Name, mc.Kind, true)
+	intent.Identity.Package = "foo-pkg"
 
 	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
 	if err != nil {
@@ -65,6 +66,7 @@ func TestPacstallAdapterV2InstallResolvedUsesElevationAndResolvedPackage(t *test
 	tool := &config.Tool{Name: "foo"}
 	mc := &config.MethodCandidate{Kind: "pacstall", Config: map[string]any{"pkg": "resolved-pkg"}}
 	intent := plan.New(tool.Name, mc.Kind, true)
+	intent.Identity.Package = "resolved-pkg"
 	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
 	if err != nil {
 		t.Fatalf("ResolvePlan() error = %v", err)

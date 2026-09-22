@@ -25,6 +25,9 @@ func TestSDKManAdapterV2ResolvesObservesAndInstallsExactVersion(t *testing.T) {
 	tool := &config.Tool{Name: "java"}
 	mc := &config.MethodCandidate{Kind: "sdkman", Config: map[string]any{"pkg": "java", "version": version}}
 	intent := plan.New(tool.Name, mc.Kind, true)
+	intent.Identity.Package = "java"
+	intent.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: version}
+	intent.Identity.Version = version
 
 	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
 	if err != nil {

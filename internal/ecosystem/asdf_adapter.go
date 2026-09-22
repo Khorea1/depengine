@@ -130,15 +130,9 @@ func (a *AsdfAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.
 	if len(pkg) == 0 || pkg[0] == "" {
 		return nil, errors.New("asdf: no package name")
 	}
-	version := asdfVersion(mc)
 	resolved := intent.Clone()
-	resolved.Identity.Package = pkg[0]
-	resolved.Identity.Version = ""
-	if version == "latest" {
-		resolved.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionLatest}
-	} else {
-		resolved.Identity.Version = version
-		resolved.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: version}
+	if resolved.Identity.Package == "" {
+		return nil, errors.New("asdf: no package name in plan intent")
 	}
 	return &resolved, nil
 }

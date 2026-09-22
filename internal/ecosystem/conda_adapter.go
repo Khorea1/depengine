@@ -186,11 +186,8 @@ func (a *CondaAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config
 		return nil, errors.New("conda: no package name")
 	}
 	resolved := intent.Clone()
-	resolved.Identity.Package = pkg
-	resolved.Identity.Environment = condaEnvironmentTarget(mc)
-	if version, _ := mc.Config["version"].(string); version != "" {
-		resolved.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: version}
-		resolved.Identity.Version = version
+	if resolved.Identity.Package == "" {
+		return nil, errors.New("conda: no package name in plan intent")
 	}
 	if build, _ := mc.Config["build"].(string); build != "" {
 		if resolved.Identity.Version == "" {
@@ -201,8 +198,6 @@ func (a *CondaAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config
 	if channels := condaChannels(mc); len(channels) > 0 {
 		resolved.Identity.Source = channels[0]
 	}
-	resolved.Removal.Supported = true
-	resolved.Removal.Identity = pkg
 	return &resolved, nil
 }
 

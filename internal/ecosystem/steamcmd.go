@@ -52,8 +52,9 @@ func (a *SteamCMDAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *con
 		return nil, fmt.Errorf("steamcmd: no app id")
 	}
 	resolved := intent.Clone()
-	resolved.Identity.Package = pkg[0]
-	resolved.Removal.Supported = false
+	if resolved.Identity.Package == "" {
+		return nil, errors.New("steamcmd: no app id in plan intent")
+	}
 	return &resolved, nil
 }
 

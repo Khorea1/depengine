@@ -64,8 +64,9 @@ func (a *PacstallAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *con
 		return nil, errors.New("pacstall: no package name")
 	}
 	resolved := intent.Clone()
-	resolved.Identity.Package = pkg[0]
-	resolved.Removal.Supported = false
+	if resolved.Identity.Package == "" {
+		return nil, errors.New("pacstall: no package name in plan intent")
+	}
 	return &resolved, nil
 }
 
