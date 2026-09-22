@@ -2,6 +2,7 @@ package httpdownload
 
 import (
 	"context"
+	"runtime"
 	"testing"
 
 	"github.com/Khorea1/depengine/pkg/run"
@@ -34,8 +35,9 @@ func TestGPGPathFollowsProbe(t *testing.T) {
 }
 
 func TestIsMSYSGPGFalseOffWindows(t *testing.T) {
-	// Off Windows the probe short-circuits before touching the runner:
-	// even a runner that claims everything exists must yield false.
+	if runtime.GOOS == "windows" {
+		t.Skip("probe is live on Windows; nothing to short-circuit")
+	}
 	fr := &run.FakeRunner{}
 	if isMSYSGPG(context.Background(), fr) {
 		t.Fatal("isMSYSGPG should be false off Windows")
