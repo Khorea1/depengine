@@ -1,0 +1,173 @@
+package exec
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/run"
+)
+
+type executorAdapterV2Double struct {
+	testMockAdapter
+	presence    plan.PresenceState
+	observeErr  error
+	observeCall int
+	checkCalls  int
+	resolveCall int
+	installCall int
+	installed   *plan.ResolvedInstallPlan
+}
+
+func (a *executorAdapterV2Double) Check(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	a.checkCalls++
+	return false
+}
+
+func (a *executorAdapterV2Double) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
+	a.observeCall++
+	if a.observeErr != nil {
+		return plan.Observation{}, a.observeErr
+	}
+	return plan.Observation{Presence: a.presence, Detail: "probe detail"}, nil
+}
+
+func (a *executorAdapterV2Double) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	a.resolveCall++
+	resolved := intent.Clone()
+	return &resolved, nil
+}
+
+func (a *executorAdapterV2Double) Install(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
+	a.installCall++
+	return nil
+}
+
+func (a *executorAdapterV2Double) InstallResolved(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	a.installCall++
+	a.installed = resolved
+	return nil
+}
+
+func v2ExecutorAttempt(t *testing.T, adapter Adapter) ToolResult {
+	t.Helper()
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex)
+	WithAdapters(adapter)(ex)
+	tool := &config.Tool{
+		Name:       "demo",
+		MethodOnly: []string{adapter.Kind()},
+		Methods: []*config.MethodCandidate{{
+			Kind:   adapter.Kind(),
+			Config: map[string]any{"pkg": "demo"},
+		}},
+	}
+	result := ToolResult{Tool: tool.Name}
+	ex.tryMethods(context.Background(), tool, &result, time.Now())
+	return result
+}
+
+func TestExecutorAdapterV2PresenceStates(t *testing.T) {
+	tests := []struct {
+		name        string
+		presence    plan.PresenceState
+		wantStatus  StatusEnum
+		wantInstall int
+	}{
+		{name: "present", presence: plan.PresencePresent, wantStatus: StatusAlready},
+		{name: "absent", presence: plan.PresenceAbsent, wantStatus: StatusInstalled, wantInstall: 1},
+		{name: "unknown", presence: plan.PresenceUnknown, wantStatus: StatusInstalled, wantInstall: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adapter := &executorAdapterV2Double{
+				testMockAdapter: testMockAdapter{kindValue: "cargo"},
+				presence:        tt.presence,
+			}
+			result := v2ExecutorAttempt(t, adapter)
+			if result.Status != tt.wantStatus {
+				t.Fatalf("status = %v, want %v; result = %+v", result.Status, tt.wantStatus, result)
+			}
+			if adapter.observeCall != 1 {
+				t.Fatalf("Observe() calls = %d, want 1", adapter.observeCall)
+			}
+			if adapter.resolveCall != 1 {
+				t.Fatalf("ResolvePlan() calls = %d, want 1", adapter.resolveCall)
+			}
+			if adapter.checkCalls != 0 {
+				t.Fatalf("Check() calls = %d, want 0 for V2", adapter.checkCalls)
+			}
+			if adapter.installCall != tt.wantInstall {
+				t.Fatalf("Install() calls = %d, want %d", adapter.installCall, tt.wantInstall)
+			}
+			if tt.wantInstall > 0 && adapter.installed == nil {
+				t.Fatal("InstallResolved() did not receive the resolved plan")
+			}
+		})
+	}
+}
+
+func TestExecutorAdapterV2BrokenObservationFailsCandidate(t *testing.T) {
+	adapter := &executorAdapterV2Double{
+		testMockAdapter: testMockAdapter{kindValue: "cargo"},
+		presence:        plan.PresenceBroken,
+	}
+	result := v2ExecutorAttempt(t, adapter)
+	if result.Status != StatusFailed {
+		t.Fatalf("status = %v, want failed; result = %+v", result.Status, result)
+	}
+	if adapter.installCall != 0 {
+		t.Fatalf("Install() calls = %d, want 0", adapter.installCall)
+	}
+	if len(result.Methods) != 1 || result.Methods[0].Status != "failed" || !strings.Contains(result.Methods[0].Error, "probe detail") {
+		t.Fatalf("methods = %+v, want explainable broken-observation failure", result.Methods)
+	}
+}
+
+func TestExecutorAdapterV2ObservationErrorFailsCandidate(t *testing.T) {
+	adapter := &executorAdapterV2Double{
+		testMockAdapter: testMockAdapter{kindValue: "cargo"},
+		observeErr:      errors.New("probe unavailable"),
+	}
+	result := v2ExecutorAttempt(t, adapter)
+	if result.Status != StatusFailed {
+		t.Fatalf("status = %v, want failed; result = %+v", result.Status, result)
+	}
+	if adapter.installCall != 0 {
+		t.Fatalf("Install() calls = %d, want 0", adapter.installCall)
+	}
+	if len(result.Methods) != 1 || !strings.Contains(result.Methods[0].Error, "probe unavailable") {
+		t.Fatalf("methods = %+v, want explainable observation error", result.Methods)
+	}
+}
+
+func TestExecutorLegacyAdapterStillUsesCheck(t *testing.T) {
+	checkCalls := 0
+	installCalls := 0
+	adapter := &testMockAdapter{
+		kindValue: "legacy",
+		checkFunc: func(string) bool {
+			checkCalls++
+			return true
+		},
+		installFunc: func(string) error {
+			installCalls++
+			return nil
+		},
+	}
+	result := v2ExecutorAttempt(t, adapter)
+	if result.Status != StatusAlready {
+		t.Fatalf("status = %v, want already; result = %+v", result.Status, result)
+	}
+	if checkCalls != 1 {
+		t.Fatalf("Check() calls = %d, want 1", checkCalls)
+	}
+	if installCalls != 0 {
+		t.Fatalf("Install() calls = %d, want 0", installCalls)
+	}
+}
