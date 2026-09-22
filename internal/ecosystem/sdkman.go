@@ -2,12 +2,14 @@ package ecosystem
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -97,13 +99,81 @@ func (a *SDKManAdapter) Install(ctx context.Context, rn run.Runner, tool *config
 	if len(pkg) == 0 {
 		return fmt.Errorf("sdkman: no package name")
 	}
-	cmd := []string{"sdk", "install", pkg[0]}
-	if v, ok := mc.Config["version"].(string); ok && v != "" {
-		cmd = append(cmd, v)
+	return a.install(ctx, rn, pkg[0], sdkmanVersion(mc))
+}
+
+func sdkmanVersion(mc *config.MethodCandidate) string {
+	if mc != nil {
+		if version, ok := mc.Config["version"].(string); ok {
+			return version
+		}
 	}
-	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	return run.CheckResult(res, "sdkman: install")
+	return ""
+}
+
+func (a *SDKManAdapter) install(ctx context.Context, rn run.Runner, candidate, version string) error {
+	if rn == nil {
+		return errors.New("sdkman: runner is required")
+	}
+	if candidate == "" {
+		return fmt.Errorf("sdkman: no package name")
+	}
+	cmd := []string{"sdk", "install", candidate}
+	if version != "" {
+		cmd = append(cmd, version)
+	}
+	return run.CheckResult(rn.Run(ctx, cmd[0], cmd[1:]...), "sdkman: install")
+}
+
+func (a *SDKManAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent == nil {
+		return nil, errors.New("sdkman: nil plan intent")
+	}
+	if tool == nil || mc == nil {
+		return nil, errors.New("sdkman: tool and method are required")
+	}
+	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
+	if len(pkg) == 0 || pkg[0] == "" {
+		return nil, errors.New("sdkman: no package name")
+	}
+	resolved := intent.Clone()
+	resolved.Identity.Package = pkg[0]
+	if version := sdkmanVersion(mc); version != "" {
+		resolved.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: version}
+		resolved.Identity.Version = version
+	}
+	return &resolved, nil
+}
+
+func (a *SDKManAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if tool == nil || mc == nil {
+		return plan.Observation{}, errors.New("sdkman: tool and method are required")
+	}
+	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
+	if len(pkg) == 0 || pkg[0] == "" {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	if !a.Check(ctx, rn, tool, mc) {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	observation := plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg[0]}, KnownFields: []plan.IdentityField{plan.FieldPackage}}
+	if version := sdkmanVersion(mc); version != "" {
+		observation.Identity.Version = version
+		observation.KnownFields = append(observation.KnownFields, plan.FieldVersion)
+	}
+	return observation, nil
+}
+
+func (a *SDKManAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *config.Tool, _ *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if resolved == nil {
+		return errors.New("sdkman: nil resolved plan")
+	}
+	if len(resolved.Operations) > 0 {
+		return errors.New("sdkman: resolved operations are unsupported")
+	}
+	return a.install(ctx, rn, resolved.Identity.Package, resolved.Identity.Version)
 }
 
 var _ exec.Adapter = (*SDKManAdapter)(nil)
+var _ exec.AdapterV2 = (*SDKManAdapter)(nil)
 var _ exec.Versioner = (*SDKManAdapter)(nil)
