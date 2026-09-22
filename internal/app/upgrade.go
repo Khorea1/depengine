@@ -277,10 +277,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 				c.dim(ot.ts.Version), c.green(ot.pinnedVer))
 		}
 		fmt.Fprint(os.Stderr, "\nProceed? [y/N] ")
-		var input string
-		fmt.Fscanln(os.Stdin, &input)
-		input = strings.TrimSpace(strings.ToLower(input))
-		if input != "y" && input != "yes" {
+		if !confirmationAccepted(os.Stdin) {
 			fmt.Fprintln(os.Stderr, "Aborted.")
 			return nil
 		}

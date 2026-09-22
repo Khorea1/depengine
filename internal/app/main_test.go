@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -20,6 +21,25 @@ func TestCommandReturnsTypedExitErrorWithoutTerminatingProcess(t *testing.T) {
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
 		t.Fatalf("Execute() error = %v, want ExitError code 2", err)
+	}
+}
+
+func TestConfirmationAccepted(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		input string
+		want bool
+	}{
+		{name: "yes", input: "yes\n", want: true},
+		{name: "uppercase y", input: " Y \n", want: true},
+		{name: "no", input: "no\n", want: false},
+		{name: "empty", input: "\n", want: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := confirmationAccepted(strings.NewReader(tt.input)); got != tt.want {
+				t.Fatalf("confirmationAccepted(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
 	}
 }
 

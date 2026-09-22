@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -382,9 +381,7 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 			return exitWithCode(2)
 		}
 		fmt.Fprint(os.Stderr, "WARNING: This will remove ALL installed tools tracked by depengine.\nAre you sure? [y/N] ")
-		input, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-		input = strings.TrimSpace(strings.ToLower(input))
-		if input != "y" && input != "yes" {
+		if !confirmationAccepted(os.Stdin) {
 			fmt.Fprintln(os.Stderr, "Aborted.")
 			return nil
 		}
