@@ -2,11 +2,13 @@ package ecosystem
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -49,6 +51,57 @@ func (a *AURAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool
 	return res.Err == nil && res.ExitCode == 0
 }
 
+func (a *AURAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent == nil {
+		return nil, errors.New("aur: nil plan intent")
+	}
+	if tool == nil || mc == nil {
+		return nil, errors.New("aur: tool and method are required")
+	}
+	resolved := intent.Clone()
+	if resolved.Identity.Package == "" {
+		name, ok := a.pkgName(tool, mc)
+		if !ok {
+			return nil, errors.New("aur: no package name")
+		}
+		resolved.Identity.Package = name
+	}
+	return &resolved, nil
+}
+
+func (a *AURAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	name, ok := a.pkgName(tool, mc)
+	if !ok {
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "aur: no package name"}, errors.New("aur: no package name")
+	}
+	res := rn.Run(ctx, a.helper, "-Qi", name)
+	identity := plan.ObservedIdentity{Package: name}
+	known := []plan.IdentityField{plan.FieldPackage}
+	if res.Err != nil {
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "aur: package query failed", Identity: identity, KnownFields: known}, res.Err
+	}
+	if res.ExitCode == 0 {
+		return plan.Observation{Presence: plan.PresencePresent, Identity: identity, KnownFields: known}, nil
+	}
+	return plan.Observation{Presence: plan.PresenceAbsent, Identity: identity, KnownFields: known}, nil
+}
+
+func (a *AURAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *config.Tool, _ *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if resolved == nil {
+		return errors.New("aur: nil resolved plan")
+	}
+	for _, operation := range resolved.Operations {
+		if operation.Kind != "install" {
+			return errors.New("aur: resolved operations are unsupported")
+		}
+	}
+	if resolved.Identity.Package == "" {
+		return errors.New("aur: no package name in resolved plan")
+	}
+	res := rn.Run(ctx, a.helper, "-S", "--noconfirm", resolved.Identity.Package)
+	return run.CheckResult(res, "aur: install")
+}
+
 func (a *AURAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	name, ok := a.pkgName(tool, mc)
 	if !ok {
@@ -76,4 +129,5 @@ func (a *AURAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Too
 
 // Ensure AURAdapter implements exec.Adapter and exec.Remover at compile time.
 var _ exec.Adapter = (*AURAdapter)(nil)
+var _ exec.AdapterV2 = (*AURAdapter)(nil)
 var _ exec.Remover = (*AURAdapter)(nil)

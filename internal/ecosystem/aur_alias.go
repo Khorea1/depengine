@@ -27,3 +27,4 @@ func RegisterAURAliases() {
 }
 
 var _ exec.Adapter = (*AURByNameAdapter)(nil)
+var _ exec.AdapterV2 = (*AURByNameAdapter)(nil)
