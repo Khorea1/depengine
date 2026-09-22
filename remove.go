@@ -45,63 +45,136 @@ func newRemoveCmd() *cobra.Command {
 	return cmd
 }
 
-// runRemove removes a tool using the adapter that installed it.
-// Supports --all, --dry-run, --schema, and --only flags. Body unchanged
-// from the pre-Cobra version — only the flag declarations above it moved,
-// and removeArgs is now the positional args Cobra already separated out.
+// removeSession carries per-invocation removal state shared by the phase
+// helpers below. State aliases the locked (or unlocked, for dry-run) state
+// loaded by runRemove; helpers mutate it in place exactly as the original
+// runRemove closures did.
+type removeSession struct {
+	ctx              context.Context
+	state            *state.State
+	schemaTools      map[string]*config.Tool
+	dryRun           bool
+	requestedRemoval map[string]bool
+	removedThisRun   map[string]bool
+}
+
+// runRemove removes tools using the adapter that installed them.
+// Supports --all, --dry-run, --schema, and --only flags. Thin orchestrator:
+// flag validation → state load → schema load → native adapter resolution →
+// confirmation → removal loop → state persist. Each phase lives in its own
+// helper below; behavior is unchanged from the pre-split version.
 func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce *bool) error {
-	// Validate mutually exclusive flags.
+	if err := validateRemoveFlags(removeAll, removeOnly); err != nil {
+		return err
+	}
+
+	st, ls, err := loadRemoveState(*removeDryRun)
+	if err != nil {
+		return err
+	}
+	if ls != nil {
+		defer ls.Close()
+	}
+
+	schemaTools, err := loadRemoveSchemaTools(*removeSchema)
+	if err != nil {
+		return err
+	}
+
+	ensureRemoveNativeAdapter()
+
+	sess := &removeSession{
+		ctx:              ctx,
+		state:            st,
+		schemaTools:      schemaTools,
+		dryRun:           *removeDryRun,
+		requestedRemoval: collectRemovalTargets(st, removeAll, removeOnly, removeArgs),
+		removedThisRun:   make(map[string]bool),
+	}
+
+	proceed, err := confirmRemoveAll(removeAll, removeForce)
+	if err != nil || !proceed {
+		return err
+	}
+
+	hadFailure, err := sess.removeRequestedTools(removeAll, removeOnly, removeArgs)
+	if err != nil {
+		return err
+	}
+
+	if err := persistRemoveState(ls, *removeDryRun); err != nil {
+		return err
+	}
+
+	if hadFailure {
+		return exitWithCode(1)
+	}
+	return nil
+}
+
+// validateRemoveFlags rejects mutually exclusive flag combinations.
+func validateRemoveFlags(removeAll *bool, removeOnly *string) error {
 	if *removeAll && *removeOnly != "" {
 		log.Default.Error("cannot use both --all and --only")
 		return exitWithCode(2)
 	}
+	return nil
+}
 
-	var (
-		st  *state.State
-		ls  *state.LockedState
-		err error
-	)
-	if *removeDryRun {
+// loadRemoveState loads removal state. Dry-run takes an unlocked read so
+// merely rendering a removal plan never creates a lock file or rewrites
+// state; real removals take the lock.
+func loadRemoveState(dryRun bool) (*state.State, *state.LockedState, error) {
+	if dryRun {
 		// Dry-run must not create a state lock file or rewrite state merely to
 		// render a removal plan. State writes are atomic, so an unlocked read
 		// safely observes either the previous or next complete state file.
-		st, err = state.Load()
-	} else {
-		ls, err = state.LoadLocked()
-		if err == nil {
-			defer ls.Close()
-			st = ls.State()
+		st, err := state.Load()
+		if err != nil {
+			log.Default.Error("load state", "error", err)
+			return nil, nil, exitWithCode(3)
 		}
+		return st, nil, nil
 	}
+	ls, err := state.LoadLocked()
 	if err != nil {
 		log.Default.Error("load state", "error", err)
-		return exitWithCode(3)
+		return nil, nil, exitWithCode(3)
 	}
+	return ls.State(), ls, nil
+}
 
-	// Optionally load schema for validation.
-	var schemaTools map[string]*config.Tool
-	if *removeSchema != "" {
-		s, _, _, err := loadSchema(*removeSchema)
-		if err != nil {
-			log.Default.Error("load schema", "error", err)
-			return exitWithCode(2)
-		}
-		schemaTools = s.Tools
+// loadRemoveSchemaTools optionally loads schema tools for validation.
+// An empty path disables validation and returns a nil map.
+func loadRemoveSchemaTools(schemaPath string) (map[string]*config.Tool, error) {
+	if schemaPath == "" {
+		return nil, nil
 	}
+	s, _, _, err := loadSchema(schemaPath)
+	if err != nil {
+		log.Default.Error("load schema", "error", err)
+		return nil, exitWithCode(2)
+	}
+	return s.Tools, nil
+}
 
-	// The global "native" adapter (registered in main.go) is constructed
-	// with an empty clan and falls back to PATH-probing, which is ambiguous
-	// for manager binaries shared across clans (e.g. "pkg" on both termux
-	// and freebsd — same install command, different check/remove commands).
-	// Resolve the real clan from OS facts and make it authoritative here,
-	// the same way install/upgrade already do, so removal always uses the
-	// correct check/remove commands for this machine.
+// ensureRemoveNativeAdapter resolves the real distro clan from OS facts and
+// makes it authoritative for native removal. The global "native" adapter
+// (registered in main.go) is constructed with an empty clan and falls back
+// to PATH-probing, which is ambiguous for manager binaries shared across
+// clans (e.g. "pkg" on both termux and freebsd — same install command,
+// different check/remove commands). Same treatment install/upgrade already do.
+func ensureRemoveNativeAdapter() {
 	if facts, err := engine.GatherFacts(run.OSExecRunner{}); err == nil {
 		exec.Replace(exec.NewNativeAdapter(engine.ResolveFamily(facts)))
 	} else {
 		log.Default.Warn("could not gather OS facts; falling back to PATH-probing for native manager detection", "error", err)
 	}
+}
 
+// collectRemovalTargets builds the set of tools scheduled for removal from
+// --all, --only, or the positional args. Pure: no I/O, no logging.
+func collectRemovalTargets(st *state.State, removeAll *bool, removeOnly *string, removeArgs []string) map[string]bool {
 	requestedRemoval := make(map[string]bool)
 	switch {
 	case *removeAll:
@@ -115,314 +188,391 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 			requestedRemoval[toolName] = true
 		}
 	}
-	removedThisRun := make(map[string]bool)
+	return requestedRemoval
+}
 
-	findOwnedResource := func(resource plan.ResourceIdentity) (plan.OwnedResourceState, bool) {
-		for _, owned := range st.OwnedResources {
-			if owned.Resource == resource {
-				return owned, true
-			}
-		}
-		return plan.OwnedResourceState{}, false
+// resolveRemover maps a tool's recorded install method to the adapter that
+// can remove it. Falls back to Method when MethodKind is empty (explicitly
+// constructed current-format state). Returns removable=false for the
+// manual-remove-required paths: unknown adapter or no remove support.
+func resolveRemover(toolName string, toolState state.ToolState) (exec.Remover, string, bool) {
+	methodKind := toolState.MethodKind
+	if methodKind == "" {
+		methodKind = toolState.Method // fallback for explicitly constructed current-format state
 	}
-
-	prerequisiteDependents := func(toolName string) ([]string, error) {
-		resource, err := plan.PrerequisiteResource(toolName)
-		if err != nil {
-			return nil, err
-		}
-		owned, ok := findOwnedResource(resource)
-		if !ok {
-			return nil, nil
-		}
-		return append([]string(nil), owned.Dependents...), nil
+	adapter := exec.Lookup(methodKind)
+	if adapter == nil {
+		log.Default.Warn("adapter not found for method", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
+		log.Default.Warn("manual remove required", "tool", toolName)
+		return nil, methodKind, false
 	}
+	if !exec.CanRemove(adapter) {
+		log.Default.Warn("manual remove required", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
+		return nil, methodKind, false
+	}
+	return adapter.(exec.Remover), methodKind, true
+}
 
-	finalizeRemovedPrerequisite := func(toolName string) error {
-		resource, err := plan.PrerequisiteResource(toolName)
-		if err != nil {
-			return err
+// findOwnedResource returns the ownership record for a shared resource.
+func (s *removeSession) findOwnedResource(resource plan.ResourceIdentity) (plan.OwnedResourceState, bool) {
+	for _, owned := range s.state.OwnedResources {
+		if owned.Resource == resource {
+			return owned, true
 		}
-		owned, ok := findOwnedResource(resource)
-		if !ok || owned.Ownership != plan.OwnershipDepengine || owned.RefCount() != 0 {
-			return nil
+	}
+	return plan.OwnedResourceState{}, false
+}
+
+// prerequisiteDependents returns the tracked tools still depending on the
+// prerequisite helper behind toolName, or nil when toolName is not a helper.
+func (s *removeSession) prerequisiteDependents(toolName string) ([]string, error) {
+	resource, err := plan.PrerequisiteResource(toolName)
+	if err != nil {
+		return nil, err
+	}
+	owned, ok := s.findOwnedResource(resource)
+	if !ok {
+		return nil, nil
+	}
+	return append([]string(nil), owned.Dependents...), nil
+}
+
+// prerequisiteBlockers returns the dependents that block removal: tools still
+// depending on toolName that are not themselves scheduled for removal.
+func (s *removeSession) prerequisiteBlockers(toolName string) ([]string, error) {
+	dependents, err := s.prerequisiteDependents(toolName)
+	if err != nil {
+		return nil, err
+	}
+	var blockers []string
+	for _, dependent := range dependents {
+		if !s.requestedRemoval[dependent] {
+			blockers = append(blockers, dependent)
 		}
-		next, err := plan.FinalizeReleasedResource(plan.ResourceReleaseDecision{
-			Updated:   st.OwnedResources,
-			Removable: []plan.ResourceIdentity{resource},
-		}, resource)
-		if err != nil {
-			return err
-		}
-		st.OwnedResources = next
+	}
+	return blockers, nil
+}
+
+// finalizeRemovedPrerequisite drops the zero-ref depengine-owned ownership
+// record left behind for an explicitly removed prerequisite helper.
+func (s *removeSession) finalizeRemovedPrerequisite(toolName string) error {
+	resource, err := plan.PrerequisiteResource(toolName)
+	if err != nil {
+		return err
+	}
+	owned, ok := s.findOwnedResource(resource)
+	if !ok || owned.Ownership != plan.OwnershipDepengine || owned.RefCount() != 0 {
 		return nil
 	}
+	next, err := plan.FinalizeReleasedResource(plan.ResourceReleaseDecision{
+		Updated:   s.state.OwnedResources,
+		Removable: []plan.ResourceIdentity{resource},
+	}, resource)
+	if err != nil {
+		return err
+	}
+	s.state.OwnedResources = next
+	return nil
+}
 
-	resolveRemover := func(toolName string, toolState state.ToolState) (exec.Remover, string, bool) {
-		methodKind := toolState.MethodKind
-		if methodKind == "" {
-			methodKind = toolState.Method // fallback for explicitly constructed current-format state
+// invokeRemover runs the adapter's Remove for one tool and records success.
+func (s *removeSession) invokeRemover(ctx context.Context, toolName string, toolState state.ToolState, remover exec.Remover, methodKind string, automatic bool) bool {
+	mc := &config.MethodCandidate{Kind: methodKind, Config: toolState.Config}
+	tool := &config.Tool{Name: toolName}
+	if err := remover.Remove(ctx, run.OSExecRunner{}, tool, mc); err != nil {
+		log.Default.Error("remove failed", "tool", toolName, "error", err)
+		return false
+	}
+	if automatic {
+		log.Default.Info("removed unreferenced prerequisite", "tool", toolName, "method", toolState.Method)
+	} else {
+		log.Default.Info("removed", "tool", toolName, "method", toolState.Method)
+	}
+	s.removedThisRun[toolName] = true
+	return true
+}
+
+// releaseOwnedResources releases the removed tool's owned resources and
+// projects the updated ownership snapshot. On failure the tool entry is
+// dropped (removal itself succeeded) and the caller fails closed.
+func (s *removeSession) releaseOwnedResources(toolName string) (plan.ResourceReleaseDecision, bool) {
+	release, err := plan.ReleaseDependentResources(s.state.OwnedResources, toolName)
+	if err != nil {
+		log.Default.Error("release owned resources", "tool", toolName, "error", err)
+		delete(s.state.Tools, toolName)
+		return plan.ResourceReleaseDecision{}, false
+	}
+	s.state.OwnedResources = release.Updated
+	return release, true
+}
+
+// cleanupReleasedSources removes owned sources released by a tool removal and
+// drops the tool entry. Source cleanup failures retain state for retry.
+func (s *removeSession) cleanupReleasedSources(ctx context.Context, toolName string, release plan.ResourceReleaseDecision) bool {
+	nextOwned, sourceCleanupErr := source.NewManager(run.OSExecRunner{}, false).CleanupReleasedSources(ctx, release)
+	s.state.OwnedResources = nextOwned
+	delete(s.state.Tools, toolName)
+
+	if sourceCleanupErr != nil {
+		log.Default.Error("owned source cleanup failed; retaining state for retry", "tool", toolName, "error", sourceCleanupErr)
+		return false
+	}
+	return true
+}
+
+// reportUnimplementedResourceKinds warns about released resource kinds with
+// no automated cleanup; their zero-ref state is retained.
+func (s *removeSession) reportUnimplementedResourceKinds(toolName string, release plan.ResourceReleaseDecision) {
+	for _, resource := range release.Removable {
+		if resource.Kind != plan.ResourceSource && resource.Kind != plan.ResourcePrerequisite {
+			log.Default.Warn("owned resource cleanup not implemented; retaining zero-ref state", "tool", toolName, "kind", resource.Kind, "resource", resource.Key)
 		}
-		adapter := exec.Lookup(methodKind)
-		if adapter == nil {
-			log.Default.Warn("adapter not found for method", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
-			log.Default.Warn("manual remove required", "tool", toolName)
-			return nil, methodKind, false
-		}
-		if !exec.CanRemove(adapter) {
-			log.Default.Warn("manual remove required", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
-			return nil, methodKind, false
-		}
-		return adapter.(exec.Remover), methodKind, true
+	}
+}
+
+// removeTrackedTool removes one state-tracked tool plus its now-unreferenced
+// owned prerequisites. Automatic removals skip root-requested tools (they
+// stay until explicitly removed).
+func (s *removeSession) removeTrackedTool(ctx context.Context, toolName string, automatic bool) bool {
+	toolState, exists := s.state.Tools[toolName]
+	if !exists {
+		return s.removedThisRun[toolName]
+	}
+	if automatic && toolState.RootRequested {
+		return true
 	}
 
-	var removeTrackedTool func(context.Context, string, bool) bool
-	var cleanupReleasedPrerequisites func(context.Context, string, plan.ResourceReleaseDecision) bool
+	remover, methodKind, removable := resolveRemover(toolName, toolState)
+	if !removable {
+		return false
+	}
+	if !s.invokeRemover(ctx, toolName, toolState, remover, methodKind, automatic) {
+		return false
+	}
 
-	cleanupReleasedPrerequisites = func(ctx context.Context, ownerName string, release plan.ResourceReleaseDecision) bool {
-		ok := true
-		for _, resource := range release.Removable {
-			if resource.Kind != plan.ResourcePrerequisite {
+	release, ok := s.releaseOwnedResources(toolName)
+	if !ok {
+		return false
+	}
+
+	ok = s.cleanupReleasedSources(ctx, toolName, release)
+	if err := s.finalizeRemovedPrerequisite(toolName); err != nil {
+		log.Default.Error("finalize prerequisite ownership", "tool", toolName, "error", err)
+		ok = false
+	}
+	if !s.cleanupReleasedPrerequisites(ctx, toolName, release) {
+		ok = false
+	}
+	s.reportUnimplementedResourceKinds(toolName, release)
+	return ok
+}
+
+// cleanupReleasedPrerequisites garbage-collects depengine-owned prerequisites
+// left with zero references by a removal. Explicitly scheduled tools are
+// left for their own visit so --all ordering never reports a later explicit
+// visit as a failure; root-requested helpers are retained.
+func (s *removeSession) cleanupReleasedPrerequisites(ctx context.Context, ownerName string, release plan.ResourceReleaseDecision) bool {
+	ok := true
+	for _, resource := range release.Removable {
+		if resource.Kind != plan.ResourcePrerequisite {
+			continue
+		}
+		helperName, err := plan.PrerequisiteToolName(resource)
+		if err != nil {
+			log.Default.Error("decode owned prerequisite", "tool", ownerName, "resource", resource.Key, "error", err)
+			ok = false
+			continue
+		}
+
+		owned, stillTracked := s.findOwnedResource(resource)
+		if !stillTracked {
+			continue
+		}
+		if owned.Ownership != plan.OwnershipDepengine || owned.RefCount() != 0 {
+			log.Default.Error("owned prerequisite changed before cleanup", "tool", ownerName, "prerequisite", helperName)
+			ok = false
+			continue
+		}
+
+		if s.removedThisRun[helperName] {
+			next, err := plan.FinalizeReleasedResource(plan.ResourceReleaseDecision{
+				Updated:   s.state.OwnedResources,
+				Removable: []plan.ResourceIdentity{resource},
+			}, resource)
+			if err != nil {
+				log.Default.Error("finalize removed prerequisite", "tool", ownerName, "prerequisite", helperName, "error", err)
+				ok = false
 				continue
 			}
+			s.state.OwnedResources = next
+			continue
+		}
+
+		// Explicit removals own their ordering. In particular, --all must not
+		// recursively delete a tool and then report its later explicit visit as
+		// a failure merely because map iteration happened to see its owner first.
+		if s.requestedRemoval[helperName] {
+			continue
+		}
+
+		helperState, exists := s.state.Tools[helperName]
+		if !exists {
+			log.Default.Error("owned prerequisite is not tracked as a tool; retaining zero-ref state", "tool", ownerName, "prerequisite", helperName)
+			ok = false
+			continue
+		}
+		if helperState.RootRequested {
+			log.Default.Info("retaining prerequisite requested as root", "tool", ownerName, "prerequisite", helperName)
+			continue
+		}
+		if !s.removeTrackedTool(ctx, helperName, true) {
+			log.Default.Error("owned prerequisite cleanup failed; retaining state for retry", "tool", ownerName, "prerequisite", helperName)
+			ok = false
+		}
+	}
+	return ok
+}
+
+// planDryRunRemoval renders what a real removal would do without touching
+// the system or state. Read-only: resolver lookup plus ownership planning.
+func (s *removeSession) planDryRunRemoval(toolName string, toolState state.ToolState) bool {
+	if _, _, removable := resolveRemover(toolName, toolState); !removable {
+		return false
+	}
+	log.Default.Info("would remove", "tool", toolName, "method", toolState.Method)
+	release, err := plan.ReleaseDependentResources(s.state.OwnedResources, toolName)
+	if err != nil {
+		log.Default.Error("plan owned resource release", "tool", toolName, "error", err)
+		return false
+	}
+	for _, resource := range release.Removable {
+		switch resource.Kind {
+		case plan.ResourceSource:
+			sourceConfig, err := source.FromResourceIdentity(resource)
+			if err != nil {
+				log.Default.Error("decode owned source", "tool", toolName, "resource", resource.Key, "error", err)
+				return false
+			}
+			log.Default.Info("would remove owned source", "tool", toolName, "kind", sourceConfig.Kind, "source", sourceConfig.Name)
+		case plan.ResourcePrerequisite:
 			helperName, err := plan.PrerequisiteToolName(resource)
 			if err != nil {
-				log.Default.Error("decode owned prerequisite", "tool", ownerName, "resource", resource.Key, "error", err)
-				ok = false
-				continue
-			}
-
-			owned, stillTracked := findOwnedResource(resource)
-			if !stillTracked {
-				continue
-			}
-			if owned.Ownership != plan.OwnershipDepengine || owned.RefCount() != 0 {
-				log.Default.Error("owned prerequisite changed before cleanup", "tool", ownerName, "prerequisite", helperName)
-				ok = false
-				continue
-			}
-
-			if removedThisRun[helperName] {
-				next, err := plan.FinalizeReleasedResource(plan.ResourceReleaseDecision{
-					Updated:   st.OwnedResources,
-					Removable: []plan.ResourceIdentity{resource},
-				}, resource)
-				if err != nil {
-					log.Default.Error("finalize removed prerequisite", "tool", ownerName, "prerequisite", helperName, "error", err)
-					ok = false
-					continue
-				}
-				st.OwnedResources = next
-				continue
-			}
-
-			// Explicit removals own their ordering. In particular, --all must not
-			// recursively delete a tool and then report its later explicit visit as
-			// a failure merely because map iteration happened to see its owner first.
-			if requestedRemoval[helperName] {
-				continue
-			}
-
-			helperState, exists := st.Tools[helperName]
-			if !exists {
-				log.Default.Error("owned prerequisite is not tracked as a tool; retaining zero-ref state", "tool", ownerName, "prerequisite", helperName)
-				ok = false
-				continue
-			}
-			if helperState.RootRequested {
-				log.Default.Info("retaining prerequisite requested as root", "tool", ownerName, "prerequisite", helperName)
-				continue
-			}
-			if !removeTrackedTool(ctx, helperName, true) {
-				log.Default.Error("owned prerequisite cleanup failed; retaining state for retry", "tool", ownerName, "prerequisite", helperName)
-				ok = false
-			}
-		}
-		return ok
-	}
-
-	removeTrackedTool = func(ctx context.Context, toolName string, automatic bool) bool {
-		toolState, exists := st.Tools[toolName]
-		if !exists {
-			return removedThisRun[toolName]
-		}
-		if automatic && toolState.RootRequested {
-			return true
-		}
-
-		remover, methodKind, removable := resolveRemover(toolName, toolState)
-		if !removable {
-			return false
-		}
-		mc := &config.MethodCandidate{Kind: methodKind, Config: toolState.Config}
-		tool := &config.Tool{Name: toolName}
-		if err := remover.Remove(ctx, run.OSExecRunner{}, tool, mc); err != nil {
-			log.Default.Error("remove failed", "tool", toolName, "error", err)
-			return false
-		}
-		if automatic {
-			log.Default.Info("removed unreferenced prerequisite", "tool", toolName, "method", toolState.Method)
-		} else {
-			log.Default.Info("removed", "tool", toolName, "method", toolState.Method)
-		}
-		removedThisRun[toolName] = true
-
-		release, releaseErr := plan.ReleaseDependentResources(st.OwnedResources, toolName)
-		if releaseErr != nil {
-			log.Default.Error("release owned resources", "tool", toolName, "error", releaseErr)
-			delete(st.Tools, toolName)
-			return false
-		}
-		st.OwnedResources = release.Updated
-
-		nextOwned, sourceCleanupErr := source.NewManager(run.OSExecRunner{}, false).CleanupReleasedSources(ctx, release)
-		st.OwnedResources = nextOwned
-		delete(st.Tools, toolName)
-
-		ok := true
-		if sourceCleanupErr != nil {
-			log.Default.Error("owned source cleanup failed; retaining state for retry", "tool", toolName, "error", sourceCleanupErr)
-			ok = false
-		}
-		if err := finalizeRemovedPrerequisite(toolName); err != nil {
-			log.Default.Error("finalize prerequisite ownership", "tool", toolName, "error", err)
-			ok = false
-		}
-		if !cleanupReleasedPrerequisites(ctx, toolName, release) {
-			ok = false
-		}
-		for _, resource := range release.Removable {
-			if resource.Kind != plan.ResourceSource && resource.Kind != plan.ResourcePrerequisite {
-				log.Default.Warn("owned resource cleanup not implemented; retaining zero-ref state", "tool", toolName, "kind", resource.Kind, "resource", resource.Key)
-			}
-		}
-		return ok
-	}
-
-	removeTool := func(toolName string) bool {
-		// If schema is loaded, validate tool exists (warn but continue).
-		if schemaTools != nil {
-			if _, ok := schemaTools[toolName]; !ok {
-				log.Default.Warn("tool not found in schema, removing from state anyway", "tool", toolName)
-			}
-		}
-
-		toolState, ok := st.Tools[toolName]
-		if !ok {
-			if removedThisRun[toolName] {
-				return true
-			}
-			log.Default.Warn("tool not installed, nothing to remove", "tool", toolName)
-			return false
-		}
-
-		dependents, err := prerequisiteDependents(toolName)
-		if err != nil {
-			log.Default.Error("inspect prerequisite dependents", "tool", toolName, "error", err)
-			return false
-		}
-		var blockers []string
-		for _, dependent := range dependents {
-			if !requestedRemoval[dependent] {
-				blockers = append(blockers, dependent)
-			}
-		}
-		if len(blockers) > 0 {
-			log.Default.Error("tool is still required by tracked tools", "tool", toolName, "dependents", strings.Join(blockers, ","))
-			return false
-		}
-
-		if *removeDryRun {
-			if _, _, removable := resolveRemover(toolName, toolState); !removable {
+				log.Default.Error("decode owned prerequisite", "tool", toolName, "resource", resource.Key, "error", err)
 				return false
 			}
-			log.Default.Info("would remove", "tool", toolName, "method", toolState.Method)
-			release, err := plan.ReleaseDependentResources(st.OwnedResources, toolName)
-			if err != nil {
-				log.Default.Error("plan owned resource release", "tool", toolName, "error", err)
-				return false
+			if helperState, exists := s.state.Tools[helperName]; exists && helperState.RootRequested {
+				log.Default.Info("would retain prerequisite requested as root", "tool", toolName, "prerequisite", helperName)
+			} else if s.requestedRemoval[helperName] {
+				log.Default.Info("prerequisite is also explicitly scheduled for removal", "tool", toolName, "prerequisite", helperName)
+			} else {
+				log.Default.Info("would remove owned prerequisite", "tool", toolName, "prerequisite", helperName)
 			}
-			for _, resource := range release.Removable {
-				switch resource.Kind {
-				case plan.ResourceSource:
-					sourceConfig, err := source.FromResourceIdentity(resource)
-					if err != nil {
-						log.Default.Error("decode owned source", "tool", toolName, "resource", resource.Key, "error", err)
-						return false
-					}
-					log.Default.Info("would remove owned source", "tool", toolName, "kind", sourceConfig.Kind, "source", sourceConfig.Name)
-				case plan.ResourcePrerequisite:
-					helperName, err := plan.PrerequisiteToolName(resource)
-					if err != nil {
-						log.Default.Error("decode owned prerequisite", "tool", toolName, "resource", resource.Key, "error", err)
-						return false
-					}
-					if helperState, exists := st.Tools[helperName]; exists && helperState.RootRequested {
-						log.Default.Info("would retain prerequisite requested as root", "tool", toolName, "prerequisite", helperName)
-					} else if requestedRemoval[helperName] {
-						log.Default.Info("prerequisite is also explicitly scheduled for removal", "tool", toolName, "prerequisite", helperName)
-					} else {
-						log.Default.Info("would remove owned prerequisite", "tool", toolName, "prerequisite", helperName)
-					}
-				default:
-					log.Default.Info("would release owned resource", "tool", toolName, "kind", resource.Kind, "resource", resource.Key, "cleanup", "retained")
-				}
-			}
+		default:
+			log.Default.Info("would release owned resource", "tool", toolName, "kind", resource.Kind, "resource", resource.Key, "cleanup", "retained")
+		}
+	}
+	return true
+}
+
+// removeSingleTool removes one explicitly requested tool: schema warning,
+// tracked-state check, dependent blockers, then dry-run planning or a real
+// timed removal.
+func (s *removeSession) removeSingleTool(toolName string) bool {
+	// If schema is loaded, validate tool exists (warn but continue).
+	if s.schemaTools != nil {
+		if _, ok := s.schemaTools[toolName]; !ok {
+			log.Default.Warn("tool not found in schema, removing from state anyway", "tool", toolName)
+		}
+	}
+
+	toolState, ok := s.state.Tools[toolName]
+	if !ok {
+		if s.removedThisRun[toolName] {
 			return true
 		}
-
-		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-		defer cancel()
-		return removeTrackedTool(ctx, toolName, false)
+		log.Default.Warn("tool not installed, nothing to remove", "tool", toolName)
+		return false
 	}
 
-	if *removeAll && !*removeForce {
-		if !isInteractive() {
-			log.Default.Error("stdin is not a terminal; use --force to confirm, or run in an interactive terminal")
-			return exitWithCode(2)
-		}
-		fmt.Fprint(os.Stderr, "WARNING: This will remove ALL installed tools tracked by depengine.\nAre you sure? [y/N] ")
-		input, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-		input = strings.TrimSpace(strings.ToLower(input))
-		if input != "y" && input != "yes" {
-			fmt.Fprintln(os.Stderr, "Aborted.")
-			return nil
-		}
+	blockers, err := s.prerequisiteBlockers(toolName)
+	if err != nil {
+		log.Default.Error("inspect prerequisite dependents", "tool", toolName, "error", err)
+		return false
+	}
+	if len(blockers) > 0 {
+		log.Default.Error("tool is still required by tracked tools", "tool", toolName, "dependents", strings.Join(blockers, ","))
+		return false
 	}
 
+	if s.dryRun {
+		return s.planDryRunRemoval(toolName, toolState)
+	}
+
+	ctx, cancel := context.WithTimeout(s.ctx, 2*time.Minute)
+	defer cancel()
+	return s.removeTrackedTool(ctx, toolName, false)
+}
+
+// confirmRemoveAll gates --all removals behind an interactive confirmation
+// unless --force is given. Returns proceed=false with a nil error when the
+// user aborts at the prompt.
+func confirmRemoveAll(removeAll, removeForce *bool) (bool, error) {
+	if !*removeAll || *removeForce {
+		return true, nil
+	}
+	if !isInteractive() {
+		log.Default.Error("stdin is not a terminal; use --force to confirm, or run in an interactive terminal")
+		return false, exitWithCode(2)
+	}
+	fmt.Fprint(os.Stderr, "WARNING: This will remove ALL installed tools tracked by depengine.\nAre you sure? [y/N] ")
+	input, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	input = strings.TrimSpace(strings.ToLower(input))
+	if input != "y" && input != "yes" {
+		fmt.Fprintln(os.Stderr, "Aborted.")
+		return false, nil
+	}
+	return true, nil
+}
+
+// removeRequestedTools dispatches the removal loop over --all, --only, or
+// the positional args. Returns hadFailure=true when any tool failed; a
+// missing target entirely is a usage error.
+func (s *removeSession) removeRequestedTools(removeAll *bool, removeOnly *string, removeArgs []string) (bool, error) {
 	hadFailure := false
 
 	switch {
 	case *removeAll:
-		for toolName := range st.Tools {
-			if !removeTool(toolName) {
+		for toolName := range s.state.Tools {
+			if !s.removeSingleTool(toolName) {
 				hadFailure = true
 			}
 		}
 	case *removeOnly != "":
-		if !removeTool(*removeOnly) {
+		if !s.removeSingleTool(*removeOnly) {
 			hadFailure = true
 		}
 	case len(removeArgs) > 0:
 		for _, toolName := range removeArgs {
-			if !removeTool(toolName) {
+			if !s.removeSingleTool(toolName) {
 				hadFailure = true
 			}
 		}
 	default:
 		log.Default.Error("usage: depengine remove [--all | --only=<tool> | <tool>...] [--schema=<path>]")
-		return exitWithCode(1)
+		return false, exitWithCode(1)
 	}
+	return hadFailure, nil
+}
 
-	if !*removeDryRun {
-		if err := ls.Save(); err != nil {
-			log.Default.Error("failed to update state", "error", err)
-			return exitWithCode(3)
-		}
+// persistRemoveState saves the locked state after a real removal run.
+// Dry-runs never write; the lock is nil there.
+func persistRemoveState(ls *state.LockedState, dryRun bool) error {
+	if dryRun {
+		return nil
 	}
-
-	if hadFailure {
-		return exitWithCode(1)
+	if err := ls.Save(); err != nil {
+		log.Default.Error("failed to update state", "error", err)
+		return exitWithCode(3)
 	}
 	return nil
 }
