@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/ghrelease"
 	"github.com/Khorea1/depengine/internal/plan"
@@ -604,8 +605,17 @@ func managedPaths(mc *config.MethodCandidate) ([]string, error) {
 func (a *GitAdapter) CanRemove() bool { return true }
 
 // Ensure GitAdapter implements exec.Adapter at compile time.
+// CheckAvailable assumes availability: git remotes have no cheap local
+// index to probe, so an unreachable repository surfaces at clone time.
+func (a *GitAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+// CheckHostCompatibility imposes no host constraints: the clone target is
+// host-independent and build/extract parameters are validated at execution.
+func (a *GitAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
 var _ exec.Adapter = (*GitAdapter)(nil)
 var _ exec.AdapterV2 = (*GitAdapter)(nil)
-var _ exec.PlanResolver = (*GitAdapter)(nil)
-var _ exec.ResolvedInstaller = (*GitAdapter)(nil)
-var _ exec.Remover = (*GitAdapter)(nil)

@@ -14,6 +14,7 @@ import (
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
 )
@@ -36,6 +37,32 @@ func (a *phaseTestAdapter) Check(context.Context, run.Runner, *config.Tool, *con
 	a.calls = append(a.calls, "check")
 	return a.installed
 }
+func (a *phaseTestAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	a.calls = append(a.calls, "check-available")
+	return true
+}
+func (a *phaseTestAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+func (a *phaseTestAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	a.calls = append(a.calls, "resolve-plan")
+	resolved := intent.Clone()
+	return &resolved, nil
+}
+func (a *phaseTestAdapter) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
+	a.calls = append(a.calls, "observe")
+	presence := plan.PresenceAbsent
+	if a.installed {
+		presence = plan.PresencePresent
+	}
+	return plan.Observation{Presence: presence}, nil
+}
+func (a *phaseTestAdapter) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
+	a.calls = append(a.calls, "install-resolved")
+	return nil
+}
+
+var _ exec.AdapterV2 = (*phaseTestAdapter)(nil)
 func (a *phaseTestAdapter) Install(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
 	a.calls = append(a.calls, "install")
 	return nil
@@ -225,7 +252,7 @@ func TestUpgradeSingleToolDryRunSkipsMutation(t *testing.T) {
 	if res.Status != "would_upgrade" || res.NewVer != "v0.2.0" {
 		t.Fatalf("result = %+v, want would_upgrade/v0.2.0", res)
 	}
-	if strings.Join(adapter.calls, ",") != "available,check" {
+	if strings.Join(adapter.calls, ",") != "available,resolve-plan,observe,check-available" {
 		t.Fatalf("adapter calls = %v, want probes only (no remove/install)", adapter.calls)
 	}
 	if st.Tools["demo"].Version != "v0.1.0" {

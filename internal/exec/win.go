@@ -6,13 +6,15 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
 // WindowsAdapters returns the built-in Windows package-manager adapters.
 // Callers explicitly add them to their registry at the composition root.
-func WindowsAdapters() []Adapter {
-	return []Adapter{
+func WindowsAdapters() []AdapterV2 {
+	return []AdapterV2{
 		&winAdapter{
 			kind:       "scoop",
 			binary:     "scoop",
@@ -212,7 +214,53 @@ func (w *winAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Too
 }
 func (w *winAdapter) CanRemove() bool { return len(w.removeCmd) > 0 }
 
+// ResolvePlan returns the static intent unchanged: scoop/choco installs
+// perform no dynamic resolution ({latest}, tags, assets), so the intent is
+// already the concrete plan.
+func (w *winAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent == nil {
+		return nil, fmt.Errorf("%s: nil plan intent", w.kind)
+	}
+	resolved := intent.Clone()
+	return &resolved, nil
+}
+
+// Observe maps the Check probe onto presence semantics and records the
+// resolved package name, mirroring the native adapters.
+func (w *winAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if !w.Check(ctx, rn, tool, mc) {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	observation := plan.Observation{Presence: plan.PresencePresent}
+	if pkg := packageName(tool, mc); pkg != "" {
+		observation.Identity.Package = pkg
+		observation.KnownFields = append(observation.KnownFields, plan.FieldPackage)
+	}
+	return observation, nil
+}
+
+// InstallResolved executes the resolved plan without re-resolving identity:
+// scoop/choco package selection comes from mc, mirroring Install.
+func (w *winAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if resolved == nil {
+		return fmt.Errorf("%s: nil resolved plan", w.kind)
+	}
+	return w.Install(ctx, rn, tool, mc)
+}
+
+// CheckAvailable assumes availability: these managers resolve names at
+// install time, so an unknown package surfaces there.
+func (w *winAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+// CheckHostCompatibility imposes no host constraints: these adapters only
+// run on Windows hosts by construction.
+func (w *winAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
 // Compile-time interface checks.
 var _ Adapter = (*winAdapter)(nil)
-var _ Remover = (*winAdapter)(nil)
+var _ AdapterV2 = (*winAdapter)(nil)
 var _ Versioner = (*winAdapter)(nil)

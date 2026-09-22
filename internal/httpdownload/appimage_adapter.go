@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -234,8 +235,17 @@ func (a *AppImageAdapter) Remove(ctx context.Context, rn run.Runner, tool *confi
 func (a *AppImageAdapter) CanRemove() bool { return a.http.CanRemove() }
 
 // Compile-time interface checks.
+// CheckAvailable assumes availability: download URLs have no cheap local
+// index to probe, so an unreachable artifact surfaces at download time.
+func (a *AppImageAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+// CheckHostCompatibility imposes no host constraints beyond the transport:
+// AppImages are portable Linux binaries with no distro-specific payload.
+func (a *AppImageAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
 var _ exec.Adapter = (*AppImageAdapter)(nil)
 var _ exec.AdapterV2 = (*AppImageAdapter)(nil)
-var _ exec.PlanResolver = (*AppImageAdapter)(nil)
-var _ exec.ResolvedInstaller = (*AppImageAdapter)(nil)
-var _ exec.Remover = (*AppImageAdapter)(nil)

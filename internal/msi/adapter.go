@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/httpdownload"
 	"github.com/Khorea1/depengine/internal/plan"
@@ -148,8 +149,17 @@ func stringValue(mc *config.MethodCandidate, key string) string {
 	return value
 }
 
+// CheckAvailable assumes availability: installer URLs have no cheap local
+// index to probe, so an unreachable artifact surfaces at download time.
+func (a *Adapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+// CheckHostCompatibility imposes no host constraints beyond adapter
+// availability: the MSI payload is Windows-scoped by the method contract.
+func (a *Adapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
 var _ exec.Adapter = (*Adapter)(nil)
 var _ exec.AdapterV2 = (*Adapter)(nil)
-var _ exec.PlanResolver = (*Adapter)(nil)
-var _ exec.ResolvedInstaller = (*Adapter)(nil)
-var _ exec.Remover = (*Adapter)(nil)

@@ -19,7 +19,12 @@ func TestRegisteredAdaptersMatchMethodContracts(t *testing.T) {
 			t.Errorf("registered adapter %q has no method contract", kind)
 			continue
 		}
-		if got := exec.CanRemove(exec.Lookup(kind)); got != contract.CanRemove {
+		adapter, ok := exec.Lookup(kind).(exec.AdapterV2)
+		if !ok {
+			t.Errorf("registered adapter %q does not implement AdapterV2", kind)
+			continue
+		}
+		if got := adapter.CanRemove(); got != contract.CanRemove {
 			t.Errorf("adapter %q CanRemove=%t, contract=%t", kind, got, contract.CanRemove)
 		}
 	}

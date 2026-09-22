@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
@@ -180,7 +179,7 @@ func TestCondaAdapterInstallNoPkg(t *testing.T) {
 func TestCondaAdapterCanRemove(t *testing.T) {
 	t.Parallel()
 	a := &CondaAdapter{}
-	if !exec.CanRemove(a) {
+	if !a.CanRemove() {
 		t.Fatal("CondaAdapter should implement Remover with CanRemove=true")
 	}
 }

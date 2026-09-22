@@ -7,7 +7,6 @@ import (
 	"github.com/Khorea1/depengine/internal/artifact"
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/engine"
-	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 )
 
@@ -106,6 +105,3 @@ func explicitlyTargetsCurrentDistro(mc *config.MethodCandidate, facts *engine.Fa
 	}
 	return false
 }
-
-var _ exec.HostCompatibilityChecker = (*HTTPAdapter)(nil)
-var _ exec.HostCompatibilityChecker = (*GitHubAdapter)(nil)

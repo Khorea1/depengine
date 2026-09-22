@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -216,7 +215,7 @@ func TestAsdfAdapterInstallNoPkg(t *testing.T) {
 func TestAsdfAdapterCanRemove(t *testing.T) {
 	t.Parallel()
 	a := &AsdfAdapter{}
-	if !exec.CanRemove(a) {
+	if !a.CanRemove() {
 		t.Fatal("AsdfAdapter should implement Remover with CanRemove=true")
 	}
 }

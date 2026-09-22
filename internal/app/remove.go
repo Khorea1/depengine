@@ -197,22 +197,22 @@ func collectRemovalTargets(st *state.State, removeAll *bool, removeOnly *string,
 // can remove it. Falls back to Method when MethodKind is empty (explicitly
 // constructed current-format state). Returns removable=false for the
 // manual-remove-required paths: unknown adapter or no remove support.
-func resolveRemover(toolName string, toolState state.ToolState) (exec.Remover, string, bool) {
+func resolveRemover(toolName string, toolState state.ToolState) (exec.AdapterV2, string, bool) {
 	methodKind := toolState.MethodKind
 	if methodKind == "" {
 		methodKind = toolState.Method // fallback for explicitly constructed current-format state
 	}
-	adapter := exec.Lookup(methodKind)
-	if adapter == nil {
+	adapter, ok := exec.Lookup(methodKind).(exec.AdapterV2)
+	if !ok || adapter == nil {
 		log.Default.Warn("adapter not found for method", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
 		log.Default.Warn("manual remove required", "tool", toolName)
 		return nil, methodKind, false
 	}
-	if !exec.CanRemove(adapter) {
+	if !adapter.CanRemove() {
 		log.Default.Warn("manual remove required", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
 		return nil, methodKind, false
 	}
-	return adapter.(exec.Remover), methodKind, true
+	return adapter, methodKind, true
 }
 
 // findOwnedResource returns the ownership record for a shared resource.
@@ -278,7 +278,7 @@ func (s *removeSession) finalizeRemovedPrerequisite(toolName string) error {
 }
 
 // invokeRemover runs the adapter's Remove for one tool and records success.
-func (s *removeSession) invokeRemover(ctx context.Context, toolName string, toolState state.ToolState, remover exec.Remover, methodKind string, automatic bool) bool {
+func (s *removeSession) invokeRemover(ctx context.Context, toolName string, toolState state.ToolState, remover exec.AdapterV2, methodKind string, automatic bool) bool {
 	mc := &config.MethodCandidate{Kind: methodKind, Config: toolState.Config}
 	tool := &config.Tool{Name: toolName}
 	if err := remover.Remove(ctx, s.runner, tool, mc); err != nil {

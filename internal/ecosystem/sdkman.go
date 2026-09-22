@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -171,6 +172,27 @@ func (a *SDKManAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *c
 	}
 	return a.install(ctx, rn, resolved.Identity.Package, resolved.Identity.Version)
 }
+
+// CheckAvailable assumes availability: sdkman resolves names at install
+// time, so an unknown candidate surfaces there.
+func (a *SDKManAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+// CheckHostCompatibility imposes no host constraints beyond adapter
+// availability.
+func (a *SDKManAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
+// Remove is unsupported: sdkman removals are user-managed, so removal
+// stays manual.
+func (a *SDKManAdapter) Remove(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
+	return errors.New("sdkman: remove is not supported — remove manually")
+}
+
+// CanRemove always reports false; see Remove.
+func (a *SDKManAdapter) CanRemove() bool { return false }
 
 var _ exec.Adapter = (*SDKManAdapter)(nil)
 var _ exec.AdapterV2 = (*SDKManAdapter)(nil)

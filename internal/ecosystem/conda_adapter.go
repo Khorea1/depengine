@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -303,7 +304,18 @@ func (a *CondaAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.T
 	return run.CheckResult(res, "conda: remove")
 }
 
+// CheckAvailable assumes availability: conda resolves names at install
+// time, so an unknown package surfaces there.
+func (a *CondaAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+// CheckHostCompatibility imposes no host constraints beyond adapter
+// availability.
+func (a *CondaAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
 var _ exec.Adapter = (*CondaAdapter)(nil)
 var _ exec.AdapterV2 = (*CondaAdapter)(nil)
-var _ exec.Remover = (*CondaAdapter)(nil)
 var _ exec.Versioner = (*CondaAdapter)(nil)

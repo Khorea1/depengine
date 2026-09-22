@@ -311,13 +311,13 @@ func TestWinAdapterCanRemove(t *testing.T) {
 
 func TestWinAdapterImplementsRemover(t *testing.T) {
 	a := lookupWinAdapter("scoop")
-	if _, ok := any(a).(Remover); !ok {
-		t.Fatal("winAdapter must implement Remover")
+	if _, ok := any(a).(AdapterV2); !ok {
+		t.Fatal("winAdapter must implement AdapterV2")
 	}
 
 	b := lookupWinAdapter("choco")
-	if _, ok := any(b).(Remover); !ok {
-		t.Fatal("winAdapter must implement Remover")
+	if _, ok := any(b).(AdapterV2); !ok {
+		t.Fatal("winAdapter must implement AdapterV2")
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/native"
 	"github.com/Khorea1/depengine/internal/plan"
@@ -82,9 +83,11 @@ func (a *NativeAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool
 // CheckAvailable reports whether mc's package exists in the detected
 // clan's repo/index at all, independent of install status. This is what
 // separates "not installed yet" (→ install it) from "not a real package"
-// (→ skip, try the next method_order candidate, or fail cleanly) — see
-// AvailabilityChecker's doc comment for why this matters for `simple`
-// tools. Clans with no SearchCmd configured (native.BuildSearchCmd
+// (→ skip, try the next method_order candidate, or fail cleanly) — the
+// schema.go `simple = [...]` shortcut injects a native MethodCandidate for
+// every simple tool with no such validation, so any simple tool whose name
+// isn't an actual native package looks installable until this check runs.
+// Clans with no SearchCmd configured (native.BuildSearchCmd
 // returns nil) fail open and report available, unchanged from before this
 // check existed.
 func (a *NativeAdapter) CheckAvailable(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) bool {
@@ -102,6 +105,12 @@ func (a *NativeAdapter) CheckAvailable(ctx context.Context, rn run.Runner, _ *co
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return res.Err == nil && res.ExitCode == 0
+}
+
+// CheckHostCompatibility imposes no host constraints: the clan-resolved
+// manager is itself the compatibility boundary.
+func (a *NativeAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
 }
 
 // Install runs the install command. Sync is handled by the executor's
@@ -343,6 +352,12 @@ func (a *NativeByManagerAdapter) CheckAvailable(ctx context.Context, rn run.Runn
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return res.Err == nil && res.ExitCode == 0
+}
+
+// CheckHostCompatibility imposes no host constraints: the manager-resolved
+// clan is itself the compatibility boundary.
+func (a *NativeByManagerAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
 }
 
 func (a *NativeByManagerAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
@@ -636,10 +651,10 @@ func validateNativeResolvedInstallOperation(adapter string, resolved *plan.Resol
 }
 
 // Compile-time interface checks.
-var _ Remover = (*NativeAdapter)(nil)
-var _ Remover = (*NativeByManagerAdapter)(nil)
-var _ AvailabilityChecker = (*NativeAdapter)(nil)
-var _ AvailabilityChecker = (*NativeByManagerAdapter)(nil)
+var _ Adapter = (*NativeAdapter)(nil)
+var _ AdapterV2 = (*NativeAdapter)(nil)
+var _ Adapter = (*NativeByManagerAdapter)(nil)
+var _ AdapterV2 = (*NativeByManagerAdapter)(nil)
 var _ Versioner = (*NativeByManagerAdapter)(nil)
 var _ AdapterV2 = (*NativeAdapter)(nil)
 var _ AdapterV2 = (*NativeByManagerAdapter)(nil)

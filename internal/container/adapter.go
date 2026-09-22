@@ -14,6 +14,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/containerref"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -269,6 +270,17 @@ func stringConfig(mc *config.MethodCandidate, key string) string {
 }
 
 // Compile-time interface checks.
+// CheckAvailable assumes availability: image references have no cheap
+// local index to probe, so a missing reference surfaces at pull time.
+func (a *ContainerAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+// CheckHostCompatibility imposes no host constraints: the manager daemon
+// itself is the compatibility boundary and is probed via Available.
+func (a *ContainerAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
 var _ exec.Adapter = (*ContainerAdapter)(nil)
 var _ exec.AdapterV2 = (*ContainerAdapter)(nil)
-var _ exec.Remover = (*ContainerAdapter)(nil)

@@ -128,8 +128,11 @@ func (a *GitHubAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.
 
 func (a *GitHubAdapter) CanRemove() bool { return a.http.CanRemove() }
 
+// CheckAvailable assumes availability: release assets have no cheap local
+// index to probe, so an unknown asset surfaces at resolution time.
+func (a *GitHubAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
 var _ exec.Adapter = (*GitHubAdapter)(nil)
 var _ exec.AdapterV2 = (*GitHubAdapter)(nil)
-var _ exec.PlanResolver = (*GitHubAdapter)(nil)
-var _ exec.ResolvedInstaller = (*GitHubAdapter)(nil)
-var _ exec.Remover = (*GitHubAdapter)(nil)

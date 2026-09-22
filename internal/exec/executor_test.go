@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -62,6 +63,43 @@ func (m *testMockAdapter) Install(ctx context.Context, rn run.Runner, tool *conf
 	return nil
 }
 
+func (m *testMockAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	resolved := intent.Clone()
+	return &resolved, nil
+}
+
+func (m *testMockAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if m.Check(ctx, rn, tool, mc) {
+		observation := plan.Observation{Presence: plan.PresencePresent}
+		if pkg := packageName(tool, mc); pkg != "" {
+			observation.Identity.Package = pkg
+			observation.KnownFields = []plan.IdentityField{plan.FieldPackage}
+		}
+		return observation, nil
+	}
+	return plan.Observation{Presence: plan.PresenceAbsent}, nil
+}
+
+func (m *testMockAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, _ *plan.ResolvedInstallPlan) error {
+	return m.Install(ctx, rn, tool, mc)
+}
+
+func (*testMockAdapter) Remove(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
+	return errors.New("test adapter does not support removal")
+}
+
+func (*testMockAdapter) CanRemove() bool { return false }
+
+func (*testMockAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+func (*testMockAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
+var _ AdapterV2 = (*testMockAdapter)(nil)
+
 // blockingMockAdapter is an adapter whose Install blocks until the context is
 // cancelled or a value is sent on block. Used to test timeout behavior.
 type blockingMockAdapter struct {
@@ -93,6 +131,41 @@ func (m *blockingMockAdapter) Install(ctx context.Context, rn run.Runner, tool *
 	}
 }
 
+// v2TestStub supplies the AdapterV2 methods beyond the legacy
+// testMockAdapter surface, so specialized test doubles become full V2
+// adapters by embedding both. Doubles override individual stub methods to
+// script their behavior; the stub defaults are inert (absent presence,
+// cloned plans, no-op install, no removal, assumed availability, no host
+// constraints).
+type v2TestStub struct{}
+
+func (v2TestStub) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	resolved := intent.Clone()
+	return &resolved, nil
+}
+
+func (v2TestStub) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
+	return plan.Observation{Presence: plan.PresenceAbsent}, nil
+}
+
+func (v2TestStub) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
+	return nil
+}
+
+func (v2TestStub) Remove(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
+	return errors.New("test double does not support removal")
+}
+
+func (v2TestStub) CanRemove() bool { return false }
+
+func (v2TestStub) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+func (v2TestStub) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
 // availabilityMockAdapter is a testMockAdapter that also implements
 // AvailabilityChecker, so tests can simulate a native-style adapter that
 // distinguishes "not installed" from "doesn't exist in any repo" — the
@@ -110,6 +183,58 @@ type compatibilityMockAdapter struct {
 type resolvingCompatibilityMockAdapter struct {
 	testMockAdapter
 	resolvedURL string
+}
+
+func (m *availabilityMockAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	resolved := intent.Clone()
+	return &resolved, nil
+}
+
+func (m *availabilityMockAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if m.Check(ctx, rn, tool, mc) {
+		return plan.Observation{Presence: plan.PresencePresent}, nil
+	}
+	return plan.Observation{Presence: plan.PresenceAbsent}, nil
+}
+
+func (m *availabilityMockAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, _ *plan.ResolvedInstallPlan) error {
+	return m.Install(ctx, rn, tool, mc)
+}
+
+func (*availabilityMockAdapter) Remove(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
+	return errors.New("test adapter does not support removal")
+}
+
+func (*availabilityMockAdapter) CanRemove() bool { return false }
+
+func (*availabilityMockAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
+func (m *compatibilityMockAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	resolved := intent.Clone()
+	return &resolved, nil
+}
+
+func (m *compatibilityMockAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if m.Check(ctx, rn, tool, mc) {
+		return plan.Observation{Presence: plan.PresencePresent}, nil
+	}
+	return plan.Observation{Presence: plan.PresenceAbsent}, nil
+}
+
+func (m *compatibilityMockAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, _ *plan.ResolvedInstallPlan) error {
+	return m.Install(ctx, rn, tool, mc)
+}
+
+func (*compatibilityMockAdapter) Remove(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
+	return errors.New("test adapter does not support removal")
+}
+
+func (*compatibilityMockAdapter) CanRemove() bool { return false }
+
+func (*compatibilityMockAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
 }
 
 func (m *resolvingCompatibilityMockAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
@@ -133,6 +258,16 @@ func (m *resolvingCompatibilityMockAdapter) InstallResolved(_ context.Context, _
 	return nil
 }
 
+func (m *resolvingCompatibilityMockAdapter) Remove(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
+	return errors.New("test adapter does not support removal")
+}
+
+func (*resolvingCompatibilityMockAdapter) CanRemove() bool { return false }
+
+func (*resolvingCompatibilityMockAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
 func (m *compatibilityMockAdapter) CheckHostCompatibility(_ *config.Tool, _ *config.MethodCandidate, _ *plan.ResolvedInstallPlan, _ *engine.Facts, _ string) error {
 	return m.err
 }
@@ -140,6 +275,36 @@ func (m *compatibilityMockAdapter) CheckHostCompatibility(_ *config.Tool, _ *con
 type elevationMockAdapter struct {
 	testMockAdapter
 	required bool
+}
+
+func (m *elevationMockAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	resolved := intent.Clone()
+	return &resolved, nil
+}
+
+func (m *elevationMockAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if m.Check(ctx, rn, tool, mc) {
+		return plan.Observation{Presence: plan.PresencePresent}, nil
+	}
+	return plan.Observation{Presence: plan.PresenceAbsent}, nil
+}
+
+func (m *elevationMockAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, _ *plan.ResolvedInstallPlan) error {
+	return m.Install(ctx, rn, tool, mc)
+}
+
+func (*elevationMockAdapter) Remove(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
+	return errors.New("test adapter does not support removal")
+}
+
+func (*elevationMockAdapter) CanRemove() bool { return false }
+
+func (*elevationMockAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+func (*elevationMockAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
 }
 
 func (m *elevationMockAdapter) RequiresElevation(*config.Tool, *config.MethodCandidate) bool {

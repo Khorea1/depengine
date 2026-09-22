@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/localartifact"
 	"github.com/Khorea1/depengine/internal/plan"
@@ -271,6 +272,17 @@ func destinationFor(tool *config.Tool, mc *config.MethodCandidate, kind plan.Art
 	return destination, nil
 }
 
+// CheckAvailable assumes availability: vendored paths are validated at
+// plan time, so a missing file surfaces during resolution.
+func (a *Adapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+// CheckHostCompatibility imposes no host constraints: vendored artifacts
+// are host-independent by construction.
+func (a *Adapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
 var _ exec.Adapter = (*Adapter)(nil)
 var _ exec.AdapterV2 = (*Adapter)(nil)
-var _ exec.Remover = (*Adapter)(nil)

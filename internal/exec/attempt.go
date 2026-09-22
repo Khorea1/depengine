@@ -31,7 +31,7 @@ type candidateAttempt struct {
 	method      *config.MethodCandidate
 	displayKind string
 	adapter     Adapter
-	installer   ResolvedInstaller // set only for resolving adapters in real mode
+	installer   AdapterV2 // set in real mode; fail-closed when the adapter is not V2
 	planIntent  *plan.ResolvedInstallPlan
 	resolved    *plan.ResolvedInstallPlan
 	reported    *plan.ResolvedInstallPlan
@@ -112,21 +112,18 @@ func (ex *Executor) resolveConcretePlan(ac *candidateAttempt, result *ToolResult
 	ac.resolved = resolved
 	ac.attempt.PlanIntent = resolved
 
-	// Fail closed before any mutation: a resolving adapter must execute
-	// the exact plan produced above. Silent fallback to Install() would
-	// resolve a second time and reinstall the A != B divergence.
+	// Fail closed before any mutation: V2 adapters execute exactly the
+	// plan produced above through InstallResolved. Non-V2 adapters keep
+	// the legacy Install entry point until the cutover removes it.
 	// Dry-run never mutates, so it needs no installer.
-	if _, isResolver := ac.adapter.(PlanResolver); isResolver && !ex.dryRun {
-		installer, ok := ac.adapter.(ResolvedInstaller)
-		if !ok {
-			ex.skipCandidate(ac, result, "failed", fmt.Sprintf("%s: adapter resolves plans but does not implement ResolvedInstaller", ac.displayKind))
-			return nextMethod
+	if !ex.dryRun {
+		if installer, ok := ac.adapter.(AdapterV2); ok {
+			ac.installer = installer
 		}
-		ac.installer = installer
 	}
 
-	if checker, ok := ac.adapter.(HostCompatibilityChecker); ok {
-		if compatibilityErr := checker.CheckHostCompatibility(ac.tool, ac.method, ac.resolved, ex.facts, ex.clan); compatibilityErr != nil {
+	if v2, ok := ac.adapter.(AdapterV2); ok {
+		if compatibilityErr := v2.CheckHostCompatibility(ac.tool, ac.method, ac.resolved, ex.facts, ex.clan); compatibilityErr != nil {
 			ex.skipCandidate(ac, result, "skip_unavailable", compatibilityErr.Error())
 			ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "skip_incompatible_host", "reason", compatibilityErr.Error())
 			return nextMethod

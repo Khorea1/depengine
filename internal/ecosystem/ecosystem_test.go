@@ -452,7 +452,7 @@ func TestRemovalMatrixRegistryKinds(t *testing.T) {
 			if len(cfg.RemoveTmpl) == 0 {
 				t.Fatalf("Configs[%q].RemoveTmpl is empty; kind should be removable", kind)
 			}
-			if !exec.CanRemove(NewBaseAdapter(cfg)) {
+			if !NewBaseAdapter(cfg).CanRemove() {
 				t.Fatalf("kind %q should report CanRemove=true", kind)
 			}
 		})
@@ -467,7 +467,7 @@ func TestRemovalMatrixRegistryKinds(t *testing.T) {
 			if len(cfg.RemoveTmpl) != 0 {
 				t.Fatalf("Configs[%q].RemoveTmpl should stay empty (manual removal)", kind)
 			}
-			if exec.CanRemove(NewBaseAdapter(cfg)) {
+			if NewBaseAdapter(cfg).CanRemove() {
 				t.Fatalf("kind %q should report CanRemove=false", kind)
 			}
 		})
@@ -477,13 +477,13 @@ func TestRemovalMatrixRegistryKinds(t *testing.T) {
 func TestAURAdapterCanRemove(t *testing.T) {
 	t.Parallel()
 	adapter := NewAURAdapter("paru")
-	if !exec.CanRemove(adapter) {
+	if !adapter.CanRemove() {
 		t.Fatal("AURAdapter should implement Remover with CanRemove=true")
 	}
 	// Named aliases embed AURAdapter and must inherit removal support.
 	for _, alias := range []string{"paru", "yay"} {
 		byName := &AURByNameAdapter{AURAdapter: NewAURAdapter(alias), name: alias}
-		if !exec.CanRemove(byName) {
+		if !byName.CanRemove() {
 			t.Fatalf("AUR alias %q should implement Remover", alias)
 		}
 	}

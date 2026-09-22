@@ -133,7 +133,7 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 		}
 		attempt.PlanIntent = resolvedPlan
 
-		if checker, ok := adapter.(HostCompatibilityChecker); ok {
+		if checker, ok := adapter.(AdapterV2); ok {
 			if compatibilityErr := checker.CheckHostCompatibility(tool, method, resolvedPlan, ex.facts, clan); compatibilityErr != nil {
 				attempt.Status = "skip_unavailable"
 				attempt.Error = compatibilityErr.Error()

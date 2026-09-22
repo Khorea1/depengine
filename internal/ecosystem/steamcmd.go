@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -96,6 +97,27 @@ func (a *SteamCMDAdapter) Install(ctx context.Context, rn run.Runner, tool *conf
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return run.CheckResult(res, "steamcmd: install")
 }
+
+// CheckAvailable assumes availability: steamcmd resolves app IDs at
+// install time, so an unknown app surfaces there.
+func (a *SteamCMDAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+// CheckHostCompatibility imposes no host constraints beyond adapter
+// availability.
+func (a *SteamCMDAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
+// Remove is unsupported: app removal is server-managed, so removal stays
+// manual.
+func (a *SteamCMDAdapter) Remove(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
+	return errors.New("steamcmd: remove is not supported — remove manually")
+}
+
+// CanRemove always reports false; see Remove.
+func (a *SteamCMDAdapter) CanRemove() bool { return false }
 
 var _ exec.Adapter = (*SteamCMDAdapter)(nil)
 var _ exec.AdapterV2 = (*SteamCMDAdapter)(nil)

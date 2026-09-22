@@ -114,6 +114,9 @@ func (ex *Executor) probeCandidateSources(ctx context.Context, configured []conf
 	if len(configured) == 0 {
 		return prepared, nil
 	}
+	if ex.sources == nil {
+		ex.sources = source.NewManager(ex.rn, ex.dryRun)
+	}
 
 	// Validate every ownership identity before any mutation and reject duplicate
 	// host resources before an add command can run.

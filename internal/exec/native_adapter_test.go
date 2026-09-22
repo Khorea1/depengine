@@ -304,7 +304,7 @@ func TestNativeByManagerAdapterAvailable(t *testing.T) {
 
 func TestNativeByManagerAdapterImplementsRemover(t *testing.T) {
 	a := &NativeByManagerAdapter{managerName: "apt"}
-	if !CanRemove(a) {
+	if !a.CanRemove() {
 		t.Fatal("NativeByManagerAdapter should implement Remover")
 	}
 	if !a.CanRemove() {

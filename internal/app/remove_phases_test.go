@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -43,7 +44,28 @@ func (a *recordingRemoveAdapter) Remove(_ context.Context, rn run.Runner, tool *
 
 func (a *recordingRemoveAdapter) CanRemove() bool { return true }
 
-var _ exec.Remover = (*recordingRemoveAdapter)(nil)
+func (a *recordingRemoveAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	resolved := intent.Clone()
+	return &resolved, nil
+}
+
+func (a *recordingRemoveAdapter) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
+	return plan.Observation{Presence: plan.PresenceAbsent}, nil
+}
+
+func (a *recordingRemoveAdapter) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
+	return nil
+}
+
+func (a *recordingRemoveAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+func (a *recordingRemoveAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
+var _ exec.AdapterV2 = (*recordingRemoveAdapter)(nil)
 
 // requireExitCode unwraps an ExitError to its code, failing the test when
 // err carries none. (Named to avoid colliding with undo_phases_test.go's

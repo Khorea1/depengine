@@ -14,7 +14,7 @@ import (
 // Versioner is an optional adapter interface for reporting the installed
 // version while state is persisted.
 type Versioner interface {
-	Adapter
+	AdapterV2
 	InstalledVersion(ctx context.Context, rn run.Runner, tool *config.Tool, method *config.MethodCandidate) (string, error)
 }
 

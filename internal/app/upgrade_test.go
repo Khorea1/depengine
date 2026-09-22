@@ -13,6 +13,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -468,7 +469,7 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 
 type upgradePreflightAdapter struct {
 	available       bool
-	installed       bool
+	presence        plan.PresenceState
 	targetAvailable bool
 	canRemove       bool
 	calls           []string
@@ -481,11 +482,14 @@ func (a *upgradePreflightAdapter) Available(context.Context, run.Runner) bool {
 }
 func (a *upgradePreflightAdapter) Check(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
 	a.calls = append(a.calls, "check")
-	return a.installed
+	return a.presence == plan.PresencePresent
 }
 func (a *upgradePreflightAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
 	a.calls = append(a.calls, "check-available")
 	return a.targetAvailable
+}
+func (a *upgradePreflightAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
 }
 func (a *upgradePreflightAdapter) Install(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
 	a.calls = append(a.calls, "install")
@@ -497,30 +501,27 @@ func (a *upgradePreflightAdapter) Remove(context.Context, run.Runner, *config.To
 }
 func (a *upgradePreflightAdapter) CanRemove() bool { return a.canRemove }
 
-type upgradePreflightV2Adapter struct {
-	upgradePreflightAdapter
-	presence plan.PresenceState
-}
-
-func (a *upgradePreflightV2Adapter) ResolvePlan(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+func (a *upgradePreflightAdapter) ResolvePlan(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
 	a.calls = append(a.calls, "resolve-plan")
 	return &plan.ResolvedInstallPlan{}, nil
 }
 
-func (a *upgradePreflightV2Adapter) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
+func (a *upgradePreflightAdapter) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
 	a.calls = append(a.calls, "observe")
 	return plan.Observation{Presence: a.presence}, nil
 }
 
-func (a *upgradePreflightV2Adapter) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
+func (a *upgradePreflightAdapter) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
 	a.calls = append(a.calls, "install-resolved")
 	return nil
 }
 
+var _ exec.AdapterV2 = (*upgradePreflightAdapter)(nil)
+
 func TestPreflightDirectUpgradeUsesV2ResolveAndObserveWithoutCheck(t *testing.T) {
-	adapter := &upgradePreflightV2Adapter{
-		upgradePreflightAdapter: upgradePreflightAdapter{available: true, targetAvailable: true, canRemove: true},
-		presence:                plan.PresencePresent,
+	adapter := &upgradePreflightAdapter{
+		available: true, targetAvailable: true, canRemove: true,
+		presence: plan.PresencePresent,
 	}
 	method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
 	err := preflightDirectUpgrade(context.Background(), &run.FakeRunner{}, &engine.Facts{}, &config.Tool{Name: "demo"}, method, adapter, false)
@@ -535,9 +536,9 @@ func TestPreflightDirectUpgradeUsesV2ResolveAndObserveWithoutCheck(t *testing.T)
 func TestPreflightDirectUpgradeV2FailsClosedForNonPresent(t *testing.T) {
 	for _, presence := range []plan.PresenceState{plan.PresenceAbsent, plan.PresenceUnknown, plan.PresenceBroken} {
 		t.Run(string(presence), func(t *testing.T) {
-			adapter := &upgradePreflightV2Adapter{
-				upgradePreflightAdapter: upgradePreflightAdapter{available: true, targetAvailable: true, canRemove: true},
-				presence:                presence,
+			adapter := &upgradePreflightAdapter{
+				available: true, targetAvailable: true, canRemove: true,
+				presence: presence,
 			}
 			method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
 			err := preflightDirectUpgrade(context.Background(), &run.FakeRunner{}, &engine.Facts{}, &config.Tool{Name: "demo"}, method, adapter, false)
@@ -617,7 +618,7 @@ func TestFindTrackedMethodCandidateLegacyKindResolvesSingleLabeledCandidate(t *t
 }
 
 func TestPreflightDirectUpgradeRejectsPreparationBeforeProbes(t *testing.T) {
-	adapter := &upgradePreflightAdapter{available: true, installed: true, targetAvailable: true, canRemove: true}
+	adapter := &upgradePreflightAdapter{available: true, presence: plan.PresencePresent, targetAvailable: true, canRemove: true}
 	method := &config.MethodCandidate{
 		Kind:    "native",
 		Config:  map[string]any{"pkg": "demo"},
@@ -645,10 +646,10 @@ func TestPreflightDirectUpgradeRequiresInstalledRemovableAvailableTarget(t *test
 		wantCalls []string
 	}{
 		{name: "adapter unavailable", adapter: upgradePreflightAdapter{}, wantErr: "unavailable", wantCalls: []string{"available"}},
-		{name: "installation missing", adapter: upgradePreflightAdapter{available: true}, wantErr: "not present", wantCalls: []string{"available", "check"}},
-		{name: "target unavailable", adapter: upgradePreflightAdapter{available: true, installed: true}, wantErr: "not available", wantCalls: []string{"available", "check", "check-available"}},
-		{name: "removal unsupported", adapter: upgradePreflightAdapter{available: true, installed: true, targetAvailable: true}, wantErr: "does not support removal", wantCalls: []string{"available", "check", "check-available"}},
-		{name: "valid", adapter: upgradePreflightAdapter{available: true, installed: true, targetAvailable: true, canRemove: true}, wantCalls: []string{"available", "check", "check-available"}},
+		{name: "installation missing", adapter: upgradePreflightAdapter{available: true}, wantErr: "not present", wantCalls: []string{"available", "resolve-plan", "observe"}},
+		{name: "target unavailable", adapter: upgradePreflightAdapter{available: true, presence: plan.PresencePresent}, wantErr: "not available", wantCalls: []string{"available", "resolve-plan", "observe", "check-available"}},
+		{name: "removal unsupported", adapter: upgradePreflightAdapter{available: true, presence: plan.PresencePresent, targetAvailable: true}, wantErr: "does not support removal", wantCalls: []string{"available", "resolve-plan", "observe", "check-available"}},
+		{name: "valid", adapter: upgradePreflightAdapter{available: true, presence: plan.PresencePresent, targetAvailable: true, canRemove: true}, wantCalls: []string{"available", "resolve-plan", "observe", "check-available"}},
 	}
 
 	for _, tt := range tests {
@@ -733,7 +734,7 @@ func TestRecordFailedUpgradeRemovalReleasesClaimsWithoutCleaningResources(t *tes
 }
 
 func TestPreflightDirectUpgradeRejectsStaticRequiresBeforeProbes(t *testing.T) {
-	adapter := &upgradePreflightAdapter{available: true, installed: true, targetAvailable: true, canRemove: true}
+	adapter := &upgradePreflightAdapter{available: true, presence: plan.PresencePresent, targetAvailable: true, canRemove: true}
 	method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
 	tool := &config.Tool{Name: "demo", Requires: []string{"helper"}, Methods: []*config.MethodCandidate{method}}
 

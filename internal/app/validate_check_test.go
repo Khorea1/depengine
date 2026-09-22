@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -50,6 +51,18 @@ func (a *checkV2Adapter) Observe(context.Context, run.Runner, *config.Tool, *con
 func (a *checkV2Adapter) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
 	return nil
 }
+func (a *checkV2Adapter) Remove(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
+	return nil
+}
+func (a *checkV2Adapter) CanRemove() bool { return true }
+func (a *checkV2Adapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+func (a *checkV2Adapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
+var _ exec.AdapterV2 = (*checkV2Adapter)(nil)
 
 func checkCandidate() (*config.Tool, *config.MethodCandidate) {
 	return &config.Tool{Name: "demo"}, &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}

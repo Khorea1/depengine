@@ -5,25 +5,10 @@ import (
 	"errors"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
-
-// AdapterV2 is the plan-aware adapter seam.
-//
-// It deliberately lives beside Adapter while adapters migrate one at a time.
-// The serial executor consumes Observe and InstallResolved for adapters that
-// implement V2; other execution paths retain the legacy Adapter contract.
-//
-// AdapterV2 does not define an operation interpreter. In particular,
-// Operation.Command is not a fallback execution mechanism: adapters must give
-// each operation its own typed semantics before a V2 executor can apply it.
-type AdapterV2 interface {
-	Adapter
-	ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error)
-	Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error)
-	InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error
-}
 
 // ErrAdapterV2OperationsUnsupported reports that a legacy adapter was asked
 // to install a plan containing explicit operations. Legacy adapters only know
@@ -92,4 +77,24 @@ func (a *LegacyAdapterV2) InstallResolved(ctx context.Context, rn run.Runner, to
 		return ErrAdapterV2OperationsUnsupported
 	}
 	return a.legacy.Install(ctx, rn, tool, mc)
+}
+
+// Remove reports that removal is unsupported. The shim exists only to keep
+// pre-cutover call sites compiling; it is deleted with the legacy Adapter.
+func (a *LegacyAdapterV2) Remove(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
+	return errors.New("legacy adapter does not support removal")
+}
+
+// CanRemove always reports false for the shim.
+func (a *LegacyAdapterV2) CanRemove() bool { return false }
+
+// CheckAvailable assumes availability for the shimmed adapter, matching the
+// pre-cutover default for adapters without a repository concept.
+func (a *LegacyAdapterV2) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+// CheckHostCompatibility imposes no host constraints for the shim.
+func (a *LegacyAdapterV2) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
 }

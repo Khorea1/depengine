@@ -1,4 +1,4 @@
-// Package exec implements the core installation orchestrator and the Adapter
+// Package exec implements the core installation orchestrator and the AdapterV2
 // interface that every method (native, cargo, git, http, …) must satisfy.
 //
 // Architecture
@@ -21,7 +21,7 @@
 //	  │
 //	  └─ 3. Report summary (successes, failures, skips)
 //
-// Adding a new adapter: implement Adapter and register it at the binary's
+// Adding a new adapter: implement AdapterV2 and register it at the binary's
 // composition root.
 // The executor is generic — it only knows this interface.
 package exec
@@ -36,9 +36,11 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// Adapter is the contract that every method backend (native, cargo, git,
-// http, …) implements. The executor is generic — it only knows this
-// interface and never imports adapter packages directly.
+// Adapter is the legacy contract that every method backend (native, cargo,
+// git, http, …) implements. It is superseded by AdapterV2, which folds in
+// plan resolution, observation, resolved installation, removal,
+// availability, and host compatibility. Adapter remains only until the
+// cutover removes the legacy dispatch paths; new code must use AdapterV2.
 type Adapter interface {
 	// Kind returns the method identifier: "native", "cargo", "git", …
 	// Must be a stable value; used as the registry key.
@@ -60,88 +62,46 @@ type Adapter interface {
 	Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error
 }
 
-// PlanResolver is a read-only adapter capability used by planning and
-// execution to turn a static candidate intent into the concrete plan that
-// will be consumed by Install (for example a GitHub release asset URL).
-// Implementations must not mutate host state. After ResolvePlan returns,
-// no layer below the executor may consult GitHub, {latest}, tags, or asset
-// lists again to decide what to install.
-type PlanResolver interface {
+// AdapterV2 is the plan-aware adapter seam: the single contract every method
+// backend (native, cargo, git, http, …) implements. The executor is generic —
+// it only knows this interface and never imports adapter packages directly.
+//
+// Besides the legacy Kind/Available/Check/Install entry points (retained as
+// adapter-level primitives consumed by Observe and InstallResolved), every
+// adapter provides plan resolution (ResolvePlan), presence observation
+// (Observe), resolved-plan execution (InstallResolved), removal
+// (Remove/CanRemove), repository availability (CheckAvailable), and host
+// compatibility (CheckHostCompatibility). There are no optional capability
+// interfaces: uniformity is what lets dry-run, why, and install agree on
+// one resolution path per candidate.
+type AdapterV2 interface {
 	Adapter
 	ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error)
-}
-
-// ResolvedInstaller is an optional adapter capability for executing an
-// already-resolved plan. It must not resolve any identity: no GitHub calls,
-// no {latest} expansion, no tag/asset lookups. It executes exactly what is
-// already present in resolved.
-//
-// Fail-closed rule: an adapter implementing PlanResolver must also implement
-// ResolvedInstaller for real installs. The executor never falls back
-// silently to Install() for such adapters, because that would reintroduce
-// the double resolution this contract eliminates.
-type ResolvedInstaller interface {
-	Adapter
+	Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error)
 	InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error
-}
-
-// HostCompatibilityChecker is an optional adapter capability for candidates
-// whose installability depends on more than the presence of the adapter's
-// runtime. A download method, for example, may be available everywhere while
-// the resolved artifact is a distribution-specific installer such as .deb.
-//
-// Returning an error rejects only this candidate and lets normal method
-// fallback continue. Implementations must be read-only and deterministic for
-// the supplied facts/plan; expensive source resolution belongs in
-// PlanResolver instead.
-type HostCompatibilityChecker interface {
-	Adapter
-	CheckHostCompatibility(tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan, facts *engine.Facts, clan string) error
-}
-
-// Remover is an optional interface that adapters can implement to support
-// automated uninstallation. The executor's `remove` command checks for this
-// interface and calls Remove when available. When an adapter does not implement
-// Remover, the executor falls back to a manual-removal instruction.
-type Remover interface {
-	Adapter
 	Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error
 	// CanRemove reports whether this adapter actually supports removal.
-	// Adapters may implement Remover but have no remove template configured.
+	// Adapters with no remove template configured return false, and the
+	// executor falls back to a manual-removal instruction.
 	CanRemove() bool
-}
-
-func CanRemove(adapter Adapter) bool {
-	r, ok := adapter.(Remover)
-	return ok && r.CanRemove()
-}
-
-// AvailabilityChecker is an optional interface for adapters that can
-// distinguish "not installed yet" from "does not exist as an installable
-// target at all" for a given method candidate — e.g. a native package
-// manager where the resolved package name isn't in any configured repo.
-//
-// Without this, Check() == false is ambiguous: the executor cannot tell
-// "go ahead and install this" apart from "this was never a real candidate
-// in the first place" (the schema.go `simple = [...]` shortcut injects a
-// native MethodCandidate for every simple tool with no such validation,
-// so any simple tool whose name isn't an actual native package — AUR-only,
-// cargo-only, or simply nonexistent — looks installable until this check
-// runs).
-//
-// Adapters that don't implement this interface are assumed to always have
-// the package available, preserving prior behavior for methods that have
-// no concept of "not in any repo" (cargo, go, pip, git, http, ...).
-type AvailabilityChecker interface {
-	Adapter
 	// CheckAvailable reports whether the package this method candidate
 	// targets actually exists as an installable target (e.g. in the
 	// manager's repo/index), independent of whether it is already
-	// installed. Implementations that cannot cheaply determine this
-	// should return true (assume available): failing open only risks a
+	// installed. Adapters with no concept of "not in any repo" (cargo,
+	// go, pip, git, http, ...) return true: failing open only risks a
 	// wasted install attempt, whereas failing closed risks silently
 	// skipping a tool that really was installable.
 	CheckAvailable(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool
+	// CheckHostCompatibility rejects candidates whose installability
+	// depends on more than the presence of the adapter's runtime. A
+	// download method, for example, may be available everywhere while
+	// the resolved artifact is a distribution-specific installer such as
+	// .deb. Returning an error rejects only this candidate and lets
+	// normal method fallback continue. Implementations must be read-only
+	// and deterministic for the supplied facts/plan; expensive source
+	// resolution belongs in ResolvePlan instead. Adapters without host
+	// constraints return nil.
+	CheckHostCompatibility(tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan, facts *engine.Facts, clan string) error
 }
 
 // ElevationRequirer is an optional interface for adapters whose need for
@@ -149,16 +109,16 @@ type AvailabilityChecker interface {
 // install targeting /usr/local/bin). The executor uses it to establish an
 // interactive elevation session before subprocess output is captured.
 type ElevationRequirer interface {
-	Adapter
+	AdapterV2
 	RequiresElevation(tool *config.Tool, mc *config.MethodCandidate) bool
 }
 
-// checkAvailable consults AvailabilityChecker if the adapter implements
-// it; otherwise it assumes the package is available, which preserves
-// existing behavior for adapters that have no notion of "not in any repo".
+// checkAvailable consults the adapter's CheckAvailable. Adapters that
+// predate the AdapterV2 cutover are assumed available, preserving legacy
+// behavior until the legacy dispatch paths are removed.
 func checkAvailable(ctx context.Context, rn run.Runner, adapter Adapter, tool *config.Tool, mc *config.MethodCandidate) bool {
-	if ac, ok := adapter.(AvailabilityChecker); ok {
-		return ac.CheckAvailable(ctx, rn, tool, mc)
+	if v2, ok := adapter.(AdapterV2); ok {
+		return v2.CheckAvailable(ctx, rn, tool, mc)
 	}
 	return true
 }

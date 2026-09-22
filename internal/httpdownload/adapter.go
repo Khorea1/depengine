@@ -485,10 +485,14 @@ func (a *HTTPAdapter) fetchChecksumFromURL(ctx context.Context, rn run.Runner, c
 }
 
 // Ensure HTTPAdapter implements exec.Adapter.
+// CheckAvailable assumes availability: download URLs have no cheap local
+// index to probe, so an unreachable artifact surfaces at download time.
+func (a *HTTPAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
 var _ exec.Adapter = (*HTTPAdapter)(nil)
 var _ exec.AdapterV2 = (*HTTPAdapter)(nil)
-var _ exec.PlanResolver = (*HTTPAdapter)(nil)
-var _ exec.ResolvedInstaller = (*HTTPAdapter)(nil)
 
 // isSharedDir checks if a directory path is a common shared system directory.
 // We avoid deleting these directories completely during uninstallation.
@@ -602,9 +606,6 @@ func removeHTTPPath(ctx context.Context, rn run.Runner, path string, recursive, 
 // CanRemove returns true — the adapter can remove installations done via
 // HTTP download when extract_to and/or binary is configured.
 func (a *HTTPAdapter) CanRemove() bool { return true }
-
-// Ensure HTTPAdapter implements exec.Remover at compile time.
-var _ exec.Remover = (*HTTPAdapter)(nil)
 
 // copyLocalFile copies a file from src to dst, preserving permissions.
 // Used by the download cache to materialize cached files into temp locations.

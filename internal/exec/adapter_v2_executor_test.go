@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
@@ -57,6 +58,22 @@ func (a *executorAdapterV2Double) InstallResolved(_ context.Context, _ run.Runne
 	a.installed = resolved
 	return nil
 }
+
+func (a *executorAdapterV2Double) Remove(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
+	return nil
+}
+
+func (a *executorAdapterV2Double) CanRemove() bool { return true }
+
+func (a *executorAdapterV2Double) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+func (a *executorAdapterV2Double) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
+var _ AdapterV2 = (*executorAdapterV2Double)(nil)
 
 func v2ExecutorAttempt(t *testing.T, adapter Adapter) ToolResult {
 	t.Helper()

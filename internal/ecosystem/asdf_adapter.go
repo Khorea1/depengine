@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -259,6 +260,17 @@ func (a *AsdfAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 	return fmt.Errorf("asdf: neither asdf nor mise found")
 }
 
+// CheckAvailable assumes availability: asdf has no cheap local index to
+// probe, so an unknown plugin surfaces at install time.
+func (a *AsdfAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+// CheckHostCompatibility imposes no host constraints beyond adapter
+// availability.
+func (a *AsdfAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
 var _ exec.Adapter = (*AsdfAdapter)(nil)
 var _ exec.AdapterV2 = (*AsdfAdapter)(nil)
-var _ exec.Remover = (*AsdfAdapter)(nil)

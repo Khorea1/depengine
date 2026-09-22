@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -343,6 +344,17 @@ func versionToken(tok string) string {
 }
 
 // Ensure GoAdapter implements exec.Adapter and exec.Remover.
+// CheckAvailable assumes availability: the Go module proxy has no cheap
+// local index to probe, so an unknown module surfaces at install time.
+func (a *GoAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+// CheckHostCompatibility imposes no host constraints beyond adapter
+// availability.
+func (a *GoAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
 var _ exec.Adapter = (*GoAdapter)(nil)
 var _ exec.AdapterV2 = (*GoAdapter)(nil)
-var _ exec.Remover = (*GoAdapter)(nil)

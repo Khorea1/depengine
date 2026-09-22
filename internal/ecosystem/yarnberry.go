@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -142,6 +143,27 @@ func (a *YarnBerryAdapter) Install(ctx context.Context, rn run.Runner, tool *con
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return run.CheckResult(res, "yarn-berry: install")
 }
+
+// CheckAvailable assumes availability: the npm registry has no cheap local
+// index to probe, so an unknown package surfaces at install time.
+func (a *YarnBerryAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+// CheckHostCompatibility imposes no host constraints beyond adapter
+// availability.
+func (a *YarnBerryAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
+// Remove is unsupported: yarn global removals are user-managed, so removal
+// stays manual.
+func (a *YarnBerryAdapter) Remove(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
+	return errors.New("yarn-berry: remove is not supported — remove manually")
+}
+
+// CanRemove always reports false; see Remove.
+func (a *YarnBerryAdapter) CanRemove() bool { return false }
 
 var _ exec.Adapter = (*YarnBerryAdapter)(nil)
 var _ exec.AdapterV2 = (*YarnBerryAdapter)(nil)

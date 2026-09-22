@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -127,6 +128,27 @@ func (a *PacstallAdapter) installPackage(ctx context.Context, rn run.Runner, pac
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return run.CheckResult(res, "pacstall: install")
 }
+
+// CheckAvailable assumes availability: pacstall resolves names at install
+// time, so an unknown package surfaces there.
+func (a *PacstallAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+// CheckHostCompatibility imposes no host constraints beyond adapter
+// availability.
+func (a *PacstallAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
+// Remove is unsupported: pacstall has no reliable uninstall primitive, so
+// removal stays manual.
+func (a *PacstallAdapter) Remove(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
+	return errors.New("pacstall: remove is not supported — remove manually")
+}
+
+// CanRemove always reports false; see Remove.
+func (a *PacstallAdapter) CanRemove() bool { return false }
 
 var _ exec.Adapter = (*PacstallAdapter)(nil)
 var _ exec.AdapterV2 = (*PacstallAdapter)(nil)

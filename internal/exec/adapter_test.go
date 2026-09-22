@@ -30,21 +30,14 @@ func (r *removableFalseMockAdapter) CanRemove() bool { return false }
 
 func TestCanRemoveReturnsTrueForRemover(t *testing.T) {
 	a := &removableMockAdapter{mockAdapter{kindValue: "removable"}}
-	if !CanRemove(a) {
+	if !a.CanRemove() {
 		t.Fatal("CanRemove should be true for adapter implementing Remover")
 	}
 }
 
 func TestCanRemoveReturnsFalseWhenRemoverSaysFalse(t *testing.T) {
 	a := &removableFalseMockAdapter{mockAdapter{kindValue: "removable-false"}}
-	if CanRemove(a) {
+	if a.CanRemove() {
 		t.Fatal("CanRemove should be false when adapter.Remover.CanRemove() returns false")
-	}
-}
-
-func TestCanRemoveReturnsFalseForNonRemover(t *testing.T) {
-	a := &mockAdapter{kindValue: "non-removable"}
-	if CanRemove(a) {
-		t.Fatal("CanRemove should be false for adapter without Remover")
 	}
 }

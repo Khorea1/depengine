@@ -257,20 +257,19 @@ func removeUndoTools(ctx context.Context, toRemove []string, curState *state.Sta
 
 		methodKind := resolveUndoMethodKind(toolState)
 
-		adapter := exec.Lookup(methodKind)
-		if adapter == nil {
+		adapter, ok := exec.Lookup(methodKind).(exec.AdapterV2)
+		if !ok || adapter == nil {
 			log.Default.Warn("adapter not found — manual removal may be needed", "tool", name, "method", toolState.Method, "methodKind", methodKind)
 			hadFailure = true
 			continue
 		}
 
-		if !exec.CanRemove(adapter) {
+		if !adapter.CanRemove() {
 			log.Default.Warn("adapter does not support automated removal — manual removal needed", "tool", name, "method", toolState.Method, "methodKind", methodKind)
 			hadFailure = true
 			continue
 		}
 
-		remover := adapter.(exec.Remover)
 		mc := &config.MethodCandidate{
 			Kind:   methodKind,
 			Config: toolState.Config,
@@ -278,7 +277,7 @@ func removeUndoTools(ctx context.Context, toRemove []string, curState *state.Sta
 		tool := &config.Tool{Name: name}
 
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-		if err := remover.Remove(ctx, run.OSExecRunner{}, tool, mc); err != nil {
+		if err := adapter.Remove(ctx, run.OSExecRunner{}, tool, mc); err != nil {
 			log.Default.Error("remove failed during undo", "tool", name, "error", err)
 			hadFailure = true
 			cancel()

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -167,7 +168,26 @@ func (a *AndroidAdapter) InstallResolved(ctx context.Context, rn run.Runner, too
 // same policy as "vscode"/"mas"/"apm" (see internal/ecosystem/registry.go).
 
 // Compile-time interface check.
+// CheckAvailable assumes availability: release assets have no cheap local
+// index to probe, so an unknown asset surfaces at resolution time.
+func (a *AndroidAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+// CheckHostCompatibility imposes no host constraints beyond adapter
+// availability: the APK target is Termux-scoped by the method contract.
+func (a *AndroidAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
+// Remove is unsupported: APK uninstalls go through the Android package
+// installer UI, so removal stays manual.
+func (a *AndroidAdapter) Remove(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
+	return errors.New("android: remove is not supported — remove manually")
+}
+
+// CanRemove always reports false; see Remove.
+func (a *AndroidAdapter) CanRemove() bool { return false }
+
 var _ exec.Adapter = (*AndroidAdapter)(nil)
 var _ exec.AdapterV2 = (*AndroidAdapter)(nil)
-var _ exec.PlanResolver = (*AndroidAdapter)(nil)
-var _ exec.ResolvedInstaller = (*AndroidAdapter)(nil)

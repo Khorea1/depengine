@@ -16,7 +16,7 @@ import (
 //
 //	intent estático
 //	    ↓
-//	PlanResolver.ResolvePlan(), se existir
+//	AdapterV2.ResolvePlan()
 //	    ↓
 //	plan.ValidateResolution (intent preservation + resolved.Validate)
 //
@@ -36,7 +36,7 @@ func (ex *Executor) resolveCandidatePlan(
 	if intent == nil {
 		return nil, nil
 	}
-	resolver, ok := adapter.(PlanResolver)
+	resolver, ok := adapter.(AdapterV2)
 	if !ok {
 		return intent, nil
 	}

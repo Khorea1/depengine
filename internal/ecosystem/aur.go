@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -126,6 +127,17 @@ func (a *AURAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Too
 }
 
 // Ensure AURAdapter implements exec.Adapter and exec.Remover at compile time.
+// CheckAvailable assumes availability: AUR helpers resolve names against
+// the AUR at install time, so an unknown package surfaces there.
+func (a *AURAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+// CheckHostCompatibility imposes no host constraints beyond adapter
+// availability.
+func (a *AURAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
 var _ exec.Adapter = (*AURAdapter)(nil)
 var _ exec.AdapterV2 = (*AURAdapter)(nil)
-var _ exec.Remover = (*AURAdapter)(nil)

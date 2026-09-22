@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -21,6 +22,10 @@ func (a *perToolNativeAdapter) Install(ctx context.Context, rn run.Runner, tool 
 		return &installError{"fd native install failed"}
 	}
 	return nil // bat succeeds
+}
+
+func (a *perToolNativeAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, _ *plan.ResolvedInstallPlan) error {
+	return a.Install(ctx, rn, tool, mc)
 }
 
 func TestBatchDoesNotChangeMethodSelection(t *testing.T) {

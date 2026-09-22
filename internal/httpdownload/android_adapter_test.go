@@ -194,11 +194,15 @@ func TestAndroidAdapterInstallTermuxOpenFailure(t *testing.T) {
 	}
 }
 
-// --- Remover: intentionally not implemented ---
+// --- Remover: removal stays manual via CanRemove=false ---
 
 func TestAndroidAdapterIsNotARemover(t *testing.T) {
-	if _, ok := any(NewAndroidAdapter()).(interface{ CanRemove() bool }); ok {
-		t.Fatal("android adapter should not implement Remover — see the doc comment on why removal stays manual")
+	adapter := NewAndroidAdapter()
+	if adapter.CanRemove() {
+		t.Fatal("android adapter must report CanRemove=false — see the doc comment on why removal stays manual")
+	}
+	if err := adapter.Remove(context.Background(), &run.FakeRunner{}, androidTool("app"), &config.MethodCandidate{}); err == nil {
+		t.Fatal("android Remove must refuse — uninstalls go through the package installer UI")
 	}
 }
 
