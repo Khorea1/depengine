@@ -33,7 +33,7 @@ func TestDefaultPath(t *testing.T) {
 	}
 
 	got4 := DefaultPath("/tmp/foo.yaml")
-	want4 := "/tmp/depengine.lock"
+	want4 := filepath.Join("/tmp", "depengine.lock")
 	if got4 != want4 {
 		t.Fatalf("DefaultPath(/tmp/foo.yaml) = %q, want %q", got4, want4)
 	}
