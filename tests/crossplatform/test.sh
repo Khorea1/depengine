@@ -14,7 +14,9 @@ echo "Running cross-platform tests for distro: $DISTRO"
 # In a real CI, we'd likely copy a pre-built binary
 if [ ! -x "$BIN" ] || [ "$BIN" -nt "main.go" ]; then
     echo "Building depengine..."
-    go build -o "$BIN" . || exit 1
+    # -buildvcs=false: the repo is bind-mounted, and container git sees it
+    # as dubious-owned (exit 128), which otherwise fails the build.
+    go build -buildvcs=false -o "$BIN" . || exit 1
 fi
 
 # Install the depengine binary to a temporary location for testing
