@@ -455,10 +455,11 @@ var _ exec.Adapter = (*HTTPAdapter)(nil)
 
 // isSharedDir checks if a directory path is a common shared system directory.
 // We avoid deleting these directories completely during uninstallation.
-// Paths are normalized with ToSlash so Unix-style manifests evaluate the
-// same on Windows (where filepath.Clean turns "/" into "\").
+// Separators are folded to "/" after Clean so Unix-style manifests and
+// Windows-style paths evaluate identically on every platform (ToSlash
+// alone is a no-op for literal backslashes on Unix).
 func isSharedDir(path string) bool {
-	p := filepath.ToSlash(filepath.Clean(path))
+	p := strings.ReplaceAll(filepath.Clean(path), "\\", "/")
 	if p == "/" || p == "." {
 		return true
 	}
