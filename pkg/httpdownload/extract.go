@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -316,12 +317,14 @@ func validateArchiveSafety(src, dest, ext string) error {
 
 // safeJoin joins name onto dest and confirms the result does not escape
 // dest, rejecting absolute paths and ".." traversal. It does not require the
-// path to exist.
+// path to exist. name is an ARCHIVE entry, which always uses "/" separators,
+// so absoluteness is tested with path.IsAbs: filepath.IsAbs would miss
+// "/absolute" entries on Windows and hand them to the system extractor.
 func safeJoin(dest, name string) error {
 	if name == "" {
 		return fmt.Errorf("empty entry name")
 	}
-	if filepath.IsAbs(name) {
+	if path.IsAbs(name) {
 		return fmt.Errorf("absolute path in archive entry: %q", name)
 	}
 	cleanDest := filepath.Clean(dest)
@@ -389,7 +392,7 @@ func validateTarSafety(src, dest, ext string) error {
 			return fmt.Errorf("unsafe tar entry: %w", err)
 		}
 		if (hdr.Typeflag == tar.TypeSymlink || hdr.Typeflag == tar.TypeLink) && hdr.Linkname != "" {
-			if filepath.IsAbs(hdr.Linkname) {
+			if path.IsAbs(hdr.Linkname) {
 				return fmt.Errorf("unsafe tar entry: %q links outside destination to absolute path %q", hdr.Name, hdr.Linkname)
 			}
 			if err := safeJoin(dest, filepath.Join(filepath.Dir(hdr.Name), hdr.Linkname)); err != nil {
