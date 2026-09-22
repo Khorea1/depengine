@@ -515,21 +515,35 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "skip_unavailable")
 			continue
 		}
-		resolvedIntent := planIntent
-		if resolver, ok := adapter.(PlanResolver); ok {
-			resolved, resolveErr := resolver.ResolvePlan(toolCtx, ex.probeRunner(tool.Name, displayKind), tool, method, planIntent)
-			if resolveErr != nil {
+		resolvedPlan := planIntent
+		resolvedPlan, resolveErr := ex.resolveCandidatePlan(toolCtx, tool, method, adapter, planIntent, displayKind)
+		if resolveErr != nil {
+			attempt.Status = "failed"
+			attempt.Error = resolveErr.Error()
+			result.Methods = append(result.Methods, attempt)
+			continue
+		}
+		attempt.PlanIntent = resolvedPlan
+
+		// Fail closed before any mutation: a resolving adapter must execute
+		// the exact plan produced above. Silent fallback to Install() would
+		// resolve a second time and reinstall the A != B divergence.
+		// Dry-run never mutates, so it needs no installer.
+		var resolvedInstaller ResolvedInstaller
+		_, isResolver := adapter.(PlanResolver)
+		if isResolver && !ex.dryRun {
+			var ok bool
+			resolvedInstaller, ok = adapter.(ResolvedInstaller)
+			if !ok {
 				attempt.Status = "failed"
-				attempt.Error = fmt.Sprintf("%s: resolve plan: %v", displayKind, resolveErr)
+				attempt.Error = fmt.Sprintf("%s: adapter resolves plans but does not implement ResolvedInstaller", displayKind)
 				result.Methods = append(result.Methods, attempt)
 				continue
 			}
-			resolvedIntent = resolved
-			attempt.PlanIntent = resolvedIntent
 		}
 
 		if checker, ok := adapter.(HostCompatibilityChecker); ok {
-			if compatibilityErr := checker.CheckHostCompatibility(tool, method, resolvedIntent, ex.facts, ex.clan); compatibilityErr != nil {
+			if compatibilityErr := checker.CheckHostCompatibility(tool, method, resolvedPlan, ex.facts, ex.clan); compatibilityErr != nil {
 				attempt.Status = "skip_unavailable"
 				attempt.Error = compatibilityErr.Error()
 				result.Methods = append(result.Methods, attempt)
@@ -543,7 +557,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			result.Method = displayKind
 			result.MethodKind = method.Kind
 			result.Config = method.Config
-			result.PlanIntent = resolvedIntent
+			result.PlanIntent = resolvedPlan
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "already_installed")
 			result.Duration = time.Since(toolStart).String()
 			return
@@ -572,7 +586,10 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			continue
 		}
 
-		preparedSources, err := ex.prepareCandidateSources(toolCtx, tool.Name, method.Kind, resolvedIntent, sourceProbe)
+		// The WAL transaction key identifies the stable candidate intent, not a
+		// mutable resolved release. Persisting the resolved plan here would
+		// break recovery identity across runs.
+		preparedSources, err := ex.prepareCandidateSources(toolCtx, tool.Name, method.Kind, planIntent, sourceProbe)
 		if err != nil {
 			attempt.Status = "failed"
 			attempt.Error = err.Error()
@@ -641,13 +658,19 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		resourceUses := append([]plan.ResourceUse(nil), preparedSources.resourceUses...)
 		resourceUses = append(resourceUses, prerequisiteUses...)
 
+		// Preparation is projected into the same concrete plan in both modes:
+		// dry-run PlanIntent == plan that would be executed,
+		// real PlanIntent == plan that was executed.
+		reportedPlan := resolvedPlan
+		if reportedPlan != nil && preparedSources.preparationPlan != nil {
+			projected := *reportedPlan
+			projected.Preparation = preparedSources.preparationPlan
+			reportedPlan = &projected
+		}
+		attempt.PlanIntent = reportedPlan
+
 		if ex.dryRun {
-			dryRunIntent := resolvedIntent
-			if dryRunIntent != nil && preparedSources.preparationPlan != nil {
-				projected := *dryRunIntent
-				projected.Preparation = preparedSources.preparationPlan
-				dryRunIntent = &projected
-			}
+			dryRunIntent := reportedPlan
 			result.Status = StatusWouldInstall
 			result.Method = displayKind
 			result.MethodKind = method.Kind
@@ -688,9 +711,15 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			return
 		}
 
-		// method-timeout applies to each individual attempt.
+		// method-timeout applies to each individual attempt. Resolving
+		// adapters execute exactly the plan resolved above; all others use
+		// the legacy Install entry point.
 		methodCtx, methodCancel := context.WithTimeout(toolCtx, ex.methodTimeout)
-		err = adapter.Install(methodCtx, runner, tool, method)
+		if resolvedInstaller != nil {
+			err = resolvedInstaller.InstallResolved(methodCtx, runner, tool, method, resolvedPlan)
+		} else {
+			err = adapter.Install(methodCtx, runner, tool, method)
+		}
 		methodCancel()
 
 		if err == nil {
@@ -700,7 +729,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 				result.Method = displayKind
 				result.MethodKind = method.Kind
 				result.Config = method.Config
-				result.PlanIntent = resolvedIntent
+				result.PlanIntent = reportedPlan
 				result.InstallCommitted = true
 				result.ResourceUses = append([]plan.ResourceUse(nil), resourceUses...)
 				result.Duration = time.Since(toolStart).String()
@@ -711,7 +740,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 			result.Method = displayKind
 			result.MethodKind = method.Kind
 			result.Config = method.Config
-			result.PlanIntent = resolvedIntent
+			result.PlanIntent = reportedPlan
 			result.ResourceUses = append([]plan.ResourceUse(nil), resourceUses...)
 			result.RebootRequired, _ = method.Config["_reboot_required"].(bool)
 			ex.logDebug(toolCtx, "tool", "tool", tool.Name, "method", displayKind, "status", "installed")
