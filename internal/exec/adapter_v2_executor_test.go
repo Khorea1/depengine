@@ -14,13 +14,14 @@ import (
 
 type executorAdapterV2Double struct {
 	testMockAdapter
-	presence    plan.PresenceState
-	observeErr  error
-	observeCall int
-	checkCalls  int
-	resolveCall int
-	installCall int
-	installed   *plan.ResolvedInstallPlan
+	presence      plan.PresenceState
+	observeErr    error
+	observeDetail string
+	observeCall   int
+	checkCalls    int
+	resolveCall   int
+	installCall   int
+	installed     *plan.ResolvedInstallPlan
 }
 
 func (a *executorAdapterV2Double) Check(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
@@ -33,7 +34,11 @@ func (a *executorAdapterV2Double) Observe(context.Context, run.Runner, *config.T
 	if a.observeErr != nil {
 		return plan.Observation{}, a.observeErr
 	}
-	return plan.Observation{Presence: a.presence, Detail: "probe detail"}, nil
+	detail := a.observeDetail
+	if detail == "" {
+		detail = "probe detail"
+	}
+	return plan.Observation{Presence: a.presence, Detail: detail}, nil
 }
 
 func (a *executorAdapterV2Double) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
@@ -169,5 +174,92 @@ func TestExecutorLegacyAdapterStillUsesCheck(t *testing.T) {
 	}
 	if installCalls != 0 {
 		t.Fatalf("Install() calls = %d, want 0", installCalls)
+	}
+}
+
+func explainAdapterAttempt(t *testing.T, adapter Adapter) MethodAttempt {
+	t.Helper()
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex)
+	WithAdapters(adapter)(ex)
+	tool := &config.Tool{
+		Name:       "demo",
+		MethodOnly: []string{adapter.Kind()},
+		Methods: []*config.MethodCandidate{{
+			Kind:   adapter.Kind(),
+			Config: map[string]any{"pkg": "demo"},
+		}},
+	}
+	attempts := ex.ExplainTool(context.Background(), tool, "")
+	if len(attempts) != 1 {
+		t.Fatalf("attempts = %+v, want 1", attempts)
+	}
+	return attempts[0]
+}
+
+func TestExplainToolAdapterV2PresenceStates(t *testing.T) {
+	tests := []struct {
+		name       string
+		presence   plan.PresenceState
+		wantStatus string
+	}{
+		{name: "present", presence: plan.PresencePresent, wantStatus: "already_installed"},
+		{name: "absent", presence: plan.PresenceAbsent, wantStatus: "would_install"},
+		{name: "unknown", presence: plan.PresenceUnknown, wantStatus: "would_install"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adapter := &executorAdapterV2Double{
+				testMockAdapter: testMockAdapter{kindValue: "cargo"},
+				presence:        tt.presence,
+			}
+			attempt := explainAdapterAttempt(t, adapter)
+			if attempt.Status != tt.wantStatus {
+				t.Fatalf("status = %q, want %q: %+v", attempt.Status, tt.wantStatus, attempt)
+			}
+			if adapter.observeCall != 1 || adapter.checkCalls != 0 {
+				t.Fatalf("Observe() calls = %d, Check() calls = %d; want 1 and 0", adapter.observeCall, adapter.checkCalls)
+			}
+			if adapter.resolveCall != 1 {
+				t.Fatalf("ResolvePlan() calls = %d, want 1", adapter.resolveCall)
+			}
+		})
+	}
+}
+
+func TestExplainToolAdapterV2ProbeFailureIsSafe(t *testing.T) {
+	adapter := &executorAdapterV2Double{
+		testMockAdapter: testMockAdapter{kindValue: "cargo"},
+		presence:        plan.PresenceBroken,
+		observeDetail:   "probe failed at https://user:pass@example.test/?token=secret",
+	}
+	attempt := explainAdapterAttempt(t, adapter)
+	if attempt.Status != "failed" {
+		t.Fatalf("status = %q, want failed: %+v", attempt.Status, attempt)
+	}
+	if strings.Contains(attempt.Error, "pass") || strings.Contains(attempt.Error, "secret") {
+		t.Fatalf("error leaked probe credentials: %q", attempt.Error)
+	}
+	if !strings.Contains(attempt.Error, "probe failed") {
+		t.Fatalf("error = %q, want probe failure detail", attempt.Error)
+	}
+}
+
+func TestExplainToolLegacyAdapterUsesCheck(t *testing.T) {
+	checkCalls := 0
+	adapter := &testMockAdapter{
+		kindValue: "legacy",
+		checkFunc: func(string) bool {
+			checkCalls++
+			return true
+		},
+	}
+	attempt := explainAdapterAttempt(t, adapter)
+	if attempt.Status != "already_installed" {
+		t.Fatalf("status = %q, want already_installed: %+v", attempt.Status, attempt)
+	}
+	if checkCalls != 1 {
+		t.Fatalf("Check() calls = %d, want 1", checkCalls)
 	}
 }
