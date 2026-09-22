@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -20,10 +21,22 @@ func skipIfNoGPG(t *testing.T) {
 }
 
 // setupGPGDir creates a temporary GNUPGHOME with proper permissions and
-// sets the GNUPGHOME environment variable for the test.
+// sets the GNUPGHOME environment variable for the test. The homedir is
+// created under a short parent: gpg-agent's socket path is derived from
+// GNUPGHOME and macOS TMPDIR (/var/folders/...) is deep enough to exceed
+// the ~104-char sun_path limit, which makes key generation fail with
+// "can't connect to the gpg-agent".
 func setupGPGDir(t *testing.T) string {
 	t.Helper()
-	gnupgHome := t.TempDir()
+	parent := os.TempDir()
+	if runtime.GOOS == "darwin" {
+		parent = "/tmp"
+	}
+	gnupgHome, err := os.MkdirTemp(parent, "depengine-gpg-*")
+	if err != nil {
+		t.Fatalf("mkdtemp gnupgHome: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(gnupgHome) })
 	if err := os.Chmod(gnupgHome, 0o700); err != nil {
 		t.Fatalf("chmod gnupgHome: %v", err)
 	}
@@ -174,11 +187,7 @@ func TestGPGVerifyKeyImport(t *testing.T) {
 	signatureFile := signFile(t, checksumFile)
 
 	// Reset GNUPGHOME to a clean one so the key is NOT in the keyring.
-	gnupgHome2 := t.TempDir()
-	if err := os.Chmod(gnupgHome2, 0o700); err != nil {
-		t.Fatalf("chmod gnupgHome2: %v", err)
-	}
-	t.Setenv("GNUPGHOME", gnupgHome2)
+	setupGPGDir(t)
 
 	// Verification should fail since the key is not in the new keyring.
 	rn := &run.OSExecRunner{}
@@ -270,11 +279,7 @@ func TestGPGVerifyWrongSigner(t *testing.T) {
 	}
 
 	// Reset GNUPGHOME to a clean dir — no keys pre-imported.
-	cleanDir := t.TempDir()
-	if err := os.Chmod(cleanDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("GNUPGHOME", cleanDir)
+	setupGPGDir(t)
 
 	// Call GPGVerify with the combined key file as signingKey.
 	// Before the fix: imports both keys into the shared keyring, verifies B's sig using B's key — passes (BUG).
