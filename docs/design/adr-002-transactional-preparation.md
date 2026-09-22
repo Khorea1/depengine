@@ -46,6 +46,11 @@ write-ahead journal and explicit ownership:
   wait for the final owner, root/external prerequisites are retained.
 - Failed candidates use explicit-retain semantics: installed lazy
   prerequisites remain visible in report/state, never silent orphans.
+- Before any new host mutation, the executor replays recoverable source
+  preparation/rollback work from the persisted plan, reconciles a committing
+  candidate through a read-only identity observation, and records a confirmed
+  recovered commit without replaying its hooks or installation. Ambiguous
+  outcomes surface as fail-closed recovery errors.
 - Hooks stay candidate-local transition events; post-hook failure reports
   against an already-committed transition and never triggers implicit
   compensating uninstall.
@@ -57,4 +62,3 @@ write-ahead journal and explicit ownership:
 - WAL-backed prerequisite preparation (sources are wired; lazy
   `method.requires` still uses explicit-retain).
 - Richer identity observation for automatic commit finalization.
-- Executor committing-recovery wiring and blocked-state surfacing.
