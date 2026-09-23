@@ -195,6 +195,27 @@ fastfetch = { http = {
 } }
 ```
 
+For an artifact that requires Bearer authentication, add a typed reference to
+an environment variable:
+
+```toml
+[tools.private-tool.http]
+url = "https://downloads.example.com/private-tool.tar.gz"
+secret_ref = { provider = "env", name = "PRIVATE_TOOL_TOKEN" }
+```
+
+`secret_ref` must contain exactly `provider` and `name`. The supported provider
+is `env`; `name` is the environment variable name, not the token itself. The
+token is sent as `Authorization: Bearer <value>` for the primary artifact
+download. It is resolved only when this HTTP candidate is reached. If the
+reference cannot be resolved (including a missing or empty variable), this
+candidate fails and depengine can try the next configured installation method.
+The credential remains in process memory and the authenticated request uses
+depengine's in-process Go HTTP backend.
+
+Authentication applies only to the primary artifact URL. It does not
+automatically authenticate checksum, signature, or other sidecar requests.
+
 > `checksum` accepts a literal hash (`sha256:...`) or `:auto` (automatic
 > resolution — this is Trust On First Use, not offline-verified; prefer a
 > literal hash when available). Use `checksum_url` for a separate
