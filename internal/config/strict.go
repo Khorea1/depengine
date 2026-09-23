@@ -381,7 +381,7 @@ func validateSources(raw any, path string, errs *[]string) {
 			continue
 		}
 		for _, key := range sortedMapKeys(m) {
-			if key != "kind" && key != "name" && key != "url" {
+			if key != "kind" && key != "name" && key != "url" && key != "secret_ref" {
 				*errs = append(*errs, p+"."+key+": unknown field")
 			}
 		}
@@ -393,6 +393,29 @@ func validateSources(raw any, path string, errs *[]string) {
 		}
 		if rawURL, exists := m["url"]; exists {
 			validateNonEmptyString(rawURL, p+".url", errs)
+		}
+		if rawRef, exists := m["secret_ref"]; exists {
+			validateSecretReference(rawRef, p+".secret_ref", errs)
+		}
+	}
+}
+
+func validateSecretReference(raw any, path string, errs *[]string) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		*errs = append(*errs, fmt.Sprintf("%s: expected table, got %T", path, raw))
+		return
+	}
+	for _, key := range sortedMapKeys(m) {
+		if key != "provider" && key != "name" {
+			*errs = append(*errs, path+"."+key+": unknown field")
+		}
+	}
+	for _, key := range []string{"provider", "name"} {
+		field := path + "." + key
+		validateNonEmptyString(m[key], field, errs)
+		if value, ok := m[key].(string); ok && (strings.TrimSpace(value) != value || strings.ContainsRune(value, '\x00')) {
+			*errs = append(*errs, field+": must not contain surrounding whitespace or NUL")
 		}
 	}
 }

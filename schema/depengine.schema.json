@@ -50,6 +50,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -443,6 +446,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -526,6 +532,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -592,6 +601,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -753,6 +765,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -830,6 +845,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -903,6 +921,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -969,6 +990,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -1040,6 +1064,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -1114,6 +1141,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -1184,6 +1214,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -1354,6 +1387,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -1432,6 +1468,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -1514,6 +1553,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -1584,6 +1626,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -1696,6 +1741,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -1794,6 +1842,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -1872,6 +1923,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -1945,6 +1999,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -2017,6 +2074,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -2100,6 +2160,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -2177,6 +2240,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -2335,6 +2401,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -2486,6 +2555,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -2560,6 +2632,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -2722,6 +2797,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -2806,6 +2884,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -2873,6 +2954,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -3034,6 +3118,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -3112,6 +3199,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -3182,6 +3272,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -3260,6 +3353,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -3333,6 +3429,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -3400,6 +3499,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -3466,6 +3568,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -3537,6 +3642,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -3620,6 +3728,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -3697,6 +3808,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -3769,6 +3883,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -3843,6 +3960,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -3909,6 +4029,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -3986,6 +4109,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -4073,6 +4199,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -4143,6 +4272,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -4271,6 +4403,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -4341,6 +4476,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -4413,6 +4551,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -4484,6 +4625,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -4550,6 +4694,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -4655,6 +4802,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -4732,6 +4882,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -4798,6 +4951,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -4870,6 +5026,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -4936,6 +5095,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -5010,6 +5172,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -5082,6 +5247,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -5228,6 +5396,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -5308,6 +5479,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -5467,6 +5641,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -5548,6 +5725,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -5618,6 +5798,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -5694,6 +5877,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -5768,6 +5954,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -5942,6 +6131,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -6024,6 +6216,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -6110,6 +6305,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -6184,6 +6382,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -6300,6 +6501,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -6396,6 +6600,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -6489,6 +6696,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -6570,6 +6780,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -6726,6 +6939,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -6877,6 +7093,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -6957,6 +7176,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -7117,6 +7339,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -7199,6 +7424,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -7272,6 +7500,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -7431,6 +7662,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -7515,6 +7749,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -7589,6 +7826,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -7665,6 +7905,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -7739,6 +7982,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -7826,6 +8072,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -7900,6 +8149,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -7995,6 +8247,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -8069,6 +8324,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -8201,6 +8459,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -8275,6 +8536,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -8351,6 +8615,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -8426,6 +8693,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -8496,6 +8766,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -8605,6 +8878,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -8679,6 +8955,9 @@
                   "name": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
                   },
                   "url": {
                     "minLength": 1,
@@ -8755,6 +9034,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
                   "url": {
                     "minLength": 1,
                     "type": "string"
@@ -8805,6 +9087,26 @@
       "required": [
         "schema_version",
         "tools"
+      ],
+      "type": "object"
+    },
+    "secretReference": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000](?:[^\\u0000]*[^\\s\\u0000])?$",
+          "type": "string"
+        },
+        "provider": {
+          "minLength": 1,
+          "pattern": "^[^\\s\\u0000](?:[^\\u0000]*[^\\s\\u0000])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "name"
       ],
       "type": "object"
     },

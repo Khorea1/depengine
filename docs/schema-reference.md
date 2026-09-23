@@ -633,8 +633,13 @@ sources = [{ kind = "apt-ppa", name = "ppa:neovim-ppa/stable" }]
 ```
 
 Supported source kinds are `apt-ppa`, `dnf-copr`, `scoop-bucket`, and
-`brew-tap`. They are checked before mutation. `dependency_only` tools are not
-normal roots, but remain selectable with `--only`.
+`brew-tap`. A source may declare
+`secret_ref = { provider = "env", name = "CORP_TOKEN" }` to identify external
+credentials without storing their value in the schema or plan. Authentication
+is required for that candidate; methods without an auth capability reject it
+during planning. Runtime secret resolution is not yet implemented. Sources are
+checked before mutation. `dependency_only` tools are not normal roots, but
+remain selectable with `--only`.
 
 ### Virtual tools: dependency groups with no methods
 

@@ -20,6 +20,7 @@ func GenerateJSONSchema() ([]byte, error) {
 		"defaults":         defaultsJSONSchema(),
 		"manifestOptions":  manifestOptionsJSONSchema(),
 		"hook":             hookJSONSchema(),
+		"secretReference":  secretReferenceJSONSchema(),
 		"projectDocument":  documentJSONSchema("tools", false),
 		"manifestDocument": documentJSONSchema("packages", true),
 		"tool":             toolJSONSchema(),
@@ -170,9 +171,10 @@ func methodObjectJSONSchema(contract *methodkind.Contract, variantKind string) m
 			"items": map[string]any{
 				"type": "object", "required": []string{"kind", "name"},
 				"properties": map[string]any{
-					"kind": map[string]any{"enum": []string{"apt-ppa", "dnf-copr", "scoop-bucket", "brew-tap"}},
-					"name": map[string]any{"type": "string", "minLength": 1},
-					"url":  map[string]any{"type": "string", "minLength": 1},
+					"kind":       map[string]any{"enum": []string{"apt-ppa", "dnf-copr", "scoop-bucket", "brew-tap"}},
+					"name":       map[string]any{"type": "string", "minLength": 1},
+					"url":        map[string]any{"type": "string", "minLength": 1},
+					"secret_ref": map[string]any{"$ref": "#/definitions/secretReference"},
 				},
 				"additionalProperties": false,
 			},
@@ -247,6 +249,18 @@ func methodObjectJSONSchema(contract *methodkind.Contract, variantKind string) m
 		schema["oneOf"] = oneOf
 	}
 	return schema
+}
+
+func secretReferenceJSONSchema() map[string]any {
+	field := map[string]any{"type": "string", "minLength": 1, "pattern": `^[^\s\u0000](?:[^\u0000]*[^\s\u0000])?$`}
+	return map[string]any{
+		"type": "object", "required": []string{"provider", "name"},
+		"properties": map[string]any{
+			"provider": field,
+			"name":     field,
+		},
+		"additionalProperties": false,
+	}
 }
 
 func methodFieldJSONSchema(field methodkind.Field) map[string]any {

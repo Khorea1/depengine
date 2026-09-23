@@ -18,12 +18,16 @@ var sourceFields = []struct {
 
 func applySources(p *plan.ResolvedInstallPlan, method *config.MethodCandidate) {
 	for _, source := range method.Sources {
-		p.Sources = append(p.Sources, plan.SourceReference{
+		ref := plan.SourceReference{
 			Role: plan.SourceHostConfiguration,
 			Kind: source.Kind,
 			Name: source.Name,
 			URL:  source.URL,
-		})
+		}
+		if source.SecretRef != nil {
+			ref.SecretRef = &plan.SecretReference{Provider: source.SecretRef.Provider, Name: source.SecretRef.Name}
+		}
+		p.Sources = append(p.Sources, ref)
 	}
 	for _, field := range sourceFields {
 		if value := stringValue(method.Config, field.key); value != "" {

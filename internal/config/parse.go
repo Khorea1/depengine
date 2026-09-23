@@ -534,17 +534,7 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 			delete(t, "requires")
 		}
 		if rawSources, ok := t["sources"].([]any); ok {
-			for _, raw := range rawSources {
-				m, ok := raw.(map[string]any)
-				if !ok {
-					continue
-				}
-				source := Source{}
-				source.Kind, _ = m["kind"].(string)
-				source.Name, _ = m["name"].(string)
-				source.URL, _ = m["url"].(string)
-				mc.Sources = append(mc.Sources, source)
-			}
+			mc.Sources = parseSources(rawSources)
 			delete(t, "sources")
 		}
 		for k, v := range t {
@@ -655,17 +645,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 		delete(cfg, "requires")
 		var methodSources []Source
 		if rawSources, ok := cfg["sources"].([]any); ok {
-			for _, raw := range rawSources {
-				m, ok := raw.(map[string]any)
-				if !ok {
-					continue
-				}
-				source := Source{}
-				source.Kind, _ = m["kind"].(string)
-				source.Name, _ = m["name"].(string)
-				source.URL, _ = m["url"].(string)
-				methodSources = append(methodSources, source)
-			}
+			methodSources = parseSources(rawSources)
 		}
 		delete(cfg, "sources")
 		methods = append(methods, &MethodCandidate{
@@ -695,6 +675,27 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 	}
 
 	return methods
+}
+
+func parseSources(rawSources []any) []Source {
+	var sources []Source
+	for _, raw := range rawSources {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		source := Source{}
+		source.Kind, _ = m["kind"].(string)
+		source.Name, _ = m["name"].(string)
+		source.URL, _ = m["url"].(string)
+		if rawRef, ok := m["secret_ref"].(map[string]any); ok {
+			source.SecretRef = &SecretReference{}
+			source.SecretRef.Provider, _ = rawRef["provider"].(string)
+			source.SecretRef.Name, _ = rawRef["name"].(string)
+		}
+		sources = append(sources, source)
+	}
+	return sources
 }
 
 func toStringSlice(v any) []string {

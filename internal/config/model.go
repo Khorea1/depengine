@@ -139,7 +139,7 @@ func cloneMethod(method *MethodCandidate) *MethodCandidate {
 	}
 	out := *method
 	out.Requires = append([]string(nil), method.Requires...)
-	out.Sources = append([]Source(nil), method.Sources...)
+	out.Sources = cloneSources(method.Sources)
 	out.Config = make(map[string]any, len(method.Config))
 	for key, value := range method.Config {
 		out.Config[key] = value
@@ -149,6 +149,17 @@ func cloneMethod(method *MethodCandidate) *MethodCandidate {
 		out.When = &condition
 	}
 	return &out
+}
+
+func cloneSources(sources []Source) []Source {
+	out := append([]Source(nil), sources...)
+	for i := range out {
+		if out[i].SecretRef != nil {
+			ref := *out[i].SecretRef
+			out[i].SecretRef = &ref
+		}
+	}
+	return out
 }
 
 // MethodCandidate is one way to install the parent Tool.
@@ -171,9 +182,16 @@ type MethodCandidate struct {
 
 // Source is repository configuration scoped to a single method candidate.
 type Source struct {
-	Kind string
-	Name string
-	URL  string
+	Kind      string
+	Name      string
+	URL       string
+	SecretRef *SecretReference
+}
+
+// SecretReference names external secret material without storing its value.
+type SecretReference struct {
+	Provider string
+	Name     string
 }
 
 func (t *Tool) GraphDependencies() []string { return t.Requires }

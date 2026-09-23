@@ -1,6 +1,10 @@
 package planner_test
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -45,6 +49,55 @@ func TestBuildCandidateIntentProjectsHostSources(t *testing.T) {
 	}
 	if missing != 0 {
 		t.Fatalf("host-source plan unexpectedly rejected by method capability boundary: %v", methodkind.CapabilityNames(missing))
+	}
+}
+
+func TestSourceSecretReferenceFlowsFromSchemaToPlanAndRequiresAuth(t *testing.T) {
+	t.Setenv("CORP_TOKEN", "private-value-must-not-enter-plan")
+	for _, withRef := range []bool{false, true} {
+		path := filepath.Join(t.TempDir(), "schema.toml")
+		ref := ""
+		if withRef {
+			ref = `, secret_ref = { provider = "env", name = "CORP_TOKEN" }`
+		}
+		data := "schema_version = 1\n[tools.demo.native]\npkg = \"demo\"\nsources = [{ kind = \"apt-ppa\", name = \"ppa:vendor/stable\"" + ref + " }]\n"
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		schema, err := config.ParseProjectSchema(path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tool := schema.Tools["demo"]
+		intent, err := planner.BuildCandidateIntent(tool, tool.Methods[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		contract, _ := methodkind.Lookup("native")
+		missing, err := contract.MissingPlanCapabilities(intent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if withRef {
+			if len(intent.Sources) != 1 || intent.Sources[0].SecretRef == nil || *intent.Sources[0].SecretRef != (plan.SecretReference{Provider: "env", Name: "CORP_TOKEN"}) {
+				t.Fatalf("plan source = %+v", intent.Sources)
+			}
+			if missing&methodkind.CapabilityAuth == 0 {
+				t.Fatalf("missing capabilities = %v, want auth", methodkind.CapabilityNames(missing))
+			}
+			if _, err := planner.BuildValidatedCandidateIntent(tool, tool.Methods[0], methodkind.CandidateRequirements{}); err == nil || !plan.IsClass(err, plan.ErrorAuthRequirement) {
+				t.Fatalf("validated intent error = %v, want auth requirement", err)
+			}
+		} else if missing&methodkind.CapabilityAuth != 0 {
+			t.Fatalf("missing capabilities = %v, unexpected auth", methodkind.CapabilityNames(missing))
+		}
+		encoded, err := json.Marshal(intent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(encoded), "private-value-must-not-enter-plan") {
+			t.Fatal("plan serialized environment secret material")
+		}
 	}
 }
 
