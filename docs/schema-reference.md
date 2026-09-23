@@ -455,11 +455,13 @@ when = { is_android = true }
 
 The artifact source must resolve to a filename ending in `.apk`; other formats are rejected before download/dispatch.
 
-Shared artifact fields (`checksum`, `checksum_url`, `signature_url`,
-`signing_key`, ...) keep the same meaning. There is no
-`install_dir`/`binary`/`extract_to` field here, unlike `appimage` — the
-`.apk` always lands under a fixed, depengine-owned cache directory named
-`<tool>.apk`; it's never meant to end up on `PATH`.
+Shared transport/integrity fields (`checksum`, `checksum_url`,
+`signature_url`, `signing_key`, ...) keep the same meaning. There is no
+`install_dir`/`binary`/`extract_to` field here, unlike `appimage`, and
+archive-only placement fields (`strip_components`, `entrypoints`,
+`link_dir`) are rejected. The `.apk` always lands under a fixed,
+depengine-owned cache directory named `<tool>.apk`; it's never meant to end
+up on `PATH`.
 
 **What "installed" means here:** success means "handed to the Android
 package installer", not "installed" — a human still has to tap through the
