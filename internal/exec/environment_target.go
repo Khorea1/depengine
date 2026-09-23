@@ -28,9 +28,10 @@ func methodForResolvedTarget(method *config.MethodCandidate, resolved *plan.Reso
 		delete(copy.Config, "environment")
 		delete(copy.Config, "prefix")
 		if target != nil {
-			if target.Kind == plan.EnvironmentPrefix {
+			switch target.Kind {
+			case plan.EnvironmentPrefix:
 				copy.Config["prefix"] = target.Value
-			} else if target.Kind == plan.EnvironmentNamed {
+			case plan.EnvironmentNamed:
 				copy.Config["environment"] = target.Value
 			}
 		}

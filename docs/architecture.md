@@ -65,6 +65,13 @@ the process registry populated by `app.InitAdapters()`.
 Subprocesses go through `internal/run.Runner`. Adapters should not call
 `exec.Command` directly.
 
+`platform.ResolveFamily()` classifies the host without inspecting installed
+manager binaries. The `native` method selects one default provider for that
+family. Competing managers, such as winget, Scoop, and Chocolatey, are explicit
+method candidates; their order and fallback remain visible in the plan.
+Binary variants may share a provider only when package identity and behavior
+match, as with dnf and dnf5.
+
 ## Configuration boundary
 
 `internal/config` parses files and validates schema structure, but it does not

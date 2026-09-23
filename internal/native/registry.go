@@ -11,11 +11,10 @@
 //     from.
 //
 //   - A "manager key" is what the manager map is indexed by. Today it
-//     1:1-collides with the clan, but they are free to diverge: README
-//     already notes that rhel/fedora are forced into one family and that
-//     windows will need winget/choco/scoop. When that happens, the
-//     manager map keys on a finer granule ("windows-winget") while the
-//     clan stays "windows" for `when` matching.
+//     usually matches the clan but may be finer ("windows-winget") while
+//     the clan stays "windows" for `when` matching. This key selects one
+//     default native provider, not a list of competing managers. Alternatives
+//     such as Scoop and Chocolatey stay explicit method candidates.
 //
 // Lookup translates clan -> manager entry. Nothing else in the engine
 // should read the manager map directly; that foraging pattern is how
