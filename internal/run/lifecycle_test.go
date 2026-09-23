@@ -89,9 +89,11 @@ func TestRunCapturedOutputIsBounded(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX producer pipeline")
 	}
-	res := OSExecRunner{}.Run(context.Background(), "sh", "-c", "yes | head -c 3000000")
-	if res.Err != nil {
-		t.Fatalf("producer failed: %v", res.Err)
+	// awk is POSIX and produces exactly 3,000,000 bytes here. Avoid
+	// head -c: OpenBSD head(1) intentionally supports line counts only.
+	res := OSExecRunner{}.Run(context.Background(), "awk", "BEGIN { for (i = 0; i < 1500000; i++) print \"y\" }")
+	if res.Err != nil || res.ExitCode != 0 {
+		t.Fatalf("producer failed: %+v", res)
 	}
 	if len(res.Stdout) > maxCapturedOutput {
 		t.Fatalf("captured stdout = %d bytes, want <= %d", len(res.Stdout), maxCapturedOutput)

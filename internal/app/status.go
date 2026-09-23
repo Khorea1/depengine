@@ -1,16 +1,22 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -27,10 +33,11 @@ func newStatusCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "status",
 		Short:   ifPT("Mostrar estado das ferramentas em relação ao schema", "Show tool installation state vs schema"),
+		Long:    ifPT("Reconcilia o estado rastreado com a identidade observada no host. Os status incluem installed, missing, outdated, unknown e broken.", "Reconciles tracked state with identity observed on the host. Status values include installed, missing, outdated, unknown, and broken."),
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
-			return runStatus(statusSchema, statusManifest, statusNoManifest, statusFormat, statusJSON, statusOrphans)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runStatus(cmd.Context(), statusSchema, statusManifest, statusNoManifest, statusFormat, statusJSON, statusOrphans)
 		},
 	}
 	f := cmd.Flags()
@@ -43,12 +50,8 @@ func newStatusCmd() *cobra.Command {
 	return cmd
 }
 
-// runStatus shows the installation status of tools by comparing the state
-// file against the schema. It reports installed, missing, and outdated tools.
-// Thin orchestrator over the phase helpers below: normalize flags, load
-// state, load schema, classify, render. Pure state-vs-schema+lock comparison
-// with no adapter calls.
-func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, statusFormat *string, statusJSON, statusOrphans *bool) error {
+// runStatus compares tracked and observed host state with the current schema.
+func runStatus(ctx context.Context, statusSchema, statusManifest *string, statusNoManifest *bool, statusFormat *string, statusJSON, statusOrphans *bool) error {
 	normalizeStatusFormat(statusFormat, statusJSON)
 
 	ls, err := openStatusState()
@@ -67,6 +70,26 @@ func runStatus(statusSchema, statusManifest *string, statusNoManifest *bool, sta
 	s, lk := loadStatusSchema(schemaPath, statusManifest, statusNoManifest)
 
 	tools := classifyStatusTools(st.Tools, s, lk, *statusOrphans)
+	if s != nil && !*statusOrphans {
+		facts, factsErr := engine.GatherFacts(run.OSExecRunner{})
+		if factsErr == nil {
+			ex := exec.New()
+			exec.WithRunner(run.OSExecRunner{})(ex)
+			exec.WithFacts(facts)(ex)
+			exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
+			tools = reconcileStatusTools(ctx, tools, st.Tools, s, lk, ex, engine.ResolveFamily(facts))
+		} else {
+			log.Default.Warn("gather host facts for status", "error", factsErr)
+			for i := range tools {
+				if tools[i].Status == "orphaned" || tools[i].Status == "missing" {
+					continue
+				}
+				tools[i].Status = "unknown"
+				verification := plan.VerificationResult{State: plan.StateUnknown, Detail: factsErr.Error()}
+				tools[i].Verification = &verification
+			}
+		}
+	}
 
 	if *statusFormat == "json" {
 		return renderStatusJSON(tools)
@@ -158,11 +181,12 @@ func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifes
 
 // toolStatus is one row of the status report.
 type toolStatus struct {
-	Name    string `json:"name"`
-	Status  string `json:"status"`
-	Method  string `json:"method,omitempty"`
-	Version string `json:"version,omitempty"`
-	Updated string `json:"updated,omitempty"`
+	Name         string                   `json:"name"`
+	Status       string                   `json:"status"`
+	Method       string                   `json:"method,omitempty"`
+	Version      string                   `json:"version,omitempty"`
+	Updated      string                   `json:"updated,omitempty"`
+	Verification *plan.VerificationResult `json:"verification,omitempty"`
 }
 
 // statusToolOutdated reports whether an installed tool drifted from the
@@ -180,6 +204,66 @@ func statusToolOutdated(ts state.ToolState, stTool *config.Tool, lk *lock.Lock, 
 		}
 	}
 	return false
+}
+
+func reconcileStatusTools(ctx context.Context, rows []toolStatus, installed map[string]state.ToolState, schema *config.Schema, lk *lock.Lock, ex *exec.Executor, clan string) []toolStatus {
+	for i := range rows {
+		row := &rows[i]
+		if row.Status == "orphaned" || row.Status == "missing" {
+			continue
+		}
+		tool := schema.Tools[row.Name]
+		ts := installed[row.Name]
+		definitionDrift := ts.DefinitionHash != "" && state.DefinitionHash(tool) != ts.DefinitionHash
+		method, methodErr := findTrackedMethodCandidate(tool, ts, ex.DefaultMethodOrder(), ex.NativeManagerName())
+		if methodErr != nil {
+			row.Status = "unknown"
+			verification := plan.VerificationResult{State: plan.StateUnknown, Detail: methodErr.Error()}
+			row.Verification = &verification
+			continue
+		}
+		ex.SetHostContext(clan)
+		resolved, err := ex.ResolveCandidatePlan(ctx, tool, method)
+		if err == nil {
+			if pin, ok := lockPinForCandidate(lk, row.Name, tool, method); ok {
+				resolved.Identity.Version = pin.Latest
+				if validateErr := resolved.Validate(); validateErr != nil {
+					err = fmt.Errorf("apply lock pin to desired identity: %w", validateErr)
+				}
+			}
+		}
+		var verification plan.VerificationResult
+		if err == nil {
+			verification, err = ex.VerifyResolvedCandidate(ctx, tool, method, resolved)
+		}
+		if err != nil {
+			row.Status = "unknown"
+			v := plan.VerificationResult{State: plan.StateUnknown, Detail: err.Error()}
+			row.Verification = &v
+			continue
+		}
+		row.Verification = &verification
+		if slices.Contains(verification.KnownFields, plan.FieldVersion) {
+			row.Version = verification.Observed.Version
+		}
+		switch verification.State {
+		case plan.StateSatisfied:
+			if definitionDrift {
+				row.Status = "outdated"
+			} else {
+				row.Status = "installed"
+			}
+		case plan.StateAbsent:
+			row.Status = "missing"
+		case plan.StateDrifted:
+			row.Status = "outdated"
+		case plan.StateUnknown:
+			row.Status = "unknown"
+		case plan.StateBroken:
+			row.Status = "broken"
+		}
+	}
+	return rows
 }
 
 // classifyStatusTools compares installed state against the schema (plus lock)
@@ -311,7 +395,7 @@ func renderStatusTable(tools []toolStatus, orphansOnly bool) error {
 
 	fmt.Fprintln(c.w)
 	var parts []string
-	for _, st := range []string{"outdated", "missing", "orphaned", "installed"} {
+	for _, st := range []string{"broken", "outdated", "missing", "unknown", "orphaned", "installed"} {
 		if n := counts[st]; n > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", n, st))
 		}
@@ -322,14 +406,18 @@ func renderStatusTable(tools []toolStatus, orphansOnly bool) error {
 
 func statusRank(s string) int {
 	switch s {
-	case "outdated":
+	case "broken":
 		return 0
-	case "missing":
+	case "outdated":
 		return 1
-	case "orphaned":
+	case "missing":
 		return 2
-	default: // installed
+	case "unknown":
 		return 3
+	case "orphaned":
+		return 4
+	default: // installed
+		return 5
 	}
 }
 
@@ -338,11 +426,11 @@ func statusRank(s string) int {
 // column alignment.
 func statusStyled(c *cliStyle, padded, status string) string {
 	switch status {
+	case "broken", "missing":
+		return c.red(padded)
 	case "outdated":
 		return c.yellow(padded)
-	case "missing":
-		return c.red(padded)
-	case "orphaned":
+	case "unknown", "orphaned":
 		return c.yellow(padded)
 	default: // installed
 		return c.green(padded)

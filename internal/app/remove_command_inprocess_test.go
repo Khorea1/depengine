@@ -20,7 +20,7 @@ func TestRunRemoveInvokesAdapterRemover(t *testing.T) {
 	stateHome := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateHome)
 	writeTestState(t, stateHome, map[string]state.ToolState{
-		"tool": {Method: "test-remove", MethodKind: "test-remove", Config: map[string]any{"package": "example/tool"}},
+		"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "example/tool"}},
 	})
 
 	all, dryRun, force := false, false, false
@@ -34,7 +34,7 @@ func TestRunRemoveInvokesAdapterRemover(t *testing.T) {
 	if adapter.gotTool == nil || adapter.gotTool.Name != "tool" {
 		t.Fatalf("Remove tool = %#v, want tool", adapter.gotTool)
 	}
-	if adapter.gotMethod == nil || adapter.gotMethod.Config["package"] != "example/tool" {
+	if adapter.gotMethod == nil || adapter.gotMethod.Config["pkg"] != "example/tool" {
 		t.Fatalf("Remove method = %#v, want persisted method config", adapter.gotMethod)
 	}
 	if _, ok := loadTestState(t, stateHome).Tools["tool"]; ok {
@@ -49,7 +49,7 @@ func TestRunRemoveAdapterFailureRetainsState(t *testing.T) {
 	stateHome := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateHome)
 	writeTestState(t, stateHome, map[string]state.ToolState{
-		"tool": {Method: "test-remove", MethodKind: "test-remove"},
+		"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "example/tool"}},
 	})
 
 	all, dryRun, force := false, false, false
@@ -72,7 +72,7 @@ func TestRunRemoveDryRunDoesNotInvokeAdapterRemover(t *testing.T) {
 	stateHome := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateHome)
 	writeTestState(t, stateHome, map[string]state.ToolState{
-		"tool": {Method: "test-remove", MethodKind: "test-remove"},
+		"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "example/tool"}},
 	})
 
 	all, dryRun, force := false, true, false

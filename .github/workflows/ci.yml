@@ -109,9 +109,9 @@ jobs:
           docker compose -f tests/crossplatform/docker-compose.yml run --rm "$distro"
         done
 
-  # Native adapters claimed for macOS (brew/cask/mas) and Windows
-  # (scoop/choco/winget) are compile-time claims today — validate them at the
-  # compile + unit level on the real runners.
+  # Real macOS runner: unit tests plus an actual Homebrew lifecycle smoke test.
+  # This validates install/check/status/idempotency/remove against the native
+  # package manager instead of treating macOS support as compile-time only.
   test-macos:
     runs-on: macos-latest
 
@@ -129,6 +129,117 @@ jobs:
     - name: Run tests
       run: go test -race ./...
 
+    - name: Run native Homebrew lifecycle smoke test
+      env:
+        HOMEBREW_NO_AUTO_UPDATE: "1"
+      run: tests/platform/native-lifecycle.sh tests/platform/fixtures/native-hello.toml depengine-native-smoke
+
+  # Real FreeBSD VM: compile/test the Go code on the target OS, then exercise
+  # the same native package-manager lifecycle contract used by macOS.
+  test-freebsd:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.x.x
+
+    - name: Run tests and native pkg lifecycle in FreeBSD
+      uses: vmactions/freebsd-vm@4469451fe39bee80be4066836c5170362e9349f3 # v1.5.7
+      with:
+        release: "15.1"
+        copyback: false
+        prepare: |
+          env ASSUME_ALWAYS_YES=yes pkg bootstrap -f
+          fetch -qo /tmp/go.tar.gz https://go.dev/dl/go1.27.1.freebsd-amd64.tar.gz
+          sha256 -c 9761194512938a640948ae5ba273df73a441f4229ea21a1503937e55c69bf107 /tmp/go.tar.gz
+          rm -rf /usr/local/go
+          tar -C /usr/local -xzf /tmp/go.tar.gz
+        run: |
+          export PATH="/usr/local/go/bin:$PATH"
+          go version
+          go test ./...
+          tests/platform/native-lifecycle.sh tests/platform/fixtures/native-hello.toml depengine-native-smoke
+
+  # Real OpenBSD VM: run the Go suite on the target OS and exercise pkg_add.
+  test-openbsd:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.x.x
+
+    - name: Run tests and native pkg_add lifecycle in OpenBSD
+      uses: vmactions/openbsd-vm@86cdc08415d9d0865267e686561e276c52d62530 # v1.4.7
+      with:
+        release: "7.9"
+        copyback: false
+        prepare: |
+          pkg_add unzip--
+          ftp -o /tmp/go.tar.gz https://go.dev/dl/go1.27.1.openbsd-amd64.tar.gz
+          test "$(sha256 -q /tmp/go.tar.gz)" = "db0566b3b3ddf6eda09cb3434a9401eb2583ffa539475e45592812813f11c792"
+          rm -rf /usr/local/go
+          tar -C /usr/local -xzf /tmp/go.tar.gz
+        run: |
+          export PATH="/usr/local/go/bin:$PATH"
+          go version
+          go test ./...
+          tests/platform/native-lifecycle.sh tests/platform/fixtures/openbsd-pkgadd.toml depengine-openbsd-smoke
+
+  # Real NetBSD VM: run the Go suite on the target OS and exercise pkgin.
+  test-netbsd:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.x.x
+
+    - name: Run tests and native pkgin lifecycle in NetBSD
+      uses: vmactions/netbsd-vm@20ee93a005c9fc78743e6e05269f4cb023b87413 # v1.5.0
+      with:
+        release: "11.0-microvm"
+        copyback: false
+        prepare: |
+          /usr/sbin/pkg_add pkgin unzip
+          /usr/bin/ftp -o /tmp/go.tar.gz https://go.dev/dl/go1.27.1.netbsd-amd64.tar.gz
+          test "$(/usr/bin/sha256 -q /tmp/go.tar.gz)" = "4ace14c14e7c6eb1d06890433afe81f8c2dc746d1d5f4df3ae6d2d7dd0481ba2"
+          mkdir -p /usr/local
+          rm -rf /usr/local/go
+          tar -C /usr/local -xzf /tmp/go.tar.gz
+        run: |
+          export PATH="/usr/local/go/bin:/usr/pkg/bin:/usr/pkg/sbin:$PATH"
+          go version
+          go test ./...
+          tests/platform/native-lifecycle.sh tests/platform/fixtures/netbsd-pkgin.toml depengine-netbsd-smoke
+
+  # Real Android emulator: cross-build the CLI with the Android NDK, execute it
+  # through adb, and assert depengine detects the runtime as Android. This is
+  # intentionally separate from the Termux package-manager lifecycle.
+  test-android:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.x.x
+
+    - name: Set up Go
+      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.x.x
+      with:
+        go-version: '1.27.x'
+
+    - name: Install dependencies
+      run: go mod download
+
+    - name: Enable KVM access
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    - name: Run CLI inside Android emulator
+      uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+      with:
+        api-level: 35
+        arch: x86_64
+        target: default
+        ndk: 27.3.13750724
+        script: tests/platform/android-runtime-smoke.sh
+
   test-windows:
     runs-on: windows-latest
 
@@ -145,3 +256,9 @@ jobs:
 
     - name: Run tests
       run: go test -race ./...
+
+    - name: Run native Chocolatey lifecycle smoke test
+      shell: bash
+      env:
+        DEPENGINE_BIN: ./depengine.exe
+      run: tests/platform/native-lifecycle.sh tests/platform/fixtures/windows-choco.toml depengine-windows-smoke

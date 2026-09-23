@@ -136,35 +136,34 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 			continue
 		}
 
-		// Check whether observation reports the target already installed.
-		probe := ex.probeRunner(tool.Name, displayKind)
-		observation, observeErr := adapter.Observe(ctx, probe, tool, methodForResolvedTarget(method, resolvedPlan))
-		if observeErr != nil {
+		verification, verifyErr := ex.VerifyResolvedCandidate(ctx, tool, method, resolvedPlan)
+		if verifyErr != nil {
 			attempt.Status = "failed"
-			attempt.Error = fmt.Sprintf("%s: observe presence: %s", displayKind, run.RedactSensitiveText(observeErr.Error()))
+			attempt.Error = fmt.Sprintf("%s: verify desired state: %s", displayKind, run.RedactSensitiveText(verifyErr.Error()))
 			appendAttempt(attempt, method)
 			continue
 		}
-		switch observation.Presence {
-		case plan.PresencePresent:
+		switch verification.State {
+		case plan.StateSatisfied:
 			attempt.Status = "already_installed"
-			attempt.Error = "presence probe passed — tool appears to be installed"
 			appendAttempt(attempt, method)
 			continue
-		case plan.PresenceAbsent, plan.PresenceUnknown:
-			// Neither state establishes that the candidate is installed.
-		case plan.PresenceBroken:
-			detail := observation.Detail
+		case plan.StateAbsent:
+			// Continue to source and target availability checks.
+		case plan.StateDrifted:
+			attempt.Error = verificationDetail(verification)
+		case plan.StateUnknown, plan.StateBroken:
+			detail := verificationDetail(verification)
 			if detail == "" {
-				detail = "presence observation is broken"
+				detail = string(verification.State)
 			}
 			attempt.Status = "failed"
-			attempt.Error = fmt.Sprintf("%s: %s", displayKind, run.RedactSensitiveText(detail))
+			attempt.Error = fmt.Sprintf("%s: desired state %s: %s", displayKind, verification.State, run.RedactSensitiveText(detail))
 			appendAttempt(attempt, method)
 			continue
 		default:
 			attempt.Status = "failed"
-			attempt.Error = fmt.Sprintf("%s: invalid presence observation %q", displayKind, observation.Presence)
+			attempt.Error = fmt.Sprintf("%s: invalid verification state %q", displayKind, verification.State)
 			appendAttempt(attempt, method)
 			continue
 		}
@@ -189,7 +188,7 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 			// distinguish that from "this candidate does not exist in the configured
 			// repo/index". Without this check, `why` can call a phantom native
 			// candidate ready even though Execute will deterministically reject it.
-			if !checkAvailable(ctx, probe, adapter, tool, method) {
+			if !checkAvailable(ctx, ex.probeRunner(tool.Name, displayKind), adapter, tool, method) {
 				attempt.Status = "skip_unavailable"
 				attempt.Error = fmt.Sprintf("%s: package not found in repo/index", displayKind)
 				appendAttempt(attempt, method)
@@ -241,12 +240,19 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 	return attempts
 }
 
-// CheckInstalled probes method candidates in install order and returns the
-// first method that reports the tool present. It shares candidate selection
-// and V2 plan resolution with ExplainTool, but stops after presence probes so
+// CheckDesiredState probes method candidates in install order and returns the
+// first candidate whose resolved identity satisfies desired state. It shares
+// candidate selection and V2 plan resolution with ExplainTool, but stops after
 // `check` never probes package sources or install availability. When live is
 // false, unavailable adapters are skipped; live bypasses that gate.
-func (ex *Executor) CheckInstalled(ctx context.Context, tool *config.Tool, clan string, live bool) (string, bool) {
+type CheckResult struct {
+	Method       string                  `json:"method,omitempty"`
+	Verification plan.VerificationResult `json:"verification"`
+}
+
+func (ex *Executor) CheckDesiredState(ctx context.Context, tool *config.Tool, clan string, live bool) (CheckResult, error) {
+	var first CheckResult
+	haveFirst := false
 	for _, method := range ex.selectedMethods(tool, clan) {
 		if method.When != nil && !method.When.Match(ex.facts) {
 			continue
@@ -268,19 +274,50 @@ func (ex *Executor) CheckInstalled(ctx context.Context, tool *config.Tool, clan 
 		if err != nil {
 			continue
 		}
-		observation, err := adapter.Observe(ctx, probe, tool, methodForResolvedTarget(method, resolved))
-		if err == nil && observation.Presence == plan.PresencePresent {
-			return method.Kind, true
+		verification, err := ex.VerifyResolvedCandidate(ctx, tool, method, resolved)
+		if err != nil {
+			checked := CheckResult{
+				Method: method.Kind,
+				Verification: plan.VerificationResult{
+					State:  plan.StateBroken,
+					Detail: err.Error(),
+				},
+			}
+			if !haveFirst || first.Verification.State == plan.StateAbsent {
+				first, haveFirst = checked, true
+			}
+			continue
 		}
-		continue
+		checked := CheckResult{Method: method.Kind, Verification: verification}
+		if verification.State == plan.StateSatisfied {
+			return checked, nil
+		}
+		if !haveFirst || first.Verification.State == plan.StateAbsent && verification.State != plan.StateAbsent {
+			first, haveFirst = checked, true
+		}
 	}
-	return "", false
+	if haveFirst {
+		return first, nil
+	}
+	return CheckResult{Verification: plan.VerificationResult{State: plan.StateAbsent}}, nil
+}
+
+// CheckInstalled remains a compatibility wrapper for internal callers.
+func (ex *Executor) CheckInstalled(ctx context.Context, tool *config.Tool, clan string, live bool) (string, bool) {
+	checked, err := ex.CheckDesiredState(ctx, tool, clan, live)
+	return checked.Method, err == nil && checked.Verification.State == plan.StateSatisfied
 }
 
 func (ex *Executor) selectedMethods(tool *config.Tool, clan string) []*config.MethodCandidate {
+	ex.SetHostContext(clan)
+	return config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
+}
+
+// SetHostContext selects host-specific defaults used during candidate planning.
+func (ex *Executor) SetHostContext(clan string) {
 	ex.clan = clan
+	ex.nativeManagerName = ""
 	if mgr, ok := native.Lookup(clan); ok {
 		ex.nativeManagerName = mgr.Name
 	}
-	return config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
 }

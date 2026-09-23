@@ -59,7 +59,7 @@ func (a *targetCaptureAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *c
 
 func (a *targetCaptureAdapter) Observe(_ context.Context, _ run.Runner, _ *config.Tool, method *config.MethodCandidate) (plan.Observation, error) {
 	a.observedTarget, _ = method.Config["environment"].(string)
-	return plan.Observation{Presence: plan.PresencePresent}, nil
+	return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: "numpy", Environment: &plan.EnvironmentTarget{Kind: plan.EnvironmentNamed, Value: "tools"}}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldEnvironment}}, nil
 }
 
 func (a *targetCaptureAdapter) InstalledVersion(_ context.Context, _ run.Runner, _ *config.Tool, method *config.MethodCandidate) (string, error) {

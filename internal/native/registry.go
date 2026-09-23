@@ -193,9 +193,12 @@ var managers = map[string]Manager{
 		Name:         "pkg_add",
 		SudoRequired: true,
 		InstallCmd:   []string{"pkg_add", "{pkg}"},
-		CheckCmd:     []string{"pkg_info", "-e", "{pkg}"},
-		RemoveCmd:    []string{"pkg_delete", "{pkg}"},
-		AtomicBatch:  true,
+		// pkg_info -e expects a package specification, while pkg_add accepts
+		// a bare stem. Installed packages include a version suffix
+		// (stem-version[-flavor]), so match any installed version of the stem.
+		CheckCmd:    []string{"pkg_info", "-e", "{pkg}-*"},
+		RemoveCmd:   []string{"pkg_delete", "{pkg}"},
+		AtomicBatch: true,
 	},
 	"netbsd": {
 		Name:         "pkgin",
