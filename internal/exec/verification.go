@@ -34,10 +34,7 @@ func (ex *Executor) verifyResolvedCandidate(ctx context.Context, tool *config.To
 		return plan.VerificationResult{}, plan.Observation{}, fmt.Errorf("no adapter registered for %q", method.Kind)
 	}
 	displayKind := displayMethodKind(method)
-	observation, err := adapter.Observe(ctx, ex.probeRunner(tool.Name, displayKind), tool, methodForResolvedTarget(method, resolved))
-	if err != nil {
-		return plan.VerificationResult{}, plan.Observation{}, fmt.Errorf("%s: observe desired state: %w", displayKind, err)
-	}
+	observation := ex.observeResolvedCandidate(ctx, tool, method, adapter, resolved, displayKind)
 	verification := plan.Reconcile(resolved.Identity, observation)
 	if err := verification.Validate(); err != nil {
 		return plan.VerificationResult{}, plan.Observation{}, fmt.Errorf("%s: invalid verification result: %w", displayKind, err)

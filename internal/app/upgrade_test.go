@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	osexec "os/exec"
-	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -106,9 +104,9 @@ func main() {
 			name += ".exe"
 		}
 		path := filepath.Join(binDir, name)
-		cmd := osexec.Command("go", "build", "-o", path, source)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("build fake upgrade binary %s: %v\n%s", name, err, out)
+		res := (run.OSExecRunner{}).Run(context.Background(), "go", "build", "-o", path, source)
+		if err := run.CheckResult(res, "go build fake upgrade binary"); err != nil {
+			t.Fatalf("build fake upgrade binary %s: %v", name, err)
 		}
 	}
 	return "PATH=" + binDir + string(os.PathListSeparator) + os.Getenv("PATH")

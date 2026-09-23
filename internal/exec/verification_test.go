@@ -3,6 +3,7 @@ package exec
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -49,8 +50,8 @@ func TestVerifyResolvedCandidateReconcilesResolvedIdentity(t *testing.T) {
 	}
 }
 
-func TestVerifyResolvedCandidateUsesResolvedTargetAndReturnsObserveError(t *testing.T) {
-	adapter := &verificationAdapter{executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "conda"}, observeErr: errors.New("probe failed")}}
+func TestVerifyResolvedCandidateUsesResolvedTargetAndCanonicalizesObserveError(t *testing.T) {
+	adapter := &verificationAdapter{executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "conda"}, observeErr: errors.New("probe failed at https://user:pass@example.test/?token=secret")}}
 	ex := New()
 	WithAdapters(adapter)(ex)
 	tool := &config.Tool{Name: "demo"}
@@ -58,8 +59,15 @@ func TestVerifyResolvedCandidateUsesResolvedTargetAndReturnsObserveError(t *test
 	resolved := plan.New("demo", "conda", true)
 	resolved.Identity.Package = "demo"
 	resolved.Identity.Environment = &plan.EnvironmentTarget{Kind: plan.EnvironmentNamed, Value: "new"}
-	if _, err := ex.VerifyResolvedCandidate(context.Background(), tool, method, &resolved); err == nil {
-		t.Fatal("expected Observe error")
+	got, err := ex.VerifyResolvedCandidate(context.Background(), tool, method, &resolved)
+	if err != nil {
+		t.Fatalf("VerifyResolvedCandidate: %v", err)
+	}
+	if got.State != plan.StateBroken || !strings.Contains(got.Detail, "probe failed") {
+		t.Fatalf("verification=%+v, want redacted broken observation", got)
+	}
+	if strings.Contains(got.Detail, "pass") || strings.Contains(got.Detail, "secret") {
+		t.Fatalf("verification detail leaked probe credentials: %q", got.Detail)
 	}
 	if got := adapter.seen.Config["environment"]; got != "new" {
 		t.Fatalf("observed environment=%v, want new", got)
