@@ -61,14 +61,18 @@ See `docs/architecture.md` for the package map and execution flow. Check `intern
 - **Confirm first:** install or remove host dependencies, materially change `detect_os.sh`, or publish/release.
 - **Never:** force-push or commit secrets.
 - `pre_install`, `post_install`, `build`, and `build_cmd` can execute arbitrary commands. Prefer argv-form `run = ["program", "arg"]`; shell-string forms invoke a shell. Execution is blocked unless explicitly enabled with `--allow-arbitrary-code`. Treat schemas enabling it as security-sensitive.
-- For owned archive payloads, use `extract_to` and `entrypoints`. `binary` does not name an archive-internal path. Removal must delete only owned payloads and declared launchers, never shared parent directories. Use the artifact-specific adapter for installer packages; see `docs/schema-reference.md` for format constraints.
-- Before changing OS detection, verify affected distro-family mappings against `internal/native/registry.go` and update the relevant tests.
+- For owned archive payloads, use `extract_to` and `entrypoints`. `binary` does not name an archive-internal path. Removal must delete only owned payloads and declared launchers, never shared parent directories. `.msi`, `.exe`, `.pkg`, and `.dmg` must not use the generic `http` adapter; see `docs/schema-reference.md` for format constraints.
+- Before changing OS detection, test every clan returned by `internal/native.KnownClans()`: debian, arch, fedora, suse, alpine, void, gentoo, macos, termux, freebsd, openbsd, netbsd, windows, mint, and opkg.
 
 ## Known gotchas
 
 - (2026-09) [CRITICAL] Schemas require `schema_version = 1`; project schemas use `[tools]`, manifests use `[packages]`. Do not add legacy parsers, migrations, or aliases unless `docs/specs/schema-compatibility.md` changes that policy.
 - (2026-09) [INFO] `method_only` restricts candidates exclusively; `method_prefer` changes priority and keeps fallbacks. Inferred native candidates depend on declaration form. See the per-tool method-control section in `docs/schema-reference.md`.
 - (2026-09) [INFO] Method-level dependencies and sources resolve only when their candidate is reached. `dependency_only` excludes a tool from ordinary roots while keeping it available as a dependency or via `--only`; see `docs/architecture.md` and `docs/schema-reference.md`.
+- (2026-09) [INFO] `github` is the canonical release-asset method: it requires `repo` + `asset`, precedes `http` in default order without auto-injection, and has no global `gh` alias. A custom `gh` label is valid only with `kind = "github"`.
+- (2026-08) [INFO] Windows native managers are supported but remain less battle-tested than Linux/macOS.
+
+Keep gotchas specific and checkable. Merge entries only when they share a root cause; if this section grows beyond 25 entries, consolidate recurring patterns and split subsystem-specific groups only when they remain heterogeneous across multiple subsystems.
 
 ## Git and Worktrunk workflow
 
@@ -92,4 +96,4 @@ Shared project rules live in this file and version-controlled documentation. If 
 
 ## Maintaining this file
 
-Keep information here only when it is project-specific, non-obvious, reusable, stable, and likely to affect engineering decisions. Prefer source-of-truth links for detailed or volatile behavior. Keep personal preferences, generic advice, duplicated documentation, and task-specific notes out. Correct stale statements promptly; mark unresolved conflicts explicitly rather than silently choosing between them.
+Keep information here only when it is project-specific, non-obvious, reusable, stable, and likely to affect engineering decisions. Prefer source-of-truth links for detailed or volatile behavior. Keep personal preferences, generic advice, duplicated documentation, and task-specific notes out. Correct stale statements promptly; mark unresolved conflicts explicitly rather than silently choosing between them. Always inspect and show the diff for this file before committing changes to it.
