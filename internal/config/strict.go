@@ -272,6 +272,7 @@ func validateMethodValue(raw any, path, declaredKind string, errs *[]string) {
 			}
 		}
 		if known {
+			validateRequiredMethodFields(v, path, contract, errs)
 			validateArtifactChoice(v, path, contract.Kind, errs)
 			for _, group := range contract.MutuallyExclusive {
 				present := 0
@@ -300,6 +301,21 @@ func validateMethodValue(raw any, path, declaredKind string, errs *[]string) {
 	}
 }
 
+func validateRequiredMethodFields(v map[string]any, path string, contract *methodkind.Contract, errs *[]string) {
+	var required []string
+	for key, field := range contract.Fields {
+		if field.Required {
+			required = append(required, key)
+		}
+	}
+	sort.Strings(required)
+	for _, key := range required {
+		if _, configured := v[key]; !configured {
+			*errs = append(*errs, path+"."+key+": required field")
+		}
+	}
+}
+
 func validateArtifactChoice(v map[string]any, path, kind string, errs *[]string) {
 	if kind != "http" && kind != "github" && kind != "appimage" && kind != "android" && kind != "msi" {
 		return
@@ -324,7 +340,11 @@ func validateArtifactChoice(v map[string]any, path, kind string, errs *[]string)
 func validateMethodField(raw any, field methodkind.Field, path string, errs *[]string) {
 	switch field.Type {
 	case methodkind.String:
-		validateString(raw, path, errs)
+		if field.NonEmpty {
+			validateNonEmptyString(raw, path, errs)
+		} else {
+			validateString(raw, path, errs)
+		}
 	case methodkind.Boolean:
 		if _, ok := raw.(bool); !ok {
 			*errs = append(*errs, fmt.Sprintf("%s: expected boolean, got %T", path, raw))
