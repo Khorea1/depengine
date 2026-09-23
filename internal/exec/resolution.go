@@ -50,7 +50,6 @@ func (ex *Executor) resolveCandidatePlan(
 	return resolved, nil
 }
 
-
 // observeResolvedCandidate is the single read-only desired-state observation
 // point shared by install, dry-run, check/status, and explanation after plan
 // resolution. It always observes the concrete resolved target rather than the

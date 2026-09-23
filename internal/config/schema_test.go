@@ -374,9 +374,8 @@ simple = ["zsh", "bat"]
 }
 
 func TestParseSchemaMultipleGithubCandidatesDifferentWhen(t *testing.T) {
-	// Confirms (TODO item 4, 3rd bullet) that two candidates of the same
-	// `kind = "github"` with different `when` conditions parse as distinct
-	// MethodCandidate entries — no parser change needed, this already falls
+	// Two candidates of the same `kind = "github"` with different `when`
+	// conditions parse as distinct MethodCandidate entries — this falls
 	// out of the generic label+kind-override machinery in parseMethod.
 	p := writeSchema(t, `
 [defaults]
@@ -1431,7 +1430,9 @@ func TestValidateAcceptsBucketNames(t *testing.T) {
 	if err2 != nil {
 		t.Fatalf("unexpected error: %v", err2)
 	}
-	_ = warnings2 // bucket names in per-tool lists don't generate warnings (they pass silently)
+	if len(warnings2) != 0 {
+		t.Errorf("expected no warnings for bucket names in per-tool lists, got %v", warnings2)
+	}
 }
 
 func TestValidateRejectsUnknownKindInMethodPrefer(t *testing.T) {

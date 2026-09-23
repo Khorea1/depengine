@@ -164,12 +164,11 @@ func TestClear(t *testing.T) {
 	defer os.Unsetenv("XDG_CACHE_HOME")
 
 	// Store two entries.
-	for i, suffix := range []string{"a", "b"} {
+	for _, suffix := range []string{"a", "b"} {
 		url := testURL + "#Clear" + suffix
 		src := filepath.Join(dir, "src")
 		os.WriteFile(src, []byte("data"), 0o644)
 		Store(url, src)
-		_ = i
 	}
 
 	count, err := Clear()

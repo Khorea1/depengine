@@ -234,16 +234,11 @@ func TestExtractArchiveIgnoresBinaryName(t *testing.T) {
 	}
 }
 
-// TestExtractCopyBinaryElevated proves the fix for the bug flagged in
-// .dev/TODO.md's stale "already fixed" note: copyBinary used to call
-// os.WriteFile unconditionally, ignoring sudoRequired entirely — so a
-// system-scope single-file http/appimage install (extract_to under
-// /usr/local/bin, /opt, ...) would silently attempt an unprivileged write
-// into a root-owned directory and fail, unlike extractTar/extractZip/
-// installDeb, which already elevate correctly. This test forces the
-// non-root branch the same way TestElevationGuardNoMethod does, and
-// confirms Extract shells out through the elevation prefix to stage the
-// binary and atomically commit it instead of touching the filesystem directly.
+// TestExtractCopyBinaryElevated covers the system-scope single-file
+// install path: copyBinary must shell out through the elevation prefix to
+// stage the binary and atomically commit it instead of touching a
+// root-owned directory directly (unlike a plain os.WriteFile). This test
+// forces the non-root branch the same way TestElevationGuardNoMethod does.
 func TestExtractCopyBinaryElevated(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		// The sudo/install/mv staging flow targets Unix paths and

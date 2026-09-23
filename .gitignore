@@ -42,4 +42,4 @@ TODO.md
 .omp/
 .serena/
 docs/plans
-ast-metrics
+.ast-metrics*.yaml

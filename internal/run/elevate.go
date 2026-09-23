@@ -18,9 +18,9 @@ import (
 //
 // An Elevator must not be copied after first use.
 type Elevator struct {
-	mu        sync.Mutex
-	method    string // "" = unprobed/not-found, "sudo"|"doas"|"pkexec"|"run0" = detected
-	probed    bool   // true once detectElevation has been called
+	mu         sync.Mutex
+	method     string // "" = unprobed/not-found, "sudo"|"doas"|"pkexec"|"run0" = detected
+	probed     bool   // true once detectElevation has been called
 	overridden bool   // true when Override forced a method, bypassing euid/probing
 }
 

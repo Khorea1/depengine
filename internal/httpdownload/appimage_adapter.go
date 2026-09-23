@@ -14,10 +14,9 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// appImageDesktopDir is fixed (not configurable) — the TODO this adapter
-// implements is explicit that the shortcut always goes to the standard
-// XDG user applications directory, never a system one, so it never needs
-// sudo_required at all.
+// appImageDesktopDir is fixed (not configurable) — the shortcut always
+// goes to the standard XDG user applications directory, never a system
+// one, so it never needs sudo_required at all.
 const appImageDesktopDir = "~/.local/share/applications"
 
 // AppImageAdapter implements exec.AdapterV2 for the "appimage" method kind:
