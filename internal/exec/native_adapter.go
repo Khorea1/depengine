@@ -124,8 +124,9 @@ func (a *NativeAdapter) Install(ctx context.Context, rn run.Runner, _ *config.To
 }
 
 // ResolvePlan validates the host-projected intent without mutating host state.
-// The executor applies clan-specific package overrides before this boundary;
-// plan.ValidateResolution then freezes that package identity for execution.
+// The planner supplies the tool name when pkg is omitted, and the executor
+// applies clan-specific package overrides before this boundary. The plan is
+// authoritative here; re-reading method config would reject valid shorthand.
 func (a *NativeAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
 	if intent == nil {
 		return nil, errors.New("native: nil plan intent")
@@ -136,9 +137,6 @@ func (a *NativeAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *co
 	clan := a.detectClan(ctx, rn)
 	if clan == "" {
 		return nil, errors.New("native: no native manager found")
-	}
-	if pkgFromConfig(mc, clan) == "" {
-		return nil, errors.New("native: no package name")
 	}
 	if intent.Identity.Package == "" {
 		return nil, errors.New("native: no package name in plan intent")
@@ -389,8 +387,9 @@ func (a *NativeByManagerAdapter) Install(ctx context.Context, rn run.Runner, too
 }
 
 // ResolvePlan validates the host-projected intent without mutating host state.
-// The executor applies clan-specific package overrides before this boundary;
-// plan.ValidateResolution then freezes that package identity for execution.
+// The planner supplies the tool name when pkg is omitted, and the executor
+// applies clan-specific package overrides before this boundary. The plan is
+// authoritative here; re-reading method config would reject valid shorthand.
 func (a *NativeByManagerAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
 	if intent == nil {
 		return nil, fmt.Errorf("native(%s): nil plan intent", a.managerName)
@@ -401,9 +400,6 @@ func (a *NativeByManagerAdapter) ResolvePlan(_ context.Context, _ run.Runner, to
 	clan := findClanByManager(a.managerName)
 	if clan == "" {
 		return nil, fmt.Errorf("native(%s): no clan found for manager", a.managerName)
-	}
-	if pkgFromConfig(mc, clan) == "" {
-		return nil, fmt.Errorf("native(%s): no package name", a.managerName)
 	}
 	if intent.Identity.Package == "" {
 		return nil, fmt.Errorf("native(%s): no package name in plan intent", a.managerName)

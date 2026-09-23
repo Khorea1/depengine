@@ -27,6 +27,7 @@ func TestNativeAdapterV2ResolvePreservesPlannerIntent(t *testing.T) {
 		adapter *NativeAdapter
 	}{
 		{"plain pkg", &config.Tool{Name: "git"}, &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "git"}}, NewNativeAdapter("debian")},
+		{"planner package fallback", &config.Tool{Name: "git-tool"}, &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": ""}}, NewNativeAdapter("debian")},
 		{"clan override", &config.Tool{Name: "fd"}, &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "fd", "pkg_overrides": map[string]any{"apt": "fd-find"}}}, NewNativeAdapter("debian")},
 		{"override for another clan falls back to pkg", &config.Tool{Name: "fd"}, &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "fd", "pkg_overrides": map[string]any{"apt": "fd-find"}}}, NewNativeAdapter("arch")},
 	}
@@ -47,6 +48,27 @@ func TestNativeAdapterV2ResolvePreservesPlannerIntent(t *testing.T) {
 	}
 }
 
+func TestNativeByManagerAdapterV2ResolveUsesPlannerPackageFallback(t *testing.T) {
+	tool := &config.Tool{Name: "demo"}
+	method := &config.MethodCandidate{Kind: "apt", Config: map[string]any{}}
+	intent, err := planner.BuildCandidateIntent(tool, method)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if intent.Identity.Package != tool.Name {
+		t.Fatalf("planner package = %q, want tool name %q", intent.Identity.Package, tool.Name)
+	}
+
+	adapter := &NativeByManagerAdapter{managerName: "apt"}
+	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, method, &intent)
+	if err != nil {
+		t.Fatalf("ResolvePlan() error = %v", err)
+	}
+	if resolved.Identity.Package != tool.Name {
+		t.Fatalf("resolved package = %q, want %q", resolved.Identity.Package, tool.Name)
+	}
+}
+
 func TestNativeAdapterV2ResolveRejectsUnresolvable(t *testing.T) {
 	tool := &config.Tool{Name: "git"}
 	mc := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "git"}}
@@ -61,10 +83,6 @@ func TestNativeAdapterV2ResolveRejectsUnresolvable(t *testing.T) {
 	}
 	if _, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, nil, intent); err == nil {
 		t.Fatal("ResolvePlan(nil method) should fail")
-	}
-	empty := &config.MethodCandidate{Kind: "native", Config: map[string]any{}}
-	if _, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, empty, intent); err == nil {
-		t.Fatal("ResolvePlan(empty pkg) should fail")
 	}
 	noPkgIntent := plan.New("git", "native", true)
 	noPkgIntent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
