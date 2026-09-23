@@ -205,9 +205,7 @@ func (t *Tool) GraphConditionalDependencies() map[string][]string {
 		if method.Label != "" {
 			label = method.Label
 		}
-		for _, dependency := range method.Requires {
-			dependencies[label] = append(dependencies[label], dependency)
-		}
+		dependencies[label] = append(dependencies[label], method.Requires...)
 	}
 	return dependencies
 }

@@ -201,7 +201,7 @@ func validWindowsAbsolutePath(value string) bool {
 	normalized := strings.ReplaceAll(value, "/", `\`)
 	if len(normalized) >= 3 && normalized[1] == ':' && normalized[2] == '\\' {
 		c := normalized[0]
-		if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+		if (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') {
 			return false
 		}
 		return validWindowsPathTail(strings.TrimPrefix(normalized[3:], `\`))

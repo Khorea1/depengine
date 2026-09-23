@@ -227,13 +227,9 @@ func filterTools(tools map[string]*config.Tool, only, skip, profile string) map[
 				t = &clone
 			}
 			filtered[name] = t
-			for _, req := range t.Requires {
-				queue = append(queue, req)
-			}
+			queue = append(queue, t.Requires...)
 			for _, method := range t.Methods {
-				for _, req := range method.Requires {
-					queue = append(queue, req)
-				}
+				queue = append(queue, method.Requires...)
 			}
 		}
 	}
