@@ -43,9 +43,8 @@ Full flag list: [cli-reference.md](cli-reference.md).
 
 ## Schema structure
 
-The following is a structural fragment, not a standalone schema. Every
-document also requires `schema_version = 1`; project declarations live under
-`[tools]`, while personal manifests use `[packages]`.
+This is a fragment. Complete project schemas also need `schema_version = 1`.
+Projects use `[tools]`; personal manifests use `[packages]`.
 
 ```toml
 [defaults]          # global defaults (manager, aur_helper, method_prefer)
@@ -56,9 +55,9 @@ document also requires `schema_version = 1`; project declarations live under
     [tools.NAME.method]  # one sub-table per candidate method
 ```
 
-**Field ownership:** tool-level fields (`requires`, `pre_install`, `post_install`,
-`tags`) live outside methods; method-level fields (`kind`, `when`, `url`,
-`build`, `checksum`, `pkg`, `git`) live inside.
+Tool-level fields (`requires`, `pre_install`, `post_install`, `tags`) live
+outside methods. Method-level fields (`kind`, `when`, `url`, `build`,
+`checksum`, `pkg`, `git`) live inside a method.
 Tool-level fields can carry conditions: `post_install = { cmd = "...", when =
 { target_family = ["unix"] } }` skips the hook when it can't apply, and
 `requires_when = { fontconfig = { target_family = ["unix"] } }` drops the

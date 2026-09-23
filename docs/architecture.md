@@ -1,116 +1,115 @@
 # Architecture
 
-This document describes depengine internals. Usage documentation starts in the
-[README](../README.md).
+This page explains how depengine is split internally. For user-facing setup,
+start with the [README](../README.md).
 
-```mermaid
-flowchart TB
-    subgraph Input
-        SCHEMA[schema.toml]
-        LOCK[depengine.lock]
-    end
+The main path is:
 
-    subgraph Engine
-        PARSER[internal/config.ParseSchema]
-        GRAPH[internal/graph\nTopological sort]
-        EXEC[internal/exec.Executor]
-    end
-
-    subgraph Adapters
-        NATIVE[internal/native\n15 distro families]
-        ECOSYSTEM[internal/ecosystem\nlanguage/tool adapters]
-        GIT[internal/git\nClone + build]
-        HTTP[internal/httpdownload\nDownload + checksum]
-        SOURCE[internal/source\nCandidate-scoped sources]
-        MSI[internal/msi\nWindows Installer]
-    end
-
-    subgraph Output
-        STATE[State file]
-        REPORT[Install report]
-        SBOM[SBOM\nCycloneDX / SPDX]
-    end
-
-    SCHEMA --> PARSER
-    LOCK --> PARSER
-    PARSER --> GRAPH
-    GRAPH --> EXEC
-    EXEC --> NATIVE
-    EXEC --> ECOSYSTEM
-    EXEC --> GIT
-    EXEC --> HTTP
-    EXEC --> SOURCE
-    EXEC --> MSI
-    NATIVE --> STATE
-    ECOSYSTEM --> STATE
-    GIT --> STATE
-    HTTP --> STATE
-    MSI --> STATE
-    STATE --> REPORT
-    STATE --> SBOM
+```text
+schema.toml + manifest.toml
+        |
+        v
+internal/config      parse, normalize, merge, validate
+        |
+        v
+internal/graph       order tools and reject dependency cycles
+        |
+        v
+internal/exec        choose candidates and run adapters
+        |
+        +--> internal/native
+        +--> internal/ecosystem
+        +--> internal/git
+        +--> internal/httpdownload
+        +--> other typed adapters
+        |
+        v
+state / report / SBOM
 ```
 
-## Package layers
+`main.go` only wires the application together: signals, embedded assets,
+adapter registration, and the final exit code. CLI behavior lives in
+`internal/app`.
+
+## Main packages
 
 | Package | Responsibility |
-|---------|----------------|
-| `internal/app` | Cobra command tree and unit-testable CLI application workflows |
-| `internal/run` | `Runner` interface — seam for subprocess execution. Production: `OSExecRunner`. Tests: `FakeRunner`. |
-| `internal/engine` | Invokes `detect_os.sh` and parses its JSON output; retains compatibility wrappers over platform semantics |
-| `internal/platform` | Neutral host facts, distro-family resolution, and host-version comparison shared by parsing and execution |
-| `internal/native` | Declarative registry of native package managers per distro clan. Manager lookup, install command building |
-| `internal/config` | TOML parser for both `schema.toml` and `manifest.toml` (shared grammar), placeholder expansion, layer merging (`MergeLayers`), kind validation |
-| `internal/methodkind` | Compile-time list of known method kind names (ecosystem + native manager aliases). A sanity boundary, not the runtime registry — see `internal/exec.RegisteredKinds()` for that |
-| `internal/exec` | Central executor + `Adapter` interface + registry + sync manager + install/report logic |
-| `internal/ecosystem` | Language/tool ecosystem adapters (cargo, go, pip, npm, sdkman, steamcmd, ...) |
-| `internal/git` | `GitAdapter`: shallow clone + build |
-| `internal/httpdownload` | `HTTPAdapter`: download + extraction + checksum/GPG verification + `{latest}` resolution |
-| `internal/source` | Idempotent candidate-scoped PPA/COPR/Scoop bucket/Brew tap management |
-| `internal/msi` | MSI installation and exact uninstall-registry ownership |
-| `internal/graph` | Topological sort (Kahn's algorithm) with cycle detection |
-| `internal/lock` | `depengine.lock` — resolves and pins `{latest}` placeholders |
-| `internal/state` | Installed-tool state file, with cross-platform file locking (`flock` on Unix, `LockFileEx` on Windows) |
-| `internal/log` | Structured logger via `log/slog`, with trace ID and DEBUG–ERROR levels |
-| `internal/validate` | Structural + semantic + environmental validation |
-| `internal/sbom` | SBOM export (CycloneDX 1.5 / SPDX 2.3) |
+|---|---|
+| `internal/app` | Cobra commands and CLI workflows |
+| `internal/config` | Parse project schemas and personal manifests, expand placeholders, merge layers, validate method kinds |
+| `internal/graph` | Topological sorting and cycle detection |
+| `internal/exec` | Plan execution, adapter registry, candidate fallback, install reports |
+| `internal/run` | Subprocess interface used by production code and tests |
+| `internal/platform` | Host facts and distro-family logic |
+| `internal/engine` | Runs and parses `detect_os.sh` |
+| `internal/native` | Native package-manager definitions |
+| `internal/ecosystem` | Cargo, Go, Python, Node, Flatpak, Snap, and other ecosystem adapters |
+| `internal/git` | Git clone and build installs |
+| `internal/httpdownload` | Download, extraction, placement, checksum/signature checks |
+| `internal/source` | Package-source setup such as PPA, COPR, Brew taps, and Scoop buckets |
+| `internal/msi` | Windows MSI install/remove lifecycle |
+| `internal/lock` | `depengine.lock` resolution and verification |
+| `internal/state` | Installed-tool state and cross-platform file locking |
+| `internal/validate` | Structural, semantic, and environment validation |
+| `internal/sbom` | CycloneDX and SPDX export |
 
-## Process-global shims
+## Adapter boundary
 
-Four singletons remain deliberately process-global rather than injected:
+Install methods implement `internal/exec.Adapter` and are registered explicitly
+during startup. The executor looks them up by method kind; it does not call
+package managers directly.
 
-| Shim | Why global is correct |
-|------|----------------------|
-| `exec.defaultRegistry` | Exactly one populated adapter set per process; adapters are stateless w.r.t. the registry. Per-instance registries exist (`Registry`, `WithAdapters`) for tests. |
-| `run.Default` (Elevator) | Elevation method selection is process-wide configuration (flag/env override). Isolated `Elevator` instances remain available. |
-| `ghrelease.Default` (Resolver) | “Once per process” `{latest}` caching avoids repeated GitHub API calls within a run. Isolated `Resolver` instances remain available. |
-| `log.Default` | There is one stderr per process. |
+Tests can supply an isolated registry with `WithAdapters()`. Production uses
+the process registry populated by `app.InitAdapters()`.
 
-New code that needs isolation constructs its own instance; the shims are
-the composition-root boundary, not tech debt. Finishing full injection
-everywhere is explicitly deferred (S.6 tail) — not a merge blocker.
+Subprocesses go through `internal/run.Runner`. Adapters should not call
+`exec.Command` directly.
 
-## Installation flow
+## Configuration boundary
 
-```mermaid
-    A[For each tool\nin topological order] --> B[For each method\nby method preference]
-    B --> C{when matches?}
-    C -->|no| B
-    C -->|yes| D{Adapter\navailable?}
-    D -->|no| B
-    D -->|yes| E{Already\ninstalled?}
-    E -->|yes| B
-    E -->|no| P[Lazy method dependencies]
-    P --> S[Ensure candidate sources]
-    S --> F[Install]
-    F --> G[Report]
-```
+`internal/config` parses files and validates schema structure, but it does not
+detect the current OS or import the executor. Host facts come from
+`internal/platform` and are passed where needed.
 
-## Contributing
+Project and personal configuration use the same grammar but different roots:
+projects declare `[tools]`; manifests declare `[packages]`. Project values win
+when the two layers conflict.
+
+## Install flow
+
+For each tool, in dependency order, the executor:
+
+1. builds the candidate list;
+2. skips candidates whose `when` condition does not match;
+3. checks whether the adapter is available;
+4. resolves lazy method dependencies and package sources only when that
+   candidate is reached;
+5. installs with the first candidate that succeeds;
+6. records the resulting state and report data.
+
+`method_prefer` changes candidate priority but keeps fallbacks. `method_only`
+restricts the candidate list.
+
+## Process-wide defaults
+
+A few defaults are shared for one process:
+
+| Default | Reason |
+|---|---|
+| adapter registry | Production has one registered adapter set |
+| elevation config | One CLI invocation uses one elevation policy |
+| GitHub release resolver | Reuses release lookups during one run |
+| logger | One process writes one log stream |
+
+Tests can create isolated instances where isolation matters.
+
+## Checks
 
 ```sh
-go test ./...     # unit tests
-go vet ./...      # static analysis
+go test ./...
+go vet ./...
 go build -o depengine .
-
-cd tests/integration && docker compose up --build   # Debian, Arch, Fedora, Alpine
 ```
+
+The integration suite under `tests/integration` is slower and needs containers
+plus network access.

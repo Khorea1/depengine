@@ -1,25 +1,20 @@
 # `schema.toml` reference
 
-Only the latest pre-freeze contract (`schema_version = 1`) is supported today.
-`schema_version` identifies the manifest format major; it is not the depengine
-release version. Until the v1 freeze gate is complete, readers fail closed on
-all other versions and do not dispatch legacy parsers or migrations. See
-[Compatibility and format versioning](compatibility.md) for the freeze and
-future-major policy.
+This is the full reference for `schema.toml`. For setup and common commands,
+start with the [README](../README.md#quick-start).
 
-This document defines the supported tool declaration forms for
-`schema.toml`. For setup and common workflows, start with
-[the README](../README.md#first-schematoml).
+depengine currently accepts `schema_version = 1` only. The format is still
+pre-freeze, so version 1 is not yet a permanent backward-compatibility promise.
+See [file format compatibility](compatibility.md).
 
-A schema describes **tools** (dependencies) and **methods** (how to install
-each one). The engine tries candidates in the effective configured method
-order until one succeeds; TOML declaration order does not set priority.
+A schema declares **tools** and one or more **install methods** for each tool.
+depengine tries candidates in configured priority order until one succeeds.
+TOML declaration order does not choose that priority.
 
-Except for the explicitly marked complete documents below, TOML snippets on
-this page are fragments: bare assignments belong under `[tools]`, while paths
-starting with `[tools.NAME...]` assume the document already has
-`schema_version = 1`. Use [`schema.example.toml`](../schema.example.toml) for a
-larger executable schema.
+Unless a section says "complete", examples below are fragments. Bare tool
+assignments belong under `[tools]`; `[tools.NAME...]` examples assume the file
+already contains `schema_version = 1`. See
+[`schema.example.toml`](../schema.example.toml) for a larger complete example.
 
 **On this page:**
 
@@ -36,8 +31,7 @@ larger executable schema.
 
 ## Complete copy-paste documents
 
-These standalone examples are parsed and semantically validated by the test
-suite through the same public APIs used for shipped schemas.
+These examples are complete files and are validated by the test suite.
 
 ### Minimal project schema (complete)
 
@@ -108,9 +102,8 @@ lf       = { go  = "github.com/gokcehan/lf" }
 
 ### `true` shorthand and ecosystem buckets
 
-When the package name equals the tool name (~80% of Python/Node cases), use
-`true` instead of repeating it. Buckets expand to every method in an
-ecosystem at once.
+When the package name equals the tool name, use `true` instead of repeating it.
+Buckets expand to every method in an ecosystem at once.
 
 | Bucket | Expansion |
 |--------|-----------|
@@ -482,8 +475,14 @@ did.
 
 ## Method reference
 
-Manager options are typed: WinGet accepts exact `version`, `source`, `scope = "user" | "machine"`, `architecture = "x86" | "x64" | "arm" | "arm64"`, and an allow-listed `installer_type`; Scoop accepts exact `version`, `bucket`, `scope = "user" | "global"`, and `architecture = "32bit" | "64bit" | "arm64"`. Snap accepts `confinement = "strict" | "classic" | "devmode"`; risk-only `channel = "stable" | "candidate" | "beta" | "edge"` remains shorthand, while `track`, `risk`, and `branch` model a full tracking channel;
-Chocolatey accepts exact `version`, `prerelease = true`, typed `source`, and `architecture = "x86" | "x64"`. `x86` maps to Chocolatey's explicit `--forcex86`; `x64` uses the client's native architecture. Arbitrary manager arguments are not a schema feature, so depengine retains control of non-interactive/safety flags.
+Manager-specific options are typed instead of passed through as arbitrary
+arguments. WinGet supports `version`, `source`, `scope`, `architecture`, and an
+allow-listed `installer_type`. Scoop supports `version`, `bucket`, `scope`, and
+`architecture`. Chocolatey supports `version`, `prerelease`, `source`, and
+`architecture`. Snap supports confinement and structured channel selection.
+
+This keeps validation and non-interactive/safety flags under depengine's
+control.
 
 `git` custom installs may declare `managed_paths = ["/absolute/path", ...]`.
 All paths must be absolute after `~` expansion. Filesystem roots, the whole
@@ -549,7 +548,14 @@ are described above or alongside their examples.
 
 ### Ecosystem desired-state coverage
 
-The ecosystem methods do not yet provide uniform fidelity. `pip`, `npm`, `pipx`, `uv`, `gem`, `composer`, `bun`, `pnpm`, and Yarn Classic support exact `version` intent and verify the installed version using manager-native queries. Source selection is typed for `pip.index_url`, `npm.registry`, `pipx.index_url`, `uv.index`, `gem.source`, and `bun.registry`; `pipx` additionally supports `scope = "user" | "global"`, while `gem` supports `scope = "default" | "user"`. Composer, pnpm, and Yarn Classic currently model exact version but not an explicit registry/source in depengine. These methods are not yet universally lockable to immutable package identities, and authenticated registries must use out-of-band credential mechanisms rather than URL userinfo.
+Ecosystem methods do not all expose the same controls. `pip`, `npm`, `pipx`,
+`uv`, `gem`, `composer`, `bun`, `pnpm`, and Yarn Classic support exact version
+intent and check the installed version through the package manager. Source or
+registry selection is available where the adapter has a typed field.
+
+These methods are not yet universally lockable to immutable package identities.
+Authenticated registries must use the package manager's authentication
+mechanism rather than credentials embedded in URLs.
 
 ---
 
@@ -565,9 +571,8 @@ pre_install = "curl -fsSL https://setup.example.com | sh"
   pkg = "my-env"
 ```
 
-> `pre_install` runs before the first method — if it fails, the tool is
-> aborted. Requires `--allow-arbitrary-code` (a security warning is shown by
-> default, and the tool is skipped unless the flag is passed).
+`pre_install` runs before installation. If it fails, the tool stops. Hooks
+require `--allow-arbitrary-code`.
 
 The string form is a POSIX shorthand and executes as `sh -c <command>`. For
 portable or shell-independent hooks, declare the executable and arguments
@@ -803,10 +808,10 @@ Version conditions compare numeric and textual runs rather than applying SemVer 
 
 ## Per-tool method control
 
-Global and per-tool preference use the same term: `[defaults].method_prefer`
-and tool-level `method_prefer` are preference prefixes. The older
-`[defaults].method_order` spelling remains a compatibility alias for now; do
-not set both global fields. Use `method_only` for an exhaustive allow-list.
+`[defaults].method_prefer` and tool-level `method_prefer` are priority prefixes:
+unlisted methods remain available as fallbacks. The older
+`[defaults].method_order` name is still accepted as a compatibility alias; do
+not set both. Use `method_only` when fallback must be disabled.
 
 Override the preference for a single tool with `method_prefer` (prefix) or
 `method_only` (exclusive list):
@@ -901,25 +906,17 @@ yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }
 See [the README](../README.md#schematoml-and-manifesttoml) for an overview
 of the two layers.
 
-`schema.toml` and `~/.config/depengine/manifest.toml` merge per field,
-according to a declared strategy per field:
+`schema.toml` and `~/.config/depengine/manifest.toml` merge by field:
 
-1. **Whole-value overwrite** (most fields): if both layers set the field,
-   the schema's value wins.
-2. **Map merge** (e.g. `pkg_overrides`): keys from both layers are kept;
-   where a key exists in both, the schema wins.
-3. **Union** (e.g. `tags`): values from both layers are combined, without
-   duplicates.
-4. **Schema-overrides** (`pre_install`, `post_install`, `requires`,
-   `method_prefer`, `method_only`): the manifest may set
-   these as defaults, but the schema layer wins on conflict — the
-   manifest's value is replaced, not merged.
-5. **Tools only in the manifest** are silently dropped by default. The
-   personal manifest does not add tools to a project unless
-   `[manifest] allow_new_tools = true` is set explicitly. Without it,
-   manifest-only tools are stripped before
-   validation/merge. `depengine validate` and `depengine install` do not
-   report an error or warning for those excluded tools.
+1. Most scalar/list fields: the schema wins when both files set a value.
+2. Maps such as `pkg_overrides`: keys are combined; the schema wins on a
+   duplicate key.
+3. Sets such as `tags`: values are combined without duplicates.
+4. `pre_install`, `post_install`, `requires`, `method_prefer`, and
+   `method_only`: a schema value replaces the manifest value instead of
+   merging with it.
+5. Manifest-only tools are ignored unless the manifest sets
+   `[manifest] allow_new_tools = true`.
 
 Run `depengine why <tool>` to see candidate status together with normalized
 non-secret identity fields (for example version/revision, registry/source,

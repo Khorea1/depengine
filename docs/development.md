@@ -1,51 +1,45 @@
-# Development metadata
+# Project documentation
 
-Project knowledge lives with the code when a future clone needs it to understand,
-change, review, or reproduce the project. Temporary coordination stays outside the
-versioned contract.
+Keep information in Git when a future clone needs it to understand, change, or
+review the project. Keep temporary task notes in `.dev/`.
 
-## Where information belongs
+## Where things belong
 
-| Content | Location | Versioned |
-|---|---|---|
-| Architecture and public engineering constraints | `docs/` | yes |
-| Accepted architectural decisions | `docs/design/adr-*.md` | yes |
-| Durable behavioral or compatibility specifications | `docs/specs/` | yes |
-| Research that supports a lasting decision | `docs/research/` | selectively |
-| Shared agent/project instructions | `AGENTS.md` | yes |
-| Executable benchmarks | next to the relevant package or under a benchmark package | yes |
-| Long-lived project roadmap | `docs/roadmap.md` | yes |
-| Active task queue | issue tracker; `.dev/TODO.md` for local/session work | no |
-| Implementation plans, scratch notes, cached research, generated reports | `.dev/` | no |
+| Content | Location |
+|---|---|
+| Architecture and engineering constraints | `docs/` |
+| Accepted design decisions | `docs/design/adr-*.md` |
+| Behavioral and compatibility contracts | `docs/specs/` |
+| Research that supports a lasting decision | `docs/research/` |
+| Shared agent/project instructions | `AGENTS.md` |
+| Long-lived unfinished work | `docs/roadmap.md` |
+| Task plans, scratch notes, temporary TODOs, generated reports | `.dev/` |
 
-A useful test is whether a change to the file should be reviewed atomically with a
-change to the code. If yes, keep it in Git. If it describes work in progress or can
-be regenerated cheaply, keep it out of the repository history.
+A simple rule: if the note should be reviewed with a code change because future
+work depends on it, commit it. If it only helps the current task, keep it in
+`.dev/`.
 
-## `.dev/` working memory
+## `.dev/`
 
-`.dev/` is ignored by Git. It is for local or short lived context shared between
-agents and humans on the same checkout. Suggested names:
+`.dev/` is ignored by Git. Useful names include:
 
-- `TODO.md` for the current work queue;
-- `plan-<feature>.md` for implementation plans;
-- `ideas.md` and `not-planned.md` for uncommitted exploration;
-- `decisions.md` for decisions still being evaluated;
+- `TODO.md` for local work still in progress;
+- `plan-<feature>.md` for an implementation plan;
+- `ideas.md` for exploration;
 - `retrieved-<topic>.md` for cached external material;
-- `archive/` for finished local notes worth retaining.
+- `archive/` for local notes worth keeping around.
 
-When a decision or specification becomes a project invariant, promote it from
-`.dev/` into `docs/design/`, `docs/specs/`, or `AGENTS.md` and review it with the
-code it governs. Avoid keeping two canonical copies.
+When a local note becomes a project rule, move the rule into `docs/`, an ADR, a
+spec, or `AGENTS.md`. Avoid keeping two canonical copies.
 
-## Decisions and specifications
+## ADR or spec?
 
-Use an ADR when the useful artifact is the decision and its rationale. Use a spec
-when future implementation or validation must conform to a behavioral contract.
-ADRs are historical and normally remain after supersession; specs describe the
-current contract and should be updated when that contract changes.
+Use an ADR when the important artifact is a decision and why it was made. ADRs
+are historical and can remain after they are superseded.
 
-Generated benchmark outputs, logs, and analysis reports are normally CI artifacts
-or `.dev/` files. Commit benchmark baselines only when they are an intentional,
-reproducible acceptance criterion and include enough environment information to
-interpret them.
+Use a spec when code or validation must follow an active contract. Update the
+spec when that contract changes.
+
+Benchmark output, logs, and generated analysis normally belong in CI artifacts
+or `.dev/`. Commit a benchmark baseline only when it is an intentional
+acceptance criterion with enough environment data to interpret it.

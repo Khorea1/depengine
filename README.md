@@ -1,8 +1,7 @@
 <h1 align="center">depengine</h1>
 
 <p align="center">
-  <b>Distro-agnostic dependency installer</b><br>
-  Declare required tools; depengine selects an available install method.
+  <b>Install the tools a project needs, without tying the project to one distro.</b>
 </p>
 
 <p align="center">
@@ -11,218 +10,135 @@
   <img src="https://img.shields.io/badge/go-1.27-blue" alt="Go 1.27">
 </p>
 
----
+depengine reads a `schema.toml`, chooses an install method available on the
+current machine, and tries the configured fallbacks until one works. It can use
+native package managers, language package managers, GitHub releases, direct
+downloads, Git builds, Flatpak, and other adapters.
 
-Write a `schema.toml` listing the required tools. For each tool, depengine
-tries the configured installation methods in order until one succeeds. Methods
-include native package managers, cargo, go, pip, git, HTTP downloads, and flatpak.
-depengine is a static Go binary with no runtime dependencies.
+It ships as a single static Go binary with no runtime dependencies.
 
 ```sh
-depengine init --add "zsh,bat,nvim,ruff"   # → creates schema.toml
-depengine validate                          # → ✓ schema is valid
-depengine install                           # → 4 installed, 0 failed
-depengine status                            # → list what's installed
+depengine init --add "zsh,bat,nvim,ruff"
+depengine validate
+depengine install
+depengine status
 ```
 
-> **Platform support:** Linux receives distro integration coverage, and macOS
-> and Windows run the Go test suite on native CI runners. Windows includes
-> winget, Scoop, Chocolatey, file locking, and state support, but CI currently
-> provides compile and unit-test coverage rather than exercising native
-> package-manager install/check/remove lifecycles. Windows support is newer and
-> has less real-world validation than Linux and macOS.
+Linux has the broadest integration coverage. macOS and Windows run the Go test
+suite on native CI runners. Windows supports winget, Scoop, Chocolatey, file
+locking, and state handling, but its package-manager lifecycle coverage is
+still lighter than Linux.
 
-## Documentation map
+## Quick start
 
-This README covers setup and common workflows. Detailed references:
-
-| Document | What's in it |
-|----------|---------------|
-| [`docs/schema-reference.md`](docs/schema-reference.md) | `schema.toml` syntax, conditions, buckets, and method control |
-| [`docs/cli-reference.md`](docs/cli-reference.md) | Every command and flag, with defaults |
-| [`docs/cheatsheet.md`](docs/cheatsheet.md) | Copyable commands, flags, and placeholders |
-| [`docs/architecture.md`](docs/architecture.md) | Internal package layout and install flow |
-| [`docs/development.md`](docs/development.md) | Where ADRs, specs, working notes, TODOs, and other project metadata belong |
-| [`docs/roadmap.md`](docs/roadmap.md) | Long-lived unfinished project work and freeze milestones |
-| [`docs/support-boundary.md`](docs/support-boundary.md) | What depengine models, capability/reproducibility limits, scope and source semantics |
-| [`docs/security.md`](docs/security.md) | Threat model, arbitrary code, credentials, verification and lockfile expectations |
-| [`docs/compatibility.md`](docs/compatibility.md) | Manifest, lock and state format-version policy and v1 freeze status |
-| [`docs/depengine.1`](docs/depengine.1) | Man page (`depengine help --man`, or `man depengine` if installed) |
-| [`schema/depengine.schema.json`](schema/depengine.schema.json) | JSON Schema for editor autocomplete (taplo, VSCode) |
-
----
-
-## First `schema.toml`
-
-A schema describes **tools** (what to install) and, per tool, **methods** (how
-to get it). The engine tries methods in order until one succeeds.
+Create a project schema:
 
 ```toml
-# schema.toml
 schema_version = 1
 
 [tools]
+simple = ["zsh", "bat", "kitty"]
 
-# Package name is the same on every native manager.
-simple = ["zsh", "bat", "kitty", "mpv"]
+# Native package names may vary by package manager.
+fd = { apt = "fd-find" }
 
-# Package name differs per distro's native manager.
-fd = { apt = "fd-find" }   # "fd" everywhere else
-
-# A tool only available through a language ecosystem.
-ruff = { python = true }   # expands to pip + pipx + uv, pkg name = "ruff"
+# Ecosystem buckets expand to several compatible methods.
+ruff = { python = true }
 ```
+
+Then validate and install it:
 
 ```sh
-depengine validate     # check the schema before modifying the system
-depengine install      # try every tool's methods in order
-depengine status       # see what actually got installed, and how
+depengine validate
+depengine install
+depengine status
 ```
 
-For git builds, verified downloads, platform conditions, and tool dependencies,
-see the [schema reference](docs/schema-reference.md).
+Commit `schema.toml` with the project. Other contributors can run
+`depengine install` after cloning the repository and get the same declared tool
+set, using the methods available on their machine.
 
----
+For conditions, hooks, dependencies, archives, GitHub assets, checksums, and
+every supported method, see the [`schema.toml` reference](docs/schema-reference.md).
 
-## The sharing workflow
+## Schema and personal manifest
 
-Commit `schema.toml` so each checkout declares the same system tools.
+depengine can merge two files:
 
-```mermaid
-flowchart LR
-    A[Write schema.toml] --> B[depengine install]
-    B --> C[depengine status ✓]
-    D[git clone] --> E[depengine install]
-```
+| File | Purpose | Commit it? |
+|---|---|---|
+| `schema.toml` | Project dependencies and project-owned install rules | Yes |
+| `~/.config/depengine/manifest.toml` | Personal recipes and machine defaults | No |
+
+Project values win when both files set the same field. By default, tools that
+exist only in the personal manifest are ignored. Set
+`[manifest] allow_new_tools = true` in the manifest if you want them added to a
+project run.
+
+Project schemas use `[tools]`; personal manifests use `[packages]`.
+
+See [manifest merge rules](docs/schema-reference.md#manifest-merge-rules) for the
+field-level behavior.
+
+## Common commands
+
+| Command | Purpose |
+|---|---|
+| `depengine init` | Create `schema.toml` |
+| `depengine validate` | Validate configuration without installing |
+| `depengine install` | Install declared tools |
+| `depengine check <tool>` | Check one tool |
+| `depengine status` | Show recorded install state |
+| `depengine why <tool>` | Show which method would be chosen and why |
+| `depengine remove <tool>` | Remove a tool |
+| `depengine forget <tool>` | Remove a tool from state without uninstalling it |
+| `depengine update` | Resolve lockable mutable references and write `depengine.lock` |
+| `depengine upgrade` | Upgrade using the lockfile where supported |
+| `depengine graph` | Show tool dependencies |
+| `depengine undo` | Restore a previous install snapshot |
+| `depengine sbom` | Export CycloneDX or SPDX SBOM data |
+
+The complete command and flag reference is in
+[`docs/cli-reference.md`](docs/cli-reference.md).
+
+## Install methods
+
+depengine currently supports:
+
+| Group | Methods |
+|---|---|
+| Native | `native`, plus package-manager aliases such as `apt`, `pacman`, `dnf`, `brew`, `winget`, `scoop`, `choco` |
+| Languages | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `pnpm`, `bun`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
+| Desktop | `flatpak`, `snap`, `vscode`, `vscodium`, `cask`, `mas`, `appman` |
+| Specialized | `sdkman`, `steamcmd`, `pacstall`, `aur`, `conda`, `asdf`, `container`, `appimage`, `android`, `msi` |
+| Artifacts/builds | `git`, `local`, `github`, `http` |
+
+`native` detects the host package manager. A tool can also name a manager
+directly when package names differ by distro.
+
+## Lockfile and dry run
+
+`depengine.lock` stores immutable information for methods that depengine can
+currently resolve that way, including supported release assets and checksums.
+Lock coverage is not universal yet: package-manager and ecosystem installs may
+still resolve through their own registries at install time.
 
 ```sh
-# --- Project author ---
-depengine init --add "zsh,bat,nvim,ruff"
-./depengine validate
-./depengine install
-git add schema.toml depengine.lock && git commit
-
-# --- Everyone else ---
-git clone <project> && cd <project>
-depengine install                    # same declared tools; locked artifact pins where supported
-
-# --- Optional: pin supported mutable artifact identities ---
-./depengine update                   # resolves {latest}, writes depengine.lock
-./depengine update --dry-run         # preview what would be pinned
-./depengine update --frozen-lockfile # abort if depengine.lock doesn't exist
-./depengine install --frozen-lockfile
-
-# `install --dry-run` is planning mode: it may perform read-only resolution
-# and availability probes (including network reads), but it does not invoke
-# install hooks/adapters, mutate package sources/indexes, write state/lock data,
-# or populate the download cache.
-
-# depengine.lock currently pins supported release/artifact placeholders and
-# checksums. Package-manager and ecosystem installs are not universally locked
-# to concrete versions yet; schema.toml still preserves the declared tool set.
-
-# --- Everyday commands ---
-./depengine status                   # what's installed
-./depengine status --format=json     # same, machine-readable
-./depengine remove nvim              # uninstall
-./depengine why nvim                 # explain which method would run, and why
-./depengine sbom --format cyclonedx  # export an SBOM
+depengine update
+depengine install --frozen-lockfile
 ```
 
-> **Note on filenames:** `depengine init` creates `schema.toml` by default.
-> `depengine.toml` and `depends.toml` are also auto-detected. This repository's
-> examples use `schema.toml`.
+`depengine install --dry-run` plans the operation without running install
+adapters or hooks and without writing state, lock data, package-source changes,
+or download-cache entries. Planning may still perform read-only probes and
+network resolution.
 
----
+See [support boundaries](docs/support-boundary.md) for the current
+reproducibility limits.
 
-## `schema.toml` and `manifest.toml`
+## Downloads and trust
 
-depengine merges the project schema with a personal manifest, field by field.
-
-| File | Lives in | Purpose | Shared? |
-|------|----------|---------|---------|
-| `schema.toml` | Project root | **What** to install — the project's dependency list | Yes, commit it |
-| `manifest.toml` | `~/.config/depengine/manifest.toml` | **Personal install catalog** — installation recipes and machine-specific defaults | No, stays local |
-
-The manifest provides:
-
-1. Installation recipes shared across local projects, such as per-distro
-   package names, candidate methods, and build steps.
-2. Machine-specific defaults that fill gaps in the project schema. They do not
-   override project declarations.
-
-```sh
-cp manifest.example.toml ~/.config/depengine/manifest.toml
-# then edit: add tools, set per-distro package names, define custom methods
-```
-
-When `install` or `validate` runs, the personal manifest merges with the
-project's schema. The merge follows these rules:
-
-1. **The schema always wins on conflict.** The manifest fills in gaps; it
-   never overrides what the project declares.
-2. **Tools that only exist in the personal manifest are silently dropped by default.**
-   They are excluded from the project run unless explicitly enabled. Opt in with
-   `[manifest] allow_new_tools = true`.
-3. **A few fields can run arbitrary code** (`pre_install`, `post_install`,
-   `build`). The manifest can set defaults for these, but the
-   schema still overrides them.
-
-See [manifest merge rules](docs/schema-reference.md#manifest-merge-rules).
-
----
-
-## Commands
-
-| Command | Does |
-|---------|------|
-| `init` | Create a new `schema.toml` |
-| `install` | Install all tools from the schema |
-| `validate` | Check the schema without installing anything |
-| `check <tool>` | Check whether one tool is installed |
-| `status` | Show what's installed (all tools; takes no arguments) |
-| `remove <tool>` | Uninstall a tool |
-| `update` | Resolve `{latest}` placeholders, write `depengine.lock` |
-| `upgrade` | Upgrade installed tools to the versions pinned in `depengine.lock` |
-| `graph` | Show the dependency graph |
-| `why <tool>` | Explain how a tool would be installed |
-| `forget <tool>` | Drop a tool from state without touching the system |
-| `undo` | Revert the last installation |
-| `diff` | Compare two state files |
-| `sbom` | Export an SBOM (CycloneDX or SPDX) |
-| `completion <shell>` | Generate shell completion scripts |
-
-Every flag and default lives in **[`docs/cli-reference.md`](docs/cli-reference.md)**.
-
----
-
-## Supported installation methods
-
-| Category | Methods |
-|----------|---------|
-| **Native** | `native` (auto-detects apt/pacman/dnf/brew/...) + per-manager aliases |
-| **Language** | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `pnpm`, `bun`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
-| **Desktop** | `flatpak`, `snap`, `vscode`, `vscodium`, `cask` (macOS), `mas` (Mac App Store), `appman` (AppImages) |
-| **Windows** | `winget`, `scoop`, `choco`, `msi` |
-| **Specialized** | `sdkman`, `steamcmd`, `pacstall`, `aur` (configurable helper), `conda`, `asdf`, `container` (docker/podman pull), `appimage` (portable `.AppImage` under a stable name), `android` (`.apk` via Termux's package installer) |
-| **Other** | `git` (clone + build), `local` (vendored/offline file or archive), `github` (recommended for GitHub release assets), `http` (download + extract + checksum) |
-
-Auto-detected native managers, by distro family:
-
-```
-debian → apt      fedora  → dnf       suse    → zypper    arch  → pacman
-alpine → apk      void    → xbps      gentoo  → emerge    macos → brew
-termux → pkg      freebsd → pkg       openbsd → pkg_add   netbsd → pkg
-mint   → apt      opkg    → opkg
-```
-
----
-
-## GitHub release assets
-
-Use `github` for binaries published in GitHub Releases. It resolves the real
-asset list, accepts common OS/architecture spellings, and pins the release in
-`depengine.lock`:
+`github` is the preferred method for GitHub release assets:
 
 ```toml
 [tools.yq.github]
@@ -230,93 +146,20 @@ repo  = "mikefarah/yq"
 asset = "yq_{os_any}_{arch_any}"
 ```
 
-Both `repo` and `asset` are required. The pattern must match exactly one asset;
-depengine reports zero or multiple matches instead of guessing. `github` is the
-canonical method name—there is no global `gh` alias.
+Use `local` for project-vendored files and archives, and `http` for direct
+downloads. Artifact methods can verify fixed checksums; some methods also
+support release-asset checksum discovery or signatures.
 
-## Local/offline artifacts
+Credentials must not be embedded in HTTP(S) URLs. Private GitHub assets can use
+`GITHUB_TOKEN`, `GH_TOKEN`, or existing `gh` authentication.
 
-Use `local` for artifacts committed or vendored alongside `schema.toml`. `local_path`
-is always project-relative; absolute paths, `..`, backslashes, and symlink traversal
-are rejected. The adapter does not invoke a downloader or subprocess.
-
-```toml
-[tools.mytool.local]
-local_path  = "vendor/mytool"
-checksum    = "sha256:<64 hex characters>"
-install_dir = "~/.local/bin"
-```
-
-Raw files are installed as `install_dir/<tool>` (default `~/.local/bin/<tool>`).
-ZIP, TAR, TAR.GZ and TGZ archives are extracted to a tool-owned child directory
-`install_dir/<tool>` (default parent `~/.local/opt`), so removal never deletes a
-shared parent directory. Archive roots reserve
-`.depengine-local-artifact.sha256` for depengine's content-identity marker.
-Local checksums are optional but, when present, must be a fixed SHA-256 digest;
-`:auto` is intentionally unavailable offline. When omitted, the resolved SHA-256
-is frozen for the install attempt and persisted in state/lock identity without
-persisting the machine-specific project root.
-
-## Download security
-
-`http` and `github` installs can verify the download with a `checksum` field
-inside the method block:
-
-```toml
-[tools.yq.github]
-repo     = "mikefarah/yq"
-asset    = "yq_{os_any}_{arch_any}"
-checksum = "sha256:<hex>"          # pinned — verified exactly
-```
-
-- `checksum = "sha256:<hex>"` — the download is hashed and compared against
-the pinned value; a mismatch rejects the install. Algorithms: `sha256`,
-`sha512`, `sha1`, `md5`.
-- `checksum = "sha256:auto"` — the expected hash is fetched from a companion
-checksum file on first use. This is **TOFU (Trust On First Use)**: the hash
-comes from the same server as the binary, so it is **not** verified against
-a trusted source (the engine logs a warning and suggests pinning the hash in
-`depengine.lock`). Two fields tune `:auto` resolution:
-  - `checksum_url` — explicit URL of a checksum file hosted separately from
-    the download.
-  - `checksum_file_format` — layout of that file: `sha256sum` (hash +
-    filename), `bsd` (BSD extended), or `raw` (the whole file is the hash).
-    Defaults to auto-detection.
-
-Credential-bearing HTTP(S) URLs are rejected. For private GitHub assets, provide
-`GITHUB_TOKEN` / `GH_TOKEN` or authenticate `gh`; depengine keeps the token out
-of downloader subprocess arguments and sends it only in the HTTP authorization
-header.
-
-```toml
-[tools.yq.github]
-repo                 = "mikefarah/yq"
-asset                = "yq_{os_any}_{arch_any}"
-checksum             = "sha256:auto"
-checksum_url         = "https://example.com/sha256sums.txt"
-checksum_file_format = "sha256sum"   # sha256sum | bsd | raw
-```
-
----
-
-## Placeholders
-
-Runtime URL placeholders such as `{arch}`, `{os}`, and `{latest}` may be used
-in literal download URLs. GitHub release asset patterns additionally support
-`{version}`, `{os_any}`, and `{arch_any}` for matching real asset names:
-
-```toml
-yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }
-```
-
-Full placeholder and ownership table: [schema-reference.md#placeholders](docs/schema-reference.md#placeholders).
+See [security](docs/security.md) before using hooks, build commands, mutable
+downloads, or custom package sources.
 
 ## Editor support
 
-A [JSON Schema](schema/depengine.schema.json) describes `schema.toml`.
-Editors with TOML extensions (e.g. [taplo](https://taplo.tamasfe.dev/) for
-VSCode) use it for autocomplete, inline validation, and hover docs. Add to
-`.vscode/settings.json`:
+[`schema/depengine.schema.json`](schema/depengine.schema.json) provides editor
+completion and validation for `schema.toml`. For Taplo in VS Code:
 
 ```json
 {
@@ -327,34 +170,43 @@ VSCode) use it for autocomplete, inline validation, and hover docs. Add to
 
 ## Environment variables
 
-| Variable | Effect |
-|----------|--------|
-| `DEPENGINE_DETECT_SCRIPT` | Override path to `detect_os.sh`; otherwise the embedded script is used |
-| `DEPENGINE_MANIFEST` | Path to the personal manifest, overriding XDG discovery |
-| `DEPENGINE_CACHE_MAX_BYTES` | Download-cache size limit in bytes (default: 1 GiB; `0` disables eviction) |
-| `XDG_CONFIG_HOME` | Base directory for the personal manifest (default: `~/.config`) |
-| `XDG_CACHE_HOME` | Base directory for the download cache (default: `~/.cache`) |
-| `XDG_STATE_HOME` | Base directory for the state file (default: `~/.local/state`) |
-| `GITHUB_TOKEN` / `GH_TOKEN` | GitHub authentication token for API resolution and private release assets (`GITHUB_TOKEN` takes precedence) |
-| `NO_COLOR` | Disable ANSI styling when set to a non-empty value |
-| `FORCE_COLOR` | Force ANSI styling for color-capable output, unless `NO_COLOR` is set or `TERM=dumb` |
-| `DEPENGINE_TRACE_ID` | Trace ID propagated to subprocesses |
-| `DEPENGINE_LOG_JSON` | `=1` enables JSON log output |
+| Variable | Purpose |
+|---|---|
+| `DEPENGINE_DETECT_SCRIPT` | Override the OS-detection script |
+| `DEPENGINE_MANIFEST` | Override the personal manifest path |
+| `DEPENGINE_CACHE_MAX_BYTES` | Download-cache size limit; `0` disables eviction |
+| `XDG_CONFIG_HOME` | Base directory for the personal manifest |
+| `XDG_CACHE_HOME` | Base directory for downloads |
+| `XDG_STATE_HOME` | Base directory for state |
+| `GITHUB_TOKEN` / `GH_TOKEN` | GitHub API and private release authentication |
+| `NO_COLOR` / `FORCE_COLOR` | Control ANSI color output |
+| `DEPENGINE_TRACE_ID` | Trace ID passed to subprocesses |
+| `DEPENGINE_LOG_JSON` | Set to `1` for JSON logs |
 
----
+## Documentation
+
+| Document | Use it for |
+|---|---|
+| [`docs/schema-reference.md`](docs/schema-reference.md) | Schema syntax and install methods |
+| [`docs/cli-reference.md`](docs/cli-reference.md) | Commands and flags |
+| [`docs/cheatsheet.md`](docs/cheatsheet.md) | Copyable examples |
+| [`docs/support-boundary.md`](docs/support-boundary.md) | What depengine can and cannot guarantee |
+| [`docs/security.md`](docs/security.md) | Trust, arbitrary code, checksums, credentials |
+| [`docs/compatibility.md`](docs/compatibility.md) | File-format version policy |
+| [`docs/architecture.md`](docs/architecture.md) | Internal packages and execution flow |
+| [`docs/development.md`](docs/development.md) | Where project notes and design records belong |
+| [`docs/roadmap.md`](docs/roadmap.md) | Unfinished project work |
 
 ## Development
 
-See [`docs/architecture.md`](docs/architecture.md) for package layout and
-the install flow.
-
 ```sh
-go test ./...                    # unit tests
-go vet ./...                     # static analysis
-go build -o depengine .          # build
-
-cd tests/integration && docker compose up --build   # Debian, Arch, Fedora, Alpine
+go test ./...
+go vet ./...
+go build -o depengine .
 ```
+
+The slower distro integration suite lives under `tests/integration` and needs
+Docker or Podman plus network access.
 
 ## License
 

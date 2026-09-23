@@ -1,115 +1,107 @@
-# Security and threat model
+# Security
 
-This document describes the trust boundaries depengine can enforce. It is not a
-claim that software installed through depengine is trustworthy.
+depengine can verify some facts about an install. It cannot prove that software
+from a trusted-looking source is safe.
 
 ## Arbitrary code
 
-Build commands, hooks and equivalent script execution are arbitrary code. They
-are gated by the explicit arbitrary-code permission where the method contract
-marks that capability. Structured argv reduces shell parsing risk, but it does
-not make an untrusted command safe.
+Hooks and build commands execute arbitrary code. String commands use a shell;
+`run = ["program", "arg"]` keeps argument boundaries explicit, but the program
+still has the permissions of the depengine process.
 
-`--dry-run` is planning mode. Read-only resolution and availability probes may
-still execute and may use the network; mutation adapters, hooks, package-source
-changes, state/lock writes and cache population must not run.
+Execution paths marked as arbitrary code require the explicit permission gate.
 
-## Package and source trust
+`--dry-run` does not run install adapters or hooks and does not write state,
+lockfiles, package-source changes, or cache entries. Planning may still perform
+read-only checks and network resolution.
 
-depengine can preserve a requested source, registry, remote, bucket, channel,
-revision or digest when an adapter models it. That only identifies the source;
-it does not establish that the source is benign. Repository signing and package
-manager trust policies remain part of the underlying ecosystem's security
-model.
+## Sources are not trust
 
-Prefer immutable identities where available: content checksums, container
-digests and Git commits provide stronger replay properties than mutable URLs,
-tags, channels or branches.
+Fields such as `source`, `registry`, `remote`, `bucket`, `channel`, revision,
+and digest tell depengine what to request. They do not make that source safe.
+Package-manager signing and trust policies still belong to the underlying
+ecosystem.
+
+Prefer immutable identities when available: checksums, container digests, and
+Git commits are easier to replay and audit than branches, tags, channels, or
+mutable URLs.
 
 ## Checksums and signatures
 
 Artifact checksums are verified before installation when declared. Signature
-verification is supported only by methods that explicitly model it. A signature
-is meaningful only relative to a trusted key; depengine does not automatically
-establish the trustworthiness of a supplied key.
+verification is only available on methods that model it explicitly.
 
-Signing-key URLs and artifact URLs reject embedded HTTP(S) credentials. Secret
-material must not be stored in a manifest merely to make a download work.
+A signature is only useful if you trust the signing key. Supplying a key to
+depengine does not establish that trust by itself.
 
-## Release artifact verification
+HTTP(S) artifact and signing-key URLs reject embedded credentials.
 
-Release archives ship four independent integrity signals; checksums alone
-are not the whole story:
+## Release artifacts
 
-- `depengine_<version>_checksums.txt` — SHA-256 over every archive.
-- Keyless cosign signatures (`.sig` + `.pem`) over the checksum file,
-  issued via Fulcio/Rekor through GitHub OIDC. No long-lived keys exist
-  to steal. Verify with
-  `cosign verify-blob --certificate <file>.pem --signature <file>.sig --certificate-identity-regexp '^https://github.com/Khorea1/depengine/\.github/workflows/release\.yml@refs/tags/v.+$' --certificate-oidc-issuer https://token.actions.githubusercontent.com <checksums>`.
-- GitHub build provenance attestation over the checksum file, binding the
-  artifacts to the exact workflow run that produced them
-  (`gh attestation verify <checksums> --repo Khorea1/depengine`).
-- SPDX SBOMs per archive, derived from the Go module graph.
+Project releases publish several verification inputs:
 
-A release is trustworthy only when the checksum matches, the cosign
-signature validates against the repository's workflow identity, and the
-provenance attestation pins the same commit.
+- SHA-256 checksums for release archives;
+- keyless cosign signatures and certificates for the checksum file;
+- GitHub build provenance for the checksum file;
+- SPDX SBOMs for release archives.
 
-## Credentials and redaction
+For stronger release verification, check the archive checksum, verify the
+cosign signature against this repository's release workflow identity, and
+verify the GitHub provenance against `Khorea1/depengine`.
 
-Private registry/artifact authentication should use the authentication
-mechanism of the underlying client or a future typed secret reference, not
-credentials embedded in URLs or generic command arguments. Secure auth
-references are not yet a universal depengine capability.
+```sh
+cosign verify-blob \
+  --certificate <checksums>.pem \
+  --signature <checksums>.sig \
+  --certificate-identity-regexp '^https://github.com/Khorea1/depengine/\.github/workflows/release\.yml@refs/tags/v.+$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  <checksums>
 
-The subprocess logging boundary redacts common token/password flags,
-Authorization/Cookie headers and URL userinfo from argv, stderr and surfaced
-execution errors. State persistence separately rejects fields and command
-values that look like secrets. Redaction is defense in depth, not permission to
-put secrets in schema files.
+gh attestation verify <checksums> --repo Khorea1/depengine
+```
 
-## Downloader and transport selection
+## Credentials
 
-Artifact adapters use their modeled downloader/transport path. A manifest must
-not be able to smuggle an arbitrary downloader command through a generic args
-bag. HTTPS authenticates the transport endpoint according to the platform TLS
-trust store; it does not replace checksum/signature verification of mutable
-artifacts.
+Do not put credentials in schema or manifest URLs. Use the authentication
+mechanism provided by the package manager or service. GitHub release access can
+use `GITHUB_TOKEN`, `GH_TOKEN`, or existing `gh` authentication.
 
-## Elevation and installer boundaries
+depengine redacts common token/password flags, Authorization/Cookie headers,
+and URL userinfo from subprocess output where possible. State persistence also
+rejects values that look like secrets. Redaction is a fallback, not a safe way
+to store credentials in configuration.
 
-Native package managers and installer formats may request or require elevated
-privileges according to their platform semantics. depengine should keep the
-privileged operation narrow and typed. Elevation does not make an installer
-safe.
+## Privilege escalation
 
-EXE/vendor installers and arbitrary scripts have inherently weaker inspectable
-semantics than package managers or verified archives. Treat them as unsafe
-escape hatches unless their identity, verification and ownership are modeled
-explicitly.
+Some package managers and installer formats need elevated privileges. Keep the
+privileged operation as narrow as the adapter allows. Running an installer as
+root or Administrator does not make the installer trustworthy.
 
-## Source and key ownership
+Opaque vendor installers and arbitrary scripts provide less inspectable
+ownership and rollback behavior than package managers or verified archives.
 
-Adding a package source, repository, tap, bucket or signing key mutates host
-configuration beyond a single package. Such mutations must be candidate-scoped
-and idempotent, and cleanup must not remove externally-owned/shared resources
-without ownership evidence. Shared-source refcounting support
-remains incomplete.
+## Package sources and keys
 
-## Lockfile integrity
+Adding a repository, tap, bucket, or signing key changes host configuration
+beyond one package. depengine tracks these changes per candidate where the
+adapter supports it and avoids deleting shared resources without ownership
+evidence.
 
-`depengine.lock` is a reproducibility input, not a trust root. Review lockfile
-changes like source-code changes and protect the repository that stores it.
-`--frozen-lockfile` prevents implicit lock changes, but it cannot prove that an
-upstream package, signing key, package-manager index or mutable identity is
-trustworthy.
+Shared-source reference counting is still incomplete, so source cleanup should
+be conservative.
 
-Lock coverage is method-specific today. Where a method is not locked to an
-immutable identity, the manifest and underlying package manager still govern
-what can be selected.
+## Lockfile
 
-## Reporting security issues
+`depengine.lock` improves reproducibility; it is not a trust root. Review lock
+changes like source changes and protect the repository that stores them.
 
-Do not include credentials, private tokens or confidential manifests in public
-bug reports. Follow the repository's `SECURITY.md` process for vulnerability
-reports when present.
+`--frozen-lockfile` prevents implicit lock updates. It cannot tell you whether
+an upstream registry, package, signing key, or mutable reference is trustworthy.
+
+Lock coverage is not universal yet. See
+[support boundaries](support-boundary.md) for the current limits.
+
+## Reporting vulnerabilities
+
+Do not include tokens, private manifests, or other credentials in public bug
+reports. Follow the repository's `SECURITY.md` instructions when available.
