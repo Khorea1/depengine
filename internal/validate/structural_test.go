@@ -906,7 +906,9 @@ func TestValidateMultipleErrors_CountAndTypes(t *testing.T) {
 	}
 	t.Logf("error codes: %v", codes)
 
-	// Expected: at least 1 cycle, 1 dangling ref, 1 malformed URL, maybe required fields
+	// Required method fields are now rejected by config.ParseProjectSchema before
+	// semantic validation. This fixture stays parseable so ValidateSchema can
+	// demonstrate aggregation of independent graph and URL errors.
 	if codes[ErrCycle] == 0 {
 		t.Error("expected ErrCycle (self_ref + x→y cycle)")
 	}
@@ -915,9 +917,6 @@ func TestValidateMultipleErrors_CountAndTypes(t *testing.T) {
 	}
 	if codes[ErrMalformedURL] == 0 {
 		t.Error("expected ErrMalformedURL (bad_url)")
-	}
-	if codes[ErrRequiredField] == 0 {
-		t.Error("expected ErrRequiredField (bad_git without url)")
 	}
 }
 
