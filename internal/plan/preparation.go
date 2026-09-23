@@ -424,12 +424,6 @@ func ClaimResource(state OwnedResourceState, dependent string) (OwnedResourceSta
 	if err := validateDependent(dependent); err != nil {
 		return OwnedResourceState{}, err
 	}
-	if strings.ContainsRune(dependent, '\x00') {
-		return OwnedResourceState{}, errors.New("dependent contains NUL")
-	}
-	if strings.ContainsRune(dependent, '\x00') {
-		return OwnedResourceState{}, errors.New("dependent contains NUL")
-	}
 	out := state
 	out.Dependents = append([]string(nil), state.Dependents...)
 	i := sort.SearchStrings(out.Dependents, dependent)
