@@ -38,6 +38,38 @@ type Runner interface {
 	Run(ctx context.Context, name string, args ...string) Result
 }
 
+// EnvironmentRunner accepts environment overrides for one child process.
+// Callers must use RunWithEnv so sensitive output is redacted before it escapes.
+type EnvironmentRunner interface {
+	RunWithEnv(ctx context.Context, env map[string]string, sensitive []string, name string, args ...string) Result
+}
+
+// RunWithEnv executes one child with per-call environment overrides. It fails
+// closed when the runner cannot provide this boundary. For sensitive calls,
+// captured output and process errors are suppressed because a child can echo
+// credentials in encodings that literal redaction cannot reliably recognize.
+func RunWithEnv(ctx context.Context, rn Runner, env map[string]string, sensitive []string, name string, args ...string) Result {
+	if len(env) == 0 {
+		return rn.Run(ctx, name, args...)
+	}
+	er, ok := rn.(EnvironmentRunner)
+	if !ok {
+		return Result{Err: errors.New("runner does not support per-call environment")}
+	}
+	return redactResult(er.RunWithEnv(ctx, env, sensitive, name, args...), sensitive)
+}
+
+func redactResult(result Result, sensitive []string) Result {
+	if len(sensitive) > 0 {
+		result.Stdout = nil
+		result.Stderr = nil
+		if result.Err != nil {
+			result.Err = errors.New("sensitive subprocess execution failed")
+		}
+	}
+	return result
+}
+
 // BlockedRunner is an execution boundary for plans that must be observational
 // only. Every subprocess execution attempt is rejected before a process can be
 // spawned. LookPath remains available because executable lookup itself does not
@@ -76,6 +108,10 @@ func (r BlockedRunner) blocked() Result {
 }
 
 func (r BlockedRunner) Run(context.Context, string, ...string) Result {
+	return r.blocked()
+}
+
+func (r BlockedRunner) RunWithEnv(context.Context, map[string]string, []string, string, ...string) Result {
 	return r.blocked()
 }
 
@@ -163,12 +199,18 @@ func (OSExecRunner) LookPath(_ context.Context, name string) bool {
 // Run executes name with args under ctx, capturing stdout and stderr.
 // A non-zero exit is reported in Result.ExitCode, not Result.Err.
 func (r OSExecRunner) Run(ctx context.Context, name string, args ...string) Result {
-	return runCommand(ctx, r.Stream, "", name, args...)
+	return runCommand(ctx, r.Stream, "", nil, name, args...)
 }
 
 // RunInDir executes name with dir as the child process working directory.
 func (r OSExecRunner) RunInDir(ctx context.Context, dir, name string, args ...string) Result {
-	return runCommand(ctx, r.Stream, dir, name, args...)
+	return runCommand(ctx, r.Stream, dir, nil, name, args...)
+}
+
+// RunWithEnv suppresses live streaming because child output may contain a
+// credential. The RunWithEnv helper redacts captured output on return.
+func (OSExecRunner) RunWithEnv(ctx context.Context, env map[string]string, _ []string, name string, args ...string) Result {
+	return runCommand(ctx, nil, "", env, name, args...)
 }
 
 // cappedBuffer is an io.Writer that retains at most max bytes: the tail.
@@ -200,9 +242,9 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 // Bytes returns the retained tail. The caller must not mutate it.
 func (b *cappedBuffer) Bytes() []byte { return b.buf }
 
-func runCommand(ctx context.Context, stream io.Writer, dir, name string, args ...string) Result {
+func runCommand(ctx context.Context, stream io.Writer, dir string, overrides map[string]string, name string, args ...string) Result {
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = DefaultEnv()
+	cmd.Env = mergeEnv(DefaultEnv(), overrides)
 	cmd.Dir = dir
 	// Own process group so cancellation signals the whole tree, and a
 	// bounded WaitDelay so a grandchild holding the pipes cannot block
@@ -261,6 +303,26 @@ func runCommand(ctx context.Context, stream io.Writer, dir, name string, args ..
 		ExitCode: exit,
 		Err:      runErr,
 	}
+}
+
+func mergeEnv(base []string, overrides map[string]string) []string {
+	if len(overrides) == 0 {
+		return base
+	}
+	for key, value := range overrides {
+		prefix := key + "="
+		found := false
+		for i, entry := range base {
+			if strings.HasPrefix(entry, prefix) {
+				base[i] = prefix + value
+				found = true
+			}
+		}
+		if !found {
+			base = append(base, prefix+value)
+		}
+	}
+	return base
 }
 
 // LookPath reports whether name is found on PATH. Native runners use the Go

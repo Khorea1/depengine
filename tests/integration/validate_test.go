@@ -432,17 +432,20 @@ func TestValidate_SignatureNoKeyJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, output)
 	}
-	if len(result.Warnings) != 1 {
-		t.Fatalf("expected 1 warning, got %d", len(result.Warnings))
+	found := false
+	for _, raw := range result.Warnings {
+		var warn struct {
+			Code string `json:"code"`
+		}
+		if err := json.Unmarshal(raw, &warn); err != nil {
+			t.Fatalf("invalid warning JSON: %v", err)
+		}
+		if warn.Code == "W_SIGNATURE_NO_KEY" {
+			found = true
+		}
 	}
-	var warn struct {
-		Code string `json:"code"`
-	}
-	if err := json.Unmarshal(result.Warnings[0], &warn); err != nil {
-		t.Fatalf("invalid warning JSON: %v", err)
-	}
-	if warn.Code != "W_SIGNATURE_NO_KEY" {
-		t.Errorf("expected code W_SIGNATURE_NO_KEY, got %q", warn.Code)
+	if !found {
+		t.Errorf("expected W_SIGNATURE_NO_KEY warning, got %d warnings", len(result.Warnings))
 	}
 }
 

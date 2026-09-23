@@ -4,6 +4,9 @@ package source
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -69,9 +72,15 @@ func (m *Manager) Present(ctx context.Context, source config.Source) (bool, erro
 // been observed missing; Add intentionally does not perform a second probe that
 // could change the ownership classification after a transaction is persisted.
 func (m *Manager) Add(ctx context.Context, source config.Source) error {
+	return m.AddAuthenticated(ctx, source, "")
+}
+
+// AddAuthenticated uses a bearer token only for the source add subprocess.
+// The token never enters the source descriptor or its durable resource key.
+func (m *Manager) AddAuthenticated(ctx context.Context, source config.Source, token string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if err := m.add(ctx, source); err != nil {
+	if err := m.addAuthenticated(ctx, source, token); err != nil {
 		return err
 	}
 	if source.Kind == "apt-ppa" {
@@ -192,8 +201,18 @@ func (m *Manager) present(ctx context.Context, source config.Source) (bool, erro
 }
 
 func (m *Manager) add(ctx context.Context, source config.Source) error {
+	return m.addAuthenticated(ctx, source, "")
+}
+
+func (m *Manager) addAuthenticated(ctx context.Context, source config.Source, token string) error {
 	if err := validateSourceURLSupport(source); err != nil {
 		return err
+	}
+	if source.SecretRef != nil && token == "" {
+		return fmt.Errorf("source: credential is required for %s %s", source.Kind, source.Name)
+	}
+	if source.SecretRef == nil && token != "" {
+		return fmt.Errorf("source: unexpected credential for %s %s", source.Kind, source.Name)
 	}
 	var cmd []string
 	switch source.Kind {
@@ -215,6 +234,12 @@ func (m *Manager) add(ctx context.Context, source config.Source) error {
 	var result run.Result
 	if source.Kind == "apt-ppa" || source.Kind == "dnf-copr" {
 		result = run.RunElevated(ctx, m.mutator, cmd[0], cmd[1:]...)
+	} else if token != "" {
+		env, err := gitBearerEnv(source.URL, token)
+		if err != nil {
+			return err
+		}
+		result = run.RunWithEnv(ctx, m.mutator, env, []string{token}, cmd[0], cmd[1:]...)
 	} else {
 		result = m.mutator.Run(ctx, cmd[0], cmd[1:]...)
 	}
@@ -225,7 +250,37 @@ func validateSourceURLSupport(source config.Source) error {
 	if source.URL != "" && (source.Kind == "apt-ppa" || source.Kind == "dnf-copr") {
 		return fmt.Errorf("source: URL is unsupported for kind %q", source.Kind)
 	}
+	if source.SecretRef != nil {
+		if source.Kind != "scoop-bucket" && source.Kind != "brew-tap" {
+			return fmt.Errorf("source: secret_ref is unsupported for kind %q", source.Kind)
+		}
+		u, err := url.Parse(source.URL)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("source: secret_ref requires a credential-free HTTPS URL for kind %q", source.Kind)
+		}
+	}
 	return nil
+}
+
+func gitBearerEnv(rawURL, token string) (map[string]string, error) {
+	if strings.ContainsAny(token, " \t\r\n\x00") {
+		return nil, fmt.Errorf("source: credential is invalid for Git HTTP bearer authentication")
+	}
+	count := 0
+	if current := os.Getenv("GIT_CONFIG_COUNT"); current != "" {
+		var err error
+		count, err = strconv.Atoi(current)
+		if err != nil || count < 0 || count > 1024 {
+			return nil, fmt.Errorf("source: inherited Git configuration count is invalid")
+		}
+	}
+	index := strconv.Itoa(count)
+	return map[string]string{
+		"GIT_CONFIG_COUNT":          strconv.Itoa(count + 1),
+		"GIT_CONFIG_KEY_" + index:   "http." + rawURL + ".extraheader",
+		"GIT_CONFIG_VALUE_" + index: "Authorization: Bearer " + token,
+		"GIT_TERMINAL_PROMPT":       "0",
+	}, nil
 }
 
 func (m *Manager) remove(ctx context.Context, source config.Source) error {

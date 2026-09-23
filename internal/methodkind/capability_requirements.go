@@ -39,7 +39,11 @@ func (c Contract) MissingRequirements(p plan.ResolvedInstallPlan, requirements C
 	if err != nil {
 		return 0, err
 	}
-	return required &^ c.Capabilities, nil
+	missing := required &^ c.Capabilities
+	if supportsSharedSourceAuth(p) {
+		missing &^= CapabilityAuth
+	}
+	return missing, nil
 }
 
 // CheckRequirements validates that the contract can honor the complete

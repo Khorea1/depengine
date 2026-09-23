@@ -14,6 +14,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
+	"github.com/Khorea1/depengine/internal/secret"
 	"github.com/Khorea1/depengine/internal/source"
 	depstate "github.com/Khorea1/depengine/internal/state"
 )
@@ -159,13 +160,17 @@ func (ex *Executor) prepareCandidateSources(ctx context.Context, toolName, metho
 		}
 		return prepared, nil
 	}
+	tokens, err := ex.resolveSourceSecrets(ctx, missing)
+	if err != nil {
+		return candidateSourcePreparation{}, err
+	}
 
 	// Library callers that intentionally disabled state tracking retain the old
 	// best-effort semantics. The CLI always configures schemaPath and therefore
 	// takes the durable WAL path below.
 	if ex.schemaPath == "" {
-		for _, configured := range missing {
-			if err := ex.sources.Add(ctx, configured); err != nil {
+		for i, configured := range missing {
+			if err := ex.sources.AddAuthenticated(ctx, configured, tokens[i]); err != nil {
 				present, probeErr := ex.sources.Present(ctx, configured)
 				if probeErr != nil {
 					return candidateSourcePreparation{}, blockPreparation("source preparation outcome is ambiguous for %s %s: add failed: %v; probe failed: %v", configured.Kind, configured.Name, err, probeErr)
@@ -204,7 +209,7 @@ func (ex *Executor) prepareCandidateSources(ctx context.Context, toolName, metho
 			_ = tx.close()
 			return candidateSourcePreparation{}, blockPreparation("persist source preparation boundary: %v", err)
 		}
-		if addErr := ex.sources.Add(ctx, configured); addErr != nil {
+		if addErr := ex.sources.AddAuthenticated(ctx, configured, tokens[i]); addErr != nil {
 			present, probeErr := ex.sources.Present(ctx, configured)
 			if probeErr != nil {
 				_ = tx.close()
@@ -232,6 +237,40 @@ func (ex *Executor) prepareCandidateSources(ctx context.Context, toolName, metho
 		}
 	}
 	return prepared, nil
+}
+
+func (ex *Executor) resolveSourceSecrets(ctx context.Context, missing []config.Source) ([]string, error) {
+	tokens := make([]string, len(missing))
+	resolver := ex.secretResolver
+	if resolver == nil {
+		resolver = secret.EnvResolver{}
+	}
+	for i, configured := range missing {
+		if configured.SecretRef == nil {
+			continue
+		}
+		ref := plan.SecretReference{Provider: configured.SecretRef.Provider, Name: configured.SecretRef.Name}
+		token, err := resolver.Resolve(ctx, ref)
+		if err != nil {
+			reason := "resolution failed"
+			switch {
+			case errors.Is(err, secret.ErrSecretMissing):
+				reason = "missing"
+			case errors.Is(err, secret.ErrSecretEmpty):
+				reason = "empty"
+			case errors.Is(err, secret.ErrUnsupportedProvider):
+				reason = "unsupported provider"
+			case errors.Is(err, secret.ErrInvalidReference):
+				reason = "invalid reference"
+			}
+			return nil, fmt.Errorf("source %s %s: secret %s", configured.Kind, configured.Name, reason)
+		}
+		if token == "" {
+			return nil, fmt.Errorf("source %s %s: secret empty", configured.Kind, configured.Name)
+		}
+		tokens[i] = token
+	}
+	return tokens, nil
 }
 
 func (prepared *candidateSourcePreparation) planCommit() error {

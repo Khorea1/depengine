@@ -226,10 +226,10 @@ fastfetch = { http = {
 | `release` | no | Named GitHub release tag for `repo` + `asset` |
 | `branch` | no | GitHub release tag expressing rolling-branch intent; when set, it takes precedence over `release` |
 | `checksum` | no | `"sha256:<hex>"`, `"md5:<hex>"`, `"sha1:<hex>"`, `"sha512:<hex>"`, or `"<algo>:auto"` |
-| `checksum_url` | no | Explicit URL for the checksum file (overrides auto patterns) |
-| `checksum_file_format` | no | `"sha256sum"` (default), `"bsd"`, or `"raw"` |
-| `signature_url` | no | GPG detached signature URL, for verifying the checksum file |
-| `signing_key` | no | GPG key URL or fingerprint |
+| `checksum_url` | no | Explicit URL for the checksum file (overrides auto patterns); requires `checksum = "<algo>:auto"` |
+| `checksum_file_format` | no | `"sha256sum"` (default), `"bsd"`, or `"raw"`; requires `checksum = "<algo>:auto"` |
+| `signature_url` | no | GPG detached signature URL for verifying the checksum file; requires `checksum = "<algo>:auto"` |
+| `signing_key` | no | GPG key URL or fingerprint; requires `signature_url` and `checksum = "<algo>:auto"` |
 | `extract_to` | no | Extraction destination (default: `/usr/local/bin`) |
 | `strip_components` | no | Remove this many leading archive path components. Applies equally to tar and zip; negative or empty results are rejected. |
 | `entrypoints` | no | Map stable command names to relative files inside `extract_to`, e.g. `{ nvim = "bin/nvim" }`. |
@@ -636,14 +636,19 @@ sources = [{ kind = "apt-ppa", name = "ppa:neovim-ppa/stable" }]
 
 Supported source kinds are `apt-ppa`, `dnf-copr`, `scoop-bucket`, and
 `brew-tap`. `url` is supported only for `scoop-bucket` and `brew-tap`;
-`apt-ppa` and `dnf-copr` identify their repositories by `name`. A source may
-declare
-`secret_ref = { provider = "env", name = "CORP_TOKEN" }` to identify external
-credentials without storing their value in the schema or plan. Authentication
-is required for that candidate; methods without an auth capability reject it
-during planning. Runtime secret resolution is not yet implemented. Sources are
-checked before mutation. `dependency_only` tools are not normal roots, but
-remain selectable with `--only`.
+`apt-ppa` and `dnf-copr` identify their repositories by `name`.
+
+For a Git-backed `scoop-bucket` or `brew-tap` with an explicit, credential-free
+HTTPS `url`, use `secret_ref = { provider = "env", name = "CORP_TOKEN" }` to
+provide an HTTP Bearer token. The value is read only when that candidate needs
+to add the source, and is passed to Git in that child process's environment.
+It is not written to the schema, plan, lock, state, command arguments, or logs.
+Missing, empty, or unsupported secrets fail that candidate and allow the next
+method to be tried. Authentication for `apt-ppa`, `dnf-copr`, and source roles
+other than host configuration is rejected during planning. The token is not
+installed as a persistent Git credential; later source updates need their own
+host credential setup. Sources are checked before mutation. `dependency_only`
+tools are not normal roots, but remain selectable with `--only`.
 
 ### Virtual tools: dependency groups with no methods
 

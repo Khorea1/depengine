@@ -339,6 +339,47 @@ func validateArtifactChoice(v map[string]any, path string, contract *methodkind.
 	if strip, ok := v["strip_components"].(int64); ok && strip < 0 {
 		*errs = append(*errs, path+".strip_components: must be non-negative")
 	}
+	validateArtifactIntegrityOptions(v, path, errs)
+}
+
+func validateArtifactIntegrityOptions(v map[string]any, path string, errs *[]string) {
+	checksum, hasChecksum := v["checksum"].(string)
+	if _, configured := v["checksum"]; configured && hasChecksum && checksum == "" {
+		*errs = append(*errs, path+".checksum: must not be empty")
+	}
+	autoChecksum := hasChecksum && strings.HasSuffix(checksum, ":auto")
+
+	for _, key := range []string{"checksum_url", "checksum_file_format"} {
+		raw, configured := v[key]
+		if !configured {
+			continue
+		}
+		if value, ok := raw.(string); ok && value == "" {
+			*errs = append(*errs, path+"."+key+": must not be empty")
+		}
+		if !autoChecksum {
+			*errs = append(*errs, path+"."+key+`: requires checksum = "<algorithm>:auto"`)
+		}
+	}
+
+	for _, key := range []string{"signature_url", "signing_key"} {
+		raw, configured := v[key]
+		if !configured {
+			continue
+		}
+		if value, ok := raw.(string); ok && value == "" {
+			*errs = append(*errs, path+"."+key+": must not be empty")
+		}
+		if !autoChecksum {
+			*errs = append(*errs, path+"."+key+`: requires checksum = "<algorithm>:auto"`)
+		}
+	}
+
+	if _, configured := v["signing_key"]; configured {
+		if _, hasSignature := v["signature_url"]; !hasSignature {
+			*errs = append(*errs, path+".signing_key: requires signature_url")
+		}
+	}
 }
 
 func validateMethodField(raw any, field methodkind.Field, path string, errs *[]string) {
