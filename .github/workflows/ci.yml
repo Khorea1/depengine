@@ -177,3 +177,9 @@ jobs:
 
     - name: Run tests
       run: go test -race ./...
+
+    - name: Run native Chocolatey lifecycle smoke test
+      shell: bash
+      env:
+        DEPENGINE_BIN: ./depengine.exe
+      run: tests/platform/native-lifecycle.sh tests/platform/fixtures/windows-choco.toml depengine-windows-smoke
