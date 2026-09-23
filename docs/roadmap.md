@@ -1,6 +1,6 @@
 # Roadmap
 
-Long-lived unfinished work. Last reviewed: 2026-09-22.
+Long-lived unfinished work. Last reviewed: 2026-09-23.
 
 Work on the current execution model comes before adding more installer types.
 
@@ -24,13 +24,6 @@ Work on the current execution model comes before adding more installer types.
   must not depend on a one-time hook having succeeded earlier.
 - [~] Generate schema/docs metadata from adapter capabilities instead of
   scattering method-name conditionals across the codebase.
-
-## P1: AdapterV2 cleanup
-
-- [x] Remove the legacy `Adapter` contract from `AdapterV2` once all remaining
-  adapters use the resolved-plan model.
-- [x] Finish shared desired-state observation across install, upgrade, status,
-  remove, validation, explanation, and dry-run.
 
 ## P2: installer coverage
 
