@@ -2,11 +2,13 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/secret"
 )
 
 // attemptOutcome tells attemptMethod what to do after a candidate phase runs.
@@ -308,11 +310,48 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 
 	ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "installing")
 	runner := ex.mutationRunner(ac.tool.Name, ac.displayKind)
+	methodCtx, methodCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
+
+	// Resolve auth only after this candidate survives all planning and
+	// preparation gates. The credential is carried only in the per-call
+	// context and is absent from plans, method config, and persisted state.
+	if ac.method.Kind == "http" && ac.method.SecretRef != nil {
+		ref := plan.SecretReference{Provider: ac.method.SecretRef.Provider, Name: ac.method.SecretRef.Name}
+		resolver := ex.secretResolver
+		if resolver == nil {
+			resolver = secret.EnvResolver{}
+		}
+		credential, err := resolver.Resolve(methodCtx, ref)
+		if err != nil || credential == "" {
+			methodCancel()
+			reason := "resolution failed"
+			switch {
+			case errors.Is(err, secret.ErrSecretMissing):
+				reason = "missing"
+			case errors.Is(err, secret.ErrSecretEmpty), err == nil:
+				reason = "empty"
+			case errors.Is(err, secret.ErrUnsupportedProvider):
+				reason = "unsupported provider"
+			case errors.Is(err, secret.ErrInvalidReference):
+				reason = "invalid reference"
+			}
+			detail := fmt.Sprintf("http: secret %s", reason)
+			if rollbackErr := ac.prepared.rollback(ac.toolCtx, ex); rollbackErr != nil {
+				detail = fmt.Sprintf("%s; source rollback failed: %v", detail, rollbackErr)
+				ex.failCandidate(ac, result, detail)
+				return finishTool
+			}
+			ex.skipCandidate(ac, result, "failed", detail)
+			return nextMethod
+		}
+		methodCtx = WithHTTPArtifactBearer(methodCtx, credential)
+	}
 
 	// Persist the commit boundary before the adapter can mutate the target. If
 	// the install process dies after this point, recovery must reconcile the
 	// target instead of assuming candidate preparation is safe to undo.
 	if err := ac.prepared.planCommit(); err != nil {
+		methodCancel()
 		rollbackErr := ac.prepared.rollback(ac.toolCtx, ex)
 		detail := err.Error()
 		if rollbackErr != nil {
@@ -329,7 +368,6 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 
 	// method-timeout applies to each individual attempt. The adapter receives
 	// the exact plan projected after prerequisite preparation.
-	methodCtx, methodCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
 	err := ac.adapter.InstallResolved(methodCtx, runner, ac.tool, ac.method, ac.reported)
 	methodCancel()
 

@@ -232,6 +232,13 @@ func methodWithResolvedArtifact(mc *config.MethodCandidate, artifact plan.Artifa
 }
 
 func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolvedURL string) error {
+	bearerCredential, hasBearerCredential := exec.HTTPArtifactBearer(ctx)
+	if mc != nil && mc.SecretRef != nil && !hasBearerCredential {
+		return fmt.Errorf("http: authenticated artifact request has no runtime credential")
+	}
+	if mc == nil {
+		return fmt.Errorf("http: method configuration is required")
+	}
 	// Re-enforce the shared artifact URL contract at the runtime boundary.
 	// Normal CLI flows validate before execution, but adapters are also public
 	// package APIs and must not leak embedded credentials when called directly.
@@ -287,7 +294,7 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 		// Download from remote.
 		dl := selectCandidateDownloader(ctx, rn, resolvedURL, mc)
 		if err := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
-			return dl.Download(retryCtx, resolvedURL, tmpFile)
+			return downloadPrimaryArtifact(retryCtx, dl, resolvedURL, tmpFile, bearerCredential, hasBearerCredential)
 		}); err != nil {
 			return fmt.Errorf("http: download %s: %w", tool.Name, downloadErrorWithHint(err))
 		}
@@ -304,7 +311,7 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 				}
 				dl := selectCandidateDownloader(ctx, rn, resolvedURL, mc)
 				if err2 := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
-					return dl.Download(retryCtx, resolvedURL, tmpFile)
+					return downloadPrimaryArtifact(retryCtx, dl, resolvedURL, tmpFile, bearerCredential, hasBearerCredential)
 				}); err2 != nil {
 					return fmt.Errorf("http: download %s (re-download): %w", tool.Name, err2)
 				}
@@ -372,10 +379,21 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 // backend. secret_ref contains only a reference at this stage; the runtime
 // handoff supplies the resolved credential directly to GoDownloader.
 func selectCandidateDownloader(ctx context.Context, rn run.Runner, rawURL string, mc *config.MethodCandidate) Downloader {
-	if mc != nil && mc.Config != nil && mc.Config["secret_ref"] != nil {
+	if mc != nil && mc.SecretRef != nil {
 		return SelectDownloaderForAuthenticatedURL(rn)
 	}
 	return SelectDownloaderForURL(ctx, rn, rawURL)
+}
+
+func downloadPrimaryArtifact(ctx context.Context, downloader Downloader, rawURL, dest, credential string, authenticated bool) error {
+	if !authenticated {
+		return downloader.Download(ctx, rawURL, dest)
+	}
+	goDownloader, ok := downloader.(*GoDownloader)
+	if !ok {
+		return fmt.Errorf("http: authenticated request requires the in-process downloader")
+	}
+	return goDownloader.DownloadWithBearer(ctx, rawURL, dest, credential)
 }
 
 // resolvedFileName derives the downloaded file's name from an already-

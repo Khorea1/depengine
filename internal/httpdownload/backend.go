@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -88,7 +89,30 @@ func (d *GoDownloader) download(ctx context.Context, url, dest, bearerCredential
 		}
 	}
 
-	resp, err := d.client.Do(req)
+	client := d.client
+	if bearerCredential != "" {
+		// CheckRedirect belongs to this request's client copy. This makes the
+		// credential policy explicit without changing a shared client's state.
+		clientCopy := *d.client
+		priorCheckRedirect := clientCopy.CheckRedirect
+		initialURL := req.URL
+		clientCopy.CheckRedirect = func(redirectReq *http.Request, via []*http.Request) error {
+			if sameOrigin(initialURL, redirectReq.URL) {
+				redirectReq.Header.Set("Authorization", "Bearer "+bearerCredential)
+			} else {
+				redirectReq.Header.Del("Authorization")
+			}
+			if priorCheckRedirect != nil {
+				return priorCheckRedirect(redirectReq, via)
+			}
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			return nil
+		}
+		client = &clientCopy
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("http: get: %w", run.RedactError(err))
 	}
@@ -117,6 +141,26 @@ func (d *GoDownloader) download(ctx context.Context, url, dest, bearerCredential
 	}
 
 	return nil
+}
+
+func sameOrigin(left, right *url.URL) bool {
+	if left == nil || right == nil || !strings.EqualFold(left.Scheme, right.Scheme) || !strings.EqualFold(left.Hostname(), right.Hostname()) {
+		return false
+	}
+	port := func(u *url.URL) string {
+		if value := u.Port(); value != "" {
+			return value
+		}
+		switch strings.ToLower(u.Scheme) {
+		case "http":
+			return "80"
+		case "https":
+			return "443"
+		default:
+			return ""
+		}
+	}
+	return port(left) == port(right)
 }
 
 // CurlDownloader uses `curl -fsSL -o {dest} {url}`.

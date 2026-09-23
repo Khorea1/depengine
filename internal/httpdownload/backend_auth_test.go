@@ -2,6 +2,7 @@ package httpdownload
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -56,11 +58,107 @@ func TestGoDownloaderDownloadWithBearerRejectsEmptyCredential(t *testing.T) {
 	}
 }
 
+func TestGoDownloaderBearerRedirectPolicy(t *testing.T) {
+	const credential = "redirect-sentinel"
+	var sameOriginHeader string
+	sameOrigin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/start" {
+			http.Redirect(w, r, "/final", http.StatusFound)
+			return
+		}
+		sameOriginHeader = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte("same-origin"))
+	}))
+	defer sameOrigin.Close()
+	var crossOriginHeader string
+	otherOrigin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		crossOriginHeader = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte("cross-origin"))
+	}))
+	defer otherOrigin.Close()
+	originRedirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, otherOrigin.URL+"/final", http.StatusFound)
+	}))
+	defer originRedirect.Close()
+	dl := NewGoDownloader(nil)
+	if err := dl.DownloadWithBearer(context.Background(), sameOrigin.URL+"/start", filepath.Join(t.TempDir(), "same"), credential); err != nil {
+		t.Fatalf("same-origin redirect: %v", err)
+	}
+	if sameOriginHeader != "Bearer "+credential {
+		t.Errorf("same-origin Authorization = %q, want credential retained", sameOriginHeader)
+	}
+	if err := dl.DownloadWithBearer(context.Background(), originRedirect.URL+"/start", filepath.Join(t.TempDir(), "cross"), credential); err != nil {
+		t.Fatalf("cross-origin redirect: %v", err)
+	}
+	if crossOriginHeader != "" {
+		t.Errorf("cross-origin Authorization = %q, want absent", crossOriginHeader)
+	}
+}
+
+func TestGoDownloaderBearerReturnsUnauthorizedStatus(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(status) }))
+			defer server.Close()
+			err := NewGoDownloader(nil).DownloadWithBearer(context.Background(), server.URL, filepath.Join(t.TempDir(), "artifact"), "never-print-this")
+			if err == nil || !strings.Contains(err.Error(), fmt.Sprint(status)) || strings.Contains(err.Error(), "never-print-this") {
+				t.Fatalf("download error = %v, want status %d without credential", err, status)
+			}
+		})
+	}
+}
+
+func TestRetryRetainsBearerForEachPrimaryRequest(t *testing.T) {
+	const credential = "retry-sentinel"
+	attempts := 0
+	var headers []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		headers = append(headers, r.Header.Get("Authorization"))
+		if attempts == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte("artifact"))
+	}))
+	defer server.Close()
+	dest := filepath.Join(t.TempDir(), "artifact")
+	dl := NewGoDownloader(nil)
+	err := retryWithBackoff(context.Background(), 1, 0, 0, func(ctx context.Context) error {
+		return dl.DownloadWithBearer(ctx, server.URL, dest, credential)
+	})
+	if err != nil {
+		t.Fatalf("retry download: %v", err)
+	}
+	if attempts != 2 || len(headers) != 2 || headers[0] != "Bearer "+credential || headers[1] != "Bearer "+credential {
+		t.Fatalf("requests = %d, Authorization headers = %q, want two authenticated attempts", attempts, headers)
+	}
+}
+
+func TestChecksumSidecarDoesNotReceiveArtifactBearer(t *testing.T) {
+	const credential = "primary-only-sentinel"
+	var authorization string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorization = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(strings.Repeat("0", 64)))
+	}))
+	defer server.Close()
+
+	ctx := exec.WithHTTPArtifactBearer(context.Background(), credential)
+	adapter := NewHTTPAdapter()
+	runner := &run.FakeRunner{LookPaths: map[string]bool{"curl": false, "wget": false}}
+	_, err := adapter.fetchChecksumFromURL(ctx, runner, server.URL+"/checksum", "artifact", &checksumConfig{algorithm: "sha256", format: "raw"}, map[string]any{})
+	if err != nil {
+		t.Fatalf("fetch checksum sidecar: %v", err)
+	}
+	if authorization != "" {
+		t.Fatalf("checksum sidecar Authorization = %q, want absent", authorization)
+	}
+}
+
 func TestSelectCandidateDownloaderForTypedAuthUsesGoWithoutExecutableLookup(t *testing.T) {
 	fr := &run.FakeRunner{LookPaths: map[string]bool{"curl": true, "wget": true}}
-	mc := &config.MethodCandidate{Kind: "http", Config: map[string]any{
-		"secret_ref": map[string]any{"provider": "env", "name": "ARTIFACT_TOKEN"},
-	}}
+	mc := &config.MethodCandidate{Kind: "http", SecretRef: &config.SecretReference{Provider: "env", Name: "ARTIFACT_TOKEN"}}
 
 	dl := selectCandidateDownloader(context.Background(), fr, "https://example.com/private.tar.gz", mc)
 	if _, ok := dl.(*GoDownloader); !ok {
