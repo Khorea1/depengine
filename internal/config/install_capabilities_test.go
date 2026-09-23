@@ -142,6 +142,8 @@ func TestArtifactIntegrityOptionsRejectIgnoredFields(t *testing.T) {
 checksum_url = "https://example.test/SHA256SUMS"`, want: `checksum_url: requires checksum = "<algorithm>:auto"`},
 		{name: "checksum format with literal checksum", fields: `checksum = "` + literal + `"
 checksum_file_format = "raw"`, want: `checksum_file_format: requires checksum = "<algorithm>:auto"`},
+		{name: "signature URL with literal checksum", fields: `checksum = "` + literal + `"
+signature_url = "https://example.test/SHA256SUMS.sig"`, want: `signature_url: requires checksum = "<algorithm>:auto"`},
 		{name: "signing key without signature", fields: `checksum = "sha256:auto"
 signing_key = "ABCD1234"`, want: "signing_key: requires signature_url"},
 		{name: "empty checksum URL", fields: `checksum = "sha256:auto"

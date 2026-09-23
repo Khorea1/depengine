@@ -370,6 +370,9 @@ func validateArtifactIntegrityOptions(v map[string]any, path string, errs *[]str
 		if value, ok := raw.(string); ok && value == "" {
 			*errs = append(*errs, path+"."+key+": must not be empty")
 		}
+		if !autoChecksum {
+			*errs = append(*errs, path+"."+key+`: requires checksum = "<algorithm>:auto"`)
+		}
 	}
 
 	if _, configured := v["signing_key"]; configured {
