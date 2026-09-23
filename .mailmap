@@ -1,0 +1,18 @@
+# Canonical identity: khorea1 <khorea@disroot.org> (see AGENTS.md).
+#
+# Every alias below is a confirmed variant of the same person, evidenced by:
+#   - identical email address modulo case (Khorea@disroot.org / khorea@disroot.org)
+#   - identical git user.name "khorea"/"Khorea1" with a host-generated fallback
+#     email (user@localhost, user@motor.local) from machines with no
+#     user.email configured
+#   - a GitHub-issued noreply address whose local part embeds the repo owner's
+#     own username (141942237+Khorea1@users.noreply.github.com), used on this
+#     repo's own PR-merge commits (Khorea1/depengine)
+#
+# No other contributor identities exist in this repository's history.
+khorea1 <khorea@disroot.org> Khorea1 <141942237+Khorea1@users.noreply.github.com>
+khorea1 <khorea@disroot.org> Khorea1 <Khorea@disroot.org>
+khorea1 <khorea@disroot.org> Khorea1 <khorea@disroot.org>
+khorea1 <khorea@disroot.org> khorea <khorea@disroot.org>
+khorea1 <khorea@disroot.org> khorea <khorea@localhost>
+khorea1 <khorea@disroot.org> khorea <khorea@motor.local>
