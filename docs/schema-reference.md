@@ -336,7 +336,7 @@ For a direct asset, `binary` is the installed filename. For an archive,
 `binary` retains its existing payload-check meaning; use `entrypoints` for
 stable commands whose files live below the archive root.
 
-Latest releases—implicit or written as `release = "latest"`—are pinned in
+Latest releases, implicit or written as `release = "latest"`, are pinned in
 `depengine.lock`; installation then resolves the asset only within that pinned
 release. Explicit `release` and `branch` values are left unchanged. The method
 name is canonically `github`, appears immediately before `http` in the default
