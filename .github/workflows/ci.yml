@@ -161,6 +161,29 @@ jobs:
 
   # Windows stays at compile + unit coverage until the native lifecycle harness
   # has a stable package fixture for the hosted runner's winget environment.
+  # Real OpenBSD VM: run the Go suite on the target OS and exercise pkg_add.
+  test-openbsd:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.x.x
+
+    - name: Run tests and native pkg_add lifecycle in OpenBSD
+      uses: vmactions/openbsd-vm@86cdc08415d9d0865267e686561e276c52d62530 # v1.4.7
+      with:
+        release: "7.9"
+        copyback: false
+        prepare: |
+          ftp -o /tmp/go.tar.gz https://go.dev/dl/go1.27.1.openbsd-amd64.tar.gz
+          test "$(sha256 -q /tmp/go.tar.gz)" = "db0566b3b3ddf6eda09cb3434a9401eb2583ffa539475e45592812813f11c792"
+          rm -rf /usr/local/go
+          tar -C /usr/local -xzf /tmp/go.tar.gz
+        run: |
+          export PATH="/usr/local/go/bin:$PATH"
+          go version
+          go test ./...
+          tests/platform/native-lifecycle.sh tests/platform/fixtures/native-hello.toml depengine-native-smoke
+
   test-windows:
     runs-on: windows-latest
 

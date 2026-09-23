@@ -21,7 +21,8 @@ still happen on the runner or VM itself, so this suite is intended for
 disposable environments.
 
 Current native lifecycle coverage uses the same `native-hello.toml` fixture on
-the GitHub-hosted macOS runner (Homebrew) and a real FreeBSD VM (`pkg`). The
-FreeBSD job also runs the Go test suite inside the VM, so FreeBSD support is
-validated beyond cross-compilation. The GitHub-hosted Windows runner exercises
-the same lifecycle contract against Chocolatey with `windows-choco.toml`.
+the GitHub-hosted macOS runner (Homebrew), a real FreeBSD VM (`pkg`), and a
+real OpenBSD VM (`pkg_add`). The BSD jobs also run the Go test suite inside
+their VMs, so support is validated beyond cross-compilation. The GitHub-hosted
+Windows runner exercises the same lifecycle contract against Chocolatey with
+`windows-choco.toml`.
