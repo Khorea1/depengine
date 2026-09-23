@@ -7,12 +7,8 @@ import (
 	"strings"
 )
 
-// ShouldUseColor reports whether ANSI color codes should be emitted for the
+// shouldUseColor reports whether ANSI color codes should be emitted for the
 // current process's stderr.
-func ShouldUseColor() bool {
-	return shouldUseColor()
-}
-
 func shouldUseColor() bool {
 	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
 		return false
