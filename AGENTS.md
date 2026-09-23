@@ -1,185 +1,99 @@
 # AGENTS.md — depengine
 
-> Distro-agnostic dependency installer. Declare em `schema.toml`, o engine tenta todos os métodos (native, cargo, go, pip, git, http, flatpak...) até um funcionar. Single static Go binary, zero runtime deps.
+> A distro-agnostic dependency installer. Projects declare tools in `schema.toml`; depengine tries the configured installation methods until one succeeds. The application ships as a static Go binary.
 
-## 0. Scope
+## Scope
 
-Este arquivo contém regras e contexto compartilhados pelo projeto. Preferências
-pessoais de operador, notas de sessão e scratch pertencem à configuração local ou
-a `.dev/`; invariantes que todo clone precisa conhecer ficam versionadas aqui ou
-em `docs/`.
+This file contains shared project instructions. Durable project knowledge belongs in `docs/`; operator-specific guidance and task scratch belong in local configuration or `.dev/`.
 
-## 1. Quem é você aqui
+## Operating principles
 
-Você é **co-autora, diretora e engenheira principal**. Dona do projeto. Autonomia total e responsabilidade total.
+- Solve the user's intent while preserving explicit constraints and project invariants. Explain material deviations from a suggested implementation.
+- Verify consequential claims against relevant code, tests, configuration, documentation, and history. Do not turn incidental implementation details into policy.
+- Make the smallest coherent change. Expand scope only to remove a blocker, preserve an invariant, fix the root cause, or prevent a concrete regression.
+- Prefer changes that improve correctness, security, maintainability, performance, or developer experience without unrelated regressions.
+- Make local, reversible decisions within scope. Surface material trade-offs involving behavior, compatibility, security, or architecture.
 
-### Princípios (em ordem)
+## Project overview
 
-1. **Resolva a intenção; preserve constraints explícitas.** Entenda o problema real por trás da solução sugerida. Diverja do literal quando necessário para correção, segurança ou invariantes do projeto e explique no diff.
-1. **Evidência > suposição.** Antes de decisões consequentes, confira código, testes, config, docs e histórico relevantes. Não promova padrão incidental a regra do projeto.
-1. **Menor mudança coerente.** Faça a menor mudança que resolve o problema inteiro. Amplie escopo só para remover blocker, preservar invariante, corrigir causa raiz ou evitar risco concreto.
-1. **Apenas upgrades.** Mudança deve melhorar de forma observável performance, segurança, legibilidade, manutenibilidade ou DX sem regressão desnecessária.
+- Go module: `github.com/Khorea1/depengine`; toolchain requirements are defined in `go.mod`.
+- `schema.toml` declares project tools; `~/.config/depengine/manifest.toml` holds personal recipes and defaults. Project values win on conflicting fields; manifest-only tools are ignored unless `[manifest] allow_new_tools = true`.
+- `depengine.lock` pins supported mutable artifact references. Lockfile coverage and limits are documented in `docs/support-boundary.md`.
+- See `README.md` for user-facing behavior and `docs/` for durable architecture, schema, security, and development details.
 
-### Autonomia
+## Build, test, and validation
 
-Tome autonomamente decisões locais e reversíveis dentro do escopo. Reescrever, renomear, refatorar e adicionar/remover dependências do projeto são válidos quando forem a forma mais simples de resolver a causa raiz.
+Run checks relevant to the change. Common checks are:
 
-Defeito adjacente só entra no diff se bloquear a task, for causado/exposto por ela, ou puder gerar problema concreto no comportamento alterado. O restante vira finding separado.
-
-Trade-off material de comportamento, compatibilidade, segurança ou arquitetura: exponha com evidência. Decisão local óbvia: execute.
-
-## 2. Project Overview
-
-- **Lang:** Go 1.27.1. Module `github.com/Khorea1/depengine`. License GPL-3.0-or-later.
-- **Goal:** `requirements.txt` para tools de sistema. Comita `schema.toml`, todos têm as mesmas tools.
-- **State:** `XDG_STATE_HOME/depengine/state.json` (~/.local/state/depengine/state.json). File locking cross-platform (flock / LockFileEx). `depengine forget <tool>` remove do state sem tocar no sistema.
-- **Lock:** `depengine.lock` pinna `{latest}`. Commita. `--frozen-lockfile` aborta se faltar.
-- **Merge schema/manifest:** `schema.toml` (projeto, compartilhado) + `~/.config/depengine/manifest.toml` (pessoal, como instalar). Schema vence no conflito. Tools só no manifest são rejeitadas por padrão (`[manifest] allow_new_tools = true` pra liberar).
-
-## 3. Build, Test, Run
-
-Source of truth: `go.mod`, toolchain padrão. CI: `.github/workflows/ci.yml`.
-
-```bash
+```sh
 go build -o depengine .
 go test -race ./...
 go vet ./...
-golangci-lint run # CI fixa v2.13.2; também roda govulncheck + fuzz curto (ver `.github/workflows/ci.yml`)
-docker compose -f tests/integration/docker-compose.yml build # Debian, Arch, Fedora, Alpine - lento, requer Docker + rede
-for distro in debian arch fedora alpine; do docker compose -f tests/integration/docker-compose.yml run --rm "$distro"; done
-# harness local mais amplo: ./tests/integration/run.sh
+golangci-lint run
 ```
 
-Validação: rode checks estreitos durante desenvolvimento e os checks relevantes ao diff antes de integrar. Nunca declare check como verde sem executá-lo. Se ambiente/infra bloquear validação, reporte o blocker e a verificação mais forte que ainda foi possível. Não repita integration suite cara sem necessidade.
+CI is authoritative for pinned tool versions and the full validation matrix (`.github/workflows/ci.yml`). The container-based integration suites under `tests/` are slower and require Docker or Podman and network access; run them when the change warrants it, not in a unit-test loop.
 
-`detect_os.sh` é invocado em runtime. Ordem em `internal/engine/facts.go` (`locateDetectScript`): `DEPENGINE_DETECT_SCRIPT` → embedded no binário → `scripts/` ao lado do binário → `detect_os.sh` no PATH. Se o script não puder ser usado, `GatherFacts` cai para facts do Go runtime; Windows sem override pula os candidatos de script.
+Never report a check as passing unless it ran. If infrastructure blocks validation, say what failed, what ran, and the strongest alternative check completed.
 
-## 4. Architecture
+## Architecture
 
-Pipeline: `Parse -> Graph -> Execute`
+The main flow is `Parse -> Graph -> Execute`:
 
-```
-schema.toml / manifest.toml
- -> internal/config (ParseProjectSchema/ParseManifest + normalize + placeholder expand + MergeLayers)
- -> internal/graph (Kahn's topo sort + cycle detection)
- -> internal/exec.Executor (pra cada tool em ordem topo, tenta cada method em method_order)
-    -> internal/native (registry declarativo: apt/pacman/dnf/brew/... — fonte: `managers` em `internal/native/registry.go`)
-    -> internal/ecosystem (cargo, go, pip, npm, sdkman, steamcmd, ...)
-    -> internal/git, internal/httpdownload (checksum/GPG + {latest} via internal/ghrelease)
- -> internal/state + internal/sbom (CycloneDX 1.5 / SPDX 2.3)
-```
+- `main.go` is the composition root; CLI workflows belong in `internal/app`.
+- `internal/config` parses and validates project schemas and personal manifests. It must not depend on `internal/exec`.
+- `internal/graph` orders tool dependencies. Install execution normally goes through `internal/exec.Executor` and its adapter contract. Native sync and batch operations are intentional exceptions contained within `internal/exec`; do not hardcode package-manager commands in the CLI.
+- Adapters implement the contract in `internal/exec` and are registered during application bootstrap. Use `internal/run.Runner` for external processes.
+- `internal/native` owns the declarative native-manager registry; `internal/state` owns persisted install state and locking.
 
-**Regras cross-layer:**
+See `docs/architecture.md` for the package map and execution flow. Check `internal/` for the current package inventory.
 
-- `main.go` é só composition root (signals, embed da man page, `app.InitAdapters()` + `app.NewRootCmd()`; `os.Exit` só em `main`). CLI em `internal/app`. Installs resolvem via `internal/exec.Executor`; imports de `internal/config` no CLI são só para tipos/flags/parse, nunca para executar installs.
-- Dispatch normal de candidates passa por `Executor.LookupAdapter(kind)` (`internal/exec/executor.go`). Sync e batch nativos são exceções intencionais dentro de `internal/exec`: usam builders/registry de `internal/native` (`native.Lookup`, `BuildSyncCmd`, `BuildBatchInstallCmd`) em vez de hardcode de comandos. `methodkind.Lookup` é o contrato de kinds, registry separado.
-- `internal/config` não importa `internal/exec` (só menção em comentário). Host facts vêm de `internal/platform` (importado por `condition.go`, `placeholder.go`); `internal/engine` aparece só em testes de `config`. `config.Validate(s, knownKinds)` (`internal/config/parse.go`) recebe kinds como param.
-- Adapters registrados em `app.InitAdapters()` (`internal/app/bootstrap.go`), chamado por `main.go`: `exec.Register(a AdapterV2)`, `exec.RegisterNativeManagerAliases()` (`internal/exec/native_adapter.go`), `ecosystem.RegisterAll(aurHelper)` + git, localartifact, http, github, appimage, android, msi, container, windows. Executor aceita per-instance via `WithAdapters()` pra teste.
+## Engineering conventions
 
-**Key dirs:**
+- Treat pre-existing changes as owned by the user or another actor. Do not revert, reformat, stage, or overwrite unrelated changes; inspect overlaps before editing.
+- Do not invoke `exec.Command` directly from application or adapter code. Route subprocesses through `internal/run.Runner` and the existing elevation abstractions; `internal/run` implements that boundary.
+- Add or change adapters through the executor contract and registration path. Tests can use the helpers in `internal/exectest/` and an isolated adapter registry.
+- Use English, atomic Conventional Commits (for example, `fix: preserve archive ownership`). Commit identity is operator-local Git configuration.
 
-| Path | Purpose |
-| --- | --- |
-| `main.go` | Thin entry: signals, embed da man page, `app.InitAdapters()` + `app.NewRootCmd()`; `os.Exit` só em `main` |
-| `internal/app/` | Cobra command tree, lógica CLI testável |
-| `internal/config/` | Parser TOML, placeholder expand, MergeLayers, validação |
-| `internal/exec/` | Executor, interface `AdapterV2` (`internal/exec/adapter.go`), registry global, `SyncManager` (`NewSyncManager`), batch native install |
-| `internal/native/` | Registry declarativo de package managers (contagem muda; fonte: `managers` em `internal/native/registry.go`) |
-| `internal/ecosystem/` | Adapters de ecossistemas |
-| `internal/git/`, `internal/httpdownload/` | Git clone + http download/extract/verify |
-| `internal/graph/` | Topo sort |
-| `internal/lock/` | `depengine.lock` resolver |
-| `internal/state/`, `internal/run/`, `internal/engine/`, `internal/platform/`, `internal/i18n/` | State+flock, Runner seam (`run.OSExecRunner`/`run.FakeRunner`), detect_os wrapper, host facts, locale pt |
-| `internal/validate/`, `internal/sbom/` | Validação estrutural/semântica/ambiental, export SBOM |
-| `internal/artifact/`, `internal/container/`, `internal/containerref/`, `internal/downloadcache/`, `internal/exectest/`, `internal/formatversion/`, `internal/ghrelease/`, `internal/localartifact/`, `internal/localartifactadapter/`, `internal/log/`, `internal/methodkind/`, `internal/msi/`, `internal/plan/`, `internal/planner/`, `internal/source/` | Containers/artifacts, kind contracts, planos, sources, cache, releases (lista completa: `internal/`) |
-| `docs/` | schema-reference, cli-reference, cheatsheet, architecture, man page |
+## Guardrails
 
-## 5. Conventions
+- **Safe:** inspect files and Git state; run builds, tests, and relevant static checks.
+- **Confirm first:** install or remove host dependencies, materially change `detect_os.sh`, or publish/release.
+- **Never:** force-push or commit secrets.
+- `pre_install`, `post_install`, `build`, and `build_cmd` can execute arbitrary commands. Prefer argv-form `run = ["program", "arg"]`; shell-string forms invoke a shell. Execution is blocked unless explicitly enabled with `--allow-arbitrary-code`. Treat schemas enabling it as security-sensitive.
+- For owned archive payloads, use `extract_to` and `entrypoints`. `binary` does not name an archive-internal path. Removal must delete only owned payloads and declared launchers, never shared parent directories. `.msi`, `.exe`, `.pkg`, and `.dmg` must not use the generic `http` adapter; see `docs/schema-reference.md` for format constraints.
+- Before changing OS detection, test every clan returned by `internal/native.KnownClans()`: debian, arch, fedora, suse, alpine, void, gentoo, macos, termux, freebsd, openbsd, netbsd, windows, mint, and opkg.
 
-Alterações preexistentes pertencem ao usuário ou a outro ator. Não reverta, reformate, stageie ou sobrescreva mudanças fora da task. Se houver overlap, inspecione antes e preserve a intenção observável.
+## Known gotchas
 
-- Adapter = cada método de install implementa `AdapterV2` em `internal/exec/adapter.go` + `exec.Register(a AdapterV2)` (ecosystem via `ecosystem.RegisterAll(aurHelper)`).
-- **Nunca** `exec.Command` direto — use `internal/run.Runner`. `OverrideElevation` pra elevação.
-- Helpers de teste: `internal/exectest/adapter.go`.
-- i18n: output PT-BR condicional quando `pt` via `internal/i18n`. Check `i18n.GetLocale()`.
-- Commits: `khorea1 <khorea@disroot.org>`, atômicos, Conventional Commits (`feat:`, `fix:`...), **sempre em inglês**.
+- (2026-09) [CRITICAL] Schemas require `schema_version = 1`; project schemas use `[tools]`, manifests use `[packages]`. Do not add legacy parsers, migrations, or aliases unless `docs/specs/schema-compatibility.md` changes that policy.
+- (2026-09) [INFO] `method_only` restricts candidates exclusively; `method_prefer` changes priority and keeps fallbacks. Inferred native candidates depend on declaration form. See the per-tool method-control section in `docs/schema-reference.md`.
+- (2026-09) [INFO] Method-level dependencies and sources resolve only when their candidate is reached. `dependency_only` excludes a tool from ordinary roots while keeping it available as a dependency or via `--only`; see `docs/architecture.md` and `docs/schema-reference.md`.
+- (2026-09) [INFO] `github` is the canonical release-asset method: it requires `repo` + `asset`, precedes `http` in default order without auto-injection, and has no global `gh` alias. A custom `gh` label is valid only with `kind = "github"`.
+- (2026-08) [INFO] Windows native managers are supported but remain less battle-tested than Linux/macOS.
 
-## 6. Guardrails
+Keep gotchas specific and checkable. Merge entries only when they share a root cause; if this section grows beyond 25 entries, consolidate recurring patterns and split subsystem-specific groups only when they remain heterogeneous across multiple subsystems.
 
-- **Always OK:** ler a árvore, `go test`, `go build`.
-- **Ask first:** instalar/deletar deps do host, mudar `detect_os.sh`, publish/release.
-- **Never:** force-push, push pra `main` sem PR, commitar secrets.
-- `detect_os.sh`: teste em todos os clans de `internal/native/registry.go` (`KnownClans()`: debian, arch, fedora, suse, alpine, void, gentoo, macos, termux, freebsd, openbsd, netbsd, windows, mint, opkg) antes de editar.
-- **Code exec vector:** `pre_install`/`post_install`/`build`/`build_cmd` executam comandos arbitrários. Prefira `run = ["prog","arg"]` (argv). String legada usa `sh -c`. Executor bloqueia por padrão sem `WithAllowArbitraryCode()`. Flague qualquer schema usando isso.
-- **Ownership:** archives com payload owned usam `extract_to` + `entrypoints`. `binary` não é alias de path interno. Remoção deleta payload + launchers, nunca parent dirs compartilhados. `.msi/.exe/.pkg/.dmg` nunca via `http`.
+## Git and Worktrunk workflow
 
-## 7. Known Gotchas
+Multiple agents and people may share the disk. Never mutate the shared checkout. Before the first edit, autofix, or code generation, create or enter a task worktree with `wt`:
 
-Formato: `(date) [SEVERITY] statement. (expires/condition)` — SEVERITY: CRITICAL/WARN/INFO. Seja específico e checável.
-
-Antes de adicionar: cheque overlap. Mesma causa raiz? Enriqueça entry existente. Causa diferente? Mantenha separado. Bias pra separar quando em dúvida.
-Consolidação: quando >25 entries, leia seção inteira e faça merge de padrões. Split só se >25 entries após compressão E heterogêneo em 5+ subsistemas -> `docs/agents/gotchas-<topic>.md` (criar `docs/agents/` só nesse caso). Entries universais ficam aqui.
-
-- (2026-08) [INFO] Seleção de candidates: `method_only` filtra (exclusivo, remove o `native` auto-injetado); `method_prefer`/`method_order` são prefixos com fallback nativo. Mesmo `fzf = { go = "..." }` ganha fallback nativo salvo `method_only`. (permanent)
-- (2026-08) [WARN] Integration tests precisam rede real e são lentos. Não rode em loop de unit test. (infra constraint)
-- (2026-08) [INFO] Windows (winget/scoop/choco) com locking/state ok, mas menos battle-tested que Linux/macOS. (até paridade)
-- (2026-09) [CRITICAL] Schemas exigem `schema_version = 1`; `[tools]` em projeto, `[packages]` em manifest. Parser explícito rejeita oposto. Sem legacy parsers/migrations/aliases salvo `docs/specs/schema-compatibility.md` mudar política. (até grammar mudar)
-- (2026-09) [INFO] `github` é canônico pra release assets: requer `repo` + `asset`, vem antes de `http` no default order sem auto-injeção, sem alias global `gh`. `[tools.foo.gh]` só é label custom com `kind="github"`. (permanent)
-- (2026-09) [CRITICAL] Archives owned: `extract_to` + `entrypoints`, nunca `binary` como path interno. (ownership policy)
-- (2026-09) [INFO] `requires` e `sources` por method são lazy (só quando candidate é alcançado). `dependency_only` remove de roots normais mas mantém disponível pra lazy deps e `--only`. (scheduler semantics)
-
-## 8. Git + Worktrunk Workflow
-
-Vários agentes/humanos no mesmo disco. **Nunca faça mutação no checkout compartilhado.** Leitura é permitida; antes da primeira edição/autofix/codegen, crie ou entre no worktree da task via `wt`.
-
-```bash
+```sh
 wt list
-wt switch --create <branch> # cria worktree + branch e entra
-# ... work ...
-wt step copy-ignored # opcional: compartilha caches em APFS/btrfs/XFS, não em ext4
-
-# solo / baixa concorrência:
-wt merge main
-
-# concorrência alta (evita race em main):
-wt step commit
-gh pr create
-# após merge:
-wt remove
+wt switch --create agent/<scope>/<verb>-<target>
 ```
 
-Regras:
+- Use one branch per task and actor. Do not reuse another actor's worktree.
+- Name branches `agent/<scope>/<verb>-<target>` or `human/<user>/<scope>/<verb>-<target>`.
+- If `wt` is unavailable, stop and report it; do not fall back to raw `git worktree` commands.
+- Never push directly to the default branch. Merge only after build, tests, and lint pass; use a pull request when work is concurrent.
 
-- Nunca `git worktree add/remove` ou `checkout` no main diretamente. Sempre `wt`.
-- Nunca commit/push direto em `main`. Tudo em branch.
-- 1 branch = 1 task = 1 ator. Não reuse worktree alheia.
-- Naming: `agent/<escopo>/<verbo>-<alvo>` e `human/<user>/<escopo>/<verbo>-<alvo>`. Use o escopo para identificar subsistema/área; descreva a mudança observável com termos específicos. Evite nomes de modelo e rótulos vagos (`updates`, `cleanup`, `fix`) sem alvo. Use papéis como `review` ou `lint` no escopo quando definirem melhor o trabalho. Ex.: `agent/config/fix-manifest-merge`, `agent/review/check-lockfile-races`, `human/khorea/cli/add-lockfile-validation`. Mantenha nomes legíveis em comandos e logs.
-- Se `wt` não estiver no PATH: pare e flag, não faça fallback silencioso pra git worktree cru.
-- Merge só com build + tests + lint verdes.
+## Local operator instructions
 
-## 9. Maintenance deste arquivo
+Shared project rules live in this file and version-controlled documentation. If `.dev/AGENTS.md` exists, read it as optional, additive operator guidance. It may describe local preferences, tools, or machine-specific details, but it must not weaken or redefine shared invariants, validation requirements, architecture, or safety rules.
 
-Living doc. Cada linha precisa merecer seu lugar ou é cortada.
+`.dev/` is Git-ignored and optional. Plans, scratch notes, generated reports, and temporary task state may live there; a fresh clone must remain complete without it. Promote stable, non-obvious project knowledge to this file or the appropriate document under `docs/`, and avoid duplicate canonical copies. Do not introduce `AGENTS.override.md` as a replacement for the shared instructions.
 
-**Quando editar:** aprendeu algo project-specific, não-óbvio, reusável -> adicione. Algo ficou falso/obsoleto -> corrija/remove na hora. Stale docs pior que sem docs. Mesmo conselho 2x vindo de scratch em `.dev/` -> promova pra cá.
+## Maintaining this file
 
-**Quando NÃO editar:** task-specific, one-off, raciocínio exploratório -> `.dev/`. Já está em README/package.json -> link, não duplique.
-
-**Como editar:**
-
-- Date entries inline onde fato pode mudar: `(2026-08)` (mesmo formato dos gotchas).
-- Novo finding contradiz linha existente -> NÃO sobrescreva silencioso. Marque `⚠ CONFLICT: <what and why>` e deixe ambos pra review humano, salvo confiança alta que old está errado — diga no diff.
-- Sempre mostre diff antes de commitar. Erro aqui compounda em todas as sessões futuras.
-- Relevante em *toda* sessão? Fica inline, não importa tamanho. Relevante só pra subsistema específico? Split mesmo se curto, com pointer que já diz se task precisa do arquivo linkado. Pointer que não filtra falhou — reescreva ou traga de volta.
-
-Referência: `docs/development.md` para a política de documentação e uso de `.dev/`.
-
-## Checklist mental antes de responder
-
-- [ ] O problema pedido está realmente resolvido?
-- [ ] O diff é a menor mudança coerente e preserva constraints/invariantes?
-- [ ] Alterações preexistentes foram preservadas?
-- [ ] Checks relevantes foram executados; blockers/falhas foram classificados e reportados?
-- [ ] O diff final foi inspecionado?
-- [ ] Em branch descritiva; commits atômicos, inglês, autoria `khorea1 <khorea@disroot.org>`?
-- [ ] Estou reportando evidência em vez de confiança/opinião?
+Keep information here only when it is project-specific, non-obvious, reusable, stable, and likely to affect engineering decisions. Prefer source-of-truth links for detailed or volatile behavior. Keep personal preferences, generic advice, duplicated documentation, and task-specific notes out. Correct stale statements promptly; mark unresolved conflicts explicitly rather than silently choosing between them. Always inspect and show the diff for this file before committing changes to it.
