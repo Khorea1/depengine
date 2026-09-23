@@ -25,7 +25,9 @@ func applySources(p *plan.ResolvedInstallPlan, method *config.MethodCandidate) {
 			URL:  source.URL,
 		}
 		if source.SecretRef != nil {
-			ref.SecretRef = &plan.SecretReference{Provider: source.SecretRef.Provider, Name: source.SecretRef.Name}
+			secret := plan.SecretReference{Provider: source.SecretRef.Provider, Name: source.SecretRef.Name}
+			ref.SecretRef = &secret
+			appendSecretRequirement(p, secret)
 		}
 		p.Sources = append(p.Sources, ref)
 	}
@@ -37,6 +39,15 @@ func applySources(p *plan.ResolvedInstallPlan, method *config.MethodCandidate) {
 	for _, channel := range stringList(method.Config["channels"]) {
 		p.Sources = append(p.Sources, plan.SourceReference{Role: plan.SourceChannel, Name: channel})
 	}
+}
+
+func appendSecretRequirement(p *plan.ResolvedInstallPlan, secret plan.SecretReference) {
+	for _, existing := range p.Secrets {
+		if existing == secret {
+			return
+		}
+	}
+	p.Secrets = append(p.Secrets, secret)
 }
 
 func sourceReference(role plan.SourceRole, value string) plan.SourceReference {

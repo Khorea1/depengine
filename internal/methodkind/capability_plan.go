@@ -18,6 +18,9 @@ func PlanCapabilities(p plan.ResolvedInstallPlan) (Capability, error) {
 		return 0, err
 	}
 	required |= sourceCaps
+	if len(p.Secrets) > 0 {
+		required |= CapabilityAuth
+	}
 	if operationsHaveArbitraryCode(planOperations(p)) {
 		required |= CapabilityArbitraryCode
 	}
