@@ -208,6 +208,38 @@ jobs:
           go test ./...
           tests/platform/native-lifecycle.sh tests/platform/fixtures/netbsd-pkgin.toml depengine-netbsd-smoke
 
+  # Real Android emulator: cross-build the CLI with the Android NDK, execute it
+  # through adb, and assert depengine detects the runtime as Android. This is
+  # intentionally separate from the Termux package-manager lifecycle.
+  test-android:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.x.x
+
+    - name: Set up Go
+      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.x.x
+      with:
+        go-version: '1.27.x'
+
+    - name: Install dependencies
+      run: go mod download
+
+    - name: Enable KVM access
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    - name: Run CLI inside Android emulator
+      uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+      with:
+        api-level: 35
+        arch: x86_64
+        target: default
+        ndk: 27.3.13750724
+        script: tests/platform/android-runtime-smoke.sh
+
   test-windows:
     runs-on: windows-latest
 

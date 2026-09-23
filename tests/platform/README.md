@@ -26,3 +26,8 @@ OpenBSD uses `openbsd-pkgadd.toml` against `pkg_add`, NetBSD uses
 `netbsd-pkgin.toml` against `pkgin`, and Windows uses
 `windows-choco.toml` against Chocolatey. The BSD jobs also run the Go test
 suite inside their VMs, so support is validated beyond cross-compilation.
+
+Android has a separate real-emulator runtime smoke test. It cross-builds the CLI
+with the Android NDK, executes it through ADB, and asserts that depengine's own
+OS detection resolves the device as Android. This does not claim Termux native
+package-manager lifecycle coverage; that remains a distinct integration layer.
