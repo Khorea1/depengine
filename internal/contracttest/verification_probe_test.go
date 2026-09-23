@@ -182,7 +182,7 @@ func TestVerificationPhaseAdapterFieldProbes(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				responseA, _ := json.Marshal([]map[string]string{{"name": "demo", "version": "1", "build": "b0", "channel": "stable"}})
 				responseB, _ := json.Marshal([]map[string]string{})
-				prefixA, prefixB := tc.valueA, tc.valueB
+				var prefixA, prefixB string
 				if tc.key == "prefix" {
 					prefixA = "-p " + tc.valueA
 					prefixB = "-p " + tc.valueB

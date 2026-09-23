@@ -128,12 +128,13 @@ func baseCase(kind, field, command, output, desiredA string, desiredB ...string)
 	}
 	responses := map[string]run.Result{}
 	paths := map[string]bool{}
-	if kind == "appman" {
+	switch kind {
+	case "appman":
 		paths["alpha"], paths["beta"] = true, false
-	} else if kind == "cask" {
+	case "cask":
 		responses[command] = run.Result{}
 		responses["brew list --cask beta"] = run.Result{ExitCode: 1}
-	} else {
+	default:
 		responses[command] = run.Result{Stdout: []byte(output)}
 	}
 	return struct {

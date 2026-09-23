@@ -186,6 +186,7 @@ func TestRuntimeHTTPIntegrityAndSigningFieldsAreConsumed(t *testing.T) {
 	if err := httpdownload.NewHTTPAdapter().Install(context.Background(), runner, &config.Tool{Name: "probe"}, method); err != nil {
 		t.Fatalf("Install() error: %v", err)
 	}
+	// #nosec G304 -- destination is an isolated t.TempDir owned by this test.
 	installed, err := os.ReadFile(filepath.Join(destination, "probe"))
 	if err != nil || string(installed) != string(payload) {
 		t.Fatalf("installed payload = %q, err=%v", installed, err)
