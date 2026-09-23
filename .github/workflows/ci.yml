@@ -174,6 +174,7 @@ jobs:
         release: "7.9"
         copyback: false
         prepare: |
+          pkg_add unzip
           ftp -o /tmp/go.tar.gz https://go.dev/dl/go1.27.1.openbsd-amd64.tar.gz
           test "$(sha256 -q /tmp/go.tar.gz)" = "db0566b3b3ddf6eda09cb3434a9401eb2583ffa539475e45592812813f11c792"
           rm -rf /usr/local/go
