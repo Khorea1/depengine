@@ -27,7 +27,7 @@ func TestValidateEffectFieldsHaveBehaviorProbes(t *testing.T) {
 		"checksum":             `checksum = ""`,
 		"checksum_url":         `checksum_url = "https://example.test/SHA256SUMS"`,
 		"checksum_file_format": "checksum = \"sha256:auto\"\nchecksum_file_format = \"unknown\"",
-		"signature_url":        `signature_url = "https://example.test/SHA256SUMS.sig"`,
+		"signature_url":        `signature_url = ""`,
 		"signing_key":          "checksum = \"sha256:auto\"\nsigning_key = \"ABCD1234\"",
 		"strip_components":     `strip_components = -1`,
 		"container.platform":   `platform = ""`,
