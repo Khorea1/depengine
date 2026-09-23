@@ -20,9 +20,9 @@ The harness isolates depengine config and state through temporary
 still happen on the runner or VM itself, so this suite is intended for
 disposable environments.
 
-Current native lifecycle coverage uses the same `native-hello.toml` fixture on
-the GitHub-hosted macOS runner (Homebrew), a real FreeBSD VM (`pkg`), and a
-real OpenBSD VM (`pkg_add`). The BSD jobs also run the Go test suite inside
-their VMs, so support is validated beyond cross-compilation. The GitHub-hosted
-Windows runner exercises the same lifecycle contract against Chocolatey with
-`windows-choco.toml`.
+Current native lifecycle coverage uses `native-hello.toml` on the
+GitHub-hosted macOS runner (Homebrew) and the real FreeBSD VM (`pkg`).
+OpenBSD uses `openbsd-pkgadd.toml` with a package present in the 7.9 repository,
+and Windows uses `windows-choco.toml` against Chocolatey. The BSD jobs also run
+the Go test suite inside their VMs, so support is validated beyond
+cross-compilation.

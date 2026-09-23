@@ -251,7 +251,25 @@ func runNativeInstallPackage(ctx context.Context, rn run.Runner, prefix, clan, p
 		return fmt.Errorf("%s: no install command for clan %q", prefix, clan)
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	return run.CheckResult(res, prefix+": install")
+	if err := run.CheckResult(res, prefix+": install"); err != nil {
+		return err
+	}
+	return verifyNativeInstall(ctx, rn, prefix, clan, pkg, "")
+}
+
+func verifyNativeInstall(ctx context.Context, rn run.Runner, prefix, clan, pkg, managerName string) error {
+	cmd := native.BuildCheckCmd(clan, pkg)
+	if cmd == nil {
+		return fmt.Errorf("%s: install reported success but clan %q has no verification command", prefix, clan)
+	}
+	if managerName != "" {
+		cmd = replaceManagerBinary(cmd, managerName, clan)
+	}
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	if err := run.CheckResult(res, prefix+": verify install"); err != nil {
+		return fmt.Errorf("%s: install reported success but package %q could not be verified: %w", prefix, pkg, err)
+	}
+	return nil
 }
 
 // RegisterNativeManagerAliases registers aliases for each known native
@@ -383,7 +401,14 @@ func (a *NativeByManagerAdapter) Install(ctx context.Context, rn run.Runner, too
 		cmd = append(cmd, wingetSelectionArgs(mc, true)...)
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	return run.CheckResult(res, "native("+a.managerName+"): install")
+	prefix := "native(" + a.managerName + ")"
+	if err := run.CheckResult(res, prefix+": install"); err != nil {
+		return err
+	}
+	if a.managerName == "winget" {
+		return nil
+	}
+	return verifyNativeInstall(ctx, rn, prefix, clan, pkg, a.managerName)
 }
 
 // ResolvePlan validates the host-projected intent without mutating host state.
@@ -495,7 +520,11 @@ func (a *NativeByManagerAdapter) InstallResolved(ctx context.Context, rn run.Run
 	}
 	cmd = replaceManagerBinary(cmd, a.managerName, clan)
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	return run.CheckResult(res, "native("+a.managerName+"): install")
+	prefix := "native(" + a.managerName + ")"
+	if err := run.CheckResult(res, prefix+": install"); err != nil {
+		return err
+	}
+	return verifyNativeInstall(ctx, rn, prefix, clan, pkg, a.managerName)
 }
 
 func (a *NativeByManagerAdapter) installWingetResolved(ctx context.Context, rn run.Runner, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {

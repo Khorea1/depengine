@@ -159,8 +159,6 @@ jobs:
           go test ./...
           tests/platform/native-lifecycle.sh tests/platform/fixtures/native-hello.toml depengine-native-smoke
 
-  # Windows stays at compile + unit coverage until the native lifecycle harness
-  # has a stable package fixture for the hosted runner's winget environment.
   # Real OpenBSD VM: run the Go suite on the target OS and exercise pkg_add.
   test-openbsd:
     runs-on: ubuntu-24.04
@@ -183,16 +181,7 @@ jobs:
           export PATH="/usr/local/go/bin:$PATH"
           go version
           go test ./...
-          echo "Diagnosing raw OpenBSD package query semantics..."
-          pkg_add hello
-          pkg_info -a | grep hello || true
-          if pkg_info -e 'hello-*'; then
-            echo "pkg_info hello-* matched"
-          else
-            echo "pkg_info hello-* did not match"
-          fi
-          pkg_delete hello || true
-          tests/platform/native-lifecycle.sh tests/platform/fixtures/native-hello.toml depengine-native-smoke
+          tests/platform/native-lifecycle.sh tests/platform/fixtures/openbsd-pkgadd.toml depengine-openbsd-smoke
 
   test-windows:
     runs-on: windows-latest
