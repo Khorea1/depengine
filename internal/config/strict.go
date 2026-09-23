@@ -349,7 +349,7 @@ func validateArtifactIntegrityOptions(v map[string]any, path string, errs *[]str
 	}
 	autoChecksum := hasChecksum && strings.HasSuffix(checksum, ":auto")
 
-	for _, key := range []string{"checksum_url", "checksum_file_format", "signature_url", "signing_key"} {
+	for _, key := range []string{"checksum_url", "checksum_file_format"} {
 		raw, configured := v[key]
 		if !configured {
 			continue
@@ -359,6 +359,16 @@ func validateArtifactIntegrityOptions(v map[string]any, path string, errs *[]str
 		}
 		if !autoChecksum {
 			*errs = append(*errs, path+"."+key+`: requires checksum = "<algorithm>:auto"`)
+		}
+	}
+
+	for _, key := range []string{"signature_url", "signing_key"} {
+		raw, configured := v[key]
+		if !configured {
+			continue
+		}
+		if value, ok := raw.(string); ok && value == "" {
+			*errs = append(*errs, path+"."+key+": must not be empty")
 		}
 	}
 
