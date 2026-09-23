@@ -99,10 +99,10 @@ func TestInvalidScopeIsRejectedUnlessMethodOwnsScopeVocabulary(t *testing.T) {
 		cfg   map[string]any
 		scope string
 	}{
-		"http user":      {"http", map[string]any{"url": "https://example.test/x.tar.gz", "scope": "user"}, "user"},
-		"http system":    {"http", map[string]any{"url": "https://example.test/x.tar.gz", "scope": "system"}, "system"},
-		"github user":    {"github", map[string]any{"repo": "org/x", "asset": "x.tar.gz", "scope": "user"}, "user"},
-		"appimage user":  {"appimage", map[string]any{"url": "https://example.test/x.AppImage", "scope": "user"}, "user"},
+		"http user":     {"http", map[string]any{"url": "https://example.test/x.tar.gz", "scope": "user"}, "user"},
+		"http system":   {"http", map[string]any{"url": "https://example.test/x.tar.gz", "scope": "system"}, "system"},
+		"github user":   {"github", map[string]any{"repo": "org/x", "asset": "x.tar.gz", "scope": "user"}, "user"},
+		"appimage user": {"appimage", map[string]any{"url": "https://example.test/x.AppImage", "scope": "user"}, "user"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if rejected(t, tc.kind, tc.cfg) {

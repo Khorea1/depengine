@@ -6,15 +6,15 @@
 //
 // ADR-004 (docs/design/adr-004-scope-placement.md):
 //
-//	1. Portable scope vocabulary (user/system) supplies platform-native
-//	   placement defaults resolved host-independently in plan.  Darwin and
-//	   the BSDs follow the same Unix XDG model as Linux.
-//	2. Explicit extract_to/install_dir and link_dir are advanced overrides
-//	   and win independently, but must be absolute in the target OS path
-//	   model.
-//	3. Unix paths disappear from normal authoring: a scope-less manifest
-//	   keeps today's legacy defaults unchanged; a scoped manifest must not
-//	   spell ~/.local/bin or /usr/local/bin.
+//  1. Portable scope vocabulary (user/system) supplies platform-native
+//     placement defaults resolved host-independently in plan.  Darwin and
+//     the BSDs follow the same Unix XDG model as Linux.
+//  2. Explicit extract_to/install_dir and link_dir are advanced overrides
+//     and win independently, but must be absolute in the target OS path
+//     model.
+//  3. Unix paths disappear from normal authoring: a scope-less manifest
+//     keeps today's legacy defaults unchanged; a scoped manifest must not
+//     spell ~/.local/bin or /usr/local/bin.
 //
 // Every consumer (plan resolution, install, check/observe, remove,
 // elevation) derives placement through ArtifactPlacement so all verdicts

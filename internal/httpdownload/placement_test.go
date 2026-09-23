@@ -72,7 +72,7 @@ func TestExplicitPathsOverrideScope(t *testing.T) {
 	exectest.SetHome(t, home)
 
 	placement, err := ArtifactPlacement(&config.Tool{Name: "ripgrep"}, httpScopeCandidate(map[string]any{
-		"scope":     "user",
+		"scope":      "user",
 		"extract_to": "/srv/custom/tool",
 		"link_dir":   "/srv/custom/bin",
 	}), "/usr/local/bin", "")
@@ -98,7 +98,7 @@ func TestRelativeOverrideFailsClosedUnderScope(t *testing.T) {
 	exectest.SetHome(t, home)
 
 	if _, err := ArtifactPlacement(&config.Tool{Name: "ripgrep"}, httpScopeCandidate(map[string]any{
-		"scope":     "user",
+		"scope":      "user",
 		"extract_to": "relative/tool",
 	}), "/usr/local/bin", ""); err == nil {
 		t.Fatal("relative extract_to under scope must be rejected")
@@ -151,7 +151,7 @@ func TestRawBinaryAndArchiveResolveToSameScopePlacement(t *testing.T) {
 
 	rawMC := httpScopeCandidate(map[string]any{"scope": "user"})
 	archiveMC := httpScopeCandidate(map[string]any{
-		"scope":      "user",
+		"scope":       "user",
 		"entrypoints": map[string]any{"nvim": "bin/nvim"},
 	})
 

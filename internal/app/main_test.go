@@ -26,9 +26,9 @@ func TestCommandReturnsTypedExitErrorWithoutTerminatingProcess(t *testing.T) {
 
 func TestConfirmationAccepted(t *testing.T) {
 	for _, tt := range []struct {
-		name string
+		name  string
 		input string
-		want bool
+		want  bool
 	}{
 		{name: "yes", input: "yes\n", want: true},
 		{name: "uppercase y", input: " Y \n", want: true},

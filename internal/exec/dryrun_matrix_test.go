@@ -79,12 +79,12 @@ func TestDryRunMatrixLeavesZeroHostMutations(t *testing.T) {
 	schema := &config.Schema{
 		Defaults: config.Defaults{MethodOrder: []string{"native", "http", "github", "git", "go", "cargo", "container", "msi"}},
 		Tools: map[string]*config.Tool{
-			"tool-native":   nativeWithHooks,
-			"tool-sourced":  sourced,
-			"tool-http":     {Name: "tool-http", Methods: []*config.MethodCandidate{{Kind: "http", Config: map[string]any{"url": "https://example.test/tool.tar.gz"}}}},
-			"tool-gh":       {Name: "tool-gh", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{"repo": "org/demo", "asset": "demo.tar.gz"}}}},
-			"tool-git":      {Name: "tool-git", Methods: []*config.MethodCandidate{{Kind: "git", Config: map[string]any{"url": "https://example.test/demo.git", "build": map[string]any{"run": []any{"make"}}}}}},
-			"tool-go":       {Name: "tool-go", Methods: []*config.MethodCandidate{{Kind: "go", Config: map[string]any{"pkg": "example.test/demo"}}}},
+			"tool-native":    nativeWithHooks,
+			"tool-sourced":   sourced,
+			"tool-http":      {Name: "tool-http", Methods: []*config.MethodCandidate{{Kind: "http", Config: map[string]any{"url": "https://example.test/tool.tar.gz"}}}},
+			"tool-gh":        {Name: "tool-gh", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{"repo": "org/demo", "asset": "demo.tar.gz"}}}},
+			"tool-git":       {Name: "tool-git", Methods: []*config.MethodCandidate{{Kind: "git", Config: map[string]any{"url": "https://example.test/demo.git", "build": map[string]any{"run": []any{"make"}}}}}},
+			"tool-go":        {Name: "tool-go", Methods: []*config.MethodCandidate{{Kind: "go", Config: map[string]any{"pkg": "example.test/demo"}}}},
 			"tool-cargo":     {Name: "tool-cargo", Methods: []*config.MethodCandidate{{Kind: "cargo", Config: map[string]any{"pkg": "demo", "version": "1.2.3"}}}},
 			"tool-container": {Name: "tool-container", Methods: []*config.MethodCandidate{{Kind: "container", Config: map[string]any{"manager": "podman", "source": "org/demo", "tag": "edge"}}}},
 			"tool-msi":       {Name: "tool-msi", Methods: []*config.MethodCandidate{{Kind: "msi", Config: map[string]any{"url": "https://example.test/tool.msi", "product_name": "Demo"}}}},
