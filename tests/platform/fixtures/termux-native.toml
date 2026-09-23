@@ -1,0 +1,7 @@
+schema_version = 1
+
+[tools.depengine-termux-smoke]
+method_only = ["native"]
+
+[tools.depengine-termux-smoke.native]
+pkg = "figlet"

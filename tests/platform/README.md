@@ -27,7 +27,10 @@ OpenBSD uses `openbsd-pkgadd.toml` against `pkg_add`, NetBSD uses
 `windows-choco.toml` against Chocolatey. The BSD jobs also run the Go test
 suite inside their VMs, so support is validated beyond cross-compilation.
 
-Android has a separate real-emulator runtime smoke test. It cross-builds the CLI
-with the Android NDK, executes it through ADB, and asserts that depengine's own
-OS detection resolves the device as Android. This does not claim Termux native
-package-manager lifecycle coverage; that remains a distinct integration layer.
+Android has two real-emulator layers in the same job. The first cross-builds
+the CLI with the Android NDK, executes it through ADB, and asserts that
+depengine's own OS detection resolves the device as Android. The second installs
+a pinned official Termux GitHub-debug APK and reuses `native-lifecycle.sh`
+inside the app sandbox to exercise the real Termux `pkg` install/check/
+idempotency/remove contract. The Android APK adapter's interactive package-
+installer handoff remains outside this automated lifecycle coverage.
