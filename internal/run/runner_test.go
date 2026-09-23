@@ -57,7 +57,7 @@ func TestFakeRunnerHonorsCtxCancellation(t *testing.T) {
 	defer cancel()
 
 	res := fr.Run(ctx, "slow-cmd")
-	if res.Err != context.DeadlineExceeded {
+	if !errors.Is(res.Err, context.DeadlineExceeded) {
 		t.Fatalf("err = %v, want DeadlineExceeded", res.Err)
 	}
 }
@@ -285,5 +285,68 @@ func TestRedactSensitiveTextRedactsSecretURLFragments(t *testing.T) {
 	}
 	if !strings.Contains(got, "section=install") {
 		t.Fatalf("benign fragment content was lost: %q", got)
+	}
+}
+
+func TestRedactSensitiveTextForms(t *testing.T) {
+	cases := []struct {
+		name       string
+		input      string
+		leaked     []string
+		preserved  []string
+		redactMark []string
+	}{
+		{
+			name:       "flag equals and space forms",
+			input:      "install --password=hunter2 --api-key AKIAEXAMPLE --secret topsecret",
+			leaked:     []string{"hunter2", "AKIAEXAMPLE", "topsecret"},
+			redactMark: []string{"--password=***", "--api-key=***", "--secret=***"},
+		},
+		{
+			name:       "proxy and cookie headers",
+			input:      "Proxy-Authorization: Basic dXNlcjpwYXNz\nSet-Cookie: sess=abc123",
+			leaked:     []string{"dXNlcjpwYXNz", "sess=abc123"},
+			redactMark: []string{"Proxy-Authorization: ***", "Set-Cookie: ***"},
+		},
+		{
+			name:       "userinfo with port",
+			input:      "fetch https://deploy@example.test:8443/pkg.tgz",
+			leaked:     []string{"deploy@"},
+			preserved:  []string{"example.test:8443/pkg.tgz"},
+			redactMark: []string{"https://***@"},
+		},
+		{
+			name:       "sensitive query params",
+			input:      "GET https://example.test/a?password=pw123&client_secret=cs456&refresh_token=rt789&page=2",
+			leaked:     []string{"pw123", "cs456", "rt789"},
+			preserved:  []string{"page=2"},
+			redactMark: []string{"password=***", "client_secret=***", "refresh_token=***"},
+		},
+		{
+			name:      "benign text untouched",
+			input:     "install --version 1.2.3 from channel stable",
+			leaked:    nil,
+			preserved: []string{"install --version 1.2.3 from channel stable"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := RedactSensitiveText(tc.input)
+			for _, secret := range tc.leaked {
+				if strings.Contains(got, secret) {
+					t.Fatalf("redacted text still contains %q: %q", secret, got)
+				}
+			}
+			for _, want := range tc.preserved {
+				if !strings.Contains(got, want) {
+					t.Fatalf("redacted text lost %q: %q", want, got)
+				}
+			}
+			for _, mark := range tc.redactMark {
+				if !strings.Contains(got, mark) {
+					t.Fatalf("redacted text missing %q: %q", mark, got)
+				}
+			}
+		})
 	}
 }

@@ -4,6 +4,7 @@ package integration
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -76,7 +77,8 @@ func runDepengine(args ...string) (output string, exitCode int) {
 	out, err := cmd.CombinedOutput()
 	output = string(out)
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		} else {
 			exitCode = -1

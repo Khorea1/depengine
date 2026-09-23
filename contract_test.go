@@ -19,8 +19,8 @@ func TestRegisteredAdaptersMatchMethodContracts(t *testing.T) {
 			t.Errorf("registered adapter %q has no method contract", kind)
 			continue
 		}
-		adapter, ok := exec.Lookup(kind).(exec.AdapterV2)
-		if !ok {
+		adapter := exec.Lookup(kind)
+		if adapter == nil {
 			t.Errorf("registered adapter %q does not implement AdapterV2", kind)
 			continue
 		}

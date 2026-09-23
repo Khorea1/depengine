@@ -21,6 +21,17 @@ func FuzzParseProjectSchema(f *testing.F) {
 		"[tools]\nnested = { cargo = { git = \"https://example.com\" }, git = { url = \"https://ex.com\" } }",
 		"\x00\x01\x02binary garbage",
 		"[tools]\n{ broken",
+		"schema_version = 1\n[tools]\nfd = { method_only = [\"go\"], go = \"github.com/foo/fd\" }",
+		"schema_version = 1\n[tools]\nhelper = { dependency_only = true, native = \"helper-pkg\" }",
+		"schema_version = 1\n[tools]\napp = { http = { url = \"https://example.com/{latest}/app.tar.gz\", checksum = \"sha256:abc\" } }",
+		"schema_version = 1\n[tools]\ntool = { github = { repo = \"owner/repo\", asset = \"tool-{os}-{arch}.tar.gz\" } }",
+		"schema_version = 1\n[tools]\nsetup = { pre_install = [\"echo hi\"], native = \"setup\" }",
+		"schema_version = \"1\"\n[tools]\na = \"a\"",
+		"schema_version = 1\n[packages]\na = \"a\"",
+		"schema_version = 1\n[tools]\n\"ünïcodé\" = \"pkg\"",
+		"schema_version = 1\n[tools]\na = \"a\"\n[tools]\nb = \"b\"",
+		"schema_version = 1\n[tools]\n[[a]]",
+		"schema_version = 1\n[tools.a.b.c.d]\nnative = \"deep\"",
 	}
 	for _, s := range seeds {
 		f.Add(s)
@@ -62,6 +73,18 @@ func FuzzExpand(f *testing.F) {
 		"{{double}}",
 		"{}",
 		"{!@#invalid}",
+		"{os}/{arch}/{id}",
+		"{latest}",
+		"{os}-unknown-{arch}",
+		"unclosed {foo",
+		"foo} unopened",
+		"{ }",
+		"{a}{b}{c}",
+		"100% coverage",
+		"prefix-{distro_family}-{libc}-{kernel}-{init_system}",
+		"ünïcodé {os} suffix",
+		"{outer_{inner}}",
+		"{{{{}}}}",
 	}
 	for _, s := range seeds {
 		f.Add(s)

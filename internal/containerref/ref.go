@@ -79,7 +79,7 @@ func ValidateDigest(digest string) error {
 		return fmt.Errorf("container digest must contain exactly 64 hex characters")
 	}
 	for _, r := range hexPart {
-		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
 			return fmt.Errorf("container digest contains invalid hexadecimal character %q", r)
 		}
 	}

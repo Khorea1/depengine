@@ -6,6 +6,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -215,8 +216,8 @@ func TestWriteUpgradeReportExitCodes(t *testing.T) {
 	err := writeUpgradeReport(false, false,
 		upgradeCounts{upgraded: 1, failed: 2},
 		[]upgradeResult{{Tool: "demo", Status: "failed", Error: "boom"}})
-	exitErr, ok := err.(*ExitError)
-	if !ok || exitErr.Code != 1 {
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 1 {
 		t.Fatalf("failed report error = %#v, want ExitError{1}", err)
 	}
 	if err := writeUpgradeReport(true, true,

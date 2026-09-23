@@ -982,16 +982,7 @@ func (d LockDocument) PinnedPlanFor(intent ResolvedInstallPlan) (ResolvedInstall
 
 	out.Artifacts = make([]Artifact, len(entry.Identity.Artifacts))
 	for i, artifact := range entry.Identity.Artifacts {
-		out.Artifacts[i] = Artifact{
-			Kind:               artifact.Kind,
-			URL:                artifact.URL,
-			LocalPath:          artifact.LocalPath,
-			Checksum:           artifact.Checksum,
-			ChecksumURL:        artifact.ChecksumURL,
-			ChecksumFileFormat: artifact.ChecksumFileFormat,
-			SignatureURL:       artifact.SignatureURL,
-			SigningKey:         artifact.SigningKey,
-		}
+		out.Artifacts[i] = Artifact(artifact)
 	}
 	out.Sources = make([]SourceReference, len(entry.Identity.Sources))
 	for i, source := range entry.Identity.Sources {

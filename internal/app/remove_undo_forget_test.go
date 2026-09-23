@@ -61,8 +61,8 @@ func runCommand(t *testing.T, cmd string, extraEnv []string, args ...string) (ex
 	err := c.Run()
 	code := 0
 	if err != nil {
-		ee, ok := err.(*osexec.ExitError)
-		if !ok {
+		var ee *osexec.ExitError
+		if !errors.As(err, &ee) {
 			t.Fatalf("helper failed to start: %v", err)
 		}
 		code = ee.ExitCode()

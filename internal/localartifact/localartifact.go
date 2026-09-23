@@ -200,19 +200,6 @@ func checksumVerifiedRegularFile(path string, expected os.FileInfo) (string, err
 	return checksumOpenFile(f)
 }
 
-func checksumFile(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
-}
-
 // VerifyRegularFileChecksum verifies a regular, non-symlink file against an
 // expected sha256:<hex> digest. It is intended for post-install drift checks.
 func VerifyRegularFileChecksum(path, expectedChecksum string) error {

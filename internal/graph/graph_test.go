@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -101,8 +102,8 @@ func TestSortCycle(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected cycle error, got nil")
 	}
-	_, ok := err.(*CycleError)
-	if !ok {
+	var cycleErr *CycleError
+	if !errors.As(err, &cycleErr) {
 		t.Fatalf("expected *CycleError, got %T: %v", err, err)
 	}
 	// Error message should name the tools in the cycle.
@@ -120,8 +121,8 @@ func TestSortSelfCycle(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected cycle error for self-dependency, got nil")
 	}
-	_, ok := err.(*CycleError)
-	if !ok {
+	var cycleErr *CycleError
+	if !errors.As(err, &cycleErr) {
 		t.Fatalf("expected *CycleError, got %T: %v", err, err)
 	}
 }
@@ -139,8 +140,8 @@ func TestSortCycleWithDependentOutsideCycle(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected cycle error, got nil")
 	}
-	ce, ok := err.(*CycleError)
-	if !ok {
+	var ce *CycleError
+	if !errors.As(err, &ce) {
 		t.Fatalf("expected *CycleError, got %T: %v", err, err)
 	}
 	if len(ce.Cycle) != 2 {
