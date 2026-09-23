@@ -443,12 +443,10 @@ func (ex *Executor) recoveryCandidate(key string) (*config.Tool, *config.MethodC
 	return tool, matched, matchedIntent, adapter, nil
 }
 
-// observeRecoveryCandidate derives identity facts without mutation. V2
-// adapters own presence and identity observation; legacy adapters retain their
-// boolean Check semantics. Version is authoritative only when Observe or a
-// Versioner probe returns it. Other identity dimensions remain unverifiable,
-// which deliberately leaves the committing journal blocked rather than
-// guessing.
+// observeRecoveryCandidate derives identity facts without mutation. The
+// version is authoritative only when Observe or a Versioner probe returns it.
+// Other identity dimensions remain unverifiable, which deliberately leaves
+// the committing journal blocked rather than guessing.
 func (ex *Executor) observeRecoveryCandidate(ctx context.Context, tool *config.Tool, method *config.MethodCandidate, intent *plan.ResolvedInstallPlan, adapter Adapter) plan.Observation {
 	probeCtx, cancel := context.WithTimeout(ctx, ex.methodTimeout)
 	defer cancel()

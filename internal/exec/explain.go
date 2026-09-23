@@ -138,8 +138,7 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 			}
 		}
 
-		// Check if the tool is already installed via this method. V2 adapters
-		// provide explicit presence semantics; legacy adapters retain Check.
+		// Check whether observation reports the target already installed.
 		probe := ex.probeRunner(tool.Name, displayKind)
 		if observer, ok := adapter.(AdapterV2); ok {
 			observation, observeErr := observer.Observe(ctx, probe, tool, methodForResolvedTarget(method, resolvedPlan))
