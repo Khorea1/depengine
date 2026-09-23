@@ -3,7 +3,8 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"os"
+	osexec "os/exec"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -77,14 +78,27 @@ func runUpgradeCommand(t *testing.T, extraEnv []string, flags ...string) (int, s
 	return runCommand(t, "upgrade", upgradeEnv)
 }
 
-// writeFakeUpgradeBinaries creates executable stubs for the named binaries and
-// returns a PATH assignment exposing them to helper subprocesses. Upgrade
-// preflight requires the tracked installation to be present on the host;
-// without the stub the fixture would describe an absent tool and upgrade
-// must fail closed ("run install/repair") instead of destroying state.
+// writeFakeUpgradeBinaries creates real executable stubs for the named binaries
+// and returns a PATH assignment exposing them to helper subprocesses. A real
+// executable is required on Windows: a text file named *.exe is discoverable
+// via PATH but cannot answer the version probe, which correctly makes desired
+// state unknown and causes upgrade to fail closed.
 func writeFakeUpgradeBinaries(t *testing.T, names ...string) string {
 	t.Helper()
 	binDir := t.TempDir()
+	sourceDir := t.TempDir()
+	source := filepath.Join(sourceDir, "main.go")
+	const body = `package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("fixture version v0.1.0")
+}
+`
+	if err := os.WriteFile(source, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
 	for _, name := range names {
 		// Presence is resolved through PATH lookup, which needs the .exe
 		// suffix on Windows.
@@ -92,9 +106,9 @@ func writeFakeUpgradeBinaries(t *testing.T, names ...string) string {
 			name += ".exe"
 		}
 		path := filepath.Join(binDir, name)
-		body := fmt.Sprintf("#!/bin/sh\nprintf '%%s version v0.1.0\\n' %q\n", name)
-		if err := os.WriteFile(path, []byte(body), 0755); err != nil {
-			t.Fatal(err)
+		cmd := osexec.Command("go", "build", "-o", path, source)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("build fake upgrade binary %s: %v\n%s", name, err, out)
 		}
 	}
 	return "PATH=" + binDir + string(os.PathListSeparator) + os.Getenv("PATH")
