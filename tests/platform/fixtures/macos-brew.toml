@@ -1,0 +1,7 @@
+schema_version = 1
+
+[tools.depengine-native-smoke]
+method_only = ["brew"]
+
+[tools.depengine-native-smoke.brew]
+pkg = "hello"

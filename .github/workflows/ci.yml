@@ -109,9 +109,9 @@ jobs:
           docker compose -f tests/crossplatform/docker-compose.yml run --rm "$distro"
         done
 
-  # Native adapters claimed for macOS (brew/cask/mas) and Windows
-  # (scoop/choco/winget) are compile-time claims today — validate them at the
-  # compile + unit level on the real runners.
+  # Real macOS runner: unit tests plus an actual Homebrew lifecycle smoke test.
+  # This validates install/check/status/idempotency/remove against the native
+  # package manager instead of treating macOS support as compile-time only.
   test-macos:
     runs-on: macos-latest
 
@@ -129,6 +129,13 @@ jobs:
     - name: Run tests
       run: go test -race ./...
 
+    - name: Run native Homebrew lifecycle smoke test
+      env:
+        HOMEBREW_NO_AUTO_UPDATE: "1"
+      run: tests/platform/native-lifecycle.sh tests/platform/fixtures/macos-brew.toml depengine-native-smoke
+
+  # Windows stays at compile + unit coverage until the native lifecycle harness
+  # has a stable package fixture for the hosted runner's winget environment.
   test-windows:
     runs-on: windows-latest
 
