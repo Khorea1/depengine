@@ -41,7 +41,9 @@ func (l *fileLock) Close() error {
 	hFile := l.f.Fd()
 	overlap := &overlapped{}
 
-	syscall.Syscall6(
+	// Best-effort: the file is about to be closed regardless, and the OS
+	// releases the lock on close even if the explicit unlock fails.
+	_, _, _ = syscall.Syscall6(
 		procUnlockFileEx.Addr(),
 		5,
 		hFile,

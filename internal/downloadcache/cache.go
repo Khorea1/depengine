@@ -133,7 +133,7 @@ func Lookup(url string) string {
 		return ""
 	}
 	now := time.Now()
-	os.Chtimes(p, now, now) // best-effort LRU refresh
+	_ = os.Chtimes(p, now, now) // best-effort LRU refresh
 	return p
 }
 
@@ -164,7 +164,7 @@ func Store(url, src string) (string, error) {
 
 	// Try rename first (fast, atomic within the same filesystem).
 	if err := os.Rename(src, dst); err == nil {
-		os.Chtimes(dst, now, now) // mark the fresh entry as most recently used
+		_ = os.Chtimes(dst, now, now) // best-effort: mark the fresh entry as most recently used
 		evict(dir, maxCacheBytes())
 		return dst, nil
 	}
@@ -176,8 +176,8 @@ func Store(url, src string) (string, error) {
 	if err := copyFileAtomic(src, dst); err != nil {
 		return "", fmt.Errorf("downloadcache: store: %w", err)
 	}
-	os.Remove(src) // best-effort cleanup
-	os.Chtimes(dst, now, now)
+	_ = os.Remove(src)            // best-effort cleanup
+	_ = os.Chtimes(dst, now, now) // best-effort: mark the fresh entry as most recently used
 	evict(dir, maxCacheBytes())
 	return dst, nil
 }
@@ -190,10 +190,10 @@ func copyFileAtomic(src, dst string) error {
 	}
 	tmpPath := tmp.Name()
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath) // best-effort cleanup; the close error is what we report
 		return fmt.Errorf("close temp: %w", err)
 	}
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }() // best-effort: tmp is renamed away on success
 
 	if err := CopyFile(src, tmpPath); err != nil {
 		return err

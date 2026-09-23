@@ -299,7 +299,9 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 			// If we used a cached file and checksum fails, re-download fresh.
 			if fromCache {
 				log.Default.Warn("cached copy failed checksum, re-downloading", "tool", tool.Name)
-				downloadcache.Remove(resolvedURL)
+				if rmErr := downloadcache.Remove(resolvedURL); rmErr != nil {
+					log.Default.Warn("failed to evict bad cache entry", "tool", tool.Name, "error", rmErr)
+				}
 				dl := SelectDownloaderForURL(ctx, rn, resolvedURL)
 				if err2 := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
 					return dl.Download(retryCtx, resolvedURL, tmpFile)

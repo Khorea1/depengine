@@ -197,7 +197,7 @@ func LoadLocked() (*LockedState, error) {
 	}
 	st, err := Load()
 	if err != nil {
-		lk.Close()
+		_ = lk.Close() // best-effort release; the load error is what we report
 		return nil, err
 	}
 	return &LockedState{state: st, lock: lk}, nil
@@ -214,7 +214,7 @@ func LoadShared() (*LockedState, error) {
 	}
 	st, err := Load()
 	if err != nil {
-		lk.Close()
+		_ = lk.Close() // best-effort release; the load error is what we report
 		return nil, err
 	}
 	return &LockedState{state: st, lock: lk}, nil

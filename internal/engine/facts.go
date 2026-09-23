@@ -46,12 +46,12 @@ func locateDetectScript(r run.Runner) (string, bool, error) {
 			path := f.Name()
 			if _, err := f.Write(detectScriptContent); err == nil {
 				if err := f.Chmod(0o755); err == nil {
-					f.Close()
+					_ = f.Close()
 					return path, true, nil
 				}
 			}
-			f.Close()
-			os.Remove(path)
+			_ = f.Close()
+			_ = os.Remove(path) // best-effort cleanup; nothing else to do if this fails
 		}
 		// Fall through if anything goes wrong with the temp file.
 	}

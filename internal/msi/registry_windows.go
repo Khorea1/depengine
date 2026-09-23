@@ -63,7 +63,7 @@ func findInRegistry(root syscall.Handle, view uint32, name, publisher string) (s
 		if productCode, err := registryString(sub, "ProductCode"); err == nil && productCode != "" {
 			code = productCode
 		}
-		syscall.RegCloseKey(sub)
+		_ = syscall.RegCloseKey(sub) // best-effort; leaked handle is closed with the process
 		if displayErr == nil && display == name && strings.HasPrefix(code, "{") && strings.HasSuffix(code, "}") && (publisher == "" || (vendorErr == nil && vendor == publisher)) {
 			return code, true, nil
 		}
