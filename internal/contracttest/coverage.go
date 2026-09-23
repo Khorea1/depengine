@@ -1,5 +1,7 @@
 package contracttest
 
+import "fmt"
+
 // Phase identifies a behavioral boundary proven by a field probe.
 type Phase string
 
@@ -18,16 +20,23 @@ type Coverage struct {
 var coverage = map[Phase]map[string]Coverage{}
 
 // RegisterCoverage records test-only evidence for exact kind.field keys.
+// Invalid or duplicate registrations panic so evidence metadata cannot be
+// silently ignored during package initialization.
 func RegisterCoverage(phase Phase, entries map[string]Coverage) {
+	switch phase {
+	case PhaseResolveRuntime, PhaseExecute, PhaseVerify:
+	default:
+		panic(fmt.Sprintf("contracttest: unknown coverage phase %q", phase))
+	}
 	if coverage[phase] == nil {
 		coverage[phase] = make(map[string]Coverage)
 	}
 	for key, item := range entries {
 		if key == "" || item.Consumer == "" || item.Rationale == "" {
-			continue
+			panic(fmt.Sprintf("contracttest: incomplete %s coverage entry %q", phase, key))
 		}
 		if _, exists := coverage[phase][key]; exists {
-			continue
+			panic(fmt.Sprintf("contracttest: duplicate %s coverage entry %q", phase, key))
 		}
 		coverage[phase][key] = item
 	}

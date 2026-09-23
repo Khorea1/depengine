@@ -54,6 +54,9 @@ func TestResolveEffectFieldsMoveStaticIntent(t *testing.T) {
 				if exclusion.Rationale == "" || exclusion.Consumer == "" {
 					t.Errorf("%s has an incomplete EffectResolve exclusion", key)
 				}
+				if _, ok := contracttest.CoverageFor(contracttest.PhaseResolveRuntime, key); !ok {
+					t.Errorf("%s is excluded from static resolution without a runtime resolution probe", key)
+				}
 				continue
 			}
 
