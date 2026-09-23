@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -91,7 +92,7 @@ func TestCopyArtifactHonorsCanceledContext(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, "tool"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := copyArtifact(ctx, src, t.TempDir()); err != context.Canceled {
+	if err := copyArtifact(ctx, src, t.TempDir()); !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}
 }

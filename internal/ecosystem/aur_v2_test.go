@@ -2,6 +2,7 @@ package ecosystem
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -65,7 +66,7 @@ func TestAURAdapterV2AliasesConform(t *testing.T) {
 func TestAURAdapterV2ObserveDistinguishesBackendFailure(t *testing.T) {
 	wantErr := context.DeadlineExceeded
 	observation, err := NewAURAdapter("paru").Observe(context.Background(), &run.FakeRunner{Err: wantErr}, &config.Tool{Name: "foo"}, &config.MethodCandidate{Config: map[string]any{"pkg": "foo"}})
-	if observation.Presence != plan.PresenceUnknown || err != wantErr {
+	if observation.Presence != plan.PresenceUnknown || !errors.Is(err, wantErr) {
 		t.Fatalf("Observe() = %#v, error = %v, want unknown and backend error", observation, err)
 	}
 }

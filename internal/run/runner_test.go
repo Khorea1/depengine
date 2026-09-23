@@ -57,7 +57,7 @@ func TestFakeRunnerHonorsCtxCancellation(t *testing.T) {
 	defer cancel()
 
 	res := fr.Run(ctx, "slow-cmd")
-	if res.Err != context.DeadlineExceeded {
+	if !errors.Is(res.Err, context.DeadlineExceeded) {
 		t.Fatalf("err = %v, want DeadlineExceeded", res.Err)
 	}
 }
