@@ -309,9 +309,15 @@ func (ex *Executor) CheckInstalled(ctx context.Context, tool *config.Tool, clan 
 }
 
 func (ex *Executor) selectedMethods(tool *config.Tool, clan string) []*config.MethodCandidate {
+	ex.SetHostContext(clan)
+	return config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
+}
+
+// SetHostContext selects host-specific defaults used during candidate planning.
+func (ex *Executor) SetHostContext(clan string) {
 	ex.clan = clan
+	ex.nativeManagerName = ""
 	if mgr, ok := native.Lookup(clan); ok {
 		ex.nativeManagerName = mgr.Name
 	}
-	return config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
 }

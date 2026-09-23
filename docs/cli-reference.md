@@ -16,7 +16,7 @@ Distro-agnostic dependency installer
 
 ## `depengine check <tool> [flags]`
 
-Check whether a tool is installed
+Reconciles observed host identity with the resolved plan. Only 'satisfied' exits successfully; absent, drifted, unknown, and broken return a failure code.
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
@@ -151,7 +151,7 @@ Install tools from schema.toml
 
 ## `depengine remove [tool...] [flags]`
 
-Remove tools from the system
+Observes the tracked target before removal. Proven-absent targets release state and ownership; unknown or broken observations preserve state and fail.
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
@@ -173,7 +173,7 @@ Export a software bill of materials of installed state
 
 ## `depengine status [flags]`
 
-Show tool installation state vs schema
+Reconciles tracked state with identity observed on the host. Status values include installed, missing, outdated, unknown, and broken.
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|

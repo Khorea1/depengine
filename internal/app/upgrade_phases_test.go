@@ -22,10 +22,11 @@ import (
 // phaseTestAdapter is a self-contained stub for the single-tool upgrade path.
 // Probe results are canned so no host subprocess ever runs.
 type phaseTestAdapter struct {
-	available bool
-	installed bool
-	canRemove bool
-	calls     []string
+	available   bool
+	installed   bool
+	canRemove   bool
+	observation *plan.Observation
+	calls       []string
 }
 
 func (a *phaseTestAdapter) Kind() string { return "go" }
@@ -51,6 +52,9 @@ func (a *phaseTestAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *confi
 }
 func (a *phaseTestAdapter) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
 	a.calls = append(a.calls, "observe")
+	if a.observation != nil {
+		return *a.observation, nil
+	}
 	presence := plan.PresenceAbsent
 	if a.installed {
 		presence = plan.PresencePresent

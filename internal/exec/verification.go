@@ -59,22 +59,7 @@ func verificationDetail(v plan.VerificationResult) string {
 // ResolveAndVerifyCandidate resolves one candidate through the executor's
 // canonical resolver, then verifies exactly that resolved target.
 func (ex *Executor) ResolveAndVerifyCandidate(ctx context.Context, tool *config.Tool, method *config.MethodCandidate) (*plan.ResolvedInstallPlan, plan.VerificationResult, error) {
-	if tool == nil || method == nil {
-		return nil, plan.VerificationResult{}, fmt.Errorf("tool and method are required")
-	}
-	intent, mismatch := candidatePlanIntent(tool, method)
-	if mismatch != "" {
-		return nil, plan.VerificationResult{}, fmt.Errorf("%s", mismatch)
-	}
-	if intent == nil {
-		return nil, plan.VerificationResult{}, fmt.Errorf("candidate %q has no resolvable plan", method.Kind)
-	}
-	adapter := ex.LookupAdapter(method.Kind)
-	if adapter == nil {
-		return nil, plan.VerificationResult{}, fmt.Errorf("no adapter registered for %q", method.Kind)
-	}
-	intent = ex.hostResolvedPlanIntent(method, intent)
-	resolved, err := ex.resolveCandidatePlan(ctx, tool, method, adapter, intent, displayMethodKind(method))
+	resolved, err := ex.ResolveCandidatePlan(ctx, tool, method)
 	if err != nil {
 		return nil, plan.VerificationResult{}, err
 	}
@@ -82,7 +67,27 @@ func (ex *Executor) ResolveAndVerifyCandidate(ctx context.Context, tool *config.
 	return resolved, verification, err
 }
 
-// SelectMethodsForStatus sets the host clan used for native candidate intent.
-func (ex *Executor) SelectMethodsForStatus(tool *config.Tool, clan string) {
-	ex.selectedMethods(tool, clan)
+// ResolveCandidatePlan resolves one selected candidate through the executor's
+// canonical path without probing the host.
+func (ex *Executor) ResolveCandidatePlan(ctx context.Context, tool *config.Tool, method *config.MethodCandidate) (*plan.ResolvedInstallPlan, error) {
+	if tool == nil || method == nil {
+		return nil, fmt.Errorf("tool and method are required")
+	}
+	intent, mismatch := candidatePlanIntent(tool, method)
+	if mismatch != "" {
+		return nil, fmt.Errorf("%s", mismatch)
+	}
+	if intent == nil {
+		return nil, fmt.Errorf("candidate %q has no resolvable plan", method.Kind)
+	}
+	adapter := ex.LookupAdapter(method.Kind)
+	if adapter == nil {
+		return nil, fmt.Errorf("no adapter registered for %q", method.Kind)
+	}
+	intent = ex.hostResolvedPlanIntent(method, intent)
+	resolved, err := ex.resolveCandidatePlan(ctx, tool, method, adapter, intent, displayMethodKind(method))
+	if err != nil {
+		return nil, err
+	}
+	return resolved, nil
 }

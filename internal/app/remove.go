@@ -30,6 +30,7 @@ func newRemoveCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "remove [tool...]",
 		Short:   ifPT("Remover ferramentas do sistema", "Remove tools from the system"),
+		Long:    ifPT("Observa o alvo rastreado antes da remoção. Alvos ausentes comprovadamente liberam state e ownership; observações unknown ou broken preservam o state e falham.", "Observes the tracked target before removal. Proven-absent targets release state and ownership; unknown or broken observations preserve state and fail."),
 		GroupID: groupManage,
 		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -52,6 +53,8 @@ func newRemoveCmd() *cobra.Command {
 type removeSession struct {
 	ctx              context.Context
 	runner           run.Runner
+	executor         *exec.Executor
+	clan             string
 	state            *state.State
 	schemaTools      map[string]*config.Tool
 	dryRun           bool
@@ -82,13 +85,21 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 		return err
 	}
 
-	ensureRemoveNativeAdapter()
+	facts := ensureRemoveNativeAdapter()
+	executor := exec.New()
+	exec.WithRunner(run.OSExecRunner{})(executor)
+	if facts != nil {
+		exec.WithFacts(facts)(executor)
+		exec.WithDefaultMethodOrder(config.DefaultMethodOrder)(executor)
+	}
 
 	sess := &removeSession{
 		ctx:              ctx,
 		runner:           run.OSExecRunner{},
+		executor:         executor,
 		state:            st,
 		schemaTools:      schemaTools,
+		clan:             engine.ResolveFamily(facts),
 		dryRun:           *removeDryRun,
 		requestedRemoval: collectRemovalTargets(st, removeAll, removeOnly, removeArgs),
 		removedThisRun:   make(map[string]bool),
@@ -166,11 +177,13 @@ func loadRemoveSchemaTools(schemaPath string) (map[string]*config.Tool, error) {
 // to PATH-probing, which is ambiguous for manager binaries shared across
 // clans (e.g. "pkg" on both termux and freebsd — same install command,
 // different check/remove commands). Same treatment install/upgrade already do.
-func ensureRemoveNativeAdapter() {
+func ensureRemoveNativeAdapter() *engine.Facts {
 	if facts, err := engine.GatherFacts(run.OSExecRunner{}); err == nil {
 		exec.Replace(exec.NewNativeAdapter(engine.ResolveFamily(facts)))
+		return facts
 	} else {
 		log.Default.Warn("could not gather OS facts; falling back to PATH-probing for native manager detection", "error", err)
+		return nil
 	}
 }
 
@@ -197,15 +210,9 @@ func collectRemovalTargets(st *state.State, removeAll *bool, removeOnly *string,
 // can remove it. Falls back to Method when MethodKind is empty (explicitly
 // constructed current-format state). Returns removable=false for the
 // manual-remove-required paths: unknown adapter or no remove support.
-func resolveRemover(toolName string, toolState state.ToolState) (exec.AdapterV2, string, bool) {
-	methodKind := toolState.MethodKind
-	if methodKind == "" {
-		methodKind = toolState.Method // fallback for explicitly constructed current-format state
-	}
-	adapter := exec.Lookup(methodKind)
-	if adapter == nil {
-		log.Default.Warn("adapter not found for method", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
-		log.Default.Warn("manual remove required", "tool", toolName)
+func (s *removeSession) resolveRemover(toolName string, toolState state.ToolState) (exec.AdapterV2, string, bool) {
+	adapter, methodKind, found := s.lookupRemovalAdapter(toolName, toolState)
+	if !found {
 		return nil, methodKind, false
 	}
 	if !adapter.CanRemove() {
@@ -213,6 +220,55 @@ func resolveRemover(toolName string, toolState state.ToolState) (exec.AdapterV2,
 		return nil, methodKind, false
 	}
 	return adapter, methodKind, true
+}
+
+func (s *removeSession) lookupRemovalAdapter(toolName string, toolState state.ToolState) (exec.AdapterV2, string, bool) {
+	methodKind := toolState.MethodKind
+	if methodKind == "" {
+		methodKind = toolState.Method // fallback for explicitly constructed current-format state
+	}
+	adapter := s.executor.LookupAdapter(methodKind)
+	if adapter == nil {
+		log.Default.Warn("adapter not found for method", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
+		log.Default.Warn("manual remove required", "tool", toolName)
+		return nil, methodKind, false
+	}
+	return adapter, methodKind, true
+}
+
+func (s *removeSession) verifyRemovalTarget(ctx context.Context, toolName string, toolState state.ToolState) (plan.VerificationResult, error) {
+	methodKind := toolState.MethodKind
+	if methodKind == "" {
+		methodKind = toolState.Method
+	}
+	tool := &config.Tool{Name: toolName}
+	method := &config.MethodCandidate{Kind: methodKind, Label: toolState.Method, Config: toolState.Config}
+	if schemaTool := s.schemaTools[toolName]; schemaTool != nil {
+		tracked, err := findStateMethodCandidate(schemaTool, toolState)
+		if err != nil {
+			return plan.VerificationResult{}, err
+		}
+		*tool = *schemaTool
+		method = &config.MethodCandidate{Kind: tracked.Kind, Label: tracked.Label, Config: tracked.Config}
+		if toolState.Config != nil {
+			method.Config = toolState.Config
+		}
+	}
+	if methodKind == "" || method.Kind == "" {
+		return plan.VerificationResult{}, fmt.Errorf("tracked method kind is required")
+	}
+	if s.executor == nil {
+		return plan.VerificationResult{}, fmt.Errorf("removal verifier is unavailable")
+	}
+	s.executor.SetHostContext(s.clan)
+	returnedPlan, verification, err := s.executor.ResolveAndVerifyCandidate(ctx, tool, method)
+	if err != nil {
+		return plan.VerificationResult{}, err
+	}
+	if returnedPlan == nil {
+		return plan.VerificationResult{}, fmt.Errorf("resolved removal target is missing")
+	}
+	return verification, nil
 }
 
 // findOwnedResource returns the ownership record for a shared resource.
@@ -344,11 +400,32 @@ func (s *removeSession) removeTrackedTool(ctx context.Context, toolName string, 
 		return true
 	}
 
-	remover, methodKind, removable := resolveRemover(toolName, toolState)
-	if !removable {
+	remover, methodKind, found := s.lookupRemovalAdapter(toolName, toolState)
+	if !found {
 		return false
 	}
-	if !s.invokeRemover(ctx, toolName, toolState, remover, methodKind, automatic) {
+	verification, err := s.verifyRemovalTarget(ctx, toolName, toolState)
+	if err != nil {
+		log.Default.Error("verify removal target", "tool", toolName, "error", err)
+		return false
+	}
+	switch verification.State {
+	case plan.StateSatisfied, plan.StateDrifted:
+		if !remover.CanRemove() {
+			log.Default.Warn("manual remove required", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
+			return false
+		}
+		if !s.invokeRemover(ctx, toolName, toolState, remover, methodKind, automatic) {
+			return false
+		}
+	case plan.StateAbsent:
+		log.Default.Warn("tracked target already absent; releasing state and ownership", "tool", toolName)
+		s.removedThisRun[toolName] = true
+	case plan.StateUnknown, plan.StateBroken:
+		log.Default.Error("cannot safely remove target with unverifiable state", "tool", toolName, "state", verification.State, "detail", verification.Detail)
+		return false
+	default:
+		log.Default.Error("invalid target verification state", "tool", toolName, "state", verification.State)
 		return false
 	}
 
@@ -438,10 +515,31 @@ func (s *removeSession) cleanupReleasedPrerequisites(ctx context.Context, ownerN
 // planDryRunRemoval renders what a real removal would do without touching
 // the system or state. Read-only: resolver lookup plus ownership planning.
 func (s *removeSession) planDryRunRemoval(toolName string, toolState state.ToolState) bool {
-	if _, _, removable := resolveRemover(toolName, toolState); !removable {
+	remover, methodKind, found := s.lookupRemovalAdapter(toolName, toolState)
+	if !found {
 		return false
 	}
-	log.Default.Info("would remove", "tool", toolName, "method", toolState.Method)
+	verification, err := s.verifyRemovalTarget(s.ctx, toolName, toolState)
+	if err != nil {
+		log.Default.Error("verify removal target", "tool", toolName, "error", err)
+		return false
+	}
+	switch verification.State {
+	case plan.StateSatisfied, plan.StateDrifted:
+		if !remover.CanRemove() {
+			log.Default.Warn("manual remove required", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
+			return false
+		}
+		log.Default.Info("would remove", "tool", toolName, "method", toolState.Method)
+	case plan.StateAbsent:
+		log.Default.Info("target already absent; would release tracked ownership/resources", "tool", toolName, "method", toolState.Method)
+	case plan.StateUnknown, plan.StateBroken:
+		log.Default.Error("cannot plan removal with unverifiable target state", "tool", toolName, "state", verification.State, "detail", verification.Detail)
+		return false
+	default:
+		log.Default.Error("invalid target verification state", "tool", toolName, "state", verification.State)
+		return false
+	}
 	release, err := plan.ReleaseDependentResources(s.state.OwnedResources, toolName)
 	if err != nil {
 		log.Default.Error("plan owned resource release", "tool", toolName, "error", err)

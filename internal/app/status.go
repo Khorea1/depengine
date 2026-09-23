@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -32,6 +33,7 @@ func newStatusCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "status",
 		Short:   ifPT("Mostrar estado das ferramentas em relação ao schema", "Show tool installation state vs schema"),
+		Long:    ifPT("Reconcilia o estado rastreado com a identidade observada no host. Os status incluem installed, missing, outdated, unknown e broken.", "Reconciles tracked state with identity observed on the host. Status values include installed, missing, outdated, unknown, and broken."),
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -75,7 +77,7 @@ func runStatus(ctx context.Context, statusSchema, statusManifest *string, status
 			exec.WithRunner(run.OSExecRunner{})(ex)
 			exec.WithFacts(facts)(ex)
 			exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
-			tools = reconcileStatusTools(ctx, tools, st.Tools, s, ex, engine.ResolveFamily(facts))
+			tools = reconcileStatusTools(ctx, tools, st.Tools, s, lk, ex, engine.ResolveFamily(facts))
 		} else {
 			log.Default.Warn("gather host facts for status", "error", factsErr)
 			for i := range tools {
@@ -204,7 +206,7 @@ func statusToolOutdated(ts state.ToolState, stTool *config.Tool, lk *lock.Lock, 
 	return false
 }
 
-func reconcileStatusTools(ctx context.Context, rows []toolStatus, installed map[string]state.ToolState, schema *config.Schema, ex *exec.Executor, clan string) []toolStatus {
+func reconcileStatusTools(ctx context.Context, rows []toolStatus, installed map[string]state.ToolState, schema *config.Schema, lk *lock.Lock, ex *exec.Executor, clan string) []toolStatus {
 	for i := range rows {
 		row := &rows[i]
 		if row.Status == "orphaned" || row.Status == "missing" {
@@ -220,8 +222,20 @@ func reconcileStatusTools(ctx context.Context, rows []toolStatus, installed map[
 			row.Verification = &verification
 			continue
 		}
-		ex.SelectMethodsForStatus(tool, clan)
-		_, verification, err := ex.ResolveAndVerifyCandidate(ctx, tool, method)
+		ex.SetHostContext(clan)
+		resolved, err := ex.ResolveCandidatePlan(ctx, tool, method)
+		if err == nil {
+			if pin, ok := lockPinForCandidate(lk, row.Name, tool, method); ok {
+				resolved.Identity.Version = pin.Latest
+				if validateErr := resolved.Validate(); validateErr != nil {
+					err = fmt.Errorf("apply lock pin to desired identity: %w", validateErr)
+				}
+			}
+		}
+		var verification plan.VerificationResult
+		if err == nil {
+			verification, err = ex.VerifyResolvedCandidate(ctx, tool, method, resolved)
+		}
 		if err != nil {
 			row.Status = "unknown"
 			v := plan.VerificationResult{State: plan.StateUnknown, Detail: err.Error()}
@@ -229,6 +243,9 @@ func reconcileStatusTools(ctx context.Context, rows []toolStatus, installed map[
 			continue
 		}
 		row.Verification = &verification
+		if slices.Contains(verification.KnownFields, plan.FieldVersion) {
+			row.Version = verification.Observed.Version
+		}
 		switch verification.State {
 		case plan.StateSatisfied:
 			if definitionDrift {

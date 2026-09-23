@@ -55,6 +55,12 @@ An adapter should use the same target for install, check, version reporting,
 and remove. If the underlying tool cannot identify that target reliably,
 depengine should not expose a field that implies it can.
 
+Desired-state checks reconcile the resolved plan with the adapter's reported
+identity. `unknown` means depengine lacks authoritative observations for one or
+more desired fields; it does not mean the target is absent. `broken` means the
+observation is invalid or verification failed. Destructive upgrade and remove
+operations stop for either state.
+
 ## Package sources
 
 A package source, registry, remote, bucket, or channel selects where a package

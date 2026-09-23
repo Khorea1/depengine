@@ -171,7 +171,8 @@ func newCheckCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "check <tool>",
-		Short:   ifPT("Verificar se uma ferramenta está instalada", "Check whether a tool is installed"),
+		Short:   ifPT("Verificar se uma ferramenta atende ao estado desejado", "Check whether a tool satisfies desired state"),
+		Long:    ifPT("Reconcilia a identidade observada no host com o plano resolvido. Só 'satisfied' retorna sucesso; absent, drifted, unknown e broken retornam código de falha.", "Reconciles observed host identity with the resolved plan. Only 'satisfied' exits successfully; absent, drifted, unknown, and broken return a failure code."),
 		GroupID: groupInspect,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
