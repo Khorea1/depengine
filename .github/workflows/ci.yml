@@ -151,7 +151,6 @@ jobs:
           env ASSUME_ALWAYS_YES=yes pkg bootstrap -f
           fetch -qo /tmp/go.tar.gz https://go.dev/dl/go1.27.1.freebsd-amd64.tar.gz
           sha256 -c 9761194512938a640948ae5ba273df73a441f4229ea21a1503937e55c69bf107 /tmp/go.tar.gz
-          mkdir -p /usr/local
           rm -rf /usr/local/go
           tar -C /usr/local -xzf /tmp/go.tar.gz
         run: |
@@ -200,6 +199,7 @@ jobs:
           /usr/sbin/pkg_add pkgin unzip
           /usr/bin/ftp -o /tmp/go.tar.gz https://go.dev/dl/go1.27.1.netbsd-amd64.tar.gz
           test "$(/usr/bin/sha256 -q /tmp/go.tar.gz)" = "4ace14c14e7c6eb1d06890433afe81f8c2dc746d1d5f4df3ae6d2d7dd0481ba2"
+          mkdir -p /usr/local
           rm -rf /usr/local/go
           tar -C /usr/local -xzf /tmp/go.tar.gz
         run: |
