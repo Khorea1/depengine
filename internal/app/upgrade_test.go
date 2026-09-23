@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/ecosystem"
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
@@ -771,5 +773,32 @@ func TestPreflightDirectUpgradeRejectsStaticRequiresBeforeProbes(t *testing.T) {
 	}
 	if len(adapter.calls) != 0 {
 		t.Fatalf("adapter calls = %v, want no host probes after static rejection", adapter.calls)
+	}
+}
+
+// buildUpgradeExecutor must not shadow the process registry: composition-root
+// reconfiguration (defaults.aur_helper) has to reach upgrade reinstalls.
+func TestBuildUpgradeExecutorHonorsReconfiguredAURHelper(t *testing.T) {
+	ecosystem.ReconfigureAUR("yay")
+	t.Cleanup(func() { ecosystem.ReconfigureAUR("paru") })
+
+	schemaPath := filepath.Join(t.TempDir(), "schema.toml")
+	if err := os.WriteFile(schemaPath, []byte("schema_version = 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ex, _, err := buildUpgradeExecutor(&config.Schema{}, "arch", &engine.Facts{}, schemaPath, upgradeOptions{}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("buildUpgradeExecutor() error = %v", err)
+	}
+	if got, want := ex.LookupAdapter("aur"), exec.Lookup("aur"); got != want {
+		t.Fatalf("aur adapter = %p, want registry adapter %p (configured helper was shadowed)", got, want)
+	}
+	for _, kind := range exec.RegisteredKinds() {
+		if kind == "native" {
+			continue // intentionally clan-specific
+		}
+		if ex.LookupAdapter(kind) == nil {
+			t.Errorf("registered kind %q missing from upgrade executor", kind)
+		}
 	}
 }

@@ -11,16 +11,11 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/container"
 	"github.com/Khorea1/depengine/internal/ecosystem"
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
-	"github.com/Khorea1/depengine/internal/git"
-	"github.com/Khorea1/depengine/internal/httpdownload"
-	"github.com/Khorea1/depengine/internal/localartifactadapter"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
-	"github.com/Khorea1/depengine/internal/msi"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
@@ -163,34 +158,10 @@ func buildUpgradeExecutor(s *config.Schema, clan string, facts *engine.Facts, sc
 	}
 	ex := exec.New()
 	exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
-	adapters := []exec.AdapterV2{
-		ecosystem.NewCargoAdapter(),
-		ecosystem.NewGoAdapter(),
-		ecosystem.NewAURAdapter("paru"),
-		ecosystem.NewSDKManAdapter(),
-		ecosystem.NewSteamCMDAdapter(),
-		ecosystem.NewYarnBerryAdapter(),
-		ecosystem.NewPacstallAdapter(),
-		ecosystem.NewCondaAdapter(),
-		ecosystem.NewAsdfAdapter(),
-		git.NewGitAdapter(),
-		localartifactadapter.NewAdapter(),
-		httpdownload.NewHTTPAdapter(),
-		httpdownload.NewGitHubAdapter(),
-		httpdownload.NewAppImageAdapter(),
-		httpdownload.NewAndroidAdapter(),
-		msi.NewAdapter(),
-		container.NewContainerAdapter(),
-		exec.NewNativeAdapter(clan),
-	}
-	for kind, cfg := range ecosystem.Configs {
-		if kind == "cargo" || kind == "go" {
-			continue
-		}
-		adapters = append(adapters, ecosystem.NewBaseAdapter(cfg))
-	}
-	adapters = append(adapters, exec.WindowsAdapters()...)
-	exec.WithAdapters(adapters...)(ex)
+	// Every other adapter comes from the process registry so composition-root
+	// reconfiguration (e.g. defaults.aur_helper) reaches upgrade reinstalls;
+	// only native is clan-specific.
+	exec.WithAdapters(exec.NewNativeAdapter(clan))(ex)
 	exec.WithSchemaInfo(schemaPath, schemaFile.ModTime())(ex)
 	exec.WithLogger(lg)(ex)
 	runner := run.NewLoggingRunner(run.OSExecRunner{}, lg)
