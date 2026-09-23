@@ -128,3 +128,59 @@ chocovim = { choco = { pkg = "neovim", prerelease = true } }
 		t.Fatal(err)
 	}
 }
+
+func TestArtifactIntegrityOptionsRejectIgnoredFields(t *testing.T) {
+	literal := "sha256:" + strings.Repeat("0", 64)
+	tests := []struct {
+		name   string
+		fields string
+		want   string
+	}{
+		{name: "empty checksum", fields: `checksum = ""`, want: "checksum: must not be empty"},
+		{name: "checksum URL without auto checksum", fields: `checksum_url = "https://example.test/SHA256SUMS"`, want: `checksum_url: requires checksum = "<algorithm>:auto"`},
+		{name: "checksum URL with literal checksum", fields: `checksum = "` + literal + `"
+checksum_url = "https://example.test/SHA256SUMS"`, want: `checksum_url: requires checksum = "<algorithm>:auto"`},
+		{name: "checksum format with literal checksum", fields: `checksum = "` + literal + `"
+checksum_file_format = "raw"`, want: `checksum_file_format: requires checksum = "<algorithm>:auto"`},
+		{name: "signature with literal checksum", fields: `checksum = "` + literal + `"
+signature_url = "https://example.test/SHA256SUMS.sig"`, want: `signature_url: requires checksum = "<algorithm>:auto"`},
+		{name: "signing key without signature", fields: `checksum = "sha256:auto"
+signing_key = "ABCD1234"`, want: "signing_key: requires signature_url"},
+		{name: "empty checksum URL", fields: `checksum = "sha256:auto"
+checksum_url = ""`, want: "checksum_url: must not be empty"},
+		{name: "empty signature URL", fields: `checksum = "sha256:auto"
+signature_url = ""`, want: "signature_url: must not be empty"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "schema.toml")
+			data := "schema_version = 1\n[tools.demo.http]\nurl = \"https://example.test/demo.tar.gz\"\n" + tt.fields + "\n"
+			if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ParseProjectSchema(path, nil); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("ParseProjectSchema() = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestArtifactIntegrityOptionsAcceptAutoChecksumSidecars(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "schema.toml")
+	data := `schema_version = 1
+[tools.demo.http]
+url = "https://example.test/demo.tar.gz"
+checksum = "sha256:auto"
+checksum_url = "https://example.test/SHA256SUMS"
+checksum_file_format = "sha256sum"
+signature_url = "https://example.test/SHA256SUMS.sig"
+signing_key = "ABCD1234"
+`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseProjectSchema(path, nil); err != nil {
+		t.Fatalf("ParseProjectSchema() = %v, want accepted auto-checksum sidecars", err)
+	}
+}

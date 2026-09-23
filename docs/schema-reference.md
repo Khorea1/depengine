@@ -226,10 +226,10 @@ fastfetch = { http = {
 | `release` | no | Named GitHub release tag for `repo` + `asset` |
 | `branch` | no | GitHub release tag expressing rolling-branch intent; when set, it takes precedence over `release` |
 | `checksum` | no | `"sha256:<hex>"`, `"md5:<hex>"`, `"sha1:<hex>"`, `"sha512:<hex>"`, or `"<algo>:auto"` |
-| `checksum_url` | no | Explicit URL for the checksum file (overrides auto patterns) |
-| `checksum_file_format` | no | `"sha256sum"` (default), `"bsd"`, or `"raw"` |
-| `signature_url` | no | GPG detached signature URL, for verifying the checksum file |
-| `signing_key` | no | GPG key URL or fingerprint |
+| `checksum_url` | no | Explicit URL for the checksum file (overrides auto patterns); requires `checksum = "<algo>:auto"` |
+| `checksum_file_format` | no | `"sha256sum"` (default), `"bsd"`, or `"raw"`; requires `checksum = "<algo>:auto"` |
+| `signature_url` | no | GPG detached signature URL for verifying the checksum file; requires `checksum = "<algo>:auto"` |
+| `signing_key` | no | GPG key URL or fingerprint; requires `signature_url` and `checksum = "<algo>:auto"` |
 | `extract_to` | no | Extraction destination (default: `/usr/local/bin`) |
 | `strip_components` | no | Remove this many leading archive path components. Applies equally to tar and zip; negative or empty results are rejected. |
 | `entrypoints` | no | Map stable command names to relative files inside `extract_to`, e.g. `{ nvim = "bin/nvim" }`. |
