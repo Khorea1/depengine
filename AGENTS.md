@@ -42,13 +42,17 @@ Source of truth: `go.mod`, toolchain padrão. CI: `.github/workflows/ci.yml`.
 
 ```bash
 go build -o depengine .
-go test -race ./... ; go vet ./... ; golangci-lint run # CI usa golangci-lint v2.13.2 + govulncheck (ver `.github/workflows/ci.yml`)
-docker compose -f tests/integration/docker-compose.yml build # Debian, Arch, Fedora, Alpine - lento, requer Docker + rede (alt.: `./tests/integration/run.sh`)
+go test -race ./...
+go vet ./...
+golangci-lint run # CI fixa v2.13.2; também roda govulncheck + fuzz curto (ver `.github/workflows/ci.yml`)
+docker compose -f tests/integration/docker-compose.yml build # Debian, Arch, Fedora, Alpine - lento, requer Docker + rede
+for distro in debian arch fedora alpine; do docker compose -f tests/integration/docker-compose.yml run --rm "$distro"; done
+# harness local mais amplo: ./tests/integration/run.sh
 ```
 
 Validação: rode checks estreitos durante desenvolvimento e os checks relevantes ao diff antes de integrar. Nunca declare check como verde sem executá-lo. Se ambiente/infra bloquear validação, reporte o blocker e a verificação mais forte que ainda foi possível. Não repita integration suite cara sem necessidade.
 
-`detect_os.sh` é invocado em runtime. Ordem em `internal/engine/facts.go` (`locateDetectScript`): `DEPENGINE_DETECT_SCRIPT` → embedded no binário → `scripts/` ao lado do binário → `detect_os.sh` no PATH (+ fallback Win/Darwin sem script).
+`detect_os.sh` é invocado em runtime. Ordem em `internal/engine/facts.go` (`locateDetectScript`): `DEPENGINE_DETECT_SCRIPT` → embedded no binário → `scripts/` ao lado do binário → `detect_os.sh` no PATH. Se o script não puder ser usado, `GatherFacts` cai para facts do Go runtime; Windows sem override pula os candidatos de script.
 
 ## 4. Architecture
 
@@ -68,7 +72,7 @@ schema.toml / manifest.toml
 **Regras cross-layer:**
 
 - `main.go` é só composition root (signals, embed da man page, `app.InitAdapters()` + `app.NewRootCmd()`; `os.Exit` só em `main`). CLI em `internal/app`. Installs resolvem via `internal/exec.Executor`; imports de `internal/config` no CLI são só para tipos/flags/parse, nunca para executar installs.
-- Executor nunca chama package manager direto — dispatch via `Executor.LookupAdapter(kind)` (`internal/exec/executor.go`) + `native.Lookup(clan)`; `methodkind.Lookup` é o contrato de kinds, registry separado.
+- Dispatch normal de candidates passa por `Executor.LookupAdapter(kind)` (`internal/exec/executor.go`). Sync e batch nativos são exceções intencionais dentro de `internal/exec`: usam builders/registry de `internal/native` (`native.Lookup`, `BuildSyncCmd`, `BuildBatchInstallCmd`) em vez de hardcode de comandos. `methodkind.Lookup` é o contrato de kinds, registry separado.
 - `internal/config` não importa `internal/exec` (só menção em comentário). Host facts vêm de `internal/platform` (importado por `condition.go`, `placeholder.go`); `internal/engine` aparece só em testes de `config`. `config.Validate(s, knownKinds)` (`internal/config/parse.go`) recebe kinds como param.
 - Adapters registrados em `app.InitAdapters()` (`internal/app/bootstrap.go`), chamado por `main.go`: `exec.Register(a AdapterV2)`, `exec.RegisterNativeManagerAliases()` (`internal/exec/native_adapter.go`), `ecosystem.RegisterAll(aurHelper)` + git, localartifact, http, github, appimage, android, msi, container, windows. Executor aceita per-instance via `WithAdapters()` pra teste.
 
@@ -85,9 +89,9 @@ schema.toml / manifest.toml
 | `internal/git/`, `internal/httpdownload/` | Git clone + http download/extract/verify |
 | `internal/graph/` | Topo sort |
 | `internal/lock/` | `depengine.lock` resolver |
-| `internal/state/`, `internal/lock/`, `internal/run/`, `internal/engine/`, `internal/platform/`, `internal/i18n/` | State+flock, Runner seam (`run.OSExecRunner`/`run.FakeRunner`), detect_os wrapper, host facts, locale pt |
+| `internal/state/`, `internal/run/`, `internal/engine/`, `internal/platform/`, `internal/i18n/` | State+flock, Runner seam (`run.OSExecRunner`/`run.FakeRunner`), detect_os wrapper, host facts, locale pt |
 | `internal/validate/`, `internal/sbom/` | Validação estrutural/semântica/ambiental, export SBOM |
-| `internal/artifact/`, `container/`, `containerref/`, `downloadcache/`, `exectest/`, `formatversion/`, `ghrelease/`, `localartifact/`, `localartifactadapter/`, `log/`, `methodkind/`, `msi/`, `plan/`, `planner/`, `source/` | Containers/artifacts, kind contracts, planos, sources, cache, releases (lista completa: `internal/`) |
+| `internal/artifact/`, `internal/container/`, `internal/containerref/`, `internal/downloadcache/`, `internal/exectest/`, `internal/formatversion/`, `internal/ghrelease/`, `internal/localartifact/`, `internal/localartifactadapter/`, `internal/log/`, `internal/methodkind/`, `internal/msi/`, `internal/plan/`, `internal/planner/`, `internal/source/` | Containers/artifacts, kind contracts, planos, sources, cache, releases (lista completa: `internal/`) |
 | `docs/` | schema-reference, cli-reference, cheatsheet, architecture, man page |
 
 ## 5. Conventions
