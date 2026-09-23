@@ -1,7 +1,8 @@
 # Native platform smoke tests
 
-`native-lifecycle.sh` exercises the same minimal lifecycle contract against a
-real package manager on an ephemeral native runner:
+`native-lifecycle.sh` is a POSIX `sh` harness that exercises the same minimal
+lifecycle contract against a real package manager on an ephemeral native
+runner:
 
 1. validate the fixture;
 2. assert the package is initially absent;
@@ -16,10 +17,11 @@ it never removes software it did not install itself.
 
 The harness isolates depengine config and state through temporary
 `XDG_CONFIG_HOME` and `XDG_STATE_HOME` directories. Package-manager mutations
-still happen on the runner itself, so this suite is intended for disposable VMs
-or similarly ephemeral environments.
+still happen on the runner or VM itself, so this suite is intended for
+disposable environments.
 
-Current coverage starts with Homebrew on the GitHub-hosted macOS runner. Future
-BSD/Linux native runners can reuse this harness by adding a fixture; Windows can
-either invoke it from Git Bash or use a thin PowerShell wrapper if native shell
-behavior becomes part of the contract.
+Current native lifecycle coverage uses the same `native-hello.toml` fixture on
+the GitHub-hosted macOS runner (Homebrew) and a real FreeBSD VM (`pkg`). The
+FreeBSD job also runs the Go test suite inside the VM, so FreeBSD support is
+validated beyond cross-compilation. Windows remains compile/unit tested until a
+stable native package fixture is established for the hosted runner.

@@ -132,7 +132,32 @@ jobs:
     - name: Run native Homebrew lifecycle smoke test
       env:
         HOMEBREW_NO_AUTO_UPDATE: "1"
-      run: tests/platform/native-lifecycle.sh tests/platform/fixtures/macos-brew.toml depengine-native-smoke
+      run: tests/platform/native-lifecycle.sh tests/platform/fixtures/native-hello.toml depengine-native-smoke
+
+  # Real FreeBSD VM: compile/test the Go code on the target OS, then exercise
+  # the same native package-manager lifecycle contract used by macOS.
+  test-freebsd:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.x.x
+
+    - name: Run tests and native pkg lifecycle in FreeBSD
+      uses: vmactions/freebsd-vm@4469451fe39bee80be4066836c5170362e9349f3 # v1.5.7
+      with:
+        release: "15.1"
+        copyback: false
+        prepare: |
+          env ASSUME_ALWAYS_YES=yes pkg bootstrap -f
+          fetch -qo /tmp/go.tar.gz https://go.dev/dl/go1.27.1.freebsd-amd64.tar.gz
+          sha256 -c 9761194512938a640948ae5ba273df73a441f4229ea21a1503937e55c69bf107 /tmp/go.tar.gz
+          rm -rf /usr/local/go
+          tar -C /usr/local -xzf /tmp/go.tar.gz
+        run: |
+          export PATH="/usr/local/go/bin:$PATH"
+          go version
+          go test ./...
+          tests/platform/native-lifecycle.sh tests/platform/fixtures/native-hello.toml depengine-native-smoke
 
   # Windows stays at compile + unit coverage until the native lifecycle harness
   # has a stable package fixture for the hosted runner's winget environment.
