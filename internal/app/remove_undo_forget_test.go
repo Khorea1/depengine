@@ -191,6 +191,10 @@ func fakeBinary(t *testing.T, binDir, name string) string {
 	return path
 }
 
+func goBinEnvironment(binDir string) []string {
+	return []string{"GOBIN=" + binDir, "PATH=" + binDir + string(os.PathListSeparator) + os.Getenv("PATH")}
+}
+
 func goToolState() state.ToolState {
 	return state.ToolState{
 		Method:      "go",
@@ -211,7 +215,7 @@ func TestRemoveGoTool(t *testing.T) {
 	writeTestState(t, stateHome, map[string]state.ToolState{"gostr": goToolState()})
 
 	code, out := runCommand(t, "remove",
-		[]string{"XDG_STATE_HOME=" + stateHome, "GOBIN=" + binDir, "HOME=" + homeDir},
+		append([]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, goBinEnvironment(binDir)...),
 		"gostr",
 	)
 
@@ -372,6 +376,8 @@ func TestForgetGoTool(t *testing.T) {
 func TestRemoveDryRunDoesNotWriteStateOrCreateLock(t *testing.T) {
 	stateHome := t.TempDir()
 	homeDir := t.TempDir()
+	binDir := t.TempDir()
+	fakeBinary(t, binDir, "stringer")
 	writeTestState(t, stateHome, map[string]state.ToolState{"gostr": goToolState()})
 
 	statePath := filepath.Join(stateHome, "depengine", "state.json")
@@ -381,7 +387,7 @@ func TestRemoveDryRunDoesNotWriteStateOrCreateLock(t *testing.T) {
 	}
 
 	code, out := runCommand(t, "remove",
-		[]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir},
+		append([]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, goBinEnvironment(binDir)...),
 		"--dry-run", "gostr",
 	)
 	if code != 0 {
@@ -435,7 +441,7 @@ func TestRemoveLastOwnerCleansUnreferencedPrerequisite(t *testing.T) {
 	})
 
 	code, out := runCommand(t, "remove",
-		[]string{"XDG_STATE_HOME=" + stateHome, "GOBIN=" + binDir, "HOME=" + homeDir},
+		append([]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, goBinEnvironment(binDir)...),
 		"owner",
 	)
 	if code != 0 {
@@ -477,7 +483,7 @@ func TestRemoveOwnerRetainsPrerequisiteRequestedAsRoot(t *testing.T) {
 	})
 
 	code, out := runCommand(t, "remove",
-		[]string{"XDG_STATE_HOME=" + stateHome, "GOBIN=" + binDir, "HOME=" + homeDir},
+		append([]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, goBinEnvironment(binDir)...),
 		"owner",
 	)
 	if code != 0 {
@@ -519,7 +525,7 @@ func TestRemoveTrackedPrerequisiteWithLiveOwnerFailsClosed(t *testing.T) {
 	})
 
 	code, out := runCommand(t, "remove",
-		[]string{"XDG_STATE_HOME=" + stateHome, "GOBIN=" + binDir, "HOME=" + homeDir},
+		append([]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, goBinEnvironment(binDir)...),
 		"helper",
 	)
 	if code != 1 {
@@ -555,7 +561,7 @@ func TestExplicitRemoveOfRetainedRootPrerequisiteFinalizesOwnership(t *testing.T
 	})
 
 	code, out := runCommand(t, "remove",
-		[]string{"XDG_STATE_HOME=" + stateHome, "GOBIN=" + binDir, "HOME=" + homeDir},
+		append([]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, goBinEnvironment(binDir)...),
 		"helper",
 	)
 	if code != 0 {
@@ -592,7 +598,7 @@ func TestSharedPrerequisiteCleansOnlyAfterLastOwner(t *testing.T) {
 			Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"a", "b"},
 		}},
 	})
-	env := []string{"XDG_STATE_HOME=" + stateHome, "GOBIN=" + binDir, "HOME=" + homeDir}
+	env := append([]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, goBinEnvironment(binDir)...)
 
 	if code, out := runCommand(t, "remove", env, "a"); code != 0 {
 		t.Fatalf("remove a exit = %d, want 0 (output: %s)", code, out)
@@ -646,7 +652,7 @@ func TestPrerequisiteCleanupRecursesTransitively(t *testing.T) {
 	})
 
 	code, out := runCommand(t, "remove",
-		[]string{"XDG_STATE_HOME=" + stateHome, "GOBIN=" + binDir, "HOME=" + homeDir},
+		append([]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, goBinEnvironment(binDir)...),
 		"owner",
 	)
 	if code != 0 {
@@ -687,7 +693,7 @@ func TestExplicitOwnerAndPrerequisiteRemovalIsOrderIndependent(t *testing.T) {
 			})
 
 			code, out := runCommand(t, "remove",
-				[]string{"XDG_STATE_HOME=" + stateHome, "GOBIN=" + binDir, "HOME=" + homeDir},
+				append([]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, goBinEnvironment(binDir)...),
 				order...,
 			)
 			if code != 0 {
@@ -726,7 +732,7 @@ func TestPrerequisiteCleanupFailureRetainsZeroRefOwnershipForRetry(t *testing.T)
 	})
 
 	code, out := runCommand(t, "remove",
-		[]string{"XDG_STATE_HOME=" + stateHome, "GOBIN=" + binDir, "HOME=" + homeDir},
+		append([]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir}, goBinEnvironment(binDir)...),
 		"owner",
 	)
 	if code != 1 {

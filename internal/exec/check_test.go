@@ -24,11 +24,11 @@ type observationProbe struct {
 	calls int
 }
 
-func (*observationProbe) Kind() string                               { return "observed" }
+func (*observationProbe) Kind() string                               { return "cargo" }
 func (*observationProbe) Available(context.Context, run.Runner) bool { return true }
 func (a *observationProbe) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
 	a.calls++
-	return plan.Observation{Presence: plan.PresencePresent}, nil
+	return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: "demo"}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
 }
 
 func TestCheckInstalledResolvesAndObservesWithoutInstallProbes(t *testing.T) {
@@ -117,10 +117,10 @@ func TestCheckInstalledUsesAdapterObservation(t *testing.T) {
 	adapter := &observationProbe{}
 	ex := New()
 	WithAdapters(adapter)(ex)
-	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{{Kind: "observed"}}}
+	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{{Kind: "cargo", Config: map[string]any{"pkg": "demo"}}}}
 
 	kind, installed := ex.CheckInstalled(context.Background(), tool, "", true)
-	if !installed || kind != "observed" || adapter.calls != 1 {
-		t.Fatalf("CheckInstalled() = %q, %v with %d Observe calls; want observed, true, 1", kind, installed, adapter.calls)
+	if !installed || kind != "cargo" || adapter.calls != 1 {
+		t.Fatalf("CheckInstalled() = %q, %v with %d Observe calls; want cargo, true, 1", kind, installed, adapter.calls)
 	}
 }
