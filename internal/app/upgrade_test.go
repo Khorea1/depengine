@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -91,7 +92,8 @@ func writeFakeUpgradeBinaries(t *testing.T, names ...string) string {
 			name += ".exe"
 		}
 		path := filepath.Join(binDir, name)
-		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		body := fmt.Sprintf("#!/bin/sh\nprintf '%%s version v0.1.0\\n' %q\n", name)
+		if err := os.WriteFile(path, []byte(body), 0755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -176,7 +178,7 @@ func TestUpgradeDryRun(t *testing.T) {
 	schemaDir := t.TempDir()
 	// The tracked tool must be present on the host: upgrade preflight fails
 	// closed for absent installations instead of a destructive Remove+Install.
-	pathEnv := writeFakeUpgradeBinaries(t, "gostr")
+	pathEnv := writeFakeUpgradeBinaries(t, "gostr", "stringer")
 
 	writeTestSchema(t, schemaDir, map[string]string{"gostr": "golang.org/x/tools/cmd/stringer"})
 	writeTestLock(t, schemaDir, map[string]lock.ToolPin{
@@ -303,7 +305,7 @@ func TestUpgradeOnlyFlag(t *testing.T) {
 	stateHome := t.TempDir()
 	homeDir := t.TempDir()
 	schemaDir := t.TempDir()
-	pathEnv := writeFakeUpgradeBinaries(t, "gostr")
+	pathEnv := writeFakeUpgradeBinaries(t, "gostr", "stringer")
 
 	writeTestSchema(t, schemaDir, map[string]string{
 		"gostr":   "golang.org/x/tools/cmd/stringer",
@@ -357,7 +359,7 @@ func TestUpgradeJSONOutput(t *testing.T) {
 	stateHome := t.TempDir()
 	homeDir := t.TempDir()
 	schemaDir := t.TempDir()
-	pathEnv := writeFakeUpgradeBinaries(t, "gostr")
+	pathEnv := writeFakeUpgradeBinaries(t, "gostr", "stringer")
 
 	writeTestSchema(t, schemaDir, map[string]string{"gostr": "golang.org/x/tools/cmd/stringer"})
 	writeTestLock(t, schemaDir, map[string]lock.ToolPin{
@@ -470,6 +472,7 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 type upgradePreflightAdapter struct {
 	available       bool
 	presence        plan.PresenceState
+	observedPackage string
 	targetAvailable bool
 	canRemove       bool
 	calls           []string
@@ -509,7 +512,11 @@ func (a *upgradePreflightAdapter) ResolvePlan(_ context.Context, _ run.Runner, _
 
 func (a *upgradePreflightAdapter) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
 	a.calls = append(a.calls, "observe")
-	return plan.Observation{Presence: a.presence}, nil
+	pkg := a.observedPackage
+	if pkg == "" {
+		pkg = "demo"
+	}
+	return plan.Observation{Presence: a.presence, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
 }
 
 func (a *upgradePreflightAdapter) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
@@ -519,17 +526,24 @@ func (a *upgradePreflightAdapter) InstallResolved(context.Context, run.Runner, *
 
 var _ exec.AdapterV2 = (*upgradePreflightAdapter)(nil)
 
+func testUpgradeExecutor(adapter exec.AdapterV2) *exec.Executor {
+	ex := exec.New()
+	exec.WithRunner(&run.FakeRunner{})(ex)
+	exec.WithAdapters(adapter)(ex)
+	return ex
+}
+
 func TestPreflightDirectUpgradeUsesV2ResolveAndObserveWithoutCheck(t *testing.T) {
 	adapter := &upgradePreflightAdapter{
 		available: true, targetAvailable: true, canRemove: true,
 		presence: plan.PresencePresent,
 	}
 	method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
-	_, err := preflightDirectUpgrade(context.Background(), &run.FakeRunner{}, &engine.Facts{}, &config.Tool{Name: "demo"}, method, adapter, false)
+	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, &config.Tool{Name: "demo"}, method, adapter, "", false)
 	if err != nil {
 		t.Fatalf("preflightDirectUpgrade: %v", err)
 	}
-	if got, want := strings.Join(adapter.calls, ","), "available,resolve-plan,observe,check-available"; got != want {
+	if got, want := strings.Join(adapter.calls, ","), "available,resolve-plan,observe"; got != want {
 		t.Fatalf("adapter calls = %s, want %s", got, want)
 	}
 }
@@ -542,8 +556,8 @@ func TestPreflightDirectUpgradeV2FailsClosedForNonPresent(t *testing.T) {
 				presence: presence,
 			}
 			method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
-			_, err := preflightDirectUpgrade(context.Background(), &run.FakeRunner{}, &engine.Facts{}, &config.Tool{Name: "demo"}, method, adapter, false)
-			if err == nil || !strings.Contains(err.Error(), "tracked installation is not present") {
+			_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, &config.Tool{Name: "demo"}, method, adapter, "", false)
+			if err == nil || !strings.Contains(err.Error(), string(presence)) {
 				t.Fatalf("preflightDirectUpgrade error = %v, want not-present rejection", err)
 			}
 			if strings.Contains(strings.Join(adapter.calls, ","), "check") {
@@ -627,7 +641,7 @@ func TestPreflightDirectUpgradeRejectsPreparationBeforeProbes(t *testing.T) {
 	}
 	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
 
-	_, err := preflightDirectUpgrade(context.Background(), &run.FakeRunner{}, &engine.Facts{}, tool, method, adapter, false)
+	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, tool, method, adapter, "", false)
 	if err == nil || !strings.Contains(err.Error(), "transactional upgrade preparation") {
 		t.Fatalf("preflightDirectUpgrade error = %v, want preparation rejection", err)
 	}
@@ -647,15 +661,15 @@ func TestPreflightDirectUpgradeRequiresInstalledRemovableAvailableTarget(t *test
 		wantCalls []string
 	}{
 		{name: "adapter unavailable", adapter: upgradePreflightAdapter{}, wantErr: "unavailable", wantCalls: []string{"available"}},
-		{name: "installation missing", adapter: upgradePreflightAdapter{available: true}, wantErr: "not present", wantCalls: []string{"available", "resolve-plan", "observe"}},
-		{name: "target unavailable", adapter: upgradePreflightAdapter{available: true, presence: plan.PresencePresent}, wantErr: "not available", wantCalls: []string{"available", "resolve-plan", "observe", "check-available"}},
-		{name: "removal unsupported", adapter: upgradePreflightAdapter{available: true, presence: plan.PresencePresent, targetAvailable: true}, wantErr: "does not support removal", wantCalls: []string{"available", "resolve-plan", "observe", "check-available"}},
-		{name: "valid", adapter: upgradePreflightAdapter{available: true, presence: plan.PresencePresent, targetAvailable: true, canRemove: true}, wantCalls: []string{"available", "resolve-plan", "observe", "check-available"}},
+		{name: "installation missing", adapter: upgradePreflightAdapter{available: true, presence: plan.PresenceAbsent}, wantErr: "absent", wantCalls: []string{"available", "resolve-plan", "observe"}},
+		{name: "target unavailable", adapter: upgradePreflightAdapter{available: true, presence: plan.PresencePresent, observedPackage: "other"}, wantErr: "not available", wantCalls: []string{"available", "resolve-plan", "observe", "check-available"}},
+		{name: "removal unsupported", adapter: upgradePreflightAdapter{available: true, presence: plan.PresencePresent, observedPackage: "other", targetAvailable: true}, wantErr: "does not support removal", wantCalls: []string{"available", "resolve-plan", "observe", "check-available"}},
+		{name: "valid", adapter: upgradePreflightAdapter{available: true, presence: plan.PresencePresent, observedPackage: "other", targetAvailable: true, canRemove: true}, wantCalls: []string{"available", "resolve-plan", "observe", "check-available"}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := preflightDirectUpgrade(context.Background(), &run.FakeRunner{}, &engine.Facts{}, tool, method, &tt.adapter, false)
+			_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(&tt.adapter), &run.FakeRunner{}, &engine.Facts{}, tool, method, &tt.adapter, "", false)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("preflightDirectUpgrade: %v", err)
@@ -739,7 +753,7 @@ func TestPreflightDirectUpgradeRejectsStaticRequiresBeforeProbes(t *testing.T) {
 	method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
 	tool := &config.Tool{Name: "demo", Requires: []string{"helper"}, Methods: []*config.MethodCandidate{method}}
 
-	_, err := preflightDirectUpgrade(context.Background(), &run.FakeRunner{}, &engine.Facts{}, tool, method, adapter, false)
+	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, tool, method, adapter, "", false)
 	if err == nil || !strings.Contains(err.Error(), "transactional upgrade dependency handling") {
 		t.Fatalf("preflightDirectUpgrade error = %v, want static requires rejection", err)
 	}

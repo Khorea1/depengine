@@ -17,8 +17,10 @@ import (
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/git"
 	"github.com/Khorea1/depengine/internal/httpdownload"
+	"github.com/Khorea1/depengine/internal/localartifactadapter"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/msi"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
@@ -161,12 +163,34 @@ func buildUpgradeExecutor(s *config.Schema, clan string, facts *engine.Facts, sc
 	}
 	ex := exec.New()
 	exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
-	exec.WithAdapters(
+	adapters := []exec.AdapterV2{
+		ecosystem.NewCargoAdapter(),
+		ecosystem.NewGoAdapter(),
+		ecosystem.NewAURAdapter("paru"),
+		ecosystem.NewSDKManAdapter(),
+		ecosystem.NewSteamCMDAdapter(),
+		ecosystem.NewYarnBerryAdapter(),
+		ecosystem.NewPacstallAdapter(),
+		ecosystem.NewCondaAdapter(),
+		ecosystem.NewAsdfAdapter(),
 		git.NewGitAdapter(),
+		localartifactadapter.NewAdapter(),
 		httpdownload.NewHTTPAdapter(),
+		httpdownload.NewGitHubAdapter(),
+		httpdownload.NewAppImageAdapter(),
+		httpdownload.NewAndroidAdapter(),
+		msi.NewAdapter(),
 		container.NewContainerAdapter(),
 		exec.NewNativeAdapter(clan),
-	)(ex)
+	}
+	for kind, cfg := range ecosystem.Configs {
+		if kind == "cargo" || kind == "go" {
+			continue
+		}
+		adapters = append(adapters, ecosystem.NewBaseAdapter(cfg))
+	}
+	adapters = append(adapters, exec.WindowsAdapters()...)
+	exec.WithAdapters(adapters...)(ex)
 	exec.WithSchemaInfo(schemaPath, schemaFile.ModTime())(ex)
 	exec.WithLogger(lg)(ex)
 	runner := run.NewLoggingRunner(run.OSExecRunner{}, lg)
@@ -331,17 +355,28 @@ func upgradeSingleTool(ctx context.Context, ex *exec.Executor, runner *run.Loggi
 	// The legacy upgrade path calls Remove/Install directly. Fail closed on
 	// semantics it cannot yet preserve instead of removing a working tool and
 	// discovering the mismatch during reinstall.
-	resolved, err := preflightDirectUpgrade(ctx, runner, facts, ot.tool, ot.method, adapter, opts.allowArbitrary)
+	resolved, verification, err := preflightDirectUpgrade(ctx, ex, runner, facts, ot.tool, ot.method, adapter, ot.pinnedVer, opts.allowArbitrary)
 	if err != nil {
 		return fail("upgrade preflight failed: %v", err)
 	}
 
 	if opts.dryRun {
+		if verification.State == plan.StateSatisfied {
+			res.Status = "already-current"
+			res.NewVer = verification.Observed.Version
+			return res
+		}
 		res.Status = "would_upgrade"
 		res.NewVer = ot.pinnedVer
 		if !opts.quiet {
 			c.arrow("%s: %s → %s (dry-run)", ot.name, ot.ts.Version, ot.pinnedVer)
 		}
+		return res
+	}
+	if verification.State == plan.StateSatisfied {
+		res.Status = "already-current"
+		res.NewVer = verification.Observed.Version
+		st.Tools[ot.name] = upgradedToolState(ot.ts, ot.methodKind, ot.tool, ot.method, verification.Observed.Version, ot.pinnedVer, time.Now().UTC())
 		return res
 	}
 
@@ -620,63 +655,76 @@ func recordFailedUpgradeRemoval(st *state.State, toolName string) error {
 	return nil
 }
 
-func preflightDirectUpgrade(ctx context.Context, runner run.Runner, facts *engine.Facts, tool *config.Tool, method *config.MethodCandidate, adapter exec.AdapterV2, allowArbitrary bool) (*plan.ResolvedInstallPlan, error) {
+func preflightDirectUpgrade(ctx context.Context, ex *exec.Executor, runner run.Runner, facts *engine.Facts, tool *config.Tool, method *config.MethodCandidate, adapter exec.AdapterV2, targetVersion string, allowArbitrary bool) (*plan.ResolvedInstallPlan, plan.VerificationResult, error) {
 	if tool == nil || method == nil || adapter == nil {
-		return nil, fmt.Errorf("tool, method, and adapter are required")
+		return nil, plan.VerificationResult{}, fmt.Errorf("tool, method, and adapter are required")
 	}
 	if method.When != nil && !method.When.Match(facts) {
-		return nil, fmt.Errorf("tracked candidate no longer matches its when condition")
+		return nil, plan.VerificationResult{}, fmt.Errorf("tracked candidate no longer matches its when condition")
 	}
 	intent, err := exec.CandidatePlanIntent(tool, method)
 	if err != nil {
-		return nil, err
+		return nil, plan.VerificationResult{}, err
 	}
 	if len(method.Sources) > 0 {
-		return nil, fmt.Errorf("candidate declares sources; transactional upgrade preparation is required")
+		return nil, plan.VerificationResult{}, fmt.Errorf("candidate declares sources; transactional upgrade preparation is required")
 	}
 	if len(method.Requires) > 0 {
-		return nil, fmt.Errorf("candidate declares method.requires; transactional upgrade preparation is required")
+		return nil, plan.VerificationResult{}, fmt.Errorf("candidate declares method.requires; transactional upgrade preparation is required")
 	}
 	if len(tool.EffectiveRequires(facts)) > 0 {
-		return nil, fmt.Errorf("tool declares requires; transactional upgrade dependency handling is required")
+		return nil, plan.VerificationResult{}, fmt.Errorf("tool declares requires; transactional upgrade dependency handling is required")
 	}
 	if len(tool.PreInstall) > 0 || len(tool.PostInstall) > 0 {
-		return nil, fmt.Errorf("candidate has lifecycle hooks; direct upgrade cannot preserve hook semantics")
+		return nil, plan.VerificationResult{}, fmt.Errorf("candidate has lifecycle hooks; direct upgrade cannot preserve hook semantics")
 	}
 	if !allowArbitrary && exec.CandidateRunsArbitraryCode(tool, method) {
-		return nil, fmt.Errorf("candidate may execute arbitrary code; pass --allow-arbitrary-code to permit it")
+		return nil, plan.VerificationResult{}, fmt.Errorf("candidate may execute arbitrary code; pass --allow-arbitrary-code to permit it")
 	}
 	probeRunner := runner
 	if lr, ok := runner.(*run.LoggingRunner); ok {
 		probeRunner = lr.WithContext(run.Context{Tool: tool.Name, Method: method.Kind, Probe: true})
 	}
 	if !adapter.Available(ctx, probeRunner) {
-		return nil, fmt.Errorf("adapter %q is unavailable", method.Kind)
+		return nil, plan.VerificationResult{}, fmt.Errorf("adapter %q is unavailable", method.Kind)
 	}
 	resolved, err := adapter.ResolvePlan(ctx, probeRunner, tool, method, intent)
 	if err != nil {
-		return nil, err
+		return nil, plan.VerificationResult{}, err
 	}
 	if resolved == nil {
-		return nil, fmt.Errorf("tracked installation is not present; run install/repair instead of destructive upgrade")
+		return nil, plan.VerificationResult{}, fmt.Errorf("tracked installation is not present; run install/repair instead of destructive upgrade")
 	}
 	if err := plan.ValidateResolution(*intent, *resolved); err != nil {
-		return nil, fmt.Errorf("resolve plan: %w", err)
+		return nil, plan.VerificationResult{}, fmt.Errorf("resolve plan: %w", err)
 	}
-	observation, err := adapter.Observe(ctx, probeRunner, tool, method)
+	if targetVersion != "" {
+		resolved.Identity.Version = targetVersion
+		if err := resolved.Validate(); err != nil {
+			return nil, plan.VerificationResult{}, fmt.Errorf("resolve upgrade target: %w", err)
+		}
+	}
+	verification, err := ex.VerifyResolvedCandidate(ctx, tool, method, resolved)
 	if err != nil {
-		return nil, err
+		return nil, plan.VerificationResult{}, err
 	}
-	if observation.Presence != plan.PresencePresent {
-		return nil, fmt.Errorf("tracked installation is not present; run install/repair instead of destructive upgrade")
+	switch verification.State {
+	case plan.StateAbsent:
+		return nil, plan.VerificationResult{}, fmt.Errorf("tracked installation is absent; run install/repair instead of destructive upgrade")
+	case plan.StateUnknown:
+		return nil, plan.VerificationResult{}, fmt.Errorf("tracked installation identity is unknown; run install/repair instead of destructive upgrade")
+	case plan.StateBroken:
+		return nil, plan.VerificationResult{}, fmt.Errorf("tracked installation verification is broken: %s", verification.Detail)
+	case plan.StateSatisfied:
+		return resolved, verification, nil
 	}
 	if !adapter.CheckAvailable(ctx, probeRunner, tool, method) {
-		return nil, fmt.Errorf("target is not available from configured repositories")
+		return nil, plan.VerificationResult{}, fmt.Errorf("target is not available from configured repositories")
 	}
 	if !adapter.CanRemove() {
-		return nil, fmt.Errorf("adapter %q does not support removal", method.Kind)
+		return nil, plan.VerificationResult{}, fmt.Errorf("adapter %q does not support removal", method.Kind)
 	}
-	return resolved, nil
+	return resolved, verification, nil
 }
 
 // findMethodConfig extracts the config map for the first method matching kind.

@@ -55,7 +55,7 @@ func (a *phaseTestAdapter) Observe(context.Context, run.Runner, *config.Tool, *c
 	if a.installed {
 		presence = plan.PresencePresent
 	}
-	return plan.Observation{Presence: presence}, nil
+	return plan.Observation{Presence: presence, Identity: plan.ObservedIdentity{Package: "example.test/demo", Version: "v0.1.0"}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion}}, nil
 }
 func (a *phaseTestAdapter) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
 	a.calls = append(a.calls, "install-resolved")
@@ -63,6 +63,7 @@ func (a *phaseTestAdapter) InstallResolved(context.Context, run.Runner, *config.
 }
 
 var _ exec.AdapterV2 = (*phaseTestAdapter)(nil)
+
 func (a *phaseTestAdapter) Install(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
 	a.calls = append(a.calls, "install")
 	return nil
@@ -74,7 +75,7 @@ func (a *phaseTestAdapter) Remove(context.Context, run.Runner, *config.Tool, *co
 func (a *phaseTestAdapter) CanRemove() bool { return a.canRemove }
 
 func phaseTestGoTool(pkg string) (*config.Tool, *config.MethodCandidate) {
-	method := &config.MethodCandidate{Kind: "go", Config: map[string]any{"pkg": pkg}}
+	method := &config.MethodCandidate{Kind: "go", Config: map[string]any{"pkg": pkg, "version": "v0.2.0"}}
 	return &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}, method
 }
 
