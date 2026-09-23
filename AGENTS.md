@@ -42,13 +42,13 @@ Source of truth: `go.mod`, toolchain padrão. CI: `.github/workflows/ci.yml`.
 
 ```bash
 go build -o depengine .
-go test ./... ; go vet ./...
-cd tests/integration && docker compose up --build # Debian, Arch, Fedora, Alpine - lento, requer Docker/Podman + rede
+go test -race ./... ; go vet ./... ; golangci-lint run # CI usa golangci-lint v2.13.2 + govulncheck (ver `.github/workflows/ci.yml`)
+docker compose -f tests/integration/docker-compose.yml build # Debian, Arch, Fedora, Alpine - lento, requer Docker + rede (alt.: `./tests/integration/run.sh`)
 ```
 
 Validação: rode checks estreitos durante desenvolvimento e os checks relevantes ao diff antes de integrar. Nunca declare check como verde sem executá-lo. Se ambiente/infra bloquear validação, reporte o blocker e a verificação mais forte que ainda foi possível. Não repita integration suite cara sem necessidade.
 
-`detect_os.sh` é invocado em runtime. Override: `DEPENGINE_DETECT_SCRIPT` env var. Default: embedded no binário, fallback pra script adjacente e PATH.
+`detect_os.sh` é invocado em runtime. Ordem em `internal/engine/facts.go` (`locateDetectScript`): `DEPENGINE_DETECT_SCRIPT` → embedded no binário → `scripts/` ao lado do binário → `detect_os.sh` no PATH (+ fallback Win/Darwin sem script).
 
 ## 4. Architecture
 
@@ -59,7 +59,7 @@ schema.toml / manifest.toml
  -> internal/config (ParseProjectSchema/ParseManifest + normalize + placeholder expand + MergeLayers)
  -> internal/graph (Kahn's topo sort + cycle detection)
  -> internal/exec.Executor (pra cada tool em ordem topo, tenta cada method em method_order)
-    -> internal/native (15 familias: apt/pacman/dnf/brew/...)
+    -> internal/native (registry declarativo: apt/pacman/dnf/brew/... — fonte: `managers` em `internal/native/registry.go`)
     -> internal/ecosystem (cargo, go, pip, npm, sdkman, steamcmd, ...)
     -> internal/git, internal/httpdownload (checksum/GPG + {latest} via internal/ghrelease)
  -> internal/state + internal/sbom (CycloneDX 1.5 / SPDX 2.3)
@@ -67,33 +67,34 @@ schema.toml / manifest.toml
 
 **Regras cross-layer:**
 
-- `main.go` é só composition root (signals, assets embed, exit). CLI em `internal/app`. Commands não tocam `internal/config` direto — via `internal/exec.Executor`.
-- Executor nunca chama package manager direto — dispatch via `Lookup(kind)` no registry.
-- `internal/config` não importa `internal/exec`, nem OS detection. Fatos de host em `internal/platform`. `config.Validate(s, knownKinds)` recebe kinds como param.
-- Adapters registrados explicitamente em `app.InitAdapters()` por `main.go` (`exec.Register()`, `RegisterNativeManagerAliases()`, `ecosystem.RegisterAll()`). Executor aceita per-instance via `WithAdapters()` pra teste.
+- `main.go` é só composition root (signals, embed da man page, `app.InitAdapters()` + `app.NewRootCmd()`; `os.Exit` só em `main`). CLI em `internal/app`. Installs resolvem via `internal/exec.Executor`; imports de `internal/config` no CLI são só para tipos/flags/parse, nunca para executar installs.
+- Executor nunca chama package manager direto — dispatch via `Executor.LookupAdapter(kind)` (`internal/exec/executor.go`) + `native.Lookup(clan)`; `methodkind.Lookup` é o contrato de kinds, registry separado.
+- `internal/config` não importa `internal/exec` (só menção em comentário). Host facts vêm de `internal/platform` (importado por `condition.go`, `placeholder.go`); `internal/engine` aparece só em testes de `config`. `config.Validate(s, knownKinds)` (`internal/config/parse.go`) recebe kinds como param.
+- Adapters registrados em `app.InitAdapters()` (`internal/app/bootstrap.go`), chamado por `main.go`: `exec.Register(a AdapterV2)`, `exec.RegisterNativeManagerAliases()` (`internal/exec/native_adapter.go`), `ecosystem.RegisterAll(aurHelper)` + git, localartifact, http, github, appimage, android, msi, container, windows. Executor aceita per-instance via `WithAdapters()` pra teste.
 
 **Key dirs:**
 
 | Path | Purpose |
 | --- | --- |
-| `main.go` | Thin entry: signals, embed, bootstrap, único `os.Exit` em prod |
+| `main.go` | Thin entry: signals, embed da man page, `app.InitAdapters()` + `app.NewRootCmd()`; `os.Exit` só em `main` |
 | `internal/app/` | Cobra command tree, lógica CLI testável |
 | `internal/config/` | Parser TOML, placeholder expand, MergeLayers, validação |
-| `internal/exec/` | Executor, interface `Adapter`, registry global, `SyncManager`, batch native install |
-| `internal/native/` | Registry declarativo de package managers |
+| `internal/exec/` | Executor, interface `AdapterV2` (`internal/exec/adapter.go`), registry global, `SyncManager` (`NewSyncManager`), batch native install |
+| `internal/native/` | Registry declarativo de package managers (contagem muda; fonte: `managers` em `internal/native/registry.go`) |
 | `internal/ecosystem/` | Adapters de ecossistemas |
-| `internal/git/`, `httpdownload/` | Git clone + http download/extract/verify |
+| `internal/git/`, `internal/httpdownload/` | Git clone + http download/extract/verify |
 | `internal/graph/` | Topo sort |
 | `internal/lock/` | `depengine.lock` resolver |
-| `internal/state/`, `lock/`, `run/`, `engine/`, `platform/`, `i18n/` | State+flock, Runner seam (OSExecRunner/FakeRunner), detect_os wrapper, host facts, locale pt |
-| `internal/validate/`, `sbom/` | Validação estrutural/semântica/ambiental, export SBOM |
+| `internal/state/`, `internal/lock/`, `internal/run/`, `internal/engine/`, `internal/platform/`, `internal/i18n/` | State+flock, Runner seam (`run.OSExecRunner`/`run.FakeRunner`), detect_os wrapper, host facts, locale pt |
+| `internal/validate/`, `internal/sbom/` | Validação estrutural/semântica/ambiental, export SBOM |
+| `internal/artifact/`, `container/`, `containerref/`, `downloadcache/`, `exectest/`, `formatversion/`, `ghrelease/`, `localartifact/`, `localartifactadapter/`, `log/`, `methodkind/`, `msi/`, `plan/`, `planner/`, `source/` | Containers/artifacts, kind contracts, planos, sources, cache, releases (lista completa: `internal/`) |
 | `docs/` | schema-reference, cli-reference, cheatsheet, architecture, man page |
 
 ## 5. Conventions
 
 Alterações preexistentes pertencem ao usuário ou a outro ator. Não reverta, reformate, stageie ou sobrescreva mudanças fora da task. Se houver overlap, inspecione antes e preserve a intenção observável.
 
-- Adapter = cada método de install implementa `Adapter` em `internal/exec/adapter.go` + `Register()`.
+- Adapter = cada método de install implementa `AdapterV2` em `internal/exec/adapter.go` + `exec.Register(a AdapterV2)` (ecosystem via `ecosystem.RegisterAll(aurHelper)`).
 - **Nunca** `exec.Command` direto — use `internal/run.Runner`. `OverrideElevation` pra elevação.
 - Helpers de teste: `internal/exectest/adapter.go`.
 - i18n: output PT-BR condicional quando `pt` via `internal/i18n`. Check `i18n.GetLocale()`.
@@ -104,7 +105,7 @@ Alterações preexistentes pertencem ao usuário ou a outro ator. Não reverta, 
 - **Always OK:** ler a árvore, `go test`, `go build`.
 - **Ask first:** instalar/deletar deps do host, mudar `detect_os.sh`, publish/release.
 - **Never:** force-push, push pra `main` sem PR, commitar secrets.
-- `detect_os.sh`: teste em Debian, Arch, Fedora, Alpine, macOS, FreeBSD antes de editar.
+- `detect_os.sh`: teste em todos os clans de `internal/native/registry.go` (`KnownClans()`: debian, arch, fedora, suse, alpine, void, gentoo, macos, termux, freebsd, openbsd, netbsd, windows, mint, opkg) antes de editar.
 - **Code exec vector:** `pre_install`/`post_install`/`build`/`build_cmd` executam comandos arbitrários. Prefira `run = ["prog","arg"]` (argv). String legada usa `sh -c`. Executor bloqueia por padrão sem `WithAllowArbitraryCode()`. Flague qualquer schema usando isso.
 - **Ownership:** archives com payload owned usam `extract_to` + `entrypoints`. `binary` não é alias de path interno. Remoção deleta payload + launchers, nunca parent dirs compartilhados. `.msi/.exe/.pkg/.dmg` nunca via `http`.
 
@@ -113,10 +114,9 @@ Alterações preexistentes pertencem ao usuário ou a outro ator. Não reverta, 
 Formato: `(date) [SEVERITY] statement. (expires/condition)` — SEVERITY: CRITICAL/WARN/INFO. Seja específico e checável.
 
 Antes de adicionar: cheque overlap. Mesma causa raiz? Enriqueça entry existente. Causa diferente? Mantenha separado. Bias pra separar quando em dúvida.
-Consolidação: quando `last_reviewed >90d` ou >25 entries, leia seção inteira e faça merge de padrões. Split só se >25 entries após compressão E heterogêneo em 5+ subsistemas -> `docs/agents/gotchas-<topic>.md`. Entries universais ficam aqui.
+Consolidação: quando >25 entries, leia seção inteira e faça merge de padrões. Split só se >25 entries após compressão E heterogêneo em 5+ subsistemas -> `docs/agents/gotchas-<topic>.md` (criar `docs/agents/` só nesse caso). Entries universais ficam aqui.
 
-- (2026-08) [INFO] `method_only` é exclusivo (filtra candidates, não só ordena). `method_prefer`/`method_order` são prefixos que ainda permitem fallback nativo. (permanent)
-- (2026-08) [INFO] Candidate `native` é injetado pra toda tool salvo `method_only` excluir. Mesmo `fzf = { go = "..." }` ganha fallback nativo. (permanent)
+- (2026-08) [INFO] Seleção de candidates: `method_only` filtra (exclusivo, remove o `native` auto-injetado); `method_prefer`/`method_order` são prefixos com fallback nativo. Mesmo `fzf = { go = "..." }` ganha fallback nativo salvo `method_only`. (permanent)
 - (2026-08) [WARN] Integration tests precisam rede real e são lentos. Não rode em loop de unit test. (infra constraint)
 - (2026-08) [INFO] Windows (winget/scoop/choco) com locking/state ok, mas menos battle-tested que Linux/macOS. (até paridade)
 - (2026-09) [CRITICAL] Schemas exigem `schema_version = 1`; `[tools]` em projeto, `[packages]` em manifest. Parser explícito rejeita oposto. Sem legacy parsers/migrations/aliases salvo `docs/specs/schema-compatibility.md` mudar política. (até grammar mudar)
@@ -163,7 +163,7 @@ Living doc. Cada linha precisa merecer seu lugar ou é cortada.
 
 **Como editar:**
 
-- Date entries inline onde fato pode mudar: `(as of 2026-08)`.
+- Date entries inline onde fato pode mudar: `(2026-08)` (mesmo formato dos gotchas).
 - Novo finding contradiz linha existente -> NÃO sobrescreva silencioso. Marque `⚠ CONFLICT: <what and why>` e deixe ambos pra review humano, salvo confiança alta que old está errado — diga no diff.
 - Sempre mostre diff antes de commitar. Erro aqui compounda em todas as sessões futuras.
 - Relevante em *toda* sessão? Fica inline, não importa tamanho. Relevante só pra subsistema específico? Split mesmo se curto, com pointer que já diz se task precisa do arquivo linkado. Pointer que não filtra falhou — reescreva ou traga de volta.
