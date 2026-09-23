@@ -70,12 +70,18 @@ func (lr *LoggingRunner) ExecutionAllowed() bool {
 // Run executes the command via the inner runner, logging the call and
 // result. The result is passed through unchanged.
 func (lr *LoggingRunner) Run(ctx context.Context, name string, args ...string) Result {
-	return lr.run(ctx, "", name, args...)
+	return lr.run(ctx, "", nil, nil, name, args...)
 }
 
 // RunInDir executes and logs a command with an explicit working directory.
 func (lr *LoggingRunner) RunInDir(ctx context.Context, dir, name string, args ...string) Result {
-	return lr.run(ctx, dir, name, args...)
+	return lr.run(ctx, dir, nil, nil, name, args...)
+}
+
+// RunWithEnv keeps environment values out of command logs and redacts the
+// captured result before the logging layer sees it.
+func (lr *LoggingRunner) RunWithEnv(ctx context.Context, env map[string]string, sensitive []string, name string, args ...string) Result {
+	return lr.run(ctx, "", env, sensitive, name, args...)
 }
 
 // LookPath resolves an executable through the wrapped runner.
@@ -85,7 +91,7 @@ func (lr *LoggingRunner) LookPath(ctx context.Context, name string) bool {
 	return found
 }
 
-func (lr *LoggingRunner) run(ctx context.Context, dir, name string, args ...string) Result {
+func (lr *LoggingRunner) run(ctx context.Context, dir string, env map[string]string, sensitive []string, name string, args ...string) Result {
 	loggedArgs := formatArgsForLog(args)
 	baseAttrs := []any{
 		"cmd", name,
@@ -105,7 +111,9 @@ func (lr *LoggingRunner) run(ctx context.Context, dir, name string, args ...stri
 
 	start := time.Now()
 	var result Result
-	if dir == "" {
+	if len(env) > 0 {
+		result = RunWithEnv(ctx, lr.inner, env, sensitive, name, args...)
+	} else if dir == "" {
 		result = lr.inner.Run(ctx, name, args...)
 	} else {
 		result = RunInDir(ctx, lr.inner, dir, name, args...)

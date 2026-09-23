@@ -33,6 +33,12 @@ func (f *FakeRunner) Run(ctx context.Context, name string, args ...string) Resul
 	return f.run(ctx, "", name, args...)
 }
 
+// RunWithEnv models per-child execution. FakeRunner does not retain secret
+// environment values in its recorded calls.
+func (f *FakeRunner) RunWithEnv(ctx context.Context, _ map[string]string, _ []string, name string, args ...string) Result {
+	return f.run(ctx, "", name, args...)
+}
+
 // RunInDir records dir along with the command and returns the configured result.
 func (f *FakeRunner) RunInDir(ctx context.Context, dir, name string, args ...string) Result {
 	return f.run(ctx, dir, name, args...)

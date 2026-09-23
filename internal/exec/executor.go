@@ -10,6 +10,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/run"
+	"github.com/Khorea1/depengine/internal/secret"
 	"github.com/Khorea1/depengine/internal/source"
 )
 
@@ -47,6 +48,7 @@ type Executor struct {
 	schema           *config.Schema
 	report           *ExecReport
 	sources          *source.Manager
+	secretResolver   secret.SecretResolver
 	recoveredCommits map[string]recoveredCandidateCommit
 	dependencyMu     sync.Mutex
 	dependencies     map[string]*dependencyRun
@@ -64,6 +66,15 @@ func WithRunner(rn run.Runner) Option {
 	return func(e *Executor) {
 		if rn != nil {
 			e.rn = rn
+		}
+	}
+}
+
+// WithSecretResolver overrides runtime lookup of typed secret references.
+func WithSecretResolver(resolver secret.SecretResolver) Option {
+	return func(e *Executor) {
+		if resolver != nil {
+			e.secretResolver = resolver
 		}
 	}
 }
@@ -205,6 +216,7 @@ func WithFacts(f *engine.Facts) Option {
 func New() *Executor {
 	ex := &Executor{
 		rn:                 run.OSExecRunner{},
+		secretResolver:     secret.EnvResolver{},
 		toolTimeout:        5 * time.Minute,
 		methodTimeout:      2 * time.Minute,
 		maxJobs:            1,
