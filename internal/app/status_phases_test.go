@@ -1,12 +1,66 @@
 package app
 
 import (
+	"context"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
+	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
 )
+
+func TestReconcileStatusToolsUsesDesiredState(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		observation plan.Observation
+		wantStatus  string
+	}{
+		{"satisfied", plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: "example.test/demo", Version: "v1.0.0"}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion}}, "installed"},
+		{"absent", plan.Observation{Presence: plan.PresenceAbsent}, "missing"},
+		{"drifted", plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: "example.test/demo", Version: "v0.9.0"}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion}}, "outdated"},
+		{"unknown", plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: "example.test/demo"}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, "unknown"},
+		{"broken", plan.Observation{Presence: plan.PresenceBroken, Detail: "invalid probe"}, "broken"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter := &phaseTestAdapter{available: true, observation: &tc.observation}
+			tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{{Kind: "go", Config: map[string]any{"pkg": "example.test/demo", "version": "v1.0.0"}}}}
+			ex := exec.New()
+			exec.WithAdapters(adapter)(ex)
+			exec.WithRunner(&run.FakeRunner{})(ex)
+			installed := map[string]state.ToolState{"demo": {Method: "go", MethodKind: "go", Version: "v0.4.0", Config: map[string]any{"pkg": "example.test/demo", "version": "v1.0.0"}, DefinitionHash: state.DefinitionHash(tool)}}
+			rows := []toolStatus{{Name: "demo", Status: "outdated"}}
+			got := reconcileStatusTools(context.Background(), rows, installed, &config.Schema{Tools: map[string]*config.Tool{"demo": tool}}, nil, ex, "unknown")
+			if got[0].Status != tc.wantStatus {
+				t.Fatalf("status = %q, want %q (verification=%+v)", got[0].Status, tc.wantStatus, got[0].Verification)
+			}
+			if got[0].Verification == nil {
+				t.Fatal("status row has no verification result")
+			}
+		})
+	}
+}
+
+func TestReconcileStatusToolsAppliesExactLockPinToDesiredState(t *testing.T) {
+	observation := plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: "example.test/demo", Version: "v1.0.0"}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion}}
+	adapter := &phaseTestAdapter{available: true, observation: &observation}
+	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{{Kind: "go", Config: map[string]any{"pkg": "example.test/demo"}}}}
+	ex := exec.New()
+	exec.WithAdapters(adapter)(ex)
+	exec.WithRunner(&run.FakeRunner{})(ex)
+	installed := map[string]state.ToolState{"demo": {Method: "go", MethodKind: "go", Version: "v1.0.0", Config: map[string]any{"pkg": "example.test/demo"}, DefinitionHash: state.DefinitionHash(tool)}}
+	rows := []toolStatus{{Name: "demo", Status: "installed"}}
+	lk := &lock.Lock{Tools: map[string]lock.ToolPin{"demo/go/0": {Latest: "v1.1.0"}}}
+	got := reconcileStatusTools(context.Background(), rows, installed, &config.Schema{Tools: map[string]*config.Tool{"demo": tool}}, lk, ex, "unknown")
+	if got[0].Status != "outdated" {
+		t.Fatalf("status = %q, want outdated (verification=%+v)", got[0].Status, got[0].Verification)
+	}
+	if got[0].Verification == nil || got[0].Verification.State != plan.StateDrifted || len(got[0].Verification.Drift) != 1 || got[0].Verification.Drift[0].Field != plan.FieldVersion {
+		t.Fatalf("verification = %+v, want drift against lock-pinned version", got[0].Verification)
+	}
+}
 
 func TestNormalizeStatusFormat_JSONShorthand(t *testing.T) {
 	format := "text"

@@ -20,6 +20,10 @@ type countingAdapter struct {
 	checks map[string]int
 }
 
+type plannedCountingAdapter struct{ *countingAdapter }
+
+func (*plannedCountingAdapter) Kind() string { return "go" }
+
 func (a *countingAdapter) Kind() string                               { return "counting" }
 func (a *countingAdapter) Available(context.Context, run.Runner) bool { return true }
 func (a *countingAdapter) Check(_ context.Context, _ run.Runner, tool *config.Tool, _ *config.MethodCandidate) bool {
@@ -30,7 +34,7 @@ func (a *countingAdapter) Check(_ context.Context, _ run.Runner, tool *config.To
 }
 func (a *countingAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
 	if a.Check(ctx, rn, tool, mc) {
-		return plan.Observation{Presence: plan.PresencePresent}, nil
+		return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: "x"}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
 	}
 	return plan.Observation{Presence: plan.PresenceAbsent}, nil
 }
@@ -43,11 +47,11 @@ func (a *countingAdapter) Install(context.Context, run.Runner, *config.Tool, *co
 }
 
 func TestLazyDependencyRunsOnceUnderConcurrency(t *testing.T) {
-	adapter := &countingAdapter{checks: map[string]int{}}
+	adapter := &plannedCountingAdapter{countingAdapter: &countingAdapter{checks: map[string]int{}}}
 	method := func(requires ...string) []*config.MethodCandidate {
-		return []*config.MethodCandidate{{Kind: "counting", Config: map[string]any{"pkg": "x"}, Requires: requires}}
+		return []*config.MethodCandidate{{Kind: "go", Config: map[string]any{"pkg": "x"}, Requires: requires}}
 	}
-	schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{"counting"}}, Tools: map[string]*config.Tool{
+	schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{"go"}}, Tools: map[string]*config.Tool{
 		"helper": {Name: "helper", DependencyOnly: true, Methods: method()},
 		"a":      {Name: "a", Methods: method("helper")},
 		"b":      {Name: "b", Methods: method("helper")},
@@ -220,16 +224,16 @@ func TestSuccessfulMethodRequiresClaimsSharedPrerequisiteOwnership(t *testing.T)
 func TestPreexistingMethodPrerequisiteIsTrackedAsExternal(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	adapter := &testMockAdapter{
-		kindValue:   "counting",
+		kindValue:   "go",
 		checkFunc:   func(name string) bool { return name == "helper" },
 		installFunc: func(string) error { return nil },
 	}
-	method := func(requires ...string) []*config.MethodCandidate {
-		return []*config.MethodCandidate{{Kind: "counting", Config: map[string]any{"pkg": "x"}, Requires: requires}}
+	method := func(pkg string, requires ...string) []*config.MethodCandidate {
+		return []*config.MethodCandidate{{Kind: "go", Config: map[string]any{"pkg": pkg}, Requires: requires}}
 	}
-	schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{"counting"}}, Tools: map[string]*config.Tool{
-		"helper": {Name: "helper", DependencyOnly: true, Methods: method()},
-		"owner":  {Name: "owner", Methods: method("helper")},
+	schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{"go"}}, Tools: map[string]*config.Tool{
+		"helper": {Name: "helper", DependencyOnly: true, Methods: method("x")},
+		"owner":  {Name: "owner", Methods: method("owner", "helper")},
 	}}
 	executor := New()
 	WithAdapters(adapter)(executor)

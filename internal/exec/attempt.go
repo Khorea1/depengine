@@ -136,22 +136,38 @@ func (ex *Executor) resolveConcretePlan(ac *candidateAttempt, result *ToolResult
 	return proceed
 }
 
-// gateAlreadyInstalled finishes the tool when the adapter reports the
-// desired state already present. Adapters provide explicit presence semantics.
+// gateAlreadyInstalled finishes only when the observed identity satisfies the
+// fully resolved desired state. Presence alone is insufficient.
 func (ex *Executor) gateAlreadyInstalled(ac *candidateAttempt, result *ToolResult) attemptOutcome {
-	observation := ex.observeResolvedCandidate(ac.toolCtx, ac.tool, ac.method, ac.adapter, ac.resolved, ac.displayKind)
-	switch observation.Presence {
-	case plan.PresencePresent:
-		return ex.finishAlreadyInstalled(ac, result)
-	case plan.PresenceAbsent, plan.PresenceUnknown:
+	if ac.resolved == nil {
 		return proceed
-	case plan.PresenceBroken:
-		detail := fmt.Sprintf("%s: %s", ac.displayKind, observation.Detail)
+	}
+	verification, err := ex.VerifyResolvedCandidate(ac.toolCtx, ac.tool, ac.method, ac.resolved)
+	if err != nil {
+		detail := fmt.Sprintf("%s: verify desired state: %v", ac.displayKind, err)
 		ex.skipCandidate(ac, result, "failed", detail)
-		ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "observe_broken", "error", detail)
+		ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "verification_failed", "error", detail)
 		return nextMethod
 	}
-	return nextMethod
+	switch verification.State {
+	case plan.StateSatisfied:
+		return ex.finishAlreadyInstalled(ac, result)
+	case plan.StateAbsent, plan.StateDrifted:
+		return proceed
+	case plan.StateUnknown, plan.StateBroken:
+		detail := verificationDetail(verification)
+		if detail == "" {
+			detail = string(verification.State)
+		}
+		detail = fmt.Sprintf("%s: desired state %s: %s", ac.displayKind, verification.State, detail)
+		ex.skipCandidate(ac, result, "failed", detail)
+		ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "verification_"+string(verification.State), "error", detail)
+		return nextMethod
+	default:
+		detail := fmt.Sprintf("%s: invalid verification state %q", ac.displayKind, verification.State)
+		ex.skipCandidate(ac, result, "failed", detail)
+		return nextMethod
+	}
 }
 
 func (ex *Executor) finishAlreadyInstalled(ac *candidateAttempt, result *ToolResult) attemptOutcome {

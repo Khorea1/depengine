@@ -39,7 +39,7 @@ func (a *executorAdapterV2Double) Observe(context.Context, run.Runner, *config.T
 	if detail == "" {
 		detail = "probe detail"
 	}
-	return plan.Observation{Presence: a.presence, Detail: detail}, nil
+	return plan.Observation{Presence: a.presence, Identity: plan.ObservedIdentity{Package: "demo"}, KnownFields: []plan.IdentityField{plan.FieldPackage}, Detail: detail}, nil
 }
 
 func (a *executorAdapterV2Double) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
@@ -100,9 +100,9 @@ func TestExecutorAdapterV2PresenceStates(t *testing.T) {
 		wantStatus  StatusEnum
 		wantInstall int
 	}{
-		{name: "present", presence: plan.PresencePresent, wantStatus: StatusAlready},
+		{name: "present with matching package", presence: plan.PresencePresent, wantStatus: StatusAlready},
 		{name: "absent", presence: plan.PresenceAbsent, wantStatus: StatusInstalled, wantInstall: 1},
-		{name: "unknown", presence: plan.PresenceUnknown, wantStatus: StatusInstalled, wantInstall: 1},
+		{name: "unknown", presence: plan.PresenceUnknown, wantStatus: StatusFailed},
 	}
 
 	for _, tt := range tests {
@@ -171,32 +171,6 @@ func TestExecutorAdapterV2ObservationErrorFailsCandidate(t *testing.T) {
 	}
 }
 
-func TestExecutorLegacyAdapterStillUsesCheck(t *testing.T) {
-	checkCalls := 0
-	installCalls := 0
-	adapter := &testMockAdapter{
-		kindValue: "legacy",
-		checkFunc: func(string) bool {
-			checkCalls++
-			return true
-		},
-		installFunc: func(string) error {
-			installCalls++
-			return nil
-		},
-	}
-	result := v2ExecutorAttempt(t, adapter)
-	if result.Status != StatusAlready {
-		t.Fatalf("status = %v, want already; result = %+v", result.Status, result)
-	}
-	if checkCalls != 1 {
-		t.Fatalf("Check() calls = %d, want 1", checkCalls)
-	}
-	if installCalls != 0 {
-		t.Fatalf("Install() calls = %d, want 0", installCalls)
-	}
-}
-
 func explainAdapterAttempt(t *testing.T, adapter AdapterV2) MethodAttempt {
 	t.Helper()
 	ex := New()
@@ -225,7 +199,7 @@ func TestExplainToolAdapterV2PresenceStates(t *testing.T) {
 	}{
 		{name: "present", presence: plan.PresencePresent, wantStatus: "already_installed"},
 		{name: "absent", presence: plan.PresenceAbsent, wantStatus: "would_install"},
-		{name: "unknown", presence: plan.PresenceUnknown, wantStatus: "would_install"},
+		{name: "unknown", presence: plan.PresenceUnknown, wantStatus: "failed"},
 	}
 
 	for _, tt := range tests {
@@ -263,23 +237,5 @@ func TestExplainToolAdapterV2ProbeFailureIsSafe(t *testing.T) {
 	}
 	if !strings.Contains(attempt.Error, "probe failed") {
 		t.Fatalf("error = %q, want probe failure detail", attempt.Error)
-	}
-}
-
-func TestExplainToolLegacyAdapterUsesCheck(t *testing.T) {
-	checkCalls := 0
-	adapter := &testMockAdapter{
-		kindValue: "legacy",
-		checkFunc: func(string) bool {
-			checkCalls++
-			return true
-		},
-	}
-	attempt := explainAdapterAttempt(t, adapter)
-	if attempt.Status != "already_installed" {
-		t.Fatalf("status = %q, want already_installed: %+v", attempt.Status, attempt)
-	}
-	if checkCalls != 1 {
-		t.Fatalf("Check() calls = %d, want 1", checkCalls)
 	}
 }

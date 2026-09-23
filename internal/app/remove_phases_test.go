@@ -17,12 +17,14 @@ import (
 type recordingRemoveAdapter struct {
 	run.Runner
 	err       error
+	presence  plan.PresenceState
+	packageID string
 	called    bool
 	gotTool   *config.Tool
 	gotMethod *config.MethodCandidate
 }
 
-func (a *recordingRemoveAdapter) Kind() string { return "test-remove" }
+func (a *recordingRemoveAdapter) Kind() string { return "cargo" }
 
 func (a *recordingRemoveAdapter) Available(context.Context, run.Runner) bool { return true }
 
@@ -49,8 +51,97 @@ func (a *recordingRemoveAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ 
 	return &resolved, nil
 }
 
-func (a *recordingRemoveAdapter) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
-	return plan.Observation{Presence: plan.PresenceAbsent}, nil
+func (a *recordingRemoveAdapter) Observe(_ context.Context, _ run.Runner, _ *config.Tool, method *config.MethodCandidate) (plan.Observation, error) {
+	pkg, _ := method.Config["pkg"].(string)
+	if a.packageID != "" {
+		pkg = a.packageID
+	}
+	presence := a.presence
+	if presence == "" {
+		presence = plan.PresencePresent
+	}
+	return plan.Observation{Presence: presence, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
+}
+
+func TestRemoveAbsentTargetReleasesTrackingWithoutCallingRemover(t *testing.T) {
+	adapter := &recordingRemoveAdapter{presence: plan.PresenceAbsent}
+	st := &state.State{Tools: map[string]state.ToolState{
+		"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "example/tool"}},
+	}}
+	sess := testRemoveSession(st, "tool")
+	exec.WithAdapters(adapter)(sess.executor)
+
+	if !sess.removeTrackedTool(context.Background(), "tool", false) {
+		t.Fatal("removeTrackedTool returned false for proven-absent target")
+	}
+	if adapter.called {
+		t.Fatal("Remove called for proven-absent target")
+	}
+	if _, exists := st.Tools["tool"]; exists {
+		t.Fatal("tracking retained for proven-absent target")
+	}
+}
+
+func TestRemoveDriftedTargetStillInvokesRemover(t *testing.T) {
+	adapter := &recordingRemoveAdapter{presence: plan.PresencePresent, packageID: "another-package"}
+	st := &state.State{Tools: map[string]state.ToolState{
+		"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "example/tool"}},
+	}}
+	sess := testRemoveSession(st, "tool")
+	exec.WithAdapters(adapter)(sess.executor)
+
+	if !sess.removeTrackedTool(context.Background(), "tool", false) {
+		t.Fatal("removeTrackedTool returned false for present drifted target")
+	}
+	if !adapter.called {
+		t.Fatal("Remove was not called for a present drifted target")
+	}
+	if _, exists := st.Tools["tool"]; exists {
+		t.Fatal("tracking retained after drifted target was removed")
+	}
+}
+
+func TestRemoveUnknownOrBrokenTargetPreservesTracking(t *testing.T) {
+	for _, presence := range []plan.PresenceState{plan.PresenceUnknown, plan.PresenceBroken} {
+		t.Run(string(presence), func(t *testing.T) {
+			adapter := &recordingRemoveAdapter{presence: presence}
+			st := &state.State{Tools: map[string]state.ToolState{
+				"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "example/tool"}},
+			}}
+			sess := testRemoveSession(st, "tool")
+			exec.WithAdapters(adapter)(sess.executor)
+
+			if sess.removeTrackedTool(context.Background(), "tool", false) {
+				t.Fatal("removeTrackedTool succeeded without a trustworthy observation")
+			}
+			if adapter.called {
+				t.Fatal("Remove called without a trustworthy observation")
+			}
+			if _, exists := st.Tools["tool"]; !exists {
+				t.Fatal("tracking was deleted despite an unverifiable target")
+			}
+		})
+	}
+}
+
+func TestRemoveDryRunFailsForUnknownTargetWithoutMutation(t *testing.T) {
+	adapter := &recordingRemoveAdapter{presence: plan.PresenceUnknown}
+	st := &state.State{Tools: map[string]state.ToolState{
+		"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "example/tool"}},
+	}}
+	sess := testRemoveSession(st, "tool")
+	sess.dryRun = true
+	exec.WithAdapters(adapter)(sess.executor)
+
+	if sess.planDryRunRemoval("tool", st.Tools["tool"]) {
+		t.Fatal("dry-run claimed a removal plan for an unknown target")
+	}
+	if adapter.called {
+		t.Fatal("dry-run invoked Remove")
+	}
+	if _, exists := st.Tools["tool"]; !exists {
+		t.Fatal("dry-run changed state")
+	}
 }
 
 func (a *recordingRemoveAdapter) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
@@ -86,6 +177,8 @@ func testRemoveSession(st *state.State, requested ...string) *removeSession {
 	}
 	return &removeSession{
 		ctx:              context.Background(),
+		runner:           &run.FakeRunner{},
+		executor:         exec.New(),
 		state:            st,
 		requestedRemoval: req,
 		removedThisRun:   make(map[string]bool),
@@ -170,7 +263,7 @@ func TestCollectRemovalTargets(t *testing.T) {
 }
 
 func TestResolveRemoverUnknownMethod(t *testing.T) {
-	remover, _, removable := resolveRemover("tool", state.ToolState{Method: "no-such-method", MethodKind: "no-such-method"})
+	remover, _, removable := testRemoveSession(&state.State{}).resolveRemover("tool", state.ToolState{Method: "no-such-method", MethodKind: "no-such-method"})
 	if removable || remover != nil {
 		t.Errorf("expected manual-remove path, got removable=%v remover=%v", removable, remover)
 	}
@@ -178,7 +271,7 @@ func TestResolveRemoverUnknownMethod(t *testing.T) {
 
 func TestResolveRemoverMethodFallback(t *testing.T) {
 	// Empty MethodKind falls back to Method for explicitly constructed state.
-	remover, kind, removable := resolveRemover("tool", state.ToolState{Method: "go"})
+	remover, kind, removable := testRemoveSession(&state.State{}).resolveRemover("tool", state.ToolState{Method: "go"})
 	if !removable || remover == nil || kind != "go" {
 		t.Errorf("expected removable go remover, got removable=%v kind=%q remover=%v", removable, kind, remover)
 	}
@@ -190,9 +283,9 @@ func TestInvokeRemoverUsesInjectedRunnerAndPropagatesFailure(t *testing.T) {
 	adapter := &recordingRemoveAdapter{err: wantErr}
 	sess := testRemoveSession(&state.State{})
 	sess.runner = runner
-	toolState := state.ToolState{Method: "test-remove", Config: map[string]any{"pkg": "example/tool"}}
+	toolState := state.ToolState{Method: "cargo", Config: map[string]any{"pkg": "example/tool"}}
 
-	if sess.invokeRemover(context.Background(), "tool", toolState, adapter, "test-remove", false) {
+	if sess.invokeRemover(context.Background(), "tool", toolState, adapter, "cargo", false) {
 		t.Fatal("failed adapter removal should return false")
 	}
 	if !adapter.called {
@@ -204,7 +297,7 @@ func TestInvokeRemoverUsesInjectedRunnerAndPropagatesFailure(t *testing.T) {
 	if adapter.gotTool == nil || adapter.gotTool.Name != "tool" {
 		t.Fatalf("Remove received tool %#v, want tool name %q", adapter.gotTool, "tool")
 	}
-	if adapter.gotMethod == nil || adapter.gotMethod.Kind != "test-remove" || adapter.gotMethod.Config["pkg"] != "example/tool" {
+	if adapter.gotMethod == nil || adapter.gotMethod.Kind != "cargo" || adapter.gotMethod.Config["pkg"] != "example/tool" {
 		t.Fatalf("Remove received method %#v", adapter.gotMethod)
 	}
 	if sess.removedThisRun["tool"] {
