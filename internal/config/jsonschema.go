@@ -283,6 +283,8 @@ func methodFieldJSONSchema(field methodkind.Field) map[string]any {
 		schema = stringArrayJSONSchema()
 	case methodkind.StringStringMap:
 		schema = stringMapJSONSchema()
+	case methodkind.SecretRef:
+		schema = map[string]any{"$ref": "#/definitions/secretReference"}
 	case methodkind.Command:
 		command := map[string]any{
 			"type":                 "object",

@@ -11,6 +11,9 @@ import (
 )
 
 func applyArtifact(p *plan.ResolvedInstallPlan, method *config.MethodCandidate, contract *methodkind.Contract) error {
+	if method.SecretRef != nil {
+		appendSecretRequirement(p, plan.SecretReference{Provider: method.SecretRef.Provider, Name: method.SecretRef.Name})
+	}
 	checksum := stringValue(method.Config, "checksum")
 	if err := contract.ValidateChecksum(checksum); err != nil {
 		return fmt.Errorf("checksum: %w", err)

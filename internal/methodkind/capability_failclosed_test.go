@@ -110,6 +110,57 @@ func TestMissingPlanCapabilitiesPreservesCombinedRequirements(t *testing.T) {
 	}
 }
 
+func TestSharedAuthRecognitionRemainsNarrow(t *testing.T) {
+	t.Run("existing source transport", func(t *testing.T) {
+		p := plan.New("demo", "native", true)
+		p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
+		p.Sources = []plan.SourceReference{{Role: plan.SourceHostConfiguration, Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git", SecretRef: &plan.SecretReference{Provider: "env", Name: "TOKEN"}}}
+		missing, err := (Contract{Kind: "native"}).MissingPlanCapabilities(p)
+		if err != nil || missing&CapabilityAuth != 0 {
+			t.Fatalf("missing = %v, error = %v; want existing source auth accepted", CapabilityNames(missing), err)
+		}
+	})
+	cases := []struct {
+		name   string
+		method string
+		edit   func(*plan.ResolvedInstallPlan)
+	}{
+		{"orphan reference", "http", func(p *plan.ResolvedInstallPlan) {
+			p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
+		}},
+		{"non-http artifact", "github", func(p *plan.ResolvedInstallPlan) {
+			p.Artifacts = []plan.Artifact{{URL: "https://example.test/file.tar.gz"}}
+			p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
+		}},
+		{"HTTP plus source auth", "http", func(p *plan.ResolvedInstallPlan) {
+			p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
+			p.Sources = []plan.SourceReference{{Role: plan.SourceHostConfiguration, Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git", SecretRef: &plan.SecretReference{Provider: "env", Name: "TOKEN"}}}
+		}},
+		{"unsupported source role", "native", func(p *plan.ResolvedInstallPlan) {
+			p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
+			p.Sources = []plan.SourceReference{{Role: plan.SourceRegistry, Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git", SecretRef: &plan.SecretReference{Provider: "env", Name: "TOKEN"}}}
+		}},
+		{"unsupported source kind", "native", func(p *plan.ResolvedInstallPlan) {
+			p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
+			p.Sources = []plan.SourceReference{{Role: plan.SourceHostConfiguration, Kind: "apt-ppa", Name: "ppa:vendor/stable", SecretRef: &plan.SecretReference{Provider: "env", Name: "TOKEN"}}}
+		}},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			p := plan.New("demo", tt.method, true)
+			tt.edit(&p)
+			contract := Contract{Kind: tt.method}
+			missing, err := contract.MissingPlanCapabilities(p)
+			if err != nil {
+				t.Fatalf("MissingPlanCapabilities() error = %v", err)
+			}
+			if missing&CapabilityAuth == 0 {
+				t.Fatalf("missing = %v, want auth", CapabilityNames(missing))
+			}
+		})
+	}
+}
+
 func assertRequiredAndMissing(t *testing.T, p plan.ResolvedInstallPlan, want Capability) {
 	t.Helper()
 	got, err := PlanCapabilities(p)

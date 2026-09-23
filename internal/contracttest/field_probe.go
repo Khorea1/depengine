@@ -50,7 +50,11 @@ var fieldPairs = map[string][2]any{
 		"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 		"sha256:ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
 	},
-	"scope":        {"user", "system"},
+	"scope": {"user", "system"},
+	"secret_ref": {
+		map[string]any{"provider": "env", "name": "TOKEN_A"},
+		map[string]any{"provider": "env", "name": "TOKEN_B"},
+	},
 	"cargo.branch": {"edge-a", "edge-b"},
 	"cargo.tag":    {"tag-a", "tag-b"},
 	"cargo.rev":    {"rev-a", "rev-b"},

@@ -40,7 +40,7 @@ func (c Contract) MissingRequirements(p plan.ResolvedInstallPlan, requirements C
 		return 0, err
 	}
 	missing := required &^ c.Capabilities
-	if supportsSharedSourceAuth(p) {
+	if supportsSharedAuth(p, c.Kind) {
 		missing &^= CapabilityAuth
 	}
 	return missing, nil

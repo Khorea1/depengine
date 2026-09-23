@@ -18,6 +18,7 @@ const (
 	SemanticExecution
 	SemanticVerificationIdentity
 	SemanticPolicy
+	SemanticAuthentication
 )
 
 var fieldSemantics = map[string]FieldSemantic{
@@ -67,6 +68,7 @@ var fieldSemantics = map[string]FieldSemantic{
 	"risk":                 SemanticPolicy,
 	"root":                 SemanticPlacement,
 	"scope":                SemanticPolicy,
+	"secret_ref":           SemanticAuthentication,
 	"signature_url":        SemanticIntegrity,
 	"signing_key":          SemanticIntegrity,
 	"source":               SemanticSourceIdentity,

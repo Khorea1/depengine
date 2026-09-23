@@ -21,6 +21,7 @@ const (
 	Command         FieldType = "command"
 	StringList      FieldType = "string_list"
 	StringStringMap FieldType = "string_string_map"
+	SecretRef       FieldType = "secret_ref"
 )
 
 // FieldEffect identifies the runtime phase in which a declared field must
@@ -341,7 +342,9 @@ var Contracts = finalizeContracts([]Contract{
 		"branch":  {Type: String, NonEmpty: true, Effects: EffectResolve},
 		"scope":   artifactScopeField["scope"],
 	}), SourceAlternatives: [][]string{{"repo", "asset"}}, Artifact: githubArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true},
-	{Kind: "http", DefaultOrder: 36, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(downloadFields, artifactScopeField), SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract, Checksum: remoteChecksumContract},
+	{Kind: "http", DefaultOrder: 36, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(downloadFields, artifactScopeField, map[string]Field{
+		"secret_ref": {Type: SecretRef, Effects: EffectResolve | EffectExecute},
+	}), SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract, Checksum: remoteChecksumContract},
 	{Kind: "msi", DefaultOrder: 37, Fields: fields(artifactFields, map[string]Field{
 		"product_name": {Type: String, Required: true, NonEmpty: true, Effects: EffectVerify | EffectExecute},
 		"publisher":    {Type: String, Effects: EffectVerify | EffectExecute},

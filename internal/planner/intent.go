@@ -27,6 +27,15 @@ func BuildCandidateIntent(tool *config.Tool, method *config.MethodCandidate) (pl
 	if err := validateConfigKeys(method.Config, contract); err != nil {
 		return plan.ResolvedInstallPlan{}, invalid("candidate", err)
 	}
+	if method.SecretRef != nil {
+		field, supported := contract.Fields["secret_ref"]
+		if !supported || field.Type != methodkind.SecretRef {
+			return plan.ResolvedInstallPlan{}, invalid("candidate", fmt.Errorf("field %q is not supported by method %q", "secret_ref", contract.Kind))
+		}
+		if err := (plan.SecretReference{Provider: method.SecretRef.Provider, Name: method.SecretRef.Name}).Validate(); err != nil {
+			return plan.ResolvedInstallPlan{}, invalid("candidate", fmt.Errorf("secret_ref: %w", err))
+		}
+	}
 
 	p := plan.New(tool.Name, method.Kind, !method.Inferred)
 	if err := applyIdentity(&p, tool, method, contract); err != nil {

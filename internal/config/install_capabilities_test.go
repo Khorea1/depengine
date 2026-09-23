@@ -113,6 +113,59 @@ func TestSourceSecretReferenceRejectsInvalidFields(t *testing.T) {
 	}
 }
 
+func TestParseHTTPSecretReference(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "schema.toml")
+	data := `schema_version = 1
+[tools.demo.http]
+url = "https://example.test/demo.tar.gz"
+secret_ref = { provider = "env", name = "ARTIFACT_TOKEN" }
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	schema, err := ParseProjectSchema(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := schema.Tools["demo"].Methods[0].SecretRef
+	if ref == nil || *ref != (SecretReference{Provider: "env", Name: "ARTIFACT_TOKEN"}) {
+		t.Fatalf("HTTP secret reference = %+v", ref)
+	}
+}
+
+func TestHTTPSecretReferenceRejectsInvalidOrUnsupportedForms(t *testing.T) {
+	for _, tt := range []struct {
+		name, method, ref, want string
+	}{
+		{"missing provider", "http", `{ name = "TOKEN" }`, "secret_ref.provider"},
+		{"missing name", "http", `{ provider = "env" }`, "secret_ref.name"},
+		{"empty provider", "http", `{ provider = "", name = "TOKEN" }`, "secret_ref.provider"},
+		{"empty name", "http", `{ provider = "env", name = "" }`, "secret_ref.name"},
+		{"surrounding whitespace", "http", `{ provider = "env", name = " TOKEN" }`, "surrounding whitespace"},
+		{"NUL", "http", `{ provider = "env", name = "TOKEN\u0000BAD" }`, "NUL"},
+		{"unknown field", "http", `{ provider = "env", name = "TOKEN", value = "literal" }`, "secret_ref.value"},
+		{"wrong type", "http", `"TOKEN"`, "secret_ref: expected table"},
+		{"unsupported method", "github", `{ provider = "env", name = "TOKEN" }`, "field is not supported by method kind github"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "schema.toml")
+			data := "schema_version = 1\n[tools.demo." + tt.method + "]\n"
+			if tt.method == "http" {
+				data += "url = \"https://example.test/demo.tar.gz\"\n"
+			} else {
+				data += "repo = \"example/demo\"\nasset = \"demo.tar.gz\"\n"
+			}
+			data += "secret_ref = " + tt.ref + "\n"
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ParseProjectSchema(path, nil); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("ParseProjectSchema() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseArtifactAndTypedOptions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "schema.toml")
 	data := `schema_version = 1

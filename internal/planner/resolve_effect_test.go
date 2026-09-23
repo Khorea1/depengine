@@ -72,6 +72,17 @@ func TestResolveEffectFieldsMoveStaticIntent(t *testing.T) {
 
 			build := func(value any) (any, error) {
 				cfg, _ := contracttest.BaseConfig(contract.Kind, name)
+				if contract.Kind == "http" && name == "secret_ref" {
+					ref := value.(map[string]any)
+					return planner.BuildCandidateIntent(tool, &config.MethodCandidate{
+						Kind:   contract.Kind,
+						Config: cfg,
+						SecretRef: &config.SecretReference{
+							Provider: ref["provider"].(string),
+							Name:     ref["name"].(string),
+						},
+					})
+				}
 				cfg[name] = value
 				return planner.BuildCandidateIntent(tool, &config.MethodCandidate{Kind: contract.Kind, Config: cfg})
 			}
