@@ -719,7 +719,7 @@ func replaceManagerBinary(cmd []string, managerName, clan string) []string {
 	if len(cmd) > 1 && run.IsElevationPrefix(cmd[0]) {
 		start = 1
 	}
-	if start < len(cmd) {
+	if start < len(cmd) && cmd[start] == nm.Name {
 		cmd[start] = managerName
 	}
 	return cmd

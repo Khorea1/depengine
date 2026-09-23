@@ -180,6 +180,25 @@ func TestNativeInstallRequiresPostcondition(t *testing.T) {
 			t.Fatalf("verification command = %#v, want dpkg", rn.calls[1])
 		}
 	})
+
+	t.Run("manager alias preserves independent verification binary", func(t *testing.T) {
+		rn := &nativeSequenceRunner{results: []run.Result{
+			{ExitCode: 0},
+			{ExitCode: 0},
+		}}
+		adapter := &NativeByManagerAdapter{managerName: "dnf5"}
+		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+
+		if err := adapter.Install(context.Background(), rn, &config.Tool{Name: "git"}, mc); err != nil {
+			t.Fatalf("Install() error = %v, want nil", err)
+		}
+		if len(rn.calls) != 2 {
+			t.Fatalf("calls = %#v, want install + verification", rn.calls)
+		}
+		if rn.calls[1].Name != "rpm" {
+			t.Fatalf("verification command = %#v, want rpm", rn.calls[1])
+		}
+	})
 }
 
 func TestPkgFromConfigResolvesClanOverrides(t *testing.T) {
