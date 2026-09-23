@@ -415,6 +415,8 @@ func validateMethodField(raw any, field methodkind.Field, path string, errs *[]s
 		validateStringList(raw, path, errs)
 	case methodkind.StringStringMap:
 		validateStringMap(raw, path, errs)
+	case methodkind.SecretRef:
+		validateSecretReference(raw, path, errs)
 	}
 	if len(field.Enum) > 0 {
 		if value, ok := raw.(string); ok && !containsString(field.Enum, value) {

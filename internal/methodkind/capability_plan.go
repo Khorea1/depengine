@@ -39,15 +39,39 @@ func (c Contract) MissingPlanCapabilities(p plan.ResolvedInstallPlan) (Capabilit
 		return 0, err
 	}
 	missing := required &^ c.Capabilities
-	if supportsSharedSourceAuth(p) {
+	if supportsSharedAuth(p, c.Kind) {
 		missing &^= CapabilityAuth
 	}
 	return missing, nil
 }
 
-// supportsSharedSourceAuth recognizes the one credential transport owned by
-// the executor source layer. Other secret references stay fail-closed.
-func supportsSharedSourceAuth(p plan.ResolvedInstallPlan) bool {
+// supportsSharedAuth recognizes only credential transports depengine owns:
+// source setup for selected Git-backed repositories and Bearer auth for HTTP
+// artifacts. Other secret references stay fail-closed.
+func supportsSharedAuth(p plan.ResolvedInstallPlan, contractKind string) bool {
+	if p.Candidate.Method == "http" {
+		if contractKind != "http" || len(p.Secrets) != 1 {
+			return false
+		}
+		hasArtifact := len(p.Artifacts) > 0
+		if !hasArtifact {
+			for _, operation := range p.Operations {
+				if operation.Kind == "resolve-artifact" {
+					hasArtifact = true
+					break
+				}
+			}
+		}
+		if !hasArtifact {
+			return false
+		}
+		for _, source := range p.Sources {
+			if source.SecretRef != nil {
+				return false
+			}
+		}
+		return true
+	}
 	if len(p.Secrets) == 0 {
 		for _, source := range p.Sources {
 			if source.SecretRef != nil {

@@ -31,3 +31,23 @@ func TestSemanticRegistryCoversEveryPublicFieldName(t *testing.T) {
 		}
 	}
 }
+
+func TestSecretRefBelongsOnlyToHTTPContract(t *testing.T) {
+	http, ok := Lookup("http")
+	if !ok {
+		t.Fatal("http contract missing")
+	}
+	field, ok := http.Fields["secret_ref"]
+	if !ok || field.Type != SecretRef || field.Effects != EffectResolve|EffectExecute || field.Semantic != SemanticAuthentication {
+		t.Fatalf("http.secret_ref contract = %+v, want typed resolve/execute authentication field", field)
+	}
+	for _, kind := range []string{"github", "appimage", "msi"} {
+		contract, ok := Lookup(kind)
+		if !ok {
+			t.Fatalf("%s contract missing", kind)
+		}
+		if _, declared := contract.Fields["secret_ref"]; declared {
+			t.Errorf("%s unexpectedly declares secret_ref", kind)
+		}
+	}
+}

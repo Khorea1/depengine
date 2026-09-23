@@ -537,6 +537,12 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 			mc.Sources = parseSources(rawSources)
 			delete(t, "sources")
 		}
+		if rawSecretRef, ok := t["secret_ref"]; ok {
+			if ref, ok := rawSecretRef.(map[string]any); ok {
+				mc.SecretRef = parseSecretReference(ref)
+			}
+			delete(t, "secret_ref")
+		}
 		for k, v := range t {
 			mc.Config[k] = v
 		}
@@ -689,13 +695,18 @@ func parseSources(rawSources []any) []Source {
 		source.Name, _ = m["name"].(string)
 		source.URL, _ = m["url"].(string)
 		if rawRef, ok := m["secret_ref"].(map[string]any); ok {
-			source.SecretRef = &SecretReference{}
-			source.SecretRef.Provider, _ = rawRef["provider"].(string)
-			source.SecretRef.Name, _ = rawRef["name"].(string)
+			source.SecretRef = parseSecretReference(rawRef)
 		}
 		sources = append(sources, source)
 	}
 	return sources
+}
+
+func parseSecretReference(raw map[string]any) *SecretReference {
+	ref := &SecretReference{}
+	ref.Provider, _ = raw["provider"].(string)
+	ref.Name, _ = raw["name"].(string)
+	return ref
 }
 
 func toStringSlice(v any) []string {

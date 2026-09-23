@@ -66,6 +66,18 @@ Do not put credentials in schema or manifest URLs. Use the authentication
 mechanism provided by the package manager or service. GitHub release access can
 use `GITHUB_TOKEN`, `GH_TOKEN`, or existing `gh` authentication.
 
+Typed `http` artifact methods can reference an env-backed credential with
+`secret_ref`. depengine resolves that value only when the candidate reaches the
+real install step and sends it as an in-process `Authorization: Bearer` header
+for the primary artifact request. The value is not placed in command argv,
+plans, lockfiles, state, reports, diagnostics, or logs. Authenticated artifact
+downloads use the Go HTTP backend even when curl or wget is available.
+
+Bearer credentials are retained across same-origin redirects and removed before
+following a cross-origin redirect. Checksum and signature sidecar downloads do
+not inherit the primary artifact credential unless a separate transport is
+modeled explicitly in a future schema.
+
 depengine redacts common token/password flags, Authorization/Cookie headers,
 and URL userinfo from subprocess output where possible. State persistence also
 rejects values that look like secrets. Redaction is a fallback, not a safe way

@@ -2763,6 +2763,9 @@
               ],
               "type": "string"
             },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
             "signature_url": {
               "type": "string"
             },
@@ -7292,6 +7295,9 @@
                 "system"
               ],
               "type": "string"
+            },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
             },
             "signature_url": {
               "type": "string"

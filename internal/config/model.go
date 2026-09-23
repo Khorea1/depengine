@@ -140,6 +140,10 @@ func cloneMethod(method *MethodCandidate) *MethodCandidate {
 	out := *method
 	out.Requires = append([]string(nil), method.Requires...)
 	out.Sources = cloneSources(method.Sources)
+	if method.SecretRef != nil {
+		secretRef := *method.SecretRef
+		out.SecretRef = &secretRef
+	}
 	out.Config = make(map[string]any, len(method.Config))
 	for key, value := range method.Config {
 		out.Config[key] = value
@@ -178,6 +182,7 @@ type MethodCandidate struct {
 	OSMap       map[string]string
 	Requires    []string
 	Sources     []Source
+	SecretRef   *SecretReference
 }
 
 // Source is repository configuration scoped to a single method candidate.

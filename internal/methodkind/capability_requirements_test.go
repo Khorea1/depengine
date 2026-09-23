@@ -42,3 +42,16 @@ func TestCheckRequirementsClassifiesNonAuthMismatch(t *testing.T) {
 		t.Fatalf("error = %q, want missing scope capability", err)
 	}
 }
+
+func TestHTTPSecretRequirementUsesSupportedSharedAuthTransport(t *testing.T) {
+	p := plan.New("private-tool", "http", true)
+	p.Artifacts = []plan.Artifact{{URL: "https://example.test/private.tar.gz"}}
+	p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
+	contract, ok := Lookup("http")
+	if !ok {
+		t.Fatal("http contract missing")
+	}
+	if err := contract.CheckRequirements(p, CandidateRequirements{}); err != nil {
+		t.Fatalf("CheckRequirements() = %v, want supported authenticated HTTP transport", err)
+	}
+}

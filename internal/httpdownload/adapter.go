@@ -232,6 +232,13 @@ func methodWithResolvedArtifact(mc *config.MethodCandidate, artifact plan.Artifa
 }
 
 func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolvedURL string) error {
+	bearerCredential, hasBearerCredential := exec.HTTPArtifactBearer(ctx)
+	if mc != nil && mc.SecretRef != nil && !hasBearerCredential {
+		return fmt.Errorf("http: authenticated artifact request has no runtime credential")
+	}
+	if mc == nil {
+		return fmt.Errorf("http: method configuration is required")
+	}
 	// Re-enforce the shared artifact URL contract at the runtime boundary.
 	// Normal CLI flows validate before execution, but adapters are also public
 	// package APIs and must not leak embedded credentials when called directly.
@@ -270,8 +277,14 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 	tmpFile := tmpDir + "/" + fileName
 
 	// --- Download cache ---
-	// Check if the file is already cached by its resolved URL.
-	cachedPath := downloadcache.Lookup(resolvedURL)
+	// Authenticated artifacts bypass the URL-only cache. The same URL may
+	// resolve to different content for different credentials, and the secret
+	// value must never become part of a cache key.
+	cacheEnabled := mc == nil || mc.SecretRef == nil
+	cachedPath := ""
+	if cacheEnabled {
+		cachedPath = downloadcache.Lookup(resolvedURL)
+	}
 	fromCache := false
 
 	if cachedPath != "" {
@@ -285,9 +298,9 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 
 	if !fromCache {
 		// Download from remote.
-		dl := SelectDownloaderForURL(ctx, rn, resolvedURL)
+		dl := selectCandidateDownloader(ctx, rn, resolvedURL, mc)
 		if err := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
-			return dl.Download(retryCtx, resolvedURL, tmpFile)
+			return downloadPrimaryArtifact(retryCtx, dl, resolvedURL, tmpFile, bearerCredential, hasBearerCredential)
 		}); err != nil {
 			return fmt.Errorf("http: download %s: %w", tool.Name, downloadErrorWithHint(err))
 		}
@@ -302,9 +315,9 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 				if rmErr := downloadcache.Remove(resolvedURL); rmErr != nil {
 					log.Default.Warn("failed to evict bad cache entry", "tool", tool.Name, "error", rmErr)
 				}
-				dl := SelectDownloaderForURL(ctx, rn, resolvedURL)
+				dl := selectCandidateDownloader(ctx, rn, resolvedURL, mc)
 				if err2 := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
-					return dl.Download(retryCtx, resolvedURL, tmpFile)
+					return downloadPrimaryArtifact(retryCtx, dl, resolvedURL, tmpFile, bearerCredential, hasBearerCredential)
 				}); err2 != nil {
 					return fmt.Errorf("http: download %s (re-download): %w", tool.Name, err2)
 				}
@@ -360,12 +373,35 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 	// Store in cache after extraction (Store may move tmpFile via os.Rename).
 	// Re-storing a cache hit is intentional: checksum recovery may have removed
 	// the stale entry and downloaded a fresh copy while fromCache remains true.
-	if _, err := downloadcache.Store(resolvedURL, tmpFile); err != nil {
-		// Cache write failure is non-fatal; the install continues.
-		log.Default.Warn("cache write failed", "error", err, "url", resolvedURL)
+	if cacheEnabled {
+		if _, err := downloadcache.Store(resolvedURL, tmpFile); err != nil {
+			// Cache write failure is non-fatal; the install continues.
+			log.Default.Warn("cache write failed", "error", err, "url", resolvedURL)
+		}
 	}
 
 	return nil
+}
+
+// selectCandidateDownloader keeps typed HTTP authentication on the Go
+// backend. secret_ref contains only a reference at this stage; the runtime
+// handoff supplies the resolved credential directly to GoDownloader.
+func selectCandidateDownloader(ctx context.Context, rn run.Runner, rawURL string, mc *config.MethodCandidate) Downloader {
+	if mc != nil && mc.SecretRef != nil {
+		return SelectDownloaderForAuthenticatedURL(rn)
+	}
+	return SelectDownloaderForURL(ctx, rn, rawURL)
+}
+
+func downloadPrimaryArtifact(ctx context.Context, downloader Downloader, rawURL, dest, credential string, authenticated bool) error {
+	if !authenticated {
+		return downloader.Download(ctx, rawURL, dest)
+	}
+	goDownloader, ok := downloader.(*GoDownloader)
+	if !ok {
+		return fmt.Errorf("http: authenticated request requires the in-process downloader")
+	}
+	return goDownloader.DownloadWithBearer(ctx, rawURL, dest, credential)
 }
 
 // resolvedFileName derives the downloaded file's name from an already-

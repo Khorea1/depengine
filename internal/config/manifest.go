@@ -379,6 +379,10 @@ func mergeMethodConfigs(lower, upper *MethodCandidate, pc *provenanceCollector) 
 	if len(upper.Sources) == 0 {
 		result.Sources = cloneSources(lower.Sources)
 	}
+	if upper.SecretRef == nil && lower.SecretRef != nil {
+		secretRef := *lower.SecretRef
+		result.SecretRef = &secretRef
+	}
 
 	// For each key in lower.Config that upper doesn't have, copy it up.
 	for key, lowerVal := range lower.Config {

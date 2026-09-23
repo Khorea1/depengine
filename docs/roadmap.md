@@ -10,9 +10,10 @@ Work on the current execution model comes before adding more installer types.
   behavior test. Static resolution, validation effects, and differential
   execution and verification probes cover every declared field.
 - [~] Add typed secret references to planning and runtime resolution. Runtime
-  resolution now supports env-backed Bearer tokens when adding Git-backed
-  `brew-tap` and `scoop-bucket` sources; other authenticated operations still
-  need an explicit credential transport before they can be accepted.
+  resolution now supports env-backed credentials for Git-backed `brew-tap` and
+  `scoop-bucket` source preparation and env-backed Bearer tokens for typed
+  `http` artifact downloads. Other authenticated operations still need an
+  explicit credential transport before they can be accepted.
 
 ## P1: shared install semantics
 
