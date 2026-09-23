@@ -56,6 +56,9 @@ func TestPlanCapabilitiesFailClosedForEverySemanticDimension(t *testing.T) {
 		{"source-auth", func(p *plan.ResolvedInstallPlan) {
 			p.Sources = []plan.SourceReference{{Role: plan.SourceSelection, Name: "corp", SecretRef: &plan.SecretReference{Provider: "env", Name: "TOKEN"}}}
 		}, CapabilitySourceSelection | CapabilityAuth},
+		{"secret-requirement", func(p *plan.ResolvedInstallPlan) {
+			p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
+		}, CapabilityAuth},
 		{"arbitrary-code", func(p *plan.ResolvedInstallPlan) {
 			p.Operations = []plan.Operation{{Kind: "build", Effect: plan.EffectMutation, Command: []string{"make"}, ArbitraryCode: true}}
 		}, CapabilityArbitraryCode},

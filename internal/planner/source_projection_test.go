@@ -79,8 +79,12 @@ func TestSourceSecretReferenceFlowsFromSchemaToPlanAndRequiresAuth(t *testing.T)
 			t.Fatal(err)
 		}
 		if withRef {
-			if len(intent.Sources) != 1 || intent.Sources[0].SecretRef == nil || *intent.Sources[0].SecretRef != (plan.SecretReference{Provider: "env", Name: "CORP_TOKEN"}) {
+			wantRef := plan.SecretReference{Provider: "env", Name: "CORP_TOKEN"}
+			if len(intent.Sources) != 1 || intent.Sources[0].SecretRef == nil || *intent.Sources[0].SecretRef != wantRef {
 				t.Fatalf("plan source = %+v", intent.Sources)
+			}
+			if len(intent.Secrets) != 1 || intent.Secrets[0] != wantRef {
+				t.Fatalf("plan secret requirements = %+v, want [%+v]", intent.Secrets, wantRef)
 			}
 			if missing&methodkind.CapabilityAuth == 0 {
 				t.Fatalf("missing capabilities = %v, want auth", methodkind.CapabilityNames(missing))
@@ -88,8 +92,13 @@ func TestSourceSecretReferenceFlowsFromSchemaToPlanAndRequiresAuth(t *testing.T)
 			if _, err := planner.BuildValidatedCandidateIntent(tool, tool.Methods[0], methodkind.CandidateRequirements{}); err == nil || !plan.IsClass(err, plan.ErrorAuthRequirement) {
 				t.Fatalf("validated intent error = %v, want auth requirement", err)
 			}
-		} else if missing&methodkind.CapabilityAuth != 0 {
-			t.Fatalf("missing capabilities = %v, unexpected auth", methodkind.CapabilityNames(missing))
+		} else {
+			if len(intent.Secrets) != 0 {
+				t.Fatalf("plan secret requirements = %+v, want none", intent.Secrets)
+			}
+			if missing&methodkind.CapabilityAuth != 0 {
+				t.Fatalf("missing capabilities = %v, unexpected auth", methodkind.CapabilityNames(missing))
+			}
 		}
 		encoded, err := json.Marshal(intent)
 		if err != nil {
@@ -98,6 +107,29 @@ func TestSourceSecretReferenceFlowsFromSchemaToPlanAndRequiresAuth(t *testing.T)
 		if strings.Contains(string(encoded), "private-value-must-not-enter-plan") {
 			t.Fatal("plan serialized environment secret material")
 		}
+	}
+}
+
+func TestBuildCandidateIntentDeduplicatesSecretRequirements(t *testing.T) {
+	tool := &config.Tool{Name: "demo"}
+	ref := &config.SecretReference{Provider: "env", Name: "CORP_TOKEN"}
+	method := &config.MethodCandidate{
+		Kind:   "native",
+		Config: map[string]any{"pkg": "demo"},
+		Sources: []config.Source{
+			{Kind: "apt-ppa", Name: "ppa:vendor/stable", SecretRef: ref},
+			{Kind: "brew-tap", Name: "vendor/tools", SecretRef: ref},
+		},
+	}
+	tool.Methods = []*config.MethodCandidate{method}
+
+	intent, err := planner.BuildCandidateIntent(tool, method)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := plan.SecretReference{Provider: "env", Name: "CORP_TOKEN"}
+	if len(intent.Secrets) != 1 || intent.Secrets[0] != want {
+		t.Fatalf("secret requirements = %+v, want [%+v]", intent.Secrets, want)
 	}
 }
 
