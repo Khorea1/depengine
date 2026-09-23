@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 )
 
@@ -113,7 +112,6 @@ func FuzzExpand(f *testing.F) {
 			if !PlaceholderRe.MatchString(input) && allocs > 4 {
 				t.Errorf("Expand allocated %.0f times for input with no placeholders: %q", allocs, input)
 			}
-			_ = runtime.MemStats{} // keep runtime import meaningful
 		}()
 	})
 }
