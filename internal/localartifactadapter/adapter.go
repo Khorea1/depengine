@@ -284,5 +284,4 @@ func (a *Adapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, 
 	return nil
 }
 
-var _ exec.Adapter = (*Adapter)(nil)
 var _ exec.AdapterV2 = (*Adapter)(nil)

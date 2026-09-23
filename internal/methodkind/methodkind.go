@@ -332,14 +332,14 @@ var Contracts = finalizeContracts([]Contract{
 		"checksum":    {Type: String, Effects: EffectValidate | EffectResolve | EffectExecute | EffectVerify},
 		"install_dir": {Type: String, Effects: EffectExecute | EffectVerify},
 	}, CanRemove: true, Checksum: localChecksumContract},
-{Kind: "github", DefaultOrder: 35, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(withoutField(downloadFields, "url"), map[string]Field{
+	{Kind: "github", DefaultOrder: 35, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(withoutField(downloadFields, "url"), map[string]Field{
 		"repo":    {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 		"asset":   {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 		"release": {Type: String, Effects: EffectResolve},
 		"branch":  {Type: String, NonEmpty: true, Effects: EffectResolve},
 		"scope":   artifactScopeField["scope"],
 	}), SourceAlternatives: [][]string{{"repo", "asset"}}, Artifact: githubArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true},
-{Kind: "http", DefaultOrder: 36, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(downloadFields, artifactScopeField), SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract, Checksum: remoteChecksumContract},
+	{Kind: "http", DefaultOrder: 36, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(downloadFields, artifactScopeField), SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract, Checksum: remoteChecksumContract},
 	{Kind: "msi", DefaultOrder: 37, Fields: fields(artifactFields, map[string]Field{
 		"product_name": {Type: String, Required: true, NonEmpty: true, Effects: EffectVerify | EffectExecute},
 		"publisher":    {Type: String, Effects: EffectVerify | EffectExecute},
@@ -368,7 +368,7 @@ func finalizeContracts(contracts []Contract) []Contract {
 		// the supported host source kinds without weakening intent.
 		contracts[i].Capabilities |= CapabilitySourceMutation
 
-		// Check is mandatory on exec.Adapter, so every registered method can at
+		// Observe is mandatory on exec.AdapterV2, so every registered method can at
 		// least observe whether its target is installed.
 		contracts[i].Capabilities |= CapabilityCheck
 		if contracts[i].CanRemove {

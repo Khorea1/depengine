@@ -30,8 +30,7 @@ type candidateAttempt struct {
 	tool        *config.Tool
 	method      *config.MethodCandidate
 	displayKind string
-	adapter     Adapter
-	installer   AdapterV2 // set in real mode; fail-closed when the adapter is not V2
+	adapter     AdapterV2
 	planIntent  *plan.ResolvedInstallPlan
 	resolved    *plan.ResolvedInstallPlan
 	reported    *plan.ResolvedInstallPlan
@@ -111,8 +110,8 @@ func (ex *Executor) gateAdapterAvailable(ac *candidateAttempt, result *ToolResul
 }
 
 // resolveConcretePlan runs the single read-only resolution point and checks
-// host compatibility against the concrete plan. Resolution failures and the
-// fail-closed missing-installer error happen before any mutation.
+// host compatibility against the concrete plan. Resolution failures happen
+// before any mutation.
 func (ex *Executor) resolveConcretePlan(ac *candidateAttempt, result *ToolResult) attemptOutcome {
 	var resolved *plan.ResolvedInstallPlan
 	var resolveErr error
@@ -129,63 +128,43 @@ func (ex *Executor) resolveConcretePlan(ac *candidateAttempt, result *ToolResult
 	ac.resolved = resolved
 	ac.attempt.PlanIntent = resolved
 
-	// Fail closed before any mutation: V2 adapters execute exactly the
-	// plan produced above through InstallResolved. Non-V2 adapters keep
-	// the legacy Install entry point until the cutover removes it.
-	// Dry-run never mutates, so it needs no installer.
-	if !ex.dryRun {
-		if installer, ok := ac.adapter.(AdapterV2); ok {
-			ac.installer = installer
-		}
-	}
-
-	if v2, ok := ac.adapter.(AdapterV2); ok {
-		if compatibilityErr := v2.CheckHostCompatibility(ac.tool, ac.method, ac.resolved, ex.facts, ex.clan); compatibilityErr != nil {
-			ex.skipCandidate(ac, result, "skip_unavailable", compatibilityErr.Error())
-			ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "skip_incompatible_host", "reason", compatibilityErr.Error())
-			return nextMethod
-		}
+	if compatibilityErr := ac.adapter.CheckHostCompatibility(ac.tool, ac.method, ac.resolved, ex.facts, ex.clan); compatibilityErr != nil {
+		ex.skipCandidate(ac, result, "skip_unavailable", compatibilityErr.Error())
+		ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "skip_incompatible_host", "reason", compatibilityErr.Error())
+		return nextMethod
 	}
 	return proceed
 }
 
 // gateAlreadyInstalled finishes the tool when the adapter reports the
-// desired state already present. V2 adapters provide explicit presence
-// semantics; legacy adapters retain their boolean Check contract.
+// desired state already present. Adapters provide explicit presence semantics.
 func (ex *Executor) gateAlreadyInstalled(ac *candidateAttempt, result *ToolResult) attemptOutcome {
-	if observer, ok := ac.adapter.(AdapterV2); ok {
-		observation, err := observer.Observe(ac.toolCtx, ex.probeRunner(ac.tool.Name, ac.displayKind), ac.tool, methodForResolvedTarget(ac.method, ac.resolved))
-		if err != nil {
-			detail := fmt.Sprintf("%s: observe presence: %v", ac.displayKind, err)
-			ex.skipCandidate(ac, result, "failed", detail)
-			ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "observe_failed", "error", detail)
-			return nextMethod
-		}
-		switch observation.Presence {
-		case plan.PresencePresent:
-			return ex.finishAlreadyInstalled(ac, result)
-		case plan.PresenceAbsent, plan.PresenceUnknown:
-			return proceed
-		case plan.PresenceBroken:
-			detail := observation.Detail
-			if detail == "" {
-				detail = "presence observation is broken"
-			}
-			detail = fmt.Sprintf("%s: %s", ac.displayKind, detail)
-			ex.skipCandidate(ac, result, "failed", detail)
-			ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "observe_broken", "error", detail)
-			return nextMethod
-		default:
-			detail := fmt.Sprintf("%s: invalid presence observation %q", ac.displayKind, observation.Presence)
-			ex.skipCandidate(ac, result, "failed", detail)
-			return nextMethod
-		}
+	observation, err := ac.adapter.Observe(ac.toolCtx, ex.probeRunner(ac.tool.Name, ac.displayKind), ac.tool, methodForResolvedTarget(ac.method, ac.resolved))
+	if err != nil {
+		detail := fmt.Sprintf("%s: observe presence: %v", ac.displayKind, err)
+		ex.skipCandidate(ac, result, "failed", detail)
+		ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "observe_failed", "error", detail)
+		return nextMethod
 	}
-
-	if ac.adapter.Check(ac.toolCtx, ex.probeRunner(ac.tool.Name, ac.displayKind), ac.tool, methodForResolvedTarget(ac.method, ac.resolved)) {
+	switch observation.Presence {
+	case plan.PresencePresent:
 		return ex.finishAlreadyInstalled(ac, result)
+	case plan.PresenceAbsent, plan.PresenceUnknown:
+		return proceed
+	case plan.PresenceBroken:
+		detail := observation.Detail
+		if detail == "" {
+			detail = "presence observation is broken"
+		}
+		detail = fmt.Sprintf("%s: %s", ac.displayKind, detail)
+		ex.skipCandidate(ac, result, "failed", detail)
+		ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "observe_broken", "error", detail)
+		return nextMethod
+	default:
+		detail := fmt.Sprintf("%s: invalid presence observation %q", ac.displayKind, observation.Presence)
+		ex.skipCandidate(ac, result, "failed", detail)
+		return nextMethod
 	}
-	return proceed
 }
 
 func (ex *Executor) finishAlreadyInstalled(ac *candidateAttempt, result *ToolResult) attemptOutcome {
@@ -345,16 +324,10 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 		return finishTool
 	}
 
-	// method-timeout applies to each individual attempt. Resolving
-	// adapters execute exactly the plan resolved above; all others use
-	// the legacy Install entry point.
+	// method-timeout applies to each individual attempt. The adapter receives
+	// the exact plan projected after prerequisite preparation.
 	methodCtx, methodCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
-	var err error
-	if ac.installer != nil {
-		err = ac.installer.InstallResolved(methodCtx, runner, ac.tool, ac.method, ac.reported)
-	} else {
-		err = ac.adapter.Install(methodCtx, runner, ac.tool, ac.method)
-	}
+	err := ac.adapter.InstallResolved(methodCtx, runner, ac.tool, ac.method, ac.reported)
 	methodCancel()
 
 	if err == nil {

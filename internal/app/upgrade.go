@@ -323,15 +323,16 @@ func upgradeSingleTool(ctx context.Context, ex *exec.Executor, runner *run.Loggi
 		return res
 	}
 
-	adapter, ok := ex.LookupAdapter(ot.methodKind).(exec.AdapterV2)
-	if !ok || adapter == nil {
+	adapter := ex.LookupAdapter(ot.methodKind)
+	if adapter == nil {
 		return fail("no adapter for method %q", ot.methodKind)
 	}
 
 	// The legacy upgrade path calls Remove/Install directly. Fail closed on
 	// semantics it cannot yet preserve instead of removing a working tool and
 	// discovering the mismatch during reinstall.
-	if err := preflightDirectUpgrade(ctx, runner, facts, ot.tool, ot.method, adapter, opts.allowArbitrary); err != nil {
+	resolved, err := preflightDirectUpgrade(ctx, runner, facts, ot.tool, ot.method, adapter, opts.allowArbitrary)
+	if err != nil {
 		return fail("upgrade preflight failed: %v", err)
 	}
 
@@ -344,8 +345,8 @@ func upgradeSingleTool(ctx context.Context, ex *exec.Executor, runner *run.Loggi
 		return res
 	}
 
-	remover, ok := adapter.(exec.AdapterV2)
-	if !ok || !remover.CanRemove() {
+	remover := adapter
+	if !remover.CanRemove() {
 		// Adapter can't remove — skip with a clear message.
 		res.Status = "skipped"
 		res.Error = fmt.Sprintf("adapter %q does not support removal — remove manually and reinstall", ot.methodKind)
@@ -361,7 +362,7 @@ func upgradeSingleTool(ctx context.Context, ex *exec.Executor, runner *run.Loggi
 
 	// Install the exact candidate resolved before the destructive
 	// transition. Never fall back to another candidate of the same kind.
-	newVer, err := reinstallUpgradeTool(ctx, adapter, tr, st, ot)
+	newVer, err := reinstallUpgradeTool(ctx, adapter, resolved, tr, st, ot)
 	if err != nil {
 		return fail("reinstall failed: %v", err)
 	}
@@ -399,10 +400,10 @@ func removeInstalledTool(ctx context.Context, remover exec.AdapterV2, tr run.Run
 // installed version. On reinstall failure the tool's shared-resource claims
 // are released so state does not pretend a missing tool still holds refs;
 // newly zero-ref resources stay on the host for explicit retry/cleanup.
-func reinstallUpgradeTool(ctx context.Context, adapter exec.Adapter, tr run.Runner, st *state.State, ot upgradeOutdatedTool) (string, error) {
+func reinstallUpgradeTool(ctx context.Context, adapter exec.AdapterV2, resolved *plan.ResolvedInstallPlan, tr run.Runner, st *state.State, ot upgradeOutdatedTool) (string, error) {
 	installCtx, installCancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer installCancel()
-	if err := adapter.Install(installCtx, tr, ot.tool, ot.method); err != nil {
+	if err := adapter.InstallResolved(installCtx, tr, ot.tool, ot.method, resolved); err != nil {
 		if releaseErr := recordFailedUpgradeRemoval(st, ot.name); releaseErr != nil {
 			log.Default.Error("release failed-upgrade resources", "tool", ot.name, "error", releaseErr)
 		}
@@ -619,60 +620,63 @@ func recordFailedUpgradeRemoval(st *state.State, toolName string) error {
 	return nil
 }
 
-func preflightDirectUpgrade(ctx context.Context, runner run.Runner, facts *engine.Facts, tool *config.Tool, method *config.MethodCandidate, adapter exec.AdapterV2, allowArbitrary bool) error {
+func preflightDirectUpgrade(ctx context.Context, runner run.Runner, facts *engine.Facts, tool *config.Tool, method *config.MethodCandidate, adapter exec.AdapterV2, allowArbitrary bool) (*plan.ResolvedInstallPlan, error) {
 	if tool == nil || method == nil || adapter == nil {
-		return fmt.Errorf("tool, method, and adapter are required")
+		return nil, fmt.Errorf("tool, method, and adapter are required")
 	}
 	if method.When != nil && !method.When.Match(facts) {
-		return fmt.Errorf("tracked candidate no longer matches its when condition")
+		return nil, fmt.Errorf("tracked candidate no longer matches its when condition")
 	}
 	intent, err := exec.CandidatePlanIntent(tool, method)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(method.Sources) > 0 {
-		return fmt.Errorf("candidate declares sources; transactional upgrade preparation is required")
+		return nil, fmt.Errorf("candidate declares sources; transactional upgrade preparation is required")
 	}
 	if len(method.Requires) > 0 {
-		return fmt.Errorf("candidate declares method.requires; transactional upgrade preparation is required")
+		return nil, fmt.Errorf("candidate declares method.requires; transactional upgrade preparation is required")
 	}
 	if len(tool.EffectiveRequires(facts)) > 0 {
-		return fmt.Errorf("tool declares requires; transactional upgrade dependency handling is required")
+		return nil, fmt.Errorf("tool declares requires; transactional upgrade dependency handling is required")
 	}
 	if len(tool.PreInstall) > 0 || len(tool.PostInstall) > 0 {
-		return fmt.Errorf("candidate has lifecycle hooks; direct upgrade cannot preserve hook semantics")
+		return nil, fmt.Errorf("candidate has lifecycle hooks; direct upgrade cannot preserve hook semantics")
 	}
 	if !allowArbitrary && exec.CandidateRunsArbitraryCode(tool, method) {
-		return fmt.Errorf("candidate may execute arbitrary code; pass --allow-arbitrary-code to permit it")
+		return nil, fmt.Errorf("candidate may execute arbitrary code; pass --allow-arbitrary-code to permit it")
 	}
 	probeRunner := runner
 	if lr, ok := runner.(*run.LoggingRunner); ok {
 		probeRunner = lr.WithContext(run.Context{Tool: tool.Name, Method: method.Kind, Probe: true})
 	}
 	if !adapter.Available(ctx, probeRunner) {
-		return fmt.Errorf("adapter %q is unavailable", method.Kind)
+		return nil, fmt.Errorf("adapter %q is unavailable", method.Kind)
 	}
 	resolved, err := adapter.ResolvePlan(ctx, probeRunner, tool, method, intent)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if resolved == nil {
-		return fmt.Errorf("tracked installation is not present; run install/repair instead of destructive upgrade")
+		return nil, fmt.Errorf("tracked installation is not present; run install/repair instead of destructive upgrade")
+	}
+	if err := plan.ValidateResolution(*intent, *resolved); err != nil {
+		return nil, fmt.Errorf("resolve plan: %w", err)
 	}
 	observation, err := adapter.Observe(ctx, probeRunner, tool, method)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if observation.Presence != plan.PresencePresent {
-		return fmt.Errorf("tracked installation is not present; run install/repair instead of destructive upgrade")
+		return nil, fmt.Errorf("tracked installation is not present; run install/repair instead of destructive upgrade")
 	}
 	if !adapter.CheckAvailable(ctx, probeRunner, tool, method) {
-		return fmt.Errorf("target is not available from configured repositories")
+		return nil, fmt.Errorf("target is not available from configured repositories")
 	}
 	if !adapter.CanRemove() {
-		return fmt.Errorf("adapter %q does not support removal", method.Kind)
+		return nil, fmt.Errorf("adapter %q does not support removal", method.Kind)
 	}
-	return nil
+	return resolved, nil
 }
 
 // findMethodConfig extracts the config map for the first method matching kind.
@@ -721,7 +725,7 @@ func findTrackedMethodCandidate(tool *config.Tool, ts state.ToolState, defaultOr
 }
 
 // probeVersion calls the adapter's InstalledVersion if it implements Versioner.
-func probeVersion(ctx context.Context, adapter exec.Adapter, runner run.Runner, tool *config.Tool, mc *config.MethodCandidate) string {
+func probeVersion(ctx context.Context, adapter exec.AdapterV2, runner run.Runner, tool *config.Tool, mc *config.MethodCandidate) string {
 	v, ok := adapter.(exec.Versioner)
 	if !ok {
 		return ""

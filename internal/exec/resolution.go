@@ -29,18 +29,14 @@ func (ex *Executor) resolveCandidatePlan(
 	ctx context.Context,
 	tool *config.Tool,
 	method *config.MethodCandidate,
-	adapter Adapter,
+	adapter AdapterV2,
 	intent *plan.ResolvedInstallPlan,
 	displayKind string,
 ) (*plan.ResolvedInstallPlan, error) {
 	if intent == nil {
 		return nil, nil
 	}
-	resolver, ok := adapter.(AdapterV2)
-	if !ok {
-		return intent, nil
-	}
-	resolved, err := resolver.ResolvePlan(ctx, ex.probeRunner(tool.Name, displayKind), tool, method, intent)
+	resolved, err := adapter.ResolvePlan(ctx, ex.probeRunner(tool.Name, displayKind), tool, method, intent)
 	if err != nil {
 		return intent, fmt.Errorf("%s: resolve plan: %w", displayKind, err)
 	}

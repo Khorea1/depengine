@@ -32,7 +32,7 @@ func WindowsAdapters() []AdapterV2 {
 	}
 }
 
-// winAdapter implements Adapter for a Windows package manager (scoop, choco).
+// winAdapter implements AdapterV2 for a Windows package manager (scoop, choco).
 // Commands use "{pkg}" as a placeholder for the package name from Tool or config.
 type winAdapter struct {
 	kind, binary                    string
@@ -325,6 +325,5 @@ func (w *winAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidat
 }
 
 // Compile-time interface checks.
-var _ Adapter = (*winAdapter)(nil)
 var _ AdapterV2 = (*winAdapter)(nil)
 var _ Versioner = (*winAdapter)(nil)

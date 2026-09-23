@@ -23,7 +23,7 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// GitAdapter implements exec.Adapter for git-based installations.
+// GitAdapter implements exec.AdapterV2 for git-based installations.
 type GitAdapter struct{}
 
 // NewGitAdapter creates a GitAdapter.
@@ -604,7 +604,7 @@ func managedPaths(mc *config.MethodCandidate) ([]string, error) {
 // support automated removal.
 func (a *GitAdapter) CanRemove() bool { return true }
 
-// Ensure GitAdapter implements exec.Adapter at compile time.
+// Ensure GitAdapter implements exec.AdapterV2 at compile time.
 // CheckAvailable assumes availability: git remotes have no cheap local
 // index to probe, so an unreachable repository surfaces at clone time.
 func (a *GitAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
@@ -617,5 +617,4 @@ func (a *GitAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidat
 	return nil
 }
 
-var _ exec.Adapter = (*GitAdapter)(nil)
 var _ exec.AdapterV2 = (*GitAdapter)(nil)

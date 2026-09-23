@@ -75,7 +75,7 @@ func (a *executorAdapterV2Double) CheckHostCompatibility(*config.Tool, *config.M
 
 var _ AdapterV2 = (*executorAdapterV2Double)(nil)
 
-func v2ExecutorAttempt(t *testing.T, adapter Adapter) ToolResult {
+func v2ExecutorAttempt(t *testing.T, adapter AdapterV2) ToolResult {
 	t.Helper()
 	ex := New()
 	WithRunner(&run.FakeRunner{})(ex)
@@ -194,7 +194,7 @@ func TestExecutorLegacyAdapterStillUsesCheck(t *testing.T) {
 	}
 }
 
-func explainAdapterAttempt(t *testing.T, adapter Adapter) MethodAttempt {
+func explainAdapterAttempt(t *testing.T, adapter AdapterV2) MethodAttempt {
 	t.Helper()
 	ex := New()
 	WithRunner(&run.FakeRunner{})(ex)

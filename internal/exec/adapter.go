@@ -12,9 +12,9 @@
 //	  │     ├─ 2a. For each method (in method_order):
 //	  │     │      ├─ when matches?           → skip
 //	  │     │      ├─ adapter.Available()?    → no → skip
-//	  │     │      ├─ adapter Observe()/Check() says present? → yes → skip
-//	  │     │      ├─ adapter.Install()       → ok  → SUCCESS
-//	  │     │      └─ Install() failed        → try next method
+//	  │     │      ├─ adapter.Observe() says present? → yes → skip
+//	  │     │      ├─ adapter.InstallResolved() → ok → SUCCESS
+//	  │     │      └─ InstallResolved() failed  → try next method
 //	  │     │
 //	  │     ├─ 2b. If any method succeeded → run postinstall (if any)
 //	  │     └─ 2c. If all failed            → log error, CONTINUE
@@ -36,46 +36,19 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// Adapter is the legacy contract that every method backend (native, cargo,
-// git, http, …) implements. It is superseded by AdapterV2, which folds in
-// plan resolution, observation, resolved installation, removal,
-// availability, and host compatibility. Adapter remains only until the
-// cutover removes the legacy dispatch paths; new code must use AdapterV2.
-type Adapter interface {
-	// Kind returns the method identifier: "native", "cargo", "git", …
-	// Must be a stable value; used as the registry key.
-	Kind() string
-
-	// Available reports whether the runtime/binary for this adapter
-	// exists on the current system. For native: which apt/pacman/etc.
-	// For cargo: which cargo. Must be cheap (one subprocess).
-	Available(ctx context.Context, rn run.Runner) bool
-
-	// Check reports whether the tool managed by this adapter is already
-	// installed. Uses the adapter's check command (e.g. dpkg -s,
-	// cargo install --list | grep). Exit 0 → installed.
-	Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool
-
-	// Install runs the installation command for this method. Returns
-	// nil on success, an error describing what went wrong on failure.
-	// The executor handles fallback when Install fails.
-	Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error
-}
-
 // AdapterV2 is the plan-aware adapter seam: the single contract every method
 // backend (native, cargo, git, http, …) implements. The executor is generic —
 // it only knows this interface and never imports adapter packages directly.
 //
-// Besides the legacy Kind/Available/Check/Install entry points (retained as
-// adapter-level primitives consumed by Observe and InstallResolved), every
-// adapter provides plan resolution (ResolvePlan), presence observation
+// Every adapter provides plan resolution (ResolvePlan), presence observation
 // (Observe), resolved-plan execution (InstallResolved), removal
 // (Remove/CanRemove), repository availability (CheckAvailable), and host
 // compatibility (CheckHostCompatibility). There are no optional capability
 // interfaces: uniformity is what lets dry-run, why, and install agree on
 // one resolution path per candidate.
 type AdapterV2 interface {
-	Adapter
+	Kind() string
+	Available(ctx context.Context, rn run.Runner) bool
 	ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error)
 	Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error)
 	InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error
@@ -114,13 +87,9 @@ type ElevationRequirer interface {
 }
 
 // checkAvailable consults the adapter's CheckAvailable. Adapters that
-// predate the AdapterV2 cutover are assumed available, preserving legacy
-// behavior until the legacy dispatch paths are removed.
-func checkAvailable(ctx context.Context, rn run.Runner, adapter Adapter, tool *config.Tool, mc *config.MethodCandidate) bool {
-	if v2, ok := adapter.(AdapterV2); ok {
-		return v2.CheckAvailable(ctx, rn, tool, mc)
-	}
-	return true
+// Every registered adapter must implement this package-availability probe.
+func checkAvailable(ctx context.Context, rn run.Runner, adapter AdapterV2, tool *config.Tool, mc *config.MethodCandidate) bool {
+	return adapter.CheckAvailable(ctx, rn, tool, mc)
 }
 
 // SubstitutePkg replaces "{pkg}" in cmd with the package name from

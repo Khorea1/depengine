@@ -15,6 +15,7 @@ import (
 )
 
 type countingAdapter struct {
+	v2TestStub
 	mu     sync.Mutex
 	checks map[string]int
 }
@@ -27,6 +28,16 @@ func (a *countingAdapter) Check(_ context.Context, _ run.Runner, tool *config.To
 	a.checks[tool.Name]++
 	return false
 }
+func (a *countingAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if a.Check(ctx, rn, tool, mc) {
+		return plan.Observation{Presence: plan.PresencePresent}, nil
+	}
+	return plan.Observation{Presence: plan.PresenceAbsent}, nil
+}
+func (a *countingAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, _ *plan.ResolvedInstallPlan) error {
+	return a.Install(ctx, rn, tool, mc)
+}
+
 func (a *countingAdapter) Install(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
 	return nil
 }

@@ -863,6 +863,11 @@ type cancelSignallingAdapter struct {
 	entered chan struct{}
 }
 
+func (m *cancelSignallingAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, _ *plan.ResolvedInstallPlan) error {
+	close(m.entered)
+	return m.blockingMockAdapter.Install(ctx, nil, tool, mc)
+}
+
 func (m *cancelSignallingAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	close(m.entered)
 	return m.blockingMockAdapter.Install(ctx, rn, tool, mc)

@@ -15,7 +15,7 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// NativeAdapter wraps internal/native to implement the Adapter interface.
+// NativeAdapter wraps internal/native to implement the AdapterV2 interface.
 // It auto-detects the distro clan on first use by probing each known
 // native manager binary. This avoids needing the clan at construction.
 //
@@ -665,13 +665,9 @@ func validateNativeResolvedInstallOperation(adapter string, resolved *plan.Resol
 }
 
 // Compile-time interface checks.
-var _ Adapter = (*NativeAdapter)(nil)
 var _ AdapterV2 = (*NativeAdapter)(nil)
-var _ Adapter = (*NativeByManagerAdapter)(nil)
 var _ AdapterV2 = (*NativeByManagerAdapter)(nil)
 var _ Versioner = (*NativeByManagerAdapter)(nil)
-var _ AdapterV2 = (*NativeAdapter)(nil)
-var _ AdapterV2 = (*NativeByManagerAdapter)(nil)
 
 // replaceManagerBinary replaces the binary name in a native manager command
 // with the actual binary name (e.g. "dnf5" instead of "dnf"). This handles

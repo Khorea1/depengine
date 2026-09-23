@@ -9,19 +9,27 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/graph"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
 // MockAdapter is a fully configurable adapter for testing the executor.
 // Each call is recorded in Calls for assertion.
 type MockAdapter struct {
-	KindValue     string
-	AvailableFunc func() bool
-	CheckFunc     func(tool string) bool
-	InstallFunc   func(tool string) error
-	Calls         []MockCall
+	KindValue           string
+	AvailableFunc       func() bool
+	CheckFunc           func(tool string) bool
+	InstallFunc         func(tool string) error
+	ResolvePlanFunc     func(tool *config.Tool, method *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error)
+	ObserveFunc         func(tool *config.Tool, method *config.MethodCandidate) (plan.Observation, error)
+	InstallResolvedFunc func(tool *config.Tool, method *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error
+	CheckAvailableFunc  func(tool string) bool
+	RemoveFunc          func(tool string) error
+	CanRemoveValue      bool
+	Calls               []MockCall
 }
 
 // MockCall records one adapter invocation.
@@ -96,7 +104,7 @@ func MockMethod(kind string, when *config.Condition) *config.MethodCandidate {
 	}
 }
 
-// --- MockAdapter implements exec.Adapter ---
+// --- MockAdapter implements exec.AdapterV2 ---
 
 func (m *MockAdapter) Kind() string { return m.KindValue }
 
@@ -124,8 +132,54 @@ func (m *MockAdapter) Install(_ context.Context, _ run.Runner, tool *config.Tool
 	return nil
 }
 
-// Ensure MockAdapter implements exec.Adapter at compile time.
-var _ exec.Adapter = (*MockAdapter)(nil)
+// Ensure MockAdapter implements exec.AdapterV2 at compile time.
+func (m *MockAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, method *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if m.ResolvePlanFunc != nil {
+		return m.ResolvePlanFunc(tool, method, intent)
+	}
+	if intent == nil {
+		return nil, fmt.Errorf("nil plan intent")
+	}
+	resolved := intent.Clone()
+	return &resolved, nil
+}
+func (m *MockAdapter) Observe(_ context.Context, _ run.Runner, tool *config.Tool, method *config.MethodCandidate) (plan.Observation, error) {
+	if m.ObserveFunc != nil {
+		return m.ObserveFunc(tool, method)
+	}
+	if m.CheckFunc != nil && m.CheckFunc(tool.Name) {
+		return plan.Observation{Presence: plan.PresencePresent}, nil
+	}
+	return plan.Observation{Presence: plan.PresenceAbsent}, nil
+}
+func (m *MockAdapter) InstallResolved(_ context.Context, _ run.Runner, tool *config.Tool, method *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	if m.InstallResolvedFunc != nil {
+		return m.InstallResolvedFunc(tool, method, resolved)
+	}
+	if m.InstallFunc != nil {
+		return m.InstallFunc(tool.Name)
+	}
+	return nil
+}
+
+func (m *MockAdapter) Remove(_ context.Context, _ run.Runner, tool *config.Tool, _ *config.MethodCandidate) error {
+	if m.RemoveFunc != nil {
+		return m.RemoveFunc(tool.Name)
+	}
+	return fmt.Errorf("mock adapter removal unsupported")
+}
+func (m *MockAdapter) CanRemove() bool { return m.CanRemoveValue }
+func (m *MockAdapter) CheckAvailable(_ context.Context, _ run.Runner, tool *config.Tool, _ *config.MethodCandidate) bool {
+	if m.CheckAvailableFunc != nil {
+		return m.CheckAvailableFunc(tool.Name)
+	}
+	return true
+}
+func (*MockAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
+var _ exec.AdapterV2 = (*MockAdapter)(nil)
 
 // --- Schema helpers ---
 
@@ -155,13 +209,13 @@ func MustSort(tools map[string]*config.Tool) [][]string {
 }
 
 // TestAdapterConformance verifies that an adapter satisfies the basic
-// invariants of the exec.Adapter interface. Every adapter package should
+// invariants of the exec.AdapterV2 interface. Every adapter package should
 // call this from its own test:
 //
 //	func TestConformance(t *testing.T) {
 //	    exectest.TestAdapterConformance(t, myadapter.New())
 //	}
-func TestAdapterConformance(t *testing.T, a exec.Adapter) {
+func TestAdapterConformance(t *testing.T, a exec.AdapterV2) {
 	t.Helper()
 
 	t.Run("Kind_stable", func(t *testing.T) {
@@ -182,32 +236,13 @@ func TestAdapterConformance(t *testing.T, a exec.Adapter) {
 		_ = a.Available(ctx, fr)
 	})
 
-	t.Run("Check_no_panic", func(t *testing.T) {
-		ctx := context.Background()
-		fr := &run.FakeRunner{}
-		tool := &config.Tool{Name: "nonexistent-conformance-check"}
-		mc := &config.MethodCandidate{Kind: a.Kind(), Config: map[string]any{}}
-		// Check must never panic with an unknown tool and empty config.
-		_ = a.Check(ctx, fr, tool, mc)
-	})
-
-	t.Run("Install_empty_config_returns_error", func(t *testing.T) {
-		ctx := context.Background()
-		tool := &config.Tool{Name: "nonexistent-conformance-install"}
-		mc := &config.MethodCandidate{Kind: a.Kind(), Config: map[string]any{}}
-		err := a.Install(ctx, &run.FakeRunner{}, tool, mc)
-		if err == nil {
-			t.Error("Install with empty config should return an error")
+	t.Run("Observe_valid_presence", func(t *testing.T) {
+		observation, err := a.Observe(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "conformance"}, &config.MethodCandidate{Kind: a.Kind(), Config: map[string]any{}})
+		if err != nil {
+			t.Errorf("Observe(): %v", err)
 		}
-	})
-
-	t.Run("Install_nil_runner_returns_error", func(t *testing.T) {
-		ctx := context.Background()
-		tool := &config.Tool{Name: "nonexistent-conformance-install-nil"}
-		mc := &config.MethodCandidate{Kind: a.Kind(), Config: map[string]any{}}
-		err := a.Install(ctx, nil, tool, mc)
-		if err == nil {
-			t.Error("Install with nil runner should return an error")
+		if observation.Presence != plan.PresencePresent && observation.Presence != plan.PresenceAbsent && observation.Presence != plan.PresenceUnknown && observation.Presence != plan.PresenceBroken {
+			t.Errorf("invalid presence %q", observation.Presence)
 		}
 	})
 

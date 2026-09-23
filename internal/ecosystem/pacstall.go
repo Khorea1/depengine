@@ -150,7 +150,6 @@ func (a *PacstallAdapter) Remove(context.Context, run.Runner, *config.Tool, *con
 // CanRemove always reports false; see Remove.
 func (a *PacstallAdapter) CanRemove() bool { return false }
 
-var _ exec.Adapter = (*PacstallAdapter)(nil)
 var _ exec.AdapterV2 = (*PacstallAdapter)(nil)
 
 // isElevated reports whether the current process is running with

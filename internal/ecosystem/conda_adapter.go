@@ -14,7 +14,7 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// CondaAdapter implements the Adapter interface for conda packages.
+// CondaAdapter implements exec.AdapterV2 for conda packages.
 type CondaAdapter struct{}
 
 // NewCondaAdapter creates a new CondaAdapter.
@@ -322,6 +322,5 @@ func (a *CondaAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandid
 	return nil
 }
 
-var _ exec.Adapter = (*CondaAdapter)(nil)
 var _ exec.AdapterV2 = (*CondaAdapter)(nil)
 var _ exec.Versioner = (*CondaAdapter)(nil)

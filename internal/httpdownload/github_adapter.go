@@ -10,7 +10,7 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// GitHubAdapter implements exec.Adapter for the "github" method kind: a
+// GitHubAdapter implements exec.AdapterV2 for the "github" method kind: a
 // higher-level alternative to "http" for tools distributed as GitHub
 // release assets, for when the asset filename convention differs per
 // target (arch/os) in a way that isn't expressible as one URL template.
@@ -134,5 +134,4 @@ func (a *GitHubAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool
 	return true
 }
 
-var _ exec.Adapter = (*GitHubAdapter)(nil)
 var _ exec.AdapterV2 = (*GitHubAdapter)(nil)

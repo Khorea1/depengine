@@ -202,8 +202,8 @@ func resolveRemover(toolName string, toolState state.ToolState) (exec.AdapterV2,
 	if methodKind == "" {
 		methodKind = toolState.Method // fallback for explicitly constructed current-format state
 	}
-	adapter, ok := exec.Lookup(methodKind).(exec.AdapterV2)
-	if !ok || adapter == nil {
+	adapter := exec.Lookup(methodKind)
+	if adapter == nil {
 		log.Default.Warn("adapter not found for method", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
 		log.Default.Warn("manual remove required", "tool", toolName)
 		return nil, methodKind, false

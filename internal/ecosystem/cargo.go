@@ -397,6 +397,5 @@ func (a *CargoAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandid
 	return nil
 }
 
-var _ exec.Adapter = (*CargoAdapter)(nil)
 var _ exec.AdapterV2 = (*CargoAdapter)(nil)
 var _ exec.Versioner = (*CargoAdapter)(nil)

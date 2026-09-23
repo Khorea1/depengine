@@ -13,7 +13,7 @@ import (
 	"github.com/Khorea1/depengine/internal/state"
 )
 
-func batchProbeExecutor(adapter Adapter) *Executor {
+func batchProbeExecutor(adapter AdapterV2) *Executor {
 	ex := New()
 	WithRunner(&run.FakeRunner{})(ex)
 	WithAdapters(adapter)(ex)

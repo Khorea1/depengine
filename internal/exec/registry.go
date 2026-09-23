@@ -16,18 +16,18 @@ import (
 // A Registry must not be copied after first use.
 type Registry struct {
 	mu       sync.RWMutex
-	adapters map[string]Adapter
+	adapters map[string]AdapterV2
 }
 
 // NewRegistry returns an empty Registry.
 func NewRegistry() *Registry {
-	return &Registry{adapters: map[string]Adapter{}}
+	return &Registry{adapters: map[string]AdapterV2{}}
 }
 
 // Register inserts an adapter. Panics if a different adapter with the same
 // Kind is already registered (fail-fast on composition conflicts before
 // command execution).
-func (r *Registry) Register(a Adapter) {
+func (r *Registry) Register(a AdapterV2) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if existing, ok := r.adapters[a.Kind()]; ok {
@@ -42,9 +42,9 @@ func (r *Registry) Register(a Adapter) {
 // registered. Callers always check for nil before calling methods:
 //
 //	if ad := exec.Lookup(kind); ad != nil {
-//	    ad.Install(...)
+//	    ad.Kind()
 //	}
-func (r *Registry) Lookup(kind string) Adapter {
+func (r *Registry) Lookup(kind string) AdapterV2 {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.adapters[kind]
@@ -66,17 +66,17 @@ func (r *Registry) Kinds() []string {
 // panic if the kind is already registered — it overwrites the existing
 // entry silently. Use for runtime reconfiguration (e.g. swapping the AUR
 // adapter's helper binary).
-func (r *Registry) Replace(a Adapter) {
+func (r *Registry) Replace(a AdapterV2) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.adapters[a.Kind()] = a
 }
 
 // snapshot returns a copy of the registry contents for Executor seeding.
-func (r *Registry) snapshot() map[string]Adapter {
+func (r *Registry) snapshot() map[string]AdapterV2 {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := make(map[string]Adapter, len(r.adapters))
+	out := make(map[string]AdapterV2, len(r.adapters))
 	for k, a := range r.adapters {
 		out[k] = a
 	}
@@ -97,7 +97,7 @@ var defaultRegistry = NewRegistry()
 // Register inserts an adapter into the default registry. Panics if a
 // different adapter with the same Kind is already registered (fail-fast
 // on composition conflicts before command execution).
-func Register(a Adapter) {
+func Register(a AdapterV2) {
 	defaultRegistry.Register(a)
 }
 
@@ -106,9 +106,9 @@ func Register(a Adapter) {
 // calling methods:
 //
 //	if ad := exec.Lookup(kind); ad != nil {
-//	    ad.Install(...)
+//	    ad.Kind()
 //	}
-func Lookup(kind string) Adapter {
+func Lookup(kind string) AdapterV2 {
 	return defaultRegistry.Lookup(kind)
 }
 
@@ -122,6 +122,6 @@ func RegisteredKinds() []string {
 // Unlike Register, it does not panic if the kind is already registered —
 // it overwrites the existing entry silently. Use for runtime reconfiguration
 // (e.g. swapping the AUR adapter's helper binary).
-func Replace(a Adapter) {
+func Replace(a AdapterV2) {
 	defaultRegistry.Replace(a)
 }

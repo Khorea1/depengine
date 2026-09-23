@@ -343,7 +343,7 @@ func versionToken(tok string) string {
 	return v
 }
 
-// Ensure GoAdapter implements exec.Adapter and exec.Remover.
+// Ensure GoAdapter implements exec.AdapterV2 and exec.Remover.
 // CheckAvailable assumes availability: the Go module proxy has no cheap
 // local index to probe, so an unknown module surfaces at install time.
 func (a *GoAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
@@ -356,5 +356,4 @@ func (a *GoAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate
 	return nil
 }
 
-var _ exec.Adapter = (*GoAdapter)(nil)
 var _ exec.AdapterV2 = (*GoAdapter)(nil)

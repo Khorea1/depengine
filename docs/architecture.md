@@ -55,8 +55,10 @@ adapter registration, and the final exit code. CLI behavior lives in
 
 ## Adapter boundary
 
-Install methods implement `internal/exec.Adapter` and are registered explicitly
-during startup. The executor looks them up by method kind; it does not call
+Install methods implement `internal/exec.AdapterV2` and are registered
+explicitly during startup. Each adapter resolves an intent to a concrete
+`ResolvedInstallPlan`; observation and installation then use that resolved
+identity. The executor looks adapters up by method kind and does not call
 package managers directly.
 
 Tests can supply an isolated registry with `WithAdapters()`. Production uses

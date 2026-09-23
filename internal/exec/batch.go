@@ -74,11 +74,9 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 				resolutions[toolName] = resolution
 				break
 			}
-			if v2, ok := adapter.(AdapterV2); ok {
-				if err := v2.CheckHostCompatibility(tool, method, resolvedPlan, ex.facts, ex.clan); err != nil {
-					resolutions[toolName] = resolution
-					break
-				}
+			if err := adapter.CheckHostCompatibility(tool, method, resolvedPlan, ex.facts, ex.clan); err != nil {
+				resolutions[toolName] = resolution
+				break
 			}
 			presence, ok := ex.batchPresence(ctx, adapter, toolName, tool, method)
 			if !ok {
@@ -111,31 +109,23 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 	return candidates, remaining, resolutions
 }
 
-// batchPresence preserves the legacy boolean Check contract while giving V2
-// adapters their explicit observation semantics. The bool is false for a
-// failed, broken, or invalid V2 observation and makes the caller fall back to
-// serial execution.
-func (ex *Executor) batchPresence(ctx context.Context, adapter Adapter, toolName string, tool *config.Tool, method *config.MethodCandidate) (plan.PresenceState, bool) {
+// batchPresence returns false for a failed, broken, or invalid observation,
+// making the caller fall back to serial execution.
+func (ex *Executor) batchPresence(ctx context.Context, adapter AdapterV2, toolName string, tool *config.Tool, method *config.MethodCandidate) (plan.PresenceState, bool) {
 	if adapter == nil {
 		return "", false
 	}
 	runner := ex.probeRunner(toolName, method.Kind)
-	if observer, ok := adapter.(AdapterV2); ok {
-		observation, err := observer.Observe(ctx, runner, tool, method)
-		if err != nil {
-			return "", false
-		}
-		switch observation.Presence {
-		case plan.PresencePresent, plan.PresenceAbsent, plan.PresenceUnknown:
-			return observation.Presence, true
-		default:
-			return "", false
-		}
+	observation, err := adapter.Observe(ctx, runner, tool, method)
+	if err != nil {
+		return "", false
 	}
-	if adapter.Check(ctx, runner, tool, method) {
-		return plan.PresencePresent, true
+	switch observation.Presence {
+	case plan.PresencePresent, plan.PresenceAbsent, plan.PresenceUnknown:
+		return observation.Presence, true
+	default:
+		return "", false
 	}
-	return plan.PresenceAbsent, true
 }
 
 func displayMethodKind(method *config.MethodCandidate) string {

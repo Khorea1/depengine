@@ -24,11 +24,11 @@ type Executor struct {
 	quiet              bool // suppress per-tool status line output (--quiet)
 	diagnose           bool // show internal decision-making detail (graph levels, etc.) (--diagnose)
 	sortBy             SortField
-	adapters           map[string]Adapter // per-instance adapter registry
-	logger             *slog.Logger       // structured logger; nil = no structured output
-	outWriter          io.Writer          // user-facing formatted output; defaults to os.Stderr
-	maxJobs            int                // max concurrent tools; 0 or 1 = sequential (default)
-	allowArbitraryCode bool               // if false, warn about dangerous methods (build scripts, etc.)
+	adapters           map[string]AdapterV2 // per-instance adapter registry
+	logger             *slog.Logger         // structured logger; nil = no structured output
+	outWriter          io.Writer            // user-facing formatted output; defaults to os.Stderr
+	maxJobs            int                  // max concurrent tools; 0 or 1 = sequential (default)
+	allowArbitraryCode bool                 // if false, warn about dangerous methods (build scripts, etc.)
 
 	batchTimeout time.Duration // per-batch timeout, scaled by package count
 
@@ -169,10 +169,10 @@ func WithOutput(w io.Writer) Option {
 // registry. Each adapter is stored by its Kind(). Duplicate kinds
 // are silently overwritten — the last one wins (explicit construction
 // overrides global registrations from the composition root).
-func WithAdapters(adapters ...Adapter) Option {
+func WithAdapters(adapters ...AdapterV2) Option {
 	return func(e *Executor) {
 		if e.adapters == nil {
-			e.adapters = make(map[string]Adapter, len(adapters))
+			e.adapters = make(map[string]AdapterV2, len(adapters))
 		}
 		for _, a := range adapters {
 			if a != nil {
@@ -208,7 +208,7 @@ func New() *Executor {
 		toolTimeout:        5 * time.Minute,
 		methodTimeout:      2 * time.Minute,
 		maxJobs:            1,
-		adapters:           make(map[string]Adapter),
+		adapters:           make(map[string]AdapterV2),
 		outWriter:          os.Stderr,
 		defaultMethodOrder: config.DefaultMethodOrder,
 		color:              shouldUseColor(),
@@ -224,12 +224,12 @@ func New() *Executor {
 
 // LookupAdapter returns the adapter for the given kind from the executor's
 // per-instance registry. Returns nil if no adapter is registered for that kind.
-func (ex *Executor) LookupAdapter(kind string) Adapter {
+func (ex *Executor) LookupAdapter(kind string) AdapterV2 {
 	return ex.adapters[kind]
 }
 
 // probeRunner returns ex.rn tagged as a probe for the given tool/method, so
-// that Available()/Check() calls — which routinely "fail" (exit non-zero)
+// that Available()/Observe() calls — which routinely "fail" (exit non-zero)
 // simply to report "not installed yet" / "not on PATH" — log at DEBUG
 // instead of WARN. Real install attempts go through ex.rn untagged (or
 // tagged Probe: false) and keep full WARN visibility on failure. Falls back

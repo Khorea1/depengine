@@ -194,6 +194,5 @@ func (a *SDKManAdapter) Remove(context.Context, run.Runner, *config.Tool, *confi
 // CanRemove always reports false; see Remove.
 func (a *SDKManAdapter) CanRemove() bool { return false }
 
-var _ exec.Adapter = (*SDKManAdapter)(nil)
 var _ exec.AdapterV2 = (*SDKManAdapter)(nil)
 var _ exec.Versioner = (*SDKManAdapter)(nil)

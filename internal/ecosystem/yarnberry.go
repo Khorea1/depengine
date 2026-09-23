@@ -165,5 +165,4 @@ func (a *YarnBerryAdapter) Remove(context.Context, run.Runner, *config.Tool, *co
 // CanRemove always reports false; see Remove.
 func (a *YarnBerryAdapter) CanRemove() bool { return false }
 
-var _ exec.Adapter = (*YarnBerryAdapter)(nil)
 var _ exec.AdapterV2 = (*YarnBerryAdapter)(nil)

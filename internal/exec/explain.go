@@ -129,51 +129,42 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 		}
 		attempt.PlanIntent = resolvedPlan
 
-		if checker, ok := adapter.(AdapterV2); ok {
-			if compatibilityErr := checker.CheckHostCompatibility(tool, method, resolvedPlan, ex.facts, clan); compatibilityErr != nil {
-				attempt.Status = "skip_unavailable"
-				attempt.Error = compatibilityErr.Error()
-				appendAttempt(attempt, method)
-				continue
-			}
+		if compatibilityErr := adapter.CheckHostCompatibility(tool, method, resolvedPlan, ex.facts, clan); compatibilityErr != nil {
+			attempt.Status = "skip_unavailable"
+			attempt.Error = compatibilityErr.Error()
+			appendAttempt(attempt, method)
+			continue
 		}
 
 		// Check whether observation reports the target already installed.
 		probe := ex.probeRunner(tool.Name, displayKind)
-		if observer, ok := adapter.(AdapterV2); ok {
-			observation, observeErr := observer.Observe(ctx, probe, tool, methodForResolvedTarget(method, resolvedPlan))
-			if observeErr != nil {
-				attempt.Status = "failed"
-				attempt.Error = fmt.Sprintf("%s: observe presence: %s", displayKind, run.RedactSensitiveText(observeErr.Error()))
-				appendAttempt(attempt, method)
-				continue
-			}
-			switch observation.Presence {
-			case plan.PresencePresent:
-				attempt.Status = "already_installed"
-				attempt.Error = "presence probe passed — tool appears to be installed"
-				appendAttempt(attempt, method)
-				continue
-			case plan.PresenceAbsent, plan.PresenceUnknown:
-				// Neither state establishes that the candidate is installed.
-			case plan.PresenceBroken:
-				detail := observation.Detail
-				if detail == "" {
-					detail = "presence observation is broken"
-				}
-				attempt.Status = "failed"
-				attempt.Error = fmt.Sprintf("%s: %s", displayKind, run.RedactSensitiveText(detail))
-				appendAttempt(attempt, method)
-				continue
-			default:
-				attempt.Status = "failed"
-				attempt.Error = fmt.Sprintf("%s: invalid presence observation %q", displayKind, observation.Presence)
-				appendAttempt(attempt, method)
-				continue
-			}
-		} else if adapter.Check(ctx, probe, tool, methodForResolvedTarget(method, resolvedPlan)) {
+		observation, observeErr := adapter.Observe(ctx, probe, tool, methodForResolvedTarget(method, resolvedPlan))
+		if observeErr != nil {
+			attempt.Status = "failed"
+			attempt.Error = fmt.Sprintf("%s: observe presence: %s", displayKind, run.RedactSensitiveText(observeErr.Error()))
+			appendAttempt(attempt, method)
+			continue
+		}
+		switch observation.Presence {
+		case plan.PresencePresent:
 			attempt.Status = "already_installed"
-			attempt.Error = "check passed — tool appears to be installed"
+			attempt.Error = "presence probe passed — tool appears to be installed"
+			appendAttempt(attempt, method)
+			continue
+		case plan.PresenceAbsent, plan.PresenceUnknown:
+			// Neither state establishes that the candidate is installed.
+		case plan.PresenceBroken:
+			detail := observation.Detail
+			if detail == "" {
+				detail = "presence observation is broken"
+			}
+			attempt.Status = "failed"
+			attempt.Error = fmt.Sprintf("%s: %s", displayKind, run.RedactSensitiveText(detail))
+			appendAttempt(attempt, method)
+			continue
+		default:
+			attempt.Status = "failed"
+			attempt.Error = fmt.Sprintf("%s: invalid presence observation %q", displayKind, observation.Presence)
 			appendAttempt(attempt, method)
 			continue
 		}
@@ -277,16 +268,11 @@ func (ex *Executor) CheckInstalled(ctx context.Context, tool *config.Tool, clan 
 		if err != nil {
 			continue
 		}
-		if observer, ok := adapter.(AdapterV2); ok {
-			observation, err := observer.Observe(ctx, probe, tool, methodForResolvedTarget(method, resolved))
-			if err == nil && observation.Presence == plan.PresencePresent {
-				return method.Kind, true
-			}
-			continue
-		}
-		if adapter.Check(ctx, probe, tool, methodForResolvedTarget(method, resolved)) {
+		observation, err := adapter.Observe(ctx, probe, tool, methodForResolvedTarget(method, resolved))
+		if err == nil && observation.Presence == plan.PresencePresent {
 			return method.Kind, true
 		}
+		continue
 	}
 	return "", false
 }

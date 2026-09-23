@@ -257,8 +257,8 @@ func removeUndoTools(ctx context.Context, toRemove []string, curState *state.Sta
 
 		methodKind := resolveUndoMethodKind(toolState)
 
-		adapter, ok := exec.Lookup(methodKind).(exec.AdapterV2)
-		if !ok || adapter == nil {
+		adapter := exec.Lookup(methodKind)
+		if adapter == nil {
 			log.Default.Warn("adapter not found — manual removal may be needed", "tool", name, "method", toolState.Method, "methodKind", methodKind)
 			hadFailure = true
 			continue

@@ -20,7 +20,7 @@ import (
 // sudo_required at all.
 const appImageDesktopDir = "~/.local/share/applications"
 
-// AppImageAdapter implements exec.Adapter for the "appimage" method kind:
+// AppImageAdapter implements exec.AdapterV2 for the "appimage" method kind:
 // resolves a URL exactly like "http" does ({latest}/{version}/{arch}/{os}
 // placeholders, checksum verification, retry/cache), then does the
 // AppImage-specific part HTTPAdapter doesn't know about — installing under
@@ -252,5 +252,4 @@ func (a *AppImageAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCan
 	return nil
 }
 
-var _ exec.Adapter = (*AppImageAdapter)(nil)
 var _ exec.AdapterV2 = (*AppImageAdapter)(nil)

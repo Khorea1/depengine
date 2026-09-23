@@ -13,7 +13,7 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// AsdfAdapter implements the Adapter interface for asdf/mise packages.
+// AsdfAdapter implements exec.AdapterV2 for asdf/mise packages.
 type AsdfAdapter struct{}
 
 // NewAsdfAdapter creates a new AsdfAdapter.
@@ -272,5 +272,4 @@ func (a *AsdfAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandida
 	return nil
 }
 
-var _ exec.Adapter = (*AsdfAdapter)(nil)
 var _ exec.AdapterV2 = (*AsdfAdapter)(nil)

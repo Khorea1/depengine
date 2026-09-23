@@ -20,7 +20,7 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// ContainerAdapter implements exec.Adapter for container-image installs.
+// ContainerAdapter implements exec.AdapterV2 for container-image installs.
 type ContainerAdapter struct{}
 
 // NewContainerAdapter creates a ContainerAdapter.
@@ -282,5 +282,4 @@ func (a *ContainerAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCa
 	return nil
 }
 
-var _ exec.Adapter = (*ContainerAdapter)(nil)
 var _ exec.AdapterV2 = (*ContainerAdapter)(nil)

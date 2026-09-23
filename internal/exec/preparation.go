@@ -397,7 +397,7 @@ func (ex *Executor) preparationRecoveryNeedsElevation() bool {
 	return false
 }
 
-func (ex *Executor) recoveryCandidate(key string) (*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, Adapter, error) {
+func (ex *Executor) recoveryCandidate(key string) (*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, AdapterV2, error) {
 	toolName, methodKind, err := candidatePreparationSubject(key)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -447,31 +447,19 @@ func (ex *Executor) recoveryCandidate(key string) (*config.Tool, *config.MethodC
 // version is authoritative only when Observe or a Versioner probe returns it.
 // Other identity dimensions remain unverifiable, which deliberately leaves
 // the committing journal blocked rather than guessing.
-func (ex *Executor) observeRecoveryCandidate(ctx context.Context, tool *config.Tool, method *config.MethodCandidate, intent *plan.ResolvedInstallPlan, adapter Adapter) plan.Observation {
+func (ex *Executor) observeRecoveryCandidate(ctx context.Context, tool *config.Tool, method *config.MethodCandidate, intent *plan.ResolvedInstallPlan, adapter AdapterV2) plan.Observation {
 	probeCtx, cancel := context.WithTimeout(ctx, ex.methodTimeout)
 	defer cancel()
 	runner := ex.probeRunner(tool.Name, method.Kind)
 	var observation plan.Observation
-	if observer, ok := adapter.(AdapterV2); ok {
-		var err error
-		observation, err = observer.Observe(probeCtx, runner, tool, methodForResolvedTarget(method, intent))
-		if err != nil {
-			return plan.Observation{
-				Presence: plan.PresenceBroken,
-				Detail:   "observe recovery candidate failed: " + run.RedactSensitiveText(err.Error()),
-			}
-		}
-	} else {
-		if !adapter.Check(probeCtx, runner, tool, methodForResolvedTarget(method, intent)) {
-			return plan.Observation{Presence: plan.PresenceAbsent}
-		}
-		observation.Presence = plan.PresencePresent
-		if intent.Identity.Package != "" {
-			observation.Identity.Package = intent.Identity.Package
-			observation.KnownFields = append(observation.KnownFields, plan.FieldPackage)
+	var err error
+	observation, err = adapter.Observe(probeCtx, runner, tool, methodForResolvedTarget(method, intent))
+	if err != nil {
+		return plan.Observation{
+			Presence: plan.PresenceBroken,
+			Detail:   "observe recovery candidate failed: " + run.RedactSensitiveText(err.Error()),
 		}
 	}
-
 	if observation.Presence == plan.PresencePresent && intent.Identity.Version != "" && !containsIdentityField(observation.KnownFields, plan.FieldVersion) {
 		if versioner, ok := adapter.(Versioner); ok {
 			versionCtx, versionCancel := context.WithTimeout(ctx, versionProbeTimeout)

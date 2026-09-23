@@ -27,7 +27,7 @@ Work on the current execution model comes before adding more installer types.
 
 ## P1: AdapterV2 cleanup
 
-- [ ] Remove the legacy `Adapter` contract from `AdapterV2` once all remaining
+- [x] Remove the legacy `Adapter` contract from `AdapterV2` once all remaining
   adapters use the resolved-plan model.
 - [ ] Finish shared desired-state observation across install, upgrade, status,
   remove, validation, explanation, and dry-run.

@@ -119,5 +119,4 @@ func (a *SteamCMDAdapter) Remove(context.Context, run.Runner, *config.Tool, *con
 // CanRemove always reports false; see Remove.
 func (a *SteamCMDAdapter) CanRemove() bool { return false }
 
-var _ exec.Adapter = (*SteamCMDAdapter)(nil)
 var _ exec.AdapterV2 = (*SteamCMDAdapter)(nil)

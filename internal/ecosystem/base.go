@@ -2,7 +2,7 @@
 // uv, aur). Each adapter follows the same pattern — native PATH availability,
 // a package query for checks, and a package install command.
 //
-// The BaseAdapter struct implements exec.Adapter generically; each concrete
+// The BaseAdapter struct implements exec.AdapterV2 generically; each concrete
 // adapter is just a BaseConfig + registration. See the registry.go file
 // for the mapping of method names to adapters.
 package ecosystem
@@ -62,7 +62,7 @@ type BaseConfig struct {
 // CheckOutputMatcher reports whether command output confirms pkg is installed.
 type CheckOutputMatcher func(output, pkg string) bool
 
-// BaseAdapter implements exec.Adapter for a BaseConfig.
+// BaseAdapter implements exec.AdapterV2 for a BaseConfig.
 type BaseAdapter struct {
 	config BaseConfig
 }

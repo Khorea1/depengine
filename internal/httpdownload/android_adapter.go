@@ -21,7 +21,7 @@ import (
 // keeps Check() simple — the same stable filename every re-run looks for.
 const androidAPKDir = "~/.cache/depengine/android-apks"
 
-// AndroidAdapter implements exec.Adapter for the "android" method kind:
+// AndroidAdapter implements exec.AdapterV2 for the "android" method kind:
 // resolves a URL exactly like "http"/"appimage" do ({latest}/{version}
 // placeholders, checksum verification, retry/cache) via HTTPAdapter, then
 // does the one thing HTTPAdapter can't: hand the downloaded .apk to
@@ -189,5 +189,4 @@ func (a *AndroidAdapter) Remove(context.Context, run.Runner, *config.Tool, *conf
 // CanRemove always reports false; see Remove.
 func (a *AndroidAdapter) CanRemove() bool { return false }
 
-var _ exec.Adapter = (*AndroidAdapter)(nil)
 var _ exec.AdapterV2 = (*AndroidAdapter)(nil)

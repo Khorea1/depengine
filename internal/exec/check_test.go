@@ -19,16 +19,16 @@ func (a *checkAvailabilityTracker) CheckAvailable(context.Context, run.Runner, *
 	return true
 }
 
-type legacyCheckProbe struct{ calls int }
-
-func (*legacyCheckProbe) Kind() string                               { return "legacy" }
-func (*legacyCheckProbe) Available(context.Context, run.Runner) bool { return true }
-func (a *legacyCheckProbe) Check(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
-	a.calls++
-	return true
+type observationProbe struct {
+	v2TestStub
+	calls int
 }
-func (*legacyCheckProbe) Install(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
-	return nil
+
+func (*observationProbe) Kind() string                               { return "observed" }
+func (*observationProbe) Available(context.Context, run.Runner) bool { return true }
+func (a *observationProbe) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
+	a.calls++
+	return plan.Observation{Presence: plan.PresencePresent}, nil
 }
 
 func TestCheckInstalledResolvesAndObservesWithoutInstallProbes(t *testing.T) {
@@ -113,14 +113,14 @@ func TestCheckInstalledDoesNotProbeInstallAvailability(t *testing.T) {
 	}
 }
 
-func TestCheckInstalledRetainsLegacyAdapterCheck(t *testing.T) {
-	adapter := &legacyCheckProbe{}
+func TestCheckInstalledUsesAdapterObservation(t *testing.T) {
+	adapter := &observationProbe{}
 	ex := New()
 	WithAdapters(adapter)(ex)
-	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{{Kind: "legacy"}}}
+	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{{Kind: "observed"}}}
 
 	kind, installed := ex.CheckInstalled(context.Background(), tool, "", true)
-	if !installed || kind != "legacy" || adapter.calls != 1 {
-		t.Fatalf("CheckInstalled() = %q, %v with %d Check calls; want legacy, true, 1", kind, installed, adapter.calls)
+	if !installed || kind != "observed" || adapter.calls != 1 {
+		t.Fatalf("CheckInstalled() = %q, %v with %d Observe calls; want observed, true, 1", kind, installed, adapter.calls)
 	}
 }

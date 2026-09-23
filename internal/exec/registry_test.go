@@ -4,23 +4,19 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// mockAdapter is a minimal adapter for testing the registry.
+// mockAdapter is a minimal AdapterV2 for testing the registry.
 type mockAdapter struct {
+	v2TestStub
 	kindValue string
 }
 
-func (m *mockAdapter) Kind() string                               { return m.kindValue }
-func (m *mockAdapter) Available(context.Context, run.Runner) bool { return true }
-func (m *mockAdapter) Check(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
-	return false
-}
-func (m *mockAdapter) Install(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
-	return nil
-}
+var _ AdapterV2 = (*mockAdapter)(nil)
+
+func (*mockAdapter) Available(context.Context, run.Runner) bool { return true }
+func (m *mockAdapter) Kind() string                             { return m.kindValue }
 
 func TestRegisterAndLookup(t *testing.T) {
 	r := NewRegistry()

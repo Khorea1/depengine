@@ -126,7 +126,7 @@ func (a *AURAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Too
 	return run.CheckResult(res, "aur: remove")
 }
 
-// Ensure AURAdapter implements exec.Adapter and exec.Remover at compile time.
+// Ensure AURAdapter implements exec.AdapterV2 and exec.Remover at compile time.
 // CheckAvailable assumes availability: AUR helpers resolve names against
 // the AUR at install time, so an unknown package surfaces there.
 func (a *AURAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
@@ -139,5 +139,4 @@ func (a *AURAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidat
 	return nil
 }
 
-var _ exec.Adapter = (*AURAdapter)(nil)
 var _ exec.AdapterV2 = (*AURAdapter)(nil)

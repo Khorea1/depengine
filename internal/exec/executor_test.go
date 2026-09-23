@@ -103,6 +103,7 @@ var _ AdapterV2 = (*testMockAdapter)(nil)
 // blockingMockAdapter is an adapter whose Install blocks until the context is
 // cancelled or a value is sent on block. Used to test timeout behavior.
 type blockingMockAdapter struct {
+	v2TestStub
 	kindValue     string
 	availableFunc func() bool
 	checkFunc     func(string) bool
@@ -122,6 +123,16 @@ func (m *blockingMockAdapter) Check(ctx context.Context, rn run.Runner, tool *co
 	}
 	return false
 }
+func (m *blockingMockAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if m.Check(ctx, rn, tool, mc) {
+		return plan.Observation{Presence: plan.PresencePresent}, nil
+	}
+	return plan.Observation{Presence: plan.PresenceAbsent}, nil
+}
+func (m *blockingMockAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, _ *plan.ResolvedInstallPlan) error {
+	return m.Install(ctx, rn, tool, mc)
+}
+
 func (m *blockingMockAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	select {
 	case <-m.block:
@@ -2145,6 +2156,7 @@ func TestToolTimeout(t *testing.T) {
 // --- Method ordering tests ---
 
 type orderTrackingAdapter struct {
+	v2TestStub
 	kindValue    string
 	attemptOrder *[]string // shared slice to record attempts
 }
@@ -2153,6 +2165,9 @@ func (m *orderTrackingAdapter) Kind() string                                    
 func (m *orderTrackingAdapter) Available(ctx context.Context, rn run.Runner) bool { return true }
 func (m *orderTrackingAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	return false
+}
+func (m *orderTrackingAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, _ *plan.ResolvedInstallPlan) error {
+	return m.Install(ctx, rn, tool, mc)
 }
 func (m *orderTrackingAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	*m.attemptOrder = append(*m.attemptOrder, m.kindValue)

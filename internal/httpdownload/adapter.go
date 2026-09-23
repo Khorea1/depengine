@@ -22,7 +22,7 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// HTTPAdapter implements exec.Adapter for HTTP(S) downloads.
+// HTTPAdapter implements exec.AdapterV2 for HTTP(S) downloads.
 // Supports archive extraction, checksum verification, and {latest}
 // resolution via GitHub releases API.
 type HTTPAdapter struct{}
@@ -558,14 +558,13 @@ func (a *HTTPAdapter) fetchChecksumFromURL(ctx context.Context, rn run.Runner, c
 	return hash, nil
 }
 
-// Ensure HTTPAdapter implements exec.Adapter.
+// Ensure HTTPAdapter implements exec.AdapterV2.
 // CheckAvailable assumes availability: download URLs have no cheap local
 // index to probe, so an unreachable artifact surfaces at download time.
 func (a *HTTPAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
 	return true
 }
 
-var _ exec.Adapter = (*HTTPAdapter)(nil)
 var _ exec.AdapterV2 = (*HTTPAdapter)(nil)
 
 // isSharedDir checks if a directory path is a common shared system directory.
