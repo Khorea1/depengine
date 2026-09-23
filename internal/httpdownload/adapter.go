@@ -277,8 +277,14 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 	tmpFile := tmpDir + "/" + fileName
 
 	// --- Download cache ---
-	// Check if the file is already cached by its resolved URL.
-	cachedPath := downloadcache.Lookup(resolvedURL)
+	// Authenticated artifacts bypass the URL-only cache. The same URL may
+	// resolve to different content for different credentials, and the secret
+	// value must never become part of a cache key.
+	cacheEnabled := mc == nil || mc.SecretRef == nil
+	cachedPath := ""
+	if cacheEnabled {
+		cachedPath = downloadcache.Lookup(resolvedURL)
+	}
 	fromCache := false
 
 	if cachedPath != "" {
@@ -367,9 +373,11 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 	// Store in cache after extraction (Store may move tmpFile via os.Rename).
 	// Re-storing a cache hit is intentional: checksum recovery may have removed
 	// the stale entry and downloaded a fresh copy while fromCache remains true.
-	if _, err := downloadcache.Store(resolvedURL, tmpFile); err != nil {
-		// Cache write failure is non-fatal; the install continues.
-		log.Default.Warn("cache write failed", "error", err, "url", resolvedURL)
+	if cacheEnabled {
+		if _, err := downloadcache.Store(resolvedURL, tmpFile); err != nil {
+			// Cache write failure is non-fatal; the install continues.
+			log.Default.Warn("cache write failed", "error", err, "url", resolvedURL)
+		}
 	}
 
 	return nil

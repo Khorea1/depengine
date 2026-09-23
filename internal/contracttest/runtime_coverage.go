@@ -57,6 +57,7 @@ func init() {
 		"msi.publisher":        {Consumer: "internal/msi/adapter_v2_test.go", Rationale: "verification looks up the configured publisher"},
 	})
 	registerRuntimeFields(PhaseResolveRuntime, "http", "internal/httpdownload/resolved_install_test.go", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
+	registerRuntimeFields(PhaseResolveRuntime, "http", "internal/planner/resolve_effect_test.go", "static planning projects the typed secret reference into the candidate plan without resolving its value", "secret_ref")
 	registerRuntimeFields(PhaseResolveRuntime, "github", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "appimage", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "android", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
@@ -65,6 +66,7 @@ func init() {
 
 	common := []string{"checksum", "checksum_url", "checksum_file_format", "signature_url", "signing_key"}
 	registerRuntimeFields(PhaseExecute, "http", "internal/httpdownload/resolved_install_test.go", "resolved metadata is consumed by the shared HTTP installer", append(common, "url", "repo", "asset", "extract_to", "binary", "entrypoints", "link_dir", "sudo_required", "strip_components", "scope")...)
+	registerRuntimeFields(PhaseExecute, "http", "internal/exec/http_secret_test.go", "a reached HTTP candidate resolves the typed reference and hands the credential to the runtime-only Bearer transport", "secret_ref")
 	registerRuntimeFields(PhaseExecute, "github", "internal/httpdownload/github_v2_test.go", "GitHub delegates artifact execution to the shared HTTP installer", append(common, "repo", "asset", "extract_to", "binary", "entrypoints", "link_dir", "sudo_required", "strip_components", "scope")...)
 	registerRuntimeFields(PhaseExecute, "appimage", "internal/httpdownload/appimage_adapter_test.go", "AppImage delegates download and archive execution to the shared HTTP installer", append(common, "url", "repo", "asset", "binary", "entrypoints", "link_dir", "sudo_required", "strip_components", "install_dir", "desktop", "scope")...)
 	registerRuntimeFields(PhaseExecute, "android", "internal/httpdownload/android_adapter_test.go", "Android delegates download and integrity checks to the shared HTTP installer", append(common, "url", "repo", "asset", "sudo_required")...)

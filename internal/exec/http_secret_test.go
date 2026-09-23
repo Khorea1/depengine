@@ -136,6 +136,7 @@ func TestHTTPSecretReferenceAndValueAreNotPersistedInState(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// #nosec G304 -- the path is rooted in the test-owned t.TempDir().
 	data, err := os.ReadFile(filepath.Join(dir, "depengine", "state.json"))
 	if err != nil {
 		t.Fatal(err)

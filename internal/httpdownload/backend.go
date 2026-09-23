@@ -97,9 +97,7 @@ func (d *GoDownloader) download(ctx context.Context, url, dest, bearerCredential
 		priorCheckRedirect := clientCopy.CheckRedirect
 		initialURL := req.URL
 		clientCopy.CheckRedirect = func(redirectReq *http.Request, via []*http.Request) error {
-			if sameOrigin(initialURL, redirectReq.URL) {
-				redirectReq.Header.Set("Authorization", "Bearer "+bearerCredential)
-			} else {
+			if !sameOrigin(initialURL, redirectReq.URL) {
 				redirectReq.Header.Del("Authorization")
 			}
 			if priorCheckRedirect != nil {

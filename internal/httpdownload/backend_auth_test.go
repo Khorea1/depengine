@@ -46,6 +46,7 @@ func TestGoDownloaderDownloadWithBearerScopesCredentialToRequest(t *testing.T) {
 	if userAgents[0] != downloadUserAgent {
 		t.Errorf("User-Agent = %q, want %q", userAgents[0], downloadUserAgent)
 	}
+	// #nosec G304 -- dest is rooted in the test-owned t.TempDir().
 	if body, err := os.ReadFile(dest); err != nil || string(body) != "artifact" {
 		t.Errorf("downloaded body = %q, error = %v", body, err)
 	}
