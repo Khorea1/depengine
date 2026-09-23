@@ -183,6 +183,30 @@ jobs:
           go test ./...
           tests/platform/native-lifecycle.sh tests/platform/fixtures/openbsd-pkgadd.toml depengine-openbsd-smoke
 
+  # Real NetBSD VM: run the Go suite on the target OS and exercise pkgin.
+  test-netbsd:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.x.x
+
+    - name: Run tests and native pkgin lifecycle in NetBSD
+      uses: vmactions/netbsd-vm@20ee93a005c9fc78743e6e05269f4cb023b87413 # v1.5.0
+      with:
+        release: "11.0-microvm"
+        copyback: false
+        prepare: |
+          /usr/sbin/pkg_add pkgin unzip
+          /usr/bin/ftp -o /tmp/go.tar.gz https://go.dev/dl/go1.27.1.netbsd-amd64.tar.gz
+          test "$(/usr/bin/sha256 -q /tmp/go.tar.gz)" = "4ace14c14e7c6eb1d06890433afe81f8c2dc746d1d5f4df3ae6d2d7dd0481ba2"
+          rm -rf /usr/local/go
+          tar -C /usr/local -xzf /tmp/go.tar.gz
+        run: |
+          export PATH="/usr/local/go/bin:/usr/pkg/bin:/usr/pkg/sbin:$PATH"
+          go version
+          go test ./...
+          tests/platform/native-lifecycle.sh tests/platform/fixtures/netbsd-pkgin.toml depengine-netbsd-smoke
+
   test-windows:
     runs-on: windows-latest
 
