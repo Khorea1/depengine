@@ -10,6 +10,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/validate"
 	"github.com/spf13/cobra"
@@ -170,7 +171,8 @@ func newCheckCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "check <tool>",
-		Short:   ifPT("Verificar se uma ferramenta está instalada", "Check whether a tool is installed"),
+		Short:   ifPT("Verificar se uma ferramenta atende ao estado desejado", "Check whether a tool satisfies desired state"),
+		Long:    ifPT("Reconcilia a identidade observada no host com o plano resolvido. Só 'satisfied' retorna sucesso; absent, drifted, unknown e broken retornam código de falha.", "Reconciles observed host identity with the resolved plan. Only 'satisfied' exits successfully; absent, drifted, unknown, and broken return a failure code."),
 		GroupID: groupInspect,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -187,7 +189,14 @@ func newCheckCmd() *cobra.Command {
 	return cmd
 }
 
-// runCheck reports whether a single tool is installed.
+type checkOutput struct {
+	Tool         string                  `json:"tool"`
+	Method       string                  `json:"method,omitempty"`
+	Status       plan.VerificationState  `json:"status"`
+	Verification plan.VerificationResult `json:"verification"`
+}
+
+// runCheck reports whether a single tool satisfies its resolved desired state.
 func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *string, checkNoManifest, checkJSON *bool, checkFormat *string, checkLive *bool) error {
 	noManifest := *checkNoManifest
 	manifestPath := *checkManifest
@@ -219,27 +228,19 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 	exec.WithRunner(run.OSExecRunner{})(ex)
 	exec.WithFacts(facts)(ex)
 	exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
-	installedMethod, installed := ex.CheckInstalled(ctx, tool, clan, *checkLive)
-
-	if installed {
-		if useJSON {
-			json.NewEncoder(os.Stdout).Encode(map[string]string{
-				"tool":   toolName,
-				"status": "installed",
-				"method": installedMethod,
-			})
-		} else {
-			newCLIStyle(os.Stderr).ok("%s is installed (via %s)", toolName, installedMethod)
-		}
-		return nil
+	checked, checkErr := ex.CheckDesiredState(ctx, tool, clan, *checkLive)
+	if checkErr != nil {
+		checked.Verification = plan.VerificationResult{State: plan.StateBroken, Detail: checkErr.Error()}
 	}
 	if useJSON {
-		json.NewEncoder(os.Stdout).Encode(map[string]string{
-			"tool":   toolName,
-			"status": "not-installed",
-		})
+		_ = json.NewEncoder(os.Stdout).Encode(checkOutput{Tool: toolName, Method: checked.Method, Status: checked.Verification.State, Verification: checked.Verification})
+	} else if checked.Verification.State == plan.StateSatisfied {
+		newCLIStyle(os.Stderr).ok("%s satisfies desired state (via %s)", toolName, checked.Method)
 	} else {
-		newCLIStyle(os.Stderr).fail("%s is not installed", toolName)
+		newCLIStyle(os.Stderr).fail("%s desired state is %s: %s", toolName, checked.Verification.State, checked.Verification.Detail)
+	}
+	if checkErr == nil && checked.Verification.State == plan.StateSatisfied {
+		return nil
 	}
 	return exitWithCode(1)
 }

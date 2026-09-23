@@ -99,6 +99,22 @@ For each tool, in dependency order, the executor:
 `method_prefer` changes candidate priority but keeps fallbacks. `method_only`
 restricts the candidate list.
 
+## Desired-state observation
+
+Consumers share one read-only path for a resolved candidate:
+
+```text
+ResolvePlan → Observe resolved target → plan.Reconcile → VerificationResult
+```
+
+Install idempotency, `status`, `check`, `why`, upgrade preflight, and remove
+consume that result. Presence alone does not establish satisfaction: known
+identity fields must match the resolved plan. `absent` and `drifted` remain
+distinct; `unknown` means the adapter cannot prove the desired identity, while
+`broken` means observation data or verification is invalid. Upgrade and remove
+fail closed for unknown/broken targets. Remove accepts drift, and a proven
+absent target releases state and ownership without invoking the remover.
+
 ## Process-wide defaults
 
 A few defaults are shared for one process:

@@ -34,6 +34,9 @@ func TestInstallArchiveElevatesPayloadAndLinkIndependently(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX archive and launcher assertion")
 	}
+	if os.Geteuid() == 0 {
+		t.Skip("root can create the system launcher without elevation")
+	}
 	for _, tc := range []struct {
 		name           string
 		payloadInHome  bool

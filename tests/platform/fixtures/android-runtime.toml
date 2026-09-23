@@ -1,0 +1,6 @@
+schema_version = 1
+
+# A tool with no methods is virtual. The Android runtime smoke uses it to make
+# the CLI gather real device facts and render a dry-run without mutating the
+# emulator or depending on Termux.
+[tools.depengine-android-runtime]

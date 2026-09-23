@@ -1,0 +1,7 @@
+schema_version = 1
+
+[tools.depengine-netbsd-smoke]
+method_only = ["native"]
+
+[tools.depengine-netbsd-smoke.native]
+pkg = "figlet"

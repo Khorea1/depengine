@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -120,6 +121,82 @@ func TestNativeAdapterInstallWithAutoDetect(t *testing.T) {
 		}
 		if !installFound {
 			t.Fatalf("expected install command to contain package name 'git', got calls: %v", fr.Calls)
+		}
+	})
+}
+
+type nativeSequenceRunner struct {
+	calls   []run.FakeCall
+	results []run.Result
+}
+
+func (r *nativeSequenceRunner) Run(_ context.Context, name string, args ...string) run.Result {
+	r.calls = append(r.calls, run.FakeCall{Name: name, Args: append([]string(nil), args...)})
+	if len(r.results) == 0 {
+		return run.Result{}
+	}
+	result := r.results[0]
+	r.results = r.results[1:]
+	return result
+}
+
+func TestNativeInstallRequiresPostcondition(t *testing.T) {
+	t.Run("generic native rejects false-success install", func(t *testing.T) {
+		rn := &nativeSequenceRunner{results: []run.Result{
+			{ExitCode: 0},
+			{ExitCode: 1, Stderr: []byte("package not installed")},
+		}}
+		adapter := NewNativeAdapter("openbsd")
+		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "missing-package"}}
+
+		err := adapter.Install(context.Background(), rn, &config.Tool{Name: "demo"}, mc)
+		if err == nil || !strings.Contains(err.Error(), "could not be verified") {
+			t.Fatalf("Install() error = %v, want post-install verification failure", err)
+		}
+		if len(rn.calls) != 2 {
+			t.Fatalf("calls = %#v, want install + verification", rn.calls)
+		}
+		if rn.calls[1].Name != "pkg_info" {
+			t.Fatalf("verification command = %#v, want pkg_info", rn.calls[1])
+		}
+	})
+
+	t.Run("manager alias rejects false-success install", func(t *testing.T) {
+		rn := &nativeSequenceRunner{results: []run.Result{
+			{ExitCode: 0},
+			{ExitCode: 1, Stderr: []byte("package not installed")},
+		}}
+		adapter := &NativeByManagerAdapter{managerName: "apt"}
+		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "missing-package"}}
+
+		err := adapter.Install(context.Background(), rn, &config.Tool{Name: "demo"}, mc)
+		if err == nil || !strings.Contains(err.Error(), "could not be verified") {
+			t.Fatalf("Install() error = %v, want post-install verification failure", err)
+		}
+		if len(rn.calls) != 2 {
+			t.Fatalf("calls = %#v, want install + verification", rn.calls)
+		}
+		if rn.calls[1].Name != "dpkg" {
+			t.Fatalf("verification command = %#v, want dpkg", rn.calls[1])
+		}
+	})
+
+	t.Run("manager alias preserves independent verification binary", func(t *testing.T) {
+		rn := &nativeSequenceRunner{results: []run.Result{
+			{ExitCode: 0},
+			{ExitCode: 0},
+		}}
+		adapter := &NativeByManagerAdapter{managerName: "dnf5"}
+		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}
+
+		if err := adapter.Install(context.Background(), rn, &config.Tool{Name: "git"}, mc); err != nil {
+			t.Fatalf("Install() error = %v, want nil", err)
+		}
+		if len(rn.calls) != 2 {
+			t.Fatalf("calls = %#v, want install + verification", rn.calls)
+		}
+		if rn.calls[1].Name != "rpm" {
+			t.Fatalf("verification command = %#v, want rpm", rn.calls[1])
 		}
 	})
 }
@@ -414,8 +491,8 @@ func TestNativeByManagerAdapterInstall(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(fr.Calls) != 1 {
-			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
+		if len(fr.Calls) != 2 {
+			t.Fatalf("expected install + verification calls, got %d: %v", len(fr.Calls), fr.Calls)
 		}
 		// apt uses clan "debian" which has Name "apt" and sudo=true.
 		// InstallCmd = ["apt-get", "install", "-y", "{pkg}"] → with sudo → ["sudo", "apt-get", "install", "-y", "git"]

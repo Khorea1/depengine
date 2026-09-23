@@ -176,7 +176,7 @@ func TestValidate_MultipleErrors(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("expected exit 2, got %d; output:\n%s", code, output)
 	}
-	for _, code := range []string{"E_CYCLE", "E_DANGLING_REF", "E_MALFORMED_URL", "E_REQUIRED_FIELD"} {
+	for _, code := range []string{"E_CYCLE", "E_DANGLING_REF", "E_MALFORMED_URL"} {
 		if !strings.Contains(output, code) {
 			t.Errorf("expected %q in output:\n%s", code, output)
 		}

@@ -1,0 +1,7 @@
+schema_version = 1
+
+[tools.depengine-windows-smoke]
+method_only = ["choco"]
+
+[tools.depengine-windows-smoke.choco]
+pkg = "winfetch"

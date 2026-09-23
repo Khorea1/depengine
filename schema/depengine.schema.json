@@ -393,17 +393,8 @@
             "checksum_url": {
               "type": "string"
             },
-            "entrypoints": {
-              "additionalProperties": {
-                "type": "string"
-              },
-              "type": "object"
-            },
             "kind": {
               "const": "android"
-            },
-            "link_dir": {
-              "type": "string"
             },
             "os_map": {
               "additionalProperties": {
@@ -462,9 +453,6 @@
               },
               "minItems": 1,
               "type": "array"
-            },
-            "strip_components": {
-              "type": "integer"
             },
             "sudo_required": {
               "type": "boolean"
@@ -5346,15 +5334,6 @@
             "checksum_url": {
               "type": "string"
             },
-            "entrypoints": {
-              "additionalProperties": {
-                "type": "string"
-              },
-              "type": "object"
-            },
-            "link_dir": {
-              "type": "string"
-            },
             "os_map": {
               "additionalProperties": {
                 "type": "string"
@@ -5412,9 +5391,6 @@
               },
               "minItems": 1,
               "type": "array"
-            },
-            "strip_components": {
-              "type": "integer"
             },
             "sudo_required": {
               "type": "boolean"

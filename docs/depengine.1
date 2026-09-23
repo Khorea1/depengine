@@ -23,7 +23,7 @@ dependencies on the target machine.
 Distro\-agnostic dependency installer
 .TP
 .B "depengine check <tool> [flags]"
-Check whether a tool is installed
+Reconciles observed host identity with the resolved plan. Only 'satisfied' exits successfully; absent, drifted, unknown, and broken return a failure code.
 .TP
 .B "depengine completion [flags]"
 Generate the autocompletion script for depengine for the specified shell. See each sub\-command's help for details on how to use the generated script.
@@ -59,13 +59,13 @@ Initialize a schema.toml for a new project
 Install tools from schema.toml
 .TP
 .B "depengine remove [tool...] [flags]"
-Remove tools from the system
+Observes the tracked target before removal. Proven\-absent targets release state and ownership; unknown or broken observations preserve state and fail.
 .TP
 .B "depengine sbom [flags]"
 Export a software bill of materials of installed state
 .TP
 .B "depengine status [flags]"
-Show tool installation state vs schema
+Reconciles tracked state with identity observed on the host. Status values include installed, missing, outdated, unknown, and broken.
 .TP
 .B "depengine undo [flags]"
 Revert to a previous state snapshot

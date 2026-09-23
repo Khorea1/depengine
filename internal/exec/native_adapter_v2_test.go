@@ -153,8 +153,8 @@ func TestNativeAdapterV2InstallResolved(t *testing.T) {
 	if err := adapter.InstallResolved(context.Background(), runner, tool, mc, canonicalInstallPlan("git", "native")); err != nil {
 		t.Fatalf("InstallResolved() error = %v", err)
 	}
-	if len(runner.Calls) != 1 || runner.Calls[0].Name != "sudo" {
-		t.Fatalf("InstallResolved() calls = %#v, want elevated apt-get install", runner.Calls)
+	if len(runner.Calls) != 2 || runner.Calls[0].Name != "sudo" || runner.Calls[1].Name != "dpkg" {
+		t.Fatalf("InstallResolved() calls = %#v, want elevated apt-get install + dpkg verification", runner.Calls)
 	}
 	found := false
 	for _, arg := range runner.Calls[0].Args {
@@ -289,8 +289,8 @@ func TestNativeByManagerAdapterV2ResolveObserveInstall(t *testing.T) {
 	if err := adapter.InstallResolved(context.Background(), installRunner, tool, mc, resolved); err != nil {
 		t.Fatalf("InstallResolved() error = %v", err)
 	}
-	if len(installRunner.Calls) != 1 || installRunner.Calls[0].Name != "sudo" {
-		t.Fatalf("InstallResolved() calls = %#v, want elevated apt-get install", installRunner.Calls)
+	if len(installRunner.Calls) != 2 || installRunner.Calls[0].Name != "sudo" || installRunner.Calls[1].Name != "dpkg" {
+		t.Fatalf("InstallResolved() calls = %#v, want elevated apt-get install + dpkg verification", installRunner.Calls)
 	}
 	foundResolvedPkg := false
 	for _, arg := range installRunner.Calls[0].Args {

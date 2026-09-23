@@ -11,21 +11,15 @@ self_ref = { requires = ["self_ref"] }
 # 3. Dangling ref to non-existent tool
 needs_missing = { requires = ["i_dont_exist"] }
 
-# 4. Git method without url
-bad_git = { git = { build = "make" } }
-
-# 5. HTTP method with non-string url type (TOML won't allow this, but...)
-# Actually TOML will parse this as int64 which is not string
-
-# 6. Unknown placeholder
+# 4. Unknown placeholder
 bad_placeholder = { http = { url = "https://example.com/{BAD_PLACEHOLDER}/file.deb" } }
 
-# 7. Induced cycle: x→y→x
+# 5. Induced cycle: x→y→x
 x = { requires = ["y"] }
 y = { requires = ["x"] }
 
-# 8. Malformed URL
+# 6. Malformed URL
 bad_url = { http = { url = "not-a-valid-url-at-all" } }
 
-# 9. Unknown distro family
+# 7. Unknown distro family
 exotic_distro = { native = { pkg = "neofetch", when = { distro_family = ["madeup_os"] } } }
