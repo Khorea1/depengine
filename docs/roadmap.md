@@ -24,9 +24,10 @@ Work on the current execution model comes before adding more installer types.
   must not depend on a one-time hook having succeeded earlier.
 - [~] Generate schema/docs metadata from adapter capabilities instead of
   scattering method-name conditionals across the codebase.
-  Remaining method-name conditionals: purl mapping in `internal/sbom`,
-  cargo/conda target handling in `internal/exec/environment_target.go`, and
-  git/container checks in `internal/validate`.
+  Remaining method-name conditionals include purl mapping in `internal/sbom`,
+  cargo/conda target handling in `internal/exec/environment_target.go`,
+  git/container checks in `internal/validate`, git identity handling in
+  `internal/planner/identity.go`, and github handling in `internal/app/helpers.go`.
 
 ## P2: installer coverage
 
