@@ -52,8 +52,12 @@ Work on the current execution model comes before adding more installer types.
 - [ ] Triage the full `golangci-lint` backlog and remove the baseline only when
   a complete run passes. Audit on 2026-09-22: 142 findings (`errcheck` 50,
   `gosec` 50, `staticcheck` 21, `errorlint` 11, `unused` 10); output is capped
-  at 50 per category.
+  at 50 per category. Uncapped re-audit on 2026-09-23: 558 findings
+  (`errcheck` 159, `gosec` 368, `staticcheck` 19, `errorlint` 11, `unused` 1);
+  the per-linter cap hid the true `errcheck`/`gosec` counts.
 - [ ] Review `internal/plan/preparation.go` and split it only where the code has
   distinct responsibilities with separate invariants.
-- [ ] Audit author variants before adding `.mailmap`; only merge identities
-  confirmed to belong to the same person.
+- [x] Audit author variants before adding `.mailmap`; only merge identities
+  confirmed to belong to the same person. Done: `.mailmap` exists and audit
+  on 2026-09-23 verified it complete (7 identities, 6 aliases, no 8th
+  identity on any ref).
