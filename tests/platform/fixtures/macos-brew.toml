@@ -4,4 +4,5 @@ schema_version = 1
 method_only = ["brew"]
 
 [tools.depengine-native-smoke.brew]
+kind = "native"
 pkg = "hello"
