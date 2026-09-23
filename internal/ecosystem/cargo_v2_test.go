@@ -239,6 +239,23 @@ func TestCargoAdapterV2InstallResolvedRootFromEnvironment(t *testing.T) {
 	assertLastCargoCall(t, runner, []string{"install", "--root", config.ExpandHomeDir("~/.local/cargo-tools"), "crate-name"})
 }
 
+func TestCargoRejectsUnsupportedResolvedTarget(t *testing.T) {
+	adapter := NewCargoAdapter()
+	tool := &config.Tool{Name: "crate-name"}
+	mc := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"pkg": "crate-name"}}
+	intent := plan.New(tool.Name, "cargo", true)
+	intent.Identity.Package = "crate-name"
+	intent.Identity.Environment = &plan.EnvironmentTarget{Kind: plan.EnvironmentNamed, Value: "tools"}
+	intent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
+	if _, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent); err == nil {
+		t.Fatal("ResolvePlan accepted named target")
+	}
+	fr := cargoV2Runner("")
+	if err := adapter.InstallResolved(context.Background(), fr, tool, mc, &intent); err == nil {
+		t.Fatal("InstallResolved accepted named target")
+	}
+}
+
 func TestCargoAdapterV2InstallResolvedRejectsConflicts(t *testing.T) {
 	adapter := NewCargoAdapter()
 	tool := &config.Tool{Name: "crate"}

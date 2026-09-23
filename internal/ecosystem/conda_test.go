@@ -49,6 +49,51 @@ func TestCondaAdapterV2ResolvedPlanIsAuthoritative(t *testing.T) {
 	assertCondaCall(t, runner, []string{"install", "-y", "-n", "data", "-c", "conda-forge", "numpy=2.1.0=py312_0"})
 }
 
+func TestCondaResolvedPrefixMatchesLifecycleTarget(t *testing.T) {
+	adapter := NewCondaAdapter()
+	tool, mc := condaTool("numpy", "numpy")
+	mc.Config["prefix"] = "~/.conda/envs/data"
+	intent := plan.New(tool.Name, "conda", true)
+	intent.Identity.Package = "numpy"
+	intent.Identity.Environment = &plan.EnvironmentTarget{Kind: plan.EnvironmentPrefix, Value: "~/.conda/envs/data"}
+	intent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
+	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fr := &run.FakeRunner{}
+	if err := adapter.InstallResolved(context.Background(), fr, tool, mc, resolved); err != nil {
+		t.Fatal(err)
+	}
+	assertCondaCall(t, fr, []string{"install", "-y", "-p", config.ExpandHomeDir("~/.conda/envs/data"), "numpy"})
+	fr = &run.FakeRunner{Stdout: `[{"name":"numpy","version":"2.1.0"}]`}
+	if version, err := adapter.InstalledVersion(context.Background(), fr, tool, mc); err != nil || version != "2.1.0" {
+		t.Fatalf("InstalledVersion() = %q, %v", version, err)
+	}
+	assertCondaCall(t, fr, []string{"list", "--json", "-p", config.ExpandHomeDir("~/.conda/envs/data"), "numpy"})
+	fr = &run.FakeRunner{}
+	if err := adapter.Remove(context.Background(), fr, tool, mc); err != nil {
+		t.Fatal(err)
+	}
+	assertCondaCall(t, fr, []string{"remove", "-y", "-p", config.ExpandHomeDir("~/.conda/envs/data"), "numpy"})
+}
+
+func TestCondaRejectsUnsupportedResolvedTarget(t *testing.T) {
+	tool, mc := condaTool("numpy", "numpy")
+	intent := plan.New(tool.Name, "conda", true)
+	intent.Identity.Package = "numpy"
+	intent.Identity.Environment = &plan.EnvironmentTarget{Kind: plan.EnvironmentProfile, Value: "tools"}
+	intent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
+	adapter := NewCondaAdapter()
+	if _, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent); err == nil {
+		t.Fatal("ResolvePlan accepted unsupported profile target")
+	}
+	fr := &run.FakeRunner{}
+	if err := adapter.InstallResolved(context.Background(), fr, tool, mc, &intent); err == nil || len(fr.Calls) != 0 {
+		t.Fatalf("InstallResolved error = %v, calls = %#v", err, fr.Calls)
+	}
+}
+
 func TestCondaAdapterV2ObserveExactIdentityAndErrors(t *testing.T) {
 	adapter := NewCondaAdapter()
 	tool, mc := condaTool("numpy", "numpy")

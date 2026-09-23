@@ -62,7 +62,7 @@ func condaResolvedTargetArgs(target *plan.EnvironmentTarget) []string {
 		return []string{"-n", "base"}
 	}
 	if target.Kind == plan.EnvironmentPrefix {
-		return []string{"-p", target.Value}
+		return []string{"-p", config.ExpandHomeDir(target.Value)}
 	}
 	return []string{"-n", target.Value}
 }
@@ -175,6 +175,9 @@ func (a *CondaAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config
 		return nil, errors.New("conda: no package name")
 	}
 	resolved := intent.Clone()
+	if err := validateEnvironmentTarget("conda", resolved.Identity.Environment, plan.EnvironmentNamed, plan.EnvironmentPrefix); err != nil {
+		return nil, err
+	}
 	if resolved.Identity.Package == "" {
 		return nil, errors.New("conda: no package name in plan intent")
 	}
@@ -218,6 +221,9 @@ func (a *CondaAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool 
 		return errors.New("conda: nil resolved plan")
 	}
 	if err := validateResolvedInstallOperation("conda", resolved); err != nil {
+		return err
+	}
+	if err := validateEnvironmentTarget("conda", resolved.Identity.Environment, plan.EnvironmentNamed, plan.EnvironmentPrefix); err != nil {
 		return err
 	}
 	pkg := resolved.Identity.Package

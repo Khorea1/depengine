@@ -26,7 +26,7 @@ func (ex *Executor) installedVersion(ctx context.Context, tool *config.Tool, res
 	if !ok {
 		return ""
 	}
-	method := &config.MethodCandidate{Kind: result.MethodKind, Config: result.Config}
+	method := methodForResolvedTarget(&config.MethodCandidate{Kind: result.MethodKind, Config: result.Config}, result.PlanIntent)
 	probeCtx, cancel := context.WithTimeout(ctx, versionProbeTimeout)
 	defer cancel()
 	version, err := versioner.InstalledVersion(probeCtx, ex.rn, tool, method)
@@ -72,7 +72,7 @@ func (ex *Executor) writeState(ctx context.Context, schema *config.Schema, repor
 			PostinstallDone: result.PostinstallDone,
 			DefinitionHash:  depstate.DefinitionHash(tool),
 			RootRequested:   !tool.DependencyOnly,
-			Config:          result.Config,
+			Config:          configForResolvedTarget(&config.MethodCandidate{Kind: result.MethodKind, Config: result.Config}, result.PlanIntent),
 		}
 		// A successful Check means depengine did not install anything during this
 		// run. Preserve historical installation metadata instead of rewriting the

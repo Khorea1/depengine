@@ -17,8 +17,8 @@ Work on the current execution model comes before adding more installer types.
 - [~] Finish exact-version support and installed-version checks per adapter.
 - [~] Make lock generation/consumption cover every supported mutable method, or
   narrow the documented reproducibility promise.
-- [ ] Make environment/profile targeting explicit and use the same target for
-  install, check, and remove.
+- [x] Make environment/profile targeting explicit and use the same target for
+  install, check, and remove (Cargo root and Conda named environment/prefix).
 - [~] Finish typed package-source selection, trust, ownership, verification,
   and locking.
 - [~] Finish recovery for package-source and prerequisite preparation.

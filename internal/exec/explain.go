@@ -142,7 +142,7 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 		// provide explicit presence semantics; legacy adapters retain Check.
 		probe := ex.probeRunner(tool.Name, displayKind)
 		if observer, ok := adapter.(AdapterV2); ok {
-			observation, observeErr := observer.Observe(ctx, probe, tool, method)
+			observation, observeErr := observer.Observe(ctx, probe, tool, methodForResolvedTarget(method, resolvedPlan))
 			if observeErr != nil {
 				attempt.Status = "failed"
 				attempt.Error = fmt.Sprintf("%s: observe presence: %s", displayKind, run.RedactSensitiveText(observeErr.Error()))
@@ -172,7 +172,7 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 				appendAttempt(attempt, method)
 				continue
 			}
-		} else if adapter.Check(ctx, probe, tool, method) {
+		} else if adapter.Check(ctx, probe, tool, methodForResolvedTarget(method, resolvedPlan)) {
 			attempt.Status = "already_installed"
 			attempt.Error = "check passed — tool appears to be installed"
 			appendAttempt(attempt, method)
@@ -274,18 +274,18 @@ func (ex *Executor) CheckInstalled(ctx context.Context, tool *config.Tool, clan 
 			continue
 		}
 		intent = ex.hostResolvedPlanIntent(method, intent)
-		_, err := ex.resolveCandidatePlan(ctx, tool, method, adapter, intent, method.Kind)
+		resolved, err := ex.resolveCandidatePlan(ctx, tool, method, adapter, intent, method.Kind)
 		if err != nil {
 			continue
 		}
 		if observer, ok := adapter.(AdapterV2); ok {
-			observation, err := observer.Observe(ctx, probe, tool, method)
+			observation, err := observer.Observe(ctx, probe, tool, methodForResolvedTarget(method, resolved))
 			if err == nil && observation.Presence == plan.PresencePresent {
 				return method.Kind, true
 			}
 			continue
 		}
-		if adapter.Check(ctx, probe, tool, method) {
+		if adapter.Check(ctx, probe, tool, methodForResolvedTarget(method, resolved)) {
 			return method.Kind, true
 		}
 	}

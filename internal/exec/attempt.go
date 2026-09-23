@@ -154,7 +154,7 @@ func (ex *Executor) resolveConcretePlan(ac *candidateAttempt, result *ToolResult
 // semantics; legacy adapters retain their boolean Check contract.
 func (ex *Executor) gateAlreadyInstalled(ac *candidateAttempt, result *ToolResult) attemptOutcome {
 	if observer, ok := ac.adapter.(AdapterV2); ok {
-		observation, err := observer.Observe(ac.toolCtx, ex.probeRunner(ac.tool.Name, ac.displayKind), ac.tool, ac.method)
+		observation, err := observer.Observe(ac.toolCtx, ex.probeRunner(ac.tool.Name, ac.displayKind), ac.tool, methodForResolvedTarget(ac.method, ac.resolved))
 		if err != nil {
 			detail := fmt.Sprintf("%s: observe presence: %v", ac.displayKind, err)
 			ex.skipCandidate(ac, result, "failed", detail)
@@ -182,7 +182,7 @@ func (ex *Executor) gateAlreadyInstalled(ac *candidateAttempt, result *ToolResul
 		}
 	}
 
-	if ac.adapter.Check(ac.toolCtx, ex.probeRunner(ac.tool.Name, ac.displayKind), ac.tool, ac.method) {
+	if ac.adapter.Check(ac.toolCtx, ex.probeRunner(ac.tool.Name, ac.displayKind), ac.tool, methodForResolvedTarget(ac.method, ac.resolved)) {
 		return ex.finishAlreadyInstalled(ac, result)
 	}
 	return proceed
@@ -192,7 +192,7 @@ func (ex *Executor) finishAlreadyInstalled(ac *candidateAttempt, result *ToolRes
 	result.Status = StatusAlready
 	result.Method = ac.displayKind
 	result.MethodKind = ac.method.Kind
-	result.Config = ac.method.Config
+	result.Config = configForResolvedTarget(ac.method, ac.resolved)
 	result.PlanIntent = ac.resolved
 	ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "already_installed")
 	result.Duration = time.Since(ac.toolStart).String()
@@ -406,7 +406,7 @@ func (ex *Executor) finishInstalled(ac *candidateAttempt, result *ToolResult) at
 		result.Error = finalizeErr.Error()
 		result.Method = ac.displayKind
 		result.MethodKind = ac.method.Kind
-		result.Config = ac.method.Config
+		result.Config = configForResolvedTarget(ac.method, ac.resolved)
 		result.PlanIntent = ac.reported
 		result.InstallCommitted = true
 		result.ResourceUses = append([]plan.ResourceUse(nil), ac.resources...)
@@ -417,7 +417,7 @@ func (ex *Executor) finishInstalled(ac *candidateAttempt, result *ToolResult) at
 	result.InstallCommitted = true
 	result.Method = ac.displayKind
 	result.MethodKind = ac.method.Kind
-	result.Config = ac.method.Config
+	result.Config = configForResolvedTarget(ac.method, ac.resolved)
 	result.PlanIntent = ac.reported
 	result.ResourceUses = append([]plan.ResourceUse(nil), ac.resources...)
 	result.RebootRequired, _ = ac.method.Config["_reboot_required"].(bool)

@@ -186,6 +186,9 @@ func (a *CargoAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config
 		return nil, errors.New("cargo: no package name")
 	}
 	resolved := intent.Clone()
+	if err := validateEnvironmentTarget("cargo", resolved.Identity.Environment, plan.EnvironmentPrefix); err != nil {
+		return nil, err
+	}
 	if resolved.Identity.Package == "" {
 		return nil, errors.New("cargo: no package name in plan intent")
 	}
@@ -234,6 +237,9 @@ func (a *CargoAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool 
 		return errors.New("cargo: nil resolved plan")
 	}
 	if err := validateResolvedInstallOperation("cargo", resolved); err != nil {
+		return err
+	}
+	if err := validateEnvironmentTarget("cargo", resolved.Identity.Environment, plan.EnvironmentPrefix); err != nil {
 		return err
 	}
 	if resolved.Identity.Package == "" {

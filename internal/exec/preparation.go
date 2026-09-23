@@ -456,7 +456,7 @@ func (ex *Executor) observeRecoveryCandidate(ctx context.Context, tool *config.T
 	var observation plan.Observation
 	if observer, ok := adapter.(AdapterV2); ok {
 		var err error
-		observation, err = observer.Observe(probeCtx, runner, tool, method)
+		observation, err = observer.Observe(probeCtx, runner, tool, methodForResolvedTarget(method, intent))
 		if err != nil {
 			return plan.Observation{
 				Presence: plan.PresenceBroken,
@@ -464,7 +464,7 @@ func (ex *Executor) observeRecoveryCandidate(ctx context.Context, tool *config.T
 			}
 		}
 	} else {
-		if !adapter.Check(probeCtx, runner, tool, method) {
+		if !adapter.Check(probeCtx, runner, tool, methodForResolvedTarget(method, intent)) {
 			return plan.Observation{Presence: plan.PresenceAbsent}
 		}
 		observation.Presence = plan.PresencePresent
@@ -477,7 +477,7 @@ func (ex *Executor) observeRecoveryCandidate(ctx context.Context, tool *config.T
 	if observation.Presence == plan.PresencePresent && intent.Identity.Version != "" && !containsIdentityField(observation.KnownFields, plan.FieldVersion) {
 		if versioner, ok := adapter.(Versioner); ok {
 			versionCtx, versionCancel := context.WithTimeout(ctx, versionProbeTimeout)
-			version, err := versioner.InstalledVersion(versionCtx, runner, tool, method)
+			version, err := versioner.InstalledVersion(versionCtx, runner, tool, methodForResolvedTarget(method, intent))
 			versionCancel()
 			if err != nil {
 				observation.Detail = "installed version probe failed: " + run.RedactSensitiveText(err.Error())
