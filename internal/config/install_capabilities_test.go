@@ -18,7 +18,7 @@ pkg = "neovim"
 requires = ["helper"]
 sources = [{ kind = "apt-ppa", name = "ppa:neovim-ppa/stable" }]
 `
-	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	schema, err := ParseProjectSchema(path, nil)
@@ -50,7 +50,7 @@ func TestSourceURLOnlyAcceptedWhenAddUsesIt(t *testing.T) {
 		t.Run(tt.kind, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "schema.toml")
 			data := "schema_version = 1\n[tools.demo.native]\npkg = \"demo\"\nsources = [{ kind = \"" + tt.kind + "\", name = \"vendor/tools\", url = \"https://example.test/tools\" }]\n"
-			if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			_, err := ParseProjectSchema(path, nil)
@@ -73,7 +73,7 @@ func TestParseSourceSecretReferenceInNativeAndLabeledMethods(t *testing.T) {
 				kind = "kind = \"native\"\n"
 			}
 			data := "schema_version = 1\n[tools.demo." + method + "]\n" + kind + "pkg = \"demo\"\nsources = [{ kind = \"apt-ppa\", name = \"ppa:vendor/stable\", secret_ref = { provider = \"env\", name = \"CORP_TOKEN\" } }]\n"
-			if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			schema, err := ParseProjectSchema(path, nil)
@@ -103,7 +103,7 @@ func TestSourceSecretReferenceRejectsInvalidFields(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "schema.toml")
 			data := "schema_version = 1\n[tools.demo.native]\npkg = \"demo\"\nsources = [{ kind = \"apt-ppa\", name = \"ppa:vendor/stable\", secret_ref = " + tt.ref + " }]\n"
-			if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := ParseProjectSchema(path, nil); err == nil || !strings.Contains(err.Error(), tt.want) {
@@ -121,7 +121,7 @@ nvim = { method_only = ["github"], github = { repo = "neovim/neovim", asset = "n
 snapvim = { snap = { pkg = "nvim", confinement = "classic", channel = "beta" } }
 chocovim = { choco = { pkg = "neovim", prerelease = true } }
 `
-	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ParseProjectSchema(path, nil); err != nil {
@@ -154,7 +154,7 @@ signature_url = ""`, want: "signature_url: must not be empty"},
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "schema.toml")
 			data := "schema_version = 1\n[tools.demo.http]\nurl = \"https://example.test/demo.tar.gz\"\n" + tt.fields + "\n"
-			if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := ParseProjectSchema(path, nil); err == nil || !strings.Contains(err.Error(), tt.want) {
@@ -175,7 +175,7 @@ checksum_file_format = "sha256sum"
 signature_url = "https://example.test/SHA256SUMS.sig"
 signing_key = "ABCD1234"
 `
-	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ParseProjectSchema(path, nil); err != nil {

@@ -62,7 +62,7 @@ func TestValidateEffectFieldsHaveBehaviorProbes(t *testing.T) {
 				parse := func(fields string) error {
 					path := filepath.Join(t.TempDir(), "schema.toml")
 					data := "schema_version = 1\n[tools.demo." + contract.Kind + "]\n" + fields + "\n"
-					if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+					if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 						t.Fatal(err)
 					}
 					_, err := ParseProjectSchema(path, nil)

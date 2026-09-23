@@ -32,7 +32,7 @@ type EnvResolver struct {
 // never included in returned errors.
 func (r EnvResolver) Resolve(_ context.Context, ref plan.SecretReference) (string, error) {
 	if err := ref.Validate(); err != nil {
-		return "", fmt.Errorf("%w: %v", ErrInvalidReference, err)
+		return "", fmt.Errorf("%w: %w", ErrInvalidReference, err)
 	}
 	if ref.Provider != "env" {
 		return "", fmt.Errorf("%w %q", ErrUnsupportedProvider, ref.Provider)
