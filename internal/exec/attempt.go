@@ -139,32 +139,19 @@ func (ex *Executor) resolveConcretePlan(ac *candidateAttempt, result *ToolResult
 // gateAlreadyInstalled finishes the tool when the adapter reports the
 // desired state already present. Adapters provide explicit presence semantics.
 func (ex *Executor) gateAlreadyInstalled(ac *candidateAttempt, result *ToolResult) attemptOutcome {
-	observation, err := ac.adapter.Observe(ac.toolCtx, ex.probeRunner(ac.tool.Name, ac.displayKind), ac.tool, methodForResolvedTarget(ac.method, ac.resolved))
-	if err != nil {
-		detail := fmt.Sprintf("%s: observe presence: %v", ac.displayKind, err)
-		ex.skipCandidate(ac, result, "failed", detail)
-		ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "observe_failed", "error", detail)
-		return nextMethod
-	}
+	observation := ex.observeResolvedCandidate(ac.toolCtx, ac.tool, ac.method, ac.adapter, ac.resolved, ac.displayKind)
 	switch observation.Presence {
 	case plan.PresencePresent:
 		return ex.finishAlreadyInstalled(ac, result)
 	case plan.PresenceAbsent, plan.PresenceUnknown:
 		return proceed
 	case plan.PresenceBroken:
-		detail := observation.Detail
-		if detail == "" {
-			detail = "presence observation is broken"
-		}
-		detail = fmt.Sprintf("%s: %s", ac.displayKind, detail)
+		detail := fmt.Sprintf("%s: %s", ac.displayKind, observation.Detail)
 		ex.skipCandidate(ac, result, "failed", detail)
 		ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "observe_broken", "error", detail)
 		return nextMethod
-	default:
-		detail := fmt.Sprintf("%s: invalid presence observation %q", ac.displayKind, observation.Presence)
-		ex.skipCandidate(ac, result, "failed", detail)
-		return nextMethod
 	}
+	return nextMethod
 }
 
 func (ex *Executor) finishAlreadyInstalled(ac *candidateAttempt, result *ToolResult) attemptOutcome {
