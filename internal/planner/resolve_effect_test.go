@@ -1,11 +1,11 @@
 package planner_test
 
 import (
-	"maps"
 	"reflect"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/contracttest"
 	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/planner"
 )
@@ -14,127 +14,64 @@ import (
 // schema field accepted with EffectResolve must observably affect the static
 // install plan. Two candidates differing only in that field must resolve to
 // different intents (or the second value must fail validation). A field that
-// builds two identical successful plans is accepted but ignored — the manifest
-// looks precise while planning is blind to it.
+// builds two identical successful plans is accepted but ignored.
 //
-// Deliberate exclusions (runtime-resolved dimensions whose static projection
-// is P1.1 work, not ignored fields):
-//   - release + branch on github/http/msi/appimage/android: consumed by the
-//     runtime download resolver (internal/httpdownload/resolver.go), which enriches
-//     the resolved plan after static planning.
-//   - git.url: consumed by the git adapter at clone time
-//     (internal/git/adapter.go); the static plan carries only version selectors.
-//   - native.pkg_overrides: resolved per-clan by the executor
-//     (internal/exec/native_adapter.go), invisible to host-independent planning.
-var resolveEffectExclusions = map[string]bool{
-	"github.release":       true,
-	"http.release":         true,
-	"msi.release":          true,
-	"appimage.release":     true,
-	"android.release":      true,
-	"github.branch":        true,
-	"http.branch":          true,
-	"msi.branch":           true,
-	"appimage.branch":      true,
-	"android.branch":       true,
-	"git.url":              true,
-	"native.pkg_overrides": true,
+// Runtime-resolved fields stay explicit here so a new exclusion cannot become
+// an unreviewed escape hatch. Each exclusion names both its reason and the
+// production boundary that must provide the behavioral probe.
+type resolveEffectExclusion struct {
+	Rationale string
+	Consumer  string
 }
 
-// resolveEffectBases provides minimal valid configs with zero version
-// selectors set, so each single-field probe is unambiguous.
-var resolveEffectBases = map[string]map[string]any{
-	"native":        {"pkg": "demo"},
-	"winget":        {"pkg": "demo"},
-	"cargo":         {"pkg": "demo"},
-	"cargo+git":     {"pkg": "demo", "git": "https://example.test/demo.git"},
-	"pipx":          {"pkg": "demo"},
-	"uv":            {"pkg": "demo"},
-	"pip":           {"pkg": "demo"},
-	"npm":           {"pkg": "demo"},
-	"bun":           {"pkg": "demo"},
-	"gem":           {"pkg": "demo"},
-	"conda":         {"pkg": "demo"},
-	"git":           {"url": "https://example.test/demo.git"},
-	"local":         {"local_path": "vendor/tool.tar.gz"},
-	"github":        {"repo": "org/demo", "asset": "demo.tar.gz"},
-	"appimage":      {"url": "https://example.test/tool.AppImage"},
-	"appimage+repo": {"repo": "org/demo", "asset": "demo.tar.gz"},
-	"android":       {"url": "https://example.test/tool.apk"},
-	"android+repo":  {"repo": "org/demo", "asset": "demo.tar.gz"},
-	"http":          {"url": "https://example.test/tool.tar.gz"},
-	"http+repo":     {"repo": "org/demo", "asset": "demo.tar.gz"},
-	"msi":           {"url": "https://example.test/tool.msi", "product_name": "Demo"},
-	"msi+repo":      {"repo": "org/demo", "asset": "demo.tar.gz", "product_name": "Demo"},
+var resolveEffectExclusions = map[string]resolveEffectExclusion{
+	"github.release":       {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
+	"http.release":         {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
+	"msi.release":          {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
+	"appimage.release":     {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
+	"android.release":      {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
+	"github.branch":        {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
+	"http.branch":          {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
+	"msi.branch":           {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
+	"appimage.branch":      {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
+	"android.branch":       {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
+	"git.url":              {"consumed by the git adapter at clone time", "internal/git/adapter.go"},
+	"native.pkg_overrides": {"resolved from host clan by the native adapter", "internal/exec/native_adapter.go"},
 }
 
 func TestResolveEffectFieldsMoveStaticIntent(t *testing.T) {
-	shaA := "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-	shaB := "sha256:ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb"
-	// Probe values keyed by "kind.field", falling back to bare field name.
-	values := map[string][]any{
-		"url":          {"https://example.test/a.tar.gz", "https://example.test/b.tar.gz"},
-		"git.url":      {"https://example.test/a.git", "https://example.test/b.git"},
-		"appimage.url": {"https://example.test/a.AppImage", "https://example.test/b.AppImage"},
-		"android.url":  {"https://example.test/a.apk", "https://example.test/b.apk"},
-		"cargo.git":    {"https://example.test/a.git", "https://example.test/b.git"},
-		"repo":         {"org/a", "org/b"},
-		"asset":        {"a.tar.gz", "b.tar.gz"},
-		"branch":       {"edge-a", "edge-b"},
-		"tag":          {"tag-a", "tag-b"},
-		"rev":          {"rev-a", "rev-b"},
-		"registry":     {"reg-a", "reg-b"},
-		"source":       {"src-a", "src-b"},
-		"index_url":    {"https://index-a.example/simple", "https://index-b.example/simple"},
-		"index":        {"https://index-a.example/simple", "https://index-b.example/simple"},
-		"channels":     {[]any{"chan-a"}, []any{"chan-b"}},
-		"local_path":   {"vendor/a.tar.gz", "vendor/b.tar.gz"},
-		"checksum":     {shaA, shaB},
-		"scope":        {"user", "system"},
-		"cargo.branch": {"edge-a", "edge-b"},
-		"cargo.tag":    {"tag-a", "tag-b"},
-		"cargo.rev":    {"rev-a", "rev-b"},
-	}
-	// Base overrides for probes that need companion fields.
-	bases := map[string]string{
-		"cargo.branch":   "cargo+git",
-		"cargo.tag":      "cargo+git",
-		"cargo.rev":      "cargo+git",
-		"http.asset":     "http+repo",
-		"msi.asset":      "msi+repo",
-		"appimage.asset": "appimage+repo",
-		"android.asset":  "android+repo",
-	}
-
 	tool := &config.Tool{Name: "demo"}
+	usedExclusions := make(map[string]bool, len(resolveEffectExclusions))
+
 	for _, contract := range methodkind.Contracts {
 		for name, field := range contract.Fields {
 			if field.Effects&methodkind.EffectResolve == 0 {
 				continue
 			}
 			key := contract.Kind + "." + name
-			if resolveEffectExclusions[key] {
+			if exclusion, ok := resolveEffectExclusions[key]; ok {
+				usedExclusions[key] = true
+				if exclusion.Rationale == "" || exclusion.Consumer == "" {
+					t.Errorf("%s has an incomplete EffectResolve exclusion", key)
+				}
+				if _, ok := contracttest.CoverageFor(contracttest.PhaseResolveRuntime, key); !ok {
+					t.Errorf("%s is excluded from static resolution without a runtime resolution probe", key)
+				}
 				continue
 			}
-			pair, ok := values[key]
-			if !ok {
-				pair, ok = values[name]
-			}
+
+			pair, ok := contracttest.FieldPair(contract.Kind, name)
 			if !ok {
 				t.Errorf("%s declares EffectResolve but has no differential probe; add values or justify an exclusion", key)
 				continue
 			}
-			baseKey := contract.Kind
-			if override, ok := bases[key]; ok {
-				baseKey = override
-			}
-			base, ok := resolveEffectBases[baseKey]
-			if !ok {
+			if _, ok := contracttest.BaseConfig(contract.Kind, name); !ok {
 				t.Errorf("%s has no probe base config", key)
 				continue
 			}
+
 			build := func(value any) (any, error) {
-				cfg := maps.Clone(base)
+				cfg, _ := contracttest.BaseConfig(contract.Kind, name)
 				cfg[name] = value
 				return planner.BuildCandidateIntent(tool, &config.MethodCandidate{Kind: contract.Kind, Config: cfg})
 			}
@@ -144,11 +81,17 @@ func TestResolveEffectFieldsMoveStaticIntent(t *testing.T) {
 			}
 			b, err := build(pair[1])
 			if err != nil {
-				continue // Value-dependent validation is itself an observable effect.
+				continue
 			}
 			if reflect.DeepEqual(a, b) {
 				t.Errorf("%s is accepted but ignored: distinct values resolve to identical plans", key)
 			}
+		}
+	}
+
+	for key := range resolveEffectExclusions {
+		if !usedExclusions[key] {
+			t.Errorf("EffectResolve exclusion %q no longer matches a declared EffectResolve field", key)
 		}
 	}
 }

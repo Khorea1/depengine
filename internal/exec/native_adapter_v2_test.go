@@ -443,3 +443,211 @@ func TestNativeByManagerWingetV2InstallResolvedUsesResolvedIdentity(t *testing.T
 		}
 	}
 }
+
+func TestNativeByManagerWingetV2ExecuteFieldsChangeCommand(t *testing.T) {
+	fields := []struct {
+		name  string
+		value string
+		flag  string
+	}{
+		{"pkg", "Other.Package", "--id"},
+		{"version", "9.9.9", "--version"},
+		{"source", "other-source", "--source"},
+		{"scope", "user", "--scope"},
+		{"architecture", "arm64", "--architecture"},
+		{"installer_type", "zip", "--installer-type"},
+	}
+	for _, field := range fields {
+		t.Run(field.name, func(t *testing.T) {
+			toolA, methodA := wingetV2TestMethod()
+			toolB, methodB := wingetV2TestMethod()
+			methodB.Config[field.name] = field.value
+			adapter := &NativeByManagerAdapter{managerName: "winget"}
+			install := func(tool *config.Tool, method *config.MethodCandidate) []run.FakeCall {
+				t.Helper()
+				intent, err := planner.BuildCandidateIntent(tool, method)
+				if err != nil {
+					t.Fatal(err)
+				}
+				resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, method, &intent)
+				if err != nil {
+					t.Fatal(err)
+				}
+				runner := &run.FakeRunner{}
+				if err := adapter.InstallResolved(context.Background(), runner, tool, method, resolved); err != nil {
+					t.Fatal(err)
+				}
+				if len(runner.Calls) != 1 {
+					t.Fatalf("InstallResolved() calls = %#v, want one call", runner.Calls)
+				}
+				return runner.Calls
+			}
+			callA, callB := install(toolA, methodA), install(toolB, methodB)
+			if equalFakeCall(callA[0], callB[0]) {
+				t.Fatalf("changing %s did not change install command: A=%#v B=%#v", field.name, callA[0], callB[0])
+			}
+			if field.name == "pkg" && (!hasFlagValue(callA[0].Args, field.flag, "Git.Git") || !hasFlagValue(callB[0].Args, field.flag, field.value)) {
+				t.Fatalf("commands A=%v B=%v do not select configured package identities", callA[0].Args, callB[0].Args)
+			}
+			if field.name != "pkg" && !hasFlagValue(callB[0].Args, field.flag, field.value) {
+				t.Fatalf("B command %v does not include %s=%q", callB[0].Args, field.flag, field.value)
+			}
+		})
+	}
+}
+
+func TestNativeByManagerWingetV2VerifyFieldsChangeObservation(t *testing.T) {
+	for _, field := range []struct {
+		name  string
+		value string
+	}{
+		{"pkg", "Other.Package"},
+		{"version", "9.9.9"},
+		{"source", "other-source"},
+	} {
+		t.Run(field.name, func(t *testing.T) {
+			toolA, methodA := wingetV2TestMethod()
+			toolB, methodB := wingetV2TestMethod()
+			methodB.Config[field.name] = field.value
+			adapter := &NativeByManagerAdapter{managerName: "winget"}
+			outputA, outputB := "Git Git.Git 2.53.0 x64 winget\n", "Git Git.Git 2.53.0 x64 winget\n"
+			if field.name == "pkg" {
+				outputB = "Other Other.Package 2.53.0 x64 winget\n"
+			}
+			runnerA := &run.FakeRunner{Stdout: outputA}
+			runnerB := &run.FakeRunner{Stdout: outputB}
+			observationA, err := adapter.Observe(context.Background(), runnerA, toolA, methodA)
+			if err != nil {
+				t.Fatal(err)
+			}
+			observationB, err := adapter.Observe(context.Background(), runnerB, toolB, methodB)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(runnerA.Calls) != 1 || len(runnerB.Calls) != 1 {
+				t.Fatalf("Observe calls A=%#v B=%#v, want one query each", runnerA.Calls, runnerB.Calls)
+			}
+			if field.name == "pkg" && equalFakeCall(runnerA.Calls[0], runnerB.Calls[0]) {
+				t.Fatalf("changing pkg did not change verification query: %#v", runnerA.Calls[0])
+			}
+			if field.name == "source" && equalFakeCall(runnerA.Calls[0], runnerB.Calls[0]) {
+				t.Fatalf("changing source did not change verification query: %#v", runnerA.Calls[0])
+			}
+			intentA, err := planner.BuildCandidateIntent(toolA, methodA)
+			if err != nil {
+				t.Fatal(err)
+			}
+			intentB, err := planner.BuildCandidateIntent(toolB, methodB)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resultA, resultB := plan.Reconcile(intentA.Identity, observationA), plan.Reconcile(intentB.Identity, observationB)
+			if field.name == "pkg" {
+				if resultA.Observed.Package != "Git.Git" || resultB.Observed.Package != "Other.Package" {
+					t.Fatalf("changing pkg did not change observed identity: A=%#v B=%#v", resultA, resultB)
+				}
+			} else {
+				wantField := plan.FieldVersion
+				if field.name == "source" {
+					wantField = plan.FieldSource
+				}
+				if hasDrift(resultA, wantField) || !hasDrift(resultB, wantField) {
+					t.Fatalf("changing %s did not change reconciled field drift: A=%#v B=%#v", field.name, resultA, resultB)
+				}
+			}
+		})
+	}
+}
+
+func TestNativeAdapterV2PackageFieldChangesExecuteAndVerify(t *testing.T) {
+	tool := &config.Tool{Name: "demo"}
+	methodA := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
+	methodB := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo-alt"}}
+	adapter := NewNativeAdapter("debian")
+	install := func(method *config.MethodCandidate) run.FakeCall {
+		t.Helper()
+		intent, err := planner.BuildCandidateIntent(tool, method)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, method, &intent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runner := &run.FakeRunner{}
+		if err := adapter.InstallResolved(context.Background(), runner, tool, method, resolved); err != nil {
+			t.Fatal(err)
+		}
+		for _, call := range runner.Calls {
+			if call.Name == "sudo" {
+				return call
+			}
+		}
+		t.Fatalf("InstallResolved() calls = %#v, want apt-get", runner.Calls)
+		return run.FakeCall{}
+	}
+	callA, callB := install(methodA), install(methodB)
+	if equalFakeCall(callA, callB) || !contains(callA.Args, "demo") || !contains(callB.Args, "demo-alt") {
+		t.Fatalf("native pkg was not observable in execute command: A=%#v B=%#v", callA, callB)
+	}
+
+	observe := func(method *config.MethodCandidate) (plan.Observation, run.FakeCall) {
+		t.Helper()
+		runner := &run.FakeRunner{}
+		observation, err := adapter.Observe(context.Background(), runner, tool, method)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(runner.Calls) != 1 {
+			t.Fatalf("Observe() calls = %#v, want one package query", runner.Calls)
+		}
+		return observation, runner.Calls[0]
+	}
+	observationA, queryA := observe(methodA)
+	observationB, queryB := observe(methodB)
+	if equalFakeCall(queryA, queryB) || !contains(queryA.Args, "demo") || !contains(queryB.Args, "demo-alt") {
+		t.Fatalf("native pkg was not observable in verification query: A=%#v B=%#v", queryA, queryB)
+	}
+	if observationA.Identity.Package != "demo" || observationB.Identity.Package != "demo-alt" {
+		t.Fatalf("native observations A=%#v B=%#v, want configured package identities", observationA, observationB)
+	}
+}
+
+func equalFakeCall(a, b run.FakeCall) bool {
+	if a.Name != b.Name || a.Dir != b.Dir || len(a.Args) != len(b.Args) {
+		return false
+	}
+	for i := range a.Args {
+		if a.Args[i] != b.Args[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func hasFlagValue(args []string, flag, value string) bool {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == flag && args[i+1] == value {
+			return true
+		}
+	}
+	return false
+}
+
+func contains(args []string, value string) bool {
+	for _, arg := range args {
+		if arg == value {
+			return true
+		}
+	}
+	return false
+}
+
+func hasDrift(result plan.VerificationResult, field plan.IdentityField) bool {
+	for _, drift := range result.Drift {
+		if drift.Field == field {
+			return true
+		}
+	}
+	return false
+}
