@@ -6,9 +6,9 @@ Work on the current execution model comes before adding more installer types.
 
 ## P0: correctness and security
 
-- [~] Reject ignored adapter fields and cover every meaningful field with a
-  behavior test. Static resolution and validation-effect probes exist; add
-  differential execution and verification probes for every declared field.
+- [x] Reject ignored adapter fields and cover every meaningful field with a
+  behavior test. Static resolution, validation effects, and differential
+  execution and verification probes cover every declared field.
 - [~] Add typed secret references to planning and runtime resolution. Runtime
   resolution now supports env-backed Bearer tokens when adding Git-backed
   `brew-tap` and `scoop-bucket` sources; other authenticated operations still
