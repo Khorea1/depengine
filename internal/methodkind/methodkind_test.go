@@ -166,6 +166,20 @@ func TestArtifactSpecializedContractsDoNotExposeOverriddenPlacementFields(t *tes
 	}
 }
 
+func TestSteamCMDPackageIsExecuteOnly(t *testing.T) {
+	contract, ok := methodkind.Lookup("steamcmd")
+	if !ok {
+		t.Fatal("missing steamcmd contract")
+	}
+	pkg, ok := contract.Fields["pkg"]
+	if !ok {
+		t.Fatal("steamcmd contract is missing pkg field")
+	}
+	if pkg.Effects != methodkind.EffectExecute {
+		t.Fatalf("steamcmd.pkg effects = %v, want execute only", pkg.Effects)
+	}
+}
+
 func TestEveryContractFieldDeclaresSemanticEffects(t *testing.T) {
 	for _, contract := range methodkind.Contracts {
 		for name, field := range contract.Fields {

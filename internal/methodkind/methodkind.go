@@ -290,7 +290,9 @@ var Contracts = finalizeContracts([]Contract{
 	{Kind: "mas", DefaultOrder: 22, Fields: pkgField, ImplicitDistroFamily: []string{"macos"}, AllowString: true, AllowTrue: true},
 	packageContract("appman", 23, true),
 	{Kind: "sdkman", DefaultOrder: 24, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify}}), AllowString: true, AllowTrue: true},
-	packageContract("steamcmd", 25, false),
+	{Kind: "steamcmd", DefaultOrder: 25, Fields: map[string]Field{
+		"pkg": {Type: String, Effects: EffectExecute},
+	}, AllowString: true, AllowTrue: true},
 	packageContract("pacstall", 26, false),
 	{Kind: "aur", Aliases: []string{"paru", "yay"}, DefaultOrder: 27, Fields: pkgField, ImplicitDistroFamily: []string{"arch"}, AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "conda", DefaultOrder: 28, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityEnvironmentTarget, Fields: fields(pkgField, map[string]Field{
