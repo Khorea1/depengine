@@ -1,0 +1,75 @@
+package contracttest
+
+func init() {
+	RegisterCoverage(PhaseResolveRuntime, map[string]Coverage{
+		"native.pkg_overrides": {Consumer: "TestNativePackageOverrideAcrossRuntimeBoundaries", Rationale: "clan-specific package identity is selected before adapter execution"},
+		"git.url":              {Consumer: "internal/git/adapter_test.go", Rationale: "clone source is consumed by runtime source resolution"},
+		"http.release":         {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
+		"http.branch":          {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
+		"github.release":       {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
+		"github.branch":        {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
+		"appimage.release":     {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
+		"appimage.branch":      {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
+		"android.release":      {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
+		"android.branch":       {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
+		"msi.release":          {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
+		"msi.branch":           {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
+	})
+	RegisterCoverage(PhaseExecute, map[string]Coverage{
+		"native.pkg_overrides": {Consumer: "TestNativePackageOverrideAcrossRuntimeBoundaries", Rationale: "serial and batch installs use the selected clan package"},
+		"git.url":              {Consumer: "internal/git/resolved_install_test.go", Rationale: "resolved clone executes the planned source"},
+		"git.artifact":         {Consumer: "internal/git/adapter_test.go", Rationale: "artifact selects the file copied from the temporary clone"},
+		"git.managed_paths":    {Consumer: "internal/git/adapter_test.go", Rationale: "managed paths determine owned payloads for install and removal"},
+		"local.local_path":     {Consumer: "internal/localartifactadapter/adapter_v2_test.go", Rationale: "project-relative source determines installed bytes"},
+		"local.checksum":       {Consumer: "internal/localartifactadapter/adapter_v2_test.go", Rationale: "checksum gates materialization of local bytes"},
+		"local.install_dir":    {Consumer: "internal/localartifactadapter/adapter_test.go", Rationale: "install directory selects the owned destination"},
+		"container.manager":    {Consumer: "internal/container/adapter_test.go", Rationale: "manager selects the runtime command and image store"},
+		"container.source":     {Consumer: "internal/container/adapter_test.go", Rationale: "source participates in the pulled image reference"},
+		"container.tag":        {Consumer: "internal/container/adapter_test.go", Rationale: "tag participates in the pulled image reference"},
+		"container.digest":     {Consumer: "internal/container/adapter_test.go", Rationale: "digest pins the pulled image content identity"},
+		"container.platform":   {Consumer: "internal/container/adapter_test.go", Rationale: "platform selects and verifies the requested image variant"},
+		"msi.product_name":     {Consumer: "internal/msi/adapter_v2_test.go", Rationale: "product name selects the product passed to msiexec"},
+		"msi.publisher":        {Consumer: "internal/msi/adapter_v2_test.go", Rationale: "publisher narrows product lookup before install or removal"},
+	})
+	RegisterCoverage(PhaseVerify, map[string]Coverage{
+		"native.pkg_overrides": {Consumer: "TestNativePackageOverrideAcrossRuntimeBoundaries", Rationale: "observe queries the clan-specific package identity"},
+		"git.managed_paths":    {Consumer: "internal/git/adapter_test.go", Rationale: "observe and remove are bounded by declared owned paths"},
+		"local.checksum":       {Consumer: "internal/localartifactadapter/adapter_v2_test.go", Rationale: "observation reports absence when installed content drifts"},
+		"local.install_dir":    {Consumer: "internal/localartifactadapter/adapter_test.go", Rationale: "observation checks the configured destination"},
+		"appimage.install_dir": {Consumer: "internal/httpdownload/appimage_adapter_test.go", Rationale: "observation checks the configured stable binary location"},
+		"container.manager":    {Consumer: "internal/container/adapter_test.go", Rationale: "observation queries the selected runtime's image store"},
+		"container.source":     {Consumer: "internal/container/adapter_test.go", Rationale: "observation queries the requested image source"},
+		"container.tag":        {Consumer: "internal/container/adapter_test.go", Rationale: "observation distinguishes the requested image tag"},
+		"container.digest":     {Consumer: "internal/container/adapter_test.go", Rationale: "observation verifies immutable image identity"},
+		"container.platform":   {Consumer: "internal/container/adapter_test.go", Rationale: "observation compares the installed image platform"},
+		"msi.product_name":     {Consumer: "internal/msi/adapter_v2_test.go", Rationale: "verification looks up the configured product name"},
+		"msi.publisher":        {Consumer: "internal/msi/adapter_v2_test.go", Rationale: "verification looks up the configured publisher"},
+	})
+	registerRuntimeFields(PhaseResolveRuntime, "http", "internal/httpdownload/resolved_install_test.go", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
+	registerRuntimeFields(PhaseResolveRuntime, "github", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "repo", "asset")
+	registerRuntimeFields(PhaseResolveRuntime, "appimage", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
+	registerRuntimeFields(PhaseResolveRuntime, "android", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
+	registerRuntimeFields(PhaseResolveRuntime, "msi", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
+	registerRuntimeFields(PhaseResolveRuntime, "local", "internal/localartifactadapter/adapter_v2_test.go", "project-relative source and checksum resolve to local content identity", "local_path", "checksum")
+
+	common := []string{"checksum", "checksum_url", "checksum_file_format", "signature_url", "signing_key"}
+	registerRuntimeFields(PhaseExecute, "http", "internal/httpdownload/resolved_install_test.go", "resolved metadata is consumed by the shared HTTP installer", append(common, "url", "repo", "asset", "extract_to", "binary", "entrypoints", "link_dir", "sudo_required", "strip_components", "scope")...)
+	registerRuntimeFields(PhaseExecute, "github", "internal/httpdownload/github_v2_test.go", "GitHub delegates artifact execution to the shared HTTP installer", append(common, "repo", "asset", "extract_to", "binary", "entrypoints", "link_dir", "sudo_required", "strip_components", "scope")...)
+	registerRuntimeFields(PhaseExecute, "appimage", "internal/httpdownload/appimage_adapter_test.go", "AppImage delegates download and archive execution to the shared HTTP installer", append(common, "url", "repo", "asset", "binary", "entrypoints", "link_dir", "sudo_required", "strip_components", "install_dir", "desktop", "scope")...)
+	registerRuntimeFields(PhaseExecute, "android", "internal/httpdownload/android_adapter_test.go", "Android delegates download and integrity checks to the shared HTTP installer", append(common, "url", "repo", "asset", "sudo_required")...)
+	registerRuntimeFields(PhaseExecute, "msi", "internal/msi/adapter_v2_test.go", "MSI delegates artifact integrity and source handling to HTTP before msiexec", append(common, "url", "repo", "asset")...)
+	registerRuntimeFields(PhaseExecute, "git", "internal/git/adapter_test.go", "Git execution consumes clone, build, ownership, and placement settings", "branch", "tag", "rev", "depth", "submodules", "build", "extract_to", "binary")
+
+	registerRuntimeFields(PhaseVerify, "http", "internal/httpdownload/http_v2_test.go", "observation checks configured payload and launcher locations", "extract_to", "binary", "entrypoints", "link_dir", "scope")
+	registerRuntimeFields(PhaseVerify, "github", "internal/httpdownload/github_v2_test.go", "GitHub observation delegates configured payload checks to HTTP", "extract_to", "binary", "entrypoints", "link_dir", "scope")
+	registerRuntimeFields(PhaseVerify, "appimage", "internal/httpdownload/appimage_v2_test.go", "observation checks the configured stable payload and launcher locations", "binary", "entrypoints", "link_dir", "scope")
+	registerRuntimeFields(PhaseVerify, "git", "internal/git/conformance_test.go", "observation checks the configured owned paths and install destination", "extract_to", "binary")
+}
+
+func registerRuntimeFields(phase Phase, kind, consumer, rationale string, fields ...string) {
+	entries := make(map[string]Coverage, len(fields))
+	for _, field := range fields {
+		entries[kind+"."+field] = Coverage{Consumer: consumer, Rationale: rationale}
+	}
+	RegisterCoverage(phase, entries)
+}
