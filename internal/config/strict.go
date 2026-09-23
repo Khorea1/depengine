@@ -273,7 +273,7 @@ func validateMethodValue(raw any, path, declaredKind string, errs *[]string) {
 		}
 		if known {
 			validateRequiredMethodFields(v, path, contract, errs)
-			validateArtifactChoice(v, path, contract.Kind, errs)
+			validateArtifactChoice(v, path, contract, errs)
 			for _, group := range contract.MutuallyExclusive {
 				present := 0
 				for _, key := range group {
@@ -316,14 +316,18 @@ func validateRequiredMethodFields(v map[string]any, path string, contract *metho
 	}
 }
 
-func validateArtifactChoice(v map[string]any, path, kind string, errs *[]string) {
-	if kind != "http" && kind != "github" && kind != "appimage" && kind != "android" && kind != "msi" {
+// validateArtifactChoice enforces the shared url XOR repo+asset source choice
+// for every contract that declares an artifact model, so new artifact kinds
+// inherit it instead of being added to a method-name list.
+func validateArtifactChoice(v map[string]any, path string, contract *methodkind.Contract, errs *[]string) {
+	if contract.Artifact == nil {
 		return
 	}
 	_, hasURL := v["url"]
 	_, hasRepo := v["repo"]
 	_, hasAsset := v["asset"]
-	if kind == "github" {
+	if _, acceptsURL := contract.Fields["url"]; !acceptsURL {
+		// Repo-only kinds (github) always take the repo+asset alternative.
 		hasRepo = true
 	}
 	if hasURL == hasRepo {

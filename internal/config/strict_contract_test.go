@@ -62,3 +62,17 @@ func TestParseMethodContractsEnforceNonEmptyFields(t *testing.T) {
 		}
 	}
 }
+
+// Artifact source-choice validation must follow the contracts, not a
+// method-name list: every artifact kind rejects an empty source choice and no
+// other kind does.
+func TestValidateArtifactChoiceFollowsContracts(t *testing.T) {
+	for i := range methodkind.Contracts {
+		contract := &methodkind.Contracts[i]
+		var errs []string
+		validateArtifactChoice(map[string]any{}, "tools.x.methods[0]", contract, &errs)
+		if got, want := len(errs) > 0, contract.Artifact != nil; got != want {
+			t.Errorf("%s: choice errors = %v (%v), want errors=%v", contract.Kind, got, errs, want)
+		}
+	}
+}
