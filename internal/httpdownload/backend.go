@@ -50,6 +50,20 @@ func NewGoDownloader(rn run.Runner) *GoDownloader {
 }
 
 func (d *GoDownloader) Download(ctx context.Context, url, dest string) error {
+	return d.download(ctx, url, dest, "")
+}
+
+// DownloadWithBearer downloads one request with a caller-supplied Bearer
+// credential. The credential is attached only to this request and is never
+// retained on GoDownloader or exposed through the Downloader interface.
+func (d *GoDownloader) DownloadWithBearer(ctx context.Context, url, dest, credential string) error {
+	if credential == "" {
+		return fmt.Errorf("http: empty Bearer credential")
+	}
+	return d.download(ctx, url, dest, credential)
+}
+
+func (d *GoDownloader) download(ctx context.Context, url, dest, bearerCredential string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("http: request: %w", run.RedactError(err))
@@ -66,7 +80,9 @@ func (d *GoDownloader) Download(ctx context.Context, url, dest string) error {
 	// by design: the header lives in process memory here, whereas passing a
 	// token to curl/wget would put it on the command line, visible to any
 	// local user via `ps aux` / /proc/<pid>/cmdline.
-	if d.rn != nil && ghrelease.IsGitHubURL(url) {
+	if bearerCredential != "" {
+		req.Header.Set("Authorization", "Bearer "+bearerCredential)
+	} else if d.rn != nil && ghrelease.IsGitHubURL(url) {
 		if token := ghrelease.GithubToken(ctx, d.rn); token != "" {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
@@ -157,6 +173,13 @@ func SelectDownloaderForURL(ctx context.Context, rn run.Runner, rawURL string) D
 		return NewGoDownloader(rn)
 	}
 	return SelectDownloader(ctx, rn)
+}
+
+// SelectDownloaderForAuthenticatedURL selects the in-process backend for a
+// request that requires caller-supplied authentication. The credential itself
+// is deliberately not part of backend selection.
+func SelectDownloaderForAuthenticatedURL(rn run.Runner) Downloader {
+	return NewGoDownloader(rn)
 }
 
 // downloadErrorWithHint appends the arch_map/os_map hint to a download

@@ -285,7 +285,7 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 
 	if !fromCache {
 		// Download from remote.
-		dl := SelectDownloaderForURL(ctx, rn, resolvedURL)
+		dl := selectCandidateDownloader(ctx, rn, resolvedURL, mc)
 		if err := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
 			return dl.Download(retryCtx, resolvedURL, tmpFile)
 		}); err != nil {
@@ -302,7 +302,7 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 				if rmErr := downloadcache.Remove(resolvedURL); rmErr != nil {
 					log.Default.Warn("failed to evict bad cache entry", "tool", tool.Name, "error", rmErr)
 				}
-				dl := SelectDownloaderForURL(ctx, rn, resolvedURL)
+				dl := selectCandidateDownloader(ctx, rn, resolvedURL, mc)
 				if err2 := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
 					return dl.Download(retryCtx, resolvedURL, tmpFile)
 				}); err2 != nil {
@@ -366,6 +366,16 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 	}
 
 	return nil
+}
+
+// selectCandidateDownloader keeps typed HTTP authentication on the Go
+// backend. secret_ref contains only a reference at this stage; the runtime
+// handoff supplies the resolved credential directly to GoDownloader.
+func selectCandidateDownloader(ctx context.Context, rn run.Runner, rawURL string, mc *config.MethodCandidate) Downloader {
+	if mc != nil && mc.Config != nil && mc.Config["secret_ref"] != nil {
+		return SelectDownloaderForAuthenticatedURL(rn)
+	}
+	return SelectDownloaderForURL(ctx, rn, rawURL)
 }
 
 // resolvedFileName derives the downloaded file's name from an already-
