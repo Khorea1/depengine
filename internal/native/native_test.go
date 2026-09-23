@@ -30,7 +30,7 @@ func TestBuildCommandsMatchExpectedPerClan(t *testing.T) {
 		{"macos brew no sudo", "macos", true, "brew install git", "brew list git"},
 		{"termux pkg no sudo", "termux", true, "pkg install -y git", "dpkg -s git"},
 		{"freebsd pkg + sudo", "freebsd", true, "sudo pkg install -y git", "pkg info -e git"},
-		{"openbsd pkg_add + sudo", "openbsd", true, "sudo pkg_add git", "pkg_info -e git"},
+		{"openbsd pkg_add + sudo", "openbsd", true, "sudo pkg_add git", "pkg_info -e git-*"},
 		{"netbsd pkgin + sudo", "netbsd", true, "sudo pkgin -y install git", "pkg_info -e git"},
 		{"gentoo emerge + sudo", "gentoo", true, "sudo emerge --quiet git", "equery list git"},
 		{"mint apt + sudo", "mint", true, "sudo apt-get install -y git", "dpkg -s git"},
