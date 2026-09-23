@@ -2,6 +2,7 @@ package source
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -71,6 +72,54 @@ func TestManagerRejectsUnsupportedSourceKind(t *testing.T) {
 	}
 	if len(runner.calls) != 0 {
 		t.Fatalf("unexpected commands: %v", runner.calls)
+	}
+}
+
+func TestManagerRejectsIgnoredURLBeforeRunnerCall(t *testing.T) {
+	for _, kind := range []string{"apt-ppa", "dnf-copr"} {
+		t.Run(kind, func(t *testing.T) {
+			configured := config.Source{Kind: kind, Name: "vendor/tools", URL: "https://example.test/tools"}
+			for _, call := range []struct {
+				name string
+				run  func(*Manager) error
+			}{
+				{"Missing", func(m *Manager) error {
+					_, err := m.Missing(context.Background(), []config.Source{configured})
+					return err
+				}},
+				{"Add", func(m *Manager) error { return m.Add(context.Background(), configured) }},
+			} {
+				t.Run(call.name, func(t *testing.T) {
+					runner := &scriptedRunner{}
+					err := call.run(NewManager(runner, false))
+					if err == nil || !strings.Contains(err.Error(), "URL is unsupported") {
+						t.Fatalf("%s() = %v, want unsupported URL", call.name, err)
+					}
+					if len(runner.calls) != 0 {
+						t.Fatalf("%s() reached Runner: %v", call.name, runner.calls)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestManagerPassesSupportedSourceURLToAdd(t *testing.T) {
+	for _, kind := range []string{"scoop-bucket", "brew-tap"} {
+		t.Run(kind, func(t *testing.T) {
+			configured := config.Source{Kind: kind, Name: "vendor/tools", URL: "https://example.test/tools"}
+			runner := &scriptedRunner{outputs: []run.Result{{}, {}}}
+			if _, err := NewManager(runner, false).Ensure(context.Background(), []config.Source{configured}); err != nil {
+				t.Fatal(err)
+			}
+			if len(runner.calls) != 2 {
+				t.Fatalf("calls = %v, want probe and add", runner.calls)
+			}
+			args := runner.calls[1].Args
+			if len(args) == 0 || args[len(args)-1] != configured.URL {
+				t.Fatalf("add args = %v, want source URL as final argument", args)
+			}
+		})
 	}
 }
 

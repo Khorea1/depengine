@@ -164,6 +164,9 @@ func (m *Manager) refreshAPT(ctx context.Context) error {
 }
 
 func (m *Manager) present(ctx context.Context, source config.Source) (bool, error) {
+	if err := validateSourceURLSupport(source); err != nil {
+		return false, err
+	}
 	var cmd []string
 	switch source.Kind {
 	case "apt-ppa":
@@ -189,6 +192,9 @@ func (m *Manager) present(ctx context.Context, source config.Source) (bool, erro
 }
 
 func (m *Manager) add(ctx context.Context, source config.Source) error {
+	if err := validateSourceURLSupport(source); err != nil {
+		return err
+	}
 	var cmd []string
 	switch source.Kind {
 	case "apt-ppa":
@@ -213,6 +219,13 @@ func (m *Manager) add(ctx context.Context, source config.Source) error {
 		result = m.mutator.Run(ctx, cmd[0], cmd[1:]...)
 	}
 	return run.CheckResult(result, "source add")
+}
+
+func validateSourceURLSupport(source config.Source) error {
+	if source.URL != "" && (source.Kind == "apt-ppa" || source.Kind == "dnf-copr") {
+		return fmt.Errorf("source: URL is unsupported for kind %q", source.Kind)
+	}
+	return nil
 }
 
 func (m *Manager) remove(ctx context.Context, source config.Source) error {

@@ -393,6 +393,9 @@ func validateSources(raw any, path string, errs *[]string) {
 		}
 		if rawURL, exists := m["url"]; exists {
 			validateNonEmptyString(rawURL, p+".url", errs)
+			if kind == "apt-ppa" || kind == "dnf-copr" {
+				*errs = append(*errs, p+".url: unsupported for source kind "+kind)
+			}
 		}
 		if rawRef, exists := m["secret_ref"]; exists {
 			validateSecretReference(rawRef, p+".secret_ref", errs)

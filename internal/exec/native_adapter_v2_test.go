@@ -415,9 +415,16 @@ func TestNativeByManagerWingetV2InstallResolvedUsesResolvedIdentity(t *testing.T
 		t.Fatalf("ValidateResolution() error = %v", err)
 	}
 
-	// The resolved plan is authoritative for identity dimensions: mutating the
-	// method afterwards must not change the installed version.
-	mc.Config["version"] = "9.9.9"
+	// The resolved plan is authoritative for identity dimensions. Mutating the
+	// candidate after resolution must not redirect the package, version, source,
+	// scope, or architecture selected for installation. installer_type is an
+	// execution-only field and remains read from the candidate.
+	for key, value := range map[string]any{
+		"pkg": "Other.Package", "version": "9.9.9", "source": "other-source",
+		"scope": "user", "architecture": "arm64", "installer_type": "zip",
+	} {
+		mc.Config[key] = value
+	}
 	runner := &run.FakeRunner{ExitCode: 0}
 	if err := adapter.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
 		t.Fatalf("InstallResolved() error = %v", err)
@@ -425,7 +432,7 @@ func TestNativeByManagerWingetV2InstallResolvedUsesResolvedIdentity(t *testing.T
 	if len(runner.Calls) != 1 || runner.Calls[0].Name != "winget" {
 		t.Fatalf("InstallResolved() calls = %#v, want one winget call", runner.Calls)
 	}
-	want := []string{"install", "--id", "Git.Git", "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity", "--version", "2.53.0", "--source", "winget", "--scope", "machine", "--architecture", "x64", "--installer-type", "msi"}
+	want := []string{"install", "--id", "Git.Git", "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity", "--version", "2.53.0", "--source", "winget", "--scope", "machine", "--architecture", "x64", "--installer-type", "zip"}
 	got := runner.Calls[0].Args
 	if len(got) != len(want) {
 		t.Fatalf("InstallResolved() args = %v, want %v", got, want)

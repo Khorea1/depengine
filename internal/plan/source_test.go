@@ -90,6 +90,21 @@ func TestHostSourceKindsRemainDistinct(t *testing.T) {
 	}
 }
 
+func TestHostSourceURLRequiresSupportedKind(t *testing.T) {
+	for _, kind := range []string{"apt-ppa", "dnf-copr"} {
+		source := plan.SourceReference{Role: plan.SourceHostConfiguration, Kind: kind, Name: "vendor/tools", URL: "https://example.test/tools"}
+		if err := source.Validate(); err == nil || !strings.Contains(err.Error(), "unsupported") {
+			t.Fatalf("Validate(%s) = %v, want unsupported URL", kind, err)
+		}
+	}
+	for _, kind := range []string{"scoop-bucket", "brew-tap"} {
+		source := plan.SourceReference{Role: plan.SourceHostConfiguration, Kind: kind, Name: "vendor/tools", URL: "https://example.test/tools"}
+		if err := source.Validate(); err != nil {
+			t.Fatalf("Validate(%s) = %v, want supported URL", kind, err)
+		}
+	}
+}
+
 func TestSourceReferenceRejectsMalformedKind(t *testing.T) {
 	for _, kind := range []string{" brew-tap", "brew-tap ", "brew\x00tap"} {
 		if err := (plan.SourceReference{Role: plan.SourceHostConfiguration, Kind: kind, Name: "corp/tools"}).Validate(); err == nil {

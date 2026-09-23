@@ -37,6 +37,33 @@ sources = [{ kind = "apt-ppa", name = "ppa:neovim-ppa/stable" }]
 	}
 }
 
+func TestSourceURLOnlyAcceptedWhenAddUsesIt(t *testing.T) {
+	for _, tt := range []struct {
+		kind    string
+		allowed bool
+	}{
+		{"apt-ppa", false},
+		{"dnf-copr", false},
+		{"scoop-bucket", true},
+		{"brew-tap", true},
+	} {
+		t.Run(tt.kind, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "schema.toml")
+			data := "schema_version = 1\n[tools.demo.native]\npkg = \"demo\"\nsources = [{ kind = \"" + tt.kind + "\", name = \"vendor/tools\", url = \"https://example.test/tools\" }]\n"
+			if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := ParseProjectSchema(path, nil)
+			if tt.allowed && err != nil {
+				t.Fatalf("ParseProjectSchema() = %v, want accepted URL", err)
+			}
+			if !tt.allowed && (err == nil || !strings.Contains(err.Error(), "sources[0].url: unsupported")) {
+				t.Fatalf("ParseProjectSchema() = %v, want source URL rejection", err)
+			}
+		})
+	}
+}
+
 func TestParseSourceSecretReferenceInNativeAndLabeledMethods(t *testing.T) {
 	for _, method := range []string{"native", "custom"} {
 		t.Run(method, func(t *testing.T) {

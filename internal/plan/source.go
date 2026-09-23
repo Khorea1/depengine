@@ -68,6 +68,9 @@ func (s SourceReference) Validate() error {
 		return errors.New("source requires name or URL")
 	}
 	if s.URL != "" {
+		if s.Role == SourceHostConfiguration && (s.Kind == "apt-ppa" || s.Kind == "dnf-copr") {
+			return fmt.Errorf("source URL is unsupported for host source kind %q", s.Kind)
+		}
 		if err := validateSourceURL(s.URL); err != nil {
 			return fmt.Errorf("source URL: %w", err)
 		}
