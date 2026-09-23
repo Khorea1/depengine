@@ -138,13 +138,7 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 
 		// Check whether observation reports the target already installed.
 		probe := ex.probeRunner(tool.Name, displayKind)
-		observation, observeErr := adapter.Observe(ctx, probe, tool, methodForResolvedTarget(method, resolvedPlan))
-		if observeErr != nil {
-			attempt.Status = "failed"
-			attempt.Error = fmt.Sprintf("%s: observe presence: %s", displayKind, run.RedactSensitiveText(observeErr.Error()))
-			appendAttempt(attempt, method)
-			continue
-		}
+		observation := ex.observeResolvedCandidate(ctx, tool, method, adapter, resolvedPlan, displayKind)
 		switch observation.Presence {
 		case plan.PresencePresent:
 			attempt.Status = "already_installed"
@@ -154,17 +148,8 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 		case plan.PresenceAbsent, plan.PresenceUnknown:
 			// Neither state establishes that the candidate is installed.
 		case plan.PresenceBroken:
-			detail := observation.Detail
-			if detail == "" {
-				detail = "presence observation is broken"
-			}
 			attempt.Status = "failed"
-			attempt.Error = fmt.Sprintf("%s: %s", displayKind, run.RedactSensitiveText(detail))
-			appendAttempt(attempt, method)
-			continue
-		default:
-			attempt.Status = "failed"
-			attempt.Error = fmt.Sprintf("%s: invalid presence observation %q", displayKind, observation.Presence)
+			attempt.Error = fmt.Sprintf("%s: %s", displayKind, observation.Detail)
 			appendAttempt(attempt, method)
 			continue
 		}
@@ -268,8 +253,8 @@ func (ex *Executor) CheckInstalled(ctx context.Context, tool *config.Tool, clan 
 		if err != nil {
 			continue
 		}
-		observation, err := adapter.Observe(ctx, probe, tool, methodForResolvedTarget(method, resolved))
-		if err == nil && observation.Presence == plan.PresencePresent {
+		observation := ex.observeResolvedCandidate(ctx, tool, method, adapter, resolved, method.Kind)
+		if observation.Presence == plan.PresencePresent {
 			return method.Kind, true
 		}
 		continue

@@ -154,7 +154,7 @@ func TestExecutorAdapterV2BrokenObservationFailsCandidate(t *testing.T) {
 func TestExecutorAdapterV2ObservationErrorFailsCandidate(t *testing.T) {
 	adapter := &executorAdapterV2Double{
 		testMockAdapter: testMockAdapter{kindValue: "cargo"},
-		observeErr:      errors.New("probe unavailable"),
+		observeErr:      errors.New("probe unavailable at https://user:pass@example.test/?token=secret"),
 	}
 	result := v2ExecutorAttempt(t, adapter)
 	if result.Status != StatusFailed {
@@ -165,6 +165,9 @@ func TestExecutorAdapterV2ObservationErrorFailsCandidate(t *testing.T) {
 	}
 	if len(result.Methods) != 1 || !strings.Contains(result.Methods[0].Error, "probe unavailable") {
 		t.Fatalf("methods = %+v, want explainable observation error", result.Methods)
+	}
+	if strings.Contains(result.Methods[0].Error, "pass") || strings.Contains(result.Methods[0].Error, "secret") {
+		t.Fatalf("observation error leaked probe credentials: %q", result.Methods[0].Error)
 	}
 }
 
