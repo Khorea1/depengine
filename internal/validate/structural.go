@@ -400,20 +400,6 @@ func scanPlaceholders(s, field string, r *Result) {
 	}
 }
 
-// isHexString reports whether every byte in s is a valid hexadecimal digit.
-func isHexString(s string) bool {
-	if len(s) == 0 {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
-			return false
-		}
-	}
-	return true
-}
-
 // validateMethodOrderConflicts checks that no tool has both method_prefer
 // and method_only set simultaneously.
 func validateMethodOrderConflicts(s *config.Schema) *Result {
