@@ -258,7 +258,7 @@ func ValidateSchema(s *config.Schema, knownKinds []string) *Result {
 	r.Merge(validateMethodOrderConflicts(s))
 	r.Merge(validateSignatureSecurity(s))
 
-	// Plan checks reuse the executor's static planning boundary.
+	// Plan checks reuse the shared static planning boundary consumed by the executor.
 	r.Merge(validatePlanIntents(s))
 	r.sort()
 	return r

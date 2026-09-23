@@ -186,7 +186,49 @@ func (a *HTTPAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *
 	if resolved == nil || len(resolved.Artifacts) == 0 || resolved.Artifacts[0].URL == "" {
 		return fmt.Errorf("http: resolved plan has no concrete artifact URL")
 	}
-	return a.installResolvedURL(ctx, rn, tool, mc, resolved.Artifacts[0].URL)
+	effective := methodWithResolvedArtifact(mc, resolved.Artifacts[0])
+	err := a.installResolvedURL(ctx, rn, tool, effective, resolved.Artifacts[0].URL)
+	if mc != nil {
+		if checksum, ok := effective.Config["_checksum_resolved"].(string); ok && checksum != "" {
+			if mc.Config == nil {
+				mc.Config = make(map[string]any)
+			}
+			mc.Config["_checksum_resolved"] = checksum
+		}
+	}
+	return err
+}
+
+// methodWithResolvedArtifact keeps execution/layout knobs from the candidate
+// while making the resolved artifact authoritative for transport and
+// verification. This prevents InstallResolved from silently re-reading stale
+// checksum/signature inputs after the plan has been resolved.
+func methodWithResolvedArtifact(mc *config.MethodCandidate, artifact plan.Artifact) *config.MethodCandidate {
+	effective := &config.MethodCandidate{Config: make(map[string]any)}
+	if mc != nil {
+		clone := *mc
+		effective = &clone
+		effective.Config = make(map[string]any, len(mc.Config)+1)
+		for key, value := range mc.Config {
+			effective.Config[key] = value
+		}
+	}
+	effective.Config["url"] = artifact.URL
+	for key, value := range map[string]string{
+		"checksum":             artifact.Checksum,
+		"checksum_url":         artifact.ChecksumURL,
+		"checksum_file_format": artifact.ChecksumFileFormat,
+		"signature_url":        artifact.SignatureURL,
+		"signing_key":          artifact.SigningKey,
+	} {
+		if value == "" {
+			delete(effective.Config, key)
+			continue
+		}
+		effective.Config[key] = value
+	}
+	delete(effective.Config, "_checksum_resolved")
+	return effective
 }
 
 func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolvedURL string) error {

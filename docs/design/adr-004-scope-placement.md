@@ -1,7 +1,7 @@
 # ADR-004: Scope supplies platform-native placement; explicit absolute paths override
 
 - Status: implemented (2026-09-22)
-- Source: `.dev/TODO.md` P1.5 working notes
+- Origin: implementation working notes, condensed into this ADR
 
 ## Context
 

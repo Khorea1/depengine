@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/planner"
 )
 
 func TestValidatePlanIntentsRejectsUnsupportedVersionSemantics(t *testing.T) {
@@ -27,6 +29,19 @@ func TestValidatePlanIntentsExplainsCapabilityClass(t *testing.T) {
 	}
 	if !strings.Contains(r.Errors[0].Message, "exact-version") {
 		t.Fatalf("message = %q, want stable missing-capability name", r.Errors[0].Message)
+	}
+}
+
+func TestValidatePlanIntentsUsesSharedPlanningError(t *testing.T) {
+	s := schemaWithMethod("native", map[string]any{"pkg": "demo", "version": "1.2.3"})
+	method := s.Tools["demo"].Methods[0]
+	_, err := planner.BuildValidatedCandidateIntent(s.Tools["demo"], method, methodkind.CandidateRequirements{})
+	if err == nil {
+		t.Fatal("BuildValidatedCandidateIntent() = nil, want capability error")
+	}
+	r := validatePlanIntents(s)
+	if !r.HasErrors() || r.Errors[0].Message != err.Error() {
+		t.Fatalf("validation error = %+v, want shared planning error %q", r.Errors, err.Error())
 	}
 }
 

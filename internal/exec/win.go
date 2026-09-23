@@ -239,13 +239,77 @@ func (w *winAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.To
 	return observation, nil
 }
 
-// InstallResolved executes the resolved plan without re-resolving identity:
-// scoop/choco package selection comes from mc, mirroring Install.
-func (w *winAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+// InstallResolved executes identity from the resolved plan. Method config is
+// consulted only for execution-only switches that are not part of resolved
+// identity (currently Chocolatey's prerelease flag).
+func (w *winAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
 	if resolved == nil {
 		return fmt.Errorf("%s: nil resolved plan", w.kind)
 	}
-	return w.Install(ctx, rn, tool, mc)
+	if rn == nil {
+		return fmt.Errorf("%s: no runner", w.kind)
+	}
+	if err := validateNativeResolvedInstallOperation(w.kind, resolved); err != nil {
+		return err
+	}
+	pkg := resolved.Identity.Package
+	if pkg == "" {
+		return fmt.Errorf("%s: resolved plan has no package identity", w.kind)
+	}
+
+	var cmd []string
+	switch w.kind {
+	case "scoop":
+		installTarget := pkg
+		if bucket := resolvedSelectionSource(resolved); bucket != "" {
+			installTarget = bucket + "/" + installTarget
+		}
+		if resolved.Identity.Version != "" {
+			installTarget += "@" + resolved.Identity.Version
+		}
+		cmd = []string{"scoop", "install", installTarget}
+		if resolved.Identity.Scope == string(plan.ScopeSystem) {
+			cmd = append(cmd, "--global")
+		}
+		if resolved.Identity.Architecture != "" {
+			cmd = append(cmd, "--arch", resolved.Identity.Architecture)
+		}
+	case "choco":
+		cmd = []string{"choco", "install", pkg}
+		if resolved.Identity.Version != "" {
+			cmd = append(cmd, "--version", resolved.Identity.Version)
+		}
+		if resolved.Identity.Source != "" {
+			cmd = append(cmd, "--source", resolved.Identity.Source)
+		}
+		if resolved.Identity.Architecture == "x86" {
+			cmd = append(cmd, "--forcex86")
+		}
+		if mc != nil {
+			if prerelease, _ := mc.Config["prerelease"].(bool); prerelease {
+				cmd = append(cmd, "--pre")
+			}
+		}
+		cmd = append(cmd, "-y")
+	default:
+		return fmt.Errorf("%s: unsupported Windows package manager", w.kind)
+	}
+
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	return run.CheckResult(res, w.kind+": install")
+}
+
+func resolvedSelectionSource(resolved *plan.ResolvedInstallPlan) string {
+	for _, source := range resolved.Sources {
+		if source.Role != plan.SourceSelection {
+			continue
+		}
+		if source.Name != "" {
+			return source.Name
+		}
+		return source.URL
+	}
+	return ""
 }
 
 // CheckAvailable assumes availability: these managers resolve names at

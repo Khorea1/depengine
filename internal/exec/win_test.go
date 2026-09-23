@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/planner"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -318,6 +319,76 @@ func TestWinAdapterImplementsRemover(t *testing.T) {
 	b := lookupWinAdapter("choco")
 	if _, ok := any(b).(AdapterV2); !ok {
 		t.Fatal("winAdapter must implement AdapterV2")
+	}
+}
+
+func TestWinAdapterInstallResolvedUsesResolvedIdentity(t *testing.T) {
+	tests := []struct {
+		name       string
+		kind       string
+		config     map[string]any
+		mutate     map[string]any
+		wantBinary string
+		wantArgs   []string
+	}{
+		{
+			name: "scoop",
+			kind: "scoop",
+			config: map[string]any{
+				"pkg": "neovim", "version": "0.10.4", "bucket": "extras",
+				"scope": "global", "architecture": "arm64",
+			},
+			mutate: map[string]any{
+				"pkg": "wrong", "version": "9.9.9", "bucket": "wrong-bucket",
+				"scope": "user", "architecture": "32bit",
+			},
+			wantBinary: "scoop",
+			wantArgs:   []string{"install", "extras/neovim@0.10.4", "--global", "--arch", "arm64"},
+		},
+		{
+			name: "choco",
+			kind: "choco",
+			config: map[string]any{
+				"pkg": "neovim", "version": "0.10.4", "source": "internal",
+				"architecture": "x86", "prerelease": true,
+			},
+			mutate: map[string]any{
+				"pkg": "wrong", "version": "9.9.9", "source": "wrong-source",
+				"architecture": "x64",
+			},
+			wantBinary: "choco",
+			wantArgs:   []string{"install", "neovim", "--version", "0.10.4", "--source", "internal", "--forcex86", "--pre", "-y"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adapter := lookupWinAdapter(tt.kind)
+			tool := &config.Tool{Name: "nvim"}
+			mc := &config.MethodCandidate{Kind: tt.kind, Config: tt.config}
+			intent, err := planner.BuildCandidateIntent(tool, mc)
+			if err != nil {
+				t.Fatalf("BuildCandidateIntent() error = %v", err)
+			}
+			resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
+			if err != nil {
+				t.Fatalf("ResolvePlan() error = %v", err)
+			}
+			for key, value := range tt.mutate {
+				mc.Config[key] = value
+			}
+
+			runner := &run.FakeRunner{}
+			if err := adapter.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
+				t.Fatalf("InstallResolved() error = %v", err)
+			}
+			if len(runner.Calls) != 1 {
+				t.Fatalf("InstallResolved() calls = %#v, want one call", runner.Calls)
+			}
+			if got := runner.Calls[0]; got.Name != tt.wantBinary || fmt.Sprint(got.Args) != fmt.Sprint(tt.wantArgs) {
+				t.Fatalf("InstallResolved() call = %s %v, want %s %v", got.Name, got.Args, tt.wantBinary, tt.wantArgs)
+			}
+		})
 	}
 }
 

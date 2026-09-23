@@ -1,14 +1,12 @@
-# depengine — active schema/install DSL backlog
+# depengine — schema/install roadmap
 
-> Contains only unfinished work. Last audited: 2026-09-22.
+> Long-lived unfinished project work. Last audited: 2026-09-22.
 >
 > P2 is frozen until the P0/P1 semantic core is complete. New installation
 > primitives on the legacy execution model are migration debt.
 
 ## P0 — correctness and security
 
-- [~] Make validation, `why`, dry-run, and execution consume one resolved
-  plan; dry-run must render the exact executable plan.
 - [~] Complete the no-ignored-fields invariant and add one behavior test for
   every non-trivial adapter field.
 - [~] Wire explicit secret references into planning and runtime resolution.
@@ -60,5 +58,19 @@
   dry-run, version/source/scope/environment, lock, lifecycle, idempotency,
   errors, and secret redaction.
 - [ ] Add planner fuzz/property and lifecycle/state invariant tests.
-- [ ] Align product claims and public documentation with actual guarantees,
-  then run the v1 freeze gate.
+- [ ] Align product claims and public documentation with actual guarantees.
+- [ ] Complete the criteria in [`specs/format-v1-freeze.md`](specs/format-v1-freeze.md) and run the v1 freeze review.
+
+## Engineering quality
+
+- [ ] Triage the full-repository golangci-lint backlog, fix valid findings, and
+  remove the `new-from-rev` baseline only when the complete lint run passes.
+  Audit on 2026-09-22: 142 findings (`errcheck` 50, `gosec` 50,
+  `staticcheck` 21, `errorlint` 11, `unused` 10); the linter caps displayed
+  findings at 50 per category.
+- [ ] Review `internal/plan/preparation.go` for distinct change
+  responsibilities; split only evidenced boundaries and keep its invariants
+  and tests together. Do not split `internal/exec` or test files by size alone.
+- [ ] Audit author variants with Git history and normalize future reporting
+  with `.mailmap` only for identities verified as equivalent. Do not rewrite
+  published history as part of routine cleanup.

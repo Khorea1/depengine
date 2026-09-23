@@ -15,15 +15,15 @@ import (
 )
 
 type batchCandidate struct {
-	toolName   string
-	tool       *config.Tool
-	method     *config.MethodCandidate
-	planIntent *plan.ResolvedInstallPlan
-	pkg        string
+	toolName     string
+	tool         *config.Tool
+	method       *config.MethodCandidate
+	resolvedPlan *plan.ResolvedInstallPlan
 }
 
-func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string, s *config.Schema, report *ExecReport) (candidates []batchCandidate, remaining []string) {
+func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string, s *config.Schema, report *ExecReport) (candidates []batchCandidate, remaining []string, resolutions map[string]*candidateResolutionSeed) {
 	remaining = make([]string, 0, len(level))
+	resolutions = make(map[string]*candidateResolutionSeed)
 	for _, toolName := range level {
 		tool, ok := s.Tools[toolName]
 		if !ok {
@@ -57,29 +57,50 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 			if len(method.Requires) > 0 || len(method.Sources) > 0 {
 				break
 			}
+			if !native.IsBatchCapable(ex.clan) {
+				break
+			}
+
+			// Batch planning crosses the same read-only resolution boundary as
+			// serial execution. Preserve the result for any later serial fallback
+			// so a dynamic release/tag/asset lookup is never repeated.
+			resolvedPlan, resolveErr := ex.resolveCandidatePlan(ctx, tool, method, adapter, planIntent, displayMethodKind(method))
+			resolution := &candidateResolutionSeed{method: method, resolved: resolvedPlan, err: resolveErr}
+			if resolveErr != nil {
+				resolutions[toolName] = resolution
+				break
+			}
+			if resolvedPlan == nil || resolvedPlan.Identity.Package == "" || !validBatchPkgName(resolvedPlan.Identity.Package) {
+				resolutions[toolName] = resolution
+				break
+			}
+			if v2, ok := adapter.(AdapterV2); ok {
+				if err := v2.CheckHostCompatibility(tool, method, resolvedPlan, ex.facts, ex.clan); err != nil {
+					resolutions[toolName] = resolution
+					break
+				}
+			}
 			presence, ok := ex.batchPresence(ctx, adapter, toolName, tool, method)
 			if !ok {
 				// A failed or broken V2 observation is not evidence that the
 				// package is absent. Leave the candidate to the serial path,
 				// which records the probe failure using normal method semantics.
+				resolutions[toolName] = resolution
 				break
 			}
 			if presence == plan.PresencePresent {
 				ex.recordToolResult(ctx, &ToolResult{
 					Tool: toolName, Status: StatusAlready, Method: displayMethodKind(method),
-					MethodKind: method.Kind, Config: method.Config, PlanIntent: planIntent,
+					MethodKind: method.Kind, Config: method.Config, PlanIntent: resolvedPlan,
 				}, report)
 				foundNative = true
 				break
 			}
 			if !checkAvailable(ctx, ex.probeRunner(toolName, method.Kind), adapter, tool, method) {
+				resolutions[toolName] = resolution
 				break
 			}
-			pkg := pkgFromConfig(method, ex.clan)
-			if pkg == "" || !validBatchPkgName(pkg) || !native.IsBatchCapable(ex.clan) {
-				break
-			}
-			candidates = append(candidates, batchCandidate{toolName: toolName, tool: tool, method: method, planIntent: planIntent, pkg: pkg})
+			candidates = append(candidates, batchCandidate{toolName: toolName, tool: tool, method: method, resolvedPlan: resolvedPlan})
 			foundNative = true
 			break
 		}
@@ -87,7 +108,7 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 			remaining = append(remaining, toolName)
 		}
 	}
-	return candidates, remaining
+	return candidates, remaining, resolutions
 }
 
 // batchPresence preserves the legacy boolean Check contract while giving V2
@@ -159,9 +180,12 @@ func validBatchPkgName(name string) bool {
 }
 
 func (ex *Executor) batchNativeInstall(ctx context.Context, candidates []batchCandidate) bool {
-	pkgs := make([]string, len(candidates))
-	for i, candidate := range candidates {
-		pkgs[i] = candidate.pkg
+	pkgs := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.resolvedPlan == nil || candidate.resolvedPlan.Identity.Package == "" || !validBatchPkgName(candidate.resolvedPlan.Identity.Package) {
+			return false
+		}
+		pkgs = append(pkgs, candidate.resolvedPlan.Identity.Package)
 	}
 	cmd := native.BuildBatchInstallCmd(ex.clan, pkgs)
 	if cmd == nil {

@@ -49,6 +49,24 @@ func BuildCandidateIntent(tool *config.Tool, method *config.MethodCandidate) (pl
 	return p, nil
 }
 
+// BuildValidatedCandidateIntent is the shared static planning boundary for
+// callers that need both the adapter-neutral intent and capability validation.
+// It performs no host probes or mutations.
+func BuildValidatedCandidateIntent(tool *config.Tool, method *config.MethodCandidate, requirements methodkind.CandidateRequirements) (*plan.ResolvedInstallPlan, error) {
+	intent, err := BuildCandidateIntent(tool, method)
+	if err != nil {
+		return nil, err
+	}
+	contract, ok := methodkind.Lookup(method.Kind)
+	if !ok {
+		return nil, &plan.PlannerError{Class: plan.ErrorUnsupportedCapability, Op: "candidate", Err: fmt.Errorf("unknown method kind %q", method.Kind)}
+	}
+	if err := contract.CheckRequirements(intent, requirements); err != nil {
+		return &intent, err
+	}
+	return &intent, nil
+}
+
 func invalid(op string, err error) error {
 	return &plan.PlannerError{Class: plan.ErrorInvalidManifest, Op: op, Err: err}
 }

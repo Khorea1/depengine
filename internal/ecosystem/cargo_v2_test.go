@@ -19,7 +19,11 @@ func cargoV2Runner(stdout string) *run.FakeRunner {
 func TestCargoAdapterV2ResolvePreservesPlannerIntent(t *testing.T) {
 	adapter := NewCargoAdapter()
 	tool := &config.Tool{Name: "friendly-name"}
-	mc := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"pkg": "crate-name", "version": "1.2.3"}}
+	mc := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{
+		"pkg":     "crate-name",
+		"version": "1.2.3",
+		"target":  "x86_64-unknown-linux-musl",
+	}}
 
 	intent, err := planner.BuildCandidateIntent(tool, mc)
 	if err != nil {
@@ -39,7 +43,7 @@ func TestCargoAdapterV2ResolvePreservesPlannerIntent(t *testing.T) {
 	if err := adapter.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
 		t.Fatalf("InstallResolved() error = %v", err)
 	}
-	assertLastCargoCall(t, runner, []string{"install", "--version", "1.2.3", "crate-name"})
+	assertLastCargoCall(t, runner, []string{"install", "--version", "1.2.3", "--target", "x86_64-unknown-linux-musl", "crate-name"})
 }
 
 func TestCargoAdapterV2ResolveRejectsBadInput(t *testing.T) {
@@ -153,6 +157,7 @@ func TestCargoAdapterV2InstallResolvedUsesResolvedIdentity(t *testing.T) {
 	intent.Identity.Package = "crate-name"
 	intent.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: "1.2.3"}
 	intent.Identity.Version = "1.2.3"
+	intent.Identity.Architecture = "x86_64-unknown-linux-musl"
 	intent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
 
 	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
@@ -163,12 +168,13 @@ func TestCargoAdapterV2InstallResolvedUsesResolvedIdentity(t *testing.T) {
 	// the command.
 	mc.Config["pkg"] = "legacy-crate"
 	mc.Config["version"] = "9.9.9"
+	mc.Config["target"] = "aarch64-unknown-linux-gnu"
 
 	runner := cargoV2Runner("")
 	if err := adapter.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
 		t.Fatalf("InstallResolved() error = %v", err)
 	}
-	assertLastCargoCall(t, runner, []string{"install", "--version", "1.2.3", "crate-name"})
+	assertLastCargoCall(t, runner, []string{"install", "--version", "1.2.3", "--target", "x86_64-unknown-linux-musl", "crate-name"})
 }
 
 func TestCargoAdapterV2InstallResolvedGitModes(t *testing.T) {

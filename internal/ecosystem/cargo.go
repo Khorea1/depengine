@@ -221,9 +221,9 @@ func (a *CargoAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.
 }
 
 // InstallResolved executes only the identity resolved into the plan. Source,
-// version, registry, git refs, and install root come from the resolved plan
-// (overriding the candidate config); execution-only build options (features,
-// no_default_features, bins, target) still come from the candidate config.
+// version, registry, git refs, target architecture, and install root come from
+// the resolved plan (overriding the candidate config); execution-only build
+// options (features, no_default_features, bins) still come from the candidate.
 // Explicit operations have no cargo-specific interpretation and are rejected
 // rather than treated as arbitrary commands.
 func (a *CargoAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
@@ -303,6 +303,11 @@ func cargoResolvedConfig(mc *config.MethodCandidate, resolved *plan.ResolvedInst
 		cfg["root"] = environment.Value
 	} else {
 		delete(cfg, "root")
+	}
+	if resolved.Identity.Architecture != "" {
+		cfg["target"] = resolved.Identity.Architecture
+	} else {
+		delete(cfg, "target")
 	}
 	if gitURL, _ := cfg["git"].(string); gitURL == "" {
 		cfg["pkg"] = resolved.Identity.Package

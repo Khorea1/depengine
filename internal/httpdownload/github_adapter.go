@@ -106,8 +106,8 @@ func (a *GitHubAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool
 	if resolved == nil || len(resolved.Artifacts) == 0 || resolved.Artifacts[0].URL == "" {
 		return fmt.Errorf("github: resolved plan has no concrete artifact URL")
 	}
-	asset, _ := mc.Config["asset"].(string)
-	if binary, _ := mc.Config["binary"].(string); binary != "" || isArchive(fileExtension(asset)) {
+	artifactURL := resolved.Artifacts[0].URL
+	if binary, _ := mc.Config["binary"].(string); binary != "" || isArchive(fileExtension(artifactURL)) {
 		return a.http.InstallResolved(ctx, rn, tool, mc, resolved)
 	}
 	clone := *mc

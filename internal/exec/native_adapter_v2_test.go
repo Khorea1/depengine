@@ -153,9 +153,7 @@ func TestNativeAdapterV2InstallResolved(t *testing.T) {
 	}
 }
 
-func TestNativeAdapterV2InstallResolvedHonorsPkgOverrides(t *testing.T) {
-	// The planner intent is host-independent, so the clan override is applied
-	// at execution time from mc — InstallResolved must install fd-find, not fd.
+func TestNativeAdapterV2InstallResolvedUsesResolvedPackage(t *testing.T) {
 	tool := &config.Tool{Name: "fd"}
 	mc := &config.MethodCandidate{Kind: "native", Config: map[string]any{
 		"pkg":           "fd",
@@ -163,6 +161,12 @@ func TestNativeAdapterV2InstallResolvedHonorsPkgOverrides(t *testing.T) {
 	}}
 	adapter := NewNativeAdapter("debian")
 	resolved := canonicalInstallPlan("fd", "native")
+	resolved.Identity.Package = "fd-find"
+
+	// The resolved plan is authoritative after resolution. Later changes to
+	// method config must not alter the executable package identity.
+	mc.Config["pkg"] = "wrong-package"
+	mc.Config["pkg_overrides"] = map[string]any{"apt": "also-wrong"}
 
 	runner := &run.FakeRunner{ExitCode: 0}
 	if err := adapter.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
@@ -170,8 +174,8 @@ func TestNativeAdapterV2InstallResolvedHonorsPkgOverrides(t *testing.T) {
 	}
 	for _, call := range runner.Calls {
 		for _, arg := range call.Args {
-			if arg == "fd" {
-				t.Fatalf("InstallResolved() used fallback pkg despite matching override: %#v", runner.Calls)
+			if arg == "wrong-package" || arg == "also-wrong" || arg == "fd" {
+				t.Fatalf("InstallResolved() used method config instead of resolved package: %#v", runner.Calls)
 			}
 		}
 	}
@@ -184,7 +188,7 @@ func TestNativeAdapterV2InstallResolvedHonorsPkgOverrides(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("InstallResolved() did not use matching pkg_overrides: %#v", runner.Calls)
+		t.Fatalf("InstallResolved() did not use resolved package identity: %#v", runner.Calls)
 	}
 }
 
@@ -262,12 +266,25 @@ func TestNativeByManagerAdapterV2ResolveObserveInstall(t *testing.T) {
 		t.Fatalf("Observe() presence = %q, want absent", absent.Presence)
 	}
 
+	mc.Config["pkg"] = "wrong-package"
 	installRunner := &run.FakeRunner{ExitCode: 0}
 	if err := adapter.InstallResolved(context.Background(), installRunner, tool, mc, resolved); err != nil {
 		t.Fatalf("InstallResolved() error = %v", err)
 	}
 	if len(installRunner.Calls) != 1 || installRunner.Calls[0].Name != "sudo" {
 		t.Fatalf("InstallResolved() calls = %#v, want elevated apt-get install", installRunner.Calls)
+	}
+	foundResolvedPkg := false
+	for _, arg := range installRunner.Calls[0].Args {
+		if arg == "wrong-package" {
+			t.Fatalf("InstallResolved() used mutated method package: %#v", installRunner.Calls)
+		}
+		if arg == "git" {
+			foundResolvedPkg = true
+		}
+	}
+	if !foundResolvedPkg {
+		t.Fatalf("InstallResolved() args = %v, want resolved package git", installRunner.Calls[0].Args)
 	}
 
 	unknown := &NativeByManagerAdapter{managerName: "nonexistent"}

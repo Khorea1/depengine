@@ -189,8 +189,8 @@ func (ex *Executor) runLevel(rc *runContext, level []string) {
 		}
 	}
 
-	remaining := ex.runBatchPhase(rc, survivorLevel, preinstallDone)
-	ex.runRemaining(rc, remaining, preinstallDone)
+	remaining, resolutions := ex.runBatchPhase(rc, survivorLevel, preinstallDone)
+	ex.runRemaining(rc, remaining, preinstallDone, resolutions)
 	ex.recordLevelFailures(rc, level, blockedByRequires)
 }
 
@@ -281,15 +281,15 @@ func (ex *Executor) runPreinstallHooks(rc *runContext, filteredLevel []string) (
 
 // runBatchPhase attempts the optimistic batch native install and returns
 // the tool names still needing per-tool execution.
-func (ex *Executor) runBatchPhase(rc *runContext, survivorLevel []string, preinstallDone map[string]bool) []string {
-	candidates, remaining := ex.identifyBatchCandidates(rc.ctx, survivorLevel, rc.schema, rc.report)
+func (ex *Executor) runBatchPhase(rc *runContext, survivorLevel []string, preinstallDone map[string]bool) ([]string, map[string]*candidateResolutionSeed) {
+	candidates, remaining, resolutions := ex.identifyBatchCandidates(rc.ctx, survivorLevel, rc.schema, rc.report)
 
 	if len(candidates) > 0 && ex.clan != "" {
 		switch {
 		case ex.dryRun:
 			ex.reportBatchDryRun(rc, candidates)
 		case ex.batchNativeInstall(rc.ctx, candidates):
-			remaining = ex.verifyBatchInstall(rc, candidates, remaining, preinstallDone)
+			remaining = ex.verifyBatchInstall(rc, candidates, remaining, preinstallDone, resolutions)
 		default:
 			// Batch failed — transparent fallback to per-tool.
 			// remaining already excludes tools recorded as StatusAlready by
@@ -297,10 +297,11 @@ func (ex *Executor) runBatchPhase(rc *runContext, survivorLevel []string, preins
 			// go through the serial path.
 			for _, c := range candidates {
 				remaining = append(remaining, c.toolName)
+				resolutions[c.toolName] = &candidateResolutionSeed{method: c.method, resolved: c.resolvedPlan}
 			}
 		}
 	} // else: no candidates — remaining from identifyBatchCandidates is correct
-	return remaining
+	return remaining, resolutions
 }
 
 // reportBatchDryRun renders the planned batch install without mutating.
@@ -318,7 +319,7 @@ func (ex *Executor) reportBatchDryRun(rc *runContext, candidates []batchCandidat
 		}
 		wouldInstall := ToolResult{
 			Tool: c.toolName, Status: StatusWouldInstall, Method: displayMethodKind(c.method),
-			MethodKind: c.method.Kind, Config: c.method.Config, PlanIntent: c.planIntent,
+			MethodKind: c.method.Kind, Config: c.method.Config, PlanIntent: c.resolvedPlan,
 		}
 		ex.recordToolResult(rc.ctx, &wouldInstall, rc.report)
 	}
@@ -329,14 +330,14 @@ func (ex *Executor) reportBatchDryRun(rc *runContext, candidates []batchCandidat
 // exit 0 does not guarantee every package landed — some managers silently
 // skip unknown package names). The rest fall back to the serial path,
 // which re-tries native and then any remaining methods.
-func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandidate, remaining []string, preinstallDone map[string]bool) []string {
+func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandidate, remaining []string, preinstallDone map[string]bool, resolutions map[string]*candidateResolutionSeed) []string {
 	for _, c := range candidates {
 		adapter := ex.LookupAdapter(c.method.Kind)
 		presence, ok := ex.batchPresence(rc.ctx, adapter, c.toolName, c.tool, c.method)
 		if ok && presence == plan.PresencePresent {
 			tr := ToolResult{
 				Tool: c.toolName, Status: StatusInstalled, Method: displayMethodKind(c.method),
-				MethodKind: c.method.Kind, Config: c.method.Config, PlanIntent: c.planIntent, InstallCommitted: true,
+				MethodKind: c.method.Kind, Config: c.method.Config, PlanIntent: c.resolvedPlan, InstallCommitted: true,
 			}
 			tr.RebootRequired, _ = c.method.Config["_reboot_required"].(bool)
 			if preinstallDone[c.toolName] {
@@ -355,6 +356,9 @@ func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandida
 			ex.recordToolResult(rc.ctx, &tr, rc.report)
 		} else {
 			remaining = append(remaining, c.toolName)
+			if resolutions != nil {
+				resolutions[c.toolName] = &candidateResolutionSeed{method: c.method, resolved: c.resolvedPlan}
+			}
 		}
 	}
 	return remaining
@@ -362,14 +366,14 @@ func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandida
 
 // runRemaining executes leftover tools serially or in parallel within the
 // level. Results carry PreinstallDone for tools with successful PreInstall.
-func (ex *Executor) runRemaining(rc *runContext, remaining []string, preinstallDone map[string]bool) {
+func (ex *Executor) runRemaining(rc *runContext, remaining []string, preinstallDone map[string]bool, resolutions map[string]*candidateResolutionSeed) {
 	if ex.maxJobs <= 1 || len(remaining) <= 1 {
 		for _, toolName := range remaining {
 			tool, ok := rc.schema.Tools[toolName]
 			if !ok {
 				continue
 			}
-			result := ex.executeTool(rc.ctx, tool)
+			result := ex.executeToolWithResolution(rc.ctx, tool, resolutions[toolName])
 			if preinstallDone[toolName] {
 				result.PreinstallDone = true
 			}
@@ -377,7 +381,7 @@ func (ex *Executor) runRemaining(rc *runContext, remaining []string, preinstallD
 		}
 		return
 	}
-	ex.executeLevelParallel(rc.ctx, rc.schema, remaining, rc.report, preinstallDone)
+	ex.executeLevelParallel(rc.ctx, rc.schema, remaining, rc.report, preinstallDone, resolutions)
 }
 
 // recordLevelFailures registers this level's failures so dependents in

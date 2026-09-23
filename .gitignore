@@ -35,8 +35,7 @@ Thumbs.db
 # Testing
 /tmp/test_*.toml
 
-# Meta-development (agent configs, scratchpads, skills)
-AGENTS.md
+# Local meta-development (scratchpads, skills, personal config)
 .dev/
 RULES.md
 TODO.md

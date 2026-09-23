@@ -41,6 +41,16 @@ type candidateAttempt struct {
 	deferred    bool // availability deferred until missing sources are prepared
 	resources   []plan.ResourceUse
 	toolStart   time.Time
+	resolution  *candidateResolutionSeed
+}
+
+// candidateResolutionSeed carries a resolution already performed by an
+// earlier read-only planning phase (currently native batch preflight). It lets
+// serial fallback preserve the one-resolution-per-candidate invariant.
+type candidateResolutionSeed struct {
+	method   *config.MethodCandidate
+	resolved *plan.ResolvedInstallPlan
+	err      error
 }
 
 // skipCandidate records a non-terminal attempt (skip or recoverable failure)
@@ -104,7 +114,14 @@ func (ex *Executor) gateAdapterAvailable(ac *candidateAttempt, result *ToolResul
 // host compatibility against the concrete plan. Resolution failures and the
 // fail-closed missing-installer error happen before any mutation.
 func (ex *Executor) resolveConcretePlan(ac *candidateAttempt, result *ToolResult) attemptOutcome {
-	resolved, resolveErr := ex.resolveCandidatePlan(ac.toolCtx, ac.tool, ac.method, ac.adapter, ac.planIntent, ac.displayKind)
+	var resolved *plan.ResolvedInstallPlan
+	var resolveErr error
+	if ac.resolution != nil {
+		resolved = ac.resolution.resolved
+		resolveErr = ac.resolution.err
+	} else {
+		resolved, resolveErr = ex.resolveCandidatePlan(ac.toolCtx, ac.tool, ac.method, ac.adapter, ac.planIntent, ac.displayKind)
+	}
 	if resolveErr != nil {
 		ex.skipCandidate(ac, result, "failed", resolveErr.Error())
 		return nextMethod
@@ -334,7 +351,7 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 	methodCtx, methodCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
 	var err error
 	if ac.installer != nil {
-		err = ac.installer.InstallResolved(methodCtx, runner, ac.tool, ac.method, ac.resolved)
+		err = ac.installer.InstallResolved(methodCtx, runner, ac.tool, ac.method, ac.reported)
 	} else {
 		err = ac.adapter.Install(methodCtx, runner, ac.tool, ac.method)
 	}

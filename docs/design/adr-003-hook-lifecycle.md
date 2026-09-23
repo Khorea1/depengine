@@ -1,7 +1,7 @@
 # ADR-003: Hooks are candidate-local transition events, not durable state
 
 - Status: decided (2026-09-22)
-- Source: `.dev/TODO.md` P1.10 working notes (condensed here; the backlog keeps only open items)
+- Origin: implementation working notes, condensed into this ADR
 
 ## Context
 
@@ -32,7 +32,7 @@ and a one-time hook run could masquerade as ongoing health.
 - Treating hooks as idempotent state with implicit re-run: rejected — status
   must not report a tool healthy merely because a one-time hook once ran.
 
-## Open work (remains in `.dev/TODO.md` P1.10)
+## Open work
 
 - Manifest/parser integration of the candidate-local plan model.
 - Production planner/executor integration (hook cannot leak across candidates).

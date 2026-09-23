@@ -12,8 +12,9 @@ or state version bump, and vice versa.
 
 ## Current status: pre-freeze
 
-All three formats are currently **pre-freeze**. The v1 semantic freeze gate in
-`.dev/TODO.md` has not been completed, so version `1` is not yet a promise that
+All three formats are currently **pre-freeze**. The versioned
+[v1 semantic freeze gate](specs/format-v1-freeze.md) has not been completed, so
+version `1` is not yet a promise that
 all future depengine releases will continue to accept every file written today.
 
 While a format is pre-freeze:
@@ -81,7 +82,8 @@ install/remove operation against misinterpreted ownership data.
 ## Freeze gate
 
 No document in this repository should describe manifest, lock or state v1 as a
-stable backwards-compatibility guarantee until the corresponding semantic and
-lifecycle requirements in `.dev/TODO.md` are satisfied. The current numeric
+stable backwards-compatibility guarantee until the requirements in the
+[v1 freeze gate](specs/format-v1-freeze.md) are satisfied and the freeze review is
+accepted. The current numeric
 value `1` therefore has a stable *purpose* (format-major identity), but not yet a
 frozen compatibility promise.

@@ -2,6 +2,8 @@ package httpdownload
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -138,5 +140,32 @@ func TestGitHubAdapterV2ObservationReconciles(t *testing.T) {
 	}
 	if err := result.Validate(); err != nil {
 		t.Fatalf("result invalid: %v", err)
+	}
+}
+
+func TestGitHubAdapterInstallResolvedClassifiesResolvedArtifact(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("#!/bin/sh\necho hello\n"))
+	}))
+	defer server.Close()
+
+	extractTo := t.TempDir()
+	tool := &config.Tool{Name: "demo"}
+	mc := &config.MethodCandidate{Kind: "github", Config: map[string]any{
+		"asset":         "stale.tar.gz",
+		"extract_to":    extractTo,
+		"sudo_required": false,
+	}}
+	resolved := plan.New("demo", "github", true)
+	resolved.Artifacts = []plan.Artifact{{URL: server.URL + "/download"}}
+
+	if err := NewGitHubAdapter().InstallResolved(context.Background(), run.OSExecRunner{}, tool, mc, &resolved); err != nil {
+		t.Fatalf("InstallResolved() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(extractTo, "demo")); err != nil {
+		t.Fatalf("resolved raw artifact was not installed as tool name: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(extractTo, "download")); !os.IsNotExist(err) {
+		t.Fatalf("stale asset classification leaked into install path; download exists, err=%v", err)
 	}
 }

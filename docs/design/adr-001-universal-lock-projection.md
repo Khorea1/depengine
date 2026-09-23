@@ -1,7 +1,7 @@
 # ADR-001: Lockfile as immutable-resolution projection of the resolved plan
 
 - Status: decided, partially implemented (2026-09)
-- Source: `.dev/TODO.md` P1.4 working notes (condensed here; the backlog keeps only open items)
+- Origin: implementation working notes, condensed into this ADR
 
 ## Context
 
@@ -34,7 +34,7 @@ The lockfile is the immutable-resolution projection of `ResolvedInstallPlan`:
 - Until universal locking exists, product claims stay qualified to the
   methods actually pinned (P3.6).
 
-## Open work (remains in `.dev/TODO.md` P1.4)
+## Open work
 
 - Per-adapter concrete fields (native/ecosystem versions, Go/Cargo,
   Git SHAs, container digests, artifact URLs, version-manager pins,

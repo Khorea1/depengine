@@ -142,6 +142,100 @@ func TestBaseAdapterV2InstallResolvedUsesResolvedIdentity(t *testing.T) {
 	}
 }
 
+func TestBaseAdapterV2InstallResolvedUsesResolvedSourceAndScope(t *testing.T) {
+	adapter := NewBaseAdapter(Configs["pipx"])
+	tool := &config.Tool{Name: "black"}
+	mc := &config.MethodCandidate{Kind: "pipx", Config: map[string]any{
+		"pkg":       "black",
+		"index_url": "https://resolved.example/simple",
+		"scope":     "global",
+	}}
+	intent, err := planner.BuildCandidateIntent(tool, mc)
+	if err != nil {
+		t.Fatalf("BuildCandidateIntent() error = %v", err)
+	}
+	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
+	if err != nil {
+		t.Fatalf("ResolvePlan() error = %v", err)
+	}
+
+	mc.Config["pkg"] = "stale"
+	mc.Config["index_url"] = "https://stale.example/simple"
+	mc.Config["scope"] = "user"
+
+	runner := &run.FakeRunner{LookPaths: map[string]bool{"pipx": true}}
+	if err := adapter.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
+		t.Fatalf("InstallResolved() error = %v", err)
+	}
+	want := []string{"install", "--global", "--index-url", "https://resolved.example/simple", "black"}
+	last := runner.Calls[len(runner.Calls)-1]
+	if last.Name != "pipx" || !reflect.DeepEqual(last.Args, want) {
+		t.Fatalf("InstallResolved() calls = %#v, want pipx %#v", runner.Calls, want)
+	}
+}
+
+func TestBaseAdapterV2InstallResolvedUsesResolvedFlatpakSelector(t *testing.T) {
+	adapter := NewBaseAdapter(Configs["flatpak"])
+	tool := &config.Tool{Name: "org.example.Demo"}
+	mc := &config.MethodCandidate{Kind: "flatpak", Config: map[string]any{
+		"pkg":    "org.example.Demo",
+		"remote": "flathub",
+		"branch": "stable",
+		"scope":  "user",
+	}}
+	intent, err := planner.BuildCandidateIntent(tool, mc)
+	if err != nil {
+		t.Fatalf("BuildCandidateIntent() error = %v", err)
+	}
+	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
+	if err != nil {
+		t.Fatalf("ResolvePlan() error = %v", err)
+	}
+
+	mc.Config["remote"] = "stale-remote"
+	mc.Config["branch"] = "stale-branch"
+	mc.Config["scope"] = "system"
+
+	runner := &run.FakeRunner{LookPaths: map[string]bool{"flatpak": true}}
+	if err := adapter.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
+		t.Fatalf("InstallResolved() error = %v", err)
+	}
+	want := []string{"install", "-y", "--user", "flathub", "org.example.Demo//stable"}
+	last := runner.Calls[len(runner.Calls)-1]
+	if last.Name != "flatpak" || !reflect.DeepEqual(last.Args, want) {
+		t.Fatalf("InstallResolved() calls = %#v, want flatpak %#v", runner.Calls, want)
+	}
+}
+
+func TestBaseAdapterV2InstallResolvedUsesResolvedChannel(t *testing.T) {
+	adapter := NewBaseAdapter(Configs["snap"])
+	tool := &config.Tool{Name: "demo"}
+	mc := &config.MethodCandidate{Kind: "snap", Config: map[string]any{
+		"pkg":     "demo",
+		"channel": "edge",
+	}}
+	intent, err := planner.BuildCandidateIntent(tool, mc)
+	if err != nil {
+		t.Fatalf("BuildCandidateIntent() error = %v", err)
+	}
+	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
+	if err != nil {
+		t.Fatalf("ResolvePlan() error = %v", err)
+	}
+
+	mc.Config["channel"] = "stable"
+
+	runner := &run.FakeRunner{LookPaths: map[string]bool{"snap": true}}
+	if err := adapter.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
+		t.Fatalf("InstallResolved() error = %v", err)
+	}
+	want := []string{"install", "demo", "--channel=edge"}
+	last := runner.Calls[len(runner.Calls)-1]
+	if last.Name != "snap" || !reflect.DeepEqual(last.Args, want) {
+		t.Fatalf("InstallResolved() calls = %#v, want snap %#v", runner.Calls, want)
+	}
+}
+
 func TestBaseAdapterV2InstallResolvedDropsStaleVersion(t *testing.T) {
 	adapter := NewBaseAdapter(Configs["pip"])
 	tool := &config.Tool{Name: "demo"}

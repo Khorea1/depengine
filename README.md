@@ -25,9 +25,12 @@ depengine install                           # → 4 installed, 0 failed
 depengine status                            # → list what's installed
 ```
 
-> **Platform support:** Linux and macOS receive the most testing. Windows
-> builds support winget, Scoop, Chocolatey, file locking, and state management,
-> but the Windows implementation is newer.
+> **Platform support:** Linux receives distro integration coverage, and macOS
+> and Windows run the Go test suite on native CI runners. Windows includes
+> winget, Scoop, Chocolatey, file locking, and state support, but CI currently
+> provides compile and unit-test coverage rather than exercising native
+> package-manager install/check/remove lifecycles. Windows support is newer and
+> has less real-world validation than Linux and macOS.
 
 ## Documentation map
 
@@ -39,6 +42,8 @@ This README covers setup and common workflows. Detailed references:
 | [`docs/cli-reference.md`](docs/cli-reference.md) | Every command and flag, with defaults |
 | [`docs/cheatsheet.md`](docs/cheatsheet.md) | Copyable commands, flags, and placeholders |
 | [`docs/architecture.md`](docs/architecture.md) | Internal package layout and install flow |
+| [`docs/development.md`](docs/development.md) | Where ADRs, specs, working notes, TODOs, and other project metadata belong |
+| [`docs/roadmap.md`](docs/roadmap.md) | Long-lived unfinished project work and freeze milestones |
 | [`docs/support-boundary.md`](docs/support-boundary.md) | What depengine models, capability/reproducibility limits, scope and source semantics |
 | [`docs/security.md`](docs/security.md) | Threat model, arbitrary code, credentials, verification and lockfile expectations |
 | [`docs/compatibility.md`](docs/compatibility.md) | Manifest, lock and state format-version policy and v1 freeze status |

@@ -103,6 +103,10 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 }
 
 func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResult {
+	return ex.executeToolWithResolution(ctx, tool, nil)
+}
+
+func (ex *Executor) executeToolWithResolution(ctx context.Context, tool *config.Tool, resolution *candidateResolutionSeed) ToolResult {
 	toolStart := time.Now()
 	result := ToolResult{Tool: tool.Name}
 	methods := config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
@@ -142,7 +146,7 @@ func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResu
 		defer cancel()
 	}
 
-	ex.tryMethods(toolCtx, tool, &result, toolStart)
+	ex.tryMethodsWithResolution(toolCtx, tool, &result, toolStart, resolution)
 	return result
 }
 
@@ -155,6 +159,10 @@ func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResu
 // check, source preparation with availability gates, then commit+install.
 // See candidateAttempt and the phase methods in attempt.go.
 func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, result *ToolResult, toolStart time.Time) {
+	ex.tryMethodsWithResolution(toolCtx, tool, result, toolStart, nil)
+}
+
+func (ex *Executor) tryMethodsWithResolution(toolCtx context.Context, tool *config.Tool, result *ToolResult, toolStart time.Time, resolution *candidateResolutionSeed) {
 	var lastMethodKind string
 	orderedMethods := config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
 	for _, method := range orderedMethods {
@@ -169,7 +177,11 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 		default:
 		}
 
-		if ex.attemptMethod(toolCtx, tool, method, result, toolStart) {
+		var methodResolution *candidateResolutionSeed
+		if resolution != nil && resolution.method == method {
+			methodResolution = resolution
+		}
+		if ex.attemptMethod(toolCtx, tool, method, result, toolStart, methodResolution) {
 			return
 		}
 	}
@@ -180,7 +192,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, resul
 // attemptMethod runs one method candidate through the attempt pipeline.
 // It returns true when the tool result is terminal and tryMethods must
 // return, false when the next candidate should be tried.
-func (ex *Executor) attemptMethod(toolCtx context.Context, tool *config.Tool, method *config.MethodCandidate, result *ToolResult, toolStart time.Time) bool {
+func (ex *Executor) attemptMethod(toolCtx context.Context, tool *config.Tool, method *config.MethodCandidate, result *ToolResult, toolStart time.Time, resolution *candidateResolutionSeed) bool {
 	ac := &candidateAttempt{
 		toolCtx:     toolCtx,
 		tool:        tool,
@@ -188,6 +200,7 @@ func (ex *Executor) attemptMethod(toolCtx context.Context, tool *config.Tool, me
 		displayKind: displayMethodKind(method),
 		attempt:     MethodAttempt{Kind: method.Kind, Label: method.Label},
 		toolStart:   toolStart,
+		resolution:  resolution,
 	}
 	for _, phase := range []func(*candidateAttempt, *ToolResult) attemptOutcome{
 		ex.gateStaticIntent,
@@ -378,7 +391,7 @@ func recordedResult(report *ExecReport, toolName string) *ToolResult {
 // executeLevelParallel runs all tools in a topological level concurrently,
 // limiting concurrency to ex.maxJobs. Results are collected thread-safely
 // via recordToolResult.
-func (ex *Executor) executeLevelParallel(ctx context.Context, s *config.Schema, level []string, report *ExecReport, preinstallDone map[string]bool) {
+func (ex *Executor) executeLevelParallel(ctx context.Context, s *config.Schema, level []string, report *ExecReport, preinstallDone map[string]bool, resolutions map[string]*candidateResolutionSeed) {
 	toolCh := make(chan string, len(level))
 	resultCh := make(chan ToolResult, len(level))
 
@@ -404,7 +417,7 @@ func (ex *Executor) executeLevelParallel(ctx context.Context, s *config.Schema, 
 				if !ok {
 					continue
 				}
-				result := ex.executeTool(ctx, tool)
+				result := ex.executeToolWithResolution(ctx, tool, resolutions[toolName])
 				if preinstallDone[toolName] {
 					result.PreinstallDone = true
 				}

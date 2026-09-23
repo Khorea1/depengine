@@ -93,8 +93,8 @@ explicitly.
 Adding a package source, repository, tap, bucket or signing key mutates host
 configuration beyond a single package. Such mutations must be candidate-scoped
 and idempotent, and cleanup must not remove externally-owned/shared resources
-without ownership evidence. Shared-source refcounting is an area where support
-is still incomplete; see `.dev/TODO.md`.
+without ownership evidence. Shared-source refcounting support
+remains incomplete.
 
 ## Lockfile integrity
 

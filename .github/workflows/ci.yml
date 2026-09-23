@@ -65,8 +65,7 @@ jobs:
         path: depengine
 
   # Multi-distro integration suite (Docker Compose, 4 distros). Docker is
-  # preinstalled on ubuntu-24.04 runners; the run step is gated on a docker
-  # availability probe so the job degrades to a no-op if docker is ever absent.
+  # required: if unavailable, the job fails instead of reporting a false green.
   integration:
     runs-on: ubuntu-24.04
 
@@ -74,16 +73,13 @@ jobs:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.x.x
 
     - name: Check Docker availability
-      id: docker-check
       run: |
-        if docker info >/dev/null 2>&1; then
-          echo "available=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "available=false" >> "$GITHUB_OUTPUT"
+        if ! docker info >/dev/null 2>&1; then
+          echo "::error::Docker is required to run the integration suite"
+          exit 1
         fi
 
     - name: Run docker integration suite (debian, arch, fedora, alpine)
-      if: steps.docker-check.outputs.available == 'true'
       run: |
         docker compose -f tests/integration/docker-compose.yml build
         for distro in debian arch fedora alpine; do
@@ -92,7 +88,7 @@ jobs:
 
   # Cross-platform smoke suite (Docker Compose, 4 distros): validates schema
   # parsing, install/check/status/remove against each distro's native manager.
-  # Also gated on docker availability.
+  # Docker is required here too; unavailable Docker must fail the job.
   crossplatform:
     runs-on: ubuntu-24.04
 
@@ -100,16 +96,13 @@ jobs:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.x.x
 
     - name: Check Docker availability
-      id: docker-check
       run: |
-        if docker info >/dev/null 2>&1; then
-          echo "available=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "available=false" >> "$GITHUB_OUTPUT"
+        if ! docker info >/dev/null 2>&1; then
+          echo "::error::Docker is required to run the cross-platform suite"
+          exit 1
         fi
 
     - name: Run cross-platform tests (debian, arch, fedora, alpine)
-      if: steps.docker-check.outputs.available == 'true'
       run: |
         docker compose -f tests/crossplatform/docker-compose.yml build
         for distro in debian arch fedora alpine; do

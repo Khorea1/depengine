@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/planner"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -31,6 +33,16 @@ func TestCandidatePlanIntentReturnsTypedCapabilityError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "exact-version") {
 		t.Fatalf("error = %q, want stable missing-capability name", err)
+	}
+}
+
+func TestCandidatePlanIntentUsesSharedPlanningError(t *testing.T) {
+	tool := &config.Tool{Name: "demo"}
+	method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo", "version": "1.2.3"}}
+	_, want := planner.BuildValidatedCandidateIntent(tool, method, methodkind.CandidateRequirements{})
+	_, got := CandidatePlanIntent(tool, method)
+	if want == nil || got == nil || got.Error() != want.Error() {
+		t.Fatalf("CandidatePlanIntent() error = %v, want shared planning error %v", got, want)
 	}
 }
 

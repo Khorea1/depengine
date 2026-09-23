@@ -53,16 +53,8 @@ func candidatePlanIntentErr(tool *config.Tool, method *config.MethodCandidate) (
 	if method == nil {
 		return nil, nil
 	}
-	contract, ok := methodkind.Lookup(method.Kind)
-	if !ok {
+	if _, ok := methodkind.Lookup(method.Kind); !ok {
 		return nil, nil
 	}
-	intent, err := planner.BuildCandidateIntent(tool, method)
-	if err != nil {
-		return nil, fmt.Errorf("method %q has invalid plan intent: %w", method.Kind, err)
-	}
-	if err := contract.CheckRequirements(intent, methodkind.CandidateRequirements{}); err != nil {
-		return &intent, err
-	}
-	return &intent, nil
+	return planner.BuildValidatedCandidateIntent(tool, method, methodkind.CandidateRequirements{})
 }

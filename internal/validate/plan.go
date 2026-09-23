@@ -20,26 +20,12 @@ func validatePlanIntents(s *config.Schema) *Result {
 	for _, toolName := range names {
 		tool := s.Tools[toolName]
 		for i, method := range tool.Methods {
-			contract, ok := methodkind.Lookup(method.Kind)
-			if !ok {
+			if _, ok := methodkind.Lookup(method.Kind); !ok {
 				continue
 			}
-			intent, err := planner.BuildCandidateIntent(tool, method)
+			_, err := planner.BuildValidatedCandidateIntent(tool, method, methodkind.CandidateRequirements{})
 			if err != nil {
 				r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, ""), Message: err.Error()})
-				continue
-			}
-			// Capability mismatches fail here with the same typed boundary
-			// used by execution planning, so validation explains auth
-			// requirements distinctly from unsupported capabilities.
-			// The typed error already names the method, the missing
-			// capabilities, and the stable error class.
-			if err := contract.CheckRequirements(intent, methodkind.CandidateRequirements{}); err != nil {
-				r.Add(ValidationError{
-					Code:    ErrInvalidValue,
-					Field:   fieldPath(toolName, i, ""),
-					Message: err.Error(),
-				})
 			}
 		}
 	}

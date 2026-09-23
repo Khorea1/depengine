@@ -1,7 +1,7 @@
 # ADR-002: Transactional candidate preparation with ownership
 
 - Status: decided, partially implemented (2026-09)
-- Source: `.dev/TODO.md` P1.9 working notes (condensed here; the backlog keeps only open items)
+- Origin: implementation working notes, condensed into this ADR
 
 ## Context
 
@@ -57,7 +57,7 @@ write-ahead journal and explicit ownership:
 - Dry-run projects prepare/commit mutations into `plan_intent` without
   performing them (no state/WAL, no mutating runner calls).
 
-## Open work (remains in `.dev/TODO.md` P1.9)
+## Open work
 
 - WAL-backed prerequisite preparation (sources are wired; lazy
   `method.requires` still uses explicit-retain).

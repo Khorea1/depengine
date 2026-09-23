@@ -34,6 +34,16 @@ func sourceBackedSchema() *config.Schema {
 	}
 }
 
+type preparationPlanCapturingAdapter struct {
+	*testMockAdapter
+	installed *plan.ResolvedInstallPlan
+}
+
+func (a *preparationPlanCapturingAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	a.installed = resolved
+	return a.Install(ctx, rn, tool, mc)
+}
+
 func TestExecutorDryRunProjectsPreparationWithoutPersistingJournal(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	runner := &sequenceRunner{results: []run.Result{{}}}
@@ -126,6 +136,34 @@ func TestExecutorFinalizesDurableSourcePreparation(t *testing.T) {
 	}}
 	if len(st.OwnedResources) != 1 || st.OwnedResources[0].Resource != want[0].Resource || st.OwnedResources[0].Ownership != want[0].Ownership || len(st.OwnedResources[0].Dependents) != 1 || st.OwnedResources[0].Dependents[0] != "demo" {
 		t.Fatalf("owned resources = %#v, want %#v", st.OwnedResources, want)
+	}
+}
+
+func TestExecutorInstallResolvedReceivesReportedPreparationPlan(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	runner := &sequenceRunner{results: []run.Result{{}, {}}}
+	adapter := &preparationPlanCapturingAdapter{testMockAdapter: &testMockAdapter{
+		kindValue:   "cargo",
+		checkFunc:   func(string) bool { return false },
+		installFunc: func(string) error { return nil },
+	}}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
+
+	report, err := ex.Execute(context.Background(), sourceBackedSchema(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusInstalled {
+		t.Fatalf("report = %+v, want one installed tool", report.Tools)
+	}
+	if adapter.installed == nil || adapter.installed.Preparation == nil {
+		t.Fatalf("InstallResolved plan = %#v, want preparation projection", adapter.installed)
+	}
+	if report.Tools[0].PlanIntent != adapter.installed {
+		t.Fatalf("reported plan = %p, InstallResolved plan = %p; want exact same plan", report.Tools[0].PlanIntent, adapter.installed)
 	}
 }
 

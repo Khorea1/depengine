@@ -17,6 +17,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
@@ -208,10 +209,9 @@ func (a *BaseAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 	return observation, nil
 }
 
-// InstallResolved executes only the identity resolved into the plan. Package,
-// version, and registry come from the resolved plan (overriding the candidate
-// config); execution-only flags that carry no plan identity (confinement,
-// channel, index URL, scope, ...) still come from the candidate config.
+// InstallResolved executes only the identity and source selection resolved
+// into the plan. Execution-only flags that carry no plan representation
+// (for example confinement) still come from the candidate config.
 // Explicit operations have no generic interpretation and are rejected rather
 // than treated as arbitrary commands.
 func (a *BaseAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
@@ -234,7 +234,11 @@ func (a *BaseAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *
 	if effectiveTool == nil {
 		effectiveTool = &config.Tool{Name: resolved.Tool.Name}
 	}
-	cmd := a.buildCmd(a.config.InstallTmpl, effectiveTool, resolvedMethodCandidate(mc, resolved))
+	effectiveMethod, err := resolvedMethodCandidate(mc, resolved)
+	if err != nil {
+		return fmt.Errorf("%s: resolved method: %w", a.config.KindName, err)
+	}
+	cmd := a.buildCmd(a.config.InstallTmpl, effectiveTool, effectiveMethod)
 	if cmd == nil {
 		return fmt.Errorf("%s: no install command", a.config.KindName)
 	}
@@ -244,9 +248,10 @@ func (a *BaseAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *
 
 // resolvedMethodCandidate overlays the resolved identity onto a copy of the
 // candidate config so buildCmd renders the authoritative package, version,
-// and registry. Execution-only fields stay as configured. The input mc is
-// never mutated; a nil mc yields a config derived purely from the plan.
-func resolvedMethodCandidate(mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) *config.MethodCandidate {
+// source selection, scope, and channel/revision selectors. Execution-only
+// fields stay as configured. The input mc is never mutated; a nil mc yields a
+// config derived purely from the plan.
+func resolvedMethodCandidate(mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) (*config.MethodCandidate, error) {
 	cfg := make(map[string]any)
 	kind := resolved.Candidate.Method
 	if mc != nil {
@@ -268,7 +273,77 @@ func resolvedMethodCandidate(mc *config.MethodCandidate, resolved *plan.Resolved
 	} else {
 		delete(cfg, "registry")
 	}
-	return &config.MethodCandidate{Kind: kind, Config: cfg}
+	if resolved.Identity.Source != "" {
+		cfg["source"] = resolved.Identity.Source
+	} else {
+		delete(cfg, "source")
+	}
+
+	switch kind {
+	case "pip", "pipx":
+		setResolvedSourceField(cfg, "index_url", resolved.Sources, plan.SourceIndex)
+	case "uv":
+		setResolvedSourceField(cfg, "index", resolved.Sources, plan.SourceIndex)
+	case "flatpak":
+		setResolvedSourceField(cfg, "remote", resolved.Sources, plan.SourceRemote)
+	}
+
+	if resolved.Identity.Scope != "" {
+		contract, ok := methodkind.Lookup(kind)
+		if !ok {
+			return nil, fmt.Errorf("unknown method kind %q", kind)
+		}
+		scope, err := contract.AdapterScope(plan.Scope(resolved.Identity.Scope))
+		if err != nil {
+			return nil, err
+		}
+		cfg["scope"] = scope
+	}
+
+	applyResolvedSelector(cfg, kind, resolved.Identity.RequestedVersion)
+	return &config.MethodCandidate{Kind: kind, Config: cfg}, nil
+}
+
+func setResolvedSourceField(cfg map[string]any, field string, sources []plan.SourceReference, role plan.SourceRole) {
+	delete(cfg, field)
+	for _, source := range sources {
+		if source.Role != role {
+			continue
+		}
+		if source.URL != "" {
+			cfg[field] = source.URL
+		} else if source.Name != "" {
+			cfg[field] = source.Name
+		}
+		return
+	}
+}
+
+func applyResolvedSelector(cfg map[string]any, kind string, requested *plan.VersionIntent) {
+	switch kind {
+	case "flatpak":
+		delete(cfg, "branch")
+		if requested != nil && requested.Mode == plan.VersionGitBranch {
+			cfg["branch"] = requested.Value
+		}
+	case "snap":
+		delete(cfg, "channel")
+		delete(cfg, "track")
+		delete(cfg, "risk")
+		delete(cfg, "branch")
+		if requested == nil || requested.Mode != plan.VersionChannel || requested.Channel == nil {
+			return
+		}
+		if requested.Channel.Name != "" {
+			cfg["channel"] = requested.Channel.Name
+		}
+		if requested.Channel.Track != "" {
+			cfg["track"] = requested.Channel.Track
+		}
+		if requested.Channel.Risk != "" {
+			cfg["risk"] = requested.Channel.Risk
+		}
+	}
 }
 
 // resolvedIdentityVersion mirrors plan reconciliation: an exact requested

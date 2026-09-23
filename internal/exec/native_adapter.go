@@ -123,11 +123,9 @@ func (a *NativeAdapter) Install(ctx context.Context, rn run.Runner, _ *config.To
 	return runNativeInstall(ctx, rn, "native", clan, mc)
 }
 
-// ResolvePlan validates the static intent without mutating host state. The
-// planner is host-independent, so the clan-specific package override
-// (pkg_overrides) is intentionally NOT projected into the resolved identity:
-// plan.ValidateResolution freezes the package dimension and the override is
-// applied at execution time from mc by InstallResolved/Install.
+// ResolvePlan validates the host-projected intent without mutating host state.
+// The executor applies clan-specific package overrides before this boundary;
+// plan.ValidateResolution then freezes that package identity for execution.
 func (a *NativeAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
 	if intent == nil {
 		return nil, errors.New("native: nil plan intent")
@@ -184,16 +182,20 @@ func (a *NativeAdapter) Observe(ctx context.Context, rn run.Runner, tool *config
 }
 
 // InstallResolved executes the resolved plan. The operation shape is
-// fail-closed (exactly one canonical install operation); the effective
-// package stays clan-dependent and is resolved from mc, mirroring Install.
-func (a *NativeAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+// fail-closed (exactly one canonical install operation), and package identity
+// comes only from the resolved plan so execution cannot diverge from dry-run.
+func (a *NativeAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *config.Tool, _ *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
 	if resolved == nil {
 		return errors.New("native: nil resolved plan")
 	}
 	if err := validateNativeResolvedInstallOperation("native", resolved); err != nil {
 		return err
 	}
-	return a.Install(ctx, rn, tool, mc)
+	clan := a.detectClan(ctx, rn)
+	if clan == "" {
+		return errors.New("native: no native manager found")
+	}
+	return runNativeInstallPackage(ctx, rn, "native", clan, resolved.Identity.Package)
 }
 
 // Remove uninstalls a package via the native package manager.
@@ -239,6 +241,10 @@ func pkgFromConfig(mc *config.MethodCandidate, clan string) string {
 // Shared by NativeAdapter and NativeByManagerAdapter.
 func runNativeInstall(ctx context.Context, rn run.Runner, prefix, clan string, mc *config.MethodCandidate) error {
 	pkg := pkgFromConfig(mc, clan)
+	return runNativeInstallPackage(ctx, rn, prefix, clan, pkg)
+}
+
+func runNativeInstallPackage(ctx context.Context, rn run.Runner, prefix, clan, pkg string) error {
 	if pkg == "" {
 		return fmt.Errorf("%s: no package name", prefix)
 	}
@@ -382,10 +388,9 @@ func (a *NativeByManagerAdapter) Install(ctx context.Context, rn run.Runner, too
 	return run.CheckResult(res, "native("+a.managerName+"): install")
 }
 
-// ResolvePlan validates the static intent without mutating host state. Like
-// NativeAdapter.ResolvePlan it is identity-preserving: clan-specific package
-// selection (pkg_overrides, manager binary swaps) is applied at execution
-// time from mc because plan.ValidateResolution freezes the package dimension.
+// ResolvePlan validates the host-projected intent without mutating host state.
+// The executor applies clan-specific package overrides before this boundary;
+// plan.ValidateResolution then freezes that package identity for execution.
 func (a *NativeByManagerAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
 	if intent == nil {
 		return nil, fmt.Errorf("native(%s): nil plan intent", a.managerName)
@@ -466,12 +471,11 @@ func (a *NativeByManagerAdapter) Observe(ctx context.Context, rn run.Runner, too
 }
 
 // InstallResolved executes the resolved plan. The operation shape is
-// fail-closed (exactly one canonical install operation). Winget installs from
-// the resolved identity (package/version/source/scope/architecture); every
-// other manager resolves the effective package from mc at execution time,
-// mirroring Install. installer_type is a pure-execution winget field outside
-// plan identity, so it always comes from mc.
-func (a *NativeByManagerAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+// fail-closed (exactly one canonical install operation), and package identity
+// always comes from the resolved plan. Winget additionally consumes resolved
+// version/source/scope/architecture; installer_type remains a pure execution
+// field outside plan identity.
+func (a *NativeByManagerAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
 	if resolved == nil {
 		return fmt.Errorf("native(%s): nil resolved plan", a.managerName)
 	}
@@ -481,7 +485,21 @@ func (a *NativeByManagerAdapter) InstallResolved(ctx context.Context, rn run.Run
 	if a.managerName == "winget" {
 		return a.installWingetResolved(ctx, rn, mc, resolved)
 	}
-	return a.Install(ctx, rn, tool, mc)
+	pkg := resolved.Identity.Package
+	if pkg == "" {
+		return fmt.Errorf("native(%s): resolved plan has no package name", a.managerName)
+	}
+	clan := findClanByManager(a.managerName)
+	if clan == "" {
+		return fmt.Errorf("native(%s): no clan found for manager", a.managerName)
+	}
+	cmd := native.BuildInstallCmd(clan, pkg)
+	if cmd == nil {
+		return fmt.Errorf("native(%s): no install command for clan %q", a.managerName, clan)
+	}
+	cmd = replaceManagerBinary(cmd, a.managerName, clan)
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	return run.CheckResult(res, "native("+a.managerName+"): install")
 }
 
 func (a *NativeByManagerAdapter) installWingetResolved(ctx context.Context, rn run.Runner, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
