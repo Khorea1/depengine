@@ -71,6 +71,58 @@ func TestAsdfAdapterV2ObserveAbsentAndBackendError(t *testing.T) {
 	}
 }
 
+func TestAsdfAdapterInstalledVersionUsesObservedExactVersion(t *testing.T) {
+	t.Parallel()
+	a := NewAsdfAdapter()
+	tool, mc := asdfTool("node", "nodejs")
+	mc.Config["version"] = "18.20.4"
+
+	version, err := a.InstalledVersion(context.Background(), &run.FakeRunner{
+		LookPaths: map[string]bool{"asdf": true},
+		Stdout:    "  18.20.4\n  20.17.0\n",
+	}, tool, mc)
+	if err != nil {
+		t.Fatalf("InstalledVersion() error = %v", err)
+	}
+	if version != "18.20.4" {
+		t.Fatalf("InstalledVersion() = %q, want %q", version, "18.20.4")
+	}
+}
+
+func TestAsdfAdapterInstalledVersionDoesNotInventVersion(t *testing.T) {
+	t.Parallel()
+	a := NewAsdfAdapter()
+
+	t.Run("unpinned", func(t *testing.T) {
+		tool, mc := asdfTool("node", "nodejs")
+		version, err := a.InstalledVersion(context.Background(), &run.FakeRunner{
+			LookPaths: map[string]bool{"asdf": true},
+			Stdout:    "  20.17.0\n",
+		}, tool, mc)
+		if err != nil {
+			t.Fatalf("InstalledVersion() error = %v", err)
+		}
+		if version != "" {
+			t.Fatalf("InstalledVersion() = %q, want empty for unpinned intent", version)
+		}
+	})
+
+	t.Run("requested version absent", func(t *testing.T) {
+		tool, mc := asdfTool("node", "nodejs")
+		mc.Config["version"] = "18.20.4"
+		version, err := a.InstalledVersion(context.Background(), &run.FakeRunner{
+			LookPaths: map[string]bool{"asdf": true},
+			Stdout:    "  20.17.0\n",
+		}, tool, mc)
+		if err != nil {
+			t.Fatalf("InstalledVersion() error = %v", err)
+		}
+		if version != "" {
+			t.Fatalf("InstalledVersion() = %q, want empty when exact version is absent", version)
+		}
+	})
+}
+
 func TestAsdfAdapterV2RejectsOperations(t *testing.T) {
 	intent := plan.New("node", "asdf", true)
 	intent.Operations = []plan.Operation{{Kind: "arbitrary", Effect: plan.EffectMutation, Command: []string{"sh"}, ArbitraryCode: true}}

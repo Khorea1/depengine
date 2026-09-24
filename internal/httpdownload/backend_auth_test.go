@@ -12,6 +12,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/ghrelease"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -49,6 +50,28 @@ func TestGoDownloaderDownloadWithBearerScopesCredentialToRequest(t *testing.T) {
 	// #nosec G304 -- dest is rooted in the test-owned t.TempDir().
 	if body, err := os.ReadFile(dest); err != nil || string(body) != "artifact" {
 		t.Errorf("downloaded body = %q, error = %v", body, err)
+	}
+}
+
+func TestGoDownloaderDownloadWithBearerRejectsRemotePlainHTTP(t *testing.T) {
+	err := NewGoDownloader(nil).DownloadWithBearer(context.Background(), "http://example.com/private", "unused", "runtime-only-sentinel")
+	if err == nil || !strings.Contains(err.Error(), "must use HTTPS") {
+		t.Fatalf("DownloadWithBearer() error = %v, want HTTPS transport rejection", err)
+	}
+	if strings.Contains(err.Error(), "runtime-only-sentinel") {
+		t.Fatalf("transport error leaked credential: %v", err)
+	}
+}
+
+func TestGoDownloaderImplicitGitHubTokenRejectsRemotePlainHTTP(t *testing.T) {
+	const credential = "implicit-github-sentinel"
+	ctx := ghrelease.WithGithubToken(context.Background(), credential)
+	err := NewGoDownloader(&run.FakeRunner{}).Download(ctx, "http://github.com/owner/repo/file", "unused")
+	if err == nil || !strings.Contains(err.Error(), "must use HTTPS") {
+		t.Fatalf("Download() error = %v, want HTTPS transport rejection", err)
+	}
+	if strings.Contains(err.Error(), credential) {
+		t.Fatalf("transport error leaked GitHub credential: %v", err)
 	}
 }
 
@@ -93,6 +116,22 @@ func TestGoDownloaderBearerRedirectPolicy(t *testing.T) {
 	}
 	if crossOriginHeader != "" {
 		t.Errorf("cross-origin Authorization = %q, want absent", crossOriginHeader)
+	}
+}
+
+func TestGoDownloaderBearerRejectsRemotePlaintextRedirect(t *testing.T) {
+	const credential = "redirect-downgrade-sentinel"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://example.com/final", http.StatusFound)
+	}))
+	defer server.Close()
+
+	err := NewGoDownloader(nil).DownloadWithBearer(context.Background(), server.URL+"/start", filepath.Join(t.TempDir(), "artifact"), credential)
+	if err == nil || !strings.Contains(err.Error(), "authenticated redirect") || !strings.Contains(err.Error(), "must use HTTPS") {
+		t.Fatalf("DownloadWithBearer() error = %v, want plaintext redirect rejection", err)
+	}
+	if strings.Contains(err.Error(), credential) {
+		t.Fatalf("redirect error leaked credential: %v", err)
 	}
 }
 

@@ -104,6 +104,7 @@ Show the dependency graph
 | `--profile <string>` | local | `` | only show tools with matching tag |
 | `--schema <string>` | local | `schema.toml` | path to schema.toml |
 | `--skip <string>` | local | `` | skip specific tools (comma-separated) |
+| `--view <string>` | local | `declared` | graph projection: declared, effective, resolved |
 
 ## `depengine help [command] [flags]`
 
