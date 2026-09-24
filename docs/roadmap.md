@@ -67,6 +67,10 @@ Work on the current execution model comes before adding more installer types.
 
 ## Engineering cleanup
 
+- [ ] Evolve `depengine graph` around a typed graph IR before adding a terminal
+  diagram renderer. Preserve declared/effective/resolved projections and keep
+  visible dependency relations separate from scheduling constraints. See
+  [`research/typed-dependency-graph.md`](research/typed-dependency-graph.md).
 - [ ] Triage the full `golangci-lint` backlog and remove the baseline only when
   a complete run passes. Audit on 2026-09-22: 142 findings (`errcheck` 50,
   `gosec` 50, `staticcheck` 21, `errorlint` 11, `unused` 10); output is capped
