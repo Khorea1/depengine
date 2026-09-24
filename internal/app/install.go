@@ -45,7 +45,6 @@ func newInstallCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "install",
-		Aliases: []string{"i"},
 		Short:   ifPT("Instalar ferramentas do schema.toml", "Install tools from schema.toml"),
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
@@ -58,23 +57,29 @@ func newInstallCmd() *cobra.Command {
 	f.StringVar(installManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(installNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
 	f.BoolVar(installDryRun, "dry-run", false, "show what would be installed")
-	f.BoolVar(installVerbose, "verbose", false, "deprecated compatibility flag; detailed output is already the default")
+	f.BoolVar(installVerbose, "verbose", false, "detailed output")
 	f.BoolVar(installJSON, "json", false, "JSON output")
 	f.StringVar(installOnly, "only", "", "only install specific tool")
 	f.StringVar(installSkip, "skip", "", "skip specific tools (comma-separated)")
 	f.StringVar(installProfile, "profile", "", "only install tools with matching tag (e.g. minimal,desktop,server)")
 	f.BoolVar(installFrozen, "frozen-lockfile", false, "fail if depengine.lock does not exist or needs update")
-	f.BoolVar(installDiagnose, "diagnose", false, "diagnostic mode: DEBUG + dry-run + detailed report")
+	f.BoolVar(installDiagnose, "diagnose", false, "diagnostic mode: DEBUG + dry-run + verbose")
 	f.StringVar(installLogLevel, "log-level", "", "log level: debug, info, warn, error")
 	f.StringVar(installSortBy, "sort-by", "", "sort output by: name, status, method")
 	f.IntVar(installJobs, "jobs", 1, "max concurrent installations (default 1 = sequential)")
 	f.BoolVar(installAllowArbitrary, "allow-arbitrary-code", false, "permit hooks, build scripts, and other arbitrary code execution")
-	f.BoolVar(installQuiet, "quiet", false, "suppress live per-tool status lines; show final per-tool report")
+	f.BoolVar(installAllowArbitrary, "yolo", false, "alias for --allow-arbitrary-code")
+	if err := f.MarkHidden("yolo"); err != nil {
+		panic(err)
+	}
+	f.BoolVar(installQuiet, "quiet", false, "suppress per-tool status lines; show only final summary")
 	return cmd
 }
 
-// installPlan is the resolved, value-copied install configuration shared by
-// downstream install phases.
+// installPlan is the resolved, value-copied view of the install flags.
+// collectInstallPlan applies --diagnose defaults (mutating only flags the
+// user didn't explicitly set), picks the logger, validates --sort-by, and
+// resolves the manifest path. Everything downstream reads this struct.
 type installPlan struct {
 	schema       string
 	manifestFlag string
@@ -96,8 +101,8 @@ type installPlan struct {
 	quiet        bool
 }
 
-// collectInstallPlan resolves flags into an installPlan, applies --diagnose
-// defaults, configures logging, and resolves the effective manifest path.
+// collectInstallPlan resolves flags into an installPlan plus the logger.
+// Returns an ExitError(2) when --sort-by is invalid.
 func collectInstallPlan(cmd *cobra.Command, installSchema, installManifest *string, installNoManifest, installDryRun, installVerbose, installJSON *bool, installOnly, installSkip, installProfile *string, installFrozen, installDiagnose *bool, installLogLevel, installSortBy *string, installJobs *int, installAllowArbitrary, installQuiet *bool) (installPlan, *slog.Logger) {
 	lg := log.Default
 	p := installPlan{
@@ -172,7 +177,7 @@ func validateInstallSortBy(sortBy string, lg *slog.Logger) error {
 
 // printInstallHeader prints the aligned pre-run block answering "what
 // schema, what target, how many tools, is this a dry run".
-func printInstallHeader(cs *cliStyle, p installPlan, clan string, facts *engine.Facts, manifestCount, toolCount int) {
+func printInstallHeader(cs *cliStyle, p installPlan, s *config.Schema, clan string, facts *engine.Facts, manifestCount int) {
 	title := "depengine install"
 	if p.dryRun {
 		title = "depengine install — dry run (planning only)"
@@ -185,7 +190,7 @@ func printInstallHeader(cs *cliStyle, p installPlan, clan string, facts *engine.
 	}
 	pairs = append(pairs,
 		[2]string{"target", fmt.Sprintf("%s (%s) · %s", facts.DistroID, clan, facts.TargetArch)},
-		[2]string{"tools", fmt.Sprintf("%d", toolCount)},
+		[2]string{"tools", fmt.Sprintf("%d", len(s.Tools))},
 	)
 	printKV(cs, title, pairs...)
 }
@@ -341,21 +346,15 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		ecosystem.ReconfigureAUR(helper)
 	}
 
-	// Resolve the execution selection before rendering the header so the
-	// displayed tool count describes what this invocation will actually
-	// process. Keep the full schema intact until lock resolution so filters do
-	// not accidentally narrow lockfile coverage.
-	selectedTools := filterTools(s.Tools, p.only, p.skip, p.profile)
-
-	if p.verbose && cmd.Flags().Changed("verbose") {
-		fmt.Fprintln(os.Stderr, "depengine: --verbose is deprecated; detailed output is already the default. Use --quiet to suppress live per-tool status lines.")
+	if p.verbose {
+		fmt.Fprintln(os.Stderr, "depengine: --verbose is deprecated; output is now verbose by default. Use --quiet for the old summary-only behavior.")
 	}
 
 	// One aligned block instead of several scattered Fprintf calls — a
 	// single glance answers "what schema, what target, how many tools,
 	// is this a dry run" before any per-tool output starts scrolling by.
 	cs := newCLIStyle(os.Stderr)
-	printInstallHeader(cs, p, clan, facts, manifestCount, len(selectedTools))
+	printInstallHeader(cs, p, s, clan, facts, manifestCount)
 
 	schemaFile, err := os.Stat(p.schema)
 	if err != nil {
@@ -370,7 +369,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	if err != nil {
 		return err
 	}
-	s.Tools = selectedTools
+	s.Tools = filterTools(s.Tools, p.only, p.skip, p.profile)
 
 	if !p.dryRun {
 		if _, err := state.SaveSnapshot(); err != nil {
