@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Khorea1/depengine/internal/artifact"
 	"github.com/Khorea1/depengine/internal/ghrelease"
 	"github.com/Khorea1/depengine/internal/run"
 )
@@ -57,11 +58,14 @@ func (d *GoDownloader) Download(ctx context.Context, url, dest string) error {
 // DownloadWithBearer downloads one request with a caller-supplied Bearer
 // credential. The credential is attached only to this request and is never
 // retained on GoDownloader or exposed through the Downloader interface.
-func (d *GoDownloader) DownloadWithBearer(ctx context.Context, url, dest, credential string) error {
+func (d *GoDownloader) DownloadWithBearer(ctx context.Context, rawURL, dest, credential string) error {
 	if credential == "" {
 		return fmt.Errorf("http: empty Bearer credential")
 	}
-	return d.download(ctx, url, dest, credential)
+	if err := artifact.ValidateAuthenticatedURL(rawURL); err != nil {
+		return fmt.Errorf("http: authenticated URL: %w", err)
+	}
+	return d.download(ctx, rawURL, dest, credential)
 }
 
 func (d *GoDownloader) download(ctx context.Context, url, dest, bearerCredential string) error {
