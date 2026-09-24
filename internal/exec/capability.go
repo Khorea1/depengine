@@ -34,6 +34,11 @@ func CandidatePlanIntent(tool *config.Tool, method *config.MethodCandidate) (*pl
 // `why`, dry-run, and execution reports carry the same stable error class.
 func candidatePlanIntent(tool *config.Tool, method *config.MethodCandidate) (*plan.ResolvedInstallPlan, string) {
 	intent, err := candidatePlanIntentErr(tool, method)
+	// Static planner APIs retain typed references, but execution reports must
+	// not expose even the environment-variable name used to locate a secret.
+	if intent != nil && method != nil && method.Kind == "github" {
+		intent.Secrets = nil
+	}
 	if err != nil {
 		return intent, err.Error()
 	}

@@ -368,7 +368,7 @@ func upgradeSingleTool(ctx context.Context, ex *exec.Executor, runner *run.Loggi
 
 	// Install the exact candidate resolved before the destructive
 	// transition. Never fall back to another candidate of the same kind.
-	newVer, err := reinstallUpgradeTool(ctx, adapter, resolved, tr, st, ot)
+	newVer, err := reinstallUpgradeTool(ctx, ex, resolved, tr, st, ot)
 	if err != nil {
 		return fail("reinstall failed: %v", err)
 	}
@@ -406,15 +406,16 @@ func removeInstalledTool(ctx context.Context, remover exec.AdapterV2, tr run.Run
 // installed version. On reinstall failure the tool's shared-resource claims
 // are released so state does not pretend a missing tool still holds refs;
 // newly zero-ref resources stay on the host for explicit retry/cleanup.
-func reinstallUpgradeTool(ctx context.Context, adapter exec.AdapterV2, resolved *plan.ResolvedInstallPlan, tr run.Runner, st *state.State, ot upgradeOutdatedTool) (string, error) {
+func reinstallUpgradeTool(ctx context.Context, ex *exec.Executor, resolved *plan.ResolvedInstallPlan, tr run.Runner, st *state.State, ot upgradeOutdatedTool) (string, error) {
 	installCtx, installCancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer installCancel()
-	if err := adapter.InstallResolved(installCtx, tr, ot.tool, ot.method, resolved); err != nil {
+	if err := ex.InstallResolvedCandidate(installCtx, tr, ot.tool, ot.method, resolved); err != nil {
 		if releaseErr := recordFailedUpgradeRemoval(st, ot.name); releaseErr != nil {
 			log.Default.Error("release failed-upgrade resources", "tool", ot.name, "error", releaseErr)
 		}
 		return "", err
 	}
+	adapter := ex.LookupAdapter(ot.method.Kind)
 	return probeVersion(ctx, adapter, tr, ot.tool, ot.method), nil
 }
 
@@ -633,7 +634,7 @@ func preflightDirectUpgrade(ctx context.Context, ex *exec.Executor, runner run.R
 	if method.When != nil && !method.When.Match(facts) {
 		return nil, plan.VerificationResult{}, fmt.Errorf("tracked candidate no longer matches its when condition")
 	}
-	intent, err := exec.CandidatePlanIntent(tool, method)
+	_, err := exec.CandidatePlanIntent(tool, method)
 	if err != nil {
 		return nil, plan.VerificationResult{}, err
 	}
@@ -659,15 +660,12 @@ func preflightDirectUpgrade(ctx context.Context, ex *exec.Executor, runner run.R
 	if !adapter.Available(ctx, probeRunner) {
 		return nil, plan.VerificationResult{}, fmt.Errorf("adapter %q is unavailable", method.Kind)
 	}
-	resolved, err := adapter.ResolvePlan(ctx, probeRunner, tool, method, intent)
+	resolved, err := ex.ResolveCandidatePlan(ctx, tool, method)
 	if err != nil {
 		return nil, plan.VerificationResult{}, err
 	}
 	if resolved == nil {
 		return nil, plan.VerificationResult{}, fmt.Errorf("tracked installation is not present; run install/repair instead of destructive upgrade")
-	}
-	if err := plan.ValidateResolution(*intent, *resolved); err != nil {
-		return nil, plan.VerificationResult{}, fmt.Errorf("resolve plan: %w", err)
 	}
 	if targetVersion != "" {
 		resolved.Identity.Version = targetVersion

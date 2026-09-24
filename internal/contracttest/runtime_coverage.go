@@ -8,6 +8,7 @@ func init() {
 		"http.branch":          {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
 		"github.release":       {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
 		"github.branch":        {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
+		"github.secret_ref":    {Consumer: "internal/exec/TestResolveCandidatePlanPassesResolvedGitHubSecretContext", Rationale: "the canonical resolver resolves the typed GitHub reference before release API access"},
 		"appimage.release":     {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
 		"appimage.branch":      {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
 		"android.release":      {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
@@ -16,6 +17,7 @@ func init() {
 		"msi.branch":           {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
 	})
 	RegisterCoverage(PhaseExecute, map[string]Coverage{
+		"github.secret_ref":     {Consumer: "internal/exec/TestInstallResolvedCandidatePassesResolvedGitHubSecretContext", Rationale: "the canonical resolved-plan installer re-resolves and transports the typed token for asset execution"},
 		"native.pkg":            {Consumer: "internal/exec/TestNativeAdapterV2PackageFieldChangesExecuteAndVerify", Rationale: "changing the package changes the native install command"},
 		"native.pkg_overrides":  {Consumer: "TestNativePackageOverrideAcrossRuntimeBoundaries", Rationale: "serial and batch installs use the selected clan package"},
 		"winget.pkg":            {Consumer: "internal/exec/TestNativeByManagerWingetV2ExecuteFieldsChangeCommand", Rationale: "changing package identity changes the winget install command"},

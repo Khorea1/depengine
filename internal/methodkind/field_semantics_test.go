@@ -32,7 +32,7 @@ func TestSemanticRegistryCoversEveryPublicFieldName(t *testing.T) {
 	}
 }
 
-func TestSecretRefsBelongOnlyToHTTPContract(t *testing.T) {
+func TestSecretRefsBelongOnlyToSupportedContracts(t *testing.T) {
 	http, ok := Lookup("http")
 	if !ok {
 		t.Fatal("http contract missing")
@@ -44,7 +44,20 @@ func TestSecretRefsBelongOnlyToHTTPContract(t *testing.T) {
 			t.Fatalf("http.%s contract = %+v, want typed resolve/execute authentication field", name, field)
 		}
 	}
-	for _, kind := range []string{"github", "appimage", "msi"} {
+	github, ok := Lookup("github")
+	if !ok {
+		t.Fatal("github contract missing")
+	}
+	field, ok := github.Fields["secret_ref"]
+	if !ok || field.Type != SecretRef || field.Effects != EffectResolve|EffectExecute || field.Semantic != SemanticAuthentication {
+		t.Fatalf("github.secret_ref contract = %+v, want typed resolve/execute authentication field", field)
+	}
+	for _, name := range []string{"checksum_secret_ref", "signature_secret_ref"} {
+		if _, declared := github.Fields[name]; declared {
+			t.Errorf("github unexpectedly declares %s", name)
+		}
+	}
+	for _, kind := range []string{"appimage", "msi", "native"} {
 		contract, ok := Lookup(kind)
 		if !ok {
 			t.Fatalf("%s contract missing", kind)

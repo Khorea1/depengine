@@ -88,10 +88,34 @@ func TestBuildCandidateIntentRejectsInvalidHTTPSidecarSecretReference(t *testing
 	}
 }
 
-func TestBuildCandidateIntentRejectsSecretReferenceOnUnsupportedMethod(t *testing.T) {
+func TestBuildCandidateIntentProjectsGitHubSecretReference(t *testing.T) {
 	tool, method := candidate("demo", "github", map[string]any{"repo": "example/demo", "asset": "demo.tar.gz"})
+	method.SecretRef = &config.SecretReference{Provider: "env", Name: "GITHUB_TOKEN"}
+	p, err := planner.BuildCandidateIntent(tool, method)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := plan.SecretReference{Provider: "env", Name: "GITHUB_TOKEN"}
+	if len(p.Secrets) != 1 || p.Secrets[0] != want {
+		t.Fatalf("secret requirements = %+v, want [%+v]", p.Secrets, want)
+	}
+	if len(p.Operations) == 0 || p.Operations[0].Kind != "resolve-artifact" {
+		t.Fatalf("operations = %+v, want artifact resolution as the first operation", p.Operations)
+	}
+}
+
+func TestBuildCandidateIntentRejectsInvalidGitHubSecretReference(t *testing.T) {
+	tool, method := candidate("demo", "github", map[string]any{"repo": "example/demo", "asset": "demo.tar.gz"})
+	method.SecretRef = &config.SecretReference{Provider: "env", Name: ""}
+	if _, err := planner.BuildCandidateIntent(tool, method); err == nil || !strings.Contains(err.Error(), "secret_ref") {
+		t.Fatalf("BuildCandidateIntent() error = %v, want invalid secret_ref", err)
+	}
+}
+
+func TestBuildCandidateIntentRejectsSecretReferenceOnUnsupportedMethod(t *testing.T) {
+	tool, method := candidate("demo", "native", map[string]any{"pkg": "demo"})
 	method.SecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"}
 	if _, err := planner.BuildCandidateIntent(tool, method); err == nil || !strings.Contains(err.Error(), "secret_ref") {
-		t.Fatalf("BuildCandidateIntent() error = %v, want unsupported secret_ref", err)
+		t.Fatalf("BuildCandidateIntent() error = %v, want unsupported secret_ref for native", err)
 	}
 }

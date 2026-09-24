@@ -336,11 +336,12 @@ var Contracts = finalizeContracts([]Contract{
 		"install_dir": {Type: String, Effects: EffectExecute | EffectVerify},
 	}, CanRemove: true, Checksum: localChecksumContract},
 	{Kind: "github", DefaultOrder: 35, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(withoutField(downloadFields, "url"), map[string]Field{
-		"repo":    {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
-		"asset":   {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
-		"release": {Type: String, Effects: EffectResolve},
-		"branch":  {Type: String, NonEmpty: true, Effects: EffectResolve},
-		"scope":   artifactScopeField["scope"],
+		"repo":       {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"asset":      {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"release":    {Type: String, Effects: EffectResolve},
+		"branch":     {Type: String, NonEmpty: true, Effects: EffectResolve},
+		"scope":      artifactScopeField["scope"],
+		"secret_ref": {Type: SecretRef, Effects: EffectResolve | EffectExecute},
 	}), SourceAlternatives: [][]string{{"repo", "asset"}}, Artifact: githubArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true},
 	{Kind: "http", DefaultOrder: 36, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(downloadFields, artifactScopeField, map[string]Field{
 		"secret_ref":           {Type: SecretRef, Effects: EffectResolve | EffectExecute},

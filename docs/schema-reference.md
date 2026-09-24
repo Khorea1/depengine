@@ -277,9 +277,11 @@ and `.dmg` are rejected by `http` instead of being mistaken for binaries.
 Do not embed credentials in HTTP(S) URLs (for example,
 `https://token@example.com/file`). depengine rejects credential-bearing URLs so
 secrets cannot leak through command arguments, diagnostics, state, or lock data.
-For GitHub authentication, use `GITHUB_TOKEN`, `GH_TOKEN`, or an authenticated
-GitHub CLI; authenticated asset downloads use the in-process HTTP backend so the
-token is sent as an `Authorization` header rather than as a subprocess argument.
+For GitHub authentication, prefer `github.secret_ref` when the credential is
+part of project intent. If no typed reference is declared, `GITHUB_TOKEN`,
+`GH_TOKEN`, or an authenticated GitHub CLI remain valid fallbacks.
+Authenticated asset downloads use the in-process HTTP backend so the token is
+sent as an `Authorization` header rather than as a subprocess argument.
 
 
 ### Local/offline: install a vendored artifact
@@ -352,12 +354,30 @@ The pattern must match exactly one asset. Zero matches report every available
 asset; multiple matches fail and list the ambiguous matches. depengine never
 chooses the first result heuristically.
 
+Private GitHub releases can use a typed credential reference:
+
+```toml
+[tools.private-cli.github]
+repo = "acme/private-cli"
+asset = "private-cli-{os_any}-{arch_any}.tar.gz"
+secret_ref = { provider = "env", name = "PRIVATE_GITHUB_TOKEN" }
+```
+
+`secret_ref` contains the environment variable name, never the token value.
+depengine resolves it when the candidate reaches GitHub release resolution or
+execution. A declared reference fails closed when it is missing, empty, invalid,
+or uses an unsupported provider; depengine does not silently replace that
+explicit reference with ambient GitHub credentials. Without `secret_ref`, the
+existing `GITHUB_TOKEN`, `GH_TOKEN`, and authenticated `gh` fallback remain
+available.
+
 | Field | Required | Description |
 |-------|----------|--------------|
 | `repo` | yes | `"owner/repo"` (or a full `https://github.com/owner/repo` URL) |
 | `asset` | yes | Filename pattern matched against the release's real asset names (see placeholders below) |
 | `release` | no | Named release tag to resolve instead of the latest release (e.g. `"nightly"` for a project's rolling pre-release). Defaults to `"latest"`. Mutually exclusive with `branch`. |
 | `branch` | no | Literal branch name, for projects that tag a release identically to a branch (e.g. an `"unstable"` rolling build). **Does not query git branches/commits** — it resolves through the same GitHub release-by-tag API as `release`, while recording branch intent. Mutually exclusive with `release`. |
+| `secret_ref` | no | Typed env-backed Bearer credential reference for GitHub release API resolution and GitHub asset download |
 
 Every other field (`checksum`, `checksum_url`, `checksum_file_format`,
 `signature_url`, `signing_key`, `extract_to`, `binary`, `sudo_required`,

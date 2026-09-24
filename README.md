@@ -150,8 +150,11 @@ Use `local` for project-vendored files and archives, and `http` for direct
 downloads. Artifact methods can verify fixed checksums; some methods also
 support release-asset checksum discovery or signatures.
 
-Credentials must not be embedded in HTTP(S) URLs. Private GitHub assets can use
-`GITHUB_TOKEN`, `GH_TOKEN`, or existing `gh` authentication.
+Credentials must not be embedded in HTTP(S) URLs. Private GitHub methods can
+declare `secret_ref = { provider = "env", name = "..." }` so the credential is
+part of typed project intent without storing its value. Without a typed
+reference, `GITHUB_TOKEN`, `GH_TOKEN`, or existing `gh` authentication remain
+available for compatibility.
 
 See [security](docs/security.md) before using hooks, build commands, mutable
 downloads, or custom package sources.

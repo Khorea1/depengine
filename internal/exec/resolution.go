@@ -37,7 +37,11 @@ func (ex *Executor) resolveCandidatePlan(
 	if intent == nil {
 		return nil, nil
 	}
-	resolved, err := adapter.ResolvePlan(ctx, ex.probeRunner(tool.Name, displayKind), tool, method, intent)
+	resolveCtx, err := ex.githubCredentialContext(ctx, method)
+	if err != nil {
+		return intent, fmt.Errorf("%s: %w", displayKind, err)
+	}
+	resolved, err := adapter.ResolvePlan(resolveCtx, ex.probeRunner(tool.Name, displayKind), tool, method, intent)
 	if err != nil {
 		return intent, fmt.Errorf("%s: resolve plan: %w", displayKind, err)
 	}

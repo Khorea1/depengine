@@ -46,23 +46,26 @@ func (c Contract) MissingPlanCapabilities(p plan.ResolvedInstallPlan) (Capabilit
 }
 
 // supportsSharedAuth recognizes only credential transports depengine owns:
-// source setup for selected Git-backed repositories and Bearer auth for HTTP
-// artifacts. Other secret references stay fail-closed.
+// source setup for selected Git-backed repositories, Bearer auth for HTTP
+// artifacts, and GitHub release artifact downloads. Other secret references
+// stay fail-closed.
 func supportsSharedAuth(p plan.ResolvedInstallPlan, contractKind string) bool {
 	if p.Candidate.Method == "http" {
 		if contractKind != "http" || len(p.Secrets) < 1 || len(p.Secrets) > 3 {
 			return false
 		}
-		hasArtifact := len(p.Artifacts) > 0
-		if !hasArtifact {
-			for _, operation := range p.Operations {
-				if operation.Kind == "resolve-artifact" {
-					hasArtifact = true
-					break
-				}
+		if !hasResolvedArtifact(p) {
+			return false
+		}
+		for _, source := range p.Sources {
+			if source.SecretRef != nil {
+				return false
 			}
 		}
-		if !hasArtifact {
+		return true
+	}
+	if p.Candidate.Method == "github" {
+		if contractKind != "github" || len(p.Secrets) != 1 || !hasResolvedArtifact(p) {
 			return false
 		}
 		for _, source := range p.Sources {
@@ -100,4 +103,16 @@ func supportsSharedAuth(p plan.ResolvedInstallPlan, contractKind string) bool {
 		}
 	}
 	return true
+}
+
+func hasResolvedArtifact(p plan.ResolvedInstallPlan) bool {
+	if len(p.Artifacts) > 0 {
+		return true
+	}
+	for _, operation := range p.Operations {
+		if operation.Kind == "resolve-artifact" {
+			return true
+		}
+	}
+	return false
 }

@@ -314,27 +314,19 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 
 	// Resolve auth only after this candidate survives every planning and
 	// preparation gate. Credentials stay in this method call's context.
-	if ac.method.Kind == "http" {
-		resolver := ex.secretResolver
-		if resolver == nil {
-			resolver = secret.EnvResolver{}
+	credentialCtx, credentialErr := ex.executionCredentialContext(methodCtx, ac.method)
+	if credentialErr != nil {
+		methodCancel()
+		detail := credentialErr.Error()
+		if rollbackErr := ac.prepared.rollback(ac.toolCtx, ex); rollbackErr != nil {
+			detail += "; source rollback failed"
+			ex.failCandidate(ac, result, detail)
+			return finishTool
 		}
-		for _, credentialRef := range httpCredentialReferences(ac.method) {
-			credential, resolveErr := resolver.Resolve(methodCtx, credentialRef.reference)
-			if resolveErr != nil || credential == "" {
-				methodCancel()
-				detail := fmt.Sprintf("http %s secret %s", credentialRef.purpose, secretResolutionClass(resolveErr, credential))
-				if rollbackErr := ac.prepared.rollback(ac.toolCtx, ex); rollbackErr != nil {
-					detail += "; source rollback failed"
-					ex.failCandidate(ac, result, detail)
-					return finishTool
-				}
-				ex.skipCandidate(ac, result, "failed", detail)
-				return nextMethod
-			}
-			methodCtx = WithHTTPBearer(methodCtx, credentialRef.purpose, credential)
-		}
+		ex.skipCandidate(ac, result, "failed", detail)
+		return nextMethod
 	}
+	methodCtx = credentialCtx
 
 	// Persist the commit boundary before the adapter can mutate the target. If
 	// the install process dies after this point, recovery must reconcile the

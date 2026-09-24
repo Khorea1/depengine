@@ -123,24 +123,42 @@ func TestSharedAuthRecognitionRemainsNarrow(t *testing.T) {
 	cases := []struct {
 		name   string
 		method string
+		kind   string
 		edit   func(*plan.ResolvedInstallPlan)
 	}{
-		{"orphan reference", "http", func(p *plan.ResolvedInstallPlan) {
+		{"orphan reference", "http", "http", func(p *plan.ResolvedInstallPlan) {
 			p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
 		}},
-		{"non-http artifact", "github", func(p *plan.ResolvedInstallPlan) {
+		{"github orphan reference", "github", "github", func(p *plan.ResolvedInstallPlan) {
+			p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
+		}},
+		{"github has extra secret", "github", "github", func(p *plan.ResolvedInstallPlan) {
+			p.Artifacts = []plan.Artifact{{URL: "https://example.test/file.tar.gz"}}
+			p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}, {Provider: "env", Name: "OTHER"}}
+		}},
+		{"github source auth cannot use artifact transport", "github", "github", func(p *plan.ResolvedInstallPlan) {
+			p.Artifacts = []plan.Artifact{{URL: "https://example.test/file.tar.gz"}}
+			ref := &plan.SecretReference{Provider: "env", Name: "TOKEN"}
+			p.Secrets = []plan.SecretReference{*ref}
+			p.Sources = []plan.SourceReference{{Role: plan.SourceHostConfiguration, Kind: "brew-tap", URL: "https://example.test/repo.git", SecretRef: ref}}
+		}},
+		{"github capability cannot forgive other method auth", "http", "github", func(p *plan.ResolvedInstallPlan) {
 			p.Artifacts = []plan.Artifact{{URL: "https://example.test/file.tar.gz"}}
 			p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
 		}},
-		{"HTTP plus source auth", "http", func(p *plan.ResolvedInstallPlan) {
+		{"github auth requires github contract", "github", "http", func(p *plan.ResolvedInstallPlan) {
+			p.Artifacts = []plan.Artifact{{URL: "https://example.test/file.tar.gz"}}
+			p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
+		}},
+		{"HTTP plus source auth", "http", "http", func(p *plan.ResolvedInstallPlan) {
 			p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
 			p.Sources = []plan.SourceReference{{Role: plan.SourceHostConfiguration, Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git", SecretRef: &plan.SecretReference{Provider: "env", Name: "TOKEN"}}}
 		}},
-		{"unsupported source role", "native", func(p *plan.ResolvedInstallPlan) {
+		{"unsupported source role", "native", "native", func(p *plan.ResolvedInstallPlan) {
 			p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
 			p.Sources = []plan.SourceReference{{Role: plan.SourceRegistry, Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git", SecretRef: &plan.SecretReference{Provider: "env", Name: "TOKEN"}}}
 		}},
-		{"unsupported source kind", "native", func(p *plan.ResolvedInstallPlan) {
+		{"unsupported source kind", "native", "native", func(p *plan.ResolvedInstallPlan) {
 			p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
 			p.Sources = []plan.SourceReference{{Role: plan.SourceHostConfiguration, Kind: "apt-ppa", Name: "ppa:vendor/stable", SecretRef: &plan.SecretReference{Provider: "env", Name: "TOKEN"}}}
 		}},
@@ -149,7 +167,7 @@ func TestSharedAuthRecognitionRemainsNarrow(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := plan.New("demo", tt.method, true)
 			tt.edit(&p)
-			contract := Contract{Kind: tt.method}
+			contract := Contract{Kind: tt.kind}
 			missing, err := contract.MissingPlanCapabilities(p)
 			if err != nil {
 				t.Fatalf("MissingPlanCapabilities() error = %v", err)

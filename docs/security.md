@@ -63,15 +63,19 @@ gh attestation verify <checksums> --repo Khorea1/depengine
 ## Credentials
 
 Do not put credentials in schema or manifest URLs. Use the authentication
-mechanism provided by the package manager or service. GitHub release access can
-use `GITHUB_TOKEN`, `GH_TOKEN`, or existing `gh` authentication.
+mechanism provided by the package manager or service. A `github` method may
+declare an env-backed `secret_ref`; the reference participates in static
+planning while execution reports and persisted state omit it. The value is
+resolved only in process for release resolution and asset download. When no
+typed reference is declared, GitHub release access can still use
+`GITHUB_TOKEN`, `GH_TOKEN`, or existing `gh` authentication.
 
 Typed `http` methods can reference env-backed credentials with `secret_ref`,
-`checksum_secret_ref`, and `signature_secret_ref`. depengine resolves each value
-only when the candidate reaches the real install step and carries it in process
-for the matching request. Secret values are not placed in command argv, plans,
-lockfiles, state, reports, diagnostics, or logs. Authenticated HTTP requests use
-the Go backend even when curl or wget is available.
+`checksum_secret_ref`, and `signature_secret_ref`. Typed `github` methods can
+use `secret_ref` for release API resolution and GitHub asset transport. Secret
+values are not placed in command argv, plans, lockfiles, state, reports,
+diagnostics, or logs. Authenticated HTTP requests use the Go backend even when
+curl or wget is available.
 
 Bearer credentials are retained across same-origin redirects and removed before
 following a cross-origin redirect. The primary artifact credential is never

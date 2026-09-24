@@ -55,3 +55,16 @@ func TestHTTPSecretRequirementUsesSupportedSharedAuthTransport(t *testing.T) {
 		t.Fatalf("CheckRequirements() = %v, want supported authenticated HTTP transport", err)
 	}
 }
+
+func TestGitHubSecretRequirementUsesOnlyGitHubArtifactTransport(t *testing.T) {
+	p := plan.New("private-tool", "github", true)
+	p.Operations = []plan.Operation{{Kind: "resolve-artifact", Effect: plan.EffectReadOnly}}
+	p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
+	contract, ok := Lookup("github")
+	if !ok {
+		t.Fatal("github contract missing")
+	}
+	if err := contract.CheckRequirements(p, CandidateRequirements{}); err != nil {
+		t.Fatalf("CheckRequirements() = %v, want GitHub artifact auth transport accepted", err)
+	}
+}

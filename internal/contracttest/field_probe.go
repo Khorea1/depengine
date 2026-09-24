@@ -55,6 +55,10 @@ var fieldPairs = map[string][2]any{
 		map[string]any{"provider": "env", "name": "TOKEN_A"},
 		map[string]any{"provider": "env", "name": "TOKEN_B"},
 	},
+	"github.secret_ref": {
+		map[string]any{"provider": "env", "name": "GITHUB_TOKEN_A"},
+		map[string]any{"provider": "env", "name": "GITHUB_TOKEN_B"},
+	},
 	"checksum_secret_ref": {
 		map[string]any{"provider": "env", "name": "CHECKSUM_TOKEN_A"},
 		map[string]any{"provider": "env", "name": "CHECKSUM_TOKEN_B"},

@@ -177,7 +177,7 @@ func TestHTTPSecretReferenceRejectsInvalidOrUnsupportedForms(t *testing.T) {
 		{"NUL", "http", `{ provider = "env", name = "TOKEN\u0000BAD" }`, "NUL"},
 		{"unknown field", "http", `{ provider = "env", name = "TOKEN", value = "literal" }`, "secret_ref.value"},
 		{"wrong type", "http", `"TOKEN"`, "secret_ref: expected table"},
-		{"unsupported method", "github", `{ provider = "env", name = "TOKEN" }`, "field is not supported by method kind github"},
+		{"unsupported method", "native", `{ provider = "env", name = "TOKEN" }`, "field is not supported by method kind native"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "schema.toml")
@@ -195,6 +195,27 @@ func TestHTTPSecretReferenceRejectsInvalidOrUnsupportedForms(t *testing.T) {
 				t.Fatalf("ParseProjectSchema() error = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestParseGitHubSecretReference(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "schema.toml")
+	data := `schema_version = 1
+[tools.demo.github]
+repo = "example/private"
+asset = "demo.tar.gz"
+secret_ref = { provider = "env", name = "GITHUB_TOKEN" }
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	schema, err := ParseProjectSchema(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := schema.Tools["demo"].Methods[0].SecretRef
+	if ref == nil || ref.Provider != "env" || ref.Name != "GITHUB_TOKEN" {
+		t.Fatalf("GitHub secret ref = %+v, want env:GITHUB_TOKEN", ref)
 	}
 }
 
