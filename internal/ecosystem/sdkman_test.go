@@ -99,8 +99,8 @@ func TestSDKManInstallUsesExactVersion(t *testing.T) {
 		t.Fatal("expected sdk install command")
 	}
 	got := fr.Calls[len(fr.Calls)-1]
-	if got.Name != "sdk" || len(got.Args) != 3 || got.Args[0] != "install" || got.Args[1] != "java" || got.Args[2] != "21.0.4-tem" {
-		t.Fatalf("install command = %s %v, want sdk install java 21.0.4-tem", got.Name, got.Args)
+	if got.Name != "bash" || len(got.Args) != 7 || got.Args[0] != "-c" || got.Args[4] != "install" || got.Args[5] != "java" || got.Args[6] != "21.0.4-tem" {
+		t.Fatalf("install command = %s %v, want bash sdk install java 21.0.4-tem", got.Name, got.Args)
 	}
 }
 
