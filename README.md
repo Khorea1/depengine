@@ -214,6 +214,7 @@ completion and validation for `schema.toml`. For Taplo in VS Code:
 | [`docs/compatibility.md`](docs/compatibility.md) | File-format version policy |
 | [`docs/architecture.md`](docs/architecture.md) | Internal packages and execution flow |
 | [`docs/development.md`](docs/development.md) | Where project notes and design records belong |
+| [`docs/alternatives.md`](docs/alternatives.md) | Where depengine fits against mise, aqua, Nix, and Brewfile |
 | [`docs/roadmap.md`](docs/roadmap.md) | Unfinished project work |
 
 ## Development

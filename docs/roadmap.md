@@ -106,9 +106,10 @@ Work on the current execution model comes before adding more installer types.
   Done: README separates the `CGO_ENABLED=0` release binary (now asserted by a
   release contract test) from the embedded POSIX `sh` script and base utilities
   Unix detection needs; Windows uses the Go-native fallback.
-- [ ] Add a concise alternatives/positioning document comparing depengine's
+- [x] Add a concise alternatives/positioning document comparing depengine's
   project-level install model with tools such as mise, aqua, Nix, and Brewfile,
-  focusing on behavioral scope rather than marketing claims.
+  focusing on behavioral scope rather than marketing claims. Done:
+  [`docs/alternatives.md`](alternatives.md), linked from the README docs table.
 - [x] Audit author variants before adding `.mailmap`; only merge identities
   confirmed to belong to the same person. Done: `.mailmap` exists and audit
   on 2026-09-23 verified it complete (7 identities, 6 aliases, no 8th
