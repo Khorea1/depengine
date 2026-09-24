@@ -2,6 +2,7 @@ package ecosystem
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -146,6 +147,26 @@ func TestGoAdapterV2ObserveReportsDriftedVersion(t *testing.T) {
 	}
 	if _, err := adapter.Observe(context.Background(), goV2Runner(""), tool, nil); err == nil {
 		t.Fatal("Observe(nil method) should fail")
+	}
+}
+
+func TestGoAdapterV2ObserveFailsClosedOnBuildInfoPackageMismatch(t *testing.T) {
+	adapter := NewGoAdapter()
+	tool, mc := goV2Tool()
+	runner := goV2Runner("\tpath\texample.com/other/cmd/realbin\n\tmod\texample.com/other\tv9.9.9\th1:fixture\n")
+
+	observation, err := adapter.Observe(context.Background(), runner, tool, mc)
+	if !errors.Is(err, errGoBuildInfoPackageMismatch) {
+		t.Fatalf("Observe() error = %v, want build-info package mismatch", err)
+	}
+	if observation.Presence != plan.PresenceBroken {
+		t.Fatalf("Observe() presence = %q, want %q", observation.Presence, plan.PresenceBroken)
+	}
+	if observation.Detail == "" || !strings.Contains(observation.Detail, "example.com/other/cmd/realbin") {
+		t.Fatalf("Observe() detail = %q, want mismatched embedded package", observation.Detail)
+	}
+	if len(observation.KnownFields) != 0 {
+		t.Fatalf("Observe() known fields = %#v, want none for broken verification", observation.KnownFields)
 	}
 }
 

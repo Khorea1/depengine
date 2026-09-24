@@ -163,7 +163,22 @@ func (a *GoAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Too
 		Identity:    plan.ObservedIdentity{Package: importPath},
 		KnownFields: []plan.IdentityField{plan.FieldPackage},
 	}
-	if installed, err := a.InstalledVersion(ctx, rn, tool, mc); err == nil && installed != "" {
+	installed, err := a.InstalledVersion(ctx, rn, tool, mc)
+	if err != nil {
+		// A package mismatch is authoritative build metadata proving that the
+		// binary at the Go install target is not the requested package. Do not
+		// silently re-label it as the desired package.
+		if errors.Is(err, errGoBuildInfoPackageMismatch) {
+			observation.Presence = plan.PresenceBroken
+			observation.KnownFields = nil
+			observation.Detail = err.Error()
+			return observation, err
+		}
+		// Version inspection remains best-effort for generic probe failures. The
+		// binary is still known to be present from checkPresent above.
+		return observation, nil
+	}
+	if installed != "" {
 		// The planner preserves the requested spelling while Go treats a leading
 		// "v" as equivalent for exact module versions. Reconcile is deliberately
 		// adapter-neutral and exact, so collapse only that established Go
@@ -336,6 +351,8 @@ func (a *GoAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *c
 	return goModuleVersionFromBuildInfo(res.Stdout, expectedPath)
 }
 
+var errGoBuildInfoPackageMismatch = errors.New("go: build info package mismatch")
+
 func goModuleVersionFromBuildInfo(stdout []byte, expectedPath string) (string, error) {
 	var packagePath, moduleVersion string
 	for _, line := range strings.Split(string(stdout), "\n") {
@@ -356,7 +373,7 @@ func goModuleVersionFromBuildInfo(stdout []byte, expectedPath string) (string, e
 		return "", errors.New("go: build info did not report a package path")
 	}
 	if expectedPath != "" && packagePath != expectedPath {
-		return "", fmt.Errorf("go: build info package %q does not match requested package %q", packagePath, expectedPath)
+		return "", fmt.Errorf("%w: embedded package %q does not match requested package %q", errGoBuildInfoPackageMismatch, packagePath, expectedPath)
 	}
 	if moduleVersion == "" || moduleVersion == "(devel)" {
 		return "", nil
