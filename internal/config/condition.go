@@ -1,6 +1,8 @@
 package config
 
 import (
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/log"
@@ -43,6 +45,56 @@ func (c *Condition) IsZero() bool {
 		c.IsWSL == nil &&
 		c.IsContainer == nil &&
 		c.IsAndroid == nil
+}
+
+// String returns a deterministic, human-readable condition expression.
+//
+// Slice values are sorted because their matching semantics are OR-based; this
+// makes equivalent conditions render identically regardless of declaration
+// order. Quoted values keep the representation unambiguous for graph labels.
+func (c *Condition) String() string {
+	if c == nil {
+		return ""
+	}
+
+	parts := make([]string, 0, 14)
+	appendList := func(name string, values []string) {
+		if len(values) == 0 {
+			return
+		}
+		ordered := append([]string(nil), values...)
+		sort.Strings(ordered)
+		for i := range ordered {
+			ordered[i] = strconv.Quote(ordered[i])
+		}
+		parts = append(parts, name+" in ["+strings.Join(ordered, ",")+"]")
+	}
+	appendBool := func(name string, value *bool) {
+		if value != nil {
+			parts = append(parts, name+" == "+strconv.FormatBool(*value))
+		}
+	}
+
+	appendList("distro_family", c.DistroFamily)
+	appendList("target_family", c.TargetFamily)
+	appendList("distro_id", c.DistroID)
+	appendList("distro_version", c.DistroVersion)
+	if c.DistroVersionMin != "" {
+		parts = append(parts, "distro_version >= "+strconv.Quote(c.DistroVersionMin))
+	}
+	if c.DistroVersionMax != "" {
+		parts = append(parts, "distro_version <= "+strconv.Quote(c.DistroVersionMax))
+	}
+	appendList("arch", c.Arch)
+	appendList("os", c.OS)
+	appendList("kernel", c.Kernel)
+	appendList("libc", c.Libc)
+	appendList("init_system", c.InitSystem)
+	appendBool("is_wsl", c.IsWSL)
+	appendBool("is_container", c.IsContainer)
+	appendBool("is_android", c.IsAndroid)
+
+	return strings.Join(parts, " && ")
 }
 
 // Match reports whether this condition is satisfied by the given system facts.

@@ -90,7 +90,8 @@ func runGraph(graphSchema, graphManifest *string, graphNoManifest *bool, graphFo
 		return nil
 	}
 
-	levels, err := graph.Sort(s.Tools)
+	declaredGraph := graph.BuildDeclaredGraph(s.Tools)
+	levels, err := graph.SortGraph(declaredGraph)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return exitWithCode(2)
@@ -105,11 +106,11 @@ func runGraph(graphSchema, graphManifest *string, graphNoManifest *bool, graphFo
 	}
 	switch *graphFormat {
 	case "mermaid":
-		fmt.Print(graph.RenderMermaid(s.Tools))
+		fmt.Print(graph.RenderMermaidGraph(declaredGraph))
 	case "dot":
-		fmt.Print(graph.RenderDOT(s.Tools))
+		fmt.Print(graph.RenderDOTGraph(declaredGraph))
 	case "text":
-		fmt.Print(graph.RenderText(levels, s.Tools))
+		fmt.Print(graph.RenderTextGraph(levels, declaredGraph))
 	}
 	return nil
 }

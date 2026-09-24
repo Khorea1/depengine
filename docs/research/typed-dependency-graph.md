@@ -2,7 +2,7 @@
 
 - Status: research / design proposal
 - Scope: `depengine graph` representation, analysis, and future terminal rendering
-- Implementation status: not started
+- Implementation status: P1 typed IR, declared guards, scheduling, and renderer integration implemented; see `typed-dependency-graph-implementation-status.md`
 - Naming used in this document: **DPG** = **DePenGine Graph** (project shorthand, not "Program Dependence Graph")
 
 ## Motivation
@@ -19,20 +19,20 @@ does not immediately show which prerequisites feed which dependent tools, fan-in
 patterns, connected components, or the semantic difference between kinds of
 dependencies.
 
-The existing implementation already has most of the raw ingredients:
+At the research baseline, the implementation already had most of the raw ingredients:
 
 - `internal/graph.Sort` performs deterministic Kahn topological sorting and
   cycle detection;
 - `internal/graph.RenderDOT` emits directed Graphviz edges;
 - `internal/graph.RenderMermaid` emits Mermaid flowchart edges;
 - `internal/graph.RenderText` emits topological levels;
-- `collectEdges` reconstructs tool and method-scoped edges for renderers.
+- `collectEdges` reconstructed tool and method-scoped edges for renderers (removed by the P1 IR migration).
 
 The proposed direction is therefore **not** to replace the graph subsystem with
 a visualization library. It is to introduce a typed graph intermediate
 representation that can be analyzed and rendered consistently.
 
-## Current semantic gaps
+## Baseline semantic gaps
 
 The current interfaces collapse distinct schema semantics.
 
@@ -893,23 +893,27 @@ FUNCTION AnalyzeForLayout(graph):
 
 ## Implementation sequence
 
-The implementation should be incremental and preserve existing behavior before
-adding a new renderer.
+The implementation is incremental and preserves existing behavior before adding
+a new terminal renderer.
 
-1. Introduce `Graph`, `Node`, and typed `Edge` without changing CLI output.
-2. Build the IR once from merged `config.Tool` values, preserving
-   `requires_when` and method-scoped metadata.
-3. Migrate DOT and Mermaid to consume the IR; keep output compatibility where
-   the current output is semantically complete.
-4. Make topological sorting operate on the scheduling projection.
-5. Migrate the existing text/level renderer to the same IR.
-6. Add `--format graph` with weak-component grouping and isolated-node
-   compaction.
-7. Add simple ranked layout and orthogonal routing.
-8. Improve crossing reduction and edge bundling only after testing real schemas.
+P1 status:
 
-The first several steps should be refactoring/semantic preservation rather than
-a visible feature change.
+1. **Done:** introduce `Graph`, `Node`, and typed `Edge`.
+2. **Done:** build one declared IR from merged `config.Tool` values while
+   preserving `requires_when`, method guards, and candidate-scoped metadata.
+3. **Done:** migrate DOT and Mermaid to consume the IR.
+4. **Done:** make topological sorting operate on the scheduling projection.
+5. **Done:** migrate the existing text/level renderer to the same IR.
+6. **Pending:** add `--format graph` with weak-component grouping and
+   isolated-node compaction.
+7. **Pending:** add simple ranked layout and orthogonal routing.
+8. **Pending:** improve crossing reduction and edge bundling only after testing
+   real schemas.
+
+The generic effective/resolved projection engine is also implemented: callers
+supply guard evaluation and selected-method decisions without coupling the graph
+package to host facts or install-plan types. CLI/domain adapters remain a
+follow-up; see `typed-dependency-graph-implementation-status.md`.
 
 ## Non-goals for the first implementation
 
