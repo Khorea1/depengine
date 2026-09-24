@@ -177,11 +177,10 @@ func (a *BaseAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.
 	return &resolved, nil
 }
 
-// Observe reports the same installed-state result as Check using
-// VerificationResult-compatible semantics. A requested version is reported as
-// known only because Check verified it: every ExactVersion-capable base kind
-// (pip, pipx, uv, npm, pnpm, bun, gem, yarn, composer) compares the installed
-// version inside Check, and kinds without version support never carry one.
+// Observe reports installed state using VerificationResult-compatible
+// semantics. ExactVersion-capable base kinds query and report the actual
+// installed version independently from requested-version equality, so a
+// different installed version reconciles as drift instead of absence.
 func (a *BaseAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
 	if tool == nil || mc == nil {
 		return plan.Observation{}, errors.New(a.config.KindName + ": tool and method are required")
@@ -190,20 +189,33 @@ func (a *BaseAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 	if pkg == "" {
 		return plan.Observation{Presence: plan.PresenceAbsent}, nil
 	}
-	if !a.Check(ctx, rn, tool, mc) {
+	absent := plan.Observation{
+		Presence:    plan.PresenceAbsent,
+		Identity:    plan.ObservedIdentity{Package: pkg},
+		KnownFields: []plan.IdentityField{plan.FieldPackage},
+	}
+	requestedVersion, _ := mc.Config["version"].(string)
+	if contract, ok := methodkind.Lookup(a.config.KindName); requestedVersion != "" && ok && contract.Supports(methodkind.CapabilityExactVersion) {
+		installedVersion, err := a.InstalledVersion(ctx, rn, tool, mc)
+		if err != nil || installedVersion == "" {
+			return absent, nil
+		}
 		return plan.Observation{
-			Presence:    plan.PresenceAbsent,
-			Identity:    plan.ObservedIdentity{Package: pkg},
-			KnownFields: []plan.IdentityField{plan.FieldPackage},
+			Presence:    plan.PresencePresent,
+			Identity:    plan.ObservedIdentity{Package: pkg, Version: installedVersion},
+			KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion},
 		}, nil
+	}
+	if !a.Check(ctx, rn, tool, mc) {
+		return absent, nil
 	}
 	observation := plan.Observation{
 		Presence:    plan.PresencePresent,
 		Identity:    plan.ObservedIdentity{Package: pkg},
 		KnownFields: []plan.IdentityField{plan.FieldPackage},
 	}
-	if version, _ := mc.Config["version"].(string); version != "" {
-		observation.Identity.Version = version
+	if requestedVersion != "" {
+		observation.Identity.Version = requestedVersion
 		observation.KnownFields = append(observation.KnownFields, plan.FieldVersion)
 	}
 	return observation, nil
