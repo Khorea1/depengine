@@ -26,6 +26,16 @@ class FuzzManifestTest(unittest.TestCase):
         self.manifest.write_text("./pkg FuzzAlpha\n")
         self.assertEqual([("./pkg", "FuzzAlpha")], run_fuzz.validate(self.root, self.manifest))
 
+    def test_root_package_uses_dot_path(self):
+        (self.root / "fuzz_test.go").write_text(
+            'package fuzzfixture\nimport "testing"\nfunc FuzzRoot(seed *testing.F) {}\n'
+        )
+        self.manifest.write_text(". FuzzRoot\n./pkg FuzzAlpha\n")
+        self.assertEqual(
+            [(".", "FuzzRoot"), ("./pkg", "FuzzAlpha")],
+            run_fuzz.validate(self.root, self.manifest),
+        )
+
     def test_missing_runtime_target_fails(self):
         self.manifest.write_text("./pkg FuzzMissing\n")
         with self.assertRaisesRegex(ValueError, "missing or renamed targets.*FuzzMissing"):

@@ -43,7 +43,7 @@ def read_manifest(path: Path) -> list[tuple[str, str]]:
         if not line:
             continue
         fields = line.split()
-        if len(fields) != 2 or not fields[0].startswith("./") or not fields[1].startswith("Fuzz"):
+        if len(fields) != 2 or not (fields[0] == "." or fields[0].startswith("./")) or not fields[1].startswith("Fuzz"):
             raise ValueError(f"{path}:{number}: expected '<package> <FuzzTarget>'")
         entries.append((fields[0], fields[1]))
     return entries

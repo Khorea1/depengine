@@ -25,13 +25,14 @@ Work on the current execution model comes before adding more installer types.
   for the same exclusion because state does not retain reference names.
   Other authenticated operations still need an explicit credential transport
   before they can be accepted.
-- [ ] Restore fuzzing as a reliable CI gate. Keep workflow target names in sync
-  with the Go fuzz functions, run every committed fuzz target with a bounded
-  budget, and fail CI when an expected target disappears after a rename.
-- [ ] Triage the security-relevant `gosec` backlog ahead of the general lint
-  cleanup. Fix real findings and replace false positives with explicit,
-  reviewable suppressions so the `new-from-rev` baseline cannot indefinitely
-  hide unreviewed security diagnostics.
+- [x] Restore fuzzing as a reliable CI gate. The CI manifest is checked
+  against Go's runtime test listing, then every runnable target gets a bounded
+  fuzz run; missing, renamed, newly added, or build-tagged-out targets fail.
+- [~] Triage the security-relevant `gosec` backlog ahead of the general lint
+  cleanup. Reviewed and documented scanner findings, added narrow checksum
+  compatibility and TAR normalization suppressions, and fixed the hard-link
+  path validation gap. Archive expansion limits and the remaining call-site review are open;
+  see [`gosec-triage.md`](gosec-triage.md).
 - [x] Remove the orphaned root lock artifact. No canonical root schema is
   tracked; the stale lock referenced a removed `fastfetch/http/0` method and
   lacked its method identity hash. Root-generated locks are now ignored;
