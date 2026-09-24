@@ -95,10 +95,12 @@ available.
 Bearer credentials are never sent over remote plaintext HTTP. Explicit
 authenticated artifact, checksum, and signature URLs must use HTTPS; the same
 rule is rechecked after runtime URL resolution before the Authorization header
-is attached. Plain HTTP is accepted only for the local loopback interface
-(`localhost`, `127.0.0.0/8`, or `::1`) so local registries and test
-fixtures do not require certificates. Public, unauthenticated downloads retain
-their existing HTTP/HTTPS behavior.
+is attached. Authenticated redirects to remote plaintext HTTP are rejected
+rather than followed without the header; HTTPS cross-origin redirects may
+continue only after Authorization is removed. Plain HTTP is accepted only for
+the local loopback interface (`localhost`, `127.0.0.0/8`, or `::1`) so
+local registries and test fixtures do not require certificates. Public,
+unauthenticated downloads retain their existing HTTP/HTTPS behavior.
 
 For `appimage`, `android`, and `msi` candidates declared with `repo` +
 `asset`, wrapper secret references authenticate the resolved artifact and
