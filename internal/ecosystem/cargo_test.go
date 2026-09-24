@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -19,7 +20,12 @@ type cargoCredentialRunner struct {
 }
 
 func (r *cargoCredentialRunner) Run(ctx context.Context, name string, args ...string) run.Result {
-	return r.base.Run(ctx, name, args...)
+	result := r.base.Run(ctx, name, args...)
+	if name == "cargo" && len(args) > 0 && args[0] == "metadata" {
+		manifest := args[len(args)-1]
+		result.Stdout = []byte(`{"packages":[{"name":"crate-name","manifest_path":` + strconv.Quote(filepath.Join(filepath.Dir(manifest), "crate", "Cargo.toml")) + `}]}`)
+	}
+	return result
 }
 
 func (r *cargoCredentialRunner) RunWithEnv(ctx context.Context, env map[string]string, sensitive []string, name string, args ...string) run.Result {
@@ -124,10 +130,11 @@ func TestCargoGitSecretPrefetchesAndInstallsLocalCheckout(t *testing.T) {
 			t.Fatalf("git env missing scoped bearer credential: %#v", env)
 		}
 	}
-	if len(runner.base.Calls) != 5 {
-		t.Fatalf("calls = %#v, want lookup, clone, fetch, checkout, cargo", runner.base.Calls)
+	if len(runner.base.Calls) != 6 {
+		t.Fatalf("calls = %#v, want lookup, clone, fetch, checkout, metadata, cargo", runner.base.Calls)
 	}
-	clone, fetch, checkout, cargo := runner.base.Calls[1], runner.base.Calls[2], runner.base.Calls[3], runner.base.Calls[4]
+	clone, fetch, checkout := runner.base.Calls[1], runner.base.Calls[2], runner.base.Calls[3]
+	metadata, cargo := runner.base.Calls[4], runner.base.Calls[5]
 	if clone.Name != "git" || !reflect.DeepEqual(clone.Args[:2], []string{"clone", "--no-checkout"}) || clone.Args[2] != source {
 		t.Fatalf("clone call = %#v", clone)
 	}
@@ -137,7 +144,10 @@ func TestCargoGitSecretPrefetchesAndInstallsLocalCheckout(t *testing.T) {
 	if checkout.Name != "git" || !reflect.DeepEqual(checkout.Args[2:], []string{"checkout", "--detach", "FETCH_HEAD"}) {
 		t.Fatalf("checkout call = %#v", checkout)
 	}
-	if cargo.Name != "cargo" || len(cargo.Args) < 4 || cargo.Args[0] != "install" || cargo.Args[1] != "--path" || !strings.HasPrefix(cargo.Args[2], filepath.Join(os.TempDir(), "depengine-cargo-")) {
+	if metadata.Name != "cargo" || !reflect.DeepEqual(metadata.Args[:4], []string{"metadata", "--format-version", "1", "--no-deps"}) || metadata.Args[4] != "--manifest-path" || metadata.Args[5] != filepath.Join(clone.Args[3], "Cargo.toml") {
+		t.Fatalf("metadata call = %#v, want metadata for authenticated checkout", metadata)
+	}
+	if cargo.Name != "cargo" || len(cargo.Args) < 4 || cargo.Args[0] != "install" || cargo.Args[1] != "--path" || !strings.HasPrefix(cargo.Args[2], filepath.Join(os.TempDir(), "depengine-cargo-")) || filepath.Base(cargo.Args[2]) != "crate" {
 		t.Fatalf("cargo call = %#v, want install --path local checkout", cargo)
 	}
 	joined := strings.Join(cargo.Args, " ")
@@ -146,8 +156,8 @@ func TestCargoGitSecretPrefetchesAndInstallsLocalCheckout(t *testing.T) {
 			t.Fatalf("cargo argv leaked %q: %#v", forbidden, cargo.Args)
 		}
 	}
-	if !strings.Contains(joined, "--features tls,json") || !strings.Contains(joined, "--target x86_64-unknown-linux-musl") || !strings.HasSuffix(joined, "crate-name") {
-		t.Fatalf("cargo options/package not preserved: %#v", cargo.Args)
+	if !strings.Contains(joined, "--features tls,json") || !strings.Contains(joined, "--target x86_64-unknown-linux-musl") {
+		t.Fatalf("cargo options not preserved: %#v", cargo.Args)
 	}
 }
 

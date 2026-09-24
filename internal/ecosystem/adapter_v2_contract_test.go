@@ -28,6 +28,9 @@ func TestAdapterV2ResolversPreservePlannerIntent(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.method.Kind == "sdkman" {
+				sdkmanTestInit(t)
+			}
 			intent, err := planner.BuildCandidateIntent(tt.tool, tt.method)
 			if err != nil {
 				t.Fatal(err)
