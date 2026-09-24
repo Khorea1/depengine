@@ -1,6 +1,6 @@
 # Typed dependency graph implementation status
 
-Status: P2 host-aware CLI projections complete
+Status: typed IR and host-aware CLI projections complete
 
 The research proposal in `docs/research/typed-dependency-graph.md` identified the need for one typed intermediate representation between schema loading, scheduling, and rendering.
 
