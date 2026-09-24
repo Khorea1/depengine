@@ -149,3 +149,19 @@ func TestBuildCandidateIntentProjectsGitCloneURLAsSourceIdentity(t *testing.T) {
 		t.Fatalf("requested version = %+v", got.Identity.RequestedVersion)
 	}
 }
+
+func TestBuildCandidateIntentKeepsArtifactURLSeparateFromSourceIdentity(t *testing.T) {
+	tool, method := candidate("demo", "http", map[string]any{
+		"url": "https://example.test/demo.tar.gz",
+	})
+	got, err := planner.BuildCandidateIntent(tool, method)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Identity.Source != "" {
+		t.Fatalf("source = %q, want artifact URL to remain outside source identity", got.Identity.Source)
+	}
+	if len(got.Artifacts) != 1 || got.Artifacts[0].URL != "https://example.test/demo.tar.gz" {
+		t.Fatalf("artifacts = %+v", got.Artifacts)
+	}
+}

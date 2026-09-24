@@ -85,9 +85,9 @@ func toolsWithConditionalDependencies(tools map[string]*config.Tool) map[string]
 }
 
 // validateMalformedURLs applies the artifact contract for every download-backed
-// method, then preserves git's separate repository-URL validation. Keeping the
-// download rules on methodkind.Contract prevents validate and runtime adapters
-// from drifting on supported schemes and installer formats.
+// method, then validates non-artifact URL fields classified as source identity.
+// Keeping these decisions on methodkind.Contract prevents validate and runtime
+// adapters from drifting on supported schemes and installer formats.
 func validateMalformedURLs(s *config.Schema) *Result {
 	r := &Result{}
 
@@ -95,11 +95,15 @@ func validateMalformedURLs(s *config.Schema) *Result {
 		for i, mc := range tool.Methods {
 			validateSourceLikeURLs(toolName, i, mc, r)
 			contract, ok := methodkind.Lookup(mc.Kind)
-			if ok && contract.Artifact != nil {
+			if !ok {
+				continue
+			}
+			if contract.Artifact != nil {
 				validateArtifactContract(toolName, i, mc, contract.Artifact, r)
 				continue
 			}
-			if mc.Kind != "git" {
+			urlField, ok := contract.Fields["url"]
+			if !ok || urlField.Semantic != methodkind.SemanticSourceIdentity {
 				continue
 			}
 			urlStr, _ := mc.Config["url"].(string)
@@ -108,7 +112,7 @@ func validateMalformedURLs(s *config.Schema) *Result {
 			}
 			checkURL := config.PlaceholderRe.ReplaceAllString(urlStr, "_")
 			if err := artifact.ValidateURL(checkURL, []string{"http", "https", "ssh", "git"}); err != nil {
-				r.Add(ValidationError{Code: ErrMalformedURL, Field: fieldPath(toolName, i, "url"), Message: fmt.Sprintf("git: %v", err)})
+				r.Add(ValidationError{Code: ErrMalformedURL, Field: fieldPath(toolName, i, "url"), Message: fmt.Sprintf("%s: %v", mc.Kind, err)})
 			}
 		}
 	}

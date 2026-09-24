@@ -90,8 +90,10 @@ func validateRequiredFields(s *config.Schema) *Result {
 			if strip, ok := method.Config["strip_components"].(int64); ok && strip < 0 {
 				r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, i, "strip_components"), Message: "strip_components must be non-negative"})
 			}
-			if method.Kind == "git" {
+			if _, ok := contract.Fields["managed_paths"]; ok {
 				validateManagedPaths(toolName, i, method.Config["managed_paths"], r)
+			}
+			if _, ok := contract.Fields["depth"]; ok {
 				validateGitDepth(toolName, i, method.Config["depth"], r)
 			}
 			validateChecksum(toolName, i, method, contract, r)
