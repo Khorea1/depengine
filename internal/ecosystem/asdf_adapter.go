@@ -56,59 +56,58 @@ func (a *AsdfAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	if len(pkg) == 0 || pkg[0] == "" {
 		return fmt.Errorf("asdf: no package name")
 	}
-	desired := asdfVersion(mc)
-	for _, cmd := range []string{"asdf", "mise"} {
-		if !run.LookPath(ctx, rn, cmd) {
+	return installAsdfOrMise(ctx, rn, pkg[0], asdfVersion(mc))
+}
+
+func installAsdfOrMise(ctx context.Context, rn run.Runner, pkg, version string) error {
+	for _, backend := range []string{"asdf", "mise"} {
+		if !run.LookPath(ctx, rn, backend) {
 			continue
 		}
-
-		if cmd == "asdf" {
-			// Check if plugin already exists — `asdf plugin list` lists all plugins.
-			plugRes := rn.Run(ctx, cmd, "plugin", "list")
-			if plugRes.Err == nil && plugRes.ExitCode == 0 {
-				plugins := strings.Split(strings.TrimSpace(string(plugRes.Stdout)), "\n")
-				found := false
-				for _, p := range plugins {
-					if strings.TrimSpace(p) == pkg[0] {
-						found = true
-						break
-					}
-				}
-				if !found {
-					// plugin-add exit code 2 means "plugin already exists" — continue.
-					res := rn.Run(ctx, cmd, "plugin-add", pkg[0])
-					if res.Err != nil && res.ExitCode != 2 {
-						return fmt.Errorf("asdf: plugin-add failed for %s: %w", pkg[0], res.Err)
-					}
-				}
-			} else {
-				// `asdf plugin list` failed — try plugin-add directly.
-				res := rn.Run(ctx, cmd, "plugin-add", pkg[0])
-				if res.Err != nil && res.ExitCode != 2 {
-					return fmt.Errorf("asdf: plugin-add failed for %s: %w", pkg[0], res.Err)
-				}
-			}
+		if backend == "asdf" {
+			return installAsdf(ctx, rn, pkg, version)
 		}
-
-		if cmd == "mise" {
-			if res := rn.Run(ctx, cmd, "install", pkg[0]+"@"+desired); res.Err != nil {
-				return fmt.Errorf("mise: install failed: %w", res.Err)
-			}
-			if res := rn.Run(ctx, cmd, "use", "-g", pkg[0]+"@"+desired); res.Err != nil {
-				return fmt.Errorf("mise: global set failed: %w", res.Err)
-			}
-		} else {
-			if res := rn.Run(ctx, cmd, "install", pkg[0], desired); res.Err != nil {
-				return fmt.Errorf("asdf: install failed: %w", res.Err)
-			}
-			if res := rn.Run(ctx, cmd, "global", pkg[0], desired); res.Err != nil {
-				return fmt.Errorf("asdf: global set failed: %w", res.Err)
-			}
-		}
-
-		return nil
+		return installMise(ctx, rn, pkg, version)
 	}
-	return fmt.Errorf("asdf: neither asdf nor mise found")
+	return errors.New("asdf: neither asdf nor mise found")
+}
+
+func installAsdf(ctx context.Context, rn run.Runner, pkg, version string) error {
+	plugins := rn.Run(ctx, "asdf", "plugin", "list")
+	if plugins.Err != nil || plugins.ExitCode != 0 || !asdfPluginListed(plugins.Stdout, pkg) {
+		res := rn.Run(ctx, "asdf", "plugin", "add", pkg)
+		// Older asdf releases used exit code 2 for "already exists". Keep
+		// accepting that result while using the non-hyphenated command form
+		// required by asdf 0.16+.
+		if res.ExitCode != 2 {
+			if err := run.CheckResult(res, "asdf: plugin add"); err != nil {
+				return fmt.Errorf("asdf: plugin add %s: %w", pkg, err)
+			}
+		}
+	}
+	if err := run.CheckResult(rn.Run(ctx, "asdf", "install", pkg, version), "asdf: install"); err != nil {
+		return err
+	}
+	// asdf 0.16 removed `global`; `set --home` is its supported
+	// replacement and writes the same user-level .tool-versions intent.
+	return run.CheckResult(rn.Run(ctx, "asdf", "set", "--home", pkg, version), "asdf: set --home")
+}
+
+func installMise(ctx context.Context, rn run.Runner, pkg, version string) error {
+	spec := pkg + "@" + version
+	if err := run.CheckResult(rn.Run(ctx, "mise", "install", spec), "mise: install"); err != nil {
+		return err
+	}
+	return run.CheckResult(rn.Run(ctx, "mise", "use", "-g", spec), "mise: global set")
+}
+
+func asdfPluginListed(stdout []byte, pkg string) bool {
+	for _, plugin := range strings.Split(strings.TrimSpace(string(stdout)), "\n") {
+		if strings.TrimSpace(plugin) == pkg {
+			return true
+		}
+	}
+	return false
 }
 
 func asdfVersion(mc *config.MethodCandidate) string {
@@ -193,29 +192,7 @@ func (a *AsdfAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *con
 	if version == "" {
 		version = "latest"
 	}
-	for _, cmd := range []string{"asdf", "mise"} {
-		if !run.LookPath(ctx, rn, cmd) {
-			continue
-		}
-		if cmd == "asdf" {
-			plugins := rn.Run(ctx, cmd, "plugin", "list")
-			if plugins.Err != nil || plugins.ExitCode != 0 || !hasWord(string(plugins.Stdout), pkg) {
-				res := rn.Run(ctx, cmd, "plugin-add", pkg)
-				if res.Err != nil && res.ExitCode != 2 {
-					return fmt.Errorf("asdf: plugin-add failed for %s: %w", pkg, run.CheckResult(res, "asdf: plugin-add"))
-				}
-			}
-			if err := run.CheckResult(rn.Run(ctx, cmd, "install", pkg, version), "asdf: install"); err != nil {
-				return err
-			}
-			return run.CheckResult(rn.Run(ctx, cmd, "global", pkg, version), "asdf: global")
-		}
-		if err := run.CheckResult(rn.Run(ctx, cmd, "install", pkg+"@"+version), "mise: install"); err != nil {
-			return err
-		}
-		return run.CheckResult(rn.Run(ctx, cmd, "use", "-g", pkg+"@"+version), "mise: global set")
-	}
-	return errors.New("asdf: neither asdf nor mise found")
+	return installAsdfOrMise(ctx, rn, pkg, version)
 }
 
 // CanRemove reports whether this adapter supports removal. Removal is
