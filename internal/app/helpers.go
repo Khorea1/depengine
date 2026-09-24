@@ -281,13 +281,14 @@ func saveLockfile(ctx context.Context, s *config.Schema, lockPath string, oldLoc
 	}
 }
 
-// hasLatestPlaceholders checks whether any method needs a latest release
-// resolved. Used by install to decide whether auto-resolution is needed when
-// no lockfile exists.
+// hasLatestPlaceholders checks whether any validated method needs a latest
+// release resolved. Repository-backed methods are identified by their resolved
+// config shape rather than by method kind. Used by install to decide whether
+// auto-resolution is needed when no lockfile exists.
 func hasLatestPlaceholders(s *config.Schema) bool {
 	for _, tool := range s.Tools {
 		for _, method := range tool.Methods {
-			if _, hasRepo := method.Config["repo"]; method.Kind == "github" || hasRepo {
+			if _, hasRepo := method.Config["repo"]; hasRepo {
 				branch, _ := method.Config["branch"].(string)
 				release, _ := method.Config["release"].(string)
 				if branch == "" && (release == "" || release == "latest") {
