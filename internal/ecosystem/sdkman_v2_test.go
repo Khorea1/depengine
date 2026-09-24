@@ -54,8 +54,8 @@ func TestSDKManAdapterV2ResolvesObservesAndInstallsExactVersion(t *testing.T) {
 	if err := adapter.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
 		t.Fatalf("InstallResolved() error = %v", err)
 	}
-	if len(runner.Calls) != 1 || runner.Calls[0].Name != "sdk" || !reflect.DeepEqual(runner.Calls[0].Args, []string{"install", "java", version}) {
-		t.Fatalf("InstallResolved() calls = %#v, want sdk install java %s", runner.Calls, version)
+	if len(runner.Calls) != 1 || runner.Calls[0].Name != "bash" || len(runner.Calls[0].Args) != 7 || runner.Calls[0].Args[4] != "install" || runner.Calls[0].Args[5] != "java" || runner.Calls[0].Args[6] != version {
+		t.Fatalf("InstallResolved() calls = %#v, want bash sdk install java %s", runner.Calls, version)
 	}
 }
 

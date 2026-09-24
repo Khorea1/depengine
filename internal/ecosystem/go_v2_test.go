@@ -84,39 +84,55 @@ func TestGoAdapterV2ObserveReportsDiscoveredVersion(t *testing.T) {
 	adapter := NewGoAdapter()
 	tool, mc := goV2Tool()
 
+	intent, err := planner.BuildCandidateIntent(tool, mc)
+	if err != nil {
+		t.Fatalf("BuildCandidateIntent() error = %v", err)
+	}
+	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
+	if err != nil {
+		t.Fatalf("ResolvePlan() error = %v", err)
+	}
+	if resolved.Identity.Version != "v1.2.3" {
+		t.Fatalf("resolved version = %q, want planner spelling v1.2.3", resolved.Identity.Version)
+	}
+
 	observation, err := adapter.Observe(context.Background(), goV2Runner("realbin version 1.2.3\n"), tool, mc)
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)
 	}
 	want := plan.Observation{
 		Presence:    plan.PresencePresent,
-		Identity:    plan.ObservedIdentity{Package: "example.com/project/cmd/realbin", Version: "1.2.3"},
+		Identity:    plan.ObservedIdentity{Package: "example.com/project/cmd/realbin", Version: "v1.2.3"},
 		KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion},
 	}
 	if !reflect.DeepEqual(observation, want) {
 		t.Fatalf("Observe() = %#v, want %#v", observation, want)
 	}
 
-	if result := plan.Reconcile(plan.ResolvedIdentity{Package: "example.com/project/cmd/realbin", Version: "1.2.3"}, observation); result.State != plan.StateSatisfied {
+	if result := plan.Reconcile(resolved.Identity, observation); result.State != plan.StateSatisfied {
 		t.Fatalf("Reconcile() state = %q, want %q (result = %#v)", result.State, plan.StateSatisfied, result)
 	}
 }
 
-func TestGoAdapterV2ObserveAbsentOnDrift(t *testing.T) {
+func TestGoAdapterV2ObserveReportsDriftedVersion(t *testing.T) {
 	adapter := NewGoAdapter()
 	tool, mc := goV2Tool()
 
-	// Different installed version: same verdict as Check (absent).
+	// A different installed version remains present so reconciliation can
+	// distinguish exact-version drift from a missing binary.
 	observation, err := adapter.Observe(context.Background(), goV2Runner("realbin version 1.2.4\n"), tool, mc)
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)
 	}
-	if observation.Presence != plan.PresenceAbsent {
-		t.Fatalf("Observe() presence = %q, want %q", observation.Presence, plan.PresenceAbsent)
+	if observation.Presence != plan.PresencePresent || observation.Identity.Version != "1.2.4" {
+		t.Fatalf("Observe() = %+v, want present version 1.2.4", observation)
+	}
+	if result := plan.Reconcile(plan.ResolvedIdentity{Package: "example.com/project/cmd/realbin", Version: "v1.2.3"}, observation); result.State != plan.StateDrifted {
+		t.Fatalf("Reconcile() state = %q, want %q (result = %#v)", result.State, plan.StateDrifted, result)
 	}
 
 	// Missing binary entirely.
-	missing := &run.FakeRunner{LookPaths: map[string]bool{"go": true}}
+	missing := &run.FakeRunner{LookPaths: map[string]bool{"go": true, "realbin": false, "friendly-name": false}}
 	observation, err = adapter.Observe(context.Background(), missing, tool, mc)
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)

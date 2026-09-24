@@ -58,9 +58,26 @@ func (w *winAdapter) Available(ctx context.Context, rn run.Runner) bool {
 }
 
 func (w *winAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
-	if rn == nil {
+	observation := w.observeInstalled(ctx, rn, tool, mc)
+	if observation.Presence != plan.PresencePresent {
 		return false
 	}
+	if wantVersion, _ := mc.Config["version"].(string); wantVersion != "" && observation.Identity.Version != wantVersion {
+		return false
+	}
+	if w.kind == "scoop" {
+		if bucket, _ := mc.Config["bucket"].(string); bucket != "" && !strings.EqualFold(observation.Identity.Source, bucket) {
+			return false
+		}
+	}
+	return true
+}
+
+func (w *winAdapter) observeInstalled(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) plan.Observation {
+	if rn == nil {
+		return plan.Observation{Presence: plan.PresenceAbsent}
+	}
+	pkg := packageName(tool, mc)
 	cmd := SubstitutePkg(w.checkCmd, tool, mc)
 	if w.kind == "scoop" {
 		if scope, _ := mc.Config["scope"].(string); scope == "global" {
@@ -68,32 +85,50 @@ func (w *winAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool
 		}
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	if w.kind == "choco" && (res.Err != nil || res.ExitCode != 0 || !hasChocoVersion(res.Stdout, packageName(tool, mc))) {
+		// Newer Chocolatey versions use --local-only for installed package
+		// queries. Keep the legacy probe compatible while accepting the newer
+		// response shape.
+		res = rn.Run(ctx, "choco", "list", "--local-only", "--exact", "--limit-output", packageName(tool, mc))
+	}
 	if res.Err != nil || res.ExitCode != 0 {
-		return false
+		return plan.Observation{Presence: plan.PresenceAbsent}
+	}
+
+	observation := plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Package: pkg},
+		KnownFields: []plan.IdentityField{plan.FieldPackage},
 	}
 	switch w.kind {
 	case "choco":
-		version, ok := chocoVersionFromOutput(res.Stdout, packageName(tool, mc))
+		version, ok := chocoVersionFromOutput(res.Stdout, pkg)
 		if !ok {
-			return false
+			return plan.Observation{Presence: plan.PresenceAbsent}
 		}
-		wantVersion, _ := mc.Config["version"].(string)
-		return wantVersion == "" || version == wantVersion
+		observation.Identity.Version = version
+		observation.KnownFields = append(observation.KnownFields, plan.FieldVersion)
 	case "scoop":
-		version, source, ok := scoopPackageFromOutput(res.Stdout, packageName(tool, mc))
+		version, source, ok := scoopPackageFromOutput(res.Stdout, pkg)
 		if !ok {
-			return false
+			return plan.Observation{Presence: plan.PresenceAbsent}
 		}
-		if wantVersion, _ := mc.Config["version"].(string); wantVersion != "" && version != wantVersion {
-			return false
+		observation.Identity.Version = version
+		observation.KnownFields = append(observation.KnownFields, plan.FieldVersion)
+		if source != "" {
+			observation.Identity.Source = source
+			observation.KnownFields = append(observation.KnownFields, plan.FieldSource)
 		}
-		if bucket, _ := mc.Config["bucket"].(string); bucket != "" && !strings.EqualFold(source, bucket) {
-			return false
+		if scope, _ := mc.Config["scope"].(string); scope != "" {
+			if scope == "global" {
+				observation.Identity.Scope = string(plan.ScopeSystem)
+			} else {
+				observation.Identity.Scope = string(plan.ScopeUser)
+			}
+			observation.KnownFields = append(observation.KnownFields, plan.FieldScope)
 		}
-		return true
-	default:
-		return true
 	}
+	return observation
 }
 
 func chocoVersionFromOutput(stdout []byte, pkg string) (string, bool) {
@@ -105,6 +140,11 @@ func chocoVersionFromOutput(stdout []byte, pkg string) (string, bool) {
 		return version, version != ""
 	}
 	return "", false
+}
+
+func hasChocoVersion(stdout []byte, pkg string) bool {
+	_, ok := chocoVersionFromOutput(stdout, pkg)
+	return ok
 }
 
 func scoopPackageFromOutput(stdout []byte, pkg string) (version, source string, ok bool) {
@@ -225,18 +265,11 @@ func (w *winAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool
 	return &resolved, nil
 }
 
-// Observe maps the Check probe onto presence semantics and records the
-// resolved package name, mirroring the native adapters.
+// Observe preserves the concrete identity reported by the manager. In
+// particular, an installed but different exact version remains present so the
+// shared reconciler can classify it as drift instead of unknown/absent.
 func (w *winAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
-	if !w.Check(ctx, rn, tool, mc) {
-		return plan.Observation{Presence: plan.PresenceAbsent}, nil
-	}
-	observation := plan.Observation{Presence: plan.PresencePresent}
-	if pkg := packageName(tool, mc); pkg != "" {
-		observation.Identity.Package = pkg
-		observation.KnownFields = append(observation.KnownFields, plan.FieldPackage)
-	}
-	return observation, nil
+	return w.observeInstalled(ctx, rn, tool, mc), nil
 }
 
 // InstallResolved executes identity from the resolved plan. Method config is

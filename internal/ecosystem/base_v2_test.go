@@ -115,6 +115,28 @@ func TestBaseAdapterV2ObservePresentAbsentAndVersion(t *testing.T) {
 	}
 }
 
+func TestBaseAdapterV2ObservePreservesExactVersionDrift(t *testing.T) {
+	adapter := NewBaseAdapter(Configs["pip"])
+	tool := &config.Tool{Name: "demo"}
+	method := &config.MethodCandidate{Kind: "pip", Config: map[string]any{"pkg": "demo-pkg", "version": "1.2.3"}}
+	runner := &run.FakeRunner{
+		LookPaths: map[string]bool{"pip": true},
+		Stdout:    "Name: demo-pkg\nVersion: 1.2.4\n",
+	}
+
+	observation, err := adapter.Observe(context.Background(), runner, tool, method)
+	if err != nil {
+		t.Fatalf("Observe() error = %v", err)
+	}
+	if observation.Presence != plan.PresencePresent || observation.Identity.Version != "1.2.4" {
+		t.Fatalf("Observe() = %+v, want present installed version 1.2.4", observation)
+	}
+	verification := plan.Reconcile(plan.ResolvedIdentity{Package: "demo-pkg", Version: "1.2.3"}, observation)
+	if verification.State != plan.StateDrifted || len(verification.Drift) != 1 || verification.Drift[0].Field != plan.FieldVersion {
+		t.Fatalf("verification = %+v, want exact-version drift", verification)
+	}
+}
+
 func TestBaseAdapterV2InstallResolvedUsesResolvedIdentity(t *testing.T) {
 	adapter := NewBaseAdapter(testV2BaseConfig())
 	tool := &config.Tool{Name: "demo"}

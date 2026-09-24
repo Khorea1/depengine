@@ -50,6 +50,35 @@ func TestVerifyResolvedCandidateReconcilesResolvedIdentity(t *testing.T) {
 	}
 }
 
+func TestResolveAndVerifyCandidateAtVersionProjectsDesiredIdentity(t *testing.T) {
+	adapter := &verificationAdapter{
+		executorAdapterV2Double: executorAdapterV2Double{
+			testMockAdapter: testMockAdapter{kindValue: "cargo"},
+		},
+		observation: plan.Observation{
+			Presence:    plan.PresencePresent,
+			Identity:    plan.ObservedIdentity{Package: "demo", Version: "v2.0.0"},
+			KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion},
+		},
+	}
+	ex := New()
+	WithAdapters(adapter)(ex)
+	WithRunner(&run.FakeRunner{})(ex)
+	method := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"pkg": "demo"}}
+	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
+
+	resolved, verification, err := ex.ResolveAndVerifyCandidateAtVersion(context.Background(), tool, method, "v2.0.0")
+	if err != nil {
+		t.Fatalf("ResolveAndVerifyCandidateAtVersion: %v", err)
+	}
+	if resolved == nil || resolved.Identity.Version != "v2.0.0" {
+		t.Fatalf("resolved=%+v, want projected version v2.0.0", resolved)
+	}
+	if verification.State != plan.StateSatisfied {
+		t.Fatalf("verification=%+v, want satisfied", verification)
+	}
+}
+
 func TestVerifyResolvedCandidateUsesResolvedTargetAndCanonicalizesObserveError(t *testing.T) {
 	adapter := &verificationAdapter{executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "conda"}, observeErr: errors.New("probe failed at https://user:pass@example.test/?token=secret")}}
 	ex := New()

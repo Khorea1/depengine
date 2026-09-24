@@ -402,6 +402,58 @@ func TestExecutorFallback(t *testing.T) {
 	}
 }
 
+func TestExecutorRunsPreinstallPerCandidateFallback(t *testing.T) {
+	primary := &testMockAdapter{
+		kindValue: "primary",
+		checkFunc: func(string) bool { return false },
+		installFunc: func(string) error { return &installError{msg: "primary failed"} },
+	}
+	fallback := &testMockAdapter{
+		kindValue: "fallback",
+		checkFunc: func(string) bool { return false },
+		installFunc: func(string) error { return nil },
+	}
+	runner := &run.FakeRunner{}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(primary, fallback)(ex)
+	WithAllowArbitraryCode()(ex)
+
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"primary", "fallback"}},
+		Tools: map[string]*config.Tool{
+			"demo": {
+				Name: "demo",
+				PreInstall: []config.Hook{{Run: []string{"prehook"}}},
+				Methods: []*config.MethodCandidate{
+					{Kind: "primary", Config: map[string]any{"pkg": "demo"}},
+					{Kind: "fallback", Config: map[string]any{"pkg": "demo"}},
+				},
+			},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), schema, "")
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusInstalled || report.Tools[0].MethodKind != "fallback" {
+		t.Fatalf("result = %+v, want successful fallback install", report.Tools)
+	}
+	preHooks := 0
+	for _, call := range runner.Calls {
+		if call.Name == "prehook" {
+			preHooks++
+		}
+	}
+	if preHooks != 2 {
+		t.Fatalf("pre-install calls = %d, want one per attempted candidate; calls=%#v", preHooks, runner.Calls)
+	}
+	if !report.Tools[0].PreinstallDone {
+		t.Fatal("PreinstallDone should report successful pre-install execution in this run")
+	}
+}
+
 func TestExecutorSkipsHostIncompatibleCandidateAndFallsBack(t *testing.T) {
 	blocked := &compatibilityMockAdapter{
 		testMockAdapter: testMockAdapter{kindValue: "blocked"},

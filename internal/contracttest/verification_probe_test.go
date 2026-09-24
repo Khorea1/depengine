@@ -148,7 +148,7 @@ func TestVerificationPhaseAdapterFieldProbes(t *testing.T) {
 				obs := probeObservation(t, adapter, runner, method)
 				want := plan.StateSatisfied
 				if i == 1 {
-					want = plan.StateAbsent
+					want = plan.StateDrifted
 				}
 				if got := plan.Reconcile(plan.ResolvedIdentity{Package: "demo", Version: method.Config["version"].(string)}, obs).State; got != want {
 					t.Fatalf("state=%s want=%s", got, want)

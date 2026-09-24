@@ -161,9 +161,17 @@ func (a *CargoAdapter) Check(ctx context.Context, rn run.Runner, tool *config.To
 // declared version and bins intent. Shared by Check and Observe so both paths
 // agree on what "installed" means.
 func cargoEntrySatisfies(version string, bins []string, mc *config.MethodCandidate) bool {
-	if want, _ := mc.Config["version"].(string); want != "" && strings.TrimPrefix(version, "v") != strings.TrimPrefix(want, "v") {
+	if want, _ := mc.Config["version"].(string); want != "" && !sameCargoVersion(version, want) {
 		return false
 	}
+	return cargoBinsSatisfy(bins, mc)
+}
+
+func sameCargoVersion(left, right string) bool {
+	return strings.TrimPrefix(left, "v") == strings.TrimPrefix(right, "v")
+}
+
+func cargoBinsSatisfy(bins []string, mc *config.MethodCandidate) bool {
 	if wantedBins := cargoStringList(mc, "bins"); len(wantedBins) > 0 {
 		present := make(map[string]bool, len(bins))
 		for _, bin := range bins {
@@ -203,8 +211,9 @@ func (a *CargoAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config
 
 // Observe reports the installed crate entry using VerificationResult-compatible
 // semantics. The installed version comes from the host query (not the
-// request), so version or bins drift surfaces as absence — the same verdict
-// Check would give — rather than as a confirmed present.
+// request). Missing selected binaries still make the target absent, but an
+// installed crate at a different exact version remains present so reconciliation
+// can report version drift instead of conflating drift with absence.
 func (a *CargoAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
 	if tool == nil || mc == nil {
 		return plan.Observation{}, errors.New("cargo: tool and method are required")
@@ -219,8 +228,11 @@ func (a *CargoAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.
 		KnownFields: []plan.IdentityField{plan.FieldPackage},
 	}
 	version, bins, err := a.installedEntry(ctx, rn, tool, mc)
-	if err != nil || version == "" || !cargoEntrySatisfies(version, bins, mc) {
+	if err != nil || version == "" || !cargoBinsSatisfy(bins, mc) {
 		return absent, nil
+	}
+	if requested, _ := mc.Config["version"].(string); requested != "" && sameCargoVersion(version, requested) {
+		version = requested
 	}
 	return plan.Observation{
 		Presence:    plan.PresencePresent,

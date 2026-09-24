@@ -680,22 +680,12 @@ func preflightDirectUpgrade(ctx context.Context, ex *exec.Executor, runner run.R
 	if !adapter.Available(ctx, probeRunner) {
 		return nil, plan.VerificationResult{}, fmt.Errorf("adapter %q is unavailable", method.Kind)
 	}
-	resolved, err := ex.ResolveCandidatePlan(ctx, tool, method)
+	resolved, verification, err := ex.ResolveAndVerifyCandidateAtVersion(ctx, tool, method, targetVersion)
 	if err != nil {
 		return nil, plan.VerificationResult{}, err
 	}
 	if resolved == nil {
 		return nil, plan.VerificationResult{}, fmt.Errorf("tracked installation is not present; run install/repair instead of destructive upgrade")
-	}
-	if targetVersion != "" {
-		resolved.Identity.Version = targetVersion
-		if err := resolved.Validate(); err != nil {
-			return nil, plan.VerificationResult{}, fmt.Errorf("resolve upgrade target: %w", err)
-		}
-	}
-	verification, err := ex.VerifyResolvedCandidate(ctx, tool, method, resolved)
-	if err != nil {
-		return nil, plan.VerificationResult{}, err
 	}
 	switch verification.State {
 	case plan.StateAbsent:
