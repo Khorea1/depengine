@@ -124,6 +124,7 @@ func newWhyCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "why <tool>",
+		Aliases: []string{"explain"},
 		Short:   ifPT("Explicar como uma ferramenta seria instalada", "Explain how a tool would be installed"),
 		GroupID: groupInspect,
 		Args:    cobra.ExactArgs(1),
