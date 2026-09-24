@@ -18,6 +18,8 @@ Work on the current execution model comes before adding more installer types.
   authentication for private HTTPS `git` clone/fetch/same-origin recursive
   submodules plus private HTTPS `cargo.git` prefetch before local Cargo install,
   and temporary registry auth files for typed Docker/Podman image pulls.
+  Typed HTTP Bearer transports reject remote plaintext HTTP both during static
+  validation and again at the request boundary (loopback HTTP remains allowed).
   Typed env-backed secret sources are excluded from child process environments
   across probes, hooks, preparation, and execution; removal requires `--schema`
   for the same exclusion because state does not retain reference names.
