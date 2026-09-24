@@ -52,6 +52,16 @@ func TestGoDownloaderDownloadWithBearerScopesCredentialToRequest(t *testing.T) {
 	}
 }
 
+func TestGoDownloaderDownloadWithBearerRejectsRemotePlainHTTP(t *testing.T) {
+	err := NewGoDownloader(nil).DownloadWithBearer(context.Background(), "http://example.com/private", "unused", "runtime-only-sentinel")
+	if err == nil || !strings.Contains(err.Error(), "must use HTTPS") {
+		t.Fatalf("DownloadWithBearer() error = %v, want HTTPS transport rejection", err)
+	}
+	if strings.Contains(err.Error(), "runtime-only-sentinel") {
+		t.Fatalf("transport error leaked credential: %v", err)
+	}
+}
+
 func TestGoDownloaderDownloadWithBearerRejectsEmptyCredential(t *testing.T) {
 	err := NewGoDownloader(nil).DownloadWithBearer(context.Background(), "https://example.com/file", "unused", "")
 	if err == nil || !strings.Contains(err.Error(), "empty Bearer credential") {
