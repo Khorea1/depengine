@@ -232,8 +232,8 @@ func (t *Tool) GraphWalkDependencies(yield func(dependency string, guard fmt.Str
 // GraphWalkMethodDependencies exposes each method candidate independently so
 // graph construction does not lose guards or collapse candidates sharing a
 // method kind.
-func (t *Tool) GraphWalkMethodDependencies(yield func(method string, dependencies []string, guard fmt.Stringer)) {
-	for _, candidate := range t.Methods {
+func (t *Tool) GraphWalkMethodDependencies(yield func(candidate int, method string, dependencies []string, guard fmt.Stringer)) {
+	for candidateIndex, candidate := range t.Methods {
 		if candidate == nil {
 			continue
 		}
@@ -245,13 +245,13 @@ func (t *Tool) GraphWalkMethodDependencies(yield func(method string, dependencie
 		if candidate.When != nil {
 			guard = candidate.When
 		}
-		yield(method, candidate.Requires, guard)
+		yield(candidateIndex, method, candidate.Requires, guard)
 	}
 }
 
 func (t *Tool) GraphConditionalDependencies() map[string][]string {
 	dependencies := make(map[string][]string)
-	t.GraphWalkMethodDependencies(func(method string, requires []string, _ fmt.Stringer) {
+	t.GraphWalkMethodDependencies(func(_ int, method string, requires []string, _ fmt.Stringer) {
 		dependencies[method] = append(dependencies[method], requires...)
 	})
 	return dependencies

@@ -103,6 +103,7 @@ STRUCT Edge:
     kind: EdgeKind
     guard: Optional<Condition>
     method: Optional<MethodRef>
+    candidate: Optional<CandidateOrdinal>
     role: EdgeRole
 
 ENUM EdgeKind:
@@ -194,23 +195,30 @@ FUNCTION BuildDeclaredGraph(tools):
                 role   = Scheduling
             )
 
-        FOR method IN tool.Methods:
+        FOR candidateIndex, method IN tool.Methods:
             selector =
                 method.Label IF method.Label != ""
                 ELSE method.Kind
 
             FOR dependency IN method.Requires:
                 graph.AddEdge(
-                    from   = dependency,
-                    to     = toolName,
-                    kind   = MethodRequire,
-                    guard  = method.When,
-                    method = selector,
-                    role   = Activation
+                    from      = dependency,
+                    to        = toolName,
+                    kind      = MethodRequire,
+                    guard     = method.When,
+                    method    = selector,
+                    candidate = candidateIndex,
+                    role      = Activation
                 )
 
     RETURN Canonicalize(graph)
 ```
+
+The candidate ordinal is ephemeral graph identity within the merged tool method
+list; it is not a persisted user-facing identifier. A compatibility source that
+can expose only method label/kind but not exact candidate identity may still
+build declared/effective views, but resolved projection must fail closed rather
+than invent a candidate ordinal.
 
 The IR should allow more than one semantic edge between the same pair of tools.
 For example, a pair may have a general tool prerequisite and a distinct
@@ -231,7 +239,7 @@ A -> B MethodRequire(method=source)
 ```
 
 all three edges remain independent because they may differ in `role`, `guard`,
-`method`, and future projection `status`.
+`method`, exact candidate identity, and future projection `status`.
 
 Renderer policy:
 
@@ -293,6 +301,11 @@ FUNCTION Project(graph, view, context):
             result.Add(edge WITH status = Declared)
             CONTINUE
 
+        IF view == RESOLVED
+           AND edge.candidate exists
+           AND NOT context.isSelectedCandidate(edge.to, edge.candidate):
+            CONTINUE
+
         IF edge.guard exists AND edge.guard does not match context.facts:
             IF view wants inactive edges:
                 result.Add(edge WITH status = Inactive)
@@ -303,10 +316,6 @@ FUNCTION Project(graph, view, context):
             CONTINUE
 
         IF view == RESOLVED:
-            IF edge.method exists
-               AND edge.method != context.selectedMethod(edge.to):
-                CONTINUE
-
             result.Add(edge WITH status = Active)
 
     RETURN result
@@ -346,8 +355,8 @@ effective:
     optionally support --show-inactive for diagnostics
 
 resolved:
-    evaluate guards
-    apply selected candidate/method resolution
+    apply exact candidate selection before candidate-guard evaluation
+    evaluate guards only for relations that can still participate
     show only relations participating in the resolved plan
 ```
 

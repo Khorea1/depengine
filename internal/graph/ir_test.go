@@ -50,6 +50,17 @@ func TestCanonicalizeOrdersCompleteEdgeSemantics(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeOrdersSameMethodByCandidateIdentity(t *testing.T) {
+	g := NewGraph()
+	g.AddEdge(Edge{From: "a", To: "b", Kind: MethodRequire, Role: Activation, Method: "http", Candidate: 1, CandidateKnown: true})
+	g.AddEdge(Edge{From: "a", To: "b", Kind: MethodRequire, Role: Activation, Method: "http", Candidate: 0, CandidateKnown: true})
+
+	got := g.Canonicalize().Edges
+	if len(got) != 2 || got[0].Candidate != 0 || got[1].Candidate != 1 {
+		t.Fatalf("candidate identity must participate in canonical ordering: %#v", got)
+	}
+}
+
 func TestCanonicalizeUsesGuardLabelAsTieBreaker(t *testing.T) {
 	g := NewGraph()
 	g.AddEdge(Edge{From: "a", To: "b", Kind: ToolRequire, Role: Scheduling, Guard: testGuard("z")})

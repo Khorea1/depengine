@@ -84,15 +84,15 @@ func TestProjectResolvedFiltersMethodEdges(t *testing.T) {
 	g := NewGraph()
 	g.AddNode(Node{ID: "app"})
 	g.AddEdge(Edge{From: "base", To: "app", Kind: ToolRequire, Role: Scheduling})
-	g.AddEdge(Edge{From: "curl", To: "app", Kind: MethodRequire, Role: Activation, Method: "http"})
-	g.AddEdge(Edge{From: "git", To: "app", Kind: MethodRequire, Role: Activation, Method: "source"})
+	g.AddEdge(Edge{From: "curl", To: "app", Kind: MethodRequire, Role: Activation, Method: "http", Candidate: 0, CandidateKnown: true})
+	g.AddEdge(Edge{From: "git", To: "app", Kind: MethodRequire, Role: Activation, Method: "source", Candidate: 1, CandidateKnown: true})
 
 	projected, err := g.Project(ResolvedView, ProjectionContext{
-		SelectedMethod: func(toolID string) (string, bool) {
+		SelectedCandidate: func(toolID string, candidate int) bool {
 			if toolID != "app" {
 				t.Fatalf("selector called for unexpected tool %q", toolID)
 			}
-			return "http", true
+			return candidate == 0
 		},
 	})
 	if err != nil {
@@ -108,9 +108,20 @@ func TestProjectResolvedFiltersMethodEdges(t *testing.T) {
 	}
 }
 
-func TestProjectResolvedRequiresSelectorForMethodEdges(t *testing.T) {
+func TestProjectResolvedRejectsUnknownCandidateIdentity(t *testing.T) {
 	g := NewGraph()
 	g.AddEdge(Edge{From: "curl", To: "app", Kind: MethodRequire, Role: Activation, Method: "http"})
+	_, err := g.Project(ResolvedView, ProjectionContext{
+		SelectedCandidate: func(string, int) bool { return true },
+	})
+	if !errors.Is(err, ErrProjectionUnavailable) {
+		t.Fatalf("resolved Project error = %v, want ErrProjectionUnavailable for unknown candidate identity", err)
+	}
+}
+
+func TestProjectResolvedRequiresSelectorForMethodEdges(t *testing.T) {
+	g := NewGraph()
+	g.AddEdge(Edge{From: "curl", To: "app", Kind: MethodRequire, Role: Activation, Method: "http", Candidate: 0, CandidateKnown: true})
 	_, err := g.Project(ResolvedView, ProjectionContext{})
 	if !errors.Is(err, ErrProjectionUnavailable) {
 		t.Fatalf("resolved Project error = %v, want ErrProjectionUnavailable", err)
@@ -119,15 +130,53 @@ func TestProjectResolvedRequiresSelectorForMethodEdges(t *testing.T) {
 
 func TestProjectResolvedDropsMethodEdgeWhenNoSelectionExists(t *testing.T) {
 	g := NewGraph()
-	g.AddEdge(Edge{From: "curl", To: "app", Kind: MethodRequire, Role: Activation, Method: "http"})
+	g.AddEdge(Edge{From: "curl", To: "app", Kind: MethodRequire, Role: Activation, Method: "http", Candidate: 0, CandidateKnown: true})
 	projected, err := g.Project(ResolvedView, ProjectionContext{
-		SelectedMethod: func(string) (string, bool) { return "", false },
+		SelectedCandidate: func(string, int) bool { return false },
 	})
 	if err != nil {
 		t.Fatalf("resolved projection failed: %v", err)
 	}
 	if len(projected.Edges) != 0 {
 		t.Fatalf("expected no resolved method edges, got %#v", projected.Edges)
+	}
+}
+
+func TestProjectResolvedDistinguishesSameKindCandidates(t *testing.T) {
+	g := NewGraph()
+	g.AddNode(Node{ID: "app"})
+	g.AddEdge(Edge{From: "curl", To: "app", Kind: MethodRequire, Role: Activation, Method: "http", Candidate: 0, CandidateKnown: true})
+	g.AddEdge(Edge{From: "wget", To: "app", Kind: MethodRequire, Role: Activation, Method: "http", Candidate: 1, CandidateKnown: true})
+
+	projected, err := g.Project(ResolvedView, ProjectionContext{
+		SelectedCandidate: func(toolID string, candidate int) bool {
+			return toolID == "app" && candidate == 1
+		},
+	})
+	if err != nil {
+		t.Fatalf("resolved projection failed: %v", err)
+	}
+	if len(projected.Edges) != 1 || projected.Edges[0].From != "wget" || projected.Edges[0].Candidate != 1 {
+		t.Fatalf("resolved projection kept the wrong same-kind candidate edges: %#v", projected.Edges)
+	}
+}
+
+func TestProjectResolvedSkipsUnselectedGuardWithoutEvaluator(t *testing.T) {
+	g := NewGraph()
+	g.AddNode(Node{ID: "app"})
+	g.AddEdge(Edge{From: "curl", To: "app", Kind: MethodRequire, Role: Activation, Method: "http", Candidate: 0, CandidateKnown: true})
+	g.AddEdge(Edge{From: "wget", To: "app", Kind: MethodRequire, Role: Activation, Method: "http", Candidate: 1, CandidateKnown: true, Guard: testGuard("linux")})
+
+	projected, err := g.Project(ResolvedView, ProjectionContext{
+		SelectedCandidate: func(toolID string, candidate int) bool {
+			return toolID == "app" && candidate == 0
+		},
+	})
+	if err != nil {
+		t.Fatalf("unselected guarded candidate should not require guard context: %v", err)
+	}
+	if len(projected.Edges) != 1 || projected.Edges[0].From != "curl" {
+		t.Fatalf("unexpected resolved edges: %#v", projected.Edges)
 	}
 }
 

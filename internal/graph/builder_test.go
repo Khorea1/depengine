@@ -116,11 +116,16 @@ func TestBuildDeclaredGraphKeepsCandidatesWithSameKindDistinct(t *testing.T) {
 	}
 
 	guards := map[string]Guard{}
+	candidates := map[string]int{}
 	for _, edge := range graph.Edges {
 		guards[edge.From] = edge.Guard
+		candidates[edge.From] = edge.Candidate
 	}
 	if guards["curl"] != linux || guards["wget"] != darwin {
 		t.Fatalf("candidate guards were collapsed: %#v", graph.Edges)
+	}
+	if candidates["curl"] != 0 || candidates["wget"] != 1 || !graph.Edges[0].CandidateKnown || !graph.Edges[1].CandidateKnown {
+		t.Fatalf("exact candidate identities were not preserved: %#v", graph.Edges)
 	}
 }
 

@@ -29,7 +29,7 @@ type dependencyWalker interface {
 // methodDependencyWalker preserves candidate-level method relations, including
 // guards, without collapsing candidates through a map.
 type methodDependencyWalker interface {
-	GraphWalkMethodDependencies(func(method string, dependencies []string, guard fmt.Stringer))
+	GraphWalkMethodDependencies(func(candidate int, method string, dependencies []string, guard fmt.Stringer))
 }
 
 // BuildDeclaredGraph creates the host-independent declared dependency graph.
@@ -88,15 +88,17 @@ func BuildDeclaredGraph[T DeclaredTool](tools map[string]T) Graph {
 		}
 
 		if walker, ok := any(tool).(methodDependencyWalker); ok {
-			walker.GraphWalkMethodDependencies(func(method string, dependencies []string, guard fmt.Stringer) {
+			walker.GraphWalkMethodDependencies(func(candidate int, method string, dependencies []string, guard fmt.Stringer) {
 				for _, dependency := range dependencies {
 					graph.AddEdge(Edge{
-						From:   dependency,
-						To:     name,
-						Kind:   MethodRequire,
-						Role:   Activation,
-						Guard:  guard,
-						Method: method,
+						From:           dependency,
+						To:             name,
+						Kind:           MethodRequire,
+						Role:           Activation,
+						Guard:          guard,
+						Method:         method,
+						Candidate:      candidate,
+						CandidateKnown: true,
 					})
 				}
 			})

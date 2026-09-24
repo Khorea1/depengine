@@ -49,12 +49,14 @@ type Node struct {
 
 // Edge is directed from dependency to dependent tool.
 type Edge struct {
-	From   string
-	To     string
-	Kind   EdgeKind
-	Role   EdgeRole
-	Guard  Guard
-	Method string
+	From           string
+	To             string
+	Kind           EdgeKind
+	Role           EdgeRole
+	Guard          Guard
+	Method         string
+	Candidate      int
+	CandidateKnown bool
 }
 
 // NewGraph creates an empty typed graph.
@@ -121,6 +123,12 @@ func (g Graph) Canonicalize() Graph {
 		}
 		if a.Method != b.Method {
 			return a.Method < b.Method
+		}
+		if a.CandidateKnown != b.CandidateKnown {
+			return !a.CandidateKnown
+		}
+		if a.Candidate != b.Candidate {
+			return a.Candidate < b.Candidate
 		}
 		return guardLabel(a.Guard) < guardLabel(b.Guard)
 	})
