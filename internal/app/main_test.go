@@ -43,21 +43,24 @@ func TestConfirmationAccepted(t *testing.T) {
 	}
 }
 
-func TestHasLatestPlaceholdersRecognizesGitHubMethods(t *testing.T) {
+func TestHasLatestPlaceholdersRecognizesRepositoryReleaseMethods(t *testing.T) {
 	tests := []struct {
 		name   string
+		kind   string
 		config map[string]any
 		want   bool
 	}{
-		{name: "implicit latest", config: map[string]any{}, want: true},
-		{name: "explicit latest", config: map[string]any{"release": "latest"}, want: true},
-		{name: "named release", config: map[string]any{"release": "nightly"}},
-		{name: "named branch", config: map[string]any{"branch": "edge"}},
+		{name: "github implicit latest", kind: "github", config: map[string]any{"repo": "owner/tool", "asset": "tool.tar.gz"}, want: true},
+		{name: "github explicit latest", kind: "github", config: map[string]any{"repo": "owner/tool", "asset": "tool.tar.gz", "release": "latest"}, want: true},
+		{name: "github named release", kind: "github", config: map[string]any{"repo": "owner/tool", "asset": "tool.tar.gz", "release": "nightly"}},
+		{name: "github named branch", kind: "github", config: map[string]any{"repo": "owner/tool", "asset": "tool.tar.gz", "branch": "edge"}},
+		{name: "http repo asset implicit latest", kind: "http", config: map[string]any{"repo": "owner/tool", "asset": "tool.tar.gz"}, want: true},
+		{name: "non repository method", kind: "native", config: map[string]any{"pkg": "tool"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &config.Schema{Tools: map[string]*config.Tool{
-				"tool": {Methods: []*config.MethodCandidate{{Kind: "github", Config: tt.config}}},
+				"tool": {Methods: []*config.MethodCandidate{{Kind: tt.kind, Config: tt.config}}},
 			}}
 			if got := hasLatestPlaceholders(s); got != tt.want {
 				t.Fatalf("hasLatestPlaceholders() = %v, want %v", got, tt.want)
