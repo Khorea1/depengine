@@ -29,6 +29,7 @@ func newRemoveCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "remove [tool...]",
+		Aliases: []string{"rm", "uninstall"},
 		Short:   ifPT("Remover ferramentas do sistema", "Remove tools from the system"),
 		Long:    ifPT("Observa o alvo rastreado antes da remoção. Alvos ausentes comprovadamente liberam state e ownership; observações unknown ou broken preservam o state e falham.", "Observes the tracked target before removal. Proven-absent targets release state and ownership; unknown or broken observations preserve state and fail."),
 		GroupID: groupManage,
