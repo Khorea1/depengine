@@ -48,6 +48,18 @@ func explainIntent(method *config.MethodCandidate) map[string]string {
 	return intent
 }
 
+func declaredCandidateOrdinal(tool *config.Tool, method *config.MethodCandidate) (int, bool) {
+	if tool == nil || method == nil {
+		return 0, false
+	}
+	for candidate, declared := range tool.Methods {
+		if declared == method {
+			return candidate, true
+		}
+	}
+	return 0, false
+}
+
 // ExplainTool evaluates all methods for a single tool WITHOUT installing.
 // For each method it reports the status and reason: skip_when (when condition
 // didn't match), skip_unavailable (no adapter or binary not on PATH),
@@ -81,7 +93,13 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 		if method.Label != "" {
 			displayKind = method.Label
 		}
-		attempt := MethodAttempt{Kind: method.Kind, Label: method.Label}
+		candidate, candidateKnown := declaredCandidateOrdinal(tool, method)
+		attempt := MethodAttempt{
+			Kind:           method.Kind,
+			Label:          method.Label,
+			Candidate:      candidate,
+			CandidateKnown: candidateKnown,
+		}
 		planIntent, mismatch := candidatePlanIntent(tool, method)
 		planIntent = ex.hostResolvedPlanIntent(method, planIntent)
 		attempt.PlanIntent = planIntent
@@ -227,11 +245,14 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 			if selected[method] {
 				continue
 			}
+			candidate, candidateKnown := declaredCandidateOrdinal(tool, method)
 			attempt := MethodAttempt{
-				Kind:   method.Kind,
-				Label:  method.Label,
-				Status: "skip_policy",
-				Error:  "excluded by method_only",
+				Kind:           method.Kind,
+				Label:          method.Label,
+				Status:         "skip_policy",
+				Error:          "excluded by method_only",
+				Candidate:      candidate,
+				CandidateKnown: candidateKnown,
 			}
 			attempt.PlanIntent, _ = candidatePlanIntent(tool, method)
 			appendAttempt(attempt, method)

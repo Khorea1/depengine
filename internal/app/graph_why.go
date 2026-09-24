@@ -25,6 +25,7 @@ func newGraphCmd() *cobra.Command {
 	graphManifest := new(string)
 	graphNoManifest := new(bool)
 	graphFormat := new(string)
+	graphView := new(string)
 	graphProfile := new(string)
 	graphOnly := new(string)
 	graphSkip := new(string)
@@ -34,8 +35,8 @@ func newGraphCmd() *cobra.Command {
 		Short:   ifPT("Mostrar o grafo de dependências", "Show the dependency graph"),
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
-			return runGraph(graphSchema, graphManifest, graphNoManifest, graphFormat, graphProfile, graphOnly, graphSkip)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runGraphView(cmd.Context(), graphSchema, graphManifest, graphNoManifest, graphFormat, graphView, graphProfile, graphOnly, graphSkip)
 		},
 	}
 	f := cmd.Flags()
@@ -43,6 +44,7 @@ func newGraphCmd() *cobra.Command {
 	f.StringVar(graphManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(graphNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
 	f.StringVar(graphFormat, "format", "text", "output format: mermaid, dot, text")
+	f.StringVar(graphView, "view", "declared", "graph projection: declared, effective, resolved")
 	f.StringVar(graphProfile, "profile", "", "only show tools with matching tag")
 	f.StringVar(graphOnly, "only", "", "only show subgraph for specific tool")
 	f.StringVar(graphSkip, "skip", "", "skip specific tools (comma-separated)")
@@ -50,10 +52,21 @@ func newGraphCmd() *cobra.Command {
 }
 
 func runGraph(graphSchema, graphManifest *string, graphNoManifest *bool, graphFormat, graphProfile, graphOnly, graphSkip *string) error {
+	declared := "declared"
+	return runGraphView(context.Background(), graphSchema, graphManifest, graphNoManifest, graphFormat, &declared, graphProfile, graphOnly, graphSkip)
+}
+
+func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graphNoManifest *bool, graphFormat, graphView, graphProfile, graphOnly, graphSkip *string) error {
 	switch *graphFormat {
 	case "mermaid", "dot", "text":
 	default:
 		fmt.Fprintf(os.Stderr, "error: unknown format %q (valid: mermaid, dot, text)\n", *graphFormat)
+		return exitWithCode(2)
+	}
+
+	view, err := parseGraphView(*graphView)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return exitWithCode(2)
 	}
 
@@ -91,7 +104,12 @@ func runGraph(graphSchema, graphManifest *string, graphNoManifest *bool, graphFo
 	}
 
 	declaredGraph := graph.BuildDeclaredGraph(s.Tools)
-	levels, err := graph.SortGraph(declaredGraph)
+	visibleGraph, err := projectGraphView(ctx, declaredGraph, s, view)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: project %s graph: %v\n", view, err)
+		return exitWithCode(3)
+	}
+	levels, err := graph.SortGraph(visibleGraph)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return exitWithCode(2)
@@ -106,11 +124,11 @@ func runGraph(graphSchema, graphManifest *string, graphNoManifest *bool, graphFo
 	}
 	switch *graphFormat {
 	case "mermaid":
-		fmt.Print(graph.RenderMermaidGraph(declaredGraph))
+		fmt.Print(graph.RenderMermaidGraph(visibleGraph))
 	case "dot":
-		fmt.Print(graph.RenderDOTGraph(declaredGraph))
+		fmt.Print(graph.RenderDOTGraph(visibleGraph))
 	case "text":
-		fmt.Print(graph.RenderTextGraph(levels, declaredGraph))
+		fmt.Print(graph.RenderTextGraph(levels, visibleGraph))
 	}
 	return nil
 }
