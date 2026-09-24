@@ -127,6 +127,9 @@ func (a *SDKManAdapter) install(ctx context.Context, rn run.Runner, candidate, v
 	if err != nil {
 		return err
 	}
+	if info, err := os.Stat(initScript); err != nil || info.IsDir() {
+		return fmt.Errorf("sdkman: init script %q is unavailable", initScript)
+	}
 	// Keep all method-derived values outside the shell program. Bash receives
 	// them as positional argv after sourcing SDKMAN's trusted init script.
 	args := []string{"-c", sdkmanShellCommand, "depengine-sdkman", initScript, "install", candidate}

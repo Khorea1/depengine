@@ -2,6 +2,7 @@ package ecosystem
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -105,21 +106,21 @@ func TestAsdfAdapterInstall(t *testing.T) {
 	if len(got) < 5 {
 		t.Fatalf("expected at least 5 calls, got %d", len(got))
 	}
-	// Call order: which asdf, plugin list (empty → plugin-add), install, global
+	// Call order: which asdf, plugin list (empty → plugin add), install, set --home
 	if got[0].Name != "which" || got[0].Args[0] != "asdf" {
 		t.Errorf("expected first call 'which asdf', got %v", got[0])
 	}
 	if got[1].Name != "asdf" || len(got[1].Args) < 2 || got[1].Args[0] != "plugin" || got[1].Args[1] != "list" {
 		t.Errorf("expected 'asdf plugin list', got %v", got[1])
 	}
-	if got[2].Name != "asdf" || got[2].Args[0] != "plugin-add" {
-		t.Errorf("expected 'asdf plugin-add nodejs', got %v", got[2])
+	if got[2].Name != "asdf" || !reflect.DeepEqual(got[2].Args, []string{"plugin", "add", "nodejs"}) {
+		t.Errorf("expected 'asdf plugin add nodejs', got %v", got[2])
 	}
 	if got[3].Name != "asdf" || len(got[3].Args) != 3 || got[3].Args[0] != "install" || got[3].Args[1] != "nodejs" || got[3].Args[2] != "latest" {
 		t.Errorf("expected 'asdf install nodejs latest', got %v", got[3])
 	}
-	if got[4].Name != "asdf" || len(got[4].Args) != 3 || got[4].Args[0] != "global" || got[4].Args[1] != "nodejs" || got[4].Args[2] != "latest" {
-		t.Errorf("expected 'asdf global nodejs latest', got %v", got[4])
+	if got[4].Name != "asdf" || !reflect.DeepEqual(got[4].Args, []string{"set", "--home", "nodejs", "latest"}) {
+		t.Errorf("expected 'asdf set --home nodejs latest', got %v", got[4])
 	}
 }
 
@@ -134,23 +135,23 @@ func TestAsdfAdapterInstallHonorsConfiguredVersion(t *testing.T) {
 		t.Fatalf("unexpected Install error: %v", err)
 	}
 
-	var install, global *run.FakeCall
+	var install, set *run.FakeCall
 	for i := range fr.Calls {
 		call := &fr.Calls[i]
 		if call.Name == "asdf" && len(call.Args) > 0 {
 			switch call.Args[0] {
 			case "install":
 				install = call
-			case "global":
-				global = call
+			case "set":
+				set = call
 			}
 		}
 	}
 	if install == nil || len(install.Args) != 3 || install.Args[1] != "nodejs" || install.Args[2] != "18.20.4" {
 		t.Fatalf("expected 'asdf install nodejs 18.20.4', got %v", install)
 	}
-	if global == nil || len(global.Args) != 3 || global.Args[1] != "nodejs" || global.Args[2] != "18.20.4" {
-		t.Fatalf("expected 'asdf global nodejs 18.20.4', got %v", global)
+	if set == nil || !reflect.DeepEqual(set.Args, []string{"set", "--home", "nodejs", "18.20.4"}) {
+		t.Fatalf("expected 'asdf set --home nodejs 18.20.4', got %v", set)
 	}
 }
 

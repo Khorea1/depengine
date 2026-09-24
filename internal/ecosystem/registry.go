@@ -65,12 +65,11 @@ var Configs = map[string]BaseConfig{
 		RemoveTmpl:  []string{"npm", "uninstall", "-g", "{pkg}"},
 	},
 	"pnpm": {
-		KindName:       "pnpm",
-		Binary:         "pnpm",
-		CheckTmpl:      []string{"pnpm", "ls", "-g", "--depth=0", "{pkg}"},
-		InstallTmpl:    []string{"pnpm", "add", "-g", "{pkg}"},
-		RemoveTmpl:     []string{"pnpm", "remove", "-g", "{pkg}"},
-		AvailableExtra: "corepack",
+		KindName:    "pnpm",
+		Binary:      "pnpm",
+		CheckTmpl:   []string{"pnpm", "ls", "-g", "--depth=0", "{pkg}"},
+		InstallTmpl: []string{"pnpm", "add", "-g", "{pkg}"},
+		RemoveTmpl:  []string{"pnpm", "remove", "-g", "{pkg}"},
 	},
 	"bun": {
 		KindName:    "bun",

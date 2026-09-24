@@ -114,18 +114,7 @@ func (a *PacstallAdapter) Install(ctx context.Context, rn run.Runner, tool *conf
 }
 
 func (a *PacstallAdapter) installPackage(ctx context.Context, rn run.Runner, packageName string) error {
-	// Use elevation (sudo/pkexec) if not running as root.
-	// ElevationPrefix detects the best method at runtime.
-	var cmd []string
-	if isElevated() {
-		cmd = []string{"pacstall", "-I", packageName}
-	} else if prefix := run.ElevationPrefix(); prefix != nil {
-		cmd = append(append([]string(nil), prefix...), "pacstall", "-I", packageName)
-	} else {
-		// No working elevation — try with bare sudo anyway for a clear error.
-		cmd = []string{"sudo", "pacstall", "-I", packageName}
-	}
-	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	res := run.RunElevated(ctx, rn, "pacstall", "-I", packageName)
 	return run.CheckResult(res, "pacstall: install")
 }
 

@@ -127,7 +127,7 @@ func TestWinAdapterCheck(t *testing.T) {
 		if len(fr.Calls) != 1 {
 			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
 		}
-		want := []string{"list", "--local-only", "--exact", "--limit-output", "fd"}
+		want := []string{"list", "--exact", "--limit-output", "fd"}
 		if fr.Calls[0].Name != "choco" || fmt.Sprint(fr.Calls[0].Args) != fmt.Sprint(want) {
 			t.Fatalf("unexpected choco check call: %s %v", fr.Calls[0].Name, fr.Calls[0].Args)
 		}
