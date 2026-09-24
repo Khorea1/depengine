@@ -2,6 +2,7 @@ package exec
 
 import (
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/plan"
 )
 
@@ -9,33 +10,32 @@ import (
 // candidate consumed by Observe, Check, InstalledVersion, and Remove. Keep the
 // original candidate untouched: InstallResolved already reads the plan itself.
 func methodForResolvedTarget(method *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) *config.MethodCandidate {
-	if method == nil || resolved == nil || (method.Kind != "cargo" && method.Kind != "conda") {
+	if method == nil || resolved == nil {
 		return method
 	}
+
+	contract, ok := methodkind.Lookup(method.Kind)
+	if !ok || contract.Environment == nil {
+		return method
+	}
+
 	copy := *method
 	copy.Config = make(map[string]any, len(method.Config))
 	for key, value := range method.Config {
 		copy.Config[key] = value
 	}
+
+	for _, field := range contract.Environment.Fields() {
+		delete(copy.Config, field)
+	}
+
 	target := resolved.Identity.Environment
-	switch method.Kind {
-	case "cargo":
-		delete(copy.Config, "root")
-		if target != nil && target.Kind == plan.EnvironmentPrefix {
-			copy.Config["root"] = target.Value
-		}
-	case "conda":
-		delete(copy.Config, "environment")
-		delete(copy.Config, "prefix")
-		if target != nil {
-			switch target.Kind {
-			case plan.EnvironmentPrefix:
-				copy.Config["prefix"] = target.Value
-			case plan.EnvironmentNamed:
-				copy.Config["environment"] = target.Value
-			}
+	if target != nil {
+		if field, ok := contract.Environment.FieldFor(target.Kind); ok {
+			copy.Config[field] = target.Value
 		}
 	}
+
 	return &copy
 }
 
