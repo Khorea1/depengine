@@ -120,7 +120,7 @@ func TestGoAdapterV2ObserveReportsDriftedVersion(t *testing.T) {
 	}
 
 	// Missing binary entirely.
-	missing := &run.FakeRunner{LookPaths: map[string]bool{"go": true}}
+	missing := &run.FakeRunner{LookPaths: map[string]bool{"go": true, "realbin": false, "friendly-name": false}}
 	observation, err = adapter.Observe(context.Background(), missing, tool, mc)
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)
