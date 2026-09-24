@@ -39,8 +39,7 @@ func TestValidateAuthenticatedURL(t *testing.T) {
 		{name: "ipv6 loopback", raw: "http://[::1]:8080/private.tar.gz"},
 		{name: "remote plaintext", raw: "http://example.com/private.tar.gz", wantErr: true},
 		{name: "embedded credentials", raw: "https://user:pass@example.com/private.tar.gz", wantErr: true},
-	}
-	for _, tc := range tc {
+	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := ValidateAuthenticatedURL(tc.raw)
 			if (err != nil) != tc.wantErr {
