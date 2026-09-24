@@ -28,7 +28,7 @@ func TestAsdfAdapterV2ResolvesAndInstallsAsdf(t *testing.T) {
 	if err := a.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
 		t.Fatal(err)
 	}
-	want := []run.FakeCall{{Name: "which", Args: []string{"asdf"}}, {Name: "asdf", Args: []string{"plugin", "list"}}, {Name: "asdf", Args: []string{"plugin-add", "nodejs"}}, {Name: "asdf", Args: []string{"install", "nodejs", "20.1.0"}}, {Name: "asdf", Args: []string{"global", "nodejs", "20.1.0"}}}
+	want := []run.FakeCall{{Name: "which", Args: []string{"asdf"}}, {Name: "asdf", Args: []string{"plugin", "list"}}, {Name: "asdf", Args: []string{"plugin", "add", "nodejs"}}, {Name: "asdf", Args: []string{"install", "nodejs", "20.1.0"}}, {Name: "asdf", Args: []string{"set", "--home", "nodejs", "20.1.0"}}}
 	if !reflect.DeepEqual(runner.Calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.Calls, want)
 	}
