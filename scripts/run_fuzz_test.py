@@ -9,33 +9,48 @@ class FuzzManifestTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
+        (self.root / "go.mod").write_text("module example.test/fuzzfixture\n\ngo 1.23\n")
         (self.root / "pkg").mkdir()
-        (self.root / "pkg" / "fuzz_test.go").write_text(
-            'package pkg\nimport "testing"\nfunc FuzzAlpha(f *testing.F) {}\n'
+        self.source = self.root / "pkg" / "fuzz_test.go"
+        self.source.write_text(
+            'package pkg\nimport "testing"\n'
+            '// func FuzzCommentedFake(f *testing.F) {}\n'
+            'func FuzzAlpha(seed *testing.F) {}\n'
         )
-        import subprocess
-        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
-        subprocess.run(["git", "-C", str(self.root), "add", "pkg/fuzz_test.go"], check=True)
         self.manifest = self.root / "targets.txt"
 
     def tearDown(self):
         self.temp.cleanup()
 
-    def test_exact_manifest_passes(self):
+    def test_runtime_discovery_uses_go_signature_and_ignores_comments(self):
         self.manifest.write_text("./pkg FuzzAlpha\n")
         self.assertEqual([("./pkg", "FuzzAlpha")], run_fuzz.validate(self.root, self.manifest))
 
-    def test_missing_expected_target_fails(self):
-        self.manifest.write_text("./pkg FuzzRenamed\n")
-        with self.assertRaises(ValueError) as error:
+    def test_missing_runtime_target_fails(self):
+        self.manifest.write_text("./pkg FuzzMissing\n")
+        with self.assertRaisesRegex(ValueError, "missing or renamed targets.*FuzzMissing"):
             run_fuzz.validate(self.root, self.manifest)
-        self.assertIn("missing or renamed targets: ./pkg FuzzRenamed", str(error.exception))
 
-    def test_new_target_cannot_be_omitted(self):
-        with (self.root / "pkg" / "fuzz_test.go").open("a") as source:
-            source.write("func FuzzNew(f *testing.F) {}\n")
+    def test_new_runtime_target_cannot_be_omitted(self):
+        with self.source.open("a") as source:
+            source.write("func FuzzNew(seed *testing.F) {}\n")
         self.manifest.write_text("./pkg FuzzAlpha\n")
         with self.assertRaisesRegex(ValueError, "unlisted fuzz targets.*FuzzNew"):
+            run_fuzz.validate(self.root, self.manifest)
+
+    def test_build_tagged_target_missing_at_runtime_fails(self):
+        self.source.write_text(
+            '//go:build never\n\npackage pkg\nimport "testing"\n'
+            'func FuzzTagged(seed *testing.F) {}\n'
+        )
+        self.manifest.write_text("./pkg FuzzTagged\n")
+        with self.assertRaisesRegex(ValueError, "missing or renamed targets.*FuzzTagged"):
+            run_fuzz.validate(self.root, self.manifest)
+
+    def test_empty_manifest_and_discovery_fail(self):
+        self.source.write_text('package pkg\n')
+        self.manifest.write_text("# no targets\n")
+        with self.assertRaisesRegex(ValueError, "no runnable fuzz targets"):
             run_fuzz.validate(self.root, self.manifest)
 
 

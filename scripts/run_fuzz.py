@@ -1,31 +1,38 @@
 #!/usr/bin/env python3
 """Validate the fuzz target manifest and run every target for a bounded time."""
 
-import re
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "scripts/fuzz-targets.txt"
-FUZZ_DECL = re.compile(r"^func (Fuzz\w+)\s*\(f \*testing\.F\)", re.MULTILINE)
 
 
 def discover_targets(root: Path) -> set[tuple[str, str]]:
-    targets = set()
-    files = subprocess.run(
-        ["git", "-C", str(root), "ls-files", "--", "*_test.go"],
+    directories = subprocess.run(
+        ["go", "list", "-f", "{{.Dir}}", "./..."],
+        cwd=root,
         check=True,
         capture_output=True,
         text=True,
     ).stdout.splitlines()
-    for filename in files:
-        path = root / filename
-        if not path.is_file():
-            continue
-        package = "./" + str(Path(filename).parent)
-        for name in FUZZ_DECL.findall(path.read_text(encoding="utf-8")):
-            targets.add((package, name))
+    targets = set()
+    for directory in directories:
+        relative = Path(os.path.relpath(directory, root))
+        package = "." if str(relative) == "." else f"./{relative}"
+        output = subprocess.run(
+            ["go", "test", "-list=^Fuzz", "-run=^$", package],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        for line in output.splitlines():
+            name = line.strip()
+            if name.startswith("Fuzz") and name.isidentifier():
+                targets.add((package, name))
     return targets
 
 
@@ -47,6 +54,8 @@ def validate(root: Path, manifest: Path) -> list[tuple[str, str]]:
     if len(entries) != len(set(entries)):
         raise ValueError(f"{manifest}: duplicate fuzz target entry")
     discovered = discover_targets(root)
+    if not discovered and not entries:
+        raise ValueError("no runnable fuzz targets discovered")
     listed = set(entries)
     missing = sorted(discovered - listed)
     stale = sorted(listed - discovered)
