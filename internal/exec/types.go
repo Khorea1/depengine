@@ -83,6 +83,13 @@ type MethodAttempt struct {
 	Error      string                    // explanation/reason for explain and failures
 	Intent     map[string]string         // normalized, non-secret identity fields for explain/why
 	PlanIntent *plan.ResolvedInstallPlan // latest candidate plan at the planning/execution boundary reached by this attempt
+
+	// Candidate is the zero-based ordinal in the merged Tool.Methods list.
+	// CandidateKnown is false for synthesized candidates that have no exact
+	// declared identity. Graph resolved projections use these fields to avoid
+	// collapsing same-kind candidates by display name.
+	Candidate      int
+	CandidateKnown bool
 }
 
 // DisplayName returns the human-facing candidate name: the custom label when
