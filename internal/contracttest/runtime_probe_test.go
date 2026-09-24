@@ -289,10 +289,9 @@ func callsContainArg(calls []run.FakeCall, want string) bool {
 
 func batchCallsContain(calls []run.FakeCall, command, operation, packageName string) bool {
 	for _, call := range calls {
-		if call.Name != "sudo" || len(call.Args) < 3 || call.Args[0] != command || call.Args[1] != operation {
-			continue
-		}
-		if callsContainArg([]run.FakeCall{call}, packageName) {
+		direct := call.Name == command && len(call.Args) >= 1 && call.Args[0] == operation
+		elevated := run.IsElevationPrefix(call.Name) && len(call.Args) >= 2 && call.Args[0] == command && call.Args[1] == operation
+		if (direct || elevated) && callsContainArg([]run.FakeCall{call}, packageName) {
 			return true
 		}
 	}
