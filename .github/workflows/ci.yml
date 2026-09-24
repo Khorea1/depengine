@@ -43,8 +43,8 @@ jobs:
         go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
         govulncheck ./...
 
-    - name: Run fuzz tests (short)
-      run: go test -fuzz=FuzzParseSchema -fuzztime=15s -run=^$ ./internal/config/
+    - name: Run all fuzz targets (bounded)
+      run: python3 scripts/run_fuzz.py 10s
 
     - name: Derive version
       id: version

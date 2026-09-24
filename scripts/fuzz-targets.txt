@@ -1,0 +1,7 @@
+./internal/config FuzzParseProjectSchema
+./internal/config FuzzExpand
+./internal/localartifact FuzzSafeArchiveTargetNeverEscapesRoot
+./internal/plan FuzzReconcileProducesValidResult
+./internal/plan FuzzBuildLockDocumentOrderAndPurity
+./internal/plan FuzzResolvedInstallPlanSerializationRedactsSecrets
+./internal/plan FuzzSharedResourceRefcountProperties
