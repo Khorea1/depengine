@@ -49,7 +49,10 @@ func projectGraphView(ctx context.Context, declared graph.Graph, schema *config.
 	}
 
 	if len(candidateTools) > 0 {
-		selected := resolvedGraphCandidates(ctx, schema, facts, candidateTools)
+		selected, err := resolvedGraphCandidates(ctx, schema, facts, candidateTools)
+		if err != nil {
+			return graph.Graph{}, fmt.Errorf("resolve graph candidates: %w", err)
+		}
 		projection.SelectedCandidate = func(toolID string, candidate int) bool {
 			selectedCandidate, ok := selected[toolID]
 			return ok && selectedCandidate == candidate
@@ -85,10 +88,10 @@ func matchGraphGuard(guard graph.Guard, facts *engine.Facts) (bool, error) {
 	return condition.Match(facts), nil
 }
 
-func resolvedGraphCandidates(ctx context.Context, schema *config.Schema, facts *engine.Facts, candidateTools map[string]struct{}) map[string]int {
+func resolvedGraphCandidates(ctx context.Context, schema *config.Schema, facts *engine.Facts, candidateTools map[string]struct{}) (map[string]int, error) {
 	selected := make(map[string]int)
 	if schema == nil || len(candidateTools) == 0 {
-		return selected
+		return selected, nil
 	}
 
 	clan := engine.ResolveFamily(facts)
@@ -110,13 +113,19 @@ func resolvedGraphCandidates(ctx context.Context, schema *config.Schema, facts *
 	sort.Strings(names)
 
 	for _, name := range names {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		candidate, ok := selectedGraphCandidate(executor.ExplainTool(ctx, schema.Tools[name], clan))
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if ok {
 			selected[name] = candidate
 		}
 	}
 
-	return selected
+	return selected, nil
 }
 
 func selectedGraphCandidate(attempts []exec.MethodAttempt) (int, bool) {
