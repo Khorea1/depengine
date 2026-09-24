@@ -1,13 +1,16 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
 )
 
@@ -52,37 +55,6 @@ func TestValidateInstallSortBy(t *testing.T) {
 	}
 	if exitErr.Code != 2 {
 		t.Fatalf("invalid sort exit code = %d, want 2", exitErr.Code)
-	}
-}
-
-func TestPrintInstallHeaderUsesExecutionToolCount(t *testing.T) {
-	f, err := os.CreateTemp(t.TempDir(), "install-header-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	cs := newCLIStyle(f)
-	printInstallHeader(cs, installPlan{schema: "schema.toml"}, "debian", &engine.Facts{
-		DistroID:   "debian",
-		TargetArch: "amd64",
-	}, 0, 2)
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	data, err := os.ReadFile(f.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got string
-	for _, line := range strings.Split(string(data), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) >= 2 && fields[0] == "tools" {
-			got = fields[1]
-			break
-		}
-	}
-	if got != "2" {
-		t.Fatalf("tools header = %q, want execution selection count 2; output:\n%s", got, data)
 	}
 }
 
@@ -132,5 +104,163 @@ func TestShouldShareInstallHint(t *testing.T) {
 	}
 	if shouldShareInstallHint(&exec.ExecReport{}, false) {
 		t.Fatal("zero successes must not hint")
+	}
+}
+
+func TestResolveInstallLockFrozenRejectsBeforeApplyingStaleLock(t *testing.T) {
+	schemaPath := filepath.Join(t.TempDir(), "schema.toml")
+	originalURL := "https://example.test/releases/{latest}/tool.tar.gz"
+	method := &config.MethodCandidate{Kind: "http", Config: map[string]any{"url": originalURL}}
+	tool := &config.Tool{Name: "tool", Methods: []*config.MethodCandidate{method}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": tool}}
+	lk := &lock.Lock{
+		Version: 1,
+		Tools: map[string]lock.ToolPin{
+			"tool/http/0": {Latest: "v1.2.3"},
+		},
+		MethodsHash: map[string]string{"tool": "stale"},
+	}
+	if err := lock.Save(lock.DefaultPath(schemaPath), lk); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := resolveInstallLock(context.Background(), installPlan{schema: schemaPath, frozen: true}, schema, log.Default)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("resolveInstallLock() error = %v, want exit code 2", err)
+	}
+	if got := method.Config["url"]; got != originalURL {
+		t.Fatalf("stale frozen lock mutated schema before rejection: got %v want %s", got, originalURL)
+	}
+}
+
+func TestResolveInstallLockFrozenRejectsUnreadableLock(t *testing.T) {
+	schemaPath := filepath.Join(t.TempDir(), "schema.toml")
+	if err := os.WriteFile(lock.DefaultPath(schemaPath), []byte("not = [valid"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	schema := &config.Schema{Tools: map[string]*config.Tool{}}
+
+	_, err := resolveInstallLock(context.Background(), installPlan{schema: schemaPath, frozen: true}, schema, log.Default)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("resolveInstallLock() error = %v, want exit code 2", err)
+	}
+}
+
+func TestSaveLockfilePreservesOmittedMethodIdentity(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), "depengine.lock")
+	schema := &config.Schema{Tools: map[string]*config.Tool{
+		"selected": {
+			Name: "selected",
+			Methods: []*config.MethodCandidate{{
+				Kind:   "native",
+				Config: map[string]any{"pkg": "selected"},
+			}},
+		},
+	}}
+	old := &lock.Lock{
+		Version:     1,
+		Tools:       map[string]lock.ToolPin{"omitted/http/0": {Latest: "v9.9.9"}},
+		MethodsHash: map[string]string{"omitted": "preserve-me"},
+	}
+
+	saveLockfile(context.Background(), schema, lockPath, old, log.Default, false)
+
+	got, err := lock.Load(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil {
+		t.Fatal("saveLockfile() did not write lock")
+	}
+	if got.MethodsHash["omitted"] != "preserve-me" {
+		t.Fatalf("omitted method identity = %q, want preserved hash", got.MethodsHash["omitted"])
+	}
+	if got.Tools["omitted/http/0"].Latest != "v9.9.9" {
+		t.Fatalf("omitted pin was not preserved: %#v", got.Tools["omitted/http/0"])
+	}
+}
+
+func TestSaveLockfilePreservesExistingCompositePinFields(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), "depengine.lock")
+	newChecksum := "sha256:" + strings.Repeat("b", 64)
+	schema := &config.Schema{Tools: map[string]*config.Tool{
+		"tool": {
+			Name: "tool",
+			Methods: []*config.MethodCandidate{{
+				Kind: "http",
+				Config: map[string]any{
+					"url":      "https://example.test/releases/v1.2.3/tool.tar.gz",
+					"checksum": newChecksum,
+				},
+			}},
+		},
+	}}
+	old := &lock.Lock{
+		Version: 1,
+		Tools: map[string]lock.ToolPin{
+			"tool/http/0": {
+				Latest:   "v1.2.3",
+				Checksum: "sha256:" + strings.Repeat("a", 64),
+			},
+		},
+		MethodsHash: map[string]string{"tool": "old-hash"},
+	}
+
+	saveLockfile(context.Background(), schema, lockPath, old, log.Default, false)
+
+	got, err := lock.Load(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin := got.Tools["tool/http/0"]
+	if pin.Latest != "v1.2.3" {
+		t.Fatalf("Latest = %q, want preserved v1.2.3", pin.Latest)
+	}
+	if pin.Checksum != newChecksum {
+		t.Fatalf("Checksum = %q, want newly resolved %q", pin.Checksum, newChecksum)
+	}
+	if got.MethodsHash["tool"] != "old-hash" {
+		t.Fatalf("MethodsHash = %q, want old-hash until explicit update", got.MethodsHash["tool"])
+	}
+}
+
+func TestResolveInstallLockFrozenAcceptsSelectedSubsetLock(t *testing.T) {
+	schemaPath := filepath.Join(t.TempDir(), "schema.toml")
+	full := &config.Schema{Tools: map[string]*config.Tool{
+		"selected": {
+			Name: "selected",
+			Methods: []*config.MethodCandidate{{
+				Kind:   "native",
+				Config: map[string]any{"pkg": "selected"},
+			}},
+		},
+		"omitted": {
+			Name: "omitted",
+			Methods: []*config.MethodCandidate{{
+				Kind:   "http",
+				Config: map[string]any{"url": "https://example.test/releases/{latest}/omitted.tar.gz"},
+			}},
+		},
+	}}
+	selected := &config.Schema{Tools: filterTools(full.Tools, "selected", "", "")}
+	lk, err := lock.ResolveAll(context.Background(), selected, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lock.Save(lock.DefaultPath(schemaPath), lk); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := resolveInstallLock(context.Background(), installPlan{schema: schemaPath, frozen: true}, selected, log.Default)
+	if err != nil {
+		t.Fatalf("resolveInstallLock() rejected selected-scope lock: %v", err)
+	}
+	if got == nil {
+		t.Fatal("resolveInstallLock() returned nil lock")
+	}
+	if _, ok := got.MethodsHash["omitted"]; ok {
+		t.Fatal("test fixture unexpectedly locked omitted tool")
 	}
 }

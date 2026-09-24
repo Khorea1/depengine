@@ -136,7 +136,7 @@ Aliases: `i`.
 | `--allow-arbitrary-code` | local | `false` | permit hooks, build scripts, and other arbitrary code execution |
 | `--diagnose` | local | `false` | diagnostic mode: DEBUG + dry-run + detailed report |
 | `--dry-run` | local | `false` | show what would be installed |
-| `--frozen-lockfile` | local | `false` | fail if depengine.lock does not exist or needs update |
+| `--frozen-lockfile` | local | `false` | fail if depengine.lock is missing, detectably stale, or lacks a supported required pin |
 | `-h, --help` | local | `false` | help for install |
 | `--jobs <int>` | local | `1` | max concurrent installations (default 1 = sequential) |
 | `--json` | local | `false` | JSON output |
