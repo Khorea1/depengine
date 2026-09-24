@@ -47,6 +47,19 @@ func NormalizeProjectPath(raw string) (string, error) {
 	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
 		return "", fmt.Errorf("local artifact path escapes the project root")
 	}
+	// Cleaning can produce a shape the input checks reject: stripping a
+	// trailing slash can expose trailing whitespace ("0 /" -> "0 ") and
+	// removing a dot segment can expose a Windows volume prefix
+	// ("a/../C:x" -> "C:x"). Callers re-validate canonical values when
+	// projecting lock identity and when checking artifacts, so a result that
+	// fails its own rules would reject what this function just produced and
+	// leave Artifact.Validate suggesting a value it then refuses.
+	if strings.TrimSpace(clean) != clean {
+		return "", fmt.Errorf("local artifact path %q has surrounding whitespace", clean)
+	}
+	if path.IsAbs(clean) || hasWindowsVolumePrefix(clean) {
+		return "", fmt.Errorf("local artifact path %q must be relative to the project root", clean)
+	}
 	return clean, nil
 }
 
