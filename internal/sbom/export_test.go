@@ -140,23 +140,64 @@ func TestSafeSPDXID(t *testing.T) {
 	}
 }
 
-func TestComponentType(t *testing.T) {
+func TestCycloneDXMethodPackageMetadata(t *testing.T) {
 	cases := []struct {
-		method string
-		want   string
+		method        string
+		componentType string
+		purl          string
 	}{
-		{"cargo", "library"},
-		{"go", "library"},
-		{"pip", "library"},
-		{"native", "application"},
-		{"flatpak", "application"},
-		{"http", "application"},
+		{"cargo", "library", "pkg:cargo/tool@1.2.3"},
+		{"go", "library", "pkg:golang/tool@1.2.3"},
+		{"pip", "library", "pkg:pypi/tool@1.2.3"},
+		{"pipx", "library", "pkg:pypi/tool@1.2.3"},
+		{"uv", "library", "pkg:pypi/tool@1.2.3"},
+		{"npm", "library", "pkg:npm/tool@1.2.3"},
+		{"pnpm", "library", "pkg:npm/tool@1.2.3"},
+		{"bun", "library", "pkg:npm/tool@1.2.3"},
+		{"gem", "library", "pkg:gem/tool@1.2.3"},
+		{"yarn", "library", "pkg:yarn/tool@1.2.3"},
+		{"yarn-berry", "library", "pkg:yarn-berry/tool@1.2.3"},
+		{"composer", "library", "pkg:composer/tool@1.2.3"},
+		{"conda", "library", "pkg:conda/tool@1.2.3"},
+		{"flatpak", "application", "pkg:flatpak/tool@1.2.3"},
+		{"snap", "application", "pkg:snap/tool@1.2.3"},
+		{"mas", "application", "pkg:mas/tool@1.2.3"},
+		{"container", "application", "pkg:oci/tool@1.2.3"},
+		{"native", "application", "pkg:native/tool@1.2.3"},
+		{"custom", "application", "pkg:custom/tool@1.2.3"},
 	}
-	for _, c := range cases {
-		got := componentType(c.method)
-		if got != c.want {
-			t.Errorf("componentType(%q) = %q, want %q", c.method, got, c.want)
-		}
+
+	for _, tc := range cases {
+		t.Run(tc.method, func(t *testing.T) {
+			s := &state.State{
+				Version: 1,
+				Tools: map[string]state.ToolState{
+					"tool": {MethodKind: tc.method, Version: "1.2.3"},
+				},
+			}
+
+			data, err := ExportCycloneDX(s)
+			if err != nil {
+				t.Fatalf("ExportCycloneDX: %v", err)
+			}
+
+			var bom struct {
+				Components []CycloneDXComponent `json:"components"`
+			}
+			if err := json.Unmarshal(data, &bom); err != nil {
+				t.Fatalf("invalid JSON: %v", err)
+			}
+			if len(bom.Components) != 1 {
+				t.Fatalf("components = %d, want 1", len(bom.Components))
+			}
+			got := bom.Components[0]
+			if got.Type != tc.componentType {
+				t.Errorf("component type = %q, want %q", got.Type, tc.componentType)
+			}
+			if got.PURL != tc.purl {
+				t.Errorf("purl = %q, want %q", got.PURL, tc.purl)
+			}
+		})
 	}
 }
 
