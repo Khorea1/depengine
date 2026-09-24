@@ -23,6 +23,18 @@ Work on the current execution model comes before adding more installer types.
   for the same exclusion because state does not retain reference names.
   Other authenticated operations still need an explicit credential transport
   before they can be accepted.
+- [ ] Restore fuzzing as a reliable CI gate. Keep workflow target names in sync
+  with the Go fuzz functions, run every committed fuzz target with a bounded
+  budget, and fail CI when an expected target disappears after a rename.
+- [ ] Triage the security-relevant `gosec` backlog ahead of the general lint
+  cleanup. Fix real findings and replace false positives with explicit,
+  reviewable suppressions so the `new-from-rev` baseline cannot indefinitely
+  hide unreviewed security diagnostics.
+- [ ] Make the checked-in lock artifact self-consistent with current lock v1
+  validation. The repository lock currently carries a `fastfetch` pin without
+  the required method identity hash; either regenerate it from a canonical
+  schema/fixture and test `ValidateFrozen` against it, or remove the orphaned
+  root lock if it is not repository truth.
 
 ## P1: shared install semantics
 
@@ -59,7 +71,9 @@ Work on the current execution model comes before adding more installer types.
 - [ ] Cover each method contract across validation, identity, dry-run, version,
   source, scope, environment, lock, lifecycle, idempotency, errors, and secret
   redaction.
-- [ ] Add planner fuzz/property tests and lifecycle/state invariant tests.
+- [ ] Add planner fuzz/property tests and lifecycle/state invariant tests,
+  including command-bearing fields, secret/redaction boundaries, source/URL
+  normalization, and lock identity invariants.
 - [ ] Keep public claims aligned with behavior the implementation actually
   enforces.
 - [ ] Complete [`specs/format-v1-freeze.md`](specs/format-v1-freeze.md) and run
@@ -77,8 +91,19 @@ Work on the current execution model comes before adding more installer types.
   at 50 per category. Uncapped re-audit on 2026-09-23: 558 findings
   (`errcheck` 159, `gosec` 368, `staticcheck` 19, `errorlint` 11, `unused` 1);
   the per-linter cap hid the true `errcheck`/`gosec` counts.
-- [ ] Review `internal/plan/preparation.go` and split it only where the code has
-  distinct responsibilities with separate invariants.
+- [ ] Review `internal/plan/preparation.go` and
+  `internal/exec/preparation.go`; split them only where the code has distinct
+  responsibilities with separate invariants.
+- [ ] Decide whether tagged `go install github.com/Khorea1/depengine@version`
+  is a supported distribution path. If yes, remove the main-module `replace`
+  directives and add a release/install smoke check; if no, document the
+  unsupported path and point users at the canonical release installation.
+- [ ] Tighten the runtime-dependency claim. Distinguish a statically linked Go
+  binary from Unix host requirements used by OS detection (`sh` and standard
+  utilities), and keep release packaging/tests aligned with that contract.
+- [ ] Add a concise alternatives/positioning document comparing depengine's
+  project-level install model with tools such as mise, aqua, Nix, and Brewfile,
+  focusing on behavioral scope rather than marketing claims.
 - [x] Audit author variants before adding `.mailmap`; only merge identities
   confirmed to belong to the same person. Done: `.mailmap` exists and audit
   on 2026-09-23 verified it complete (7 identities, 6 aliases, no 8th
