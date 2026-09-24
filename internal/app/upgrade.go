@@ -328,9 +328,8 @@ func upgradeSingleTool(ctx context.Context, ex *exec.Executor, runner *run.Loggi
 		return fail("no adapter for method %q", ot.methodKind)
 	}
 
-	// The legacy upgrade path calls Remove/Install directly. Fail closed on
-	// semantics it cannot yet preserve instead of removing a working tool and
-	// discovering the mismatch during reinstall.
+	// The direct Remove/Install path fails closed on semantics it cannot preserve,
+	// avoiding removal of a working tool before an incompatible reinstall.
 	resolved, verification, err := preflightDirectUpgrade(ctx, ex, runner, facts, ot.tool, ot.method, adapter, ot.pinnedVer, opts.allowArbitrary)
 	if err != nil {
 		return fail("upgrade preflight failed: %v", err)
@@ -517,11 +516,10 @@ func writeUpgradeReport(jsonOut, dryRun bool, counts upgradeCounts, results []up
 }
 
 // runUpgrade upgrades installed tools whose recorded version is outdated
-// relative to the pinned version in depengine.lock. For each outdated tool,
-// it calls adapter.Remove followed by adapter.Install, then updates state.
-// Thin orchestrator over the phase helpers above: flag resolution, schema and
-// lock loading, state snapshot, executor wiring, drift collection,
-// confirmation, per-tool loop, state save, and reporting.
+// relative to the pinned version in depengine.lock. Each upgrade preflights an
+// exact candidate before removal, installs that resolved candidate, then updates
+// state. The function orchestrates schema/lock loading, executor wiring, drift
+// collection, confirmation, execution, persistence, and reporting.
 func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool) error {
 	lg := log.Default
 	opts := newUpgradeOptions(upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary)
@@ -545,7 +543,6 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		ecosystem.ReconfigureAUR(helper)
 	}
 
-	// Load lockfile.
 	lk, err := loadUpgradeLock(opts.schema, lg)
 	if err != nil {
 		return err
@@ -565,7 +562,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		return err
 	}
 
-	// Apply lock pins to the schema so Install sees resolved versions.
+	// Project lock pins into the schema before drift collection and reinstall planning.
 	lock.Apply(s, lk)
 
 	outdated, discoveryFailures := collectOutdatedTools(st, s, lk, opts.only, ex.DefaultMethodOrder(), ex.NativeManagerName())
@@ -581,7 +578,6 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		[2]string{"outdated", fmt.Sprintf("%d", len(outdated))},
 	)
 
-	// Confirmation prompt (unless --force or --dry-run or --json).
 	if shouldPromptUpgrade(opts.force, opts.dryRun, opts.jsonOut, isInteractive()) {
 		if !confirmUpgradeProceed(outdated, c) {
 			fmt.Fprintln(os.Stderr, "Aborted.")
@@ -593,7 +589,6 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 	// discovery failures are already terminal and participate in the same report.
 	results, counts := runUpgradeLoop(ctx, ex, runner, facts, st, outdated, discoveryFailures, opts, c)
 
-	// Save state (unless dry-run).
 	if !opts.dryRun {
 		if err := ls.Save(); err != nil {
 			lg.Error("state save failed", "error", err)
