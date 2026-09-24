@@ -196,20 +196,14 @@ func (ex *Executor) tryMethodsWithResolution(toolCtx context.Context, tool *conf
 // It returns true when the tool result is terminal and tryMethods must
 // return, false when the next candidate should be tried.
 func (ex *Executor) attemptMethod(toolCtx context.Context, tool *config.Tool, method *config.MethodCandidate, result *ToolResult, toolStart time.Time, resolution *candidateResolutionSeed) bool {
-	candidate, candidateKnown := declaredCandidateOrdinal(tool, method)
 	ac := &candidateAttempt{
 		toolCtx:     toolCtx,
 		tool:        tool,
 		method:      method,
 		displayKind: displayMethodKind(method),
-		attempt: MethodAttempt{
-			Kind:           method.Kind,
-			Label:          method.Label,
-			Candidate:      candidate,
-			CandidateKnown: candidateKnown,
-		},
-		toolStart:  toolStart,
-		resolution: resolution,
+		attempt:     MethodAttempt{Kind: method.Kind, Label: method.Label},
+		toolStart:   toolStart,
+		resolution:  resolution,
 	}
 	for _, phase := range []func(*candidateAttempt, *ToolResult) attemptOutcome{
 		ex.gateStaticIntent,
