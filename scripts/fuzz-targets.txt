@@ -5,3 +5,5 @@
 ./internal/plan FuzzBuildLockDocumentOrderAndPurity
 ./internal/plan FuzzResolvedInstallPlanSerializationRedactsSecrets
 ./internal/plan FuzzSharedResourceRefcountProperties
+./internal/plan FuzzNormalizeProjectPathStaysInsideProjectRoot
+./internal/plan FuzzCanonicalSourcesIsOrderIndependentAndIdempotent
