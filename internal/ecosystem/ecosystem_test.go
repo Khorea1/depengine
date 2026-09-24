@@ -78,6 +78,59 @@ func TestBaseAdapterAvailableExtra(t *testing.T) {
 	}
 }
 
+func TestBaseAdapterInstallUsesAvailableExtra(t *testing.T) {
+	fr := &run.FakeRunner{
+		LookPaths: map[string]bool{"primary-tool": false, "fallback-tool": true},
+	}
+	adapter := NewBaseAdapter(BaseConfig{
+		KindName:       "test-extra-install",
+		Binary:         "primary-tool",
+		AvailableExtra: "fallback-tool",
+		InstallTmpl:    []string{"primary-tool", "install", "{pkg}"},
+	})
+	tl, mc := tool("test-tool", "test-pkg")
+
+	if err := adapter.Install(context.Background(), fr, tl, mc); err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	got := fr.Calls[len(fr.Calls)-1]
+	if got.Name != "fallback-tool" || strings.Join(got.Args, " ") != "install test-pkg" {
+		t.Fatalf("Install() call = %s %v, want fallback-tool install test-pkg", got.Name, got.Args)
+	}
+}
+
+func TestPipFallbackUsesPip3ForCheckAndInstall(t *testing.T) {
+	fr := &run.FakeRunner{
+		LookPaths: map[string]bool{"pip": false, "pip3": true},
+		Stdout:    "Name: sample\nVersion: 1.2.3\n",
+	}
+	adapter := NewBaseAdapter(Configs["pip"])
+	tool := &config.Tool{Name: "sample"}
+	mc := &config.MethodCandidate{Kind: "pip", Config: map[string]any{"pkg": "sample", "version": "1.2.3"}}
+
+	if !adapter.Check(context.Background(), fr, tool, mc) {
+		t.Fatal("Check() should succeed through pip3 fallback")
+	}
+	check := fr.Calls[len(fr.Calls)-1]
+	if check.Name != "pip3" || strings.Join(check.Args, " ") != "show sample" {
+		t.Fatalf("Check() call = %s %v, want pip3 show sample", check.Name, check.Args)
+	}
+
+	if err := adapter.Install(context.Background(), fr, tool, mc); err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	install := fr.Calls[len(fr.Calls)-1]
+	if install.Name != "pip3" || strings.Join(install.Args, " ") != "install sample==1.2.3" {
+		t.Fatalf("Install() call = %s %v, want pip3 install sample==1.2.3", install.Name, install.Args)
+	}
+}
+
+func TestPNPMDoesNotTreatCorepackAsExecutableFallback(t *testing.T) {
+	if Configs["pnpm"].AvailableExtra != "" {
+		t.Fatalf("pnpm AvailableExtra = %q, want empty: corepack is not a drop-in pnpm binary", Configs["pnpm"].AvailableExtra)
+	}
+}
+
 func TestBaseAdapterCheckWithRunner(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 0}
 	adapter := NewBaseAdapter(BaseConfig{
