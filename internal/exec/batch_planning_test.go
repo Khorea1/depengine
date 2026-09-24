@@ -96,7 +96,7 @@ func TestVerifyBatchV2OnlyPresentCommitsBatchResult(t *testing.T) {
 			candidate := batchCandidate{toolName: tool.Name, tool: tool, method: tool.Methods[0]}
 			report := &ExecReport{}
 			rc := &runContext{ctx: context.Background(), report: report}
-			remaining := ex.verifyBatchInstall(rc, []batchCandidate{candidate}, nil, map[string]bool{}, nil)
+			remaining := ex.verifyBatchInstall(rc, []batchCandidate{candidate}, nil, nil)
 			if len(remaining) != tt.wantRemaining || len(report.Tools) != tt.wantTools {
 				t.Fatalf("verifyBatchInstall() = remaining %d, report tools %d; want %d, %d", len(remaining), len(report.Tools), tt.wantRemaining, tt.wantTools)
 			}
@@ -176,7 +176,7 @@ func TestVerifiedBatchInstallReportsSameResolvedPlan(t *testing.T) {
 
 	adapter.presence = plan.PresencePresent
 	rc := &runContext{ctx: context.Background(), report: report}
-	remaining = ex.verifyBatchInstall(rc, candidates, remaining, map[string]bool{}, make(map[string]*candidateResolutionSeed))
+	remaining = ex.verifyBatchInstall(rc, candidates, remaining, make(map[string]*candidateResolutionSeed))
 	if len(remaining) != 0 || len(report.Tools) != 1 || report.Tools[0].Status != StatusInstalled {
 		t.Fatalf("verified batch = remaining %d, report %+v; want installed", len(remaining), report.Tools)
 	}
