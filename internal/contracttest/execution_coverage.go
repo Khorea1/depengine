@@ -22,6 +22,9 @@ func init() {
 			if spec.Effects&methodkind.EffectExecute == 0 {
 				continue
 			}
+			if contract.Kind == "cargo" && field == "secret_ref" {
+				continue // covered by the executor's reached-candidate credential test
+			}
 			entries[contract.Kind+"."+field] = Coverage{
 				Consumer:  "TestExecuteEffectFieldProbes",
 				Rationale: "differential FakeRunner probe asserts the install execution calls change when this exact field changes",

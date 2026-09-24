@@ -45,6 +45,9 @@ func (ex *Executor) executionCredentialContext(ctx context.Context, method *conf
 	if method.Kind == "git" {
 		return ex.gitCredentialContext(ctx, method)
 	}
+	if method.Kind == "cargo" {
+		return ex.cargoCredentialContext(ctx, method)
+	}
 	if method.Kind != "http" {
 		return ctx, nil
 	}

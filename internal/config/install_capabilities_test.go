@@ -239,6 +239,27 @@ secret_ref = { provider = "env", name = "PRIVATE_GIT_TOKEN" }
 	}
 }
 
+func TestParseCargoGitSecretReference(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "schema.toml")
+	data := `schema_version = 1
+[tools.demo.cargo]
+pkg = "demo"
+git = "https://example.test/private.git"
+secret_ref = { provider = "env", name = "CARGO_TOKEN" }
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	schema, err := ParseProjectSchema(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := schema.Tools["demo"].Methods[0].SecretRef
+	if ref == nil || ref.Provider != "env" || ref.Name != "CARGO_TOKEN" {
+		t.Fatalf("Cargo secret ref = %+v, want env:CARGO_TOKEN", ref)
+	}
+}
+
 func TestParseArtifactAndTypedOptions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "schema.toml")
 	data := `schema_version = 1

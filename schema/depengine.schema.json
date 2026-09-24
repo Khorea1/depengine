@@ -1288,6 +1288,18 @@
             {
               "if": {
                 "required": [
+                  "secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "git"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
                   "tag"
                 ]
               },
@@ -1298,7 +1310,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, auth, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1358,6 +1370,9 @@
             "root": {
               "minLength": 1,
               "type": "string"
+            },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
             },
             "sources": {
               "items": {
@@ -6064,6 +6079,18 @@
             {
               "if": {
                 "required": [
+                  "secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "git"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
                   "tag"
                 ]
               },
@@ -6074,7 +6101,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, auth, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6131,6 +6158,9 @@
             "root": {
               "minLength": 1,
               "type": "string"
+            },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
             },
             "sources": {
               "items": {

@@ -63,6 +63,20 @@ func TestSecretRefsBelongOnlyToSupportedContracts(t *testing.T) {
 	if git.Capabilities&CapabilityAuth == 0 {
 		t.Fatalf("git capabilities = %v, want authentication capability", git.Capabilities)
 	}
+	cargo, ok := Lookup("cargo")
+	if !ok {
+		t.Fatal("cargo contract missing")
+	}
+	field, ok = cargo.Fields["secret_ref"]
+	if !ok || field.Type != SecretRef || field.Effects != EffectResolve|EffectExecute || field.Semantic != SemanticAuthentication {
+		t.Fatalf("cargo.secret_ref contract = %+v, want typed resolve/execute authentication field", field)
+	}
+	if cargo.Capabilities&CapabilityAuth == 0 {
+		t.Fatalf("cargo capabilities = %v, want authentication capability", cargo.Capabilities)
+	}
+	if got := cargo.Requires["secret_ref"]; len(got) != 1 || got[0] != "git" {
+		t.Fatalf("cargo.secret_ref requirements = %v, want git source", got)
+	}
 	for _, name := range []string{"checksum_secret_ref", "signature_secret_ref"} {
 		if _, declared := github.Fields[name]; declared {
 			t.Errorf("github unexpectedly declares %s", name)

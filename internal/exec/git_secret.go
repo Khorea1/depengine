@@ -42,3 +42,26 @@ func (ex *Executor) gitCredentialContext(ctx context.Context, method *config.Met
 	}
 	return WithGitCredential(ctx, credential), nil
 }
+
+// cargoCredentialContext resolves an explicitly declared token only when a
+// Git-backed Cargo candidate is reached for execution.
+func (ex *Executor) cargoCredentialContext(ctx context.Context, method *config.MethodCandidate) (context.Context, error) {
+	if method == nil || method.Kind != "cargo" || method.SecretRef == nil {
+		return ctx, nil
+	}
+	if _, ok := method.Config["git"].(string); !ok {
+		return nil, fmt.Errorf("cargo secret requires a Git source")
+	}
+	resolver := ex.secretResolver
+	if resolver == nil {
+		resolver = secret.EnvResolver{}
+	}
+	credential, err := resolver.Resolve(ctx, plan.SecretReference{
+		Provider: method.SecretRef.Provider,
+		Name:     method.SecretRef.Name,
+	})
+	if err != nil || credential == "" {
+		return nil, fmt.Errorf("cargo secret %s", secretResolutionClass(err, credential))
+	}
+	return WithGitCredential(ctx, credential), nil
+}

@@ -32,6 +32,21 @@ func newGitSecretTestAdapter() *gitSecretTestAdapter {
 	return &gitSecretTestAdapter{testMockAdapter: testMockAdapter{kindValue: "git"}}
 }
 
+type cargoSecretTestAdapter struct {
+	testMockAdapter
+	credential string
+	hasToken   bool
+}
+
+func newCargoSecretTestAdapter() *cargoSecretTestAdapter {
+	return &cargoSecretTestAdapter{testMockAdapter: testMockAdapter{kindValue: "cargo"}}
+}
+
+func (a *cargoSecretTestAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, method *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	a.credential, a.hasToken = GitCredential(ctx)
+	return a.testMockAdapter.InstallResolved(ctx, rn, tool, method, resolved)
+}
+
 func (a *gitSecretTestAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
 	resolved := intent.Clone()
 	return &resolved, nil
@@ -88,6 +103,119 @@ func TestGitCredentialContextFailsClosedAndSanitizesErrors(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCargoCredentialContextResolvesOnlyForGitExecutionAndFailsClosed(t *testing.T) {
+	resolver := &githubSecretTestResolver{results: []githubSecretResult{{value: "cargo-runtime-secret"}}}
+	ex := New()
+	WithSecretResolver(resolver)(ex)
+	method := &config.MethodCandidate{Kind: "cargo", SecretRef: &config.SecretReference{Provider: "env", Name: "PRIVATE_CARGO_TOKEN"}, Config: map[string]any{"git": "https://example.test/private/crate.git"}}
+
+	ctx, err := ex.executionCredentialContext(context.Background(), method)
+	if err != nil {
+		t.Fatalf("executionCredentialContext() error = %v", err)
+	}
+	if got, ok := GitCredential(ctx); !ok || got != "cargo-runtime-secret" {
+		t.Fatalf("GitCredential() = %q, %v", got, ok)
+	}
+	if resolver.calls != 1 || len(resolver.refs) != 1 || resolver.refs[0].Name != "PRIVATE_CARGO_TOKEN" {
+		t.Fatalf("resolved refs = %+v", resolver.refs)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		result githubSecretResult
+	}{
+		{name: "resolver error", result: githubSecretResult{err: errors.New("private resolver detail")}},
+		{name: "missing", result: githubSecretResult{err: secret.ErrSecretMissing}},
+		{name: "empty", result: githubSecretResult{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			failingResolver := &githubSecretTestResolver{results: []githubSecretResult{tc.result}}
+			WithSecretResolver(failingResolver)(ex)
+			failedCtx, failedErr := ex.executionCredentialContext(context.Background(), method)
+			if failedErr == nil || failedCtx != nil {
+				t.Fatalf("executionCredentialContext() = (%v, %v), want fail-closed error", failedCtx, failedErr)
+			}
+			for _, sensitive := range []string{"PRIVATE_CARGO_TOKEN", "private resolver detail", "cargo-runtime-secret"} {
+				if strings.Contains(failedErr.Error(), sensitive) {
+					t.Fatalf("error leaked %q: %v", sensitive, failedErr)
+				}
+			}
+		})
+	}
+}
+
+func TestCargoSecretReferenceIsNotResolvedByStaticPlan(t *testing.T) {
+	resolver := &githubSecretTestResolver{results: []githubSecretResult{{value: "cargo-runtime-secret"}}}
+	ex := New()
+	WithSecretResolver(resolver)(ex)
+	method := &config.MethodCandidate{Kind: "cargo", SecretRef: &config.SecretReference{Provider: "env", Name: "PRIVATE_CARGO_TOKEN"}, Config: map[string]any{"git": "https://example.test/private/crate.git"}}
+	intent, err := candidatePlanIntentErr(&config.Tool{Name: "demo"}, method)
+	if err != nil {
+		t.Fatalf("candidatePlanIntentErr() error = %v", err)
+	}
+	if len(intent.Secrets) != 1 || resolver.calls != 0 {
+		t.Fatalf("static intent secrets = %+v, resolver calls = %d", intent.Secrets, resolver.calls)
+	}
+	reported, mismatch := candidatePlanIntent(&config.Tool{Name: "demo"}, method)
+	if mismatch != "" || reported == nil || len(reported.Secrets) != 0 {
+		t.Fatalf("execution report intent = %+v, mismatch = %q; want secret-free intent", reported, mismatch)
+	}
+	if resolver.calls != 0 {
+		t.Fatalf("static planning resolved credential %d times", resolver.calls)
+	}
+}
+
+func TestCargoSecretIsResolvedAtReachedInstallAndOmittedFromReport(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateDir)
+	resolver := &githubSecretTestResolver{results: []githubSecretResult{{value: "cargo-runtime-secret"}}}
+	adapter := newCargoSecretTestAdapter()
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex)
+	WithSecretResolver(resolver)(ex)
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
+	method := &config.MethodCandidate{
+		Kind:      "cargo",
+		SecretRef: &config.SecretReference{Provider: "env", Name: "PRIVATE_CARGO_TOKEN"},
+		Config:    map[string]any{"git": "https://example.test/private.git", "pkg": "demo"},
+	}
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"cargo"}},
+		Tools:    map[string]*config.Tool{"demo": {Name: "demo", Methods: []*config.MethodCandidate{method}}},
+	}
+
+	report, err := ex.Execute(context.Background(), schema, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolver.calls != 1 || !adapter.hasToken || adapter.credential != "cargo-runtime-secret" {
+		t.Fatalf("resolver calls = %d, install credential = %q (%v)", resolver.calls, adapter.credential, adapter.hasToken)
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sensitive := range []string{"PRIVATE_CARGO_TOKEN", "cargo-runtime-secret"} {
+		if strings.Contains(string(encoded), sensitive) {
+			t.Fatalf("execution report leaked %q: %s", sensitive, encoded)
+		}
+	}
+	if len(report.Tools) != 1 || report.Tools[0].PlanIntent == nil || len(report.Tools[0].PlanIntent.Secrets) != 0 {
+		t.Fatalf("reported plan = %+v, want secret-free intent", report.Tools)
+	}
+	// #nosec G304 -- stateDir is created by t.TempDir for this test.
+	stateBytes, err := os.ReadFile(filepath.Join(stateDir, "depengine", "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sensitive := range []string{"PRIVATE_CARGO_TOKEN", "cargo-runtime-secret", "secret_ref"} {
+		if strings.Contains(string(stateBytes), sensitive) {
+			t.Fatalf("persisted state leaked %q: %s", sensitive, stateBytes)
+		}
 	}
 }
 

@@ -216,8 +216,9 @@ var Contracts = finalizeContracts([]Contract{
 		"source":       {Type: String, NonEmpty: true, Effects: EffectExecute},
 		"architecture": {Type: String, Enum: []string{"x86", "x64"}, Effects: EffectExecute},
 	}), ImplicitDistroFamily: []string{"windows"}, AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "cargo", DefaultOrder: 4, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityRevision | CapabilityArchitecture | CapabilityEnvironmentTarget, Fields: fields(pkgField, map[string]Field{
+	{Kind: "cargo", DefaultOrder: 4, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityRevision | CapabilityArchitecture | CapabilityEnvironmentTarget | CapabilityAuth, Fields: fields(pkgField, map[string]Field{
 		"git":                 {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"secret_ref":          {Type: SecretRef, Effects: EffectResolve | EffectExecute},
 		"version":             {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"registry":            {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 		"branch":              {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
@@ -229,9 +230,10 @@ var Contracts = finalizeContracts([]Contract{
 		"target":              {Type: String, NonEmpty: true, Effects: EffectExecute},
 		"root":                {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 	}), MutuallyExclusive: [][]string{{"git", "version"}, {"git", "registry"}, {"branch", "tag", "rev"}}, Requires: map[string][]string{
-		"branch": {"git"},
-		"tag":    {"git"},
-		"rev":    {"git"},
+		"branch":     {"git"},
+		"tag":        {"git"},
+		"rev":        {"git"},
+		"secret_ref": {"git"},
 	}, AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "go", DefaultOrder: 5, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{
 		"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},

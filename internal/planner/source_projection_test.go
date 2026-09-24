@@ -110,6 +110,46 @@ func TestSourceSecretReferenceFlowsFromSchemaToPlanAndRequiresAuth(t *testing.T)
 	}
 }
 
+func TestCargoGitSecretReferenceProjectsIntoPlanAndRequiresAuth(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "schema.toml")
+	data := `schema_version = 1
+[tools.demo.cargo]
+pkg = "demo"
+git = "https://example.test/private.git"
+secret_ref = { provider = "env", name = "CARGO_TOKEN" }
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	schema, err := config.ParseProjectSchema(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := schema.Tools["demo"]
+	intent, err := planner.BuildCandidateIntent(tool, tool.Methods[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRef := plan.SecretReference{Provider: "env", Name: "CARGO_TOKEN"}
+	if len(intent.Secrets) != 1 || intent.Secrets[0] != wantRef {
+		t.Fatalf("plan secret requirements = %+v, want [%+v]", intent.Secrets, wantRef)
+	}
+	contract, ok := methodkind.Lookup("cargo")
+	if !ok {
+		t.Fatal("cargo contract missing")
+	}
+	missing, err := contract.MissingPlanCapabilities(intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missing&methodkind.CapabilityAuth != 0 {
+		t.Fatalf("missing capabilities = %v, cargo contract should provide auth", methodkind.CapabilityNames(missing))
+	}
+	if _, err := planner.BuildValidatedCandidateIntent(tool, tool.Methods[0], methodkind.CandidateRequirements{}); err != nil {
+		t.Fatalf("validated intent should accept supported cargo auth: %v", err)
+	}
+}
+
 func TestBuildCandidateIntentDeduplicatesSecretRequirements(t *testing.T) {
 	tool := &config.Tool{Name: "demo"}
 	ref := &config.SecretReference{Provider: "env", Name: "CORP_TOKEN"}

@@ -18,6 +18,7 @@ func init() {
 	})
 	RegisterCoverage(PhaseExecute, map[string]Coverage{
 		"github.secret_ref":     {Consumer: "internal/exec/TestInstallResolvedCandidatePassesResolvedGitHubSecretContext", Rationale: "the canonical resolved-plan installer re-resolves and transports the typed token for asset execution"},
+		"cargo.secret_ref":      {Consumer: "internal/exec/TestCargoSecretIsResolvedAtReachedInstallAndOmittedFromReport", Rationale: "the canonical resolved-plan installer resolves the typed Cargo reference only at the execution boundary"},
 		"native.pkg":            {Consumer: "internal/exec/TestNativeAdapterV2PackageFieldChangesExecuteAndVerify", Rationale: "changing the package changes the native install command"},
 		"native.pkg_overrides":  {Consumer: "TestNativePackageOverrideAcrossRuntimeBoundaries", Rationale: "serial and batch installs use the selected clan package"},
 		"winget.pkg":            {Consumer: "internal/exec/TestNativeByManagerWingetV2ExecuteFieldsChangeCommand", Rationale: "changing package identity changes the winget install command"},
@@ -60,6 +61,7 @@ func init() {
 	})
 	registerRuntimeFields(PhaseResolveRuntime, "http", "internal/httpdownload/resolved_install_test.go", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "http", "internal/planner/resolve_effect_test.go", "static planning projects typed secret references into the candidate plan without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
+	registerRuntimeFields(PhaseResolveRuntime, "cargo", "internal/planner/resolve_effect_test.go", "static planning projects the typed Cargo Git reference without resolving its value", "secret_ref")
 	registerRuntimeFields(PhaseResolveRuntime, "github", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "appimage", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "android", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
