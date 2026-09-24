@@ -153,6 +153,14 @@ ripgrep = { cargo = { pkg = "ripgrep", registry = "corp", version = "14.1.1" } }
 
 `cargo.git` is mutually exclusive with `cargo.version` and `cargo.registry`.
 
+Private HTTPS Cargo Git sources may declare
+`secret_ref = { provider = "env", name = "PRIVATE_CARGO_TOKEN" }`. The URL
+must be credential-free HTTPS. depengine uses the resolved value only for an
+origin-scoped authenticated Git clone/fetch into a temporary checkout, then
+runs `cargo install --path` against that checkout without the credential in
+Cargo's environment or argv. An explicit missing or invalid reference fails
+the candidate instead of falling back to ambient credentials.
+
 Cargo also accepts typed build/profile options: `features = ["..."]`,
 `no_default_features = true`, `bins = ["..."]`, `target = "<triple>"`, and
 `root = "<path>"`. `root` is used consistently by install, check, and remove;

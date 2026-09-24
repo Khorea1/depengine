@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"os"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -36,6 +38,10 @@ func (a *CargoAdapter) Install(ctx context.Context, rn run.Runner, tool *config.
 	cmd, err := cargoInstallCommand(tool, mc)
 	if err != nil {
 		return err
+	}
+	if mc != nil && mc.SecretRef != nil {
+		gitURL, _ := mc.Config["git"].(string)
+		return installCargoGitWithCredential(ctx, rn, tool, mc, gitURL)
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return run.CheckResult(res, "cargo: install")
@@ -256,8 +262,97 @@ func (a *CargoAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool 
 	if err != nil {
 		return err
 	}
+	if mc != nil && mc.SecretRef != nil {
+		cfg := cargoResolvedConfig(mc, resolved)
+		source, _ := cfg.Config["git"].(string)
+		return installCargoGitWithCredential(ctx, rn, effectiveTool, cfg, source)
+	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return run.CheckResult(res, "cargo: install")
+}
+
+// installCargoGitWithCredential keeps the credential in Git's per-process
+// environment and installs from the resulting local checkout. Cargo never
+// receives the token, the remote URL, or any authenticated Git configuration.
+func installCargoGitWithCredential(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, source string) error {
+	credential, ok := exec.GitCredential(ctx)
+	if !ok {
+		return errors.New("cargo secret missing")
+	}
+	gitEnv, err := cargoGitCredentialConfig(source, credential)
+	if err != nil {
+		return err
+	}
+	if tool == nil {
+		return errors.New("cargo: tool is required")
+	}
+	cloneDir, err := os.MkdirTemp("", "depengine-cargo-*")
+	if err != nil {
+		return fmt.Errorf("cargo: temp dir: %w", err)
+	}
+	defer func() {
+		_ = os.RemoveAll(cloneDir)
+	}()
+
+	cloneArgs := []string{"clone"}
+	branch, _ := mc.Config["branch"].(string)
+	tag, _ := mc.Config["tag"].(string)
+	rev, _ := mc.Config["rev"].(string)
+	if rev != "" {
+		cloneArgs = append(cloneArgs, "--no-checkout")
+	}
+	if branch != "" {
+		cloneArgs = append(cloneArgs, "--branch", branch)
+	} else if tag != "" {
+		cloneArgs = append(cloneArgs, "--branch", tag)
+	}
+	cloneArgs = append(cloneArgs, source, cloneDir)
+	if err := run.CheckResult(run.RunWithEnv(ctx, rn, gitEnv, []string{credential}, "git", cloneArgs...), "git: clone"); err != nil {
+		return err
+	}
+	if rev != "" {
+		fetchArgs := []string{"-C", cloneDir, "fetch", "origin", rev}
+		if err := run.CheckResult(run.RunWithEnv(ctx, rn, gitEnv, []string{credential}, "git", fetchArgs...), "git: fetch revision"); err != nil {
+			return err
+		}
+		if err := run.CheckResult(rn.Run(ctx, "git", "-C", cloneDir, "checkout", "--detach", "FETCH_HEAD"), "git: checkout revision"); err != nil {
+			return err
+		}
+	}
+
+	args := []string{"install", "--path", cloneDir}
+	args = append(args, cargoInstallOptions(mc)...)
+	if pkg, _ := mc.Config["pkg"].(string); pkg != "" {
+		args = append(args, pkg)
+	}
+	return run.CheckResult(rn.Run(ctx, "cargo", args...), "cargo: install")
+}
+
+func cargoGitCredentialConfig(rawURL, credential string) (map[string]string, error) {
+	if credential == "" || strings.ContainsAny(credential, "\x00\r\n") {
+		return nil, errors.New("cargo: secret_ref requires a valid secret value")
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || !strings.EqualFold(u.Scheme, "https") || u.Host == "" || u.User != nil || u.Opaque != "" || u.Fragment != "" || strings.ContainsAny(rawURL, "\x00\r\n") {
+		return nil, errors.New("cargo: secret_ref requires a credential-free HTTPS URL")
+	}
+	for key := range u.Query() {
+		if run.IsSensitiveQueryKey(key) {
+			return nil, errors.New("cargo: secret_ref requires a credential-free HTTPS URL")
+		}
+	}
+	origin := "https://" + strings.ToLower(u.Host) + "/"
+	return map[string]string{
+		"GIT_CONFIG_COUNT":   "4",
+		"GIT_CONFIG_KEY_0":   "http." + origin + ".extraHeader",
+		"GIT_CONFIG_VALUE_0": "",
+		"GIT_CONFIG_KEY_1":   "http." + origin + ".extraHeader",
+		"GIT_CONFIG_VALUE_1": "Authorization: Bearer " + credential,
+		"GIT_CONFIG_KEY_2":   "http." + origin + ".followRedirects",
+		"GIT_CONFIG_VALUE_2": "false",
+		"GIT_CONFIG_KEY_3":   "credential." + origin + ".helper",
+		"GIT_CONFIG_VALUE_3": "",
+	}, nil
 }
 
 // cargoResolvedConfig overlays the resolved identity onto a copy of the

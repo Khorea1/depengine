@@ -18,7 +18,7 @@ func init() {
 	})
 	RegisterCoverage(PhaseExecute, map[string]Coverage{
 		"github.secret_ref":     {Consumer: "internal/exec/TestInstallResolvedCandidatePassesResolvedGitHubSecretContext", Rationale: "the canonical resolved-plan installer re-resolves and transports the typed token for asset execution"},
-		"cargo.secret_ref":      {Consumer: "internal/exec/TestCargoSecretIsResolvedAtReachedInstallAndOmittedFromReport", Rationale: "the canonical resolved-plan installer resolves the typed Cargo reference only at the execution boundary"},
+		"cargo.secret_ref":      {Consumer: "internal/ecosystem/TestCargoGitSecretPrefetchesAndInstallsLocalCheckout", Rationale: "Cargo execution scopes the resolved token to authenticated Git prefetch and installs from the local checkout without credential transport"},
 		"native.pkg":            {Consumer: "internal/exec/TestNativeAdapterV2PackageFieldChangesExecuteAndVerify", Rationale: "changing the package changes the native install command"},
 		"native.pkg_overrides":  {Consumer: "TestNativePackageOverrideAcrossRuntimeBoundaries", Rationale: "serial and batch installs use the selected clan package"},
 		"winget.pkg":            {Consumer: "internal/exec/TestNativeByManagerWingetV2ExecuteFieldsChangeCommand", Rationale: "changing package identity changes the winget install command"},

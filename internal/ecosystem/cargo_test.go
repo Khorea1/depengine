@@ -2,12 +2,37 @@ package ecosystem
 
 import (
 	"context"
+	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/run"
 )
+
+type cargoCredentialRunner struct {
+	base run.FakeRunner
+	envs []map[string]string
+}
+
+func (r *cargoCredentialRunner) Run(ctx context.Context, name string, args ...string) run.Result {
+	return r.base.Run(ctx, name, args...)
+}
+
+func (r *cargoCredentialRunner) RunWithEnv(ctx context.Context, env map[string]string, sensitive []string, name string, args ...string) run.Result {
+	copyEnv := make(map[string]string, len(env))
+	for key, value := range env {
+		copyEnv[key] = value
+	}
+	r.envs = append(r.envs, copyEnv)
+	return r.base.RunWithEnv(ctx, env, sensitive, name, args...)
+}
+
+func (r *cargoCredentialRunner) LookPath(ctx context.Context, name string) bool {
+	return r.base.LookPath(ctx, name)
+}
 
 func TestCargoPkgFieldControlsInstallCheckAndRemove(t *testing.T) {
 	ctx := context.Background()
@@ -72,6 +97,82 @@ func TestCargoGitFieldFallsBackToToolNameWhenPkgOmitted(t *testing.T) {
 	// In git mode an omitted pkg means cargo should select the repository's
 	// package itself; do not manufacture a positional package from tool.Name.
 	assertLastCargoCall(t, fr, []string{"install", "--git", "https://example.invalid/project.git"})
+}
+
+func TestCargoGitSecretPrefetchesAndInstallsLocalCheckout(t *testing.T) {
+	const source = "https://example.invalid/private/repo.git"
+	const credential = "cargo-runtime-secret" // #nosec G101 -- synthetic test credential
+	runner := &cargoCredentialRunner{base: run.FakeRunner{LookPaths: map[string]bool{"cargo": true}}}
+	method := &config.MethodCandidate{
+		Kind:      "cargo",
+		SecretRef: &config.SecretReference{Provider: "env", Name: "PRIVATE_CARGO_TOKEN"},
+		Config: map[string]any{
+			"git": "https://example.invalid/private/repo.git", "rev": "abc123", "pkg": "crate-name",
+			"features": []string{"tls", "json"}, "target": "x86_64-unknown-linux-musl",
+		},
+	}
+	ctx := exec.WithGitCredential(context.Background(), credential)
+	if err := NewCargoAdapter().Install(ctx, runner, &config.Tool{Name: "crate-name"}, method); err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	if len(runner.envs) != 2 {
+		t.Fatalf("credential env calls = %d, want clone and fetch only", len(runner.envs))
+	}
+	for _, env := range runner.envs {
+		if env["GIT_CONFIG_VALUE_1"] != "Authorization: Bearer "+credential {
+			t.Fatalf("git env missing scoped bearer credential: %#v", env)
+		}
+	}
+	if len(runner.base.Calls) != 5 {
+		t.Fatalf("calls = %#v, want lookup, clone, fetch, checkout, cargo", runner.base.Calls)
+	}
+	clone, fetch, checkout, cargo := runner.base.Calls[1], runner.base.Calls[2], runner.base.Calls[3], runner.base.Calls[4]
+	if clone.Name != "git" || !reflect.DeepEqual(clone.Args[:2], []string{"clone", "--no-checkout"}) || clone.Args[2] != source {
+		t.Fatalf("clone call = %#v", clone)
+	}
+	if fetch.Name != "git" || !reflect.DeepEqual(fetch.Args[2:], []string{"fetch", "origin", "abc123"}) {
+		t.Fatalf("fetch call = %#v", fetch)
+	}
+	if checkout.Name != "git" || !reflect.DeepEqual(checkout.Args[2:], []string{"checkout", "--detach", "FETCH_HEAD"}) {
+		t.Fatalf("checkout call = %#v", checkout)
+	}
+	if cargo.Name != "cargo" || len(cargo.Args) < 4 || cargo.Args[0] != "install" || cargo.Args[1] != "--path" || !strings.HasPrefix(cargo.Args[2], os.TempDir()+"/depengine-cargo-") {
+		t.Fatalf("cargo call = %#v, want install --path local checkout", cargo)
+	}
+	joined := strings.Join(cargo.Args, " ")
+	for _, forbidden := range []string{source, credential, "--git"} {
+		if strings.Contains(joined, forbidden) {
+			t.Fatalf("cargo argv leaked %q: %#v", forbidden, cargo.Args)
+		}
+	}
+	if !strings.Contains(joined, "--features tls,json") || !strings.Contains(joined, "--target x86_64-unknown-linux-musl") || !strings.HasSuffix(joined, "crate-name") {
+		t.Fatalf("cargo options/package not preserved: %#v", cargo.Args)
+	}
+}
+
+func TestCargoGitSecretRejectsUnsafeSourceBeforeGit(t *testing.T) {
+	for _, source := range []string{
+		"http://example.invalid/private.git",
+		"https://user@example.invalid/private.git",
+		"https://example.invalid/private.git?access_token=embedded",
+	} {
+		t.Run(source, func(t *testing.T) {
+			runner := &cargoCredentialRunner{base: run.FakeRunner{LookPaths: map[string]bool{"cargo": true}}}
+			method := &config.MethodCandidate{
+				Kind: "cargo", SecretRef: &config.SecretReference{Provider: "env", Name: "TOKEN"},
+				Config: map[string]any{"git": source},
+			}
+			err := NewCargoAdapter().Install(exec.WithGitCredential(context.Background(), "runtime-token"), runner, &config.Tool{Name: "crate"}, method)
+			if err == nil || !strings.Contains(err.Error(), "credential-free HTTPS") {
+				t.Fatalf("Install() error = %v, want unsafe source rejection", err)
+			}
+			for _, call := range runner.base.Calls {
+				if call.Name == "git" || call.Name == "cargo" {
+					t.Fatalf("unsafe source reached subprocess: %#v", call)
+				}
+			}
+		})
+	}
 }
 
 func TestCargoInstalledVersionUsesPkgField(t *testing.T) {

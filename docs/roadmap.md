@@ -15,8 +15,9 @@ Work on the current execution model comes before adding more installer types.
   for typed `http` primary artifact, explicit checksum, and signature downloads,
   typed GitHub release/API and asset authentication, and origin-scoped Bearer
   authentication for private HTTPS `git` clone/fetch/same-origin recursive
-  submodules. Other authenticated operations still need an explicit credential
-  transport before they can be accepted.
+  submodules plus private HTTPS `cargo.git` prefetch before local Cargo install.
+  Other authenticated operations still need an explicit credential transport
+  before they can be accepted.
 
 ## P1: shared install semantics
 

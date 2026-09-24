@@ -86,6 +86,13 @@ cross-origin forwarding. Without `secret_ref`, Git retains its existing
 credential-helper behavior; an explicit reference never falls back when
 resolution fails.
 
+Git-backed Cargo methods can also use `secret_ref` with a credential-free HTTPS
+`git` URL. depengine performs the authenticated clone and revision fetch first,
+then invokes `cargo install --path` on the temporary local checkout without the
+token-bearing Git environment. This keeps the credential out of Cargo itself,
+including crate build scripts and procedural macros. An explicit reference
+fails closed when it cannot be resolved.
+
 Bearer credentials are retained across same-origin redirects and removed before
 following a cross-origin redirect. The primary artifact credential is never
 implicitly reused for checksum or signature sidecars. A checksum credential is

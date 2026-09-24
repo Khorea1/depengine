@@ -23,7 +23,7 @@ func init() {
 				continue
 			}
 			if contract.Kind == "cargo" && field == "secret_ref" {
-				continue // covered by the executor's reached-candidate credential test
+				continue // covered by the Cargo adapter's authenticated-prefetch execution test
 			}
 			entries[contract.Kind+"."+field] = Coverage{
 				Consumer:  "TestExecuteEffectFieldProbes",
