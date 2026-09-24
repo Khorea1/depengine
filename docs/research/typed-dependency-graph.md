@@ -2,7 +2,7 @@
 
 - Status: research / design proposal
 - Scope: `depengine graph` representation, analysis, and future terminal rendering
-- Implementation status: P1 typed IR plus P2 effective/resolved CLI projections implemented; terminal layout remains pending; see `typed-dependency-graph-implementation-status.md`
+- Implementation status: typed IR plus effective/resolved CLI projections implemented; terminal layout remains pending; see `typed-dependency-graph-implementation-status.md`
 - Naming used in this document: **DPG** = **DePenGine Graph** (project shorthand, not "Program Dependence Graph")
 
 ## Motivation
@@ -905,7 +905,7 @@ FUNCTION AnalyzeForLayout(graph):
 The implementation is incremental and preserves existing behavior before adding
 a new terminal renderer.
 
-P1/P2 status:
+Implementation status:
 
 1. **Done:** introduce `Graph`, `Node`, and typed `Edge`.
 2. **Done:** build one declared IR from merged `config.Tool` values while
