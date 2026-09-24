@@ -219,6 +219,26 @@ secret_ref = { provider = "env", name = "GITHUB_TOKEN" }
 	}
 }
 
+func TestParseGitSecretReference(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "schema.toml")
+	data := `schema_version = 1
+[tools.demo.git]
+url = "https://example.test/private.git"
+secret_ref = { provider = "env", name = "PRIVATE_GIT_TOKEN" }
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	schema, err := ParseProjectSchema(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := schema.Tools["demo"].Methods[0].SecretRef
+	if ref == nil || ref.Provider != "env" || ref.Name != "PRIVATE_GIT_TOKEN" {
+		t.Fatalf("Git secret ref = %+v, want env:PRIVATE_GIT_TOKEN", ref)
+	}
+}
+
 func TestParseArtifactAndTypedOptions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "schema.toml")
 	data := `schema_version = 1

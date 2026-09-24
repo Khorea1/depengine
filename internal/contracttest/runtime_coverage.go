@@ -73,7 +73,7 @@ func init() {
 	registerRuntimeFields(PhaseExecute, "appimage", "internal/httpdownload/appimage_adapter_test.go", "AppImage delegates download and archive execution to the shared HTTP installer", append(common, "url", "repo", "asset", "binary", "entrypoints", "link_dir", "sudo_required", "strip_components", "install_dir", "desktop", "scope")...)
 	registerRuntimeFields(PhaseExecute, "android", "internal/httpdownload/android_adapter_test.go", "Android delegates download and integrity checks to the shared HTTP installer", append(common, "url", "repo", "asset", "sudo_required")...)
 	registerRuntimeFields(PhaseExecute, "msi", "internal/msi/adapter_v2_test.go", "MSI delegates artifact integrity and source handling to HTTP before msiexec", append(common, "url", "repo", "asset")...)
-	registerRuntimeFields(PhaseExecute, "git", "internal/git/adapter_test.go", "Git execution consumes clone, build, ownership, and placement settings", "branch", "tag", "rev", "depth", "submodules", "build", "extract_to", "binary")
+	registerRuntimeFields(PhaseExecute, "git", "internal/git/adapter_test.go", "Git execution transports an explicit credential only to scoped HTTPS Git operations and consumes install settings", "secret_ref", "branch", "tag", "rev", "depth", "submodules", "build", "extract_to", "binary")
 
 	registerRuntimeFields(PhaseVerify, "http", "internal/httpdownload/http_v2_test.go", "observation checks configured payload and launcher locations", "extract_to", "binary", "entrypoints", "link_dir", "scope")
 	registerRuntimeFields(PhaseVerify, "github", "internal/httpdownload/github_v2_test.go", "GitHub observation delegates configured payload checks to HTTP", "extract_to", "binary", "entrypoints", "link_dir", "scope")

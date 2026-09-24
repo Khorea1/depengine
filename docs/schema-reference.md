@@ -174,6 +174,7 @@ ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = [{ run =
 | Field | Required | Description |
 |-------|----------|--------------|
 | `url` | yes | Git repository URL |
+| `secret_ref` | no | Env-backed Bearer credential reference for a credential-free HTTPS URL; scoped to that HTTPS origin for clone, fetch, and recursive submodules. Missing or invalid secrets fail the candidate. |
 | `build` | no | Command `{ run = ["program", "arg", ...] }`, or a list of commands, run in the cloned directory. Legacy strings remain POSIX `sh -c` shorthand. |
 | `branch` | no | Branch to clone; mutually exclusive with `tag` and `rev` |
 | `tag` | no | Tag to clone; mutually exclusive with `branch` and `rev` |
@@ -184,6 +185,16 @@ ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = [{ run =
 | `artifact` | no | File or directory inside the clone to copy to `extract_to`; defaults to the clone root |
 | `binary` | no | Binary name for check/remove; required for removal from shared directories |
 | `managed_paths` | no | Absolute paths owned by the recipe; all must exist for `Check`, and removal deletes only these exact targets |
+
+For example, set `secret_ref = { provider = "env", name = "PRIVATE_GIT_TOKEN" }`
+on a Git method that clones a private HTTPS repository. depengine passes the
+token only through the Git child process environment. It is absent from argv,
+logs, plans, lockfiles, reports, and state. Redirects are disabled for that
+credential-scoped origin to prevent forwarding the token to another origin.
+Typed Git authentication cannot be combined with a `{latest}` URL because that
+placeholder is resolved before execution without access to the runtime secret.
+Without `secret_ref`, Git keeps its existing credential-helper and ambient
+credential behavior.
 
 ### HTTP: download an artifact (deb, zip, binary)
 

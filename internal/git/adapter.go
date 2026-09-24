@@ -219,6 +219,11 @@ func resolveCloneSource(ctx context.Context, rn run.Runner, tool *config.Tool, m
 	if parsed, err := urlpkg.Parse(url); err == nil && (strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https")) && parsed.User != nil {
 		return resolvedCloneSource{}, fmt.Errorf("git: embedded URL credentials are not allowed; use an external credential helper")
 	}
+	if mc.SecretRef != nil {
+		if _, err := credentialConfig(url, "validation-only"); err != nil {
+			return resolvedCloneSource{}, err
+		}
+	}
 
 	source := resolvedCloneSource{URL: url}
 	source.Branch, _ = mc.Config["branch"].(string)
@@ -236,6 +241,9 @@ func resolveCloneSource(ctx context.Context, rn run.Runner, tool *config.Tool, m
 	origURL := source.URL
 	if strings.Contains(origURL, "{latest}") && configuredRefs > 0 {
 		return resolvedCloneSource{}, fmt.Errorf("git: {latest} URL resolution cannot be combined with branch, tag, or rev")
+	}
+	if strings.Contains(origURL, "{latest}") && mc.SecretRef != nil {
+		return resolvedCloneSource{}, fmt.Errorf("git: secret_ref cannot be combined with {latest} URL resolution")
 	}
 
 	resolvedURL, err := ghrelease.ResolveLatest(ctx, source.URL, rn)
@@ -347,6 +355,21 @@ func (a *GitAdapter) installResolvedSource(ctx context.Context, rn run.Runner, t
 	rev := source.Revision
 	resolvedTag := source.ResolvedTag
 
+	var gitEnv map[string]string
+	var sensitive []string
+	if mc.SecretRef != nil {
+		credential, ok := exec.GitCredential(ctx)
+		if !ok {
+			return fmt.Errorf("git secret missing")
+		}
+		var err error
+		gitEnv, err = credentialConfig(url, credential)
+		if err != nil {
+			return err
+		}
+		sensitive = []string{credential}
+	}
+
 	// Determine clone depth (default: shallow). 0 means full history.
 	depth, err := normalizedGitDepth(mc.Config["depth"])
 	if err != nil {
@@ -383,7 +406,7 @@ func (a *GitAdapter) installResolvedSource(ctx context.Context, rn run.Runner, t
 	cloneArgs = append(cloneArgs, url, cloneDir)
 
 	// Run git clone.
-	res := rn.Run(ctx, "git", cloneArgs...)
+	res := runGit(ctx, rn, gitEnv, sensitive, cloneArgs...)
 	if err := run.CheckResult(res, "git: clone"); err != nil {
 		return err
 	}
@@ -393,7 +416,7 @@ func (a *GitAdapter) installResolvedSource(ctx context.Context, rn run.Runner, t
 			fetchArgs = append(fetchArgs, "--depth", depth)
 		}
 		fetchArgs = append(fetchArgs, "origin", rev)
-		if err := run.CheckResult(rn.Run(ctx, "git", fetchArgs...), "git: fetch revision"); err != nil {
+		if err := run.CheckResult(runGit(ctx, rn, gitEnv, sensitive, fetchArgs...), "git: fetch revision"); err != nil {
 			return err
 		}
 		if err := run.CheckResult(rn.Run(ctx, "git", "-C", cloneDir, "checkout", "--detach", "FETCH_HEAD"), "git: checkout revision"); err != nil {
@@ -401,7 +424,7 @@ func (a *GitAdapter) installResolvedSource(ctx context.Context, rn run.Runner, t
 		}
 	}
 	if submodules, _ := mc.Config["submodules"].(bool); submodules {
-		if err := run.CheckResult(rn.Run(ctx, "git", "-C", cloneDir, "submodule", "update", "--init", "--recursive"), "git: submodules"); err != nil {
+		if err := run.CheckResult(runGit(ctx, rn, gitEnv, sensitive, "-C", cloneDir, "submodule", "update", "--init", "--recursive"), "git: submodules"); err != nil {
 			return err
 		}
 	}
@@ -440,6 +463,45 @@ func (a *GitAdapter) installResolvedSource(ctx context.Context, rn run.Runner, t
 	}
 
 	return nil
+}
+
+// credentialConfig carries a Bearer token only in the child environment and
+// scopes it to the source HTTPS origin. The origin root covers same-origin
+// recursive submodules while Git's URL matching excludes other hosts, ports,
+// and schemes. Redirects are disabled for this scoped credential so an HTTP
+// redirect cannot forward it to another origin.
+func credentialConfig(rawURL, credential string) (map[string]string, error) {
+	if credential == "" || strings.ContainsAny(credential, "\x00\r\n") {
+		return nil, fmt.Errorf("git: secret_ref requires a valid secret value")
+	}
+	u, err := urlpkg.Parse(rawURL)
+	if err != nil || !strings.EqualFold(u.Scheme, "https") || u.Host == "" || u.User != nil || u.Opaque != "" || u.Fragment != "" || strings.ContainsAny(rawURL, "\x00\r\n") {
+		return nil, fmt.Errorf("git: secret_ref requires a credential-free HTTPS URL")
+	}
+	for key := range u.Query() {
+		if run.IsSensitiveQueryKey(key) {
+			return nil, fmt.Errorf("git: secret_ref requires a credential-free HTTPS URL")
+		}
+	}
+	origin := "https://" + strings.ToLower(u.Host) + "/"
+	return map[string]string{
+		"GIT_CONFIG_COUNT":   "4",
+		"GIT_CONFIG_KEY_0":   "http." + origin + ".extraHeader",
+		"GIT_CONFIG_VALUE_0": "",
+		"GIT_CONFIG_KEY_1":   "http." + origin + ".extraHeader",
+		"GIT_CONFIG_VALUE_1": "Authorization: Bearer " + credential,
+		"GIT_CONFIG_KEY_2":   "http." + origin + ".followRedirects",
+		"GIT_CONFIG_VALUE_2": "false",
+		"GIT_CONFIG_KEY_3":   "credential." + origin + ".helper",
+		"GIT_CONFIG_VALUE_3": "",
+	}, nil
+}
+
+func runGit(ctx context.Context, rn run.Runner, env map[string]string, sensitive []string, args ...string) run.Result {
+	if len(env) == 0 {
+		return rn.Run(ctx, "git", args...)
+	}
+	return run.RunWithEnv(ctx, rn, env, sensitive, "git", args...)
 }
 
 func parseBuildCommands(raw any) ([][]string, error) {

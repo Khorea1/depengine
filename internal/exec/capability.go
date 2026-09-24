@@ -36,7 +36,7 @@ func candidatePlanIntent(tool *config.Tool, method *config.MethodCandidate) (*pl
 	intent, err := candidatePlanIntentErr(tool, method)
 	// Static planner APIs retain typed references, but execution reports must
 	// not expose even the environment-variable name used to locate a secret.
-	if intent != nil && method != nil && method.Kind == "github" {
+	if intent != nil && method != nil && (method.SecretRef != nil || method.ChecksumSecretRef != nil || method.SignatureSecretRef != nil) {
 		intent.Secrets = nil
 	}
 	if err != nil {

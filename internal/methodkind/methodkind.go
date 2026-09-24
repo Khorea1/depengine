@@ -317,8 +317,9 @@ var Contracts = finalizeContracts([]Contract{
 		"scope":       artifactScopeField["scope"],
 	}), SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: appImageArtifactContract, Checksum: remoteChecksumContract},
 	{Kind: "android", DefaultOrder: 32, Fields: withoutFields(downloadFields, "extract_to", "binary", "strip_components", "entrypoints", "link_dir"), SourceAlternatives: artifactSourceAlternatives, Artifact: androidArtifactContract, Checksum: remoteChecksumContract},
-	{Kind: "git", DefaultOrder: 33, Capabilities: CapabilityArbitraryCode | CapabilityRevision, Fields: map[string]Field{
+	{Kind: "git", DefaultOrder: 33, Capabilities: CapabilityArbitraryCode | CapabilityRevision | CapabilityAuth, Fields: map[string]Field{
 		"url":           {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"secret_ref":    {Type: SecretRef, Effects: EffectResolve | EffectExecute},
 		"branch":        {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 		"tag":           {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 		"rev":           {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},

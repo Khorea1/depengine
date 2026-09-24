@@ -13,9 +13,10 @@ Work on the current execution model comes before adding more installer types.
   resolution now supports env-backed credentials for Git-backed `brew-tap` and
   `scoop-bucket` source preparation plus request-scoped env-backed Bearer tokens
   for typed `http` primary artifact, explicit checksum, and signature downloads,
-  plus typed GitHub release/API and asset authentication. Other authenticated
-  operations still need an explicit credential transport before they can be
-  accepted.
+  typed GitHub release/API and asset authentication, and origin-scoped Bearer
+  authentication for private HTTPS `git` clone/fetch/same-origin recursive
+  submodules. Other authenticated operations still need an explicit credential
+  transport before they can be accepted.
 
 ## P1: shared install semantics
 

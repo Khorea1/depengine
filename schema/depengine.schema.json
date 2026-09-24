@@ -2272,7 +2272,7 @@
               }
             }
           ],
-          "description": "Method capabilities: arbitrary-code, revision, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: arbitrary-code, revision, source-mutation, auth, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2372,6 +2372,9 @@
             "rev": {
               "minLength": 1,
               "type": "string"
+            },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
             },
             "sources": {
               "items": {
@@ -6839,7 +6842,7 @@
               }
             }
           ],
-          "description": "Method capabilities: arbitrary-code, revision, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: arbitrary-code, revision, source-mutation, auth, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6936,6 +6939,9 @@
             "rev": {
               "minLength": 1,
               "type": "string"
+            },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
             },
             "sources": {
               "items": {

@@ -1,8 +1,10 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -10,9 +12,24 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
+
+type credentialRecordingRunner struct {
+	*run.FakeRunner
+	environments []map[string]string
+}
+
+func (r *credentialRecordingRunner) RunWithEnv(ctx context.Context, env map[string]string, _ []string, name string, args ...string) run.Result {
+	copyEnv := make(map[string]string, len(env))
+	for key, value := range env {
+		copyEnv[key] = value
+	}
+	r.environments = append(r.environments, copyEnv)
+	return r.Run(ctx, name, args...)
+}
 
 func TestGitAdapterAvailable(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 0}
@@ -138,6 +155,113 @@ func TestGitAdapterRejectsEmbeddedCredentialsBeforeClone(t *testing.T) {
 	}
 	if len(fr.Calls) != 0 {
 		t.Fatalf("credential-bearing URL reached subprocess argv: %+v", fr.Calls)
+	}
+}
+
+func TestGitSecretRefUsesScopedEnvironmentForAllNetworkOperations(t *testing.T) {
+	const credential = "git-secret-sentinel"
+	runner := &credentialRecordingRunner{FakeRunner: &run.FakeRunner{ExitCode: 0}}
+	var logs bytes.Buffer
+	loggedRunner := run.NewLoggingRunner(runner, slog.New(slog.NewTextHandler(&logs, nil)))
+	method := &config.MethodCandidate{
+		SecretRef: &config.SecretReference{Provider: "env", Name: "GIT_TOKEN"},
+		Config: map[string]any{
+			"url":        "https://Code.Example.test/org/repo.git",
+			"rev":        "deadbeef",
+			"submodules": true,
+			"build":      map[string]any{"run": []any{"make"}},
+		},
+	}
+	ctx := exec.WithGitCredential(context.Background(), credential)
+	if err := NewGitAdapter().Install(ctx, loggedRunner, &config.Tool{Name: "private"}, method); err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	if got, want := len(runner.environments), 3; got != want {
+		t.Fatalf("credential environment calls = %d, want clone/fetch/submodule (%d); calls=%+v", got, want, runner.Calls)
+	}
+	for i, env := range runner.environments {
+		if env["GIT_CONFIG_COUNT"] != "4" || env["GIT_CONFIG_KEY_0"] != "http.https://code.example.test/.extraHeader" || env["GIT_CONFIG_VALUE_0"] != "" {
+			t.Fatalf("environment %d is not scoped to the HTTPS origin: %+v", i, env)
+		}
+		if env["GIT_CONFIG_KEY_1"] != "http.https://code.example.test/.extraHeader" || env["GIT_CONFIG_VALUE_1"] != "Authorization: Bearer "+credential {
+			t.Fatalf("environment %d has no scoped Bearer header: %+v", i, env)
+		}
+		if env["GIT_CONFIG_KEY_2"] != "http.https://code.example.test/.followRedirects" || env["GIT_CONFIG_VALUE_2"] != "false" {
+			t.Fatalf("environment %d does not block credential forwarding through redirects: %+v", i, env)
+		}
+		if env["GIT_CONFIG_KEY_3"] != "credential.https://code.example.test/.helper" || env["GIT_CONFIG_VALUE_3"] != "" {
+			t.Fatalf("environment %d does not disable ambient helpers for the explicit origin: %+v", i, env)
+		}
+	}
+	if len(runner.Calls) != 5 || runner.Calls[2].Args[2] != "checkout" || runner.Calls[3].Name != "git" || runner.Calls[4].Name != "make" {
+		t.Fatalf("expected authenticated clone/fetch/submodule with local checkout and unauthenticated build, calls=%+v", runner.Calls)
+	}
+	for _, call := range runner.Calls {
+		if strings.Contains(strings.Join(call.Args, " "), credential) {
+			t.Fatalf("credential appeared in argv: %+v", call)
+		}
+	}
+	if strings.Contains(logs.String(), credential) {
+		t.Fatalf("credential appeared in subprocess logs: %s", logs.String())
+	}
+}
+
+func TestGitSecretRefFailsClosedWithoutCredentialOrHTTPSURL(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		url  string
+		ctx  context.Context
+	}{
+		{name: "missing runtime credential", url: "https://example.test/repo.git", ctx: context.Background()},
+		{name: "http", url: "http://example.test/repo.git", ctx: exec.WithGitCredential(context.Background(), "token")},
+		{name: "ssh", url: "ssh://git@example.test/repo.git", ctx: exec.WithGitCredential(context.Background(), "token")},
+		{name: "userinfo", url: "https://user@example.test/repo.git", ctx: exec.WithGitCredential(context.Background(), "token")},
+		{name: "sensitive query", url: "https://example.test/repo.git?access_token=bad", ctx: exec.WithGitCredential(context.Background(), "token")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &credentialRecordingRunner{FakeRunner: &run.FakeRunner{ExitCode: 0}}
+			method := &config.MethodCandidate{
+				SecretRef: &config.SecretReference{Provider: "env", Name: "GIT_TOKEN"},
+				Config:    map[string]any{"url": tt.url},
+			}
+			err := NewGitAdapter().Install(tt.ctx, runner, &config.Tool{Name: "private"}, method)
+			if err == nil {
+				t.Fatal("Install() unexpectedly succeeded")
+			}
+			if len(runner.Calls) != 0 || len(runner.environments) != 0 {
+				t.Fatalf("Git was invoked after fail-closed validation: calls=%+v", runner.Calls)
+			}
+			if strings.Contains(err.Error(), "token") || strings.Contains(err.Error(), "bad") {
+				t.Fatalf("error leaked credential material: %v", err)
+			}
+		})
+	}
+}
+
+func TestGitSecretRefRejectsLatestURLResolution(t *testing.T) {
+	method := &config.MethodCandidate{
+		SecretRef: &config.SecretReference{Provider: "env", Name: "GIT_TOKEN"},
+		Config: map[string]any{
+			"url": "https://example.test/releases/{latest}/repo.git",
+		},
+	}
+	err := NewGitAdapter().Install(exec.WithGitCredential(context.Background(), "token"), &run.FakeRunner{ExitCode: 0}, &config.Tool{Name: "private"}, method)
+	if err == nil || !strings.Contains(err.Error(), "secret_ref cannot be combined with {latest}") {
+		t.Fatalf("Install() error = %v, want explicit {latest} rejection", err)
+	}
+}
+
+func TestGitWithoutSecretRefKeepsRunnerCredentialBehavior(t *testing.T) {
+	runner := &credentialRecordingRunner{FakeRunner: &run.FakeRunner{ExitCode: 0}}
+	method := &config.MethodCandidate{Config: map[string]any{"url": "https://example.test/repo.git"}}
+	if err := NewGitAdapter().Install(context.Background(), runner, &config.Tool{Name: "public"}, method); err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	if len(runner.environments) != 0 {
+		t.Fatalf("credential-free Git install changed child environment: %+v", runner.environments)
+	}
+	if len(runner.Calls) != 1 || runner.Calls[0].Name != "git" || runner.Calls[0].Args[0] != "clone" {
+		t.Fatalf("calls = %+v, want ordinary git clone", runner.Calls)
 	}
 }
 
