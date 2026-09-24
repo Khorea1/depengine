@@ -26,7 +26,7 @@ The research proposal in `docs/research/typed-dependency-graph.md` identified th
 - context-driven effective projection that evaluates guards and omits inactive edges;
 - context-driven resolved projection that filters method edges to the exact selected candidate before evaluating candidate guards;
 - CLI config/platform guard adapter backed by the canonical `Condition.Match` semantics;
-- exact candidate identity retained in explain/execution attempts instead of reconstructing identity from kind/label;
+- exact candidate identity retained in explain attempts instead of reconstructing identity from kind/label;
 - read-only resolved-candidate selection reused from `ExplainTool`, including correct fail-closed behavior when a synthesized winning candidate has no declared ordinal;
 - `depengine graph --view declared|effective|resolved`, with `declared` preserving the existing host-independent default;
 - compatibility wrappers for existing graph APIs;
