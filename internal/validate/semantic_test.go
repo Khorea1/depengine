@@ -187,6 +187,78 @@ func TestValidateMalformedURLs_WithPlaceholder(t *testing.T) {
 	}
 }
 
+func TestValidateAuthenticatedArtifactURLsRequireProtectedTransport(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind, field, raw string
+		ref                    func(*config.MethodCandidate)
+	}{
+		{
+			name: "http artifact", kind: "http", field: "url", raw: "http://example.com/tool.tar.gz",
+			ref: func(method *config.MethodCandidate) { method.SecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"} },
+		},
+		{
+			name: "appimage artifact", kind: "appimage", field: "url", raw: "http://example.com/tool.AppImage",
+			ref: func(method *config.MethodCandidate) { method.SecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"} },
+		},
+		{
+			name: "android artifact", kind: "android", field: "url", raw: "http://example.com/tool.apk",
+			ref: func(method *config.MethodCandidate) { method.SecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"} },
+		},
+		{
+			name: "msi artifact", kind: "msi", field: "url", raw: "http://example.com/tool.msi",
+			ref: func(method *config.MethodCandidate) { method.SecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"} },
+		},
+		{
+			name: "checksum sidecar", kind: "http", field: "checksum_url", raw: "http://example.com/tool.sha256",
+			ref: func(method *config.MethodCandidate) { method.ChecksumSecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"} },
+		},
+		{
+			name: "signature sidecar", kind: "http", field: "signature_url", raw: "http://example.com/tool.sig",
+			ref: func(method *config.MethodCandidate) { method.SignatureSecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"} },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := map[string]any{"url": "https://example.com/tool.tar.gz", tc.field: tc.raw}
+			if tc.field == "url" {
+				cfg["url"] = tc.raw
+			}
+			if tc.kind == "msi" {
+				cfg["product_name"] = "Tool"
+			}
+			method := mc(tc.kind, nil, cfg)
+			tc.ref(method)
+			schema := &config.Schema{Tools: map[string]*config.Tool{
+				"app": tool("app", []*config.MethodCandidate{method}, nil),
+			}}
+			r := validateMalformedURLs(schema)
+			if !r.HasErrors() {
+				t.Fatal("expected authenticated plaintext URL to be rejected")
+			}
+			found := false
+			for _, validationErr := range r.Errors {
+				if strings.HasSuffix(validationErr.Field, "."+tc.field) && validationErr.Code == ErrInvalidValue &&
+					strings.Contains(validationErr.Message, "must use HTTPS") {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("validation errors = %+v, want HTTPS error for %s", r.Errors, tc.field)
+			}
+		})
+	}
+}
+
+func TestValidateAuthenticatedArtifactURLsAllowLoopbackHTTP(t *testing.T) {
+	method := mc("http", nil, map[string]any{"url": "http://127.0.0.1:8080/tool.tar.gz"})
+	method.SecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"}
+	schema := &config.Schema{Tools: map[string]*config.Tool{
+		"app": tool("app", []*config.MethodCandidate{method}, nil),
+	}}
+	if r := validateMalformedURLs(schema); r.HasErrors() {
+		t.Fatalf("loopback authenticated URL rejected: %+v", r.Errors)
+	}
+}
+
 func TestValidateMalformedURLs_NonHTTPGitKind(t *testing.T) {
 	// native and cargo don't need url validation.
 	s := &config.Schema{
