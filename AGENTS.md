@@ -10,7 +10,7 @@ Primary sources of truth:
 - `docs/architecture.md`: package boundaries and execution flow.
 - `docs/schema-reference.md` and `docs/specs/`: schema and compatibility contracts.
 - `docs/support-boundary.md`: supported artifact/lockfile boundaries.
-- `go.mod`, `Makefile`, and CI: toolchain and validation.
+- `go.mod`, `.golangci.yml`, `.goreleaser.yaml`, and CI: toolchain, release, and validation configuration.
 - `schema.toml`: project dependency intent.
 - `~/.config/depengine/manifest.toml`: operator-local installation knowledge.
 
