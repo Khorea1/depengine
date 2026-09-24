@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -109,5 +111,21 @@ func TestGraphProjectionRequirementsAreDemandDriven(t *testing.T) {
 	}
 	if _, ok := candidateTools["app"]; !ok || len(candidateTools) != 1 {
 		t.Fatalf("candidate tools = %v, want only app", candidateTools)
+	}
+}
+
+
+func TestResolvedGraphCandidatesPropagatesCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	schema := &config.Schema{
+		Tools: map[string]*config.Tool{
+			"app": {Name: "app"},
+		},
+	}
+	_, err := resolvedGraphCandidates(ctx, schema, &engine.Facts{}, map[string]struct{}{"app": {}})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("resolvedGraphCandidates error = %v, want context.Canceled", err)
 	}
 }
