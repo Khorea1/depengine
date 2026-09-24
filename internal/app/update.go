@@ -29,6 +29,7 @@ func newUpdateCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "update",
+		Aliases: []string{"lock"},
 		Short:   ifPT("Resolver e fixar versões em depengine.lock", "Resolve and pin versions into depengine.lock"),
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
