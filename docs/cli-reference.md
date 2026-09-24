@@ -143,7 +143,7 @@ Install tools from schema.toml
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
 | `--only <string>` | local | `` | only install specific tool |
 | `--profile <string>` | local | `` | only install tools with matching tag (e.g. minimal,desktop,server) |
-| `--quiet` | local | `false` | suppress per-tool status lines; show only final summary |
+| `--quiet` | local | `false` | suppress live per-tool status lines; show final per-tool report |
 | `--schema <string>` | local | `schema.toml` | path to schema.toml |
 | `--skip <string>` | local | `` | skip specific tools (comma-separated) |
 | `--sort-by <string>` | local | `` | sort output by: name, status, method |
