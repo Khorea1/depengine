@@ -12,6 +12,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/ghrelease"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -59,6 +60,18 @@ func TestGoDownloaderDownloadWithBearerRejectsRemotePlainHTTP(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "runtime-only-sentinel") {
 		t.Fatalf("transport error leaked credential: %v", err)
+	}
+}
+
+func TestGoDownloaderImplicitGitHubTokenRejectsRemotePlainHTTP(t *testing.T) {
+	const credential = "implicit-github-sentinel"
+	ctx := ghrelease.WithGithubToken(context.Background(), credential)
+	err := NewGoDownloader(&run.FakeRunner{}).Download(ctx, "http://github.com/owner/repo/file", "unused")
+	if err == nil || !strings.Contains(err.Error(), "must use HTTPS") {
+		t.Fatalf("Download() error = %v, want HTTPS transport rejection", err)
+	}
+	if strings.Contains(err.Error(), credential) {
+		t.Fatalf("transport error leaked GitHub credential: %v", err)
 	}
 }
 
