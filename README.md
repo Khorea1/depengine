@@ -159,7 +159,8 @@ private HTTPS `git` methods, Git-backed Cargo sources, container image pulls,
 and HTTP-backed artifact methods (`http`, `appimage`, `android`, and `msi`) can
 declare typed env-backed secret references so the credential is part of project
 intent without storing its value. HTTP-backed artifact credentials are scoped to the
-specific primary/checksum/signature request. Git uses its value as a scoped
+specific primary/checksum/signature request and require HTTPS for remote URLs
+(plain HTTP is allowed only on loopback). Git uses its value as a scoped
 Bearer token for clone, fetch, and same-origin recursive submodules. Cargo Git
 sources are prefetched with the same scoped transport, then installed from the
 local checkout so Cargo and crate build scripts do not receive the credential.

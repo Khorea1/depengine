@@ -3,6 +3,7 @@ package artifact
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 )
@@ -66,6 +67,31 @@ func ValidateURL(raw string, allowedSchemes []string) error {
 		}
 	}
 	return fmt.Errorf("unsupported URL scheme %q", parsed.Scheme)
+}
+
+// ValidateAuthenticatedURL verifies that an HTTP credential will only be sent
+// over TLS. Plain HTTP is permitted only for the local loopback interface,
+// which keeps local test/development registries usable without exposing a
+// credential on the network.
+func ValidateAuthenticatedURL(raw string) error {
+	if err := ValidateURL(raw, []string{"http", "https"}); err != nil {
+		return err
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("malformed authenticated URL")
+	}
+	if strings.EqualFold(parsed.Scheme, "https") {
+		return nil
+	}
+	host := parsed.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return nil
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return nil
+	}
+	return fmt.Errorf("authenticated URL must use HTTPS; plain HTTP is allowed only for loopback")
 }
 
 func requiresNetworkHost(scheme string) bool {

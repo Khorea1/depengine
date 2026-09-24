@@ -27,6 +27,28 @@ func TestValidateURL(t *testing.T) {
 	}
 }
 
+func TestValidateAuthenticatedURL(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		raw     string
+		wantErr bool
+	}{
+		{name: "https", raw: "https://example.com/private.tar.gz"},
+		{name: "localhost", raw: "http://localhost:8080/private.tar.gz"},
+		{name: "ipv4 loopback", raw: "http://127.0.0.1:8080/private.tar.gz"},
+		{name: "ipv6 loopback", raw: "http://[::1]:8080/private.tar.gz"},
+		{name: "remote plaintext", raw: "http://example.com/private.tar.gz", wantErr: true},
+		{name: "embedded credentials", raw: "https://user:pass@example.com/private.tar.gz", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateAuthenticatedURL(tc.raw)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("ValidateAuthenticatedURL(%q) error = %v, wantErr %v", tc.raw, err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateURLNetworkSchemesRequireHost(t *testing.T) {
 	for _, tc := range []struct {
 		raw     string
