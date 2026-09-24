@@ -2,10 +2,12 @@ package ecosystem
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -320,12 +322,62 @@ func installCargoGitWithCredential(ctx context.Context, rn run.Runner, tool *con
 		}
 	}
 
-	args := []string{"install", "--path", cloneDir}
-	args = append(args, cargoInstallOptions(mc)...)
+	installPath := cloneDir
 	if pkg, _ := mc.Config["pkg"].(string); pkg != "" {
-		args = append(args, pkg)
+		installPath, err = cargoCheckoutPackagePath(ctx, rn, cloneDir, pkg)
+		if err != nil {
+			return err
+		}
 	}
+	args := []string{"install", "--path", installPath}
+	args = append(args, cargoInstallOptions(mc)...)
 	return run.CheckResult(rn.Run(ctx, "cargo", args...), "cargo: install")
+}
+
+type cargoMetadata struct {
+	Packages []struct {
+		Name         string `json:"name"`
+		ManifestPath string `json:"manifest_path"`
+	} `json:"packages"`
+}
+
+// cargoCheckoutPackagePath preserves `cargo install --git URL crate` package
+// selection after an authenticated source has been cloned locally. Cargo's
+// --path form accepts only a path, not a trailing crate argument, so resolve
+// the requested workspace member to its manifest directory first.
+func cargoCheckoutPackagePath(ctx context.Context, rn run.Runner, checkoutDir, pkg string) (string, error) {
+	manifest := filepath.Join(checkoutDir, "Cargo.toml")
+	res := rn.Run(ctx, "cargo", "metadata", "--format-version", "1", "--no-deps", "--manifest-path", manifest)
+	if err := run.CheckResult(res, "cargo: metadata"); err != nil {
+		return "", err
+	}
+	var metadata cargoMetadata
+	if err := json.Unmarshal(res.Stdout, &metadata); err != nil {
+		return "", fmt.Errorf("cargo: parse metadata: %w", err)
+	}
+	for _, candidate := range metadata.Packages {
+		if candidate.Name != pkg || candidate.ManifestPath == "" {
+			continue
+		}
+		packageDir := filepath.Dir(candidate.ManifestPath)
+		checkoutAbs, err := filepath.Abs(checkoutDir)
+		if err != nil {
+			return "", fmt.Errorf("cargo: resolve checkout path: %w", err)
+		}
+		packageAbs, err := filepath.Abs(packageDir)
+		if err != nil {
+			return "", fmt.Errorf("cargo: resolve package path: %w", err)
+		}
+		relative, err := filepath.Rel(checkoutAbs, packageAbs)
+		if err != nil {
+			return "", fmt.Errorf("cargo: validate package path: %w", err)
+		}
+		if relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
+			return "", fmt.Errorf("cargo: package %q resolves outside authenticated checkout", pkg)
+		}
+		return packageAbs, nil
+	}
+	return "", fmt.Errorf("cargo: package %q not found in authenticated git checkout", pkg)
 }
 
 func cargoGitCredentialConfig(rawURL, credential string) (map[string]string, error) {
