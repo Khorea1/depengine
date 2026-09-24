@@ -175,6 +175,27 @@ func (a *AsdfAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 	return plan.Observation{Presence: plan.PresenceAbsent}, nil
 }
 
+// InstalledVersion reports an exact installed version only when the same
+// observation used for desired-state verification can prove it. Unpinned
+// asdf/mise installs deliberately return an empty version: their list output
+// establishes presence but does not provide one portable selected-version
+// contract across both backends.
+func (a *AsdfAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (string, error) {
+	observation, err := a.Observe(ctx, rn, tool, mc)
+	if err != nil {
+		return "", err
+	}
+	if observation.Presence != plan.PresencePresent {
+		return "", nil
+	}
+	for _, field := range observation.KnownFields {
+		if field == plan.FieldVersion {
+			return observation.Identity.Version, nil
+		}
+	}
+	return "", nil
+}
+
 func (a *AsdfAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *config.Tool, _ *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
 	if rn == nil {
 		return errors.New("asdf: runner is required")
@@ -250,3 +271,4 @@ func (a *AsdfAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandida
 }
 
 var _ exec.AdapterV2 = (*AsdfAdapter)(nil)
+var _ exec.Versioner = (*AsdfAdapter)(nil)
