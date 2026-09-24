@@ -210,6 +210,7 @@ func (ex *Executor) attemptMethod(toolCtx context.Context, tool *config.Tool, me
 		ex.gateAdapterAvailable,
 		ex.resolveConcretePlan,
 		ex.gateAlreadyInstalled,
+		ex.runCandidatePreinstall,
 		ex.prepareCandidate,
 		ex.installCandidate,
 	} {
@@ -394,7 +395,7 @@ func recordedResult(report *ExecReport, toolName string) *ToolResult {
 // executeLevelParallel runs all tools in a topological level concurrently,
 // limiting concurrency to ex.maxJobs. Results are collected thread-safely
 // via recordToolResult.
-func (ex *Executor) executeLevelParallel(ctx context.Context, s *config.Schema, level []string, report *ExecReport, preinstallDone map[string]bool, resolutions map[string]*candidateResolutionSeed) {
+func (ex *Executor) executeLevelParallel(ctx context.Context, s *config.Schema, level []string, report *ExecReport, resolutions map[string]*candidateResolutionSeed) {
 	toolCh := make(chan string, len(level))
 	resultCh := make(chan ToolResult, len(level))
 
@@ -421,9 +422,6 @@ func (ex *Executor) executeLevelParallel(ctx context.Context, s *config.Schema, 
 					continue
 				}
 				result := ex.executeToolWithResolution(ctx, tool, resolutions[toolName])
-				if preinstallDone[toolName] {
-					result.PreinstallDone = true
-				}
 				resultCh <- result
 			}
 		}()

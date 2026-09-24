@@ -262,6 +262,30 @@ func (ex *Executor) recheckPostPrepareAvailability(ac *candidateAttempt, result 
 	return proceed
 }
 
+// runCandidatePreinstall executes a tool-level pre-install hook only after a
+// concrete candidate has survived static, adapter, host-compatibility, and
+// already-installed gates. It stays before source/prerequisite preparation so
+// existing pre-install ordering is preserved while no-op candidates skip it.
+func (ex *Executor) runCandidatePreinstall(ac *candidateAttempt, result *ToolResult) attemptOutcome {
+	if len(ac.tool.PreInstall) == 0 || result.PreinstallDone {
+		return proceed
+	}
+	preCtx, preCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
+	err := ex.runPreinstall(preCtx, ac.tool)
+	preCancel()
+	if err == nil {
+		if !ex.dryRun {
+			result.PreinstallDone = true
+		}
+		return proceed
+	}
+
+	detail := fmt.Sprintf("pre-install: %v", err)
+	ex.failCandidate(ac, result, detail)
+	ex.logWarn(ac.toolCtx, "preinstall", "tool", ac.tool.Name, "method", ac.displayKind, "error", detail)
+	return finishTool
+}
+
 // requireMethodPrerequisites installs lazy method.requires edges. They are
 // mutations too, so they run only after the candidate has survived every
 // availability gate that can be answered before the target install.

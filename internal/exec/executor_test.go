@@ -1732,6 +1732,69 @@ func TestExecutorPreInstallSuccess(t *testing.T) {
 	}
 }
 
+func TestExecutorPreInstallDoesNotRunForAlreadySatisfiedCandidate(t *testing.T) {
+	mock := &testMockAdapter{
+		kindValue:     "native",
+		availableFunc: func() bool { return true },
+		checkFunc:     func(string) bool { return true },
+	}
+	fake := &run.FakeRunner{ExitCode: 0}
+	ex := New()
+	WithAllowArbitraryCode()(ex)
+	WithRunner(fake)(ex)
+	WithAdapters(mock)(ex)
+
+	s := mockSchema("tool1")
+	s.Tools["tool1"].PreInstall = []config.Hook{{Run: []string{"echo", "preparing"}}}
+
+	report, err := ex.Execute(context.Background(), s, "arch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusAlready {
+		t.Fatalf("result = %+v, want already installed", report.Tools)
+	}
+	if report.Tools[0].PreinstallDone {
+		t.Fatal("pre-install must not be marked done for an already-satisfied candidate")
+	}
+	for _, call := range fake.Calls {
+		if call.Name == "echo" {
+			t.Fatalf("pre-install ran for an already-satisfied candidate: %+v", fake.Calls)
+		}
+	}
+}
+
+func TestExecutorPreInstallDoesNotRunForUnavailableCandidate(t *testing.T) {
+	mock := &testMockAdapter{
+		kindValue:     "native",
+		availableFunc: func() bool { return false },
+	}
+	fake := &run.FakeRunner{ExitCode: 0}
+	ex := New()
+	WithAllowArbitraryCode()(ex)
+	WithRunner(fake)(ex)
+	WithAdapters(mock)(ex)
+
+	s := mockSchema("tool1")
+	s.Tools["tool1"].PreInstall = []config.Hook{{Run: []string{"echo", "preparing"}}}
+
+	report, err := ex.Execute(context.Background(), s, "arch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusSkippedUnavailable {
+		t.Fatalf("result = %+v, want unavailable candidate", report.Tools)
+	}
+	if report.Tools[0].PreinstallDone {
+		t.Fatal("pre-install must not be marked done for an unavailable candidate")
+	}
+	for _, call := range fake.Calls {
+		if call.Name == "echo" {
+			t.Fatalf("pre-install ran for an unavailable candidate: %+v", fake.Calls)
+		}
+	}
+}
+
 func TestExecutorPreInstallFailure(t *testing.T) {
 	mock := &testMockAdapter{
 		kindValue:     "native",
