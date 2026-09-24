@@ -75,7 +75,19 @@ func TestCargoAdapterV2ResolveRejectsBadInput(t *testing.T) {
 func TestCargoAdapterV2ObserveReportsInstalledVersion(t *testing.T) {
 	adapter := NewCargoAdapter()
 	tool := &config.Tool{Name: "friendly-name"}
-	mc := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"pkg": "crate-name", "version": "1.2.3"}}
+	mc := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"pkg": "crate-name", "version": "v1.2.3"}}
+
+	intent, err := planner.BuildCandidateIntent(tool, mc)
+	if err != nil {
+		t.Fatalf("BuildCandidateIntent() error = %v", err)
+	}
+	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
+	if err != nil {
+		t.Fatalf("ResolvePlan() error = %v", err)
+	}
+	if resolved.Identity.Version != "v1.2.3" {
+		t.Fatalf("resolved version = %q, want planner spelling v1.2.3", resolved.Identity.Version)
+	}
 
 	observation, err := adapter.Observe(context.Background(), cargoV2Runner("crate-name v1.2.3:\n    crate-name\n"), tool, mc)
 	if err != nil {
@@ -83,14 +95,14 @@ func TestCargoAdapterV2ObserveReportsInstalledVersion(t *testing.T) {
 	}
 	want := plan.Observation{
 		Presence:    plan.PresencePresent,
-		Identity:    plan.ObservedIdentity{Package: "crate-name", Version: "1.2.3"},
+		Identity:    plan.ObservedIdentity{Package: "crate-name", Version: "v1.2.3"},
 		KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion},
 	}
 	if !reflect.DeepEqual(observation, want) {
 		t.Fatalf("Observe() = %#v, want %#v", observation, want)
 	}
 
-	if result := plan.Reconcile(plan.ResolvedIdentity{Package: "crate-name", Version: "1.2.3"}, observation); result.State != plan.StateSatisfied {
+	if result := plan.Reconcile(resolved.Identity, observation); result.State != plan.StateSatisfied {
 		t.Fatalf("Reconcile() state = %q, want %q (result = %#v)", result.State, plan.StateSatisfied, result)
 	}
 }
