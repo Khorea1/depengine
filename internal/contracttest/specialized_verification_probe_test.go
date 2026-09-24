@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -22,7 +23,22 @@ func TestSpecializedVerificationFieldProbes(t *testing.T) {
 			requireProbeStates(t, adapter, runner, [2]plan.ResolvedIdentity{{Package: "example.org/cmd/tool-a"}, {Package: "example.org/cmd/tool-b"}}, methods)
 		})
 		t.Run("version", func(t *testing.T) {
-			runner := &specializedRunner{paths: map[string]bool{"go": true, "tool-a": true}, responses: map[string]string{"tool-a --version": "tool-a version v1.2.3\n"}}
+			binDir := t.TempDir()
+			t.Setenv("GOBIN", binDir)
+			target := filepath.Join(binDir, "tool-a")
+			if runtime.GOOS == "windows" {
+				target += ".exe"
+			}
+			buildInfo := strings.Join([]string{
+				target + ": go1.27.1",
+				"\tpath\texample.org/cmd/tool-a",
+				"\tmod\texample.org\tv1.2.3\th1:fixture",
+				"",
+			}, "\n")
+			runner := &specializedRunner{
+				paths:     map[string]bool{"go": true, "tool-a": true},
+				responses: map[string]string{"go version -m " + target: buildInfo},
+			}
 			methods := [2]*config.MethodCandidate{{Kind: "go", Config: map[string]any{"pkg": "example.org/cmd/tool-a", "version": "v1.2.3"}}, {Kind: "go", Config: map[string]any{"pkg": "example.org/cmd/tool-a", "version": "v2.0.0"}}}
 			requireProbeStates(t, adapter, runner, [2]plan.ResolvedIdentity{{Package: "example.org/cmd/tool-a", Version: "v1.2.3"}, {Package: "example.org/cmd/tool-a", Version: "v2.0.0"}}, methods)
 		})
