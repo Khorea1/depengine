@@ -29,6 +29,13 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 		if !ok {
 			continue
 		}
+		// Pre-install hooks are transition-scoped. Keep those tools on the
+		// serial candidate pipeline so the hook runs only after a concrete
+		// candidate survives resolution and the already-installed gate.
+		if len(tool.PreInstall) > 0 {
+			remaining = append(remaining, toolName)
+			continue
+		}
 		toolCtx := omitToolSecretEnvironment(ctx, tool)
 		if len(tool.Methods) == 0 {
 			remaining = append(remaining, toolName)
