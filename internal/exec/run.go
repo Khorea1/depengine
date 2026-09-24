@@ -163,8 +163,10 @@ func (ex *Executor) sortExecutionLevels(ctx context.Context, s *config.Schema) (
 }
 
 // runLevel executes one topological level through its phase pipeline:
-// requires gating, dangerous-code filtering, preinstall hooks, optimistic
-// batch native install, then serial or parallel execution of the rest.
+// requires gating, dangerous-code filtering, optimistic batch native install,
+// then serial or parallel execution of the rest. Pre-install hooks stay inside
+// the candidate attempt pipeline so they are tied to a concrete candidate
+// rather than merely to topological eligibility.
 func (ex *Executor) runLevel(rc *runContext, level []string) {
 	// Reconciled commits were recorded before graph execution and are terminal
 	// for this run. Exclude them before dependency/security/hook/batch phases
@@ -179,18 +181,9 @@ func (ex *Executor) runLevel(rc *runContext, level []string) {
 
 	blockedByRequires := ex.blockFailedRequires(rc, executionLevel)
 	filteredLevel := ex.filterDangerousTools(rc, executionLevel, blockedByRequires)
-	preinstallFailed, preinstallDone := ex.runPreinstallHooks(rc, filteredLevel)
 
-	// Further filter out tools that failed preinstall.
-	survivorLevel := make([]string, 0, len(filteredLevel))
-	for _, toolName := range filteredLevel {
-		if !preinstallFailed[toolName] {
-			survivorLevel = append(survivorLevel, toolName)
-		}
-	}
-
-	remaining, resolutions := ex.runBatchPhase(rc, survivorLevel, preinstallDone)
-	ex.runRemaining(rc, remaining, preinstallDone, resolutions)
+	remaining, resolutions := ex.runBatchPhase(rc, filteredLevel)
+	ex.runRemaining(rc, remaining, resolutions)
 	ex.recordLevelFailures(rc, level, blockedByRequires)
 }
 
@@ -249,39 +242,9 @@ func (ex *Executor) filterDangerousTools(rc *runContext, executionLevel []string
 	return filteredLevel
 }
 
-// runPreinstallHooks runs PreInstall hooks for tools that passed the
-// security gate. It returns the sets of tools whose hooks failed and whose
-// hooks succeeded in real (non-dry-run) mode.
-func (ex *Executor) runPreinstallHooks(rc *runContext, filteredLevel []string) (failed, done map[string]bool) {
-	preinstallFailed := make(map[string]bool)
-	preinstallDone := make(map[string]bool)
-	for _, toolName := range filteredLevel {
-		tool, ok := rc.schema.Tools[toolName]
-		if !ok || len(tool.PreInstall) == 0 {
-			continue
-		}
-		preCtx, preCancel := context.WithTimeout(omitToolSecretEnvironment(rc.ctx, tool), ex.methodTimeout)
-		err := ex.runPreinstall(preCtx, tool)
-		preCancel()
-		if err != nil {
-			failedResult := ToolResult{
-				Tool:   toolName,
-				Status: StatusFailed,
-				Error:  fmt.Sprintf("pre-install: %v", err),
-			}
-			ex.recordToolResult(rc.ctx, &failedResult, rc.report)
-			preinstallFailed[toolName] = true
-			ex.logWarn(rc.ctx, "preinstall", "tool", toolName, "error", err.Error())
-		} else if !ex.dryRun {
-			preinstallDone[toolName] = true
-		}
-	}
-	return preinstallFailed, preinstallDone
-}
-
 // runBatchPhase attempts the optimistic batch native install and returns
 // the tool names still needing per-tool execution.
-func (ex *Executor) runBatchPhase(rc *runContext, survivorLevel []string, preinstallDone map[string]bool) ([]string, map[string]*candidateResolutionSeed) {
+func (ex *Executor) runBatchPhase(rc *runContext, survivorLevel []string) ([]string, map[string]*candidateResolutionSeed) {
 	candidates, remaining, resolutions := ex.identifyBatchCandidates(rc.ctx, survivorLevel, rc.schema, rc.report)
 
 	if len(candidates) > 0 && ex.clan != "" {
@@ -289,7 +252,7 @@ func (ex *Executor) runBatchPhase(rc *runContext, survivorLevel []string, preins
 		case ex.dryRun:
 			ex.reportBatchDryRun(rc, candidates)
 		case ex.batchNativeInstall(omitBatchSecretEnvironment(rc.ctx, candidates), candidates):
-			remaining = ex.verifyBatchInstall(rc, candidates, remaining, preinstallDone, resolutions)
+			remaining = ex.verifyBatchInstall(rc, candidates, remaining, resolutions)
 		default:
 			// Batch failed — transparent fallback to per-tool.
 			// remaining already excludes tools recorded as StatusAlready by
@@ -330,7 +293,7 @@ func (ex *Executor) reportBatchDryRun(rc *runContext, candidates []batchCandidat
 // exit 0 does not guarantee every package landed — some managers silently
 // skip unknown package names). The rest fall back to the serial path,
 // which re-tries native and then any remaining methods.
-func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandidate, remaining []string, preinstallDone map[string]bool, resolutions map[string]*candidateResolutionSeed) []string {
+func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandidate, remaining []string, resolutions map[string]*candidateResolutionSeed) []string {
 	for _, c := range candidates {
 		adapter := ex.LookupAdapter(c.method.Kind)
 		presence, ok := ex.batchPresence(omitToolSecretEnvironment(rc.ctx, c.tool), adapter, c.toolName, c.tool, c.method)
@@ -340,9 +303,6 @@ func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandida
 				MethodKind: c.method.Kind, Config: c.method.Config, PlanIntent: c.resolvedPlan, InstallCommitted: true,
 			}
 			tr.RebootRequired, _ = c.method.Config["_reboot_required"].(bool)
-			if preinstallDone[c.toolName] {
-				tr.PreinstallDone = true
-			}
 			if len(c.tool.PostInstall) > 0 {
 				postCtx, postCancel := context.WithTimeout(omitToolSecretEnvironment(rc.ctx, c.tool), ex.methodTimeout)
 				if err := ex.runPostinstall(postCtx, c.tool); err != nil {
@@ -365,8 +325,8 @@ func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandida
 }
 
 // runRemaining executes leftover tools serially or in parallel within the
-// level. Results carry PreinstallDone for tools with successful PreInstall.
-func (ex *Executor) runRemaining(rc *runContext, remaining []string, preinstallDone map[string]bool, resolutions map[string]*candidateResolutionSeed) {
+// level. Candidate-scoped pre-install hooks run inside the attempt pipeline.
+func (ex *Executor) runRemaining(rc *runContext, remaining []string, resolutions map[string]*candidateResolutionSeed) {
 	if ex.maxJobs <= 1 || len(remaining) <= 1 {
 		for _, toolName := range remaining {
 			tool, ok := rc.schema.Tools[toolName]
@@ -374,14 +334,11 @@ func (ex *Executor) runRemaining(rc *runContext, remaining []string, preinstallD
 				continue
 			}
 			result := ex.executeToolWithResolution(rc.ctx, tool, resolutions[toolName])
-			if preinstallDone[toolName] {
-				result.PreinstallDone = true
-			}
 			ex.recordToolResult(rc.ctx, &result, rc.report)
 		}
 		return
 	}
-	ex.executeLevelParallel(rc.ctx, rc.schema, remaining, rc.report, preinstallDone, resolutions)
+	ex.executeLevelParallel(rc.ctx, rc.schema, remaining, rc.report, resolutions)
 }
 
 // recordLevelFailures registers this level's failures so dependents in
