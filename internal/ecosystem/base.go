@@ -85,6 +85,28 @@ func (a *BaseAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	return false
 }
 
+// commandForAvailableBinary rewrites commands that invoke Binary when the
+// adapter was admitted through AvailableExtra. AvailableExtra is deliberately
+// limited to drop-in executable aliases (for example pip3 for pip and
+// code-insiders for code), so argv after the executable remains unchanged.
+func (a *BaseAdapter) commandForAvailableBinary(ctx context.Context, rn run.Runner, cmd []string) []string {
+	if len(cmd) == 0 || a.config.AvailableExtra == "" || cmd[0] != a.config.Binary {
+		return cmd
+	}
+	if run.LookPath(ctx, rn, a.config.Binary) || !run.LookPath(ctx, rn, a.config.AvailableExtra) {
+		return cmd
+	}
+	out := append([]string(nil), cmd...)
+	out[0] = a.config.AvailableExtra
+	return out
+}
+
+func (a *BaseAdapter) runConfiguredBinary(ctx context.Context, rn run.Runner, args ...string) run.Result {
+	cmd := append([]string{a.config.Binary}, args...)
+	cmd = a.commandForAvailableBinary(ctx, rn, cmd)
+	return rn.Run(ctx, cmd[0], cmd[1:]...)
+}
+
 // Check runs the check command template. Exit 0 means installed.
 // Returns false immediately if the adapter's binary is not available.
 func (a *BaseAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
@@ -132,6 +154,7 @@ func (a *BaseAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 	if cmd == nil {
 		return false
 	}
+	cmd = a.commandForAvailableBinary(ctx, rn, cmd)
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	if res.Err != nil || res.ExitCode != 0 {
 		return false
@@ -152,6 +175,7 @@ func (a *BaseAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	if cmd == nil {
 		return fmt.Errorf("%s: no install command", a.config.KindName)
 	}
+	cmd = a.commandForAvailableBinary(ctx, rn, cmd)
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return run.CheckResult(res, a.config.KindName+": install")
 }
@@ -242,6 +266,7 @@ func (a *BaseAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *
 	if cmd == nil {
 		return fmt.Errorf("%s: no install command", a.config.KindName)
 	}
+	cmd = a.commandForAvailableBinary(ctx, rn, cmd)
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return run.CheckResult(res, a.config.KindName+": install")
 }
@@ -369,6 +394,7 @@ func (a *BaseAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 	if cmd == nil {
 		return fmt.Errorf("%s: no remove command", a.config.KindName)
 	}
+	cmd = a.commandForAvailableBinary(ctx, rn, cmd)
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return run.CheckResult(res, a.config.KindName+": remove")
 }
@@ -594,7 +620,7 @@ func pipVersionFromShow(output string) (string, bool) {
 
 func (a *BaseAdapter) checkPip(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	pkg := resolvedPkg(tool, mc)
-	res := rn.Run(ctx, a.config.Binary, "show", pkg)
+	res := a.runConfiguredBinary(ctx, rn, "show", pkg)
 	if res.Err != nil || res.ExitCode != 0 {
 		return false
 	}
@@ -613,7 +639,7 @@ func (a *BaseAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool 
 	pkg := resolvedPkg(tool, mc)
 	switch a.config.KindName {
 	case "pip":
-		res := rn.Run(ctx, a.config.Binary, "show", pkg)
+		res := a.runConfiguredBinary(ctx, rn, "show", pkg)
 		if res.Err != nil || res.ExitCode != 0 {
 			return "", run.CheckResult(res, "pip: show installed version")
 		}
@@ -708,7 +734,7 @@ func (a *BaseAdapter) pipxInstalledVersion(ctx context.Context, rn run.Runner, p
 		args = append(args, "--global")
 	}
 	args = append(args, pkg)
-	res := rn.Run(ctx, a.config.Binary, args...)
+	res := a.runConfiguredBinary(ctx, rn, args...)
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "pipx: list installed version")
 	}
@@ -765,7 +791,7 @@ func uvVersionFromList(output, pkg string) (string, bool) {
 }
 
 func (a *BaseAdapter) uvInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
-	res := rn.Run(ctx, a.config.Binary, "tool", "list")
+	res := a.runConfiguredBinary(ctx, rn, "tool", "list")
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "uv: list installed version")
 	}
@@ -839,7 +865,7 @@ func gemVersionsFromList(output, pkg string) []string {
 }
 
 func (a *BaseAdapter) gemInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
-	res := rn.Run(ctx, a.config.Binary, "list", "--local", "--exact", pkg, "--all")
+	res := a.runConfiguredBinary(ctx, rn, "list", "--local", "--exact", pkg, "--all")
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "gem: list installed version")
 	}
@@ -852,7 +878,7 @@ func (a *BaseAdapter) gemInstalledVersion(ctx context.Context, rn run.Runner, pk
 
 func (a *BaseAdapter) checkGem(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	pkg := resolvedPkg(tool, mc)
-	res := rn.Run(ctx, a.config.Binary, "list", "--local", "--exact", pkg, "--all")
+	res := a.runConfiguredBinary(ctx, rn, "list", "--local", "--exact", pkg, "--all")
 	if res.Err != nil || res.ExitCode != 0 {
 		return false
 	}
@@ -911,7 +937,7 @@ func composerVersionFromShow(output string) (string, bool) {
 }
 
 func (a *BaseAdapter) composerInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
-	res := rn.Run(ctx, a.config.Binary, "global", "show", "--locked", pkg)
+	res := a.runConfiguredBinary(ctx, rn, "global", "show", "--locked", pkg)
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "composer: show installed version")
 	}
@@ -971,7 +997,7 @@ func bunVersionFromList(output, pkg string) (string, bool) {
 }
 
 func (a *BaseAdapter) bunInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
-	res := rn.Run(ctx, a.config.Binary, "pm", "ls", "-g")
+	res := a.runConfiguredBinary(ctx, rn, "pm", "ls", "-g")
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "bun: list installed version")
 	}
@@ -1028,7 +1054,7 @@ func pnpmVersionFromList(output, pkg string) (string, bool) {
 }
 
 func (a *BaseAdapter) pnpmInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
-	res := rn.Run(ctx, a.config.Binary, "list", "-g", "--depth=0", "--json")
+	res := a.runConfiguredBinary(ctx, rn, "list", "-g", "--depth=0", "--json")
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "pnpm: list installed version")
 	}
@@ -1085,7 +1111,7 @@ func yarnVersionFromList(output, pkg string) (string, bool) {
 }
 
 func (a *BaseAdapter) yarnInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
-	res := rn.Run(ctx, a.config.Binary, "global", "list", "--depth=0")
+	res := a.runConfiguredBinary(ctx, rn, "global", "list", "--depth=0")
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "yarn: list installed version")
 	}
@@ -1121,7 +1147,7 @@ func npmVersionFromList(output, pkg string) (string, bool) {
 }
 
 func (a *BaseAdapter) npmInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
-	res := rn.Run(ctx, a.config.Binary, "ls", "-g", "--depth=0", "--json", pkg)
+	res := a.runConfiguredBinary(ctx, rn, "ls", "-g", "--depth=0", "--json", pkg)
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "npm: list installed version")
 	}
