@@ -16,6 +16,14 @@ import (
 func TestSDKManAdapterV2ResolvesObservesAndInstallsExactVersion(t *testing.T) {
 	home := t.TempDir()
 	exectest.SetHome(t, home)
+	t.Setenv("SDKMAN_DIR", "")
+	initScript := filepath.Join(home, ".sdkman", "bin", "sdkman-init.sh")
+	if err := os.MkdirAll(filepath.Dir(initScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(initScript, []byte("# test sdkman init\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	version := "21.0.4-tem"
 	if err := os.MkdirAll(filepath.Join(home, ".sdkman", "candidates", "java", version), 0o755); err != nil {
 		t.Fatal(err)
@@ -54,8 +62,9 @@ func TestSDKManAdapterV2ResolvesObservesAndInstallsExactVersion(t *testing.T) {
 	if err := adapter.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
 		t.Fatalf("InstallResolved() error = %v", err)
 	}
-	if len(runner.Calls) != 1 || runner.Calls[0].Name != "sdk" || !reflect.DeepEqual(runner.Calls[0].Args, []string{"install", "java", version}) {
-		t.Fatalf("InstallResolved() calls = %#v, want sdk install java %s", runner.Calls, version)
+	wantArgs := []string{"-c", sdkmanShellCommand, "depengine-sdkman", initScript, "install", "java", version}
+	if len(runner.Calls) != 1 || runner.Calls[0].Name != "bash" || !reflect.DeepEqual(runner.Calls[0].Args, wantArgs) {
+		t.Fatalf("InstallResolved() calls = %#v, want bash %v", runner.Calls, wantArgs)
 	}
 }
 
