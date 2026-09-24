@@ -38,11 +38,7 @@ func projectGraphView(ctx context.Context, declared graph.Graph, schema *config.
 
 	projection := graph.ProjectionContext{
 		GuardActive: func(guard graph.Guard) (bool, error) {
-			condition, ok := guard.(*config.Condition)
-			if !ok {
-				return false, fmt.Errorf("unsupported graph guard %T", guard)
-			}
-			return condition.Match(facts), nil
+			return matchGraphGuard(guard, facts)
 		},
 	}
 
@@ -59,6 +55,14 @@ func projectGraphView(ctx context.Context, declared graph.Graph, schema *config.
 		return graph.Graph{}, err
 	}
 	return projected, nil
+}
+
+func matchGraphGuard(guard graph.Guard, facts *engine.Facts) (bool, error) {
+	condition, ok := guard.(*config.Condition)
+	if !ok {
+		return false, fmt.Errorf("unsupported graph guard %T", guard)
+	}
+	return condition.Match(facts), nil
 }
 
 func resolvedGraphCandidates(ctx context.Context, schema *config.Schema, facts *engine.Facts) map[string]int {
