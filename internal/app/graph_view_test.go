@@ -82,3 +82,32 @@ func TestSelectedGraphCandidateStopsAtSynthesizedWinner(t *testing.T) {
 		t.Fatalf("selected declared candidate %d after synthesized winner", candidate)
 	}
 }
+
+
+func TestGraphProjectionRequirementsAreDemandDriven(t *testing.T) {
+	g := graph.NewGraph()
+	g.AddEdge(graph.Edge{From: "base", To: "app", Kind: graph.ToolRequire, Role: graph.Scheduling})
+	needsGuards, candidateTools := graphProjectionRequirements(g, graph.EffectiveView)
+	if needsGuards || len(candidateTools) != 0 {
+		t.Fatalf("unguarded effective requirements = guards:%v candidates:%v", needsGuards, candidateTools)
+	}
+
+	guarded := &config.Condition{OS: []string{"linux"}}
+	g.AddEdge(graph.Edge{From: "platform", To: "app", Kind: graph.ToolRequire, Role: graph.Scheduling, Guard: guarded})
+	g.AddEdge(graph.Edge{
+		From:           "curl",
+		To:             "app",
+		Kind:           graph.MethodRequire,
+		Role:           graph.Activation,
+		Candidate:      0,
+		CandidateKnown: true,
+	})
+
+	needsGuards, candidateTools = graphProjectionRequirements(g, graph.ResolvedView)
+	if !needsGuards {
+		t.Fatal("guarded resolved graph did not request host facts")
+	}
+	if _, ok := candidateTools["app"]; !ok || len(candidateTools) != 1 {
+		t.Fatalf("candidate tools = %v, want only app", candidateTools)
+	}
+}
