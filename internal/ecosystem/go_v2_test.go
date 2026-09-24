@@ -102,17 +102,21 @@ func TestGoAdapterV2ObserveReportsDiscoveredVersion(t *testing.T) {
 	}
 }
 
-func TestGoAdapterV2ObserveAbsentOnDrift(t *testing.T) {
+func TestGoAdapterV2ObserveReportsDriftedVersion(t *testing.T) {
 	adapter := NewGoAdapter()
 	tool, mc := goV2Tool()
 
-	// Different installed version: same verdict as Check (absent).
+	// A different installed version remains present so reconciliation can
+	// distinguish exact-version drift from a missing binary.
 	observation, err := adapter.Observe(context.Background(), goV2Runner("realbin version 1.2.4\n"), tool, mc)
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)
 	}
-	if observation.Presence != plan.PresenceAbsent {
-		t.Fatalf("Observe() presence = %q, want %q", observation.Presence, plan.PresenceAbsent)
+	if observation.Presence != plan.PresencePresent || observation.Identity.Version != "1.2.4" {
+		t.Fatalf("Observe() = %+v, want present version 1.2.4", observation)
+	}
+	if result := plan.Reconcile(plan.ResolvedIdentity{Package: "example.com/project/cmd/realbin", Version: "1.2.3"}, observation); result.State != plan.StateDrifted {
+		t.Fatalf("Reconcile() state = %q, want %q (result = %#v)", result.State, plan.StateDrifted, result)
 	}
 
 	// Missing binary entirely.
