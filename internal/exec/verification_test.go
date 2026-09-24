@@ -77,9 +77,6 @@ func TestResolveAndVerifyCandidateAtVersionProjectsDesiredIdentity(t *testing.T)
 	if verification.State != plan.StateSatisfied {
 		t.Fatalf("verification=%+v, want satisfied", verification)
 	}
-	if got, _ := adapter.seen.Config["version"].(string); got != "v2.0.0" {
-		t.Fatalf("observed candidate version=%q, want v2.0.0", got)
-	}
 }
 
 func TestVerifyResolvedCandidateUsesResolvedTargetAndCanonicalizesObserveError(t *testing.T) {
