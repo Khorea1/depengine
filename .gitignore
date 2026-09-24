@@ -37,6 +37,7 @@ Thumbs.db
 
 # Local meta-development (scratchpads, skills, personal config)
 .dev/
+AGENTS.local.md
 RULES.md
 TODO.md
 .omp/
