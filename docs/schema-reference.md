@@ -354,6 +354,11 @@ or invoke a subprocess. Archive recipes currently do not create PATH launchers
 automatically, so choose an `install_dir`/payload layout appropriate for how the
 tool will be invoked.
 
+Local archive materialization is limited to 4 GiB of aggregate regular-file
+payload data. The limit counts bytes as they are decompressed across all files;
+an archive that exceeds it fails before the staged payload replaces the
+installed destination.
+
 ### GitHub release assets
 
 Some projects publish a different asset filename convention per architecture

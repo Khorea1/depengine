@@ -22,7 +22,46 @@ import (
 const (
 	archiveChecksumMarker = ".depengine-local-artifact.sha256"
 	archiveTreeMarker     = ".depengine-local-artifact-tree.sha256"
+	// archiveExpansionLimit caps the aggregate uncompressed regular-file data
+	// written while extracting one ZIP or TAR archive.
+	archiveExpansionLimit int64 = 4 << 30
 )
+
+type archiveExpansionBudget struct {
+	used  int64
+	limit int64
+}
+
+func newArchiveExpansionBudget() *archiveExpansionBudget {
+	return &archiveExpansionBudget{limit: archiveExpansionLimit}
+}
+
+func (b *archiveExpansionBudget) writer(dst io.Writer) io.Writer {
+	return archiveBudgetWriter{dst: dst, budget: b}
+}
+
+type archiveBudgetWriter struct {
+	dst    io.Writer
+	budget *archiveExpansionBudget
+}
+
+func (w archiveBudgetWriter) Write(p []byte) (int, error) {
+	remaining := w.budget.limit - w.budget.used
+	if remaining <= 0 {
+		return 0, fmt.Errorf("archive regular-file expansion exceeds %d-byte limit", w.budget.limit)
+	}
+	if int64(len(p)) > remaining {
+		n, err := w.dst.Write(p[:int(remaining)])
+		w.budget.used += int64(n)
+		if err != nil {
+			return n, err
+		}
+		return n, fmt.Errorf("archive regular-file expansion exceeds %d-byte limit", w.budget.limit)
+	}
+	n, err := w.dst.Write(p)
+	w.budget.used += int64(n)
+	return n, err
+}
 
 // Install materializes a previously resolved local artifact without network
 // access. Raw artifacts are installed as a single file; archives are extracted
@@ -535,6 +574,7 @@ func extractZip(source *os.File, sourceSize int64, destination string) (map[stri
 	}
 	entries := newArchiveEntryRegistry()
 	directoryModes := make(map[string]os.FileMode)
+	budget := newArchiveExpansionBudget()
 	for _, entry := range r.File {
 		if entry.Mode()&os.ModeSymlink != 0 {
 			return nil, fmt.Errorf("local archive entry %q is a symlink", entry.Name)
@@ -576,14 +616,15 @@ func extractZip(source *os.File, sourceSize int64, destination string) (map[stri
 			_ = rc.Close()
 			return nil, fmt.Errorf("create archive entry %q: %w", entry.Name, err)
 		}
-		_, copyErr := io.Copy(out, rc)
+		_, copyErr := io.Copy(budget.writer(out), rc) // #nosec G110 -- The writer caps aggregate expanded bytes at archiveExpansionLimit.
 		closeOutErr := out.Close()
 		closeInErr := rc.Close()
-		if copyErr != nil {
-			return nil, fmt.Errorf("extract archive entry %q: %w", entry.Name, copyErr)
-		}
-		if closeOutErr != nil || closeInErr != nil {
-			return nil, fmt.Errorf("close archive entry %q", entry.Name)
+		if copyErr != nil || closeOutErr != nil || closeInErr != nil {
+			return nil, errors.Join(
+				wrapArchiveEntryError("extract", entry.Name, copyErr),
+				wrapArchiveEntryError("close output for", entry.Name, closeOutErr),
+				wrapArchiveEntryError("close input for", entry.Name, closeInErr),
+			)
 		}
 	}
 	return directoryModes, nil
@@ -610,6 +651,7 @@ func extractTar(source *os.File, destination string, gzipped bool) (map[string]o
 	tr := tar.NewReader(reader)
 	entries := newArchiveEntryRegistry()
 	directoryModes := make(map[string]os.FileMode)
+	budget := newArchiveExpansionBudget()
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -624,6 +666,9 @@ func extractTar(source *os.File, destination string, gzipped bool) (map[string]o
 		}
 		isDir := hdr.Typeflag == tar.TypeDir
 		isFile := hdr.Typeflag == tar.TypeReg || hdr.Typeflag == tar.TypeRegA
+		if isFile && hdr.Size < 0 {
+			return nil, fmt.Errorf("local archive entry %q has negative size", hdr.Name)
+		}
 		if isDir || isFile {
 			if err := entries.add(hdr.Name, isDir); err != nil {
 				return nil, err
@@ -651,13 +696,13 @@ func extractTar(source *os.File, destination string, gzipped bool) (map[string]o
 			if err != nil {
 				return nil, fmt.Errorf("create archive entry %q: %w", hdr.Name, err)
 			}
-			_, copyErr := io.CopyN(out, tr, hdr.Size)
+			_, copyErr := io.CopyN(budget.writer(out), tr, hdr.Size)
 			closeErr := out.Close()
-			if copyErr != nil {
-				return nil, fmt.Errorf("extract archive entry %q: %w", hdr.Name, copyErr)
-			}
-			if closeErr != nil {
-				return nil, fmt.Errorf("close archive entry %q: %w", hdr.Name, closeErr)
+			if copyErr != nil || closeErr != nil {
+				return nil, errors.Join(
+					wrapArchiveEntryError("extract", hdr.Name, copyErr),
+					wrapArchiveEntryError("close", hdr.Name, closeErr),
+				)
 			}
 		case tar.TypeSymlink, tar.TypeLink:
 			return nil, fmt.Errorf("local archive entry %q is a link", hdr.Name)
@@ -666,6 +711,13 @@ func extractTar(source *os.File, destination string, gzipped bool) (map[string]o
 		}
 	}
 	return directoryModes, nil
+}
+
+func wrapArchiveEntryError(action, name string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s archive entry %q: %w", action, name, err)
 }
 
 func validatedArchiveFileMode(mode os.FileMode) (os.FileMode, error) {
