@@ -44,6 +44,52 @@ func TestMethodForResolvedTargetPreservesSelectedNamespace(t *testing.T) {
 	}
 }
 
+func TestMethodForResolvedTargetUsesContractMetadata(t *testing.T) {
+	tests := []struct {
+		name   string
+		kind   string
+		config map[string]any
+		target *plan.EnvironmentTarget
+		want   map[string]any
+		same   bool
+	}{
+		{
+			name:   "non-target method remains untouched",
+			kind:   "go",
+			config: map[string]any{"pkg": "example/tool"},
+			target: &plan.EnvironmentTarget{Kind: plan.EnvironmentPrefix, Value: "/tools"},
+			want:   map[string]any{"pkg": "example/tool"},
+			same:   true,
+		},
+		{
+			name:   "unsupported cargo target clears stale root",
+			kind:   "cargo",
+			config: map[string]any{"pkg": "ripgrep", "root": "/old"},
+			target: &plan.EnvironmentTarget{Kind: plan.EnvironmentNamed, Value: "tools"},
+			want:   map[string]any{"pkg": "ripgrep"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			method := &config.MethodCandidate{Kind: tt.kind, Config: tt.config}
+			resolved := plan.New("demo", tt.kind, true)
+			resolved.Identity.Environment = tt.target
+
+			got := methodForResolvedTarget(method, &resolved)
+			if !reflect.DeepEqual(got.Config, tt.want) {
+				t.Fatalf("projected config = %#v, want %#v", got.Config, tt.want)
+			}
+			if tt.same && got != method {
+				t.Fatal("method without environment metadata should be returned unchanged")
+			}
+			if !tt.same && got == method {
+				t.Fatal("environment-target method should be projected into a copy")
+			}
+		})
+	}
+}
+
 type targetCaptureAdapter struct {
 	executorAdapterV2Double
 	observedTarget string

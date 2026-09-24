@@ -232,6 +232,47 @@ func TestContractCapabilitiesMatchSemanticFields(t *testing.T) {
 	}
 }
 
+func TestEnvironmentTargetContractsMatchCapability(t *testing.T) {
+	for _, contract := range methodkind.Contracts {
+		supports := contract.Supports(methodkind.CapabilityEnvironmentTarget)
+		if supports && contract.Environment == nil {
+			t.Errorf("%s supports environment targets without Environment metadata", contract.Kind)
+			continue
+		}
+		if !supports && contract.Environment != nil {
+			t.Errorf("%s declares Environment metadata without CapabilityEnvironmentTarget", contract.Kind)
+			continue
+		}
+		if contract.Environment == nil {
+			continue
+		}
+		for _, field := range contract.Environment.Fields() {
+			if _, ok := contract.Fields[field]; !ok {
+				t.Errorf("%s environment target field %q is not declared in Fields", contract.Kind, field)
+			}
+		}
+	}
+
+	cargo, ok := methodkind.Lookup("cargo")
+	if !ok {
+		t.Fatal("cargo contract missing")
+	}
+	if field, ok := cargo.Environment.FieldFor(plan.EnvironmentPrefix); !ok || field != "root" {
+		t.Fatalf("cargo prefix field = %q, %t; want root, true", field, ok)
+	}
+
+	conda, ok := methodkind.Lookup("conda")
+	if !ok {
+		t.Fatal("conda contract missing")
+	}
+	if field, ok := conda.Environment.FieldFor(plan.EnvironmentNamed); !ok || field != "environment" {
+		t.Fatalf("conda named field = %q, %t; want environment, true", field, ok)
+	}
+	if field, ok := conda.Environment.FieldFor(plan.EnvironmentPrefix); !ok || field != "prefix" {
+		t.Fatalf("conda prefix field = %q, %t; want prefix, true", field, ok)
+	}
+}
+
 func TestKnownCapabilityDeclarations(t *testing.T) {
 	tests := []struct {
 		kind string
