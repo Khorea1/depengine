@@ -132,7 +132,7 @@ Install tools from schema.toml
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `--allow-arbitrary-code` | local | `false` | permit hooks, build scripts, and other arbitrary code execution |
-| `--diagnose` | local | `false` | diagnostic mode: DEBUG + dry-run + verbose |
+| `--diagnose` | local | `false` | diagnostic mode: DEBUG + dry-run + detailed report |
 | `--dry-run` | local | `false` | show what would be installed |
 | `--frozen-lockfile` | local | `false` | fail if depengine.lock does not exist or needs update |
 | `-h, --help` | local | `false` | help for install |
@@ -147,7 +147,7 @@ Install tools from schema.toml
 | `--schema <string>` | local | `schema.toml` | path to schema.toml |
 | `--skip <string>` | local | `` | skip specific tools (comma-separated) |
 | `--sort-by <string>` | local | `` | sort output by: name, status, method |
-| `--verbose` | local | `false` | detailed output |
+| `--verbose` | local | `false` | deprecated compatibility flag; detailed output is already the default |
 
 ## `depengine remove [tool...] [flags]`
 
