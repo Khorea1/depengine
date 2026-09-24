@@ -76,10 +76,10 @@ func executionCalls(t *testing.T, kind, field string, value any) []run.FakeCall 
 	if kind == "sdkman" {
 		root := t.TempDir()
 		initScript := filepath.Join(root, "bin", "sdkman-init.sh")
-		if err := os.MkdirAll(filepath.Dir(initScript), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(initScript), 0o750); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(initScript, []byte("# test SDKMAN init\n"), 0o644); err != nil {
+		if err := os.WriteFile(initScript, []byte("# test SDKMAN init\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		t.Setenv("SDKMAN_DIR", root)
