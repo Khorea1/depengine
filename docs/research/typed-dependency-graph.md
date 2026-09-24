@@ -2,7 +2,7 @@
 
 - Status: research / design proposal
 - Scope: `depengine graph` representation, analysis, and future terminal rendering
-- Implementation status: P1 typed IR, declared guards, scheduling, and renderer integration implemented; see `typed-dependency-graph-implementation-status.md`
+- Implementation status: typed IR plus effective/resolved CLI projections implemented; terminal layout remains pending; see `typed-dependency-graph-implementation-status.md`
 - Naming used in this document: **DPG** = **DePenGine Graph** (project shorthand, not "Program Dependence Graph")
 
 ## Motivation
@@ -905,7 +905,7 @@ FUNCTION AnalyzeForLayout(graph):
 The implementation is incremental and preserves existing behavior before adding
 a new terminal renderer.
 
-P1 status:
+Implementation status:
 
 1. **Done:** introduce `Graph`, `Node`, and typed `Edge`.
 2. **Done:** build one declared IR from merged `config.Tool` values while
@@ -913,16 +913,20 @@ P1 status:
 3. **Done:** migrate DOT and Mermaid to consume the IR.
 4. **Done:** make topological sorting operate on the scheduling projection.
 5. **Done:** migrate the existing text/level renderer to the same IR.
-6. **Pending:** add `--format graph` with weak-component grouping and
+6. **Done:** wire canonical config-condition evaluation into the effective
+   projection and exact read-only candidate selection into the resolved
+   projection.
+7. **Done:** expose `--view declared|effective|resolved` while retaining
+   `declared` as the default.
+8. **Pending:** add `--format graph` with weak-component grouping and
    isolated-node compaction.
-7. **Pending:** add simple ranked layout and orthogonal routing.
-8. **Pending:** improve crossing reduction and edge bundling only after testing
-   real schemas.
+9. **Pending:** add simple ranked layout and orthogonal routing.
+10. **Pending:** improve crossing reduction and edge bundling only after testing
+    real schemas.
 
-The generic effective/resolved projection engine is also implemented: callers
-supply guard evaluation and selected-method decisions without coupling the graph
-package to host facts or install-plan types. CLI/domain adapters remain a
-follow-up; see `typed-dependency-graph-implementation-status.md`.
+The generic projection engine remains domain-independent: the app layer supplies
+guard evaluation and selected-candidate decisions without coupling
+`internal/graph` to host facts, config, or install-plan types.
 
 ## Non-goals for the first implementation
 

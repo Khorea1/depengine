@@ -243,6 +243,13 @@ artifact request, `checksum_secret_ref` only an explicitly configured
 implicitly forwards the primary artifact credential to checksum/signature
 sidecars or to an automatically inferred checksum URL.
 
+Any URL that receives one of these Bearer credentials must use HTTPS. depengine
+rejects explicit remote `http://` URLs during validation and rechecks the
+resolved URL immediately before attaching the Authorization header, so a
+`repo` + `asset` resolution cannot bypass the rule. The only plaintext
+exception is the local loopback interface (`localhost`, `127.0.0.0/8`, or
+`::1`). Unauthenticated HTTP downloads are unaffected.
+
 The same three typed Bearer references are available on `appimage`, `android`,
 and `msi`, because those methods delegate artifact transfer to the HTTP
 transport. With a direct `url`, `secret_ref` authenticates that artifact

@@ -65,7 +65,7 @@ func TestCLIDocsHighRiskFlags(t *testing.T) {
 		"depengine help":    {"help", "man"},
 		"depengine install": {"allow-arbitrary-code", "diagnose", "dry-run", "frozen-lockfile", "help", "jobs", "json", "log-level", "manifest", "no-manifest", "only", "profile", "quiet", "schema", "skip", "sort-by", "verbose"},
 		"depengine check":   {"format", "help", "json", "live", "manifest", "no-manifest", "schema"},
-		"depengine graph":   {"format", "help", "manifest", "no-manifest", "only", "profile", "schema", "skip"},
+		"depengine graph":   {"format", "help", "manifest", "no-manifest", "only", "profile", "schema", "skip", "view"},
 		"depengine remove":  {"all", "dry-run", "force", "help", "only", "schema"},
 		"depengine diff":    {"help", "json", "other"},
 		"depengine sbom":    {"format", "help"},

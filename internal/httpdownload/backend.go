@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Khorea1/depengine/internal/artifact"
 	"github.com/Khorea1/depengine/internal/ghrelease"
 	"github.com/Khorea1/depengine/internal/run"
 )
@@ -57,11 +58,14 @@ func (d *GoDownloader) Download(ctx context.Context, url, dest string) error {
 // DownloadWithBearer downloads one request with a caller-supplied Bearer
 // credential. The credential is attached only to this request and is never
 // retained on GoDownloader or exposed through the Downloader interface.
-func (d *GoDownloader) DownloadWithBearer(ctx context.Context, url, dest, credential string) error {
+func (d *GoDownloader) DownloadWithBearer(ctx context.Context, rawURL, dest, credential string) error {
 	if credential == "" {
 		return fmt.Errorf("http: empty Bearer credential")
 	}
-	return d.download(ctx, url, dest, credential)
+	if err := artifact.ValidateAuthenticatedURL(rawURL); err != nil {
+		return fmt.Errorf("http: authenticated URL: %w", err)
+	}
+	return d.download(ctx, rawURL, dest, credential)
 }
 
 func (d *GoDownloader) download(ctx context.Context, url, dest, bearerCredential string) error {
@@ -75,28 +79,32 @@ func (d *GoDownloader) download(ctx context.Context, url, dest, bearerCredential
 	// happily serves ghrelease's API calls, which do set one.
 	req.Header.Set("User-Agent", downloadUserAgent)
 
-	// Attach a GitHub token for github.com asset downloads (e.g. private-repo
-	// release assets), mirroring what ghrelease already does for the
-	// releases-API call that resolves {latest}. This is Go-downloader-only
-	// by design: the header lives in process memory here, whereas passing a
-	// token to curl/wget would put it on the command line, visible to any
-	// local user via `ps aux` / /proc/<pid>/cmdline.
-	if bearerCredential != "" {
-		req.Header.Set("Authorization", "Bearer "+bearerCredential)
-	} else if d.rn != nil && ghrelease.IsGitHubURL(url) {
-		if token := ghrelease.GithubToken(ctx, d.rn); token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
+	// Attach either the caller-supplied typed credential or the existing
+	// GitHub compatibility token. Any credential selected here must satisfy
+	// the same protected-transport and redirect policy before the request is
+	// allowed to leave the process.
+	authorizationCredential := bearerCredential
+	if authorizationCredential == "" && d.rn != nil && ghrelease.IsGitHubURL(url) {
+		authorizationCredential = ghrelease.GithubToken(ctx, d.rn)
+	}
+	if authorizationCredential != "" {
+		if err := artifact.ValidateAuthenticatedURL(url); err != nil {
+			return fmt.Errorf("http: authenticated URL: %w", err)
 		}
+		req.Header.Set("Authorization", "Bearer "+authorizationCredential)
 	}
 
 	client := d.client
-	if bearerCredential != "" {
+	if authorizationCredential != "" {
 		// CheckRedirect belongs to this request's client copy. This makes the
 		// credential policy explicit without changing a shared client's state.
 		clientCopy := *d.client
 		priorCheckRedirect := clientCopy.CheckRedirect
 		initialURL := req.URL
 		clientCopy.CheckRedirect = func(redirectReq *http.Request, via []*http.Request) error {
+			if err := artifact.ValidateAuthenticatedURL(redirectReq.URL.String()); err != nil {
+				return fmt.Errorf("authenticated redirect: %w", err)
+			}
 			if !sameOrigin(initialURL, redirectReq.URL) {
 				redirectReq.Header.Del("Authorization")
 			}

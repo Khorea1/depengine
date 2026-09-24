@@ -134,6 +134,7 @@ func validateSourceLikeURLs(toolName string, methodIdx int, mc *config.MethodCan
 }
 
 func validateArtifactContract(toolName string, methodIdx int, mc *config.MethodCandidate, contract *artifact.Contract, r *Result) {
+	validateAuthenticatedArtifactURLs(toolName, methodIdx, mc, r)
 	for _, field := range contract.URLFields {
 		raw, _ := mc.Config[field].(string)
 		if raw == "" {
@@ -172,6 +173,36 @@ func validateArtifactContract(toolName string, methodIdx int, mc *config.MethodC
 				}
 			}
 			r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, methodIdx, field), Message: message})
+		}
+	}
+}
+
+func validateAuthenticatedArtifactURLs(toolName string, methodIdx int, mc *config.MethodCandidate, r *Result) {
+	checks := []struct {
+		ref   *config.SecretReference
+		field string
+	}{
+		{ref: mc.SecretRef, field: "url"},
+		{ref: mc.ChecksumSecretRef, field: "checksum_url"},
+		{ref: mc.SignatureSecretRef, field: "signature_url"},
+	}
+	for _, check := range checks {
+		if check.ref == nil {
+			continue
+		}
+		raw, _ := mc.Config[check.field].(string)
+		if raw == "" {
+			// repo+asset primary URLs are resolved later and are rechecked by
+			// the authenticated downloader at the runtime boundary.
+			continue
+		}
+		checkURL := config.PlaceholderRe.ReplaceAllString(raw, "_")
+		if err := artifact.ValidateAuthenticatedURL(checkURL); err != nil {
+			r.Add(ValidationError{
+				Code:    ErrInvalidValue,
+				Field:   fieldPath(toolName, methodIdx, check.field),
+				Message: fmt.Sprintf("%s: authenticated %s: %v", mc.Kind, check.field, err),
+			})
 		}
 	}
 }
