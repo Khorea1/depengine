@@ -57,27 +57,33 @@ Initialize a schema.toml for a new project
 .TP
 .B "depengine install [flags]"
 Install tools from schema.toml
+Aliases: i.
 .TP
 .B "depengine remove [tool...] [flags]"
 Observes the tracked target before removal. Proven\-absent targets release state and ownership; unknown or broken observations preserve state and fail.
+Aliases: rm, uninstall.
 .TP
 .B "depengine sbom [flags]"
 Export a software bill of materials of installed state
 .TP
 .B "depengine status [flags]"
 Reconciles tracked state with identity observed on the host. Status values include installed, missing, outdated, unknown, and broken.
+Aliases: st.
 .TP
 .B "depengine undo [flags]"
 Revert to a previous state snapshot
+Aliases: rollback.
 .TP
 .B "depengine update [flags]"
 Resolve and pin versions into depengine.lock
+Aliases: lock.
 .TP
 .B "depengine upgrade [flags]"
 Upgrade installed tools to pinned versions
 .TP
 .B "depengine validate [flags]"
 Validate schema.toml
+Aliases: lint.
 .TP
 .B "depengine version [flags]"
 Show version
@@ -85,6 +91,7 @@ Hidden compatibility command.
 .TP
 .B "depengine why <tool> [flags]"
 Explain how a tool would be installed
+Aliases: explain.
 .SH OPTIONS
 .SS "depengine flags"
 .TP
