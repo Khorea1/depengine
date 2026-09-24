@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/methodkind"
 )
 
 // ---------- Dangling references ----------
@@ -520,6 +521,42 @@ func TestValidateContainerReferences(t *testing.T) {
 				t.Fatalf("field = %q, want suffix .%s", got, tt.field)
 			}
 		})
+	}
+}
+
+func TestSupportsContainerReferenceValidation(t *testing.T) {
+	container, ok := methodkind.Lookup("container")
+	if !ok {
+		t.Fatal("container contract missing")
+	}
+	if !supportsContainerReferenceValidation(container) {
+		t.Fatal("container contract should opt into container reference validation")
+	}
+
+	for _, kind := range []string{"native", "choco"} {
+		contract, ok := methodkind.Lookup(kind)
+		if !ok {
+			t.Fatalf("%s contract missing", kind)
+		}
+		if supportsContainerReferenceValidation(contract) {
+			t.Fatalf("%s contract unexpectedly opted into container reference validation", kind)
+		}
+	}
+}
+
+func TestValidateContainerReferencesUsesCapabilityBoundary(t *testing.T) {
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"native": tool("native", []*config.MethodCandidate{mc("native", nil, map[string]any{
+			"pkg": "demo",
+		})}, nil),
+		"choco": tool("choco", []*config.MethodCandidate{mc("choco", nil, map[string]any{
+			"pkg":    "demo",
+			"source": "redis:7",
+		})}, nil),
+	}}
+
+	if r := validateContainerReferences(s); r.HasErrors() {
+		t.Fatalf("non-container capability contracts were subjected to container reference validation: %+v", r.Errors)
 	}
 }
 
