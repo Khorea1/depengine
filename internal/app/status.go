@@ -32,6 +32,7 @@ func newStatusCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "status",
+		Aliases: []string{"st"},
 		Short:   ifPT("Mostrar estado das ferramentas em relação ao schema", "Show tool installation state vs schema"),
 		Long:    ifPT("Reconcilia o estado rastreado com a identidade observada no host. Os status incluem installed, missing, outdated, unknown e broken.", "Reconciles tracked state with identity observed on the host. Status values include installed, missing, outdated, unknown, and broken."),
 		GroupID: groupInspect,
