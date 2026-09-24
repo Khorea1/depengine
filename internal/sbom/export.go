@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/state"
 )
 
@@ -77,14 +78,15 @@ func ExportCycloneDX(s *state.State) ([]byte, error) {
 		if methodKind == "" {
 			methodKind = ts.Method // fallback for old state files
 		}
-		compType := componentType(methodKind)
+		packageMetadata := methodkind.PackageMetadataFor(methodKind)
+		compType := packageMetadata.ComponentType
 
 		// Prefer the recorded installed version; "0.0.0" only when nothing
 		// is knowable (state may fall back to a lock pin before export).
 		version := componentVersion(ts)
 
 		// Build purl: pkg:{type}/{name}@{version}
-		purl := fmt.Sprintf("pkg:%s/%s@%s", purlType(methodKind), name, version)
+		purl := fmt.Sprintf("pkg:%s/%s@%s", packageMetadata.PURLType, name, version)
 
 		comp := CycloneDXComponent{
 			Type:    compType,
@@ -97,51 +99,6 @@ func ExportCycloneDX(s *state.State) ([]byte, error) {
 	}
 
 	return json.MarshalIndent(bom, "", "  ")
-}
-
-// componentType maps depengine methods to CycloneDX component types.
-// Most tool installations are "application" (curated software).
-// Language-specific managers produce "library".
-func componentType(method string) string {
-	switch method {
-	case "cargo", "go", "pip", "pipx", "uv", "npm", "pnpm", "bun",
-		"gem", "yarn", "yarn-berry", "composer", "conda":
-		return "library"
-	default:
-		return "application"
-	}
-}
-
-// purlType maps depengine methods to purl package types.
-// See https://github.com/package-url/purl-spec for the full type registry.
-func purlType(method string) string {
-	switch method {
-	case "cargo":
-		return "cargo"
-	case "go":
-		return "golang"
-	case "pip", "pipx", "uv":
-		return "pypi"
-	case "npm", "pnpm", "bun":
-		return "npm"
-	case "gem":
-		return "gem"
-	case "conda":
-		return "conda"
-	case "flatpak":
-		return "flatpak"
-	case "snap":
-		return "snap"
-	case "mas":
-		return "mas"
-	case "container":
-		// https://github.com/package-url/purl-spec's registered type for
-		// container images (docker/podman pulls alike).
-		return "oci"
-	default:
-		// Generic fallback — use the method name as a purl type.
-		return method
-	}
 }
 
 // componentVersion resolves the version to report for a tool: the recorded
