@@ -72,6 +72,7 @@ type Contract struct {
 	Scopes               *ScopeContract
 	Artifact             *artifact.Contract
 	Checksum             *ChecksumContract
+	Package              PackageMetadata
 }
 
 var pkgField = map[string]Field{"pkg": {Type: String, Effects: EffectExecute | EffectVerify}}
@@ -227,7 +228,7 @@ var Contracts = finalizeContracts([]Contract{
 		"source":       {Type: String, NonEmpty: true, Effects: EffectExecute},
 		"architecture": {Type: String, Enum: []string{"x86", "x64"}, Effects: EffectExecute},
 	}), ImplicitDistroFamily: []string{"windows"}, AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "cargo", DefaultOrder: 4, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityRevision | CapabilityArchitecture | CapabilityEnvironmentTarget | CapabilityAuth, Fields: fields(pkgField, map[string]Field{
+	{Kind: "cargo", DefaultOrder: 4, Package: PackageMetadata{ComponentType: PackageComponentLibrary, PURLType: "cargo"}, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityRevision | CapabilityArchitecture | CapabilityEnvironmentTarget | CapabilityAuth, Fields: fields(pkgField, map[string]Field{
 		"git":                 {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 		"secret_ref":          {Type: SecretRef, Effects: EffectResolve | EffectExecute},
 		"version":             {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
@@ -246,54 +247,54 @@ var Contracts = finalizeContracts([]Contract{
 		"rev":        {"git"},
 		"secret_ref": {"git"},
 	}, AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "go", DefaultOrder: 5, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{
+	{Kind: "go", DefaultOrder: 5, Package: PackageMetadata{ComponentType: PackageComponentLibrary, PURLType: "golang"}, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{
 		"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 	}), AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "pipx", DefaultOrder: 6, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityScope, Scopes: &ScopeContract{AdapterValues: map[plan.Scope]string{plan.ScopeUser: "user", plan.ScopeSystem: "global"}}, Fields: fields(pkgField, map[string]Field{
+	{Kind: "pipx", DefaultOrder: 6, Package: PackageMetadata{ComponentType: PackageComponentLibrary, PURLType: "pypi"}, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityScope, Scopes: &ScopeContract{AdapterValues: map[plan.Scope]string{plan.ScopeUser: "user", plan.ScopeSystem: "global"}}, Fields: fields(pkgField, map[string]Field{
 		"version":   {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"index_url": {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 		"scope":     {Type: String, Enum: []string{"user", "global"}, Effects: EffectExecute | EffectVerify},
 	}), AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "uv", DefaultOrder: 7, Capabilities: CapabilityExactVersion | CapabilitySourceSelection, Fields: fields(pkgField, map[string]Field{
+	{Kind: "uv", DefaultOrder: 7, Package: PackageMetadata{ComponentType: PackageComponentLibrary, PURLType: "pypi"}, Capabilities: CapabilityExactVersion | CapabilitySourceSelection, Fields: fields(pkgField, map[string]Field{
 		"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"index":   {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 	}), AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "pip", DefaultOrder: 8, Capabilities: CapabilityExactVersion | CapabilitySourceSelection, Fields: fields(pkgField, map[string]Field{
+	{Kind: "pip", DefaultOrder: 8, Package: PackageMetadata{ComponentType: PackageComponentLibrary, PURLType: "pypi"}, Capabilities: CapabilityExactVersion | CapabilitySourceSelection, Fields: fields(pkgField, map[string]Field{
 		"version":   {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"index_url": {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 	}), AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "npm", DefaultOrder: 9, Capabilities: CapabilityExactVersion | CapabilitySourceSelection, Fields: fields(pkgField, map[string]Field{
+	{Kind: "npm", DefaultOrder: 9, Package: PackageMetadata{ComponentType: PackageComponentLibrary, PURLType: "npm"}, Capabilities: CapabilityExactVersion | CapabilitySourceSelection, Fields: fields(pkgField, map[string]Field{
 		"version":  {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"registry": {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 	}), AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "pnpm", DefaultOrder: 10, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{
+	{Kind: "pnpm", DefaultOrder: 10, Package: PackageMetadata{ComponentType: PackageComponentLibrary, PURLType: "npm"}, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{
 		"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 	}), AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "bun", DefaultOrder: 11, Capabilities: CapabilityExactVersion | CapabilitySourceSelection, Fields: fields(pkgField, map[string]Field{
+	{Kind: "bun", DefaultOrder: 11, Package: PackageMetadata{ComponentType: PackageComponentLibrary, PURLType: "npm"}, Capabilities: CapabilityExactVersion | CapabilitySourceSelection, Fields: fields(pkgField, map[string]Field{
 		"version":  {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"registry": {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 	}), AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "gem", DefaultOrder: 12, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityScope, Scopes: &ScopeContract{AdapterValues: map[plan.Scope]string{plan.ScopeUser: "user"}}, Fields: fields(pkgField, map[string]Field{
+	{Kind: "gem", DefaultOrder: 12, Package: PackageMetadata{ComponentType: PackageComponentLibrary, PURLType: "gem"}, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityScope, Scopes: &ScopeContract{AdapterValues: map[plan.Scope]string{plan.ScopeUser: "user"}}, Fields: fields(pkgField, map[string]Field{
 		"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"source":  {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 		"scope":   {Type: String, Enum: []string{"default", "user"}, Effects: EffectExecute},
 	}), AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "yarn", DefaultOrder: 13, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{
+	{Kind: "yarn", DefaultOrder: 13, Package: PackageMetadata{ComponentType: PackageComponentLibrary, PURLType: "yarn"}, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{
 		"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 	}), AllowString: true, AllowTrue: true, CanRemove: true},
-	packageContract("yarn-berry", 14, false),
-	{Kind: "composer", DefaultOrder: 15, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{
+	{Kind: "yarn-berry", DefaultOrder: 14, Package: PackageMetadata{ComponentType: PackageComponentLibrary, PURLType: "yarn-berry"}, Fields: pkgField, AllowString: true, AllowTrue: true},
+	{Kind: "composer", DefaultOrder: 15, Package: PackageMetadata{ComponentType: PackageComponentLibrary, PURLType: "composer"}, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{
 		"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 	}), AllowString: true, AllowTrue: true, CanRemove: true},
 	packageContract("apm", 16, false),
 	packageContract("vscode", 17, false),
 	packageContract("vscodium", 18, false),
-	{Kind: "flatpak", DefaultOrder: 19, Capabilities: CapabilitySourceSelection | CapabilityScope | CapabilityRevision, Scopes: &ScopeContract{AdapterValues: map[plan.Scope]string{plan.ScopeUser: "user", plan.ScopeSystem: "system"}}, Fields: fields(pkgField, map[string]Field{
+	{Kind: "flatpak", DefaultOrder: 19, Package: PackageMetadata{PURLType: "flatpak"}, Capabilities: CapabilitySourceSelection | CapabilityScope | CapabilityRevision, Scopes: &ScopeContract{AdapterValues: map[plan.Scope]string{plan.ScopeUser: "user", plan.ScopeSystem: "system"}}, Fields: fields(pkgField, map[string]Field{
 		"remote": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"branch": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"scope":  {Type: String, Enum: []string{"user", "system"}, Effects: EffectExecute | EffectVerify},
 	}), AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "snap", DefaultOrder: 20, Capabilities: CapabilityChannel, Fields: fields(pkgField, map[string]Field{
+	{Kind: "snap", DefaultOrder: 20, Package: PackageMetadata{PURLType: "snap"}, Capabilities: CapabilityChannel, Fields: fields(pkgField, map[string]Field{
 		"confinement": {Type: String, Enum: []string{"strict", "classic", "devmode"}, Effects: EffectExecute},
 		"channel":     {Type: String, Enum: []string{"stable", "candidate", "beta", "edge"}, Effects: EffectExecute | EffectVerify},
 		"track":       {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
@@ -301,7 +302,7 @@ var Contracts = finalizeContracts([]Contract{
 		"branch":      {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 	}), MutuallyExclusive: [][]string{{"channel", "track"}, {"channel", "risk"}, {"channel", "branch"}}, AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "cask", DefaultOrder: 21, Fields: pkgField, ImplicitDistroFamily: []string{"macos"}, AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "mas", DefaultOrder: 22, Fields: pkgField, ImplicitDistroFamily: []string{"macos"}, AllowString: true, AllowTrue: true},
+	{Kind: "mas", DefaultOrder: 22, Package: PackageMetadata{PURLType: "mas"}, Fields: pkgField, ImplicitDistroFamily: []string{"macos"}, AllowString: true, AllowTrue: true},
 	packageContract("appman", 23, true),
 	{Kind: "sdkman", DefaultOrder: 24, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify}}), AllowString: true, AllowTrue: true},
 	{Kind: "steamcmd", DefaultOrder: 25, Fields: map[string]Field{
@@ -309,7 +310,7 @@ var Contracts = finalizeContracts([]Contract{
 	}, AllowString: true, AllowTrue: true},
 	packageContract("pacstall", 26, false),
 	{Kind: "aur", Aliases: []string{"paru", "yay"}, DefaultOrder: 27, Fields: pkgField, ImplicitDistroFamily: []string{"arch"}, AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "conda", DefaultOrder: 28, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityEnvironmentTarget, Fields: fields(pkgField, map[string]Field{
+	{Kind: "conda", DefaultOrder: 28, Package: PackageMetadata{ComponentType: PackageComponentLibrary, PURLType: "conda"}, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityEnvironmentTarget, Fields: fields(pkgField, map[string]Field{
 		"version":     {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"build":       {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"channels":    {Type: StringList, Effects: EffectResolve | EffectExecute},
@@ -317,7 +318,7 @@ var Contracts = finalizeContracts([]Contract{
 		"prefix":      {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 	}), MutuallyExclusive: [][]string{{"environment", "prefix"}}, Requires: map[string][]string{"build": {"version"}}, AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "asdf", DefaultOrder: 29, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify}}), AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "container", DefaultOrder: 30, Capabilities: CapabilityImmutableIdentity | CapabilityMutableTag | CapabilityArchitecture | CapabilitySourceSelection | CapabilityAuth, Fields: map[string]Field{
+	{Kind: "container", DefaultOrder: 30, Package: PackageMetadata{PURLType: "oci"}, Capabilities: CapabilityImmutableIdentity | CapabilityMutableTag | CapabilityArchitecture | CapabilitySourceSelection | CapabilityAuth, Fields: map[string]Field{
 		"manager":       {Type: String, Required: true, NonEmpty: true, Enum: []string{"docker", "podman"}, Effects: EffectExecute | EffectVerify},
 		"source":        {Type: String, Required: true, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"tag":           {Type: String, Effects: EffectExecute | EffectVerify},
