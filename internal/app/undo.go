@@ -74,6 +74,7 @@ func newUndoCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "undo",
+		Aliases: []string{"rollback"},
 		Short:   ifPT("Reverter para um snapshot anterior do estado", "Revert to a previous state snapshot"),
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
