@@ -1027,7 +1027,7 @@ yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }
 
 ## Manifest merge rules
 
-See [the README](../README.md#schematoml-and-manifesttoml) for an overview
+See [the README](../README.md#schema-and-personal-manifest) for an overview
 of the two layers.
 
 `schema.toml` and `~/.config/depengine/manifest.toml` merge by field:
