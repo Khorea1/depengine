@@ -212,7 +212,7 @@ path to write (default: schema.toml) Scope: local. Default: .
 permit hooks, build scripts, and other arbitrary code execution Scope: local. Default: false.
 .TP
 .B "\-\-diagnose"
-diagnostic mode: DEBUG + dry\-run + verbose Scope: local. Default: false.
+diagnostic mode: DEBUG + dry\-run + detailed report Scope: local. Default: false.
 .TP
 .B "\-\-dry\-run"
 show what would be installed Scope: local. Default: false.
@@ -257,7 +257,7 @@ skip specific tools (comma\-separated) Scope: local. Default: .
 sort output by: name, status, method Scope: local. Default: .
 .TP
 .B "\-\-verbose"
-detailed output Scope: local. Default: false.
+deprecated compatibility flag; detailed output is already the default Scope: local. Default: false.
 .SS "depengine remove flags"
 .TP
 .B "\-\-all"
@@ -599,9 +599,9 @@ go build -o depengine .
 .EX
 ./depengine install --schema my-tools.toml
 .EE
-.SS "Install a single tool verbosely"
+.SS "Install a single tool"
 .EX
-./depengine install --only nvim --verbose
+./depengine install --only nvim
 .EE
 .SS "Dry run with sorted output"
 .EX
