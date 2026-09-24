@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -277,6 +278,31 @@ func TestGoVersionControlsInstallAndCheck(t *testing.T) {
 	checkRunner.Stdout = "realbin version 1.2.4\n"
 	if adapter.Check(ctx, checkRunner, tool, mc) {
 		t.Fatal("Check should reject a different installed Go tool version")
+	}
+}
+
+func TestGoObservePreservesExactVersionDrift(t *testing.T) {
+	adapter := NewGoAdapter()
+	tool := &config.Tool{Name: "friendly-name"}
+	method := &config.MethodCandidate{Kind: "go", Config: map[string]any{
+		"pkg": "example.com/project/cmd/realbin", "version": "v1.2.3",
+	}}
+	runner := &run.FakeRunner{
+		LookPaths: map[string]bool{"go": true, "realbin": true},
+		Stdout:    "realbin version 1.2.4\n",
+	}
+
+	observation, err := adapter.Observe(context.Background(), runner, tool, method)
+	if err != nil {
+		t.Fatalf("Observe: %v", err)
+	}
+	if observation.Presence != plan.PresencePresent || observation.Identity.Version != "1.2.4" {
+		t.Fatalf("observation = %+v, want present installed version 1.2.4", observation)
+	}
+	desired := plan.ResolvedIdentity{Package: "example.com/project/cmd/realbin", Version: "v1.2.3"}
+	verification := plan.Reconcile(desired, observation)
+	if verification.State != plan.StateDrifted || len(verification.Drift) != 1 || verification.Drift[0].Field != plan.FieldVersion {
+		t.Fatalf("verification = %+v, want exact-version drift", verification)
 	}
 }
 
