@@ -57,7 +57,7 @@ func newInstallCmd() *cobra.Command {
 	f.StringVar(installManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(installNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
 	f.BoolVar(installDryRun, "dry-run", false, "show what would be installed")
-	f.BoolVar(installVerbose, "verbose", false, "detailed output")
+	f.BoolVar(installVerbose, "verbose", false, "deprecated compatibility flag; detailed output is already the default")
 	f.BoolVar(installJSON, "json", false, "JSON output")
 	f.StringVar(installOnly, "only", "", "only install specific tool")
 	f.StringVar(installSkip, "skip", "", "skip specific tools (comma-separated)")
@@ -346,8 +346,8 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	// not accidentally narrow lockfile coverage.
 	selectedTools := filterTools(s.Tools, p.only, p.skip, p.profile)
 
-	if p.verbose {
-		fmt.Fprintln(os.Stderr, "depengine: --verbose is deprecated; output is now verbose by default. Use --quiet for the old summary-only behavior.")
+	if p.verbose && cmd.Flags().Changed("verbose") {
+		fmt.Fprintln(os.Stderr, "depengine: --verbose is deprecated; detailed output is already the default. Use --quiet to suppress live per-tool status lines.")
 	}
 
 	// One aligned block instead of several scattered Fprintf calls — a
