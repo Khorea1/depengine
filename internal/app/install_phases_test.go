@@ -2,8 +2,11 @@ package app
 
 import (
 	"errors"
+	"os"
+	"strings"
 	"testing"
 
+	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/log"
 )
@@ -49,6 +52,37 @@ func TestValidateInstallSortBy(t *testing.T) {
 	}
 	if exitErr.Code != 2 {
 		t.Fatalf("invalid sort exit code = %d, want 2", exitErr.Code)
+	}
+}
+
+func TestPrintInstallHeaderUsesExecutionToolCount(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "install-header-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := newCLIStyle(f)
+	printInstallHeader(cs, installPlan{schema: "schema.toml"}, "debian", &engine.Facts{
+		DistroID:   "debian",
+		TargetArch: "amd64",
+	}, 0, 2)
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "tools" {
+			got = fields[1]
+			break
+		}
+	}
+	if got != "2" {
+		t.Fatalf("tools header = %q, want execution selection count 2; output:\n%s", got, data)
 	}
 }
 
