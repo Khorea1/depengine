@@ -26,7 +26,7 @@ func WindowsAdapters() []AdapterV2 {
 			kind:       "choco",
 			binary:     "choco",
 			installCmd: []string{"choco", "install", "{pkg}", "-y"},
-			checkCmd:   []string{"choco", "list", "--local-only", "--exact", "--limit-output", "{pkg}"},
+			checkCmd:   []string{"choco", "list", "--exact", "--limit-output", "{pkg}"},
 			removeCmd:  []string{"choco", "uninstall", "{pkg}", "-y"},
 		},
 	}
@@ -125,7 +125,7 @@ func (w *winAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *
 	pkg := packageName(tool, mc)
 	switch w.kind {
 	case "choco":
-		res := rn.Run(ctx, "choco", "list", "--local-only", "--exact", "--limit-output", pkg)
+		res := rn.Run(ctx, "choco", "list", "--exact", "--limit-output", pkg)
 		if err := run.CheckResult(res, "choco: version check"); err != nil {
 			return "", err
 		}
