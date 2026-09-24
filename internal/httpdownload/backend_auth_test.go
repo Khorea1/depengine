@@ -119,6 +119,22 @@ func TestGoDownloaderBearerRedirectPolicy(t *testing.T) {
 	}
 }
 
+func TestGoDownloaderBearerRejectsRemotePlaintextRedirect(t *testing.T) {
+	const credential = "redirect-downgrade-sentinel"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://example.com/final", http.StatusFound)
+	}))
+	defer server.Close()
+
+	err := NewGoDownloader(nil).DownloadWithBearer(context.Background(), server.URL+"/start", filepath.Join(t.TempDir(), "artifact"), credential)
+	if err == nil || !strings.Contains(err.Error(), "authenticated redirect") || !strings.Contains(err.Error(), "must use HTTPS") {
+		t.Fatalf("DownloadWithBearer() error = %v, want plaintext redirect rejection", err)
+	}
+	if strings.Contains(err.Error(), credential) {
+		t.Fatalf("redirect error leaked credential: %v", err)
+	}
+}
+
 func TestGoDownloaderBearerReturnsUnauthorizedStatus(t *testing.T) {
 	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
