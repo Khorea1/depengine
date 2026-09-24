@@ -312,39 +312,28 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 	runner := ex.mutationRunner(ac.tool.Name, ac.displayKind)
 	methodCtx, methodCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
 
-	// Resolve auth only after this candidate survives all planning and
-	// preparation gates. The credential is carried only in the per-call
-	// context and is absent from plans, method config, and persisted state.
-	if ac.method.Kind == "http" && ac.method.SecretRef != nil {
-		ref := plan.SecretReference{Provider: ac.method.SecretRef.Provider, Name: ac.method.SecretRef.Name}
+	// Resolve auth only after this candidate survives every planning and
+	// preparation gate. Credentials stay in this method call's context.
+	if ac.method.Kind == "http" {
 		resolver := ex.secretResolver
 		if resolver == nil {
 			resolver = secret.EnvResolver{}
 		}
-		credential, err := resolver.Resolve(methodCtx, ref)
-		if err != nil || credential == "" {
-			methodCancel()
-			reason := "resolution failed"
-			switch {
-			case errors.Is(err, secret.ErrSecretMissing):
-				reason = "missing"
-			case errors.Is(err, secret.ErrSecretEmpty), err == nil:
-				reason = "empty"
-			case errors.Is(err, secret.ErrUnsupportedProvider):
-				reason = "unsupported provider"
-			case errors.Is(err, secret.ErrInvalidReference):
-				reason = "invalid reference"
+		for _, credentialRef := range httpCredentialReferences(ac.method) {
+			credential, resolveErr := resolver.Resolve(methodCtx, credentialRef.reference)
+			if resolveErr != nil || credential == "" {
+				methodCancel()
+				detail := fmt.Sprintf("http %s secret %s", credentialRef.purpose, secretResolutionClass(resolveErr, credential))
+				if rollbackErr := ac.prepared.rollback(ac.toolCtx, ex); rollbackErr != nil {
+					detail += "; source rollback failed"
+					ex.failCandidate(ac, result, detail)
+					return finishTool
+				}
+				ex.skipCandidate(ac, result, "failed", detail)
+				return nextMethod
 			}
-			detail := fmt.Sprintf("http: secret %s", reason)
-			if rollbackErr := ac.prepared.rollback(ac.toolCtx, ex); rollbackErr != nil {
-				detail = fmt.Sprintf("%s; source rollback failed: %v", detail, rollbackErr)
-				ex.failCandidate(ac, result, detail)
-				return finishTool
-			}
-			ex.skipCandidate(ac, result, "failed", detail)
-			return nextMethod
+			methodCtx = WithHTTPBearer(methodCtx, credentialRef.purpose, credential)
 		}
-		methodCtx = WithHTTPArtifactBearer(methodCtx, credential)
 	}
 
 	// Persist the commit boundary before the adapter can mutate the target. If
@@ -389,6 +378,58 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 	ex.skipCandidate(ac, result, "failed", err.Error())
 	ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "failed", "error", err.Error())
 	return nextMethod
+}
+
+type httpCredentialReference struct {
+	purpose   HTTPBearerPurpose
+	reference plan.SecretReference
+}
+
+// Sidecar fields are accessed by name because their config declaration is
+// maintained in the config package, outside this execution slice.
+func httpCredentialReferences(method *config.MethodCandidate) []httpCredentialReference {
+	refs := make([]httpCredentialReference, 0, 3)
+	if method.SecretRef != nil {
+		refs = append(refs, httpCredentialReference{HTTPBearerArtifact, secretPlanReference(method.SecretRef)})
+	}
+	if method.ChecksumSecretRef != nil {
+		refs = append(refs, httpCredentialReference{HTTPBearerChecksum, secretPlanReference(method.ChecksumSecretRef)})
+	}
+	if method.SignatureSecretRef != nil {
+		refs = append(refs, httpCredentialReference{HTTPBearerSignature, secretPlanReference(method.SignatureSecretRef)})
+	}
+	return refs
+}
+
+// HTTPBearerRequired reports whether a candidate declares a credential for
+// the given request purpose. Adapters use it to fail closed if called without
+// the executor's resolved runtime context.
+func HTTPBearerRequired(method *config.MethodCandidate, purpose HTTPBearerPurpose) bool {
+	for _, ref := range httpCredentialReferences(method) {
+		if ref.purpose == purpose {
+			return true
+		}
+	}
+	return false
+}
+
+func secretPlanReference(ref *config.SecretReference) plan.SecretReference {
+	return plan.SecretReference{Provider: ref.Provider, Name: ref.Name}
+}
+
+func secretResolutionClass(err error, credential string) string {
+	switch {
+	case errors.Is(err, secret.ErrSecretMissing):
+		return "missing"
+	case errors.Is(err, secret.ErrSecretEmpty), err == nil && credential == "":
+		return "empty"
+	case errors.Is(err, secret.ErrUnsupportedProvider):
+		return "unsupported provider"
+	case errors.Is(err, secret.ErrInvalidReference):
+		return "invalid reference"
+	default:
+		return "resolution failed"
+	}
 }
 
 // finishWouldInstall records the dry-run terminal result. Planning only:

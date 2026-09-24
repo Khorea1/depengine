@@ -119,6 +119,12 @@ func TestParseHTTPSecretReference(t *testing.T) {
 [tools.demo.http]
 url = "https://example.test/demo.tar.gz"
 secret_ref = { provider = "env", name = "ARTIFACT_TOKEN" }
+checksum = "sha256:auto"
+checksum_url = "https://example.test/demo.tar.gz.sha256"
+checksum_secret_ref = { provider = "env", name = "CHECKSUM_TOKEN" }
+signature_url = "https://example.test/demo.tar.gz.sha256.sig"
+signature_secret_ref = { provider = "env", name = "SIGNATURE_TOKEN" }
+signing_key = "release-key"
 `
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
@@ -127,9 +133,35 @@ secret_ref = { provider = "env", name = "ARTIFACT_TOKEN" }
 	if err != nil {
 		t.Fatal(err)
 	}
-	ref := schema.Tools["demo"].Methods[0].SecretRef
-	if ref == nil || *ref != (SecretReference{Provider: "env", Name: "ARTIFACT_TOKEN"}) {
-		t.Fatalf("HTTP secret reference = %+v", ref)
+	method := schema.Tools["demo"].Methods[0]
+	refs := map[string]struct {
+		got  *SecretReference
+		want SecretReference
+	}{
+		"artifact":  {method.SecretRef, SecretReference{Provider: "env", Name: "ARTIFACT_TOKEN"}},
+		"checksum":  {method.ChecksumSecretRef, SecretReference{Provider: "env", Name: "CHECKSUM_TOKEN"}},
+		"signature": {method.SignatureSecretRef, SecretReference{Provider: "env", Name: "SIGNATURE_TOKEN"}},
+	}
+	for purpose, ref := range refs {
+		if ref.got == nil || *ref.got != ref.want {
+			t.Fatalf("HTTP %s secret reference = %+v, want %+v", purpose, ref.got, ref.want)
+		}
+	}
+}
+
+func TestHTTPSidecarSecretReferencesRejectUnsupportedMethod(t *testing.T) {
+	for _, field := range []string{"checksum_secret_ref", "signature_secret_ref"} {
+		t.Run(field, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "schema.toml")
+			data := "schema_version = 1\n[tools.demo.github]\nrepo = \"example/demo\"\nasset = \"demo.tar.gz\"\n" +
+				field + " = { provider = \"env\", name = \"TOKEN\" }\n"
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ParseProjectSchema(path, nil); err == nil || !strings.Contains(err.Error(), "field is not supported by method kind github") {
+				t.Fatalf("ParseProjectSchema() error = %v, want unsupported %s", err, field)
+			}
+		})
 	}
 }
 

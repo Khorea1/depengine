@@ -383,6 +383,14 @@ func mergeMethodConfigs(lower, upper *MethodCandidate, pc *provenanceCollector) 
 		secretRef := *lower.SecretRef
 		result.SecretRef = &secretRef
 	}
+	if upper.ChecksumSecretRef == nil && lower.ChecksumSecretRef != nil {
+		secretRef := *lower.ChecksumSecretRef
+		result.ChecksumSecretRef = &secretRef
+	}
+	if upper.SignatureSecretRef == nil && lower.SignatureSecretRef != nil {
+		secretRef := *lower.SignatureSecretRef
+		result.SignatureSecretRef = &secretRef
+	}
 
 	// For each key in lower.Config that upper doesn't have, copy it up.
 	for key, lowerVal := range lower.Config {

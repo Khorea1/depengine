@@ -50,7 +50,7 @@ func (c Contract) MissingPlanCapabilities(p plan.ResolvedInstallPlan) (Capabilit
 // artifacts. Other secret references stay fail-closed.
 func supportsSharedAuth(p plan.ResolvedInstallPlan, contractKind string) bool {
 	if p.Candidate.Method == "http" {
-		if contractKind != "http" || len(p.Secrets) != 1 {
+		if contractKind != "http" || len(p.Secrets) < 1 || len(p.Secrets) > 3 {
 			return false
 		}
 		hasArtifact := len(p.Artifacts) > 0

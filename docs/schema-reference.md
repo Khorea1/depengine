@@ -195,26 +195,34 @@ fastfetch = { http = {
 } }
 ```
 
-For an artifact that requires Bearer authentication, add a typed reference to
-an environment variable:
+For HTTP requests that require Bearer authentication, add typed references to
+environment variables for the exact request purpose:
 
 ```toml
 [tools.private-tool.http]
 url = "https://downloads.example.com/private-tool.tar.gz"
 secret_ref = { provider = "env", name = "PRIVATE_TOOL_TOKEN" }
+checksum = "sha256:auto"
+checksum_url = "https://downloads.example.com/private-tool.tar.gz.sha256"
+checksum_secret_ref = { provider = "env", name = "PRIVATE_TOOL_CHECKSUM_TOKEN" }
+signature_url = "https://downloads.example.com/private-tool.tar.gz.sha256.sig"
+signature_secret_ref = { provider = "env", name = "PRIVATE_TOOL_SIGNATURE_TOKEN" }
+signing_key = "release-key-2026"
 ```
 
-`secret_ref` must contain exactly `provider` and `name`. The supported provider
-is `env`; `name` is the environment variable name, not the token itself. The
-token is sent as `Authorization: Bearer <value>` for the primary artifact
-download. It is resolved only when this HTTP candidate is reached. If the
-reference cannot be resolved (including a missing or empty variable), this
-candidate fails and depengine can try the next configured installation method.
-The credential remains in process memory and the authenticated request uses
-depengine's in-process Go HTTP backend.
+`secret_ref`, `checksum_secret_ref`, and `signature_secret_ref` each contain
+exactly `provider` and `name`. The supported provider is `env`; `name` is the
+environment variable name, not the token itself. depengine resolves references
+only when this HTTP candidate reaches real execution. Missing, empty, invalid,
+or unsupported references fail this candidate so another configured method can
+be tried. Values remain in process memory and authenticated requests use the
+in-process Go HTTP backend.
 
-Authentication applies only to the primary artifact URL. It does not
-automatically authenticate checksum, signature, or other sidecar requests.
+Credentials are request-specific. `secret_ref` authenticates only the primary
+artifact request, `checksum_secret_ref` only an explicitly configured
+`checksum_url`, and `signature_secret_ref` only `signature_url`. depengine never
+implicitly forwards the primary artifact credential to checksum/signature
+sidecars or to an automatically inferred checksum URL.
 
 > `checksum` accepts a literal hash (`sha256:...`) or `:auto` (automatic
 > resolution — this is Trust On First Use, not offline-verified; prefer a
@@ -248,9 +256,12 @@ automatically authenticate checksum, signature, or other sidecar requests.
 | `branch` | no | GitHub release tag expressing rolling-branch intent; when set, it takes precedence over `release` |
 | `checksum` | no | `"sha256:<hex>"`, `"md5:<hex>"`, `"sha1:<hex>"`, `"sha512:<hex>"`, or `"<algo>:auto"` |
 | `checksum_url` | no | Explicit URL for the checksum file (overrides auto patterns); requires `checksum = "<algo>:auto"` |
+| `checksum_secret_ref` | no | Typed Bearer credential reference used only for the explicitly configured `checksum_url` |
 | `checksum_file_format` | no | `"sha256sum"` (default), `"bsd"`, or `"raw"`; requires `checksum = "<algo>:auto"` |
 | `signature_url` | no | GPG detached signature URL for verifying the checksum file; requires `checksum = "<algo>:auto"` |
+| `signature_secret_ref` | no | Typed Bearer credential reference used only for `signature_url` |
 | `signing_key` | no | GPG key URL or fingerprint; requires `signature_url` and `checksum = "<algo>:auto"` |
+| `secret_ref` | no | Typed Bearer credential reference used only for the primary artifact request |
 | `extract_to` | no | Extraction destination (default: `/usr/local/bin`) |
 | `strip_components` | no | Remove this many leading archive path components. Applies equally to tar and zip; negative or empty results are rejected. |
 | `entrypoints` | no | Map stable command names to relative files inside `extract_to`, e.g. `{ nvim = "bin/nvim" }`. |

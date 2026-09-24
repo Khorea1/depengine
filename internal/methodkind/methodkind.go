@@ -343,8 +343,13 @@ var Contracts = finalizeContracts([]Contract{
 		"scope":   artifactScopeField["scope"],
 	}), SourceAlternatives: [][]string{{"repo", "asset"}}, Artifact: githubArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true},
 	{Kind: "http", DefaultOrder: 36, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(downloadFields, artifactScopeField, map[string]Field{
-		"secret_ref": {Type: SecretRef, Effects: EffectResolve | EffectExecute},
-	}), SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract, Checksum: remoteChecksumContract},
+		"secret_ref":           {Type: SecretRef, Effects: EffectResolve | EffectExecute},
+		"checksum_secret_ref":  {Type: SecretRef, Effects: EffectResolve | EffectExecute},
+		"signature_secret_ref": {Type: SecretRef, Effects: EffectResolve | EffectExecute},
+	}), Requires: map[string][]string{
+		"checksum_secret_ref":  {"checksum_url"},
+		"signature_secret_ref": {"signature_url"},
+	}, SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract, Checksum: remoteChecksumContract},
 	{Kind: "msi", DefaultOrder: 37, Fields: fields(artifactFields, map[string]Field{
 		"product_name": {Type: String, Required: true, NonEmpty: true, Effects: EffectVerify | EffectExecute},
 		"publisher":    {Type: String, Effects: EffectVerify | EffectExecute},

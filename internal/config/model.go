@@ -144,6 +144,14 @@ func cloneMethod(method *MethodCandidate) *MethodCandidate {
 		secretRef := *method.SecretRef
 		out.SecretRef = &secretRef
 	}
+	if method.ChecksumSecretRef != nil {
+		secretRef := *method.ChecksumSecretRef
+		out.ChecksumSecretRef = &secretRef
+	}
+	if method.SignatureSecretRef != nil {
+		secretRef := *method.SignatureSecretRef
+		out.SignatureSecretRef = &secretRef
+	}
 	out.Config = make(map[string]any, len(method.Config))
 	for key, value := range method.Config {
 		out.Config[key] = value
@@ -174,15 +182,17 @@ type MethodCandidate struct {
 	// ProjectRoot is inherited from the final project schema after layering.
 	// Adapters may use it for project-relative resources, but must never persist
 	// the machine-specific absolute value.
-	ProjectRoot string `json:"-"`
-	When        *Condition
-	Config      map[string]any
-	Err         error
-	ArchMap     map[string]string
-	OSMap       map[string]string
-	Requires    []string
-	Sources     []Source
-	SecretRef   *SecretReference
+	ProjectRoot        string `json:"-"`
+	When               *Condition
+	Config             map[string]any
+	Err                error
+	ArchMap            map[string]string
+	OSMap              map[string]string
+	Requires           []string
+	Sources            []Source
+	SecretRef          *SecretReference
+	ChecksumSecretRef  *SecretReference
+	SignatureSecretRef *SecretReference
 }
 
 // Source is repository configuration scoped to a single method candidate.

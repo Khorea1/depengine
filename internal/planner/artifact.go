@@ -14,6 +14,12 @@ func applyArtifact(p *plan.ResolvedInstallPlan, method *config.MethodCandidate, 
 	if method.SecretRef != nil {
 		appendSecretRequirement(p, plan.SecretReference{Provider: method.SecretRef.Provider, Name: method.SecretRef.Name})
 	}
+	if method.ChecksumSecretRef != nil {
+		appendSecretRequirement(p, plan.SecretReference{Provider: method.ChecksumSecretRef.Provider, Name: method.ChecksumSecretRef.Name})
+	}
+	if method.SignatureSecretRef != nil {
+		appendSecretRequirement(p, plan.SecretReference{Provider: method.SignatureSecretRef.Provider, Name: method.SignatureSecretRef.Name})
+	}
 	checksum := stringValue(method.Config, "checksum")
 	if err := contract.ValidateChecksum(checksum); err != nil {
 		return fmt.Errorf("checksum: %w", err)

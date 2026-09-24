@@ -543,6 +543,18 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 			}
 			delete(t, "secret_ref")
 		}
+		if rawSecretRef, ok := t["checksum_secret_ref"]; ok {
+			if ref, ok := rawSecretRef.(map[string]any); ok {
+				mc.ChecksumSecretRef = parseSecretReference(ref)
+			}
+			delete(t, "checksum_secret_ref")
+		}
+		if rawSecretRef, ok := t["signature_secret_ref"]; ok {
+			if ref, ok := rawSecretRef.(map[string]any); ok {
+				mc.SignatureSecretRef = parseSecretReference(ref)
+			}
+			delete(t, "signature_secret_ref")
+		}
 		for k, v := range t {
 			mc.Config[k] = v
 		}

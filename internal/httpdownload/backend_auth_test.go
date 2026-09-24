@@ -157,6 +157,75 @@ func TestChecksumSidecarDoesNotReceiveArtifactBearer(t *testing.T) {
 	}
 }
 
+func TestChecksumSidecarUsesOnlyItsOwnBearerForExplicitURL(t *testing.T) {
+	artifactCredential := "artifact-" + t.Name()
+	checksumCredential := "checksum-" + t.Name()
+	headers := map[string]string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headers[r.URL.Path] = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(strings.Repeat("0", 64)))
+	}))
+	defer server.Close()
+
+	ctx := exec.WithHTTPBearer(context.Background(), exec.HTTPBearerArtifact, artifactCredential)
+	ctx = exec.WithHTTPBearer(ctx, exec.HTTPBearerChecksum, checksumCredential)
+	adapter := NewHTTPAdapter()
+	runner := &run.FakeRunner{LookPaths: map[string]bool{"curl": false, "wget": false}}
+	checks := []struct {
+		url        string
+		configured string
+		wantAuth   string
+	}{
+		{url: server.URL + "/explicit", configured: server.URL + "/explicit", wantAuth: "Bearer " + checksumCredential},
+		{url: server.URL + "/inferred", wantAuth: ""},
+	}
+	for _, check := range checks {
+		cc := &checksumConfig{algorithm: "sha256", format: "raw", url: check.configured}
+		if _, err := adapter.fetchChecksumFromURL(ctx, runner, check.url, "artifact", cc, map[string]any{}); err != nil {
+			t.Fatalf("fetch checksum %s: %v", check.url, err)
+		}
+		path := strings.TrimPrefix(check.url, server.URL)
+		if got := headers[path]; got != check.wantAuth {
+			t.Errorf("Authorization for %s = %q, want %q", path, got, check.wantAuth)
+		}
+	}
+}
+
+func TestSignatureSidecarUsesOnlyItsOwnBearer(t *testing.T) {
+	const (
+		artifactCredential  = "artifact-only-sentinel"
+		signatureCredential = "signature-only-sentinel"
+	)
+	var checksumAuth, signatureAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/checksum":
+			checksumAuth = r.Header.Get("Authorization")
+			_, _ = w.Write([]byte(strings.Repeat("0", 64)))
+		case "/signature":
+			signatureAuth = r.Header.Get("Authorization")
+			_, _ = w.Write([]byte("signature"))
+		}
+	}))
+	defer server.Close()
+
+	ctx := exec.WithHTTPBearer(context.Background(), exec.HTTPBearerArtifact, artifactCredential)
+	ctx = exec.WithHTTPBearer(ctx, exec.HTTPBearerSignature, signatureCredential)
+	adapter := NewHTTPAdapter()
+	runner := &run.FakeRunner{LookPaths: map[string]bool{"curl": false, "wget": false, "gpg": false}}
+	config := map[string]any{"signature_url": server.URL + "/signature"}
+	_, err := adapter.fetchChecksumFromURL(ctx, runner, server.URL+"/checksum", "artifact", &checksumConfig{algorithm: "sha256", format: "raw"}, config)
+	if err == nil || !strings.Contains(err.Error(), "gpg: not found") {
+		t.Fatalf("fetch checksum with unavailable gpg error = %v, want gpg unavailable", err)
+	}
+	if checksumAuth != "" {
+		t.Errorf("checksum Authorization = %q, want absent without checksum credential", checksumAuth)
+	}
+	if signatureAuth != "Bearer "+signatureCredential {
+		t.Errorf("signature Authorization = %q, want its own bearer", signatureAuth)
+	}
+}
+
 func TestSelectCandidateDownloaderForTypedAuthUsesGoWithoutExecutableLookup(t *testing.T) {
 	fr := &run.FakeRunner{LookPaths: map[string]bool{"curl": true, "wget": true}}
 	mc := &config.MethodCandidate{Kind: "http", SecretRef: &config.SecretReference{Provider: "env", Name: "ARTIFACT_TOKEN"}}

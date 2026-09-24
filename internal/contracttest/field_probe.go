@@ -55,6 +55,14 @@ var fieldPairs = map[string][2]any{
 		map[string]any{"provider": "env", "name": "TOKEN_A"},
 		map[string]any{"provider": "env", "name": "TOKEN_B"},
 	},
+	"checksum_secret_ref": {
+		map[string]any{"provider": "env", "name": "CHECKSUM_TOKEN_A"},
+		map[string]any{"provider": "env", "name": "CHECKSUM_TOKEN_B"},
+	},
+	"signature_secret_ref": {
+		map[string]any{"provider": "env", "name": "SIGNATURE_TOKEN_A"},
+		map[string]any{"provider": "env", "name": "SIGNATURE_TOKEN_B"},
+	},
 	"cargo.branch": {"edge-a", "edge-b"},
 	"cargo.tag":    {"tag-a", "tag-b"},
 	"cargo.rev":    {"rev-a", "rev-b"},

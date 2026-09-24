@@ -69,6 +69,8 @@ var fieldSemantics = map[string]FieldSemantic{
 	"root":                 SemanticPlacement,
 	"scope":                SemanticPolicy,
 	"secret_ref":           SemanticAuthentication,
+	"checksum_secret_ref":  SemanticAuthentication,
+	"signature_secret_ref": SemanticAuthentication,
 	"signature_url":        SemanticIntegrity,
 	"signing_key":          SemanticIntegrity,
 	"source":               SemanticSourceIdentity,

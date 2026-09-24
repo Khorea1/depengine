@@ -43,16 +43,27 @@ func TestBuildCandidateIntentRejectsCredentialBearingArtifact(t *testing.T) {
 func TestBuildCandidateIntentProjectsHTTPSecretReference(t *testing.T) {
 	tool, method := candidate("demo", "http", map[string]any{"url": "https://example.test/demo.tar.gz"})
 	method.SecretRef = &config.SecretReference{Provider: "env", Name: "ARTIFACT_TOKEN"}
+	method.ChecksumSecretRef = &config.SecretReference{Provider: "env", Name: "CHECKSUM_TOKEN"}
+	method.SignatureSecretRef = &config.SecretReference{Provider: "env", Name: "SIGNATURE_TOKEN"}
 	p, err := planner.BuildCandidateIntent(tool, method)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := plan.SecretReference{Provider: "env", Name: "ARTIFACT_TOKEN"}
+	want := []plan.SecretReference{
+		{Provider: "env", Name: "ARTIFACT_TOKEN"},
+		{Provider: "env", Name: "CHECKSUM_TOKEN"},
+		{Provider: "env", Name: "SIGNATURE_TOKEN"},
+	}
 	if len(p.Artifacts) != 1 || p.Artifacts[0].URL != "https://example.test/demo.tar.gz" {
 		t.Fatalf("artifact identity = %+v", p.Artifacts)
 	}
-	if len(p.Secrets) != 1 || p.Secrets[0] != want {
-		t.Fatalf("secret requirements = %+v, want [%+v]", p.Secrets, want)
+	if len(p.Secrets) != len(want) {
+		t.Fatalf("secret requirements = %+v, want %+v", p.Secrets, want)
+	}
+	for i := range want {
+		if p.Secrets[i] != want[i] {
+			t.Fatalf("secret requirements = %+v, want %+v", p.Secrets, want)
+		}
 	}
 	encoded, err := json.Marshal(p)
 	if err != nil {
@@ -60,6 +71,20 @@ func TestBuildCandidateIntentProjectsHTTPSecretReference(t *testing.T) {
 	}
 	if strings.Contains(string(encoded), "sentinel-token-value") {
 		t.Fatal("serialized static plan contains secret material")
+	}
+}
+
+func TestBuildCandidateIntentRejectsInvalidHTTPSidecarSecretReference(t *testing.T) {
+	tool, method := candidate("demo", "http", map[string]any{"url": "https://example.test/demo.tar.gz"})
+	method.ChecksumSecretRef = &config.SecretReference{Provider: "env", Name: ""}
+	if _, err := planner.BuildCandidateIntent(tool, method); err == nil || !strings.Contains(err.Error(), "checksum_secret_ref") {
+		t.Fatalf("BuildCandidateIntent() error = %v, want invalid checksum_secret_ref", err)
+	}
+
+	tool, method = candidate("demo", "github", map[string]any{"repo": "example/demo", "asset": "demo.tar.gz"})
+	method.SignatureSecretRef = &config.SecretReference{Provider: "env", Name: "SIGNATURE_TOKEN"}
+	if _, err := planner.BuildCandidateIntent(tool, method); err == nil || !strings.Contains(err.Error(), "signature_secret_ref") {
+		t.Fatalf("BuildCandidateIntent() error = %v, want unsupported signature_secret_ref", err)
 	}
 }
 

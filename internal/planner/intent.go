@@ -27,13 +27,23 @@ func BuildCandidateIntent(tool *config.Tool, method *config.MethodCandidate) (pl
 	if err := validateConfigKeys(method.Config, contract); err != nil {
 		return plan.ResolvedInstallPlan{}, invalid("candidate", err)
 	}
-	if method.SecretRef != nil {
-		field, supported := contract.Fields["secret_ref"]
-		if !supported || field.Type != methodkind.SecretRef {
-			return plan.ResolvedInstallPlan{}, invalid("candidate", fmt.Errorf("field %q is not supported by method %q", "secret_ref", contract.Kind))
+	for _, secret := range []struct {
+		name string
+		ref  *config.SecretReference
+	}{
+		{name: "secret_ref", ref: method.SecretRef},
+		{name: "checksum_secret_ref", ref: method.ChecksumSecretRef},
+		{name: "signature_secret_ref", ref: method.SignatureSecretRef},
+	} {
+		if secret.ref == nil {
+			continue
 		}
-		if err := (plan.SecretReference{Provider: method.SecretRef.Provider, Name: method.SecretRef.Name}).Validate(); err != nil {
-			return plan.ResolvedInstallPlan{}, invalid("candidate", fmt.Errorf("secret_ref: %w", err))
+		field, supported := contract.Fields[secret.name]
+		if !supported || field.Type != methodkind.SecretRef {
+			return plan.ResolvedInstallPlan{}, invalid("candidate", fmt.Errorf("field %q is not supported by method %q", secret.name, contract.Kind))
+		}
+		if err := (plan.SecretReference{Provider: secret.ref.Provider, Name: secret.ref.Name}).Validate(); err != nil {
+			return plan.ResolvedInstallPlan{}, invalid("candidate", fmt.Errorf("%s: %w", secret.name, err))
 		}
 	}
 

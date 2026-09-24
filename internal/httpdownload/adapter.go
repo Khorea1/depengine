@@ -232,13 +232,17 @@ func methodWithResolvedArtifact(mc *config.MethodCandidate, artifact plan.Artifa
 }
 
 func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolvedURL string) error {
-	bearerCredential, hasBearerCredential := exec.HTTPArtifactBearer(ctx)
-	if mc != nil && mc.SecretRef != nil && !hasBearerCredential {
-		return fmt.Errorf("http: authenticated artifact request has no runtime credential")
-	}
 	if mc == nil {
 		return fmt.Errorf("http: method configuration is required")
 	}
+	for _, purpose := range []exec.HTTPBearerPurpose{exec.HTTPBearerArtifact, exec.HTTPBearerChecksum, exec.HTTPBearerSignature} {
+		if exec.HTTPBearerRequired(mc, purpose) {
+			if _, ok := exec.HTTPBearer(ctx, purpose); !ok {
+				return fmt.Errorf("http: authenticated %s request has no runtime credential", purpose)
+			}
+		}
+	}
+	bearerCredential, hasBearerCredential := exec.HTTPBearer(ctx, exec.HTTPBearerArtifact)
 	// Re-enforce the shared artifact URL contract at the runtime boundary.
 	// Normal CLI flows validate before execution, but adapters are also public
 	// package APIs and must not leak embedded credentials when called directly.
@@ -541,8 +545,13 @@ func (a *HTTPAdapter) fetchChecksumFromURL(ctx context.Context, rn run.Runner, c
 	defer os.RemoveAll(tmpDir)
 
 	checksumFile := tmpDir + "/checksum"
-	dl := SelectDownloaderForURL(ctx, rn, checksumURL)
-	if err := dl.Download(ctx, checksumURL, checksumFile); err != nil {
+	var checksumBearer string
+	// A checksum credential is scoped to the explicitly configured URL. Never
+	// send it to companion URLs inferred from the artifact URL.
+	if cc.url != "" && checksumURL == cc.url {
+		checksumBearer, _ = exec.HTTPBearer(ctx, exec.HTTPBearerChecksum)
+	}
+	if err := downloadSidecar(ctx, rn, checksumURL, checksumFile, checksumBearer); err != nil {
 		return "", fmt.Errorf("downloading %s: %w", checksumURL, err)
 	}
 
@@ -550,8 +559,8 @@ func (a *HTTPAdapter) fetchChecksumFromURL(ctx context.Context, rn run.Runner, c
 	if sigURL, ok := config["signature_url"].(string); ok && sigURL != "" {
 		signingKey, _ := config["signing_key"].(string)
 		sigFile := tmpDir + "/checksum.sig"
-		sigDownloader := SelectDownloaderForURL(ctx, rn, sigURL)
-		if err := sigDownloader.Download(ctx, sigURL, sigFile); err != nil {
+		signatureBearer, _ := exec.HTTPBearer(ctx, exec.HTTPBearerSignature)
+		if err := downloadSidecar(ctx, rn, sigURL, sigFile, signatureBearer); err != nil {
 			return "", fmt.Errorf("downloading signature %s: %w", sigURL, err)
 		}
 		if err := GPGVerify(ctx, rn, checksumFile, sigFile, signingKey); err != nil {
@@ -592,6 +601,21 @@ func (a *HTTPAdapter) fetchChecksumFromURL(ctx context.Context, rn run.Runner, c
 		return "", fmt.Errorf("no checksum for %q in %s", wantName, checksumURL)
 	}
 	return hash, nil
+}
+
+// downloadSidecar uses a credential only when the executor explicitly
+// attached one for this sidecar purpose. It deliberately does not inspect or
+// reuse the primary artifact credential.
+func downloadSidecar(ctx context.Context, rn run.Runner, rawURL, dest, bearerCredential string) error {
+	if bearerCredential == "" {
+		return SelectDownloaderForURL(ctx, rn, rawURL).Download(ctx, rawURL, dest)
+	}
+	dl := SelectDownloaderForAuthenticatedURL(rn)
+	goDownloader, ok := dl.(*GoDownloader)
+	if !ok {
+		return fmt.Errorf("http: authenticated sidecar request requires the in-process downloader")
+	}
+	return goDownloader.DownloadWithBearer(ctx, rawURL, dest, bearerCredential)
 }
 
 // Ensure HTTPAdapter implements exec.AdapterV2.
