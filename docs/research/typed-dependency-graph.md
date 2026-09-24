@@ -217,6 +217,53 @@ For example, a pair may have a general tool prerequisite and a distinct
 candidate-specific prerequisite. Renderers may choose to merge or bundle those
 edges visually, but the model should not discard them.
 
+### Multiedges and renderer bundling
+
+**Decision:** preserve every semantic edge in the IR. Bundling is a presentation
+optimization only.
+
+For a pair such as:
+
+```text
+A -> B ToolRequire
+A -> B MethodRequire(method=http)
+A -> B MethodRequire(method=source)
+```
+
+all three edges remain independent because they may differ in `role`, `guard`,
+`method`, and future projection `status`.
+
+Renderer policy:
+
+- DOT emits separate parallel edges. Activation-only method edges should use
+  `constraint=false` so they remain visible without affecting rank assignment.
+  Do not enable Graphviz edge concentration by default, because that can hide
+  semantic multiplicity.
+- Mermaid emits one edge statement per semantic edge in deterministic order.
+  Stable edge IDs may be added later for styling, but correctness must not
+  depend on them.
+- Terminal output may share a physical route between the same endpoints through
+  a layout-only bundle:
+
+```text
+STRUCT EdgeBundle:
+    from: ToolID
+    to: ToolID
+    members: List<Edge>
+```
+
+The bundle never replaces the member edges in the graph IR. Its line style is
+chosen deterministically from the strongest visible relation:
+
+```text
+unconditional Scheduling present -> Solid
+guarded Scheduling present       -> Dashed
+Activation-only                  -> Dotted
+```
+
+All member semantics that are not carried by the line style remain in the edge
+annotation.
+
 ## Declared, effective, and resolved projections
 
 There are three different questions a graph command may eventually answer:
@@ -265,9 +312,52 @@ FUNCTION Project(graph, view, context):
     RETURN result
 ```
 
-The first implementation does not need to expose all three CLI views. The
-important design constraint is that the IR must not make those future views
-impossible.
+### Projection defaults and edge state
+
+**Decision:** `depengine graph` remains a declared-schema view by default.
+
+The declared view is intentionally host-independent and deterministic. It shows
+all declared semantic edges and preserves guard expressions as metadata, but it
+does **not** classify guarded edges as active or inactive because no host facts
+have been evaluated.
+
+The eventual CLI surface should use one mutually exclusive view selector:
+
+```text
+--view declared
+--view effective
+--view resolved
+```
+
+with `declared` as the default.
+
+Projection behavior:
+
+```text
+declared:
+    show all declared edges
+    show guard annotations
+    do not gather host facts
+    do not assign active/inactive state
+
+effective:
+    evaluate guards against host facts
+    show applicable edges by default
+    optionally support --show-inactive for diagnostics
+
+resolved:
+    evaluate guards
+    apply selected candidate/method resolution
+    show only relations participating in the resolved plan
+```
+
+An inactive edge is therefore meaningful only in an evaluated projection such
+as `effective` or `resolved`; it is not a state that should appear in the
+default declared view.
+
+The first implementation does not need to expose all three CLI views, but the
+IR and projection API must preserve this model so that adding them later does
+not require changing graph semantics.
 
 ## Scheduling projection
 
@@ -494,6 +584,40 @@ FUNCTION RouteEdges(layout):
 For edges spanning multiple ranks, the layout layer may introduce virtual
 routing points. These are layout-only objects, never semantic graph nodes.
 
+## Terminal width and compact fallback
+
+**Decision:** do not use a fixed terminal-width threshold such as 80 or 100
+columns to decide whether the entire graph is drawable.
+
+The layout already computes each connected component's required width, so the
+renderer should compare that width with the actual available width:
+
+```text
+FUNCTION RenderComponent(component, availableWidth):
+
+    layout = Layout(component)
+
+    IF layout.width <= availableWidth:
+        RETURN RenderDiagram(layout)
+
+    RETURN RenderCompactEdges(component)
+```
+
+The decision is made **per component**, not once for the complete graph. A small
+component should remain diagrammatic even when another component is too wide.
+
+The compact fallback must remain a dependency-edge view rather than reverting
+to topological `level N` output:
+
+```text
+dependency -> dependent [annotation]
+```
+
+When a terminal width cannot be discovered, pass a deterministic default width
+to the renderer rather than letting rendering code query the environment
+internally. The renderer API should accept width explicitly so behavior is easy
+to snapshot-test at widths such as 40, 80, and 120 columns.
+
 ## Visual edge semantics
 
 The renderer should expose only a small number of stable visual distinctions:
@@ -520,6 +644,30 @@ STRUCT EdgeStyle:
 ```
 
 Do not make ANSI color the sole carrier of meaning.
+
+### Edge annotations
+
+**Decision:** method identity and guards remain separate semantic fields in the
+IR, but renderers combine them into one structured edge annotation.
+
+A central formatter should produce deterministic labels such as:
+
+```text
+ToolRequire without guard:
+    ""
+
+ToolRequire with guard:
+    "when family=unix"
+
+MethodRequire without guard:
+    "method=http"
+
+MethodRequire with guard:
+    "method=http; when family=unix"
+```
+
+The terminal renderer may use a shorter equivalent when space is constrained,
+but it must not collapse the underlying fields into one semantic property.
 
 ## CLI evolution
 
@@ -552,12 +700,35 @@ mermaid  -> documentation/interchange
 
 No default-output change is required for the first implementation.
 
+The graph projection is orthogonal to output format. When host-aware projections
+are exposed, prefer an enum-style `--view declared|effective|resolved` flag over
+independent boolean flags such as `--effective` and `--resolved`. The default
+view remains `declared`.
+
 ## `--only` and future graph slicing
 
-A typed IR makes `--only` useful as graph traversal rather than only input
-filtering.
+The current implementation already gives `--only` traversal semantics.
+`filterTools` selects the requested tool as a root and then includes the
+transitive closure of both `Tool.Requires` and `MethodCandidate.Requires`.
+Tests also require dependencies to remain present even when they are named by
+`--skip`.
 
-Possible later model:
+**Decision:** preserve this behavior exactly for compatibility.
+
+Conceptually, the existing command is equivalent to:
+
+```text
+--only foo
+    root      = foo
+    direction = dependencies
+    depth     = unbounded
+```
+
+Do not introduce a separate `--traverse` flag for behavior that already
+exists.
+
+A typed graph IR can later generalize slicing without changing the meaning of
+`--only`:
 
 ```text
 FUNCTION SubgraphAround(graph, target, direction, depth):
@@ -583,7 +754,22 @@ Potential future flags:
 --depth N
 ```
 
-These are deliberately outside the first implementation scope.
+Examples:
+
+```text
+--only foo --direction deps
+--only foo --direction dependents
+--only foo --direction both
+--only foo --depth 0
+--only foo --depth 2
+```
+
+`--depth 0` naturally represents "only this node" without redefining
+`--only`.
+
+When non-dependency directions are implemented, graph slicing should occur
+against the complete typed IR rather than pre-filtering the schema, because
+dependent traversal requires successor information from the full graph.
 
 ## Evaluation of `hmdsefi/gograph`
 
@@ -736,22 +922,26 @@ a visible feature change.
 - adding a general-purpose graph dependency without demonstrated need;
 - changing the default `depengine graph` output immediately.
 
-## Open design questions
+## Resolved design decisions
 
-Before implementation, resolve these points:
+The initial open questions are resolved as follows:
 
-1. Should the initial `graph` renderer show inactive guarded edges, or only
-   declared/active edges?
-2. Should `depengine graph` remain a declared-schema view by default, with a
-   later explicit effective/resolved flag?
-3. How should multiple semantic edges between the same pair be bundled in DOT,
-   Mermaid, and terminal output?
-4. Should method guards and method dependency labels be rendered separately or
-   combined into one edge label?
-5. Should `--only` preserve the current filtering behavior initially and gain
-   traversal semantics only under a new flag?
-6. What terminal width threshold should switch a component from diagram form to
-   a compact textual fallback?
+1. The default declared graph shows every declared guarded edge and its guard,
+   but does not classify it as active or inactive. Those states only exist
+   after host facts are evaluated.
+2. `depengine graph` remains a declared-schema view by default. Future
+   host-aware behavior should use `--view declared|effective|resolved`.
+3. The graph IR preserves multiple semantic edges between the same endpoints.
+   DOT and Mermaid emit them independently; terminal rendering may bundle only
+   their physical route while retaining every member relation.
+4. Method identity and guards stay separate in the IR and are combined only at
+   presentation time into one structured annotation.
+5. `--only` keeps its existing dependency-closure semantics. Future
+   `--direction` and `--depth` options generalize slicing rather than
+   replacing the current behavior.
+6. There is no global terminal-width cutoff. Each connected component is laid
+   out independently and falls back to a compact edge list only when its
+   computed layout width exceeds the available width.
 
 ## References
 
