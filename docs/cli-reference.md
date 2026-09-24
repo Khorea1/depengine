@@ -96,7 +96,7 @@ Show the dependency graph
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
-| `--format <string>` | local | `text` | output format: mermaid, dot, text |
+| `--format <string>` | local | `text` | output format: mermaid, dot, text, graph |
 | `-h, --help` | local | `false` | help for graph |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
@@ -105,6 +105,7 @@ Show the dependency graph
 | `--schema <string>` | local | `schema.toml` | path to schema.toml |
 | `--skip <string>` | local | `` | skip specific tools (comma-separated) |
 | `--view <string>` | local | `declared` | graph projection: declared, effective, resolved |
+| `--width <int>` | local | `0` | terminal width for --format graph (0 = detect terminal width) |
 
 ## `depengine help [command] [flags]`
 

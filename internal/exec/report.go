@@ -3,11 +3,13 @@ package exec
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/term"
 )
 
 // SortBy sorts the Tools slice in-place by the given criterion.
@@ -135,7 +137,7 @@ func (r *ExecReport) Detail() string {
 	}
 
 	color := shouldUseColor()
-	availWidth := terminalWidth()
+	availWidth := term.Width(os.Stderr)
 	toolWidth := 24
 	statusWidth := 15
 	methodWidth := 15

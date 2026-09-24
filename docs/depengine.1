@@ -170,7 +170,7 @@ help for forget Scope: local. Default: false.
 .SS "depengine graph flags"
 .TP
 .B "\-\-format <string>"
-output format: mermaid, dot, text Scope: local. Default: text.
+output format: mermaid, dot, text, graph Scope: local. Default: text.
 .TP
 .B "\-h, \-\-help"
 help for graph Scope: local. Default: false.
@@ -195,6 +195,9 @@ skip specific tools (comma\-separated) Scope: local. Default: .
 .TP
 .B "\-\-view <string>"
 graph projection: declared, effective, resolved Scope: local. Default: declared.
+.TP
+.B "\-\-width <int>"
+terminal width for \-\-format graph (0 = detect terminal width) Scope: local. Default: 0.
 .SS "depengine help flags"
 .TP
 .B "\-h, \-\-help"

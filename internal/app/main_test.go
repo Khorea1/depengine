@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -21,6 +22,40 @@ func TestCommandReturnsTypedExitErrorWithoutTerminatingProcess(t *testing.T) {
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
 		t.Fatalf("Execute() error = %v, want ExitError code 2", err)
+	}
+}
+
+func TestGraphCmdRejectsNegativeWidth(t *testing.T) {
+	cmd := newGraphCmd()
+	cmd.SetArgs([]string{"--format", "graph", "--width=-1"})
+	err := cmd.Execute()
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("Execute() error = %v, want ExitError code 2", err)
+	}
+}
+
+func TestGraphFormatGraphRendersTerminalDiagram(t *testing.T) {
+	dir := t.TempDir()
+	schema := "schema_version = 1\n\n" +
+		"[tools.bat]\nnative = true\nrequires = [\"ctpv\"]\n\n" +
+		"[tools.ctpv]\nnative = true\n\n" +
+		"[tools.unzip]\nnative = true\n"
+	schemaPath := filepath.Join(dir, "schema.toml")
+	if err := os.WriteFile(schemaPath, []byte(schema), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out := runCommand(t, "graph", nil,
+		"--schema", schemaPath, "--no-manifest", "--format", "graph", "--width", "40")
+	if code != 0 {
+		t.Fatalf("exit code %d, output:\n%s", code, out)
+	}
+	if !strings.Contains(out, "ctpv ──▶ bat") {
+		t.Errorf("expected the requires edge as a diagram arrow, output:\n%s", out)
+	}
+	if !strings.Contains(out, "isolated:\nunzip") {
+		t.Errorf("expected unzip in the isolated list, output:\n%s", out)
 	}
 }
 
