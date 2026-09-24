@@ -10,6 +10,8 @@ vendor/
 # Schema / manifest
 depengine.toml
 schema.toml
+# Root schemas are operator-local; their generated lock is not repository truth.
+/depengine.lock
 # Test-suite runs generate locks next to fixture schemas; never commit those.
 tests/**/depengine.lock
 # Build output

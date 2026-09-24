@@ -32,11 +32,10 @@ Work on the current execution model comes before adding more installer types.
   cleanup. Fix real findings and replace false positives with explicit,
   reviewable suppressions so the `new-from-rev` baseline cannot indefinitely
   hide unreviewed security diagnostics.
-- [ ] Make the checked-in lock artifact self-consistent with current lock v1
-  validation. The repository lock currently carries a `fastfetch` pin without
-  the required method identity hash; either regenerate it from a canonical
-  schema/fixture and test `ValidateFrozen` against it, or remove the orphaned
-  root lock if it is not repository truth.
+- [x] Remove the orphaned root lock artifact. No canonical root schema is
+  tracked; the stale lock referenced a removed `fastfetch/http/0` method and
+  lacked its method identity hash. Root-generated locks are now ignored;
+  lock v1 validation remains covered by `internal/lock` fixtures and tests.
 
 ## P1: shared install semantics
 
