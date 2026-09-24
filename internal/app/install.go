@@ -68,6 +68,10 @@ func newInstallCmd() *cobra.Command {
 	f.StringVar(installSortBy, "sort-by", "", "sort output by: name, status, method")
 	f.IntVar(installJobs, "jobs", 1, "max concurrent installations (default 1 = sequential)")
 	f.BoolVar(installAllowArbitrary, "allow-arbitrary-code", false, "permit hooks, build scripts, and other arbitrary code execution")
+	f.BoolVar(installAllowArbitrary, "yolo", false, "alias for --allow-arbitrary-code")
+	if err := f.MarkHidden("yolo"); err != nil {
+		panic(err)
+	}
 	f.BoolVar(installQuiet, "quiet", false, "suppress per-tool status lines; show only final summary")
 	return cmd
 }

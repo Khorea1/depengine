@@ -94,6 +94,32 @@ func TestCLIDocsHighRiskFlags(t *testing.T) {
 	}
 }
 
+func TestInstallYoloAliasesAllowArbitraryCode(t *testing.T) {
+	cmd := newInstallCmd()
+	canonical := cmd.Flags().Lookup("allow-arbitrary-code")
+	alias := cmd.Flags().Lookup("yolo")
+	if canonical == nil || alias == nil {
+		t.Fatalf("install flags missing: canonical=%v alias=%v", canonical != nil, alias != nil)
+	}
+	if !alias.Hidden {
+		t.Error("--yolo should remain a hidden convenience alias")
+	}
+
+	if err := cmd.Flags().Set("yolo", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if got := canonical.Value.String(); got != "true" {
+		t.Fatalf("--yolo did not enable --allow-arbitrary-code storage: got %q", got)
+	}
+
+	if err := cmd.Flags().Set("allow-arbitrary-code", "false"); err != nil {
+		t.Fatal(err)
+	}
+	if got := alias.Value.String(); got != "false" {
+		t.Fatalf("canonical flag did not update --yolo storage: got %q", got)
+	}
+}
+
 func commandDocByPath(docs []cliCommandDoc, path string) *cliCommandDoc {
 	for i := range docs {
 		if docs[i].Path == path {
