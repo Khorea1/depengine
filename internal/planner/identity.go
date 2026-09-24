@@ -12,8 +12,10 @@ func applyIdentity(p *plan.ResolvedInstallPlan, tool *config.Tool, method *confi
 		return err
 	}
 	p.Identity.Source = firstValue(method.Config, "source", "git", "repo")
-	if p.Identity.Source == "" && method.Kind == "git" {
-		p.Identity.Source = stringValue(method.Config, "url")
+	if p.Identity.Source == "" && contract.Artifact == nil {
+		if field, ok := contract.Fields["url"]; ok && field.Semantic == methodkind.SemanticSourceIdentity {
+			p.Identity.Source = stringValue(method.Config, "url")
+		}
 	}
 	p.Identity.Registry = stringValue(method.Config, "registry")
 	p.Identity.Architecture = firstValue(method.Config, "architecture", "target")
