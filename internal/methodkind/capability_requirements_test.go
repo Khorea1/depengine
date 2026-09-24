@@ -44,15 +44,39 @@ func TestCheckRequirementsClassifiesNonAuthMismatch(t *testing.T) {
 }
 
 func TestHTTPSecretRequirementUsesSupportedSharedAuthTransport(t *testing.T) {
-	p := plan.New("private-tool", "http", true)
-	p.Artifacts = []plan.Artifact{{URL: "https://example.test/private.tar.gz"}}
-	p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
-	contract, ok := Lookup("http")
-	if !ok {
-		t.Fatal("http contract missing")
+	for _, kind := range []string{"http", "appimage", "android", "msi"} {
+		t.Run(kind, func(t *testing.T) {
+			p := plan.New("private-tool", kind, true)
+			p.Artifacts = []plan.Artifact{{URL: "https://example.test/private.tar.gz"}}
+			p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
+			contract, ok := Lookup(kind)
+			if !ok {
+				t.Fatalf("%s contract missing", kind)
+			}
+			if err := contract.CheckRequirements(p, CandidateRequirements{}); err != nil {
+				t.Fatalf("CheckRequirements() = %v, want supported authenticated HTTP transport", err)
+			}
+		})
 	}
-	if err := contract.CheckRequirements(p, CandidateRequirements{}); err != nil {
-		t.Fatalf("CheckRequirements() = %v, want supported authenticated HTTP transport", err)
+}
+
+func TestWrapperSecretRequirementSupportsDirectAndResolvedAssetDownloads(t *testing.T) {
+	for _, kind := range []string{"appimage", "android", "msi"} {
+		for _, source := range []string{"direct", "repo+asset"} {
+			t.Run(kind+"/"+source, func(t *testing.T) {
+				p := plan.New("private-tool", kind, true)
+				if source == "direct" {
+					p.Artifacts = []plan.Artifact{{URL: "https://example.test/private.pkg"}}
+				} else {
+					p.Operations = []plan.Operation{{Kind: "resolve-artifact", Effect: plan.EffectReadOnly}}
+				}
+				p.Secrets = []plan.SecretReference{{Provider: "env", Name: "TOKEN"}}
+				contract, _ := Lookup(kind)
+				if err := contract.CheckRequirements(p, CandidateRequirements{}); err != nil {
+					t.Fatalf("CheckRequirements() = %v", err)
+				}
+			})
+		}
 	}
 }
 

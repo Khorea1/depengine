@@ -48,7 +48,9 @@ func (ex *Executor) executionCredentialContext(ctx context.Context, method *conf
 	if method.Kind == "cargo" {
 		return ex.cargoCredentialContext(ctx, method)
 	}
-	if method.Kind != "http" {
+	switch method.Kind {
+	case "http", "appimage", "android", "msi":
+	default:
 		return ctx, nil
 	}
 	resolver := ex.secretResolver
@@ -58,7 +60,7 @@ func (ex *Executor) executionCredentialContext(ctx context.Context, method *conf
 	for _, credentialRef := range httpCredentialReferences(method) {
 		credential, err := resolver.Resolve(ctx, credentialRef.reference)
 		if err != nil || credential == "" {
-			return nil, fmt.Errorf("http %s secret %s", credentialRef.purpose, secretResolutionClass(err, credential))
+			return nil, fmt.Errorf("%s %s secret %s", method.Kind, credentialRef.purpose, secretResolutionClass(err, credential))
 		}
 		ctx = WithHTTPBearer(ctx, credentialRef.purpose, credential)
 	}

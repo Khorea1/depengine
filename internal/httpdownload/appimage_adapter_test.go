@@ -60,7 +60,7 @@ func TestHTTPDelegatePreservesOtherConfigKeys(t *testing.T) {
 	mc := &config.MethodCandidate{Config: map[string]any{
 		"url":      "https://example.com/App.AppImage",
 		"checksum": "sha256:deadbeef",
-	}}
+	}, SecretRef: &config.SecretReference{Provider: "env", Name: "ARTIFACT_TOKEN"}, ChecksumSecretRef: &config.SecretReference{Provider: "env", Name: "CHECKSUM_TOKEN"}, SignatureSecretRef: &config.SecretReference{Provider: "env", Name: "SIGNATURE_TOKEN"}}
 	d := httpDelegate(mc, "/opt/bin", "obsidian")
 	if d.Kind != "http" {
 		t.Errorf("delegate Kind = %q, want %q", d.Kind, "http")
@@ -73,6 +73,13 @@ func TestHTTPDelegatePreservesOtherConfigKeys(t *testing.T) {
 	}
 	if d.Config["checksum"] != "sha256:deadbeef" {
 		t.Errorf("delegate lost unrelated config key checksum: %v", d.Config["checksum"])
+	}
+	for purpose, ref := range map[string]*config.SecretReference{
+		"artifact": d.SecretRef, "checksum": d.ChecksumSecretRef, "signature": d.SignatureSecretRef,
+	} {
+		if ref == nil {
+			t.Errorf("delegate lost %s secret reference", purpose)
+		}
 	}
 	// Original mc must be untouched — httpDelegate must copy, not mutate.
 	if _, ok := mc.Config["extract_to"]; ok {

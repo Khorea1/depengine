@@ -17,29 +17,38 @@ func init() {
 		"msi.branch":           {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
 	})
 	RegisterCoverage(PhaseExecute, map[string]Coverage{
-		"github.secret_ref":     {Consumer: "internal/exec/TestInstallResolvedCandidatePassesResolvedGitHubSecretContext", Rationale: "the canonical resolved-plan installer re-resolves and transports the typed token for asset execution"},
-		"cargo.secret_ref":      {Consumer: "internal/ecosystem/TestCargoGitSecretPrefetchesAndInstallsLocalCheckout", Rationale: "Cargo execution scopes the resolved token to authenticated Git prefetch and installs from the local checkout without credential transport"},
-		"native.pkg":            {Consumer: "internal/exec/TestNativeAdapterV2PackageFieldChangesExecuteAndVerify", Rationale: "changing the package changes the native install command"},
-		"native.pkg_overrides":  {Consumer: "TestNativePackageOverrideAcrossRuntimeBoundaries", Rationale: "serial and batch installs use the selected clan package"},
-		"winget.pkg":            {Consumer: "internal/exec/TestNativeByManagerWingetV2ExecuteFieldsChangeCommand", Rationale: "changing package identity changes the winget install command"},
-		"winget.version":        {Consumer: "internal/exec/TestNativeByManagerWingetV2ExecuteFieldsChangeCommand", Rationale: "changing version changes the winget install command"},
-		"winget.source":         {Consumer: "internal/exec/TestNativeByManagerWingetV2ExecuteFieldsChangeCommand", Rationale: "changing source changes the winget install command"},
-		"winget.scope":          {Consumer: "internal/exec/TestNativeByManagerWingetV2ExecuteFieldsChangeCommand", Rationale: "changing scope changes the winget install command"},
-		"winget.architecture":   {Consumer: "internal/exec/TestNativeByManagerWingetV2ExecuteFieldsChangeCommand", Rationale: "changing architecture changes the winget install command"},
-		"winget.installer_type": {Consumer: "internal/exec/TestNativeByManagerWingetV2ExecuteFieldsChangeCommand", Rationale: "changing installer type changes the winget install command"},
-		"git.url":               {Consumer: "internal/git/resolved_install_test.go", Rationale: "resolved clone executes the planned source"},
-		"git.artifact":          {Consumer: "internal/git/adapter_test.go", Rationale: "artifact selects the file copied from the temporary clone"},
-		"git.managed_paths":     {Consumer: "internal/git/adapter_test.go", Rationale: "managed paths determine owned payloads for install and removal"},
-		"local.local_path":      {Consumer: "internal/localartifactadapter/adapter_v2_test.go", Rationale: "project-relative source determines installed bytes"},
-		"local.checksum":        {Consumer: "internal/localartifactadapter/adapter_v2_test.go", Rationale: "checksum gates materialization of local bytes"},
-		"local.install_dir":     {Consumer: "internal/localartifactadapter/adapter_test.go", Rationale: "install directory selects the owned destination"},
-		"container.manager":     {Consumer: "internal/container/adapter_test.go", Rationale: "manager selects the runtime command and image store"},
-		"container.source":      {Consumer: "internal/container/adapter_test.go", Rationale: "source participates in the pulled image reference"},
-		"container.tag":         {Consumer: "internal/container/adapter_test.go", Rationale: "tag participates in the pulled image reference"},
-		"container.digest":      {Consumer: "internal/container/adapter_test.go", Rationale: "digest pins the pulled image content identity"},
-		"container.platform":    {Consumer: "internal/container/adapter_test.go", Rationale: "platform selects and verifies the requested image variant"},
-		"msi.product_name":      {Consumer: "internal/msi/adapter_v2_test.go", Rationale: "product name selects the product passed to msiexec"},
-		"msi.publisher":         {Consumer: "internal/msi/adapter_v2_test.go", Rationale: "publisher narrows product lookup before install or removal"},
+		"github.secret_ref":             {Consumer: "internal/exec/TestInstallResolvedCandidatePassesResolvedGitHubSecretContext", Rationale: "the canonical resolved-plan installer re-resolves and transports the typed token for asset execution"},
+		"cargo.secret_ref":              {Consumer: "internal/ecosystem/TestCargoGitSecretPrefetchesAndInstallsLocalCheckout", Rationale: "Cargo execution scopes the resolved token to authenticated Git prefetch and installs from the local checkout without credential transport"},
+		"appimage.secret_ref":           {Consumer: "internal/exec/TestDownloadWrapperSecretsResolveAtInstallAndStayOutOfReportsAndState", Rationale: "AppImage resolves the typed Bearer reference only for the reached install attempt"},
+		"appimage.checksum_secret_ref":  {Consumer: "internal/exec/TestDownloadWrapperSecretsResolveAtInstallAndStayOutOfReportsAndState", Rationale: "AppImage checksum credentials use the shared HTTP request-purpose transport"},
+		"appimage.signature_secret_ref": {Consumer: "internal/exec/TestDownloadWrapperSecretsResolveAtInstallAndStayOutOfReportsAndState", Rationale: "AppImage signature credentials use the shared HTTP request-purpose transport"},
+		"android.secret_ref":            {Consumer: "internal/exec/TestDownloadWrapperSecretsResolveAtInstallAndStayOutOfReportsAndState", Rationale: "Android resolves the typed Bearer reference only for the reached install attempt"},
+		"android.checksum_secret_ref":   {Consumer: "internal/exec/TestDownloadWrapperSecretsResolveAtInstallAndStayOutOfReportsAndState", Rationale: "Android checksum credentials use the shared HTTP request-purpose transport"},
+		"android.signature_secret_ref":  {Consumer: "internal/exec/TestDownloadWrapperSecretsResolveAtInstallAndStayOutOfReportsAndState", Rationale: "Android signature credentials use the shared HTTP request-purpose transport"},
+		"msi.secret_ref":                {Consumer: "internal/exec/TestDownloadWrapperSecretsResolveAtInstallAndStayOutOfReportsAndState", Rationale: "MSI resolves the typed Bearer reference only for the reached install attempt"},
+		"msi.checksum_secret_ref":       {Consumer: "internal/exec/TestDownloadWrapperSecretsResolveAtInstallAndStayOutOfReportsAndState", Rationale: "MSI checksum credentials use the shared HTTP request-purpose transport"},
+		"msi.signature_secret_ref":      {Consumer: "internal/exec/TestDownloadWrapperSecretsResolveAtInstallAndStayOutOfReportsAndState", Rationale: "MSI signature credentials use the shared HTTP request-purpose transport"},
+		"native.pkg":                    {Consumer: "internal/exec/TestNativeAdapterV2PackageFieldChangesExecuteAndVerify", Rationale: "changing the package changes the native install command"},
+		"native.pkg_overrides":          {Consumer: "TestNativePackageOverrideAcrossRuntimeBoundaries", Rationale: "serial and batch installs use the selected clan package"},
+		"winget.pkg":                    {Consumer: "internal/exec/TestNativeByManagerWingetV2ExecuteFieldsChangeCommand", Rationale: "changing package identity changes the winget install command"},
+		"winget.version":                {Consumer: "internal/exec/TestNativeByManagerWingetV2ExecuteFieldsChangeCommand", Rationale: "changing version changes the winget install command"},
+		"winget.source":                 {Consumer: "internal/exec/TestNativeByManagerWingetV2ExecuteFieldsChangeCommand", Rationale: "changing source changes the winget install command"},
+		"winget.scope":                  {Consumer: "internal/exec/TestNativeByManagerWingetV2ExecuteFieldsChangeCommand", Rationale: "changing scope changes the winget install command"},
+		"winget.architecture":           {Consumer: "internal/exec/TestNativeByManagerWingetV2ExecuteFieldsChangeCommand", Rationale: "changing architecture changes the winget install command"},
+		"winget.installer_type":         {Consumer: "internal/exec/TestNativeByManagerWingetV2ExecuteFieldsChangeCommand", Rationale: "changing installer type changes the winget install command"},
+		"git.url":                       {Consumer: "internal/git/resolved_install_test.go", Rationale: "resolved clone executes the planned source"},
+		"git.artifact":                  {Consumer: "internal/git/adapter_test.go", Rationale: "artifact selects the file copied from the temporary clone"},
+		"git.managed_paths":             {Consumer: "internal/git/adapter_test.go", Rationale: "managed paths determine owned payloads for install and removal"},
+		"local.local_path":              {Consumer: "internal/localartifactadapter/adapter_v2_test.go", Rationale: "project-relative source determines installed bytes"},
+		"local.checksum":                {Consumer: "internal/localartifactadapter/adapter_v2_test.go", Rationale: "checksum gates materialization of local bytes"},
+		"local.install_dir":             {Consumer: "internal/localartifactadapter/adapter_test.go", Rationale: "install directory selects the owned destination"},
+		"container.manager":             {Consumer: "internal/container/adapter_test.go", Rationale: "manager selects the runtime command and image store"},
+		"container.source":              {Consumer: "internal/container/adapter_test.go", Rationale: "source participates in the pulled image reference"},
+		"container.tag":                 {Consumer: "internal/container/adapter_test.go", Rationale: "tag participates in the pulled image reference"},
+		"container.digest":              {Consumer: "internal/container/adapter_test.go", Rationale: "digest pins the pulled image content identity"},
+		"container.platform":            {Consumer: "internal/container/adapter_test.go", Rationale: "platform selects and verifies the requested image variant"},
+		"msi.product_name":              {Consumer: "internal/msi/adapter_v2_test.go", Rationale: "product name selects the product passed to msiexec"},
+		"msi.publisher":                 {Consumer: "internal/msi/adapter_v2_test.go", Rationale: "publisher narrows product lookup before install or removal"},
 	})
 	RegisterCoverage(PhaseVerify, map[string]Coverage{
 		"native.pkg":           {Consumer: "internal/exec/TestNativeAdapterV2PackageFieldChangesExecuteAndVerify", Rationale: "changing the package changes the native verification query and observed identity"},
@@ -61,6 +70,9 @@ func init() {
 	})
 	registerRuntimeFields(PhaseResolveRuntime, "http", "internal/httpdownload/resolved_install_test.go", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "http", "internal/planner/resolve_effect_test.go", "static planning projects typed secret references into the candidate plan without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
+	registerRuntimeFields(PhaseResolveRuntime, "appimage", "internal/planner/resolve_effect_test.go", "static planning projects typed wrapper secret references without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
+	registerRuntimeFields(PhaseResolveRuntime, "android", "internal/planner/resolve_effect_test.go", "static planning projects typed wrapper secret references without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
+	registerRuntimeFields(PhaseResolveRuntime, "msi", "internal/planner/resolve_effect_test.go", "static planning projects typed wrapper secret references without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
 	registerRuntimeFields(PhaseResolveRuntime, "cargo", "internal/planner/resolve_effect_test.go", "static planning projects the typed Cargo Git reference without resolving its value", "secret_ref")
 	registerRuntimeFields(PhaseResolveRuntime, "github", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "appimage", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")

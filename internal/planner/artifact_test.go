@@ -74,6 +74,44 @@ func TestBuildCandidateIntentProjectsHTTPSecretReference(t *testing.T) {
 	}
 }
 
+func TestBuildCandidateIntentProjectsWrapperSecretsForBothSourceForms(t *testing.T) {
+	for _, kind := range []string{"appimage", "android", "msi"} {
+		for _, source := range []string{"url", "repo+asset"} {
+			t.Run(kind+"/"+source, func(t *testing.T) {
+				cfg := map[string]any{}
+				if source == "url" {
+					cfg["url"] = "https://example.test/tool.pkg"
+				} else {
+					cfg["repo"] = "owner/project"
+					cfg["asset"] = "tool-{version}.pkg"
+				}
+				if kind == "msi" {
+					cfg["product_name"] = "Demo"
+				}
+				_, method := candidate("demo", kind, cfg)
+				method.SecretRef = &config.SecretReference{Provider: "env", Name: "ARTIFACT_TOKEN"}
+				method.ChecksumSecretRef = &config.SecretReference{Provider: "env", Name: "CHECKSUM_TOKEN"}
+				method.SignatureSecretRef = &config.SecretReference{Provider: "env", Name: "SIGNATURE_TOKEN"}
+				method.Config["checksum_url"] = "https://example.test/tool.sha256"
+				method.Config["signature_url"] = "https://example.test/tool.sig"
+				p, err := planner.BuildCandidateIntent(&config.Tool{Name: "demo"}, method)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(p.Secrets) != 3 {
+					t.Fatalf("secret references = %+v, want artifact/checksum/signature references", p.Secrets)
+				}
+				if source == "url" && (len(p.Artifacts) != 1 || len(p.Operations) != 1 || p.Operations[0].Kind != "install") {
+					t.Fatalf("direct URL plan artifacts=%+v operations=%+v", p.Artifacts, p.Operations)
+				}
+				if source == "repo+asset" && (len(p.Artifacts) != 0 || len(p.Operations) != 2 || p.Operations[0].Kind != "resolve-artifact" || p.Operations[1].Kind != "install") {
+					t.Fatalf("repo+asset plan artifacts=%+v operations=%+v", p.Artifacts, p.Operations)
+				}
+			})
+		}
+	}
+}
+
 func TestBuildCandidateIntentRejectsInvalidHTTPSidecarSecretReference(t *testing.T) {
 	tool, method := candidate("demo", "http", map[string]any{"url": "https://example.test/demo.tar.gz"})
 	method.ChecksumSecretRef = &config.SecretReference{Provider: "env", Name: ""}

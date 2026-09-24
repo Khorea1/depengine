@@ -243,6 +243,14 @@ artifact request, `checksum_secret_ref` only an explicitly configured
 implicitly forwards the primary artifact credential to checksum/signature
 sidecars or to an automatically inferred checksum URL.
 
+The same three typed Bearer references are available on `appimage`, `android`,
+and `msi`, because those methods delegate artifact transfer to the HTTP
+transport. With a direct `url`, `secret_ref` authenticates that artifact
+request. With `repo` + `asset`, depengine still performs release discovery
+through the existing public GitHub resolution path; the wrapper `secret_ref`
+is applied only after the asset URL has been resolved. Use the `github` method
+when authenticated GitHub release API resolution is required.
+
 > `checksum` accepts a literal hash (`sha256:...`) or `:auto` (automatic
 > resolution — this is Trust On First Use, not offline-verified; prefer a
 > literal hash when available). Use `checksum_url` for a separate
@@ -492,8 +500,11 @@ desktop = true
 The artifact source must resolve to a filename ending in `.AppImage`; other formats are rejected during validation and again at the adapter boundary.
 
 Shared artifact fields such as `checksum`, `checksum_url`, `signature_url`,
-`signing_key`, and `sudo_required` keep the same meaning because the download
-is delegated to the `http` adapter. `extract_to` is intentionally not accepted:
+`signing_key`, `sudo_required`, `secret_ref`, `checksum_secret_ref`, and
+`signature_secret_ref` keep the same meaning because the download is delegated
+to the `http` adapter. For `repo` + `asset`, those secret references apply to
+the resolved artifact and explicit sidecar downloads only; they do not
+authenticate GitHub release API discovery. `extract_to` is intentionally not accepted:
 `install_dir` is the AppImage destination contract and accepting both would make
 `extract_to` appear configurable while the adapter overrides it.
 
@@ -527,7 +538,10 @@ when = { is_android = true }
 The artifact source must resolve to a filename ending in `.apk`; other formats are rejected before download/dispatch.
 
 Shared transport/integrity fields (`checksum`, `checksum_url`,
-`signature_url`, `signing_key`, ...) keep the same meaning. There is no
+`signature_url`, `signing_key`, `secret_ref`, `checksum_secret_ref`,
+`signature_secret_ref`, ...) keep the same meaning. For `repo` + `asset`,
+the typed references authenticate only the resolved artifact and explicit
+sidecar downloads, not GitHub release API discovery. There is no
 `install_dir`/`binary`/`extract_to` field here, unlike `appimage`, and
 archive-only placement fields (`strip_components`, `entrypoints`,
 `link_dir`) are rejected. The `.apk` always lands under a fixed,
@@ -572,7 +586,11 @@ every path and `Remove` deletes only those exact targets.
 `msi` accepts exactly one artifact source (`url`, or `repo` + `asset`) plus
 required `product_name` and optional `publisher`. Registry matching is exact;
 install/remove use quiet `msiexec` operations, and reboot-required exit codes
-are treated as successful installs.
+are treated as successful installs. It accepts the same request-scoped
+`secret_ref`, `checksum_secret_ref`, and `signature_secret_ref` transport as
+`http`. With `repo` + `asset`, those credentials apply only to the resolved
+artifact and explicit sidecar downloads; GitHub release API discovery remains
+unauthenticated.
 
 One-line syntax for every supported method. All accept `when` (see
 [Platform targeting](#platform-targeting)); methods with richer configuration

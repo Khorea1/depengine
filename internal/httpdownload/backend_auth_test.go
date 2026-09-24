@@ -227,15 +227,18 @@ func TestSignatureSidecarUsesOnlyItsOwnBearer(t *testing.T) {
 }
 
 func TestSelectCandidateDownloaderForTypedAuthUsesGoWithoutExecutableLookup(t *testing.T) {
-	fr := &run.FakeRunner{LookPaths: map[string]bool{"curl": true, "wget": true}}
-	mc := &config.MethodCandidate{Kind: "http", SecretRef: &config.SecretReference{Provider: "env", Name: "ARTIFACT_TOKEN"}}
-
-	dl := selectCandidateDownloader(context.Background(), fr, "https://example.com/private.tar.gz", mc)
-	if _, ok := dl.(*GoDownloader); !ok {
-		t.Fatalf("expected GoDownloader for typed HTTP auth, got %T", dl)
-	}
-	if len(fr.Calls) != 0 {
-		t.Errorf("authenticated selection probed executables: %#v", fr.Calls)
+	for _, kind := range []string{"http", "appimage", "android", "msi"} {
+		t.Run(kind, func(t *testing.T) {
+			fr := &run.FakeRunner{LookPaths: map[string]bool{"curl": true, "wget": true}}
+			mc := &config.MethodCandidate{Kind: kind, SecretRef: &config.SecretReference{Provider: "env", Name: "ARTIFACT_TOKEN"}}
+			dl := selectCandidateDownloader(context.Background(), fr, "https://example.com/private.tar.gz", mc)
+			if _, ok := dl.(*GoDownloader); !ok {
+				t.Fatalf("expected GoDownloader for typed %s auth, got %T", kind, dl)
+			}
+			if len(fr.Calls) != 0 {
+				t.Errorf("authenticated selection probed executables: %#v", fr.Calls)
+			}
+		})
 	}
 }
 

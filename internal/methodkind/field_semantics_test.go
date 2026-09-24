@@ -85,7 +85,7 @@ func TestSecretRefsBelongOnlyToSupportedContracts(t *testing.T) {
 			t.Errorf("git unexpectedly declares %s", name)
 		}
 	}
-	for _, kind := range []string{"appimage", "msi", "native"} {
+	for _, kind := range []string{"native"} {
 		contract, ok := Lookup(kind)
 		if !ok {
 			t.Fatalf("%s contract missing", kind)
@@ -93,6 +93,18 @@ func TestSecretRefsBelongOnlyToSupportedContracts(t *testing.T) {
 		for _, name := range secretFields {
 			if _, declared := contract.Fields[name]; declared {
 				t.Errorf("%s unexpectedly declares %s", kind, name)
+			}
+		}
+	}
+	for _, kind := range []string{"appimage", "android", "msi"} {
+		contract, ok := Lookup(kind)
+		if !ok {
+			t.Fatalf("%s contract missing", kind)
+		}
+		for _, name := range secretFields {
+			field, declared := contract.Fields[name]
+			if !declared || field.Type != SecretRef || field.Effects != EffectResolve|EffectExecute || field.Semantic != SemanticAuthentication {
+				t.Errorf("%s.%s contract = %+v, want typed resolve/execute authentication field", kind, name, field)
 			}
 		}
 	}

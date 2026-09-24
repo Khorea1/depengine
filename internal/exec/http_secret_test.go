@@ -183,6 +183,141 @@ func TestHTTPSidecarSecretsResolveSeparatelyAndReachInstallByPurpose(t *testing.
 	}
 }
 
+func TestDownloadWrapperSecretsResolveAtInstallAndStayOutOfReportsAndState(t *testing.T) {
+	for _, kind := range []string{"appimage", "android", "msi"} {
+		t.Run(kind, func(t *testing.T) {
+			const credential = "wrapper-runtime-secret-sentinel"
+			dir := t.TempDir()
+			t.Setenv("XDG_STATE_HOME", dir)
+			resolver := &httpCredentialResolver{values: map[string]string{
+				"ARTIFACT_TOKEN": credential, "CHECKSUM_TOKEN": "checksum-sentinel", "SIGNATURE_TOKEN": "signature-sentinel",
+			}}
+			adapter := &bearerCaptureAdapter{testMockAdapter: &testMockAdapter{kindValue: kind}}
+			method := &config.MethodCandidate{
+				Kind: kind, Config: map[string]any{"url": "https://example.test/private.pkg"},
+				SecretRef:          &config.SecretReference{Provider: "env", Name: "ARTIFACT_TOKEN"},
+				ChecksumSecretRef:  &config.SecretReference{Provider: "env", Name: "CHECKSUM_TOKEN"},
+				SignatureSecretRef: &config.SecretReference{Provider: "env", Name: "SIGNATURE_TOKEN"},
+			}
+			if kind == "msi" {
+				method.Config["product_name"] = "Demo"
+			}
+			schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{kind}}, Tools: map[string]*config.Tool{
+				"demo": {Name: "demo", Methods: []*config.MethodCandidate{method}},
+			}}
+			ex := New()
+			WithRunner(&sequenceRunner{})(ex)
+			WithSecretResolver(resolver)(ex)
+			WithAdapters(adapter)(ex)
+			WithSchemaInfo("/test/schema.toml", time.Now())(ex)
+			report, err := ex.Execute(context.Background(), schema, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resolver.calls != 3 {
+				t.Fatalf("resolver calls = %d, want artifact/checksum/signature resolutions", resolver.calls)
+			}
+			for purpose, want := range map[HTTPBearerPurpose]string{
+				HTTPBearerArtifact: credential, HTTPBearerChecksum: "checksum-sentinel", HTTPBearerSignature: "signature-sentinel",
+			} {
+				if got := adapter.credentials[purpose]; got != want {
+					t.Errorf("%s credential = %q, want %q", purpose, got, want)
+				}
+			}
+			encoded, err := json.Marshal(report)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, sensitive := range []string{credential, "ARTIFACT_TOKEN", "CHECKSUM_TOKEN", "SIGNATURE_TOKEN", "secret_ref"} {
+				if strings.Contains(string(encoded), sensitive) {
+					t.Errorf("execution report contains %q", sensitive)
+				}
+			}
+			// #nosec G304 -- the path is rooted in the test-owned t.TempDir().
+			state, err := os.ReadFile(filepath.Join(dir, "depengine", "state.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, sensitive := range []string{credential, "ARTIFACT_TOKEN", "CHECKSUM_TOKEN", "SIGNATURE_TOKEN", "secret_ref"} {
+				if strings.Contains(string(state), sensitive) {
+					t.Errorf("persisted state contains %q", sensitive)
+				}
+			}
+		})
+	}
+}
+
+func TestDownloadWrapperSecretResolutionFailureIsFailClosed(t *testing.T) {
+	for _, kind := range []string{"appimage", "android", "msi"} {
+		t.Run(kind, func(t *testing.T) {
+			resolver := &httpCredentialResolver{err: secret.ErrSecretMissing}
+			method := &config.MethodCandidate{
+				Kind: kind, Config: map[string]any{"url": "https://example.test/private.pkg"},
+				SecretRef: &config.SecretReference{Provider: "env", Name: "ARTIFACT_TOKEN"},
+			}
+			if kind == "msi" {
+				method.Config["product_name"] = "Demo"
+			}
+			ex := New()
+			WithRunner(&sequenceRunner{})(ex)
+			WithSecretResolver(resolver)(ex)
+			WithAdapters(&testMockAdapter{kindValue: kind}, &testMockAdapter{kindValue: "cargo"})(ex)
+			schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{kind, "cargo"}}, Tools: map[string]*config.Tool{
+				"demo": {Name: "demo", Methods: []*config.MethodCandidate{method, {Kind: "cargo", Config: map[string]any{"pkg": "demo"}}}},
+			}}
+			report, err := ex.Execute(context.Background(), schema, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resolver.calls != 1 || report.Tools[0].MethodKind != "cargo" || !strings.Contains(report.Tools[0].Methods[0].Error, kind+" artifact secret missing") {
+				t.Fatalf("resolver calls = %d, result = %+v; want fail-closed %s then fallback", resolver.calls, report.Tools[0], kind)
+			}
+		})
+	}
+}
+
+func TestDownloadWrapperSecretIsNotResolvedForDryRunOrUnreachedCandidate(t *testing.T) {
+	for _, kind := range []string{"appimage", "android", "msi"} {
+		for _, dryRun := range []bool{false, true} {
+			name := "unreached"
+			if dryRun {
+				name = "dry-run"
+			}
+			t.Run(kind+"/"+name, func(t *testing.T) {
+				resolver := &httpCredentialResolver{value: "unused"}
+				method := &config.MethodCandidate{
+					Kind: kind, Config: map[string]any{"url": "https://example.test/private.pkg"},
+					SecretRef: &config.SecretReference{Provider: "env", Name: "ARTIFACT_TOKEN"},
+				}
+				if kind == "msi" {
+					method.Config["product_name"] = "Demo"
+				}
+				schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{kind}}, Tools: map[string]*config.Tool{
+					"demo": {Name: "demo", Methods: []*config.MethodCandidate{method}},
+				}}
+				ex := New()
+				WithRunner(&sequenceRunner{})(ex)
+				WithSecretResolver(resolver)(ex)
+				WithAdapters(&testMockAdapter{kindValue: kind})(ex)
+				if dryRun {
+					WithDryRun()(ex)
+				} else {
+					// An earlier candidate succeeds before the secret-bearing method is reached.
+					schema.Defaults.MethodOrder = []string{"cargo", kind}
+					schema.Tools["demo"].Methods = append([]*config.MethodCandidate{{Kind: "cargo", Config: map[string]any{"pkg": "demo"}}}, method)
+					WithAdapters(&testMockAdapter{kindValue: "cargo"}, &testMockAdapter{kindValue: kind})(ex)
+				}
+				if _, err := ex.Execute(context.Background(), schema, ""); err != nil {
+					t.Fatal(err)
+				}
+				if resolver.calls != 0 {
+					t.Fatalf("resolver called %d times, want zero", resolver.calls)
+				}
+			})
+		}
+	}
+}
+
 func TestHTTPSidecarSecretFailureFallsBackWithSanitizedDiagnostic(t *testing.T) {
 	resolver := &httpCredentialResolver{
 		values: map[string]string{"ARTIFACT_TOKEN": "artifact-token"},

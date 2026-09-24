@@ -12,7 +12,8 @@ Work on the current execution model comes before adding more installer types.
 - [~] Add typed secret references to planning and runtime resolution. Runtime
   resolution now supports env-backed credentials for Git-backed `brew-tap` and
   `scoop-bucket` source preparation plus request-scoped env-backed Bearer tokens
-  for typed `http` primary artifact, explicit checksum, and signature downloads,
+  for typed `http`, `appimage`, `android`, and `msi` primary artifact,
+  explicit checksum, and signature downloads,
   typed GitHub release/API and asset authentication, and origin-scoped Bearer
   authentication for private HTTPS `git` clone/fetch/same-origin recursive
   submodules plus private HTTPS `cargo.git` prefetch before local Cargo install.

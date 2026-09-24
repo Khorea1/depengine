@@ -327,6 +327,32 @@
       "oneOf": [
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "checksum_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "checksum_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signature_url"
+                ]
+              }
+            }
+          ],
           "description": "Method capabilities: source-mutation, check, immutable-lock.",
           "oneOf": [
             {
@@ -390,6 +416,9 @@
               ],
               "type": "string"
             },
+            "checksum_secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
             "checksum_url": {
               "type": "string"
             },
@@ -414,6 +443,12 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "signature_secret_ref": {
+              "$ref": "#/definitions/secretReference"
             },
             "signature_url": {
               "type": "string"
@@ -618,6 +653,32 @@
         },
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "checksum_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "checksum_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signature_url"
+                ]
+              }
+            }
+          ],
           "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock.",
           "oneOf": [
             {
@@ -684,6 +745,9 @@
               ],
               "type": "string"
             },
+            "checksum_secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
             "checksum_url": {
               "type": "string"
             },
@@ -730,6 +794,12 @@
                 "system"
               ],
               "type": "string"
+            },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "signature_secret_ref": {
+              "$ref": "#/definitions/secretReference"
             },
             "signature_url": {
               "type": "string"
@@ -3043,6 +3113,30 @@
                   "branch"
                 ]
               }
+            },
+            {
+              "if": {
+                "required": [
+                  "checksum_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "checksum_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signature_url"
+                ]
+              }
             }
           ],
           "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
@@ -3108,6 +3202,9 @@
               ],
               "type": "string"
             },
+            "checksum_secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
             "checksum_url": {
               "type": "string"
             },
@@ -3139,6 +3236,12 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "signature_secret_ref": {
+              "$ref": "#/definitions/secretReference"
             },
             "signature_url": {
               "type": "string"
@@ -5324,6 +5427,32 @@
       "oneOf": [
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "checksum_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "checksum_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signature_url"
+                ]
+              }
+            }
+          ],
           "description": "Method capabilities: source-mutation, check, immutable-lock.",
           "oneOf": [
             {
@@ -5387,6 +5516,9 @@
               ],
               "type": "string"
             },
+            "checksum_secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
             "checksum_url": {
               "type": "string"
             },
@@ -5408,6 +5540,12 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "signature_secret_ref": {
+              "$ref": "#/definitions/secretReference"
             },
             "signature_url": {
               "type": "string"
@@ -5541,6 +5679,32 @@
       "oneOf": [
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "checksum_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "checksum_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signature_url"
+                ]
+              }
+            }
+          ],
           "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock.",
           "oneOf": [
             {
@@ -5607,6 +5771,9 @@
               ],
               "type": "string"
             },
+            "checksum_secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
             "checksum_url": {
               "type": "string"
             },
@@ -5650,6 +5817,12 @@
                 "system"
               ],
               "type": "string"
+            },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "signature_secret_ref": {
+              "$ref": "#/definitions/secretReference"
             },
             "signature_url": {
               "type": "string"
@@ -7634,6 +7807,30 @@
                   "branch"
                 ]
               }
+            },
+            {
+              "if": {
+                "required": [
+                  "checksum_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "checksum_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signature_url"
+                ]
+              }
             }
           ],
           "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
@@ -7699,6 +7896,9 @@
               ],
               "type": "string"
             },
+            "checksum_secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
             "checksum_url": {
               "type": "string"
             },
@@ -7727,6 +7927,12 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "signature_secret_ref": {
+              "$ref": "#/definitions/secretReference"
             },
             "signature_url": {
               "type": "string"

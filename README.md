@@ -151,9 +151,11 @@ downloads. Artifact methods can verify fixed checksums; some methods also
 support release-asset checksum discovery or signatures.
 
 Credentials must not be embedded in HTTP(S) URLs. Private GitHub methods,
-private HTTPS `git` methods, and Git-backed Cargo sources can declare
-`secret_ref = { provider = "env", name = "..." }` so the credential is part of
-typed project intent without storing its value. Git uses that value as a scoped
+private HTTPS `git` methods, Git-backed Cargo sources, and HTTP-backed
+artifact methods (`http`, `appimage`, `android`, and `msi`) can declare
+typed env-backed secret references so the credential is part of project intent
+without storing its value. HTTP-backed artifact credentials are scoped to the
+specific primary/checksum/signature request. Git uses its value as a scoped
 Bearer token for clone, fetch, and same-origin recursive submodules. Cargo Git
 sources are prefetched with the same scoped transport, then installed from the
 local checkout so Cargo and crate build scripts do not receive the credential.

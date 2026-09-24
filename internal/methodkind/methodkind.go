@@ -146,6 +146,17 @@ var downloadFields = fields(artifactFields, map[string]Field{
 	"link_dir":         {Type: String, Effects: EffectExecute | EffectVerify},
 })
 
+var httpBearerSecretFields = map[string]Field{
+	"secret_ref":           {Type: SecretRef, Effects: EffectResolve | EffectExecute},
+	"checksum_secret_ref":  {Type: SecretRef, Effects: EffectResolve | EffectExecute},
+	"signature_secret_ref": {Type: SecretRef, Effects: EffectResolve | EffectExecute},
+}
+
+var httpBearerSecretRequirements = map[string][]string{
+	"checksum_secret_ref":  {"checksum_url"},
+	"signature_secret_ref": {"signature_url"},
+}
+
 var artifactSourceAlternatives = [][]string{{"url"}, {"repo", "asset"}}
 
 var remoteChecksumContract = &ChecksumContract{
@@ -313,12 +324,12 @@ var Contracts = finalizeContracts([]Contract{
 		"digest":   {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"platform": {Type: String, NonEmpty: true, Effects: EffectValidate | EffectExecute | EffectVerify},
 	}, MutuallyExclusive: [][]string{{"tag", "digest"}}, CanRemove: true},
-	{Kind: "appimage", DefaultOrder: 31, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(withoutField(downloadFields, "extract_to"), map[string]Field{
+	{Kind: "appimage", DefaultOrder: 31, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(withoutField(downloadFields, "extract_to"), httpBearerSecretFields, map[string]Field{
 		"install_dir": {Type: String, Effects: EffectExecute | EffectVerify},
 		"desktop":     {Type: Boolean, Effects: EffectExecute},
 		"scope":       artifactScopeField["scope"],
-	}), SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: appImageArtifactContract, Checksum: remoteChecksumContract},
-	{Kind: "android", DefaultOrder: 32, Fields: withoutFields(downloadFields, "extract_to", "binary", "strip_components", "entrypoints", "link_dir"), SourceAlternatives: artifactSourceAlternatives, Artifact: androidArtifactContract, Checksum: remoteChecksumContract},
+	}), Requires: httpBearerSecretRequirements, SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: appImageArtifactContract, Checksum: remoteChecksumContract},
+	{Kind: "android", DefaultOrder: 32, Fields: fields(withoutFields(downloadFields, "extract_to", "binary", "strip_components", "entrypoints", "link_dir"), httpBearerSecretFields), Requires: httpBearerSecretRequirements, SourceAlternatives: artifactSourceAlternatives, Artifact: androidArtifactContract, Checksum: remoteChecksumContract},
 	{Kind: "git", DefaultOrder: 33, Capabilities: CapabilityArbitraryCode | CapabilityRevision | CapabilityAuth, Fields: map[string]Field{
 		"url":           {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 		"secret_ref":    {Type: SecretRef, Effects: EffectResolve | EffectExecute},
@@ -346,18 +357,11 @@ var Contracts = finalizeContracts([]Contract{
 		"scope":      artifactScopeField["scope"],
 		"secret_ref": {Type: SecretRef, Effects: EffectResolve | EffectExecute},
 	}), SourceAlternatives: [][]string{{"repo", "asset"}}, Artifact: githubArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true},
-	{Kind: "http", DefaultOrder: 36, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(downloadFields, artifactScopeField, map[string]Field{
-		"secret_ref":           {Type: SecretRef, Effects: EffectResolve | EffectExecute},
-		"checksum_secret_ref":  {Type: SecretRef, Effects: EffectResolve | EffectExecute},
-		"signature_secret_ref": {Type: SecretRef, Effects: EffectResolve | EffectExecute},
-	}), Requires: map[string][]string{
-		"checksum_secret_ref":  {"checksum_url"},
-		"signature_secret_ref": {"signature_url"},
-	}, SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract, Checksum: remoteChecksumContract},
-	{Kind: "msi", DefaultOrder: 37, Fields: fields(artifactFields, map[string]Field{
+	{Kind: "http", DefaultOrder: 36, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(downloadFields, artifactScopeField, httpBearerSecretFields), Requires: httpBearerSecretRequirements, SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract, Checksum: remoteChecksumContract},
+	{Kind: "msi", DefaultOrder: 37, Fields: fields(artifactFields, httpBearerSecretFields, map[string]Field{
 		"product_name": {Type: String, Required: true, NonEmpty: true, Effects: EffectVerify | EffectExecute},
 		"publisher":    {Type: String, Effects: EffectVerify | EffectExecute},
-	}), SourceAlternatives: artifactSourceAlternatives, Artifact: msiArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, ImplicitDistroFamily: []string{"windows"}, CanRemove: true},
+	}), Requires: httpBearerSecretRequirements, SourceAlternatives: artifactSourceAlternatives, Artifact: msiArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, ImplicitDistroFamily: []string{"windows"}, CanRemove: true},
 })
 
 // finalizeContracts adds capabilities implied by the adapter interface and by

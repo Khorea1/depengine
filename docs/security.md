@@ -70,12 +70,19 @@ resolved only in process for release resolution and asset download. When no
 typed reference is declared, GitHub release access can still use
 `GITHUB_TOKEN`, `GH_TOKEN`, or existing `gh` authentication.
 
-Typed `http` methods can reference env-backed credentials with `secret_ref`,
-`checksum_secret_ref`, and `signature_secret_ref`. Typed `github` methods can
-use `secret_ref` for release API resolution and GitHub asset transport. Secret
-values are not placed in command argv, plans, lockfiles, state, reports,
-diagnostics, or logs. Authenticated HTTP requests use the Go backend even when
-curl or wget is available.
+Typed `http`, `appimage`, `android`, and `msi` methods can reference
+env-backed credentials with `secret_ref`, `checksum_secret_ref`, and
+`signature_secret_ref`. Typed `github` methods can use `secret_ref` for
+release API resolution and GitHub asset transport. Secret values are not placed
+in command argv, plans, lockfiles, state, reports, diagnostics, or logs.
+Authenticated HTTP requests use the Go backend even when curl or wget is
+available.
+
+For `appimage`, `android`, and `msi` candidates declared with `repo` +
+`asset`, wrapper secret references authenticate the resolved artifact and
+explicit checksum/signature sidecar requests only. They do not authenticate
+GitHub release API discovery. Use a typed `github.secret_ref` when private
+GitHub API resolution is required.
 
 Typed `git` methods can use `secret_ref` only with a credential-free HTTPS
 repository URL. The Bearer token is passed through a per-child environment

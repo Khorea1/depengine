@@ -104,7 +104,10 @@ func httpDelegate(mc *config.MethodCandidate, installDir, name string) *config.M
 	}
 	cfg["extract_to"] = installDir
 	cfg["binary"] = name
-	return &config.MethodCandidate{Kind: "http", Label: mc.Label, When: mc.When, Config: cfg}
+	return &config.MethodCandidate{
+		Kind: "http", Label: mc.Label, When: mc.When, Config: cfg,
+		SecretRef: mc.SecretRef, ChecksumSecretRef: mc.ChecksumSecretRef, SignatureSecretRef: mc.SignatureSecretRef,
+	}
 }
 
 // Check delegates to HTTPAdapter.Check against the resolved install_dir and

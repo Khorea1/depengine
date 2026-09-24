@@ -72,7 +72,7 @@ func TestResolveEffectFieldsMoveStaticIntent(t *testing.T) {
 
 			build := func(value any) (any, error) {
 				cfg, _ := contracttest.BaseConfig(contract.Kind, name)
-				if contract.Kind == "http" && (name == "secret_ref" || name == "checksum_secret_ref" || name == "signature_secret_ref") || (contract.Kind == "github" || contract.Kind == "git" || contract.Kind == "cargo") && name == "secret_ref" {
+				if (contract.Kind == "http" || contract.Kind == "appimage" || contract.Kind == "android" || contract.Kind == "msi") && (name == "secret_ref" || name == "checksum_secret_ref" || name == "signature_secret_ref") || (contract.Kind == "github" || contract.Kind == "git" || contract.Kind == "cargo") && name == "secret_ref" {
 					ref := value.(map[string]any)
 					method := &config.MethodCandidate{
 						Kind:   contract.Kind,

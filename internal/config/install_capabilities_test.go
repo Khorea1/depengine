@@ -149,6 +149,39 @@ signing_key = "release-key"
 	}
 }
 
+func TestParseHTTPBearerReferencesOnDownloadWrappers(t *testing.T) {
+	for _, kind := range []string{"appimage", "android", "msi"} {
+		t.Run(kind, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "schema.toml")
+			artifact := map[string]string{"appimage": "demo.AppImage", "android": "demo.apk", "msi": "demo.msi"}[kind]
+			data := "schema_version = 1\n[tools.demo." + kind + "]\nurl = \"https://example.test/" + artifact + "\"\n"
+			if kind == "msi" {
+				data += "product_name = \"Demo\"\n"
+			}
+			data += "secret_ref = { provider = \"env\", name = \"ARTIFACT_TOKEN\" }\n" +
+				"checksum = \"sha256:auto\"\nchecksum_url = \"https://example.test/" + artifact + ".sha256\"\n" +
+				"checksum_secret_ref = { provider = \"env\", name = \"CHECKSUM_TOKEN\" }\n" +
+				"signature_url = \"https://example.test/" + artifact + ".sig\"\nsignature_secret_ref = { provider = \"env\", name = \"SIGNATURE_TOKEN\" }\n" +
+				"signing_key = \"release-key\"\n"
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			schema, err := ParseProjectSchema(path, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			method := schema.Tools["demo"].Methods[0]
+			for field, ref := range map[string]*SecretReference{
+				"secret_ref": method.SecretRef, "checksum_secret_ref": method.ChecksumSecretRef, "signature_secret_ref": method.SignatureSecretRef,
+			} {
+				if ref == nil || ref.Provider != "env" {
+					t.Errorf("%s = %+v, want parsed env reference", field, ref)
+				}
+			}
+		})
+	}
+}
+
 func TestHTTPSidecarSecretReferencesRejectUnsupportedMethod(t *testing.T) {
 	for _, field := range []string{"checksum_secret_ref", "signature_secret_ref"} {
 		t.Run(field, func(t *testing.T) {
