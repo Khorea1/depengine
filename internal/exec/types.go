@@ -88,8 +88,8 @@ type MethodAttempt struct {
 	// CandidateKnown is false for synthesized candidates that have no exact
 	// declared identity. Graph resolved projections use these fields to avoid
 	// collapsing same-kind candidates by display name.
-	Candidate      int
-	CandidateKnown bool
+	Candidate      int  `json:"-"`
+	CandidateKnown bool `json:"-"`
 }
 
 // DisplayName returns the human-facing candidate name: the custom label when
