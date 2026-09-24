@@ -267,7 +267,7 @@ func (ex *Executor) recheckPostPrepareAvailability(ac *candidateAttempt, result 
 // already-installed gates. It stays before source/prerequisite preparation so
 // existing pre-install ordering is preserved while no-op candidates skip it.
 func (ex *Executor) runCandidatePreinstall(ac *candidateAttempt, result *ToolResult) attemptOutcome {
-	if len(ac.tool.PreInstall) == 0 || result.PreinstallDone {
+	if len(ac.tool.PreInstall) == 0 {
 		return proceed
 	}
 	preCtx, preCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
