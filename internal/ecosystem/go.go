@@ -267,6 +267,10 @@ func goBinDir() (string, error) {
 			return "", fmt.Errorf("resolve home for go bin dir: %w", err)
 		}
 		gopath = filepath.Join(home, "go")
+	} else if paths := filepath.SplitList(gopath); len(paths) > 0 {
+		// The go command installs binaries into the bin directory of the first
+		// GOPATH entry when GOPATH is a list.
+		gopath = paths[0]
 	}
 	return filepath.Join(gopath, "bin"), nil
 }

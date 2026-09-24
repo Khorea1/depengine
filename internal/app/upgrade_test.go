@@ -84,9 +84,13 @@ func runUpgradeCommand(t *testing.T, extraEnv []string, flags ...string) (int, s
 // would correctly be treated as an unknown installation identity.
 func writeFakeUpgradeBinaries(t *testing.T, names ...string) []string {
 	t.Helper()
-	binDir := t.TempDir()
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 
-	moduleDir := t.TempDir()
+	moduleDir := filepath.Join(root, "module")
 	cmdDir := filepath.Join(moduleDir, "cmd", "stringer")
 	if err := os.MkdirAll(cmdDir, 0755); err != nil {
 		t.Fatal(err)
@@ -102,7 +106,10 @@ func main() {}
 		t.Fatal(err)
 	}
 
-	buildDir := t.TempDir()
+	buildDir := filepath.Join(root, "build")
+	if err := os.MkdirAll(buildDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	buildMod := "module depengine.test/upgradefixture\n\ngo 1.27\n\nrequire golang.org/x/tools v0.1.0\n\nreplace golang.org/x/tools => " + filepath.ToSlash(moduleDir) + "\n"
 	if err := os.WriteFile(filepath.Join(buildDir, "go.mod"), []byte(buildMod), 0600); err != nil {
 		t.Fatal(err)

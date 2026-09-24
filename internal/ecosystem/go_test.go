@@ -100,6 +100,22 @@ func TestGoAdapterRemoveFallsBackToToolNameAsImportPath(t *testing.T) {
 	}
 }
 
+func TestGoBinDirUsesFirstGOPATHEntry(t *testing.T) {
+	first := t.TempDir()
+	second := t.TempDir()
+	t.Setenv("GOBIN", "")
+	t.Setenv("GOPATH", strings.Join([]string{first, second}, string(os.PathListSeparator)))
+
+	got, err := goBinDir()
+	if err != nil {
+		t.Fatalf("goBinDir() error = %v", err)
+	}
+	want := filepath.Join(first, "bin")
+	if got != want {
+		t.Fatalf("goBinDir() = %q, want first GOPATH bin %q", got, want)
+	}
+}
+
 func TestGoAdapterRemoveUsesGOPATHBinWhenGOBINUnset(t *testing.T) {
 	gopath := t.TempDir()
 	t.Setenv("GOBIN", "")
