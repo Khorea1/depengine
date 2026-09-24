@@ -31,6 +31,7 @@ func TestSpecializedVerificationFieldProbes(t *testing.T) {
 	t.Run("sdkman package and exact version", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
 		for _, path := range []string{
 			filepath.Join(home, ".sdkman", "candidates", "gradle", "current"),
 			filepath.Join(home, ".sdkman", "candidates", "gradle", "8.7"),
