@@ -32,7 +32,8 @@ Work on the current execution model comes before adding more installer types.
   cleanup. Reviewed and documented scanner findings, added narrow checksum
   compatibility and TAR normalization suppressions, and fixed the hard-link
   path validation gap. Local/offline archive expansion now has a 4 GiB
-  aggregate limit. Remaining call-site review is open; see
+  aggregate limit, and TAR mode conversions validate range before narrowing.
+  Remaining call-site review is open; see
   [`gosec-triage.md`](gosec-triage.md).
 - [x] Remove the orphaned root lock artifact. No canonical root schema is
   tracked; the stale lock referenced a removed `fastfetch/http/0` method and
