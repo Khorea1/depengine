@@ -95,18 +95,22 @@ func TestCargoAdapterV2ObserveReportsInstalledVersion(t *testing.T) {
 	}
 }
 
-func TestCargoAdapterV2ObserveAbsentOnDrift(t *testing.T) {
+func TestCargoAdapterV2ObserveReportsDriftedVersion(t *testing.T) {
 	adapter := NewCargoAdapter()
 	tool := &config.Tool{Name: "friendly-name"}
 	mc := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"pkg": "crate-name", "version": "1.2.3"}}
 
-	// Different installed version: same verdict as Check (absent, not present).
+	// A different installed version remains present so reconciliation can
+	// distinguish exact-version drift from a missing crate.
 	observation, err := adapter.Observe(context.Background(), cargoV2Runner("crate-name v1.2.4:\n    crate-name\n"), tool, mc)
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)
 	}
-	if observation.Presence != plan.PresenceAbsent {
-		t.Fatalf("Observe() presence = %q, want %q", observation.Presence, plan.PresenceAbsent)
+	if observation.Presence != plan.PresencePresent || observation.Identity.Version != "1.2.4" {
+		t.Fatalf("Observe() = %+v, want present version 1.2.4", observation)
+	}
+	if result := plan.Reconcile(plan.ResolvedIdentity{Package: "crate-name", Version: "1.2.3"}, observation); result.State != plan.StateDrifted {
+		t.Fatalf("Reconcile() state = %q, want %q (result = %#v)", result.State, plan.StateDrifted, result)
 	}
 
 	// Missing crate entirely.
