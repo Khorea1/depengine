@@ -161,10 +161,14 @@ func (a *CargoAdapter) Check(ctx context.Context, rn run.Runner, tool *config.To
 // declared version and bins intent. Shared by Check and Observe so both paths
 // agree on what "installed" means.
 func cargoEntrySatisfies(version string, bins []string, mc *config.MethodCandidate) bool {
-	if want, _ := mc.Config["version"].(string); want != "" && strings.TrimPrefix(version, "v") != strings.TrimPrefix(want, "v") {
+	if want, _ := mc.Config["version"].(string); want != "" && !sameCargoVersion(version, want) {
 		return false
 	}
 	return cargoBinsSatisfy(bins, mc)
+}
+
+func sameCargoVersion(left, right string) bool {
+	return strings.TrimPrefix(left, "v") == strings.TrimPrefix(right, "v")
 }
 
 func cargoBinsSatisfy(bins []string, mc *config.MethodCandidate) bool {
@@ -226,6 +230,9 @@ func (a *CargoAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.
 	version, bins, err := a.installedEntry(ctx, rn, tool, mc)
 	if err != nil || version == "" || !cargoBinsSatisfy(bins, mc) {
 		return absent, nil
+	}
+	if requested, _ := mc.Config["version"].(string); requested != "" && sameCargoVersion(version, requested) {
+		version = requested
 	}
 	return plan.Observation{
 		Presence:    plan.PresencePresent,
