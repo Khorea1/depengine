@@ -85,7 +85,11 @@ func (a *GoAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool,
 	if err != nil || installed == "" {
 		return false
 	}
-	return strings.TrimPrefix(installed, "v") == strings.TrimPrefix(version, "v")
+	return sameGoVersion(installed, version)
+}
+
+func sameGoVersion(left, right string) bool {
+	return strings.TrimPrefix(left, "v") == strings.TrimPrefix(right, "v")
 }
 
 func (a *GoAdapter) checkPresent(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
@@ -160,6 +164,13 @@ func (a *GoAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Too
 		KnownFields: []plan.IdentityField{plan.FieldPackage},
 	}
 	if installed, err := a.InstalledVersion(ctx, rn, tool, mc); err == nil && installed != "" {
+		// The planner preserves the requested spelling while Go treats a leading
+		// "v" as equivalent for exact module versions. Reconcile is deliberately
+		// adapter-neutral and exact, so collapse only that established Go
+		// equivalence into the requested spelling before exposing the observation.
+		if requested, _ := mc.Config["version"].(string); requested != "" && sameGoVersion(installed, requested) {
+			installed = requested
+		}
 		observation.Identity.Version = installed
 		observation.KnownFields = append(observation.KnownFields, plan.FieldVersion)
 	}
