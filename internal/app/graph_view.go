@@ -31,19 +31,25 @@ func projectGraphView(ctx context.Context, declared graph.Graph, schema *config.
 		return declared.Project(view, graph.ProjectionContext{})
 	}
 
+	needsGuards, candidateTools := graphProjectionRequirements(declared, view)
+	if !needsGuards && len(candidateTools) == 0 {
+		return declared.Project(view, graph.ProjectionContext{})
+	}
+
 	facts, err := engine.GatherFacts(run.OSExecRunner{})
 	if err != nil {
 		return graph.Graph{}, fmt.Errorf("gather host facts: %w", err)
 	}
 
-	projection := graph.ProjectionContext{
-		GuardActive: func(guard graph.Guard) (bool, error) {
+	projection := graph.ProjectionContext{}
+	if needsGuards {
+		projection.GuardActive = func(guard graph.Guard) (bool, error) {
 			return matchGraphGuard(guard, facts)
-		},
+		}
 	}
 
-	if view == graph.ResolvedView {
-		selected := resolvedGraphCandidates(ctx, schema, facts)
+	if len(candidateTools) > 0 {
+		selected := resolvedGraphCandidates(ctx, schema, facts, candidateTools)
 		projection.SelectedCandidate = func(toolID string, candidate int) bool {
 			selectedCandidate, ok := selected[toolID]
 			return ok && selectedCandidate == candidate
@@ -57,6 +63,20 @@ func projectGraphView(ctx context.Context, declared graph.Graph, schema *config.
 	return projected, nil
 }
 
+func graphProjectionRequirements(declared graph.Graph, view graph.GraphView) (bool, map[string]struct{}) {
+	candidateTools := make(map[string]struct{})
+	needsGuards := false
+	for _, edge := range declared.Edges {
+		if edge.Guard != nil {
+			needsGuards = true
+		}
+		if view == graph.ResolvedView && edge.Kind == graph.MethodRequire {
+			candidateTools[edge.To] = struct{}{}
+		}
+	}
+	return needsGuards, candidateTools
+}
+
 func matchGraphGuard(guard graph.Guard, facts *engine.Facts) (bool, error) {
 	condition, ok := guard.(*config.Condition)
 	if !ok {
@@ -65,9 +85,9 @@ func matchGraphGuard(guard graph.Guard, facts *engine.Facts) (bool, error) {
 	return condition.Match(facts), nil
 }
 
-func resolvedGraphCandidates(ctx context.Context, schema *config.Schema, facts *engine.Facts) map[string]int {
+func resolvedGraphCandidates(ctx context.Context, schema *config.Schema, facts *engine.Facts, candidateTools map[string]struct{}) map[string]int {
 	selected := make(map[string]int)
-	if schema == nil {
+	if schema == nil || len(candidateTools) == 0 {
 		return selected
 	}
 
@@ -81,9 +101,11 @@ func resolvedGraphCandidates(ctx context.Context, schema *config.Schema, facts *
 	exec.WithFacts(facts)(executor)
 	exec.WithDefaultMethodOrder(schema.Defaults.MethodOrder)(executor)
 
-	names := make([]string, 0, len(schema.Tools))
-	for name := range schema.Tools {
-		names = append(names, name)
+	names := make([]string, 0, len(candidateTools))
+	for name := range candidateTools {
+		if schema.Tools[name] != nil {
+			names = append(names, name)
+		}
 	}
 	sort.Strings(names)
 
