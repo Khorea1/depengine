@@ -236,13 +236,28 @@ func validateSignatureSecurity(s *config.Schema) *Result {
 	return r
 }
 
-// validateContainerReferences rejects container identities that cannot be
-// represented by the container adapter's canonical source + tag/digest model.
+// supportsContainerReferenceValidation recognizes contracts whose declared
+// capabilities and fields use the canonical source + tag/digest container model.
+func supportsContainerReferenceValidation(contract *methodkind.Contract) bool {
+	if contract == nil || !contract.Supports(methodkind.CapabilityImmutableIdentity|methodkind.CapabilityMutableTag) {
+		return false
+	}
+	for _, field := range []string{"source", "tag", "digest", "platform"} {
+		if _, ok := contract.Fields[field]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// validateContainerReferences rejects identities that cannot be represented by
+// the capability-declared canonical container reference model.
 func validateContainerReferences(s *config.Schema) *Result {
 	r := &Result{}
 	for toolName, tool := range s.Tools {
 		for i, mc := range tool.Methods {
-			if mc.Kind != "container" {
+			contract, ok := methodkind.Lookup(mc.Kind)
+			if !ok || !supportsContainerReferenceValidation(contract) {
 				continue
 			}
 			if source, _ := mc.Config["source"].(string); source != "" {
