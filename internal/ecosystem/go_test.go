@@ -338,8 +338,8 @@ func TestGoObservePreservesExactVersionDrift(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Observe: %v", err)
 	}
-	if observation.Presence != plan.PresencePresent || observation.Identity.Version != "1.2.4" {
-		t.Fatalf("observation = %+v, want present installed version 1.2.4", observation)
+	if observation.Presence != plan.PresencePresent || observation.Identity.Version != "v1.2.4" {
+		t.Fatalf("observation = %+v, want present installed version v1.2.4", observation)
 	}
 	desired := plan.ResolvedIdentity{Package: "example.com/project/cmd/realbin", Version: "v1.2.3"}
 	verification := plan.Reconcile(desired, observation)
