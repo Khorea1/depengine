@@ -30,15 +30,17 @@ func NewSDKManAdapter() *SDKManAdapter {
 func (a *SDKManAdapter) Kind() string { return "sdkman" }
 
 func (a *SDKManAdapter) Available(ctx context.Context, rn run.Runner) bool {
-	home, err := os.UserHomeDir()
+	initScript, err := sdkmanInitScript()
 	if err != nil {
 		return false
 	}
-	sdk := filepath.Join(home, ".sdkman", "bin", "sdk")
-	if _, err := os.Stat(sdk); err == nil {
-		return true
+	info, err := os.Stat(initScript)
+	if err != nil || info.IsDir() {
+		return false
 	}
-	return run.LookPath(ctx, rn, "sdk")
+	// SDKMAN exposes `sdk` from sdkman-init.sh rather than as a standalone
+	// executable, and its supported runtime is Bash.
+	return run.LookPath(ctx, rn, "bash")
 }
 
 func (a *SDKManAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
@@ -46,11 +48,11 @@ func (a *SDKManAdapter) Check(ctx context.Context, rn run.Runner, tool *config.T
 	if len(candidate) == 0 {
 		return false
 	}
-	home, err := os.UserHomeDir()
+	root, err := sdkmanRoot()
 	if err != nil {
 		return false
 	}
-	base := filepath.Join(home, ".sdkman", "candidates", candidate[0])
+	base := filepath.Join(root, "candidates", candidate[0])
 	if version, ok := mc.Config["version"].(string); ok && version != "" {
 		// Exact-version intent is satisfied only when that version is actually
 		// installed. Checking only the `current` symlink would silently accept
@@ -73,11 +75,11 @@ func (a *SDKManAdapter) InstalledVersion(_ context.Context, _ run.Runner, tool *
 	if len(candidate) == 0 || candidate[0] == "" {
 		return "", fmt.Errorf("sdkman: no package name")
 	}
-	home, err := os.UserHomeDir()
+	root, err := sdkmanRoot()
 	if err != nil {
 		return "", err
 	}
-	base := filepath.Join(home, ".sdkman", "candidates", candidate[0])
+	base := filepath.Join(root, "candidates", candidate[0])
 	if version, ok := mc.Config["version"].(string); ok && version != "" {
 		if _, err := os.Stat(filepath.Join(base, version)); err != nil {
 			return "", err
@@ -112,6 +114,8 @@ func sdkmanVersion(mc *config.MethodCandidate) string {
 	return ""
 }
 
+const sdkmanShellCommand = `source "$1"; shift; sdkman_auto_answer=true; sdk "$@"`
+
 func (a *SDKManAdapter) install(ctx context.Context, rn run.Runner, candidate, version string) error {
 	if rn == nil {
 		return errors.New("sdkman: runner is required")
@@ -119,11 +123,39 @@ func (a *SDKManAdapter) install(ctx context.Context, rn run.Runner, candidate, v
 	if candidate == "" {
 		return fmt.Errorf("sdkman: no package name")
 	}
-	cmd := []string{"sdk", "install", candidate}
-	if version != "" {
-		cmd = append(cmd, version)
+	initScript, err := sdkmanInitScript()
+	if err != nil {
+		return err
 	}
-	return run.CheckResult(rn.Run(ctx, cmd[0], cmd[1:]...), "sdkman: install")
+	if info, err := os.Stat(initScript); err != nil || info.IsDir() {
+		return fmt.Errorf("sdkman: init script %q is unavailable", initScript)
+	}
+	// Keep all method-derived values outside the shell program. Bash receives
+	// them as positional argv after sourcing SDKMAN's trusted init script.
+	args := []string{"-c", sdkmanShellCommand, "depengine-sdkman", initScript, "install", candidate}
+	if version != "" {
+		args = append(args, version)
+	}
+	return run.CheckResult(rn.Run(ctx, "bash", args...), "sdkman: install")
+}
+
+func sdkmanRoot() (string, error) {
+	if root := os.Getenv("SDKMAN_DIR"); root != "" {
+		return root, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("sdkman: home directory: %w", err)
+	}
+	return filepath.Join(home, ".sdkman"), nil
+}
+
+func sdkmanInitScript() (string, error) {
+	root, err := sdkmanRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, "bin", "sdkman-init.sh"), nil
 }
 
 func (a *SDKManAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
