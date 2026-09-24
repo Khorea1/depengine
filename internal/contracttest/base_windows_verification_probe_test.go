@@ -156,7 +156,21 @@ func probeAB(t *testing.T, adapter interface {
 		if err != nil {
 			t.Fatalf("Observe(%s) failed: %v", kind, err)
 		}
-		states[i] = plan.Reconcile(plan.ResolvedIdentity{Package: method.Config["pkg"].(string)}, observation).State
+		desired := plan.ResolvedIdentity{Package: method.Config["pkg"].(string)}
+		if version, _ := method.Config["version"].(string); version != "" {
+			desired.Version = version
+		}
+		if source, _ := method.Config["bucket"].(string); source != "" {
+			desired.Source = source
+		}
+		if scope, _ := method.Config["scope"].(string); scope != "" {
+			if scope == "global" {
+				desired.Scope = string(plan.ScopeSystem)
+			} else {
+				desired.Scope = string(plan.ScopeUser)
+			}
+		}
+		states[i] = plan.Reconcile(desired, observation).State
 	}
 	if states[0] != plan.StateSatisfied || states[1] == plan.StateSatisfied {
 		t.Fatalf("A/B verification states = %v; want satisfied then absent/drifted", states)
