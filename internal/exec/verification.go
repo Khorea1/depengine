@@ -58,9 +58,28 @@ func verificationDetail(v plan.VerificationResult) string {
 // ResolveAndVerifyCandidate resolves one candidate through the executor's
 // canonical resolver, then verifies exactly that resolved target.
 func (ex *Executor) ResolveAndVerifyCandidate(ctx context.Context, tool *config.Tool, method *config.MethodCandidate) (*plan.ResolvedInstallPlan, plan.VerificationResult, error) {
+	return ex.ResolveAndVerifyCandidateAtVersion(ctx, tool, method, "")
+}
+
+// ResolveAndVerifyCandidateAtVersion resolves a candidate through the canonical
+// resolver, optionally projects an exact desired version onto the resolved
+// identity, validates that projection, and verifies exactly that target.
+//
+// The version projection belongs here rather than in command workflows so
+// status, upgrade, and future lock consumers cannot accidentally verify a
+// different identity from the one they resolved.
+func (ex *Executor) ResolveAndVerifyCandidateAtVersion(ctx context.Context, tool *config.Tool, method *config.MethodCandidate, desiredVersion string) (*plan.ResolvedInstallPlan, plan.VerificationResult, error) {
 	resolved, err := ex.ResolveCandidatePlan(ctx, tool, method)
 	if err != nil {
 		return nil, plan.VerificationResult{}, err
+	}
+	if desiredVersion != "" {
+		projected := resolved.Clone()
+		projected.Identity.Version = desiredVersion
+		if err := projected.Validate(); err != nil {
+			return nil, plan.VerificationResult{}, fmt.Errorf("project desired version %q: %w", desiredVersion, err)
+		}
+		resolved = &projected
 	}
 	verification, err := ex.VerifyResolvedCandidate(ctx, tool, method, resolved)
 	return resolved, verification, err
