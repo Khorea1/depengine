@@ -130,12 +130,10 @@ Initialize a schema.toml for a new project
 
 Install tools from schema.toml
 
-Aliases: `i`.
-
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `--allow-arbitrary-code` | local | `false` | permit hooks, build scripts, and other arbitrary code execution |
-| `--diagnose` | local | `false` | diagnostic mode: DEBUG + dry-run + detailed report |
+| `--diagnose` | local | `false` | diagnostic mode: DEBUG + dry-run + verbose |
 | `--dry-run` | local | `false` | show what would be installed |
 | `--frozen-lockfile` | local | `false` | fail if depengine.lock is missing, detectably stale, or lacks a supported required pin |
 | `-h, --help` | local | `false` | help for install |
@@ -146,11 +144,11 @@ Aliases: `i`.
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
 | `--only <string>` | local | `` | only install specific tool |
 | `--profile <string>` | local | `` | only install tools with matching tag (e.g. minimal,desktop,server) |
-| `--quiet` | local | `false` | suppress live per-tool status lines; show final per-tool report |
+| `--quiet` | local | `false` | suppress per-tool status lines; show only final summary |
 | `--schema <string>` | local | `schema.toml` | path to schema.toml |
 | `--skip <string>` | local | `` | skip specific tools (comma-separated) |
 | `--sort-by <string>` | local | `` | sort output by: name, status, method |
-| `--verbose` | local | `false` | deprecated compatibility flag; detailed output is already the default |
+| `--verbose` | local | `false` | detailed output |
 
 ## `depengine remove [tool...] [flags]`
 
