@@ -275,3 +275,23 @@ Explain how a tool would be installed
 | `1` | Tool failure / strict mode warnings |
 | `2` | Schema error (invalid TOML, validation) |
 | `3` | Runtime error (`detect_os.sh` not found, etc.) |
+
+
+## Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `DEPENGINE_DETECT_SCRIPT` | Override the OS-detection script |
+| `DEPENGINE_MANIFEST` | Override the personal manifest path |
+| `DEPENGINE_CACHE_MAX_BYTES` | Download-cache size limit; `0` disables eviction |
+| `XDG_CONFIG_HOME` | Base directory for the personal manifest |
+| `XDG_CACHE_HOME` | Base directory for downloads |
+| `XDG_STATE_HOME` | Base directory for state |
+| `GITHUB_TOKEN` / `GH_TOKEN` | GitHub API and private release authentication |
+| `NO_COLOR` / `FORCE_COLOR` | Control ANSI color output |
+| `DEPENGINE_TRACE_ID` | Trace ID passed to subprocesses |
+| `DEPENGINE_LOG_JSON` | Set to `1` for JSON logs |
+
+Secret-bearing environment variables referenced through typed `secret_ref`
+configuration are resolved only for the operation that owns them; see
+[security](security.md) for credential-scoping rules.
