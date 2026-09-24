@@ -16,7 +16,8 @@ Work on the current execution model comes before adding more installer types.
   explicit checksum, and signature downloads,
   typed GitHub release/API and asset authentication, and origin-scoped Bearer
   authentication for private HTTPS `git` clone/fetch/same-origin recursive
-  submodules plus private HTTPS `cargo.git` prefetch before local Cargo install.
+  submodules plus private HTTPS `cargo.git` prefetch before local Cargo install,
+  and temporary registry auth files for typed Docker/Podman image pulls.
   Other authenticated operations still need an explicit credential transport
   before they can be accepted.
 

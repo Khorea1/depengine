@@ -74,6 +74,23 @@ func TestBuildCandidateIntentProjectsHTTPSecretReference(t *testing.T) {
 	}
 }
 
+func TestBuildCandidateIntentProjectsContainerRegistrySecretReference(t *testing.T) {
+	tool, method := candidate("demo", "container", map[string]any{
+		"manager": "docker", "source": "registry.example.test/team/demo", "auth_username": "ci-user",
+	})
+	method.SecretRef = &config.SecretReference{Provider: "env", Name: "REGISTRY_TOKEN"}
+	p, err := planner.BuildCandidateIntent(tool, method)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Secrets) != 1 || p.Secrets[0] != (plan.SecretReference{Provider: "env", Name: "REGISTRY_TOKEN"}) {
+		t.Fatalf("secret requirements = %+v", p.Secrets)
+	}
+	if p.Identity.Source != "registry.example.test/team/demo" {
+		t.Fatalf("container identity = %+v", p.Identity)
+	}
+}
+
 func TestBuildCandidateIntentProjectsWrapperSecretsForBothSourceForms(t *testing.T) {
 	for _, kind := range []string{"appimage", "android", "msi"} {
 		for _, source := range []string{"url", "repo+asset"} {

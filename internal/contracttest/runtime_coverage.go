@@ -47,6 +47,8 @@ func init() {
 		"container.tag":                 {Consumer: "internal/container/adapter_test.go", Rationale: "tag participates in the pulled image reference"},
 		"container.digest":              {Consumer: "internal/container/adapter_test.go", Rationale: "digest pins the pulled image content identity"},
 		"container.platform":            {Consumer: "internal/container/adapter_test.go", Rationale: "platform selects and verifies the requested image variant"},
+		"container.auth_username":       {Consumer: "internal/exec/TestContainerCredentialContextResolvesOnlyForExplicitReference", Rationale: "username joins the resolved credential in the runtime pull context"},
+		"container.secret_ref":          {Consumer: "internal/container/TestContainerAdapterRegistryAuthIsScopedAndCleanedForEachManager", Rationale: "registry credentials use a temporary manager-specific auth file during pull"},
 		"msi.product_name":              {Consumer: "internal/msi/adapter_v2_test.go", Rationale: "product name selects the product passed to msiexec"},
 		"msi.publisher":                 {Consumer: "internal/msi/adapter_v2_test.go", Rationale: "publisher narrows product lookup before install or removal"},
 	})

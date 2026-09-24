@@ -23,6 +23,7 @@ const (
 
 var fieldSemantics = map[string]FieldSemantic{
 	"architecture":         SemanticPolicy,
+	"auth_username":        SemanticAuthentication,
 	"artifact":             SemanticArtifactIdentity,
 	"asset":                SemanticArtifactIdentity,
 	"binary":               SemanticPlacement,

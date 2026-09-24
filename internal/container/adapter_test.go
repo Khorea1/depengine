@@ -2,9 +2,15 @@ package container
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -16,6 +22,47 @@ type nameAwareRunner struct {
 	exitByName map[string]int // missing entries default to exit 1 (not found)
 	stdout     string
 	calls      []run.FakeCall
+}
+
+type authInspectRunner struct {
+	nameAwareRunner
+	env              map[string]string
+	fileData         []byte
+	filePath         string
+	contextDataFound bool
+	contextIsSymlink bool
+	fileMode         os.FileMode
+}
+
+func (r *authInspectRunner) RunWithEnv(ctx context.Context, env map[string]string, _ []string, name string, args ...string) run.Result {
+	r.env = env
+	for _, key := range []string{"DOCKER_CONFIG", "REGISTRY_AUTH_FILE"} {
+		if root := env[key]; root != "" {
+			if key == "DOCKER_CONFIG" {
+				r.filePath = filepath.Join(root, "config.json")
+			} else {
+				r.filePath = root
+			}
+			data, err := os.ReadFile(r.filePath)
+			if err != nil {
+				return run.Result{Err: err}
+			}
+			r.fileData = data
+			info, err := os.Stat(r.filePath)
+			if err != nil {
+				return run.Result{Err: err}
+			}
+			r.fileMode = info.Mode().Perm()
+			if key == "DOCKER_CONFIG" {
+				_, err := os.Stat(filepath.Join(root, "contexts", "meta", "ctx", "meta.json"))
+				r.contextDataFound = err == nil
+				if info, err := os.Lstat(filepath.Join(root, "contexts")); err == nil {
+					r.contextIsSymlink = info.Mode()&os.ModeSymlink != 0
+				}
+			}
+		}
+	}
+	return r.Run(ctx, name, args...)
 }
 
 func (r *nameAwareRunner) Run(_ context.Context, name string, args ...string) run.Result {
@@ -146,6 +193,210 @@ func TestContainerAdapterInstallCommandFailurePropagates(t *testing.T) {
 
 	if err := NewContainerAdapter().Install(context.Background(), rn, tool("redis"), mc); err == nil {
 		t.Fatal("Install should propagate a non-zero exit as an error")
+	}
+}
+
+func TestContainerAdapterRegistryAuthIsScopedAndCleanedForEachManager(t *testing.T) {
+	for _, tc := range []struct {
+		manager, source, envKey, authKey string
+	}{
+		{"docker", "ghcr.io/acme/widget", "DOCKER_CONFIG", "ghcr.io"},
+		{"podman", "quay.io/acme/widget", "REGISTRY_AUTH_FILE", "quay.io"},
+		{"podman", "docker.io/acme/widget", "REGISTRY_AUTH_FILE", "docker.io"},
+		{"docker", "acme/widget", "DOCKER_CONFIG", "https://index.docker.io/v1/"},
+		{"docker", "busybox", "DOCKER_CONFIG", "https://index.docker.io/v1/"},
+	} {
+		t.Run(tc.manager+"/"+tc.source, func(t *testing.T) {
+			// #nosec G101 -- synthetic test marker, never an actual credential.
+			const username, credentialValue = "build-user", "credential-must-not-appear-in-argv"
+			rn := &authInspectRunner{nameAwareRunner: nameAwareRunner{exitByName: map[string]int{tc.manager: 0}}}
+			ctx := exec.WithContainerRegistryCredential(context.Background(), username, credentialValue)
+			mc := &config.MethodCandidate{Config: map[string]any{"manager": tc.manager, "source": tc.source}, SecretRef: &config.SecretReference{Provider: "env", Name: "REGISTRY_SECRET"}}
+			if err := NewContainerAdapter().Install(ctx, rn, tool("widget"), mc); err != nil {
+				t.Fatalf("Install: %v", err)
+			}
+			if len(rn.env) != 2 || rn.env[tc.envKey] == "" || rn.env["REGISTRY_SECRET"] != "" {
+				t.Fatalf("environment overrides = %#v, want auth path plus blanked secret source", rn.env)
+			}
+			var config registryAuthConfig
+			if err := json.Unmarshal(rn.fileData, &config); err != nil {
+				t.Fatalf("decode auth file: %v", err)
+			}
+			if len(config.Auths) != 1 {
+				t.Fatalf("auth entries = %#v, want exactly one registry entry", config.Auths)
+			}
+			entry, ok := config.Auths[tc.authKey]
+			decodedAuth, decodeErr := base64.StdEncoding.DecodeString(entry.Auth)
+			if !ok || decodeErr != nil || string(decodedAuth) != username+":"+credentialValue {
+				t.Fatalf("auth file entries = %#v, want key %q decoding to username:secret", config.Auths, tc.authKey)
+			}
+			if rn.fileMode != 0o600 {
+				t.Fatalf("auth file mode = %#o, want 0600", rn.fileMode)
+			}
+			call := rn.calls[len(rn.calls)-1]
+			joinedArgs := strings.Join(call.Args, " ")
+			if strings.Contains(joinedArgs, username) || strings.Contains(joinedArgs, credentialValue) {
+				t.Fatalf("credential leaked into argv: %#v", call.Args)
+			}
+			if _, err := os.Stat(rn.filePath); !os.IsNotExist(err) {
+				t.Fatalf("temporary auth file still exists (stat err %v)", err)
+			}
+		})
+	}
+}
+
+func TestContainerAdapterRegistryAuthFailsClosedWithoutEnvironmentRunner(t *testing.T) {
+	// #nosec G101 -- synthetic test marker, never an actual credential.
+	const credentialValue = "credential-must-not-appear-in-argv"
+	rn := &nameAwareRunner{exitByName: map[string]int{"docker": 0}}
+	ctx := exec.WithContainerRegistryCredential(context.Background(), "user", credentialValue)
+	mc := &config.MethodCandidate{Config: map[string]any{"manager": "docker", "source": "registry.example/acme/widget"}}
+	if err := NewContainerAdapter().Install(ctx, rn, tool("widget"), mc); err == nil || !strings.Contains(err.Error(), "per-call environment") {
+		t.Fatalf("Install error = %v, want fail-closed environment-runner error", err)
+	}
+	if len(rn.calls) != 0 {
+		t.Fatalf("runner without environment support executed a command: %#v", rn.calls)
+	}
+}
+
+func TestContainerAdapterAuthenticatedPodmanRequiresExplicitRegistry(t *testing.T) {
+	rn := &authInspectRunner{nameAwareRunner: nameAwareRunner{exitByName: map[string]int{"podman": 0}}}
+	ctx := exec.WithContainerRegistryCredential(context.Background(), "user", "credential-value")
+	mc := &config.MethodCandidate{
+		Config:    map[string]any{"manager": "podman", "source": "team/widget"},
+		SecretRef: &config.SecretReference{Provider: "env", Name: "REGISTRY_SECRET"},
+	}
+	if err := NewContainerAdapter().Install(ctx, rn, tool("widget"), mc); err == nil || !strings.Contains(err.Error(), "explicit registry") {
+		t.Fatalf("Install error = %v, want explicit registry requirement", err)
+	}
+	if len(rn.calls) != 0 {
+		t.Fatalf("ambiguous Podman source reached runner: %#v", rn.calls)
+	}
+}
+
+func TestContainerAdapterRegistryAuthFailureCleansTemporaryFile(t *testing.T) {
+	rn := &authInspectRunner{nameAwareRunner: nameAwareRunner{exitByName: map[string]int{"docker": 1}}}
+	ctx := exec.WithContainerRegistryCredential(context.Background(), "user", "secret")
+	mc := &config.MethodCandidate{
+		Config:    map[string]any{"manager": "docker", "source": "registry.example/acme/widget"},
+		SecretRef: &config.SecretReference{Provider: "env", Name: "REGISTRY_SECRET"},
+	}
+	if err := NewContainerAdapter().Install(ctx, rn, tool("widget"), mc); err == nil {
+		t.Fatal("Install should report pull failure")
+	}
+	if rn.filePath == "" {
+		t.Fatal("runner did not observe the temporary auth file")
+	}
+	if _, err := os.Stat(rn.filePath); !os.IsNotExist(err) {
+		t.Fatalf("temporary auth file remains after failed pull (stat err %v)", err)
+	}
+}
+
+func TestContainerAdapterRejectsInvalidRegistryUsername(t *testing.T) {
+	for _, username := range []string{"user:name", "user\nname"} {
+		t.Run(strings.ReplaceAll(username, "\n", "newline"), func(t *testing.T) {
+			rn := &authInspectRunner{nameAwareRunner: nameAwareRunner{exitByName: map[string]int{"docker": 0}}}
+			ctx := exec.WithContainerRegistryCredential(context.Background(), username, "secret")
+			mc := &config.MethodCandidate{Config: map[string]any{"manager": "docker", "source": "registry.example/acme/widget"}, SecretRef: &config.SecretReference{Provider: "env", Name: "REGISTRY_SECRET"}}
+			if err := NewContainerAdapter().Install(ctx, rn, tool("widget"), mc); err == nil || !strings.Contains(err.Error(), "invalid registry username") {
+				t.Fatalf("Install error = %v, want invalid username error", err)
+			}
+			if len(rn.calls) != 0 {
+				t.Fatalf("invalid username reached runner: %#v", rn.calls)
+			}
+		})
+	}
+}
+
+func TestContainerAdapterDeclaredSecretRefFailsClosedWhenCredentialMissing(t *testing.T) {
+	rn := &nameAwareRunner{exitByName: map[string]int{"docker": 0}}
+	mc := &config.MethodCandidate{
+		Config:    map[string]any{"manager": "docker", "source": "registry.example/acme/widget"},
+		SecretRef: &config.SecretReference{Provider: "env", Name: "REGISTRY_TOKEN"},
+	}
+	if err := NewContainerAdapter().Install(context.Background(), rn, tool("widget"), mc); err == nil || !strings.Contains(err.Error(), "declared registry credential is unavailable") {
+		t.Fatalf("Install error = %v, want missing declared credential error", err)
+	}
+	if len(rn.calls) != 0 {
+		t.Fatalf("missing declared credential reached runner: %#v", rn.calls)
+	}
+}
+
+func TestContainerAdapterSecretNameCannotCollideWithAuthOverride(t *testing.T) {
+	for _, secretName := range []string{"DOCKER_CONFIG", "REGISTRY_AUTH_FILE"} {
+		t.Run(secretName, func(t *testing.T) {
+			rn := &nameAwareRunner{exitByName: map[string]int{"docker": 0}}
+			ctx := exec.WithContainerRegistryCredential(context.Background(), "user", "secret")
+			mc := &config.MethodCandidate{
+				Config:    map[string]any{"manager": "docker", "source": "registry.example/acme/widget"},
+				SecretRef: &config.SecretReference{Provider: "env", Name: secretName},
+			}
+			if err := NewContainerAdapter().Install(ctx, rn, tool("widget"), mc); err == nil || !strings.Contains(err.Error(), "invalid registry secret environment name") {
+				t.Fatalf("Install error = %v, want environment-name collision error", err)
+			}
+			if len(rn.calls) != 0 {
+				t.Fatalf("colliding secret name reached runner: %#v", rn.calls)
+			}
+		})
+	}
+}
+
+func TestContainerAdapterDockerAuthPreservesSelectedContext(t *testing.T) {
+	configDir := t.TempDir()
+	contextMeta := filepath.Join(configDir, "contexts", "meta", "ctx")
+	if err := os.MkdirAll(contextMeta, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(contextMeta, "meta.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.json"), []byte(`{"currentContext":"ctx","auths":{"ambient.example":{"auth":"must-not-copy"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_CONFIG", configDir)
+	rn := &authInspectRunner{nameAwareRunner: nameAwareRunner{exitByName: map[string]int{"docker": 0}}}
+	ctx := exec.WithContainerRegistryCredential(context.Background(), "user", "secret")
+	mc := &config.MethodCandidate{Config: map[string]any{"manager": "docker", "source": "registry.example/acme/widget"}, SecretRef: &config.SecretReference{Provider: "env", Name: "REGISTRY_SECRET"}}
+	if err := NewContainerAdapter().Install(ctx, rn, tool("widget"), mc); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	var authConfig registryAuthConfig
+	if err := json.Unmarshal(rn.fileData, &authConfig); err != nil {
+		t.Fatalf("decode generated Docker config: %v", err)
+	}
+	if authConfig.CurrentContext != "ctx" || !rn.contextDataFound {
+		t.Fatalf("Docker context not preserved: currentContext=%q metadataFound=%v", authConfig.CurrentContext, rn.contextDataFound)
+	}
+	if rn.contextIsSymlink {
+		t.Fatal("Docker contexts must be copied into the temporary configuration")
+	}
+	if len(authConfig.Auths) != 1 {
+		t.Fatalf("generated auth entries = %#v, ambient auth must not be copied", authConfig.Auths)
+	}
+}
+
+func TestContainerAdapterRejectsUnknownManager(t *testing.T) {
+	for _, install := range []struct {
+		name string
+		call func(*nameAwareRunner, *config.MethodCandidate) error
+	}{
+		{"install", func(r *nameAwareRunner, mc *config.MethodCandidate) error {
+			return NewContainerAdapter().Install(context.Background(), r, tool("widget"), mc)
+		}},
+		{"remove", func(r *nameAwareRunner, mc *config.MethodCandidate) error {
+			return NewContainerAdapter().Remove(context.Background(), r, tool("widget"), mc)
+		}},
+	} {
+		t.Run(install.name, func(t *testing.T) {
+			rn := &nameAwareRunner{}
+			mc := &config.MethodCandidate{Config: map[string]any{"manager": "docker;touch /tmp/pwned", "source": "registry.example/acme/widget"}}
+			if err := install.call(rn, mc); err == nil {
+				t.Fatal("unknown manager should be rejected")
+			}
+			if len(rn.calls) != 0 {
+				t.Fatalf("unknown manager reached runner: %#v", rn.calls)
+			}
+		})
 	}
 }
 

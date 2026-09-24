@@ -48,6 +48,9 @@ func (ex *Executor) executionCredentialContext(ctx context.Context, method *conf
 	if method.Kind == "cargo" {
 		return ex.cargoCredentialContext(ctx, method)
 	}
+	if method.Kind == "container" {
+		return ex.containerCredentialContext(ctx, method)
+	}
 	switch method.Kind {
 	case "http", "appimage", "android", "msi":
 	default:

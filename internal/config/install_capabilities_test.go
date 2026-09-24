@@ -149,6 +149,38 @@ signing_key = "release-key"
 	}
 }
 
+func TestParseContainerRegistryCredentialContract(t *testing.T) {
+	for _, tc := range []struct {
+		name, fields, wantError string
+	}{
+		{name: "paired", fields: "auth_username = \"ci-user\"\nsecret_ref = { provider = \"env\", name = \"REGISTRY_TOKEN\" }\n"},
+		{name: "missing username", fields: "secret_ref = { provider = \"env\", name = \"REGISTRY_TOKEN\" }\n", wantError: "requires auth_username"},
+		{name: "missing reference", fields: "auth_username = \"ci-user\"\n", wantError: "requires secret_ref"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "schema.toml")
+			data := "schema_version = 1\n[tools.demo.container]\nmanager = \"docker\"\nsource = \"registry.example.test/team/demo\"\n" + tc.fields
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			schema, err := ParseProjectSchema(path, nil)
+			if tc.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+					t.Fatalf("error = %v, want %q", err, tc.wantError)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			method := schema.Tools["demo"].Methods[0]
+			if method.Config["auth_username"] != "ci-user" || method.SecretRef == nil || method.SecretRef.Name != "REGISTRY_TOKEN" {
+				t.Fatalf("parsed credential fields = %+v, %+v", method.Config, method.SecretRef)
+			}
+		})
+	}
+}
+
 func TestParseHTTPBearerReferencesOnDownloadWrappers(t *testing.T) {
 	for _, kind := range []string{"appimage", "android", "msi"} {
 		t.Run(kind, func(t *testing.T) {

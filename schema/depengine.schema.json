@@ -1854,15 +1854,43 @@
                   "digest"
                 ]
               }
+            },
+            {
+              "if": {
+                "required": [
+                  "auth_username"
+                ]
+              },
+              "then": {
+                "required": [
+                  "secret_ref"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "auth_username"
+                ]
+              }
             }
           ],
-          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, auth, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "auth_username": {
+              "minLength": 1,
+              "type": "string"
             },
             "digest": {
               "minLength": 1,
@@ -1894,6 +1922,9 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
             },
             "source": {
               "minLength": 1,
@@ -6762,15 +6793,43 @@
                   "digest"
                 ]
               }
+            },
+            {
+              "if": {
+                "required": [
+                  "auth_username"
+                ]
+              },
+              "then": {
+                "required": [
+                  "secret_ref"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "auth_username"
+                ]
+              }
             }
           ],
-          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, auth, check, remove, upgrade, immutable-lock.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
                 "type": "string"
               },
               "type": "object"
+            },
+            "auth_username": {
+              "minLength": 1,
+              "type": "string"
             },
             "digest": {
               "minLength": 1,
@@ -6799,6 +6858,9 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
             },
             "source": {
               "minLength": 1,

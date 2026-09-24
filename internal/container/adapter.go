@@ -8,9 +8,15 @@ package container
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/containerref"
@@ -52,8 +58,11 @@ func containerRef(mc *config.MethodCandidate) (manager, reference, platform stri
 	source, _ := mc.Config["source"].(string)
 	tag, _ := mc.Config["tag"].(string)
 	digest, _ := mc.Config["digest"].(string)
-	if manager == "" || source == "" {
-		return "", "", "", fmt.Errorf("container: requires both manager and source fields")
+	if !validContainerManager(manager) {
+		return "", "", "", fmt.Errorf("container: manager must be docker or podman")
+	}
+	if source == "" {
+		return "", "", "", fmt.Errorf("container: source is required")
 	}
 	ref, err := containerref.Reference(source, tag, digest)
 	if err != nil {
@@ -123,17 +132,231 @@ func (a *ContainerAdapter) Install(ctx context.Context, rn run.Runner, tool *con
 	if err != nil {
 		return fmt.Errorf("container: tool %q: %w", tool.Name, err)
 	}
-	return a.pull(ctx, rn, manager, reference, platform)
+	if err := requireDeclaredRegistryCredential(ctx, mc); err != nil {
+		return err
+	}
+	secretEnvName := ""
+	if mc.SecretRef != nil {
+		secretEnvName = mc.SecretRef.Name
+	}
+	return a.pull(ctx, rn, manager, reference, platform, secretEnvName)
 }
 
-func (a *ContainerAdapter) pull(ctx context.Context, rn run.Runner, manager, reference, platform string) error {
+func requireDeclaredRegistryCredential(ctx context.Context, mc *config.MethodCandidate) error {
+	if mc != nil && mc.SecretRef != nil {
+		if mc.SecretRef.Name == "" || mc.SecretRef.Name == "DOCKER_CONFIG" || mc.SecretRef.Name == "REGISTRY_AUTH_FILE" {
+			return errors.New("container: invalid registry secret environment name")
+		}
+		if _, _, ok := exec.ContainerRegistryCredential(ctx); !ok {
+			return errors.New("container: declared registry credential is unavailable")
+		}
+	}
+	return nil
+}
+
+func (a *ContainerAdapter) pull(ctx context.Context, rn run.Runner, manager, reference, platform, secretEnvName string) error {
 	args := []string{"pull"}
 	if platform != "" {
 		args = append(args, "--platform", platform)
 	}
 	args = append(args, reference)
-	res := rn.Run(ctx, manager, args...)
+	username, secret, ok := exec.ContainerRegistryCredential(ctx)
+	if !ok {
+		return run.CheckResult(rn.Run(ctx, manager, args...), "container: pull")
+	}
+	env, cleanup, err := registryAuthEnvironment(manager, reference, username, secret)
+	if err != nil {
+		return fmt.Errorf("container: prepare registry authentication: %w", err)
+	}
+	defer cleanup()
+	if secretEnvName != "" {
+		env[secretEnvName] = ""
+	}
+	res := run.RunWithEnv(ctx, rn, env, []string{secret}, manager, args...)
 	return run.CheckResult(res, "container: pull")
+}
+
+func validContainerManager(manager string) bool {
+	return manager == "docker" || manager == "podman"
+}
+
+type registryAuthConfig struct {
+	Auths          map[string]registryAuthEntry `json:"auths"`
+	CurrentContext string                       `json:"currentContext,omitempty"`
+}
+
+type registryAuthEntry struct {
+	Auth string `json:"auth"`
+}
+
+// registryAuthEnvironment writes a manager-specific, short-lived auth file.
+// The credential is scoped to the registry part of the image reference and
+// never appears in the command arguments or process environment.
+func registryAuthEnvironment(manager, reference, username, secret string) (map[string]string, func(), error) {
+	if !validContainerManager(manager) {
+		return nil, nil, fmt.Errorf("unsupported manager %q", manager)
+	}
+	if username == "" || strings.ContainsRune(username, ':') || strings.IndexFunc(username, unicode.IsControl) >= 0 {
+		return nil, nil, errors.New("invalid registry username")
+	}
+	registry := registryForReference(reference)
+	if manager == "podman" && !hasExplicitRegistry(reference) {
+		return nil, nil, errors.New("authenticated Podman pulls require an explicit registry in source")
+	}
+	config := registryAuthConfig{Auths: map[string]registryAuthEntry{
+		registryAuthKey(manager, registry): {
+			Auth: base64.StdEncoding.EncodeToString([]byte(username + ":" + secret)),
+		},
+	}}
+	dir, err := os.MkdirTemp("", "depengine-container-auth-")
+	if err != nil {
+		return nil, nil, err
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	if manager == "docker" {
+		configDir, err := dockerConfigDir()
+		if err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+		config.CurrentContext, err = dockerCurrentContext(configDir)
+		if err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+		contexts := filepath.Join(configDir, "contexts")
+		if info, statErr := os.Stat(contexts); statErr == nil && info.IsDir() {
+			if err := copyDockerContexts(contexts, filepath.Join(dir, "contexts")); err != nil {
+				cleanup()
+				return nil, nil, fmt.Errorf("preserve Docker contexts: %w", err)
+			}
+		} else if statErr != nil && !os.IsNotExist(statErr) {
+			cleanup()
+			return nil, nil, fmt.Errorf("inspect Docker contexts: %w", statErr)
+		}
+	}
+	data, err := json.Marshal(config)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	file := filepath.Join(dir, "config.json")
+	if manager == "podman" {
+		file = filepath.Join(dir, "auth.json")
+	}
+	if err := os.WriteFile(file, data, 0o600); err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	env := map[string]string{}
+	if manager == "docker" {
+		env["DOCKER_CONFIG"] = dir
+	} else {
+		env["REGISTRY_AUTH_FILE"] = file
+	}
+	return env, cleanup, nil
+}
+
+func copyDockerContexts(source, target string) error {
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		return err
+	}
+	sourceRoot, err := os.OpenRoot(source)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = sourceRoot.Close() }()
+	targetRoot, err := os.OpenRoot(target)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = targetRoot.Close() }()
+	return filepath.WalkDir(source, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return targetRoot.MkdirAll(relative, 0o700)
+		}
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("unsupported Docker context entry %q", relative)
+		}
+		input, err := sourceRoot.Open(relative)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = input.Close() }()
+		output, err := targetRoot.OpenFile(relative, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.Copy(output, input)
+		closeErr := output.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		return closeErr
+	})
+}
+
+func hasExplicitRegistry(reference string) bool {
+	first, _, hasSlash := strings.Cut(reference, "/")
+	return hasSlash && (strings.ContainsAny(first, ".:") || first == "localhost")
+}
+
+func dockerConfigDir() (string, error) {
+	var dir string
+	if configured := os.Getenv("DOCKER_CONFIG"); configured != "" {
+		dir = configured
+	} else {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("locate Docker configuration: %w", err)
+		}
+		dir = filepath.Join(home, ".docker")
+	}
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("resolve Docker configuration path: %w", err)
+	}
+	return absDir, nil
+}
+
+func dockerCurrentContext(configDir string) (string, error) {
+	// #nosec G304 -- configDir is the selected Docker client configuration directory.
+	data, err := os.ReadFile(filepath.Join(configDir, "config.json"))
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read Docker configuration: %w", err)
+	}
+	var config struct {
+		CurrentContext string `json:"currentContext"`
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return "", fmt.Errorf("parse Docker configuration: %w", err)
+	}
+	return config.CurrentContext, nil
+}
+
+func registryForReference(reference string) string {
+	first, _, hasSlash := strings.Cut(reference, "/")
+	if !hasSlash || !hasExplicitRegistry(reference) {
+		return "docker.io"
+	}
+	return first
+}
+
+func registryAuthKey(manager, registry string) string {
+	if manager == "docker" && registry == "docker.io" {
+		return "https://index.docker.io/v1/"
+	}
+	return registry
 }
 
 // ResolvePlan validates the configured container identity without contacting
@@ -200,15 +423,22 @@ func (a *ContainerAdapter) InstallResolved(ctx context.Context, rn run.Runner, _
 	if mc == nil {
 		return errors.New("container: method configuration is required")
 	}
+	if err := requireDeclaredRegistryCredential(ctx, mc); err != nil {
+		return err
+	}
 	manager := stringConfig(mc, "manager")
-	if manager == "" {
-		return errors.New("container: requires both manager and source fields")
+	if !validContainerManager(manager) {
+		return errors.New("container: manager must be docker or podman")
 	}
 	reference, platform, err := resolvedReference(resolved)
 	if err != nil {
 		return err
 	}
-	return a.pull(ctx, rn, manager, reference, platform)
+	secretEnvName := ""
+	if mc.SecretRef != nil {
+		secretEnvName = mc.SecretRef.Name
+	}
+	return a.pull(ctx, rn, manager, reference, platform, secretEnvName)
 }
 
 // resolvedReference rebuilds the canonical image reference solely from the

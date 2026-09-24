@@ -317,12 +317,17 @@ var Contracts = finalizeContracts([]Contract{
 		"prefix":      {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 	}), MutuallyExclusive: [][]string{{"environment", "prefix"}}, Requires: map[string][]string{"build": {"version"}}, AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "asdf", DefaultOrder: 29, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify}}), AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "container", DefaultOrder: 30, Capabilities: CapabilityImmutableIdentity | CapabilityMutableTag | CapabilityArchitecture | CapabilitySourceSelection, Fields: map[string]Field{
-		"manager":  {Type: String, Required: true, NonEmpty: true, Enum: []string{"docker", "podman"}, Effects: EffectExecute | EffectVerify},
-		"source":   {Type: String, Required: true, NonEmpty: true, Effects: EffectExecute | EffectVerify},
-		"tag":      {Type: String, Effects: EffectExecute | EffectVerify},
-		"digest":   {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
-		"platform": {Type: String, NonEmpty: true, Effects: EffectValidate | EffectExecute | EffectVerify},
+	{Kind: "container", DefaultOrder: 30, Capabilities: CapabilityImmutableIdentity | CapabilityMutableTag | CapabilityArchitecture | CapabilitySourceSelection | CapabilityAuth, Fields: map[string]Field{
+		"manager":       {Type: String, Required: true, NonEmpty: true, Enum: []string{"docker", "podman"}, Effects: EffectExecute | EffectVerify},
+		"source":        {Type: String, Required: true, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"tag":           {Type: String, Effects: EffectExecute | EffectVerify},
+		"digest":        {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"platform":      {Type: String, NonEmpty: true, Effects: EffectValidate | EffectExecute | EffectVerify},
+		"auth_username": {Type: String, NonEmpty: true, Effects: EffectExecute},
+		"secret_ref":    {Type: SecretRef, Effects: EffectResolve | EffectExecute},
+	}, Requires: map[string][]string{
+		"auth_username": {"secret_ref"},
+		"secret_ref":    {"auth_username"},
 	}, MutuallyExclusive: [][]string{{"tag", "digest"}}, CanRemove: true},
 	{Kind: "appimage", DefaultOrder: 31, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(withoutField(downloadFields, "extract_to"), httpBearerSecretFields, map[string]Field{
 		"install_dir": {Type: String, Effects: EffectExecute | EffectVerify},

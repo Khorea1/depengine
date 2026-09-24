@@ -463,6 +463,27 @@ tag     = "latest"
 | `tag` | no | Defaults to `"latest"`. |
 | `digest` | no | Immutable `sha256:<64 hex>` identity; mutually exclusive with `tag`. |
 | `platform` | no | OCI platform selector `os/arch[/variant]`, e.g. `linux/amd64` or `linux/arm64/v8`. Applied to pull and verified from image metadata. |
+| `auth_username` | with `secret_ref` | Registry account name used for this pull. Colons and control characters are invalid. |
+| `secret_ref` | with `auth_username` | Env-backed registry password or token reference. The value is resolved when this candidate reaches a pull. |
+
+For a private registry, declare both authentication fields:
+
+```toml
+[tools.private-image.container]
+manager = "podman"
+source = "registry.example.com/team/tool"
+auth_username = "ci-user"
+secret_ref = { provider = "env", name = "REGISTRY_TOKEN" }
+```
+
+The credential is supplied through a temporary registry auth file scoped to
+the registry in `source`, and that file is removed after the pull. Docker uses
+an isolated client configuration for the pull; Podman uses an isolated auth
+file. No `login` command is run. Docker maps an unqualified `source` to the
+Docker Hub auth entry. An authenticated Podman pull requires a registry prefix
+such as `docker.io/team/tool`, because Podman may resolve short names through
+local registry aliases. An explicit reference fails if the environment
+variable is missing or empty.
 
 `source` is the repository only: tags and digests belong to separate resolved identity fields and are rejected when embedded in `source`. Registry ports such as `registry.example:5000/team/tool` remain valid. Invalid tag syntax is rejected before invoking Docker/Podman.
 

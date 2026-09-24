@@ -241,6 +241,29 @@ func TestContainerAdapterV2InstallResolvedRequiresConcreteIdentity(t *testing.T)
 	}
 }
 
+func TestContainerAdapterV2InstallResolvedFailsClosedWithoutDeclaredCredential(t *testing.T) {
+	ctx := context.Background()
+	adapter := NewContainerAdapter()
+	tool := tool("widget")
+	mc := containerMethod(map[string]any{"source": "registry.example/acme/widget"})
+	mc.SecretRef = &config.SecretReference{Provider: "env", Name: "REGISTRY_TOKEN"}
+	intent, err := planner.BuildCandidateIntent(tool, mc)
+	if err != nil {
+		t.Fatalf("BuildCandidateIntent() error = %v", err)
+	}
+	resolved, err := adapter.ResolvePlan(ctx, &run.FakeRunner{}, tool, mc, &intent)
+	if err != nil {
+		t.Fatalf("ResolvePlan() error = %v", err)
+	}
+	runner := &nameAwareRunner{exitByName: map[string]int{"podman": 0}}
+	if err := adapter.InstallResolved(ctx, runner, tool, mc, resolved); err == nil || !strings.Contains(err.Error(), "declared registry credential is unavailable") {
+		t.Fatalf("InstallResolved() error = %v, want missing declared credential error", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("missing declared credential reached runner: %#v", runner.calls)
+	}
+}
+
 func TestContainerAdapterV2InstallResolvedUsesPlatform(t *testing.T) {
 	ctx := context.Background()
 	adapter := NewContainerAdapter()

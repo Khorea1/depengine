@@ -100,6 +100,15 @@ token-bearing Git environment. This keeps the credential out of Cargo itself,
 including crate build scripts and procedural macros. An explicit reference
 fails closed when it cannot be resolved.
 
+Typed `container` methods pair `auth_username` with an env-backed `secret_ref`
+for a single Docker or Podman image pull. depengine writes a private temporary
+auth file with one registry entry, passes its location to that child process,
+and removes the file when the pull returns. The secret is absent from argv and
+the child environment; output from the credentialed pull is suppressed.
+Docker's temporary client configuration is isolated from the user's normal
+client configuration for that pull. Authenticated Podman pulls require an
+explicit registry in `source` so the auth entry matches the pull target.
+
 Bearer credentials are retained across same-origin redirects and removed before
 following a cross-origin redirect. The primary artifact credential is never
 implicitly reused for checksum or signature sidecars. A checksum credential is
