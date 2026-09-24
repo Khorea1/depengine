@@ -2,6 +2,7 @@ package ecosystem
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -14,12 +15,31 @@ import (
 )
 
 type cargoCredentialRunner struct {
-	base run.FakeRunner
-	envs []map[string]string
+	base            run.FakeRunner
+	envs            []map[string]string
+	metadataPackage string
 }
 
 func (r *cargoCredentialRunner) Run(ctx context.Context, name string, args ...string) run.Result {
-	return r.base.Run(ctx, name, args...)
+	res := r.base.Run(ctx, name, args...)
+	if name != "cargo" || len(args) == 0 || args[0] != "metadata" || r.metadataPackage == "" {
+		return res
+	}
+	var root string
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "--manifest-path" {
+			root = filepath.Dir(args[i+1])
+			break
+		}
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"packages": []map[string]any{{
+			"name":          r.metadataPackage,
+			"manifest_path": filepath.Join(root, "crates", r.metadataPackage, "Cargo.toml"),
+		}},
+	})
+	res.Stdout = payload
+	return res
 }
 
 func (r *cargoCredentialRunner) RunWithEnv(ctx context.Context, env map[string]string, sensitive []string, name string, args ...string) run.Result {
@@ -103,7 +123,10 @@ func TestCargoGitFieldFallsBackToToolNameWhenPkgOmitted(t *testing.T) {
 func TestCargoGitSecretPrefetchesAndInstallsLocalCheckout(t *testing.T) {
 	const source = "https://example.invalid/private/repo.git"
 	const credential = "cargo-runtime-secret" // #nosec G101 -- synthetic test credential
-	runner := &cargoCredentialRunner{base: run.FakeRunner{LookPaths: map[string]bool{"cargo": true}}}
+	runner := &cargoCredentialRunner{
+		base:            run.FakeRunner{LookPaths: map[string]bool{"cargo": true}},
+		metadataPackage: "crate-name",
+	}
 	method := &config.MethodCandidate{
 		Kind:      "cargo",
 		SecretRef: &config.SecretReference{Provider: "env", Name: "PRIVATE_CARGO_TOKEN"},
@@ -124,10 +147,10 @@ func TestCargoGitSecretPrefetchesAndInstallsLocalCheckout(t *testing.T) {
 			t.Fatalf("git env missing scoped bearer credential: %#v", env)
 		}
 	}
-	if len(runner.base.Calls) != 5 {
-		t.Fatalf("calls = %#v, want lookup, clone, fetch, checkout, cargo", runner.base.Calls)
+	if len(runner.base.Calls) != 6 {
+		t.Fatalf("calls = %#v, want lookup, clone, fetch, checkout, metadata, cargo", runner.base.Calls)
 	}
-	clone, fetch, checkout, cargo := runner.base.Calls[1], runner.base.Calls[2], runner.base.Calls[3], runner.base.Calls[4]
+	clone, fetch, checkout, metadata, cargo := runner.base.Calls[1], runner.base.Calls[2], runner.base.Calls[3], runner.base.Calls[4], runner.base.Calls[5]
 	if clone.Name != "git" || !reflect.DeepEqual(clone.Args[:2], []string{"clone", "--no-checkout"}) || clone.Args[2] != source {
 		t.Fatalf("clone call = %#v", clone)
 	}
@@ -137,8 +160,11 @@ func TestCargoGitSecretPrefetchesAndInstallsLocalCheckout(t *testing.T) {
 	if checkout.Name != "git" || !reflect.DeepEqual(checkout.Args[2:], []string{"checkout", "--detach", "FETCH_HEAD"}) {
 		t.Fatalf("checkout call = %#v", checkout)
 	}
-	if cargo.Name != "cargo" || len(cargo.Args) < 4 || cargo.Args[0] != "install" || cargo.Args[1] != "--path" || !strings.HasPrefix(cargo.Args[2], filepath.Join(os.TempDir(), "depengine-cargo-")) {
-		t.Fatalf("cargo call = %#v, want install --path local checkout", cargo)
+	if metadata.Name != "cargo" || len(metadata.Args) < 6 || metadata.Args[0] != "metadata" || metadata.Args[1] != "--format-version" || metadata.Args[2] != "1" || metadata.Args[3] != "--no-deps" || metadata.Args[4] != "--manifest-path" {
+		t.Fatalf("metadata call = %#v", metadata)
+	}
+	if cargo.Name != "cargo" || len(cargo.Args) < 4 || cargo.Args[0] != "install" || cargo.Args[1] != "--path" || !strings.HasPrefix(cargo.Args[2], filepath.Join(os.TempDir(), "depengine-cargo-")) || !strings.HasSuffix(cargo.Args[2], filepath.Join("crates", "crate-name")) {
+		t.Fatalf("cargo call = %#v, want install --path selected workspace package", cargo)
 	}
 	joined := strings.Join(cargo.Args, " ")
 	for _, forbidden := range []string{source, credential, "--git"} {
@@ -146,8 +172,11 @@ func TestCargoGitSecretPrefetchesAndInstallsLocalCheckout(t *testing.T) {
 			t.Fatalf("cargo argv leaked %q: %#v", forbidden, cargo.Args)
 		}
 	}
-	if !strings.Contains(joined, "--features tls,json") || !strings.Contains(joined, "--target x86_64-unknown-linux-musl") || !strings.HasSuffix(joined, "crate-name") {
-		t.Fatalf("cargo options/package not preserved: %#v", cargo.Args)
+	if !strings.Contains(joined, "--features tls,json") || !strings.Contains(joined, "--target x86_64-unknown-linux-musl") {
+		t.Fatalf("cargo options not preserved: %#v", cargo.Args)
+	}
+	if cargo.Args[len(cargo.Args)-1] == "crate-name" {
+		t.Fatalf("cargo --path must not receive a trailing package argument: %#v", cargo.Args)
 	}
 }
 
