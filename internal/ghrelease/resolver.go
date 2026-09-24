@@ -129,7 +129,8 @@ func (r *Resolver) fetchLatestTag(ctx context.Context, owner, repo string, rn ru
 	req.Header.Set("User-Agent", UserAgent)
 
 	// Add GitHub token if available to raise rate limit from 60 to 5000 req/h.
-	if token := r.githubToken(ctx, rn); token != "" {
+	token := r.githubToken(ctx, rn)
+	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
@@ -140,7 +141,7 @@ func (r *Resolver) fetchLatestTag(ctx context.Context, owner, repo string, rn ru
 		return client.Do(req)
 	}()
 	if err != nil {
-		return "", fmt.Errorf("resolve latest: http: %w", err)
+		return "", fmt.Errorf("resolve latest: http: %s", redactToken(err.Error(), token))
 	}
 	defer resp.Body.Close()
 
@@ -178,7 +179,8 @@ func (r *Resolver) fetchLatestRelease(ctx context.Context, owner, repo string, r
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", UserAgent)
-	if token := r.githubToken(ctx, rn); token != "" {
+	token := r.githubToken(ctx, rn)
+	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
@@ -189,7 +191,7 @@ func (r *Resolver) fetchLatestRelease(ctx context.Context, owner, repo string, r
 		return client.Do(req)
 	}()
 	if err != nil {
-		return nil, fmt.Errorf("resolve release: http: %w", err)
+		return nil, fmt.Errorf("resolve release: http: %s", redactToken(err.Error(), token))
 	}
 	defer resp.Body.Close()
 
@@ -229,7 +231,8 @@ func (r *Resolver) fetchReleaseByTag(ctx context.Context, owner, repo, tag strin
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", UserAgent)
-	if token := r.githubToken(ctx, rn); token != "" {
+	token := r.githubToken(ctx, rn)
+	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
@@ -240,7 +243,7 @@ func (r *Resolver) fetchReleaseByTag(ctx context.Context, owner, repo, tag strin
 		return client.Do(req)
 	}()
 	if err != nil {
-		return nil, fmt.Errorf("resolve release %s: http: %w", tag, err)
+		return nil, fmt.Errorf("resolve release %s: http: %s", tag, redactToken(err.Error(), token))
 	}
 	defer resp.Body.Close()
 
@@ -258,6 +261,13 @@ func (r *Resolver) fetchReleaseByTag(ctx context.Context, owner, repo, tag strin
 
 	r.releases.Store(cacheKey, &rel)
 	return &rel, nil
+}
+
+func redactToken(message, token string) string {
+	if token == "" {
+		return message
+	}
+	return strings.ReplaceAll(message, token, "[REDACTED]")
 }
 
 // ResolveAssetURL resolves a "github" method's {repo, asset} declaration into
@@ -391,6 +401,9 @@ func (r *Resolver) GithubToken(ctx context.Context, rn run.Runner) string {
 // Checks GITHUB_TOKEN first, then GH_TOKEN (common aliases used by gh CLI and CI).
 // Falls back to `gh auth token` if the GitHub CLI is authenticated.
 func (r *Resolver) githubToken(ctx context.Context, rn run.Runner) string {
+	if token, ok := ctx.Value(githubTokenContextKey{}).(string); ok && token != "" {
+		return token
+	}
 	if t := os.Getenv("GITHUB_TOKEN"); t != "" {
 		return t
 	}

@@ -2,6 +2,7 @@ package ghrelease
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,14 @@ import (
 // the GitHub API in tests without changing the production code path.
 type redirectTripper struct {
 	testURL string
+}
+
+type errorRoundTripper struct {
+	token string
+}
+
+func (r errorRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return nil, fmt.Errorf("transport failed with Bearer %s", r.token)
 }
 
 func (r *redirectTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -391,6 +400,78 @@ func TestGithubTokenNilRunnerWithoutEnvIsSafe(t *testing.T) {
 	// Fresh Resolver: no cache reset needed, isolation by construction.
 	if got := NewResolver().GithubToken(context.Background(), nil); got != "" {
 		t.Fatalf("GithubToken(nil) = %q, want empty", got)
+	}
+}
+
+func TestGithubTokenContextOverridePrecedesEnvironmentAndCLI(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "environment-github-token")
+	t.Setenv("GH_TOKEN", "environment-gh-token")
+	runner := &run.FakeRunner{Stdout: "cli-token"}
+	token := "context-injected-token"
+	ctx := WithGithubToken(context.Background(), token)
+
+	if got := NewResolver().GithubToken(ctx, runner); got != token {
+		t.Fatalf("GithubToken(context override) = %q, want context token", got)
+	}
+	if len(runner.Calls) != 0 {
+		t.Fatalf("context override invoked fallback command(s): %#v", runner.Calls)
+	}
+}
+
+func TestGithubTokenWithoutContextPreservesEnvironmentAndCLIPrecedence(t *testing.T) {
+	t.Run("GITHUB_TOKEN before GH_TOKEN", func(t *testing.T) {
+		t.Setenv("GITHUB_TOKEN", "github-token")
+		t.Setenv("GH_TOKEN", "gh-token")
+		runner := &run.FakeRunner{Stdout: "cli-token"}
+
+		if got := NewResolver().GithubToken(context.Background(), runner); got != "github-token" {
+			t.Fatalf("GithubToken() = %q, want GITHUB_TOKEN", got)
+		}
+		if len(runner.Calls) != 0 {
+			t.Fatalf("environment token invoked fallback command(s): %#v", runner.Calls)
+		}
+	})
+
+	t.Run("GH_TOKEN before gh auth", func(t *testing.T) {
+		t.Setenv("GITHUB_TOKEN", "")
+		t.Setenv("GH_TOKEN", "gh-token")
+		runner := &run.FakeRunner{Stdout: "cli-token"}
+
+		if got := NewResolver().GithubToken(context.Background(), runner); got != "gh-token" {
+			t.Fatalf("GithubToken() = %q, want GH_TOKEN", got)
+		}
+		if len(runner.Calls) != 0 {
+			t.Fatalf("GH_TOKEN invoked fallback command(s): %#v", runner.Calls)
+		}
+	})
+
+	t.Run("gh auth fallback", func(t *testing.T) {
+		t.Setenv("GITHUB_TOKEN", "")
+		t.Setenv("GH_TOKEN", "")
+		runner := &run.FakeRunner{Stdout: " cli-token\n"}
+
+		if got := NewResolver().GithubToken(context.Background(), runner); got != "cli-token" {
+			t.Fatalf("GithubToken() = %q, want trimmed gh auth token", got)
+		}
+		if len(runner.Calls) != 1 || runner.Calls[0].Name != "gh" || strings.Join(runner.Calls[0].Args, " ") != "auth token" {
+			t.Fatalf("fallback calls = %#v, want gh auth token", runner.Calls)
+		}
+	})
+}
+
+func TestContextTokenIsRedactedFromTransportErrors(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GH_TOKEN", "")
+	token := "context-injected-token"
+	r := NewResolver()
+	r.SetHTTPClient(&http.Client{Transport: errorRoundTripper{token: token}})
+
+	_, err := r.ResolveLatestTag(WithGithubToken(context.Background(), token), "https://github.com/owner/repo", nil)
+	if err == nil {
+		t.Fatal("ResolveLatestTag() error = nil, want transport error")
+	}
+	if strings.Contains(err.Error(), token) {
+		t.Fatalf("transport error exposed injected token: %v", err)
 	}
 }
 

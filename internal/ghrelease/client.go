@@ -9,6 +9,16 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
+type githubTokenContextKey struct{}
+
+// WithGithubToken returns a context that makes token the preferred GitHub
+// credential for release API requests made with that context. The token is
+// kept only in the context and is never cached by Resolver. An empty token is
+// treated as no override.
+func WithGithubToken(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, githubTokenContextKey{}, token)
+}
+
 // Resolver is an injectable GitHub release-resolution client. It owns the
 // tag/release caches, the HTTP client, and the `gh auth token` cache that
 // used to live in package globals (reset by hand between tests). Most
