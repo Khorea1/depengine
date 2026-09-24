@@ -70,6 +70,7 @@ type Contract struct {
 	CanRemove            bool
 	Capabilities         Capability
 	Scopes               *ScopeContract
+	Environment          *EnvironmentTargetContract
 	Artifact             *artifact.Contract
 	Checksum             *ChecksumContract
 	Package              PackageMetadata
@@ -228,7 +229,7 @@ var Contracts = finalizeContracts([]Contract{
 		"source":       {Type: String, NonEmpty: true, Effects: EffectExecute},
 		"architecture": {Type: String, Enum: []string{"x86", "x64"}, Effects: EffectExecute},
 	}), ImplicitDistroFamily: []string{"windows"}, AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "cargo", DefaultOrder: 4, Package: PackageMetadata{ComponentType: PackageComponentLibrary, PURLType: "cargo"}, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityRevision | CapabilityArchitecture | CapabilityEnvironmentTarget | CapabilityAuth, Fields: fields(pkgField, map[string]Field{
+	{Kind: "cargo", DefaultOrder: 4, Package: PackageMetadata{ComponentType: PackageComponentLibrary, PURLType: "cargo"}, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityRevision | CapabilityArchitecture | CapabilityEnvironmentTarget | CapabilityAuth, Environment: &EnvironmentTargetContract{ConfigFields: map[plan.EnvironmentKind]string{plan.EnvironmentPrefix: "root"}}, Fields: fields(pkgField, map[string]Field{
 		"git":                 {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 		"secret_ref":          {Type: SecretRef, Effects: EffectResolve | EffectExecute},
 		"version":             {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
@@ -310,7 +311,7 @@ var Contracts = finalizeContracts([]Contract{
 	}, AllowString: true, AllowTrue: true},
 	packageContract("pacstall", 26, false),
 	{Kind: "aur", Aliases: []string{"paru", "yay"}, DefaultOrder: 27, Fields: pkgField, ImplicitDistroFamily: []string{"arch"}, AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "conda", DefaultOrder: 28, Package: PackageMetadata{ComponentType: PackageComponentLibrary, PURLType: "conda"}, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityEnvironmentTarget, Fields: fields(pkgField, map[string]Field{
+	{Kind: "conda", DefaultOrder: 28, Package: PackageMetadata{ComponentType: PackageComponentLibrary, PURLType: "conda"}, Capabilities: CapabilityExactVersion | CapabilitySourceSelection | CapabilityEnvironmentTarget, Environment: &EnvironmentTargetContract{ConfigFields: map[plan.EnvironmentKind]string{plan.EnvironmentNamed: "environment", plan.EnvironmentPrefix: "prefix"}}, Fields: fields(pkgField, map[string]Field{
 		"version":     {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"build":       {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"channels":    {Type: StringList, Effects: EffectResolve | EffectExecute},
