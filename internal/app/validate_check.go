@@ -32,6 +32,7 @@ func newValidateCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "validate",
+		Aliases: []string{"lint"},
 		Short:   ifPT("Validar schema.toml", "Validate schema.toml"),
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,

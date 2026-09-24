@@ -129,6 +129,8 @@ Initialize a schema.toml for a new project
 
 Install tools from schema.toml
 
+Aliases: `i`.
+
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `--allow-arbitrary-code` | local | `false` | permit hooks, build scripts, and other arbitrary code execution |
@@ -153,6 +155,8 @@ Install tools from schema.toml
 
 Observes the tracked target before removal. Proven-absent targets release state and ownership; unknown or broken observations preserve state and fail.
 
+Aliases: `rm`, `uninstall`.
+
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `--all` | local | `false` | remove all tools |
@@ -175,6 +179,8 @@ Export a software bill of materials of installed state
 
 Reconciles tracked state with identity observed on the host. Status values include installed, missing, outdated, unknown, and broken.
 
+Aliases: `st`.
+
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `--format <string>` | local | `text` | output format: text or json |
@@ -189,6 +195,8 @@ Reconciles tracked state with identity observed on the host. Status values inclu
 
 Revert to a previous state snapshot
 
+Aliases: `rollback`.
+
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `-h, --help` | local | `false` | help for undo |
@@ -198,6 +206,8 @@ Revert to a previous state snapshot
 ## `depengine update [flags]`
 
 Resolve and pin versions into depengine.lock
+
+Aliases: `lock`.
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
@@ -232,6 +242,8 @@ Upgrade installed tools to pinned versions
 
 Validate schema.toml
 
+Aliases: `lint`.
+
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `--check-env` | local | `false` | check system environment for required tools |
@@ -255,6 +267,8 @@ Visibility: hidden (documented compatibility command).
 ## `depengine why <tool> [flags]`
 
 Explain how a tool would be installed
+
+Aliases: `explain`.
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|

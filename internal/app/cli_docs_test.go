@@ -94,6 +94,54 @@ func TestCLIDocsHighRiskFlags(t *testing.T) {
 	}
 }
 
+func TestCommandAliasesResolveAndAreDocumented(t *testing.T) {
+	setEnglishLocale(t)
+	root := newRootCmd()
+	docs := normalizeCLI(root)
+	cases := []struct {
+		canonical string
+		aliases   []string
+	}{
+		{canonical: "install", aliases: []string{"i"}},
+		{canonical: "remove", aliases: []string{"rm", "uninstall"}},
+		{canonical: "status", aliases: []string{"st"}},
+		{canonical: "why", aliases: []string{"explain"}},
+		{canonical: "undo", aliases: []string{"rollback"}},
+		{canonical: "update", aliases: []string{"lock"}},
+		{canonical: "validate", aliases: []string{"lint"}},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.canonical, func(t *testing.T) {
+			canonical, _, err := root.Find([]string{tt.canonical})
+			if err != nil {
+				t.Fatalf("find canonical command %q: %v", tt.canonical, err)
+			}
+			if !slices.Equal(canonical.Aliases, tt.aliases) {
+				t.Fatalf("%s aliases = %v, want %v", tt.canonical, canonical.Aliases, tt.aliases)
+			}
+
+			doc := commandDocByPath(docs, "depengine "+tt.canonical)
+			if doc == nil {
+				t.Fatalf("missing docs for %q", tt.canonical)
+			}
+			if !slices.Equal(doc.Aliases, tt.aliases) {
+				t.Fatalf("%s documented aliases = %v, want %v", tt.canonical, doc.Aliases, tt.aliases)
+			}
+
+			for _, alias := range tt.aliases {
+				resolved, _, err := root.Find([]string{alias})
+				if err != nil {
+					t.Fatalf("find alias %q: %v", alias, err)
+				}
+				if resolved.Name() != tt.canonical {
+					t.Errorf("alias %q resolved to %q, want %q", alias, resolved.Name(), tt.canonical)
+				}
+			}
+		})
+	}
+}
+
 func commandDocByPath(docs []cliCommandDoc, path string) *cliCommandDoc {
 	for i := range docs {
 		if docs[i].Path == path {
