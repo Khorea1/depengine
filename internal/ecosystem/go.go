@@ -374,3 +374,4 @@ func (a *GoAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate
 }
 
 var _ exec.AdapterV2 = (*GoAdapter)(nil)
+var _ exec.Versioner = (*GoAdapter)(nil)
