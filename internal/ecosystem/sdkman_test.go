@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"testing"
 
@@ -11,6 +12,35 @@ import (
 	"github.com/Khorea1/depengine/internal/exectest"
 	"github.com/Khorea1/depengine/internal/run"
 )
+
+func sdkmanTestInit(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	exectest.SetHome(t, home)
+	t.Setenv("SDKMAN_DIR", "")
+	initScript := filepath.Join(home, ".sdkman", "bin", "sdkman-init.sh")
+	if err := os.MkdirAll(filepath.Dir(initScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(initScript, []byte("# test sdkman init\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return initScript
+}
+
+func TestSDKManAvailableUsesInitScriptAndBash(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("SDKMAN layout is Unix-specific")
+	}
+	sdkmanTestInit(t)
+	runner := &run.FakeRunner{LookPaths: map[string]bool{"bash": true}}
+	if !NewSDKManAdapter().Available(context.Background(), runner) {
+		t.Fatal("Available should accept SDKMAN init script with bash")
+	}
+	if len(runner.Calls) != 1 || runner.Calls[0].Name != "which" || len(runner.Calls[0].Args) != 1 || runner.Calls[0].Args[0] != "bash" {
+		t.Fatalf("Available calls = %#v, want which bash", runner.Calls)
+	}
+}
 
 func TestSDKManCheckExactVersion(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -85,6 +115,7 @@ func TestSDKManCheckWithoutVersionKeepsCurrentSemantics(t *testing.T) {
 }
 
 func TestSDKManInstallUsesExactVersion(t *testing.T) {
+	initScript := sdkmanTestInit(t)
 	fr := &run.FakeRunner{ExitCode: 0}
 	adapter := NewSDKManAdapter()
 	tool := &config.Tool{Name: "java"}
@@ -96,11 +127,12 @@ func TestSDKManInstallUsesExactVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(fr.Calls) == 0 {
-		t.Fatal("expected sdk install command")
+		t.Fatal("expected SDKMAN bash invocation")
 	}
 	got := fr.Calls[len(fr.Calls)-1]
-	if got.Name != "sdk" || len(got.Args) != 3 || got.Args[0] != "install" || got.Args[1] != "java" || got.Args[2] != "21.0.4-tem" {
-		t.Fatalf("install command = %s %v, want sdk install java 21.0.4-tem", got.Name, got.Args)
+	want := []string{"-c", sdkmanShellCommand, "depengine-sdkman", initScript, "install", "java", "21.0.4-tem"}
+	if got.Name != "bash" || !reflect.DeepEqual(got.Args, want) {
+		t.Fatalf("install command = %s %v, want bash %v", got.Name, got.Args, want)
 	}
 }
 
