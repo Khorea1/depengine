@@ -676,7 +676,11 @@ func extractTar(source *os.File, destination string, gzipped bool) (map[string]o
 		}
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			mode, err := validatedArchiveDirectoryMode(os.FileMode(hdr.Mode).Perm())
+			archiveMode, err := tarPermissionMode(hdr.Mode)
+			if err != nil {
+				return nil, fmt.Errorf("archive directory %q: %w", hdr.Name, err)
+			}
+			mode, err := validatedArchiveDirectoryMode(archiveMode)
 			if err != nil {
 				return nil, fmt.Errorf("archive directory %q: %w", hdr.Name, err)
 			}
@@ -685,7 +689,11 @@ func extractTar(source *os.File, destination string, gzipped bool) (map[string]o
 			}
 			directoryModes[target] = mode
 		case tar.TypeReg, tar.TypeRegA:
-			fileMode, err := validatedArchiveFileMode(os.FileMode(hdr.Mode).Perm())
+			archiveMode, err := tarPermissionMode(hdr.Mode)
+			if err != nil {
+				return nil, fmt.Errorf("archive file %q: %w", hdr.Name, err)
+			}
+			fileMode, err := validatedArchiveFileMode(archiveMode)
 			if err != nil {
 				return nil, fmt.Errorf("archive file %q: %w", hdr.Name, err)
 			}
@@ -711,6 +719,18 @@ func extractTar(source *os.File, destination string, gzipped bool) (map[string]o
 		}
 	}
 	return directoryModes, nil
+}
+
+// tarPermissionMode validates the signed archive mode before translating its
+// permission bits. TAR modes may include setuid, setgid, and sticky bits, but
+// must not contain negative or out-of-range values that could be truncated.
+func tarPermissionMode(mode int64) (os.FileMode, error) {
+	if mode < 0 || mode > 0o7777 {
+		return 0, fmt.Errorf("mode %d is outside the supported permission range", mode)
+	}
+	// The range check makes this conversion safe; the mask preserves the
+	// permission-only behavior of os.FileMode.Perm().
+	return os.FileMode(mode & 0o777), nil
 }
 
 func wrapArchiveEntryError(action, name string, err error) error {

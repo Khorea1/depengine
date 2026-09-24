@@ -122,6 +122,43 @@ func TestInstallTarGzExtractsRegularFiles(t *testing.T) {
 	}
 }
 
+func TestInstallTarRejectsInvalidModes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mode int64
+	}{{"negative", -1}, {"oversized", 0o10000}} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			archivePath := filepath.Join(root, "invalid.tar")
+			archive, err := os.Create(archivePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writer := tar.NewWriter(archive)
+			body := []byte("payload")
+			if err := writer.WriteHeader(&tar.Header{Name: "tool", Mode: tc.mode, Size: int64(len(body))}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := writer.Write(body); err != nil {
+				t.Fatal(err)
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := archive.Close(); err != nil {
+				t.Fatal(err)
+			}
+			resolved, err := localartifact.Resolve(root, "invalid.tar", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := localartifact.Install(resolved, filepath.Join(t.TempDir(), "payload")); err == nil || !strings.Contains(err.Error(), "outside the supported permission range") {
+				t.Fatalf("Install() error = %v, want invalid mode rejection", err)
+			}
+		})
+	}
+}
+
 func TestInstallDefensivelyRejectsUnsupportedOfflineArchive(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "tool.tar.xz")
