@@ -12,7 +12,7 @@ schema.toml + manifest.toml
 internal/config      parse, normalize, merge, validate
         |
         v
-internal/graph       order tools and reject dependency cycles
+internal/graph       order tools, reject cycles, render graph views
         |
         v
 internal/exec        choose candidates and run adapters
@@ -37,9 +37,10 @@ adapter registration, and the final exit code. CLI behavior lives in
 |---|---|
 | `internal/app` | Cobra commands and CLI workflows |
 | `internal/config` | Parse project schemas and personal manifests, expand placeholders, merge layers, validate method kinds |
-| `internal/graph` | Topological sorting and cycle detection |
+| `internal/graph` | Scheduling order, cycle detection, view projections, weak-component analysis, and graph renderers (text, mermaid, dot, terminal diagram) |
 | `internal/exec` | Plan execution, adapter registry, candidate fallback, install reports |
 | `internal/run` | Subprocess interface used by production code and tests |
+| `internal/term` | Terminal geometry detection for width-aware output |
 | `internal/platform` | Host facts and distro-family logic |
 | `internal/engine` | Runs and parses `detect_os.sh` |
 | `internal/native` | Native package-manager definitions |

@@ -26,6 +26,7 @@ depengine remove --all --dry-run
 
 depengine why nvim --fields                # explain + provenance
 depengine graph --format=mermaid --profile=desktop
+depengine graph --format=graph --width=100  # terminal diagram; 0 = auto-detect
 depengine undo --list                       # show snapshots
 depengine undo --snapshot <path>
 depengine sbom --format=spdx

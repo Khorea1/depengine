@@ -85,7 +85,7 @@ Work on the current execution model comes before adding more installer types.
 
 ## Engineering cleanup
 
-- [ ] Evolve `depengine graph` around a typed graph IR before adding a terminal
+- [x] Evolve `depengine graph` around a typed graph IR before adding a terminal
   diagram renderer. Preserve declared/effective/resolved projections and keep
   visible dependency relations separate from scheduling constraints. See
   [`research/typed-dependency-graph.md`](research/typed-dependency-graph.md).
