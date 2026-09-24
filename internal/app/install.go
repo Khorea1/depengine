@@ -45,6 +45,7 @@ func newInstallCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "install",
+		Aliases: []string{"i"},
 		Short:   ifPT("Instalar ferramentas do schema.toml", "Install tools from schema.toml"),
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
