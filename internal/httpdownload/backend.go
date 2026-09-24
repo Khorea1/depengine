@@ -102,6 +102,9 @@ func (d *GoDownloader) download(ctx context.Context, url, dest, bearerCredential
 		priorCheckRedirect := clientCopy.CheckRedirect
 		initialURL := req.URL
 		clientCopy.CheckRedirect = func(redirectReq *http.Request, via []*http.Request) error {
+			if err := artifact.ValidateAuthenticatedURL(redirectReq.URL.String()); err != nil {
+				return fmt.Errorf("authenticated redirect: %w", err)
+			}
 			if !sameOrigin(initialURL, redirectReq.URL) {
 				redirectReq.Header.Del("Authorization")
 			}
