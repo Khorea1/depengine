@@ -223,19 +223,11 @@ func reconcileStatusTools(ctx context.Context, rows []toolStatus, installed map[
 			continue
 		}
 		ex.SetHostContext(clan)
-		resolved, err := ex.ResolveCandidatePlan(ctx, tool, method)
-		if err == nil {
-			if pin, ok := lockPinForCandidate(lk, row.Name, tool, method); ok {
-				resolved.Identity.Version = pin.Latest
-				if validateErr := resolved.Validate(); validateErr != nil {
-					err = fmt.Errorf("apply lock pin to desired identity: %w", validateErr)
-				}
-			}
+		desiredVersion := ""
+		if pin, ok := lockPinForCandidate(lk, row.Name, tool, method); ok {
+			desiredVersion = pin.Latest
 		}
-		var verification plan.VerificationResult
-		if err == nil {
-			verification, err = ex.VerifyResolvedCandidate(ctx, tool, method, resolved)
-		}
+		_, verification, err := ex.ResolveAndVerifyCandidateAtVersion(ctx, tool, method, desiredVersion)
 		if err != nil {
 			row.Status = "unknown"
 			v := plan.VerificationResult{State: plan.StateUnknown, Detail: err.Error()}
