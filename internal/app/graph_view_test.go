@@ -85,7 +85,6 @@ func TestSelectedGraphCandidateStopsAtSynthesizedWinner(t *testing.T) {
 	}
 }
 
-
 func TestGraphProjectionRequirementsAreDemandDriven(t *testing.T) {
 	g := graph.NewGraph()
 	g.AddEdge(graph.Edge{From: "base", To: "app", Kind: graph.ToolRequire, Role: graph.Scheduling})
@@ -113,7 +112,6 @@ func TestGraphProjectionRequirementsAreDemandDriven(t *testing.T) {
 		t.Fatalf("candidate tools = %v, want only app", candidateTools)
 	}
 }
-
 
 func TestResolvedGraphCandidatesPropagatesCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
