@@ -271,6 +271,23 @@ func goBinDir() (string, error) {
 	return filepath.Join(gopath, "bin"), nil
 }
 
+func goInstalledBinaryPath(tool *config.Tool, mc *config.MethodCandidate) (string, error) {
+	importPath := importPathFromTool(tool, mc)
+	binary := goBinaryName(importPath)
+	if binary == "" || binary == "." || binary == ".." {
+		return "", fmt.Errorf("cannot derive binary name from import path %q", importPath)
+	}
+	binDir, err := goBinDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve GOBIN dir: %w", err)
+	}
+	target := filepath.Join(binDir, binary)
+	if runtime.GOOS == "windows" {
+		target += ".exe"
+	}
+	return target, nil
+}
+
 // CanRemove reports that go removals are supported (via binary deletion).
 func (a *GoAdapter) CanRemove() bool { return true }
 
@@ -279,18 +296,9 @@ func (a *GoAdapter) CanRemove() bool { return true }
 // cache and leaves the installed binary in place. Removing an already-missing
 // binary is treated as success (idempotent removal, matching the git adapter).
 func (a *GoAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
-	importPath := importPathFromTool(tool, mc)
-	binary := goBinaryName(importPath)
-	binDir, err := goBinDir()
+	target, err := goInstalledBinaryPath(tool, mc)
 	if err != nil {
-		return fmt.Errorf("go: resolve GOBIN dir: %w", err)
-	}
-	if binary == "" || binary == "." || binary == ".." {
-		return fmt.Errorf("go: cannot derive binary name from import path %q", importPath)
-	}
-	target := filepath.Join(binDir, binary)
-	if runtime.GOOS == "windows" {
-		target += ".exe"
+		return fmt.Errorf("go: %w", err)
 	}
 	if err := os.Remove(target); err != nil {
 		if os.IsNotExist(err) {
@@ -301,69 +309,55 @@ func (a *GoAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool
 	return nil
 }
 
-// InstalledVersion reports the installed binary's version by running
-// "<binary> --version" (or "<binary> version") and parsing the output.
-// Best-effort: returns "" when the binary or a version string cannot be
-// determined.
+// InstalledVersion reports the module version embedded by the Go toolchain in
+// the binary installed to GOBIN/GOPATH/bin. It deliberately asks the trusted
+// `go` command to inspect build metadata instead of executing the installed
+// program with an ad-hoc --version convention.
 func (a *GoAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (string, error) {
-	bin := goBinaryName(importPathFromTool(tool, mc))
-	// Strip any version suffix (e.g. "pkg@v1.2.3").
-	if idx := strings.LastIndex(bin, "@"); idx >= 0 {
-		bin = bin[:idx]
+	if rn == nil {
+		return "", errors.New("go: runner is required")
 	}
-	if bin == "" || bin == "." || bin == ".." {
+	target, err := goInstalledBinaryPath(tool, mc)
+	if err != nil {
+		return "", fmt.Errorf("go: %w", err)
+	}
+	res := rn.Run(ctx, "go", "version", "-m", target)
+	if err := run.CheckResult(res, "go: inspect installed build info"); err != nil {
+		return "", err
+	}
+	expectedPath := importPathFromTool(tool, mc)
+	if idx := strings.LastIndex(expectedPath, "@"); idx >= 0 {
+		expectedPath = expectedPath[:idx]
+	}
+	return goModuleVersionFromBuildInfo(res.Stdout, expectedPath)
+}
+
+func goModuleVersionFromBuildInfo(stdout []byte, expectedPath string) (string, error) {
+	var packagePath, moduleVersion string
+	for _, line := range strings.Split(string(stdout), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		switch fields[0] {
+		case "path":
+			packagePath = fields[1]
+		case "mod":
+			if len(fields) >= 3 {
+				moduleVersion = fields[2]
+			}
+		}
+	}
+	if packagePath == "" {
+		return "", errors.New("go: build info did not report a package path")
+	}
+	if expectedPath != "" && packagePath != expectedPath {
+		return "", fmt.Errorf("go: build info package %q does not match requested package %q", packagePath, expectedPath)
+	}
+	if moduleVersion == "" || moduleVersion == "(devel)" {
 		return "", nil
 	}
-
-	res := rn.Run(ctx, bin, "--version")
-	if res.Err != nil || res.ExitCode != 0 {
-		res = rn.Run(ctx, bin, "version")
-		if res.Err != nil || res.ExitCode != 0 {
-			return "", nil
-		}
-	}
-	line := strings.TrimSpace(string(res.Stdout))
-	// Version banners can include build info on later lines.
-	if i := strings.IndexByte(line, '\n'); i >= 0 {
-		line = line[:i]
-	}
-	return parseVersion(line), nil
-}
-
-// parseVersion extracts the first version-looking token from a command output
-// line (e.g. "gh version 2.45.0 (2024-...)" → "2.45.0"). Returns "" when
-// no token looks like a version.
-func parseVersion(line string) string {
-	for _, tok := range strings.Fields(line) {
-		if v := versionToken(tok); v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
-// versionToken returns tok as a version string, or "" when tok does not
-// look like a version. Accepts a leading "v"/"V" (kept in the result) and
-// strips trailing punctuation (e.g. "0.44.1," → "0.44.1").
-func versionToken(tok string) string {
-	trimmed := strings.TrimPrefix(strings.TrimPrefix(tok, "v"), "V")
-	if trimmed == "" {
-		return ""
-	}
-	if first := trimmed[0]; first < '0' || first > '9' {
-		return ""
-	}
-	// Trim trailing characters that cannot be part of a version.
-	v := tok
-	for len(v) > 0 {
-		last := v[len(v)-1]
-		isAlnum := (last >= '0' && last <= '9') || (last >= 'a' && last <= 'z') || (last >= 'A' && last <= 'Z')
-		if isAlnum || last == '.' || last == '-' || last == '+' || last == '_' {
-			break
-		}
-		v = v[:len(v)-1]
-	}
-	return v
+	return moduleVersion, nil
 }
 
 // Ensure GoAdapter implements exec.AdapterV2 and exec.Remover.
