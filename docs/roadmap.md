@@ -1,6 +1,6 @@
 # Roadmap
 
-Long-lived unfinished work. Last reviewed: 2026-09-23.
+Long-lived unfinished work. Last reviewed: 2026-09-24.
 
 Work on the current execution model comes before adding more installer types.
 
@@ -18,6 +18,9 @@ Work on the current execution model comes before adding more installer types.
   authentication for private HTTPS `git` clone/fetch/same-origin recursive
   submodules plus private HTTPS `cargo.git` prefetch before local Cargo install,
   and temporary registry auth files for typed Docker/Podman image pulls.
+  Typed env-backed secret sources are excluded from child process environments
+  across probes, hooks, preparation, and execution; removal requires `--schema`
+  for the same exclusion because state does not retain reference names.
   Other authenticated operations still need an explicit credential transport
   before they can be accepted.
 

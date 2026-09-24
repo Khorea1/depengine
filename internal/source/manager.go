@@ -43,6 +43,7 @@ type EnsureResult struct {
 // Missing probes candidate sources without mutating host state and returns the
 // subset that is currently absent, preserving input order.
 func (m *Manager) Missing(ctx context.Context, sources []config.Source) ([]config.Source, error) {
+	ctx = omitSourceSecretEnvironment(ctx, sources)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	missing := make([]config.Source, 0, len(sources))
@@ -62,6 +63,7 @@ func (m *Manager) Missing(ctx context.Context, sources []config.Source) ([]confi
 // recovery code that must resolve an in-flight add/remove WAL record from
 // read-only evidence.
 func (m *Manager) Present(ctx context.Context, source config.Source) (bool, error) {
+	ctx = omitSourceSecretEnvironment(ctx, []config.Source{source})
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.present(ctx, source)
@@ -78,6 +80,7 @@ func (m *Manager) Add(ctx context.Context, source config.Source) error {
 // AddAuthenticated uses a bearer token only for the source add subprocess.
 // The token never enters the source descriptor or its durable resource key.
 func (m *Manager) AddAuthenticated(ctx context.Context, source config.Source, token string) error {
+	ctx = omitSourceSecretEnvironment(ctx, []config.Source{source})
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.addAuthenticated(ctx, source, token); err != nil {
@@ -101,6 +104,7 @@ func (m *Manager) Ensure(ctx context.Context, sources []config.Source) ([]config
 // whose add operation completed during this call. Added is safe to use as the
 // rollback set because pre-existing sources are never included.
 func (m *Manager) EnsureTracked(ctx context.Context, sources []config.Source) (EnsureResult, error) {
+	ctx = omitSourceSecretEnvironment(ctx, sources)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	result := EnsureResult{
@@ -139,6 +143,7 @@ func (m *Manager) EnsureTracked(ctx context.Context, sources []config.Source) (E
 // idempotent: sources already absent are skipped. Callers must pass only
 // sources they own; this method intentionally does not infer ownership.
 func (m *Manager) Remove(ctx context.Context, sources []config.Source) error {
+	ctx = omitSourceSecretEnvironment(ctx, sources)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := len(sources) - 1; i >= 0; i-- {
@@ -158,6 +163,16 @@ func (m *Manager) Remove(ctx context.Context, sources []config.Source) error {
 		}
 	}
 	return m.refreshAPT(ctx)
+}
+
+func omitSourceSecretEnvironment(ctx context.Context, sources []config.Source) context.Context {
+	var names []string
+	for _, source := range sources {
+		if source.SecretRef != nil && source.SecretRef.Provider == "env" && source.SecretRef.Name != "" {
+			names = append(names, source.SecretRef.Name)
+		}
+	}
+	return run.WithOmittedEnv(ctx, names...)
 }
 
 func (m *Manager) refreshAPT(ctx context.Context) error {

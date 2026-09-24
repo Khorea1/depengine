@@ -11,6 +11,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/native"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/source"
 )
 
@@ -71,8 +72,9 @@ func (ex *Executor) needsElevation(s *config.Schema, clan string) bool {
 func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) (*ExecReport, error) {
 	start := time.Now()
 	report := &ExecReport{}
+	housekeepingCtx := run.WithOmittedEnv(ctx, schemaSecretEnvNames(s)...)
 
-	stop, err := ex.initializeRun(ctx, s, clan, report)
+	stop, err := ex.initializeRun(housekeepingCtx, s, clan, report)
 	if err != nil {
 		return nil, err
 	}
@@ -80,11 +82,11 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 		defer stop()
 	}
 
-	if err := ex.recoverAndRecord(ctx, report); err != nil {
+	if err := ex.recoverAndRecord(housekeepingCtx, report); err != nil {
 		return nil, err
 	}
 
-	ex.syncNativeIndex(ctx, s, clan)
+	ex.syncNativeIndex(housekeepingCtx, s, clan)
 
 	levels, err := ex.sortExecutionLevels(ctx, s)
 	if err != nil {
@@ -107,6 +109,7 @@ func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResu
 }
 
 func (ex *Executor) executeToolWithResolution(ctx context.Context, tool *config.Tool, resolution *candidateResolutionSeed) ToolResult {
+	ctx = omitToolSecretEnvironment(ctx, tool)
 	toolStart := time.Now()
 	result := ToolResult{Tool: tool.Name}
 	methods := config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)

@@ -50,8 +50,16 @@ func (OSExecRunner) StartElevationSession(ctx context.Context) (func(), error) {
 // This is the one legitimate use of `sudo -n` as a probe: it fails closed
 // instead of prompting, so it is safe to call from a non-interactive
 // context.
-func sudoNoPasswdOK() bool {
-	return exec.Command("sudo", "-n", "true").Run() == nil
+func sudoNoPasswdOK(ctx context.Context) bool {
+	return sudoCommand(ctx, "-n", "true").Run() == nil
+}
+
+// sudoCommand keeps the environment and cancellation behavior of sudo children
+// consistent with commands launched through OSExecRunner.
+func sudoCommand(ctx context.Context, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "sudo", args...)
+	cmd.Env = omitEnv(DefaultEnv(), ctx)
+	return cmd
 }
 
 // isInteractive reports whether the process's stdin is a real terminal.
@@ -75,7 +83,7 @@ func EnsureSudo(ctx context.Context) error {
 	if os.Geteuid() == 0 {
 		return nil
 	}
-	if sudoNoPasswdOK() {
+	if sudoNoPasswdOK(ctx) {
 		return nil
 	}
 	if !isInteractive() {
@@ -88,7 +96,7 @@ func EnsureSudo(ctx context.Context) error {
 				"reconnect with a TTY (e.g. ssh -t) or add NOPASSWD rules for %s in /etc/sudoers.d/", user)
 	}
 
-	cmd := exec.CommandContext(ctx, "sudo", "-v")
+	cmd := sudoCommand(ctx, "-v")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -112,7 +120,7 @@ func KeepAlive(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			_ = exec.Command("sudo", "-n", "-v").Run()
+			_ = sudoCommand(ctx, "-n", "-v").Run()
 		}
 	}
 }

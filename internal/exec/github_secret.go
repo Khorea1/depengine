@@ -39,6 +39,7 @@ func (ex *Executor) executionCredentialContext(ctx context.Context, method *conf
 	if method == nil {
 		return ctx, nil
 	}
+	ctx = run.WithOmittedEnv(ctx, methodSecretEnvNames(method)...)
 	if method.Kind == "github" {
 		return ex.githubCredentialContext(ctx, method)
 	}

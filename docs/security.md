@@ -70,6 +70,20 @@ resolved only in process for release resolution and asset download. When no
 typed reference is declared, GitHub release access can still use
 `GITHUB_TOKEN`, `GH_TOKEN`, or existing `gh` authentication.
 
+For env-backed typed references, depengine reads the value in its own process
+and removes the referenced variable from child process environments during
+the affected tool's probes, hooks, preparation, and install. This applies to
+normal runs and direct resolved-candidate upgrades. Other environment
+variables keep their usual behavior. Custom runners that launch processes
+must honor the same context-scoped exclusion.
+
+For `remove`, supply `--schema` to exclude typed reference variables declared
+in that schema while verifying, removing, and cleaning up a tool. Removal
+without a schema relies on persisted state, which intentionally does not
+retain secret reference names and therefore cannot identify those variables
+for exclusion. References declared only in a personal manifest are likewise
+unavailable to removal.
+
 Typed `http`, `appimage`, `android`, and `msi` methods can reference
 env-backed credentials with `secret_ref`, `checksum_secret_ref`, and
 `signature_secret_ref`. Typed `github` methods can use `secret_ref` for

@@ -396,6 +396,9 @@ func (s *removeSession) removeTrackedTool(ctx context.Context, toolName string, 
 	if !exists {
 		return s.removedThisRun[toolName]
 	}
+	// A schema, when supplied, is the only source of typed reference names:
+	// persisted ownership and tool state deliberately exclude them.
+	ctx = removeToolContext(ctx, s.schemaTools[toolName])
 	if automatic && toolState.RootRequested {
 		return true
 	}
@@ -444,6 +447,30 @@ func (s *removeSession) removeTrackedTool(ctx context.Context, toolName string, 
 	}
 	s.reportUnimplementedResourceKinds(toolName, release)
 	return ok
+}
+
+func removeToolContext(ctx context.Context, tool *config.Tool) context.Context {
+	if tool == nil {
+		return ctx
+	}
+	var names []string
+	appendRef := func(ref *config.SecretReference) {
+		if ref != nil && ref.Provider == "env" && ref.Name != "" {
+			names = append(names, ref.Name)
+		}
+	}
+	for _, method := range tool.Methods {
+		if method == nil {
+			continue
+		}
+		appendRef(method.SecretRef)
+		appendRef(method.ChecksumSecretRef)
+		appendRef(method.SignatureSecretRef)
+		for i := range method.Sources {
+			appendRef(method.Sources[i].SecretRef)
+		}
+	}
+	return run.WithOmittedEnv(ctx, names...)
 }
 
 // cleanupReleasedPrerequisites garbage-collects depengine-owned prerequisites

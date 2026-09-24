@@ -7,6 +7,7 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -86,6 +87,56 @@ func phaseTestGoTool(pkg string) (*config.Tool, *config.MethodCandidate) {
 
 func phaseTestRunner() *run.LoggingRunner {
 	return run.NewLoggingRunner(&run.FakeRunner{}, log.Default)
+}
+
+func TestUpgradeEnvironmentChild(t *testing.T) {
+	if os.Getenv("DEPENGINE_UPGRADE_ENV_CHILD") != "1" {
+		return
+	}
+	for _, name := range []string{
+		"DEPENGINE_UPGRADE_ARTIFACT_SECRET",
+		"DEPENGINE_UPGRADE_CHECKSUM_SECRET",
+		"DEPENGINE_UPGRADE_SIGNATURE_SECRET",
+		"DEPENGINE_UPGRADE_SOURCE_SECRET",
+	} {
+		if value, ok := os.LookupEnv(name); ok {
+			t.Errorf("typed secret %s reached child with value %q", name, value)
+		}
+	}
+	for _, name := range []string{"DEPENGINE_UPGRADE_OTHER_METHOD_SECRET", "DEPENGINE_UPGRADE_UNRELATED"} {
+		if got := os.Getenv(name); got != "preserved" {
+			t.Errorf("unrelated environment %s = %q, want preserved", name, got)
+		}
+	}
+}
+
+func TestUpgradeContextOmitsOnlySelectedMethodEnvSecrets(t *testing.T) {
+	for _, name := range []string{
+		"DEPENGINE_UPGRADE_ARTIFACT_SECRET",
+		"DEPENGINE_UPGRADE_CHECKSUM_SECRET",
+		"DEPENGINE_UPGRADE_SIGNATURE_SECRET",
+		"DEPENGINE_UPGRADE_SOURCE_SECRET",
+		"DEPENGINE_UPGRADE_OTHER_METHOD_SECRET",
+		"DEPENGINE_UPGRADE_UNRELATED",
+	} {
+		t.Setenv(name, "preserved")
+	}
+	t.Setenv("DEPENGINE_UPGRADE_ENV_CHILD", "1")
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected := &config.MethodCandidate{
+		SecretRef:          &config.SecretReference{Provider: "env", Name: "DEPENGINE_UPGRADE_ARTIFACT_SECRET"},
+		ChecksumSecretRef:  &config.SecretReference{Provider: "env", Name: "DEPENGINE_UPGRADE_CHECKSUM_SECRET"},
+		SignatureSecretRef: &config.SecretReference{Provider: "env", Name: "DEPENGINE_UPGRADE_SIGNATURE_SECRET"},
+		Sources:            []config.Source{{SecretRef: &config.SecretReference{Provider: "env", Name: "DEPENGINE_UPGRADE_SOURCE_SECRET"}}},
+	}
+	ctx := upgradeContext(context.Background(), selected)
+	result := (run.OSExecRunner{}).Run(ctx, exe, "-test.run=^TestUpgradeEnvironmentChild$")
+	if result.Err != nil || result.ExitCode != 0 {
+		t.Fatalf("child failed: exit=%d err=%v stderr=%s", result.ExitCode, result.Err, result.Stderr)
+	}
 }
 
 func TestResolveUpgradeManifestPathPassthrough(t *testing.T) {

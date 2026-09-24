@@ -304,6 +304,11 @@ func confirmUpgradeProceed(outdated []upgradeOutdatedTool, c *cliStyle) bool {
 // state update. Every outcome is a result value; the whole run is never
 // aborted from here.
 func upgradeSingleTool(ctx context.Context, ex *exec.Executor, runner *run.LoggingRunner, facts *engine.Facts, st *state.State, ot upgradeOutdatedTool, opts upgradeOptions, c *cliStyle) upgradeResult {
+	// The selected candidate's typed environment references are application
+	// secrets. Keep them available to in-process resolvers, but prevent every
+	// child process in this tool's upgrade lifecycle from inheriting them.
+	ctx = upgradeContext(ctx, ot.method)
+
 	res := upgradeResult{
 		Tool:   ot.name,
 		OldVer: ot.ts.Version,
@@ -385,6 +390,26 @@ func upgradeSingleTool(ctx context.Context, ex *exec.Executor, runner *run.Loggi
 		c.ok("%s: %s → %s", ot.name, ot.ts.Version, res.NewVer)
 	}
 	return res
+}
+
+// upgradeContext scopes child-process environment filtering to the tracked
+// candidate selected for this tool, rather than every method in its schema.
+func upgradeContext(ctx context.Context, method *config.MethodCandidate) context.Context {
+	var names []string
+	appendRef := func(ref *config.SecretReference) {
+		if ref != nil && ref.Provider == "env" && ref.Name != "" {
+			names = append(names, ref.Name)
+		}
+	}
+	if method != nil {
+		appendRef(method.SecretRef)
+		appendRef(method.ChecksumSecretRef)
+		appendRef(method.SignatureSecretRef)
+		for i := range method.Sources {
+			appendRef(method.Sources[i].SecretRef)
+		}
+	}
+	return run.WithOmittedEnv(ctx, names...)
 }
 
 // removeInstalledTool removes the tracked installation, recovering method

@@ -2,6 +2,7 @@ package source
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -65,5 +66,44 @@ func TestAuthenticatedSourceRejectsMissingTransport(t *testing.T) {
 		if runner.name != "" {
 			t.Fatalf("unsupported source reached command runner: %+v", source)
 		}
+	}
+}
+
+type sourceEnvProbeRunner struct{ executable string }
+
+func (sourceEnvProbeRunner) Run(context.Context, string, ...string) run.Result {
+	return run.Result{Err: context.Canceled}
+}
+
+func (r sourceEnvProbeRunner) RunWithEnv(ctx context.Context, env map[string]string, sensitive []string, _ string, _ ...string) run.Result {
+	return (run.OSExecRunner{}).RunWithEnv(ctx, env, sensitive, r.executable, "-test.run=^TestAuthenticatedSourceChildEnvironment$")
+}
+
+func TestAuthenticatedSourceChildEnvironment(t *testing.T) {
+	if os.Getenv("DEPENGINE_SOURCE_AUTH_CHILD") != "1" {
+		return
+	}
+	if _, found := os.LookupEnv("DEPENGINE_SOURCE_AUTH_TOKEN"); found {
+		t.Fatal("typed source secret variable reached child")
+	}
+	if os.Getenv("GIT_CONFIG_VALUE_0") != "Authorization: Bearer source-auth-marker" {
+		t.Fatal("scoped Git credential did not reach source child")
+	}
+}
+
+func TestAuthenticatedSourceDirectCallOmitsTypedSecretVariable(t *testing.T) {
+	t.Setenv("DEPENGINE_SOURCE_AUTH_CHILD", "1")
+	t.Setenv("DEPENGINE_SOURCE_AUTH_TOKEN", "source-auth-marker")
+	t.Setenv("GIT_CONFIG_COUNT", "")
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := config.Source{
+		Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git",
+		SecretRef: &config.SecretReference{Provider: "env", Name: "DEPENGINE_SOURCE_AUTH_TOKEN"},
+	}
+	if err := NewManager(sourceEnvProbeRunner{executable: exe}, false).AddAuthenticated(context.Background(), source, "source-auth-marker"); err != nil {
+		t.Fatal(err)
 	}
 }

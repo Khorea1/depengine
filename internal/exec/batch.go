@@ -29,6 +29,7 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 		if !ok {
 			continue
 		}
+		toolCtx := omitToolSecretEnvironment(ctx, tool)
 		if len(tool.Methods) == 0 {
 			remaining = append(remaining, toolName)
 			continue
@@ -48,7 +49,7 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 				break
 			}
 			adapter := ex.LookupAdapter(method.Kind)
-			if adapter == nil || !adapter.Available(ctx, ex.probeRunner(toolName, method.Kind)) {
+			if adapter == nil || !adapter.Available(toolCtx, ex.probeRunner(toolName, method.Kind)) {
 				continue
 			}
 			if method.Kind != "native" && !native.IsNativeManagerName(method.Kind) {
@@ -64,7 +65,7 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 			// Batch planning crosses the same read-only resolution boundary as
 			// serial execution. Preserve the result for any later serial fallback
 			// so a dynamic release/tag/asset lookup is never repeated.
-			resolvedPlan, resolveErr := ex.resolveCandidatePlan(ctx, tool, method, adapter, planIntent, displayMethodKind(method))
+			resolvedPlan, resolveErr := ex.resolveCandidatePlan(toolCtx, tool, method, adapter, planIntent, displayMethodKind(method))
 			resolution := &candidateResolutionSeed{method: method, resolved: resolvedPlan, err: resolveErr}
 			if resolveErr != nil {
 				resolutions[toolName] = resolution
@@ -78,7 +79,7 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 				resolutions[toolName] = resolution
 				break
 			}
-			presence, ok := ex.batchPresence(ctx, adapter, toolName, tool, method)
+			presence, ok := ex.batchPresence(toolCtx, adapter, toolName, tool, method)
 			if !ok {
 				// A failed or broken V2 observation is not evidence that the
 				// package is absent. Leave the candidate to the serial path,
@@ -87,14 +88,14 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 				break
 			}
 			if presence == plan.PresencePresent {
-				ex.recordToolResult(ctx, &ToolResult{
+				ex.recordToolResult(toolCtx, &ToolResult{
 					Tool: toolName, Status: StatusAlready, Method: displayMethodKind(method),
 					MethodKind: method.Kind, Config: method.Config, PlanIntent: resolvedPlan,
 				}, report)
 				foundNative = true
 				break
 			}
-			if !checkAvailable(ctx, ex.probeRunner(toolName, method.Kind), adapter, tool, method) {
+			if !checkAvailable(toolCtx, ex.probeRunner(toolName, method.Kind), adapter, tool, method) {
 				resolutions[toolName] = resolution
 				break
 			}

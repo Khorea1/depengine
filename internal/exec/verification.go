@@ -7,11 +7,13 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/run"
 )
 
 // VerifyResolvedCandidate observes the target selected by a resolved plan and
 // reconciles that observation against its desired identity.
 func (ex *Executor) VerifyResolvedCandidate(ctx context.Context, tool *config.Tool, method *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) (plan.VerificationResult, error) {
+	ctx = run.WithOmittedEnv(ctx, methodSecretEnvNames(method)...)
 	verification, _, err := ex.verifyResolvedCandidate(ctx, tool, method, resolved)
 	return verification, err
 }
@@ -70,6 +72,7 @@ func (ex *Executor) ResolveCandidatePlan(ctx context.Context, tool *config.Tool,
 	if tool == nil || method == nil {
 		return nil, fmt.Errorf("tool and method are required")
 	}
+	ctx = run.WithOmittedEnv(ctx, methodSecretEnvNames(method)...)
 	intent, mismatch := candidatePlanIntent(tool, method)
 	if mismatch != "" {
 		return nil, fmt.Errorf("%s", mismatch)

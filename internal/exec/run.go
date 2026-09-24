@@ -260,7 +260,7 @@ func (ex *Executor) runPreinstallHooks(rc *runContext, filteredLevel []string) (
 		if !ok || len(tool.PreInstall) == 0 {
 			continue
 		}
-		preCtx, preCancel := context.WithTimeout(rc.ctx, ex.methodTimeout)
+		preCtx, preCancel := context.WithTimeout(omitToolSecretEnvironment(rc.ctx, tool), ex.methodTimeout)
 		err := ex.runPreinstall(preCtx, tool)
 		preCancel()
 		if err != nil {
@@ -288,7 +288,7 @@ func (ex *Executor) runBatchPhase(rc *runContext, survivorLevel []string, preins
 		switch {
 		case ex.dryRun:
 			ex.reportBatchDryRun(rc, candidates)
-		case ex.batchNativeInstall(rc.ctx, candidates):
+		case ex.batchNativeInstall(omitBatchSecretEnvironment(rc.ctx, candidates), candidates):
 			remaining = ex.verifyBatchInstall(rc, candidates, remaining, preinstallDone, resolutions)
 		default:
 			// Batch failed — transparent fallback to per-tool.
@@ -313,7 +313,7 @@ func (ex *Executor) reportBatchDryRun(rc *runContext, candidates []batchCandidat
 	ex.outputf("  ⚡  commit: would batch native install: %s via %s\n", strings.Join(names, ", "), ex.nativeManagerName)
 	for _, c := range candidates {
 		if len(c.tool.PostInstall) > 0 {
-			postCtx, postCancel := context.WithTimeout(rc.ctx, ex.methodTimeout)
+			postCtx, postCancel := context.WithTimeout(omitToolSecretEnvironment(rc.ctx, c.tool), ex.methodTimeout)
 			_ = ex.runPostinstall(postCtx, c.tool)
 			postCancel()
 		}
@@ -333,7 +333,7 @@ func (ex *Executor) reportBatchDryRun(rc *runContext, candidates []batchCandidat
 func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandidate, remaining []string, preinstallDone map[string]bool, resolutions map[string]*candidateResolutionSeed) []string {
 	for _, c := range candidates {
 		adapter := ex.LookupAdapter(c.method.Kind)
-		presence, ok := ex.batchPresence(rc.ctx, adapter, c.toolName, c.tool, c.method)
+		presence, ok := ex.batchPresence(omitToolSecretEnvironment(rc.ctx, c.tool), adapter, c.toolName, c.tool, c.method)
 		if ok && presence == plan.PresencePresent {
 			tr := ToolResult{
 				Tool: c.toolName, Status: StatusInstalled, Method: displayMethodKind(c.method),
@@ -344,7 +344,7 @@ func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandida
 				tr.PreinstallDone = true
 			}
 			if len(c.tool.PostInstall) > 0 {
-				postCtx, postCancel := context.WithTimeout(rc.ctx, ex.methodTimeout)
+				postCtx, postCancel := context.WithTimeout(omitToolSecretEnvironment(rc.ctx, c.tool), ex.methodTimeout)
 				if err := ex.runPostinstall(postCtx, c.tool); err != nil {
 					tr.Status = StatusFailed
 					tr.Error = fmt.Sprintf("post-install: %v", err)

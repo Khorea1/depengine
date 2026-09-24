@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -32,14 +33,44 @@ type Result struct {
 	Err error
 }
 
+type omittedEnvKey struct{}
+
+// WithOmittedEnv returns a child context that tells OSExecRunner to omit the
+// named environment variables from processes started with that context. Names
+// apply to Run, RunWithEnv, and RunInDir, including per-child overrides. The
+// parent process environment is not changed.
+func WithOmittedEnv(ctx context.Context, names ...string) context.Context {
+	omitted := make(map[string]struct{}, len(names))
+	if existing, ok := ctx.Value(omittedEnvKey{}).(map[string]struct{}); ok {
+		for name := range existing {
+			omitted[name] = struct{}{}
+		}
+	}
+	for _, name := range names {
+		if name != "" {
+			omitted[omittedEnvName(name)] = struct{}{}
+		}
+	}
+	return context.WithValue(ctx, omittedEnvKey{}, omitted)
+}
+
+func omittedEnvName(name string) string {
+	if runtime.GOOS == "windows" {
+		return strings.ToUpper(name)
+	}
+	return name
+}
+
 // Runner executes one command with captured stdout/stderr. Implementations
-// must honor ctx cancellation/timeout and must never mutate global state.
+// must honor ctx cancellation/timeout and WithOmittedEnv when launching child
+// processes, and must never mutate global state.
 type Runner interface {
 	Run(ctx context.Context, name string, args ...string) Result
 }
 
 // EnvironmentRunner accepts environment overrides for one child process.
 // Callers must use RunWithEnv so sensitive output is redacted before it escapes.
+// Implementations that launch child processes must honor WithOmittedEnv.
 type EnvironmentRunner interface {
 	RunWithEnv(ctx context.Context, env map[string]string, sensitive []string, name string, args ...string) Result
 }
@@ -244,7 +275,7 @@ func (b *cappedBuffer) Bytes() []byte { return b.buf }
 
 func runCommand(ctx context.Context, stream io.Writer, dir string, overrides map[string]string, name string, args ...string) Result {
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = mergeEnv(DefaultEnv(), overrides)
+	cmd.Env = omitEnv(mergeEnv(DefaultEnv(), overrides), ctx)
 	cmd.Dir = dir
 	// Own process group so cancellation signals the whole tree, and a
 	// bounded WaitDelay so a grandchild holding the pipes cannot block
@@ -303,6 +334,21 @@ func runCommand(ctx context.Context, stream io.Writer, dir string, overrides map
 		ExitCode: exit,
 		Err:      runErr,
 	}
+}
+
+func omitEnv(env []string, ctx context.Context) []string {
+	omitted, ok := ctx.Value(omittedEnvKey{}).(map[string]struct{})
+	if !ok || len(omitted) == 0 {
+		return env
+	}
+	filtered := env[:0]
+	for _, entry := range env {
+		name, _, _ := strings.Cut(entry, "=")
+		if _, skip := omitted[omittedEnvName(name)]; !skip {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
 }
 
 func mergeEnv(base []string, overrides map[string]string) []string {

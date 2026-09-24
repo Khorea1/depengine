@@ -56,6 +56,7 @@ func explainIntent(method *config.MethodCandidate) map[string]string {
 //
 // This is the engine behind `depengine why <tool>`.
 func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan string) []MethodAttempt {
+	ctx = omitToolSecretEnvironment(ctx, tool)
 	orderedMethods := ex.selectedMethods(tool, clan)
 	methods := orderedMethods
 	if len(tool.Methods) == 0 {
@@ -251,6 +252,7 @@ type CheckResult struct {
 }
 
 func (ex *Executor) CheckDesiredState(ctx context.Context, tool *config.Tool, clan string, live bool) (CheckResult, error) {
+	ctx = omitToolSecretEnvironment(ctx, tool)
 	var first CheckResult
 	haveFirst := false
 	for _, method := range ex.selectedMethods(tool, clan) {
