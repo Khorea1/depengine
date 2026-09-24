@@ -1,6 +1,6 @@
 # Typed dependency graph implementation status
 
-Status: typed IR and host-aware CLI projections complete
+Status: typed IR, host-aware CLI projections, and the first terminal renderer complete
 
 The research proposal in `docs/research/typed-dependency-graph.md` identified the need for one typed intermediate representation between schema loading, scheduling, and rendering.
 
@@ -29,6 +29,9 @@ The research proposal in `docs/research/typed-dependency-graph.md` identified th
 - exact candidate identity retained in explain attempts instead of reconstructing identity from kind/label;
 - read-only resolved-candidate selection reused from `ExplainTool`, including correct fail-closed behavior when a synthesized winning candidate has no declared ordinal;
 - `depengine graph --view declared|effective|resolved`, with `declared` preserving the existing host-independent default;
+- weakly connected component analysis, isolated-node compaction, and per-component edge sets for layout;
+- scheduling ranks exposed from levels for layered layout;
+- `depengine graph --format graph`, an orthogonal terminal renderer with explicit `--width` input (0 detects terminal width through `internal/term`), per-component compact dependency-edge fallback when the layout exceeds the width, line-style edge semantics with an annotations section, and a wrapped isolated-node list;
 - compatibility wrappers for existing graph APIs;
 - unit coverage for builders, guards, candidate multiplicity, multiedges, canonicalization, projections, scheduling roles, renderers, CLI view parsing, guard adaptation, and exact candidate selection.
 
@@ -62,10 +65,8 @@ For `resolved`, candidate selection follows executor ordering and the read-only 
 ## Intentionally deferred
 
 - active/inactive edge retention and a possible `--show-inactive` diagnostic mode;
-- terminal layered layout and routing;
-- weak-component grouping and isolated-node compaction;
-- explicit terminal-width input and per-component compact fallback;
-- crossing reduction and layout-only edge bundling.
+- crossing reduction and layout-only edge bundling;
+- Windows terminal-width detection (callers fall back to the default width).
 
 ## Design constraints validated
 
@@ -82,10 +83,7 @@ For `resolved`, candidate selection follows executor ordering and the read-only 
 
 ## Next implementation slice
 
-1. add graph analysis for weakly connected components and isolated nodes;
-2. expose deterministic rank information from scheduling levels for layout;
-3. implement a compact dependency-edge renderer as the width fallback;
-4. add the first `--format graph` terminal renderer with explicit width input;
-5. add orthogonal routing, then crossing reduction and route bundling only as needed by real-schema snapshots.
+1. improve crossing reduction and route bundling only as needed by real-schema snapshots;
+2. retain inactive edges behind a possible `--show-inactive` diagnostic mode.
 
 Terminal visualization can now consume declared, effective, or resolved graphs without inventing dependency semantics.

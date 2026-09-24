@@ -918,9 +918,9 @@ Implementation status:
    projection.
 7. **Done:** expose `--view declared|effective|resolved` while retaining
    `declared` as the default.
-8. **Pending:** add `--format graph` with weak-component grouping and
+8. **Done:** add `--format graph` with weak-component grouping and
    isolated-node compaction.
-9. **Pending:** add simple ranked layout and orthogonal routing.
+9. **Done:** add simple ranked layout and orthogonal routing.
 10. **Pending:** improve crossing reduction and edge bundling only after testing
     real schemas.
 
