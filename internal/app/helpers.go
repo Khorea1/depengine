@@ -236,18 +236,30 @@ func filterTools(tools map[string]*config.Tool, only, skip, profile string) map[
 	return filtered
 }
 
-// loadLockfile reads the lockfile for a given schema. Returns nil if no
-// lockfile exists or it's corrupted (logs a warning).
-// Returns an exit-coded error if --frozen-lockfile is set and no lock exists.
+// loadLockfile reads, frozen-validates, then applies the lockfile for a schema.
+// Non-frozen installs tolerate a corrupt lock and continue without it. Frozen
+// installs fail closed for a missing, unreadable, detectably stale, or
+// incomplete lock.
 func loadLockfile(schemaPath string, s *config.Schema, frozen bool, lg *slog.Logger) (*lock.Lock, error) {
 	lockPath := lock.DefaultPath(schemaPath)
 	lk, err := lock.Load(lockPath)
 	if err != nil {
+		if frozen {
+			lg.Error("--frozen-lockfile requires a readable lockfile", "path", lockPath, "error", err)
+			return nil, exitWithCode(2)
+		}
 		lg.Warn("lockfile corrupted, continuing without lock", "path", lockPath, "error", err)
+		lk = nil
 	}
 	if frozen && lk == nil {
 		lg.Error("--frozen-lockfile requires lockfile — run 'depengine update' first", "path", lockPath)
 		return nil, exitWithCode(2)
+	}
+	if frozen {
+		if err := lock.ValidateFrozen(s, lk); err != nil {
+			lg.Error("--frozen-lockfile requires an up-to-date supported lock", "error", err)
+			return nil, exitWithCode(2)
+		}
 	}
 	if lk != nil {
 		lock.Apply(s, lk)
@@ -266,9 +278,32 @@ func saveLockfile(ctx context.Context, s *config.Schema, lockPath string, oldLoc
 		return
 	}
 	if oldLock != nil {
-		for k, v := range oldLock.Tools {
-			if _, exists := newLock.Tools[k]; !exists {
-				newLock.Tools[k] = v
+		for key, oldPin := range oldLock.Tools {
+			newPin, exists := newLock.Tools[key]
+			if !exists {
+				newLock.Tools[key] = oldPin
+				continue
+			}
+			// lock.Apply concretizes release/checksum selectors before execution.
+			// ResolveAll therefore may rediscover only one field of an existing
+			// composite pin. Merge fields independently so a normal install cannot
+			// silently drop the other frozen identity.
+			if newPin.Latest == "" {
+				newPin.Latest = oldPin.Latest
+			}
+			if newPin.Checksum == "" {
+				newPin.Checksum = oldPin.Checksum
+			}
+			newLock.Tools[key] = newPin
+		}
+		// A regular install may persist newly discovered pin fields, but it must
+		// not bless a changed method identity. Preserve hashes for omitted tools
+		// and for detectable method-map drift; an explicit 'depengine update'
+		// is the operation that accepts a new method identity.
+		for name, oldHash := range oldLock.MethodsHash {
+			newHash, exists := newLock.MethodsHash[name]
+			if !exists || newHash != oldHash {
+				newLock.MethodsHash[name] = oldHash
 			}
 		}
 	}

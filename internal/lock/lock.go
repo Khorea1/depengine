@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -240,6 +241,94 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 	}
 
 	return l, nil
+}
+
+// ValidateFrozen verifies that a lock can be consumed without silently
+// re-resolving identities that legacy lock v1 already knows how to pin.
+//
+// The v1 methods hash covers candidate kind/label ordering. It deliberately
+// does not claim to encode every requested field inside a candidate; selectors
+// outside the legacy lock model remain documented as unsupported.
+func ValidateFrozen(s *config.Schema, l *Lock) error {
+	if s == nil {
+		return fmt.Errorf("lock: frozen validation requires schema")
+	}
+	if l == nil {
+		return fmt.Errorf("lock: frozen validation requires lockfile")
+	}
+	if l.Version != 1 {
+		return fmt.Errorf("lock: unsupported version %d (supported: 1)", l.Version)
+	}
+
+	names := make([]string, 0, len(s.Tools))
+	for name := range s.Tools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		tool := s.Tools[name]
+		if tool == nil {
+			return fmt.Errorf("lock: frozen validation requires a valid tool %q", name)
+		}
+		for _, method := range tool.Methods {
+			if method == nil {
+				return fmt.Errorf("lock: frozen validation requires a valid method for tool %q", name)
+			}
+		}
+
+		if len(tool.Methods) > 0 {
+			stored, ok := l.MethodsHash[name]
+			if !ok || stored == "" {
+				return fmt.Errorf("lock: frozen lock needs update: missing method identity for tool %q", name)
+			}
+			if current := computeMethodsHash(tool.Methods); stored != current {
+				return fmt.Errorf("lock: frozen lock needs update: methods changed for tool %q", name)
+			}
+		}
+
+		kindCount := make(map[string]int)
+		for _, method := range tool.Methods {
+			idx := kindCount[method.Kind]
+			kindCount[method.Kind] = idx + 1
+			key := toolKey(name, method.Kind, idx)
+			pin := l.Tools[key]
+
+			if requiresLatestPin(method) && pin.Latest == "" {
+				return fmt.Errorf("lock: frozen lock needs update: missing resolved release pin for %q", key)
+			}
+			if requiresChecksumPin(method) && pin.Checksum == "" {
+				checksum, _ := method.Config["checksum"].(string)
+				if strings.HasSuffix(checksum, ":auto") {
+					return fmt.Errorf("lock: frozen lock needs update: missing resolved checksum pin for %q (materialize the auto checksum with a non-frozen install first)", key)
+				}
+				return fmt.Errorf("lock: frozen lock needs update: missing resolved checksum pin for %q", key)
+			}
+		}
+	}
+	return nil
+}
+
+func requiresLatestPin(method *config.MethodCandidate) bool {
+	if method == nil {
+		return false
+	}
+	if raw, ok := method.Config["url"].(string); ok && strings.Contains(raw, "{latest}") {
+		return true
+	}
+	return usesGitHubReleasePin(method) && githubUsesLatest(method.Config)
+}
+
+func requiresChecksumPin(method *config.MethodCandidate) bool {
+	if method == nil {
+		return false
+	}
+	checksum, _ := method.Config["checksum"].(string)
+	if strings.HasSuffix(checksum, ":auto") {
+		return true
+	}
+	localPath, _ := method.Config["local_path"].(string)
+	return localPath != "" && checksum == ""
 }
 
 // Apply substitutes pinned values from the lock into the schema's method

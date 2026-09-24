@@ -62,7 +62,7 @@ func newInstallCmd() *cobra.Command {
 	f.StringVar(installOnly, "only", "", "only install specific tool")
 	f.StringVar(installSkip, "skip", "", "skip specific tools (comma-separated)")
 	f.StringVar(installProfile, "profile", "", "only install tools with matching tag (e.g. minimal,desktop,server)")
-	f.BoolVar(installFrozen, "frozen-lockfile", false, "fail if depengine.lock does not exist or needs update")
+	f.BoolVar(installFrozen, "frozen-lockfile", false, "fail if depengine.lock is missing, detectably stale, or lacks a supported required pin")
 	f.BoolVar(installDiagnose, "diagnose", false, "diagnostic mode: DEBUG + dry-run + verbose")
 	f.StringVar(installLogLevel, "log-level", "", "log level: debug, info, warn, error")
 	f.StringVar(installSortBy, "sort-by", "", "sort output by: name, status, method")
@@ -358,6 +358,11 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		return exitWithCode(exitCodeForError(err))
 	}
 
+	// Lock semantics follow the effective install closure. A partial lock
+	// produced for a profile/--only selection must not be rejected because an
+	// intentionally omitted tool lacks pins, while dependencies pulled into the
+	// closure remain validated.
+	s.Tools = filterTools(s.Tools, p.only, p.skip, p.profile)
 	ex := newInstallExecutor(p, s, clan, facts, schemaFile.ModTime(), lg)
 
 	lockPath := lock.DefaultPath(p.schema)
@@ -365,7 +370,6 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	if err != nil {
 		return err
 	}
-	s.Tools = filterTools(s.Tools, p.only, p.skip, p.profile)
 
 	if !p.dryRun {
 		if _, err := state.SaveSnapshot(); err != nil {

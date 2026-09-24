@@ -823,3 +823,236 @@ func TestApplyLocalPinDoesNotOverrideExplicitChecksum(t *testing.T) {
 		t.Fatalf("explicit checksum overridden: got %v want %s", got, explicit)
 	}
 }
+
+func frozenTestLock(s *config.Schema, pins map[string]ToolPin) *Lock {
+	l := &Lock{
+		Version:     1,
+		Tools:       pins,
+		MethodsHash: make(map[string]string),
+	}
+	for name, tool := range s.Tools {
+		if tool != nil && len(tool.Methods) > 0 {
+			l.MethodsHash[name] = computeMethodsHash(tool.Methods)
+		}
+	}
+	return l
+}
+
+func TestValidateFrozenAcceptsCompleteSupportedCoverage(t *testing.T) {
+	explicitChecksum := "sha256:" + strings.Repeat("a", 64)
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"repo": {
+			Name: "repo",
+			Methods: []*config.MethodCandidate{{
+				Kind:   "appimage",
+				Config: map[string]any{"repo": "owner/tool", "asset": "tool.AppImage"},
+			}},
+		},
+		"url": {
+			Name: "url",
+			Methods: []*config.MethodCandidate{{
+				Kind:   "http",
+				Config: map[string]any{"url": "https://example.test/{latest}/tool.tar.gz"},
+			}},
+		},
+		"local": {
+			Name: "local",
+			Methods: []*config.MethodCandidate{{
+				Kind:   "local",
+				Config: map[string]any{"local_path": "vendor/tool"},
+			}},
+		},
+		"auto": {
+			Name: "auto",
+			Methods: []*config.MethodCandidate{{
+				Kind:   "http",
+				Config: map[string]any{"url": "https://example.test/tool.tar.gz", "checksum": "sha256:auto"},
+			}},
+		},
+		"fixed": {
+			Name: "fixed",
+			Methods: []*config.MethodCandidate{{
+				Kind:   "local",
+				Config: map[string]any{"local_path": "vendor/fixed", "checksum": explicitChecksum},
+			}},
+		},
+	}}
+	l := frozenTestLock(s, map[string]ToolPin{
+		"repo/appimage/0": {Latest: "v1.2.3"},
+		"url/http/0":      {Latest: "v2.0.0"},
+		"local/local/0":   {Checksum: "sha256:" + strings.Repeat("b", 64)},
+		"auto/http/0":     {Checksum: "sha256:" + strings.Repeat("c", 64)},
+	})
+	if err := ValidateFrozen(s, l); err != nil {
+		t.Fatalf("ValidateFrozen() error = %v", err)
+	}
+}
+
+func TestValidateFrozenRejectsMissingSupportedPins(t *testing.T) {
+	cases := []struct {
+		name   string
+		method *config.MethodCandidate
+		want   string
+	}{
+		{
+			name:   "repo-backed latest release",
+			method: &config.MethodCandidate{Kind: "appimage", Config: map[string]any{"repo": "owner/tool", "asset": "tool.AppImage"}},
+			want:   "missing resolved release pin",
+		},
+		{
+			name:   "url latest placeholder",
+			method: &config.MethodCandidate{Kind: "http", Config: map[string]any{"url": "https://example.test/{latest}/tool.tar.gz"}},
+			want:   "missing resolved release pin",
+		},
+		{
+			name:   "implicit local checksum",
+			method: &config.MethodCandidate{Kind: "local", Config: map[string]any{"local_path": "vendor/tool"}},
+			want:   "missing resolved checksum pin",
+		},
+		{
+			name:   "remote auto checksum",
+			method: &config.MethodCandidate{Kind: "http", Config: map[string]any{"url": "https://example.test/tool.tar.gz", "checksum": "sha256:auto"}},
+			want:   "missing resolved checksum pin",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &config.Schema{Tools: map[string]*config.Tool{
+				"tool": {Name: "tool", Methods: []*config.MethodCandidate{tc.method}},
+			}}
+			l := frozenTestLock(s, map[string]ToolPin{})
+			err := ValidateFrozen(s, l)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("ValidateFrozen() error = %v, want containing %q", err, tc.want)
+			}
+			if !strings.Contains(err.Error(), "tool/"+tc.method.Kind+"/0") {
+				t.Fatalf("ValidateFrozen() error = %v, want canonical lock key", err)
+			}
+		})
+	}
+}
+
+func TestValidateFrozenRejectsMethodIdentityDrift(t *testing.T) {
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"tool": {
+			Name: "tool",
+			Methods: []*config.MethodCandidate{
+				{Kind: "http", Label: "http-primary", Config: map[string]any{"url": "https://example.test/tool.tar.gz"}},
+				{Kind: "git", Label: "git-fallback", Config: map[string]any{"url": "https://example.test/tool.git"}},
+			},
+		},
+	}}
+	l := frozenTestLock(s, map[string]ToolPin{})
+	s.Tools["tool"].Methods[0], s.Tools["tool"].Methods[1] = s.Tools["tool"].Methods[1], s.Tools["tool"].Methods[0]
+
+	err := ValidateFrozen(s, l)
+	if err == nil || !strings.Contains(err.Error(), "methods changed for tool") {
+		t.Fatalf("ValidateFrozen() error = %v, want method drift", err)
+	}
+}
+
+func TestValidateFrozenAllowsSelectorsOutsideLegacyLockCoverage(t *testing.T) {
+	explicitChecksum := "sha256:" + strings.Repeat("a", 64)
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"container": {
+			Name: "container",
+			Methods: []*config.MethodCandidate{{
+				Kind: "container",
+				Config: map[string]any{"manager": "docker", "source": "example/tool", "tag": "latest"},
+			}},
+		},
+		"git": {
+			Name: "git",
+			Methods: []*config.MethodCandidate{{
+				Kind: "git",
+				Config: map[string]any{"url": "https://example.test/tool.git", "branch": "main"},
+			}},
+		},
+		"snap": {
+			Name: "snap",
+			Methods: []*config.MethodCandidate{{
+				Kind: "snap",
+				Config: map[string]any{"pkg": "tool", "channel": "stable"},
+			}},
+		},
+		"release": {
+			Name: "release",
+			Methods: []*config.MethodCandidate{{
+				Kind: "github",
+				Config: map[string]any{"repo": "owner/tool", "asset": "tool.tar.gz", "release": "v1.2.3"},
+			}},
+		},
+		"branch": {
+			Name: "branch",
+			Methods: []*config.MethodCandidate{{
+				Kind: "github",
+				Config: map[string]any{"repo": "owner/tool", "asset": "tool.tar.gz", "branch": "edge"},
+			}},
+		},
+		"local-fixed": {
+			Name: "local-fixed",
+			Methods: []*config.MethodCandidate{{
+				Kind: "local",
+				Config: map[string]any{"local_path": "vendor/tool", "checksum": explicitChecksum},
+			}},
+		},
+	}}
+	if err := ValidateFrozen(s, frozenTestLock(s, map[string]ToolPin{})); err != nil {
+		t.Fatalf("ValidateFrozen() rejected selector outside legacy lock coverage: %v", err)
+	}
+}
+
+func TestValidateFrozenRejectsMissingMethodIdentity(t *testing.T) {
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"tool": {
+			Name: "tool",
+			Methods: []*config.MethodCandidate{{
+				Kind:   "native",
+				Config: map[string]any{"pkg": "tool"},
+			}},
+		},
+	}}
+	l := &Lock{Version: 1, Tools: map[string]ToolPin{}, MethodsHash: map[string]string{}}
+	err := ValidateFrozen(s, l)
+	if err == nil || !strings.Contains(err.Error(), "missing method identity") {
+		t.Fatalf("ValidateFrozen() error = %v, want missing method identity", err)
+	}
+}
+
+func TestValidateFrozenReportsToolsDeterministically(t *testing.T) {
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"z-tool": {Name: "z-tool", Methods: []*config.MethodCandidate{{Kind: "native"}}},
+		"a-tool": {Name: "a-tool", Methods: []*config.MethodCandidate{{Kind: "native"}}},
+	}}
+	l := &Lock{Version: 1, Tools: map[string]ToolPin{}, MethodsHash: map[string]string{}}
+	for i := 0; i < 20; i++ {
+		err := ValidateFrozen(s, l)
+		if err == nil || !strings.Contains(err.Error(), `tool "a-tool"`) {
+			t.Fatalf("ValidateFrozen() error = %v, want deterministic a-tool first", err)
+		}
+	}
+}
+
+func TestValidateFrozenRejectsInvalidInputs(t *testing.T) {
+	s := &config.Schema{Tools: map[string]*config.Tool{}}
+	if err := ValidateFrozen(nil, &Lock{Version: 1}); err == nil {
+		t.Fatal("ValidateFrozen(nil, lock) unexpectedly succeeded")
+	}
+	if err := ValidateFrozen(s, nil); err == nil {
+		t.Fatal("ValidateFrozen(schema, nil) unexpectedly succeeded")
+	}
+	if err := ValidateFrozen(s, &Lock{Version: 2}); err == nil || !strings.Contains(err.Error(), "unsupported version 2") {
+		t.Fatalf("ValidateFrozen(version 2) error = %v", err)
+	}
+
+	withNilTool := &config.Schema{Tools: map[string]*config.Tool{"tool": nil}}
+	if err := ValidateFrozen(withNilTool, &Lock{Version: 1}); err == nil {
+		t.Fatal("ValidateFrozen(nil tool) unexpectedly succeeded")
+	}
+	withNilMethod := &config.Schema{Tools: map[string]*config.Tool{
+		"tool": {Name: "tool", Methods: []*config.MethodCandidate{nil}},
+	}}
+	if err := ValidateFrozen(withNilMethod, &Lock{Version: 1}); err == nil {
+		t.Fatal("ValidateFrozen(nil method) unexpectedly succeeded")
+	}
+}

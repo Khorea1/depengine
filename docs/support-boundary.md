@@ -45,6 +45,30 @@ The useful identity terms are:
 Digests and commits are stronger replay inputs than mutable tags, branches,
 channels, or URLs.
 
+For the legacy lock v1 subset, `depengine install --frozen-lockfile` fails
+closed when the lockfile is missing or unreadable, when the stored method
+kind/label ordering no longer matches, or when a required supported pin is
+missing. Required pins currently include repo-backed latest GitHub releases,
+`{latest}` URL templates, implicit local-artifact digests, and resolved
+`*:auto` checksums. Frozen mode does not perform checksum TOFU to create a
+missing auto-checksum pin. Remote `*:auto` checksums are materialized by a
+normal non-frozen install; `depengine update` alone does not download the
+remote payload needed to compute that digest.
+
+Frozen validation follows the effective install closure after
+`--only`/`--skip`/`--profile` filtering. Dependencies pulled into that
+closure are still validated, while deliberately omitted tools do not make a
+partial/profile install fail frozen validation.
+
+This check is intentionally narrower than universal immutable resolution.
+Container tags, Git branches/tags, package-manager constraints, channels, and
+other selectors not represented by legacy lock v1 are not made immutable by
+`--frozen-lockfile`. The v1 method identity hash also covers method kind,
+label, and ordering rather than every requested field inside a candidate.
+After changing resolver details that keep the same kind/label, run
+`depengine update`; the planned universal lock projection is the path that
+will close this requested-identity gap.
+
 ## Scope and environments
 
 `scope` describes who owns an install, usually user versus system/global.
