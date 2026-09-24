@@ -10,6 +10,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -223,6 +224,26 @@ func TestCargoVersionControlsInstallAndCheck(t *testing.T) {
 	checkRunner.Stdout = "crate-name v1.2.4:\n    crate-name\n"
 	if adapter.Check(ctx, checkRunner, tool, mc) {
 		t.Fatal("Check should reject a different installed cargo version")
+	}
+}
+
+func TestCargoObservePreservesExactVersionDrift(t *testing.T) {
+	adapter := NewCargoAdapter()
+	tool := &config.Tool{Name: "friendly-name"}
+	method := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"pkg": "crate-name", "version": "1.2.3"}}
+	runner := &run.FakeRunner{Stdout: "crate-name v1.2.4:\n    crate-name\n"}
+
+	observation, err := adapter.Observe(context.Background(), runner, tool, method)
+	if err != nil {
+		t.Fatalf("Observe: %v", err)
+	}
+	if observation.Presence != plan.PresencePresent || observation.Identity.Version != "1.2.4" {
+		t.Fatalf("observation = %+v, want present installed version 1.2.4", observation)
+	}
+	desired := plan.ResolvedIdentity{Package: "crate-name", Version: "1.2.3"}
+	verification := plan.Reconcile(desired, observation)
+	if verification.State != plan.StateDrifted || len(verification.Drift) != 1 || verification.Drift[0].Field != plan.FieldVersion {
+		t.Fatalf("verification = %+v, want exact-version drift", verification)
 	}
 }
 
