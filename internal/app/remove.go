@@ -47,9 +47,8 @@ func newRemoveCmd() *cobra.Command {
 }
 
 // removeSession carries per-invocation removal state shared by the phase
-// helpers below. State aliases the locked (or unlocked, for dry-run) state
-// loaded by runRemove; helpers mutate it in place exactly as the original
-// runRemove closures did.
+// helpers. State aliases the locked (or unlocked, for dry-run) state loaded by
+// runRemove and is mutated in place throughout the removal flow.
 type removeSession struct {
 	ctx              context.Context
 	runner           run.Runner
@@ -62,11 +61,9 @@ type removeSession struct {
 	removedThisRun   map[string]bool
 }
 
-// runRemove removes tools using the adapter that installed them.
-// Supports --all, --dry-run, --schema, and --only flags. Thin orchestrator:
-// flag validation → state load → schema load → native adapter resolution →
-// confirmation → removal loop → state persist. Each phase lives in its own
-// helper below; behavior is unchanged from the pre-split version.
+// runRemove removes tools using the adapter that installed them. It orchestrates
+// validation, state/schema loading, adapter resolution, confirmation, removal,
+// and state persistence.
 func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce *bool) error {
 	if err := validateRemoveFlags(removeAll, removeOnly); err != nil {
 		return err
@@ -134,14 +131,11 @@ func validateRemoveFlags(removeAll *bool, removeOnly *string) error {
 	return nil
 }
 
-// loadRemoveState loads removal state. Dry-run takes an unlocked read so
-// merely rendering a removal plan never creates a lock file or rewrites
-// state; real removals take the lock.
+// loadRemoveState loads removal state. Dry-run uses an unlocked read so it
+// neither creates a lock file nor rewrites state; atomic state writes ensure
+// that read still observes a complete state file. Real removals take the lock.
 func loadRemoveState(dryRun bool) (*state.State, *state.LockedState, error) {
 	if dryRun {
-		// Dry-run must not create a state lock file or rewrite state merely to
-		// render a removal plan. State writes are atomic, so an unlocked read
-		// safely observes either the previous or next complete state file.
 		st, err := state.Load()
 		if err != nil {
 			log.Default.Error("load state", "error", err)

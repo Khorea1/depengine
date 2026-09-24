@@ -291,18 +291,10 @@ var managers = map[string]Manager{
 	},
 }
 
-// managerNameToClan maps a manager binary name to its clan. This handles
-// the case where the binary name differs from Manager.Name (e.g. gentoo's
-// Manager.Name is "emerge" but the binary is "emerge"). Only entries that
-// differ from Manager.Name need to be here; everything else falls through to
-// the KnownClans iteration in findClanByManager.
-//
-// Entries here must be UNAMBIGUOUS: the binary name must belong to exactly
-// one clan. Binary names shared across clans (e.g. "pkg" used by both
-// termux and freebsd) are intentionally omitted — findClanByManager's
-// fallback loop resolves them by iterating KnownClans, which is correct
-// (though non-deterministic in ordering, both clans produce valid commands
-// for the shared binary).
+// managerNameToClan records manager aliases and intentional disambiguations.
+// Callers consult it before the deterministic KnownClans fallback. A shared
+// name may be mapped when one clan is the canonical choice (for example
+// apt → debian); genuinely ambiguous names such as pkg stay omitted.
 var managerNameToClan = map[string]string{
 	// Disambiguate managers with the same binary name across clans.
 	"apt":     "debian", // debian and mint both use "apt"; debian is the primary
@@ -312,9 +304,8 @@ var managerNameToClan = map[string]string{
 	"dnf5":    "fedora", // dnf5 is the new default in Fedora 41+
 }
 
-// ManagerNameToClan returns the clan for a given manager binary name. This
-// is the primary lookup for findClanByManager; it checks the explicit map
-// first, falling back to KnownClans iteration.
+// ManagerNameToClan returns an explicit alias or disambiguation for a manager
+// binary name. Callers may fall back to KnownClans when no mapping exists.
 func ManagerNameToClan(name string) (string, bool) {
 	clan, ok := managerNameToClan[name]
 	return clan, ok

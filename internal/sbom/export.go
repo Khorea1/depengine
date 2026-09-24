@@ -63,7 +63,7 @@ func ExportCycloneDX(s *state.State) ([]byte, error) {
 		Components: make([]CycloneDXComponent, 0, len(s.Tools)),
 	}
 
-	// Sort tool names for deterministic output.
+	// Keep output stable across randomized map iteration.
 	names := make([]string, 0, len(s.Tools))
 	for name := range s.Tools {
 		names = append(names, name)
@@ -73,10 +73,9 @@ func ExportCycloneDX(s *state.State) ([]byte, error) {
 	for _, name := range names {
 		ts := s.Tools[name]
 
-		// Infer component type from method.
 		methodKind := ts.MethodKind
 		if methodKind == "" {
-			methodKind = ts.Method // fallback for old state files
+			methodKind = ts.Method // compatibility fallback for states written before MethodKind
 		}
 		packageMetadata := methodkind.PackageMetadataFor(methodKind)
 		compType := packageMetadata.ComponentType
@@ -85,7 +84,6 @@ func ExportCycloneDX(s *state.State) ([]byte, error) {
 		// is knowable (state may fall back to a lock pin before export).
 		version := componentVersion(ts)
 
-		// Build purl: pkg:{type}/{name}@{version}
 		purl := fmt.Sprintf("pkg:%s/%s@%s", packageMetadata.PURLType, name, version)
 
 		comp := CycloneDXComponent{
@@ -118,7 +116,6 @@ func extractVersion(config map[string]any) string {
 	if config == nil {
 		return "0.0.0"
 	}
-	// Common config keys that might hold version info.
 	for _, key := range []string{"version", "ver", "tag", "ref"} {
 		if v, ok := config[key]; ok {
 			if s, ok := v.(string); ok && s != "" {

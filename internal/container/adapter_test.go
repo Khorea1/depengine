@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -230,7 +231,7 @@ func TestContainerAdapterRegistryAuthIsScopedAndCleanedForEachManager(t *testing
 			if !ok || decodeErr != nil || string(decodedAuth) != username+":"+credentialValue {
 				t.Fatalf("auth file entries = %#v, want key %q decoding to username:secret", config.Auths, tc.authKey)
 			}
-			if rn.fileMode != 0o600 {
+			if runtime.GOOS != "windows" && rn.fileMode != 0o600 {
 				t.Fatalf("auth file mode = %#o, want 0600", rn.fileMode)
 			}
 			call := rn.calls[len(rn.calls)-1]

@@ -72,10 +72,8 @@ func newInstallCmd() *cobra.Command {
 	return cmd
 }
 
-// installPlan is the resolved, value-copied view of the install flags.
-// collectInstallPlan applies --diagnose defaults (mutating only flags the
-// user didn't explicitly set), picks the logger, validates --sort-by, and
-// resolves the manifest path. Everything downstream reads this struct.
+// installPlan is the resolved, value-copied install configuration shared by
+// downstream install phases.
 type installPlan struct {
 	schema       string
 	manifestFlag string
@@ -97,8 +95,8 @@ type installPlan struct {
 	quiet        bool
 }
 
-// collectInstallPlan resolves flags into an installPlan plus the logger.
-// Returns an ExitError(2) when --sort-by is invalid.
+// collectInstallPlan resolves flags into an installPlan, applies --diagnose
+// defaults, configures logging, and resolves the effective manifest path.
 func collectInstallPlan(cmd *cobra.Command, installSchema, installManifest *string, installNoManifest, installDryRun, installVerbose, installJSON *bool, installOnly, installSkip, installProfile *string, installFrozen, installDiagnose *bool, installLogLevel, installSortBy *string, installJobs *int, installAllowArbitrary, installQuiet *bool) (installPlan, *slog.Logger) {
 	lg := log.Default
 	p := installPlan{
