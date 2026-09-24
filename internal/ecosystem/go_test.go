@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -190,8 +191,15 @@ func TestGoPkgFieldControlsInstallAndCheck(t *testing.T) {
 }
 
 func TestGoInstalledVersionUsesPkgField(t *testing.T) {
+	binDir := t.TempDir()
+	t.Setenv("GOBIN", binDir)
 	adapter := NewGoAdapter()
-	fr := &run.FakeRunner{Stdout: "realbin version 1.2.3\n"}
+	fr := &run.FakeRunner{Stdout: strings.Join([]string{
+		goFixturePath(binDir, "realbin") + ": go1.27.1",
+		"\tpath\texample.com/project/cmd/realbin",
+		"\tmod\texample.com/project\tv1.2.3\th1:fixture",
+		"",
+	}, "\n")}
 	tool := &config.Tool{Name: "friendly-name"}
 	mc := &config.MethodCandidate{Kind: "go", Config: map[string]any{"pkg": "example.com/project/cmd/realbin"}}
 
@@ -199,12 +207,29 @@ func TestGoInstalledVersionUsesPkgField(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InstalledVersion: %v", err)
 	}
-	if got != "1.2.3" {
-		t.Fatalf("InstalledVersion = %q, want %q", got, "1.2.3")
+	if got != "v1.2.3" {
+		t.Fatalf("InstalledVersion = %q, want %q", got, "v1.2.3")
 	}
-	assertLastGoCall(t, fr, []string{"--version"})
-	if fr.Calls[len(fr.Calls)-1].Name != "realbin" {
-		t.Fatalf("version command binary = %q, want %q", fr.Calls[len(fr.Calls)-1].Name, "realbin")
+	assertLastGoCall(t, fr, []string{"version", "-m", goFixturePath(binDir, "realbin")})
+}
+
+func TestGoModuleVersionFromBuildInfo(t *testing.T) {
+	t.Parallel()
+	stdout := []byte("/tmp/realbin: go1.27.1\n\tpath\texample.com/project/cmd/realbin\n\tmod\texample.com/project\tv1.2.3\th1:fixture\n")
+	got, err := goModuleVersionFromBuildInfo(stdout, "example.com/project/cmd/realbin")
+	if err != nil {
+		t.Fatalf("goModuleVersionFromBuildInfo() error = %v", err)
+	}
+	if got != "v1.2.3" {
+		t.Fatalf("goModuleVersionFromBuildInfo() = %q, want %q", got, "v1.2.3")
+	}
+}
+
+func TestGoModuleVersionFromBuildInfoRejectsWrongPackage(t *testing.T) {
+	t.Parallel()
+	stdout := []byte("/tmp/realbin: go1.27.1\n\tpath\texample.com/other/cmd/realbin\n\tmod\texample.com/other\tv9.9.9\th1:fixture\n")
+	if _, err := goModuleVersionFromBuildInfo(stdout, "example.com/project/cmd/realbin"); err == nil {
+		t.Fatal("goModuleVersionFromBuildInfo() should reject mismatched package identity")
 	}
 }
 
@@ -271,11 +296,21 @@ func TestGoVersionControlsInstallAndCheck(t *testing.T) {
 	}
 	assertLastGoCall(t, installRunner, []string{"install", "example.com/project/cmd/realbin@v1.2.3"})
 
-	checkRunner := &run.FakeRunner{LookPaths: map[string]bool{"go": true, "realbin": true}, Stdout: "realbin version 1.2.3\n"}
+	binDir := t.TempDir()
+	t.Setenv("GOBIN", binDir)
+	checkRunner := &run.FakeRunner{
+		LookPaths: map[string]bool{"go": true, "realbin": true},
+		Stdout: strings.Join([]string{
+			goFixturePath(binDir, "realbin") + ": go1.27.1",
+			"\tpath\texample.com/project/cmd/realbin",
+			"\tmod\texample.com/project\tv1.2.3\th1:fixture",
+			"",
+		}, "\n"),
+	}
 	if !adapter.Check(ctx, checkRunner, tool, mc) {
 		t.Fatal("Check should accept the requested Go tool version when discoverable")
 	}
-	checkRunner.Stdout = "realbin version 1.2.4\n"
+	checkRunner.Stdout = strings.Replace(checkRunner.Stdout, "v1.2.3", "v1.2.4", 1)
 	if adapter.Check(ctx, checkRunner, tool, mc) {
 		t.Fatal("Check should reject a different installed Go tool version")
 	}
@@ -287,9 +322,16 @@ func TestGoObservePreservesExactVersionDrift(t *testing.T) {
 	method := &config.MethodCandidate{Kind: "go", Config: map[string]any{
 		"pkg": "example.com/project/cmd/realbin", "version": "v1.2.3",
 	}}
+	binDir := t.TempDir()
+	t.Setenv("GOBIN", binDir)
 	runner := &run.FakeRunner{
 		LookPaths: map[string]bool{"go": true, "realbin": true},
-		Stdout:    "realbin version 1.2.4\n",
+		Stdout: strings.Join([]string{
+			goFixturePath(binDir, "realbin") + ": go1.27.1",
+			"\tpath\texample.com/project/cmd/realbin",
+			"\tmod\texample.com/project\tv1.2.4\th1:fixture",
+			"",
+		}, "\n"),
 	}
 
 	observation, err := adapter.Observe(context.Background(), runner, tool, method)
