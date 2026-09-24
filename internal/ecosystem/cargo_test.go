@@ -3,6 +3,7 @@ package ecosystem
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -136,7 +137,7 @@ func TestCargoGitSecretPrefetchesAndInstallsLocalCheckout(t *testing.T) {
 	if checkout.Name != "git" || !reflect.DeepEqual(checkout.Args[2:], []string{"checkout", "--detach", "FETCH_HEAD"}) {
 		t.Fatalf("checkout call = %#v", checkout)
 	}
-	if cargo.Name != "cargo" || len(cargo.Args) < 4 || cargo.Args[0] != "install" || cargo.Args[1] != "--path" || !strings.HasPrefix(cargo.Args[2], os.TempDir()+"/depengine-cargo-") {
+	if cargo.Name != "cargo" || len(cargo.Args) < 4 || cargo.Args[0] != "install" || cargo.Args[1] != "--path" || !strings.HasPrefix(cargo.Args[2], filepath.Join(os.TempDir(), "depengine-cargo-")) {
 		t.Fatalf("cargo call = %#v, want install --path local checkout", cargo)
 	}
 	joined := strings.Join(cargo.Args, " ")
