@@ -27,15 +27,12 @@ func TestSortLinearDependency(t *testing.T) {
 	if len(levels) != 3 {
 		t.Fatalf("expected 3 levels, got %d: %v", len(levels), levels)
 	}
-	// Level 0: c (no deps)
 	if len(levels[0]) != 1 || levels[0][0] != "c" {
 		t.Fatalf("level 0 should be [c], got %v", levels[0])
 	}
-	// Level 1: b (depends on c)
 	if len(levels[1]) != 1 || levels[1][0] != "b" {
 		t.Fatalf("level 1 should be [b], got %v", levels[1])
 	}
-	// Level 2: a (depends on b)
 	if len(levels[2]) != 1 || levels[2][0] != "a" {
 		t.Fatalf("level 2 should be [a], got %v", levels[2])
 	}
@@ -55,19 +52,16 @@ func TestSortDAG(t *testing.T) {
 	if len(levels) < 2 {
 		t.Fatalf("expected at least 2 levels, got %d: %v", len(levels), levels)
 	}
-	// Level 0: d
 	if len(levels[0]) != 1 || levels[0][0] != "d" {
 		t.Fatalf("level 0 should be [d], got %v", levels[0])
 	}
-	// Level 1: b and c (deps satisfied by d)
 	level1 := make(map[string]bool)
-	for _, t := range levels[1] {
-		level1[t] = true
+	for _, name := range levels[1] {
+		level1[name] = true
 	}
 	if !level1["b"] || !level1["c"] {
 		t.Fatalf("level 1 should contain b and c, got %v", levels[1])
 	}
-	// Last level: a
 	last := levels[len(levels)-1]
 	if len(last) != 1 || last[0] != "a" {
 		t.Fatalf("last level should be [a], got %v", last)
@@ -106,9 +100,7 @@ func TestSortCycle(t *testing.T) {
 	if !errors.As(err, &cycleErr) {
 		t.Fatalf("expected *CycleError, got %T: %v", err, err)
 	}
-	// Error message should name the tools in the cycle.
-	msg := err.Error()
-	if len(msg) == 0 {
+	if err.Error() == "" {
 		t.Fatal("empty error message")
 	}
 }
@@ -128,9 +120,6 @@ func TestSortSelfCycle(t *testing.T) {
 }
 
 func TestSortCycleWithDependentOutsideCycle(t *testing.T) {
-	// a↔b form a cycle; d depends on a cycle member but is not part of it.
-	// Walking children edges could dead-end at d and mask the real cycle;
-	// the reported cycle must name a and b regardless of map iteration order.
 	tools := map[string]*config.Tool{
 		"a": tool("a", "b"),
 		"b": tool("b", "a"),
@@ -176,5 +165,56 @@ func TestSortEmptyReturnsEmpty(t *testing.T) {
 	}
 	if len(levels) != 0 {
 		t.Fatalf("expected 0 levels for empty input, got %d", len(levels))
+	}
+}
+
+func TestSortGraphIgnoresActivationEdges(t *testing.T) {
+	graph := NewGraph()
+	graph.AddNode(Node{ID: "app"})
+	graph.AddEdge(Edge{
+		From:   "missing-method-dependency",
+		To:     "app",
+		Kind:   MethodRequire,
+		Role:   Activation,
+		Method: "http",
+	})
+
+	levels, err := SortGraph(graph)
+	if err != nil {
+		t.Fatalf("activation-only edge should not constrain sorting: %v", err)
+	}
+	if len(levels) != 1 || len(levels[0]) != 1 || levels[0][0] != "app" {
+		t.Fatalf("unexpected levels: %v", levels)
+	}
+}
+
+func TestSortGraphRejectsMissingSchedulingDependency(t *testing.T) {
+	graph := NewGraph()
+	graph.AddNode(Node{ID: "app"})
+	graph.AddEdge(Edge{
+		From: "missing",
+		To:   "app",
+		Kind: ToolRequire,
+		Role: Scheduling,
+	})
+
+	if _, err := SortGraph(graph); err == nil {
+		t.Fatal("expected missing scheduling dependency to fail")
+	}
+}
+
+func TestSortGraphIgnoresActivationCycle(t *testing.T) {
+	graph := NewGraph()
+	graph.AddNode(Node{ID: "a"})
+	graph.AddNode(Node{ID: "b"})
+	graph.AddEdge(Edge{From: "a", To: "b", Kind: MethodRequire, Role: Activation, Method: "one"})
+	graph.AddEdge(Edge{From: "b", To: "a", Kind: MethodRequire, Role: Activation, Method: "two"})
+
+	levels, err := SortGraph(graph)
+	if err != nil {
+		t.Fatalf("activation cycle should not be a scheduling cycle: %v", err)
+	}
+	if len(levels) != 1 || len(levels[0]) != 2 || levels[0][0] != "a" || levels[0][1] != "b" {
+		t.Fatalf("unexpected levels: %v", levels)
 	}
 }

@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+
 	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/platform"
 )
@@ -213,14 +215,44 @@ func (t *Tool) GraphDependencies() []string { return t.Requires }
 
 func (t *Tool) GraphTags() []string { return t.Tags }
 
+func (t *Tool) GraphDependencyOnly() bool { return t.DependencyOnly }
+
+// GraphWalkDependencies exposes tool-level requirements and their declared
+// conditions without importing the graph package into config.
+func (t *Tool) GraphWalkDependencies(yield func(dependency string, guard fmt.Stringer)) {
+	for _, dependency := range t.Requires {
+		var guard fmt.Stringer
+		if condition := t.RequiresWhen[dependency]; condition != nil {
+			guard = condition
+		}
+		yield(dependency, guard)
+	}
+}
+
+// GraphWalkMethodDependencies exposes each method candidate independently so
+// graph construction does not lose guards or collapse candidates sharing a
+// method kind.
+func (t *Tool) GraphWalkMethodDependencies(yield func(candidate int, method string, dependencies []string, guard fmt.Stringer)) {
+	for candidateIndex, candidate := range t.Methods {
+		if candidate == nil {
+			continue
+		}
+		method := candidate.Kind
+		if candidate.Label != "" {
+			method = candidate.Label
+		}
+		var guard fmt.Stringer
+		if candidate.When != nil {
+			guard = candidate.When
+		}
+		yield(candidateIndex, method, candidate.Requires, guard)
+	}
+}
+
 func (t *Tool) GraphConditionalDependencies() map[string][]string {
 	dependencies := make(map[string][]string)
-	for _, method := range t.Methods {
-		label := method.Kind
-		if method.Label != "" {
-			label = method.Label
-		}
-		dependencies[label] = append(dependencies[label], method.Requires...)
-	}
+	t.GraphWalkMethodDependencies(func(_ int, method string, requires []string, _ fmt.Stringer) {
+		dependencies[method] = append(dependencies[method], requires...)
+	})
 	return dependencies
 }

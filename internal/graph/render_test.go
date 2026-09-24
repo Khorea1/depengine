@@ -50,6 +50,67 @@ func TestRenderDOT(t *testing.T) {
 	}
 }
 
+func TestRenderGraphMethodEdgesRemainActivationOnly(t *testing.T) {
+	graph := NewGraph()
+	graph.AddNode(Node{ID: "app"})
+	graph.AddNode(Node{ID: "curl"})
+	graph.AddEdge(Edge{
+		From:   "curl",
+		To:     "app",
+		Kind:   MethodRequire,
+		Role:   Activation,
+		Method: "http",
+	})
+
+	mermaid := RenderMermaidGraph(graph)
+	if !strings.Contains(mermaid, "curl -.->|http| app") {
+		t.Fatalf("method edge missing from Mermaid output:\n%s", mermaid)
+	}
+
+	dot := RenderDOTGraph(graph)
+	if !strings.Contains(dot, `"curl" -> "app" [style=dashed,label="http",constraint=false];`) {
+		t.Fatalf("method edge must be visible but non-constraining in DOT:\n%s", dot)
+	}
+}
+
+func TestRenderGraphIncludesGuardMetadata(t *testing.T) {
+	graph := NewGraph()
+	graph.AddEdge(Edge{
+		From:  "unzip",
+		To:    "app",
+		Kind:  ToolRequire,
+		Role:  Scheduling,
+		Guard: testGuard("target_family=unix"),
+	})
+
+	mermaid := RenderMermaidGraph(graph)
+	if !strings.Contains(mermaid, "unzip -.->|target_family=unix| app") {
+		t.Fatalf("guard missing from Mermaid output:\n%s", mermaid)
+	}
+
+	dot := RenderDOTGraph(graph)
+	if !strings.Contains(dot, `"unzip" -> "app" [style=dashed,label="target_family=unix"];`) {
+		t.Fatalf("guard missing from DOT output:\n%s", dot)
+	}
+}
+
+func TestRenderDeclaredConfigGuards(t *testing.T) {
+	tools := map[string]*config.Tool{
+		"app": {
+			Requires: []string{"unzip"},
+			RequiresWhen: map[string]*config.Condition{
+				"unzip": {TargetFamily: []string{"unix"}},
+			},
+		},
+		"unzip": {},
+	}
+
+	got := RenderDOT(tools)
+	if !strings.Contains(got, `"unzip" -> "app" [style=dashed,label="target_family in [\"unix\"]"];`) {
+		t.Fatalf("declared requires_when guard missing from DOT:\n%s", got)
+	}
+}
+
 func TestRenderText(t *testing.T) {
 	levels := [][]string{{"c"}, {"b"}, {"a"}}
 	tools := map[string]*config.Tool{}
@@ -67,8 +128,39 @@ func TestRenderText(t *testing.T) {
 	}
 }
 
+func TestRenderTextUsesGraphNodeTags(t *testing.T) {
+	graph := NewGraph()
+	graph.AddNode(Node{ID: "app", Tags: []string{"cli", "dev"}})
+
+	got := RenderTextGraph([][]string{{"app"}}, graph)
+	if got != "level 0: app (cli,dev)\n" {
+		t.Fatalf("unexpected tagged text output: %q", got)
+	}
+}
+
+func TestRenderTextShowsGuardedToolDependencies(t *testing.T) {
+	tools := map[string]*config.Tool{
+		"app": {
+			Requires: []string{"unzip"},
+			RequiresWhen: map[string]*config.Condition{
+				"unzip": {TargetFamily: []string{"unix"}},
+			},
+		},
+		"unzip": {},
+	}
+
+	graph := BuildDeclaredGraph(tools)
+	levels, err := SortGraph(graph)
+	if err != nil {
+		t.Fatalf("SortGraph: %v", err)
+	}
+	got := RenderTextGraph(levels, graph)
+	if !strings.Contains(got, `conditional: unzip -[target_family in ["unix"]]-> app`) {
+		t.Fatalf("guarded scheduling edge missing from text output:\n%s", got)
+	}
+}
+
 func TestRenderTextSortsLevels(t *testing.T) {
-	// Tools within a level must be sorted alphabetically.
 	levels := [][]string{{"z", "a", "m"}}
 	want := "level 0: a, m, z\n"
 	got := RenderText(levels, map[string]*config.Tool{})
@@ -89,7 +181,6 @@ func TestRenderTextEmpty(t *testing.T) {
 }
 
 func TestRenderNoEdges(t *testing.T) {
-	// Two tools with no dependencies — no edges expected.
 	tools := map[string]*config.Tool{
 		"a": {Name: "a"},
 		"b": {Name: "b"},
@@ -107,7 +198,6 @@ func TestRenderNoEdges(t *testing.T) {
 }
 
 func TestRenderDeterministic(t *testing.T) {
-	// Same input must produce identical output every time.
 	tools := map[string]*config.Tool{
 		"z": {Name: "z", Requires: []string{"a", "m"}},
 		"a": {Name: "a", Requires: []string{"b"}},
