@@ -1,21 +1,24 @@
 <h1 align="center">depengine</h1>
 
 <p align="center">
-  <b>Install the tools a project needs, without tying the project to one distro.</b>
+  <b>Install the tools a project needs without tying the project to one distro.</b>
 </p>
 
 <p align="center">
   <a href="https://github.com/Khorea1/depengine/actions"><img src="https://github.com/Khorea1/depengine/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue" alt="License"></a>
-  <img src="https://img.shields.io/badge/go-1.27-blue" alt="Go 1.27">
+  <img src="https://img.shields.io/badge/go-1.27.1-blue" alt="Go 1.27.1">
 </p>
 
-depengine reads a `schema.toml`, chooses an install method available on the
-current machine, and tries the configured fallbacks until one works. It can use
-native package managers, language package managers, GitHub releases, direct
-downloads, Git builds, Flatpak, and other adapters.
+depengine reads a project-owned `schema.toml`, resolves install candidates for
+the current host, and installs the declared tools through native package
+managers, language ecosystems, release artifacts, Git builds, and other typed
+adapters.
 
-It ships as a single static Go binary with no runtime dependencies.
+The project schema describes intent; the host decides which compatible method
+can satisfy it. depengine keeps candidate selection, dependency ordering,
+desired-state checks, lock data, and installed state explicit instead of hiding
+them in shell scripts.
 
 ```sh
 depengine init --add "zsh,bat,nvim,ruff"
@@ -24,10 +27,8 @@ depengine install
 depengine status
 ```
 
-Linux has the broadest integration coverage. macOS and Windows run the Go test
-suite on native CI runners. Windows supports winget, Scoop, Chocolatey, file
-locking, and state handling, but its package-manager lifecycle coverage is
-still lighter than Linux.
+The release binary is self-contained. Individual install methods still depend on
+the package manager, runtime, or toolchain they invoke.
 
 ## Quick start
 
@@ -42,7 +43,7 @@ simple = ["zsh", "bat", "kitty"]
 # Native package names may vary by package manager.
 fd = { apt = "fd-find" }
 
-# Ecosystem buckets expand to several compatible methods.
+# Ecosystem buckets expand to compatible typed methods.
 ruff = { python = true }
 ```
 
@@ -54,30 +55,47 @@ depengine install
 depengine status
 ```
 
-Commit `schema.toml` with the project. Other contributors can run
-`depengine install` after cloning the repository and get the same declared tool
-set, using the methods available on their machine.
+Commit `schema.toml` with the project. Contributors can use the same declared
+tool set while depengine selects compatible methods for their host.
 
-For conditions, hooks, dependencies, archives, GitHub assets, checksums, and
-every supported method, see the [`schema.toml` reference](docs/schema-reference.md).
+For conditions, hooks, dependencies, archives, GitHub assets, checksums,
+platform targeting, and every supported method, use the
+[`schema.toml` reference](docs/schema-reference.md).
+
+## How resolution works
+
+At a high level, depengine:
+
+1. parses and validates the project schema and optional personal manifest;
+2. builds the dependency graph and rejects invalid dependency cycles;
+3. orders each tool's compatible install candidates;
+4. resolves the selected candidate to a concrete install plan;
+5. observes the target and installs only when reconciliation requires it;
+6. records state and, where supported, lock information.
+
+Candidate priority can be changed with `method_prefer`; `method_only` limits
+a tool to an explicit set of candidates. Use `depengine why <tool>` to inspect
+the decision on the current host.
+
+The implementation model and package boundaries are documented in
+[architecture](docs/architecture.md).
 
 ## Schema and personal manifest
 
-depengine can merge two files:
+depengine can merge project intent with operator-local installation knowledge:
 
 | File | Purpose | Commit it? |
 |---|---|---|
 | `schema.toml` | Project dependencies and project-owned install rules | Yes |
 | `~/.config/depengine/manifest.toml` | Personal recipes and machine defaults | No |
 
-Project values win when both files set the same field. By default, tools that
-exist only in the personal manifest are ignored. Set
-`[manifest] allow_new_tools = true` in the manifest if you want them added to a
-project run.
+Project values win when both layers set the same field. By default,
+manifest-only tools are ignored; set `[manifest] allow_new_tools = true` in
+the manifest to opt into adding them to a project run.
 
 Project schemas use `[tools]`; personal manifests use `[packages]`.
 
-See [manifest merge rules](docs/schema-reference.md#manifest-merge-rules) for the
+See [manifest merge rules](docs/schema-reference.md#manifest-merge-rules) for
 field-level behavior.
 
 ## Common commands
@@ -87,14 +105,14 @@ field-level behavior.
 | `depengine init` | Create `schema.toml` |
 | `depengine validate` | Validate configuration without installing |
 | `depengine install` | Install declared tools |
-| `depengine check <tool>` | Check one tool |
-| `depengine status` | Show recorded install state |
-| `depengine why <tool>` | Show which method would be chosen and why |
-| `depengine remove <tool>` | Remove a tool |
-| `depengine forget <tool>` | Remove a tool from state without uninstalling it |
-| `depengine update` | Resolve lockable mutable references and write `depengine.lock` |
-| `depengine upgrade` | Upgrade using the lockfile where supported |
+| `depengine status` | Reconcile tracked state with the host |
+| `depengine check <tool>` | Reconcile one tool |
+| `depengine why <tool>` | Explain candidate selection and resolved intent |
 | `depengine graph` | Show tool dependencies |
+| `depengine update` | Resolve supported mutable references into `depengine.lock` |
+| `depengine upgrade` | Upgrade tracked tools using supported lock data |
+| `depengine remove <tool>` | Remove a tracked tool |
+| `depengine forget <tool>` | Drop state without uninstalling |
 | `depengine undo` | Restore a previous install snapshot |
 | `depengine sbom` | Export CycloneDX or SPDX SBOM data |
 
@@ -103,25 +121,22 @@ The complete command and flag reference is in
 
 ## Install methods
 
-depengine currently supports:
+depengine supports native package managers, language package managers, desktop
+and specialized package ecosystems, containers, local artifacts, Git builds,
+GitHub releases, and direct HTTP artifacts.
 
-| Group | Methods |
-|---|---|
-| Native | `native`, plus package-manager aliases such as `apt`, `pacman`, `dnf`, `brew`, `winget`, `scoop`, `choco` |
-| Languages | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `pnpm`, `bun`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
-| Desktop | `flatpak`, `snap`, `vscode`, `vscodium`, `cask`, `mas`, `appman` |
-| Specialized | `sdkman`, `steamcmd`, `pacstall`, `aur`, `conda`, `asdf`, `container`, `appimage`, `android`, `msi` |
-| Artifacts/builds | `git`, `local`, `github`, `http` |
+The authoritative method list, accepted fields, shorthand forms, and lifecycle
+semantics live in
+[the schema method reference](docs/schema-reference.md#method-reference).
+Keeping that detail in one place prevents the README and implementation from
+drifting independently.
 
-`native` detects the host package manager. A tool can also name a manager
-directly when package names differ by distro.
+## Reproducibility and security
 
-## Lockfile and dry run
-
-`depengine.lock` stores immutable information for methods that depengine can
-currently resolve that way, including supported release assets and checksums.
-Lock coverage is not universal yet: package-manager and ecosystem installs may
-still resolve through their own registries at install time.
+`depengine.lock` improves reproducibility for methods whose mutable identities
+can currently be resolved and represented by the lock model. Coverage is not
+universal: some package-manager and ecosystem installs still resolve through
+their own registries at execution time.
 
 ```sh
 depengine update
@@ -133,37 +148,34 @@ adapters or hooks and without writing state, lock data, package-source changes,
 or download-cache entries. Planning may still perform read-only probes and
 network resolution.
 
-See [support boundaries](docs/support-boundary.md) for the current
-reproducibility limits.
+Hooks, build commands, and other arbitrary-code paths require the explicit
+`--allow-arbitrary-code` gate. Checksums, signatures, typed secret references,
+credential transport, and package-source trust have method-specific boundaries.
 
-## Downloads and trust
+Read [support boundaries](docs/support-boundary.md) for reproducibility and
+lifecycle limits, and [security](docs/security.md) before enabling arbitrary
+code or using mutable/private sources.
 
-`github` is the preferred method for GitHub release assets:
+## Platform coverage
 
-```toml
-[tools.yq.github]
-repo  = "mikefarah/yq"
-asset = "yq_{os_any}_{arch_any}"
-```
+Linux has the broadest integration coverage. macOS and Windows run the Go test
+suite on native CI runners. Windows supports winget, Scoop, Chocolatey, file
+locking, and state handling, but package-manager lifecycle coverage is still
+lighter than Linux.
 
-Use `local` for project-vendored files and archives, and `http` for direct
-downloads. Artifact methods can verify fixed checksums; some methods also
-support release-asset checksum discovery or signatures.
+Platform support does not imply identical package availability or lifecycle
+semantics across managers. See
+[the support boundaries](docs/support-boundary.md) and
+[the schema reference](docs/schema-reference.md) for method-specific behavior.
 
-Credentials must not be embedded in HTTP(S) URLs. Private GitHub methods,
-private HTTPS `git` methods, Git-backed Cargo sources, container image pulls,
-and HTTP-backed artifact methods (`http`, `appimage`, `android`, and `msi`) can
-declare typed env-backed secret references so the credential is part of project
-intent without storing its value. HTTP-backed artifact credentials are scoped to the
-specific primary/checksum/signature request. Git uses its value as a scoped
-Bearer token for clone, fetch, and same-origin recursive submodules. Cargo Git
-sources are prefetched with the same scoped transport, then installed from the
-local checkout so Cargo and crate build scripts do not receive the credential.
-Without a typed GitHub reference, `GITHUB_TOKEN`, `GH_TOKEN`, or existing `gh`
-authentication remain available for compatibility.
+## Format status
 
-See [security](docs/security.md) before using hooks, build commands, mutable
-downloads, or custom package sources.
+Project schemas, lockfiles, and installed state currently use version `1`, but
+the v1 compatibility freeze is not complete yet. Until that freeze is accepted,
+version `1` should not be read as a permanent backward-compatibility promise.
+
+See [file-format compatibility](docs/compatibility.md) and the
+[v1 freeze gate](docs/specs/format-v1-freeze.md).
 
 ## Editor support
 
@@ -173,38 +185,25 @@ completion and validation for `schema.toml`. For Taplo in VS Code:
 ```json
 {
   "taplo.schema.enabled": true,
-  "taplo.schema.url": "https://raw.githubusercontent.com/Khorea1/depengine/main/schema/depengine.schema.json"
+  "taplo.schema.url": "https://raw.githubusercontent.com/Khorea1/depengine/master/schema/depengine.schema.json"
 }
 ```
-
-## Environment variables
-
-| Variable | Purpose |
-|---|---|
-| `DEPENGINE_DETECT_SCRIPT` | Override the OS-detection script |
-| `DEPENGINE_MANIFEST` | Override the personal manifest path |
-| `DEPENGINE_CACHE_MAX_BYTES` | Download-cache size limit; `0` disables eviction |
-| `XDG_CONFIG_HOME` | Base directory for the personal manifest |
-| `XDG_CACHE_HOME` | Base directory for downloads |
-| `XDG_STATE_HOME` | Base directory for state |
-| `GITHUB_TOKEN` / `GH_TOKEN` | GitHub API and private release authentication |
-| `NO_COLOR` / `FORCE_COLOR` | Control ANSI color output |
-| `DEPENGINE_TRACE_ID` | Trace ID passed to subprocesses |
-| `DEPENGINE_LOG_JSON` | Set to `1` for JSON logs |
 
 ## Documentation
 
 | Document | Use it for |
 |---|---|
-| [`docs/schema-reference.md`](docs/schema-reference.md) | Schema syntax and install methods |
-| [`docs/cli-reference.md`](docs/cli-reference.md) | Commands and flags |
-| [`docs/cheatsheet.md`](docs/cheatsheet.md) | Copyable examples |
-| [`docs/support-boundary.md`](docs/support-boundary.md) | What depengine can and cannot guarantee |
-| [`docs/security.md`](docs/security.md) | Trust, arbitrary code, checksums, credentials |
+| [`docs/schema-reference.md`](docs/schema-reference.md) | Schema syntax, install methods, conditions, hooks, and merge rules |
+| [`docs/cli-reference.md`](docs/cli-reference.md) | Commands, flags, defaults, and exit codes |
+| [`docs/cheatsheet.md`](docs/cheatsheet.md) | Copyable command and schema examples |
+| [`docs/support-boundary.md`](docs/support-boundary.md) | Reproducibility and lifecycle guarantees |
+| [`docs/security.md`](docs/security.md) | Trust, arbitrary code, checksums, signatures, and credentials |
 | [`docs/compatibility.md`](docs/compatibility.md) | File-format version policy |
 | [`docs/architecture.md`](docs/architecture.md) | Internal packages and execution flow |
-| [`docs/development.md`](docs/development.md) | Where project notes and design records belong |
-| [`docs/roadmap.md`](docs/roadmap.md) | Unfinished project work |
+| [`docs/design/`](docs/design/) | Accepted architecture decisions |
+| [`docs/research/`](docs/research/) | Research supporting future design work |
+| [`docs/development.md`](docs/development.md) | Documentation and development-note conventions |
+| [`docs/roadmap.md`](docs/roadmap.md) | Long-lived unfinished work |
 
 ## Development
 
@@ -214,8 +213,9 @@ go vet ./...
 go build -o depengine .
 ```
 
-The slower distro integration suite lives under `tests/integration` and needs
-Docker or Podman plus network access.
+The slower distro integration suite lives under `tests/integration` and
+requires Docker or Podman plus network access. CI is authoritative for the full
+validation matrix and pinned tooling.
 
 ## License
 
