@@ -180,7 +180,10 @@ func validateCredentialFreeReference(raw string) error {
 	}
 	u, err := url.Parse(placeholderToken.ReplaceAllString(raw, "x"))
 	if err != nil {
-		return fmt.Errorf("invalid reference: %w", err)
+		// net/url includes the raw input in parse errors. Redact before wrapping
+		// so malformed credential-bearing references cannot escape through
+		// planner or validation diagnostics.
+		return fmt.Errorf("invalid reference: %w", run.RedactError(err))
 	}
 	// Credential checks run for every parseable reference, host or not:
 	// "a://user:pass@" parses with an empty host, so gating on the host
