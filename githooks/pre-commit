@@ -1,0 +1,21 @@
+#!/bin/sh
+# Validate the staged tree, which may differ from the working tree.
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+if ! command -v go >/dev/null 2>&1; then
+	echo "pre-commit: Go is required to validate the staged tree" >&2
+	exit 1
+fi
+
+snapshot=$(mktemp -d "${TMPDIR:-/tmp}/depengine-pre-commit.XXXXXX")
+trap 'rm -rf "$snapshot"' 0
+trap 'exit 1' 1 2 3 15
+
+git -C "$root" checkout-index --all --prefix="$snapshot/"
+cd "$snapshot"
+
+echo "pre-commit: building staged tree"
+go build ./...
+echo "pre-commit: vetting staged tree"
+go vet ./...

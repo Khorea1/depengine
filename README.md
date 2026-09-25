@@ -221,6 +221,11 @@ completion and validation for `schema.toml`. For Taplo in VS Code:
 
 ## Development
 
+Run `scripts/setup-hooks.sh` once in each worktree to enable local commit and
+push checks. The commit hook builds and vets the staged files; the push hook
+builds, vets, race-tests, and lints each commit tip being pushed. Both require
+Go; pushing also requires `golangci-lint`.
+
 ```sh
 go test ./...
 go vet ./...
