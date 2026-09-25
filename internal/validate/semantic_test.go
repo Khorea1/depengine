@@ -260,7 +260,7 @@ func TestValidateAuthenticatedArtifactURLsAllowLoopbackHTTP(t *testing.T) {
 }
 
 func TestValidateMalformedURLs_NonHTTPGitKind(t *testing.T) {
-	// native and cargo don't need url validation.
+	// native and cargo without a git source do not need URL validation.
 	s := &config.Schema{
 		Tools: map[string]*config.Tool{
 			"app": tool("app", []*config.MethodCandidate{
@@ -272,6 +272,51 @@ func TestValidateMalformedURLs_NonHTTPGitKind(t *testing.T) {
 	r := validateMalformedURLs(s)
 	if r.HasErrors() {
 		t.Errorf("expected no errors for non-url methods, got: %v", r.Errors)
+	}
+}
+
+func TestValidateCargoGitSourceCredentialBoundary(t *testing.T) {
+	tests := []struct {
+		name  string
+		git   string
+		valid bool
+	}{
+		{name: "https", git: "https://github.com/example/crate.git", valid: true},
+		{name: "ssh username", git: "ssh://git@example.invalid/example/crate.git", valid: true},
+		{name: "scp style", git: "git@example.invalid:example/crate.git", valid: true},
+		{name: "https userinfo", git: "https://user:supersecret@example.invalid/crate.git"},
+		{name: "ssh password", git: "ssh://git:supersecret@example.invalid/crate.git"},
+		{name: "sensitive query", git: "https://example.invalid/crate.git?token=supersecret"},
+		{name: "missing host", git: "https:///crate.git"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &config.Schema{Tools: map[string]*config.Tool{
+				"crate": tool("crate", []*config.MethodCandidate{
+					mc("cargo", nil, map[string]any{"pkg": "crate", "git": tt.git}),
+				}, nil),
+			}}
+			got := validateMalformedURLs(s)
+			if tt.valid {
+				if got.HasErrors() {
+					t.Fatalf("valid cargo.git source rejected: %+v", got.Errors)
+				}
+				return
+			}
+			if !got.HasErrors() {
+				t.Fatal("expected invalid cargo.git source to be rejected")
+			}
+			if got.Errors[0].Code != ErrMalformedURL {
+				t.Fatalf("code = %s, want %s", got.Errors[0].Code, ErrMalformedURL)
+			}
+			if got.Errors[0].Field != "tools.crate.methods[0].git" {
+				t.Fatalf("field = %q, want cargo git field", got.Errors[0].Field)
+			}
+			if strings.Contains(fmt.Sprint(got.Errors), "supersecret") {
+				t.Fatal("validation error leaked credential material")
+			}
+		})
 	}
 }
 
