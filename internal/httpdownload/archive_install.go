@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -253,19 +254,15 @@ func copyTreeStripped(src, dest string, strip int) error {
 	defer func() { _ = targetRoot.Close() }()
 
 	count := 0
-	err = filepath.WalkDir(src, func(path string, _ os.DirEntry, walkErr error) error {
+	err = fs.WalkDir(sourceRoot.FS(), ".", func(path string, _ fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if path == src {
+		if path == "." {
 			return nil
 		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		sourceRel := filepath.Clean(rel)
-		parts := strings.Split(filepath.ToSlash(sourceRel), "/")
+		sourceRel := filepath.FromSlash(path)
+		parts := strings.Split(path, "/")
 		if len(parts) <= strip {
 			return nil
 		}
@@ -290,10 +287,10 @@ func copyTreeStripped(src, dest string, strip int) error {
 				return err
 			}
 			if !symlinkTargetStaysWithinRoot(sourceRel, link) {
-				return fmt.Errorf("archive: symlink %q escapes staging", rel)
+				return fmt.Errorf("archive: symlink %q escapes staging", sourceRel)
 			}
 			if !symlinkTargetStaysWithinRoot(targetRel, link) {
-				return fmt.Errorf("archive: symlink %q escapes stripped payload", rel)
+				return fmt.Errorf("archive: symlink %q escapes stripped payload", sourceRel)
 			}
 			if err := targetRoot.Symlink(link, targetRel); err != nil {
 				return err
@@ -302,7 +299,7 @@ func copyTreeStripped(src, dest string, strip int) error {
 			return nil
 		}
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("archive: unsupported staged entry %q (%s)", rel, info.Mode().Type())
+			return fmt.Errorf("archive: unsupported staged entry %q (%s)", sourceRel, info.Mode().Type())
 		}
 
 		in, err := sourceRoot.Open(sourceRel)
