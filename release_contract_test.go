@@ -92,3 +92,16 @@ func TestReleaseSigningContract(t *testing.T) {
 		t.Error("verification docs must pin the release workflow identity")
 	}
 }
+
+func TestGoReleaserStaticBuildContract(t *testing.T) {
+	data, err := os.ReadFile(".goreleaser.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// README's runtime-dependency claim ("single static Go binary ... links no
+	// libc or other shared libraries") only holds while release builds keep CGO
+	// disabled; a cgo build would link the host libc and break the claim.
+	if !strings.Contains(string(data), "- CGO_ENABLED=0") {
+		t.Error("GoReleaser builds must keep CGO_ENABLED=0 for the static-binary contract")
+	}
+}
