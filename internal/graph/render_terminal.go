@@ -2,6 +2,7 @@ package graph
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -274,9 +275,23 @@ func (cell terminalCell) render() rune {
 	}
 }
 
+// terminalLabel converts node IDs to single-cell ASCII when terminal display
+// width would otherwise differ from rune count (wide, combining, or control
+// characters). ASCII IDs remain unchanged; escaped IDs stay unambiguous and
+// make the renderer's column arithmetic exact without depending on locale.
+func terminalLabel(id string) string {
+	for _, r := range id {
+		if r < 0x20 || r > 0x7e {
+			return strconv.QuoteToASCII(id)
+		}
+	}
+	return id
+}
+
 type terminalNode struct {
-	id  string
-	row int
+	id    string
+	label string
+	row   int
 }
 
 type terminalColumn struct {
@@ -542,7 +557,7 @@ func terminalColumns(component Component, ranks map[string]int) ([]terminalColum
 		member := byRank[rank]
 		column := terminalColumn{nodes: make([]terminalNode, 0, len(member))}
 		for _, id := range member {
-			column.nodes = append(column.nodes, terminalNode{id: id})
+			column.nodes = append(column.nodes, terminalNode{id: id, label: terminalLabel(id)})
 		}
 		columns = append(columns, column)
 	}
@@ -556,7 +571,7 @@ func terminalColumns(component Component, ranks map[string]int) ([]terminalColum
 		for j := range columns[i].nodes {
 			columns[i].nodes[j].row = offset + j
 			rows[columns[i].nodes[j].id] = offset + j
-			if width := len([]rune(columns[i].nodes[j].id)); width > columns[i].width {
+			if width := len(columns[i].nodes[j].label); width > columns[i].width {
 				columns[i].width = width
 			}
 		}
@@ -593,7 +608,7 @@ func renderTerminalDiagram(layout *terminalLayout) string {
 	}
 	for _, column := range layout.columns {
 		for _, node := range column.nodes {
-			canvas.paintText(column.start, node.row, node.id)
+			canvas.paintText(column.start, node.row, node.label)
 		}
 	}
 	for _, route := range layout.routes {
@@ -634,7 +649,7 @@ func terminalAnnotations(layout *terminalLayout) []string {
 	annotations := make([]string, 0, len(layout.component.Edges))
 	for _, edge := range layout.component.Edges {
 		if label := edgeLabel(edge); label != "" {
-			annotations = append(annotations, fmt.Sprintf("%s -> %s [%s]", edge.From, edge.To, label))
+			annotations = append(annotations, fmt.Sprintf("%s -> %s [%s]", terminalLabel(edge.From), terminalLabel(edge.To), label))
 		}
 	}
 	return annotations
@@ -647,9 +662,9 @@ func renderTerminalCompact(layout *terminalLayout, width int) string {
 	fmt.Fprintf(&b, "component needs %d columns (%d available):", layout.width, width)
 	for _, edge := range layout.component.Edges {
 		b.WriteString("\n  ")
-		b.WriteString(edge.From)
+		b.WriteString(terminalLabel(edge.From))
 		b.WriteString(" -> ")
-		b.WriteString(edge.To)
+		b.WriteString(terminalLabel(edge.To))
 		if label := edgeLabel(edge); label != "" {
 			b.WriteString(" [")
 			b.WriteString(label)
@@ -666,15 +681,16 @@ func renderTerminalIsolated(ids []string, width int) string {
 	b.WriteString("isolated:")
 	line := ""
 	for _, id := range ids {
+		label := terminalLabel(id)
 		switch {
 		case line == "":
-			line = id
-		case len([]rune(line))+2+len([]rune(id)) <= width:
-			line += ", " + id
+			line = label
+		case len(line)+2+len(label) <= width:
+			line += ", " + label
 		default:
 			b.WriteString("\n")
 			b.WriteString(line)
-			line = id
+			line = label
 		}
 	}
 	if line != "" {

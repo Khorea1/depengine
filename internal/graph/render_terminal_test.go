@@ -2,6 +2,7 @@ package graph
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -260,6 +261,27 @@ func TestRenderTerminalGraphWrapsIsolatedList(t *testing.T) {
 	for _, id := range ids {
 		if !strings.Contains(out, id) {
 			t.Errorf("isolated node %q missing from output:\n%s", id, out)
+		}
+	}
+}
+
+func TestRenderTerminalGraphEscapesVariableWidthNodeIDs(t *testing.T) {
+	g := NewGraph()
+	for _, id := range []string{"工具", "e\u0301"} {
+		g.AddNode(Node{ID: id})
+	}
+
+	out, err := RenderTerminalGraph(g, 80)
+	if err != nil {
+		t.Fatalf("RenderTerminalGraph: %v", err)
+	}
+	for _, id := range []string{"工具", "e\u0301"} {
+		label := strconv.QuoteToASCII(id)
+		if !strings.Contains(out, label) {
+			t.Fatalf("rendering missing escaped label %q:\n%s", label, out)
+		}
+		if strings.Contains(out, id) {
+			t.Fatalf("rendering leaked variable-width label %q instead of ASCII escape:\n%s", id, out)
 		}
 	}
 }

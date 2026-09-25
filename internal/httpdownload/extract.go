@@ -350,6 +350,9 @@ func validateZipSafety(src, dest string) error {
 		if err := safeJoin(dest, f.Name); err != nil {
 			return fmt.Errorf("unsafe zip entry: %w", err)
 		}
+		if f.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("unsafe zip entry: symlink %q is not supported", f.Name)
+		}
 	}
 	return nil
 }
