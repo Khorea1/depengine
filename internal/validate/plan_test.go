@@ -45,6 +45,23 @@ func TestValidatePlanIntentsUsesSharedPlanningError(t *testing.T) {
 	}
 }
 
+func TestValidateSchemaRedactsMalformedCargoGitCredentials(t *testing.T) {
+	const secret = "redaction-sentinel"
+	s := schemaWithMethod("cargo", map[string]any{
+		"pkg": "demo",
+		"git": "https://user:" + secret + "@%zz.example/repo.git",
+	})
+	r := ValidateSchema(s, nil)
+	if !r.HasErrors() {
+		t.Fatal("ValidateSchema() accepted malformed credential-bearing cargo.git source")
+	}
+	for _, finding := range r.Errors {
+		if strings.Contains(finding.Message, secret) {
+			t.Fatalf("ValidateSchema() leaked credential in finding: %+v", finding)
+		}
+	}
+}
+
 func TestValidatePlanIntentsAcceptsOverloadedSelectorsByContract(t *testing.T) {
 	for name, method := range map[string]*config.MethodCandidate{
 		"container-tag": {Kind: "container", Config: map[string]any{"manager": "podman", "source": "org/demo", "tag": "edge"}},
