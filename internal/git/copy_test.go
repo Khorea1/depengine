@@ -19,7 +19,7 @@ func TestCopyArtifactCopiesDirectoryContents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := copyArtifact(context.Background(), src, dst); err != nil {
+	if err := copyArtifactFromRoot(context.Background(), src, ".", dst); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(filepath.Join(dst, "sub", "tool"))
@@ -48,7 +48,7 @@ func TestCopyArtifactCopiesSingleFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := copyArtifact(context.Background(), src, dst); err != nil {
+	if err := copyArtifactFromRoot(context.Background(), src, ".", dst); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := os.ReadFile(filepath.Join(dst, "tool")); err != nil || string(got) != "binary" {
@@ -74,7 +74,7 @@ func TestCopyArtifactReplacesSymlinkWithoutFollowingIt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := copyArtifact(context.Background(), srcDir, dst); err != nil {
+	if err := copyArtifactFromRoot(context.Background(), srcDir, ".", dst); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := os.ReadFile(outside); err != nil || string(got) != "old" {
@@ -103,7 +103,7 @@ func TestCopyArtifactRejectsDestinationDirectorySymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := copyArtifact(context.Background(), src, dst); err == nil {
+	if err := copyArtifactFromRoot(context.Background(), src, ".", dst); err == nil {
 		t.Fatal("expected destination directory symlink to be rejected")
 	}
 	if _, err := os.Stat(filepath.Join(outside, "tool")); !os.IsNotExist(err) {
@@ -178,7 +178,7 @@ func TestCopyArtifactRejectsEscapingSourceSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := copyArtifact(context.Background(), src, dst); err == nil {
+	if err := copyArtifactFromRoot(context.Background(), src, ".", dst); err == nil {
 		t.Fatal("expected escaping source symlink to be rejected")
 	}
 	if _, err := os.Lstat(filepath.Join(dst, "tool")); !os.IsNotExist(err) {
@@ -206,7 +206,7 @@ func TestCopyArtifactPreservesContainedSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := copyArtifact(context.Background(), src, dst); err != nil {
+	if err := copyArtifactFromRoot(context.Background(), src, ".", dst); err != nil {
 		t.Fatal(err)
 	}
 	target, err := os.Readlink(filepath.Join(dst, "bin", "tool"))
@@ -225,7 +225,7 @@ func TestCopyArtifactHonorsCanceledContext(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, "tool"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := copyArtifact(ctx, src, t.TempDir()); !errors.Is(err, context.Canceled) {
+	if err := copyArtifactFromRoot(ctx, src, ".", t.TempDir()); !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}
 }
