@@ -2,13 +2,17 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -36,6 +40,24 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) run.Res
 		Stderr:   []byte(f.stderr),
 		ExitCode: f.exitCode,
 		Err:      f.err,
+	}
+}
+
+type nativeDetectionRunner struct {
+	calls []call
+}
+
+func (r *nativeDetectionRunner) Run(_ context.Context, name string, args ...string) run.Result {
+	r.calls = append(r.calls, call{name: name, args: append([]string(nil), args...)})
+	switch strings.Join(append([]string{name}, args...), " ") {
+	case "uname -s":
+		return run.Result{Stdout: []byte("Linux\n")}
+	case "uname -r":
+		return run.Result{Stdout: []byte("6.12.0\n")}
+	case "uname -m":
+		return run.Result{Stdout: []byte("x86_64\n")}
+	default:
+		return run.Result{ExitCode: 127}
 	}
 }
 
@@ -170,20 +192,58 @@ func TestGatherFactsFallsBackOnExecutionFailure(t *testing.T) {
 	}
 }
 
-func TestGatherFactsSucceedsWithEmbeddedScript(t *testing.T) {
-	// The embedded detect_os.sh is always available at compile time, so
-	// locateDetectScript returns a temp-file copy. Verify that GatherFacts
-	// succeeds when the fake runner returns valid JSON.
+func TestGatherFactsUsesNativeDetectorByDefault(t *testing.T) {
 	t.Setenv("DEPENGINE_DETECT_SCRIPT", "")
-	t.Setenv("PATH", "/nonexistent")
 
-	fr := &fakeRunner{stdout: detectionJSON}
-	facts, err := GatherFacts(fr)
+	runner := &nativeDetectionRunner{}
+	facts, err := GatherFacts(runner)
 	if err != nil {
-		t.Fatalf("GatherFacts with embedded script failed: %v", err)
+		t.Fatalf("GatherFacts native detector failed: %v", err)
 	}
 	if facts == nil {
 		t.Fatal("GatherFacts returned nil facts")
+	}
+	if facts.TargetArch != "x86_64" {
+		t.Fatalf("native detector facts = %#v", facts)
+	}
+	for _, c := range runner.calls {
+		if strings.Contains(c.name, "detect_os.sh") {
+			t.Fatalf("native default executed legacy detector: %s %v", c.name, c.args)
+		}
+	}
+}
+
+func TestNativeDetectorMatchesLegacyDetectorOnHost(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("legacy detector requires a POSIX shell")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	runner := run.OSExecRunner{}
+	if !run.LookPath(ctx, runner, "sh") {
+		t.Skip("POSIX shell unavailable")
+	}
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate engine test source")
+	}
+	scriptPath := filepath.Join(filepath.Dir(filename), "detect_os.sh")
+	legacyResult := runner.Run(ctx, "sh", scriptPath, "--json", "--no-prompt")
+	if legacyResult.Err != nil {
+		t.Fatalf("legacy detector failed to execute: %v", legacyResult.Err)
+	}
+	if legacyResult.ExitCode != 0 && legacyResult.ExitCode != 1 {
+		t.Fatalf("legacy detector exit %d: %s", legacyResult.ExitCode, legacyResult.Stderr)
+	}
+
+	var legacy Facts
+	if err := json.Unmarshal(legacyResult.Stdout, &legacy); err != nil {
+		t.Fatalf("decode legacy detector output: %v", err)
+	}
+	native := platform.Detect(ctx, runner)
+	if !reflect.DeepEqual(*native, legacy) {
+		t.Fatalf("native detector drifted from legacy detector\nnative: %#v\nlegacy: %#v", *native, legacy)
 	}
 }
 
