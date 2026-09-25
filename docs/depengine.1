@@ -57,6 +57,7 @@ Initialize a schema.toml for a new project
 .TP
 .B "depengine install [flags]"
 Install tools from schema.toml
+Aliases: i.
 .TP
 .B "depengine remove [tool...] [flags]"
 Observes the tracked target before removal. Proven\-absent targets release state and ownership; unknown or broken observations preserve state and fail.
@@ -224,7 +225,7 @@ path to write (default: schema.toml) Scope: local. Default: .
 permit hooks, build scripts, and other arbitrary code execution Scope: local. Default: false.
 .TP
 .B "\-\-diagnose"
-diagnostic mode: DEBUG + dry\-run + verbose Scope: local. Default: false.
+diagnostic mode: DEBUG + dry\-run + detailed report Scope: local. Default: false.
 .TP
 .B "\-\-dry\-run"
 show what would be installed Scope: local. Default: false.
@@ -257,7 +258,7 @@ only install specific tool Scope: local. Default: .
 only install tools with matching tag (e.g. minimal,desktop,server) Scope: local. Default: .
 .TP
 .B "\-\-quiet"
-suppress per\-tool status lines; show only final summary Scope: local. Default: false.
+suppress live per\-tool status lines; show final per\-tool report Scope: local. Default: false.
 .TP
 .B "\-\-schema <string>"
 path to schema.toml Scope: local. Default: schema.toml.
@@ -269,7 +270,7 @@ skip specific tools (comma\-separated) Scope: local. Default: .
 sort output by: name, status, method Scope: local. Default: .
 .TP
 .B "\-\-verbose"
-detailed output Scope: local. Default: false.
+deprecated compatibility flag; detailed output is already the default Scope: local. Default: false.
 .SS "depengine remove flags"
 .TP
 .B "\-\-all"

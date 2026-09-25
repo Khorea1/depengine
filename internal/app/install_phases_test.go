@@ -78,6 +78,45 @@ func TestInstallOutputMode(t *testing.T) {
 	}
 }
 
+func TestShouldWarnDeprecatedVerbose(t *testing.T) {
+	t.Run("explicit verbose", func(t *testing.T) {
+		cmd := newInstallCmd()
+		if err := cmd.Flags().Set("verbose", "true"); err != nil {
+			t.Fatal(err)
+		}
+		if !shouldWarnDeprecatedVerbose(cmd) {
+			t.Fatal("explicit --verbose should emit the deprecation warning")
+		}
+	})
+
+	t.Run("explicit verbose false", func(t *testing.T) {
+		cmd := newInstallCmd()
+		if err := cmd.Flags().Set("verbose", "false"); err != nil {
+			t.Fatal(err)
+		}
+		if !shouldWarnDeprecatedVerbose(cmd) {
+			t.Fatal("explicit --verbose=false should emit the deprecation warning")
+		}
+	})
+
+	t.Run("diagnose implied verbose", func(t *testing.T) {
+		cmd := newInstallCmd()
+		if err := cmd.Flags().Set("diagnose", "true"); err != nil {
+			t.Fatal(err)
+		}
+		if shouldWarnDeprecatedVerbose(cmd) {
+			t.Fatal("--diagnose should not emit a deprecation warning for --verbose it implied")
+		}
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		cmd := newInstallCmd()
+		if shouldWarnDeprecatedVerbose(cmd) {
+			t.Fatal("default install should not emit the --verbose deprecation warning")
+		}
+	})
+}
+
 func TestInstallExitForReport(t *testing.T) {
 	if err := installExitForReport(&exec.ExecReport{Success: 3}); err != nil {
 		t.Fatalf("clean report must exit nil, got %v", err)
