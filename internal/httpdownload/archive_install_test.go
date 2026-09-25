@@ -256,10 +256,10 @@ func TestCopyTreeStrippedRejectsSourceSymlinkEscape(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(root, "src")
 	dest := filepath.Join(root, "dest")
-	if err := os.MkdirAll(filepath.Join(src, "top"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(src, "top"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(dest, 0o755); err != nil {
+	if err := os.Mkdir(dest, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "outside"), []byte("foreign"), 0o600); err != nil {
@@ -282,10 +282,10 @@ func TestCopyTreeStrippedRejectsSymlinkEscapeIntroducedByStrip(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(root, "src")
 	dest := filepath.Join(root, "dest")
-	if err := os.MkdirAll(filepath.Join(src, "top", "a"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(src, "top", "a"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(dest, 0o755); err != nil {
+	if err := os.Mkdir(dest, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(src, "outside"), []byte("inside staging"), 0o600); err != nil {
@@ -310,13 +310,13 @@ func TestCopyTreeStrippedPreservesContainedSymlink(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(root, "src")
 	dest := filepath.Join(root, "dest")
-	if err := os.MkdirAll(filepath.Join(src, "top", "bin"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(src, "top", "bin"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(dest, 0o755); err != nil {
+	if err := os.Mkdir(dest, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(src, "top", "bin", "demo"), []byte("binary"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(src, "top", "bin", "demo"), []byte("binary"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink("demo", filepath.Join(src, "top", "bin", "current")); err != nil {
@@ -326,14 +326,19 @@ func TestCopyTreeStrippedPreservesContainedSymlink(t *testing.T) {
 	if err := copyTreeStripped(src, dest, 1); err != nil {
 		t.Fatalf("copyTreeStripped() error = %v", err)
 	}
-	link, err := os.Readlink(filepath.Join(dest, "bin", "current"))
+	payloadRoot, err := os.OpenRoot(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer payloadRoot.Close()
+	link, err := payloadRoot.Readlink(filepath.Join("bin", "current"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if link != "demo" {
 		t.Fatalf("copied symlink target = %q, want demo", link)
 	}
-	data, err := os.ReadFile(filepath.Join(dest, "bin", "demo"))
+	data, err := payloadRoot.ReadFile(filepath.Join("bin", "demo"))
 	if err != nil {
 		t.Fatal(err)
 	}
