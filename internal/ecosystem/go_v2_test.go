@@ -2,6 +2,7 @@ package ecosystem
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -96,7 +97,7 @@ func TestGoAdapterV2ObserveReportsDiscoveredVersion(t *testing.T) {
 		t.Fatalf("resolved version = %q, want planner spelling v1.2.3", resolved.Identity.Version)
 	}
 
-	observation, err := adapter.Observe(context.Background(), goV2Runner("realbin version 1.2.3\n"), tool, mc)
+	observation, err := adapter.Observe(context.Background(), goV2Runner("\tpath\texample.com/project/cmd/realbin\n\tmod\texample.com/project\tv1.2.3\th1:fixture\n"), tool, mc)
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)
 	}
@@ -120,12 +121,12 @@ func TestGoAdapterV2ObserveReportsDriftedVersion(t *testing.T) {
 
 	// A different installed version remains present so reconciliation can
 	// distinguish exact-version drift from a missing binary.
-	observation, err := adapter.Observe(context.Background(), goV2Runner("realbin version 1.2.4\n"), tool, mc)
+	observation, err := adapter.Observe(context.Background(), goV2Runner("\tpath\texample.com/project/cmd/realbin\n\tmod\texample.com/project\tv1.2.4\th1:fixture\n"), tool, mc)
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)
 	}
-	if observation.Presence != plan.PresencePresent || observation.Identity.Version != "1.2.4" {
-		t.Fatalf("Observe() = %+v, want present version 1.2.4", observation)
+	if observation.Presence != plan.PresencePresent || observation.Identity.Version != "v1.2.4" {
+		t.Fatalf("Observe() = %+v, want present version v1.2.4", observation)
 	}
 	if result := plan.Reconcile(plan.ResolvedIdentity{Package: "example.com/project/cmd/realbin", Version: "v1.2.3"}, observation); result.State != plan.StateDrifted {
 		t.Fatalf("Reconcile() state = %q, want %q (result = %#v)", result.State, plan.StateDrifted, result)
@@ -146,6 +147,26 @@ func TestGoAdapterV2ObserveReportsDriftedVersion(t *testing.T) {
 	}
 	if _, err := adapter.Observe(context.Background(), goV2Runner(""), tool, nil); err == nil {
 		t.Fatal("Observe(nil method) should fail")
+	}
+}
+
+func TestGoAdapterV2ObserveFailsClosedOnBuildInfoPackageMismatch(t *testing.T) {
+	adapter := NewGoAdapter()
+	tool, mc := goV2Tool()
+	runner := goV2Runner("\tpath\texample.com/other/cmd/realbin\n\tmod\texample.com/other\tv9.9.9\th1:fixture\n")
+
+	observation, err := adapter.Observe(context.Background(), runner, tool, mc)
+	if !errors.Is(err, errGoBuildInfoPackageMismatch) {
+		t.Fatalf("Observe() error = %v, want build-info package mismatch", err)
+	}
+	if observation.Presence != plan.PresenceBroken {
+		t.Fatalf("Observe() presence = %q, want %q", observation.Presence, plan.PresenceBroken)
+	}
+	if observation.Detail == "" || !strings.Contains(observation.Detail, "example.com/other/cmd/realbin") {
+		t.Fatalf("Observe() detail = %q, want mismatched embedded package", observation.Detail)
+	}
+	if len(observation.KnownFields) != 0 {
+		t.Fatalf("Observe() known fields = %#v, want none for broken verification", observation.KnownFields)
 	}
 }
 

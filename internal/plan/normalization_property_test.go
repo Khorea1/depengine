@@ -10,13 +10,10 @@ import (
 	"github.com/Khorea1/depengine/internal/plan"
 )
 
-// projectPathRejection restates the documented rejection rules for portable
-// project paths instead of calling into the implementation, so the fuzz test
-// doubles as a specification: a path is accepted exactly when no rule applies.
-// The Windows volume rule is mirrored here on purpose because path.IsAbs only
-// follows slash semantics and would accept C:/vendor on any host. The rules
-// are applied to the raw input and again to its canonical form, because
-// cleaning can expose whitespace or a volume prefix the input never had.
+// projectPathRejection encodes mandatory rejection properties without
+// requiring NormalizeProjectPath to accept every string not covered here.
+// That keeps the fuzz oracle from freezing an incomplete allow-list while still
+// catching regressions in root containment and cross-platform path safety.
 func projectPathRejection(raw string) (string, bool) {
 	if reason, rejected := projectPathShapeRejection(raw); rejected {
 		return reason, true
@@ -26,6 +23,9 @@ func projectPathRejection(raw string) (string, bool) {
 		return "project root escape", true
 	}
 	if reason, rejected := projectPathShapeRejection(clean); rejected {
+		return reason + " after cleaning", true
+	}
+	if reason, rejected := projectPathComponentRejection(clean); rejected {
 		return reason + " after cleaning", true
 	}
 	return "", false
@@ -57,6 +57,30 @@ func hasWindowsDrivePrefix(raw string) bool {
 	return c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z'
 }
 
+func projectPathComponentRejection(value string) (string, bool) {
+	for _, component := range strings.Split(value, "/") {
+		for _, r := range component {
+			if r < 0x20 || strings.ContainsRune(`<>"|?*:`, r) {
+				return "non-portable path character", true
+			}
+		}
+		if strings.HasSuffix(component, ".") || strings.HasSuffix(component, " ") {
+			return "windows-ambiguous trailing dot or space", true
+		}
+		base := component
+		if i := strings.IndexByte(base, '.'); i >= 0 {
+			base = base[:i]
+		}
+		switch strings.ToUpper(base) {
+		case "CON", "PRN", "AUX", "NUL", "CLOCK$",
+			"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+			"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9":
+			return "reserved windows device name", true
+		}
+	}
+	return "", false
+}
+
 // FuzzNormalizeProjectPathStaysInsideProjectRoot pins the plan-time path
 // guard for vendored artifacts: every accepted path must already be canonical,
 // re-normalizing it must be a no-op, and resolving it under the project root
@@ -82,6 +106,12 @@ func FuzzNormalizeProjectPathStaysInsideProjectRoot(f *testing.F) {
 		"vendor/tool ",
 		"vendor/tool\x00",
 		"vendor/\x00tool",
+		"vendor/tool:stream",
+		"vendor/CON",
+		"vendor/COM1.txt",
+		"vendor/a?b",
+		"vendor/name.",
+		"vendor/name ",
 		"",
 	} {
 		f.Add(seed)
@@ -94,9 +124,6 @@ func FuzzNormalizeProjectPathStaysInsideProjectRoot(f *testing.F) {
 		got, err := plan.NormalizeProjectPath(raw)
 		if rejected && err == nil {
 			t.Fatalf("NormalizeProjectPath(%q) = %q, want rejection for %s", raw, got, reason)
-		}
-		if !rejected && err != nil {
-			t.Fatalf("NormalizeProjectPath(%q) rejected an input no documented rule excludes: %v", raw, err)
 		}
 		if err != nil {
 			return

@@ -378,6 +378,30 @@ func writeZipWithEntry(t *testing.T, path, entryName string) {
 	}
 }
 
+func writeZipSymlink(t *testing.T, archivePath, name, target string) {
+	t.Helper()
+	f, err := os.OpenFile(archivePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) // #nosec G304 -- archivePath is test-controlled under t.TempDir.
+	if err != nil {
+		t.Fatalf("create zip: %v", err)
+	}
+	zw := zip.NewWriter(f)
+	hdr := &zip.FileHeader{Name: name, Method: zip.Store}
+	hdr.SetMode(os.ModeSymlink | 0o777)
+	w, err := zw.CreateHeader(hdr)
+	if err != nil {
+		t.Fatalf("zip create symlink: %v", err)
+	}
+	if _, err := w.Write([]byte(target)); err != nil {
+		t.Fatalf("zip write symlink: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip close: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+}
+
 func TestExtractRejectsZipSlipRelative(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -406,6 +430,22 @@ func TestExtractRejectsZipSlipAbsolute(t *testing.T) {
 	err := Extract(context.Background(), zipPath, dest, ".zip", fr, false, "")
 	if err == nil {
 		t.Fatal("expected Extract to reject an absolute zip entry path")
+	}
+	if len(fr.Calls) != 0 {
+		t.Fatalf("expected extraction to be blocked before any subprocess call, got %d calls", len(fr.Calls))
+	}
+}
+
+func TestExtractRejectsZipSymlinkBeforeUnzip(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	zipPath := filepath.Join(dir, "evil-link.zip")
+	writeZipSymlink(t, zipPath, "nested/link", "../../outside")
+
+	fr := &run.FakeRunner{ExitCode: 0}
+	err := Extract(context.Background(), zipPath, filepath.Join(dir, "dest"), ".zip", fr, false, "")
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected ZIP symlink rejection, got %v", err)
 	}
 	if len(fr.Calls) != 0 {
 		t.Fatalf("expected extraction to be blocked before any subprocess call, got %d calls", len(fr.Calls))

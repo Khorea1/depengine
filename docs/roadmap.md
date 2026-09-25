@@ -104,12 +104,13 @@ Work on the current execution model comes before adding more installer types.
   is a supported distribution path. If yes, remove the main-module `replace`
   directives and add a release/install smoke check; if no, document the
   unsupported path and point users at the canonical release installation.
-- [x] Tighten the runtime-dependency claim. Distinguish a statically linked Go
-  binary from Unix host requirements used by OS detection (`sh` and standard
-  utilities), and keep release packaging/tests aligned with that contract.
-  Done: README separates the `CGO_ENABLED=0` release binary (now asserted by a
-  release contract test) from the embedded POSIX `sh` script and base utilities
-  Unix detection needs; Windows uses the Go-native fallback.
+- [x] Tighten the runtime-dependency claim. Distinguish the single-file
+  `CGO_ENABLED=0` release contract from platform system interfaces and Unix
+  host requirements used by OS detection (`sh` and standard utilities).
+  Done: README no longer claims that every platform binary has zero shared
+  libraries; the release contract binds `CGO_ENABLED=0` to the depengine build,
+  and CI inspects the produced Linux ELF for an interpreter or `NEEDED`
+  entries. Windows uses the Go-native OS-detection fallback.
 - [x] Add a concise alternatives/positioning document comparing depengine's
   project-level install model with tools such as mise, aqua, Nix, and Brewfile,
   focusing on behavioral scope rather than marketing claims. Done:

@@ -2,6 +2,7 @@ package artifact
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -24,6 +25,22 @@ func TestValidateURL(t *testing.T) {
 				t.Fatalf("ValidateURL(%q) error = %v, wantErr %v", tc.raw, err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestValidateURLRedactsMalformedCredentialBearingInput(t *testing.T) {
+	const secret = "redaction-sentinel"
+	for _, raw := range []string{
+		"https://user:" + secret + "@%zz.example/tool.tar.gz",
+		"https://example.invalid/%zz?token=" + secret,
+	} {
+		err := ValidateURL(raw, []string{"http", "https"})
+		if err == nil {
+			t.Fatalf("ValidateURL(%q) accepted malformed URL", raw)
+		}
+		if strings.Contains(err.Error(), secret) {
+			t.Fatalf("ValidateURL() leaked credential in error: %v", err)
+		}
 	}
 }
 
