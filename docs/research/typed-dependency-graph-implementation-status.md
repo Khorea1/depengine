@@ -34,6 +34,7 @@ The research proposal in `docs/research/typed-dependency-graph.md` identified th
 - deterministic fixed-sweep barycenter ordering within ranks to reduce avoidable crossings without changing scheduling ranks;
 - layout-only route bundling for semantic multiedges with identical endpoints, using the strongest visible line style while retaining every member annotation;
 - `depengine graph --format graph`, an orthogonal terminal renderer with explicit `--width` input (0 detects terminal width through `internal/term`), per-component compact dependency-edge fallback when the layout exceeds the width, line-style edge semantics with an annotations section, and a wrapped isolated-node list;
+- terminal-width detection through `internal/term` on Unix and Windows, with non-terminal streams falling back to the default width;
 - compatibility wrappers for existing graph APIs;
 - unit coverage for builders, guards, candidate multiplicity, multiedges, canonicalization, projections, scheduling roles, renderers, CLI view parsing, guard adaptation, and exact candidate selection.
 
@@ -68,7 +69,6 @@ For `resolved`, candidate selection follows executor ordering and the read-only 
 
 - active/inactive edge retention and a possible `--show-inactive` diagnostic mode;
 - further layout heuristics only if real-schema snapshots expose a concrete readability problem;
-- terminal-width detection is implemented on Unix and Windows; non-terminal streams still fall back to the default width.
 
 ## Design constraints validated
 
