@@ -37,6 +37,7 @@ func runCommand(t *testing.T, cmd string, extraEnv []string, args ...string) (ex
 		"GOPATH":             true,
 		"HOME":               true,
 		"USERPROFILE":        true,
+		"TEST_TELEMETRY_DIR": true,
 		"DEPENGINE_MANIFEST": true,
 	}
 	var env []string
@@ -49,6 +50,11 @@ func runCommand(t *testing.T, cmd string, extraEnv []string, args ...string) (ex
 			env = append(env, kv)
 		}
 	}
+	telemetryDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(telemetryDir, "mode"), []byte("off"), 0o600); err != nil {
+		t.Fatalf("disable Go telemetry for helper: %v", err)
+	}
+	env = append(env, "TEST_TELEMETRY_DIR="+telemetryDir)
 	env = append(env, "DEPENGINE_TEST_HELPER=1")
 	env = append(env, "DEPENGINE_TEST_HELPER_CMD="+cmd)
 	env = append(env, "DEPENGINE_TEST_ARGS="+strings.Join(args, "\x1f"))
