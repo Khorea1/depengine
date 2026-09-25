@@ -25,6 +25,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"time"
@@ -97,6 +98,16 @@ func evict(dir string, max int64) int {
 	return removed
 }
 
+func ensurePrivateCacheDir(path string) error {
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return err
+	}
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	return os.Chmod(path, 0o700) // #nosec G302 -- This is a directory permission; cached artifacts are intentionally owner-only.
+}
+
 // CacheDir returns the download cache directory, respecting XDG_CACHE_HOME.
 func CacheDir() string {
 	cacheHome := os.Getenv("XDG_CACHE_HOME")
@@ -155,8 +166,8 @@ func isCacheEntryName(name string) bool {
 // Returns the path of the cached file.
 func Store(url, src string) (string, error) {
 	dir := CacheDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("downloadcache: mkdir: %w", err)
+	if err := ensurePrivateCacheDir(dir); err != nil {
+		return "", fmt.Errorf("downloadcache: private cache dir: %w", err)
 	}
 
 	dst := Path(url)
