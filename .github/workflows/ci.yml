@@ -75,11 +75,12 @@ jobs:
           exit 1
         fi
 
-    - name: Upload build artifact
+    - name: Upload build artifacts
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.x.x
       with:
         name: depengine-binary
-        path: depengine
+        path: dist/depengine-*
+        if-no-files-found: error
 
   # Multi-distro integration suite (Docker Compose, 4 distros). Docker is
   # required: if unavailable, the job fails instead of reporting a false green.
