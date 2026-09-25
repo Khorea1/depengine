@@ -154,6 +154,7 @@ func TestCopyArtifactFromRootAllowsContainedIntermediateSourceSymlink(t *testing
 	if err := copyArtifactFromRoot(context.Background(), root, filepath.Join("linked", "tool"), dst); err != nil {
 		t.Fatal(err)
 	}
+	// #nosec G304 -- dst is a test-owned temporary directory.
 	got, err := os.ReadFile(filepath.Join(dst, "tool"))
 	if err != nil {
 		t.Fatal(err)
