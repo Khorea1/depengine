@@ -198,13 +198,15 @@ func discoverTargets(ctx context.Context, root string, rn runpkg.Runner) ([]Targ
 	if err := runpkg.CheckResult(res, "go list ./..."); err != nil {
 		return nil, err
 	}
+	canonicalRoot := canonicalPath(root)
 	seen := make(map[Target]struct{})
 	for _, directory := range strings.Split(strings.TrimSpace(string(res.Stdout)), "\n") {
 		directory = strings.TrimSpace(directory)
 		if directory == "" {
 			continue
 		}
-		rel, err := filepath.Rel(root, directory)
+		canonicalDirectory := canonicalPath(directory)
+		rel, err := filepath.Rel(canonicalRoot, canonicalDirectory)
 		if err != nil {
 			return nil, fmt.Errorf("resolve package path for %s: %w", directory, err)
 		}
@@ -224,6 +226,18 @@ func discoverTargets(ctx context.Context, root string, rn runpkg.Runner) ([]Targ
 		}
 	}
 	return sortedTargets(seen), nil
+}
+
+func canonicalPath(path string) string {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return abs
+	}
+	return resolved
 }
 
 func discoverPackageTargets(ctx context.Context, root, pkg string, rn runpkg.Runner) ([]Target, error) {
