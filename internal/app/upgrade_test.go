@@ -78,27 +78,36 @@ func runUpgradeCommand(t *testing.T, extraEnv []string, flags ...string) (int, s
 	return runCommand(t, "upgrade", upgradeEnv)
 }
 
-// writeFakeUpgradeBinaries creates real executable stubs for the named binaries
-// and returns a PATH assignment exposing them to helper subprocesses. A real
-// executable is required on Windows: a text file named *.exe is discoverable
-// via PATH but cannot answer the version probe, which correctly makes desired
-// state unknown and causes upgrade to fail closed.
-func writeFakeUpgradeBinaries(t *testing.T, names ...string) string {
+// writeFakeUpgradeBinaries creates Go binaries whose build metadata matches a
+// real versioned module install. Upgrade preflight now inspects `go version -m`
+// instead of executing the installed program, so a command-line-arguments stub
+// would correctly be treated as an unknown installation identity.
+func writeFakeUpgradeBinaries(t *testing.T, names ...string) []string {
 	t.Helper()
 	binDir := t.TempDir()
-	sourceDir := t.TempDir()
-	source := filepath.Join(sourceDir, "main.go")
-	const body = `package main
 
-import "fmt"
-
-func main() {
-	fmt.Println("fixture version v0.1.0")
-}
-`
-	if err := os.WriteFile(source, []byte(body), 0600); err != nil {
+	moduleDir := t.TempDir()
+	cmdDir := filepath.Join(moduleDir, "cmd", "stringer")
+	if err := os.MkdirAll(cmdDir, 0755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte("module golang.org/x/tools\n\ngo 1.27\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	const body = `package main
+
+func main() {}
+`
+	if err := os.WriteFile(filepath.Join(cmdDir, "main.go"), []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	buildDir := t.TempDir()
+	buildMod := "module depengine.test/upgradefixture\n\ngo 1.27\n\nrequire golang.org/x/tools v0.1.0\n\nreplace golang.org/x/tools => " + filepath.ToSlash(moduleDir) + "\n"
+	if err := os.WriteFile(filepath.Join(buildDir, "go.mod"), []byte(buildMod), 0600); err != nil {
+		t.Fatal(err)
+	}
+
 	for _, name := range names {
 		// Presence is resolved through PATH lookup, which needs the .exe
 		// suffix on Windows.
@@ -106,12 +115,15 @@ func main() {
 			name += ".exe"
 		}
 		path := filepath.Join(binDir, name)
-		res := (run.OSExecRunner{}).Run(context.Background(), "go", "build", "-o", path, source)
+		res := (run.OSExecRunner{}).RunInDir(context.Background(), buildDir, "go", "build", "-o", path, "golang.org/x/tools/cmd/stringer")
 		if err := run.CheckResult(res, "go build fake upgrade binary"); err != nil {
 			t.Fatalf("build fake upgrade binary %s: %v", name, err)
 		}
 	}
-	return "PATH=" + binDir + string(os.PathListSeparator) + os.Getenv("PATH")
+	return []string{
+		"PATH=" + binDir + string(os.PathListSeparator) + os.Getenv("PATH"),
+		"GOBIN=" + binDir,
+	}
 }
 
 // TestUpgradeNoLockfile exits 1 with a clear message when no lock exists.
@@ -192,7 +204,7 @@ func TestUpgradeDryRun(t *testing.T) {
 	schemaDir := t.TempDir()
 	// The tracked tool must be present on the host: upgrade preflight fails
 	// closed for absent installations instead of a destructive Remove+Install.
-	pathEnv := writeFakeUpgradeBinaries(t, "gostr", "stringer")
+	goEnv := writeFakeUpgradeBinaries(t, "gostr", "stringer")
 
 	writeTestSchema(t, schemaDir, map[string]string{"gostr": "golang.org/x/tools/cmd/stringer"})
 	writeTestLock(t, schemaDir, map[string]lock.ToolPin{
@@ -208,12 +220,12 @@ func TestUpgradeDryRun(t *testing.T) {
 		},
 	})
 
+	upgradeEnv := append([]string{
+		"XDG_STATE_HOME=" + stateHome,
+		"HOME=" + homeDir,
+	}, goEnv...)
 	code, out := runUpgradeCommand(t,
-		[]string{
-			"XDG_STATE_HOME=" + stateHome,
-			"HOME=" + homeDir,
-			pathEnv,
-		},
+		upgradeEnv,
 		"-schema", filepath.Join(schemaDir, "schema.toml"),
 		"-dry-run",
 	)
@@ -319,7 +331,7 @@ func TestUpgradeOnlyFlag(t *testing.T) {
 	stateHome := t.TempDir()
 	homeDir := t.TempDir()
 	schemaDir := t.TempDir()
-	pathEnv := writeFakeUpgradeBinaries(t, "gostr", "stringer")
+	goEnv := writeFakeUpgradeBinaries(t, "gostr", "stringer")
 
 	writeTestSchema(t, schemaDir, map[string]string{
 		"gostr":   "golang.org/x/tools/cmd/stringer",
@@ -346,12 +358,12 @@ func TestUpgradeOnlyFlag(t *testing.T) {
 		},
 	})
 
+	upgradeEnv := append([]string{
+		"XDG_STATE_HOME=" + stateHome,
+		"HOME=" + homeDir,
+	}, goEnv...)
 	code, out := runUpgradeCommand(t,
-		[]string{
-			"XDG_STATE_HOME=" + stateHome,
-			"HOME=" + homeDir,
-			pathEnv,
-		},
+		upgradeEnv,
 		"-schema", filepath.Join(schemaDir, "schema.toml"),
 		"-only", "gostr",
 		"-dry-run",
@@ -373,7 +385,7 @@ func TestUpgradeJSONOutput(t *testing.T) {
 	stateHome := t.TempDir()
 	homeDir := t.TempDir()
 	schemaDir := t.TempDir()
-	pathEnv := writeFakeUpgradeBinaries(t, "gostr", "stringer")
+	goEnv := writeFakeUpgradeBinaries(t, "gostr", "stringer")
 
 	writeTestSchema(t, schemaDir, map[string]string{"gostr": "golang.org/x/tools/cmd/stringer"})
 	writeTestLock(t, schemaDir, map[string]lock.ToolPin{
@@ -389,12 +401,12 @@ func TestUpgradeJSONOutput(t *testing.T) {
 		},
 	})
 
+	upgradeEnv := append([]string{
+		"XDG_STATE_HOME=" + stateHome,
+		"HOME=" + homeDir,
+	}, goEnv...)
 	code, out := runUpgradeCommand(t,
-		[]string{
-			"XDG_STATE_HOME=" + stateHome,
-			"HOME=" + homeDir,
-			pathEnv,
-		},
+		upgradeEnv,
 		"-schema", filepath.Join(schemaDir, "schema.toml"),
 		"-dry-run",
 		"-json",
