@@ -45,7 +45,7 @@ jobs:
 
     - name: Run all Linux-runnable fuzz targets (bounded)
       timeout-minutes: 15
-      run: python3 scripts/run_fuzz.py 10s
+      run: go run ./internal/tools/fuzzall -fuzztime=10s
 
     - name: Derive version
       id: version
