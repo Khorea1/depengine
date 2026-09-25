@@ -16,6 +16,7 @@ import (
 	"github.com/Khorea1/depengine/internal/log"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
+	"github.com/Khorea1/depengine/internal/term"
 	"github.com/spf13/cobra"
 )
 
@@ -25,6 +26,7 @@ func newGraphCmd() *cobra.Command {
 	graphManifest := new(string)
 	graphNoManifest := new(bool)
 	graphFormat := new(string)
+	graphWidth := new(int)
 	graphView := new(string)
 	graphProfile := new(string)
 	graphOnly := new(string)
@@ -36,14 +38,15 @@ func newGraphCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runGraphView(cmd.Context(), graphSchema, graphManifest, graphNoManifest, graphFormat, graphView, graphProfile, graphOnly, graphSkip)
+			return runGraphView(cmd.Context(), graphSchema, graphManifest, graphNoManifest, graphFormat, graphWidth, graphView, graphProfile, graphOnly, graphSkip)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(graphSchema, "schema", defaultSchemaPath(), "path to schema.toml")
 	f.StringVar(graphManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(graphNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
-	f.StringVar(graphFormat, "format", "text", "output format: mermaid, dot, text")
+	f.StringVar(graphFormat, "format", "text", "output format: mermaid, dot, text, graph")
+	f.IntVar(graphWidth, "width", 0, "terminal width for --format graph (0 = detect terminal width)")
 	f.StringVar(graphView, "view", "declared", "graph projection: declared, effective, resolved")
 	f.StringVar(graphProfile, "profile", "", "only show tools with matching tag")
 	f.StringVar(graphOnly, "only", "", "only show subgraph for specific tool")
@@ -51,16 +54,15 @@ func newGraphCmd() *cobra.Command {
 	return cmd
 }
 
-func runGraph(graphSchema, graphManifest *string, graphNoManifest *bool, graphFormat, graphProfile, graphOnly, graphSkip *string) error {
-	declared := "declared"
-	return runGraphView(context.Background(), graphSchema, graphManifest, graphNoManifest, graphFormat, &declared, graphProfile, graphOnly, graphSkip)
-}
-
-func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graphNoManifest *bool, graphFormat, graphView, graphProfile, graphOnly, graphSkip *string) error {
+func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graphNoManifest *bool, graphFormat *string, graphWidth *int, graphView, graphProfile, graphOnly, graphSkip *string) error {
 	switch *graphFormat {
-	case "mermaid", "dot", "text":
+	case "mermaid", "dot", "text", "graph":
 	default:
-		fmt.Fprintf(os.Stderr, "error: unknown format %q (valid: mermaid, dot, text)\n", *graphFormat)
+		fmt.Fprintf(os.Stderr, "error: unknown format %q (valid: mermaid, dot, text, graph)\n", *graphFormat)
+		return exitWithCode(2)
+	}
+	if *graphWidth < 0 {
+		fmt.Fprintln(os.Stderr, "error: --width must not be negative (0 = detect terminal width)")
 		return exitWithCode(2)
 	}
 
@@ -129,6 +131,20 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 		fmt.Print(graph.RenderDOTGraph(visibleGraph))
 	case "text":
 		fmt.Print(graph.RenderTextGraph(levels, visibleGraph))
+	case "graph":
+		// Unlike text, the terminal diagram carries its own structure, so it
+		// gets no stderr header: everything the renderer outputs belongs to
+		// the picture.
+		width := *graphWidth
+		if width == 0 {
+			width = term.OutputWidth()
+		}
+		out, err := graph.RenderTerminalGraph(visibleGraph, width)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			return exitWithCode(2)
+		}
+		fmt.Print(out)
 	}
 	return nil
 }

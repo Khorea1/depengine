@@ -392,10 +392,14 @@ func validateTarSafety(src, dest, ext string) error {
 			return fmt.Errorf("unsafe tar entry: %w", err)
 		}
 		if (hdr.Typeflag == tar.TypeSymlink || hdr.Typeflag == tar.TypeLink) && hdr.Linkname != "" {
-			if path.IsAbs(hdr.Linkname) {
-				return fmt.Errorf("unsafe tar entry: %q links outside destination to absolute path %q", hdr.Name, hdr.Linkname)
+			linkTarget := hdr.Linkname
+			if path.IsAbs(linkTarget) {
+				return fmt.Errorf("unsafe tar entry: %q links outside destination to absolute path %q", hdr.Name, linkTarget)
 			}
-			if err := safeJoin(dest, filepath.Join(filepath.Dir(hdr.Name), hdr.Linkname)); err != nil {
+			if hdr.Typeflag == tar.TypeSymlink {
+				linkTarget = path.Join(path.Dir(hdr.Name), linkTarget) // #nosec G305 -- Normalize the archive-relative target; safeJoin below checks containment.
+			}
+			if err := safeJoin(dest, linkTarget); err != nil {
 				return fmt.Errorf("unsafe tar entry: %q link target escapes destination: %w", hdr.Name, err)
 			}
 		}

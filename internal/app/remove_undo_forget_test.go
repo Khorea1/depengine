@@ -91,6 +91,8 @@ func TestCommandHelperSubprocess(t *testing.T) {
 		runViaCobra(newForgetCmd(), args)
 	case "upgrade":
 		runViaCobra(newUpgradeCmd(), args)
+	case "graph":
+		runViaCobra(newGraphCmd(), args)
 	default:
 		os.Exit(99)
 	}

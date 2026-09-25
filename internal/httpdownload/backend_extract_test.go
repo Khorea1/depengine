@@ -496,6 +496,47 @@ func TestExtractRejectsTarAbsoluteSymlink(t *testing.T) {
 	}
 }
 
+func TestExtractRejectsEscapingTarHardlink(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	tarPath := filepath.Join(dir, "evil-hardlink.tar.gz")
+	writeTarGzWithEntry(t, tarPath, &tar.Header{
+		Name:     "nested/link",
+		Typeflag: tar.TypeLink,
+		Linkname: "../outside",
+		Mode:     0o644,
+	}, nil)
+
+	fr := &run.FakeRunner{ExitCode: 0}
+	err := Extract(context.Background(), tarPath, filepath.Join(dir, "dest"), ".tar.gz", fr, false, "")
+	if err == nil {
+		t.Fatal("expected Extract to reject a tar hardlink target outside the destination")
+	}
+	if len(fr.Calls) != 0 {
+		t.Fatalf("expected extraction to be blocked before any subprocess call, got %d calls", len(fr.Calls))
+	}
+}
+
+func TestExtractAllowsRootRelativeTarHardlink(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	tarPath := filepath.Join(dir, "safe-hardlink.tar.gz")
+	writeTarGzWithEntry(t, tarPath, &tar.Header{
+		Name:     "nested/link",
+		Typeflag: tar.TypeLink,
+		Linkname: "bin/tool",
+		Mode:     0o644,
+	}, nil)
+
+	fr := &run.FakeRunner{ExitCode: 0}
+	if err := Extract(context.Background(), tarPath, filepath.Join(dir, "dest"), ".tar.gz", fr, false, ""); err != nil {
+		t.Fatalf("unexpected error for root-relative hardlink target: %v", err)
+	}
+	if len(fr.Calls) != 1 {
+		t.Fatalf("expected extraction to proceed via tar, got %d calls", len(fr.Calls))
+	}
+}
+
 func TestExtractAllowsSafeTarGz(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

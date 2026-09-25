@@ -2,8 +2,8 @@ package httpdownload
 
 import (
 	"bufio"
-	"crypto/md5"
-	"crypto/sha1"
+	"crypto/md5"  // #nosec G501 -- Explicit legacy checksum compatibility; not signature or credential verification.
+	"crypto/sha1" // #nosec G505 -- Explicit legacy checksum compatibility; not signature or credential verification.
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
@@ -36,9 +36,9 @@ func HashFile(algorithm, path string) (string, error) {
 	case "sha256":
 		h = sha256.New()
 	case "md5":
-		h = md5.New()
+		h = md5.New() // #nosec G401 -- Explicit legacy checksum algorithm supported by the schema contract.
 	case "sha1":
-		h = sha1.New()
+		h = sha1.New() // #nosec G401 -- Explicit legacy checksum algorithm supported by the schema contract.
 	case "sha512":
 		h = sha512.New()
 	default:

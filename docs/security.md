@@ -34,6 +34,11 @@ verification is only available on methods that model it explicitly.
 A signature is only useful if you trust the signing key. Supplying a key to
 depengine does not establish that trust by itself.
 
+MD5 and SHA-1 checksums remain supported for explicit compatibility with
+upstream checksum files. They do not resist deliberate collision attacks;
+use SHA-256 or SHA-512 for new checksum declarations. Legacy checksums are
+not signatures or proof of publisher identity.
+
 HTTP(S) artifact and signing-key URLs reject embedded credentials.
 
 ## Release artifacts

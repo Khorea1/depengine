@@ -3,6 +3,8 @@ package contracttest
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -71,6 +73,17 @@ func TestExecuteEffectFieldProbes(t *testing.T) {
 
 func executionCalls(t *testing.T, kind, field string, value any) []run.FakeCall {
 	t.Helper()
+	if kind == "sdkman" {
+		root := t.TempDir()
+		initScript := filepath.Join(root, "bin", "sdkman-init.sh")
+		if err := os.MkdirAll(filepath.Dir(initScript), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(initScript, []byte("# test SDKMAN init\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("SDKMAN_DIR", root)
+	}
 	adapter := executionAdapter(kind)
 	if adapter == nil {
 		t.Fatalf("no execution adapter for %q", kind)
