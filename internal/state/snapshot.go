@@ -31,8 +31,8 @@ func SaveSnapshot() (*SnapshotInfo, error) {
 	now := time.Now()
 	name := fmt.Sprintf("state-%s.json", now.Format("20060102T150405.000000000"))
 	dir := snapshotDir()
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("create snapshot dir: %w", err)
+	if err := ensurePrivateDir(dir); err != nil {
+		return nil, fmt.Errorf("create private snapshot dir: %w", err)
 	}
 
 	src := DefaultPath()
