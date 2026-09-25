@@ -68,7 +68,7 @@ For `resolved`, candidate selection follows executor ordering and the read-only 
 
 - active/inactive edge retention and a possible `--show-inactive` diagnostic mode;
 - further layout heuristics only if real-schema snapshots expose a concrete readability problem;
-- Windows terminal-width detection (callers fall back to the default width).
+- terminal-width detection is implemented on Unix and Windows; non-terminal streams still fall back to the default width.
 
 ## Design constraints validated
 
