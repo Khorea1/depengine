@@ -57,7 +57,7 @@ func sudoNoPasswdOK(ctx context.Context) bool {
 // sudoCommand keeps the environment and cancellation behavior of sudo children
 // consistent with commands launched through OSExecRunner.
 func sudoCommand(ctx context.Context, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "sudo", args...)
+	cmd := exec.CommandContext(ctx, "sudo", args...) // #nosec G204 -- The executable is fixed; args are internal sudo-session controls, not schema input.
 	cmd.Env = omitEnv(DefaultEnv(), ctx)
 	return cmd
 }
