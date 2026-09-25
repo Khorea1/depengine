@@ -95,9 +95,12 @@ Work on the current execution model comes before adding more installer types.
   at 50 per category. Uncapped re-audit on 2026-09-23: 558 findings
   (`errcheck` 159, `gosec` 368, `staticcheck` 19, `errorlint` 11, `unused` 1);
   the per-linter cap hid the true `errcheck`/`gosec` counts.
-- [ ] Review `internal/plan/preparation.go` and
+- [x] Review `internal/plan/preparation.go` and
   `internal/exec/preparation.go`; split them only where the code has distinct
-  responsibilities with separate invariants.
+  responsibilities with separate invariants. Done: both files mapped
+  (`.dev/preparation-map-2026-09-23.md`,
+  `.dev/preparation-exec-map-2026-09-24.md`); each is one cohesive state
+  machine with cross-block coupling — verdict: keep both unsplit.
 - [ ] Decide whether tagged `go install github.com/Khorea1/depengine@version`
   is a supported distribution path. If yes, remove the main-module `replace`
   directives and add a release/install smoke check; if no, document the
