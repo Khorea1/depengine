@@ -27,6 +27,12 @@ func TestNormalizeProjectPath(t *testing.T) {
 		{in: "0 /", wantErr: true},
 		{in: "a/../ b", wantErr: true},
 		{in: "a/../C:x", wantErr: true},
+		{in: "vendor/tool:stream", wantErr: true},
+		{in: "vendor/CON", wantErr: true},
+		{in: "vendor/COM1.txt", wantErr: true},
+		{in: "vendor/a?b", wantErr: true},
+		{in: "vendor/name.", wantErr: true},
+		{in: "vendor/name ", wantErr: true},
 	} {
 		got, err := plan.NormalizeProjectPath(tc.in)
 		if (err != nil) != tc.wantErr {

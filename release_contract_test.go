@@ -93,15 +93,44 @@ func TestReleaseSigningContract(t *testing.T) {
 	}
 }
 
+func goReleaserBuildBlock(config, id string) (string, bool) {
+	inBuilds := false
+	collecting := false
+	var block strings.Builder
+	for _, line := range strings.Split(config, "\n") {
+		if !inBuilds {
+			if line == "builds:" {
+				inBuilds = true
+			}
+			continue
+		}
+		if line != "" && line[0] != ' ' {
+			break
+		}
+		if strings.HasPrefix(line, "  - id: ") {
+			if collecting {
+				break
+			}
+			collecting = strings.TrimSpace(strings.TrimPrefix(line, "  - id: ")) == id
+		}
+		if collecting {
+			block.WriteString(line)
+			block.WriteByte('\n')
+		}
+	}
+	return block.String(), block.Len() > 0
+}
+
 func TestGoReleaserStaticBuildContract(t *testing.T) {
 	data, err := os.ReadFile(".goreleaser.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// README's runtime-dependency claim ("single static Go binary ... links no
-	// libc or other shared libraries") only holds while release builds keep CGO
-	// disabled; a cgo build would link the host libc and break the claim.
-	if !strings.Contains(string(data), "- CGO_ENABLED=0") {
-		t.Error("GoReleaser builds must keep CGO_ENABLED=0 for the static-binary contract")
+	build, ok := goReleaserBuildBlock(string(data), "depengine")
+	if !ok {
+		t.Fatal("GoReleaser build depengine is missing")
+	}
+	if !strings.Contains(build, "    env:\n      - CGO_ENABLED=0\n") {
+		t.Error("GoReleaser depengine build must set CGO_ENABLED=0")
 	}
 }

@@ -22,18 +22,40 @@ import (
 const (
 	archiveChecksumMarker = ".depengine-local-artifact.sha256"
 	archiveTreeMarker     = ".depengine-local-artifact-tree.sha256"
-	// archiveExpansionLimit caps the aggregate uncompressed regular-file data
-	// written while extracting one ZIP or TAR archive.
+	// archiveExpansionLimit caps aggregate uncompressed regular-file data.
 	archiveExpansionLimit int64 = 4 << 30
+	// archiveEntryLimit bounds metadata/inode amplification from archives with
+	// huge numbers of empty files or directories.
+	archiveEntryLimit = 100_000
+	// Path limits bound allocation and traversal work independently of bytes.
+	archivePathByteLimit = 4096
+	archivePathDepthLimit = 256
 )
 
 type archiveExpansionBudget struct {
-	used  int64
-	limit int64
+	used       int64
+	limit      int64
+	entries    int
+	entryLimit int
 }
 
 func newArchiveExpansionBudget() *archiveExpansionBudget {
-	return &archiveExpansionBudget{limit: archiveExpansionLimit}
+	return &archiveExpansionBudget{limit: archiveExpansionLimit, entryLimit: archiveEntryLimit}
+}
+
+func (b *archiveExpansionBudget) accountEntry(name string) error {
+	if b.entryLimit > 0 && b.entries >= b.entryLimit {
+		return fmt.Errorf("archive entry count exceeds %d-entry limit", b.entryLimit)
+	}
+	if len(name) > archivePathByteLimit {
+		return fmt.Errorf("archive entry name exceeds %d-byte limit", archivePathByteLimit)
+	}
+	trimmed := strings.TrimSuffix(name, "/")
+	if trimmed != "" && strings.Count(trimmed, "/")+1 > archivePathDepthLimit {
+		return fmt.Errorf("archive entry path exceeds %d-component depth limit", archivePathDepthLimit)
+	}
+	b.entries++
+	return nil
 }
 
 func (b *archiveExpansionBudget) writer(dst io.Writer) io.Writer {
@@ -576,6 +598,9 @@ func extractZip(source *os.File, sourceSize int64, destination string) (map[stri
 	directoryModes := make(map[string]os.FileMode)
 	budget := newArchiveExpansionBudget()
 	for _, entry := range r.File {
+		if err := budget.accountEntry(entry.Name); err != nil {
+			return nil, fmt.Errorf("local archive entry %q: %w", entry.Name, err)
+		}
 		if entry.Mode()&os.ModeSymlink != 0 {
 			return nil, fmt.Errorf("local archive entry %q is a symlink", entry.Name)
 		}
@@ -659,6 +684,9 @@ func extractTar(source *os.File, destination string, gzipped bool) (map[string]o
 		}
 		if err != nil {
 			return nil, fmt.Errorf("read local tar: %w", err)
+		}
+		if err := budget.accountEntry(hdr.Name); err != nil {
+			return nil, fmt.Errorf("local archive entry %q: %w", hdr.Name, err)
 		}
 		target, err := safeArchiveTarget(destination, hdr.Name)
 		if err != nil {
@@ -856,26 +884,8 @@ func validatePortableArchiveName(name string) error {
 		if component == ".." {
 			return errors.New("contains a parent-directory component")
 		}
-		for _, r := range component {
-			if r < 0x20 || strings.ContainsRune(`<>"|?*`, r) {
-				return fmt.Errorf("contains Windows-invalid character %q", r)
-			}
-		}
-		if strings.Contains(component, ":") {
-			return errors.New("contains a Windows alternate-data-stream separator")
-		}
-		if strings.HasSuffix(component, ".") || strings.HasSuffix(component, " ") {
-			return errors.New("contains a component with a Windows-ambiguous trailing dot or space")
-		}
-		base := component
-		if i := strings.IndexByte(base, '.'); i >= 0 {
-			base = base[:i]
-		}
-		switch strings.ToUpper(base) {
-		case "CON", "PRN", "AUX", "NUL", "CLOCK$",
-			"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-			"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9":
-			return fmt.Errorf("contains reserved Windows device name %q", component)
+		if err := plan.ValidatePortablePathComponent(component); err != nil {
+			return err
 		}
 	}
 	return nil

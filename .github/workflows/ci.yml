@@ -43,7 +43,10 @@ jobs:
         go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
         govulncheck ./...
 
-    - name: Run all Linux-runnable fuzz targets (bounded)
+    - name: Test fuzz harness
+      run: python3 scripts/run_fuzz_test.py
+
+    - name: Run all declared fuzz targets runnable on Linux (bounded)
       timeout-minutes: 15
       run: python3 scripts/run_fuzz.py 10s
 
@@ -58,6 +61,19 @@ jobs:
 
     - name: Build static binary
       run: scripts/build-static.sh
+
+    - name: Verify Linux artifact has no dynamic loader
+      run: |
+        linux_binary="dist/depengine-${VERSION#v}-linux-amd64"
+        test -x "$linux_binary"
+        if readelf -l "$linux_binary" | grep -q 'INTERP'; then
+          echo "::error::Linux release binary has a dynamic program interpreter"
+          exit 1
+        fi
+        if readelf -d "$linux_binary" 2>/dev/null | grep -q '(NEEDED)'; then
+          echo "::error::Linux release binary declares shared-library dependencies"
+          exit 1
+        fi
 
     - name: Upload build artifact
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.x.x

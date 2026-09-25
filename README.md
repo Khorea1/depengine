@@ -15,12 +15,13 @@ current machine, and tries the configured fallbacks until one works. It can use
 native package managers, language package managers, GitHub releases, direct
 downloads, Git builds, Flatpak, and other adapters.
 
-It ships as a single static Go binary: releases build with `CGO_ENABLED=0`,
-so the binary itself links no libc or other shared libraries. The binary's one
-host requirement is on Unix, where OS detection runs an embedded POSIX `sh`
-script that uses only base utilities (`uname`, `sed`, `grep`, `tr`, `cut`,
-`cat`) that Unix-like systems ship by default. Windows skips the script and
-falls back to Go-native detection, so no shell is required there.
+It ships as a single Go executable with no separately installed depengine
+runtime. Release builds use `CGO_ENABLED=0`, so Linux artifacts do not acquire
+libc dependencies through cgo; platform binaries still use the operating
+system's normal kernel/system interfaces. On Unix, OS detection runs an
+embedded POSIX `sh` script using base utilities (`uname`, `sed`, `grep`,
+`tr`, `cut`, `cat`). Windows skips that script and uses Go-native detection,
+so no shell is required there.
 
 ```sh
 depengine init --add "zsh,bat,nvim,ruff"

@@ -35,6 +35,20 @@ func TestGraphCmdRejectsNegativeWidth(t *testing.T) {
 	}
 }
 
+func TestGraphCmdAllowsUnusedWidthForOtherFormats(t *testing.T) {
+	dir := t.TempDir()
+	schemaPath := filepath.Join(dir, "schema.toml")
+	if err := os.WriteFile(schemaPath, []byte("schema_version = 1\n\n[tools.bat]\nnative = true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out := runCommand(t, "graph", nil,
+		"--schema", schemaPath, "--no-manifest", "--format", "text", "--width=-1")
+	if code != 0 {
+		t.Fatalf("exit code %d, output:\n%s", code, out)
+	}
+}
+
 func TestGraphFormatGraphRendersTerminalDiagram(t *testing.T) {
 	dir := t.TempDir()
 	schema := "schema_version = 1\n\n" +

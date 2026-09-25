@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "scripts/fuzz-targets.txt"
+INVENTORY = Path(__file__).resolve().parent / "fuzz_inventory.go"
 
 
 def discover_targets(root: Path) -> set[tuple[str, str]]:
@@ -36,6 +37,23 @@ def discover_targets(root: Path) -> set[tuple[str, str]]:
     return targets
 
 
+
+def discover_declared_targets(root: Path) -> set[tuple[str, str]]:
+    output = subprocess.run(
+        ["go", "run", str(INVENTORY)],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    targets = set()
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) != 2:
+            raise ValueError(f"invalid fuzz inventory line: {line!r}")
+        targets.add((fields[0], fields[1]))
+    return targets
+
 def read_manifest(path: Path) -> list[tuple[str, str]]:
     entries = []
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -53,18 +71,22 @@ def validate(root: Path, manifest: Path) -> list[tuple[str, str]]:
     entries = read_manifest(manifest)
     if len(entries) != len(set(entries)):
         raise ValueError(f"{manifest}: duplicate fuzz target entry")
-    discovered = discover_targets(root)
-    if not discovered and not entries:
-        raise ValueError("no runnable fuzz targets discovered")
+    declared = discover_declared_targets(root)
+    runnable = discover_targets(root)
+    if not declared and not entries:
+        raise ValueError("no fuzz targets discovered")
     listed = set(entries)
-    missing = sorted(discovered - listed)
-    stale = sorted(listed - discovered)
-    if missing or stale:
+    missing = sorted(declared - listed)
+    stale = sorted(listed - declared)
+    inventory_gap = sorted(runnable - declared)
+    if missing or stale or inventory_gap:
         details = []
         if missing:
             details.append("unlisted fuzz targets: " + ", ".join(f"{pkg} {name}" for pkg, name in missing))
         if stale:
             details.append("missing or renamed targets: " + ", ".join(f"{pkg} {name}" for pkg, name in stale))
+        if inventory_gap:
+            details.append("runtime targets missing from static inventory: " + ", ".join(f"{pkg} {name}" for pkg, name in inventory_gap))
         raise ValueError("; ".join(details))
     return entries
 
@@ -82,7 +104,11 @@ def main() -> int:
     elif len(sys.argv) > 2:
         print("usage: scripts/run_fuzz.py [fuzztime]", file=sys.stderr)
         return 2
+    runnable = discover_targets(ROOT)
     for package, target in entries:
+        if (package, target) not in runnable:
+            print(f"==> {package} {target} (not runnable on this host; inventory only)", flush=True)
+            continue
         print(f"==> {package} {target} ({duration})", flush=True)
         result = subprocess.run([
             "go", "test", package, "-run=^$", f"-fuzz=^{target}$", f"-fuzztime={duration}"
