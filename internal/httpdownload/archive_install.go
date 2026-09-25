@@ -232,9 +232,28 @@ func requirePayloadFile(root, relative string) error {
 	return nil
 }
 
+func symlinkTargetStaysWithinRoot(relative, target string) bool {
+	if filepath.IsAbs(target) || filepath.VolumeName(target) != "" {
+		return false
+	}
+	resolved := filepath.Clean(filepath.Join(filepath.Dir(relative), target))
+	return resolved != ".." && !strings.HasPrefix(resolved, ".."+string(filepath.Separator))
+}
+
 func copyTreeStripped(src, dest string, strip int) error {
+	sourceRoot, err := os.OpenRoot(src)
+	if err != nil {
+		return fmt.Errorf("archive: open staging root: %w", err)
+	}
+	defer func() { _ = sourceRoot.Close() }()
+	targetRoot, err := os.OpenRoot(dest)
+	if err != nil {
+		return fmt.Errorf("archive: open payload root: %w", err)
+	}
+	defer func() { _ = targetRoot.Close() }()
+
 	count := 0
-	err := filepath.WalkDir(src, func(path string, entry os.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(src, func(path string, _ os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -245,49 +264,52 @@ func copyTreeStripped(src, dest string, strip int) error {
 		if err != nil {
 			return err
 		}
-		parts := strings.Split(filepath.ToSlash(rel), "/")
+		sourceRel := filepath.Clean(rel)
+		parts := strings.Split(filepath.ToSlash(sourceRel), "/")
 		if len(parts) <= strip {
 			return nil
 		}
 		targetRel := filepath.FromSlash(strings.Join(parts[strip:], "/"))
-		target := filepath.Join(dest, targetRel)
 		if err := safeJoin(dest, targetRel); err != nil {
 			return err
 		}
-		info, err := entry.Info()
+
+		info, err := sourceRoot.Lstat(sourceRel)
 		if err != nil {
 			return err
 		}
-		if entry.IsDir() {
-			return os.MkdirAll(target, info.Mode().Perm())
+		if info.IsDir() {
+			return targetRoot.MkdirAll(targetRel, info.Mode().Perm())
 		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		if err := targetRoot.MkdirAll(filepath.Dir(targetRel), 0o755); err != nil {
 			return err
 		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			link, err := os.Readlink(path)
+		if info.Mode()&os.ModeSymlink != 0 {
+			link, err := sourceRoot.Readlink(sourceRel)
 			if err != nil {
 				return err
 			}
-			resolved := filepath.Clean(filepath.Join(filepath.Dir(path), link))
-			if resolved != src && !strings.HasPrefix(resolved, src+string(filepath.Separator)) {
+			if !symlinkTargetStaysWithinRoot(sourceRel, link) {
 				return fmt.Errorf("archive: symlink %q escapes staging", rel)
 			}
-			resolvedTarget := filepath.Clean(filepath.Join(filepath.Dir(target), link))
-			if resolvedTarget != dest && !strings.HasPrefix(resolvedTarget, dest+string(filepath.Separator)) {
+			if !symlinkTargetStaysWithinRoot(targetRel, link) {
 				return fmt.Errorf("archive: symlink %q escapes stripped payload", rel)
 			}
-			if err := os.Symlink(link, target); err != nil {
+			if err := targetRoot.Symlink(link, targetRel); err != nil {
 				return err
 			}
 			count++
 			return nil
 		}
-		in, err := os.Open(path)
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("archive: unsupported staged entry %q (%s)", rel, info.Mode().Type())
+		}
+
+		in, err := sourceRoot.Open(sourceRel)
 		if err != nil {
 			return err
 		}
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
+		out, err := targetRoot.OpenFile(targetRel, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
 		if err != nil {
 			_ = in.Close()
 			return fmt.Errorf("archive: conflicting stripped path %q: %w", targetRel, err)
