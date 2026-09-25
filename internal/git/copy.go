@@ -7,101 +7,205 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func copyArtifact(ctx context.Context, src, dst string) error {
-	info, err := os.Lstat(src)
+	srcParent, srcName := filepath.Split(filepath.Clean(src))
+	if srcParent == "" {
+		srcParent = "."
+	}
+	if srcName == "" {
+		srcName = "."
+	}
+
+	srcParentRoot, err := os.OpenRoot(srcParent)
 	if err != nil {
 		return err
 	}
-	if !info.IsDir() {
-		return copyEntry(ctx, src, filepath.Join(dst, filepath.Base(src)), info)
+	defer srcParentRoot.Close()
+
+	info, err := srcParentRoot.Lstat(srcName)
+	if err != nil {
+		return err
 	}
 
-	entries, err := os.ReadDir(src)
+	dstRoot, err := os.OpenRoot(dst)
+	if err != nil {
+		return err
+	}
+	defer dstRoot.Close()
+
+	if info.IsDir() {
+		srcRoot, err := openVerifiedSubroot(srcParentRoot, srcName, info)
+		if err != nil {
+			return err
+		}
+		defer srcRoot.Close()
+		return copyRootContents(ctx, srcRoot, dstRoot, ".")
+	}
+
+	return copyRootEntry(ctx, srcParentRoot, dstRoot, srcName, filepath.Base(src), filepath.Base(src), info)
+}
+
+func copyRootContents(ctx context.Context, srcRoot, dstRoot *os.Root, relPrefix string) error {
+	entries, err := fs.ReadDir(srcRoot.FS(), ".")
 	if err != nil {
 		return err
 	}
 	for _, entry := range entries {
-		path := filepath.Join(src, entry.Name())
-		info, err := os.Lstat(path)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		info, err := srcRoot.Lstat(entry.Name())
 		if err != nil {
 			return err
 		}
-		if err := copyEntry(ctx, path, filepath.Join(dst, entry.Name()), info); err != nil {
+		globalRel := filepath.Join(relPrefix, entry.Name())
+		if err := copyRootEntry(ctx, srcRoot, dstRoot, entry.Name(), entry.Name(), globalRel, info); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func copyEntry(ctx context.Context, src, dst string, info fs.FileInfo) error {
+func copyRootEntry(ctx context.Context, srcRoot, dstRoot *os.Root, srcName, dstName, globalRel string, info fs.FileInfo) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
 	switch {
 	case info.IsDir():
-		if err := os.MkdirAll(dst, info.Mode().Perm()); err != nil {
-			return err
-		}
-		return copyArtifact(ctx, src, dst)
-	case info.Mode()&os.ModeSymlink != 0:
-		target, err := os.Readlink(src)
+		dstInfo, err := ensureRootDirectory(dstRoot, dstName, info.Mode().Perm())
 		if err != nil {
 			return err
 		}
-		if err := removeCopyTarget(dst); err != nil {
+
+		srcChild, err := openVerifiedSubroot(srcRoot, srcName, info)
+		if err != nil {
 			return err
 		}
-		return os.Symlink(target, dst)
+		defer srcChild.Close()
+
+		dstChild, err := openVerifiedSubroot(dstRoot, dstName, dstInfo)
+		if err != nil {
+			return err
+		}
+		defer dstChild.Close()
+
+		return copyRootContents(ctx, srcChild, dstChild, globalRel)
+	case info.Mode()&os.ModeSymlink != 0:
+		target, err := srcRoot.Readlink(srcName)
+		if err != nil {
+			return err
+		}
+		if err := validateCopiedSymlinkTarget(globalRel, target); err != nil {
+			return err
+		}
+		if err := removeRootCopyTarget(dstRoot, dstName); err != nil {
+			return err
+		}
+		return dstRoot.Symlink(target, dstName)
 	case info.Mode().IsRegular():
-		return copyRegularFile(src, dst, info.Mode().Perm())
+		return copyRegularRootFile(srcRoot, dstRoot, srcName, dstName, info)
 	default:
-		return fmt.Errorf("unsupported file type %s", src)
+		return fmt.Errorf("unsupported file type %s", globalRel)
 	}
 }
 
-func copyRegularFile(src, dst string, mode fs.FileMode) error {
-	if info, err := os.Lstat(dst); err == nil && info.Mode()&os.ModeSymlink != 0 {
-		if err := os.Remove(dst); err != nil {
-			return err
+func ensureRootDirectory(root *os.Root, name string, mode fs.FileMode) (fs.FileInfo, error) {
+	info, err := root.Lstat(name)
+	switch {
+	case os.IsNotExist(err):
+		if err := root.Mkdir(name, mode); err != nil {
+			return nil, err
 		}
-	} else if err != nil && !os.IsNotExist(err) {
-		return err
+		info, err = root.Lstat(name)
+	case err != nil:
+		return nil, err
 	}
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("replace %s: destination is not a directory", name)
+	}
+	return info, nil
+}
 
-	in, err := os.Open(src)
+func openVerifiedSubroot(root *os.Root, name string, expected fs.FileInfo) (*os.Root, error) {
+	child, err := root.OpenRoot(name)
+	if err != nil {
+		return nil, err
+	}
+	actual, err := child.Stat(".")
+	if err != nil {
+		_ = child.Close()
+		return nil, err
+	}
+	if !actual.IsDir() || !os.SameFile(expected, actual) {
+		_ = child.Close()
+		return nil, fmt.Errorf("directory %s changed during copy", name)
+	}
+	return child, nil
+}
+
+func validateCopiedSymlinkTarget(linkRel, target string) error {
+	if filepath.IsAbs(target) || filepath.VolumeName(target) != "" {
+		return fmt.Errorf("symlink %s points outside copied artifact", linkRel)
+	}
+	resolved := filepath.Clean(filepath.Join(filepath.Dir(linkRel), target))
+	if resolved == ".." || strings.HasPrefix(resolved, ".."+string(filepath.Separator)) || filepath.IsAbs(resolved) {
+		return fmt.Errorf("symlink %s points outside copied artifact", linkRel)
+	}
+	return nil
+}
+
+func copyRegularRootFile(srcRoot, dstRoot *os.Root, srcName, dstName string, expected fs.FileInfo) error {
+	in, err := srcRoot.Open(srcName)
 	if err != nil {
 		return err
 	}
+	actual, err := in.Stat()
+	if err != nil {
+		_ = in.Close()
+		return err
+	}
+	if !actual.Mode().IsRegular() || !os.SameFile(expected, actual) {
+		_ = in.Close()
+		return fmt.Errorf("source %s changed during copy", srcName)
+	}
 	defer in.Close()
 
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if err := removeRootCopyTarget(dstRoot, dstName); err != nil {
+		return err
+	}
+	out, err := dstRoot.OpenFile(dstName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, expected.Mode().Perm())
 	if err != nil {
 		return err
 	}
 	_, copyErr := io.Copy(out, in)
+	chmodErr := out.Chmod(expected.Mode().Perm())
 	closeErr := out.Close()
 	if copyErr != nil {
 		return copyErr
 	}
-	if closeErr != nil {
-		return closeErr
+	if chmodErr != nil {
+		return chmodErr
 	}
-	return os.Chmod(dst, mode)
+	return closeErr
 }
 
-func removeCopyTarget(path string) error {
-	info, err := os.Lstat(path)
+func removeRootCopyTarget(root *os.Root, name string) error {
+	info, err := root.Lstat(name)
 	if os.IsNotExist(err) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if info.IsDir() {
-		return fmt.Errorf("replace %s: destination is a directory", path)
+	if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+		return fmt.Errorf("replace %s: destination is a directory", name)
 	}
-	return os.Remove(path)
+	return root.Remove(name)
 }
