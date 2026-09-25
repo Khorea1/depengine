@@ -15,9 +15,9 @@ import (
 // later, on already-fact-expanded strings, and we never touch their tokens
 // because they aren't present in the Facts map.
 //
-// Extensibility: any new key detect_os.sh emits in the future only needs to
-// be added to Facts (facts.go) and to BuildMap below — every schema string
-// field gets expanded for free, no parser change required.
+// Extensibility: any new host-fact placeholder only needs to be represented
+// by platform.Facts and added to BuildMap below — every schema string field
+// gets expanded for free, no parser change required.
 var PlaceholderRe = regexp.MustCompile(`\{([a-z][a-z0-9_]*)\}`)
 
 // Expand replaces every `{name}` placeholder in s with the corresponding value
@@ -42,12 +42,12 @@ func Expand(s string, m map[string]string) string {
 }
 
 // BuildMap produces the substitution table fed to Expand. It is the single
-// source of truth for which detect_os.sh Facts are exposed as placeholders.
+// source of truth for which platform.Facts fields are exposed as placeholders.
 //
 // The clan (resolved distro family) is included as {distro_family} so
 // `when = { distro_family = [...] }` style values and any URL/pkg field can
-// reference it. Adding a new placeholder later means: (1) extend Facts in
-// facts.go, (2) emit it from detect_os.sh, (3) add one line here. That's it.
+// reference it. Adding a new placeholder later means extending platform.Facts
+// when needed and adding one line here.
 func BuildMap(f *platform.Facts, clan string) map[string]string {
 	m := map[string]string{
 		"id":             f.DistroID,
@@ -73,7 +73,7 @@ func BuildMap(f *platform.Facts, clan string) map[string]string {
 
 // KnownPlaceholders returns every {name} token that may appear in schema.toml
 // without being flagged by validation. It derives the set from BuildMap (the
-// detect_os.sh Facts surface plus adapter-owned tokens that pass through
+// platform.Facts surface plus adapter-owned tokens that pass through
 // Expand untouched.
 //
 // Deriving from BuildMap ensures that adding a new Fact field automatically
@@ -99,7 +99,7 @@ func KnownPlaceholders() []string {
 // normalizeAliasMap converts a raw arch_map/os_map inline table (as decoded
 // by go-toml into map[string]any) into a map[string]string for use with
 // resolveAlias. Keys are lowercased — they are matched against
-// engine.Facts values case-insensitively, exactly like
+// platform.Facts values case-insensitively, exactly like
 // ghrelease.synonymGroup's strings.ToLower(value) lookup. Values are left
 // byte-for-byte as written: they are opaque strings a schema author chose
 // to match an upstream naming convention (release URLs are frequently
@@ -126,8 +126,8 @@ func normalizeAliasMap(raw any) map[string]string {
 	return out
 }
 
-// boolStr mirrors detect_os.sh's bool_str so JSON booleans expose a stable
-// "true"/"false" string form to placeholders.
+// boolStr exposes booleans to placeholders with a stable "true"/"false"
+// string form.
 func boolStr(b bool) string {
 	if b {
 		return "true"

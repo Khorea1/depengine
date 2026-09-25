@@ -13,13 +13,13 @@ import (
 
 func TestFakeRunnerReplaysCall(t *testing.T) {
 	fr := &FakeRunner{Stdout: "{}", ExitCode: 1}
-	res := fr.Run(context.Background(), "detect_os.sh", "--json", "--no-prompt")
+	res := fr.Run(context.Background(), "probe", "--json", "--no-prompt")
 
 	if len(fr.Calls) != 1 {
 		t.Fatalf("expected 1 recorded call, got %d", len(fr.Calls))
 	}
-	if fr.Calls[0].Name != "detect_os.sh" {
-		t.Fatalf("recorded name = %q, want detect_os.sh", fr.Calls[0].Name)
+	if fr.Calls[0].Name != "probe" {
+		t.Fatalf("recorded name = %q, want probe", fr.Calls[0].Name)
 	}
 	if len(fr.Calls[0].Args) != 2 {
 		t.Fatalf("expected 2 args, got %d", len(fr.Calls[0].Args))

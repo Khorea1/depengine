@@ -18,10 +18,11 @@ downloads, Git builds, Flatpak, and other adapters.
 It ships as a single Go executable with no separately installed depengine
 runtime. Release builds use `CGO_ENABLED=0`, so Linux artifacts do not acquire
 libc dependencies through cgo; platform binaries still use the operating
-system's normal kernel/system interfaces. On Unix, OS detection runs an
-embedded POSIX `sh` script using base utilities (`uname`, `sed`, `grep`,
-`tr`, `cut`, `cat`). Windows skips that script and uses Go-native detection,
-so no shell is required there.
+system's normal kernel/system interfaces. Host detection is native Go on every
+supported platform: depengine reads standard OS metadata directly and, when
+useful, runs narrowly scoped read-only probes such as `uname`, `sw_vers`,
+`ldd`/`getconf`, or `cmd.exe` through the shared runner boundary. A POSIX shell
+is not required for host detection.
 
 ```sh
 depengine init --add "zsh,bat,nvim,ruff"
@@ -192,7 +193,7 @@ completion and validation for `schema.toml`. For Taplo in VS Code:
 
 | Variable | Purpose |
 |---|---|
-| `DEPENGINE_DETECT_SCRIPT` | Override the OS-detection script |
+| `DEPENGINE_DETECT_SCRIPT` | Deprecated explicit legacy host-detector override; normal detection is native Go |
 | `DEPENGINE_MANIFEST` | Override the personal manifest path |
 | `DEPENGINE_CACHE_MAX_BYTES` | Download-cache size limit; `0` disables eviction |
 | `XDG_CONFIG_HOME` | Base directory for the personal manifest |

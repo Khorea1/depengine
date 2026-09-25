@@ -1,1 +1,0 @@
-../internal/engine/detect_os.sh

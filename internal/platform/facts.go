@@ -2,8 +2,14 @@
 // detection, configuration, and execution layers.
 package platform
 
-// Facts mirrors detect_os.sh's JSON output without coupling consumers to the
-// engine that gathers it.
+// Facts describes observable properties of the target host. Detection fills
+// this structure; classification such as ResolveFamily remains a separate,
+// pure step so consumers can distinguish observed facts from derived policy.
+//
+// Field values are an internal compatibility contract because they are also
+// exposed through schema placeholders. In particular, TargetArch retains the
+// uname-style spellings historically emitted by the host detector (for
+// example x86_64 and aarch64) on the full native-detection path.
 type Facts struct {
 	TargetArch      string `json:"target_arch"`
 	DistroID        string `json:"distro_id"`

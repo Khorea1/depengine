@@ -51,7 +51,7 @@ func TestParseProjectSchemaRejectsManifestSection(t *testing.T) {
 }
 
 // fixedMap is a deterministic substitution table that exercises the new
-// placeholders end-to-end without invoking detect_os.sh. Keep the values
+// placeholders end-to-end without invoking host detection. Keep the values
 // here in sync with the assertions in each test.
 func fixedMap() map[string]string {
 	return map[string]string{

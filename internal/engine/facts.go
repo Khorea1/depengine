@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -15,66 +14,29 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// Facts is a 1:1 mirror of detect_os.sh's --json output. Nothing is
-// derived here: this struct is exactly what the fetcher emits, no more.
-// Derived notions (clan, native manager) are separate return values or
-// local vars at their use sites — keeps Facts cheap to test and honest
-// about what the script actually produced.
+// Facts is retained as an engine-level compatibility alias while host-fact
+// ownership moves to internal/platform. Consumers can migrate to platform.Facts
+// independently of the detector implementation change.
 type Facts = platform.Facts
 
-//  1. the DEPENGINE_DETECT_SCRIPT env var (explicit override)
-//  2. embedded content → write to a temp file, return its path
-//  3. a "scripts/detect_os.sh" alongside the engine binary itself
-//     (this is how the project ships: binary + scripts/ together)
-//  4. "detect_os.sh" on the PATH, for those who installed it loose
-//
-// The second return value, clean, is true when the returned path is a
-// temp file that the caller should remove after use.
-func locateDetectScript(r run.Runner) (string, bool, error) {
-	// 1. DEPENGINE_DETECT_SCRIPT env var (explicit override, highest priority).
-	if p := os.Getenv("DEPENGINE_DETECT_SCRIPT"); p != "" {
-		if _, err := os.Stat(p); err == nil {
-			return p, false, nil
-		}
-		return "", false, fmt.Errorf("DEPENGINE_DETECT_SCRIPT points to %q but the file does not exist", p)
+// legacyDetectorPath returns the explicitly configured legacy detector.
+// Native Go detection is the default; the environment override remains
+// temporarily supported so operators relying on a custom detector are not
+// broken by the runtime migration.
+func legacyDetectorPath() (string, error) {
+	p := os.Getenv("DEPENGINE_DETECT_SCRIPT")
+	if p == "" {
+		return "", nil
 	}
-
-	// 2. Embedded content (always available at compile time).
-	if len(detectScriptContent) > 0 {
-		f, err := os.CreateTemp("", "detect_os.sh.*")
-		if err == nil {
-			path := f.Name()
-			if _, err := f.Write(detectScriptContent); err == nil {
-				if err := f.Chmod(0o755); err == nil {
-					_ = f.Close()
-					return path, true, nil
-				}
-			}
-			_ = f.Close()
-			_ = os.Remove(path) // best-effort cleanup; nothing else to do if this fails
-		}
-		// Fall through if anything goes wrong with the temp file.
+	//nolint:gosec // DEPENGINE_DETECT_SCRIPT intentionally trusts an operator-supplied local path.
+	if _, err := os.Stat(p); err != nil {
+		return "", fmt.Errorf("DEPENGINE_DETECT_SCRIPT points to %q but the file does not exist", p)
 	}
-
-	// 3. scripts/detect_os.sh alongside the binary.
-	if exe, err := os.Executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(exe), "scripts", "detect_os.sh")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, false, nil
-		}
-	}
-
-	// 4. detect_os.sh on PATH. Executable lookup stays behind internal/run so
-	// dry-run/test/remote runners observe the same process boundary.
-	if r != nil && run.LookPath(context.Background(), r, "detect_os.sh") {
-		return "detect_os.sh", false, nil
-	}
-
-	return "", false, fmt.Errorf("detect_os.sh not found (try setting DEPENGINE_DETECT_SCRIPT=/path/to/script)")
+	return p, nil
 }
 
-// gatherFactsGo builds a minimal Facts from Go runtime info.
-// Used as fallback when detect_os.sh cannot execute (e.g. on Windows).
+// gatherFactsGo builds minimal runtime-only Facts for blocked execution and
+// as a fallback when an explicitly configured legacy detector cannot run.
 func gatherFactsGo(r run.Runner) *Facts {
 	tf := "unknown"
 	switch runtime.GOOS {
@@ -192,40 +154,37 @@ func validWindowsVersion(version string) bool {
 	return true
 }
 
-// GatherFacts runs the fetcher via the injected Runner and returns the
-// decoded Facts. It no longer computes the clan here — that's a pure
-// function (ResolveFamily) the caller invokes once and reuses, which also
-// keeps GatherFacts trivially testable against a fake Runner.
-//
-// detect_os.sh uses exit code 1 for "partial detection" (low confidence)
-// and that's NOT an execution failure — the JSON is still valid. We only
-// fail when we cannot parse the stdout; then we prefer the script's own
-// stderr as the actionable message.
+// GatherFacts returns host facts through the native Go detector. An explicitly
+// configured DEPENGINE_DETECT_SCRIPT still uses the legacy JSON contract during
+// the migration window; no bundled or PATH-discovered script is selected here.
 func GatherFacts(r run.Runner) (*Facts, error) {
 	if !run.ExecutionAllowed(r) {
-		// In observational/dry-run mode, do not materialize the embedded shell
-		// detector or invoke the runner through platform-version fallbacks. A
-		// blocked execution policy means zero runner calls, not merely calls that
-		// are expected to reject execution.
+		// Preserve the observational/dry-run contract: zero runner calls and
+		// only runtime facts when subprocess execution is intentionally blocked.
 		return gatherFactsGo(nil), nil
 	}
-	// detect_os.sh is a POSIX shell script: on Windows it cannot execute
-	// (the OS rejects fork/exec of a .sh file), so skip every script
-	// candidate and use the Go runtime fallback directly. An explicit
-	// DEPENGINE_DETECT_SCRIPT override is still honored — the operator may
-	// point it at a Windows-runnable detector.
-	if runtime.GOOS == "windows" && os.Getenv("DEPENGINE_DETECT_SCRIPT") == "" {
-		return gatherFactsGo(r), nil
-	}
-	script, clean, err := locateDetectScript(r)
-	if err != nil {
-		log.Default.Warn("OS detection script not available, using Go runtime fallback", "error", err)
-		return gatherFactsGo(r), nil
-	}
-	if clean {
-		defer os.Remove(script)
+
+	script, legacyErr := legacyDetectorPath()
+	if legacyErr != nil {
+		log.Default.Warn("legacy OS detector override unavailable, using native Go detection", "error", legacyErr)
+	} else if script != "" {
+		facts, err := gatherFactsFromLegacyDetector(r, script)
+		if err != nil {
+			return nil, err
+		}
+		logFacts(facts)
+		return facts, nil
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	facts := platform.Detect(ctx, r)
+	logFacts(facts)
+	return facts, nil
+}
+
+func gatherFactsFromLegacyDetector(r run.Runner, script string) (*Facts, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -234,30 +193,31 @@ func GatherFacts(r run.Runner) (*Facts, error) {
 	var facts Facts
 	if jsonErr := json.Unmarshal(res.Stdout, &facts); jsonErr != nil {
 		if len(res.Stdout) == 0 && res.Err != nil {
-			// Script couldn't start (no shell, .sh not executable on Windows, etc.)
-			log.Default.Warn("OS detection script failed, using Go runtime fallback",
+			log.Default.Warn("legacy OS detection script failed, using Go runtime fallback",
 				"error", res.Err, "stderr", string(res.Stderr))
 			return gatherFactsGo(r), nil
 		}
 		if res.Err != nil {
-			return nil, fmt.Errorf("detect_os.sh failed (exit %d): %s",
+			return nil, fmt.Errorf("legacy detector failed (exit %d): %s",
 				res.ExitCode, strings.TrimSpace(string(res.Stderr)))
 		}
-		return nil, fmt.Errorf("detect_os.sh output is not valid JSON: %w\nraw output: %s",
+		return nil, fmt.Errorf("legacy detector output is not valid JSON: %w\nraw output: %s",
 			jsonErr, string(res.Stdout))
 	}
 
-	// A process-level execution failure (timeout, cancellation, signal, spawn
-	// failure) means the detector did not complete successfully even if it
-	// happened to emit syntactically valid JSON before dying. Normal exit code
-	// 1 remains accepted above because detect_os.sh deliberately uses it for
-	// partial-but-complete detection and Runner reports that via ExitCode only.
 	if res.Err != nil {
-		log.Default.Warn("OS detection script did not complete, using Go runtime fallback",
+		log.Default.Warn("legacy OS detection script did not complete, using Go runtime fallback",
 			"error", res.Err, "stderr", string(res.Stderr))
 		return gatherFactsGo(r), nil
 	}
 
+	return &facts, nil
+}
+
+func logFacts(facts *Facts) {
+	if facts == nil {
+		return
+	}
 	log.Default.Debug("gathered facts",
 		"distro_id", facts.DistroID,
 		"distro_name", facts.DistroName,
@@ -273,6 +233,4 @@ func GatherFacts(r run.Runner) (*Facts, error) {
 		"family", facts.TargetFamily,
 		"confidence", facts.Confidence,
 	)
-
-	return &facts, nil
 }

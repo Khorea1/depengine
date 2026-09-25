@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -14,8 +13,8 @@ import (
 
 // fakeRunner records the last call and returns canned stdout, with a
 // definable exit code. Distinct from internal/run's FakeRunner because this
-// one lives in the engine package and proves GatherFacts' handling of
-// detect_os.sh's exit-1-means-partial convention specifically.
+// one lives in the engine package and proves GatherFacts' handling of the
+// explicit legacy detector contract specifically.
 type call struct {
 	name string
 	args []string
@@ -39,7 +38,25 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) run.Res
 	}
 }
 
-// detectionJSON is the minimal-but-realistic detect_os.sh output. The
+type nativeDetectionRunner struct {
+	calls []call
+}
+
+func (r *nativeDetectionRunner) Run(_ context.Context, name string, args ...string) run.Result {
+	r.calls = append(r.calls, call{name: name, args: append([]string(nil), args...)})
+	switch strings.Join(append([]string{name}, args...), " ") {
+	case "uname -s":
+		return run.Result{Stdout: []byte("Linux\n")}
+	case "uname -r":
+		return run.Result{Stdout: []byte("6.12.0\n")}
+	case "uname -m":
+		return run.Result{Stdout: []byte("x86_64\n")}
+	default:
+		return run.Result{ExitCode: 127}
+	}
+}
+
+// detectionJSON is a minimal-but-realistic legacy detector output. The
 // parser must succeed with ONLY these keys (no required field missing,
 // no surprise fields breaking the struct).
 const detectionJSON = `{
@@ -62,7 +79,7 @@ const detectionJSON = `{
 // nothing on the struct hints at clan derivation.
 func TestGatherFactsParsesJSONAndLeavesFactsImmutable(t *testing.T) {
 	fr := &fakeRunner{stdout: detectionJSON}
-	// locateDetectScript respects DEPENGINE_DETECT_SCRIPT.
+	// The explicit legacy override remains supported during the migration window.
 	t.Setenv("DEPENGINE_DETECT_SCRIPT", "/tmp/does-not-exist-truth.txt")
 	t.Setenv("DEPENGINE_TRACE_ID", "trace-xyz")
 
@@ -99,8 +116,8 @@ func TestGatherFactsParsesJSONAndLeavesFactsImmutable(t *testing.T) {
 	}
 }
 
-// TestGatherFactsSurvivesPartialDetection: detect_os.sh exit 1 = "partial
-// detection" (low confidence), not failure. JSON is still valid; we must
+// TestGatherFactsSurvivesPartialDetection: legacy exit 1 = "partial detection"
+// (low confidence), not failure. JSON is still valid; we must
 // succeed. This tests both the C5 seam (Result.ExitCode vs Err) and the
 // facts.go error-handling branch.
 func TestGatherFactsSurvivesPartialDetection(t *testing.T) {
@@ -148,7 +165,7 @@ func TestGatherFactsFallsBackOnExecutionFailure(t *testing.T) {
 		exitCode: 0,
 		err:      fmt.Errorf("exec format error"),
 	}
-	// Point at a valid-but-empty file so locateDetectScript returns a path.
+	// Point at a valid-but-empty file so the explicit legacy override is selected.
 	tmp := tmpFile(t, "")
 	t.Setenv("DEPENGINE_DETECT_SCRIPT", tmp)
 
@@ -170,20 +187,43 @@ func TestGatherFactsFallsBackOnExecutionFailure(t *testing.T) {
 	}
 }
 
-func TestGatherFactsSucceedsWithEmbeddedScript(t *testing.T) {
-	// The embedded detect_os.sh is always available at compile time, so
-	// locateDetectScript returns a temp-file copy. Verify that GatherFacts
-	// succeeds when the fake runner returns valid JSON.
+func TestGatherFactsUsesNativeDetectorByDefault(t *testing.T) {
 	t.Setenv("DEPENGINE_DETECT_SCRIPT", "")
-	t.Setenv("PATH", "/nonexistent")
 
-	fr := &fakeRunner{stdout: detectionJSON}
-	facts, err := GatherFacts(fr)
+	runner := &nativeDetectionRunner{}
+	facts, err := GatherFacts(runner)
 	if err != nil {
-		t.Fatalf("GatherFacts with embedded script failed: %v", err)
+		t.Fatalf("GatherFacts native detector failed: %v", err)
 	}
 	if facts == nil {
 		t.Fatal("GatherFacts returned nil facts")
+	}
+	if facts.TargetArch != "x86_64" {
+		t.Fatalf("native detector facts = %#v", facts)
+	}
+	for _, c := range runner.calls {
+		if strings.HasSuffix(c.name, ".sh") {
+			t.Fatalf("native default executed a shell detector: %s %v", c.name, c.args)
+		}
+	}
+}
+
+func TestGatherFactsInvalidLegacyOverrideFallsBackToNativeDetector(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing-legacy-detector")
+	t.Setenv("DEPENGINE_DETECT_SCRIPT", missing)
+
+	runner := &nativeDetectionRunner{}
+	facts, err := GatherFacts(runner)
+	if err != nil {
+		t.Fatalf("GatherFacts with missing legacy override failed: %v", err)
+	}
+	if facts == nil || facts.TargetArch != "x86_64" {
+		t.Fatalf("native fallback facts = %#v, want x86_64 architecture", facts)
+	}
+	for _, c := range runner.calls {
+		if c.name == missing {
+			t.Fatalf("missing legacy detector was executed: %s %v", c.name, c.args)
+		}
 	}
 }
 
@@ -256,26 +296,6 @@ func TestResolveFamilyNilFactsPanic(t *testing.T) {
 func TestMatchesDistroFamilyNilSlice(t *testing.T) {
 	if MatchesDistroFamily("arch", nil) {
 		t.Fatal("MatchesDistroFamily should return false for nil allowed list")
-	}
-}
-
-// TestDetectOSScriptsAreInSync ensures the embedded detect_os.sh (used by
-// locateDetectScript) matches scripts/detect_os.sh (shipped alongside the
-// binary as a fallback). These MUST stay in sync — edit the engine copy,
-// then replicate to scripts/.
-func TestDetectOSScriptsAreInSync(t *testing.T) {
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("locate engine test source")
-	}
-	scriptsPath := filepath.Join(filepath.Dir(filename), "..", "..", "scripts", "detect_os.sh")
-	got, err := os.ReadFile(scriptsPath)
-	if err != nil {
-		t.Fatalf("reading scripts/detect_os.sh: %v", err)
-	}
-	if string(got) != string(detectScriptContent) {
-		t.Fatalf("scripts/detect_os.sh differs from internal/engine/detect_os.sh\n" +
-			"Edit internal/engine/detect_os.sh, then copy to scripts/detect_os.sh")
 	}
 }
 
