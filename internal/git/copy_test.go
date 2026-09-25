@@ -48,7 +48,7 @@ func TestCopyArtifactCopiesSingleFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := copyArtifactFromRoot(context.Background(), src, ".", dst); err != nil {
+	if err := copyArtifactFromRoot(context.Background(), srcDir, "tool", dst); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := os.ReadFile(filepath.Join(dst, "tool")); err != nil || string(got) != "binary" {
