@@ -273,7 +273,7 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 func (b *cappedBuffer) Bytes() []byte { return b.buf }
 
 func runCommand(ctx context.Context, stream io.Writer, dir string, overrides map[string]string, name string, args ...string) Result {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := exec.CommandContext(ctx, name, args...) // #nosec G204 -- OSExecRunner is the intentional subprocess boundary; validated adapters and explicitly authorized hooks select argv at runtime.
 	cmd.Env = omitEnv(mergeEnv(DefaultEnv(), overrides), ctx)
 	cmd.Dir = dir
 	// Own process group so cancellation signals the whole tree, and a
