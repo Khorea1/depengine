@@ -182,11 +182,11 @@ func validateCredentialFreeReference(raw string) error {
 	if err != nil {
 		return fmt.Errorf("invalid reference: %w", err)
 	}
-	// Plain symbolic references such as "conda-forge" or "crates-io" are
-	// valid. URL-specific credential checks apply only when a host is present.
-	if u.Host == "" {
-		return nil
-	}
+	// Credential checks run for every parseable reference, host or not:
+	// "a://user:pass@" parses with an empty host, so gating on the host
+	// accepted passwords the contract always forbids. Plain symbolic
+	// references such as "conda-forge" or "crates-io" never carry userinfo
+	// or query material and still pass unchanged.
 	if u.User != nil {
 		if _, hasPassword := u.User.Password(); hasPassword || !isSSHScheme(u.Scheme) {
 			return errors.New("literal URL credentials are forbidden; use secret_ref")

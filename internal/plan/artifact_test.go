@@ -14,12 +14,19 @@ func TestNormalizeProjectPath(t *testing.T) {
 	}{
 		{in: "vendor/tool", want: "vendor/tool"},
 		{in: "vendor/./tool", want: "vendor/tool"},
+		{in: "vendor/tool/", want: "vendor/tool"},
 		{in: "../tool", wantErr: true},
 		{in: "/tmp/tool", wantErr: true},
 		{in: "C:/vendor/tool", wantErr: true},
 		{in: "c:vendor/tool", wantErr: true},
 		{in: `vendor\\tool`, wantErr: true},
 		{in: " tool", wantErr: true},
+		// Cleaning must not hand back a value that fails these very rules:
+		// stripping the trailing slash exposes trailing whitespace, and
+		// removing a dot segment can expose a Windows volume prefix.
+		{in: "0 /", wantErr: true},
+		{in: "a/../ b", wantErr: true},
+		{in: "a/../C:x", wantErr: true},
 	} {
 		got, err := plan.NormalizeProjectPath(tc.in)
 		if (err != nil) != tc.wantErr {

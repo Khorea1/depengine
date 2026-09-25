@@ -29,6 +29,12 @@ func TestValidateCredentialFreeReference(t *testing.T) {
 		"https://example.test/a.tar.gz?X-Amz-Signature=abc",
 		" https://example.test/repo.git",
 		"https://{token}@example.test/repo.git",
+		// Host-less references parse with u.Host == "" but can still carry
+		// userinfo or sensitive query material.
+		"A://:@",
+		"a://user:pass@/x",
+		"file:///srv/key.gpg?token=abc",
+		"/srv/repo.git#access_token=abc",
 	}
 	for _, raw := range rejected {
 		if err := validateCredentialFreeReference(raw); err == nil {
