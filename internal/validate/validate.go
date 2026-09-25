@@ -13,6 +13,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/native"
+	"github.com/Khorea1/depengine/internal/run"
 )
 
 // ErrorCode is a stable identifier for a class of validation findings.
@@ -66,6 +67,10 @@ type Result struct {
 
 // Add classifies a finding by its code prefix and appends to the right slice.
 func (r *Result) Add(e ValidationError) {
+	// Validation findings are user-facing and JSON-serializable. Treat this as
+	// the final display boundary so a lower-level parser error cannot persist
+	// literal credentials even if an individual validator forgets to redact it.
+	e.Message = run.RedactSensitiveText(e.Message)
 	if e.IsError() {
 		r.Errors = append(r.Errors, e)
 	} else {
