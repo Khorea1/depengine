@@ -15,12 +15,14 @@ current machine, and tries the configured fallbacks until one works. It can use
 native package managers, language package managers, GitHub releases, direct
 downloads, Git builds, Flatpak, and other adapters.
 
-It ships as a single static Go binary: releases build with `CGO_ENABLED=0`,
-so the binary itself links no libc or other shared libraries. Host detection is
-native Go on every supported platform: depengine reads standard OS metadata
-directly and, when useful, runs narrowly scoped read-only probes such as
-`uname`, `sw_vers`, `ldd`/`getconf`, or `cmd.exe` through the shared
-runner boundary. A POSIX shell is not required for host detection.
+It ships as a single Go executable with no separately installed depengine
+runtime. Release builds use `CGO_ENABLED=0`, so Linux artifacts do not acquire
+libc dependencies through cgo; platform binaries still use the operating
+system's normal kernel/system interfaces. Host detection is native Go on every
+supported platform: depengine reads standard OS metadata directly and, when
+useful, runs narrowly scoped read-only probes such as `uname`, `sw_vers`,
+`ldd`/`getconf`, or `cmd.exe` through the shared runner boundary. A POSIX shell
+is not required for host detection.
 
 ```sh
 depengine init --add "zsh,bat,nvim,ruff"

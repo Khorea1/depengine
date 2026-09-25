@@ -335,7 +335,8 @@ project `schema.toml`, including when the method configuration originated in a
 personal manifest layer. The portable plan/lock identity keeps only the
 normalized project-relative path and checksum; the machine-specific absolute
 project root is runtime metadata and is not persisted. Absolute paths, `..`,
-backslashes, Windows drive prefixes, and any symlink component are rejected.
+backslashes, Windows drive prefixes, Windows-invalid/reserved path components
+(including ADS-style `:` separators), and any symlink component are rejected.
 
 | Field | Required | Description |
 |-------|----------|-------------|
