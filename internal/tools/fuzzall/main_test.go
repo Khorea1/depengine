@@ -6,18 +6,18 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	runpkg "github.com/Khorea1/depengine/internal/run"
 )
 
 func TestRuntimeDiscoveryUsesGoSignatureAndIgnoresComments(t *testing.T) {
 	root, _, manifest := newFixture(t)
 	writeFile(t, manifest, "./pkg FuzzAlpha\n")
-
 	targets, err := validateFixture(context.Background(), root, manifest)
 	if err != nil {
 		t.Fatalf("validate fixture: %v", err)
 	}
-	want := []Target{{Package: "./pkg", Name: "FuzzAlpha"}}
-	assertTargetsEqual(t, targets, want)
+	assertTargetsEqual(t, targets, []Target{{Package: "./pkg", Name: "FuzzAlpha"}})
 }
 
 func TestRootPackageUsesDotPath(t *testing.T) {
@@ -27,24 +27,18 @@ import "testing"
 func FuzzRoot(seed *testing.F) {}
 `)
 	writeFile(t, manifest, ". FuzzRoot\n./pkg FuzzAlpha\n")
-
 	targets, err := validateFixture(context.Background(), root, manifest)
 	if err != nil {
 		t.Fatalf("validate fixture: %v", err)
 	}
-	want := []Target{
-		{Package: ".", Name: "FuzzRoot"},
-		{Package: "./pkg", Name: "FuzzAlpha"},
-	}
-	assertTargetsEqual(t, targets, want)
+	assertTargetsEqual(t, targets, []Target{{Package: ".", Name: "FuzzRoot"}, {Package: "./pkg", Name: "FuzzAlpha"}})
 }
 
-func TestMissingRuntimeTargetFails(t *testing.T) {
+func TestMissingDeclaredTargetFails(t *testing.T) {
 	root, _, manifest := newFixture(t)
 	writeFile(t, manifest, "./pkg FuzzMissing\n")
-
 	_, err := validateFixture(context.Background(), root, manifest)
-	assertErrorContains(t, err, "missing or renamed targets", "FuzzMissing")
+	assertErrorContains(t, err, "unlisted fuzz targets", "FuzzAlpha", "missing or renamed targets", "FuzzMissing")
 }
 
 func TestNewRuntimeTargetCannotBeOmitted(t *testing.T) {
@@ -55,12 +49,11 @@ func FuzzAlpha(seed *testing.F) {}
 func FuzzNew(seed *testing.F) {}
 `)
 	writeFile(t, manifest, "./pkg FuzzAlpha\n")
-
 	_, err := validateFixture(context.Background(), root, manifest)
 	assertErrorContains(t, err, "unlisted fuzz targets", "FuzzNew")
 }
 
-func TestBuildTaggedTargetMissingAtRuntimeFails(t *testing.T) {
+func TestBuildTaggedTargetIsTrackedWithoutBeingRunnable(t *testing.T) {
 	root, source, manifest := newFixture(t)
 	writeFile(t, source, `//go:build never
 
@@ -69,32 +62,64 @@ import "testing"
 func FuzzTagged(seed *testing.F) {}
 `)
 	writeFile(t, manifest, "./pkg FuzzTagged\n")
+	targets, err := validateFixture(context.Background(), root, manifest)
+	if err != nil {
+		t.Fatalf("validate fixture: %v", err)
+	}
+	assertTargetsEqual(t, targets, []Target{{Package: "./pkg", Name: "FuzzTagged"}})
+	runnable, err := discoverTargets(context.Background(), root, runpkg.OSExecRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := targetSet(runnable)[Target{Package: "./pkg", Name: "FuzzTagged"}]; ok {
+		t.Fatal("build-tagged target unexpectedly runnable")
+	}
+}
 
+func TestBuildTaggedTargetCannotBeOmitted(t *testing.T) {
+	root, source, manifest := newFixture(t)
+	writeFile(t, source, `//go:build never
+
+package pkg
+import "testing"
+func FuzzTagged(seed *testing.F) {}
+`)
+	writeFile(t, manifest, "# omitted\n")
 	_, err := validateFixture(context.Background(), root, manifest)
-	assertErrorContains(t, err, "missing or renamed targets", "FuzzTagged")
+	assertErrorContains(t, err, "unlisted fuzz targets", "FuzzTagged")
+}
+
+func TestStaticInventoryUnderstandsTestingAlias(t *testing.T) {
+	root, source, _ := newFixture(t)
+	writeFile(t, source, `package pkg
+import testpkg "testing"
+func FuzzAlias(seed *testpkg.F) {}
+`)
+	declared, err := discoverDeclaredTargets(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertTargetsEqual(t, declared, []Target{{Package: "./pkg", Name: "FuzzAlias"}})
 }
 
 func TestEmptyManifestAndDiscoveryFail(t *testing.T) {
 	root, source, manifest := newFixture(t)
 	writeFile(t, source, "package pkg\n")
 	writeFile(t, manifest, "# no targets\n")
-
 	_, err := validateFixture(context.Background(), root, manifest)
-	assertErrorContains(t, err, "no runnable fuzz targets")
+	assertErrorContains(t, err, "no fuzz targets discovered")
 }
 
 func TestDuplicateManifestEntryFails(t *testing.T) {
 	root, _, manifest := newFixture(t)
 	writeFile(t, manifest, "./pkg FuzzAlpha\n./pkg FuzzAlpha\n")
-
 	_, err := validateFixture(context.Background(), root, manifest)
-	assertErrorContains(t, err, "duplicate fuzz target entry")
+	assertErrorContains(t, err, "duplicate fuzz target entry", "FuzzAlpha")
 }
 
 func TestInvalidManifestEntryFails(t *testing.T) {
 	_, _, manifest := newFixture(t)
 	writeFile(t, manifest, "./pkg Fuzz-Invalid\n")
-
 	_, err := readManifest(manifest)
 	assertErrorContains(t, err, "expected '<package> <FuzzTarget>'")
 }
@@ -121,11 +146,15 @@ func validateFixture(ctx context.Context, root, manifest string) ([]Target, erro
 	if err != nil {
 		return nil, err
 	}
-	discovered, err := discoverTargets(ctx, root)
+	declared, err := discoverDeclaredTargets(root)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateTargets(expected, discovered); err != nil {
+	runnable, err := discoverTargets(ctx, root, runpkg.OSExecRunner{})
+	if err != nil {
+		return nil, err
+	}
+	if err := validateTargets(expected, declared, runnable); err != nil {
 		return nil, err
 	}
 	return expected, nil
@@ -137,7 +166,6 @@ func writeFile(t *testing.T, path, contents string) {
 		t.Fatal(err)
 	}
 }
-
 func assertTargetsEqual(t *testing.T, got, want []Target) {
 	t.Helper()
 	if len(got) != len(want) {
@@ -149,7 +177,6 @@ func assertTargetsEqual(t *testing.T, got, want []Target) {
 		}
 	}
 }
-
 func assertErrorContains(t *testing.T, err error, fragments ...string) {
 	t.Helper()
 	if err == nil {
