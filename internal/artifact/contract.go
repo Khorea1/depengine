@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/url"
 	"strings"
+
+	"github.com/Khorea1/depengine/internal/run"
 )
 
 // Contract describes URL and file-format invariants for a download-backed
@@ -46,10 +48,10 @@ var UnsupportedArchiveExtensions = []string{
 func ValidateURL(raw string, allowedSchemes []string) error {
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Scheme == "" {
-		return fmt.Errorf("malformed URL %q", raw)
+		return fmt.Errorf("malformed URL %q", run.RedactSensitiveText(raw))
 	}
 	if requiresNetworkHost(parsed.Scheme) && parsed.Host == "" {
-		return fmt.Errorf("malformed URL %q", raw)
+		return fmt.Errorf("malformed URL %q", run.RedactSensitiveText(raw))
 	}
 	if strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https") {
 		// Credentials embedded in a URL are unsafe for a declarative artifact
