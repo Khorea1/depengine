@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -245,6 +246,104 @@ func TestArchiveEntrypointRejectsTraversal(t *testing.T) {
 	}
 	if err := requirePayloadFile(payload, outside); err == nil {
 		t.Fatal("expected absolute entrypoint to be rejected")
+	}
+}
+
+func TestCopyTreeStrippedRejectsSourceSymlinkEscape(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink fixture requires Unix semantics")
+	}
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	dest := filepath.Join(root, "dest")
+	if err := os.MkdirAll(filepath.Join(src, "top"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(dest, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "outside"), []byte("foreign"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../outside", filepath.Join(src, "top", "link")); err != nil {
+		t.Fatal(err)
+	}
+
+	err := copyTreeStripped(src, dest, 0)
+	if err == nil || !strings.Contains(err.Error(), "escapes staging") {
+		t.Fatalf("copyTreeStripped() error = %v, want staging escape rejection", err)
+	}
+}
+
+func TestCopyTreeStrippedRejectsSymlinkEscapeIntroducedByStrip(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink fixture requires Unix semantics")
+	}
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	dest := filepath.Join(root, "dest")
+	if err := os.MkdirAll(filepath.Join(src, "top", "a"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(dest, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "outside"), []byte("inside staging"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Safe before stripping: top/a/../../outside resolves inside src.
+	// After stripping top/, a/../../outside would escape the payload root.
+	if err := os.Symlink("../../outside", filepath.Join(src, "top", "a", "link")); err != nil {
+		t.Fatal(err)
+	}
+
+	err := copyTreeStripped(src, dest, 1)
+	if err == nil || !strings.Contains(err.Error(), "escapes stripped payload") {
+		t.Fatalf("copyTreeStripped() error = %v, want stripped-payload escape rejection", err)
+	}
+}
+
+func TestCopyTreeStrippedPreservesContainedSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink fixture requires Unix semantics")
+	}
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	dest := filepath.Join(root, "dest")
+	if err := os.MkdirAll(filepath.Join(src, "top", "bin"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(dest, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "top", "bin", "demo"), []byte("binary"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("demo", filepath.Join(src, "top", "bin", "current")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyTreeStripped(src, dest, 1); err != nil {
+		t.Fatalf("copyTreeStripped() error = %v", err)
+	}
+	payloadRoot, err := os.OpenRoot(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = payloadRoot.Close() }()
+	link, err := payloadRoot.Readlink(filepath.Join("bin", "current"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if link != "demo" {
+		t.Fatalf("copied symlink target = %q, want demo", link)
+	}
+	data, err := payloadRoot.ReadFile(filepath.Join("bin", "demo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "binary" {
+		t.Fatalf("copied file = %q, want binary", string(data))
 	}
 }
 
