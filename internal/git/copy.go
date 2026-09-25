@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-func copyArtifact(ctx context.Context, src, dst string) (retErr error) {
+func copyArtifact(ctx context.Context, src, dst string) error {
 	srcParent, srcName := filepath.Split(filepath.Clean(src))
 	if srcParent == "" {
 		srcParent = "."
@@ -18,8 +18,20 @@ func copyArtifact(ctx context.Context, src, dst string) (retErr error) {
 	if srcName == "" {
 		srcName = "."
 	}
+	return copyArtifactFromRoot(ctx, srcParent, srcName, dst)
+}
 
-	srcParentRoot, err := os.OpenRoot(srcParent)
+// copyArtifactFromRoot copies srcName while keeping every source lookup rooted
+// under srcRootPath. Production passes the clone directory as srcRootPath, so
+// intermediate symlinks in an artifact path cannot redirect reads outside the
+// checkout before the root boundary is established.
+func copyArtifactFromRoot(ctx context.Context, srcRootPath, srcName, dst string) (retErr error) {
+	srcName = filepath.Clean(srcName)
+	if filepath.IsAbs(srcName) || srcName == ".." || strings.HasPrefix(srcName, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("source %s escapes copy root", srcName)
+	}
+
+	srcParentRoot, err := os.OpenRoot(srcRootPath)
 	if err != nil {
 		return err
 	}
@@ -45,7 +57,7 @@ func copyArtifact(ctx context.Context, src, dst string) (retErr error) {
 		return copyRootContents(ctx, srcRoot, dstRoot, ".")
 	}
 
-	return copyRootEntry(ctx, srcParentRoot, dstRoot, srcName, filepath.Base(src), filepath.Base(src), info)
+	return copyRootEntry(ctx, srcParentRoot, dstRoot, srcName, filepath.Base(srcName), filepath.Base(srcName), info)
 }
 
 func copyRootContents(ctx context.Context, srcRoot, dstRoot *os.Root, relPrefix string) error {
