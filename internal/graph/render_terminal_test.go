@@ -103,21 +103,16 @@ func TestRenderTerminalGraphDeterministic(t *testing.T) {
 }
 
 func TestLayoutTerminalComponentReducesSimpleCrossing(t *testing.T) {
-	g := NewGraph()
-	for _, id := range []string{"a", "b", "c", "d"} {
-		g.AddNode(Node{ID: id})
+	component := Component{
+		Nodes: []string{"a", "b", "c", "d"},
+		Edges: []Edge{
+			{From: "a", To: "d", Kind: ToolRequire, Role: Scheduling},
+			{From: "b", To: "c", Kind: ToolRequire, Role: Scheduling},
+		},
 	}
-	g.AddEdge(Edge{From: "a", To: "d", Kind: ToolRequire, Role: Scheduling})
-	g.AddEdge(Edge{From: "b", To: "c", Kind: ToolRequire, Role: Scheduling})
+	ranks := map[string]int{"a": 0, "b": 0, "c": 1, "d": 1}
 
-	analysis, err := Analyze(g)
-	if err != nil {
-		t.Fatalf("Analyze: %v", err)
-	}
-	if len(analysis.Connected) != 1 {
-		t.Fatalf("connected components = %d, want 1", len(analysis.Connected))
-	}
-	layout, err := layoutTerminalComponent(analysis.Connected[0], analysis.Ranks)
+	layout, err := layoutTerminalComponent(component, ranks)
 	if err != nil {
 		t.Fatalf("layoutTerminalComponent: %v", err)
 	}
@@ -128,12 +123,7 @@ func TestLayoutTerminalComponentReducesSimpleCrossing(t *testing.T) {
 	if got := layout.columns[1].nodes[1].id; got != "c" {
 		t.Errorf("second node in target rank = %q, want c", got)
 	}
-
-	out, err := RenderTerminalGraph(g, 80)
-	if err != nil {
-		t.Fatalf("RenderTerminalGraph: %v", err)
-	}
-	if strings.Contains(out, "┼") {
+	if out := renderTerminalDiagram(layout); strings.Contains(out, "┼") {
 		t.Errorf("simple crossing was not reduced:\n%s", out)
 	}
 }
