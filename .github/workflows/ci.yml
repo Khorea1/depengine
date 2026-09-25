@@ -279,3 +279,32 @@ jobs:
       env:
         DEPENGINE_BIN: ./depengine.exe
       run: tests/platform/native-lifecycle.sh tests/platform/fixtures/windows-choco.toml depengine-windows-smoke
+
+  # Stable branch-protection status check. Keep this job name unchanged so the
+  # same ruleset can be reused across repositories.
+  gate:
+    name: gate
+    if: ${{ always() }}
+    needs:
+      - test
+      - integration
+      - crossplatform
+      - test-macos
+      - test-freebsd
+      - test-openbsd
+      - test-netbsd
+      - test-android
+      - test-windows
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify required jobs
+        run: |
+          test "${{ needs.test.result }}" = "success"
+          test "${{ needs.integration.result }}" = "success"
+          test "${{ needs.crossplatform.result }}" = "success"
+          test "${{ needs.test-macos.result }}" = "success"
+          test "${{ needs.test-freebsd.result }}" = "success"
+          test "${{ needs.test-openbsd.result }}" = "success"
+          test "${{ needs.test-netbsd.result }}" = "success"
+          test "${{ needs.test-android.result }}" = "success"
+          test "${{ needs.test-windows.result }}" = "success"
