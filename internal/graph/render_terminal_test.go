@@ -102,6 +102,102 @@ func TestRenderTerminalGraphDeterministic(t *testing.T) {
 	}
 }
 
+func TestLayoutTerminalComponentReducesSimpleCrossing(t *testing.T) {
+	g := NewGraph()
+	for _, id := range []string{"a", "b", "c", "d"} {
+		g.AddNode(Node{ID: id})
+	}
+	g.AddEdge(Edge{From: "a", To: "d", Kind: ToolRequire, Role: Scheduling})
+	g.AddEdge(Edge{From: "b", To: "c", Kind: ToolRequire, Role: Scheduling})
+
+	analysis, err := Analyze(g)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if len(analysis.Connected) != 1 {
+		t.Fatalf("connected components = %d, want 1", len(analysis.Connected))
+	}
+	layout, err := layoutTerminalComponent(analysis.Connected[0], analysis.Ranks)
+	if err != nil {
+		t.Fatalf("layoutTerminalComponent: %v", err)
+	}
+
+	if got := layout.columns[1].nodes[0].id; got != "d" {
+		t.Errorf("first node in target rank = %q, want d", got)
+	}
+	if got := layout.columns[1].nodes[1].id; got != "c" {
+		t.Errorf("second node in target rank = %q, want c", got)
+	}
+
+	out, err := RenderTerminalGraph(g, 80)
+	if err != nil {
+		t.Fatalf("RenderTerminalGraph: %v", err)
+	}
+	if strings.Contains(out, "┼") {
+		t.Errorf("simple crossing was not reduced:\n%s", out)
+	}
+}
+
+func TestLayoutTerminalComponentBundlesSemanticMultiedges(t *testing.T) {
+	t.Run("long route shares one corridor", func(t *testing.T) {
+		g := NewGraph()
+		for _, id := range []string{"a", "middle", "z"} {
+			g.AddNode(Node{ID: id})
+		}
+		g.AddEdge(Edge{From: "a", To: "middle", Kind: ToolRequire, Role: Scheduling})
+		g.AddEdge(Edge{From: "middle", To: "z", Kind: ToolRequire, Role: Scheduling})
+		g.AddEdge(Edge{From: "a", To: "z", Kind: MethodRequire, Role: Activation, Method: "git"})
+		g.AddEdge(Edge{From: "a", To: "z", Kind: MethodRequire, Role: Activation, Method: "http"})
+
+		analysis, err := Analyze(g)
+		if err != nil {
+			t.Fatalf("Analyze: %v", err)
+		}
+		layout, err := layoutTerminalComponent(analysis.Connected[0], analysis.Ranks)
+		if err != nil {
+			t.Fatalf("layoutTerminalComponent: %v", err)
+		}
+
+		if got := len(layout.routes); got != 3 {
+			t.Errorf("physical routes = %d, want 3 for 4 semantic edges", got)
+		}
+		if got := len(layout.corridors); got != 1 {
+			t.Errorf("corridors = %d, want 1 shared long-edge corridor", got)
+		}
+
+		annotations := strings.Join(terminalAnnotations(layout), "\n")
+		for _, want := range []string{"a -> z [git]", "a -> z [http]"} {
+			if !strings.Contains(annotations, want) {
+				t.Errorf("semantic annotation %q missing:\n%s", want, annotations)
+			}
+		}
+	})
+
+	t.Run("strongest relation determines bundle style", func(t *testing.T) {
+		g := NewGraph()
+		for _, id := range []string{"a", "b"} {
+			g.AddNode(Node{ID: id})
+		}
+		g.AddEdge(Edge{From: "a", To: "b", Kind: ToolRequire, Role: Scheduling})
+		g.AddEdge(Edge{From: "a", To: "b", Kind: MethodRequire, Role: Activation, Method: "git"})
+
+		analysis, err := Analyze(g)
+		if err != nil {
+			t.Fatalf("Analyze: %v", err)
+		}
+		layout, err := layoutTerminalComponent(analysis.Connected[0], analysis.Ranks)
+		if err != nil {
+			t.Fatalf("layoutTerminalComponent: %v", err)
+		}
+		if got := len(layout.routes); got != 1 {
+			t.Fatalf("physical routes = %d, want 1", got)
+		}
+		if got := layout.routes[0].style; got != terminalStyleSolid {
+			t.Errorf("bundle style = %v, want solid", got)
+		}
+	})
+}
+
 func TestRenderTerminalGraphSnapshotWidth80(t *testing.T) {
 	const want = `fontconfig ┬─▶ DepartureMono
 unzip      ┘
