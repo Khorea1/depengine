@@ -2,6 +2,8 @@ package state
 
 import (
 	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -34,6 +36,29 @@ func TestSaveSnapshotCreatesFile(t *testing.T) {
 	// Verify file exists.
 	if _, err := os.Stat(info.Path); os.IsNotExist(err) {
 		t.Fatalf("snapshot file not created at %s", info.Path)
+	}
+}
+
+func TestSaveSnapshotTightensDirectoryPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows ACLs are not represented by Unix permission bits")
+	}
+	td := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", td)
+	dir := filepath.Join(td, "depengine", "snapshots")
+	if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- Fixture intentionally starts permissive to verify tightening.
+		t.Fatal(err)
+	}
+
+	if _, err := SaveSnapshot(); err != nil {
+		t.Fatalf("SaveSnapshot(): %v", err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != privateDirMode {
+		t.Fatalf("snapshot dir mode = %04o, want %04o", got, privateDirMode)
 	}
 }
 

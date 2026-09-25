@@ -108,6 +108,33 @@ func TestStoreAndLookup(t *testing.T) {
 	}
 }
 
+func TestStoreTightensCacheDirectoryPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows ACLs are not represented by Unix permission bits")
+	}
+	dir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", dir)
+	cacheDir := CacheDir()
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil { // #nosec G301 -- Fixture intentionally starts permissive to verify tightening.
+		t.Fatal(err)
+	}
+	src := filepath.Join(dir, "download.bin")
+	if err := os.WriteFile(src, []byte("private artifact"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Store(testURL+"#PrivateDir", src); err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+	info, err := os.Stat(cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("cache dir mode = %04o, want 0700", got)
+	}
+}
+
 func TestStoreOverwritesExisting(t *testing.T) {
 	dir := t.TempDir()
 	os.Setenv("XDG_CACHE_HOME", dir)

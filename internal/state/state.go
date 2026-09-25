@@ -66,6 +66,18 @@ type ToolState struct {
 
 // DefaultPath returns the platform-appropriate state file path.
 // Uses XDG_STATE_HOME when set, falling back to ~/.local/state/depengine/state.json.
+const privateDirMode = 0o700
+
+func ensurePrivateDir(path string) error {
+	if err := os.MkdirAll(path, privateDirMode); err != nil {
+		return err
+	}
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	return os.Chmod(path, privateDirMode) // #nosec G302 -- This is a directory permission; state directories are intentionally owner-only.
+}
+
 func DefaultPath() string {
 	xdgState := os.Getenv("XDG_STATE_HOME")
 	if xdgState == "" {
@@ -95,8 +107,8 @@ func Save(s *State) error {
 	}
 	path := DefaultPath()
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("create state dir: %w", err)
+	if err := ensurePrivateDir(dir); err != nil {
+		return fmt.Errorf("create private state dir: %w", err)
 	}
 	// Compute the integrity checksum over the canonical JSON of the state
 	// with the checksum field zeroed. encoding/json marshals maps with

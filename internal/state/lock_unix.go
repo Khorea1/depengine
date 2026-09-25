@@ -39,8 +39,8 @@ func lockShared() (io.Closer, error) {
 func lockWithMode(mode int, desc string) (io.Closer, error) {
 	path := DefaultPath() + ".lock"
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("create lock dir: %w", err)
+	if err := ensurePrivateDir(dir); err != nil {
+		return nil, fmt.Errorf("create private lock dir: %w", err)
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
