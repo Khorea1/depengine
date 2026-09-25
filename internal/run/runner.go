@@ -1,6 +1,6 @@
 // Package run is the single seam through which the engine executes any
-// subprocess: the detect_os.sh fetcher today, and later every native install,
-// language-adapter install, and postinstall hook.
+// subprocess: host probes, native installs, language-adapter installs, and
+// postinstall hooks.
 //
 // Centralizing subprocess execution lets us inject timeouts, structured
 // logging, and a per-child DEPENGINE_TRACE_ID env in one place, and lets
@@ -21,8 +21,7 @@ import (
 )
 
 // Result captures everything a caller needs to decide what happened:
-// stdout/stderr (for logging + error messages) and the exit code (detect_os.sh
-// uses 1 to mean "partial detection", not failure — see facts.go).
+// stdout/stderr (for logging + error messages) and the exit code.
 type Result struct {
 	Stdout   []byte
 	Stderr   []byte
@@ -197,8 +196,8 @@ func DefaultEnv() []string {
 
 // OSExecRunner is the production Runner: real os/exec, capturing buffers.
 // The child environment is always the parent env plus DEPENGINE_TRACE_ID
-// (when set) via DefaultEnv; injecting it here is what lets trace id
-// flow into detect_os.sh and later into every adapter install.
+// (when set) via DefaultEnv; injecting it here lets the trace id flow into
+// host probes and every adapter install.
 type OSExecRunner struct {
 	// Stream optionally receives a live copy of the child's stdout and
 	// stderr while the command runs. Capture into Result is unaffected.

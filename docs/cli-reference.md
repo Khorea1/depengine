@@ -288,14 +288,14 @@ Aliases: `explain`.
 | `0` | Success |
 | `1` | Tool failure / strict mode warnings |
 | `2` | Schema error (invalid TOML, validation) |
-| `3` | Runtime error (`detect_os.sh` not found, etc.) |
+| `3` | Runtime error (subprocess, filesystem, or other infrastructure failure) |
 
 
 ## Environment variables
 
 | Variable | Purpose |
 |---|---|
-| `DEPENGINE_DETECT_SCRIPT` | Override the OS-detection script |
+| `DEPENGINE_DETECT_SCRIPT` | Deprecated explicit legacy host-detector override; normal detection is native Go |
 | `DEPENGINE_MANIFEST` | Override the personal manifest path |
 | `DEPENGINE_CACHE_MAX_BYTES` | Download-cache size limit; `0` disables eviction |
 | `XDG_CONFIG_HOME` | Base directory for the personal manifest |

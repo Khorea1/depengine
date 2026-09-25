@@ -7,12 +7,12 @@ import (
 )
 
 // tmpFile writes content into a temp file and returns its path. The file
-// is cleaned up when the test ends. Used so locateDetectScript's env-
+// is cleaned up when the test ends. Used so the explicit legacy-detector
 // override branch has something real to stat.
 func tmpFile(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
-	p := filepath.Join(dir, "detect_os.sh")
+	p := filepath.Join(dir, "legacy-detector")
 	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 		t.Fatalf("tmpFile write: %v", err)
 	}

@@ -994,33 +994,33 @@ later by the adapter that owns their field.
 
 | Placeholder | Source | Valid for | Example |
 |-------------|--------|-----------|---------|
-| `{arch}` | `detect_os.sh` | any method | `x86_64`, `aarch64` |
-| `{os}` | `detect_os.sh` | any method | `linux`, `darwin` |
+| `{arch}` | Native host facts | any method | `x86_64`, `aarch64` |
+| `{os}` | Native host facts | any method | `linux`, `darwin` |
 | `{distro_family}` | Resolved clan | any method | `debian`, `arch`, `fedora` |
-| `{id}` | `detect_os.sh` | any method | `ubuntu`, `arch` |
-| `{distro_name}` | `detect_os.sh` | any method | `Ubuntu 24.04 LTS` |
-| `{distro_version}` | `detect_os.sh` | any method | `24.04`, `14.6.1` |
-| `{distro_id_like}` | `detect_os.sh` | any method | `debian` |
-| `{target_family}` | `detect_os.sh` | any method | `unix`, `windows` |
-| `{kernel}` | `detect_os.sh` | any method | `5.15.0` |
-| `{libc}` | `detect_os.sh` | any method | `glibc`, `musl` |
-| `{init_system}` | `detect_os.sh` | any method | `systemd`, `openrc` |
-| `{detection}` | `detect_os.sh` | any method | `os-release` |
-| `{confidence}` | `detect_os.sh` | any method | `high`, `medium` |
-| `{is_wsl}` / `{is_container}` / `{is_android}` | `detect_os.sh` | any method | `true`, `false` |
+| `{id}` | Native host facts | any method | `ubuntu`, `arch` |
+| `{distro_name}` | Native host facts | any method | `Ubuntu 24.04 LTS` |
+| `{distro_version}` | Native host facts | any method | `24.04`, `14.6.1` |
+| `{distro_id_like}` | Native host facts | any method | `debian` |
+| `{target_family}` | Native host facts | any method | `unix`, `windows` |
+| `{kernel}` | Native host facts | any method | `5.15.0` |
+| `{libc}` | Native host facts | any method | `glibc`, `musl` |
+| `{init_system}` | Native host facts | any method | `systemd`, `openrc` |
+| `{detection}` | Native host facts | any method | `os-release` |
+| `{confidence}` | Native host facts | any method | `high`, `medium` |
+| `{is_wsl}` / `{is_container}` / `{is_android}` | Native host facts | any method | `true`, `false` |
 | `{pkg}` | Adapter-owned — substituted at install time | **`native` only** (or a manager name used directly as `kind`, e.g. `kind = "apt"`) | package name |
 | `{latest}` | Adapter-owned — resolved via GitHub API | Literal `url` in `git`, `http`, `appimage`, `android`, or `msi` | `v1.2.3` |
 | `{version}` | Adapter-owned — matched against a resolved GitHub release tag | `asset` in `github`, `http`, `appimage`, `android`, or `msi` when using `repo` + `asset` | matches `v1.2.3` or `1.2.3` |
 | `{arch_any}` | Adapter-owned — matched (not substituted) against real asset names | Same `repo` + `asset` methods, `asset` field only | matches `x86_64`/`amd64`/`x64`, etc. |
 | `{os_any}` | Adapter-owned — matched (not substituted) against real asset names | Same `repo` + `asset` methods, `asset` field only | matches `darwin`/`macos`/`osx`, etc. |
 
-The `detect_os.sh`-sourced placeholders are expanded for every method kind.
+The native host-fact placeholders are expanded for every method kind.
 The remaining tokens are field-specific: `{pkg}` belongs to native commands,
 `{latest}` belongs to literal artifact URLs, and `{version}`/`{arch_any}`/
 `{os_any}` belong only to GitHub release `asset` matching.
 
 ```toml
-# {arch}/{os} expand from detect_os.sh before installation:
+# {arch}/{os} expand from native host facts before installation:
 fastfetch = { http = { url = "https://example.com/{os}/{arch}/fastfetch.deb" } }
 
 # {latest} is resolved in a literal artifact URL via GitHub's API:

@@ -53,8 +53,6 @@ nfpms:
       - archlinux
     bindir: /usr/bin
     contents:
-      - src: scripts/detect_os.sh
-        dst: /usr/lib/depengine/detect_os.sh
       - src: docs/depengine.1
         dst: /usr/share/man/man1/depengine.1
       - src: scripts/depengine-completion.bash
@@ -89,7 +87,6 @@ archives:
   - id: depengine-archives
     name_template: "depengine_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
-      - scripts/detect_os.sh
       - docs/depengine.1
       - scripts/depengine-completion.*
       - README.md

@@ -478,8 +478,8 @@ compatible). Non-string values are silently ignored.
 .SS "when condition (platform gate by method)"
 .PP
 The \fBwhen\fR field inside a method declaration restricts which platforms
-that method applies to. The condition is evaluated against facts detected
-by \fBdetect_os.sh\fR at runtime. Semantics: AND across fields, OR within
+that method applies to. The condition is evaluated against host facts detected
+natively by depengine at runtime. Semantics: AND across fields, OR within
 each list. Empty fields are ignored. Absent \fBwhen\fR = always try.
 .PP
 Available fields:
@@ -664,15 +664,10 @@ depengine completion fish | source
 .SH ENVIRONMENT
 .TP
 .B DEPENGINE_DETECT_SCRIPT
-Path to the
-.B detect_os.sh
-script. Search order: an embedded copy of the script is used by default;
-if this variable is set it overrides the embedded copy; otherwise the
-engine looks for
-.B scripts/detect_os.sh
-alongside the binary, then
-.B detect_os.sh
-on \fBPATH\fR.
+Deprecated explicit legacy host-detector override. The executable must accept
+.B --json --no-prompt
+and emit the historical host-facts JSON contract. Normal host detection is
+implemented natively in Go and does not require this variable.
 .TP
 .B DEPENGINE_MANIFEST
 Path to the personal manifest file, overriding the default XDG discovery
@@ -721,10 +716,6 @@ Base directory for the state file. The state file is stored at
 The declarative schema describing tools and installation methods.
 Shipped with the project as a reference template.
 .TP
-.B scripts/detect_os.sh
-System detection script invoked at runtime to gather OS, architecture,
-distro, libc, and init-system facts.
-.TP
 .BI $XDG_STATE_HOME/depengine/state.json
 State file tracking which tools were installed, by which method, and
 when. Used by the
@@ -752,9 +743,8 @@ Schema error — invalid TOML, validation failure, unknown method, or
 unknown placeholder.
 .TP
 3
-Runtime error —
-.B detect_os.sh
-not found, state I/O failure, or other infrastructure error.
+Runtime error — subprocess, state I/O, filesystem, or other infrastructure
+failure.
 .SH "SEE ALSO"
 .PP
 The project README and
