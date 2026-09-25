@@ -10,17 +10,6 @@ import (
 	"strings"
 )
 
-func copyArtifact(ctx context.Context, src, dst string) error {
-	srcParent, srcName := filepath.Split(filepath.Clean(src))
-	if srcParent == "" {
-		srcParent = "."
-	}
-	if srcName == "" {
-		srcName = "."
-	}
-	return copyArtifactFromRoot(ctx, srcParent, srcName, dst)
-}
-
 // copyArtifactFromRoot copies srcName while keeping every source lookup rooted
 // under srcRootPath. Production passes the clone directory as srcRootPath, so
 // intermediate symlinks in an artifact path cannot redirect reads outside the
