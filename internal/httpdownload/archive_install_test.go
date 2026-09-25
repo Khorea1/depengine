@@ -330,7 +330,7 @@ func TestCopyTreeStrippedPreservesContainedSymlink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer payloadRoot.Close()
+	defer func() { _ = payloadRoot.Close() }()
 	link, err := payloadRoot.Readlink(filepath.Join("bin", "current"))
 	if err != nil {
 		t.Fatal(err)
