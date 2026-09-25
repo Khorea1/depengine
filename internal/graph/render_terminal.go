@@ -2,6 +2,7 @@ package graph
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -432,7 +433,17 @@ func layoutTerminalComponent(component Component, ranks map[string]int) (*termin
 
 	gaps := make([]terminalGap, len(columns)+1)
 	routes := make([]terminalRoute, 0, len(component.Edges))
+	routeByEndpoints := make(map[[2]string]int, len(component.Edges))
 	for _, edge := range component.Edges {
+		endpoints := [2]string{edge.From, edge.To}
+		if index, ok := routeByEndpoints[endpoints]; ok {
+			// Semantic multiedges remain distinct in the IR and annotations, but
+			// the terminal layout shares one physical route between identical
+			// endpoints. The strongest visible relation determines line style.
+			routes[index].style = strongerStyle(routes[index].style, terminalEdgeStyle(edge))
+			continue
+		}
+
 		srcCol, ok := columnIndexOf(columns, edge.From)
 		if !ok {
 			return nil, fmt.Errorf("graph: edge %q -> %q starts at a node outside its component", edge.From, edge.To)
@@ -462,6 +473,7 @@ func layoutTerminalComponent(component Component, ranks map[string]int) (*termin
 			route.entryLane = gaps[dstCol].entryLane(route.dstRow)
 		}
 		gaps[dstCol].arrow = true
+		routeByEndpoints[endpoints] = len(routes)
 		routes = append(routes, route)
 	}
 
@@ -562,6 +574,8 @@ func terminalColumns(component Component, ranks map[string]int) ([]terminalColum
 		columns = append(columns, column)
 	}
 
+	orderTerminalColumns(columns, component.Edges)
+
 	rows := make(map[string]int, len(component.Nodes))
 	nodeRows := terminalNodeRows(columns)
 	for i := range columns {
@@ -577,6 +591,101 @@ func terminalColumns(component Component, ranks map[string]int) ([]terminalColum
 		}
 	}
 	return columns, rows, nil
+}
+
+const terminalCrossingSweeps = 4
+
+// orderTerminalColumns applies a deterministic barycenter heuristic to the
+// nodes inside each scheduling rank. Rank assignment remains untouched; only
+// presentation order changes. Repeated semantic edges between the same pair do
+// not overweight that relation during layout.
+func orderTerminalColumns(columns []terminalColumn, edges []Edge) {
+	if len(columns) < 2 {
+		return
+	}
+
+	for sweep := 0; sweep < terminalCrossingSweeps; sweep++ {
+		for column := 1; column < len(columns); column++ {
+			orderTerminalColumn(columns, column, edges, true)
+		}
+		for column := len(columns) - 2; column >= 0; column-- {
+			orderTerminalColumn(columns, column, edges, false)
+		}
+	}
+}
+
+type terminalBarycenter struct {
+	sum   int64
+	count int64
+}
+
+func orderTerminalColumn(columns []terminalColumn, columnIndex int, edges []Edge, predecessors bool) {
+	column := &columns[columnIndex]
+	if len(column.nodes) < 2 {
+		return
+	}
+
+	positions := terminalColumnPositions(columns)
+	members := make(map[string]struct{}, len(column.nodes))
+	for _, node := range column.nodes {
+		members[node.id] = struct{}{}
+	}
+
+	neighbors := make(map[string]map[string]struct{}, len(column.nodes))
+	for _, edge := range edges {
+		nodeID, neighborID := edge.To, edge.From
+		if !predecessors {
+			nodeID, neighborID = edge.From, edge.To
+		}
+		if _, ok := members[nodeID]; !ok {
+			continue
+		}
+		if neighbors[nodeID] == nil {
+			neighbors[nodeID] = map[string]struct{}{}
+		}
+		neighbors[nodeID][neighborID] = struct{}{}
+	}
+
+	scores := make(map[string]terminalBarycenter, len(column.nodes))
+	for _, node := range column.nodes {
+		score := terminalBarycenter{}
+		for neighborID := range neighbors[node.id] {
+			if position, ok := positions[neighborID]; ok {
+				score.sum += position
+				score.count++
+			}
+		}
+		if score.count == 0 {
+			// Nodes without a neighbor in this sweep stay anchored to their
+			// current row instead of being pulled arbitrarily to an edge.
+			score.sum = positions[node.id]
+			score.count = 1
+		}
+		scores[node.id] = score
+	}
+
+	sort.SliceStable(column.nodes, func(i, j int) bool {
+		left := scores[column.nodes[i].id]
+		right := scores[column.nodes[j].id]
+		leftScaled := left.sum * right.count
+		rightScaled := right.sum * left.count
+		if leftScaled != rightScaled {
+			return leftScaled < rightScaled
+		}
+		return column.nodes[i].id < column.nodes[j].id
+	})
+}
+
+func terminalColumnPositions(columns []terminalColumn) map[string]int64 {
+	nodeRows := terminalNodeRows(columns)
+	positions := make(map[string]int64)
+	for _, column := range columns {
+		offset := (nodeRows - len(column.nodes)) / 2
+		for index, node := range column.nodes {
+			positions[node.id] = int64(offset + index)
+		}
+	}
+	return positions
 }
 
 func terminalNodeRows(columns []terminalColumn) int {
