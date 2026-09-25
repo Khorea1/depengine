@@ -61,7 +61,7 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 		fmt.Fprintf(os.Stderr, "error: unknown format %q (valid: mermaid, dot, text, graph)\n", *graphFormat)
 		return exitWithCode(2)
 	}
-	if *graphWidth < 0 {
+	if *graphFormat == "graph" && *graphWidth < 0 {
 		fmt.Fprintln(os.Stderr, "error: --width must not be negative (0 = detect terminal width)")
 		return exitWithCode(2)
 	}

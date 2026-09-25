@@ -14,8 +14,8 @@ You describe \fIwhat\fR to install in a declarative
 the engine decides \fIhow\fR to install each tool by trying methods in
 order (native, cargo, go, pip, git, http, ...) until one succeeds,
 respecting per-distro conditions, inter-tool dependencies, and
-post-installation hooks. The binary is static with no runtime
-dependencies on the target machine.
+post-installation hooks. Release binaries use CGO_ENABLED=0; Unix OS
+detection still relies on a POSIX shell and standard base utilities.
 .\" BEGIN GENERATED CLI REFERENCE
 .SH COMMANDS
 .TP

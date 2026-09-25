@@ -48,19 +48,28 @@ class FuzzManifestTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unlisted fuzz targets.*FuzzNew"):
             run_fuzz.validate(self.root, self.manifest)
 
-    def test_build_tagged_target_missing_at_runtime_fails(self):
+    def test_build_tagged_target_is_tracked_without_being_runnable(self):
         self.source.write_text(
             '//go:build never\n\npackage pkg\nimport "testing"\n'
             'func FuzzTagged(seed *testing.F) {}\n'
         )
         self.manifest.write_text("./pkg FuzzTagged\n")
-        with self.assertRaisesRegex(ValueError, "missing or renamed targets.*FuzzTagged"):
+        self.assertEqual([("./pkg", "FuzzTagged")], run_fuzz.validate(self.root, self.manifest))
+        self.assertNotIn(("./pkg", "FuzzTagged"), run_fuzz.discover_targets(self.root))
+
+    def test_build_tagged_target_cannot_be_omitted(self):
+        self.source.write_text(
+            '//go:build never\n\npackage pkg\nimport "testing"\n'
+            'func FuzzTagged(seed *testing.F) {}\n'
+        )
+        self.manifest.write_text("# omitted\n")
+        with self.assertRaisesRegex(ValueError, "unlisted fuzz targets.*FuzzTagged"):
             run_fuzz.validate(self.root, self.manifest)
 
     def test_empty_manifest_and_discovery_fail(self):
         self.source.write_text('package pkg\n')
         self.manifest.write_text("# no targets\n")
-        with self.assertRaisesRegex(ValueError, "no runnable fuzz targets"):
+        with self.assertRaisesRegex(ValueError, "no fuzz targets discovered"):
             run_fuzz.validate(self.root, self.manifest)
 
 

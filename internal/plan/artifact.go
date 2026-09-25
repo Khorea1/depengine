@@ -60,6 +60,11 @@ func NormalizeProjectPath(raw string) (string, error) {
 	if path.IsAbs(clean) || hasWindowsVolumePrefix(clean) {
 		return "", fmt.Errorf("local artifact path %q must be relative to the project root", clean)
 	}
+	for _, component := range strings.Split(clean, "/") {
+		if err := ValidatePortablePathComponent(component); err != nil {
+			return "", fmt.Errorf("local artifact path %q: %w", clean, err)
+		}
+	}
 	return clean, nil
 }
 
