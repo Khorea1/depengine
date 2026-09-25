@@ -1,8 +1,8 @@
 # Typed dependency graph and terminal visualization research
 
 - Status: research / design proposal
-- Scope: `depengine graph` representation, analysis, and future terminal rendering
-- Implementation status: typed IR plus effective/resolved CLI projections implemented; terminal layout remains pending; see `typed-dependency-graph-implementation-status.md`
+- Scope: `depengine graph` representation, analysis, and terminal rendering
+- Implementation status: typed IR, effective/resolved CLI projections, and the terminal layered renderer are implemented; inactive-edge diagnostics remain deferred; see `typed-dependency-graph-implementation-status.md`
 - Naming used in this document: **DPG** = **DePenGine Graph** (project shorthand, not "Program Dependence Graph")
 
 ## Motivation
