@@ -84,6 +84,10 @@ func runUpgradeCommand(t *testing.T, extraEnv []string, flags ...string) (int, s
 // would correctly be treated as an unknown installation identity.
 func writeFakeUpgradeBinaries(t *testing.T, names ...string) []string {
 	t.Helper()
+	// The Go command may initialize telemetry state under HOME on BSD hosts.
+	// Disable it for these short-lived fixture commands so no late filesystem
+	// writes can race testing.TempDir cleanup after the subprocess exits.
+	t.Setenv("GOTELEMETRY", "off")
 	binDir := t.TempDir()
 
 	moduleDir := t.TempDir()
