@@ -27,6 +27,24 @@ func TestSourceReferenceRejectsLiteralCredentials(t *testing.T) {
 	}
 }
 
+func TestSourceReferenceMalformedURLDoesNotLeakCredentials(t *testing.T) {
+	const secret = "redaction-sentinel"
+	source := plan.SourceReference{
+		Role: plan.SourceRemote,
+		URL:  "https://user:" + secret + "@%zz.example/repo.git",
+	}
+	err := source.Validate()
+	if err == nil {
+		t.Fatal("Validate() accepted malformed credential-bearing URL")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("Validate() leaked credential in error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "***") {
+		t.Fatalf("Validate() error = %q, want redacted userinfo marker", err)
+	}
+}
+
 func TestSourceReferenceAllowsExternalSecretReference(t *testing.T) {
 	s := plan.SourceReference{
 		Role: plan.SourceRegistry,
