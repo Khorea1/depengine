@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-func copyArtifact(ctx context.Context, src, dst string) error {
+func copyArtifact(ctx context.Context, src, dst string) (retErr error) {
 	srcParent, srcName := filepath.Split(filepath.Clean(src))
 	if srcParent == "" {
 		srcParent = "."
@@ -23,7 +23,7 @@ func copyArtifact(ctx context.Context, src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer srcParentRoot.Close()
+	defer closeRoot(srcParentRoot, &retErr)
 
 	info, err := srcParentRoot.Lstat(srcName)
 	if err != nil {
@@ -34,14 +34,14 @@ func copyArtifact(ctx context.Context, src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer dstRoot.Close()
+	defer closeRoot(dstRoot, &retErr)
 
 	if info.IsDir() {
 		srcRoot, err := openVerifiedSubroot(srcParentRoot, srcName, info)
 		if err != nil {
 			return err
 		}
-		defer srcRoot.Close()
+		defer closeRoot(srcRoot, &retErr)
 		return copyRootContents(ctx, srcRoot, dstRoot, ".")
 	}
 
@@ -69,7 +69,7 @@ func copyRootContents(ctx context.Context, srcRoot, dstRoot *os.Root, relPrefix 
 	return nil
 }
 
-func copyRootEntry(ctx context.Context, srcRoot, dstRoot *os.Root, srcName, dstName, globalRel string, info fs.FileInfo) error {
+func copyRootEntry(ctx context.Context, srcRoot, dstRoot *os.Root, srcName, dstName, globalRel string, info fs.FileInfo) (retErr error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -85,13 +85,13 @@ func copyRootEntry(ctx context.Context, srcRoot, dstRoot *os.Root, srcName, dstN
 		if err != nil {
 			return err
 		}
-		defer srcChild.Close()
+		defer closeRoot(srcChild, &retErr)
 
 		dstChild, err := openVerifiedSubroot(dstRoot, dstName, dstInfo)
 		if err != nil {
 			return err
 		}
-		defer dstChild.Close()
+		defer closeRoot(dstChild, &retErr)
 
 		return copyRootContents(ctx, srcChild, dstChild, globalRel)
 	case info.Mode()&os.ModeSymlink != 0:
@@ -110,6 +110,12 @@ func copyRootEntry(ctx context.Context, srcRoot, dstRoot *os.Root, srcName, dstN
 		return copyRegularRootFile(srcRoot, dstRoot, srcName, dstName, info)
 	default:
 		return fmt.Errorf("unsupported file type %s", globalRel)
+	}
+}
+
+func closeRoot(root *os.Root, retErr *error) {
+	if err := root.Close(); err != nil && *retErr == nil {
+		*retErr = err
 	}
 }
 
