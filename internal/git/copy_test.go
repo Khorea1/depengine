@@ -111,6 +111,58 @@ func TestCopyArtifactRejectsDestinationDirectorySymlink(t *testing.T) {
 	}
 }
 
+func TestCopyArtifactFromRootRejectsIntermediateSourceSymlinkEscape(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation may require elevated privileges")
+	}
+
+	root := t.TempDir()
+	dst := t.TempDir()
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "tool"), []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "linked")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyArtifactFromRoot(context.Background(), root, filepath.Join("linked", "tool"), dst); err == nil {
+		t.Fatal("expected intermediate source symlink escape to be rejected")
+	}
+	if _, err := os.Stat(filepath.Join(dst, "tool")); !os.IsNotExist(err) {
+		t.Fatalf("escaped source was copied: %v", err)
+	}
+}
+
+func TestCopyArtifactFromRootAllowsContainedIntermediateSourceSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation may require elevated privileges")
+	}
+
+	root := t.TempDir()
+	dst := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "real"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "real", "tool"), []byte("binary"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real", filepath.Join(root, "linked")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyArtifactFromRoot(context.Background(), root, filepath.Join("linked", "tool"), dst); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dst, "tool"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "binary" {
+		t.Fatalf("copied content = %q, want binary", got)
+	}
+}
+
 func TestCopyArtifactRejectsEscapingSourceSymlink(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation may require elevated privileges")
