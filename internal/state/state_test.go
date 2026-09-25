@@ -3,6 +3,7 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -35,6 +36,29 @@ func TestLoadReturnsEmptyOnMissingFile(t *testing.T) {
 	}
 	if len(s.Tools) != 0 {
 		t.Fatalf("expected empty Tools, got %d entries", len(s.Tools))
+	}
+}
+
+func TestSaveTightensStateDirectoryPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows ACLs are not represented by Unix permission bits")
+	}
+	td := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", td)
+	dir := filepath.Join(td, "depengine")
+	if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- Fixture intentionally starts permissive to verify tightening.
+		t.Fatal(err)
+	}
+
+	if err := Save(&State{Version: currentStateVersion, Tools: map[string]ToolState{}}); err != nil {
+		t.Fatalf("Save(): %v", err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != privateDirMode {
+		t.Fatalf("state dir mode = %04o, want %04o", got, privateDirMode)
 	}
 }
 
