@@ -79,6 +79,12 @@ if [[ "${termux_ready}" -ne 1 ]]; then
   exit 1
 fi
 
+# The pinned APK can bootstrap with a community mirror selected at build time.
+# Keep CI independent of that mutable mirror choice by selecting Termux's
+# official primary repository before exercising the native package lifecycle.
+echo "Pinning Termux package source..."
+adb shell "run-as ${termux_package} /system/bin/sh -c 'printf \"%s\\n\" \"deb https://packages.termux.dev/apt/termux-main stable main\" > ${termux_prefix}/etc/apt/sources.list'"
+
 echo "Staging depengine lifecycle harness inside Termux..."
 adb shell "run-as ${termux_package} /system/bin/mkdir -p ${termux_home}/tests/platform/fixtures"
 
