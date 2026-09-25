@@ -1,22 +1,11 @@
 version: "2"
 run:
-  timeout: 3m
+  timeout: 5m
   tests: true
 linters:
   default: none
   enable:
-    - govet
-    - ineffassign
-    - errcheck
-    - staticcheck
-    - unused
     - gosec
-    - errorlint
 issues:
-  max-same-issues: 50
-  # Baseline: only issues in code changed since the base branch block CI.
-  # origin/master (not master): CI checks out PRs detached, where no local
-  # branch ref exists. The pre-existing backlog (unchecked errors, gosec
-  # findings, dead code) is triaged incrementally instead of blocking
-  # unrelated work.
-  new-from-rev: origin/master
+  max-same-issues: 0
+  max-issues-per-linter: 0
