@@ -67,10 +67,7 @@ type Result struct {
 
 // Add classifies a finding by its code prefix and appends to the right slice.
 func (r *Result) Add(e ValidationError) {
-	// Validation findings are user-facing and JSON-serializable. Treat this as
-	// the final display boundary so a lower-level parser error cannot persist
-	// literal credentials even if an individual validator forgets to redact it.
-	e.Message = run.RedactSensitiveText(e.Message)
+	e = redactValidationError(e)
 	if e.IsError() {
 		r.Errors = append(r.Errors, e)
 	} else {
@@ -78,10 +75,23 @@ func (r *Result) Add(e ValidationError) {
 	}
 }
 
-// Merge absorbs findings from another result.
+// Merge absorbs findings from another result while preserving their existing
+// error/warning classification.
 func (r *Result) Merge(other *Result) {
-	r.Errors = append(r.Errors, other.Errors...)
-	r.Warnings = append(r.Warnings, other.Warnings...)
+	for _, e := range other.Errors {
+		r.Errors = append(r.Errors, redactValidationError(e))
+	}
+	for _, warning := range other.Warnings {
+		r.Warnings = append(r.Warnings, redactValidationError(warning))
+	}
+}
+
+func redactValidationError(e ValidationError) ValidationError {
+	// Validation findings are user-facing and JSON-serializable. Treat storage
+	// as the final display boundary so a lower-level parser error cannot persist
+	// literal credentials even if an individual validator forgets to redact it.
+	e.Message = run.RedactSensitiveText(e.Message)
+	return e
 }
 
 // HasErrors reports whether any hard errors were found.
