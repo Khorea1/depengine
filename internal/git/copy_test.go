@@ -85,6 +85,87 @@ func TestCopyArtifactReplacesSymlinkWithoutFollowingIt(t *testing.T) {
 	}
 }
 
+func TestCopyArtifactRejectsDestinationDirectorySymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation may require elevated privileges")
+	}
+
+	src := t.TempDir()
+	dst := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Mkdir(filepath.Join(src, "bin"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "bin", "tool"), []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dst, "bin")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyArtifact(context.Background(), src, dst); err == nil {
+		t.Fatal("expected destination directory symlink to be rejected")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "tool")); !os.IsNotExist(err) {
+		t.Fatalf("copy escaped destination root: %v", err)
+	}
+}
+
+func TestCopyArtifactRejectsEscapingSourceSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation may require elevated privileges")
+	}
+
+	src := t.TempDir()
+	dst := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(src, "tool")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyArtifact(context.Background(), src, dst); err == nil {
+		t.Fatal("expected escaping source symlink to be rejected")
+	}
+	if _, err := os.Lstat(filepath.Join(dst, "tool")); !os.IsNotExist(err) {
+		t.Fatalf("escaping symlink copied: %v", err)
+	}
+}
+
+func TestCopyArtifactPreservesContainedSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation may require elevated privileges")
+	}
+
+	src := t.TempDir()
+	dst := t.TempDir()
+	if err := os.Mkdir(filepath.Join(src, "bin"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(src, "lib"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "lib", "tool"), []byte("binary"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("..", "lib", "tool"), filepath.Join(src, "bin", "tool")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyArtifact(context.Background(), src, dst); err != nil {
+		t.Fatal(err)
+	}
+	target, err := os.Readlink(filepath.Join(dst, "bin", "tool"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join("..", "lib", "tool"); target != want {
+		t.Fatalf("target = %q, want %q", target, want)
+	}
+}
+
 func TestCopyArtifactHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
