@@ -11,7 +11,6 @@ import (
 	"github.com/Khorea1/depengine/internal/containerref"
 	"github.com/Khorea1/depengine/internal/graph"
 	"github.com/Khorea1/depengine/internal/methodkind"
-	"github.com/Khorea1/depengine/internal/plan"
 )
 
 // validateCycles detects dependency cycles using graph.Sort.
@@ -131,30 +130,6 @@ func validateSourceLikeURLs(toolName string, methodIdx int, mc *config.MethodCan
 		if err := artifact.ValidateURL(checkURL, []string{"http", "https"}); err != nil {
 			r.Add(ValidationError{Code: ErrMalformedURL, Field: fieldPath(toolName, methodIdx, field), Message: fmt.Sprintf("%s: %v", mc.Kind, err)})
 		}
-	}
-
-	// cargo.git is projected into the shared source IR by the planner, so static
-	// validation must enforce the same credential-free boundary before planning.
-	// Preserve non-URL spellings (for example scp-style Git remotes) exactly as
-	// the planner does instead of inventing a stricter transport policy here.
-	rawGit, _ := mc.Config["git"].(string)
-	if rawGit == "" {
-		return
-	}
-	checkReference := config.PlaceholderRe.ReplaceAllString(rawGit, "_")
-	gitSource := plan.SourceReference{Role: plan.SourceSelection, Name: checkReference}
-	if strings.Contains(checkReference, "://") {
-		gitSource.Name = ""
-		gitSource.URL = checkReference
-	}
-	if err := gitSource.Validate(); err != nil {
-		// Do not include the parser error: malformed references can contain the
-		// very credential material this validation boundary is meant to reject.
-		r.Add(ValidationError{
-			Code:    ErrMalformedURL,
-			Field:   fieldPath(toolName, methodIdx, "git"),
-			Message: fmt.Sprintf("%s: git source is malformed or contains forbidden inline credential material", mc.Kind),
-		})
 	}
 }
 
