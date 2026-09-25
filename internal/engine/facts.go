@@ -164,8 +164,9 @@ func GatherFacts(r run.Runner) (*Facts, error) {
 		return gatherFactsGo(nil), nil
 	}
 
-	if script, err := legacyDetectorPath(); err != nil {
-		return nil, err
+	script, legacyErr := legacyDetectorPath()
+	if legacyErr != nil {
+		log.Default.Warn("legacy OS detector override unavailable, using native Go detection", "error", legacyErr)
 	} else if script != "" {
 		facts, err := gatherFactsFromLegacyDetector(r, script)
 		if err != nil {
