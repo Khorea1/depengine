@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -203,6 +204,25 @@ func TestGatherFactsUsesNativeDetectorByDefault(t *testing.T) {
 	for _, c := range runner.calls {
 		if strings.HasSuffix(c.name, ".sh") {
 			t.Fatalf("native default executed a shell detector: %s %v", c.name, c.args)
+		}
+	}
+}
+
+func TestGatherFactsInvalidLegacyOverrideFallsBackToNativeDetector(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing-legacy-detector")
+	t.Setenv("DEPENGINE_DETECT_SCRIPT", missing)
+
+	runner := &nativeDetectionRunner{}
+	facts, err := GatherFacts(runner)
+	if err != nil {
+		t.Fatalf("GatherFacts with missing legacy override failed: %v", err)
+	}
+	if facts == nil || facts.TargetArch != "x86_64" {
+		t.Fatalf("native fallback facts = %#v, want x86_64 architecture", facts)
+	}
+	for _, c := range runner.calls {
+		if c.name == missing {
+			t.Fatalf("missing legacy detector was executed: %s %v", c.name, c.args)
 		}
 	}
 }
