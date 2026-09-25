@@ -454,10 +454,14 @@ func (a *GitAdapter) installResolvedSource(ctx context.Context, rn run.Runner, t
 		if err != nil {
 			return err
 		}
+		rel, err := filepath.Rel(cloneDir, src)
+		if err != nil {
+			return fmt.Errorf("git: artifact path: %w", err)
+		}
 		if err := os.MkdirAll(extractTo, 0o755); err != nil {
 			return fmt.Errorf("git: mkdir %s: %w", extractTo, err)
 		}
-		if err := copyArtifact(ctx, src, extractTo); err != nil {
+		if err := copyArtifactFromRoot(ctx, cloneDir, rel, extractTo); err != nil {
 			return fmt.Errorf("git: copy: %w", err)
 		}
 	}

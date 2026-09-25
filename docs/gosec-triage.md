@@ -4,9 +4,12 @@ Reviewed on 2026-09-25 with golangci-lint v2.13.2, without the
 `new-from-rev` baseline or diagnostic caps. The original 2026-09-24 audit
 reported 420 diagnostics: 72 in production and 348 in tests. The owner-only
 storage pass reduced the current tree to 405 diagnostics: 56 in production
-and 349 in tests. Root-scoping stripped archive copies further reduces the
+and 349 in tests. Root-scoping stripped archive copies further reduced the last full
 uncapped scan to 401 diagnostics: 52 in production and 349 in tests.
-These are scanner diagnostics, not a count of confirmed vulnerabilities.
+The subsequent Git artifact-copy hardening removes two production G304
+findings in a targeted scan without suppressions; rerun the full uncapped
+scan to establish the next repository-wide total. These are scanner
+diagnostics, not a count of confirmed vulnerabilities.
 
 Reproduce with a temporary configuration:
 
@@ -57,6 +60,8 @@ lint baseline until the complete backlog is resolved.
   executable permissions, and fake credentials account for many diagnostics;
   do not blanket-disable gosec for tests.
 
-The current uncapped count is 401 diagnostics: 52 in production and 349 in
-tests. The count is not a severity score; rerun the uncapped command after
-future changes to measure the current backlog.
+The last full uncapped count is 401 diagnostics: 52 in production and 349
+in tests. The Git artifact-copy hardening has a verified targeted delta of
+minus two production G304 findings; do not treat 399 as the new repository
+total until the uncapped command above is rerun. The count is not a severity
+score.
