@@ -44,11 +44,11 @@ jobs:
         govulncheck ./...
 
     - name: Test fuzz harness
-      run: python3 scripts/run_fuzz_test.py
+      run: go test ./internal/tools/fuzzall
 
     - name: Run all declared fuzz targets runnable on Linux (bounded)
       timeout-minutes: 15
-      run: python3 scripts/run_fuzz.py 10s
+      run: go run ./internal/tools/fuzzall -fuzztime=10s
 
     - name: Derive version
       id: version
