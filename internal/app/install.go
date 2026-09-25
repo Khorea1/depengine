@@ -45,6 +45,7 @@ func newInstallCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "install",
+		Aliases: []string{"i"},
 		Short:   ifPT("Instalar ferramentas do schema.toml", "Install tools from schema.toml"),
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
@@ -57,13 +58,13 @@ func newInstallCmd() *cobra.Command {
 	f.StringVar(installManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(installNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
 	f.BoolVar(installDryRun, "dry-run", false, "show what would be installed")
-	f.BoolVar(installVerbose, "verbose", false, "detailed output")
+	f.BoolVar(installVerbose, "verbose", false, "deprecated compatibility flag; detailed output is already the default")
 	f.BoolVar(installJSON, "json", false, "JSON output")
 	f.StringVar(installOnly, "only", "", "only install specific tool")
 	f.StringVar(installSkip, "skip", "", "skip specific tools (comma-separated)")
 	f.StringVar(installProfile, "profile", "", "only install tools with matching tag (e.g. minimal,desktop,server)")
 	f.BoolVar(installFrozen, "frozen-lockfile", false, "fail if depengine.lock is missing, detectably stale, or lacks a supported required pin")
-	f.BoolVar(installDiagnose, "diagnose", false, "diagnostic mode: DEBUG + dry-run + verbose")
+	f.BoolVar(installDiagnose, "diagnose", false, "diagnostic mode: DEBUG + dry-run + detailed report")
 	f.StringVar(installLogLevel, "log-level", "", "log level: debug, info, warn, error")
 	f.StringVar(installSortBy, "sort-by", "", "sort output by: name, status, method")
 	f.IntVar(installJobs, "jobs", 1, "max concurrent installations (default 1 = sequential)")
@@ -72,7 +73,7 @@ func newInstallCmd() *cobra.Command {
 	if err := f.MarkHidden("yolo"); err != nil {
 		panic(err)
 	}
-	f.BoolVar(installQuiet, "quiet", false, "suppress per-tool status lines; show only final summary")
+	f.BoolVar(installQuiet, "quiet", false, "suppress live per-tool status lines; show final per-tool report")
 	return cmd
 }
 
@@ -320,6 +321,10 @@ func finishInstallRun(ctx context.Context, report *exec.ExecReport, p installPla
 	return installExitForReport(report)
 }
 
+func shouldWarnDeprecatedVerbose(cmd *cobra.Command) bool {
+	return cmd.Flags().Changed("verbose")
+}
+
 // runInstall installs tools from schema.toml. Thin orchestrator over the
 // phase helpers above — flag resolution, header, executor build, lock,
 // execute, render, finish.
@@ -346,8 +351,8 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		ecosystem.ReconfigureAUR(helper)
 	}
 
-	if p.verbose {
-		fmt.Fprintln(os.Stderr, "depengine: --verbose is deprecated; output is now verbose by default. Use --quiet for the old summary-only behavior.")
+	if shouldWarnDeprecatedVerbose(cmd) {
+		fmt.Fprintln(os.Stderr, "depengine: --verbose is deprecated; detailed output is already the default. Use --quiet to suppress live per-tool status lines.")
 	}
 
 	// One aligned block instead of several scattered Fprintf calls — a
