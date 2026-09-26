@@ -4,12 +4,36 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/log"
 )
+
+func TestLoggingRunnerPassesStdoutPipeThrough(t *testing.T) {
+	inner := &FakeRunner{Stdout: "payload"}
+	cap := log.NewTestLogger(t)
+	runner := NewLoggingRunner(inner, cap.Logger)
+
+	pipe, err := OpenStdoutPipe(context.Background(), runner, "decoder", "-dc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(pipe.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := pipe.Wait(); result.Err != nil || result.ExitCode != 0 {
+		t.Fatalf("stream result = %+v", result)
+	}
+	if string(got) != "payload" {
+		t.Fatalf("streamed stdout = %q, want payload", got)
+	}
+	cap.AssertContains(t, "run stream")
+	cap.AssertContains(t, "run stream ok")
+}
 
 func TestLoggingRunnerPassesResultThrough(t *testing.T) {
 	inner := &FakeRunner{Stdout: "ok", ExitCode: 0}
