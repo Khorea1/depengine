@@ -417,6 +417,9 @@ func extractNativeTar(ctx context.Context, src, dest, ext string) (retErr error)
 			return fmt.Errorf("tar entry %q has unsupported type %d", hdr.Name, hdr.Typeflag)
 		}
 	}
+	if err := verifyCompressedTarTrailer(ctx, r); err != nil {
+		return fmt.Errorf("tar: verify archive stream: %w", err)
+	}
 	if err := m.applyDirectoryModes(); err != nil {
 		return fmt.Errorf("tar: %w", err)
 	}

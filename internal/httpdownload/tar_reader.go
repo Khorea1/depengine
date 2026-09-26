@@ -2,6 +2,7 @@ package httpdownload
 
 import (
 	"compress/bzip2"
+	"context"
 	"compress/gzip"
 	"errors"
 	"fmt"
@@ -42,6 +43,28 @@ func openStdlibTarReader(src, ext string) (io.ReadCloser, error) {
 		_ = f.Close()
 		return nil, fmt.Errorf("tar archive compression %q is not supported by the Go standard library", ext)
 	}
+}
+
+
+// maxTarTrailingBytes bounds bytes following the TAR end markers while still
+// allowing ordinary record padding produced by system tar implementations.
+// Draining this tail forces gzip/bzip2 readers to validate their stream trailer
+// without permitting an unbounded decompression sink after the logical archive.
+const maxTarTrailingBytes int64 = 16 << 20
+
+func verifyCompressedTarTrailer(ctx context.Context, r io.Reader) error {
+	limited := &io.LimitedReader{
+		R: contextReader{ctx: ctx, r: r},
+		N: maxTarTrailingBytes + 1,
+	}
+	n, err := io.Copy(io.Discard, limited)
+	if err != nil {
+		return err
+	}
+	if n > maxTarTrailingBytes {
+		return fmt.Errorf("tar trailing data exceeds %d-byte limit", maxTarTrailingBytes)
+	}
+	return nil
 }
 
 type compoundReadCloser struct {

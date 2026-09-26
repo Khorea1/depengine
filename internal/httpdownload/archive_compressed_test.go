@@ -142,6 +142,34 @@ func TestExtractCompressedTarRejectsCorruptGzip(t *testing.T) {
 	}
 }
 
+
+func TestExtractCompressedTarRejectsCorruptGzipTrailer(t *testing.T) {
+	t.Parallel()
+	plain := makeCompressedTarFixture(t, []compressedTarFixtureEntry{{
+		header: tar.Header{Name: "bin/tool", Mode: 0o755, Typeflag: tar.TypeReg},
+		body:   []byte("payload"),
+	}})
+	payload := gzipCompressedTarFixture(t, plain)
+	if len(payload) < 8 {
+		t.Fatal("gzip fixture is unexpectedly short")
+	}
+	payload[len(payload)-8] ^= 0xff // corrupt CRC32 while leaving the deflate payload intact
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "bad-crc.tar.gz")
+	if err := os.WriteFile(src, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fr := &run.FakeRunner{ExitCode: 0}
+
+	if err := Extract(context.Background(), src, filepath.Join(dir, "dest"), ".tar.gz", fr, false, ""); err == nil {
+		t.Fatal("expected gzip trailer checksum error")
+	}
+	if len(fr.Calls) != 0 {
+		t.Fatalf("corrupt gzip trailer should not invoke subprocesses: %+v", fr.Calls)
+	}
+}
+
 func writeTarGzEntries(t *testing.T, archivePath string, entries []compressedTarFixtureEntry) {
 	t.Helper()
 	plain := makeCompressedTarFixture(t, entries)
