@@ -129,6 +129,7 @@ func TestExtractExternalTarViaStreamingDecoder(t *testing.T) {
 		})
 	}
 }
+
 func TestExtractZipNative(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -171,6 +172,7 @@ func TestExternalTarDecoderDoesNotReceiveDestination(t *testing.T) {
 		}
 	}
 }
+
 func TestExtractCopyBinary(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
@@ -382,6 +384,7 @@ func TestExtractExternalTarDecoderFailure(t *testing.T) {
 		t.Fatalf("decoder failure = %v", err)
 	}
 }
+
 func TestExtractZipFailure(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -704,6 +707,7 @@ func TestExternalTarExtractionRejectsPreexistingSymlinkPivot(t *testing.T) {
 		})
 	}
 }
+
 func TestElevationGuardNoMethod(t *testing.T) {
 	t.Parallel()
 	if os.Geteuid() == 0 {
