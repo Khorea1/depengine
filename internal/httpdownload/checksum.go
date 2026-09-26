@@ -48,7 +48,7 @@ const (
 
 // HashFile hashes a file with the given algorithm name ("sha256", "md5", "sha1", "sha512").
 func HashFile(algorithm, path string) (string, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- HashFile intentionally hashes the caller-selected artifact path.
 	if err != nil {
 		return "", fmt.Errorf("open: %w", err)
 	}

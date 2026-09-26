@@ -266,7 +266,7 @@ func Clear() (int, error) {
 
 // CopyFile copies a file from src to dst, preserving permissions.
 func CopyFile(src, dst string) error {
-	s, err := os.Open(src)
+	s, err := os.Open(src) // #nosec G304 -- CopyFile deliberately accepts caller-selected local source paths.
 	if err != nil {
 		return fmt.Errorf("open source: %w", err)
 	}
@@ -277,7 +277,7 @@ func CopyFile(src, dst string) error {
 		return fmt.Errorf("stat source: %w", err)
 	}
 
-	d, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, fi.Mode().Perm())
+	d, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, fi.Mode().Perm()) // #nosec G304 -- CopyFile deliberately materializes into a caller-selected destination path.
 	if err != nil {
 		return fmt.Errorf("create dest: %w", err)
 	}

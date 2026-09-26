@@ -131,7 +131,7 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 	if m == nil {
 		m = map[string]string{}
 	}
-	rawBytes, err := os.ReadFile(path)
+	rawBytes, err := os.ReadFile(path) // #nosec G304 -- Parsing an explicitly selected schema/manifest path is this package's contract.
 	if err != nil {
 		return nil, &ParseSchemaError{Err: fmt.Errorf("reading schema %s: %w", path, err)}
 	}
@@ -804,7 +804,7 @@ func sortedKeys(m map[string]any, exclude ...string) []string {
 // findLineInFile returns the 1-based line number of the first occurrence of key in the file.
 // Used to augment error messages with file positions when go-toml/v2 doesn't expose them.
 func findLineInFile(path, key string) (int, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- This diagnostic helper rereads the same explicitly selected config file.
 	if err != nil {
 		return 0, err
 	}

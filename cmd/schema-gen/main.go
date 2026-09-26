@@ -16,7 +16,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if err := os.WriteFile(*output, data, 0o644); err != nil {
+	if err := os.WriteFile(*output, data, 0o644); err != nil { // #nosec G306 -- Generated schema is a repository artifact intended to be shareable.
 		fmt.Fprintf(os.Stderr, "write %s: %v\n", *output, err)
 		os.Exit(1)
 	}

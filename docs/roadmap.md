@@ -26,11 +26,12 @@ Work on the current execution model comes before adding more installer types.
   against Go's runtime test listing, then every runnable target gets a bounded
   fuzz run; missing, renamed, newly added, or build-tagged-out targets fail.
 - [~] Triage the security-relevant `gosec` backlog ahead of the general lint
-  cleanup. Reviewed and documented scanner findings, added narrow checksum
-  compatibility and TAR normalization suppressions, and fixed the hard-link
-  path validation gap. Local/offline archive expansion now has a 4 GiB
-  aggregate limit, and TAR mode conversions validate range before narrowing.
-  Remaining call-site review is open; see
+  cleanup. Production call sites are now fully reviewed under the uncapped
+  scanner: the current tree has zero unsuppressed production diagnostics.
+  Hardening includes archive confinement/limits, owner-only state/cache storage,
+  owner-only state locks and temporary GPG key material, and symlink rejection
+  during snapshot enumeration. The remaining 348 diagnostics are all in test
+  fixtures and still require independent review; see
   [`gosec-triage.md`](gosec-triage.md).
 - [x] Remove the orphaned root lock artifact. No canonical root schema is
   tracked; the stale lock referenced a removed `fastfetch/http/0` method and

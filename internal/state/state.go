@@ -132,7 +132,7 @@ func Save(s *State) error {
 	// because Windows FlushFileBuffers needs GENERIC_WRITE, which a
 	// read-only os.Open handle does not provide.
 	tmpPath := path + ".tmp"
-	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) // #nosec G304 -- tmpPath is derived from the generated private state path.
 	if err != nil {
 		return fmt.Errorf("write state tmp: %w", err)
 	}
@@ -165,7 +165,7 @@ func Save(s *State) error {
 	// file object, not a directory), and NTFS journals metadata updates, so
 	// the directory sync is Unix-only.
 	if runtime.GOOS != "windows" {
-		dirF, err := os.Open(dir)
+		dirF, err := os.Open(dir) // #nosec G304 -- dir is the generated private state directory and is opened only for fsync.
 		if err != nil {
 			return fmt.Errorf("open state dir for sync: %w", err)
 		}
@@ -247,7 +247,7 @@ func SaveLocked(st *State) error {
 // LoadFrom reads a state file from an arbitrary path (not DefaultPath).
 // If the file does not exist, it returns an empty-but-valid State ready for first use.
 func LoadFrom(path string) (*State, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- LoadFrom intentionally reads an explicitly selected state file path.
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &State{

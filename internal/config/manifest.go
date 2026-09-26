@@ -29,7 +29,7 @@ func DefaultManifestPath() string {
 		xdg = filepath.Join(home, ".config")
 	}
 	p := filepath.Join(xdg, "depengine", "manifest.toml")
-	if _, err := os.Stat(p); err != nil {
+	if _, err := os.Stat(p); err != nil { // #nosec G703 -- XDG/operator configuration intentionally selects the manifest path being probed.
 		return ""
 	}
 	return p
