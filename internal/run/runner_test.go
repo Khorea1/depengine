@@ -34,6 +34,19 @@ func TestFakeRunnerStdoutPipe(t *testing.T) {
 	}
 }
 
+func TestFakeRunnerStdoutPipeReturnsSpawnError(t *testing.T) {
+	spawnErr := errors.New("decoder not found")
+	fr := &FakeRunner{Err: spawnErr}
+
+	pipe, err := OpenStdoutPipe(context.Background(), fr, "decoder")
+	if pipe != nil {
+		t.Fatalf("pipe = %#v, want nil on spawn failure", pipe)
+	}
+	if !errors.Is(err, spawnErr) {
+		t.Fatalf("error = %v, want %v", err, spawnErr)
+	}
+}
+
 func TestOSExecRunnerStdoutPipe(t *testing.T) {
 	name := "sh"
 	args := []string{"-c", "printf streamed"}
