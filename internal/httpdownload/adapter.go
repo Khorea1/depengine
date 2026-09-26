@@ -488,7 +488,7 @@ func (a *HTTPAdapter) verifyChecksum(ctx context.Context, rn run.Runner, filePat
 // resolveAutoChecksum handles :auto checksum resolution by trying to fetch
 // a companion checksum file and extracting the expected hash.
 func (a *HTTPAdapter) resolveAutoChecksum(ctx context.Context, rn run.Runner, filePath, downloadURL string, cc *checksumConfig, config map[string]any) error {
-	log.Default.Warn("checksum fetched from server (TOFU)", "algorithm", cc.algorithm, "hint", "use checksum_url for a separate source, or pin the hash in depengine.lock")
+	log.Default.Warn("checksum fetched from server (TOFU)", "algorithm", cc.algorithm, "hint", "use checksum_url for a separate source, set a literal checksum in schema.toml, or pin the hash in depengine.lock")
 
 	parsedURL, err := url.Parse(downloadURL)
 	if err != nil {

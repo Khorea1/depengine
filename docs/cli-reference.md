@@ -207,7 +207,7 @@ Aliases: `rollback`.
 
 ## `depengine update [flags]`
 
-Resolve and pin versions into depengine.lock
+Resolve mutable references and pin them in depengine.lock
 
 Aliases: `lock`.
 
@@ -219,13 +219,13 @@ Aliases: `lock`.
 | `--lock <string>` | local | `` | path to depengine.lock (default: alongside schema.toml) |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
-| `--profile <string>` | local | `` | only resolve & pin tools with matching tag |
+| `--profile <string>` | local | `` | only re-resolve tools with matching tag; other pins from a readable lock are preserved |
 | `--schema <string>` | local | `schema.toml` | path to schema.toml |
 | `--v` | local | `false` | detailed output |
 
 ## `depengine upgrade [flags]`
 
-Upgrade installed tools to pinned versions
+Upgrade installed tools to the versions pinned in depengine.lock
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|

@@ -353,7 +353,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, immutable-lock.",
+          "description": "Method capabilities: source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "oneOf": [
             {
               "not": {
@@ -679,7 +679,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "oneOf": [
             {
               "not": {
@@ -1007,7 +1007,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1227,7 +1227,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1380,7 +1380,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, auth, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1570,7 +1570,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1658,7 +1658,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1754,7 +1754,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, environment-profile, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, environment-profile, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1880,7 +1880,7 @@
               }
             }
           ],
-          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, auth, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2207,7 +2207,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, scope, revision, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: source-selection, scope, revision, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2292,7 +2292,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2388,7 +2388,7 @@
               }
             }
           ],
-          "description": "Method capabilities: arbitrary-code, revision, source-mutation, auth, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: arbitrary-code, revision, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2558,7 +2558,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "oneOf": [
             {
               "required": [
@@ -2701,7 +2701,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2801,7 +2801,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "oneOf": [
             {
               "not": {
@@ -2980,7 +2980,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock, local-artifact.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock, local-artifact. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3170,7 +3170,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "oneOf": [
             {
               "not": {
@@ -3405,7 +3405,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3775,7 +3775,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3853,7 +3853,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4166,7 +4166,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4316,7 +4316,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4409,7 +4409,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4683,7 +4683,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4901,7 +4901,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5088,7 +5088,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5484,7 +5484,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, immutable-lock.",
+          "description": "Method capabilities: source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "oneOf": [
             {
               "not": {
@@ -5736,7 +5736,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "oneOf": [
             {
               "not": {
@@ -5996,7 +5996,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6148,7 +6148,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6305,7 +6305,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, auth, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6503,7 +6503,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6595,7 +6595,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6695,7 +6695,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, environment-profile, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, environment-profile, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6819,7 +6819,7 @@
               }
             }
           ],
-          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, auth, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6924,7 +6924,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, scope, revision, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: source-selection, scope, revision, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7013,7 +7013,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7107,7 +7107,7 @@
               }
             }
           ],
-          "description": "Method capabilities: arbitrary-code, revision, source-mutation, auth, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: arbitrary-code, revision, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7277,7 +7277,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "oneOf": [
             {
               "required": [
@@ -7426,7 +7426,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7524,7 +7524,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "oneOf": [
             {
               "not": {
@@ -7701,7 +7701,7 @@
       "oneOf": [
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock, local-artifact.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock, local-artifact. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7895,7 +7895,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "oneOf": [
             {
               "not": {
@@ -8140,7 +8140,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8296,7 +8296,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8378,7 +8378,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8467,7 +8467,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8545,7 +8545,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8642,7 +8642,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8928,7 +8928,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -9158,7 +9158,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -9273,7 +9273,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock.",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests.",
           "properties": {
             "arch_map": {
               "additionalProperties": {

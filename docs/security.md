@@ -173,8 +173,13 @@ be conservative.
 `depengine.lock` improves reproducibility; it is not a trust root. Review lock
 changes like source changes and protect the repository that stores them.
 
-`--frozen-lockfile` prevents implicit lock updates. It cannot tell you whether
-an upstream registry, package, signing key, or mutable reference is trustworthy.
+`--frozen-lockfile` does not leave the file untouched: a successful frozen
+install still rewrites `depengine.lock`. Its guarantee is about what the run
+consumes — validation runs before execution and fails closed when a required
+pin or a stored method identity is missing or no longer matches, so no existing
+pin or method identity is silently re-resolved or dropped from the rewritten
+file. It cannot tell you whether an upstream registry, package, signing key, or
+mutable reference is trustworthy.
 
 Lock coverage is not universal yet. See
 [support boundaries](support-boundary.md) for the current limits.

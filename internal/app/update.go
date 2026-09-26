@@ -30,7 +30,7 @@ func newUpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "update",
 		Aliases: []string{"lock"},
-		Short:   ifPT("Resolver e fixar versões em depengine.lock", "Resolve and pin versions into depengine.lock"),
+		Short:   ifPT("Resolver referências mutáveis e fixá-las no depengine.lock", "Resolve mutable references and pin them in depengine.lock"),
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -42,7 +42,7 @@ func newUpdateCmd() *cobra.Command {
 	f.StringVar(updateManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(updateNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
 	f.StringVar(updateLock, "lock", "", "path to depengine.lock (default: alongside schema.toml)")
-	f.StringVar(updateProfile, "profile", "", "only resolve & pin tools with matching tag")
+	f.StringVar(updateProfile, "profile", "", ifPT("resolver apenas ferramentas com tag correspondente; os demais pins de um lock legível são preservados", "only re-resolve tools with matching tag; other pins from a readable lock are preserved"))
 	f.BoolVar(updateFrozen, "frozen-lockfile", false, "abort if depengine.lock does not exist")
 	f.BoolVar(updateDryRun, "dry-run", false, "show what would be updated without writing lock")
 	f.BoolVar(updateVerbose, "v", false, "detailed output")
@@ -104,10 +104,34 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 			return exitWithCode(2)
 		}
 	}
+
+	// Merge a readable pre-existing lock so update does not drop pins it did
+	// not just re-resolve: ResolveAll deliberately skips materialized `:auto`
+	// checksums, and --profile keeps tools out of the resolution entirely. A
+	// missing lock is the normal first-run case. Preserve update's historical
+	// recovery behavior for an unreadable lock: warn, then regenerate it from
+	// the fresh resolution because its old pins cannot be recovered safely.
+	oldLock, err := lock.Load(lockPath)
+	if err != nil {
+		lg.Warn("existing lock unreadable; pins not carried over", "path", lockPath, "error", err)
+		oldLock = nil
+	}
+	newLock = lock.Merge(oldLock, newLock)
+	if oldLock != nil {
+		// update IS the operation that accepts a changed method identity: for
+		// tools the fresh resolution covers, the newly computed hash wins.
+		// Old hashes survive only for tools the fresh lock does not cover
+		// (filtered out by --profile, or resolved without methods).
+		for name, oldHash := range oldLock.MethodsHash {
+			if _, ok := newLock.MethodsHash[name]; !ok {
+				newLock.MethodsHash[name] = oldHash
+			}
+		}
+	}
 	pinned := len(newLock.Tools)
 	if *updateDryRun {
 		done(c.cyan("dry-run"))
-		c.arrow("would pin %d versions to %s", pinned, lockPath)
+		c.arrow("would write %d pins to %s", pinned, lockPath)
 	} else {
 		if err := lock.Save(lockPath, newLock); err != nil {
 			done("FAIL")

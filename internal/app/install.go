@@ -314,7 +314,7 @@ func finishInstallRun(ctx context.Context, report *exec.ExecReport, p installPla
 	// After successful install, guide the user to share.
 	if shouldShareInstallHint(report, p.dryRun) {
 		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, cs.dim("Share schema.toml in git so others can reproduce your tools:"))
+		fmt.Fprintln(os.Stderr, cs.dim("Share schema.toml in git so others can reproduce your declared tool set:"))
 		fmt.Fprintln(os.Stderr, cs.dim("  git add schema.toml depengine.lock && git commit"))
 	}
 
