@@ -149,25 +149,6 @@ func extractTar(ctx context.Context, src, dest string, flags []string, rn run.Ru
 	return nil
 }
 
-func extractZip(ctx context.Context, src, dest string, rn run.Runner, sudoRequired bool, toolName string) error {
-	if sudoRequired && os.Geteuid() != 0 {
-		if err := elevationGuard(sudoRequired, toolName); err != nil {
-			return fmt.Errorf("unzip: %w", err)
-		}
-		sudoBin := run.ElevationPrefix()[0]
-		res := rn.Run(ctx, sudoBin, "unzip", "-o", src, "-d", dest)
-		if err := run.CheckResult(res, "unzip"); err != nil {
-			return err
-		}
-	} else {
-		res := rn.Run(ctx, "unzip", "-o", src, "-d", dest)
-		if err := run.CheckResult(res, "unzip"); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired bool, toolName string) error {
 	// Guard: dpkg must exist on the system. Host/distribution compatibility is
 	// enforced by the executor before this mutation boundary; this check remains
@@ -230,7 +211,7 @@ func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired boo
 // sudoRequired is set and the process isn't already root, os.WriteFile can't
 // help — an unprivileged process has no way to write into a root-owned
 // directory — so the copy is done via an elevated `install`, mirroring how
-// extractTar/extractZip/installDeb already shell out through
+// compressed TAR extraction/installDeb already shell out through
 // run.ElevationPrefix() instead of touching the filesystem directly.
 // `install -m 0755` also creates the destination with the right mode in one
 // step, avoiding a separate chmod call under sudo.
