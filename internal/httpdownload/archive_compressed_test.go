@@ -104,7 +104,7 @@ func TestExtractCompressedTarRejectsSymlinkPivot(t *testing.T) {
 			}
 			outside := t.TempDir()
 			dest := filepath.Join(dir, "dest")
-			if err := os.MkdirAll(dest, 0o755); err != nil {
+			if err := os.MkdirAll(dest, 0o755); err != nil { // #nosec G301 -- test staging root lives under t.TempDir.
 				t.Fatal(err)
 			}
 			if err := os.Symlink(outside, filepath.Join(dest, "pivot")); err != nil {
