@@ -658,9 +658,8 @@ func TestExtractAllowsSafeTarGz(t *testing.T) {
 	}
 }
 
-// .tar.xz has no decompressor in the standard library, so validateArchiveSafety
-// is a no-op for it — Extract must still reach the system `tar` binary
-// exactly as before this change (see TestExtractArchiveTypes).
+// XZ/Zstd decoders are byte producers only; the rooted TAR materializer must
+// still reject a destination symlink pivot before any outside write occurs.
 func TestExternalTarExtractionRejectsPreexistingSymlinkPivot(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink fixture requires platform symlink privileges")
