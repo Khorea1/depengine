@@ -50,9 +50,11 @@ type ToolResult struct {
 	Error      string          // populated only if StatusFailed
 	Methods    []MethodAttempt // history of attempts (for --verbose)
 	Duration   string          // human-readable duration (e.g. "3.2s"), set by executor
-	// PreinstallDone reports that at least one attempted candidate successfully
-	// crossed its pre-install hook boundary in this run. It is reporting only:
-	// it must never suppress a later candidate's hook or establish durable health.
+	// PreinstallDone reports that the candidate/transition that actually
+	// committed the install crossed its pre-install hook boundary in this run.
+	// It is tied to that transition only: a losing candidate's successful hook
+	// must not stamp the result, and it must never establish durable health or
+	// suppress a later candidate's hook.
 	PreinstallDone bool
 
 	// PostinstallDone is true if a postinstall script was successfully run.

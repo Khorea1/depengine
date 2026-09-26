@@ -454,6 +454,71 @@ func TestExecutorRunsPreinstallPerCandidateFallback(t *testing.T) {
 	}
 }
 
+// TestExecutorFallbackPreinstallDoneTiedToCommittingTransition verifies that
+// the report-level PreinstallDone flag belongs to the candidate/transition
+// that actually ran, not to whichever candidate first crossed the boundary.
+// The primary candidate's successful pre-install must not stamp the tool
+// result when the final (fallback) transition fails at its own pre-install:
+// a one-time hook success from an earlier attempt must never masquerade as
+// the running transition's record.
+func TestExecutorFallbackPreinstallDoneTiedToCommittingTransition(t *testing.T) {
+	primary := &testMockAdapter{
+		kindValue:   "primary",
+		checkFunc:   func(string) bool { return false },
+		installFunc: func(string) error { return &installError{msg: "primary failed"} },
+	}
+	fallback := &testMockAdapter{
+		kindValue: "fallback",
+		checkFunc: func(string) bool { return false },
+		// No installFunc: the fallback pre-install fails before install is tried.
+	}
+	runner := &sequenceRunner{results: []run.Result{
+		{},            // primary pre-install succeeds
+		{ExitCode: 1}, // fallback pre-install fails
+	}}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(primary, fallback)(ex)
+	WithAllowArbitraryCode()(ex)
+
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"primary", "fallback"}},
+		Tools: map[string]*config.Tool{
+			"demo": {
+				Name:       "demo",
+				PreInstall: []config.Hook{{Run: []string{"prehook"}}},
+				Methods: []*config.MethodCandidate{
+					{Kind: "primary", Config: map[string]any{"pkg": "demo"}},
+					{Kind: "fallback", Config: map[string]any{"pkg": "demo"}},
+				},
+			},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), schema, "")
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusFailed {
+		t.Fatalf("result = %+v, want terminal failure from the fallback pre-install", report.Tools)
+	}
+	if !strings.Contains(report.Tools[0].Error, "pre-install") {
+		t.Fatalf("result error = %q, want pre-install failure", report.Tools[0].Error)
+	}
+	if report.Tools[0].PreinstallDone {
+		t.Fatalf("PreinstallDone = true from the losing candidate; one-time hook success must not masquerade as the running transition's record: %+v", report.Tools[0])
+	}
+	if len(report.Tools[0].Methods) != 2 {
+		t.Fatalf("method attempts = %+v, want primary + fallback attempts", report.Tools[0].Methods)
+	}
+	if report.Tools[0].Methods[0].Status != "failed" || report.Tools[0].Methods[1].Status != "failed" {
+		t.Fatalf("method attempts = %+v, want both candidates failed", report.Tools[0].Methods)
+	}
+	if report.Tools[0].Methods[1].Error != "pre-install: pre-install exited 1" {
+		t.Fatalf("fallback attempt error = %q, want pre-install failure detail", report.Tools[0].Methods[1].Error)
+	}
+}
+
 func TestExecutorSkipsHostIncompatibleCandidateAndFallsBack(t *testing.T) {
 	blocked := &compatibilityMockAdapter{
 		testMockAdapter: testMockAdapter{kindValue: "blocked"},
