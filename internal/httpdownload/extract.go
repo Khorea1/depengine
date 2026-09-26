@@ -58,10 +58,11 @@ func defaultSudoRequired(dest string) bool {
 	return !strings.HasPrefix(dest, home+string(filepath.Separator))
 }
 
-// Extract decompresses src into dest based on the file extension.
-// Delegates to external tools (tar, unzip, dpkg) for v0.1 to avoid
-// adding Go archive-library dependencies. Go stdlib archive support
-// may replace this in a future version.
+// Extract materializes src into dest based on the file extension.
+// ZIP and TAR formats supported by the Go standard library are extracted
+// in-process through an os.Root-confined materializer. XZ- and Zstd-compressed
+// TAR archives retain the subprocess backend until streamed decompression is
+// added without granting the subprocess filesystem write authority.
 func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequired bool, toolName string) error {
 	return extract(ctx, src, dest, ext, "", rn, sudoRequired, toolName)
 }
@@ -72,33 +73,24 @@ func extract(ctx context.Context, src, dest, ext, binaryName string, rn run.Runn
 		return fmt.Errorf("extract: mkdir %s: %w", dest, err)
 	}
 
-	// Reject archives containing a "zip slip" / path-traversal member (e.g.
-	// "../../etc/cron.d/evil" or an absolute path, or a symlink pointing
-	// outside dest) BEFORE handing the file to the system tar/unzip binary.
-	// depengine downloads archives from arbitrary schema-declared URLs and
-	// frequently extracts them with sudo, so a malicious or compromised
-	// upstream release asset must not be able to write outside dest. This
-	// check reads the archive with the Go standard library only (no new
-	// dependency, no extra subprocess call) and is a no-op if the file can't
-	// be parsed — in that case the real extraction command below still runs
-	// and reports its own, more specific error.
-	if err := validateArchiveSafety(src, dest, ext); err != nil {
-		return fmt.Errorf("extract: refusing unsafe archive: %w", err)
+	// XZ/Zstd are the only TAR variants still delegated to host tar. Keep the
+	// legacy preflight hook on that subprocess path until streamed decompression
+	// removes its filesystem write authority.
+	if ext == ".tar.xz" || ext == ".tar.zst" {
+		if err := validateArchiveSafety(src, dest, ext); err != nil {
+			return fmt.Errorf("extract: refusing unsafe archive: %w", err)
+		}
 	}
 
 	switch ext {
-	case ".tar.gz", ".tgz":
-		return extractTar(ctx, src, dest, []string{"xzf"}, rn, sudoRequired, toolName)
-	case ".tar.bz2":
-		return extractTar(ctx, src, dest, []string{"xjf"}, rn, sudoRequired, toolName)
+	case ".tar", ".tar.gz", ".tgz", ".tar.bz2":
+		return extractNativeTar(ctx, src, dest, ext)
 	case ".tar.xz":
 		return extractTar(ctx, src, dest, []string{"xJf"}, rn, sudoRequired, toolName)
 	case ".tar.zst":
 		return extractTar(ctx, src, dest, []string{"--zstd", "-xf"}, rn, sudoRequired, toolName)
-	case ".tar":
-		return extractTar(ctx, src, dest, []string{"xf"}, rn, sudoRequired, toolName)
 	case ".zip":
-		return extractZip(ctx, src, dest, rn, sudoRequired, toolName)
+		return extractNativeZip(ctx, src, dest)
 	case ".bz2":
 		return extractBzip2(ctx, src, dest, binaryName, rn, sudoRequired, toolName)
 	case ".deb":
@@ -146,25 +138,6 @@ func extractTar(ctx context.Context, src, dest string, flags []string, rn run.Ru
 	} else {
 		res := rn.Run(ctx, "tar", args...)
 		if err := run.CheckResult(res, "tar"); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func extractZip(ctx context.Context, src, dest string, rn run.Runner, sudoRequired bool, toolName string) error {
-	if sudoRequired && os.Geteuid() != 0 {
-		if err := elevationGuard(sudoRequired, toolName); err != nil {
-			return fmt.Errorf("unzip: %w", err)
-		}
-		sudoBin := run.ElevationPrefix()[0]
-		res := rn.Run(ctx, sudoBin, "unzip", "-o", src, "-d", dest)
-		if err := run.CheckResult(res, "unzip"); err != nil {
-			return err
-		}
-	} else {
-		res := rn.Run(ctx, "unzip", "-o", src, "-d", dest)
-		if err := run.CheckResult(res, "unzip"); err != nil {
 			return err
 		}
 	}
@@ -233,7 +206,7 @@ func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired boo
 // sudoRequired is set and the process isn't already root, os.WriteFile can't
 // help — an unprivileged process has no way to write into a root-owned
 // directory — so the copy is done via an elevated `install`, mirroring how
-// extractTar/extractZip/installDeb already shell out through
+// compressed TAR extraction/installDeb already shell out through
 // run.ElevationPrefix() instead of touching the filesystem directly.
 // `install -m 0755` also creates the destination with the right mode in one
 // step, avoiding a separate chmod call under sudo.
