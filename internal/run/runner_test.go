@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,6 +11,71 @@ import (
 	"testing"
 	"time"
 )
+
+func TestFakeRunnerStdoutPipe(t *testing.T) {
+	fr := &FakeRunner{Stdout: "streamed", Stderr: "note", ExitCode: 7}
+	pipe, err := OpenStdoutPipe(context.Background(), fr, "decoder", "-dc", "archive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(pipe.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "streamed" {
+		t.Fatalf("streamed stdout = %q, want streamed", got)
+	}
+	result := pipe.Wait()
+	if result.ExitCode != 7 || string(result.Stderr) != "note" || len(result.Stdout) != 0 {
+		t.Fatalf("stream result = %+v", result)
+	}
+	if len(fr.Calls) != 1 || fr.Calls[0].Name != "decoder" {
+		t.Fatalf("calls = %+v", fr.Calls)
+	}
+}
+
+func TestOSExecRunnerStdoutPipe(t *testing.T) {
+	name := "sh"
+	args := []string{"-c", "printf streamed"}
+	if runtime.GOOS == "windows" {
+		name = "cmd.exe"
+		args = []string{"/d", "/c", "<nul set /p =streamed"}
+	}
+
+	pipe, err := OpenStdoutPipe(context.Background(), OSExecRunner{}, name, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, readErr := io.ReadAll(pipe.Reader)
+	result := pipe.Wait()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if err := CheckResult(result, "stream"); err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "streamed" {
+		t.Fatalf("streamed stdout = %q, want streamed", got)
+	}
+	if len(result.Stdout) != 0 {
+		t.Fatalf("streamed stdout was also captured: %q", result.Stdout)
+	}
+}
+
+func TestOpenStdoutPipeRejectsUnsupportedRunner(t *testing.T) {
+	type runOnly struct{ Runner }
+	_, err := OpenStdoutPipe(context.Background(), runOnly{Runner: &FakeRunner{}}, "decoder")
+	if err == nil || !strings.Contains(err.Error(), "stdout streaming") {
+		t.Fatalf("error = %v, want unsupported stdout streaming", err)
+	}
+}
+
+func TestBlockedRunnerRejectsStdoutPipe(t *testing.T) {
+	_, err := OpenStdoutPipe(context.Background(), BlockedRunner{Reason: "dry-run"}, "decoder")
+	if err == nil || !strings.Contains(err.Error(), "dry-run") {
+		t.Fatalf("error = %v, want dry-run rejection", err)
+	}
+}
 
 func TestFakeRunnerReplaysCall(t *testing.T) {
 	fr := &FakeRunner{Stdout: "{}", ExitCode: 1}
