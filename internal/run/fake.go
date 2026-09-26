@@ -1,7 +1,9 @@
 package run
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"sync"
 	"time"
 )
@@ -31,6 +33,16 @@ type FakeCall struct {
 
 func (f *FakeRunner) Run(ctx context.Context, name string, args ...string) Result {
 	return f.run(ctx, "", name, args...)
+}
+
+func (f *FakeRunner) OpenStdoutPipe(ctx context.Context, name string, args ...string) (*StdoutPipe, error) {
+	result := f.run(ctx, "", name, args...)
+	stdout := append([]byte(nil), result.Stdout...)
+	result.Stdout = nil
+	return &StdoutPipe{
+		Reader: io.NopCloser(bytes.NewReader(stdout)),
+		wait:   func() Result { return result },
+	}, nil
 }
 
 // RunWithEnv models per-child execution. FakeRunner does not retain secret
@@ -76,3 +88,4 @@ func (f *FakeRunner) run(ctx context.Context, dir, name string, args ...string) 
 
 var _ DirectoryRunner = (*FakeRunner)(nil)
 var _ PathLookupRunner = (*FakeRunner)(nil)
+var _ StdoutPipeRunner = (*FakeRunner)(nil)
