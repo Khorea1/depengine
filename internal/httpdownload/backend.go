@@ -133,7 +133,7 @@ func (d *GoDownloader) download(ctx context.Context, url, dest, bearerCredential
 		}
 	}
 
-	out, err := os.Create(dest)
+	out, err := os.Create(dest) // #nosec G304 -- Downloader destinations are depengine-managed staging/install paths chosen by the caller.
 	if err != nil {
 		return fmt.Errorf("http: create %s: %w", dest, err)
 	}

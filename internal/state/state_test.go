@@ -62,6 +62,39 @@ func TestSaveTightensStateDirectoryPermissions(t *testing.T) {
 	}
 }
 
+func TestStateLockFileIsOwnerOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows ACLs are not represented by Unix permission bits")
+	}
+	td := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", td)
+	dir := filepath.Dir(DefaultPath())
+	if err := ensurePrivateDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(DefaultPath()+".lock", nil, 0o644); err != nil { // #nosec G306 -- Fixture starts permissive to verify lock() tightens existing files.
+		t.Fatal(err)
+	}
+
+	lk, err := lock()
+	if err != nil {
+		t.Fatalf("lock(): %v", err)
+	}
+	defer func() {
+		if err := lk.Close(); err != nil {
+			t.Errorf("close lock: %v", err)
+		}
+	}()
+
+	info, err := os.Stat(DefaultPath() + ".lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("state lock mode = %04o, want 0600", got)
+	}
+}
+
 func TestSaveAndLoadRoundTrip(t *testing.T) {
 	td := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", td)

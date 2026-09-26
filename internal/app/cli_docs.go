@@ -257,7 +257,7 @@ func roffText(value string) string {
 }
 
 func replaceGenerated(path, start, end, generated string) ([]byte, error) {
-	contents, err := os.ReadFile(path)
+	contents, err := os.ReadFile(path) // #nosec G304 -- Callers pass fixed repository documentation paths to this generator helper.
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}

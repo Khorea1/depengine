@@ -157,7 +157,7 @@ func classify(name string) (Kind, error) {
 }
 
 func openVerifiedRegularFile(path string, expected os.FileInfo) (*os.File, os.FileInfo, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- Local artifacts are explicitly selected by the operator and revalidated after open.
 	if err != nil {
 		return nil, nil, err
 	}

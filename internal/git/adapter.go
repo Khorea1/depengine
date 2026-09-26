@@ -458,7 +458,7 @@ func (a *GitAdapter) installResolvedSource(ctx context.Context, rn run.Runner, t
 		if err != nil {
 			return fmt.Errorf("git: artifact path: %w", err)
 		}
-		if err := os.MkdirAll(extractTo, 0o755); err != nil {
+		if err := os.MkdirAll(extractTo, 0o755); err != nil { // #nosec G301 -- Installed artifact directories must remain traversable/executable by the user.
 			return fmt.Errorf("git: mkdir %s: %w", extractTo, err)
 		}
 		if err := copyArtifactFromRoot(ctx, cloneDir, rel, extractTo); err != nil {

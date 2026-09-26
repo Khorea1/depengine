@@ -84,7 +84,7 @@ func installArchive(ctx context.Context, src, ext string, tool *config.Tool, mc 
 			return err
 		}
 		stageParent = ""
-	} else if err := os.MkdirAll(parent, 0o755); err != nil {
+	} else if err := os.MkdirAll(parent, 0o755); err != nil { // #nosec G301 -- Installation parents are intentionally traversable for installed payloads.
 		return fmt.Errorf("archive: create destination parent: %w", err)
 	}
 	raw, err := os.MkdirTemp(stageParent, ".depengine-raw-*")
@@ -343,7 +343,7 @@ func createLaunchers(ctx context.Context, rn run.Runner, payload, linkDir string
 		if err := run.CheckResult(run.RunElevated(ctx, rn, "mkdir", "-p", linkDir), "archive: create link_dir"); err != nil {
 			return nil, err
 		}
-	} else if err := os.MkdirAll(linkDir, 0o755); err != nil {
+	} else if err := os.MkdirAll(linkDir, 0o755); err != nil { // #nosec G301 -- Launcher directories must be traversable so installed commands can execute.
 		return nil, fmt.Errorf("archive: create link_dir: %w", err)
 	}
 	names := make([]string, 0, len(points))
@@ -361,7 +361,7 @@ func createLaunchers(ctx context.Context, rn run.Runner, payload, linkDir string
 		if runtime.GOOS == "windows" {
 			launcher += ".cmd"
 			content := []byte("@echo off\r\n\"" + target + "\" %*\r\n")
-			file, err := os.OpenFile(launcher, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
+			file, err := os.OpenFile(launcher, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755) // #nosec G304,G302 -- launcher is path-validated and must be executable on Windows.
 			if err == nil {
 				_, err = file.Write(content)
 				closeErr := file.Close()
@@ -395,7 +395,7 @@ func launcherValid(payload, linkDir, name, relative string) bool {
 	target := filepath.Join(payload, filepath.Clean(relative))
 	launcher := filepath.Join(linkDir, name)
 	if runtime.GOOS == "windows" {
-		data, err := os.ReadFile(launcher + ".cmd")
+		data, err := os.ReadFile(launcher + ".cmd") // #nosec G304 -- launcher is derived from the validated link directory and configured launcher name.
 		return err == nil && strings.Contains(string(data), `"`+target+`"`)
 	}
 	actual, err := os.Readlink(launcher)

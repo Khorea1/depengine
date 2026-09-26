@@ -77,7 +77,7 @@ func runInit(output, addTools *string, interactive *bool) error {
 		}
 		dir := filepath.Dir(path)
 		if dir != "." {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
+			if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- Project schema parent directories are intentionally traversable by collaborators.
 				fmt.Fprintf(os.Stderr, "error: cannot create directory %s: %v\n", dir, err)
 				return exitWithCode(1)
 			}
@@ -93,7 +93,7 @@ func runInit(output, addTools *string, interactive *bool) error {
 
 	dir := filepath.Dir(path)
 	if dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- Project schema parent directories are intentionally traversable by collaborators.
 			fmt.Fprintf(os.Stderr, "error: cannot create directory %s: %v\n", dir, err)
 			return exitWithCode(1)
 		}
@@ -119,7 +119,7 @@ func runInit(output, addTools *string, interactive *bool) error {
 	}
 
 	template := fmt.Sprintf(initTemplate, filepath.Base(path), simpleList)
-	if err := os.WriteFile(path, []byte(template), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(template), 0o644); err != nil { // #nosec G306 -- schema.toml is a project file intended to be shared and committed.
 		fmt.Fprintf(os.Stderr, "error: cannot write %s: %v\n", path, err)
 		return exitWithCode(1)
 	}
@@ -281,7 +281,7 @@ manager = "native"
 		b.WriteString(line + "\n")
 	}
 
-	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil { // #nosec G306 -- schema.toml is a project file intended to be shared and committed.
 		fmt.Fprintf(os.Stderr, "error: cannot write %s: %v\n", path, err)
 		return exitWithCode(1)
 	}
