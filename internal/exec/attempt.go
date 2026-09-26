@@ -266,6 +266,10 @@ func (ex *Executor) recheckPostPrepareAvailability(ac *candidateAttempt, result 
 // concrete candidate has survived static, adapter, host-compatibility, and
 // already-installed gates. It stays before source/prerequisite preparation so
 // existing pre-install ordering is preserved while no-op candidates skip it.
+// The PreinstallDone report flag is intentionally NOT set here: it belongs to
+// the candidate/transition that actually commits the install (finishInstalled),
+// so a losing candidate's successful hook must not stamp the tool result when
+// a later candidate fails at its own hook or the tool never installs.
 func (ex *Executor) runCandidatePreinstall(ac *candidateAttempt, result *ToolResult) attemptOutcome {
 	if len(ac.tool.PreInstall) == 0 {
 		return proceed
@@ -274,9 +278,6 @@ func (ex *Executor) runCandidatePreinstall(ac *candidateAttempt, result *ToolRes
 	err := ex.runPreinstall(preCtx, ac.tool)
 	preCancel()
 	if err == nil {
-		if !ex.dryRun {
-			result.PreinstallDone = true
-		}
 		return proceed
 	}
 
@@ -472,6 +473,11 @@ func (ex *Executor) finishWouldInstall(ac *candidateAttempt, result *ToolResult)
 // means the tool is not in the state the schema requires, so the tool is
 // marked failed instead of being silently reported as installed.
 func (ex *Executor) finishInstalled(ac *candidateAttempt, result *ToolResult) attemptOutcome {
+	// finishInstalled is reached only after this candidate's pre-install phase
+	// proceeded and its adapter mutation succeeded. Record that transition
+	// before finalizing preparation state so a journal-finalization failure does
+	// not erase the fact that the committed install crossed the hook boundary.
+	result.PreinstallDone = len(ac.tool.PreInstall) > 0
 	if finalizeErr := ac.prepared.finalizeCommit(ac.tool.Name); finalizeErr != nil {
 		result.Status = StatusFailed
 		result.Error = finalizeErr.Error()
