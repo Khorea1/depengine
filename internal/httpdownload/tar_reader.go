@@ -56,7 +56,6 @@ func openStdlibTarReader(src, ext string) (io.ReadCloser, error) {
 	}
 }
 
-
 // maxTarTrailingBytes bounds bytes following the TAR end markers while still
 // allowing ordinary record padding produced by system tar implementations.
 // Draining this tail forces gzip/bzip2 readers to validate their stream trailer
