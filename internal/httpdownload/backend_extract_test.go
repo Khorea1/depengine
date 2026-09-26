@@ -118,7 +118,7 @@ func TestExtractZipNative(t *testing.T) {
 	if len(fr.Calls) != 0 {
 		t.Fatalf("native ZIP extraction invoked subprocesses: %+v", fr.Calls)
 	}
-	data, err := os.ReadFile(filepath.Join(dest, "bin", "tool"))
+	data, err := os.ReadFile(filepath.Join(dest, "bin", "tool")) // #nosec G304 -- dest is test-controlled under t.TempDir.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -480,7 +480,7 @@ func TestExtractAllowsSafeZip(t *testing.T) {
 	if len(fr.Calls) != 0 {
 		t.Fatalf("native ZIP extraction invoked subprocesses: %+v", fr.Calls)
 	}
-	data, err := os.ReadFile(filepath.Join(dest, "bin", "tool"))
+	data, err := os.ReadFile(filepath.Join(dest, "bin", "tool")) // #nosec G304 -- dest is test-controlled under t.TempDir.
 	if err != nil {
 		t.Fatal(err)
 	}
