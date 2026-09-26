@@ -26,8 +26,8 @@ including GitHub or URL-based artifacts and local artifact digests. It does not
 yet capture complete immutable resolution for every native or ecosystem package
 manager.
 
-An exact package version is still useful, but it is not automatically the same
-as a fully locked package graph.
+An exact package version constrains one package. A fully locked package graph
+also needs immutable identities for its dependencies.
 
 Current ecosystem adapters should therefore be treated as best-effort for
 reproducibility. Their behavior is covered by unit tests, often through fake

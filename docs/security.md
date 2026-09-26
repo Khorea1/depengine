@@ -116,9 +116,9 @@ GitHub API resolution is required.
 Typed `git` methods can use `secret_ref` only with a credential-free HTTPS
 repository URL. The Bearer token is passed through a per-child environment
 override and Git URL-scoped configuration for clone, revision fetch, and
-recursive submodule operations. It is not inherited by build commands or
-persisted. Redirects are disabled on the credential-scoped origin to prevent
-cross-origin forwarding. Without `secret_ref`, Git retains its existing
+recursive submodule operations. Build commands receive no token, and depengine
+does not persist it. Redirects are disabled on the credential-scoped origin to
+prevent cross-origin forwarding. Without `secret_ref`, Git retains its existing
 credential-helper behavior; an explicit reference never falls back when
 resolution fails.
 

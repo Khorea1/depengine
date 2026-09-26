@@ -765,7 +765,8 @@ For a Git-backed `scoop-bucket` or `brew-tap` with an explicit, credential-free
 HTTPS `url`, use `secret_ref = { provider = "env", name = "CORP_TOKEN" }` to
 provide an HTTP Bearer token. The value is read only when that candidate needs
 to add the source, and is passed to Git in that child process's environment.
-It is not written to the schema, plan, lock, state, command arguments, or logs.
+The token stays in that child process's environment. The schema, plan, lock,
+state, command arguments, and logs contain no token value.
 Missing, empty, or unsupported secrets fail that candidate and allow the next
 method to be tried. Authentication for `apt-ppa`, `dnf-copr`, and source roles
 other than host configuration is rejected during planning. The token is not

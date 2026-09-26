@@ -1,4 +1,4 @@
-# ADR-003: Hooks are candidate-local transition events, not durable state
+# ADR-003: Hooks run during candidate transitions
 
 - Status: decided (2026-09-22)
 - Origin: implementation working notes, condensed into this ADR
