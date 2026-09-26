@@ -841,8 +841,8 @@ methods.
 ### Phase A: correctness and security
 
 1. Continue the archive/materialization audit for `os.Root`: local/offline
-   archives plus HTTP ZIP/TAR/gzip/bzip2 extraction are rooted; XZ/Zstd
-   subprocess extraction and other paths remain.
+   archives and all HTTP ZIP/TAR variants are rooted; other materialization
+   paths remain.
 2. Finish semantic download error coverage (checksum mismatch and Go HTTP
    status are implemented; external downloader/transport classification remains).
 3. Keep retry/error policy free of `err.Error()` text classification.
