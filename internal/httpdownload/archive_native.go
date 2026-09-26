@@ -384,7 +384,7 @@ func extractNativeTar(ctx context.Context, src, dest string) (retErr error) {
 			if err := m.mkdir(target, mode); err != nil {
 				return fmt.Errorf("tar: create directory %q: %w", hdr.Name, err)
 			}
-		case tar.TypeReg, tar.TypeRegA:
+		case tar.TypeReg, 0:
 			if hdr.Size < 0 {
 				return fmt.Errorf("tar entry %q has negative size", hdr.Name)
 			}
