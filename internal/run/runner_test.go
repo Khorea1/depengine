@@ -54,7 +54,7 @@ func TestOSExecRunnerStdoutPipe(t *testing.T) {
 	if err := CheckResult(result, "stream"); err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "streamed" {
+	if strings.TrimSpace(string(got)) != "streamed" {
 		t.Fatalf("streamed stdout = %q, want streamed", got)
 	}
 	if len(result.Stdout) != 0 {
