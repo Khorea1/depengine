@@ -101,7 +101,7 @@ func TestEnsureRequiresExplicitReadOnlyCheck(t *testing.T) {
 }
 
 func TestEnsureRejectsCredentialResource(t *testing.T) {
-	e := EnsureAction{
+	e := EnsureAction{ // #nosec G101 -- synthetic credential is required to exercise secret/credential handling.
 		ID:       "source",
 		Resource: "https://user:secret@example.test/repo",
 		Check:    Operation{Kind: "check", Effect: EffectReadOnly},

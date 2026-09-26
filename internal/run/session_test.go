@@ -18,7 +18,7 @@ func TestSudoNoPasswdOKUsesFilteredDefaultEnvironment(t *testing.T) {
 	script := "#!/bin/sh\n" +
 		"test -z \"${DEPENGINE_TEST_OMITTED+x}\" && " +
 		"test \"$DEPENGINE_TRACE_ID\" = \"session-trace-test\"\n"
-	if err := os.WriteFile(sudo, []byte(script), 0o700); err != nil {
+	if err := os.WriteFile(sudo, []byte(script), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 

@@ -16,10 +16,10 @@ import (
 func TestResolveRawArtifactProducesPortableIdentity(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "vendor", "tool")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("offline payload"), 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("offline payload"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 
@@ -44,10 +44,10 @@ func TestResolveRawArtifactProducesPortableIdentity(t *testing.T) {
 func TestResolveArchiveAndChecksum(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "vendor", "tool.tar.gz")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("archive bytes"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("archive bytes"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -69,7 +69,7 @@ func TestResolveArchiveAndChecksum(t *testing.T) {
 func TestResolveRejectsEscapesSymlinksAndInstallers(t *testing.T) {
 	root := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "outside")
-	if err := os.WriteFile(outside, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(outside, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := localartifact.Resolve(root, "../outside", ""); err == nil {
@@ -86,7 +86,7 @@ func TestResolveRejectsEscapesSymlinksAndInstallers(t *testing.T) {
 		}
 
 		inside := filepath.Join(root, "inside")
-		if err := os.WriteFile(inside, []byte("inside"), 0o644); err != nil {
+		if err := os.WriteFile(inside, []byte("inside"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		insideLink := filepath.Join(root, "inside-link")
@@ -99,7 +99,7 @@ func TestResolveRejectsEscapesSymlinksAndInstallers(t *testing.T) {
 	}
 
 	installer := filepath.Join(root, "setup.exe")
-	if err := os.WriteFile(installer, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(installer, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := localartifact.Resolve(root, "setup.exe", "")
@@ -113,7 +113,7 @@ func TestResolveRejectsUnsupportedArchiveAndInvalidChecksum(t *testing.T) {
 	root := t.TempDir()
 	for _, name := range []string{"tool.7z", "tool.tar.xz", "tool.tar.zst", "tool.tar.bz2", "tool.bz2"} {
 		path := filepath.Join(root, name)
-		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		_, err := localartifact.Resolve(root, name, "")
@@ -124,7 +124,7 @@ func TestResolveRejectsUnsupportedArchiveAndInvalidChecksum(t *testing.T) {
 	}
 
 	raw := filepath.Join(root, "tool")
-	if err := os.WriteFile(raw, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(raw, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, checksum := range []string{"md5:abcd", "sha256:abcd", "sha256:" + strings.Repeat("z", 64)} {
@@ -141,10 +141,10 @@ func TestResolveRejectsParentSymlink(t *testing.T) {
 	root := t.TempDir()
 
 	insideDir := filepath.Join(root, "real-vendor")
-	if err := os.MkdirAll(insideDir, 0o755); err != nil {
+	if err := os.MkdirAll(insideDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(insideDir, "tool"), []byte("payload"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(insideDir, "tool"), []byte("payload"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(insideDir, filepath.Join(root, "vendor")); err != nil {
@@ -155,7 +155,7 @@ func TestResolveRejectsParentSymlink(t *testing.T) {
 	}
 
 	outside := t.TempDir()
-	if err := os.WriteFile(filepath.Join(outside, "tool"), []byte("payload"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(outside, "tool"), []byte("payload"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(outside, filepath.Join(root, "outside-vendor")); err != nil {
@@ -195,7 +195,7 @@ func TestClassifyProjectPathUsesOfflineFormatsOnly(t *testing.T) {
 func TestVerifyRegularFileChecksumRejectsDriftAndSymlink(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "tool")
-	if err := os.WriteFile(path, []byte("payload"), 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("payload"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	resolved, err := localartifact.Resolve(root, "tool", "")
@@ -205,7 +205,7 @@ func TestVerifyRegularFileChecksumRejectsDriftAndSymlink(t *testing.T) {
 	if err := localartifact.VerifyRegularFileChecksum(path, resolved.Artifact.Checksum); err != nil {
 		t.Fatalf("VerifyRegularFileChecksum(): %v", err)
 	}
-	if err := os.WriteFile(path, []byte("drift"), 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("drift"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	if err := localartifact.VerifyRegularFileChecksum(path, resolved.Artifact.Checksum); err == nil {
@@ -228,11 +228,11 @@ func TestInstallRejectsParentSymlinkIntroducedAfterResolve(t *testing.T) {
 	}
 	root := t.TempDir()
 	vendor := filepath.Join(root, "vendor")
-	if err := os.MkdirAll(vendor, 0o755); err != nil {
+	if err := os.MkdirAll(vendor, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	body := []byte("payload")
-	if err := os.WriteFile(filepath.Join(vendor, "tool"), body, 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(vendor, "tool"), body, 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	resolved, err := localartifact.Resolve(root, "vendor/tool", "")
@@ -241,7 +241,7 @@ func TestInstallRejectsParentSymlinkIntroducedAfterResolve(t *testing.T) {
 	}
 
 	outside := t.TempDir()
-	if err := os.WriteFile(filepath.Join(outside, "tool"), body, 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(outside, "tool"), body, 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	if err := os.Rename(vendor, vendor+".original"); err != nil {
@@ -266,7 +266,7 @@ func TestVerifyRegularFileStateDetectsPermissionDrift(t *testing.T) {
 	}
 	root := t.TempDir()
 	path := filepath.Join(root, "tool")
-	if err := os.WriteFile(path, []byte("payload"), 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("payload"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	resolved, err := localartifact.Resolve(root, "tool", "")
@@ -276,7 +276,7 @@ func TestVerifyRegularFileStateDetectsPermissionDrift(t *testing.T) {
 	if err := localartifact.VerifyRegularFileState(path, resolved.Artifact.Checksum, resolved.Mode); err != nil {
 		t.Fatalf("initial state verification failed: %v", err)
 	}
-	if err := os.Chmod(path, 0o644); err != nil {
+	if err := os.Chmod(path, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := localartifact.VerifyRegularFileState(path, resolved.Artifact.Checksum, resolved.Mode); err == nil {

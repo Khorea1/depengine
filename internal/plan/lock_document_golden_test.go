@@ -27,11 +27,11 @@ func TestLockDocumentGolden(t *testing.T) {
 
 	path := filepath.Join("testdata", "universal_lock.golden.json")
 	if os.Getenv("UPDATE_GOLDEN") == "1" {
-		if err := os.WriteFile(path, got, 0o644); err != nil {
+		if err := os.WriteFile(path, got, 0o600); err != nil {
 			t.Fatalf("update golden: %v", err)
 		}
 	}
-	want, err := os.ReadFile(path)
+	want, err := os.ReadFile(path) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatalf("read golden: %v", err)
 	}

@@ -404,13 +404,13 @@ func TestExecutorFallback(t *testing.T) {
 
 func TestExecutorRunsPreinstallPerCandidateFallback(t *testing.T) {
 	primary := &testMockAdapter{
-		kindValue: "primary",
-		checkFunc: func(string) bool { return false },
+		kindValue:   "primary",
+		checkFunc:   func(string) bool { return false },
 		installFunc: func(string) error { return &installError{msg: "primary failed"} },
 	}
 	fallback := &testMockAdapter{
-		kindValue: "fallback",
-		checkFunc: func(string) bool { return false },
+		kindValue:   "fallback",
+		checkFunc:   func(string) bool { return false },
 		installFunc: func(string) error { return nil },
 	}
 	runner := &run.FakeRunner{}
@@ -423,7 +423,7 @@ func TestExecutorRunsPreinstallPerCandidateFallback(t *testing.T) {
 		Defaults: config.Defaults{MethodOrder: []string{"primary", "fallback"}},
 		Tools: map[string]*config.Tool{
 			"demo": {
-				Name: "demo",
+				Name:       "demo",
 				PreInstall: []config.Hook{{Run: []string{"prehook"}}},
 				Methods: []*config.MethodCandidate{
 					{Kind: "primary", Config: map[string]any{"pkg": "demo"}},
@@ -2118,7 +2118,7 @@ func TestWriteState(t *testing.T) {
 	}
 
 	// Verify the state content is well-formed.
-	data, err := os.ReadFile(statePath)
+	data, err := os.ReadFile(statePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatalf("failed to read state file: %v", err)
 	}

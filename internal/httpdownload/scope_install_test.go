@@ -138,23 +138,23 @@ func TestHTTPScopeRawRemoveRefusesReplacedLauncher(t *testing.T) {
 	}
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
-	if err := os.MkdirAll(home, 0o755); err != nil {
+	if err := os.MkdirAll(home, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	exectest.SetHome(t, home)
 	payload := filepath.Join(home, "tools", "demo")
 	links := filepath.Join(home, "bin")
-	if err := os.MkdirAll(payload, 0o755); err != nil {
+	if err := os.MkdirAll(payload, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(links, 0o755); err != nil {
+	if err := os.MkdirAll(links, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(payload, "demo"), []byte("owned"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(payload, "demo"), []byte("owned"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	foreign := filepath.Join(root, "replacement")
-	if err := os.WriteFile(foreign, []byte("replacement"), 0o755); err != nil {
+	if err := os.WriteFile(foreign, []byte("replacement"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	launcher := filepath.Join(links, "demo")
@@ -189,31 +189,35 @@ func TestHTTPScopeSystemRemoveElevatesPayloadDeletion(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
 	lockedParent := filepath.Join(root, "system")
-	if err := os.MkdirAll(home, 0o755); err != nil {
+	if err := os.MkdirAll(home, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(lockedParent, 0o755); err != nil {
+	if err := os.MkdirAll(lockedParent, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	exectest.SetHome(t, home)
 	payload := filepath.Join(lockedParent, "demo")
 	links := filepath.Join(home, "bin")
-	if err := os.MkdirAll(payload, 0o755); err != nil {
+	if err := os.MkdirAll(payload, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(links, 0o755); err != nil {
+	if err := os.MkdirAll(links, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(payload, "demo"), []byte("owned"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(payload, "demo"), []byte("owned"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	if err := os.Symlink(filepath.Join(payload, "demo"), filepath.Join(links, "demo")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(lockedParent, 0o555); err != nil {
+	if err := os.Chmod(lockedParent, 0o500); err != nil { // #nosec G302 -- test intentionally changes fixture permissions to exercise permission behavior.
 		t.Fatal(err)
 	}
-	defer os.Chmod(lockedParent, 0o755)
+	t.Cleanup(func() {
+		if err := os.Chmod(lockedParent, 0o700); err != nil { // #nosec G302 -- cleanup restores fixture permissions before TempDir removal.
+			t.Errorf("restore locked parent permissions: %v", err)
+		}
+	})
 
 	run.OverrideElevation("sudo")
 	defer run.OverrideElevation("")

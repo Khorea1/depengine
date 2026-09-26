@@ -38,11 +38,11 @@ func TestMaxCacheBytesEnv(t *testing.T) {
 // Store so no eviction runs, and stamps it with the given mtime.
 func seedEntry(t *testing.T, url string, size int, mtime time.Time) {
 	t.Helper()
-	if err := os.MkdirAll(CacheDir(), 0o755); err != nil {
+	if err := os.MkdirAll(CacheDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	p := Path(url)
-	if err := os.WriteFile(p, bytes.Repeat([]byte{'x'}, size), 0o644); err != nil {
+	if err := os.WriteFile(p, bytes.Repeat([]byte{'x'}, size), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chtimes(p, mtime, mtime); err != nil {
@@ -90,7 +90,7 @@ func TestStoreEvictsOldestBeyondLimit(t *testing.T) {
 	// 100-byte limit: the two oldest entries must be evicted.
 	fresh := testEvictURL + "#Evict-fresh"
 	src := filepath.Join(t.TempDir(), "src.bin")
-	if err := os.WriteFile(src, bytes.Repeat([]byte{'y'}, 40), 0o644); err != nil {
+	if err := os.WriteFile(src, bytes.Repeat([]byte{'y'}, 40), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Store(fresh, src); err != nil {
@@ -126,7 +126,7 @@ func TestNoEvictionUnderLimit(t *testing.T) {
 
 	c := testEvictURL + "#Under-c"
 	src := filepath.Join(t.TempDir(), "src.bin")
-	if err := os.WriteFile(src, bytes.Repeat([]byte{'y'}, 40), 0o644); err != nil {
+	if err := os.WriteFile(src, bytes.Repeat([]byte{'y'}, 40), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Store(c, src); err != nil {
@@ -156,7 +156,7 @@ func TestLookupRefreshesRecency(t *testing.T) {
 
 	fresh := testEvictURL + "#Lru-fresh"
 	src := filepath.Join(t.TempDir(), "src.bin")
-	if err := os.WriteFile(src, bytes.Repeat([]byte{'y'}, 40), 0o644); err != nil {
+	if err := os.WriteFile(src, bytes.Repeat([]byte{'y'}, 40), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Store(fresh, src); err != nil {

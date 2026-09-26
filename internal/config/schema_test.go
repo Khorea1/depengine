@@ -22,7 +22,7 @@ func writeSchema(t *testing.T, content string) string {
 	if !strings.Contains(content, "schema_version") {
 		content = "schema_version = 1\n" + content
 	}
-	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 		t.Fatalf("write schema: %v", err)
 	}
 	return p
@@ -31,7 +31,7 @@ func writeSchema(t *testing.T, content string) string {
 func TestParseProjectSchemaRequiresSupportedVersion(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "schema.toml")
-	if err := os.WriteFile(path, []byte("[tools]\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("[tools]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ParseProjectSchema(path, nil); err == nil || !strings.Contains(err.Error(), "schema_version: required") {

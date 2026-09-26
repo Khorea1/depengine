@@ -37,7 +37,7 @@ func setupGPGDir(t *testing.T) string {
 		t.Fatalf("mkdtemp gnupgHome: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(gnupgHome) })
-	if err := os.Chmod(gnupgHome, 0o700); err != nil {
+	if err := os.Chmod(gnupgHome, 0o700); err != nil { // #nosec G302 -- test intentionally changes fixture permissions to exercise permission behavior.
 		t.Fatalf("chmod gnupgHome: %v", err)
 	}
 	// Windows CI ships an MSYS2 gpg (via Git), which reads GNUPGHOME with
@@ -49,7 +49,7 @@ func setupGPGDir(t *testing.T) string {
 	// which case the native path is exported unchanged.
 	envHome := gnupgHome
 	if runtime.GOOS == "windows" {
-		if out, err := exec.Command("cygpath", "-u", gnupgHome).Output(); err == nil {
+		if out, err := exec.Command("cygpath", "-u", gnupgHome).Output(); err == nil { // #nosec G204 -- test intentionally launches a controlled helper/tool subprocess.
 			if s := strings.TrimSpace(string(out)); s != "" {
 				envHome = s
 			}
@@ -83,7 +83,7 @@ func genGPGKey(t *testing.T, keyID string) {
 // signFile creates an armored detached signature for the given file.
 func signFile(t *testing.T, filePath string) string {
 	t.Helper()
-	cmd := exec.Command("gpg", "--detach-sign", "--armor", "--batch", "--no-tty", filePath)
+	cmd := exec.Command("gpg", "--detach-sign", "--armor", "--batch", "--no-tty", filePath) // #nosec G204 -- test intentionally launches a controlled helper/tool subprocess.
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("gpg --detach-sign failed: %v\n%s", err, out)
@@ -105,7 +105,7 @@ func TestGPGVerifyValidSignature(t *testing.T) {
 	// Create the checksum file to sign.
 	checksumContent := []byte("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  file.tar.gz\n")
 	checksumFile := filepath.Join(t.TempDir(), "checksum.sha256")
-	if err := os.WriteFile(checksumFile, checksumContent, 0o644); err != nil {
+	if err := os.WriteFile(checksumFile, checksumContent, 0o600); err != nil {
 		t.Fatalf("write checksum file: %v", err)
 	}
 
@@ -130,7 +130,7 @@ func TestGPGVerifyTamperedFile(t *testing.T) {
 	// Create checksum file.
 	checksumContent := []byte("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  file.tar.gz\n")
 	checksumFile := filepath.Join(t.TempDir(), "checksum.sha256")
-	if err := os.WriteFile(checksumFile, checksumContent, 0o644); err != nil {
+	if err := os.WriteFile(checksumFile, checksumContent, 0o600); err != nil {
 		t.Fatalf("write checksum file: %v", err)
 	}
 
@@ -139,7 +139,7 @@ func TestGPGVerifyTamperedFile(t *testing.T) {
 	signatureFile := signFile(t, checksumFile)
 
 	// Tamper with the checksum file.
-	if err := os.WriteFile(checksumFile, []byte("tampered content\n"), 0o644); err != nil {
+	if err := os.WriteFile(checksumFile, []byte("tampered content\n"), 0o600); err != nil {
 		t.Fatalf("tamper checksum file: %v", err)
 	}
 
@@ -180,7 +180,7 @@ func TestGPGVerifyKeyImport(t *testing.T) {
 	// Create checksum file.
 	checksumContent := []byte("abc123  test.tar.gz\n")
 	checksumFile := filepath.Join(t.TempDir(), "checksum.sha256")
-	if err := os.WriteFile(checksumFile, checksumContent, 0o644); err != nil {
+	if err := os.WriteFile(checksumFile, checksumContent, 0o600); err != nil {
 		t.Fatalf("write checksum file: %v", err)
 	}
 
@@ -195,7 +195,7 @@ func TestGPGVerifyKeyImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("gpg --export failed: %v", err)
 	}
-	if err := os.WriteFile(keyFile, keyData, 0o644); err != nil {
+	if err := os.WriteFile(keyFile, keyData, 0o600); err != nil {
 		t.Fatalf("write pubkey: %v", err)
 	}
 
@@ -212,7 +212,7 @@ func TestGPGVerifyKeyImport(t *testing.T) {
 	}
 
 	// Import the key (simulating what GPGVerify does for a key URL).
-	importCmd := exec.Command("gpg", "--import", "--batch", keyFile)
+	importCmd := exec.Command("gpg", "--import", "--batch", keyFile) // #nosec G204 -- test intentionally launches a controlled helper/tool subprocess.
 	out, err := importCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("gpg --import failed: %v\n%s", err, out)
@@ -231,7 +231,7 @@ func TestGPGVerifyAllExistingPass(t *testing.T) {
 	// Just verify the package builds and checksum verification still works.
 	content := []byte("hello world")
 	tmpFile := filepath.Join(t.TempDir(), "test.txt")
-	if err := os.WriteFile(tmpFile, content, 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, content, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -251,7 +251,7 @@ func TestGPGVerifyWrongSigner(t *testing.T) {
 	// Create checksum file.
 	checksumContent := []byte("abc123  test.tar.gz\n")
 	checksumFile := filepath.Join(t.TempDir(), "checksum.sha256")
-	if err := os.WriteFile(checksumFile, checksumContent, 0o644); err != nil {
+	if err := os.WriteFile(checksumFile, checksumContent, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -266,7 +266,7 @@ func TestGPGVerifyWrongSigner(t *testing.T) {
 		t.Fatal(err)
 	}
 	keyFileB := filepath.Join(t.TempDir(), "pubkey-b.asc")
-	if err := os.WriteFile(keyFileB, keyDataB, 0o644); err != nil {
+	if err := os.WriteFile(keyFileB, keyDataB, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -278,7 +278,7 @@ func TestGPGVerifyWrongSigner(t *testing.T) {
 		t.Fatal(err)
 	}
 	keyFileA := filepath.Join(t.TempDir(), "pubkey-a.asc")
-	if err := os.WriteFile(keyFileA, keyDataA, 0o644); err != nil {
+	if err := os.WriteFile(keyFileA, keyDataA, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -289,7 +289,7 @@ func TestGPGVerifyWrongSigner(t *testing.T) {
 	combinedKeyFile := filepath.Join(t.TempDir(), "pubkey-combined.asc")
 	combined := append([]byte(nil), keyDataA...)
 	combined = append(combined, keyDataB...)
-	if err := os.WriteFile(combinedKeyFile, combined, 0o644); err != nil {
+	if err := os.WriteFile(combinedKeyFile, combined, 0o600); err != nil {
 		t.Fatal(err)
 	}
 

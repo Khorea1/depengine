@@ -206,7 +206,7 @@ func TestReconcileInvalidKnownFieldFailsClosed(t *testing.T) {
 func TestVerificationJSONRedactsSensitiveObservedState(t *testing.T) {
 	result := VerificationResult{
 		State: StateDrifted,
-		Observed: ObservedIdentity{
+		Observed: ObservedIdentity{ // #nosec G101 -- synthetic credential is required to exercise secret/credential handling.
 			Source: "https://user:secret@example.test/pkg?token=topsecret",
 		},
 		KnownFields: []IdentityField{FieldSource},

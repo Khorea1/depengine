@@ -61,7 +61,7 @@ func TestGitAdapterKind(t *testing.T) {
 
 func TestGitAdapterCheckViaExtractTo(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	fr := &run.FakeRunner{}
@@ -78,7 +78,7 @@ func TestGitAdapterCheckViaExtractTo(t *testing.T) {
 
 func TestGitAdapterCheckRejectsFileAsGitDirectory(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, ".git"), nil, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".git"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if NewGitAdapter().Check(context.Background(), &run.FakeRunner{}, nil, &config.MethodCandidate{Config: map[string]any{"extract_to": dir}}) {
@@ -527,13 +527,13 @@ func TestGitAdapterRemoveSharedDirWithBinary(t *testing.T) {
 	// Setup temporary shared-like directory
 	tempDir := t.TempDir()
 	sharedDir := filepath.Join(tempDir, "bin")
-	if err := os.MkdirAll(sharedDir, 0o755); err != nil {
+	if err := os.MkdirAll(sharedDir, 0o700); err != nil {
 		t.Fatalf("failed to create temp bin dir: %v", err)
 	}
 
 	binaryName := "mytool"
 	binaryPath := filepath.Join(sharedDir, binaryName)
-	if err := os.WriteFile(binaryPath, []byte("binary data"), 0o755); err != nil {
+	if err := os.WriteFile(binaryPath, []byte("binary data"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatalf("failed to write dummy binary: %v", err)
 	}
 
@@ -567,7 +567,7 @@ func TestGitAdapterRemoveSharedDirWithoutBinary(t *testing.T) {
 
 	tempDir := t.TempDir()
 	sharedDir := filepath.Join(tempDir, "bin")
-	if err := os.MkdirAll(sharedDir, 0o755); err != nil {
+	if err := os.MkdirAll(sharedDir, 0o700); err != nil {
 		t.Fatalf("failed to create temp bin dir: %v", err)
 	}
 
@@ -593,12 +593,12 @@ func TestGitAdapterRemovePrivateDir(t *testing.T) {
 
 	tempDir := t.TempDir()
 	privateDir := filepath.Join(tempDir, "mytool-private-dir")
-	if err := os.MkdirAll(privateDir, 0o755); err != nil {
+	if err := os.MkdirAll(privateDir, 0o700); err != nil {
 		t.Fatalf("failed to create private dir: %v", err)
 	}
 
 	binaryPath := filepath.Join(privateDir, "mytool")
-	if err := os.WriteFile(binaryPath, []byte("data"), 0o755); err != nil {
+	if err := os.WriteFile(binaryPath, []byte("data"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatalf("failed to write dummy file: %v", err)
 	}
 
@@ -732,10 +732,10 @@ func (r *clonePopulatingRunner) Run(_ context.Context, name string, args ...stri
 	if name == "git" && len(args) > 0 && args[0] == "clone" {
 		cloneDir := args[len(args)-1]
 		artifactDir := filepath.Join(cloneDir, "dist")
-		if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		if err := os.MkdirAll(artifactDir, 0o700); err != nil {
 			return run.Result{Err: err}
 		}
-		if err := os.WriteFile(filepath.Join(artifactDir, "tool"), []byte("artifact"), 0o755); err != nil {
+		if err := os.WriteFile(filepath.Join(artifactDir, "tool"), []byte("artifact"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 			return run.Result{Err: err}
 		}
 	}
@@ -783,7 +783,7 @@ func TestGitAdapterArtifactAndExtractToGovernCopiedOutput(t *testing.T) {
 	if err := NewGitAdapter().Install(context.Background(), rn, &config.Tool{Name: "tool"}, mc); err != nil {
 		t.Fatalf("Install returned error: %v", err)
 	}
-	got, err := os.ReadFile(filepath.Join(dst, "tool"))
+	got, err := os.ReadFile(filepath.Join(dst, "tool")) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatalf("configured artifact was not copied to extract_to: %v", err)
 	}
@@ -797,7 +797,7 @@ func TestGitAdapterManagedPathsGovernCheckAndRemove(t *testing.T) {
 	first := filepath.Join(root, "owned-a")
 	second := filepath.Join(root, "owned-b")
 	for _, path := range []string{first, second} {
-		if err := os.MkdirAll(path, 0o755); err != nil {
+		if err := os.MkdirAll(path, 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -900,7 +900,7 @@ func containsArg(args []string, want string) bool {
 
 func TestGitAdapterCheckVerifiesRequestedRevisionWhenRepoIsOwned(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	mc := &config.MethodCandidate{Config: map[string]any{
@@ -928,7 +928,7 @@ func TestGitAdapterCheckVerifiesRequestedRevisionWhenRepoIsOwned(t *testing.T) {
 
 func TestGitAdapterInstalledVersionReportsOwnedRepoHEAD(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	mc := &config.MethodCandidate{Config: map[string]any{

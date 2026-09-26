@@ -18,14 +18,14 @@ func TestSDKManAdapterV2ResolvesObservesAndInstallsExactVersion(t *testing.T) {
 	exectest.SetHome(t, home)
 	t.Setenv("SDKMAN_DIR", "")
 	initScript := filepath.Join(home, ".sdkman", "bin", "sdkman-init.sh")
-	if err := os.MkdirAll(filepath.Dir(initScript), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(initScript), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(initScript, []byte("# test sdkman init\n"), 0o644); err != nil {
+	if err := os.WriteFile(initScript, []byte("# test sdkman init\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	version := "21.0.4-tem"
-	if err := os.MkdirAll(filepath.Join(home, ".sdkman", "candidates", "java", version), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(home, ".sdkman", "candidates", "java", version), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -72,7 +72,7 @@ func TestSDKManAdapterV2ObserveWithoutVersionUsesCurrent(t *testing.T) {
 	home := t.TempDir()
 	exectest.SetHome(t, home)
 	versionDir := filepath.Join(home, ".sdkman", "candidates", "java", "17.0.12-tem")
-	if err := os.MkdirAll(versionDir, 0o755); err != nil {
+	if err := os.MkdirAll(versionDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(versionDir, filepath.Join(home, ".sdkman", "candidates", "java", "current")); err != nil {

@@ -97,7 +97,7 @@ func writeFakeUpgradeBinaries(t *testing.T, names ...string) []string {
 
 	moduleDir := t.TempDir()
 	cmdDir := filepath.Join(moduleDir, "cmd", "stringer")
-	if err := os.MkdirAll(cmdDir, 0755); err != nil {
+	if err := os.MkdirAll(cmdDir, 0700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte("module golang.org/x/tools\n\ngo 1.27\n"), 0600); err != nil {
@@ -458,7 +458,7 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 
 	// Create a /bin-suffixed dir so isSharedDir returns true.
 	sharedDir := filepath.Join(t.TempDir(), "bin")
-	if err := os.MkdirAll(sharedDir, 0755); err != nil {
+	if err := os.MkdirAll(sharedDir, 0700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(sharedDir, "httptool"), []byte("old"), 0600); err != nil {

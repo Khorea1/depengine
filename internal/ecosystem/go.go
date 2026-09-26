@@ -96,7 +96,7 @@ func (a *GoAdapter) checkPresent(ctx context.Context, rn run.Runner, tool *confi
 	// Removal targets the Go install directory even when that directory is not
 	// on PATH. Observe that owned target before falling back to PATH probes.
 	if target, err := goInstalledBinaryPath(tool, mc); err == nil {
-		if info, statErr := os.Stat(target); statErr == nil && info.Mode().IsRegular() {
+		if info, statErr := os.Stat(target); statErr == nil && info.Mode().IsRegular() { // #nosec G703 -- target is derived from a validated Go package binary name under GOBIN/GOPATH/bin.
 			return true
 		}
 	}
@@ -326,7 +326,7 @@ func (a *GoAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool
 	if err != nil {
 		return fmt.Errorf("go: %w", err)
 	}
-	if err := os.Remove(target); err != nil {
+	if err := os.Remove(target); err != nil { // #nosec G703 -- target is derived from a validated Go package binary name under GOBIN/GOPATH/bin.
 		if os.IsNotExist(err) {
 			return nil
 		}

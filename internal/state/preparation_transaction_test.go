@@ -60,7 +60,7 @@ func TestLockedStatePersistsExactPreparationPlanForRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := ls.BeginPreparation(key, p); err != nil {
-		ls.Close()
+		_ = ls.Close()
 		t.Fatal(err)
 	}
 
@@ -453,11 +453,11 @@ func TestLockedStateResolvesPersistedApplyingOutcome(t *testing.T) {
 			}
 			resolved, err := ls.ResolvePreparationApplying(key, p, "source-add", tc.outcome)
 			if err != nil {
-				ls.Close()
+				_ = ls.Close()
 				t.Fatal(err)
 			}
 			if resolved.Status != tc.status || resolved.Applying != "" || !reflect.DeepEqual(resolved.Applied, tc.applied) {
-				ls.Close()
+				_ = ls.Close()
 				t.Fatalf("resolved journal = %#v, want status=%q applied=%v", resolved, tc.status, tc.applied)
 			}
 			if err := ls.Close(); err != nil {

@@ -135,7 +135,7 @@ func TestLockProjectionMarshalRedactsManualValues(t *testing.T) {
 		Candidate: plan.CandidateIdentity{Method: "http"},
 		Stability: plan.LockUnavailable,
 		Reason:    "resolution failed at https://example.test/x?token=reason-secret",
-		Identity: plan.LockIdentity{
+		Identity: plan.LockIdentity{ // #nosec G101 -- synthetic credential is required to exercise secret/credential handling.
 			Source:   "https://user:source-password@example.test/repo",
 			Registry: "https://registry.test/x?api_key=registry-secret",
 			Artifacts: []plan.LockedArtifact{{

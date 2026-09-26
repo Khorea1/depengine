@@ -15,7 +15,7 @@ func writeManifest(t *testing.T, content string) string {
 	if !strings.Contains(content, "schema_version") {
 		content = "schema_version = 1\n" + content
 	}
-	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 	return p

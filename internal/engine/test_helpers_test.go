@@ -13,7 +13,7 @@ func tmpFile(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
 	p := filepath.Join(dir, "legacy-detector")
-	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
 		t.Fatalf("tmpFile write: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Remove(p) })

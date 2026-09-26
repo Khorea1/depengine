@@ -3,10 +3,11 @@
 Reviewed on 2026-09-26 with golangci-lint v2.13.2, without the
 `new-from-rev` baseline or diagnostic caps. The original 2026-09-24 audit
 reported 420 diagnostics: 72 in production and 348 in tests. Successive
-hardening passes reduced production findings through 56, 52, and 43. The
-current uncapped scan reports 348 diagnostics, all in tests: production code
-has no unsuppressed `gosec` diagnostics. These are scanner diagnostics, not a
-count or severity score of confirmed vulnerabilities.
+hardening passes reduced production findings through 56, 52, and 43, then to
+zero. The final fixture pass reduced the remaining 348 test diagnostics to zero
+without excluding `gosec` globally or by test package. The current uncapped
+scan reports no `gosec` diagnostics. These historical counts are scanner
+diagnostics, not a count or severity score of confirmed vulnerabilities.
 
 Reproduce with a temporary configuration:
 
@@ -29,8 +30,9 @@ golangci-lint run --config /tmp/depengine-gosec.yml \
   --output.json.path /tmp/gosec.json
 ```
 
-The command exits unsuccessfully while diagnostics remain. Keep the general
-lint baseline until the complete backlog is resolved.
+The command exits unsuccessfully while diagnostics remain. As of the review
+date above, it exits successfully with zero diagnostics. The repository's
+general lint baseline still covers unrelated non-`gosec` backlog.
 
 ## Reviewed cases
 
@@ -50,18 +52,17 @@ lint baseline until the complete backlog is resolved.
 | G703 | `internal/engine/facts.go`, detector selection | Intentional operator-selected executable override. An attacker-controlled process environment is a separate trust concern; the warning alone does not establish traversal. No suppression added. |
 | G703 | `internal/state/snapshot.go`, snapshot write | Generated timestamp filename under the operator-selected owner-only state root. No untrusted archive/document filename reaches this write; a narrow suppression records that reviewed boundary. |
 
-## Remaining priorities
+## Test fixture disposition
 
-- Review the remaining 348 test-only diagnostics independently. Temporary
-  paths, intentional executable permissions, fake credentials, and deliberately
-  permissive fixtures account for much of the backlog; do not blanket-disable
-  `gosec` for tests.
-- Prefer changing fixture permissions to owner-only where the test does not
-  exercise permission semantics. Where a broader mode, dynamic test path,
-  synthetic credential, subprocess, or intentionally ignored cleanup error is
-  part of the fixture contract, use a narrow call-site suppression with a
-  reason.
+The final 348 test-only diagnostics were reviewed independently. Fixture files
+and directories now use owner-only modes where broader permissions were not
+part of the test contract. Executable fixtures retain owner execute permission,
+and tests that intentionally exercise broader permission states retain those
+states with narrow suppressions. Dynamic fixture paths, synthetic credentials,
+and controlled subprocesses use call-site suppressions with reasons rather than
+package- or test-wide exclusions. Previously ignored setup/decoding/lock errors
+were handled or made explicitly secondary to the primary test failure.
 
-The current uncapped count is 348 diagnostics, all in tests. Production code
-has zero unsuppressed `gosec` diagnostics under the command above. Keep the
-general lint baseline until the test fixture backlog is also resolved.
+The current uncapped count is zero across production and tests. Keep `gosec`
+enabled in the normal lint configuration; no repository-wide `gosec` exclusion
+is required.

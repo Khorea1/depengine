@@ -20,10 +20,10 @@ func TestAdapterConformance(t *testing.T) {
 
 func TestAdapterInstallsRawArtifactRelativeToProjectRoot(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "vendor"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "vendor"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "vendor", "demo"), []byte("payload"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "vendor", "demo"), []byte("payload"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	dest := t.TempDir()
@@ -44,7 +44,7 @@ func TestAdapterInstallsRawArtifactRelativeToProjectRoot(t *testing.T) {
 	if strings.Contains(resolvedChecksum, root) {
 		t.Fatalf("resolved checksum leaked project root: %q", resolvedChecksum)
 	}
-	got, err := os.ReadFile(filepath.Join(dest, "demo"))
+	got, err := os.ReadFile(filepath.Join(dest, "demo")) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestAdapterInstallsRawArtifactRelativeToProjectRoot(t *testing.T) {
 	if !adapter.Check(context.Background(), fr, tool, mc) {
 		t.Fatal("installed local artifact not satisfied")
 	}
-	if err := os.WriteFile(filepath.Join(dest, "demo"), []byte("drift"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dest, "demo"), []byte("drift"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	if adapter.Check(context.Background(), fr, tool, mc) {
@@ -65,7 +65,7 @@ func TestAdapterInstallsRawArtifactRelativeToProjectRoot(t *testing.T) {
 func TestAdapterRemoveDoesNotNeedSourceFile(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "demo")
-	if err := os.WriteFile(source, []byte("payload"), 0o755); err != nil {
+	if err := os.WriteFile(source, []byte("payload"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	dest := t.TempDir()
@@ -89,7 +89,7 @@ func TestAdapterRemoveDoesNotNeedSourceFile(t *testing.T) {
 func TestAdapterArchiveOwnsOnlyToolChild(t *testing.T) {
 	root := t.TempDir()
 	archivePath := filepath.Join(root, "demo.zip")
-	f, err := os.Create(archivePath)
+	f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestAdapterArchiveOwnsOnlyToolChild(t *testing.T) {
 
 	installDir := t.TempDir()
 	sibling := filepath.Join(installDir, "keep")
-	if err := os.WriteFile(sibling, []byte("keep"), 0o644); err != nil {
+	if err := os.WriteFile(sibling, []byte("keep"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	mc := &config.MethodCandidate{Kind: "local", ProjectRoot: root, Config: map[string]any{"local_path": "demo.zip", "install_dir": installDir}}
@@ -129,7 +129,7 @@ func TestAdapterArchiveOwnsOnlyToolChild(t *testing.T) {
 	if !adapter.Check(context.Background(), fr, tool, mc) {
 		t.Fatal("installed archive not satisfied")
 	}
-	if err := os.WriteFile(archivePath, []byte("changed"), 0o644); err != nil {
+	if err := os.WriteFile(archivePath, []byte("changed"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if adapter.Check(context.Background(), fr, tool, mc) {
@@ -141,7 +141,7 @@ func TestAdapterArchiveOwnsOnlyToolChild(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(installDir, "demo")); !os.IsNotExist(err) {
 		t.Fatalf("owned tool directory still exists: %v", err)
 	}
-	if got, err := os.ReadFile(sibling); err != nil || string(got) != "keep" {
+	if got, err := os.ReadFile(sibling); err != nil || string(got) != "keep" { // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 		t.Fatalf("sibling changed by remove: data=%q err=%v", got, err)
 	}
 }
@@ -149,7 +149,7 @@ func TestAdapterArchiveOwnsOnlyToolChild(t *testing.T) {
 func TestAdapterFreezesResolvedChecksumAcrossCheckAndInstall(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "demo")
-	if err := os.WriteFile(source, []byte("first"), 0o755); err != nil {
+	if err := os.WriteFile(source, []byte("first"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	installDir := t.TempDir()
@@ -171,7 +171,7 @@ func TestAdapterFreezesResolvedChecksumAcrossCheckAndInstall(t *testing.T) {
 	if checksum == "" {
 		t.Fatal("Check() did not freeze resolved checksum")
 	}
-	if err := os.WriteFile(source, []byte("second"), 0o755); err != nil {
+	if err := os.WriteFile(source, []byte("second"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	if err := adapter.Install(context.Background(), fr, tool, mc); err == nil {

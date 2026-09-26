@@ -92,7 +92,7 @@ func TestLoadMissingFileIsNil(t *testing.T) {
 func TestLoadRejectsNonCanonicalKeys(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "depengine.lock")
 	data := []byte("version = 1\n[tools.'DepartureMono/http']\nlatest = 'v3.4.0'\n")
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Load(path); err == nil {
@@ -369,7 +369,7 @@ func TestSaveLoadFile(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 	// Verify file exists and is valid TOML.
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
@@ -767,10 +767,10 @@ func TestMethodHashDetectsSameKindReordering(t *testing.T) {
 
 func TestResolveAllPinsLocalArtifactContentWithoutAbsolutePath(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "vendor"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "vendor"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "vendor", "demo"), []byte("payload"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "vendor", "demo"), []byte("payload"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	s := &config.Schema{
@@ -957,42 +957,42 @@ func TestValidateFrozenAllowsSelectorsOutsideLegacyLockCoverage(t *testing.T) {
 		"container": {
 			Name: "container",
 			Methods: []*config.MethodCandidate{{
-				Kind: "container",
+				Kind:   "container",
 				Config: map[string]any{"manager": "docker", "source": "example/tool", "tag": "latest"},
 			}},
 		},
 		"git": {
 			Name: "git",
 			Methods: []*config.MethodCandidate{{
-				Kind: "git",
+				Kind:   "git",
 				Config: map[string]any{"url": "https://example.test/tool.git", "branch": "main"},
 			}},
 		},
 		"snap": {
 			Name: "snap",
 			Methods: []*config.MethodCandidate{{
-				Kind: "snap",
+				Kind:   "snap",
 				Config: map[string]any{"pkg": "tool", "channel": "stable"},
 			}},
 		},
 		"release": {
 			Name: "release",
 			Methods: []*config.MethodCandidate{{
-				Kind: "github",
+				Kind:   "github",
 				Config: map[string]any{"repo": "owner/tool", "asset": "tool.tar.gz", "release": "v1.2.3"},
 			}},
 		},
 		"branch": {
 			Name: "branch",
 			Methods: []*config.MethodCandidate{{
-				Kind: "github",
+				Kind:   "github",
 				Config: map[string]any{"repo": "owner/tool", "asset": "tool.tar.gz", "branch": "edge"},
 			}},
 		},
 		"local-fixed": {
 			Name: "local-fixed",
 			Methods: []*config.MethodCandidate{{
-				Kind: "local",
+				Kind:   "local",
 				Config: map[string]any{"local_path": "vendor/tool", "checksum": explicitChecksum},
 			}},
 		},

@@ -26,8 +26,7 @@ func TestCacheDirDefault(t *testing.T) {
 }
 
 func TestCacheDirRespectsXDG(t *testing.T) {
-	os.Setenv("XDG_CACHE_HOME", "/tmp/xdg-cache")
-	defer os.Unsetenv("XDG_CACHE_HOME")
+	t.Setenv("XDG_CACHE_HOME", "/tmp/xdg-cache")
 	dir := CacheDir()
 	want := filepath.Join("/tmp/xdg-cache", "depengine", "downloads")
 	if dir != want {
@@ -73,13 +72,12 @@ func TestLookupMissing(t *testing.T) {
 func TestStoreAndLookup(t *testing.T) {
 	dir := t.TempDir()
 	// Override cache dir to use temp dir so we don't pollute real cache.
-	os.Setenv("XDG_CACHE_HOME", dir)
-	defer os.Unsetenv("XDG_CACHE_HOME")
+	t.Setenv("XDG_CACHE_HOME", dir)
 
 	// Create a "downloaded" file.
 	src := filepath.Join(dir, "downloaded-file.bin")
 	content := "some binary content for " + t.Name()
-	if err := os.WriteFile(src, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(src, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -99,7 +97,7 @@ func TestStoreAndLookup(t *testing.T) {
 	}
 
 	// Verify content survived.
-	data, err := os.ReadFile(found)
+	data, err := os.ReadFile(found) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,21 +135,24 @@ func TestStoreTightensCacheDirectoryPermissions(t *testing.T) {
 
 func TestStoreOverwritesExisting(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("XDG_CACHE_HOME", dir)
-	defer os.Unsetenv("XDG_CACHE_HOME")
+	t.Setenv("XDG_CACHE_HOME", dir)
 
 	url := testURL + "#Overwrite"
 
 	// First store.
 	src1 := filepath.Join(dir, "first.bin")
-	os.WriteFile(src1, []byte("first"), 0o644)
+	if err := os.WriteFile(src1, []byte("first"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := Store(url, src1); err != nil {
 		t.Fatal(err)
 	}
 
 	// Second store with different content.
 	src2 := filepath.Join(dir, "second.bin")
-	os.WriteFile(src2, []byte("second"), 0o644)
+	if err := os.WriteFile(src2, []byte("second"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := Store(url, src2); err != nil {
 		t.Fatal(err)
 	}
@@ -164,13 +165,16 @@ func TestStoreOverwritesExisting(t *testing.T) {
 
 func TestRemove(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("XDG_CACHE_HOME", dir)
-	defer os.Unsetenv("XDG_CACHE_HOME")
+	t.Setenv("XDG_CACHE_HOME", dir)
 
 	url := testURL + "#Remove"
 	src := filepath.Join(dir, "src.bin")
-	os.WriteFile(src, []byte("data"), 0o644)
-	Store(url, src)
+	if err := os.WriteFile(src, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Store(url, src); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := Remove(url); err != nil {
 		t.Fatalf("Remove: %v", err)
@@ -187,15 +191,18 @@ func TestRemove(t *testing.T) {
 
 func TestClear(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("XDG_CACHE_HOME", dir)
-	defer os.Unsetenv("XDG_CACHE_HOME")
+	t.Setenv("XDG_CACHE_HOME", dir)
 
 	// Store two entries.
 	for _, suffix := range []string{"a", "b"} {
 		url := testURL + "#Clear" + suffix
 		src := filepath.Join(dir, "src")
-		os.WriteFile(src, []byte("data"), 0o644)
-		Store(url, src)
+		if err := os.WriteFile(src, []byte("data"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Store(url, src); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	count, err := Clear()
@@ -218,8 +225,7 @@ func TestClear(t *testing.T) {
 
 func TestClearNonExistentDir(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("XDG_CACHE_HOME", dir)
-	defer os.Unsetenv("XDG_CACHE_HOME")
+	t.Setenv("XDG_CACHE_HOME", dir)
 
 	// Cache dir doesn't exist yet — Clear should be a no-op.
 	count, err := Clear()
@@ -233,15 +239,18 @@ func TestClearNonExistentDir(t *testing.T) {
 
 func TestStoreCreatesParentDirs(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("XDG_CACHE_HOME", dir)
-	defer os.Unsetenv("XDG_CACHE_HOME")
+	t.Setenv("XDG_CACHE_HOME", dir)
 
 	// Remove the depengine/downloads subdir so Store must create it.
-	os.RemoveAll(filepath.Join(dir, "depengine"))
+	if err := os.RemoveAll(filepath.Join(dir, "depengine")); err != nil {
+		t.Fatal(err)
+	}
 
 	url := testURL + "#CreateDirs"
 	src := filepath.Join(dir, "src.bin")
-	os.WriteFile(src, []byte("data"), 0o644)
+	if err := os.WriteFile(src, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := Store(url, src); err != nil {
 		t.Fatalf("Store (create dirs): %v", err)
@@ -254,7 +263,7 @@ func TestStoreCreatesParentDirs(t *testing.T) {
 func TestCopyFileAtomicPreservesExistingEntryOnCopyFailure(t *testing.T) {
 	dir := t.TempDir()
 	dst := filepath.Join(dir, "cached")
-	if err := os.WriteFile(dst, []byte("known-good"), 0o644); err != nil {
+	if err := os.WriteFile(dst, []byte("known-good"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -265,7 +274,7 @@ func TestCopyFileAtomicPreservesExistingEntryOnCopyFailure(t *testing.T) {
 	if err := copyFileAtomic(t.TempDir(), dst); err == nil {
 		t.Fatal("copyFileAtomic(directory, dst) = nil, want error")
 	}
-	got, err := os.ReadFile(dst)
+	got, err := os.ReadFile(dst) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,17 +295,17 @@ func TestCopyFileAtomicCommitsCompleteFile(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src")
 	dst := filepath.Join(dir, "dst")
-	if err := os.WriteFile(src, []byte("new-complete-content"), 0o640); err != nil {
+	if err := os.WriteFile(src, []byte("new-complete-content"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(dst, []byte("old"), 0o644); err != nil {
+	if err := os.WriteFile(dst, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := copyFileAtomic(src, dst); err != nil {
 		t.Fatalf("copyFileAtomic: %v", err)
 	}
-	got, err := os.ReadFile(dst)
+	got, err := os.ReadFile(dst) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,10 +318,10 @@ func TestLookupRejectsNonRegularEntries(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	url := testURL + "#non-regular"
 	p := Path(url)
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(p, 0o755); err != nil {
+	if err := os.Mkdir(p, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if got := Lookup(url); got != "" {
@@ -323,7 +332,7 @@ func TestLookupRejectsNonRegularEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := filepath.Join(t.TempDir(), "target")
-	if err := os.WriteFile(target, []byte("not cache-owned"), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte("not cache-owned"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(target, p); err != nil {
@@ -336,7 +345,7 @@ func TestLookupRejectsNonRegularEntries(t *testing.T) {
 
 func TestEvictIgnoresStagingFiles(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-	if err := os.MkdirAll(CacheDir(), 0o755); err != nil {
+	if err := os.MkdirAll(CacheDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	staging := filepath.Join(CacheDir(), ".depengine-download-active")
@@ -345,7 +354,7 @@ func TestEvictIgnoresStagingFiles(t *testing.T) {
 	}
 	url := testURL + "#evict-real-entry"
 	entry := Path(url)
-	if err := os.WriteFile(entry, []byte("cached"), 0o644); err != nil {
+	if err := os.WriteFile(entry, []byte("cached"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -359,7 +368,7 @@ func TestEvictIgnoresStagingFiles(t *testing.T) {
 
 func TestClearIgnoresStagingFiles(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-	if err := os.MkdirAll(CacheDir(), 0o755); err != nil {
+	if err := os.MkdirAll(CacheDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	staging := filepath.Join(CacheDir(), ".depengine-download-active")
@@ -367,7 +376,7 @@ func TestClearIgnoresStagingFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	entry := Path(testURL + "#clear-real-entry")
-	if err := os.WriteFile(entry, []byte("cached"), 0o644); err != nil {
+	if err := os.WriteFile(entry, []byte("cached"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -390,7 +399,7 @@ func TestCopyFilePreservesPermissionsWhenDestinationExists(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src")
 	dst := filepath.Join(dir, "dst")
-	if err := os.WriteFile(src, []byte("executable"), 0o755); err != nil {
+	if err := os.WriteFile(src, []byte("executable"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(dst, []byte("old"), 0o600); err != nil {
@@ -404,8 +413,8 @@ func TestCopyFilePreservesPermissionsWhenDestinationExists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o755 {
-		t.Fatalf("destination mode = %o, want 755", got)
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("destination mode = %o, want 700", got)
 	}
 }
 
@@ -416,7 +425,7 @@ func TestCopyFileAtomicPreservesPermissions(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src")
 	dst := filepath.Join(dir, "dst")
-	if err := os.WriteFile(src, []byte("executable"), 0o751); err != nil {
+	if err := os.WriteFile(src, []byte("executable"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 
@@ -427,7 +436,7 @@ func TestCopyFileAtomicPreservesPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o751 {
-		t.Fatalf("destination mode = %o, want 751", got)
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("destination mode = %o, want 700", got)
 	}
 }

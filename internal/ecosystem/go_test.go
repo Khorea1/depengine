@@ -79,7 +79,7 @@ func TestGoAdapterRemoveDeletesBinaryFromGOBIN(t *testing.T) {
 	// Explicit pkg config points at the import path; the binary that
 	// `go install` produced is named after the /cmd/ element.
 	binPath := goFixturePath(binDir, "stringer")
-	if err := os.WriteFile(binPath, []byte("#!/bin/sh\n"), 0755); err != nil {
+	if err := os.WriteFile(binPath, []byte("#!/bin/sh\n"), 0700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 
@@ -101,7 +101,7 @@ func TestGoAdapterRemoveFallsBackToToolNameAsImportPath(t *testing.T) {
 	binDir := t.TempDir()
 	t.Setenv("GOBIN", binDir)
 	binPath := goFixturePath(binDir, "fzf")
-	if err := os.WriteFile(binPath, []byte("x"), 0755); err != nil {
+	if err := os.WriteFile(binPath, []byte("x"), 0700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 
@@ -138,7 +138,7 @@ func TestGoAdapterRemoveUsesGOPATHBinWhenGOBINUnset(t *testing.T) {
 	t.Setenv("GOBIN", "")
 	t.Setenv("GOPATH", gopath)
 	binPath := goFixturePath(filepath.Join(gopath, "bin"), "fzf")
-	if err := os.MkdirAll(filepath.Dir(binPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(binPath), 0700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(binPath, []byte("x"), 0755); err != nil {
@@ -188,7 +188,7 @@ func TestGoAdapterRemoveDoesNotTouchUnrelatedBinaries(t *testing.T) {
 	binDir := t.TempDir()
 	t.Setenv("GOBIN", binDir)
 	unrelated := filepath.Join(binDir, "cargo")
-	if err := os.WriteFile(unrelated, []byte("x"), 0755); err != nil {
+	if err := os.WriteFile(unrelated, []byte("x"), 0700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 
@@ -271,10 +271,10 @@ func TestGoPkgFieldControlsRemoveTarget(t *testing.T) {
 	t.Setenv("GOBIN", binDir)
 	realBin := goFixturePath(binDir, "realbin")
 	friendlyBin := goFixturePath(binDir, "friendly-name")
-	if err := os.WriteFile(realBin, []byte("x"), 0755); err != nil {
+	if err := os.WriteFile(realBin, []byte("x"), 0700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(friendlyBin, []byte("keep"), 0755); err != nil {
+	if err := os.WriteFile(friendlyBin, []byte("keep"), 0700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 

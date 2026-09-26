@@ -27,16 +27,16 @@ func TestAppImageAdapterV2ObserveAgreesWithCheck(t *testing.T) {
 
 	// Explicit install_dir fixture.
 	installDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(installDir, "explicit-app"), []byte("x"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(installDir, "explicit-app"), []byte("x"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 
 	// Default install_dir fixture (~/.local/bin under the isolated home).
 	defaultDir := filepath.Join(home, ".local", "bin")
-	if err := os.MkdirAll(defaultDir, 0o755); err != nil {
+	if err := os.MkdirAll(defaultDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(defaultDir, "default-app"), []byte("x"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(defaultDir, "default-app"), []byte("x"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 

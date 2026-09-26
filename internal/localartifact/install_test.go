@@ -20,10 +20,10 @@ import (
 func TestInstallRawOfflineAndAtomicReplacement(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "vendor", "tool")
-	if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(source, []byte("new"), 0o755); err != nil {
+	if err := os.WriteFile(source, []byte("new"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	resolved, err := localartifact.Resolve(root, "vendor/tool", "")
@@ -31,16 +31,16 @@ func TestInstallRawOfflineAndAtomicReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	destination := filepath.Join(t.TempDir(), "bin", "tool")
-	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(destination, []byte("old"), 0o644); err != nil {
+	if err := os.WriteFile(destination, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := localartifact.Install(resolved, destination); err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile(destination)
+	got, err := os.ReadFile(destination) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestInstallRawOfflineAndAtomicReplacement(t *testing.T) {
 func TestInstallZipRejectsTraversal(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "bad.zip")
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestInstallTarGzExtractsRegularFiles(t *testing.T) {
 	}
 	_ = tw.Close()
 	_ = gz.Close()
-	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	resolved, err := localartifact.Resolve(root, "tool.tar.gz", "")
@@ -113,7 +113,7 @@ func TestInstallTarGzExtractsRegularFiles(t *testing.T) {
 	if err := localartifact.Install(resolved, dest); err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile(filepath.Join(dest, "bin", "tool"))
+	got, err := os.ReadFile(filepath.Join(dest, "bin", "tool")) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestInstallTarRejectsInvalidModes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
 			archivePath := filepath.Join(root, "invalid.tar")
-			archive, err := os.Create(archivePath)
+			archive, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -163,7 +163,7 @@ func TestInstallDefensivelyRejectsUnsupportedOfflineArchive(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "tool.tar.xz")
 	body := []byte("not actually xz")
-	if err := os.WriteFile(path, body, 0o644); err != nil {
+	if err := os.WriteFile(path, body, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(body)
@@ -184,14 +184,14 @@ func TestInstallDefensivelyRejectsUnsupportedOfflineArchive(t *testing.T) {
 func TestInstallRejectsArtifactChangedAfterResolve(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "tool")
-	if err := os.WriteFile(path, []byte("original"), 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("original"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	resolved, err := localartifact.Resolve(root, "tool", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("tampered"), 0o755); err != nil {
+	if err := os.WriteFile(path, []byte("tampered"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	destination := filepath.Join(t.TempDir(), "tool")
@@ -206,7 +206,7 @@ func TestInstallRejectsArtifactChangedAfterResolve(t *testing.T) {
 func TestInstallPreservesUnrelatedLegacyBackupPath(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "tool")
-	if err := os.WriteFile(source, []byte("new"), 0o755); err != nil {
+	if err := os.WriteFile(source, []byte("new"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	resolved, err := localartifact.Resolve(root, "tool", "")
@@ -214,7 +214,7 @@ func TestInstallPreservesUnrelatedLegacyBackupPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	destination := filepath.Join(t.TempDir(), "tool")
-	if err := os.WriteFile(destination, []byte("old"), 0o755); err != nil {
+	if err := os.WriteFile(destination, []byte("old"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	legacyBackup := destination + ".depengine-backup"
@@ -225,7 +225,7 @@ func TestInstallPreservesUnrelatedLegacyBackupPath(t *testing.T) {
 	if err := localartifact.Install(resolved, destination); err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile(legacyBackup)
+	got, err := os.ReadFile(legacyBackup) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ func TestInstallPreservesUnrelatedLegacyBackupPath(t *testing.T) {
 func TestInstallArchiveWritesAndVerifiesContentIdentity(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "tool.zip")
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +276,7 @@ func TestInstallArchiveWritesAndVerifiesContentIdentity(t *testing.T) {
 func TestInstallArchiveRejectsReservedMetadataEntry(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "tool.zip")
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +308,7 @@ func TestInstallZipRejectsWindowsDriveQualifiedEntriesOnEveryHost(t *testing.T) 
 		t.Run(strings.ReplaceAll(entryName, "/", "_"), func(t *testing.T) {
 			root := t.TempDir()
 			archivePath := filepath.Join(root, "bad.zip")
-			f, err := os.Create(archivePath)
+			f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -350,7 +350,7 @@ func TestInstallArchivePreservesExplicitDirectoryModeAfterChild(t *testing.T) {
 			name: "zip",
 			file: "tool.zip",
 			write: func(t *testing.T, path string) {
-				f, err := os.Create(path)
+				f, err := os.Create(path) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -379,7 +379,7 @@ func TestInstallArchivePreservesExplicitDirectoryModeAfterChild(t *testing.T) {
 			name: "tar",
 			file: "tool.tar",
 			write: func(t *testing.T, path string) {
-				f, err := os.Create(path)
+				f, err := os.Create(path) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -432,7 +432,7 @@ func TestInstallZipRejectsWindowsSpecialEntriesOnEveryHost(t *testing.T) {
 		t.Run(strings.NewReplacer("/", "_", ":", "_").Replace(entryName), func(t *testing.T) {
 			root := t.TempDir()
 			archivePath := filepath.Join(root, "bad.zip")
-			f, err := os.Create(archivePath)
+			f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -471,7 +471,7 @@ func TestInstallArchiveRejectsPortablePathAliases(t *testing.T) {
 			name: "zip case collision",
 			file: "bad.zip",
 			write: func(t *testing.T, archivePath string) {
-				f, err := os.Create(archivePath)
+				f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -497,7 +497,7 @@ func TestInstallArchiveRejectsPortablePathAliases(t *testing.T) {
 			name: "zip empty component alias",
 			file: "bad.zip",
 			write: func(t *testing.T, archivePath string) {
-				f, err := os.Create(archivePath)
+				f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -521,7 +521,7 @@ func TestInstallArchiveRejectsPortablePathAliases(t *testing.T) {
 			name: "zip dot component alias",
 			file: "bad.zip",
 			write: func(t *testing.T, archivePath string) {
-				f, err := os.Create(archivePath)
+				f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -545,7 +545,7 @@ func TestInstallArchiveRejectsPortablePathAliases(t *testing.T) {
 			name: "tar file parent collision",
 			file: "bad.tar",
 			write: func(t *testing.T, archivePath string) {
-				f, err := os.Create(archivePath)
+				f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -576,7 +576,7 @@ func TestInstallArchiveRejectsPortablePathAliases(t *testing.T) {
 			name: "zip parent component",
 			file: "bad.zip",
 			write: func(t *testing.T, archivePath string) {
-				f, err := os.Create(archivePath)
+				f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -622,7 +622,7 @@ func TestInstallArchiveRejectsReservedMetadataNamesCaseInsensitively(t *testing.
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			archivePath := filepath.Join(root, "bad.zip")
-			f, err := os.Create(archivePath)
+			f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -655,7 +655,7 @@ func TestInstallArchiveRejectsReservedMetadataNamesCaseInsensitively(t *testing.
 func TestVerifyArchiveChecksumDetectsInstalledPayloadDrift(t *testing.T) {
 	root := t.TempDir()
 	archivePath := filepath.Join(root, "tool.zip")
-	f, err := os.Create(archivePath)
+	f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -685,7 +685,7 @@ func TestVerifyArchiveChecksumDetectsInstalledPayloadDrift(t *testing.T) {
 	if err := localartifact.VerifyArchiveChecksum(destination, resolved.Artifact.Checksum); err != nil {
 		t.Fatalf("initial VerifyArchiveChecksum() error: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(destination, "bin", "tool"), []byte("tampered"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(destination, "bin", "tool"), []byte("tampered"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := localartifact.VerifyArchiveChecksum(destination, resolved.Artifact.Checksum); err == nil {
@@ -696,7 +696,7 @@ func TestVerifyArchiveChecksumDetectsInstalledPayloadDrift(t *testing.T) {
 func TestInstallArchiveRejectsReservedTreeMetadataEntry(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "tool.zip")
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -726,7 +726,7 @@ func TestInstallArchiveRejectsReservedTreeMetadataEntry(t *testing.T) {
 func TestInstallRawAlreadySatisfiedDoesNotReplaceDestination(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "tool")
-	if err := os.WriteFile(source, []byte("stable"), 0o755); err != nil {
+	if err := os.WriteFile(source, []byte("stable"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	resolved, err := localartifact.Resolve(root, "tool", "")
@@ -756,7 +756,7 @@ func TestInstallRawAlreadySatisfiedDoesNotReplaceDestination(t *testing.T) {
 func TestInstallArchiveAlreadySatisfiedDoesNotReplaceDestination(t *testing.T) {
 	root := t.TempDir()
 	archivePath := filepath.Join(root, "tool.zip")
-	f, err := os.Create(archivePath)
+	f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -804,7 +804,7 @@ func TestInstallRawRepairsPermissionDrift(t *testing.T) {
 	}
 	root := t.TempDir()
 	source := filepath.Join(root, "tool")
-	if err := os.WriteFile(source, []byte("stable"), 0o755); err != nil {
+	if err := os.WriteFile(source, []byte("stable"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	resolved, err := localartifact.Resolve(root, "tool", "")
@@ -815,7 +815,7 @@ func TestInstallRawRepairsPermissionDrift(t *testing.T) {
 	if err := localartifact.Install(resolved, destination); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(destination, 0o644); err != nil {
+	if err := os.Chmod(destination, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := localartifact.Install(resolved, destination); err != nil {
@@ -836,7 +836,7 @@ func TestInstallArchiveNormalizesAndVerifiesRootMode(t *testing.T) {
 	}
 	root := t.TempDir()
 	archivePath := filepath.Join(root, "tool.zip")
-	f, err := os.Create(archivePath)
+	f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -870,7 +870,7 @@ func TestInstallArchiveNormalizesAndVerifiesRootMode(t *testing.T) {
 	if got := info.Mode().Perm(); got != 0o755 {
 		t.Fatalf("archive root mode = %o, want 755", got)
 	}
-	if err := os.Chmod(destination, 0o700); err != nil {
+	if err := os.Chmod(destination, 0o700); err != nil { // #nosec G302 -- test intentionally changes fixture permissions to exercise permission behavior.
 		t.Fatal(err)
 	}
 	if err := localartifact.VerifyArchiveChecksum(destination, resolved.Artifact.Checksum); err == nil {
@@ -884,14 +884,14 @@ func TestInstallRejectsRawSourcePermissionDriftAfterResolve(t *testing.T) {
 	}
 	root := t.TempDir()
 	source := filepath.Join(root, "tool")
-	if err := os.WriteFile(source, []byte("payload"), 0o755); err != nil {
+	if err := os.WriteFile(source, []byte("payload"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	resolved, err := localartifact.Resolve(root, "tool", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(source, 0o644); err != nil {
+	if err := os.Chmod(source, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	destination := filepath.Join(t.TempDir(), "tool")
@@ -906,7 +906,7 @@ func TestInstallRejectsRawSourcePermissionDriftAfterResolve(t *testing.T) {
 func TestInstallTarAllowsConventionalRootDirectoryEntry(t *testing.T) {
 	root := t.TempDir()
 	archivePath := filepath.Join(root, "tool.tar")
-	f, err := os.Create(archivePath)
+	f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -954,7 +954,7 @@ func TestInstallArchiveDefersRestrictiveDirectoryModesUntilAfterExtraction(t *te
 			name: "zip",
 			file: "tool.zip",
 			write: func(t *testing.T, archivePath string) {
-				f, err := os.Create(archivePath)
+				f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -983,7 +983,7 @@ func TestInstallArchiveDefersRestrictiveDirectoryModesUntilAfterExtraction(t *te
 			name: "tar",
 			file: "tool.tar",
 			write: func(t *testing.T, archivePath string) {
-				f, err := os.Create(archivePath)
+				f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1018,11 +1018,11 @@ func TestInstallArchiveDefersRestrictiveDirectoryModesUntilAfterExtraction(t *te
 			}
 			dest := filepath.Join(t.TempDir(), "payload")
 			// Ensure writable so t.TempDir cleanup can remove tree.
-			t.Cleanup(func() { _ = os.Chmod(filepath.Join(dest, "bin"), 0o755) })
+			t.Cleanup(func() { _ = os.Chmod(filepath.Join(dest, "bin"), 0o700) }) // #nosec G302 -- test intentionally changes fixture permissions to exercise permission behavior.
 			if err := localartifact.Install(resolved, dest); err != nil {
 				t.Fatal(err)
 			}
-			data, err := os.ReadFile(filepath.Join(dest, "bin", "tool"))
+			data, err := os.ReadFile(filepath.Join(dest, "bin", "tool")) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1049,7 +1049,7 @@ func TestInstallArchiveRejectsUnverifiableDirectoryMode(t *testing.T) {
 	}
 	root := t.TempDir()
 	archivePath := filepath.Join(root, "tool.tar")
-	f, err := os.Create(archivePath)
+	f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1078,7 +1078,7 @@ func TestInstallArchiveRejectsUnverifiableFileMode(t *testing.T) {
 	}
 	root := t.TempDir()
 	archivePath := filepath.Join(root, "tool.tar")
-	f, err := os.Create(archivePath)
+	f, err := os.Create(archivePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}

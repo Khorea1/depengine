@@ -85,7 +85,7 @@ func TestAdaptersRequireElevationForSystemDestinations(t *testing.T) {
 
 func TestHTTPAdapterCheckViaExtractTo(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "mytool"), nil, 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "mytool"), nil, 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	fr := &run.FakeRunner{}
@@ -105,7 +105,7 @@ func TestHTTPAdapterCheckViaExtractToBinary(t *testing.T) {
 	// When the install record names a binary, the target file is
 	// extract_to/<binary>.
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "yq"), nil, 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "yq"), nil, 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	fr := &run.FakeRunner{}
@@ -126,7 +126,7 @@ func TestHTTPAdapterCheckDirectoryOnlyIsNotInstalled(t *testing.T) {
 	// another tool's clone) must NOT count as installed — the target FILE
 	// must exist even though the parent directory does.
 	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, "yq"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(dir, "yq"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	fr := &run.FakeRunner{}
@@ -145,7 +145,7 @@ func TestHTTPAdapterCheckDirectoryOnlyIsNotInstalled(t *testing.T) {
 func TestHTTPAdapterCheckFollowsSymlinkToRegularFile(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target")
-	if err := os.WriteFile(target, nil, 0o755); err != nil {
+	if err := os.WriteFile(target, nil, 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	if err := os.Symlink(target, filepath.Join(dir, "tool")); err != nil {
@@ -237,7 +237,7 @@ func TestFileExtension(t *testing.T) {
 func TestSHA256File(t *testing.T) {
 	content := []byte("hello world")
 	tmpFile := filepath.Join(t.TempDir(), "test.txt")
-	if err := os.WriteFile(tmpFile, content, 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, content, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -255,7 +255,7 @@ func TestSHA256File(t *testing.T) {
 func TestVerifyChecksumMatch(t *testing.T) {
 	content := []byte("hello world")
 	tmpFile := filepath.Join(t.TempDir(), "test.txt")
-	if err := os.WriteFile(tmpFile, content, 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, content, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -268,7 +268,7 @@ func TestVerifyChecksumMatch(t *testing.T) {
 func TestVerifyChecksumMismatch(t *testing.T) {
 	content := []byte("hello world")
 	tmpFile := filepath.Join(t.TempDir(), "test.txt")
-	if err := os.WriteFile(tmpFile, content, 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, content, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -352,7 +352,7 @@ func TestDownloadFileNameFromURL(t *testing.T) {
 func TestMD5File(t *testing.T) {
 	content := []byte("hello")
 	tmpFile := filepath.Join(t.TempDir(), "test.txt")
-	if err := os.WriteFile(tmpFile, content, 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, content, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -370,7 +370,7 @@ func TestMD5File(t *testing.T) {
 func TestSHA1File(t *testing.T) {
 	content := []byte("hello")
 	tmpFile := filepath.Join(t.TempDir(), "test.txt")
-	if err := os.WriteFile(tmpFile, content, 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, content, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -388,7 +388,7 @@ func TestSHA1File(t *testing.T) {
 func TestSHA512File(t *testing.T) {
 	content := []byte("hello")
 	tmpFile := filepath.Join(t.TempDir(), "test.txt")
-	if err := os.WriteFile(tmpFile, content, 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, content, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -406,7 +406,7 @@ func TestSHA512File(t *testing.T) {
 func TestVerifyChecksumMD5(t *testing.T) {
 	content := []byte("hello")
 	tmpFile := filepath.Join(t.TempDir(), "test.txt")
-	if err := os.WriteFile(tmpFile, content, 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, content, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -426,7 +426,7 @@ func TestVerifyChecksumMD5(t *testing.T) {
 func TestVerifyChecksumSHA1(t *testing.T) {
 	content := []byte("hello")
 	tmpFile := filepath.Join(t.TempDir(), "test.txt")
-	if err := os.WriteFile(tmpFile, content, 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, content, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -446,7 +446,7 @@ func TestVerifyChecksumSHA1(t *testing.T) {
 func TestVerifyChecksumSHA512(t *testing.T) {
 	content := []byte("hello")
 	tmpFile := filepath.Join(t.TempDir(), "test.txt")
-	if err := os.WriteFile(tmpFile, content, 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, content, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -648,7 +648,7 @@ func TestVerifyChecksumDirectHashStillWorks(t *testing.T) {
 	// still works via the adapter method.
 	content := []byte("hello world")
 	tmpFile := filepath.Join(t.TempDir(), "test.txt")
-	if err := os.WriteFile(tmpFile, content, 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, content, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -678,7 +678,7 @@ func TestVerifyChecksumAutoWithConfig(t *testing.T) {
 	// This proves the code path is reached and URL generation works.
 	content := []byte("test data")
 	tmpFile := filepath.Join(t.TempDir(), "test.txt")
-	if err := os.WriteFile(tmpFile, content, 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, content, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -711,7 +711,7 @@ func TestVerifyChecksumAutoWithURLChecksumURL(t *testing.T) {
 	// Test with explicit checksum_url set but unreachable.
 	content := []byte("test data")
 	tmpFile := filepath.Join(t.TempDir(), "test.txt")
-	if err := os.WriteFile(tmpFile, content, 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, content, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -737,7 +737,7 @@ func TestVerifyChecksumConfigResolved(t *testing.T) {
 	// path is reachable (it will fail with a network error).
 	content := []byte("test data")
 	tmpFile := filepath.Join(t.TempDir(), "test.txt")
-	if err := os.WriteFile(tmpFile, content, 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, content, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -755,7 +755,7 @@ func TestVerifyChecksumFileFormatRaw(t *testing.T) {
 	// Test that checksum_file_format:raw is passed through to URL attempts.
 	content := []byte("test data")
 	tmpFile := filepath.Join(t.TempDir(), "test.txt")
-	if err := os.WriteFile(tmpFile, content, 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, content, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -814,7 +814,7 @@ func TestHTTPAdapterRemoveSharedDirRemovesOnlyBinary(t *testing.T) {
 
 	// Use a dir ending in /bin so isSharedDir returns true.
 	sharedDir := filepath.Join(dir, "bin")
-	if err := os.Mkdir(sharedDir, 0755); err != nil {
+	if err := os.Mkdir(sharedDir, 0700); err != nil {
 		t.Fatal(err)
 	}
 	binInShared := filepath.Join(sharedDir, "mytool")
@@ -849,7 +849,7 @@ func TestHTTPAdapterRemoveNoExtractToUsesToolName(t *testing.T) {
 	// Instead, use a shared-dir-suffixed temp and verify tool name is the target.
 	dir := t.TempDir()
 	sharedDir := filepath.Join(dir, "bin")
-	if err := os.Mkdir(sharedDir, 0755); err != nil {
+	if err := os.Mkdir(sharedDir, 0700); err != nil {
 		t.Fatal(err)
 	}
 	binPath := filepath.Join(sharedDir, "named-tool")
@@ -878,7 +878,7 @@ func TestHTTPAdapterRemoveNonexistentNoError(t *testing.T) {
 	tool := &config.Tool{Name: "ghost"}
 	dir := t.TempDir()
 	sharedDir := filepath.Join(dir, "bin")
-	if err := os.Mkdir(sharedDir, 0755); err != nil {
+	if err := os.Mkdir(sharedDir, 0700); err != nil {
 		t.Fatal(err)
 	}
 	mc := &config.MethodCandidate{Config: map[string]any{
@@ -896,7 +896,7 @@ func TestHTTPAdapterRemoveToolSpecificDir(t *testing.T) {
 	// Non-shared extract_to → entire directory deleted.
 	dir := t.TempDir()
 	toolDir := filepath.Join(dir, "mytool-dir")
-	if err := os.Mkdir(toolDir, 0755); err != nil {
+	if err := os.Mkdir(toolDir, 0700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(toolDir, "mytool"), []byte("x"), 0600); err != nil {

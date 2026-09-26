@@ -91,7 +91,7 @@ func TestHTTPDelegatePreservesOtherConfigKeys(t *testing.T) {
 
 func TestAppImageAdapterCheckInstalled(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "obsidian"), nil, 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "obsidian"), nil, 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	mc := &config.MethodCandidate{Config: map[string]any{"install_dir": dir}}
@@ -129,7 +129,7 @@ func TestAppImageAdapterInstallNoURL(t *testing.T) {
 func TestAppImageAdapterInstallsStableName(t *testing.T) {
 	const body = "fake-appimage-bytes"
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(body))
+		_, _ = w.Write([]byte(body))
 	}))
 	defer ts.Close()
 
@@ -148,7 +148,7 @@ func TestAppImageAdapterInstallsStableName(t *testing.T) {
 	}
 
 	stablePath := filepath.Join(installDir, "obsidian")
-	data, err := os.ReadFile(stablePath)
+	data, err := os.ReadFile(stablePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatalf("expected stable-named binary at %s: %v", stablePath, err)
 	}
@@ -168,7 +168,7 @@ func TestAppImageAdapterInstallsStableName(t *testing.T) {
 
 func TestAppImageAdapterInstallSameName(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("content"))
+		_, _ = w.Write([]byte("content"))
 	}))
 	defer ts.Close()
 
@@ -196,7 +196,7 @@ func TestAppImageAdapterInstallWithDesktopEntry(t *testing.T) {
 	exectest.SetHome(t, fakeHome)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("content"))
+		_, _ = w.Write([]byte("content"))
 	}))
 	defer ts.Close()
 
@@ -214,7 +214,7 @@ func TestAppImageAdapterInstallWithDesktopEntry(t *testing.T) {
 	}
 
 	desktopPath := filepath.Join(fakeHome, ".local", "share", "applications", "obsidian.desktop")
-	data, err := os.ReadFile(desktopPath)
+	data, err := os.ReadFile(desktopPath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatalf("expected .desktop entry at %s: %v", desktopPath, err)
 	}
@@ -233,7 +233,7 @@ func TestAppImageAdapterInstallWithoutDesktopSkipsEntry(t *testing.T) {
 	exectest.SetHome(t, fakeHome)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("content"))
+		_, _ = w.Write([]byte("content"))
 	}))
 	defer ts.Close()
 
@@ -267,15 +267,15 @@ func TestAppImageAdapterRemoveBinaryAndDesktopEntry(t *testing.T) {
 
 	installDir := t.TempDir()
 	binPath := filepath.Join(installDir, "obsidian")
-	if err := os.WriteFile(binPath, []byte("x"), 0o755); err != nil {
+	if err := os.WriteFile(binPath, []byte("x"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	desktopDir := filepath.Join(fakeHome, ".local", "share", "applications")
-	if err := os.MkdirAll(desktopDir, 0o755); err != nil {
+	if err := os.MkdirAll(desktopDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	desktopPath := filepath.Join(desktopDir, "obsidian.desktop")
-	if err := os.WriteFile(desktopPath, []byte("[Desktop Entry]"), 0o644); err != nil {
+	if err := os.WriteFile(desktopPath, []byte("[Desktop Entry]"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -297,7 +297,7 @@ func TestAppImageAdapterRemoveBinaryAndDesktopEntry(t *testing.T) {
 func TestAppImageAdapterRemoveWithoutDesktopLeavesNothingToDelete(t *testing.T) {
 	installDir := t.TempDir()
 	binPath := filepath.Join(installDir, "obsidian")
-	if err := os.WriteFile(binPath, []byte("x"), 0o755); err != nil {
+	if err := os.WriteFile(binPath, []byte("x"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	mc := &config.MethodCandidate{Config: map[string]any{"install_dir": installDir}}

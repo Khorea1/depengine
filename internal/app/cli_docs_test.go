@@ -200,7 +200,7 @@ func setEnglishLocale(t *testing.T) {
 
 func assertGoldenFile(t *testing.T, path string, got []byte) {
 	t.Helper()
-	want, err := os.ReadFile(path)
+	want, err := os.ReadFile(path) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}

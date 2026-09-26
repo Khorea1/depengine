@@ -50,7 +50,7 @@ func TestInstallArchiveElevatesPayloadAndLinkIndependently(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
 			home := filepath.Join(root, "home")
-			if err := os.MkdirAll(home, 0o755); err != nil {
+			if err := os.MkdirAll(home, 0o700); err != nil {
 				t.Fatal(err)
 			}
 			exectest.SetHome(t, home)
@@ -107,25 +107,29 @@ func TestArchiveRemoveElevatesLinkIndependently(t *testing.T) {
 	lockedParent := filepath.Join(root, "system")
 	payload := filepath.Join(home, "tools", "demo")
 	links := filepath.Join(lockedParent, "bin")
-	if err := os.MkdirAll(filepath.Join(payload, "bin"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(payload, "bin"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(links, 0o755); err != nil {
+	if err := os.MkdirAll(links, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	exectest.SetHome(t, home)
 	owned := filepath.Join(payload, "bin", "demo")
-	if err := os.WriteFile(owned, []byte("owned"), 0o755); err != nil {
+	if err := os.WriteFile(owned, []byte("owned"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	launcher := filepath.Join(links, "demo")
 	if err := os.Symlink(owned, launcher); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(links, 0o555); err != nil {
+	if err := os.Chmod(links, 0o500); err != nil { // #nosec G302 -- test intentionally changes fixture permissions to exercise permission behavior.
 		t.Fatal(err)
 	}
-	defer os.Chmod(links, 0o755)
+	t.Cleanup(func() {
+		if err := os.Chmod(links, 0o700); err != nil { // #nosec G302 -- cleanup restores fixture permissions before TempDir removal.
+			t.Errorf("restore launcher directory permissions: %v", err)
+		}
+	})
 
 	run.OverrideElevation("sudo")
 	defer run.OverrideElevation("")
@@ -154,7 +158,7 @@ func TestInstallArchiveStripEntrypointCheckRemove(t *testing.T) {
 		t.Run(format, func(t *testing.T) {
 			root := t.TempDir()
 			home := filepath.Join(root, "home")
-			if err := os.MkdirAll(home, 0o755); err != nil {
+			if err := os.MkdirAll(home, 0o700); err != nil {
 				t.Fatal(err)
 			}
 			exectest.SetHome(t, home)
@@ -187,7 +191,7 @@ func TestInstallArchiveStripEntrypointCheckRemove(t *testing.T) {
 
 func writeTestArchive(t *testing.T, path, format, name string, body []byte) {
 	t.Helper()
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,11 +238,11 @@ func TestHTTPRejectsInstallerArtifacts(t *testing.T) {
 func TestArchiveEntrypointRejectsTraversal(t *testing.T) {
 	root := t.TempDir()
 	payload := filepath.Join(root, "payload")
-	if err := os.MkdirAll(payload, 0o755); err != nil {
+	if err := os.MkdirAll(payload, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	outside := filepath.Join(root, "outside")
-	if err := os.WriteFile(outside, []byte("x"), 0o755); err != nil {
+	if err := os.WriteFile(outside, []byte("x"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	if err := requirePayloadFile(payload, "../outside"); err == nil {
@@ -354,18 +358,18 @@ func TestArchiveRemoveRefusesRedirectedLauncher(t *testing.T) {
 	root := t.TempDir()
 	payload := filepath.Join(root, "opt", "nvim")
 	links := filepath.Join(root, "bin")
-	if err := os.MkdirAll(filepath.Join(payload, "bin"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(payload, "bin"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(links, 0o755); err != nil {
+	if err := os.MkdirAll(links, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	owned := filepath.Join(payload, "bin", "nvim")
-	if err := os.WriteFile(owned, []byte("owned"), 0o755); err != nil {
+	if err := os.WriteFile(owned, []byte("owned"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	foreign := filepath.Join(root, "foreign")
-	if err := os.WriteFile(foreign, []byte("foreign"), 0o755); err != nil {
+	if err := os.WriteFile(foreign, []byte("foreign"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	launcher := filepath.Join(links, "nvim")

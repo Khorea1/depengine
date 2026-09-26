@@ -16,7 +16,7 @@ func writeTempSchema(t *testing.T, content string) string {
 	if !strings.Contains(content, "schema_version") {
 		content = "schema_version = 1\n" + content
 	}
-	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(p, []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
 	return p

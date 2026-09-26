@@ -311,7 +311,7 @@ func TestExternalResourceNeverBecomesRemovable(t *testing.T) {
 }
 
 func TestResourceIdentityRejectsCredentialBearingKey(t *testing.T) {
-	r := ResourceIdentity{Kind: ResourceSource, Key: "https://user:secret@example.test/repo"}
+	r := ResourceIdentity{Kind: ResourceSource, Key: "https://user:secret@example.test/repo"} // #nosec G101 -- synthetic credential is required to exercise secret/credential handling.
 	if err := r.Validate(); err == nil {
 		t.Fatal("expected credential-bearing resource identity to fail")
 	}

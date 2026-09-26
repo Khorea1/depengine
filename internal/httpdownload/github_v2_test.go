@@ -24,7 +24,7 @@ func TestGitHubAdapterV2ObserveAgreesWithCheck(t *testing.T) {
 	adapter := NewGitHubAdapter()
 
 	extractDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(extractDir, "gh-tool"), []byte("x"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(extractDir, "gh-tool"), []byte("x"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 

@@ -34,11 +34,11 @@ func TestObserveAgreesWithCheck(t *testing.T) {
 
 	managedDir := t.TempDir()
 	managedFile := filepath.Join(managedDir, "owned")
-	if err := os.WriteFile(managedFile, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(managedFile, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	checkout := t.TempDir()
-	if err := os.Mkdir(filepath.Join(checkout, ".git"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(checkout, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -128,7 +128,7 @@ func TestObserveAgreesWithCheck(t *testing.T) {
 func TestObserveCarriesPinnedRevision(t *testing.T) {
 	ctx := context.Background()
 	checkout := t.TempDir()
-	if err := os.Mkdir(filepath.Join(checkout, ".git"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(checkout, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	mc := &config.MethodCandidate{Kind: "git", Config: map[string]any{"extract_to": checkout, "rev": "abc123"}}

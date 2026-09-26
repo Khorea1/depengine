@@ -25,26 +25,26 @@ func TestHTTPAdapterV2ObserveAgreesWithCheck(t *testing.T) {
 	adapter := NewHTTPAdapter()
 
 	extractDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(extractDir, "present-tool"), []byte("x"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(extractDir, "present-tool"), []byte("x"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	// Directory created by an unrelated operation: the target FILE is what
 	// counts, never the bare directory.
 	dirOnly := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dirOnly, "dir-only-tool"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(dirOnly, "dir-only-tool"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
 	entryRoot := t.TempDir()
 	payload := filepath.Join(entryRoot, "opt", "entry-tool")
-	if err := os.MkdirAll(filepath.Join(payload, "bin"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(payload, "bin"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(payload, "bin", "entry-tool"), []byte("x"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(payload, "bin", "entry-tool"), []byte("x"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	links := filepath.Join(entryRoot, "bin")
-	if err := os.MkdirAll(links, 0o755); err != nil {
+	if err := os.MkdirAll(links, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	entryMC := &config.MethodCandidate{Kind: "http", Config: map[string]any{
@@ -189,14 +189,14 @@ func TestHTTPAdapterV2ObserveStaleLauncherIsAbsent(t *testing.T) {
 
 	root := t.TempDir()
 	payload := filepath.Join(root, "opt", "stale-tool")
-	if err := os.MkdirAll(filepath.Join(payload, "bin"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(payload, "bin"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(payload, "bin", "stale-tool"), []byte("x"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(payload, "bin", "stale-tool"), []byte("x"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	links := filepath.Join(root, "bin")
-	if err := os.MkdirAll(links, 0o755); err != nil {
+	if err := os.MkdirAll(links, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	tool := &config.Tool{Name: "stale-tool"}
@@ -310,7 +310,7 @@ func TestHTTPAdapterV2ResolveInstallRoundTrip(t *testing.T) {
 	if err := adapter.InstallResolved(ctx, run.OSExecRunner{}, tool, mc, resolved); err != nil {
 		t.Fatalf("InstallResolved() error = %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(extractTo, "demo"))
+	data, err := os.ReadFile(filepath.Join(extractTo, "demo")) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatalf("installed binary: %v", err)
 	}
