@@ -81,6 +81,13 @@ type StdoutPipe struct {
 	result   Result
 }
 
+// NewStdoutPipe constructs a streaming command handle for custom Runner
+// implementations. wait should return the normalized child Result; abort may
+// be nil when the producer has no separate cancellation action.
+func NewStdoutPipe(reader io.ReadCloser, wait func() Result, abort func() error) *StdoutPipe {
+	return &StdoutPipe{Reader: reader, wait: wait, abort: abort}
+}
+
 // Wait waits for the streaming child to exit and returns its normalized
 // process result. It is safe to call more than once.
 func (p *StdoutPipe) Wait() Result {
