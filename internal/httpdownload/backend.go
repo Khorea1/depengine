@@ -2,6 +2,7 @@ package httpdownload
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -125,11 +126,11 @@ func (d *GoDownloader) download(ctx context.Context, url, dest, bearerCredential
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		safeURL := run.RedactSensitiveText(url)
-		if resp.StatusCode == http.StatusNotFound {
-			return fmt.Errorf("http: %s returned %s (hint: check this tool's arch_map/os_map — the upstream release asset may use a different spelling of arch/os than this machine's own)", safeURL, resp.Status)
+		return &HTTPStatusError{
+			URL:        run.RedactSensitiveText(url),
+			StatusCode: resp.StatusCode,
+			Status:     resp.Status,
 		}
-		return fmt.Errorf("http: %s returned %s", safeURL, resp.Status)
 	}
 
 	out, err := os.Create(dest)
@@ -235,16 +236,19 @@ func SelectDownloaderForAuthenticatedURL(rn run.Runner) Downloader {
 // downloadErrorWithHint appends the arch_map/os_map hint to a download
 // error when it looks like a 404, for downloaders (curl, wget) that don't
 // give us a typed status code the way GoDownloader does — we only have
-// their stderr text to go on. GoDownloader already attaches the hint
-// itself (see its precise resp.StatusCode check above), so this checks for
-// that marker to avoid appending the hint twice.
+// their stderr text to go on. Typed GoDownloader errors already own their
+// status-specific diagnostics; legacy preformatted errors are also left alone.
 func downloadErrorWithHint(err error) error {
 	if err == nil {
 		return nil
 	}
+	var statusErr *HTTPStatusError
+	if errors.As(err, &statusErr) {
+		return err // GoDownloader carries precise typed status and its own 404 hint.
+	}
 	msg := err.Error()
 	if strings.Contains(msg, "arch_map/os_map") {
-		return err // GoDownloader already attached the hint
+		return err
 	}
 	if strings.Contains(msg, "404") {
 		return fmt.Errorf("%w (hint: check this tool's arch_map/os_map — the upstream release asset may use a different spelling of arch/os than this machine's own)", err)

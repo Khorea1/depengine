@@ -76,6 +76,10 @@ func TestGoDownloaderDownloadNonOKStatus(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for 404 response, got nil")
 	}
+	var statusErr *HTTPStatusError
+	if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusNotFound {
+		t.Fatalf("404 error = %v, want typed HTTPStatusError", err)
+	}
 	// A 404 specifically should hint at arch_map/os_map, since that's the
 	// most common reason a "http" method's URL 404s: the upstream release
 	// spells arch/os differently than this machine's own facts.
@@ -97,6 +101,10 @@ func TestGoDownloaderDownloadOtherStatusNoHint(t *testing.T) {
 	err := dl.Download(context.Background(), ts.URL, dest)
 	if err == nil {
 		t.Fatal("expected error for 403 response, got nil")
+	}
+	var statusErr *HTTPStatusError
+	if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusForbidden {
+		t.Fatalf("403 error = %v, want typed HTTPStatusError", err)
 	}
 	// Only 404 gets the arch_map/os_map hint — a 403 has nothing to do
 	// with arch/os spelling and shouldn't carry a misleading suggestion.
