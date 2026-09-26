@@ -37,6 +37,9 @@ func (f *FakeRunner) Run(ctx context.Context, name string, args ...string) Resul
 
 func (f *FakeRunner) OpenStdoutPipe(ctx context.Context, name string, args ...string) (*StdoutPipe, error) {
 	result := f.run(ctx, "", name, args...)
+	if result.Err != nil {
+		return nil, result.Err
+	}
 	stdout := append([]byte(nil), result.Stdout...)
 	result.Stdout = nil
 	return &StdoutPipe{
