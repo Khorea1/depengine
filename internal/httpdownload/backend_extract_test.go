@@ -104,18 +104,26 @@ func TestExtractTarViaRunner(t *testing.T) {
 	}
 }
 
-func TestExtractZipViaRunner(t *testing.T) {
+func TestExtractZipNative(t *testing.T) {
 	t.Parallel()
-	fr := &run.FakeRunner{ExitCode: 0}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.zip")
+	writeZipWithEntry(t, src, "bin/tool")
 
-	if err := Extract(context.Background(), "/tmp/src.zip", "/tmp/dest", ".zip", fr, false, ""); err != nil {
+	fr := &run.FakeRunner{ExitCode: 0}
+	dest := filepath.Join(dir, "dest")
+	if err := Extract(context.Background(), src, dest, ".zip", fr, false, ""); err != nil {
 		t.Fatalf("unexpected Extract error: %v", err)
 	}
-	if len(fr.Calls) != 1 {
-		t.Fatalf("expected 1 call, got %d", len(fr.Calls))
+	if len(fr.Calls) != 0 {
+		t.Fatalf("native ZIP extraction invoked subprocesses: %+v", fr.Calls)
 	}
-	if fr.Calls[0].Name != "unzip" {
-		t.Errorf("expected unzip command, got %s", fr.Calls[0].Name)
+	data, err := os.ReadFile(filepath.Join(dest, "bin", "tool"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "content" {
+		t.Fatalf("extracted content = %q, want content", string(data))
 	}
 }
 
@@ -130,8 +138,7 @@ func TestExtractArchiveTypes(t *testing.T) {
 		{".tgz", "tar", "xzf"},
 		{".tar.bz2", "tar", "xjf"},
 		{".tar.xz", "tar", "xJf"},
-		{".tar", "tar", "xf"},
-		{".zip", "unzip", "-o"},
+		{".tar.zst", "tar", "--zstd"},
 	}
 
 	for _, tt := range tests {
@@ -349,10 +356,17 @@ func TestExtractTarFailure(t *testing.T) {
 
 func TestExtractZipFailure(t *testing.T) {
 	t.Parallel()
-	fr := &run.FakeRunner{ExitCode: 1, Stderr: "unzip: not found"}
-
-	if err := Extract(context.Background(), "/tmp/src.zip", "/tmp/dest", ".zip", fr, true, ""); err == nil {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "broken.zip")
+	if err := os.WriteFile(src, []byte("not a zip"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fr := &run.FakeRunner{ExitCode: 0}
+	if err := Extract(context.Background(), src, filepath.Join(dir, "dest"), ".zip", fr, false, ""); err == nil {
 		t.Fatal("expected Extract error, got nil")
+	}
+	if len(fr.Calls) != 0 {
+		t.Fatalf("corrupt native ZIP should not invoke subprocesses: %+v", fr.Calls)
 	}
 }
 
@@ -463,8 +477,15 @@ func TestExtractAllowsSafeZip(t *testing.T) {
 	if err := Extract(context.Background(), zipPath, dest, ".zip", fr, false, ""); err != nil {
 		t.Fatalf("unexpected error for safe zip: %v", err)
 	}
-	if len(fr.Calls) != 1 {
-		t.Fatalf("expected extraction to proceed via unzip, got %d calls", len(fr.Calls))
+	if len(fr.Calls) != 0 {
+		t.Fatalf("native ZIP extraction invoked subprocesses: %+v", fr.Calls)
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "bin", "tool"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "content" {
+		t.Fatalf("extracted content = %q, want content", string(data))
 	}
 }
 
