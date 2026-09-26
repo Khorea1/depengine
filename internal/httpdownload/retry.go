@@ -33,9 +33,11 @@ func retryWithBackoff(ctx context.Context, maxRetries int, baseDelay, maxDelay t
 		}
 		lastErr = err
 
-		// Don't retry if context is cancelled or expired.
-		if ctx.Err() != nil {
-			return err
+		// Cancellation wins over the attempt error once the context is done.
+		// This keeps cancellation semantics deterministic even when cancellation
+		// races with fn returning a transient transport error.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("retry cancelled: %w (last error: %w)", ctxErr, err)
 		}
 
 		// Checksum mismatches are deterministic for the downloaded bytes. Keep
