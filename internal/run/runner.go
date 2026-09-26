@@ -317,7 +317,11 @@ func (r OSExecRunner) OpenStdoutPipe(ctx context.Context, name string, args ...s
 	cmd.WaitDelay = killGracePeriod
 
 	stderr := newCappedBuffer(maxCapturedOutput)
-	cmd.Stderr = stderr
+	if r.Stream != nil {
+		cmd.Stderr = io.MultiWriter(stderr, r.Stream)
+	} else {
+		cmd.Stderr = stderr
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("stdout pipe for %s: %w", name, RedactError(err))
