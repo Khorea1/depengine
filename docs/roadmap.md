@@ -39,8 +39,12 @@ Work on the current execution model comes before adding more installer types.
 
 ## P1: shared install semantics
 
-- [~] Use `ResolvedInstallPlan` consistently in install, upgrade, status,
-  remove, validation, explanation, and dry-run.
+- [x] Use `ResolvedInstallPlan` consistently in install, upgrade, status,
+  remove, validation, explanation, and dry-run. Validation checks the static
+  candidate intent; host-aware flows resolve the selected candidate once and
+  reconcile observations against that plan. Native batch gates use the same
+  verification as serial execution. Remove and undo verify the tracked target
+  and project its resolved identity into the removal adapter.
 - [~] Finish exact-version support and installed-version checks per adapter.
 - [~] Make lock generation/consumption cover every supported mutable method, or
   narrow the documented reproducibility promise.

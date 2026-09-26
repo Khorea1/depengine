@@ -1,27 +1,26 @@
 # ADR-005: ResolvedInstallPlan as the shared execution projection
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 
-The roadmap identifies a need to use `ResolvedInstallPlan` consistently across
-install, upgrade, status, remove, validation, explanation, and dry-run paths.
-The current architecture already separates declaration, resolution, and
-execution concerns, but every command must consume the same resolved projection
-or the observable behavior can diverge.
+Install, upgrade, status, remove, validation, explanation, and dry-run must
+agree on candidate identity. A host-dependent resolution can enrich an intent
+with versions, revisions, digests, artifact URLs, and placement paths. Later
+observations and mutations must use that resolved target.
 
 ## Decision
 
-Commands should consume a single resolved install plan produced after:
+Each selected candidate starts with a validated, host-independent plan intent
+projected from the merged schema and manifest. Candidate ordering and method
+capability checks determine which intent can be reached. Dependency scheduling
+and lockfile constraints remain separate inputs to execution.
 
-1. schema and manifest merge;
-2. validation of declared intent;
-3. adapter capability filtering;
-4. candidate selection and ordering;
-5. dependency expansion;
-6. lockfile constraints where applicable.
-
-The plan is the boundary between user intent and adapter execution.
+The adapter resolves that intent once when the candidate is reached. The
+executor validates the resolution and uses the concrete plan for observation,
+reconciliation, reporting, and execution. Validation checks static intent
+without probing the host. Explanations may show static intent for candidates
+that are filtered before host resolution.
 
 Commands may project information from the plan:
 
@@ -29,10 +28,14 @@ Commands may project information from the plan:
 - `dry-run`: render transitions without mutation;
 - `why`: explain candidate selection;
 - `status`: compare installed state with planned identity;
-- `remove`: derive owned resources and lifecycle actions;
-- `upgrade`: resolve mutable upgrades against the same model.
+- `remove` and `undo`: verify the tracked target, then project its resolved
+  identity into the removal adapter; ownership release uses persisted state;
+- `upgrade`: verify the tracked candidate and install the exact resolved new
+  target after removing the previously tracked installation.
 
-No command should independently repeat adapter selection rules.
+Native batch installation uses the same resolved-target verification as serial
+execution before deciding a tool is already installed and after the batch
+command. No command should independently repeat adapter selection rules.
 
 ## Non-goals
 
@@ -51,11 +54,6 @@ Positive:
 
 Trade-off:
 
-- migration requires replacing command-specific resolution paths gradually.
-
-## Migration order
-
-1. Identify command paths that resolve adapters independently.
-2. Replace them with resolved plan consumers.
-3. Add invariant tests asserting equivalent plans across commands.
-4. Remove duplicated selection logic.
+- adapters with legacy removal signatures receive a method configuration
+  projected from the verified plan; that projection remains an internal
+  compatibility boundary.

@@ -295,9 +295,8 @@ func (ex *Executor) reportBatchDryRun(rc *runContext, candidates []batchCandidat
 // which re-tries native and then any remaining methods.
 func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandidate, remaining []string, resolutions map[string]*candidateResolutionSeed) []string {
 	for _, c := range candidates {
-		adapter := ex.LookupAdapter(c.method.Kind)
-		presence, ok := ex.batchPresence(omitToolSecretEnvironment(rc.ctx, c.tool), adapter, c.toolName, c.tool, c.method)
-		if ok && presence == plan.PresencePresent {
+		verification, ok := ex.batchPresence(omitToolSecretEnvironment(rc.ctx, c.tool), c.tool, c.method, c.resolvedPlan)
+		if ok && verification.State == plan.StateSatisfied {
 			tr := ToolResult{
 				Tool: c.toolName, Status: StatusInstalled, Method: displayMethodKind(c.method),
 				MethodKind: c.method.Kind, Config: c.method.Config, PlanIntent: c.resolvedPlan, InstallCommitted: true,

@@ -93,6 +93,13 @@ func sameGoVersion(left, right string) bool {
 }
 
 func (a *GoAdapter) checkPresent(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
+	// Removal targets the Go install directory even when that directory is not
+	// on PATH. Observe that owned target before falling back to PATH probes.
+	if target, err := goInstalledBinaryPath(tool, mc); err == nil {
+		if info, statErr := os.Stat(target); statErr == nil && info.Mode().IsRegular() {
+			return true
+		}
+	}
 	method := *mc
 	method.Config = make(map[string]any, len(mc.Config))
 	for key, value := range mc.Config {

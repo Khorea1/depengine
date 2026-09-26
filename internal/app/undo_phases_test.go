@@ -1,12 +1,146 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"sort"
 	"testing"
 
+	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
 )
+
+type undoPlanAdapter struct {
+	kind       string
+	presence   plan.PresenceState
+	observeErr error
+	removeErr  error
+	canRemove  bool
+	removed    bool
+	removePkg  string
+}
+
+func (a *undoPlanAdapter) Kind() string                             { return a.kind }
+func (*undoPlanAdapter) Available(context.Context, run.Runner) bool { return true }
+func (a *undoPlanAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	resolved := intent.Clone()
+	return &resolved, nil
+}
+func (a *undoPlanAdapter) Observe(_ context.Context, _ run.Runner, _ *config.Tool, method *config.MethodCandidate) (plan.Observation, error) {
+	if a.observeErr != nil {
+		return plan.Observation{}, a.observeErr
+	}
+	presence := a.presence
+	if presence == "" {
+		presence = plan.PresencePresent
+	}
+	pkg, _ := method.Config["pkg"].(string)
+	version, _ := method.Config["version"].(string)
+	known := []plan.IdentityField{plan.FieldPackage}
+	if version != "" {
+		known = append(known, plan.FieldVersion)
+	}
+	return plan.Observation{Presence: presence, Identity: plan.ObservedIdentity{Package: pkg, Version: version}, KnownFields: known}, nil
+}
+func (*undoPlanAdapter) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
+	return nil
+}
+func (a *undoPlanAdapter) Remove(_ context.Context, _ run.Runner, _ *config.Tool, method *config.MethodCandidate) error {
+	a.removed = true
+	a.removePkg, _ = method.Config["pkg"].(string)
+	return a.removeErr
+}
+func (a *undoPlanAdapter) CanRemove() bool { return a.canRemove }
+func (*undoPlanAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+func (*undoPlanAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+	return nil
+}
+
+func undoPlanExecutor(adapter exec.AdapterV2) *exec.Executor {
+	ex := exec.New()
+	exec.WithAdapters(adapter)(ex)
+	exec.WithRunner(&run.FakeRunner{})(ex)
+	return ex
+}
+
+func TestRemoveUndoToolsUsesResolvedTargetAndReleasesAbsentState(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		presence  plan.PresenceState
+		wantCall  bool
+		canRemove bool
+	}{
+		{name: "satisfied removes resolved target", wantCall: true, canRemove: true},
+		{name: "absent releases tracking without remover", presence: plan.PresenceAbsent},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter := &undoPlanAdapter{kind: "cargo", presence: tc.presence, canRemove: tc.canRemove}
+			current := &state.State{Tools: map[string]state.ToolState{
+				"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "tool", "version": "1.0.0"}},
+			}}
+			original, succeeded, failed := removeUndoTools(context.Background(), []string{"tool"}, current, undoPlanExecutor(adapter))
+			if failed || !succeeded["tool"] {
+				t.Fatalf("removeUndoTools failed=%t succeeded=%v", failed, succeeded)
+			}
+			if adapter.removed != tc.wantCall {
+				t.Fatalf("Remove called=%t, want %t", adapter.removed, tc.wantCall)
+			}
+			if tc.wantCall && adapter.removePkg != "tool" {
+				t.Fatalf("removed package = %q, want resolved package tool", adapter.removePkg)
+			}
+			if _, ok := original["tool"]; !ok {
+				t.Fatal("original state snapshot did not retain tool")
+			}
+		})
+	}
+}
+
+func TestRemoveUndoToolsPreservesTrackingOnUnverifiableTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		presence   plan.PresenceState
+		observeErr error
+	}{
+		{name: "unknown", presence: plan.PresenceUnknown},
+		{name: "broken", presence: plan.PresenceBroken},
+		{name: "probe error", observeErr: errors.New("probe failed")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter := &undoPlanAdapter{kind: "cargo", presence: tc.presence, observeErr: tc.observeErr}
+			current := &state.State{Tools: map[string]state.ToolState{
+				"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "tool"}},
+			}}
+			_, succeeded, failed := removeUndoTools(context.Background(), []string{"tool"}, current, undoPlanExecutor(adapter))
+			if !failed || succeeded["tool"] {
+				t.Fatalf("removeUndoTools failed=%t succeeded=%v, want failure", failed, succeeded)
+			}
+			if adapter.removed {
+				t.Fatal("Remove called for unverifiable target")
+			}
+		})
+	}
+}
+
+func TestRemoveUndoToolsPreservesPartialFailureAfterResolvedRemovalError(t *testing.T) {
+	adapter := &undoPlanAdapter{kind: "cargo", canRemove: true, removeErr: errors.New("remove failed")}
+	current := &state.State{Tools: map[string]state.ToolState{
+		"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "tool"}},
+	}}
+	original, succeeded, failed := removeUndoTools(context.Background(), []string{"tool"}, current, undoPlanExecutor(adapter))
+	if !failed || succeeded["tool"] || !adapter.removed {
+		t.Fatalf("failed=%t succeeded=%v removed=%t", failed, succeeded, adapter.removed)
+	}
+	mergeUndoTools(current, &state.State{Tools: map[string]state.ToolState{}}, []string{"tool"}, succeeded, original, failed)
+	if _, ok := current.Tools["tool"]; !ok {
+		t.Fatal("failed removal lost tracked tool")
+	}
+}
 
 // exitCodeOf unwraps an ExitError to its code, or -1 when err is nil or of
 // another type.

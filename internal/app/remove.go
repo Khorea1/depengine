@@ -231,7 +231,14 @@ func (s *removeSession) lookupRemovalAdapter(toolName string, toolState state.To
 	return adapter, methodKind, true
 }
 
-func (s *removeSession) verifyRemovalTarget(ctx context.Context, toolName string, toolState state.ToolState) (plan.VerificationResult, error) {
+type verifiedRemovalTarget struct {
+	tool         *config.Tool
+	method       *config.MethodCandidate
+	resolvedPlan *plan.ResolvedInstallPlan
+	verification plan.VerificationResult
+}
+
+func (s *removeSession) verifyRemovalTarget(ctx context.Context, toolName string, toolState state.ToolState) (verifiedRemovalTarget, error) {
 	methodKind := toolState.MethodKind
 	if methodKind == "" {
 		methodKind = toolState.Method
@@ -241,7 +248,7 @@ func (s *removeSession) verifyRemovalTarget(ctx context.Context, toolName string
 	if schemaTool := s.schemaTools[toolName]; schemaTool != nil {
 		tracked, err := findStateMethodCandidate(schemaTool, toolState)
 		if err != nil {
-			return plan.VerificationResult{}, err
+			return verifiedRemovalTarget{}, err
 		}
 		*tool = *schemaTool
 		method = &config.MethodCandidate{Kind: tracked.Kind, Label: tracked.Label, Config: tracked.Config}
@@ -250,20 +257,25 @@ func (s *removeSession) verifyRemovalTarget(ctx context.Context, toolName string
 		}
 	}
 	if methodKind == "" || method.Kind == "" {
-		return plan.VerificationResult{}, fmt.Errorf("tracked method kind is required")
+		return verifiedRemovalTarget{}, fmt.Errorf("tracked method kind is required")
 	}
 	if s.executor == nil {
-		return plan.VerificationResult{}, fmt.Errorf("removal verifier is unavailable")
+		return verifiedRemovalTarget{}, fmt.Errorf("removal verifier is unavailable")
 	}
 	s.executor.SetHostContext(s.clan)
 	returnedPlan, verification, err := s.executor.ResolveAndVerifyCandidate(ctx, tool, method)
 	if err != nil {
-		return plan.VerificationResult{}, err
+		return verifiedRemovalTarget{}, err
 	}
 	if returnedPlan == nil {
-		return plan.VerificationResult{}, fmt.Errorf("resolved removal target is missing")
+		return verifiedRemovalTarget{}, fmt.Errorf("resolved removal target is missing")
 	}
-	return verification, nil
+	return verifiedRemovalTarget{
+		tool:         tool,
+		method:       method,
+		resolvedPlan: returnedPlan,
+		verification: verification,
+	}, nil
 }
 
 // findOwnedResource returns the ownership record for a shared resource.
@@ -329,10 +341,8 @@ func (s *removeSession) finalizeRemovedPrerequisite(toolName string) error {
 }
 
 // invokeRemover runs the adapter's Remove for one tool and records success.
-func (s *removeSession) invokeRemover(ctx context.Context, toolName string, toolState state.ToolState, remover exec.AdapterV2, methodKind string, automatic bool) bool {
-	mc := &config.MethodCandidate{Kind: methodKind, Config: toolState.Config}
-	tool := &config.Tool{Name: toolName}
-	if err := remover.Remove(ctx, s.runner, tool, mc); err != nil {
+func (s *removeSession) invokeRemover(ctx context.Context, toolName string, toolState state.ToolState, target verifiedRemovalTarget, automatic bool) bool {
+	if err := s.executor.RemoveResolvedCandidate(ctx, s.runner, target.tool, target.method, target.resolvedPlan); err != nil {
 		log.Default.Error("remove failed", "tool", toolName, "error", err)
 		return false
 	}
@@ -402,28 +412,28 @@ func (s *removeSession) removeTrackedTool(ctx context.Context, toolName string, 
 	if !found {
 		return false
 	}
-	verification, err := s.verifyRemovalTarget(ctx, toolName, toolState)
+	target, err := s.verifyRemovalTarget(ctx, toolName, toolState)
 	if err != nil {
 		log.Default.Error("verify removal target", "tool", toolName, "error", err)
 		return false
 	}
-	switch verification.State {
+	switch target.verification.State {
 	case plan.StateSatisfied, plan.StateDrifted:
 		if !remover.CanRemove() {
 			log.Default.Warn("manual remove required", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
 			return false
 		}
-		if !s.invokeRemover(ctx, toolName, toolState, remover, methodKind, automatic) {
+		if !s.invokeRemover(ctx, toolName, toolState, target, automatic) {
 			return false
 		}
 	case plan.StateAbsent:
 		log.Default.Warn("tracked target already absent; releasing state and ownership", "tool", toolName)
 		s.removedThisRun[toolName] = true
 	case plan.StateUnknown, plan.StateBroken:
-		log.Default.Error("cannot safely remove target with unverifiable state", "tool", toolName, "state", verification.State, "detail", verification.Detail)
+		log.Default.Error("cannot safely remove target with unverifiable state", "tool", toolName, "state", target.verification.State, "detail", target.verification.Detail)
 		return false
 	default:
-		log.Default.Error("invalid target verification state", "tool", toolName, "state", verification.State)
+		log.Default.Error("invalid target verification state", "tool", toolName, "state", target.verification.State)
 		return false
 	}
 
@@ -541,12 +551,12 @@ func (s *removeSession) planDryRunRemoval(toolName string, toolState state.ToolS
 	if !found {
 		return false
 	}
-	verification, err := s.verifyRemovalTarget(s.ctx, toolName, toolState)
+	target, err := s.verifyRemovalTarget(s.ctx, toolName, toolState)
 	if err != nil {
 		log.Default.Error("verify removal target", "tool", toolName, "error", err)
 		return false
 	}
-	switch verification.State {
+	switch target.verification.State {
 	case plan.StateSatisfied, plan.StateDrifted:
 		if !remover.CanRemove() {
 			log.Default.Warn("manual remove required", "tool", toolName, "method", toolState.Method, "methodKind", methodKind)
@@ -556,10 +566,10 @@ func (s *removeSession) planDryRunRemoval(toolName string, toolState state.ToolS
 	case plan.StateAbsent:
 		log.Default.Info("target already absent; would release tracked ownership/resources", "tool", toolName, "method", toolState.Method)
 	case plan.StateUnknown, plan.StateBroken:
-		log.Default.Error("cannot plan removal with unverifiable target state", "tool", toolName, "state", verification.State, "detail", verification.Detail)
+		log.Default.Error("cannot plan removal with unverifiable target state", "tool", toolName, "state", target.verification.State, "detail", target.verification.Detail)
 		return false
 	default:
-		log.Default.Error("invalid target verification state", "tool", toolName, "state", verification.State)
+		log.Default.Error("invalid target verification state", "tool", toolName, "state", target.verification.State)
 		return false
 	}
 	release, err := plan.ReleaseDependentResources(s.state.OwnedResources, toolName)

@@ -84,8 +84,9 @@ func TestRemoveAbsentTargetReleasesTrackingWithoutCallingRemover(t *testing.T) {
 
 func TestRemoveDriftedTargetStillInvokesRemover(t *testing.T) {
 	adapter := &recordingRemoveAdapter{presence: plan.PresencePresent, packageID: "another-package"}
+	trackedConfig := map[string]any{"pkg": "example/tool"}
 	st := &state.State{Tools: map[string]state.ToolState{
-		"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "example/tool"}},
+		"tool": {Method: "cargo", MethodKind: "cargo", Config: trackedConfig},
 	}}
 	sess := testRemoveSession(st, "tool")
 	exec.WithAdapters(adapter)(sess.executor)
@@ -95,6 +96,15 @@ func TestRemoveDriftedTargetStillInvokesRemover(t *testing.T) {
 	}
 	if !adapter.called {
 		t.Fatal("Remove was not called for a present drifted target")
+	}
+	if got := adapter.gotMethod.Config["pkg"]; got != "example/tool" {
+		t.Fatalf("Remove config package = %v, want verified package", got)
+	}
+	if adapter.Runner != sess.runner {
+		t.Fatal("Remove did not receive the session runner")
+	}
+	if got := trackedConfig["pkg"]; got != "example/tool" {
+		t.Fatalf("persisted config package mutated to %v", got)
 	}
 	if _, exists := st.Tools["tool"]; exists {
 		t.Fatal("tracking retained after drifted target was removed")
@@ -284,8 +294,16 @@ func TestInvokeRemoverUsesInjectedRunnerAndPropagatesFailure(t *testing.T) {
 	sess := testRemoveSession(&state.State{})
 	sess.runner = runner
 	toolState := state.ToolState{Method: "cargo", Config: map[string]any{"pkg": "example/tool"}}
+	exec.WithAdapters(adapter)(sess.executor)
+	resolved := plan.New("tool", "cargo", true)
+	resolved.Identity.Package = "example/tool"
+	target := verifiedRemovalTarget{
+		tool:         &config.Tool{Name: "tool"},
+		method:       &config.MethodCandidate{Kind: "cargo", Config: toolState.Config},
+		resolvedPlan: &resolved,
+	}
 
-	if sess.invokeRemover(context.Background(), "tool", toolState, adapter, "cargo", false) {
+	if sess.invokeRemover(context.Background(), "tool", toolState, target, false) {
 		t.Fatal("failed adapter removal should return false")
 	}
 	if !adapter.called {

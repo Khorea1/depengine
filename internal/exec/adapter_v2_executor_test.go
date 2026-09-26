@@ -16,6 +16,8 @@ import (
 type executorAdapterV2Double struct {
 	testMockAdapter
 	presence      plan.PresenceState
+	observed      plan.ObservedIdentity
+	knownFields   []plan.IdentityField
 	observeErr    error
 	observeDetail string
 	observeCall   int
@@ -39,7 +41,15 @@ func (a *executorAdapterV2Double) Observe(context.Context, run.Runner, *config.T
 	if detail == "" {
 		detail = "probe detail"
 	}
-	return plan.Observation{Presence: a.presence, Identity: plan.ObservedIdentity{Package: "demo"}, KnownFields: []plan.IdentityField{plan.FieldPackage}, Detail: detail}, nil
+	identity := a.observed
+	if identity.Package == "" {
+		identity.Package = "demo"
+	}
+	knownFields := a.knownFields
+	if len(knownFields) == 0 {
+		knownFields = []plan.IdentityField{plan.FieldPackage}
+	}
+	return plan.Observation{Presence: a.presence, Identity: identity, KnownFields: knownFields, Detail: detail}, nil
 }
 
 func (a *executorAdapterV2Double) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
