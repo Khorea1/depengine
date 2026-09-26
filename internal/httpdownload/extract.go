@@ -58,10 +58,11 @@ func defaultSudoRequired(dest string) bool {
 	return !strings.HasPrefix(dest, home+string(filepath.Separator))
 }
 
-// Extract decompresses src into dest based on the file extension.
-// Delegates to external tools (tar, unzip, dpkg) for v0.1 to avoid
-// adding Go archive-library dependencies. Go stdlib archive support
-// may replace this in a future version.
+// Extract materializes src into dest based on the file extension.
+// ZIP and uncompressed TAR archives are extracted in-process through an
+// os.Root-confined materializer. Compressed TAR variants still use the
+// existing subprocess backend until their decompression streams are moved
+// behind the same rooted materialization boundary.
 func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequired bool, toolName string) error {
 	return extract(ctx, src, dest, ext, "", rn, sudoRequired, toolName)
 }
@@ -72,18 +73,14 @@ func extract(ctx context.Context, src, dest, ext, binaryName string, rn run.Runn
 		return fmt.Errorf("extract: mkdir %s: %w", dest, err)
 	}
 
-	// Reject archives containing a "zip slip" / path-traversal member (e.g.
-	// "../../etc/cron.d/evil" or an absolute path, or a symlink pointing
-	// outside dest) BEFORE handing the file to the system tar/unzip binary.
-	// depengine downloads archives from arbitrary schema-declared URLs and
-	// frequently extracts them with sudo, so a malicious or compromised
-	// upstream release asset must not be able to write outside dest. This
-	// check reads the archive with the Go standard library only (no new
-	// dependency, no extra subprocess call) and is a no-op if the file can't
-	// be parsed — in that case the real extraction command below still runs
-	// and reports its own, more specific error.
-	if err := validateArchiveSafety(src, dest, ext); err != nil {
-		return fmt.Errorf("extract: refusing unsafe archive: %w", err)
+	// Native ZIP/TAR extraction validates each entry at the write boundary.
+	// Compressed TAR variants still delegated to host tar retain the legacy
+	// preflight safety validation until they are migrated to streamed native
+	// materialization in the next phase.
+	if ext != ".zip" && ext != ".tar" {
+		if err := validateArchiveSafety(src, dest, ext); err != nil {
+			return fmt.Errorf("extract: refusing unsafe archive: %w", err)
+		}
 	}
 
 	switch ext {
@@ -96,9 +93,9 @@ func extract(ctx context.Context, src, dest, ext, binaryName string, rn run.Runn
 	case ".tar.zst":
 		return extractTar(ctx, src, dest, []string{"--zstd", "-xf"}, rn, sudoRequired, toolName)
 	case ".tar":
-		return extractTar(ctx, src, dest, []string{"xf"}, rn, sudoRequired, toolName)
+		return extractNativeTar(ctx, src, dest)
 	case ".zip":
-		return extractZip(ctx, src, dest, rn, sudoRequired, toolName)
+		return extractNativeZip(ctx, src, dest)
 	case ".bz2":
 		return extractBzip2(ctx, src, dest, binaryName, rn, sudoRequired, toolName)
 	case ".deb":
