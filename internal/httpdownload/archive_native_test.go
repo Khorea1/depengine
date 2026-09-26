@@ -279,7 +279,7 @@ func TestNativeArchiveDirectoryModeAppliedAfterChildren(t *testing.T) {
 	})
 
 	dest := filepath.Join(dir, "dest")
-	t.Cleanup(func() { _ = os.Chmod(filepath.Join(dest, "locked"), 0o700) })
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(dest, "locked"), 0o700) }) // #nosec G302 -- cleanup restores directory traversal under t.TempDir.
 	if err := Extract(context.Background(), src, dest, ".tar", &run.FakeRunner{}, false, ""); err != nil {
 		t.Fatalf("Extract() error = %v", err)
 	}
