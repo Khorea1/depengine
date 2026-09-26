@@ -73,6 +73,69 @@ func (lr *LoggingRunner) Run(ctx context.Context, name string, args ...string) R
 	return lr.run(ctx, "", nil, nil, name, args...)
 }
 
+// OpenStdoutPipe preserves stdout streaming through the logging wrapper while
+// logging command lifecycle and the final normalized result.
+func (lr *LoggingRunner) OpenStdoutPipe(ctx context.Context, name string, args ...string) (*StdoutPipe, error) {
+	loggedArgs := formatArgsForLog(args)
+	baseAttrs := []any{
+		"cmd", name,
+		"args", loggedArgs,
+	}
+	if lr.ctx.Tool != "" {
+		baseAttrs = append(baseAttrs, "tool", lr.ctx.Tool)
+	}
+	if lr.ctx.Method != "" {
+		baseAttrs = append(baseAttrs, "method", lr.ctx.Method)
+	}
+
+	lr.logger.Debug("run stream", baseAttrs...)
+	start := time.Now()
+	pipe, err := OpenStdoutPipe(ctx, lr.inner, name, args...)
+	if err != nil {
+		failLevel := slog.LevelWarn
+		if lr.ctx.Probe {
+			failLevel = slog.LevelDebug
+		}
+		lr.logger.Log(ctx, failLevel, "run stream failed", append(baseAttrs,
+			"error", RedactSensitiveText(err.Error()),
+		)...)
+		return nil, err
+	}
+
+	return &StdoutPipe{
+		Reader: pipe.Reader,
+		abort:  pipe.Abort,
+		wait: func() Result {
+			result := pipe.Wait()
+			attrs := append([]any{
+				"cmd", name,
+				"args", loggedArgs,
+				"exit", result.ExitCode,
+				"duration", time.Since(start).String(),
+			}, baseAttrs[4:]...)
+
+			failLevel := slog.LevelWarn
+			if lr.ctx.Probe {
+				failLevel = slog.LevelDebug
+			}
+			switch {
+			case result.Err != nil:
+				lr.logger.Log(ctx, failLevel, "run stream failed", append(attrs,
+					"error", RedactSensitiveText(result.Err.Error()),
+					"stderr", truncateStderr(result.Stderr),
+				)...)
+			case result.ExitCode != 0:
+				lr.logger.Log(ctx, failLevel, "run stream exited non-zero", append(attrs,
+					"stderr", truncateStderr(result.Stderr),
+				)...)
+			default:
+				lr.logger.Debug("run stream ok", attrs...)
+			}
+			return result
+		},
+	}, nil
+}
+
 // RunInDir executes and logs a command with an explicit working directory.
 func (lr *LoggingRunner) RunInDir(ctx context.Context, dir, name string, args ...string) Result {
 	return lr.run(ctx, dir, nil, nil, name, args...)
@@ -179,6 +242,7 @@ func truncateStderr(data []byte) string {
 
 var _ DirectoryRunner = (*LoggingRunner)(nil)
 var _ PathLookupRunner = (*LoggingRunner)(nil)
+var _ StdoutPipeRunner = (*LoggingRunner)(nil)
 
 // formatArgsForLog returns a display-only argv with common credential forms
 // redacted. The original args are still passed unchanged to the subprocess.
