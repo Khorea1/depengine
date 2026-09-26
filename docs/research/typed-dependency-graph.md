@@ -227,8 +227,7 @@ edges visually, but the model should not discard them.
 
 ### Multiedges and renderer bundling
 
-**Decision:** preserve every semantic edge in the IR. Bundling is a presentation
-optimization only.
+Preserve every semantic edge in the IR. Bundling affects presentation only.
 
 For a pair such as:
 
@@ -323,7 +322,7 @@ FUNCTION Project(graph, view, context):
 
 ### Projection defaults and edge state
 
-**Decision:** `depengine graph` remains a declared-schema view by default.
+`depengine graph` uses the declared-schema view by default.
 
 The declared view is intentionally host-independent and deterministic. It shows
 all declared semantic edges and preserves guard expressions as metadata, but it
@@ -595,8 +594,8 @@ routing points. These are layout-only objects, never semantic graph nodes.
 
 ## Terminal width and compact fallback
 
-**Decision:** do not use a fixed terminal-width threshold such as 80 or 100
-columns to decide whether the entire graph is drawable.
+Compare each component's rendered width with the available terminal width
+instead of applying a fixed 80- or 100-column threshold to the whole graph.
 
 The layout already computes each connected component's required width, so the
 renderer should compare that width with the actual available width:
@@ -656,8 +655,8 @@ Do not make ANSI color the sole carrier of meaning.
 
 ### Edge annotations
 
-**Decision:** method identity and guards remain separate semantic fields in the
-IR, but renderers combine them into one structured edge annotation.
+Method identity and guards remain separate fields in the IR. Renderers combine
+them into one structured edge annotation.
 
 A central formatter should produce deterministic labels such as:
 
@@ -722,7 +721,7 @@ transitive closure of both `Tool.Requires` and `MethodCandidate.Requires`.
 Tests also require dependencies to remain present even when they are named by
 `--skip`.
 
-**Decision:** preserve this behavior exactly for compatibility.
+Keep this behavior for compatibility.
 
 Conceptually, the existing command is equivalent to:
 
@@ -905,24 +904,25 @@ FUNCTION AnalyzeForLayout(graph):
 The implementation is incremental and preserves existing behavior before adding
 a new terminal renderer.
 
-Implementation status:
+Implemented:
 
-1. **Done:** introduce `Graph`, `Node`, and typed `Edge`.
-2. **Done:** build one declared IR from merged `config.Tool` values while
+1. Introduced `Graph`, `Node`, and typed `Edge`.
+2. Built one declared IR from merged `config.Tool` values while
    preserving `requires_when`, method guards, and candidate-scoped metadata.
-3. **Done:** migrate DOT and Mermaid to consume the IR.
-4. **Done:** make topological sorting operate on the scheduling projection.
-5. **Done:** migrate the existing text/level renderer to the same IR.
-6. **Done:** wire canonical config-condition evaluation into the effective
+3. Migrated DOT and Mermaid to consume the IR.
+4. Made topological sorting operate on the scheduling projection.
+5. Migrated the existing text/level renderer to the same IR.
+6. Wired canonical config-condition evaluation into the effective
    projection and exact read-only candidate selection into the resolved
    projection.
-7. **Done:** expose `--view declared|effective|resolved` while retaining
+7. Exposed `--view declared|effective|resolved` while retaining
    `declared` as the default.
-8. **Done:** add `--format graph` with weak-component grouping and
+8. Added `--format graph` with weak-component grouping and
    isolated-node compaction.
-9. **Done:** add simple ranked layout and orthogonal routing.
-10. **Pending:** improve crossing reduction and edge bundling only after testing
-    real schemas.
+9. Added simple ranked layout and orthogonal routing.
+
+Pending: improve crossing reduction and edge bundling after testing real
+schemas.
 
 The generic projection engine remains domain-independent: the app layer supplies
 guard evaluation and selected-candidate decisions without coupling
