@@ -55,12 +55,19 @@ Work on the current execution model comes before adding more installer types.
 - [~] Finish recovery for package-source and prerequisite preparation.
 - [~] Keep hooks tied to the candidate/transition that actually runs; status
   must not depend on a one-time hook having succeeded earlier.
-- [~] Generate schema/docs metadata from adapter capabilities instead of
-  scattering method-name conditionals across the codebase.
-  Remaining method-name conditionals include cargo/conda target handling in
-  `internal/exec/environment_target.go`,
-  git/container checks in `internal/validate`, git identity handling in
-  `internal/planner/identity.go`, and github handling in `internal/app/helpers.go`.
+- [x] Generate schema/docs metadata from adapter capabilities instead of
+  scattering method-name conditionals across the codebase. JSON schema
+  generation, contracttest coverage registration, environment-target
+  projection (`internal/exec/environment_target.go`), validate git/container
+  checks, planner identity, and app github-latest handling all derive from
+  `methodkind.Contracts`. The final scattered conditional — the
+  `cargo.secret_ref` execution-coverage exception, previously inlined in
+  three places — now lives in one `kind.field`-keyed exclusion table in
+  `internal/contracttest/execution_coverage.go` with a drift guard. Remaining
+  kind-based branches implement runtime behavior that is inherently
+  method-specific (for example credential transport and source/native
+  execution) or native-manager knowledge; schema/docs metadata no longer
+  depends on those branches.
 
 ## P2: installer coverage
 

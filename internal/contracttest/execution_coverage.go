@@ -12,6 +12,16 @@ var executionProbeKinds = map[string]bool{
 	"pacstall": true, "aur": true, "conda": true, "asdf": true,
 }
 
+// executionProbeExclusions lists owned EffectExecute fields that the generic
+// differential probe does not vary, mapped to the dedicated test that covers
+// the effect instead. The probe asserts that changing the field changes the
+// adapter's process calls through planning → resolve → install; a field whose
+// effect only appears through a transport the FakeRunner probe cannot drive
+// must instead be exercised by a focused runtime test.
+var executionProbeExclusions = map[string]string{ // #nosec G101 -- contract field metadata contains "secret_ref"; no credential is embedded.
+	"cargo.secret_ref": "internal/ecosystem/TestCargoGitSecretPrefetchesAndInstallsLocalCheckout",
+}
+
 func init() {
 	entries := make(map[string]Coverage)
 	for _, contract := range methodkind.Contracts {
@@ -22,10 +32,11 @@ func init() {
 			if spec.Effects&methodkind.EffectExecute == 0 {
 				continue
 			}
-			if contract.Kind == "cargo" && field == "secret_ref" {
-				continue // covered by the Cargo adapter's authenticated-prefetch execution test
+			key := contract.Kind + "." + field
+			if _, excluded := executionProbeExclusions[key]; excluded {
+				continue // dedicated runtime test covers the execute effect (see table)
 			}
-			entries[contract.Kind+"."+field] = Coverage{
+			entries[key] = Coverage{
 				Consumer:  "TestExecuteEffectFieldProbes",
 				Rationale: "differential FakeRunner probe asserts the install execution calls change when this exact field changes",
 			}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -28,10 +29,10 @@ func TestExecuteCoverageRegisteredAtInit(t *testing.T) {
 			if spec.Effects&methodkind.EffectExecute == 0 {
 				continue
 			}
-			if contract.Kind == "cargo" && field == "secret_ref" {
-				continue // runtime secret resolution is covered at the executor boundary
-			}
 			key := contract.Kind + "." + field
+			if _, excluded := executionProbeExclusions[key]; excluded {
+				continue // dedicated runtime test covers the execute effect (see execution_coverage.go)
+			}
 			if _, ok := CoverageFor(PhaseExecute, key); !ok {
 				t.Errorf("execution evidence for %s is not registered during package initialization", key)
 			}
@@ -48,10 +49,10 @@ func TestExecuteEffectFieldProbes(t *testing.T) {
 			if spec.Effects&methodkind.EffectExecute == 0 {
 				continue
 			}
-			if contract.Kind == "cargo" && field == "secret_ref" {
-				continue // runtime secret resolution is covered at the executor boundary
-			}
 			key := contract.Kind + "." + field
+			if _, excluded := executionProbeExclusions[key]; excluded {
+				continue // dedicated runtime test covers the execute effect (see execution_coverage.go)
+			}
 			t.Run(key, func(t *testing.T) {
 				values, ok := executionValues(field, spec)
 				if !ok {
@@ -179,5 +180,46 @@ func executionValues(field string, spec methodkind.Field) ([2]any, bool) {
 		return [2]any{fmt.Sprintf("first-%s", field), fmt.Sprintf("second-%s", field)}, true
 	default:
 		return [2]any{}, false
+	}
+}
+
+// TestExecutionProbeExclusionsStayCurrent guards the exclusion table against
+// drift: every key must name an owned EffectExecute field, that field's
+// execute effect must be covered by a dedicated runtime test, and the
+// registered consumer must match the documented one. A field that gains real
+// probe coverage must be removed from the table; a field removed from its
+// contract must drop its exclusion.
+func TestExecutionProbeExclusionsStayCurrent(t *testing.T) {
+	for key, consumer := range executionProbeExclusions {
+		kind, field, ok := strings.Cut(key, ".")
+		if !ok {
+			t.Errorf("exclusion key %q is not kind.field", key)
+			continue
+		}
+		contract, ok := methodkind.Lookup(kind)
+		if !ok {
+			t.Errorf("exclusion %q names unknown method %q", key, kind)
+			continue
+		}
+		spec, ok := contract.Fields[field]
+		if !ok {
+			t.Errorf("exclusion %q names unknown field %q", key, field)
+			continue
+		}
+		if spec.Effects&methodkind.EffectExecute == 0 {
+			t.Errorf("exclusion %q names field %q without EffectExecute", key, field)
+			continue
+		}
+		coverage, ok := CoverageFor(PhaseExecute, key)
+		if !ok {
+			t.Errorf("exclusion %q has no PhaseExecute coverage; register the dedicated runtime test", key)
+			continue
+		}
+		if coverage.Consumer == "TestExecuteEffectFieldProbes" {
+			t.Errorf("exclusion %q is already covered by the generic probe; remove it from executionProbeExclusions", key)
+		}
+		if coverage.Consumer != consumer {
+			t.Errorf("exclusion %q documents %q but registered coverage names %q", key, consumer, coverage.Consumer)
+		}
 	}
 }
