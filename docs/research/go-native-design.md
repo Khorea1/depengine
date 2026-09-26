@@ -164,10 +164,15 @@ architectural invariant.
 
 ## 2. Make errors semantic, not textual
 
-One concrete anti-pattern remains in the current codebase.
+Implementation status (2026-09-25): checksum mismatch and Go HTTP status
+classification are now semantic. `VerifyChecksum` returns
+`*ChecksumMismatchError`, which unwraps to `ErrChecksumMismatch`;
+`GoDownloader` returns `*HTTPStatusError`; and retry policy uses
+`errors.Is` / `errors.As`. External downloader/transport classification remains
+best-effort where only subprocess stderr is available.
 
-`internal/httpdownload/retry.go` decides that checksum failures are permanent
-by inspecting the text of the error:
+Previously, `internal/httpdownload/retry.go` decided that checksum failures were
+permanent by inspecting the text of the error:
 
 ```go
 if strings.Contains(strings.ToLower(err.Error()), "checksum") {
@@ -175,8 +180,8 @@ if strings.Contains(strings.ToLower(err.Error()), "checksum") {
 }
 ```
 
-This is fragile because human-facing error text becomes part of runtime control
-flow. A wording change can silently alter retry behavior.
+That was fragile because human-facing error text became part of runtime control
+flow. A wording change could silently alter retry behavior.
 
 ### Desired direction
 
@@ -227,6 +232,11 @@ typed planning and observation state.
 ---
 
 ## 3. Use `testing/synctest` for executor and retry semantics
+
+Implementation status (2026-09-25): retry backoff and cancellation now have
+deterministic `testing/synctest` coverage. Tests assert exponential delay, delay
+capping, cancellation during backoff, and final-error propagation without
+wall-clock sleeps. Executor timeout/cancellation coverage remains Phase B work.
 
 Go 1.25 made `testing/synctest` generally available. Go 1.27 adds further
 integration, including a `Sleep` helper and an in-memory HTTP test server
@@ -821,9 +831,11 @@ methods.
 ### Phase A: correctness and security
 
 1. Audit archive/materialization paths for conversion to `os.Root`.
-2. Introduce semantic checksum/download error types.
-3. Remove retry/error policy based on `err.Error()` text.
-4. Add synctest coverage for retry and cancellation behavior.
+2. Finish semantic download error coverage (checksum mismatch and Go HTTP
+   status are implemented; external downloader/transport classification remains).
+3. Keep retry/error policy free of `err.Error()` text classification.
+4. Extend synctest coverage beyond retry into executor timeout/cancellation
+   behavior (retry backoff/cancellation coverage is implemented).
 
 These changes have direct correctness value and fit current P0/P1 work.
 

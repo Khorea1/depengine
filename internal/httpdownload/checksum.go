@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -14,6 +15,28 @@ import (
 	"regexp"
 	"strings"
 )
+
+// ErrChecksumMismatch identifies checksum verification failures where the
+// computed digest does not match the expected digest.
+var ErrChecksumMismatch = errors.New("checksum mismatch")
+
+// ChecksumMismatchError records the expected and computed digests for a
+// checksum verification failure while preserving ErrChecksumMismatch for
+// machine-readable classification with errors.Is.
+type ChecksumMismatchError struct {
+	Algorithm string
+	Expected  string
+	Actual    string
+}
+
+func (e *ChecksumMismatchError) Error() string {
+	return fmt.Sprintf("%s: expected %s, got %s", ErrChecksumMismatch, e.Expected, e.Actual)
+}
+
+// Unwrap makes checksum mismatches classifiable without parsing diagnostics.
+func (e *ChecksumMismatchError) Unwrap() error {
+	return ErrChecksumMismatch
+}
 
 // Checksum prefix constants for known algorithms.
 const (
@@ -100,7 +123,11 @@ func VerifyChecksum(filePath, checksum string) error {
 	}
 
 	if !strings.EqualFold(actual, expected) {
-		return fmt.Errorf("checksum mismatch: expected %s, got %s", expected, actual)
+		return &ChecksumMismatchError{
+			Algorithm: algorithm,
+			Expected:  expected,
+			Actual:    actual,
+		}
 	}
 	return nil
 }

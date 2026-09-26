@@ -36,6 +36,13 @@ golangci-lint run
 
 CI is authoritative for pinned tool versions and the complete validation matrix.
 
+Run `scripts/setup-hooks.sh` in each checkout to enable the local Git gates.
+Before a commit, the staged tree must pass `go build ./...` and `go vet ./...`.
+Before a push, each distinct commit tip being sent must pass those commands,
+`go test -race ./...`, and `golangci-lint run`. Install Go and golangci-lint
+before pushing. These hooks supplement CI and do not validate intermediate
+commits that were created without the commit hook.
+
 Container-based integration suites under `tests/` are slower and require Docker or Podman plus network access. Run them when a change affects real installation behavior rather than in every unit-test loop.
 
 ## Security and execution

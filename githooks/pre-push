@@ -1,0 +1,46 @@
+#!/bin/sh
+# Git passes the refs being pushed on standard input.
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/depengine-pre-push.XXXXXX")
+checkout="$scratch/checkout"
+cleanup() {
+	cd "$root"
+	git worktree remove --force "$checkout" >/dev/null 2>&1 || :
+	rm -rf "$scratch"
+}
+trap cleanup 0
+trap 'exit 1' 1 2 3 15
+
+validated=''
+while read -r local_ref local_oid remote_ref remote_oid; do
+	case "$local_oid" in
+		0000000000000000000000000000000000000000|0000000000000000000000000000000000000000000000000000000000000000)
+			continue ;; # Deleting a remote ref adds no commit to validate.
+	esac
+
+	if ! commit=$(git rev-parse --verify "$local_oid^{commit}" 2>/dev/null); then
+		echo "pre-push: $local_ref does not point to a commit" >&2
+		exit 1
+	fi
+	case " $validated " in
+		*" $commit "*) continue ;;
+	esac
+
+	if ! command -v go >/dev/null 2>&1 || ! command -v golangci-lint >/dev/null 2>&1; then
+		echo "pre-push: Go and golangci-lint are required to validate $local_ref" >&2
+		exit 1
+	fi
+
+	echo "pre-push: validating $local_ref ($commit)"
+	git worktree add --quiet --detach "$checkout" "$commit" </dev/null
+	cd "$checkout"
+	go build ./... </dev/null
+	go vet ./... </dev/null
+	go test -race ./... </dev/null
+	golangci-lint run </dev/null
+	cd "$root"
+	git worktree remove --force "$checkout"
+	validated="$validated $commit"
+done
