@@ -171,7 +171,7 @@ func installRaw(source *os.File, info os.FileInfo, expectedChecksum, destination
 		return fmt.Errorf("rewind local artifact: %w", err)
 	}
 	parent := filepath.Dir(destination)
-	if err := os.MkdirAll(parent, 0o755); err != nil {
+	if err := os.MkdirAll(parent, 0o755); err != nil { // #nosec G301 -- Installed artifact parents are intentionally traversable.
 		return fmt.Errorf("create destination parent: %w", err)
 	}
 	stage, err := os.CreateTemp(parent, ".depengine-local-*")
@@ -217,7 +217,7 @@ func snapshotVerifiedSource(source *os.File, expectedChecksum, parent string) (*
 	if source == nil {
 		return nil, 0, func() {}, errors.New("verified source is required")
 	}
-	if err := os.MkdirAll(parent, 0o755); err != nil {
+	if err := os.MkdirAll(parent, 0o755); err != nil { // #nosec G301 -- Installed artifact parents are intentionally traversable.
 		return nil, 0, func() {}, fmt.Errorf("create snapshot parent: %w", err)
 	}
 	if _, err := source.Seek(0, io.SeekStart); err != nil {
@@ -265,7 +265,7 @@ func installArchive(source *os.File, sourceSize int64, projectPath, checksum, de
 		return fmt.Errorf("local archive format %q requires an extraction backend not available in the offline stdlib installer", ext)
 	}
 	parent := filepath.Dir(destination)
-	if err := os.MkdirAll(parent, 0o755); err != nil {
+	if err := os.MkdirAll(parent, 0o755); err != nil { // #nosec G301 -- Installed artifact parents are intentionally traversable.
 		return fmt.Errorf("create destination parent: %w", err)
 	}
 	stage, err := os.MkdirTemp(parent, ".depengine-local-*")
@@ -276,7 +276,7 @@ func installArchive(source *os.File, sourceSize int64, projectPath, checksum, de
 	// temporary work but would otherwise become the installed payload root after
 	// the atomic rename. Normalize the default installed root mode; an explicit
 	// archive root directory entry may still override it during extraction.
-	if err := os.Chmod(stage, 0o755); err != nil {
+	if err := os.Chmod(stage, 0o755); err != nil { // #nosec G302 -- This directory becomes the installed payload root and must be traversable.
 		_ = os.RemoveAll(stage)
 		return fmt.Errorf("set archive staging root permissions: %w", err)
 	}

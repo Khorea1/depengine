@@ -570,14 +570,14 @@ func (a *HTTPAdapter) fetchChecksumFromURL(ctx context.Context, rn run.Runner, c
 
 	// If format is "raw", the entire file content is the hash.
 	if cc.format == "raw" {
-		data, err := os.ReadFile(checksumFile)
+		data, err := os.ReadFile(checksumFile) // #nosec G304 -- checksumFile is created inside this function's private temporary directory.
 		if err != nil {
 			return "", fmt.Errorf("reading %s: %w", checksumURL, err)
 		}
 		return strings.TrimSpace(string(data)), nil
 	}
 
-	f, err := os.Open(checksumFile)
+	f, err := os.Open(checksumFile) // #nosec G304 -- checksumFile is created inside this function's private temporary directory.
 	if err != nil {
 		return "", fmt.Errorf("open: %w", err)
 	}

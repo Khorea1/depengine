@@ -66,7 +66,7 @@ func DefaultPath(schemaPath string) string {
 
 // Load reads a lock file. A missing file is NOT an error — returns nil, nil.
 func Load(path string) (*Lock, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- Lock paths are explicitly selected or derived next to the project schema.
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -91,13 +91,13 @@ func Load(path string) (*Lock, error) {
 // Save writes l to path, creating parent directories as needed.
 func Save(path string, l *Lock) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0755); err != nil { // #nosec G301 -- Project lockfile parent directories are intentionally traversable.
 		return fmt.Errorf("lock: mkdir: %w", err)
 	}
 
 	// Write to a temp file in the same directory (ensures same-filesystem rename).
 	tmpPath := path + ".tmp"
-	f, err := os.Create(tmpPath)
+	f, err := os.Create(tmpPath) // #nosec G304 -- tmpPath is deterministically derived beside the selected project lockfile.
 	if err != nil {
 		return fmt.Errorf("lock: create tmp: %w", err)
 	}

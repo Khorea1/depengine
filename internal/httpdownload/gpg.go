@@ -93,7 +93,7 @@ func gpgVerifyWithIdentityCheck(ctx context.Context, rn run.Runner, msys bool, c
 		return fmt.Errorf("gpg: temp homedir: %w", err)
 	}
 	defer os.RemoveAll(homedir)
-	if err := os.Chmod(homedir, 0o700); err != nil {
+	if err := os.Chmod(homedir, 0o700); err != nil { // #nosec G302 -- This is a directory mode; the temporary GNUPG home is intentionally owner-only.
 		return fmt.Errorf("gpg: chmod homedir: %w", err)
 	}
 
@@ -159,11 +159,11 @@ func importSigningKeyFromURL(ctx context.Context, rn run.Runner, msys bool, home
 			// file:///C:/... decodes to a drive-letter path.
 			localPath = localPath[1:]
 		}
-		data, err := os.ReadFile(localPath)
+		data, err := os.ReadFile(localPath) // #nosec G304 -- file:// signing keys intentionally reference an operator-selected local path.
 		if err != nil {
 			return "", fmt.Errorf("gpg: reading key file: %w", err)
 		}
-		if err := os.WriteFile(keyFile, data, 0o644); err != nil {
+		if err := os.WriteFile(keyFile, data, 0o600); err != nil { // #nosec G703 -- keyFile is generated inside the owner-only temporary GNUPG home.
 			return "", fmt.Errorf("gpg: writing key file: %w", err)
 		}
 	} else {

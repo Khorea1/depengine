@@ -159,6 +159,34 @@ func TestLoadSnapshot(t *testing.T) {
 	}
 }
 
+func TestListSnapshotsIgnoresSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation may require elevated Windows privileges")
+	}
+	td := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", td)
+	dir := snapshotDir()
+	if err := ensurePrivateDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(td, "outside.json")
+	if err := os.WriteFile(target, []byte(`{"version":1,"tools":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "state-20260101T000000.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	snaps, err := ListSnapshots()
+	if err != nil {
+		t.Fatalf("ListSnapshots(): %v", err)
+	}
+	if len(snaps) != 0 {
+		t.Fatalf("ListSnapshots() returned %d entries for a symlink fixture, want 0", len(snaps))
+	}
+}
+
 func TestListSnapshotsEmpty(t *testing.T) {
 	td := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", td)

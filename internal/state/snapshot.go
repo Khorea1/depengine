@@ -38,7 +38,7 @@ func SaveSnapshot() (*SnapshotInfo, error) {
 	src := DefaultPath()
 	dst := filepath.Join(dir, name)
 
-	data, err := os.ReadFile(src)
+	data, err := os.ReadFile(src) // #nosec G304 -- src is the generated state path under the operator-selected private state root.
 	if err != nil {
 		if os.IsNotExist(err) {
 			data = []byte("{}")
@@ -47,7 +47,7 @@ func SaveSnapshot() (*SnapshotInfo, error) {
 		}
 	}
 
-	if err := os.WriteFile(dst, data, 0600); err != nil {
+	if err := os.WriteFile(dst, data, 0600); err != nil { // #nosec G703 -- dst uses a generated timestamp filename under the private snapshot directory.
 		return nil, fmt.Errorf("write snapshot: %w", err)
 	}
 	// Prune old snapshots using default retention policy.
@@ -81,11 +81,11 @@ func ListSnapshots() ([]SnapshotInfo, error) {
 
 	var snapshots []SnapshotInfo
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasPrefix(e.Name(), "state-") || !strings.HasSuffix(e.Name(), ".json") {
+		if e.IsDir() || e.Type()&os.ModeSymlink != 0 || !strings.HasPrefix(e.Name(), "state-") || !strings.HasSuffix(e.Name(), ".json") {
 			continue
 		}
 		path := filepath.Join(dir, e.Name())
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) // #nosec G304 -- path is constrained to a non-symlink snapshot entry under the private snapshot directory.
 		if err != nil {
 			continue
 		}

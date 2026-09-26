@@ -65,7 +65,7 @@ func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequ
 
 func extract(ctx context.Context, src, dest, ext, binaryName string, rn run.Runner, sudoRequired bool, toolName string) error {
 	// Ensure destination exists.
-	if err := os.MkdirAll(dest, 0o755); err != nil {
+	if err := os.MkdirAll(dest, 0o755); err != nil { // #nosec G301 -- Extraction destinations are installed payload roots and must remain traversable.
 		return fmt.Errorf("extract: mkdir %s: %w", dest, err)
 	}
 
@@ -87,7 +87,7 @@ func extract(ctx context.Context, src, dest, ext, binaryName string, rn run.Runn
 }
 
 func extractBzip2(ctx context.Context, src, dest, binaryName string, rn run.Runner, sudoRequired bool, toolName string) error {
-	in, err := os.Open(src)
+	in, err := os.Open(src) // #nosec G304 -- src is the depengine-managed downloaded archive path.
 	if err != nil {
 		return fmt.Errorf("bzip2: open %s: %w", src, err)
 	}
@@ -194,7 +194,7 @@ func copyBinary(ctx context.Context, src, destDir, binaryName string, rn run.Run
 		return run.CheckResult(rn.Run(ctx, sudoBin, "mv", "-f", "--", tmp, dest), "install commit")
 	}
 
-	in, err := os.Open(src)
+	in, err := os.Open(src) // #nosec G304 -- src is the depengine-managed downloaded archive path.
 	if err != nil {
 		return fmt.Errorf("copy: read %s: %w", src, err)
 	}

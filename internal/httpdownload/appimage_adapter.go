@@ -203,7 +203,7 @@ Categories=Utility;
 // entries for the desktop environment either way.
 func writeDesktopEntry(tool *config.Tool, name, execPath string) error {
 	dir := config.ExpandHomeDir(appImageDesktopDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- XDG application directories are intentionally traversable by desktop tooling.
 		return fmt.Errorf("mkdir %s: %w", dir, err)
 	}
 	displayName := name
@@ -212,7 +212,7 @@ func writeDesktopEntry(tool *config.Tool, name, execPath string) error {
 	}
 	content := fmt.Sprintf(desktopEntryTemplate, displayName, execPath)
 	path := filepath.Join(dir, name+".desktop")
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil { // #nosec G306 -- .desktop launchers must be readable by the desktop environment.
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil

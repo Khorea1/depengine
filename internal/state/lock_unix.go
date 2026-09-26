@@ -42,9 +42,13 @@ func lockWithMode(mode int, desc string) (io.Closer, error) {
 	if err := ensurePrivateDir(dir); err != nil {
 		return nil, fmt.Errorf("create private lock dir: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600) // #nosec G304 -- path is the generated lock file under the owner-only state directory.
 	if err != nil {
 		return nil, fmt.Errorf("open lock file: %w", err)
+	}
+	if err := f.Chmod(0600); err != nil {
+		_ = f.Close()
+		return nil, fmt.Errorf("tighten lock file permissions: %w", err)
 	}
 
 	// Retry on EINTR — flock can be interrupted by signals on some systems.
