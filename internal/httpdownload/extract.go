@@ -1,10 +1,7 @@
 package httpdownload
 
 import (
-	"archive/tar"
-	"archive/zip"
 	"compress/bzip2"
-	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -59,10 +56,9 @@ func defaultSudoRequired(dest string) bool {
 }
 
 // Extract materializes src into dest based on the file extension.
-// ZIP and TAR formats supported by the Go standard library are extracted
-// in-process through an os.Root-confined materializer. XZ- and Zstd-compressed
-// TAR archives retain the subprocess backend until streamed decompression is
-// added without granting the subprocess filesystem write authority.
+// ZIP and every supported TAR variant are written through an os.Root-confined
+// materializer. XZ/Zstd use external decoders only as byte producers; those
+// subprocesses never receive the extraction destination.
 func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequired bool, toolName string) error {
 	return extract(ctx, src, dest, ext, "", rn, sudoRequired, toolName)
 }
@@ -73,22 +69,11 @@ func extract(ctx context.Context, src, dest, ext, binaryName string, rn run.Runn
 		return fmt.Errorf("extract: mkdir %s: %w", dest, err)
 	}
 
-	// XZ/Zstd are the only TAR variants still delegated to host tar. Keep the
-	// legacy preflight hook on that subprocess path until streamed decompression
-	// removes its filesystem write authority.
-	if ext == ".tar.xz" || ext == ".tar.zst" {
-		if err := validateArchiveSafety(src, dest, ext); err != nil {
-			return fmt.Errorf("extract: refusing unsafe archive: %w", err)
-		}
-	}
-
 	switch ext {
 	case ".tar", ".tar.gz", ".tgz", ".tar.bz2":
 		return extractNativeTar(ctx, src, dest, ext)
-	case ".tar.xz":
-		return extractTar(ctx, src, dest, []string{"xJf"}, rn, sudoRequired, toolName)
-	case ".tar.zst":
-		return extractTar(ctx, src, dest, []string{"--zstd", "-xf"}, rn, sudoRequired, toolName)
+	case ".tar.xz", ".tar.zst":
+		return extractExternalTar(ctx, src, dest, ext, rn)
 	case ".zip":
 		return extractNativeZip(ctx, src, dest)
 	case ".bz2":
@@ -122,26 +107,6 @@ func extractBzip2(ctx context.Context, src, dest, binaryName string, rn run.Runn
 		return fmt.Errorf("bzip2: close temporary file: %w", err)
 	}
 	return copyBinary(ctx, tmpName, dest, binaryName, rn, sudoRequired, toolName)
-}
-
-func extractTar(ctx context.Context, src, dest string, flags []string, rn run.Runner, sudoRequired bool, toolName string) error {
-	args := append(append([]string(nil), flags...), src, "-C", dest)
-	if sudoRequired && os.Geteuid() != 0 {
-		if err := elevationGuard(sudoRequired, toolName); err != nil {
-			return fmt.Errorf("tar: %w", err)
-		}
-		sudoBin := run.ElevationPrefix()[0]
-		res := rn.Run(ctx, sudoBin, append([]string{"tar"}, args...)...)
-		if err := run.CheckResult(res, "tar"); err != nil {
-			return err
-		}
-	} else {
-		res := rn.Run(ctx, "tar", args...)
-		if err := run.CheckResult(res, "tar"); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired bool, toolName string) error {
@@ -206,8 +171,8 @@ func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired boo
 // sudoRequired is set and the process isn't already root, os.WriteFile can't
 // help — an unprivileged process has no way to write into a root-owned
 // directory — so the copy is done via an elevated `install`, mirroring how
-// compressed TAR extraction/installDeb already shell out through
-// run.ElevationPrefix() instead of touching the filesystem directly.
+// installDeb shells out through run.ElevationPrefix() instead of touching the
+// filesystem directly.
 // `install -m 0755` also creates the destination with the right mode in one
 // step, avoiding a separate chmod call under sudo.
 func copyBinary(ctx context.Context, src, destDir, binaryName string, rn run.Runner, sudoRequired bool, toolName string) error {
@@ -261,33 +226,6 @@ func copyBinary(ctx context.Context, src, destDir, binaryName string, rn run.Run
 	return nil
 }
 
-// validateArchiveSafety inspects an archive's member paths and rejects any
-// entry that would escape dest once extracted. Supported without any new
-// dependency because the Go standard library already implements these
-// formats:
-//
-//   - .zip            → archive/zip
-//   - .tar            → archive/tar
-//   - .tar.gz / .tgz  → archive/tar + compress/gzip
-//   - .tar.bz2        → archive/tar + compress/bzip2
-//
-// .tar.xz and .tar.zst have no decompressor in the standard library, so this
-// check is skipped for those two extensions and extraction proceeds via the
-// system `tar` binary as before, retaining whatever protections it ships
-// with (modern GNU tar refuses ".." members by default; behavior on older or
-// busybox tar varies, which is exactly why this function exists for the
-// formats it *can* check).
-func validateArchiveSafety(src, dest, ext string) error {
-	switch ext {
-	case ".zip":
-		return validateZipSafety(src, dest)
-	case ".tar", ".tar.gz", ".tgz", ".tar.bz2":
-		return validateTarSafety(src, dest, ext)
-	default:
-		return nil
-	}
-}
-
 // safeJoin joins name onto dest and confirms the result does not escape
 // dest, rejecting absolute paths and ".." traversal. It does not require the
 // path to exist. name is an ARCHIVE entry, which always uses "/" separators,
@@ -304,81 +242,6 @@ func safeJoin(dest, name string) error {
 	joined := filepath.Join(cleanDest, name)
 	if joined != cleanDest && !strings.HasPrefix(joined, cleanDest+string(os.PathSeparator)) {
 		return fmt.Errorf("entry escapes destination: %q", name)
-	}
-	return nil
-}
-
-// validateZipSafety opens src as a zip archive and checks every member name.
-// If src can't be opened/parsed as a zip, it returns nil — extraction is
-// left to `unzip`, which will report a more specific error for a genuinely
-// corrupt file.
-func validateZipSafety(src, dest string) error {
-	r, err := zip.OpenReader(src)
-	if err != nil {
-		return nil
-	}
-	defer r.Close()
-
-	for _, f := range r.File {
-		if err := safeJoin(dest, f.Name); err != nil {
-			return fmt.Errorf("unsafe zip entry: %w", err)
-		}
-		if f.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("unsafe zip entry: symlink %q is not supported", f.Name)
-		}
-	}
-	return nil
-}
-
-// validateTarSafety opens src as a (optionally gzip/bzip2-compressed) tar
-// archive and checks every member name, plus the link target of any
-// symlink/hardlink entry. If src can't be opened/decompressed/parsed, it
-// returns nil — extraction is left to `tar`, which will report a more
-// specific error for a genuinely corrupt file.
-func validateTarSafety(src, dest, ext string) error {
-	f, err := os.Open(src)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-
-	var r io.Reader = f
-	switch ext {
-	case ".tar.gz", ".tgz":
-		gz, err := gzip.NewReader(f)
-		if err != nil {
-			return nil
-		}
-		defer gz.Close()
-		r = gz
-	case ".tar.bz2":
-		r = bzip2.NewReader(f)
-	}
-
-	tr := tar.NewReader(r)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil
-		}
-		if err := safeJoin(dest, hdr.Name); err != nil {
-			return fmt.Errorf("unsafe tar entry: %w", err)
-		}
-		if (hdr.Typeflag == tar.TypeSymlink || hdr.Typeflag == tar.TypeLink) && hdr.Linkname != "" {
-			linkTarget := hdr.Linkname
-			if path.IsAbs(linkTarget) {
-				return fmt.Errorf("unsafe tar entry: %q links outside destination to absolute path %q", hdr.Name, linkTarget)
-			}
-			if hdr.Typeflag == tar.TypeSymlink {
-				linkTarget = path.Join(path.Dir(hdr.Name), linkTarget) // #nosec G305 -- Normalize the archive-relative target; safeJoin below checks containment.
-			}
-			if err := safeJoin(dest, linkTarget); err != nil {
-				return fmt.Errorf("unsafe tar entry: %q link target escapes destination: %w", hdr.Name, err)
-			}
-		}
 	}
 	return nil
 }
