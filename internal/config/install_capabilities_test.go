@@ -64,7 +64,7 @@ func TestSourceURLOnlyAcceptedWhenAddUsesIt(t *testing.T) {
 	}
 }
 
-func TestParseSourceSecretReferenceInNativeAndLabeledMethods(t *testing.T) {
+func TestParseSourceSecretReferenceRequiresAuthenticatedGitSource(t *testing.T) {
 	for _, method := range []string{"native", "custom"} {
 		t.Run(method, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "schema.toml")
@@ -72,7 +72,7 @@ func TestParseSourceSecretReferenceInNativeAndLabeledMethods(t *testing.T) {
 			if method == "custom" {
 				kind = "kind = \"native\"\n"
 			}
-			data := "schema_version = 1\n[tools.demo." + method + "]\n" + kind + "pkg = \"demo\"\nsources = [{ kind = \"apt-ppa\", name = \"ppa:vendor/stable\", secret_ref = { provider = \"env\", name = \"CORP_TOKEN\" } }]\n"
+			data := "schema_version = 1\n[tools.demo." + method + "]\n" + kind + "pkg = \"demo\"\nsources = [{ kind = \"brew-tap\", name = \"vendor/tools\", url = \"https://example.test/tools\", secret_ref = { provider = \"env\", name = \"CORP_TOKEN\" } }]\n"
 			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -83,6 +83,52 @@ func TestParseSourceSecretReferenceInNativeAndLabeledMethods(t *testing.T) {
 			ref := schema.Tools["demo"].Methods[0].Sources[0].SecretRef
 			if ref == nil || ref.Provider != "env" || ref.Name != "CORP_TOKEN" {
 				t.Fatalf("secret reference = %+v", ref)
+			}
+		})
+	}
+}
+
+func TestSourceSecretReferenceValidation(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		kind string
+		url  string
+		want string
+	}{
+		{name: "PPA unsupported", kind: "apt-ppa", want: "sources[0].secret_ref: unsupported for source kind apt-ppa"},
+		{name: "COPR unsupported", kind: "dnf-copr", want: "sources[0].secret_ref: unsupported for source kind dnf-copr"},
+		{name: "Scoop URL required", kind: "scoop-bucket", want: "sources[0].url: required when tools.demo.native.sources[0].secret_ref is set"},
+		{name: "Brew URL required", kind: "brew-tap", want: "sources[0].url: required when tools.demo.native.sources[0].secret_ref is set"},
+		{name: "userinfo rejected", kind: "brew-tap", url: "https://user@example.test/tools", want: "sources[0].url: secret_ref requires a credential-free HTTPS URL"},
+		{name: "query rejected", kind: "scoop-bucket", url: "https://example.test/tools?token=x", want: "sources[0].url: secret_ref requires a credential-free HTTPS URL"},
+		{name: "fragment rejected", kind: "brew-tap", url: "https://example.test/tools#section", want: "sources[0].url: secret_ref requires a credential-free HTTPS URL"},
+		{name: "HTTP rejected", kind: "scoop-bucket", url: "http://example.test/tools", want: "sources[0].url: secret_ref requires a credential-free HTTPS URL"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "schema.toml")
+			urlField := ""
+			if tt.url != "" {
+				urlField = ", url = \"" + tt.url + "\""
+			}
+			data := "schema_version = 1\n[tools.demo.native]\npkg = \"demo\"\nsources = [{ kind = \"" + tt.kind + "\", name = \"vendor/tools\"" + urlField + ", secret_ref = { provider = \"env\", name = \"CORP_TOKEN\" } }]\n"
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ParseProjectSchema(path, nil); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("ParseProjectSchema() error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+
+	for _, kind := range []string{"scoop-bucket", "brew-tap"} {
+		t.Run(kind+" valid URL", func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "schema.toml")
+			data := "schema_version = 1\n[tools.demo.native]\npkg = \"demo\"\nsources = [{ kind = \"" + kind + "\", name = \"vendor/tools\", url = \"https://example.test/tools\", secret_ref = { provider = \"env\", name = \"CORP_TOKEN\" } }]\n"
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ParseProjectSchema(path, nil); err != nil {
+				t.Fatalf("ParseProjectSchema() = %v, want valid authenticated source", err)
 			}
 		})
 	}

@@ -52,7 +52,7 @@ func TestBuildCandidateIntentProjectsHostSources(t *testing.T) {
 	}
 }
 
-func TestSourceSecretReferenceFlowsFromSchemaToPlanAndRequiresAuth(t *testing.T) {
+func TestSourceSecretReferenceFlowsFromSchemaToSupportedAuthPlan(t *testing.T) {
 	t.Setenv("CORP_TOKEN", "private-value-must-not-enter-plan")
 	for _, withRef := range []bool{false, true} {
 		path := filepath.Join(t.TempDir(), "schema.toml")
@@ -60,7 +60,7 @@ func TestSourceSecretReferenceFlowsFromSchemaToPlanAndRequiresAuth(t *testing.T)
 		if withRef {
 			ref = `, secret_ref = { provider = "env", name = "CORP_TOKEN" }`
 		}
-		data := "schema_version = 1\n[tools.demo.native]\npkg = \"demo\"\nsources = [{ kind = \"apt-ppa\", name = \"ppa:vendor/stable\"" + ref + " }]\n"
+		data := "schema_version = 1\n[tools.demo.native]\npkg = \"demo\"\nsources = [{ kind = \"brew-tap\", name = \"vendor/tools\", url = \"https://example.test/vendor/tools.git\"" + ref + " }]\n"
 		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -86,11 +86,11 @@ func TestSourceSecretReferenceFlowsFromSchemaToPlanAndRequiresAuth(t *testing.T)
 			if len(intent.Secrets) != 1 || intent.Secrets[0] != wantRef {
 				t.Fatalf("plan secret requirements = %+v, want [%+v]", intent.Secrets, wantRef)
 			}
-			if missing&methodkind.CapabilityAuth == 0 {
-				t.Fatalf("missing capabilities = %v, want auth", methodkind.CapabilityNames(missing))
+			if missing&methodkind.CapabilityAuth != 0 {
+				t.Fatalf("missing capabilities = %v, want supported source auth", methodkind.CapabilityNames(missing))
 			}
-			if _, err := planner.BuildValidatedCandidateIntent(tool, tool.Methods[0], methodkind.CandidateRequirements{}); err == nil || !plan.IsClass(err, plan.ErrorAuthRequirement) {
-				t.Fatalf("validated intent error = %v, want auth requirement", err)
+			if _, err := planner.BuildValidatedCandidateIntent(tool, tool.Methods[0], methodkind.CandidateRequirements{}); err != nil {
+				t.Fatalf("validated intent error = %v, want supported source auth", err)
 			}
 		} else {
 			if len(intent.Secrets) != 0 {

@@ -768,9 +768,10 @@ to add the source, and is passed to Git in that child process's environment.
 The token stays in that child process's environment. The schema, plan, lock,
 state, command arguments, and logs contain no token value.
 Missing, empty, or unsupported secrets fail that candidate and allow the next
-method to be tried. Authentication for `apt-ppa`, `dnf-copr`, and source roles
-other than host configuration is rejected during planning. The token is not
-installed as a persistent Git credential; later source updates need their own
+method to be tried. Authentication for `apt-ppa` and `dnf-copr` is rejected
+during schema validation; source roles other than host configuration are
+rejected during planning. The token is not installed as a persistent Git
+credential; later source updates need their own
 host credential setup. Sources are checked before mutation. `dependency_only`
 tools are not normal roots, but remain selectable with `--only`.
 
