@@ -46,7 +46,7 @@ func newUpgradeCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "upgrade",
-		Short:   ifPT("Atualizar ferramentas para as versões do depengine.lock", "Upgrade installed tools to pinned versions"),
+		Short:   ifPT("Atualizar ferramentas para as versões fixadas no depengine.lock", "Upgrade installed tools to the versions pinned in depengine.lock"),
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

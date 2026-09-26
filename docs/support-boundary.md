@@ -19,12 +19,11 @@ or desired state from an arbitrary command.
 
 ## Reproducibility
 
-Lock coverage is method-specific today.
-
-`depengine.lock` can pin supported resolved artifact identities and checksums,
-including GitHub or URL-based artifacts and local artifact digests. It does not
-yet capture complete immutable resolution for every native or ecosystem package
-manager.
+Lock coverage is method-specific today. The table below states, per selector
+class, what `depengine.lock` actually pins and what it leaves alone: supported
+resolved artifact identities and checksums (GitHub or URL-based artifacts and
+local artifact digests) are pinned, but the lock does not capture complete
+immutable resolution for every native or ecosystem package manager.
 
 An exact package version constrains one package. A fully locked package graph
 also needs immutable identities for its dependencies.
@@ -45,14 +44,37 @@ The useful identity terms are:
 Digests and commits are stronger replay inputs than mutable tags, branches,
 channels, or URLs.
 
+Legacy lock v1 covers each selector class as follows:
+
+| Selector requested in schema.toml | Pinned in depengine.lock? | Note |
+|---|---|---|
+| `{latest}` inside a literal `url` | Yes | The resolved release tag is stored as a pin and substituted into the URL before adapters see it. |
+| Latest release of a repo-backed method: `repo` present, `release` empty or `"latest"`, and no `branch` (the `repo` + `asset` forms of `github`, `http`, `appimage`, `android`, and `msi` qualify) | Yes | The latest release tag at resolution time is stored as a pin; installation resolves the asset only within that pinned release. |
+| Literal `checksum = "<algo>:<hex>"` | Yes | Recorded alongside the method. The schema's literal value still governs, because the lock only substitutes a checksum into `*:auto` and checksum-less local declarations. |
+| `checksum = "<algo>:auto"` | Yes, once materialized | The digest the adapter resolves from the declared checksum source is recorded by a normal non-frozen install. Frozen validation requires that pin and never computes one, and `depengine update` does not download payloads. |
+| `local_path` artifact | Yes | The content digest is computed during lock resolution even when the schema omits a checksum. |
+| Exact ecosystem version (`version = "1.2.3"` on npm, pip, cargo, go, ...) | No | `version` is never written to the lock, and the dependency graph behind it is not locked either. |
+| Native package install (apt, dnf, pacman, brew, ...) | No | Native methods carry no version field for the lock to record. |
+| Git `branch` or `tag` | No | The lock records no commit — not even an explicit `rev` is written — and a branch or tag can move upstream. |
+| `cargo` git source (`branch`, `tag`, or `rev`) | No | The lock records no commit for the checkout. |
+| Container `tag` | No | The lock records nothing about the pulled image. |
+| Snap channel or track | No | The lock records no resolved snap revision. |
+| Flatpak `branch` | No | The lock records no resolved commit on that branch. |
+| `sdkman` or `asdf` version | No | The lock records no resolved version. |
+| Selectorless kinds (`cask`, `mas`, `aur`, `apm`, `vscode`, ...) | No | There is no selector for the lock to pin. |
+| Artifact method with no `checksum` | No | Downloaded content is unpinned. |
+| Explicit literal selector (`release`, `branch`, `version`, `rev`, or `digest`) | No — fixed by the schema | The same literal value is requested on every run, so the lock adds no constraint of its own. It also records nothing about where a mutable request such as a git `branch` or an exact package `version` resolved. |
+
 For the legacy lock v1 subset, `depengine install --frozen-lockfile` fails
-closed when the lockfile is missing or unreadable, when the stored method
-kind/label ordering no longer matches, or when a required supported pin is
-missing. Required pins currently include repo-backed latest GitHub releases,
-`{latest}` URL templates, implicit local-artifact digests, and resolved
-`*:auto` checksums. Frozen mode does not perform checksum TOFU to create a
-missing auto-checksum pin. Remote `*:auto` checksums are materialized by a
-normal non-frozen install; `depengine update` alone does not download the
+closed when the lockfile is missing, unreadable, or written for an unsupported
+lock version; when a tool's method identity is absent from the lock — the tool
+was added to the schema after the lock was written; when the stored method
+kind/label ordering no longer matches the schema; or when a required supported
+pin is missing. Required pins currently include repo-backed latest GitHub
+releases, `{latest}` URL templates, implicit local-artifact digests, and
+resolved `*:auto` checksums. Frozen mode does not perform checksum TOFU to
+create a missing auto-checksum pin. Remote `*:auto` checksums are materialized
+by a normal non-frozen install; `depengine update` alone does not download the
 remote payload needed to compute that digest.
 
 Frozen validation follows the effective install closure after
@@ -60,14 +82,30 @@ Frozen validation follows the effective install closure after
 closure are still validated, while deliberately omitted tools do not make a
 partial/profile install fail frozen validation.
 
+`depengine update` is the operation that accepts a changed method identity. It
+re-resolves the lockable selectors for every tool in scope — the whole schema,
+or only tools matching `--profile` — and refreshes those pins and their stored
+method identity hashes. Pins the fresh resolution cannot recompute, such as an
+already-materialized `*:auto` checksum, are carried over from the existing
+lock instead of being dropped, as are the pins and method identities of tools
+excluded by `--profile`, provided the existing lock is readable. If the
+existing lock is unreadable or has an unsupported version, `update` warns and
+regenerates from the fresh resolution; it cannot preserve data it cannot
+parse. A plain `depengine install` never changes a stored method identity:
+frozen installs fail validation against a changed identity, and non-frozen
+installs keep the stored hash and only warn.
+
 This check is intentionally narrower than universal immutable resolution.
 Container tags, Git branches/tags, package-manager constraints, channels, and
 other selectors not represented by legacy lock v1 are not made immutable by
 `--frozen-lockfile`. The v1 method identity hash also covers method kind,
 label, and ordering rather than every requested field inside a candidate.
 After changing resolver details that keep the same kind/label, run
-`depengine update`; the planned universal lock projection is the path that
-will close this requested-identity gap.
+`depengine update`; the planned universal lock projection
+([ADR-001](design/adr-001-universal-lock-projection.md)) is the path that will
+close this requested-identity gap, but it is not implemented end to end yet:
+its projection and verification helpers are exercised only by tests, no
+command consumes them, and nothing persists their output.
 
 ## Scope and environments
 

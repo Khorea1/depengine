@@ -48,8 +48,24 @@ Work on the current execution model comes before adding more installer types.
   verification as serial execution. Remove and undo verify the tracked target
   and project its resolved identity into the removal adapter.
 - [~] Finish exact-version support and installed-version checks per adapter.
-- [~] Make lock generation/consumption cover every supported mutable method, or
-  narrow the documented reproducibility promise.
+- [x] Make lock generation/consumption cover every supported mutable method, or
+  narrow the documented reproducibility promise. Done: the promise is narrowed —
+  `docs/support-boundary.md` tabulates, per selector class, what lock v1 pins and
+  what it ignores, and documents every frozen failure mode plus `update` merge
+  semantics; the generated `immutable-lock` capability text, the `internal/lock`
+  package doc, and the ambiguous install/upgrade/update wording no longer
+  overclaim; `depengine update` now preserves pins from a readable existing lock
+  when it cannot re-resolve them instead of dropping them (previously it deleted
+  materialized `*:auto` checksums and every pin outside `--profile`, breaking
+  the next frozen install). Remaining
+  selector coverage stays open in the item below and in ADR-001 open work.
+- [ ] Cover the mutable selectors lock v1 still ignores: git `branch`/`tag`,
+  container `tag`, ecosystem/native resolutions, and channels — either by pinning
+  them in `depengine.lock` or by wiring the universal lock projection
+  end-to-end. See
+  [`design/adr-001-universal-lock-projection.md`](design/adr-001-universal-lock-projection.md);
+  current per-selector coverage is tabulated in
+  [`support-boundary.md`](support-boundary.md).
 - [~] Finish typed package-source selection, trust, ownership, verification,
   and locking.
 - [~] Finish recovery for package-source and prerequisite preparation.

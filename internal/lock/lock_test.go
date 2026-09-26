@@ -1056,3 +1056,121 @@ func TestValidateFrozenRejectsInvalidInputs(t *testing.T) {
 		t.Fatal("ValidateFrozen(nil method) unexpectedly succeeded")
 	}
 }
+
+func TestMergeNilInputs(t *testing.T) {
+	if got := Merge(nil, nil); got != nil {
+		t.Fatalf("Merge(nil, nil) = %#v, want nil", got)
+	}
+
+	existing := &Lock{
+		Version:     1,
+		Tools:       map[string]ToolPin{"a/http/0": {Latest: "v1.0.0"}},
+		MethodsHash: map[string]string{"a": "hash-a"},
+	}
+	if got := Merge(existing, nil); got != existing {
+		t.Fatalf("Merge(existing, nil) = %#v, want existing unchanged", got)
+	}
+
+	fresh := &Lock{
+		Version:     1,
+		Tools:       map[string]ToolPin{"b/http/0": {Latest: "v2.0.0"}},
+		MethodsHash: map[string]string{"b": "hash-b"},
+	}
+	if got := Merge(nil, fresh); got != fresh {
+		t.Fatalf("Merge(nil, fresh) = %#v, want fresh unchanged", got)
+	}
+}
+
+func TestMergeFreshValueWins(t *testing.T) {
+	existing := &Lock{Version: 1, Tools: map[string]ToolPin{
+		"tool/http/0": {Latest: "v1.0.0", Checksum: "sha256:" + strings.Repeat("a", 64)},
+	}}
+	fresh := &Lock{Version: 1, Tools: map[string]ToolPin{
+		"tool/http/0": {Latest: "v2.0.0", Checksum: "sha256:" + strings.Repeat("b", 64)},
+	}, MethodsHash: map[string]string{"tool": "fresh-hash"}}
+
+	got := Merge(existing, fresh)
+	if got != fresh {
+		t.Fatalf("Merge returned %p, want fresh %p", got, fresh)
+	}
+	pin := got.Tools["tool/http/0"]
+	if pin.Latest != "v2.0.0" {
+		t.Fatalf("Latest = %q, want fresh v2.0.0", pin.Latest)
+	}
+	if want := "sha256:" + strings.Repeat("b", 64); pin.Checksum != want {
+		t.Fatalf("Checksum = %q, want fresh %q", pin.Checksum, want)
+	}
+	if old := existing.Tools["tool/http/0"]; old.Latest != "v1.0.0" || old.Checksum != "sha256:"+strings.Repeat("a", 64) {
+		t.Fatalf("Merge mutated existing: %#v", old)
+	}
+	if _, ok := got.MethodsHash["tool"]; !ok || got.MethodsHash["tool"] != "fresh-hash" {
+		t.Fatalf("MethodsHash = %v, want fresh map passed through untouched", got.MethodsHash)
+	}
+}
+
+func TestMergeKeepsExistingFieldWhenFreshEmpty(t *testing.T) {
+	materialized := "sha256:" + strings.Repeat("c", 64)
+	cases := []struct {
+		name     string
+		existing ToolPin
+		fresh    ToolPin
+		want     ToolPin
+	}{
+		{
+			// The `:auto` regression: fresh re-resolves Latest but skips the
+			// materialized checksum, so the old checksum must survive.
+			name:     "fresh latest-only keeps materialized checksum",
+			existing: ToolPin{Latest: "v1.2.3", Checksum: materialized},
+			fresh:    ToolPin{Latest: "v2.0.0"},
+			want:     ToolPin{Latest: "v2.0.0", Checksum: materialized},
+		},
+		{
+			name:     "fresh checksum-only keeps existing latest",
+			existing: ToolPin{Latest: "v1.2.3", Checksum: materialized},
+			fresh:    ToolPin{Checksum: "sha256:" + strings.Repeat("d", 64)},
+			want:     ToolPin{Latest: "v1.2.3", Checksum: "sha256:" + strings.Repeat("d", 64)},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			existing := &Lock{Version: 1, Tools: map[string]ToolPin{"tool/http/0": tc.existing}}
+			fresh := &Lock{Version: 1, Tools: map[string]ToolPin{"tool/http/0": tc.fresh}}
+
+			got := Merge(existing, fresh)
+			if pin := got.Tools["tool/http/0"]; pin != tc.want {
+				t.Fatalf("merged pin = %#v, want %#v", pin, tc.want)
+			}
+		})
+	}
+}
+
+func TestMergeCarriesToolsAbsentFromFresh(t *testing.T) {
+	materialized := "sha256:" + strings.Repeat("c", 64)
+	existing := &Lock{Version: 1,
+		Tools: map[string]ToolPin{
+			"outside/http/0": {Latest: "v9.9.9", Checksum: materialized},
+			"auto/http/0":    {Checksum: materialized},
+		},
+		MethodsHash: map[string]string{"outside": "outside-hash"},
+	}
+	fresh := &Lock{Version: 1,
+		Tools:       map[string]ToolPin{"profiled/http/0": {Checksum: "sha256:" + strings.Repeat("b", 64)}},
+		MethodsHash: map[string]string{"profiled": "profiled-hash"},
+	}
+
+	got := Merge(existing, fresh)
+	if pin := got.Tools["outside/http/0"]; pin != (ToolPin{Latest: "v9.9.9", Checksum: materialized}) {
+		t.Fatalf("outside pin = %#v, want preserved wholesale", pin)
+	}
+	if pin := got.Tools["auto/http/0"]; pin != (ToolPin{Checksum: materialized}) {
+		t.Fatalf("auto pin = %#v, want preserved wholesale", pin)
+	}
+	if _, ok := got.Tools["profiled/http/0"]; !ok {
+		t.Fatal("fresh pin dropped by merge")
+	}
+	// MethodsHash is not merged: the old hash for the absent tool must be
+	// carried by the caller's identity policy, never by Merge itself.
+	if _, ok := got.MethodsHash["outside"]; ok {
+		t.Fatalf("Merge leaked existing MethodsHash entries: %v", got.MethodsHash)
+	}
+}

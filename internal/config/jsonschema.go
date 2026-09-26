@@ -203,7 +203,14 @@ func methodObjectJSONSchema(contract *methodkind.Contract, variantKind string) m
 		"additionalProperties": false,
 	}
 	if capabilities := methodkind.CapabilityNames(contract.Capabilities); len(capabilities) > 0 {
-		schema["description"] = "Method capabilities: " + strings.Join(capabilities, ", ") + "."
+		description := "Method capabilities: " + strings.Join(capabilities, ", ") + "."
+		if contract.Capabilities&methodkind.CapabilityImmutableLock != 0 {
+			// The capability only says a concrete identity mechanism exists.
+			// depengine.lock pins far less than that; never imply otherwise in
+			// editor-facing text (see docs/support-boundary.md).
+			description += " immutable-lock means a pinnable identity exists; depengine.lock currently pins only latest-release references, checksums, and local digests."
+		}
+		schema["description"] = description
 	}
 	if len(required) > 0 {
 		schema["required"] = required

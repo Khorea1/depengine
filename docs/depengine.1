@@ -75,11 +75,11 @@ Revert to a previous state snapshot
 Aliases: rollback.
 .TP
 .B "depengine update [flags]"
-Resolve and pin versions into depengine.lock
+Resolve mutable references and pin them in depengine.lock
 Aliases: lock.
 .TP
 .B "depengine upgrade [flags]"
-Upgrade installed tools to pinned versions
+Upgrade installed tools to the versions pinned in depengine.lock
 .TP
 .B "depengine validate [flags]"
 Validate schema.toml
@@ -350,7 +350,7 @@ path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Sc
 disable personal manifest (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-profile <string>"
-only resolve & pin tools with matching tag Scope: local. Default: .
+only re\-resolve tools with matching tag; other pins from a readable lock are preserved Scope: local. Default: .
 .TP
 .B "\-\-schema <string>"
 path to schema.toml Scope: local. Default: schema.toml.

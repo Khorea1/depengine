@@ -129,10 +129,12 @@ directly when package names differ by distro.
 currently resolve that way, including supported release assets and checksums.
 Lock coverage is not universal yet: package-manager and ecosystem installs may
 still resolve through their own registries at install time. Within the legacy
-lock v1 subset, `--frozen-lockfile` fails closed when the lock is missing or
-unreadable, when method kind/label ordering is detectably stale, or when a
-required release/checksum pin is absent. This includes resolved `*:auto`
-checksums; frozen mode will not perform checksum TOFU to fill a missing pin.
+lock v1 subset, `--frozen-lockfile` fails closed when the lock is missing,
+unreadable, or written for an unsupported lock version; when a tool's method
+identity is missing from the lock or method kind/label ordering is detectably
+stale; or when a required release/checksum pin is absent. This includes
+resolved `*:auto` checksums; frozen mode will not perform checksum TOFU to fill
+a missing pin.
 
 ```sh
 depengine update

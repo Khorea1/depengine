@@ -526,7 +526,7 @@ desktop = true
 
 | Field | Required | Description |
 |-------|----------|--------------|
-| `url` or `repo` + `asset` | yes | Exactly one artifact source. `repo` + `asset` supports `{version}`, `{arch_any}` and `{os_any}` and is pinned in `depengine.lock`. |
+| `url` or `repo` + `asset` | yes | Exactly one artifact source. `repo` + `asset` supports `{version}`, `{arch_any}` and `{os_any}`. Latest releases, implicit or written as `release = "latest"`, are pinned in `depengine.lock`; installation then resolves the asset only within that pinned release, and a `{latest}` placeholder in a literal `url` is pinned the same way. Explicit `release` and `branch` values are left unchanged and are not pinned. |
 | `install_dir` | no | Destination directory. Defaults to `~/.local/bin` (user-scope). There is no separate `system = true` boolean — pointing this at a system path (e.g. `/usr/local/bin`) is how a system-wide install is requested, and `sudo_required` is derived from the path the same way `http` derives it from `extract_to`. |
 | `binary` | no | Final executable name. Defaults to the tool's name. |
 | `scope` | no | Portable installation scope: `"user"` (default) or `"system"`. When set, supplies platform-native install root defaults (`~/.local/share/depengine/tools/<tool>` for user scope) while the adapter creates a PATH link in `~/.local/bin`. |

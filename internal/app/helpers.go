@@ -277,25 +277,12 @@ func saveLockfile(ctx context.Context, s *config.Schema, lockPath string, oldLoc
 	if newLock == nil {
 		return
 	}
+	// lock.Apply concretizes release/checksum selectors before execution, so
+	// ResolveAll may rediscover only one field of an existing composite pin.
+	// Merge field-wise so a normal install cannot silently drop the other
+	// frozen identity, nor drop pins it did not re-resolve.
+	newLock = lock.Merge(oldLock, newLock)
 	if oldLock != nil {
-		for key, oldPin := range oldLock.Tools {
-			newPin, exists := newLock.Tools[key]
-			if !exists {
-				newLock.Tools[key] = oldPin
-				continue
-			}
-			// lock.Apply concretizes release/checksum selectors before execution.
-			// ResolveAll therefore may rediscover only one field of an existing
-			// composite pin. Merge fields independently so a normal install cannot
-			// silently drop the other frozen identity.
-			if newPin.Latest == "" {
-				newPin.Latest = oldPin.Latest
-			}
-			if newPin.Checksum == "" {
-				newPin.Checksum = oldPin.Checksum
-			}
-			newLock.Tools[key] = newPin
-		}
 		// A regular install may persist newly discovered pin fields, but it must
 		// not bless a changed method identity. Preserve hashes for omitted tools
 		// and for detectable method-map drift; an explicit 'depengine update'

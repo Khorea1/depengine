@@ -1,13 +1,28 @@
-// Package lock provides a depengine.lock mechanism for reproducible installations.
+// Package lock persists depengine.lock: the resolved values of the mutable
+// references a schema pins.
 //
-// schema.toml declares intent ("install the latest release of tool X"), while
-// depengine.lock pins the resolved versions so that repeated installs produce the
-// same result — akin to Cargo.lock or package-lock.json.
+// schema.toml declares intent ("install the latest release of tool X");
+// depengine.lock records the concrete values resolved for that intent so
+// later installs substitute them instead of re-resolving them. Lock coverage
+// is method-specific; docs/support-boundary.md is the authoritative boundary.
+// The lock pins:
 //
-// The lock captures resolved {latest} tags for every tool method that uses a
-// GitHub release URL. On subsequent installs the lockfile is read and the pinned
-// tags are substituted directly into the schema's URL fields before the adapters
-// see them. Running `depengine update` force-re-resolves and updates the lock.
+//   - {latest} placeholders in URL templates (the bare version tag, not a
+//     baked URL);
+//   - repo-backed latest GitHub releases (repo present, release empty or
+//     "latest", no branch), resolved through the GitHub releases API;
+//   - checksums, including `:auto` checksums once a non-frozen install has
+//     materialized them (update alone never downloads a payload to compute
+//     one); and
+//   - local artifact content digests.
+//
+// It does NOT pin native/ecosystem package versions, git branches or tags,
+// container tags, or channels — those selectors are outside the legacy lock
+// v1 model. On subsequent installs the lockfile is read and the pinned values
+// are substituted into the schema's method config before the adapters see
+// them. Running `depengine update` re-resolves and merges into the existing
+// lock, so pins the resolution skipped (e.g. a materialized `:auto` checksum)
+// or did not cover (e.g. tools outside --profile) are kept.
 //
 // Pipeline:
 //
@@ -241,6 +256,58 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 	}
 
 	return l, nil
+}
+
+// Merge folds the pins of an existing lock (typically the lock already on
+// disk) into fresh (typically a lock just produced by ResolveAll) and returns
+// the result that callers save.
+//
+// Tool pins merge field by field. For a pin key present in both locks, a
+// non-empty field in fresh wins and an empty field in fresh keeps the value
+// from existing. This matters for composite pins: ResolveAll may rediscover
+// only one field of an existing identity (lock.Apply concretizes release and
+// checksum selectors before execution, and `:auto` checksums are skipped
+// until materialized), so replacing a pin wholesale would silently drop the
+// half it did not re-resolve. Pin keys only present in existing are carried
+// over wholesale — they cover pins ResolveAll deliberately skips and tools
+// the fresh resolution did not cover (e.g. filtered out by --profile). Pin
+// keys only present in fresh are kept as resolved.
+//
+// Ownership and nil behavior: when fresh is non-nil, Merge mutates fresh's
+// Tools map and returns fresh; existing is never modified, and its pin values
+// are copied rather than aliased. When fresh is nil, existing is returned
+// unchanged (nil when both are nil).
+//
+// MethodsHash is intentionally not merged — fresh's map passes through
+// untouched (or existing's, in the fresh-nil case above). Callers apply their
+// own method-identity policy: a regular install must not bless a changed
+// method identity, while `depengine update` accepts the freshly resolved one.
+// That policy belongs to each caller, not to the pin merge.
+func Merge(existing, fresh *Lock) *Lock {
+	if fresh == nil {
+		return existing
+	}
+	if existing == nil {
+		return fresh
+	}
+	if fresh.Tools == nil {
+		fresh.Tools = make(map[string]ToolPin, len(existing.Tools))
+	}
+	for key, oldPin := range existing.Tools {
+		newPin, ok := fresh.Tools[key]
+		if !ok {
+			fresh.Tools[key] = oldPin
+			continue
+		}
+		if newPin.Latest == "" {
+			newPin.Latest = oldPin.Latest
+		}
+		if newPin.Checksum == "" {
+			newPin.Checksum = oldPin.Checksum
+		}
+		fresh.Tools[key] = newPin
+	}
+	return fresh
 }
 
 // ValidateFrozen verifies that a lock can be consumed without silently
