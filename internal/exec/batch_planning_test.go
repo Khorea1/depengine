@@ -30,6 +30,40 @@ func batchProbeTool() *config.Tool {
 	}
 }
 
+type batchIdentityAdapter struct {
+	*executorAdapterV2Double
+	observedPackage     string
+	observedEnvironment string
+}
+
+func (a *batchIdentityAdapter) Observe(ctx context.Context, runner run.Runner, tool *config.Tool, method *config.MethodCandidate) (plan.Observation, error) {
+	a.observedEnvironment, _ = method.Config["environment"].(string)
+	observation, err := a.executorAdapterV2Double.Observe(ctx, runner, tool, method)
+	if err == nil && a.observedPackage != "" {
+		observation.Identity.Package = a.observedPackage
+	}
+	return observation, err
+}
+
+func TestBatchPresenceObservesResolvedEnvironment(t *testing.T) {
+	adapter := &batchIdentityAdapter{executorAdapterV2Double: &executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "conda"}, presence: plan.PresencePresent}}
+	ex := batchProbeExecutor(adapter)
+	method := &config.MethodCandidate{Kind: "conda", Config: map[string]any{"pkg": "demo", "environment": "old"}}
+	tool := &config.Tool{Name: "demo"}
+	resolved := plan.New("demo", "conda", true)
+	resolved.Identity.Environment = &plan.EnvironmentTarget{Kind: plan.EnvironmentNamed, Value: "tools"}
+
+	if _, ok := ex.batchPresence(context.Background(), tool, method, &resolved); !ok {
+		t.Fatal("batchPresence() rejected a valid observation")
+	}
+	if adapter.observedEnvironment != "tools" {
+		t.Fatalf("observed environment = %q, want resolved target %q", adapter.observedEnvironment, "tools")
+	}
+	if got := method.Config["environment"]; got != "old" {
+		t.Fatalf("source method environment changed to %v", got)
+	}
+}
+
 func TestBatchV2ProbeStatesPreserveSerialFallback(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -38,20 +72,25 @@ func TestBatchV2ProbeStatesPreserveSerialFallback(t *testing.T) {
 		wantCandidates int
 		wantRemaining  int
 		wantReport     bool
+		observedPkg    string
 	}{
 		{name: "present", presence: plan.PresencePresent, wantReport: true},
+		{name: "present but drifted", presence: plan.PresencePresent, observedPkg: "other", wantCandidates: 0, wantRemaining: 1},
 		{name: "absent", presence: plan.PresenceAbsent, wantCandidates: 1},
-		{name: "unknown", presence: plan.PresenceUnknown, wantCandidates: 1},
+		{name: "unknown", presence: plan.PresenceUnknown, wantRemaining: 1},
 		{name: "broken", presence: plan.PresenceBroken, wantRemaining: 1},
 		{name: "error", observeErr: errors.New("probe failed"), wantRemaining: 1},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			adapter := &executorAdapterV2Double{
-				testMockAdapter: testMockAdapter{kindValue: "native"},
-				presence:        tt.presence,
-				observeErr:      tt.observeErr,
+			adapter := &batchIdentityAdapter{
+				executorAdapterV2Double: &executorAdapterV2Double{
+					testMockAdapter: testMockAdapter{kindValue: "native"},
+					presence:        tt.presence,
+					observeErr:      tt.observeErr,
+				},
+				observedPackage: tt.observedPkg,
 			}
 			ex := batchProbeExecutor(adapter)
 			report := &ExecReport{}
@@ -78,22 +117,31 @@ func TestVerifyBatchV2OnlyPresentCommitsBatchResult(t *testing.T) {
 		observeErr    error
 		wantRemaining int
 		wantTools     int
+		observedPkg   string
 	}{
 		{name: "present", presence: plan.PresencePresent, wantTools: 1},
+		{name: "present but drifted", presence: plan.PresencePresent, observedPkg: "other", wantRemaining: 1},
 		{name: "absent", presence: plan.PresenceAbsent, wantRemaining: 1},
 		{name: "unknown", presence: plan.PresenceUnknown, wantRemaining: 1},
 		{name: "broken", presence: plan.PresenceBroken, wantRemaining: 1},
 		{name: "error", observeErr: errors.New("probe failed"), wantRemaining: 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			adapter := &executorAdapterV2Double{
-				testMockAdapter: testMockAdapter{kindValue: "native"},
-				presence:        tt.presence,
-				observeErr:      tt.observeErr,
+			adapter := &batchIdentityAdapter{
+				executorAdapterV2Double: &executorAdapterV2Double{
+					testMockAdapter: testMockAdapter{kindValue: "native"},
+					presence:        tt.presence,
+					observeErr:      tt.observeErr,
+				},
+				observedPackage: tt.observedPkg,
 			}
 			ex := batchProbeExecutor(adapter)
 			tool := batchProbeTool()
-			candidate := batchCandidate{toolName: tool.Name, tool: tool, method: tool.Methods[0]}
+			resolved, err := ex.ResolveCandidatePlan(context.Background(), tool, tool.Methods[0])
+			if err != nil {
+				t.Fatalf("ResolveCandidatePlan() error = %v", err)
+			}
+			candidate := batchCandidate{toolName: tool.Name, tool: tool, method: tool.Methods[0], resolvedPlan: resolved}
 			report := &ExecReport{}
 			rc := &runContext{ctx: context.Background(), report: report}
 			remaining := ex.verifyBatchInstall(rc, []batchCandidate{candidate}, nil, nil)

@@ -12,6 +12,7 @@ import (
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
@@ -124,8 +125,14 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
 		return nil
 	}
 
-	ensureUndoNativeAdapter()
-	originalTools, succeeded, hadFailure := removeUndoTools(ctx, toRemove, curState)
+	facts := ensureUndoNativeAdapter()
+	executor := exec.New()
+	exec.WithRunner(run.OSExecRunner{})(executor)
+	if facts != nil {
+		exec.WithFacts(facts)(executor)
+		executor.SetHostContext(engine.ResolveFamily(facts))
+	}
+	originalTools, succeeded, hadFailure := removeUndoTools(ctx, toRemove, curState, executor)
 	return finalizeUndo(ls, curState, snapState, toRemove, originalTools, succeeded, hadFailure)
 }
 
@@ -224,7 +231,7 @@ func resolveUndoMethodKind(toolState state.ToolState) string {
 // ensureUndoNativeAdapter makes the OS-resolved native adapter authoritative,
 // the same way install/upgrade already do, so removal uses the correct
 // check/remove commands for this machine instead of PATH-probing.
-func ensureUndoNativeAdapter() {
+func ensureUndoNativeAdapter() *engine.Facts {
 	// The global "native" adapter (registered in main.go) is constructed
 	// with an empty clan and falls back to PATH-probing, which is ambiguous
 	// for manager binaries shared across clans (e.g. "pkg" on both termux
@@ -234,16 +241,18 @@ func ensureUndoNativeAdapter() {
 	// correct check/remove commands for this machine.
 	if facts, err := engine.GatherFacts(run.OSExecRunner{}); err == nil {
 		exec.Replace(exec.NewNativeAdapter(engine.ResolveFamily(facts)))
+		return facts
 	} else {
 		log.Default.Warn("could not gather OS facts; falling back to PATH-probing for native manager detection", "error", err)
 	}
+	return nil
 }
 
 // removeUndoTools removes each tool via its installing adapter (mirroring
 // remove.go's state-driven Remover shape). It returns a copy of the
 // pre-removal tool map, the per-tool success set, and whether any removal
 // failed. Callers merge state with mergeUndoTools.
-func removeUndoTools(ctx context.Context, toRemove []string, curState *state.State) (map[string]state.ToolState, map[string]bool, bool) {
+func removeUndoTools(ctx context.Context, toRemove []string, curState *state.State, executor *exec.Executor) (map[string]state.ToolState, map[string]bool, bool) {
 	// Capture original state before removal, so failed tools can be preserved.
 	originalTools := make(map[string]state.ToolState, len(curState.Tools))
 	for k, v := range curState.Tools {
@@ -258,15 +267,9 @@ func removeUndoTools(ctx context.Context, toRemove []string, curState *state.Sta
 
 		methodKind := resolveUndoMethodKind(toolState)
 
-		adapter := exec.Lookup(methodKind)
+		adapter := executor.LookupAdapter(methodKind)
 		if adapter == nil {
 			log.Default.Warn("adapter not found — manual removal may be needed", "tool", name, "method", toolState.Method, "methodKind", methodKind)
-			hadFailure = true
-			continue
-		}
-
-		if !adapter.CanRemove() {
-			log.Default.Warn("adapter does not support automated removal — manual removal needed", "tool", name, "method", toolState.Method, "methodKind", methodKind)
 			hadFailure = true
 			continue
 		}
@@ -276,9 +279,40 @@ func removeUndoTools(ctx context.Context, toRemove []string, curState *state.Sta
 			Config: toolState.Config,
 		}
 		tool := &config.Tool{Name: name}
+		resolved, verification, err := executor.ResolveAndVerifyCandidate(ctx, tool, mc)
+		if err != nil {
+			log.Default.Error("verify removal target during undo", "tool", name, "error", err)
+			hadFailure = true
+			continue
+		}
+		if resolved == nil {
+			log.Default.Error("verify removal target during undo", "tool", name, "error", "resolved plan is missing")
+			hadFailure = true
+			continue
+		}
+		switch verification.State {
+		case plan.StateAbsent:
+			log.Default.Info("tracked target already absent during undo", "tool", name)
+			succeeded[name] = true
+			continue
+		case plan.StateSatisfied, plan.StateDrifted:
+			if !adapter.CanRemove() {
+				log.Default.Warn("adapter does not support automated removal — manual removal needed", "tool", name, "method", toolState.Method, "methodKind", methodKind)
+				hadFailure = true
+				continue
+			}
+		case plan.StateUnknown, plan.StateBroken:
+			log.Default.Error("cannot safely remove target during undo", "tool", name, "state", verification.State, "detail", verification.Detail)
+			hadFailure = true
+			continue
+		default:
+			log.Default.Error("cannot safely remove target during undo", "tool", name, "state", verification.State)
+			hadFailure = true
+			continue
+		}
 
-		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-		if err := adapter.Remove(ctx, run.OSExecRunner{}, tool, mc); err != nil {
+		removeCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		if err := executor.RemoveResolvedCandidate(removeCtx, run.OSExecRunner{}, tool, mc, resolved); err != nil {
 			log.Default.Error("remove failed during undo", "tool", name, "error", err)
 			hadFailure = true
 			cancel()

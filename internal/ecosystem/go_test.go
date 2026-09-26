@@ -24,6 +24,23 @@ func goFixturePath(binDir, name string) string {
 	return filepath.Join(binDir, name)
 }
 
+func TestGoObserveFindsInstallTargetOutsidePATH(t *testing.T) {
+	binDir := t.TempDir()
+	t.Setenv("GOBIN", binDir)
+	tool := &config.Tool{Name: "gostr"}
+	method := &config.MethodCandidate{Kind: "go", Config: map[string]any{"pkg": "golang.org/x/tools/cmd/stringer"}}
+	if err := os.WriteFile(goFixturePath(binDir, "stringer"), []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	observation, err := NewGoAdapter().Observe(context.Background(), &run.FakeRunner{ExitCode: 1}, tool, method)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observation.Presence != plan.PresencePresent || observation.Identity.Package != "golang.org/x/tools/cmd/stringer" {
+		t.Fatalf("Observe() = %+v, want installed package from GOBIN", observation)
+	}
+}
+
 func TestGoBinaryName(t *testing.T) {
 	cases := []struct {
 		importPath string

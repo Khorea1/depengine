@@ -245,6 +245,9 @@ func (w *winAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Too
 	}
 	cmd := SubstitutePkg(w.removeCmd, tool, mc)
 	if w.kind == "scoop" {
+		if bucket, _ := mc.Config["bucket"].(string); bucket != "" {
+			cmd[len(cmd)-1] = bucket + "/" + packageName(tool, mc)
+		}
 		if scope, _ := mc.Config["scope"].(string); scope == "global" {
 			cmd = append(cmd, "--global")
 		}

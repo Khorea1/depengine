@@ -313,6 +313,18 @@ func TestWinAdapterRemove(t *testing.T) {
 		}
 	})
 
+	t.Run("scoop remove command uses bucket-qualified package", func(t *testing.T) {
+		fr := &run.FakeRunner{ExitCode: 0}
+		a := lookupWinAdapter("scoop")
+		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "fd", "bucket": "main"}}
+		if err := a.Remove(ctx, fr, tool, mc); err != nil {
+			t.Fatalf("Remove() error = %v", err)
+		}
+		if got := fr.Calls[0].Args; len(got) < 2 || got[0] != "uninstall" || got[1] != "main/fd" {
+			t.Fatalf("Scoop remove args = %v, want uninstall main/fd", got)
+		}
+	})
+
 	t.Run("choco remove succeeds", func(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 0}
 		a := lookupWinAdapter("choco")
@@ -554,7 +566,7 @@ func TestScoopTypedIdentityAndDesiredState(t *testing.T) {
 	if err := a.Remove(context.Background(), remove, tool, mc); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
-	if !slices.Equal(remove.Calls[0].Args, []string{"uninstall", "git", "--global"}) {
+	if !slices.Equal(remove.Calls[0].Args, []string{"uninstall", "main/git", "--global"}) {
 		t.Fatalf("remove args = %v", remove.Calls[0].Args)
 	}
 }

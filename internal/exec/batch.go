@@ -86,7 +86,7 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 				resolutions[toolName] = resolution
 				break
 			}
-			presence, ok := ex.batchPresence(toolCtx, adapter, toolName, tool, method)
+			verification, ok := ex.batchPresence(toolCtx, tool, method, resolvedPlan)
 			if !ok {
 				// A failed or broken V2 observation is not evidence that the
 				// package is absent. Leave the candidate to the serial path,
@@ -94,12 +94,16 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 				resolutions[toolName] = resolution
 				break
 			}
-			if presence == plan.PresencePresent {
+			if verification.State == plan.StateSatisfied {
 				ex.recordToolResult(toolCtx, &ToolResult{
 					Tool: toolName, Status: StatusAlready, Method: displayMethodKind(method),
 					MethodKind: method.Kind, Config: method.Config, PlanIntent: resolvedPlan,
 				}, report)
 				foundNative = true
+				break
+			}
+			if verification.State != plan.StateAbsent {
+				resolutions[toolName] = resolution
 				break
 			}
 			if !checkAvailable(toolCtx, ex.probeRunner(toolName, method.Kind), adapter, tool, method) {
@@ -117,23 +121,15 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 	return candidates, remaining, resolutions
 }
 
-// batchPresence returns false for a failed, broken, or invalid observation,
-// making the caller fall back to serial execution.
-func (ex *Executor) batchPresence(ctx context.Context, adapter AdapterV2, toolName string, tool *config.Tool, method *config.MethodCandidate) (plan.PresenceState, bool) {
-	if adapter == nil {
-		return "", false
-	}
-	runner := ex.probeRunner(toolName, method.Kind)
-	observation, err := adapter.Observe(ctx, runner, tool, method)
+// batchPresence observes the target projected from the resolved plan and
+// reconciles its identity. Failed, broken, or invalid observations fall back
+// to serial execution.
+func (ex *Executor) batchPresence(ctx context.Context, tool *config.Tool, method *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) (plan.VerificationResult, bool) {
+	verification, err := ex.VerifyResolvedCandidate(ctx, tool, method, resolved)
 	if err != nil {
-		return "", false
+		return plan.VerificationResult{}, false
 	}
-	switch observation.Presence {
-	case plan.PresencePresent, plan.PresenceAbsent, plan.PresenceUnknown:
-		return observation.Presence, true
-	default:
-		return "", false
-	}
+	return verification, true
 }
 
 func displayMethodKind(method *config.MethodCandidate) string {
