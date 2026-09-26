@@ -2,6 +2,7 @@ package httpdownload
 
 import (
 	"archive/tar"
+	"bytes"
 	"archive/zip"
 	"context"
 	"io"
@@ -50,13 +51,10 @@ func TestSafeArchiveRelative(t *testing.T) {
 	}
 }
 
-func writePlainTar(t *testing.T, archivePath string, entries []tarEntry) {
+func plainTarBytes(t *testing.T, entries []tarEntry) []byte {
 	t.Helper()
-	f, err := os.Create(archivePath) // #nosec G304 -- archivePath is test-controlled under t.TempDir.
-	if err != nil {
-		t.Fatal(err)
-	}
-	tw := tar.NewWriter(f)
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
 	for _, entry := range entries {
 		hdr := entry.header
 		hdr.Size = int64(len(entry.body))
@@ -64,21 +62,23 @@ func writePlainTar(t *testing.T, archivePath string, entries []tarEntry) {
 			hdr.Typeflag = tar.TypeReg
 		}
 		if err := tw.WriteHeader(&hdr); err != nil {
-			_ = f.Close()
 			t.Fatal(err)
 		}
 		if len(entry.body) > 0 {
 			if _, err := tw.Write(entry.body); err != nil {
-				_ = f.Close()
 				t.Fatal(err)
 			}
 		}
 	}
 	if err := tw.Close(); err != nil {
-		_ = f.Close()
 		t.Fatal(err)
 	}
-	if err := f.Close(); err != nil {
+	return buf.Bytes()
+}
+
+func writePlainTar(t *testing.T, archivePath string, entries []tarEntry) {
+	t.Helper()
+	if err := os.WriteFile(archivePath, plainTarBytes(t, entries), 0o600); err != nil { // #nosec G304 -- archivePath is test-controlled under t.TempDir.
 		t.Fatal(err)
 	}
 }
