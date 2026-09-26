@@ -218,7 +218,7 @@ func (m *rootedArchiveMaterializer) writeFile(ctx context.Context, name string, 
 	if exactSize >= 0 {
 		_, copyErr = io.CopyN(m.budget.writer(out), reader, exactSize)
 	} else {
-		_, copyErr = io.Copy(m.budget.writer(out), reader)
+		_, copyErr = io.Copy(m.budget.writer(out), reader) // #nosec G110 -- aggregate expanded bytes are capped by archiveExpansionLimit.
 	}
 	closeErr := out.Close()
 	if copyErr != nil || closeErr != nil {
