@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/Khorea1/depengine/internal/run"
 )
 
 const (
@@ -345,6 +347,45 @@ func extractNativeTar(ctx context.Context, src, dest, ext string) (retErr error)
 		}
 	}()
 
+	return extractTarStream(ctx, r, dest)
+}
+
+// extractExternalTar delegates only decompression to an external decoder.
+// The child receives the archive path but never the destination path; all TAR
+// parsing and filesystem mutation remains inside extractTarStream and os.Root.
+func extractExternalTar(ctx context.Context, src, dest, ext string, rn run.Runner) (retErr error) {
+	name, args, err := externalTarDecoder(src, ext)
+	if err != nil {
+		return fmt.Errorf("tar: %w", err)
+	}
+	pipe, err := run.OpenStdoutPipe(ctx, rn, name, args...)
+	if err != nil {
+		return fmt.Errorf("tar: start %s decoder: %w", name, err)
+	}
+	defer func() {
+		if retErr != nil {
+			_ = pipe.Abort()
+		}
+		if closeErr := pipe.Reader.Close(); retErr == nil && closeErr != nil {
+			retErr = fmt.Errorf("tar: close %s decoder stdout: %w", name, closeErr)
+		}
+	}()
+
+	extractErr := extractTarStream(ctx, pipe.Reader, dest)
+	if extractErr != nil {
+		_ = pipe.Abort()
+	}
+	result := pipe.Wait()
+	if extractErr != nil {
+		return extractErr
+	}
+	if err := run.CheckResult(result, name+" decoder"); err != nil {
+		return fmt.Errorf("tar: %w", err)
+	}
+	return nil
+}
+
+func extractTarStream(ctx context.Context, r io.Reader, dest string) (retErr error) {
 	m, err := openRootedArchiveMaterializer(dest)
 	if err != nil {
 		return fmt.Errorf("tar: %w", err)

@@ -1,7 +1,7 @@
 # Go-native design opportunities
 
 Status: research note  
-Last reviewed: 2026-09-25
+Last reviewed: 2026-09-26
 
 This note explores how depengine can make fuller use of Go as a platform, not
 just as an implementation language.
@@ -62,10 +62,11 @@ Implementation status (2026-09-26): the offline/local archive installer now
 opens its staging directory with `os.OpenRoot` and performs archive directory
 creation, file creation, final directory chmods, and metadata-marker writes
 through that rooted capability. The existing portable-name, collision, type,
-and expansion-budget checks remain in front of the filesystem boundary. HTTP
-ZIP, TAR, gzip/TGZ, and bzip2-compressed TAR archives now materialize through
-the same rooted Go boundary; XZ/Zstd subprocess TAR extraction and other
-materialization paths remain to be audited.
+and expansion-budget checks remain in front of the filesystem boundary. Every
+HTTP archive format now materializes through the same rooted Go boundary.
+ZIP/TAR/gzip/bzip2 are decoded in-process; XZ/Zstd subprocesses are restricted
+to streaming decompression and never receive the extraction destination.
+Other materialization paths remain to be audited.
 
 ### Why it fits depengine
 
@@ -840,8 +841,8 @@ methods.
 ### Phase A: correctness and security
 
 1. Continue the archive/materialization audit for `os.Root`: local/offline
-   archives plus HTTP ZIP/TAR/gzip/bzip2 extraction are rooted; XZ/Zstd
-   subprocess extraction and other paths remain.
+   archives and all HTTP ZIP/TAR variants are rooted; other materialization
+   paths remain.
 2. Finish semantic download error coverage (checksum mismatch and Go HTTP
    status are implemented; external downloader/transport classification remains).
 3. Keep retry/error policy free of `err.Error()` text classification.
