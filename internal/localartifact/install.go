@@ -28,7 +28,7 @@ const (
 	// huge numbers of empty files or directories.
 	archiveEntryLimit = 100_000
 	// Path limits bound allocation and traversal work independently of bytes.
-	archivePathByteLimit = 4096
+	archivePathByteLimit  = 4096
 	archivePathDepthLimit = 256
 )
 
@@ -280,8 +280,17 @@ func installArchive(source *os.File, sourceSize int64, projectPath, checksum, de
 		_ = os.RemoveAll(stage)
 		return fmt.Errorf("set archive staging root permissions: %w", err)
 	}
+	stageRoot, err := os.OpenRoot(stage)
+	if err != nil {
+		_ = os.RemoveAll(stage)
+		return fmt.Errorf("open archive staging root: %w", err)
+	}
+	rootClosed := false
 	committed := false
 	defer func() {
+		if !rootClosed {
+			_ = stageRoot.Close()
+		}
 		if !committed {
 			_ = os.RemoveAll(stage)
 		}
@@ -290,26 +299,24 @@ func installArchive(source *os.File, sourceSize int64, projectPath, checksum, de
 	var directoryModes map[string]os.FileMode
 	switch ext {
 	case ".zip":
-		directoryModes, err = extractZip(source, sourceSize, stage)
+		directoryModes, err = extractZip(source, sourceSize, stageRoot)
 	default:
-		directoryModes, err = extractTar(source, stage, ext == ".tar.gz" || ext == ".tgz")
+		directoryModes, err = extractTar(source, stageRoot, ext == ".tar.gz" || ext == ".tgz")
 	}
 	if err != nil {
 		return err
 	}
 	for _, reserved := range []string{archiveChecksumMarker, archiveTreeMarker} {
-		marker := filepath.Join(stage, reserved)
-		if _, err := os.Lstat(marker); err == nil {
+		if _, err := stageRoot.Lstat(reserved); err == nil {
 			return fmt.Errorf("local archive contains reserved metadata entry %q", reserved)
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("inspect local archive metadata marker %q: %w", reserved, err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(stage, archiveChecksumMarker), []byte(checksum+"\n"), 0o644); err != nil {
+	if err := stageRoot.WriteFile(archiveChecksumMarker, []byte(checksum+"\n"), 0o644); err != nil {
 		return fmt.Errorf("write local archive metadata marker: %w", err)
 	}
-	treeMarkerPath := filepath.Join(stage, archiveTreeMarker)
-	treeMarker, err := os.OpenFile(treeMarkerPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	treeMarker, err := stageRoot.OpenFile(archiveTreeMarker, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("create local archive tree marker: %w", err)
 	}
@@ -319,7 +326,7 @@ func installArchive(source *os.File, sourceSize int64, projectPath, checksum, de
 			_ = treeMarker.Close()
 		}
 	}()
-	if err := applyArchiveDirectoryModes(directoryModes); err != nil {
+	if err := applyArchiveDirectoryModes(stageRoot, directoryModes); err != nil {
 		return err
 	}
 	treeChecksum, err := checksumDirectoryPayload(stage)
@@ -336,6 +343,10 @@ func installArchive(source *os.File, sourceSize int64, projectPath, checksum, de
 		return fmt.Errorf("close local archive tree marker: %w", err)
 	}
 	markerClosed = true
+	if err := stageRoot.Close(); err != nil {
+		return fmt.Errorf("close archive staging root: %w", err)
+	}
+	rootClosed = true
 	if err := replacePath(stage, destination); err != nil {
 		return err
 	}
@@ -586,9 +597,12 @@ func replacePathWithOps(stage, destination string, ops replacePathOps) error {
 	return nil
 }
 
-func extractZip(source *os.File, sourceSize int64, destination string) (map[string]os.FileMode, error) {
+func extractZip(source *os.File, sourceSize int64, destination *os.Root) (map[string]os.FileMode, error) {
 	if source == nil {
 		return nil, fmt.Errorf("open local zip: verified source is required")
+	}
+	if destination == nil {
+		return nil, fmt.Errorf("open local zip: destination root is required")
 	}
 	r, err := zip.NewReader(source, sourceSize)
 	if err != nil {
@@ -604,7 +618,7 @@ func extractZip(source *os.File, sourceSize int64, destination string) (map[stri
 		if entry.Mode()&os.ModeSymlink != 0 {
 			return nil, fmt.Errorf("local archive entry %q is a symlink", entry.Name)
 		}
-		target, err := safeArchiveTarget(destination, entry.Name)
+		target, err := safeArchiveRelative(entry.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -616,7 +630,7 @@ func extractZip(source *os.File, sourceSize int64, destination string) (map[stri
 			if err != nil {
 				return nil, fmt.Errorf("archive directory %q: %w", entry.Name, err)
 			}
-			if err := os.MkdirAll(target, mode|0o700); err != nil {
+			if err := destination.MkdirAll(target, mode|0o700); err != nil {
 				return nil, fmt.Errorf("create archive directory %q: %w", entry.Name, err)
 			}
 			directoryModes[target] = mode
@@ -629,14 +643,14 @@ func extractZip(source *os.File, sourceSize int64, destination string) (map[stri
 		if err != nil {
 			return nil, fmt.Errorf("archive file %q: %w", entry.Name, err)
 		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		if err := destination.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return nil, fmt.Errorf("create archive parent %q: %w", entry.Name, err)
 		}
 		rc, err := entry.Open()
 		if err != nil {
 			return nil, fmt.Errorf("open archive entry %q: %w", entry.Name, err)
 		}
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, fileMode)
+		out, err := destination.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, fileMode)
 		if err != nil {
 			_ = rc.Close()
 			return nil, fmt.Errorf("create archive entry %q: %w", entry.Name, err)
@@ -655,9 +669,12 @@ func extractZip(source *os.File, sourceSize int64, destination string) (map[stri
 	return directoryModes, nil
 }
 
-func extractTar(source *os.File, destination string, gzipped bool) (map[string]os.FileMode, error) {
+func extractTar(source *os.File, destination *os.Root, gzipped bool) (map[string]os.FileMode, error) {
 	if source == nil {
 		return nil, fmt.Errorf("open local tar: verified source is required")
+	}
+	if destination == nil {
+		return nil, fmt.Errorf("open local tar: destination root is required")
 	}
 	if _, err := source.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("rewind local tar: %w", err)
@@ -688,7 +705,7 @@ func extractTar(source *os.File, destination string, gzipped bool) (map[string]o
 		if err := budget.accountEntry(hdr.Name); err != nil {
 			return nil, fmt.Errorf("local archive entry %q: %w", hdr.Name, err)
 		}
-		target, err := safeArchiveTarget(destination, hdr.Name)
+		target, err := safeArchiveRelative(hdr.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -712,7 +729,7 @@ func extractTar(source *os.File, destination string, gzipped bool) (map[string]o
 			if err != nil {
 				return nil, fmt.Errorf("archive directory %q: %w", hdr.Name, err)
 			}
-			if err := os.MkdirAll(target, mode|0o700); err != nil {
+			if err := destination.MkdirAll(target, mode|0o700); err != nil {
 				return nil, fmt.Errorf("create archive directory %q: %w", hdr.Name, err)
 			}
 			directoryModes[target] = mode
@@ -725,10 +742,10 @@ func extractTar(source *os.File, destination string, gzipped bool) (map[string]o
 			if err != nil {
 				return nil, fmt.Errorf("archive file %q: %w", hdr.Name, err)
 			}
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			if err := destination.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return nil, fmt.Errorf("create archive parent %q: %w", hdr.Name, err)
 			}
-			out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, fileMode)
+			out, err := destination.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, fileMode)
 			if err != nil {
 				return nil, fmt.Errorf("create archive entry %q: %w", hdr.Name, err)
 			}
@@ -790,7 +807,10 @@ func validatedArchiveDirectoryMode(mode os.FileMode) (os.FileMode, error) {
 	return mode, nil
 }
 
-func applyArchiveDirectoryModes(modes map[string]os.FileMode) error {
+func applyArchiveDirectoryModes(root *os.Root, modes map[string]os.FileMode) error {
+	if root == nil {
+		return errors.New("archive destination root is required")
+	}
 	paths := make([]string, 0, len(modes))
 	for path := range modes {
 		paths = append(paths, path)
@@ -804,7 +824,7 @@ func applyArchiveDirectoryModes(modes map[string]os.FileMode) error {
 		return strings.Compare(a, b)
 	})
 	for _, path := range paths {
-		if err := os.Chmod(path, modes[path]); err != nil {
+		if err := root.Chmod(path, modes[path]); err != nil {
 			return fmt.Errorf("set final archive directory permissions %q: %w", path, err)
 		}
 	}
@@ -812,6 +832,19 @@ func applyArchiveDirectoryModes(modes map[string]os.FileMode) error {
 }
 
 func safeArchiveTarget(root, name string) (string, error) {
+	clean, err := safeArchiveRelative(name)
+	if err != nil {
+		return "", err
+	}
+	target := filepath.Join(root, clean)
+	rel, err := filepath.Rel(root, target)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("local archive entry %q escapes destination", name)
+	}
+	return target, nil
+}
+
+func safeArchiveRelative(name string) (string, error) {
 	if name == "" || strings.ContainsRune(name, '\x00') {
 		return "", fmt.Errorf("local archive contains invalid entry name")
 	}
@@ -836,12 +869,7 @@ func safeArchiveTarget(root, name string) (string, error) {
 	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) || filepath.IsAbs(clean) {
 		return "", fmt.Errorf("local archive entry %q escapes destination", name)
 	}
-	target := filepath.Join(root, clean)
-	rel, err := filepath.Rel(root, target)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("local archive entry %q escapes destination", name)
-	}
-	return target, nil
+	return clean, nil
 }
 
 func isReservedArchiveMetadataName(name string) bool {

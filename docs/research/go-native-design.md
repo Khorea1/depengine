@@ -58,6 +58,14 @@ maintainability, or performance discipline.
 
 ## 1. Treat `os.Root` as a filesystem security boundary
 
+Implementation status (2026-09-26): the offline/local archive installer now
+opens its staging directory with `os.OpenRoot` and performs archive directory
+creation, file creation, final directory chmods, and metadata-marker writes
+through that rooted capability. The existing portable-name, collision, type,
+and expansion-budget checks remain in front of the filesystem boundary. HTTP
+archive staging already uses rooted copies for stripped payloads; subprocess
+`tar`/`unzip` extraction and other materialization paths remain to be audited.
+
 ### Why it fits depengine
 
 depengine consumes paths and archives that may originate from project
@@ -830,7 +838,9 @@ methods.
 
 ### Phase A: correctness and security
 
-1. Audit archive/materialization paths for conversion to `os.Root`.
+1. Continue the archive/materialization audit for `os.Root`: local/offline
+   archive extraction is rooted; subprocess HTTP extraction and other paths
+   remain.
 2. Finish semantic download error coverage (checksum mismatch and Go HTTP
    status are implemented; external downloader/transport classification remains).
 3. Keep retry/error policy free of `err.Error()` text classification.
