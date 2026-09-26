@@ -52,7 +52,7 @@ func TestSafeArchiveRelative(t *testing.T) {
 
 func writePlainTar(t *testing.T, archivePath string, entries []tarEntry) {
 	t.Helper()
-	f, err := os.Create(archivePath)
+	f, err := os.Create(archivePath) // #nosec G304 -- archivePath is test-controlled under t.TempDir.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestExtractTarNative(t *testing.T) {
 	if len(fr.Calls) != 0 {
 		t.Fatalf("native TAR extraction invoked subprocesses: %+v", fr.Calls)
 	}
-	data, err := os.ReadFile(filepath.Join(dest, "bin", "tool"))
+	data, err := os.ReadFile(filepath.Join(dest, "bin", "tool")) // #nosec G304 -- dest is test-controlled under t.TempDir.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestNativeArchiveExtractionRejectsPreexistingSymlinkPivot(t *testing.T) {
 			ext:  ".zip",
 			write: func(t *testing.T, archivePath string) {
 				t.Helper()
-				f, err := os.Create(archivePath)
+				f, err := os.Create(archivePath) // #nosec G304 -- archivePath is test-controlled under t.TempDir.
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -170,10 +170,10 @@ func TestNativeArchiveExtractionRejectsPreexistingSymlinkPivot(t *testing.T) {
 			root := t.TempDir()
 			dest := filepath.Join(root, "dest")
 			outside := filepath.Join(root, "outside")
-			if err := os.Mkdir(dest, 0o755); err != nil {
+			if err := os.Mkdir(dest, 0o700); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.Mkdir(outside, 0o755); err != nil {
+			if err := os.Mkdir(outside, 0o700); err != nil {
 				t.Fatal(err)
 			}
 			if err := os.Symlink(outside, filepath.Join(dest, "pivot")); err != nil {
@@ -279,7 +279,7 @@ func TestNativeArchiveDirectoryModeAppliedAfterChildren(t *testing.T) {
 	})
 
 	dest := filepath.Join(dir, "dest")
-	t.Cleanup(func() { _ = os.Chmod(filepath.Join(dest, "locked"), 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(dest, "locked"), 0o700) })
 	if err := Extract(context.Background(), src, dest, ".tar", &run.FakeRunner{}, false, ""); err != nil {
 		t.Fatalf("Extract() error = %v", err)
 	}
@@ -290,7 +290,7 @@ func TestNativeArchiveDirectoryModeAppliedAfterChildren(t *testing.T) {
 	if info.Mode().Perm() != 0o555 {
 		t.Fatalf("directory mode = %o, want 555", info.Mode().Perm())
 	}
-	if _, err := os.ReadFile(filepath.Join(dest, "locked", "tool")); err != nil {
+	if _, err := os.ReadFile(filepath.Join(dest, "locked", "tool")); err != nil { // #nosec G304 -- dest is test-controlled under t.TempDir.
 		t.Fatalf("child file was not materialized before final directory chmod: %v", err)
 	}
 }
