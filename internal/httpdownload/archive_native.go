@@ -147,7 +147,7 @@ type rootedArchiveMaterializer struct {
 }
 
 func openRootedArchiveMaterializer(dest string) (*rootedArchiveMaterializer, error) {
-	root, err := os.OpenRoot(dest)
+	root, err := os.OpenRoot(dest) // #nosec G304 -- dest is the explicit extraction root selected by depengine.
 	if err != nil {
 		return nil, fmt.Errorf("open archive destination root: %w", err)
 	}
@@ -264,7 +264,7 @@ func (m *rootedArchiveMaterializer) applyDirectoryModes() error {
 }
 
 func extractNativeZip(ctx context.Context, src, dest string) (retErr error) {
-	f, err := os.Open(src)
+	f, err := os.Open(src) // #nosec G304 -- src is the depengine-managed downloaded archive path.
 	if err != nil {
 		return fmt.Errorf("zip: open %s: %w", src, err)
 	}
@@ -335,7 +335,7 @@ func extractNativeZip(ctx context.Context, src, dest string) (retErr error) {
 }
 
 func extractNativeTar(ctx context.Context, src, dest string) (retErr error) {
-	f, err := os.Open(src)
+	f, err := os.Open(src) // #nosec G304 -- src is the depengine-managed downloaded archive path.
 	if err != nil {
 		return fmt.Errorf("tar: open %s: %w", src, err)
 	}
