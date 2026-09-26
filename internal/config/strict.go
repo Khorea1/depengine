@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -466,8 +467,24 @@ func validateSources(raw any, path string, errs *[]string) {
 		}
 		if rawRef, exists := m["secret_ref"]; exists {
 			validateSecretReference(rawRef, p+".secret_ref", errs)
+			switch kind {
+			case "apt-ppa", "dnf-copr":
+				*errs = append(*errs, p+".secret_ref: unsupported for source kind "+kind)
+			case "scoop-bucket", "brew-tap":
+				rawURL, exists := m["url"]
+				if !exists {
+					*errs = append(*errs, p+".url: required when "+p+".secret_ref is set")
+				} else if sourceURL, ok := rawURL.(string); ok && !validSourceSecretURL(sourceURL) {
+					*errs = append(*errs, p+".url: secret_ref requires a credential-free HTTPS URL without query or fragment")
+				}
+			}
 		}
 	}
+}
+
+func validSourceSecretURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil && u.RawQuery == "" && u.Fragment == ""
 }
 
 func validateSecretReference(raw any, path string, errs *[]string) {

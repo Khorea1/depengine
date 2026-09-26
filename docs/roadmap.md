@@ -1,6 +1,6 @@
 # Roadmap
 
-Long-lived unfinished work. Last reviewed: 2026-09-24.
+Long-lived unfinished work. Last reviewed: 2026-09-26.
 
 Work on the current execution model comes before adding more installer types.
 
@@ -9,22 +9,19 @@ Work on the current execution model comes before adding more installer types.
 - [x] Reject ignored adapter fields and cover every meaningful field with a
   behavior test. Static resolution, validation effects, and differential
   execution and verification probes cover every declared field.
-- [~] Add typed secret references to planning and runtime resolution. Runtime
-  resolution now supports env-backed credentials for Git-backed `brew-tap` and
-  `scoop-bucket` source preparation plus request-scoped env-backed Bearer tokens
-  for typed `http`, `appimage`, `android`, and `msi` primary artifact,
-  explicit checksum, and signature downloads,
-  typed GitHub release/API and asset authentication, and origin-scoped Bearer
-  authentication for private HTTPS `git` clone/fetch/same-origin recursive
-  submodules plus private HTTPS `cargo.git` prefetch before local Cargo install,
-  and temporary registry auth files for typed Docker/Podman image pulls.
-  Typed HTTP Bearer transports reject remote plaintext HTTP both during static
-  validation and again at the request boundary (loopback HTTP remains allowed).
-  Typed env-backed secret sources are excluded from child process environments
-  across probes, hooks, preparation, and execution; removal requires `--schema`
-  for the same exclusion because state does not retain reference names.
-  Other authenticated operations still need an explicit credential transport
-  before they can be accepted.
+- [x] Add typed secret references to planning and runtime resolution for the
+  supported transports: Git-backed `brew-tap` and `scoop-bucket` source setup;
+  request-scoped Bearer credentials for `http`, `appimage`, `android`, and `msi`
+  artifact, explicit checksum, and signature downloads; GitHub release/API and
+  asset authentication; origin-scoped Bearer credentials for private HTTPS
+  `git` clone/fetch/same-origin recursive submodules and `cargo.git` prefetch;
+  and temporary registry auth files for Docker/Podman pulls. References resolve
+  at the reached operation and fail closed when missing, empty, invalid, or
+  unsupported. Authenticated HTTP rejects remote plaintext HTTP (loopback is
+  allowed). Env-backed secret sources are excluded from child environments;
+  removal needs `--schema` for the same exclusion because state does not retain
+  reference names. Unsupported authenticated operations remain rejected until
+  an explicit credential transport is defined.
 - [x] Restore fuzzing as a reliable CI gate. The CI manifest is checked
   against Go's runtime test listing, then every runnable target gets a bounded
   fuzz run; missing, renamed, newly added, or build-tagged-out targets fail.
