@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -65,6 +66,75 @@ func omittedEnvName(name string) string {
 // processes, and must never mutate global state.
 type Runner interface {
 	Run(ctx context.Context, name string, args ...string) Result
+}
+
+// StdoutPipe represents one running child whose stdout is consumed as a
+// stream instead of being captured in memory. Callers must drain Reader or
+// call Abort before Wait. Wait is idempotent and returns the same Result on
+// every call; streamed stdout is intentionally absent from Result.Stdout.
+type StdoutPipe struct {
+	Reader io.ReadCloser
+
+	wait     func() Result
+	abort    func() error
+	waitOnce sync.Once
+	result   Result
+}
+
+// Wait waits for the streaming child to exit and returns its normalized
+// process result. It is safe to call more than once.
+func (p *StdoutPipe) Wait() Result {
+	if p == nil {
+		return Result{Err: errors.New("stdout pipe is nil")}
+	}
+	p.waitOnce.Do(func() {
+		if p.wait == nil {
+			p.result = Result{Err: errors.New("stdout pipe has no wait function")}
+			return
+		}
+		p.result = p.wait()
+	})
+	return p.result
+}
+
+// Abort closes the stdout reader and asks the runner to terminate the child
+// process tree. It is intended for consumers that reject the stream before
+// EOF and therefore must not leave the producer blocked on a full pipe.
+func (p *StdoutPipe) Abort() error {
+	if p == nil {
+		return nil
+	}
+	if p.Reader != nil {
+		_ = p.Reader.Close()
+	}
+	if p.abort == nil {
+		return nil
+	}
+	err := p.abort()
+	if errors.Is(err, os.ErrProcessDone) {
+		return nil
+	}
+	return err
+}
+
+// StdoutPipeRunner is an optional Runner capability for commands whose stdout
+// must be consumed incrementally. It keeps subprocess creation behind the same
+// execution boundary as Run while avoiding unbounded capture of binary data.
+type StdoutPipeRunner interface {
+	OpenStdoutPipe(ctx context.Context, name string, args ...string) (*StdoutPipe, error)
+}
+
+// OpenStdoutPipe opens a streaming stdout command through rn. Runners that do
+// not expose the capability fail closed rather than bypassing the Runner seam.
+func OpenStdoutPipe(ctx context.Context, rn Runner, name string, args ...string) (*StdoutPipe, error) {
+	if rn == nil {
+		return nil, errors.New("stdout streaming requires a runner")
+	}
+	streamer, ok := rn.(StdoutPipeRunner)
+	if !ok {
+		return nil, errors.New("runner does not support stdout streaming")
+	}
+	return streamer.OpenStdoutPipe(ctx, name, args...)
 }
 
 // EnvironmentRunner accepts environment overrides for one child process.
@@ -139,6 +209,10 @@ func (r BlockedRunner) blocked() Result {
 
 func (r BlockedRunner) Run(context.Context, string, ...string) Result {
 	return r.blocked()
+}
+
+func (r BlockedRunner) OpenStdoutPipe(context.Context, string, ...string) (*StdoutPipe, error) {
+	return nil, r.blocked().Err
 }
 
 func (r BlockedRunner) RunWithEnv(context.Context, map[string]string, []string, string, ...string) Result {
@@ -232,6 +306,36 @@ func (r OSExecRunner) Run(ctx context.Context, name string, args ...string) Resu
 	return runCommand(ctx, r.Stream, "", nil, name, args...)
 }
 
+// OpenStdoutPipe starts name with stdout exposed as a pipe and stderr retained
+// in the same bounded diagnostic buffer used by Run. Binary stdout is never
+// copied to the optional live Stream because callers own and interpret it.
+func (r OSExecRunner) OpenStdoutPipe(ctx context.Context, name string, args ...string) (*StdoutPipe, error) {
+	cmd := exec.CommandContext(ctx, name, args...) // #nosec G204 -- OSExecRunner is the intentional subprocess boundary; validated callers select argv at runtime.
+	cmd.Env = omitEnv(DefaultEnv(), ctx)
+	setupChild(cmd)
+	cmd.Cancel = func() error { return terminateTree(cmd) }
+	cmd.WaitDelay = killGracePeriod
+
+	stderr := newCappedBuffer(maxCapturedOutput)
+	cmd.Stderr = stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("stdout pipe for %s: %w", name, RedactError(err))
+	}
+	if err := cmd.Start(); err != nil {
+		_ = stdout.Close()
+		return nil, fmt.Errorf("start %s: %w", name, RedactError(err))
+	}
+
+	return &StdoutPipe{
+		Reader: stdout,
+		abort:  cmd.Cancel,
+		wait: func() Result {
+			return commandResult(ctx, cmd, cmd.Wait(), nil, stderr.Bytes())
+		},
+	}, nil
+}
+
 // RunInDir executes name with dir as the child process working directory.
 func (r OSExecRunner) RunInDir(ctx context.Context, dir, name string, args ...string) Result {
 	return runCommand(ctx, r.Stream, dir, nil, name, args...)
@@ -295,41 +399,30 @@ func runCommand(ctx context.Context, stream io.Writer, dir string, overrides map
 		cmd.Stderr = stderr
 	}
 
-	runErr := cmd.Run()
+	return commandResult(ctx, cmd, cmd.Run(), stdout.Bytes(), stderr.Bytes())
+}
+
+func commandResult(ctx context.Context, cmd *exec.Cmd, runErr error, stdout, stderr []byte) Result {
 	exit := 0
 	if cmd.ProcessState != nil {
 		exit = cmd.ProcessState.ExitCode()
 	}
 
-	// cmd.Run() returns a non-nil *exec.ExitError for ANY non-zero exit —
-	// that's a command that ran fine and just said "no" (e.g. `which cargo`
-	// when cargo isn't installed, or `apt-get update` hitting a dead repo).
-	// Reporting that through Err would violate the Result contract above
-	// (and the one FakeRunner already enforces — see
-	// TestResultNonZeroExitDoesNotSetErr) and makes every caller that
-	// branches on Err vs ExitCode treat routine "ran, said no" the same as
-	// "never ran at all". Only keep Err for errors that are NOT a plain
-	// exit-status result: binary not found, permission denied, killed by
-	// signal, context deadline/cancellation, etc.
+	// os/exec returns a non-nil *exec.ExitError for any ordinary non-zero
+	// exit. Preserve the Runner contract by reporting that only via ExitCode;
+	// Err is reserved for spawn failure, cancellation, timeout, or signals.
 	var exitErr *exec.ExitError
 	if runErr != nil && errors.As(runErr, &exitErr) {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			// The operation's context expired: the result is untrustworthy
-			// (partial output, killed tree) so cancellation wins over the
-			// exit code. This also covers Windows, where a killed process
-			// reports a plain non-zero exit indistinguishable from failure.
 			runErr = ctxErr
 		} else if exit >= 0 {
-			// A normal process exit, even when non-zero, belongs exclusively
-			// in ExitCode.
 			runErr = nil
 		}
-		// Otherwise (signal death with a live context) keep the ExitError.
 	}
 
 	return Result{
-		Stdout:   stdout.Bytes(),
-		Stderr:   stderr.Bytes(),
+		Stdout:   stdout,
+		Stderr:   stderr,
 		ExitCode: exit,
 		Err:      runErr,
 	}
@@ -428,5 +521,7 @@ func (e *redactedWrappedError) Unwrap() error { return e.cause }
 
 var _ DirectoryRunner = OSExecRunner{}
 var _ PathLookupRunner = OSExecRunner{}
+var _ StdoutPipeRunner = OSExecRunner{}
 var _ DirectoryRunner = BlockedRunner{}
 var _ PathLookupRunner = BlockedRunner{}
+var _ StdoutPipeRunner = BlockedRunner{}
