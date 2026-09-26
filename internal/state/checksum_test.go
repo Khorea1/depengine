@@ -145,7 +145,7 @@ func TestLoadFromDetectsCorruptedState(t *testing.T) {
 	}
 
 	path := DefaultPath()
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatalf("read state file: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestLoadFromDetectsCorruptedState(t *testing.T) {
 		t.Fatal("corruption target not found in state file")
 	}
 	data[idx] ^= 0x01
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil { // #nosec G703 -- fixture path is generated and controlled by this test.
 		t.Fatalf("rewrite corrupted state: %v", err)
 	}
 
@@ -183,7 +183,7 @@ func TestLoadFromRejectsLegacyFileWithoutChecksum(t *testing.T) {
 	// State v1 predates the mandatory checksum invariant and must not be
 	// reinterpreted as current state.
 	data := `{"version":1,"schema_path":"/tmp/schema.toml","schema_modified_at":"2024-01-01T00:00:00Z","tools":{"fd":{"method":"cargo","installed_at":"2024-01-01T00:00:00Z","postinstall_done":false,"definition_hash":"abc","config":{"pkg":"fd-find"}}}}`
-	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
 		t.Fatal(err)
 	}
 

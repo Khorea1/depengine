@@ -194,27 +194,39 @@ func TestValidateAuthenticatedArtifactURLsRequireProtectedTransport(t *testing.T
 	}{
 		{
 			name: "http artifact", kind: "http", field: "url", raw: "http://example.com/tool.tar.gz",
-			ref: func(method *config.MethodCandidate) { method.SecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"} },
+			ref: func(method *config.MethodCandidate) {
+				method.SecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"}
+			},
 		},
 		{
 			name: "appimage artifact", kind: "appimage", field: "url", raw: "http://example.com/tool.AppImage",
-			ref: func(method *config.MethodCandidate) { method.SecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"} },
+			ref: func(method *config.MethodCandidate) {
+				method.SecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"}
+			},
 		},
 		{
 			name: "android artifact", kind: "android", field: "url", raw: "http://example.com/tool.apk",
-			ref: func(method *config.MethodCandidate) { method.SecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"} },
+			ref: func(method *config.MethodCandidate) {
+				method.SecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"}
+			},
 		},
 		{
 			name: "msi artifact", kind: "msi", field: "url", raw: "http://example.com/tool.msi",
-			ref: func(method *config.MethodCandidate) { method.SecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"} },
+			ref: func(method *config.MethodCandidate) {
+				method.SecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"}
+			},
 		},
 		{
 			name: "checksum sidecar", kind: "http", field: "checksum_url", raw: "http://example.com/tool.sha256",
-			ref: func(method *config.MethodCandidate) { method.ChecksumSecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"} },
+			ref: func(method *config.MethodCandidate) {
+				method.ChecksumSecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"}
+			},
 		},
 		{
 			name: "signature sidecar", kind: "http", field: "signature_url", raw: "http://example.com/tool.sig",
-			ref: func(method *config.MethodCandidate) { method.SignatureSecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"} },
+			ref: func(method *config.MethodCandidate) {
+				method.SignatureSecretRef = &config.SecretReference{Provider: "env", Name: "TOKEN"}
+			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -690,7 +702,7 @@ func TestValidateSourceLikeURLsRejectEmbeddedCredentials(t *testing.T) {
 		{"pipx", "index_url"}, {"uv", "index"}, {"choco", "source"},
 	} {
 		t.Run(tc.kind+"/"+tc.field, func(t *testing.T) {
-			s := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{{Kind: tc.kind, Config: map[string]any{"pkg": "tool", tc.field: "https://user:supersecret@example.invalid/simple"}}}}}}
+			s := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{{Kind: tc.kind, Config: map[string]any{"pkg": "tool", tc.field: "https://user:supersecret@example.invalid/simple"}}}}}} // #nosec G101 -- synthetic credential is required to exercise secret/credential handling.
 			got := validateMalformedURLs(s)
 			if !got.HasErrors() {
 				t.Fatal("expected embedded credentials to be rejected")

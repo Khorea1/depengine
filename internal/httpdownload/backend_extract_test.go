@@ -178,7 +178,7 @@ func TestExtractCopyBinary(t *testing.T) {
 	srcDir := t.TempDir()
 	destDir := t.TempDir()
 	src := filepath.Join(srcDir, "mybin")
-	if err := os.WriteFile(src, []byte("binary-content"), 0o755); err != nil {
+	if err := os.WriteFile(src, []byte("binary-content"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 
@@ -194,7 +194,7 @@ func TestExtractCopyBinary(t *testing.T) {
 	if _, err := os.Stat(dest); os.IsNotExist(err) {
 		t.Fatal("expected destination file to exist")
 	}
-	data, _ := os.ReadFile(dest)
+	data, _ := os.ReadFile(dest) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if string(data) != "binary-content" {
 		t.Fatalf("unexpected content: %s", data)
 	}
@@ -213,7 +213,7 @@ func TestExtractBzip2Binary(t *testing.T) {
 	if err := extract(context.Background(), src, dest, ".bz2", "tool", nil, false, "tool"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile(filepath.Join(dest, "tool"))
+	got, err := os.ReadFile(filepath.Join(dest, "tool")) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestExtractBzip2Binary(t *testing.T) {
 func TestExtractCopyBinaryUsesConfiguredName(t *testing.T) {
 	t.Parallel()
 	src := filepath.Join(t.TempDir(), "release-name-amd64")
-	if err := os.WriteFile(src, []byte("binary-content"), 0o755); err != nil {
+	if err := os.WriteFile(src, []byte("binary-content"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	destDir := t.TempDir()
@@ -281,7 +281,7 @@ func TestExtractCopyBinaryElevated(t *testing.T) {
 
 	srcDir := t.TempDir()
 	src := filepath.Join(srcDir, "mybin")
-	if err := os.WriteFile(src, []byte("binary-content"), 0o755); err != nil {
+	if err := os.WriteFile(src, []byte("binary-content"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 
@@ -317,7 +317,7 @@ func TestExtractCopyBinaryElevatedUsesConfiguredName(t *testing.T) {
 	defer run.OverrideElevation("")
 
 	src := filepath.Join(t.TempDir(), "release-name-amd64")
-	if err := os.WriteFile(src, []byte("binary-content"), 0o755); err != nil {
+	if err := os.WriteFile(src, []byte("binary-content"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	fr := &run.FakeRunner{ExitCode: 0}
@@ -353,7 +353,7 @@ func TestExtractCopyBinaryElevationUnavailable(t *testing.T) {
 
 	srcDir := t.TempDir()
 	src := filepath.Join(srcDir, "mybin")
-	if err := os.WriteFile(src, []byte("binary-content"), 0o755); err != nil {
+	if err := os.WriteFile(src, []byte("binary-content"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 
@@ -405,7 +405,7 @@ func TestExtractZipFailure(t *testing.T) {
 
 func writeZipWithEntry(t *testing.T, path, entryName string) {
 	t.Helper()
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatalf("create zip: %v", err)
 	}
@@ -522,7 +522,7 @@ func TestExtractAllowsSafeZip(t *testing.T) {
 
 func writeTarGzWithEntry(t *testing.T, path string, hdr *tar.Header, body []byte) {
 	t.Helper()
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatalf("create tar.gz: %v", err)
 	}

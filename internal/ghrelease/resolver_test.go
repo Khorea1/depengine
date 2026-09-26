@@ -89,7 +89,7 @@ func TestResolveLatestWithHTTPMock(t *testing.T) {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"tag_name": "v1.2.3"}`))
+		_, _ = w.Write([]byte(`{"tag_name": "v1.2.3"}`))
 	}))
 	t.Cleanup(ts.Close)
 
@@ -135,7 +135,7 @@ func TestResolveLatestTagNonGitHub(t *testing.T) {
 func TestResolveLatestTagWithHTTPMock(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"tag_name": "v9.9.9"}`))
+		_, _ = w.Write([]byte(`{"tag_name": "v9.9.9"}`))
 	}))
 	t.Cleanup(ts.Close)
 
@@ -170,7 +170,7 @@ func TestResolveAssetURLLatest(t *testing.T) {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"tag_name": "v1.0.0", "assets": [{"name": "tool-linux-x86_64", "browser_download_url": "https://example.com/tool-linux-x86_64"}]}`))
+		_, _ = w.Write([]byte(`{"tag_name": "v1.0.0", "assets": [{"name": "tool-linux-x86_64", "browser_download_url": "https://example.com/tool-linux-x86_64"}]}`))
 	}))
 	t.Cleanup(ts.Close)
 	r := newTestResolver(ts.URL)
@@ -190,7 +190,7 @@ func TestResolveAssetURLLatest(t *testing.T) {
 func TestResolveAssetURLMatchesOSSynonyms(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"tag_name":"v1.0.0","assets":[{"name":"tool-macos-amd64","browser_download_url":"https://example.com/tool"}]}`))
+		_, _ = w.Write([]byte(`{"tag_name":"v1.0.0","assets":[{"name":"tool-macos-amd64","browser_download_url":"https://example.com/tool"}]}`))
 	}))
 	t.Cleanup(ts.Close)
 	r := newTestResolver(ts.URL)
@@ -207,7 +207,7 @@ func TestResolveAssetURLMatchesOSSynonyms(t *testing.T) {
 func TestResolveAssetURLNoMatchListsAvailableAssets(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"tag_name":"v1.0.0","assets":[{"name":"checksums.txt"},{"name":"tool-linux-arm64"}]}`))
+		_, _ = w.Write([]byte(`{"tag_name":"v1.0.0","assets":[{"name":"checksums.txt"},{"name":"tool-linux-arm64"}]}`))
 	}))
 	t.Cleanup(ts.Close)
 	r := newTestResolver(ts.URL)
@@ -221,7 +221,7 @@ func TestResolveAssetURLNoMatchListsAvailableAssets(t *testing.T) {
 func TestResolveAssetURLRejectsMultipleMatches(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"tag_name":"v1.0.0","assets":[{"name":"tool-linux-x86_64"},{"name":"tool-linux-amd64"},{"name":"tool-linux-arm64"}]}`))
+		_, _ = w.Write([]byte(`{"tag_name":"v1.0.0","assets":[{"name":"tool-linux-x86_64"},{"name":"tool-linux-amd64"},{"name":"tool-linux-arm64"}]}`))
 	}))
 	t.Cleanup(ts.Close)
 	r := newTestResolver(ts.URL)
@@ -247,7 +247,7 @@ func TestResolveAssetURLWithSlashInRefEscapesTagPath(t *testing.T) {
 			t.Errorf("escaped path = %q, want %q", got, wantEscaped)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"tag_name":"release/v1","assets":[{"name":"tool-linux-x86_64","browser_download_url":"https://example.com/tool"}]}`))
+		_, _ = w.Write([]byte(`{"tag_name":"release/v1","assets":[{"name":"tool-linux-x86_64","browser_download_url":"https://example.com/tool"}]}`))
 	}))
 	t.Cleanup(ts.Close)
 	r := newTestResolver(ts.URL)
@@ -268,7 +268,7 @@ func TestResolveAssetURLWithRef(t *testing.T) {
 			t.Errorf("unexpected path: %s, want %s", r.URL.Path, want)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"tag_name": "nightly", "assets": [{"name": "tool-linux-aarch64", "browser_download_url": "https://example.com/tool-linux-aarch64"}]}`))
+		_, _ = w.Write([]byte(`{"tag_name": "nightly", "assets": [{"name": "tool-linux-aarch64", "browser_download_url": "https://example.com/tool-linux-aarch64"}]}`))
 	}))
 	t.Cleanup(ts.Close)
 	r := newTestResolver(ts.URL)
@@ -305,10 +305,10 @@ func TestFetchReleaseByTagCachesSeparatelyFromLatest(t *testing.T) {
 		switch r.URL.Path {
 		case "/repos/cache-owner/cache-repo/releases/latest":
 			latestHits++
-			w.Write([]byte(`{"tag_name": "v2.0.0", "assets": []}`))
+			_, _ = w.Write([]byte(`{"tag_name": "v2.0.0", "assets": []}`))
 		case "/repos/cache-owner/cache-repo/releases/tags/v1.0.0":
 			tagHits++
-			w.Write([]byte(`{"tag_name": "v1.0.0", "assets": []}`))
+			_, _ = w.Write([]byte(`{"tag_name": "v1.0.0", "assets": []}`))
 		default:
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}

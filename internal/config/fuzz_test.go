@@ -48,7 +48,7 @@ func FuzzParseProjectSchema(f *testing.F) {
 
 		dir := t.TempDir()
 		path := filepath.Join(dir, "schema.toml")
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 			t.Skip("write:", err)
 		}
 		// Parse errors are valid behavior; we only care about panics.

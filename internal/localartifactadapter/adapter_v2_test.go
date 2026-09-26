@@ -17,10 +17,10 @@ import (
 
 func writeVendored(t *testing.T, root, name, content string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Join(root, "vendor"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "vendor"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "vendor", name), []byte(content), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "vendor", name), []byte(content), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 }
@@ -75,7 +75,7 @@ func TestAdapterV2ResolvesObservesAndInstalls(t *testing.T) {
 	if len(runner.Calls) != 0 {
 		t.Fatalf("local InstallResolved invoked subprocesses: %#v", runner.Calls)
 	}
-	got, err := os.ReadFile(filepath.Join(dest, "demo"))
+	got, err := os.ReadFile(filepath.Join(dest, "demo")) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestAdapterV2InstallResolvedUsesPlanArtifact(t *testing.T) {
 	if err := adapter.InstallResolved(ctx, &run.FakeRunner{}, tool, mc, resolved); err != nil {
 		t.Fatalf("InstallResolved() error = %v", err)
 	}
-	got, err := os.ReadFile(filepath.Join(dest, "demo"))
+	got, err := os.ReadFile(filepath.Join(dest, "demo")) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}

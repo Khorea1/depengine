@@ -25,7 +25,7 @@ func TestValidateNoSecretsRejectsSensitiveConfigKeys(t *testing.T) {
 
 func TestValidateNoSecretsRejectsCredentialURL(t *testing.T) {
 	st := &State{Tools: map[string]ToolState{
-		"tool": {Config: map[string]any{"url": "https://alice:supersecret@example.com/file"}},
+		"tool": {Config: map[string]any{"url": "https://alice:supersecret@example.com/file"}}, // #nosec G101 -- synthetic credential is required to exercise secret/credential handling.
 	}}
 	err := ValidateNoSecrets(st)
 	if err == nil {

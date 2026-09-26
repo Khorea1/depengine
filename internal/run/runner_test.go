@@ -242,7 +242,7 @@ func TestFormatArgsForLogRedactsCredentials(t *testing.T) {
 }
 
 func TestRedactSensitiveText(t *testing.T) {
-	input := "fetch https://alice:s3cr3t@example.com/x?token=querysecret&keep=yes&sig=signed&X-Amz-Credential=AKIA/thing&X-Goog-Signature=googsecret --token abc123 --client-secret cli-secret\nAuthorization: Bearer topsecret\nCookie: session=xyz"
+	input := "fetch https://alice:s3cr3t@example.com/x?token=querysecret&keep=yes&sig=signed&X-Amz-Credential=AKIA/thing&X-Goog-Signature=googsecret --token abc123 --client-secret cli-secret\nAuthorization: Bearer topsecret\nCookie: session=xyz" // #nosec G101 -- synthetic credential is required to exercise secret/credential handling.
 	got := RedactSensitiveText(input)
 	for _, secret := range []string{"s3cr3t", "querysecret", "signed", "AKIA/thing", "googsecret", "abc123", "cli-secret", "topsecret", "session=xyz"} {
 		if strings.Contains(got, secret) {

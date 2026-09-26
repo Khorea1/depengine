@@ -15,14 +15,14 @@ func TestCopyArtifactCopiesDirectoryContents(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(src, "sub"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(src, "sub", "tool"), []byte("binary"), 0o751); err != nil {
+	if err := os.WriteFile(filepath.Join(src, "sub", "tool"), []byte("binary"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 
 	if err := copyArtifactFromRoot(context.Background(), src, ".", dst); err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile(filepath.Join(dst, "sub", "tool"))
+	got, err := os.ReadFile(filepath.Join(dst, "sub", "tool")) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestCopyArtifactCopiesDirectoryContents(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got, want := info.Mode().Perm(), os.FileMode(0o751); got != want {
+		if got, want := info.Mode().Perm(), os.FileMode(0o700); got != want {
 			t.Fatalf("copied mode = %o, want %o", got, want)
 		}
 	}
@@ -44,14 +44,14 @@ func TestCopyArtifactCopiesSingleFile(t *testing.T) {
 	srcDir := t.TempDir()
 	dst := t.TempDir()
 	src := filepath.Join(srcDir, "tool")
-	if err := os.WriteFile(src, []byte("binary"), 0o755); err != nil {
+	if err := os.WriteFile(src, []byte("binary"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 
 	if err := copyArtifactFromRoot(context.Background(), srcDir, "tool", dst); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := os.ReadFile(filepath.Join(dst, "tool")); err != nil || string(got) != "binary" {
+	if got, err := os.ReadFile(filepath.Join(dst, "tool")); err != nil || string(got) != "binary" { // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 		t.Fatalf("copied file = %q, %v", got, err)
 	}
 }
@@ -64,7 +64,7 @@ func TestCopyArtifactReplacesSymlinkWithoutFollowingIt(t *testing.T) {
 	srcDir := t.TempDir()
 	dst := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "outside")
-	if err := os.WriteFile(filepath.Join(srcDir, "tool"), []byte("new"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "tool"), []byte("new"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(outside, []byte("old"), 0o600); err != nil {
@@ -77,10 +77,10 @@ func TestCopyArtifactReplacesSymlinkWithoutFollowingIt(t *testing.T) {
 	if err := copyArtifactFromRoot(context.Background(), srcDir, ".", dst); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := os.ReadFile(outside); err != nil || string(got) != "old" {
+	if got, err := os.ReadFile(outside); err != nil || string(got) != "old" { // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 		t.Fatalf("symlink target was modified: %q, %v", got, err)
 	}
-	if got, err := os.ReadFile(filepath.Join(dst, "tool")); err != nil || string(got) != "new" {
+	if got, err := os.ReadFile(filepath.Join(dst, "tool")); err != nil || string(got) != "new" { // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 		t.Fatalf("destination = %q, %v", got, err)
 	}
 }
@@ -223,7 +223,7 @@ func TestCopyArtifactHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	src := t.TempDir()
-	if err := os.WriteFile(filepath.Join(src, "tool"), nil, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(src, "tool"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := copyArtifactFromRoot(ctx, src, ".", t.TempDir()); !errors.Is(err, context.Canceled) {

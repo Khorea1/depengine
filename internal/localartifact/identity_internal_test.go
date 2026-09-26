@@ -11,10 +11,10 @@ func TestChecksumVerifiedRegularFileRejectsDifferentOpenedIdentity(t *testing.T)
 	dir := t.TempDir()
 	first := filepath.Join(dir, "first")
 	second := filepath.Join(dir, "second")
-	if err := os.WriteFile(first, []byte("first"), 0o644); err != nil {
+	if err := os.WriteFile(first, []byte("first"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(second, []byte("second"), 0o644); err != nil {
+	if err := os.WriteFile(second, []byte("second"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Lstat(first)
@@ -35,7 +35,7 @@ func TestInstallRawMaterializesAlreadyVerifiedOpenFile(t *testing.T) {
 	}
 	dir := t.TempDir()
 	sourcePath := filepath.Join(dir, "source")
-	if err := os.WriteFile(sourcePath, []byte("verified"), 0o755); err != nil {
+	if err := os.WriteFile(sourcePath, []byte("verified"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	info, err := os.Lstat(sourcePath)
@@ -52,7 +52,7 @@ func TestInstallRawMaterializesAlreadyVerifiedOpenFile(t *testing.T) {
 	if err := os.Rename(sourcePath, oldPath); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(sourcePath, []byte("replacement"), 0o755); err != nil {
+	if err := os.WriteFile(sourcePath, []byte("replacement"), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 
@@ -64,7 +64,7 @@ func TestInstallRawMaterializesAlreadyVerifiedOpenFile(t *testing.T) {
 	if err := installRaw(f, opened, expected, destination); err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile(destination)
+	got, err := os.ReadFile(destination) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestSnapshotVerifiedSourceRejectsInPlaceMutation(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tool.tar")
 	original := []byte("original archive bytes")
-	if err := os.WriteFile(path, original, 0o644); err != nil {
+	if err := os.WriteFile(path, original, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Lstat(path)
@@ -93,7 +93,7 @@ func TestSnapshotVerifiedSourceRejectsInPlaceMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("mutated archive bytes"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("mutated archive bytes"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, cleanup, err := snapshotVerifiedSource(f, expected, dir); err == nil {

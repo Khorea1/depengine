@@ -25,13 +25,14 @@ Work on the current execution model comes before adding more installer types.
 - [x] Restore fuzzing as a reliable CI gate. The CI manifest is checked
   against Go's runtime test listing, then every runnable target gets a bounded
   fuzz run; missing, renamed, newly added, or build-tagged-out targets fail.
-- [~] Triage the security-relevant `gosec` backlog ahead of the general lint
-  cleanup. Production call sites are now fully reviewed under the uncapped
-  scanner: the current tree has zero unsuppressed production diagnostics.
-  Hardening includes archive confinement/limits, owner-only state/cache storage,
-  owner-only state locks and temporary GPG key material, and symlink rejection
-  during snapshot enumeration. The remaining 348 diagnostics are all in test
-  fixtures and still require independent review; see
+- [x] Triage the security-relevant `gosec` backlog ahead of the general lint
+  cleanup. The uncapped scanner now reports zero diagnostics across production
+  and tests. Hardening includes archive confinement/limits, owner-only
+  state/cache storage, owner-only state locks and temporary GPG key material,
+  symlink rejection during snapshot enumeration, and owner-only fixture
+  permissions where broader modes are not part of the test contract. Reviewed
+  dynamic paths, synthetic credentials, executable fixtures, and controlled
+  subprocesses use narrow call-site suppressions; see
   [`gosec-triage.md`](gosec-triage.md).
 - [x] Remove the orphaned root lock artifact. No canonical root schema is
   tracked; the stale lock referenced a removed `fastfetch/http/0` method and

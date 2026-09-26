@@ -61,7 +61,7 @@ func TestSourceSecretReferenceFlowsFromSchemaToSupportedAuthPlan(t *testing.T) {
 			ref = `, secret_ref = { provider = "env", name = "CORP_TOKEN" }`
 		}
 		data := "schema_version = 1\n[tools.demo.native]\npkg = \"demo\"\nsources = [{ kind = \"brew-tap\", name = \"vendor/tools\", url = \"https://example.test/vendor/tools.git\"" + ref + " }]\n"
-		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		schema, err := config.ParseProjectSchema(path, nil)

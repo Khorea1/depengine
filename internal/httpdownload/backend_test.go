@@ -42,7 +42,7 @@ func TestGoDownloaderDownloadSuccess(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
-		w.Write([]byte(body))
+		_, _ = w.Write([]byte(body))
 	}))
 	t.Cleanup(ts.Close)
 
@@ -53,7 +53,7 @@ func TestGoDownloaderDownloadSuccess(t *testing.T) {
 		t.Fatalf("unexpected Download error: %v", err)
 	}
 
-	got, err := os.ReadFile(dest)
+	got, err := os.ReadFile(dest) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatalf("reading downloaded file: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestGoDownloaderDownloadSetsUserAgent(t *testing.T) {
 	var gotUA string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotUA = r.Header.Get("User-Agent")
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	t.Cleanup(ts.Close)
 
@@ -198,7 +198,7 @@ func TestGoDownloaderDownloadAttachesGithubToken(t *testing.T) {
 	var gotAuth string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	t.Cleanup(ts.Close)
 
@@ -225,7 +225,7 @@ func TestGoDownloaderDownloadNoTokenForNonGithubHost(t *testing.T) {
 	var authHeaderSeen bool
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeaderSeen = r.Header.Get("Authorization") != ""
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	t.Cleanup(ts.Close)
 
@@ -249,7 +249,7 @@ func TestGoDownloaderDownloadNoTokenWithNilRunner(t *testing.T) {
 	var authHeaderSeen bool
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeaderSeen = r.Header.Get("Authorization") != ""
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	t.Cleanup(ts.Close)
 

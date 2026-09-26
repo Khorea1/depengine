@@ -166,7 +166,7 @@ func TestLoadPrexistingFile(t *testing.T) {
 
 	// Write a valid state file manually.
 	path := filepath.Join(td, "depengine", "state.json")
-	_ = os.MkdirAll(filepath.Dir(path), 0755)
+	_ = os.MkdirAll(filepath.Dir(path), 0700)
 	writeChecksummedStateForTest(t, path, State{
 		Version: currentStateVersion,
 		Tools:   map[string]ToolState{"fd": {Method: "cargo"}},
@@ -190,8 +190,8 @@ func TestLoadCorruptedFile(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", td)
 
 	path := filepath.Join(td, "depengine", "state.json")
-	_ = os.MkdirAll(filepath.Dir(path), 0755)
-	_ = os.WriteFile(path, []byte(`{invalid json`), 0644)
+	_ = os.MkdirAll(filepath.Dir(path), 0700)
+	_ = os.WriteFile(path, []byte(`{invalid json`), 0600)
 
 	_, err := Load()
 	if err == nil {
@@ -394,7 +394,7 @@ func TestLockSharedAcquireAndRelease(t *testing.T) {
 	go func() {
 		c2, err := lockShared()
 		if err == nil {
-			c2.Close() // release immediately so the exclusive test below isn't blocked
+			err = c2.Close() // release immediately so the exclusive test below isn't blocked
 		}
 		got <- err
 	}()

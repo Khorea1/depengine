@@ -78,10 +78,10 @@ func TestAndroidAdapterCheckInstalled(t *testing.T) {
 
 	mc := &config.MethodCandidate{Config: map[string]any{"url": "https://example.com/app.apk"}}
 	wantPath := filepath.Join(config.ExpandHomeDir(androidAPKDir), "obsidian.apk")
-	if err := os.MkdirAll(filepath.Dir(wantPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(wantPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(wantPath, nil, 0o644); err != nil {
+	if err := os.WriteFile(wantPath, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	fr := &run.FakeRunner{}
@@ -132,7 +132,7 @@ func TestAndroidAdapterInstallStableNameAndDispatches(t *testing.T) {
 
 	const body = "fake-apk-bytes"
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(body))
+		_, _ = w.Write([]byte(body))
 	}))
 	defer ts.Close()
 
@@ -148,7 +148,7 @@ func TestAndroidAdapterInstallStableNameAndDispatches(t *testing.T) {
 	}
 
 	stablePath := filepath.Join(config.ExpandHomeDir(androidAPKDir), "obsidian.apk")
-	data, err := os.ReadFile(stablePath)
+	data, err := os.ReadFile(stablePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatalf("expected stable-named apk at %s: %v", stablePath, err)
 	}
@@ -179,7 +179,7 @@ func TestAndroidAdapterInstallTermuxOpenFailure(t *testing.T) {
 	exectest.SetHome(t, fakeHome)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("content"))
+		_, _ = w.Write([]byte("content"))
 	}))
 	defer ts.Close()
 

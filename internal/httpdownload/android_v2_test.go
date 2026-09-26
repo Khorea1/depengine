@@ -25,10 +25,10 @@ func TestAndroidAdapterV2ObserveAgreesWithCheck(t *testing.T) {
 	exectest.SetHome(t, home)
 
 	apkDir := filepath.Join(home, ".cache", "depengine", "android-apks")
-	if err := os.MkdirAll(apkDir, 0o755); err != nil {
+	if err := os.MkdirAll(apkDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(apkDir, "present-app.apk"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(apkDir, "present-app.apk"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

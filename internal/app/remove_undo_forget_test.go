@@ -27,7 +27,7 @@ import (
 // network, no real package managers.
 func runCommand(t *testing.T, cmd string, extraEnv []string, args ...string) (exitCode int, output string) {
 	t.Helper()
-	c := osexec.Command(os.Args[0], "-test.run=^TestCommandHelperSubprocess$")
+	c := osexec.Command(os.Args[0], "-test.run=^TestCommandHelperSubprocess$") // #nosec G204 G702 -- test intentionally launches the current test binary as a controlled helper subprocess.
 
 	scrubbed := map[string]bool{
 		"XDG_STATE_HOME":     true,
@@ -129,7 +129,7 @@ func writeTestState(t *testing.T, stateHome string, tools map[string]state.ToolS
 func writeTestFullState(t *testing.T, stateHome string, st state.State) {
 	t.Helper()
 	dir := filepath.Join(stateHome, "depengine")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
 	data := marshalTestFullState(t, st)
@@ -160,7 +160,7 @@ func marshalTestFullState(t *testing.T, st state.State) []byte {
 
 func loadTestState(t *testing.T, stateHome string) state.State {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(stateHome, "depengine", "state.json"))
+	data, err := os.ReadFile(filepath.Join(stateHome, "depengine", "state.json")) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func loadTestState(t *testing.T, stateHome string) state.State {
 func writeTestSnapshot(t *testing.T, stateHome string, tools map[string]state.ToolState) {
 	t.Helper()
 	dir := filepath.Join(stateHome, "depengine", "snapshots")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
 	data := marshalTestState(t, tools)
@@ -193,7 +193,7 @@ func fakeBinary(t *testing.T, binDir, name string) string {
 		name += ".exe"
 	}
 	path := filepath.Join(binDir, name)
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0755); err != nil {
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatal(err)
 	}
 	return path
@@ -249,7 +249,7 @@ func TestRemoveHTTPTool(t *testing.T) {
 
 	// Create a /bin-suffixed dir so isSharedDir returns true.
 	sharedDir := filepath.Join(t.TempDir(), "bin")
-	if err := os.MkdirAll(sharedDir, 0755); err != nil {
+	if err := os.MkdirAll(sharedDir, 0700); err != nil {
 		t.Fatal(err)
 	}
 	// Plant the target binary.
@@ -389,7 +389,7 @@ func TestRemoveDryRunDoesNotWriteStateOrCreateLock(t *testing.T) {
 	writeTestState(t, stateHome, map[string]state.ToolState{"gostr": goToolState()})
 
 	statePath := filepath.Join(stateHome, "depengine", "state.json")
-	before, err := os.ReadFile(statePath)
+	before, err := os.ReadFile(statePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,7 +405,7 @@ func TestRemoveDryRunDoesNotWriteStateOrCreateLock(t *testing.T) {
 		t.Fatalf("output should describe planned removal, got: %s", out)
 	}
 
-	after, err := os.ReadFile(statePath)
+	after, err := os.ReadFile(statePath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
 		t.Fatal(err)
 	}

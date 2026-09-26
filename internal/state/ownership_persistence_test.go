@@ -101,7 +101,7 @@ func TestLoadSnapshotVerifiesStateChecksum(t *testing.T) {
 		t.Fatal(err)
 	}
 	data = []byte(strings.Replace(string(data), `"repo:stable"`, `"repo:tampered"`, 1))
-	if err := os.WriteFile(info.Path, data, 0600); err != nil {
+	if err := os.WriteFile(info.Path, data, 0600); err != nil { // #nosec G703 -- fixture path is generated and controlled by this test.
 		t.Fatal(err)
 	}
 	if _, err := LoadSnapshot(info.Path); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {

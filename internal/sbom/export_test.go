@@ -297,8 +297,12 @@ func TestCycloneDXDeterministic(t *testing.T) {
 
 	// Compare only the components (schema-versioned), not the timestamp.
 	var bom1, bom2 map[string]any
-	json.Unmarshal(data1, &bom1)
-	json.Unmarshal(data2, &bom2)
+	if err := json.Unmarshal(data1, &bom1); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data2, &bom2); err != nil {
+		t.Fatal(err)
+	}
 	delete(bom1, "metadata")
 	delete(bom2, "metadata")
 	if !reflect.DeepEqual(bom1, bom2) {
@@ -307,7 +311,9 @@ func TestCycloneDXDeterministic(t *testing.T) {
 	// Verify both timestamps are valid RFC3339.
 	for _, d := range [][]byte{data1, data2} {
 		var b map[string]any
-		json.Unmarshal(d, &b)
+		if err := json.Unmarshal(d, &b); err != nil {
+			t.Fatal(err)
+		}
 		meta, ok := b["metadata"].(map[string]any)
 		if !ok {
 			t.Fatal("missing metadata")
@@ -343,8 +349,12 @@ func TestSPDXDeterministic(t *testing.T) {
 
 	// Compare only packages, not creationInfo (which has timestamp).
 	var doc1, doc2 map[string]any
-	json.Unmarshal(data1, &doc1)
-	json.Unmarshal(data2, &doc2)
+	if err := json.Unmarshal(data1, &doc1); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data2, &doc2); err != nil {
+		t.Fatal(err)
+	}
 	delete(doc1, "creationInfo")
 	delete(doc2, "creationInfo")
 	if !reflect.DeepEqual(doc1, doc2) {
@@ -353,7 +363,9 @@ func TestSPDXDeterministic(t *testing.T) {
 	// Verify creationInfo has valid timestamps.
 	for _, d := range [][]byte{data1, data2} {
 		var doc map[string]any
-		json.Unmarshal(d, &doc)
+		if err := json.Unmarshal(d, &doc); err != nil {
+			t.Fatal(err)
+		}
 		ci, ok := doc["creationInfo"].(map[string]any)
 		if !ok {
 			t.Fatal("missing creationInfo")

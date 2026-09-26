@@ -55,7 +55,7 @@ func TestValidateAuthenticatedURL(t *testing.T) {
 		{name: "ipv4 loopback", raw: "http://127.0.0.1:8080/private.tar.gz"},
 		{name: "ipv6 loopback", raw: "http://[::1]:8080/private.tar.gz"},
 		{name: "remote plaintext", raw: "http://example.com/private.tar.gz", wantErr: true},
-		{name: "embedded credentials", raw: "https://user:pass@example.com/private.tar.gz", wantErr: true},
+		{name: "embedded credentials", raw: "https://user:pass@example.com/private.tar.gz", wantErr: true}, // #nosec G101 -- synthetic credential is required to exercise secret/credential handling.
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := ValidateAuthenticatedURL(tc.raw)

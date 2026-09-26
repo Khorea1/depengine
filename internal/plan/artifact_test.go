@@ -97,7 +97,7 @@ func TestArtifactValidatesRemoteIntegrityMetadata(t *testing.T) {
 	}
 
 	for name, artifact := range map[string]plan.Artifact{
-		"checksum URL": {
+		"checksum URL": { // #nosec G101 -- synthetic credential is required to exercise secret/credential handling.
 			URL:         "https://example.test/tool.tar.gz",
 			ChecksumURL: "https://user:secret@example.test/tool.sha256",
 		},
@@ -109,7 +109,7 @@ func TestArtifactValidatesRemoteIntegrityMetadata(t *testing.T) {
 			URL:        "https://example.test/tool.tar.gz",
 			SigningKey: " release-key",
 		},
-		"signing key URL credentials": {
+		"signing key URL credentials": { // #nosec G101 -- synthetic credential is required to exercise secret/credential handling.
 			URL:        "https://example.test/tool.tar.gz",
 			SigningKey: "https://user:secret@example.test/key.asc",
 		},

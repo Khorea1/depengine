@@ -20,7 +20,7 @@ var binary string
 func TestMain(m *testing.M) {
 	tmp, err := os.MkdirTemp("", "depengine-integration-*")
 	if err != nil {
-		os.Stderr.WriteString("integration: MkdirTemp: " + err.Error() + "\n")
+		_, _ = os.Stderr.WriteString("integration: MkdirTemp: " + err.Error() + "\n")
 		os.Exit(1)
 	}
 
@@ -30,11 +30,11 @@ func TestMain(m *testing.M) {
 		// probing; a direct path without .exe fails to start.
 		binary += ".exe"
 	}
-	cmd := exec.Command("go", "build", "-o", binary, ".")
+	cmd := exec.Command("go", "build", "-o", binary, ".") // #nosec G204 -- test intentionally launches a controlled helper/tool subprocess.
 	cmd.Dir = findModuleRoot()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		os.Stderr.WriteString("integration: build failed:\n" + string(out) + "\n")
+		_, _ = os.Stderr.WriteString("integration: build failed:\n" + string(out) + "\n")
 		_ = os.RemoveAll(tmp)
 		os.Exit(1)
 	}
@@ -73,7 +73,7 @@ func schemaPath() string {
 
 // runDepengine executes depengine with args, returns output + exit code.
 func runDepengine(args ...string) (output string, exitCode int) {
-	cmd := exec.Command(binary, args...)
+	cmd := exec.Command(binary, args...) // #nosec G204 -- test intentionally launches a controlled helper/tool subprocess.
 	out, err := cmd.CombinedOutput()
 	output = string(out)
 	if err != nil {
@@ -386,7 +386,7 @@ func TestValidate_NonExistentSchema(t *testing.T) {
 func TestValidate_EmptySchemaFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	emptyPath := filepath.Join(tmpDir, "empty.toml")
-	if err := os.WriteFile(emptyPath, []byte("schema_version = 1\n[tools]\n"), 0644); err != nil {
+	if err := os.WriteFile(emptyPath, []byte("schema_version = 1\n[tools]\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	output, code := runDepengine("validate", "--no-manifest", "--schema", emptyPath)

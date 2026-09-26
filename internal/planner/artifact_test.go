@@ -33,7 +33,7 @@ func TestBuildCandidateIntentProjectsArtifact(t *testing.T) {
 }
 
 func TestBuildCandidateIntentRejectsCredentialBearingArtifact(t *testing.T) {
-	tool, method := candidate("demo", "http", map[string]any{"url": "https://user:secret@example.test/demo.tar.gz"})
+	tool, method := candidate("demo", "http", map[string]any{"url": "https://user:secret@example.test/demo.tar.gz"}) // #nosec G101 -- synthetic credential is required to exercise secret/credential handling.
 	_, err := planner.BuildCandidateIntent(tool, method)
 	if err == nil || !strings.Contains(err.Error(), "literal URL credentials") {
 		t.Fatalf("error = %v, want credential rejection", err)

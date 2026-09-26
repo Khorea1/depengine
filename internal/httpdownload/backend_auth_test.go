@@ -64,7 +64,7 @@ func TestGoDownloaderDownloadWithBearerRejectsRemotePlainHTTP(t *testing.T) {
 }
 
 func TestGoDownloaderImplicitGitHubTokenRejectsRemotePlainHTTP(t *testing.T) {
-	const credential = "implicit-github-sentinel"
+	const credential = "implicit-github-sentinel" // #nosec G101 -- synthetic credential is required to exercise secret/credential handling.
 	ctx := ghrelease.WithGithubToken(context.Background(), credential)
 	err := NewGoDownloader(&run.FakeRunner{}).Download(ctx, "http://github.com/owner/repo/file", "unused")
 	if err == nil || !strings.Contains(err.Error(), "must use HTTPS") {
