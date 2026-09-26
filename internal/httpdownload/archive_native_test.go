@@ -2,8 +2,8 @@ package httpdownload
 
 import (
 	"archive/tar"
-	"bytes"
 	"archive/zip"
+	"bytes"
 	"context"
 	"io"
 	"os"
