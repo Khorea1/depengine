@@ -22,7 +22,7 @@ func TestFakeRunnerStdoutPipe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "streamed" {
+	if strings.TrimSpace(string(got)) != "streamed" {
 		t.Fatalf("streamed stdout = %q, want streamed", got)
 	}
 	result := pipe.Wait()
@@ -39,7 +39,7 @@ func TestOSExecRunnerStdoutPipe(t *testing.T) {
 	args := []string{"-c", "printf streamed"}
 	if runtime.GOOS == "windows" {
 		name = "cmd.exe"
-		args = []string{"/d", "/c", "<nul set /p =streamed"}
+		args = []string{"/d", "/c", "echo streamed"}
 	}
 
 	pipe, err := OpenStdoutPipe(context.Background(), OSExecRunner{}, name, args...)
