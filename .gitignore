@@ -39,6 +39,7 @@ Thumbs.db
 
 # Local meta-development (scratchpads, skills, personal config)
 .dev/
+.agents/
 # worktrunk checkouts: other branches, never repository content.
 .worktrees/
 AGENTS.local.md

@@ -86,9 +86,8 @@ func (w *winAdapter) observeInstalled(ctx context.Context, rn run.Runner, tool *
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	if w.kind == "choco" && (res.Err != nil || res.ExitCode != 0 || !hasChocoVersion(res.Stdout, packageName(tool, mc))) {
-		// Newer Chocolatey versions use --local-only for installed package
-		// queries. Keep the legacy probe compatible while accepting the newer
-		// response shape.
+		// Chocolatey 2.x removed --local-only. Prefer the current probe, then
+		// fall back for older Chocolatey releases that still require the flag.
 		res = rn.Run(ctx, "choco", "list", "--local-only", "--exact", "--limit-output", packageName(tool, mc))
 	}
 	if res.Err != nil || res.ExitCode != 0 {

@@ -145,6 +145,7 @@ func TestRuntimeArtifactAndGitEffectFieldsHaveEvidence(t *testing.T) {
 }
 
 func TestRuntimeHTTPIntegrityAndSigningFieldsAreConsumed(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	payload := []byte("runtime integrity probe\n")
 	digest := sha256.Sum256(payload)
 	checksum := hex.EncodeToString(digest[:])
