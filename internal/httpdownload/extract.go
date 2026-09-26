@@ -59,10 +59,10 @@ func defaultSudoRequired(dest string) bool {
 }
 
 // Extract materializes src into dest based on the file extension.
-// ZIP and uncompressed TAR archives are extracted in-process through an
-// os.Root-confined materializer. Compressed TAR variants still use the
-// existing subprocess backend until their decompression streams are moved
-// behind the same rooted materialization boundary.
+// ZIP and TAR formats supported by the Go standard library are extracted
+// in-process through an os.Root-confined materializer. XZ- and Zstd-compressed
+// TAR archives retain the subprocess backend until streamed decompression is
+// added without granting the subprocess filesystem write authority.
 func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequired bool, toolName string) error {
 	return extract(ctx, src, dest, ext, "", rn, sudoRequired, toolName)
 }
@@ -73,27 +73,22 @@ func extract(ctx context.Context, src, dest, ext, binaryName string, rn run.Runn
 		return fmt.Errorf("extract: mkdir %s: %w", dest, err)
 	}
 
-	// Native ZIP/TAR extraction validates each entry at the write boundary.
-	// Compressed TAR variants still delegated to host tar retain the legacy
-	// preflight safety validation until they are migrated to streamed native
-	// materialization in the next phase.
-	if ext != ".zip" && ext != ".tar" {
+	// XZ/Zstd are the only TAR variants still delegated to host tar. Keep the
+	// legacy preflight hook on that subprocess path until streamed decompression
+	// removes its filesystem write authority.
+	if ext == ".tar.xz" || ext == ".tar.zst" {
 		if err := validateArchiveSafety(src, dest, ext); err != nil {
 			return fmt.Errorf("extract: refusing unsafe archive: %w", err)
 		}
 	}
 
 	switch ext {
-	case ".tar.gz", ".tgz":
-		return extractTar(ctx, src, dest, []string{"xzf"}, rn, sudoRequired, toolName)
-	case ".tar.bz2":
-		return extractTar(ctx, src, dest, []string{"xjf"}, rn, sudoRequired, toolName)
+	case ".tar", ".tar.gz", ".tgz", ".tar.bz2":
+		return extractNativeTar(ctx, src, dest, ext)
 	case ".tar.xz":
 		return extractTar(ctx, src, dest, []string{"xJf"}, rn, sudoRequired, toolName)
 	case ".tar.zst":
 		return extractTar(ctx, src, dest, []string{"--zstd", "-xf"}, rn, sudoRequired, toolName)
-	case ".tar":
-		return extractNativeTar(ctx, src, dest)
 	case ".zip":
 		return extractNativeZip(ctx, src, dest)
 	case ".bz2":

@@ -88,19 +88,19 @@ func TestCurlDownloaderFailure(t *testing.T) {
 	}
 }
 
-func TestExtractTarViaRunner(t *testing.T) {
+func TestExtractTarXZViaRunner(t *testing.T) {
 	t.Parallel()
 	fr := &run.FakeRunner{ExitCode: 0}
 
-	if err := Extract(context.Background(), "/tmp/src.tar.gz", "/tmp/dest", ".tar.gz", fr, false, ""); err != nil {
+	if err := Extract(context.Background(), "/tmp/src.tar.xz", "/tmp/dest", ".tar.xz", fr, false, ""); err != nil {
 		t.Fatalf("unexpected Extract error: %v", err)
 	}
 	if len(fr.Calls) != 1 {
 		t.Fatalf("expected 1 call, got %d", len(fr.Calls))
 	}
 	got := fr.Calls[0]
-	if got.Name != "tar" || got.Args[0] != "xzf" {
-		t.Errorf("unexpected tar call for .tar.gz: %s %v", got.Name, got.Args)
+	if got.Name != "tar" || got.Args[0] != "xJf" {
+		t.Errorf("unexpected tar call for .tar.xz: %s %v", got.Name, got.Args)
 	}
 }
 
@@ -134,9 +134,6 @@ func TestExtractArchiveTypes(t *testing.T) {
 		wantCmd  string
 		wantFlag string
 	}{
-		{".tar.gz", "tar", "xzf"},
-		{".tgz", "tar", "xzf"},
-		{".tar.bz2", "tar", "xjf"},
 		{".tar.xz", "tar", "xJf"},
 		{".tar.zst", "tar", "--zstd"},
 	}
@@ -232,12 +229,23 @@ func TestExtractCopyBinaryUsesConfiguredName(t *testing.T) {
 }
 
 func TestExtractArchiveIgnoresBinaryName(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "tool.tar.gz")
+	writeTarGzWithEntry(t, src, &tar.Header{Name: "bin/tool", Mode: 0o755}, []byte("binary"))
+	dest := filepath.Join(dir, "dest")
 	fr := &run.FakeRunner{ExitCode: 0}
-	if err := extract(context.Background(), "/tmp/tool.tar.gz", "/tmp/dest", ".tar.gz", "renamed", fr, false, "tool"); err != nil {
+
+	if err := extract(context.Background(), src, dest, ".tar.gz", "renamed", fr, false, "tool"); err != nil {
 		t.Fatalf("extract: %v", err)
 	}
-	if got := fr.Calls[0].Args; len(got) < 2 || got[1] != "/tmp/tool.tar.gz" {
-		t.Fatalf("archive extraction changed by binary name: %v", got)
+	if len(fr.Calls) != 0 {
+		t.Fatalf("native archive extraction invoked subprocesses: %+v", fr.Calls)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "bin", "tool")); err != nil {
+		t.Fatalf("archive payload missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "renamed")); !os.IsNotExist(err) {
+		t.Fatalf("binary name should not rename archive entries, got err %v", err)
 	}
 }
 
@@ -349,7 +357,7 @@ func TestExtractTarFailure(t *testing.T) {
 	t.Parallel()
 	fr := &run.FakeRunner{ExitCode: 1, Stderr: "tar: command not found"}
 
-	if err := Extract(context.Background(), "/tmp/src.tar.gz", "/tmp/dest", ".tar.gz", fr, true, ""); err == nil {
+	if err := Extract(context.Background(), "/tmp/src.tar.xz", "/tmp/dest", ".tar.xz", fr, true, ""); err == nil {
 		t.Fatal("expected Extract error, got nil")
 	}
 }
@@ -582,19 +590,25 @@ func TestExtractAllowsRootRelativeTarHardlink(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	tarPath := filepath.Join(dir, "safe-hardlink.tar.gz")
-	writeTarGzWithEntry(t, tarPath, &tar.Header{
-		Name:     "nested/link",
-		Typeflag: tar.TypeLink,
-		Linkname: "bin/tool",
-		Mode:     0o644,
-	}, nil)
+	writeTarGzEntries(t, tarPath, []compressedTarFixtureEntry{
+		{header: tar.Header{Name: "bin/tool", Mode: 0o755, Typeflag: tar.TypeReg}, body: []byte("binary")},
+		{header: tar.Header{Name: "nested/link", Mode: 0o644, Typeflag: tar.TypeLink, Linkname: "bin/tool"}},
+	})
 
 	fr := &run.FakeRunner{ExitCode: 0}
-	if err := Extract(context.Background(), tarPath, filepath.Join(dir, "dest"), ".tar.gz", fr, false, ""); err != nil {
+	dest := filepath.Join(dir, "dest")
+	if err := Extract(context.Background(), tarPath, dest, ".tar.gz", fr, false, ""); err != nil {
 		t.Fatalf("unexpected error for root-relative hardlink target: %v", err)
 	}
-	if len(fr.Calls) != 1 {
-		t.Fatalf("expected extraction to proceed via tar, got %d calls", len(fr.Calls))
+	if len(fr.Calls) != 0 {
+		t.Fatalf("native TAR extraction invoked subprocesses: %+v", fr.Calls)
+	}
+	got, err := os.ReadFile(filepath.Join(dest, "nested", "link")) // #nosec G304 -- dest is test-controlled under t.TempDir.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "binary" {
+		t.Fatalf("hardlink content = %q, want binary", got)
 	}
 }
 
@@ -612,8 +626,15 @@ func TestExtractAllowsSafeTarGz(t *testing.T) {
 	if err := Extract(context.Background(), tarPath, dest, ".tar.gz", fr, false, ""); err != nil {
 		t.Fatalf("unexpected error for safe tar.gz: %v", err)
 	}
-	if len(fr.Calls) != 1 {
-		t.Fatalf("expected extraction to proceed via tar, got %d calls", len(fr.Calls))
+	if len(fr.Calls) != 0 {
+		t.Fatalf("native TAR extraction invoked subprocesses: %+v", fr.Calls)
+	}
+	got, err := os.ReadFile(filepath.Join(dest, "bin", "tool")) // #nosec G304 -- dest is test-controlled under t.TempDir.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "binary" {
+		t.Fatalf("extracted content = %q, want binary", got)
 	}
 }
 

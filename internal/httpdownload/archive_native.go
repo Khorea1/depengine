@@ -334,14 +334,14 @@ func extractNativeZip(ctx context.Context, src, dest string) (retErr error) {
 	return nil
 }
 
-func extractNativeTar(ctx context.Context, src, dest string) (retErr error) {
-	f, err := os.Open(src) // #nosec G304 -- src is the depengine-managed downloaded archive path.
+func extractNativeTar(ctx context.Context, src, dest, ext string) (retErr error) {
+	r, err := openStdlibTarReader(src, ext)
 	if err != nil {
-		return fmt.Errorf("tar: open %s: %w", src, err)
+		return fmt.Errorf("tar: %w", err)
 	}
 	defer func() {
-		if closeErr := f.Close(); retErr == nil && closeErr != nil {
-			retErr = fmt.Errorf("tar: close %s: %w", src, closeErr)
+		if closeErr := r.Close(); retErr == nil && closeErr != nil {
+			retErr = fmt.Errorf("tar: close source %s: %w", src, closeErr)
 		}
 	}()
 
@@ -355,7 +355,7 @@ func extractNativeTar(ctx context.Context, src, dest string) (retErr error) {
 		}
 	}()
 
-	tr := tar.NewReader(f)
+	tr := tar.NewReader(r)
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
