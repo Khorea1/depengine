@@ -15,6 +15,17 @@ import (
 // and must close it. Decompression is intentionally separated from tar entry
 // materialization so every supported format feeds the same rooted archive
 // writer.
+func externalTarDecoder(src, ext string) (string, []string, error) {
+	switch ext {
+	case ".tar.xz":
+		return "xz", []string{"-d", "-c", "--", src}, nil
+	case ".tar.zst":
+		return "zstd", []string{"-d", "-c", "--", src}, nil
+	default:
+		return "", nil, fmt.Errorf("tar archive compression %q has no external decoder", ext)
+	}
+}
+
 func openStdlibTarReader(src, ext string) (io.ReadCloser, error) {
 	f, err := os.Open(src) // #nosec G304 -- src is the depengine-managed downloaded archive path.
 	if err != nil {
