@@ -88,22 +88,47 @@ func TestCurlDownloaderFailure(t *testing.T) {
 	}
 }
 
-func TestExtractTarXZViaRunner(t *testing.T) {
+func TestExtractExternalTarViaStreamingDecoder(t *testing.T) {
 	t.Parallel()
-	fr := &run.FakeRunner{ExitCode: 0}
+	payload := plainTarBytes(t, []tarEntry{{
+		header: tar.Header{Name: "bin/tool", Typeflag: tar.TypeReg, Mode: 0o755},
+		body:   []byte("binary"),
+	}})
+	tests := []struct {
+		ext     string
+		decoder string
+	}{
+		{ext: ".tar.xz", decoder: "xz"},
+		{ext: ".tar.zst", decoder: "zstd"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.ext, func(t *testing.T) {
+			dir := t.TempDir()
+			src := filepath.Join(dir, "src"+tt.ext)
+			dest := filepath.Join(dir, "dest")
+			fr := &run.FakeRunner{Stdout: string(payload)}
 
-	if err := Extract(context.Background(), "/tmp/src.tar.xz", "/tmp/dest", ".tar.xz", fr, false, ""); err != nil {
-		t.Fatalf("unexpected Extract error: %v", err)
-	}
-	if len(fr.Calls) != 1 {
-		t.Fatalf("expected 1 call, got %d", len(fr.Calls))
-	}
-	got := fr.Calls[0]
-	if got.Name != "tar" || got.Args[0] != "xJf" {
-		t.Errorf("unexpected tar call for .tar.xz: %s %v", got.Name, got.Args)
+			if err := Extract(context.Background(), src, dest, tt.ext, fr, false, ""); err != nil {
+				t.Fatalf("Extract() error = %v", err)
+			}
+			if len(fr.Calls) != 1 {
+				t.Fatalf("calls = %+v, want one decoder call", fr.Calls)
+			}
+			got := fr.Calls[0]
+			wantArgs := []string{"-d", "-c", "--", src}
+			if got.Name != tt.decoder || !slices.Equal(got.Args, wantArgs) {
+				t.Fatalf("decoder call = %s %v, want %s %v", got.Name, got.Args, tt.decoder, wantArgs)
+			}
+			data, err := os.ReadFile(filepath.Join(dest, "bin", "tool")) // #nosec G304 -- dest is test-controlled under t.TempDir.
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(data) != "binary" {
+				t.Fatalf("extracted content = %q, want binary", data)
+			}
+		})
 	}
 }
-
 func TestExtractZipNative(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -127,39 +152,25 @@ func TestExtractZipNative(t *testing.T) {
 	}
 }
 
-func TestExtractArchiveTypes(t *testing.T) {
+func TestExternalTarDecoderDoesNotReceiveDestination(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		ext      string
-		wantCmd  string
-		wantFlag string
-	}{
-		{".tar.xz", "tar", "xJf"},
-		{".tar.zst", "tar", "--zstd"},
+	payload := plainTarBytes(t, []tarEntry{{
+		header: tar.Header{Name: "tool", Typeflag: tar.TypeReg, Mode: 0o644},
+		body:   []byte("x"),
+	}})
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.tar.xz")
+	dest := filepath.Join(dir, "sensitive-destination")
+	fr := &run.FakeRunner{Stdout: string(payload)}
+	if err := Extract(context.Background(), src, dest, ".tar.xz", fr, false, ""); err != nil {
+		t.Fatal(err)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.ext, func(t *testing.T) {
-			fr := &run.FakeRunner{ExitCode: 0}
-
-			src := "/tmp/src" + tt.ext
-			if err := Extract(context.Background(), src, "/tmp/dest", tt.ext, fr, false, ""); err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if len(fr.Calls) != 1 {
-				t.Fatalf("expected 1 call, got %d", len(fr.Calls))
-			}
-			got := fr.Calls[0]
-			if got.Name != tt.wantCmd {
-				t.Errorf("expected cmd=%s, got %s", tt.wantCmd, got.Name)
-			}
-			if got.Args[0] != tt.wantFlag {
-				t.Errorf("expected flag=%s, got %s", tt.wantFlag, got.Args[0])
-			}
-		})
+	for _, arg := range fr.Calls[0].Args {
+		if arg == dest {
+			t.Fatalf("decoder received extraction destination in argv: %+v", fr.Calls[0])
+		}
 	}
 }
-
 func TestExtractCopyBinary(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
@@ -353,15 +364,24 @@ func TestExtractCopyBinaryElevationUnavailable(t *testing.T) {
 	}
 }
 
-func TestExtractTarFailure(t *testing.T) {
+func TestExtractExternalTarDecoderFailure(t *testing.T) {
 	t.Parallel()
-	fr := &run.FakeRunner{ExitCode: 1, Stderr: "tar: command not found"}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.tar.xz")
+	payload := plainTarBytes(t, []tarEntry{{
+		header: tar.Header{Name: "tool", Typeflag: tar.TypeReg, Mode: 0o644},
+		body:   []byte("binary"),
+	}})
+	fr := &run.FakeRunner{Stdout: string(payload), ExitCode: 1, Stderr: "corrupt xz stream"}
 
-	if err := Extract(context.Background(), "/tmp/src.tar.xz", "/tmp/dest", ".tar.xz", fr, true, ""); err == nil {
-		t.Fatal("expected Extract error, got nil")
+	err := Extract(context.Background(), src, filepath.Join(dir, "dest"), ".tar.xz", fr, false, "")
+	if err == nil {
+		t.Fatal("expected decoder failure")
+	}
+	if !strings.Contains(err.Error(), "xz decoder") || !strings.Contains(err.Error(), "corrupt xz stream") {
+		t.Fatalf("decoder failure = %v", err)
 	}
 }
-
 func TestExtractZipFailure(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -641,27 +661,50 @@ func TestExtractAllowsSafeTarGz(t *testing.T) {
 // .tar.xz has no decompressor in the standard library, so validateArchiveSafety
 // is a no-op for it — Extract must still reach the system `tar` binary
 // exactly as before this change (see TestExtractArchiveTypes).
-func TestExtractSkipsSafetyCheckForUnsupportedCompression(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	// Not a real xz file — proves the (skipped) check doesn't block on it.
-	xzPath := filepath.Join(dir, "src.tar.xz")
-	if err := os.WriteFile(xzPath, []byte("not really xz"), 0o644); err != nil {
-		t.Fatal(err)
+func TestExternalTarExtractionRejectsPreexistingSymlinkPivot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink fixture requires platform symlink privileges")
 	}
+	payload := plainTarBytes(t, []tarEntry{{
+		header: tar.Header{Name: "pivot/escaped", Typeflag: tar.TypeReg, Mode: 0o644},
+		body:   []byte("payload"),
+	}})
+	for _, tt := range []struct {
+		ext     string
+		decoder string
+	}{
+		{ext: ".tar.xz", decoder: "xz"},
+		{ext: ".tar.zst", decoder: "zstd"},
+	} {
+		t.Run(tt.ext, func(t *testing.T) {
+			root := t.TempDir()
+			dest := filepath.Join(root, "dest")
+			outside := filepath.Join(root, "outside")
+			if err := os.Mkdir(dest, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(outside, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(outside, filepath.Join(dest, "pivot")); err != nil {
+				t.Skipf("create symlink fixture: %v", err)
+			}
 
-	fr := &run.FakeRunner{ExitCode: 0}
-	dest := filepath.Join(dir, "dest")
-	if err := Extract(context.Background(), xzPath, dest, ".tar.xz", fr, false, ""); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(fr.Calls) != 1 {
-		t.Fatalf("expected extraction to proceed via tar (no stdlib xz check), got %d calls", len(fr.Calls))
+			src := filepath.Join(root, "payload"+tt.ext)
+			fr := &run.FakeRunner{Stdout: string(payload)}
+			err := Extract(context.Background(), src, dest, tt.ext, fr, false, "")
+			if err == nil {
+				t.Fatal("expected rooted extraction to reject staging symlink pivot")
+			}
+			if len(fr.Calls) != 1 || fr.Calls[0].Name != tt.decoder {
+				t.Fatalf("calls = %+v, want only %s decoder", fr.Calls, tt.decoder)
+			}
+			if _, statErr := os.Stat(filepath.Join(outside, "escaped")); !os.IsNotExist(statErr) {
+				t.Fatalf("outside path was materialized or became unreadable: %v", statErr)
+			}
+		})
 	}
 }
-
-// --- elevation guard ---
-
 func TestElevationGuardNoMethod(t *testing.T) {
 	t.Parallel()
 	if os.Geteuid() == 0 {
