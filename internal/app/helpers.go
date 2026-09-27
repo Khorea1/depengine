@@ -336,6 +336,30 @@ func lockCandidateToolName(key string) string {
 // release resolved. Repository-backed methods are identified by their resolved
 // config shape rather than by method kind. Used by install to decide whether
 // auto-resolution is needed when no lockfile exists.
+// hasLockableMutableSelectors reports whether first install must create a lock
+// for a mutable Git selector. Direct git branch/tag and cargo --git branch/tag
+// are the selector classes legacy lock v1 can make immutable.
+func hasLockableMutableSelectors(s *config.Schema) bool {
+	for _, tool := range s.Tools {
+		for _, method := range tool.Methods {
+			if method == nil || (method.Kind != "git" && method.Kind != "cargo") {
+				continue
+			}
+			if method.Kind == "cargo" {
+				if source, _ := method.Config["git"].(string); source == "" {
+					continue
+				}
+			}
+			branch, _ := method.Config["branch"].(string)
+			tag, _ := method.Config["tag"].(string)
+			if branch != "" || tag != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func hasLatestPlaceholders(s *config.Schema) bool {
 	for _, tool := range s.Tools {
 		for _, method := range tool.Methods {

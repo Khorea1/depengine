@@ -31,6 +31,17 @@ const (
 	Activation
 )
 
+// EdgeState describes the result of host-aware projection. The zero value is
+// intentionally DeclaredEdge: declared graphs preserve guards without claiming
+// whether they are active on the current host.
+type EdgeState uint8
+
+const (
+	DeclaredEdge EdgeState = iota
+	ActiveEdge
+	InactiveEdge
+)
+
 // Graph is the typed dependency graph intermediate representation.
 //
 // Edges are kept as semantic multiedges. Renderers may collapse them visually,
@@ -53,6 +64,7 @@ type Edge struct {
 	To             string
 	Kind           EdgeKind
 	Role           EdgeRole
+	State          EdgeState
 	Guard          Guard
 	Method         string
 	Candidate      int
@@ -86,7 +98,7 @@ func (g Graph) SchedulingProjection() Graph {
 		out.AddNode(node)
 	}
 	for _, edge := range g.Edges {
-		if edge.Role == Scheduling {
+		if edge.Role == Scheduling && edge.State != InactiveEdge {
 			out.AddEdge(edge)
 		}
 	}
@@ -120,6 +132,9 @@ func (g Graph) Canonicalize() Graph {
 		}
 		if a.Role != b.Role {
 			return a.Role < b.Role
+		}
+		if a.State != b.State {
+			return a.State < b.State
 		}
 		if a.Method != b.Method {
 			return a.Method < b.Method

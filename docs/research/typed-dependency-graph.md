@@ -2,7 +2,7 @@
 
 - Status: research / design proposal
 - Scope: `depengine graph` representation, analysis, and terminal rendering
-- Implementation status: typed IR, effective/resolved CLI projections, and the terminal layered renderer are implemented; inactive-edge diagnostics remain deferred; see `typed-dependency-graph-implementation-status.md`
+- Implementation status: typed IR, effective/resolved CLI projections, inactive-edge diagnostics, and the terminal layered renderer are implemented; see `typed-dependency-graph-implementation-status.md`
 - Naming used in this document: **DPG** = **DePenGine Graph** (project shorthand, not "Program Dependence Graph")
 
 ## Motivation
@@ -351,21 +351,22 @@ declared:
 effective:
     evaluate guards against host facts
     show applicable edges by default
-    optionally support --show-inactive for diagnostics
+    --show-inactive retains guard-rejected edges for diagnostics
 
 resolved:
     apply exact candidate selection before candidate-guard evaluation
     evaluate guards only for relations that can still participate
-    show only relations participating in the resolved plan
+    show only relations participating in the resolved plan by default
+    --show-inactive retains guard-rejected relations after candidate selection
 ```
 
 An inactive edge is therefore meaningful only in an evaluated projection such
 as `effective` or `resolved`; it is not a state that should appear in the
 default declared view.
 
-The first implementation does not need to expose all three CLI views, but the
-IR and projection API must preserve this model so that adding them later does
-not require changing graph semantics.
+The CLI exposes all three views. Inactive-edge diagnostics deliberately do not
+change resolution semantics: an unselected exact-candidate relation is omitted
+before its guard is evaluated, even when `--show-inactive` is enabled.
 
 ## Scheduling projection
 

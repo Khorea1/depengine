@@ -197,11 +197,12 @@ func nonEmptyLines(output string) []string {
 }
 
 type resolvedCloneSource struct {
-	URL         string
-	Branch      string
-	Tag         string
-	Revision    string
-	ResolvedTag string
+	URL            string
+	Branch         string
+	Tag            string
+	Revision       string
+	LockedRevision string
+	ResolvedTag    string
 }
 
 // resolveCloneSource performs the read-only part of Install's git source
@@ -225,7 +226,7 @@ func resolveCloneSource(ctx context.Context, rn run.Runner, tool *config.Tool, m
 		}
 	}
 
-	source := resolvedCloneSource{URL: url}
+	source := resolvedCloneSource{URL: url, LockedRevision: mc.LockedRevision}
 	source.Branch, _ = mc.Config["branch"].(string)
 	source.Tag, _ = mc.Config["tag"].(string)
 	source.Revision, _ = mc.Config["rev"].(string)
@@ -278,6 +279,8 @@ func (a *GitAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *confi
 		resolved.Identity.Version = source.ResolvedTag
 	case source.Revision != "":
 		resolved.Identity.Revision = source.Revision
+	case source.LockedRevision != "":
+		resolved.Identity.Revision = source.LockedRevision
 	case source.Branch != "" || source.Tag != "":
 		revision, err := resolveRemoteRevision(ctx, rn, mc, source)
 		if err != nil {
@@ -286,6 +289,23 @@ func (a *GitAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *confi
 		resolved.Identity.Revision = revision
 	}
 	return &resolved, nil
+}
+
+// ResolveMutableRevision resolves a configured branch or tag to the concrete
+// remote commit without mutating host state. It is shared with lock v1 so the
+// commit persisted in depengine.lock uses exactly the adapter's ref semantics.
+func ResolveMutableRevision(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (string, error) {
+	if mc == nil {
+		return "", errors.New("git: method is required")
+	}
+	source, err := resolveCloneSource(ctx, rn, tool, mc)
+	if err != nil {
+		return "", err
+	}
+	if source.Branch == "" && source.Tag == "" {
+		return "", errors.New("git: mutable branch or tag is required")
+	}
+	return resolveRemoteRevision(ctx, rn, mc, source)
 }
 
 func resolveRemoteRevision(ctx context.Context, rn run.Runner, mc *config.MethodCandidate, source resolvedCloneSource) (string, error) {

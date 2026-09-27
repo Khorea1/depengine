@@ -1004,6 +1004,16 @@ func TestValidateFrozenRejectsMissingSupportedPins(t *testing.T) {
 			method: &config.MethodCandidate{Kind: "http", Config: map[string]any{"url": "https://example.test/tool.tar.gz", "checksum": "sha256:auto"}},
 			want:   "missing resolved checksum pin",
 		},
+		{
+			name:   "direct git branch",
+			method: &config.MethodCandidate{Kind: "git", Config: map[string]any{"url": "https://example.test/tool.git", "branch": "main"}},
+			want:   "missing resolved Git revision pin",
+		},
+		{
+			name:   "cargo git tag",
+			method: &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"git": "https://example.test/tool.git", "tag": "v1"}},
+			want:   "missing resolved Git revision pin",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1049,13 +1059,6 @@ func TestValidateFrozenAllowsSelectorsOutsideLegacyLockCoverage(t *testing.T) {
 			Methods: []*config.MethodCandidate{{
 				Kind:   "container",
 				Config: map[string]any{"manager": "docker", "source": "example/tool", "tag": "latest"},
-			}},
-		},
-		"git": {
-			Name: "git",
-			Methods: []*config.MethodCandidate{{
-				Kind:   "git",
-				Config: map[string]any{"url": "https://example.test/tool.git", "branch": "main"},
 			}},
 		},
 		"snap": {
@@ -1262,5 +1265,94 @@ func TestMergeCarriesToolsAbsentFromFresh(t *testing.T) {
 	// carried by the caller's identity policy, never by Merge itself.
 	if _, ok := got.MethodsHash["outside"]; ok {
 		t.Fatalf("Merge leaked existing MethodsHash entries: %v", got.MethodsHash)
+	}
+}
+
+func TestResolveAllPinsMutableGitSelectors(t *testing.T) {
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	cases := []struct {
+		name   string
+		method *config.MethodCandidate
+		want   string
+		stdout string
+	}{
+		{
+			name:   "direct branch",
+			method: &config.MethodCandidate{Kind: "git", Config: map[string]any{"url": "https://example.test/tool.git", "branch": "main"}},
+			want:   "branch:main",
+			stdout: commit + "\trefs/heads/main\n",
+		},
+		{
+			name:   "cargo annotated tag",
+			method: &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"git": "https://example.test/tool.git", "tag": "v1"}},
+			want:   "tag:v1",
+			stdout: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\trefs/tags/v1\n" + commit + "\trefs/tags/v1^{}\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			schema := &config.Schema{Tools: map[string]*config.Tool{
+				"tool": {Name: "tool", Methods: []*config.MethodCandidate{tc.method}},
+			}}
+			lk, err := ResolveAll(context.Background(), schema, &run.FakeRunner{Stdout: tc.stdout})
+			if err != nil {
+				t.Fatal(err)
+			}
+			pin := lk.Tools["tool/"+tc.method.Kind+"/0"]
+			if pin.Selector != tc.want || pin.Revision != commit {
+				t.Fatalf("pin = %+v, want selector %q revision %s", pin, tc.want, commit)
+			}
+		})
+	}
+}
+
+func TestApplyMutableGitPinReusesCommitWithoutChangingSelector(t *testing.T) {
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	method := &config.MethodCandidate{Kind: "git", Config: map[string]any{"url": "https://example.test/tool.git", "branch": "main"}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}}}}
+	Apply(schema, &Lock{Version: 1, Tools: map[string]ToolPin{
+		"tool/git/0": {Selector: "branch:main", Revision: commit},
+	}})
+	if method.LockedRevision != commit {
+		t.Fatalf("LockedRevision = %q, want %q", method.LockedRevision, commit)
+	}
+	if got := method.Config["branch"]; got != "main" {
+		t.Fatalf("branch = %#v, want original selector preserved", got)
+	}
+}
+
+func TestValidateFrozenRejectsMutableGitSelectorDrift(t *testing.T) {
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	method := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"git": "https://example.test/tool.git", "branch": "develop"}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}}}}
+	lk := frozenTestLock(schema, map[string]ToolPin{
+		"tool/cargo/0": {Selector: "branch:main", Revision: commit},
+	})
+	if err := ValidateFrozen(schema, lk); err == nil || !strings.Contains(err.Error(), "Git selector changed") {
+		t.Fatalf("ValidateFrozen() error = %v, want selector drift", err)
+	}
+}
+
+func TestMergeClearsRemovedMutableGitPin(t *testing.T) {
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	existing := &Lock{Version: 1, Tools: map[string]ToolPin{
+		"tool/git/0": {Selector: "branch:main", Revision: commit, Checksum: "sha256:abc"},
+	}}
+	fresh := &Lock{Version: 1, Tools: map[string]ToolPin{}, clearGitRevision: map[string]struct{}{"tool/git/0": {}}}
+	merged := Merge(existing, fresh)
+	pin := merged.Tools["tool/git/0"]
+	if pin.Revision != "" || pin.Selector != "" || pin.Checksum != "sha256:abc" {
+		t.Fatalf("merged pin = %+v, want only non-Git fields retained", pin)
+	}
+}
+
+func TestLoadRejectsMalformedGitPin(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "depengine.lock")
+	data := []byte("version = 1\n[tools.'tool/git/0']\nselector = 'branch:main'\nrevision = 'main'\n")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "40- or 64-hex") {
+		t.Fatalf("Load() error = %v, want malformed revision rejection", err)
 	}
 }

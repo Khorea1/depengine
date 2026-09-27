@@ -36,6 +36,22 @@ suite on native CI runners. Windows supports winget, Scoop, Chocolatey, file
 locking, and state handling, but its package-manager lifecycle coverage is
 still lighter than Linux.
 
+## Installing depengine
+
+Use the artifacts published on the project's [GitHub Releases
+page](https://github.com/Khorea1/depengine/releases). Release tags produce
+platform archives plus supported native package artifacts, a SHA-256 checksum
+file, and keyless cosign material. Install the matching artifact for your
+platform and place `depengine` on `PATH`. Building from a source checkout with
+the pinned Go toolchain is also supported.
+
+Version-suffixed module installation such as
+`go install github.com/Khorea1/depengine@vX.Y.Z` is **not** a supported
+distribution path. The main module intentionally contains `replace` directives
+for transitive `gopkg.in` sources, and the Go tool rejects `go install
+pkg@version` when the providing module contains `replace` directives. Use a
+published release artifact or build from a checkout instead.
+
 ## Quick start
 
 Create a project schema:

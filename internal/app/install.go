@@ -241,11 +241,11 @@ func resolveInstallLock(ctx context.Context, p installPlan, s *config.Schema, lg
 		return nil, err
 	}
 	if lk == nil && !p.frozen {
-		if hasLatestPlaceholders(s) {
-			lg.Info("no lockfile found — resolving latest versions")
+		if hasLatestPlaceholders(s) || hasLockableMutableSelectors(s) {
+			lg.Info("no lockfile found — resolving lockable selectors")
 			newLock, err := lock.ResolveAll(ctx, s, run.OSExecRunner{})
 			if err != nil {
-				lg.Warn("could not auto-resolve latest", "error", err, "hint", "run 'depengine update' manually")
+				lg.Warn("could not auto-resolve lockable selectors", "error", err, "hint", "run 'depengine update' manually")
 			} else if newLock != nil {
 				lock.Apply(s, newLock)
 				lk = newLock

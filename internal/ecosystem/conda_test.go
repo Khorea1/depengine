@@ -98,9 +98,13 @@ func TestCondaAdapterV2ObserveExactIdentityAndErrors(t *testing.T) {
 	adapter := NewCondaAdapter()
 	tool, mc := condaTool("numpy", "numpy")
 	mc.Config["prefix"] = "/envs/data"
+	mc.Config["version"] = "2.0.0"
 	observed, err := adapter.Observe(context.Background(), &run.FakeRunner{Stdout: `[{"name":"numpy","version":"2.1.0","build":"py312_0","channel":"conda-forge"}]`}, tool, mc)
 	if err != nil || observed.Presence != plan.PresencePresent || observed.Identity.Version != "2.1.0" || observed.Identity.Revision != "py312_0" || observed.Identity.Source != "conda-forge" {
 		t.Fatalf("Observe() = %#v, error %v", observed, err)
+	}
+	if verification := plan.Reconcile(plan.ResolvedIdentity{Package: "numpy", Version: "2.0.0"}, observed); verification.State != plan.StateDrifted {
+		t.Fatalf("Reconcile() = %+v, want exact-version drift", verification)
 	}
 	if _, err := adapter.Observe(context.Background(), &run.FakeRunner{ExitCode: 1}, tool, mc); err == nil {
 		t.Fatal("backend failure should return an error")

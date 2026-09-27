@@ -48,6 +48,7 @@ func TestSDKManCheckExactVersion(t *testing.T) {
 	}
 	home := t.TempDir()
 	exectest.SetHome(t, home)
+	t.Setenv("SDKMAN_DIR", "")
 
 	versionDir := filepath.Join(home, ".sdkman", "candidates", "java", "21.0.4-tem")
 	if err := os.MkdirAll(versionDir, 0o700); err != nil {
@@ -70,6 +71,7 @@ func TestSDKManCheckExactVersionRejectsDifferentInstalledVersion(t *testing.T) {
 	}
 	home := t.TempDir()
 	exectest.SetHome(t, home)
+	t.Setenv("SDKMAN_DIR", "")
 
 	otherVersionDir := filepath.Join(home, ".sdkman", "candidates", "java", "17.0.12-tem")
 	if err := os.MkdirAll(otherVersionDir, 0o700); err != nil {
@@ -96,6 +98,7 @@ func TestSDKManCheckWithoutVersionKeepsCurrentSemantics(t *testing.T) {
 	}
 	home := t.TempDir()
 	exectest.SetHome(t, home)
+	t.Setenv("SDKMAN_DIR", "")
 
 	versionDir := filepath.Join(home, ".sdkman", "candidates", "java", "17.0.12-tem")
 	if err := os.MkdirAll(versionDir, 0o700); err != nil {
@@ -142,6 +145,7 @@ func TestSDKManInstalledVersionExact(t *testing.T) {
 	}
 	home := t.TempDir()
 	exectest.SetHome(t, home)
+	t.Setenv("SDKMAN_DIR", "")
 	version := "21.0.4-tem"
 	if err := os.MkdirAll(filepath.Join(home, ".sdkman", "candidates", "java", version), 0o700); err != nil {
 		t.Fatal(err)
@@ -161,6 +165,7 @@ func TestSDKManInstalledVersionCurrentSymlink(t *testing.T) {
 	}
 	home := t.TempDir()
 	exectest.SetHome(t, home)
+	t.Setenv("SDKMAN_DIR", "")
 	version := "17.0.12-tem"
 	versionDir := filepath.Join(home, ".sdkman", "candidates", "java", version)
 	if err := os.MkdirAll(versionDir, 0o700); err != nil {
@@ -175,5 +180,25 @@ func TestSDKManInstalledVersionCurrentSymlink(t *testing.T) {
 	}
 	if got != version {
 		t.Fatalf("InstalledVersion = %q, want %q", got, version)
+	}
+}
+
+func TestSDKManCheckExactVersionRejectsNonDirectoryEntry(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("SDKMAN layout is Unix-specific")
+	}
+	home := t.TempDir()
+	exectest.SetHome(t, home)
+	t.Setenv("SDKMAN_DIR", "")
+	versionPath := filepath.Join(home, ".sdkman", "candidates", "java", "21.0.4-tem")
+	if err := os.MkdirAll(filepath.Dir(versionPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(versionPath, []byte("not a version directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	method := &config.MethodCandidate{Kind: "sdkman", Config: map[string]any{"pkg": "java", "version": "21.0.4-tem"}}
+	if NewSDKManAdapter().Check(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "java"}, method) {
+		t.Fatal("Check() accepted a regular file as an installed SDKMAN version")
 	}
 }

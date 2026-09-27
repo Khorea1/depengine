@@ -22,6 +22,18 @@ func TestSchedulingProjectionKeepsOnlySchedulingEdges(t *testing.T) {
 	}
 }
 
+func TestSchedulingProjectionExcludesInactiveEdges(t *testing.T) {
+	g := NewGraph()
+	g.AddNode(Node{ID: "a"})
+	g.AddNode(Node{ID: "b"})
+	g.AddEdge(Edge{From: "a", To: "b", Kind: ToolRequire, Role: Scheduling, State: InactiveEdge})
+
+	projected := g.SchedulingProjection()
+	if len(projected.Edges) != 0 {
+		t.Fatalf("inactive scheduling edge participated in ordering: %#v", projected.Edges)
+	}
+}
+
 func TestGraphPreservesSemanticMultiedges(t *testing.T) {
 	g := NewGraph()
 	g.AddEdge(Edge{From: "a", To: "b", Kind: ToolRequire, Role: Scheduling})

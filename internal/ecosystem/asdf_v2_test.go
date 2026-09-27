@@ -78,7 +78,7 @@ func TestAsdfAdapterInstalledVersionUsesObservedExactVersion(t *testing.T) {
 	mc.Config["version"] = "18.20.4"
 
 	version, err := a.InstalledVersion(context.Background(), &run.FakeRunner{
-		LookPaths: map[string]bool{"asdf": true},
+		LookPaths: map[string]bool{"asdf": true, "mise": false},
 		Stdout:    "  18.20.4\n  20.17.0\n",
 	}, tool, mc)
 	if err != nil {
@@ -89,14 +89,14 @@ func TestAsdfAdapterInstalledVersionUsesObservedExactVersion(t *testing.T) {
 	}
 }
 
-func TestAsdfAdapterInstalledVersionDoesNotInventVersion(t *testing.T) {
+func TestAsdfAdapterInstalledVersionReportsDriftWithoutInventingUnpinnedVersion(t *testing.T) {
 	t.Parallel()
 	a := NewAsdfAdapter()
 
 	t.Run("unpinned", func(t *testing.T) {
 		tool, mc := asdfTool("node", "nodejs")
 		version, err := a.InstalledVersion(context.Background(), &run.FakeRunner{
-			LookPaths: map[string]bool{"asdf": true},
+			LookPaths: map[string]bool{"asdf": true, "mise": false},
 			Stdout:    "  20.17.0\n",
 		}, tool, mc)
 		if err != nil {
@@ -111,16 +111,40 @@ func TestAsdfAdapterInstalledVersionDoesNotInventVersion(t *testing.T) {
 		tool, mc := asdfTool("node", "nodejs")
 		mc.Config["version"] = "18.20.4"
 		version, err := a.InstalledVersion(context.Background(), &run.FakeRunner{
-			LookPaths: map[string]bool{"asdf": true},
+			LookPaths: map[string]bool{"asdf": true, "mise": false},
 			Stdout:    "  20.17.0\n",
 		}, tool, mc)
 		if err != nil {
 			t.Fatalf("InstalledVersion() error = %v", err)
 		}
-		if version != "" {
-			t.Fatalf("InstalledVersion() = %q, want empty when exact version is absent", version)
+		if version != "20.17.0" {
+			t.Fatalf("InstalledVersion() = %q, want observed drift version 20.17.0", version)
+		}
+		observation, err := a.Observe(context.Background(), &run.FakeRunner{
+			LookPaths: map[string]bool{"asdf": true, "mise": false},
+			Stdout:    "  20.17.0\n",
+		}, tool, mc)
+		if err != nil {
+			t.Fatalf("Observe() error = %v", err)
+		}
+		verification := plan.Reconcile(plan.ResolvedIdentity{Package: "nodejs", Version: "18.20.4"}, observation)
+		if verification.State != plan.StateDrifted {
+			t.Fatalf("verification = %+v, want drifted", verification)
 		}
 	})
+}
+
+func TestMiseInstalledVersionsFiltersInstalledRows(t *testing.T) {
+	versions, err := miseInstalledVersions([]byte(`[
+		{"version":"20.17.0","installed":true},
+		{"version":"22.0.0","installed":false}
+	]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(versions, []string{"20.17.0"}) {
+		t.Fatalf("versions = %#v, want installed rows only", versions)
+	}
 }
 
 func TestAsdfAdapterV2RejectsOperations(t *testing.T) {

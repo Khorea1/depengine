@@ -1257,28 +1257,3 @@ func (a *BaseAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandida
 
 var _ exec.Versioner = (*BaseAdapter)(nil)
 var _ exec.AdapterV2 = (*BaseAdapter)(nil)
-
-// hasWord reports whether s contains word as a standalone word, using
-// simple boundary matching (space, tab, newline, or start/end of string).
-// This avoids false positives from substring matches (e.g. "python" matching
-// "ms-python.python" or "ipython").
-func hasWord(s, word string) bool {
-	if word == "" {
-		return false
-	}
-	start := 0
-	for start <= len(s) {
-		idx := strings.Index(s[start:], word)
-		if idx < 0 {
-			return false
-		}
-		abs := start + idx
-		before := abs == 0 || s[abs-1] == ' ' || s[abs-1] == '\t' || s[abs-1] == '\n' || s[abs-1] == '-'
-		after := abs+len(word) >= len(s) || s[abs+len(word)] == ' ' || s[abs+len(word)] == '\t' || s[abs+len(word)] == '\n' || s[abs+len(word)] == '-'
-		if before && after {
-			return true
-		}
-		start = abs + 1
-	}
-	return false
-}

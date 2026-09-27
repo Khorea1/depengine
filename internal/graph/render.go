@@ -27,9 +27,11 @@ func RenderMermaidGraph(graph Graph) string {
 	b.WriteString("graph TD\n")
 
 	for _, edge := range graph.Canonicalize().Edges {
-		label := edgeLabel(edge)
+		label := edgeRenderLabel(edge)
 		guard := guardLabel(edge.Guard)
 		switch {
+		case edge.State == InactiveEdge:
+			fmt.Fprintf(&b, "  %s -.->|%s| %s\n", edge.From, label, edge.To)
 		case edge.Kind == MethodRequire:
 			if label == "" {
 				fmt.Fprintf(&b, "  %s -.-> %s\n", edge.From, edge.To)
@@ -60,9 +62,11 @@ func RenderDOTGraph(graph Graph) string {
 	b.WriteString("digraph depengine {\n")
 
 	for _, edge := range graph.Canonicalize().Edges {
-		label := edgeLabel(edge)
+		label := edgeRenderLabel(edge)
 		guard := guardLabel(edge.Guard)
 		switch {
+		case edge.State == InactiveEdge:
+			fmt.Fprintf(&b, "  %q -> %q [style=dotted,label=%q,constraint=false];\n", edge.From, edge.To, label)
 		case edge.Kind == MethodRequire:
 			fmt.Fprintf(&b, "  %q -> %q [style=dashed", edge.From, edge.To)
 			if label != "" {
@@ -107,6 +111,12 @@ func RenderTextGraph(levels [][]string, graph Graph) string {
 
 	for _, edge := range graph.Edges {
 		switch {
+		case edge.State == InactiveEdge:
+			if label := edgeLabel(edge); label != "" {
+				fmt.Fprintf(&b, "inactive: %s -[%s]-> %s\n", edge.From, label, edge.To)
+			} else {
+				fmt.Fprintf(&b, "inactive: %s -> %s\n", edge.From, edge.To)
+			}
 		case edge.Kind == MethodRequire:
 			fmt.Fprintf(&b, "conditional: %s -[%s]-> %s\n", edge.From, edgeLabel(edge), edge.To)
 		case edge.Guard != nil:
@@ -125,4 +135,15 @@ func edgeLabel(edge Edge) string {
 		return edge.Method
 	}
 	return edge.Method + "; " + guard
+}
+
+func edgeRenderLabel(edge Edge) string {
+	label := edgeLabel(edge)
+	if edge.State != InactiveEdge {
+		return label
+	}
+	if label == "" {
+		return "inactive"
+	}
+	return "inactive; " + label
 }

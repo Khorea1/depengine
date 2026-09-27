@@ -28,6 +28,12 @@ var ErrProjectionUnavailable = errors.New("graph: projection context unavailable
 // ProjectionContext supplies domain decisions without coupling graph to config,
 // platform facts, or install-plan types.
 type ProjectionContext struct {
+	// IncludeInactive retains relations rejected by evaluated guards and marks
+	// them InactiveEdge. Exact candidate selection still filters unselected
+	// method relations before their guards are evaluated. It has no effect on
+	// the declared view, where active/inactive state is intentionally unknown.
+	IncludeInactive bool
+
 	// GuardActive evaluates an opaque declared guard. It is only required when
 	// the input graph actually contains guarded edges.
 	GuardActive func(Guard) (bool, error)
@@ -57,8 +63,9 @@ func (v GraphView) String() string {
 // Project returns a semantic projection of the graph.
 //
 // DeclaredView is host-independent. EffectiveView evaluates guards and omits
-// inactive relations. ResolvedView additionally keeps only method-require
-// relations that belong to the selected candidate for their dependent tool.
+// inactive relations unless IncludeInactive is requested. ResolvedView first
+// applies exact candidate selection, then evaluates guards only on relations
+// that can still participate in the selected plan.
 func (g Graph) Project(view GraphView, context ProjectionContext) (Graph, error) {
 	if view != DeclaredView && view != EffectiveView && view != ResolvedView {
 		return Graph{}, fmt.Errorf("graph: unknown projection %d", view)
@@ -94,10 +101,15 @@ func (g Graph) Project(view GraphView, context ProjectionContext) (Graph, error)
 				return Graph{}, fmt.Errorf("graph: evaluate guard on %q -> %q: %w", edge.From, edge.To, err)
 			}
 			if !active {
+				if context.IncludeInactive {
+					edge.State = InactiveEdge
+					out.AddEdge(edge)
+				}
 				continue
 			}
 		}
 
+		edge.State = ActiveEdge
 		out.AddEdge(edge)
 	}
 

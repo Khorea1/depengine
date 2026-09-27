@@ -1,6 +1,6 @@
 # Typed dependency graph implementation status
 
-Status: typed IR, host-aware CLI projections, and terminal graph layout complete
+Status: typed IR, host-aware CLI projections, inactive-edge diagnostics, and terminal graph layout complete
 
 The research proposal in `docs/research/typed-dependency-graph.md` identified the need for one typed intermediate representation between schema loading, scheduling, and rendering.
 
@@ -23,12 +23,13 @@ The research proposal in `docs/research/typed-dependency-graph.md` identified th
 - level-oriented text rendering from the typed IR;
 - `constraint=false` for activation-only method edges in DOT;
 - `depengine graph` builds one declared IR and reuses it for projection, sorting, and rendering;
-- context-driven effective projection that evaluates guards and omits inactive edges;
-- context-driven resolved projection that filters method edges to the exact selected candidate before evaluating candidate guards;
+- context-driven effective projection that evaluates guards, omits inactive edges by default, and can retain them with explicit inactive state;
+- context-driven resolved projection that filters method edges to the exact selected candidate before evaluating candidate guards; unselected candidate guards remain unevaluated even when inactive diagnostics are requested;
 - CLI config/platform guard adapter backed by the canonical `Condition.Match` semantics;
 - exact candidate identity retained in explain attempts instead of reconstructing identity from kind/label;
 - read-only resolved-candidate selection reused from `ExplainTool`, including correct fail-closed behavior when a synthesized winning candidate has no declared ordinal;
 - `depengine graph --view declared|effective|resolved`, with `declared` preserving the existing host-independent default;
+- `depengine graph --show-inactive` for evaluated views, retaining guard-rejected relations as visibly inactive diagnostics while excluding them from scheduling; exact candidate selection still omits unselected method relations;
 - weakly connected component analysis, isolated-node compaction, and per-component edge sets for layout;
 - scheduling ranks exposed from levels for layered layout;
 - deterministic fixed-sweep barycenter ordering within ranks to reduce avoidable crossings without changing scheduling ranks;
@@ -59,7 +60,7 @@ The default `depengine graph` view remains `declared`: it gathers no host facts 
 
 ## Projection policy
 
-`effective` and `resolved` currently omit inactive edges. They do not retain a second inactive-edge set in the IR.
+`effective` and `resolved` omit guard-inactive edges by default. With `--show-inactive`, guard-rejected relations remain in the projected graph with `InactiveEdge` state. Resolved projection still applies exact candidate selection first, so unselected method relations remain omitted and their guards are not evaluated. Scheduling projection excludes inactive edges, so enabling diagnostics cannot change topological levels or cycle detection. The declared view still has no active/inactive classification because it gathers no host facts.
 
 For `resolved`, candidate selection follows executor ordering and the read-only planning gates exposed by `ExplainTool`. The first `already_installed` or `would_install` attempt is the selected candidate. If that winner is synthesized and therefore has no exact declared ordinal, no later declared candidate is substituted; declared method activation edges for that tool are omitted.
 
@@ -67,7 +68,6 @@ For `resolved`, candidate selection follows executor ordering and the read-only 
 
 ## Intentionally deferred
 
-- active/inactive edge retention and a possible `--show-inactive` diagnostic mode;
 - further layout heuristics only if real-schema snapshots expose a concrete readability problem;
 
 ## Design constraints validated
@@ -85,7 +85,6 @@ For `resolved`, candidate selection follows executor ordering and the read-only 
 
 ## Next implementation slice
 
-1. retain inactive edges behind a possible `--show-inactive` diagnostic mode;
-2. keep terminal-layout tuning evidence-driven: add further heuristics only when real-schema snapshots demonstrate a concrete readability regression.
+1. keep terminal-layout tuning evidence-driven: add further heuristics only when real-schema snapshots demonstrate a concrete readability regression.
 
 Terminal visualization can now consume declared, effective, or resolved graphs without inventing dependency semantics.

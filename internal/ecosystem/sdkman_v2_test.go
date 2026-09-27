@@ -71,6 +71,7 @@ func TestSDKManAdapterV2ResolvesObservesAndInstallsExactVersion(t *testing.T) {
 func TestSDKManAdapterV2ObserveWithoutVersionUsesCurrent(t *testing.T) {
 	home := t.TempDir()
 	exectest.SetHome(t, home)
+	t.Setenv("SDKMAN_DIR", "")
 	versionDir := filepath.Join(home, ".sdkman", "candidates", "java", "17.0.12-tem")
 	if err := os.MkdirAll(versionDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -85,5 +86,32 @@ func TestSDKManAdapterV2ObserveWithoutVersionUsesCurrent(t *testing.T) {
 	}
 	if observation.Presence != plan.PresencePresent || observation.Identity.Package != "java" || len(observation.KnownFields) != 1 {
 		t.Fatalf("Observe() = %#v, want present java package identity only", observation)
+	}
+}
+
+func TestSDKManObservePreservesExactVersionDrift(t *testing.T) {
+	home := t.TempDir()
+	exectest.SetHome(t, home)
+	t.Setenv("SDKMAN_DIR", "")
+	base := filepath.Join(home, ".sdkman", "candidates", "java")
+	currentVersion := "17.0.12-tem"
+	versionDir := filepath.Join(base, currentVersion)
+	if err := os.MkdirAll(versionDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(versionDir, filepath.Join(base, "current")); err != nil {
+		t.Fatal(err)
+	}
+	method := &config.MethodCandidate{Kind: "sdkman", Config: map[string]any{"pkg": "java", "version": "21.0.4-tem"}}
+	observation, err := NewSDKManAdapter().Observe(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "java"}, method)
+	if err != nil {
+		t.Fatalf("Observe() error = %v", err)
+	}
+	if observation.Presence != plan.PresencePresent || observation.Identity.Version != currentVersion {
+		t.Fatalf("Observe() = %+v, want present current version %s", observation, currentVersion)
+	}
+	verification := plan.Reconcile(plan.ResolvedIdentity{Package: "java", Version: "21.0.4-tem"}, observation)
+	if verification.State != plan.StateDrifted {
+		t.Fatalf("verification = %+v, want drifted", verification)
 	}
 }

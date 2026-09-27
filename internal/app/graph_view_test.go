@@ -38,6 +38,21 @@ func TestParseGraphView(t *testing.T) {
 	}
 }
 
+func TestValidateGraphProjectionOptions(t *testing.T) {
+	if err := validateGraphProjectionOptions(graph.DeclaredView, false); err != nil {
+		t.Fatalf("declared view without inactive diagnostics: %v", err)
+	}
+	if err := validateGraphProjectionOptions(graph.EffectiveView, true); err != nil {
+		t.Fatalf("effective view rejected inactive diagnostics: %v", err)
+	}
+	if err := validateGraphProjectionOptions(graph.ResolvedView, true); err != nil {
+		t.Fatalf("resolved view rejected inactive diagnostics: %v", err)
+	}
+	if err := validateGraphProjectionOptions(graph.DeclaredView, true); err == nil {
+		t.Fatal("declared view accepted --show-inactive")
+	}
+}
+
 func TestMatchGraphGuardUsesConfigConditionSemantics(t *testing.T) {
 	facts := &engine.Facts{OS: "linux", TargetFamily: "unix"}
 	active, err := matchGraphGuard(&config.Condition{

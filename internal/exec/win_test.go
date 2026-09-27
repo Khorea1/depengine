@@ -183,6 +183,33 @@ func TestScoopObservePreservesVersionSourceAndScope(t *testing.T) {
 	}
 }
 
+func TestScoopObserveReportsExactVersionDrift(t *testing.T) {
+	method := &config.MethodCandidate{Kind: "scoop", Config: map[string]any{
+		"pkg": "git", "version": "2.53.0.2", "bucket": "main", "scope": "global",
+	}}
+	observation, err := lookupWinAdapter("scoop").Observe(
+		context.Background(),
+		&run.FakeRunner{Stdout: "git 2.52.0 main 2026-01-01 10:00:00\n"},
+		&config.Tool{Name: "git"}, method,
+	)
+	if err != nil {
+		t.Fatalf("Observe() error = %v", err)
+	}
+	verification := plan.Reconcile(plan.ResolvedIdentity{Package: "git", Version: "2.53.0.2", Source: "main", Scope: string(plan.ScopeSystem)}, observation)
+	if verification.State != plan.StateDrifted {
+		t.Fatalf("verification = %+v, want drifted", verification)
+	}
+	found := false
+	for _, drift := range verification.Drift {
+		if drift.Field == plan.FieldVersion && drift.Desired == "2.53.0.2" && drift.Observed == "2.52.0" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("verification drift = %+v, want version 2.53.0.2 -> 2.52.0", verification.Drift)
+	}
+}
+
 func TestWinAdapterInstall(t *testing.T) {
 	ctx := context.Background()
 	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "fd"}}

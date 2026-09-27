@@ -80,7 +80,8 @@ func RenderTerminalGraph(g Graph, width int) (string, error) {
 // terminalStyle carries edge semantics without relying on color. The zero
 // value is the weakest style so a cell keeps the strongest relation painted
 // over it, matching the bundle rule from the research: unconditional
-// scheduling beats guarded scheduling beats activation-only.
+// scheduling beats guarded scheduling, while activation-only and inactive
+// relations use the weakest dotted style.
 type terminalStyle uint8
 
 const (
@@ -91,6 +92,8 @@ const (
 
 func terminalEdgeStyle(edge Edge) terminalStyle {
 	switch {
+	case edge.State == InactiveEdge:
+		return terminalStyleDotted
 	case edge.Kind == MethodRequire:
 		return terminalStyleDotted
 	case edge.Guard != nil:
@@ -752,12 +755,12 @@ func paintTerminalRoute(canvas *terminalCanvas, layout *terminalLayout, route te
 	canvas.paintHorizontal(route.laneEntryX, route.arrowX-1, route.dstRow, style, false, true)
 }
 
-// terminalAnnotations lists the diagram-rendered edges that carry a guard or a
-// method selector, so line style has a readable companion.
+// terminalAnnotations lists diagram-rendered edges that carry a guard, method
+// selector, or inactive state, so line style has a readable companion.
 func terminalAnnotations(layout *terminalLayout) []string {
 	annotations := make([]string, 0, len(layout.component.Edges))
 	for _, edge := range layout.component.Edges {
-		if label := edgeLabel(edge); label != "" {
+		if label := edgeRenderLabel(edge); label != "" {
 			annotations = append(annotations, fmt.Sprintf("%s -> %s [%s]", terminalLabel(edge.From), terminalLabel(edge.To), label))
 		}
 	}
@@ -774,7 +777,7 @@ func renderTerminalCompact(layout *terminalLayout, width int) string {
 		b.WriteString(terminalLabel(edge.From))
 		b.WriteString(" -> ")
 		b.WriteString(terminalLabel(edge.To))
-		if label := edgeLabel(edge); label != "" {
+		if label := edgeRenderLabel(edge); label != "" {
 			b.WriteString(" [")
 			b.WriteString(label)
 			b.WriteString("]")
