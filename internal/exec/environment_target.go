@@ -15,7 +15,7 @@ func methodForResolvedTarget(method *config.MethodCandidate, resolved *plan.Reso
 	}
 
 	contract, ok := methodkind.Lookup(method.Kind)
-	if !ok || contract.Environment == nil && (method.Kind != "git" || resolved.Identity.Revision == "") {
+	if !ok || (contract.Environment == nil && (method.Kind != "git" || resolved.Identity.Revision == "")) {
 		return method
 	}
 

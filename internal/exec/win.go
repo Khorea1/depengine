@@ -75,7 +75,7 @@ func (w *winAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool
 
 func (w *winAdapter) observeInstalled(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) plan.Observation {
 	if rn == nil {
-		return plan.Observation{Presence: plan.PresenceAbsent}
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "package manager probe is unavailable"}
 	}
 	pkg := packageName(tool, mc)
 	cmd := SubstitutePkg(w.checkCmd, tool, mc)
@@ -91,7 +91,7 @@ func (w *winAdapter) observeInstalled(ctx context.Context, rn run.Runner, tool *
 		res = rn.Run(ctx, "choco", "list", "--local-only", "--exact", "--limit-output", packageName(tool, mc))
 	}
 	if res.Err != nil || res.ExitCode != 0 {
-		return plan.Observation{Presence: plan.PresenceAbsent}
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "package manager probe failed"}
 	}
 
 	observation := plan.Observation{
@@ -103,6 +103,9 @@ func (w *winAdapter) observeInstalled(ctx context.Context, rn run.Runner, tool *
 	case "choco":
 		version, ok := chocoVersionFromOutput(res.Stdout, pkg)
 		if !ok {
+			if outputMentionsPackage(res.Stdout, pkg) {
+				return plan.Observation{Presence: plan.PresenceBroken, Detail: "package manager returned an invalid installed version"}
+			}
 			return plan.Observation{Presence: plan.PresenceAbsent}
 		}
 		observation.Identity.Version = version
@@ -110,6 +113,9 @@ func (w *winAdapter) observeInstalled(ctx context.Context, rn run.Runner, tool *
 	case "scoop":
 		version, source, ok := scoopPackageFromOutput(res.Stdout, pkg)
 		if !ok {
+			if outputMentionsPackage(res.Stdout, pkg) {
+				return plan.Observation{Presence: plan.PresenceBroken, Detail: "package manager returned an invalid installed version"}
+			}
 			return plan.Observation{Presence: plan.PresenceAbsent}
 		}
 		observation.Identity.Version = version
@@ -128,6 +134,20 @@ func (w *winAdapter) observeInstalled(ctx context.Context, rn run.Runner, tool *
 		}
 	}
 	return observation
+}
+
+func outputMentionsPackage(stdout []byte, pkg string) bool {
+	for _, line := range strings.Split(string(stdout), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		id, _, _ := strings.Cut(fields[0], "|")
+		if strings.EqualFold(id, pkg) {
+			return true
+		}
+	}
+	return false
 }
 
 func chocoVersionFromOutput(stdout []byte, pkg string) (string, bool) {
