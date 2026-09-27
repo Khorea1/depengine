@@ -1004,3 +1004,42 @@ func TestGitAdapterResolvePlanProjectsSourceAndRevision(t *testing.T) {
 		t.Fatal("resolved plan aliases input intent")
 	}
 }
+
+func TestGitAdapterResolvePlanPinsMutableRefs(t *testing.T) {
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	for _, tc := range []struct {
+		name   string
+		field  string
+		ref    string
+		stdout string
+	}{
+		{"branch", "branch", "refs/heads/main", commit + "\trefs/heads/main\n"},
+		{"tag", "tag", "refs/tags/v1", commit + "\trefs/tags/v1\n"},
+		{"annotated tag", "tag", "refs/tags/v1", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\trefs/tags/v1\n" + commit + "\trefs/tags/v1^{}\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mc := &config.MethodCandidate{Kind: "git", Config: map[string]any{"url": "https://example.test/repo.git", tc.field: strings.TrimPrefix(strings.TrimPrefix(tc.ref, "refs/heads/"), "refs/tags/")}}
+			intent := plan.New("demo", "git", true)
+			fr := &run.FakeRunner{Stdout: tc.stdout}
+			resolved, err := NewGitAdapter().ResolvePlan(context.Background(), fr, &config.Tool{Name: "demo"}, mc, &intent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resolved.Identity.Revision != commit {
+				t.Fatalf("revision = %q, want %q", resolved.Identity.Revision, commit)
+			}
+			if len(fr.Calls) != 1 || fr.Calls[0].Name != "git" || !reflect.DeepEqual(fr.Calls[0].Args, []string{"ls-remote", "https://example.test/repo.git", tc.ref, tc.ref + "^{}"}) {
+				t.Fatalf("remote lookup = %+v", fr.Calls)
+			}
+		})
+	}
+}
+
+func TestGitAdapterResolvePlanRejectsMissingRemoteRef(t *testing.T) {
+	mc := &config.MethodCandidate{Kind: "git", Config: map[string]any{"url": "https://example.test/repo.git", "branch": "main"}}
+	intent := plan.New("demo", "git", true)
+	_, err := NewGitAdapter().ResolvePlan(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "demo"}, mc, &intent)
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("ResolvePlan() error = %v, want missing reference", err)
+	}
+}
