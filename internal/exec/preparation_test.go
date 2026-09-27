@@ -657,8 +657,8 @@ func TestRecoveredCommitDoesNotReplayHooksOrSecurityGate(t *testing.T) {
 	if _, err := first.Execute(context.Background(), schema, ""); err != nil {
 		t.Fatal(err)
 	}
-	if len(firstRunner.calls) != 3 || firstRunner.calls[0].Name != "pre-hook" {
-		t.Fatalf("first-run calls = %#v, want pre-hook then source check/add", firstRunner.calls)
+	if len(firstRunner.calls) != 3 || firstRunner.calls[2].Name != "pre-hook" {
+		t.Fatalf("first-run calls = %#v, want candidate source selection before pre-hook", firstRunner.calls)
 	}
 
 	secondRunner := &sequenceRunner{}
