@@ -46,6 +46,12 @@ write-ahead journal and explicit ownership:
   wait for the final owner, root/external prerequisites are retained.
 - Failed candidates use explicit-retain semantics: installed lazy
   prerequisites remain visible in report/state, never silent orphans.
+- Lazy `method.requires` executions use the same candidate WAL, even when no
+  package source is missing. Their install crosses the durable committing
+  boundary and is reconciled by resolved identity after restart, so an
+  interrupted prerequisite install is not blindly replayed. Once the owner
+  resumes, its normal resource-use projection records the prerequisite
+  relationship.
 - Before any new host mutation, the executor replays recoverable source
   preparation/rollback work from the persisted plan, reconciles a committing
   candidate through a read-only identity observation, and records a confirmed
@@ -59,6 +65,9 @@ write-ahead journal and explicit ownership:
 
 ## Open work
 
-- WAL-backed prerequisite preparation (sources are wired; lazy
-  `method.requires` still uses explicit-retain).
+- Atomic ownership projection across a prerequisite's recovered commit and its
+  dependent candidate remains open: a crash between those transactions can
+  leave the prerequisite installed and recorded without the dependent
+  reference until that candidate is retried. Cleanup must continue to retain
+  unreferenced prerequisite state safely.
 - Richer identity observation for automatic commit finalization.

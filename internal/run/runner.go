@@ -151,6 +151,27 @@ type EnvironmentRunner interface {
 	RunWithEnv(ctx context.Context, env map[string]string, sensitive []string, name string, args ...string) Result
 }
 
+// OutputValidator converts command stdout into a small result that is safe to
+// return across a sensitive subprocess boundary. On validation failure, no
+// child output or error detail is returned.
+type OutputValidator func(stdout []byte) ([]byte, error)
+
+// ValidatedEnvironmentRunner executes a child with environment overrides and
+// returns only output accepted by the supplied validator.
+type ValidatedEnvironmentRunner interface {
+	RunWithEnvValidated(ctx context.Context, env map[string]string, sensitive []string, name string, validate OutputValidator, args ...string) Result
+}
+
+// RunWithEnvValidated fails closed unless the runner can validate captured
+// output before it leaves the subprocess boundary.
+func RunWithEnvValidated(ctx context.Context, rn Runner, env map[string]string, sensitive []string, name string, validate OutputValidator, args ...string) Result {
+	runner, ok := rn.(ValidatedEnvironmentRunner)
+	if !ok || validate == nil {
+		return Result{Err: errors.New("runner does not support validated per-call environment output")}
+	}
+	return runner.RunWithEnvValidated(ctx, env, sensitive, name, validate, args...)
+}
+
 // RunWithEnv executes one child with per-call environment overrides. It fails
 // closed when the runner cannot provide this boundary. For sensitive calls,
 // captured output and process errors are suppressed because a child can echo
@@ -223,6 +244,10 @@ func (r BlockedRunner) OpenStdoutPipe(context.Context, string, ...string) (*Stdo
 }
 
 func (r BlockedRunner) RunWithEnv(context.Context, map[string]string, []string, string, ...string) Result {
+	return r.blocked()
+}
+
+func (r BlockedRunner) RunWithEnvValidated(context.Context, map[string]string, []string, string, OutputValidator, ...string) Result {
 	return r.blocked()
 }
 
@@ -356,6 +381,20 @@ func (r OSExecRunner) RunInDir(ctx context.Context, dir, name string, args ...st
 // credential. The RunWithEnv helper redacts captured output on return.
 func (OSExecRunner) RunWithEnv(ctx context.Context, env map[string]string, _ []string, name string, args ...string) Result {
 	return runCommand(ctx, nil, "", env, name, args...)
+}
+
+// RunWithEnvValidated keeps raw output inside the runner and returns only the
+// validator's normalized result. Sensitive command output is never streamed.
+func (OSExecRunner) RunWithEnvValidated(ctx context.Context, env map[string]string, _ []string, name string, validate OutputValidator, args ...string) Result {
+	raw := runCommand(ctx, nil, "", env, name, args...)
+	if raw.Err != nil || raw.ExitCode != 0 {
+		return Result{Err: errors.New("sensitive subprocess execution failed"), ExitCode: raw.ExitCode}
+	}
+	stdout, err := validate(raw.Stdout)
+	if err != nil {
+		return Result{Err: errors.New("subprocess output validation failed"), ExitCode: 1}
+	}
+	return Result{Stdout: stdout}
 }
 
 // cappedBuffer is an io.Writer that retains at most max bytes: the tail.
@@ -531,8 +570,12 @@ func (e *redactedWrappedError) Error() string { return e.message }
 func (e *redactedWrappedError) Unwrap() error { return e.cause }
 
 var _ DirectoryRunner = OSExecRunner{}
+var _ EnvironmentRunner = OSExecRunner{}
+var _ ValidatedEnvironmentRunner = OSExecRunner{}
 var _ PathLookupRunner = OSExecRunner{}
 var _ StdoutPipeRunner = OSExecRunner{}
 var _ DirectoryRunner = BlockedRunner{}
+var _ EnvironmentRunner = BlockedRunner{}
+var _ ValidatedEnvironmentRunner = BlockedRunner{}
 var _ PathLookupRunner = BlockedRunner{}
 var _ StdoutPipeRunner = BlockedRunner{}

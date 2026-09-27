@@ -3,6 +3,7 @@ package run
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"time"
@@ -52,6 +53,18 @@ func (f *FakeRunner) OpenStdoutPipe(ctx context.Context, name string, args ...st
 // environment values in its recorded calls.
 func (f *FakeRunner) RunWithEnv(ctx context.Context, _ map[string]string, _ []string, name string, args ...string) Result {
 	return f.run(ctx, "", name, args...)
+}
+
+func (f *FakeRunner) RunWithEnvValidated(ctx context.Context, _ map[string]string, _ []string, name string, validate OutputValidator, args ...string) Result {
+	result := f.run(ctx, "", name, args...)
+	if result.Err != nil || result.ExitCode != 0 {
+		return Result{Err: errors.New("sensitive subprocess execution failed"), ExitCode: result.ExitCode}
+	}
+	stdout, err := validate(result.Stdout)
+	if err != nil {
+		return Result{Err: errors.New("subprocess output validation failed"), ExitCode: 1}
+	}
+	return Result{Stdout: stdout}
 }
 
 // RunInDir records dir along with the command and returns the configured result.

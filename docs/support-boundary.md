@@ -55,7 +55,7 @@ Legacy lock v1 covers each selector class as follows:
 | `local_path` artifact | Yes | The content digest is computed during lock resolution even when the schema omits a checksum. |
 | Exact ecosystem version (`version = "1.2.3"` on npm, pip, cargo, go, ...) | No | `version` is never written to the lock, and the dependency graph behind it is not locked either. |
 | Native package install (apt, dnf, pacman, brew, ...) | No | Native methods carry no version field for the lock to record. |
-| Git `branch` or `tag` | No | The lock records no commit — not even an explicit `rev` is written — and a branch or tag can move upstream. |
+| Git `branch` or `tag` | No | Host-aware planning resolves the selected ref to a commit for that execution, but the lock records no commit. A later execution may resolve a different commit. |
 | `cargo` git source (`branch`, `tag`, or `rev`) | No | The lock records no commit for the checkout. |
 | Container `tag` | No | The lock records nothing about the pulled image. |
 | Snap channel or track | No | The lock records no resolved snap revision. |

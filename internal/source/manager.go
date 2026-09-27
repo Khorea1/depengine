@@ -219,6 +219,12 @@ func (m *Manager) present(ctx context.Context, source config.Source) (bool, erro
 	if source.Kind == "apt-ppa" {
 		want = normalizePPA(want)
 	}
+	switch source.Kind {
+	case "brew-tap":
+		return outputHasSourceName(string(res.Stdout), want), nil
+	case "scoop-bucket":
+		return outputHasFirstField(string(res.Stdout), want), nil
+	}
 	return strings.Contains(strings.ToLower(string(res.Stdout)), strings.ToLower(want)), nil
 }
 
@@ -283,6 +289,17 @@ func (m *Manager) scoopBucketPresent(ctx context.Context, source config.Source) 
 func outputHasSourceName(output, name string) bool {
 	_, ok := outputSourceLine(output, name)
 	return ok
+}
+
+func outputHasFirstField(output, name string) bool {
+	want := strings.TrimSpace(name)
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && strings.EqualFold(fields[0], want) {
+			return true
+		}
+	}
+	return false
 }
 
 func outputSourceLine(output, name string) (string, bool) {

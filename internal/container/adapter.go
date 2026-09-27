@@ -455,7 +455,9 @@ func resolvedReference(resolved *plan.ResolvedInstallPlan) (reference, platform 
 				digest = requested.Value
 			}
 		case plan.VersionContainerTag:
-			tag = requested.Value
+			if digest == "" {
+				tag = requested.Value
+			}
 		}
 	}
 	reference, err = containerref.Reference(source, tag, digest)

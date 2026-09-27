@@ -113,6 +113,9 @@ func candidatePreparationSubject(key string) (string, string, error) {
 func (ex *Executor) probeCandidateSources(ctx context.Context, configured []config.Source) (candidateSourcePreparation, error) {
 	var prepared candidateSourcePreparation
 	if len(configured) == 0 {
+		if ctx.Value(lazyDependencyExecutionKey{}) == true {
+			prepared.preparationPlan = &plan.PreparationPlan{}
+		}
 		return prepared, nil
 	}
 	if ex.sources == nil {
@@ -133,7 +136,11 @@ func (ex *Executor) probeCandidateSources(ctx context.Context, configured []conf
 	if err != nil {
 		return candidateSourcePreparation{}, err
 	}
+	journalPrerequisite := ctx.Value(lazyDependencyExecutionKey{}) == true
 	if len(missing) == 0 {
+		if journalPrerequisite {
+			prepared.preparationPlan = &plan.PreparationPlan{}
+		}
 		return prepared, nil
 	}
 
@@ -146,7 +153,8 @@ func (ex *Executor) probeCandidateSources(ctx context.Context, configured []conf
 }
 
 func (ex *Executor) prepareCandidateSources(ctx context.Context, toolName, methodKind string, intent *plan.ResolvedInstallPlan, prepared candidateSourcePreparation) (candidateSourcePreparation, error) {
-	if len(prepared.missing) == 0 {
+	journalPrerequisite := ctx.Value(lazyDependencyExecutionKey{}) == true
+	if len(prepared.missing) == 0 && !journalPrerequisite {
 		return prepared, nil
 	}
 	if prepared.preparationPlan == nil {
@@ -169,6 +177,9 @@ func (ex *Executor) prepareCandidateSources(ctx context.Context, toolName, metho
 	// best-effort semantics. The CLI always configures schemaPath and therefore
 	// takes the durable WAL path below.
 	if ex.schemaPath == "" {
+		if len(missing) == 0 {
+			return prepared, nil
+		}
 		for i, configured := range missing {
 			if err := ex.sources.AddAuthenticated(ctx, configured, tokens[i]); err != nil {
 				present, probeErr := ex.sources.Present(ctx, configured)

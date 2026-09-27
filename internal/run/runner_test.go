@@ -212,6 +212,9 @@ func TestBlockedRunnerRejectsExecution(t *testing.T) {
 	runner := BlockedRunner{Reason: "dry-run: blocked"}
 	for _, result := range []Result{
 		runner.Run(context.Background(), "sh", "-c", "exit 0"),
+		runner.RunWithEnvValidated(context.Background(), map[string]string{"TOKEN": "secret"}, []string{"secret"}, "sh", func(stdout []byte) ([]byte, error) {
+			return stdout, nil
+		}, "-c", "exit 0"),
 		runner.RunInDir(context.Background(), t.TempDir(), "sh", "-c", "exit 0"),
 	} {
 		if result.Err == nil || !strings.Contains(result.Err.Error(), "dry-run: blocked") {

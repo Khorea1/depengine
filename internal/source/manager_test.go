@@ -206,6 +206,32 @@ func TestManagerRejectsExistingSourceWithDifferentOrigin(t *testing.T) {
 	}
 }
 
+func TestManagerMatchesGitBackedSourceNamesExactly(t *testing.T) {
+	for _, tc := range []struct {
+		kind    string
+		name    string
+		output  string
+		present bool
+	}{
+		{kind: "brew-tap", name: "vendor/tools", output: "vendor/tools\n", present: true},
+		{kind: "brew-tap", name: "tools", output: "vendor/tools\n", present: false},
+		{kind: "brew-tap", name: "vendor/tools", output: "vendor/tools-extra\n", present: false},
+		{kind: "scoop-bucket", name: "vendor", output: "Name Source Updated\nvendor https://example.test/vendor 2026-09-26\n", present: true},
+		{kind: "scoop-bucket", name: "vendor", output: "Name Source Updated\nvendor-tools https://example.test/vendor 2026-09-26\n", present: false},
+	} {
+		t.Run(tc.kind+"/"+tc.name+"/"+tc.output, func(t *testing.T) {
+			runner := &scriptedRunner{outputs: []run.Result{{Stdout: []byte(tc.output)}}}
+			present, err := NewManager(runner, false).Present(context.Background(), config.Source{Kind: tc.kind, Name: tc.name})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if present != tc.present {
+				t.Fatalf("Present() = %t, want %t", present, tc.present)
+			}
+		})
+	}
+}
+
 func TestManagerPropagatesCheckFailure(t *testing.T) {
 	runner := &scriptedRunner{outputs: []run.Result{{Err: context.DeadlineExceeded, ExitCode: 1}}}
 	_, err := NewManager(runner, false).Ensure(context.Background(), []config.Source{{Kind: "brew-tap", Name: "user/tap"}})

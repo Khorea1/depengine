@@ -48,6 +48,10 @@ Work on the current execution model comes before adding more installer types.
   verification as serial execution. Remove and undo verify the tracked target
   and project its resolved identity into the removal adapter.
 - [~] Finish exact-version support and installed-version checks per adapter.
+  The 17 methods that declare exact-version capability are documented in the
+  schema reference. RubyGems now reports the requested version when it is one
+  of several installed versions, matching its presence check. Continue the
+  per-adapter audit before declaring this complete.
 - [x] Make lock generation/consumption cover every supported mutable method, or
   narrow the documented reproducibility promise. Done: the promise is narrowed —
   `docs/support-boundary.md` tabulates, per selector class, what lock v1 pins and
@@ -65,15 +69,23 @@ Work on the current execution model comes before adding more installer types.
   end-to-end. See
   [`design/adr-001-universal-lock-projection.md`](design/adr-001-universal-lock-projection.md);
   current per-selector coverage is tabulated in
-  [`support-boundary.md`](support-boundary.md).
+  [`support-boundary.md`](support-boundary.md). Git branch/tag plans now resolve
+  to a concrete commit before execution, including annotated tags; persisting
+  and consuming that commit in the lock remains open.
 - [~] Finish typed package-source selection, trust, ownership, verification,
   and locking. Git-backed Brew/Scoop sources with explicit URLs now verify the
   existing host origin instead of accepting a same-name source blindly;
+  Brew/Scoop presence probes now match source names exactly rather than by
+  substring;
   transactional recovery retains the credential-free URL, and legacy lock v1
   hashes candidate host-source declarations so frozen installs reject source
   drift. Signing/trust identity and immutable upstream source revisions remain
   open.
-- [~] Finish recovery for package-source and prerequisite preparation.
+- [~] Finish recovery for package-source and prerequisite preparation. Lazy
+  `method.requires` installs now cross the candidate WAL commit boundary even
+  without package sources, and recovery reconciles their installed identity.
+  Atomic ownership projection between recovered prerequisite and dependent
+  remains open; see ADR-002.
 - [x] Keep hooks tied to the candidate/transition that actually runs; status
   must not depend on a one-time hook having succeeded earlier. Tool-level and
   candidate-local hooks are projected into the selected `ResolvedInstallPlan`,

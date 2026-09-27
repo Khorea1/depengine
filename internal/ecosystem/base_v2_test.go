@@ -137,6 +137,32 @@ func TestBaseAdapterV2ObservePreservesExactVersionDrift(t *testing.T) {
 	}
 }
 
+func TestBaseAdapterV2GemObserveSelectsRequestedInstalledVersion(t *testing.T) {
+	adapter := NewBaseAdapter(Configs["gem"])
+	tool := &config.Tool{Name: "demo"}
+	method := &config.MethodCandidate{Kind: "gem", Config: map[string]any{"pkg": "demo-gem", "version": "1.2.3"}}
+	runner := &run.FakeRunner{
+		LookPaths: map[string]bool{"gem": true},
+		Stdout:    "demo-gem (2.0.0, 1.2.3)\n",
+	}
+
+	observation, err := adapter.Observe(context.Background(), runner, tool, method)
+	if err != nil {
+		t.Fatalf("Observe() error = %v", err)
+	}
+	if observation.Presence != plan.PresencePresent || observation.Identity.Version != "1.2.3" {
+		t.Fatalf("Observe() = %+v, want present requested version 1.2.3", observation)
+	}
+
+	installed, err := adapter.InstalledVersion(context.Background(), runner, tool, method)
+	if err != nil {
+		t.Fatalf("InstalledVersion() error = %v", err)
+	}
+	if installed != "1.2.3" {
+		t.Fatalf("InstalledVersion() = %q, want requested installed version 1.2.3", installed)
+	}
+}
+
 func TestBaseAdapterV2InstallResolvedUsesResolvedIdentity(t *testing.T) {
 	adapter := NewBaseAdapter(testV2BaseConfig())
 	tool := &config.Tool{Name: "demo"}

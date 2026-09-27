@@ -90,6 +90,22 @@ func TestMethodForResolvedTargetUsesContractMetadata(t *testing.T) {
 	}
 }
 
+func TestMethodForResolvedTargetUsesPinnedGitRevision(t *testing.T) {
+	method := &config.MethodCandidate{Kind: "git", Config: map[string]any{"url": "https://example.test/repo.git", "branch": "main"}}
+	resolved := plan.New("demo", "git", true)
+	resolved.Identity.Revision = "0123456789abcdef0123456789abcdef01234567"
+	projected := methodForResolvedTarget(method, &resolved)
+	if got := projected.Config["rev"]; got != resolved.Identity.Revision {
+		t.Fatalf("projected revision = %v, want %s", got, resolved.Identity.Revision)
+	}
+	if _, ok := projected.Config["branch"]; ok {
+		t.Fatal("projected candidate retained mutable branch")
+	}
+	if method.Config["branch"] != "main" {
+		t.Fatalf("source candidate was mutated: %#v", method.Config)
+	}
+}
+
 type targetCaptureAdapter struct {
 	executorAdapterV2Double
 	observedTarget string

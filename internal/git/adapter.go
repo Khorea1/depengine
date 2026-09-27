@@ -261,8 +261,8 @@ func resolveCloneSource(ctx context.Context, rn run.Runner, tool *config.Tool, m
 	return source, nil
 }
 
-// ResolvePlan exposes the concrete clone URL and resolved/requested ref without
-// cloning or otherwise mutating host state.
+// ResolvePlan exposes the concrete clone URL and revision. Branches and tags
+// are resolved to commits before execution without mutating host state.
 func (a *GitAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
 	if intent == nil {
 		return nil, nil
@@ -278,8 +278,87 @@ func (a *GitAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *confi
 		resolved.Identity.Version = source.ResolvedTag
 	case source.Revision != "":
 		resolved.Identity.Revision = source.Revision
+	case source.Branch != "" || source.Tag != "":
+		revision, err := resolveRemoteRevision(ctx, rn, mc, source)
+		if err != nil {
+			return intent, err
+		}
+		resolved.Identity.Revision = revision
 	}
 	return &resolved, nil
+}
+
+func resolveRemoteRevision(ctx context.Context, rn run.Runner, mc *config.MethodCandidate, source resolvedCloneSource) (string, error) {
+	ref := "refs/heads/" + source.Branch
+	if source.Tag != "" {
+		ref = "refs/tags/" + source.Tag
+	}
+	var env map[string]string
+	var sensitive []string
+	if mc.SecretRef != nil {
+		credential, ok := exec.GitCredential(ctx)
+		if !ok {
+			return "", errors.New("git: declared credential is unavailable")
+		}
+		var err error
+		env, err = credentialConfig(source.URL, credential)
+		if err != nil {
+			return "", err
+		}
+		sensitive = []string{credential}
+	}
+	if len(sensitive) > 0 {
+		result := run.RunWithEnvValidated(ctx, rn, env, sensitive, "git", func(stdout []byte) ([]byte, error) {
+			revision, err := parseRemoteRevision(stdout, ref)
+			if err != nil {
+				return nil, errors.New("git: invalid authenticated remote revision output")
+			}
+			return []byte(revision), nil
+		}, "ls-remote", source.URL, ref, ref+"^{}")
+		if err := run.CheckResult(result, "git: resolve remote revision"); err != nil {
+			return "", err
+		}
+		return string(result.Stdout), nil
+	}
+	result := runGit(ctx, rn, env, sensitive, "ls-remote", source.URL, ref, ref+"^{}")
+	if err := run.CheckResult(result, "git: resolve remote revision"); err != nil {
+		return "", err
+	}
+	return parseRemoteRevision(result.Stdout, ref)
+}
+
+func parseRemoteRevision(stdout []byte, ref string) (string, error) {
+	refs := make(map[string]string)
+	for _, line := range nonEmptyLines(string(stdout)) {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		if fields[1] != ref && fields[1] != ref+"^{}" {
+			continue
+		}
+		if (len(fields[0]) != 40 && len(fields[0]) != 64) || !isHexSHA(fields[0]) {
+			return "", fmt.Errorf("git: invalid remote revision for %q", ref)
+		}
+		refs[fields[1]] = fields[0]
+	}
+	if revision := refs[ref+"^{}"]; revision != "" {
+		return revision, nil
+	}
+	if revision := refs[ref]; revision != "" {
+		return revision, nil
+	}
+	return "", fmt.Errorf("git: remote reference %q not found", ref)
+}
+
+func isHexSHA(value string) bool {
+	for _, char := range value {
+		if char >= '0' && char <= '9' || char >= 'a' && char <= 'f' || char >= 'A' && char <= 'F' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // Install clones the repository, optionally builds, and optionally copies

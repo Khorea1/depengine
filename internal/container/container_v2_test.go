@@ -287,3 +287,29 @@ func TestContainerAdapterV2InstallResolvedUsesPlatform(t *testing.T) {
 		t.Fatalf("InstallResolved ran %v %v, want podman %v", last.Name, last.Args, want)
 	}
 }
+
+func TestContainerAdapterV2InstallResolvedUsesConcreteDigestForTag(t *testing.T) {
+	ctx := context.Background()
+	adapter := NewContainerAdapter()
+	tool := tool("redis")
+	mc := containerMethod(map[string]any{"source": "registry.example.test/team/redis", "tag": "7", "platform": "linux/arm64/v8"})
+	intent, err := planner.BuildCandidateIntent(tool, mc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := adapter.ResolvePlan(ctx, &run.FakeRunner{}, tool, mc, &intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved.Identity.Digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+	runner := &nameAwareRunner{exitByName: map[string]int{"podman": 0}}
+	if err := adapter.InstallResolved(ctx, runner, tool, mc, resolved); err != nil {
+		t.Fatalf("InstallResolved() error = %v", err)
+	}
+	last := runner.calls[len(runner.calls)-1]
+	want := []string{"pull", "--platform", "linux/arm64/v8", "registry.example.test/team/redis@" + resolved.Identity.Digest}
+	if last.Name != "podman" || !equalArgs(last.Args, want) {
+		t.Fatalf("InstallResolved ran %v %v, want podman %v", last.Name, last.Args, want)
+	}
+}

@@ -481,6 +481,38 @@ func TestChocoInstalledVersion(t *testing.T) {
 	}
 }
 
+func TestWindowsVersionObservationDistinguishesProbeFailureFromAbsence(t *testing.T) {
+	for _, tc := range []struct {
+		kind      string
+		malformed string
+	}{
+		{kind: "choco", malformed: "neovim|\n"},
+		{kind: "scoop", malformed: "neovim\n"},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			adapter := lookupWinAdapter(tc.kind)
+			tool := &config.Tool{Name: "neovim"}
+			method := &config.MethodCandidate{Config: map[string]any{"pkg": "neovim", "version": "1.2.3"}}
+			for _, probe := range []struct {
+				name   string
+				runner *run.FakeRunner
+				want   plan.PresenceState
+			}{
+				{"failed", &run.FakeRunner{Err: context.DeadlineExceeded, ExitCode: 1}, plan.PresenceUnknown},
+				{"missing", &run.FakeRunner{Stdout: "other 1.0 main\n"}, plan.PresenceAbsent},
+				{"malformed", &run.FakeRunner{Stdout: tc.malformed}, plan.PresenceBroken},
+			} {
+				t.Run(probe.name, func(t *testing.T) {
+					got := adapter.observeInstalled(context.Background(), probe.runner, tool, method)
+					if got.Presence != probe.want {
+						t.Fatalf("presence = %q, want %q", got.Presence, probe.want)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestChocoSourceAndArchitectureArgv(t *testing.T) {
 	ctx := context.Background()
 	tool := &config.Tool{Name: "nvim"}
