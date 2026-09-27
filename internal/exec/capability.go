@@ -59,7 +59,19 @@ func candidatePlanIntentErr(tool *config.Tool, method *config.MethodCandidate) (
 		return nil, nil
 	}
 	if _, ok := methodkind.Lookup(method.Kind); !ok {
-		return nil, nil
+		// Programmatic/custom adapters predate the typed method registry. Keep
+		// lifecycle behavior compatible for them by carrying only executor-owned
+		// hooks in a minimal plan; no adapter-specific capability claims are
+		// inferred for an unregistered method kind.
+		p := plan.New(tool.Name, method.Kind, true)
+		planner.ProjectLifecycleHooks(&p, tool, method)
+		if len(p.Hooks) == 0 {
+			return nil, nil
+		}
+		if err := p.Validate(); err != nil {
+			return &p, err
+		}
+		return &p, nil
 	}
 	return planner.BuildValidatedCandidateIntent(tool, method, methodkind.CandidateRequirements{})
 }
