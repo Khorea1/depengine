@@ -261,8 +261,8 @@ func resolveCloneSource(ctx context.Context, rn run.Runner, tool *config.Tool, m
 	return source, nil
 }
 
-// ResolvePlan exposes the concrete clone URL and resolved/requested ref without
-// cloning or otherwise mutating host state.
+// ResolvePlan exposes the concrete clone URL and revision. Branches and tags
+// are resolved to commits before execution without mutating host state.
 func (a *GitAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
 	if intent == nil {
 		return nil, nil
