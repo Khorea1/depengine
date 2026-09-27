@@ -15,7 +15,7 @@ func methodForResolvedTarget(method *config.MethodCandidate, resolved *plan.Reso
 	}
 
 	contract, ok := methodkind.Lookup(method.Kind)
-	if !ok || contract.Environment == nil {
+	if !ok || contract.Environment == nil && (method.Kind != "git" || resolved.Identity.Revision == "") {
 		return method
 	}
 
@@ -25,15 +25,20 @@ func methodForResolvedTarget(method *config.MethodCandidate, resolved *plan.Reso
 		methodCopy.Config[key] = value
 	}
 
-	for _, field := range contract.Environment.Fields() {
-		delete(methodCopy.Config, field)
-	}
-
-	target := resolved.Identity.Environment
-	if target != nil {
-		if field, ok := contract.Environment.FieldFor(target.Kind); ok {
-			methodCopy.Config[field] = target.Value
+	if contract.Environment != nil {
+		for _, field := range contract.Environment.Fields() {
+			delete(methodCopy.Config, field)
 		}
+		if target := resolved.Identity.Environment; target != nil {
+			if field, ok := contract.Environment.FieldFor(target.Kind); ok {
+				methodCopy.Config[field] = target.Value
+			}
+		}
+	}
+	if method.Kind == "git" && resolved.Identity.Revision != "" {
+		delete(methodCopy.Config, "branch")
+		delete(methodCopy.Config, "tag")
+		methodCopy.Config["rev"] = resolved.Identity.Revision
 	}
 
 	return &methodCopy
