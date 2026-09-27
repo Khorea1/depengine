@@ -202,6 +202,7 @@ func TestSaveLockfilePreservesOmittedMethodIdentity(t *testing.T) {
 		Version:     1,
 		Tools:       map[string]lock.ToolPin{"omitted/http/0": {Latest: "v9.9.9"}},
 		MethodsHash: map[string]string{"omitted": "preserve-me"},
+		SourceHash:  map[string]string{"omitted/http/0": "preserve-source"},
 	}
 
 	saveLockfile(context.Background(), schema, lockPath, old, log.Default, false)
@@ -216,8 +217,39 @@ func TestSaveLockfilePreservesOmittedMethodIdentity(t *testing.T) {
 	if got.MethodsHash["omitted"] != "preserve-me" {
 		t.Fatalf("omitted method identity = %q, want preserved hash", got.MethodsHash["omitted"])
 	}
+	if got.SourceHash["omitted/http/0"] != "preserve-source" {
+		t.Fatalf("omitted source identity = %q, want preserved hash", got.SourceHash["omitted/http/0"])
+	}
 	if got.Tools["omitted/http/0"].Latest != "v9.9.9" {
 		t.Fatalf("omitted pin was not preserved: %#v", got.Tools["omitted/http/0"])
+	}
+}
+
+func TestSaveLockfileDoesNotBlessAddedSourceIdentity(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), "depengine.lock")
+	method := &config.MethodCandidate{
+		Kind:   "native",
+		Config: map[string]any{"pkg": "tool"},
+	}
+	schema := &config.Schema{Tools: map[string]*config.Tool{
+		"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}},
+	}}
+	old, err := lock.ResolveAll(context.Background(), schema, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	method.Sources = []config.Source{{
+		Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git",
+	}}
+
+	saveLockfile(context.Background(), schema, lockPath, old, log.Default, false)
+
+	got, err := lock.Load(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got.SourceHash["tool/native/0"]; ok {
+		t.Fatalf("SourceHash = %v, want added source identity withheld until explicit update", got.SourceHash)
 	}
 }
 

@@ -15,6 +15,9 @@
 //     materialized them (update alone never downloads a payload to compute
 //     one); and
 //   - local artifact content digests.
+//   - candidate-scoped host package-source declarations (kind/name/url) as
+//     identity hashes, so frozen installs reject source drift even though the
+//     source repository's mutable contents are not pinned.
 //
 // It does NOT pin native/ecosystem package versions, git branches or tags,
 // container tags, or channels — those selectors are outside the legacy lock
@@ -57,6 +60,7 @@ type Lock struct {
 	Version     int                `toml:"version"`
 	Tools       map[string]ToolPin `toml:"tools"`
 	MethodsHash map[string]string  `toml:"methods_hash,omitempty" json:"methods_hash,omitempty"`
+	SourceHash  map[string]string  `toml:"source_hash,omitempty" json:"source_hash,omitempty"`
 }
 
 // ToolPin captures resolved values for one tool's {latest} placeholder and/or
@@ -98,6 +102,11 @@ func Load(path string) (*Lock, error) {
 	for key := range l.Tools {
 		if !isCanonicalKey(key) {
 			return nil, fmt.Errorf("lock: invalid tool key %q; expected <tool>/<method>/<index>", key)
+		}
+	}
+	for key := range l.SourceHash {
+		if !isCanonicalKey(key) {
+			return nil, fmt.Errorf("lock: invalid source identity key %q; expected <tool>/<method>/<index>", key)
 		}
 	}
 	return &l, nil
@@ -187,6 +196,26 @@ func computeMethodsHash(methods []*config.MethodCandidate) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// computeSourceHash returns the requested host-source identity for one method
+// candidate. Secret references are deliberately excluded: authentication is
+// external to the lock contract, while kind/name/url determine which host
+// repository the candidate expects to consume.
+func computeSourceHash(method *config.MethodCandidate) string {
+	if method == nil || len(method.Sources) == 0 {
+		return ""
+	}
+	h := sha256.New()
+	for _, source := range method.Sources {
+		h.Write([]byte(strings.ToLower(source.Kind)))
+		h.Write([]byte{0})
+		h.Write([]byte(strings.ToLower(source.Name)))
+		h.Write([]byte{0})
+		h.Write([]byte(source.URL))
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 // ResolveAll scans every tool method in the schema for {latest} in URL fields,
 // resolves them via the GitHub releases API, and returns a Lock with the pinned
 // values. Empty lock (no tools needing resolution) is still valid.
@@ -195,6 +224,7 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 		Version:     1,
 		Tools:       make(map[string]ToolPin),
 		MethodsHash: make(map[string]string),
+		SourceHash:  make(map[string]string),
 	}
 
 	for name, tool := range s.Tools {
@@ -203,6 +233,9 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 			idx := kindCount[method.Kind]
 			kindCount[method.Kind] = idx + 1
 			key := toolKey(name, method.Kind, idx)
+			if sourceHash := computeSourceHash(method); sourceHash != "" {
+				l.SourceHash[key] = sourceHash
+			}
 			pin := ToolPin{}
 
 			// Resolve {latest} in URL fields (git and http methods only).
@@ -278,11 +311,11 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 // are copied rather than aliased. When fresh is nil, existing is returned
 // unchanged (nil when both are nil).
 //
-// MethodsHash is intentionally not merged — fresh's map passes through
-// untouched (or existing's, in the fresh-nil case above). Callers apply their
-// own method-identity policy: a regular install must not bless a changed
-// method identity, while `depengine update` accepts the freshly resolved one.
-// That policy belongs to each caller, not to the pin merge.
+// MethodsHash and SourceHash are intentionally not merged — fresh's maps pass
+// through untouched (or existing's, in the fresh-nil case above). Callers
+// apply their own identity policy: a regular install must not bless changed
+// method/source identity, while `depengine update` accepts freshly resolved
+// identity. That policy belongs to each caller, not to the pin merge.
 func Merge(existing, fresh *Lock) *Lock {
 	if fresh == nil {
 		return existing
@@ -359,6 +392,18 @@ func ValidateFrozen(s *config.Schema, l *Lock) error {
 			idx := kindCount[method.Kind]
 			kindCount[method.Kind] = idx + 1
 			key := toolKey(name, method.Kind, idx)
+			currentSourceHash := computeSourceHash(method)
+			storedSourceHash, hasStoredSourceHash := l.SourceHash[key]
+			if currentSourceHash != "" {
+				if !hasStoredSourceHash || storedSourceHash == "" {
+					return fmt.Errorf("lock: frozen lock needs update: missing package-source identity for %q", key)
+				}
+				if storedSourceHash != currentSourceHash {
+					return fmt.Errorf("lock: frozen lock needs update: package sources changed for %q", key)
+				}
+			} else if hasStoredSourceHash && storedSourceHash != "" {
+				return fmt.Errorf("lock: frozen lock needs update: package sources changed for %q", key)
+			}
 			pin := l.Tools[key]
 
 			if requiresLatestPin(method) && pin.Latest == "" {
@@ -423,6 +468,16 @@ func Apply(s *config.Schema, l *Lock) {
 			idx := kindCount[method.Kind]
 			kindCount[method.Kind] = idx + 1
 			key := toolKey(name, method.Kind, idx)
+			if l.SourceHash != nil {
+				if storedHash, ok := l.SourceHash[key]; ok {
+					if currentHash := computeSourceHash(method); currentHash != storedHash {
+						log.Default.Warn("package sources changed since lock was created",
+							"tool", name,
+							"method", method.Kind,
+							"action", "run 'depengine update' to accept the source change")
+					}
+				}
+			}
 			pin, ok := l.Tools[key]
 			if !ok {
 				continue

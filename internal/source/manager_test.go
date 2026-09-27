@@ -2,6 +2,7 @@ package source
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -104,6 +105,26 @@ func TestManagerRejectsIgnoredURLBeforeRunnerCall(t *testing.T) {
 	}
 }
 
+func TestManagerRejectsUnsafeGitSourceURLBeforeRunnerCall(t *testing.T) {
+	for _, rawURL := range []string{
+		"https://user@example.test/tools.git",
+		"https://example.test/tools.git?token=secret",
+		"https://example.test/tools.git#fragment",
+	} {
+		t.Run(rawURL, func(t *testing.T) {
+			runner := &scriptedRunner{}
+			configured := config.Source{Kind: "brew-tap", Name: "vendor/tools", URL: rawURL}
+			_, err := NewManager(runner, false).Missing(context.Background(), []config.Source{configured})
+			if err == nil || !strings.Contains(err.Error(), "credential-free") {
+				t.Fatalf("Missing() error = %v, want unsafe source URL rejection", err)
+			}
+			if len(runner.calls) != 0 {
+				t.Fatalf("unsafe source URL reached Runner: %#v", runner.calls)
+			}
+		})
+	}
+}
+
 func TestManagerPassesSupportedSourceURLToAdd(t *testing.T) {
 	for _, kind := range []string{"scoop-bucket", "brew-tap"} {
 		t.Run(kind, func(t *testing.T) {
@@ -118,6 +139,68 @@ func TestManagerPassesSupportedSourceURLToAdd(t *testing.T) {
 			args := runner.calls[1].Args
 			if len(args) == 0 || args[len(args)-1] != configured.URL {
 				t.Fatalf("add args = %v, want source URL as final argument", args)
+			}
+		})
+	}
+}
+
+func TestManagerVerifiesExistingGitBackedSourceOrigin(t *testing.T) {
+	t.Run("brew tap", func(t *testing.T) {
+		configured := config.Source{Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git"}
+		runner := &scriptedRunner{outputs: []run.Result{
+			{Stdout: []byte("vendor/tools\n")},
+			{Stdout: []byte(`[{"name":"vendor/tools","remote":"https://EXAMPLE.test/vendor/tools.git/"}]`)},
+		}}
+		missing, err := NewManager(runner, false).Missing(context.Background(), []config.Source{configured})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(missing) != 0 {
+			t.Fatalf("missing = %v, want source verified present", missing)
+		}
+		if len(runner.calls) != 2 || runner.calls[1].Name != "brew" || !reflect.DeepEqual(runner.calls[1].Args, []string{"tap-info", "--json=v1", "vendor/tools"}) {
+			t.Fatalf("calls = %#v, want tap listing plus tap-info origin probe", runner.calls)
+		}
+	})
+
+	t.Run("scoop bucket", func(t *testing.T) {
+		configured := config.Source{Kind: "scoop-bucket", Name: " vendor ", URL: "https://example.test/vendor/bucket.git"}
+		runner := &scriptedRunner{outputs: []run.Result{{Stdout: []byte("Name Source Updated Manifests\nvendor https://EXAMPLE.test/vendor/bucket.git/ 2026-09-26 42\n")}}}
+		missing, err := NewManager(runner, false).Missing(context.Background(), []config.Source{configured})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(missing) != 0 {
+			t.Fatalf("missing = %v, want source verified present", missing)
+		}
+	})
+}
+
+func TestManagerRejectsExistingSourceWithDifferentOrigin(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		source  config.Source
+		outputs []run.Result
+	}{
+		{
+			name:   "brew tap",
+			source: config.Source{Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git"},
+			outputs: []run.Result{
+				{Stdout: []byte("vendor/tools\n")},
+				{Stdout: []byte(`[{"name":"vendor/tools","remote":"https://mirror.test/vendor/tools.git"}]`)},
+			},
+		},
+		{
+			name:    "scoop bucket",
+			source:  config.Source{Kind: "scoop-bucket", Name: "vendor", URL: "https://example.test/vendor/bucket.git"},
+			outputs: []run.Result{{Stdout: []byte("vendor https://mirror.test/vendor/bucket.git 2026-09-26 42\n")}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &scriptedRunner{outputs: tc.outputs}
+			_, err := NewManager(runner, false).Missing(context.Background(), []config.Source{tc.source})
+			if err == nil || !strings.Contains(err.Error(), "different origin") {
+				t.Fatalf("Missing() error = %v, want origin mismatch", err)
 			}
 		})
 	}

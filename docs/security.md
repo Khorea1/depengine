@@ -165,6 +165,18 @@ beyond one package. depengine tracks these changes per candidate where the
 adapter supports it and avoids deleting shared resources without ownership
 evidence.
 
+For a Brew tap or Scoop bucket declared with an explicit URL, a pre-existing
+same-name source is accepted only when its configured Git origin matches that
+URL. Source URLs are required to be credential-free and cannot contain query
+strings or fragments; authenticated source setup uses the typed `secret_ref`
+transport instead. Transaction recovery retains that credential-free URL so an
+interrupted add/remove is not reconciled using weaker name-only evidence.
+
+Legacy lock v1 hashes candidate host-source `kind`/`name`/`url` declarations
+and frozen installs reject missing or changed source identity. This protects
+the project's requested source configuration from silent drift; it does not
+pin mutable repository contents or prove publisher trust.
+
 Shared-source reference counting is still incomplete, so source cleanup should
 be conservative.
 

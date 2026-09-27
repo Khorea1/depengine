@@ -118,14 +118,26 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	}
 	newLock = lock.Merge(oldLock, newLock)
 	if oldLock != nil {
-		// update IS the operation that accepts a changed method identity: for
-		// tools the fresh resolution covers, the newly computed hash wins.
-		// Old hashes survive only for tools the fresh lock does not cover
-		// (filtered out by --profile, or resolved without methods).
+		// update IS the operation that accepts changed method/source identity:
+		// for tools/candidates the fresh resolution covers, newly computed
+		// hashes win. Old hashes survive only where fresh resolution had no
+		// corresponding entry (for example a tool filtered out by --profile).
 		for name, oldHash := range oldLock.MethodsHash {
 			if _, ok := newLock.MethodsHash[name]; !ok {
 				newLock.MethodsHash[name] = oldHash
 			}
+		}
+		if newLock.SourceHash == nil {
+			newLock.SourceHash = make(map[string]string, len(oldLock.SourceHash))
+		}
+		for key, oldHash := range oldLock.SourceHash {
+			if _, ok := newLock.SourceHash[key]; ok {
+				continue
+			}
+			if _, toolWasResolved := s.Tools[lockCandidateToolName(key)]; toolWasResolved {
+				continue
+			}
+			newLock.SourceHash[key] = oldHash
 		}
 	}
 	pinned := len(newLock.Tools)
