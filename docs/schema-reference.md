@@ -673,10 +673,15 @@ are described above or alongside their examples.
 
 ### Ecosystem desired-state coverage
 
-Ecosystem methods do not all expose the same controls. `pip`, `npm`, `pipx`,
-`uv`, `gem`, `composer`, `bun`, `pnpm`, and Yarn Classic support exact version
-intent and check the installed version through the package manager. Source or
-registry selection is available where the adapter has a typed field.
+Ecosystem methods do not all expose the same controls. Exact version intent is
+supported by WinGet, Scoop, Chocolatey, Cargo, Go, pipx, uv, pip, npm, pnpm,
+Bun, RubyGems, Yarn Classic, Composer, SDKMAN, Conda, and asdf/mise. Their
+installed-version checks read the selected package manager's installed
+metadata or the manager's version-specific install target; an exact match is
+required for the desired state to be satisfied. RubyGems can keep multiple
+versions installed, so its check accepts the requested version when it appears
+anywhere in the installed version list and reports that matching version.
+Source or registry selection is available where the adapter has a typed field.
 
 These methods are not yet universally lockable to immutable package identities.
 Authenticated registries must use the package manager's authentication

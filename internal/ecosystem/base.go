@@ -665,7 +665,8 @@ func (a *BaseAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool 
 	case "uv":
 		return a.uvInstalledVersion(ctx, rn, pkg)
 	case "gem":
-		return a.gemInstalledVersion(ctx, rn, pkg)
+		requested, _ := mc.Config["version"].(string)
+		return a.gemInstalledVersion(ctx, rn, pkg, requested)
 	case "composer":
 		return a.composerInstalledVersion(ctx, rn, pkg)
 	case "bun":
@@ -876,7 +877,7 @@ func gemVersionsFromList(output, pkg string) []string {
 	return nil
 }
 
-func (a *BaseAdapter) gemInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
+func (a *BaseAdapter) gemInstalledVersion(ctx context.Context, rn run.Runner, pkg, requested string) (string, error) {
 	res := a.runConfiguredBinary(ctx, rn, "list", "--local", "--exact", pkg, "--all")
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "gem: list installed version")
@@ -884,6 +885,11 @@ func (a *BaseAdapter) gemInstalledVersion(ctx context.Context, rn run.Runner, pk
 	versions := gemVersionsFromList(string(res.Stdout), pkg)
 	if len(versions) == 0 {
 		return "", fmt.Errorf("gem: installed package %q was not present in list output", pkg)
+	}
+	for _, version := range versions {
+		if requested != "" && version == requested {
+			return version, nil
+		}
 	}
 	return versions[0], nil
 }
