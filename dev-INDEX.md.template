@@ -1,0 +1,41 @@
+# .dev/ — private working memory
+
+#TODO: adicionar remover esse template e, de fato, criar o INDEX.md de fato
+# - [ ] adicionar a informação de que  "Esse arquivo funciona como índice/TOC para outros arquivos desse mesmo diretório, que por sua vez, podem referenciar arquivos do projeto"
+# - [ ] adicionar que isso deve ser atualizado a cana `cleaning`
+# - [ ] adicionar que pode-se organizar da forma que preferir, mas o padrão está abaixo:
+#     archives/ -- arquivos stale, planos, todos, ideias, Q&As, ou qualquer coisa que não é mais relevante para o projeto atual, mas pode ser relevante como backlog
+#     plans/ -- planos que faltam implementar 100%
+#     ideas/ -- autoexplicativo
+#     TODOs/ -- opcional, coleção tarefas isoladas por arquivo de todo, mais direto e atômico
+#     TODO.md -- autoexplicativo
+#
+
+## Control files
+
+- `cleaning.md` — maintenance procedure for consolidating and triaging `.dev/`.
+  It is personal workflow configuration, normally symlinked from the user's
+  dotfiles. Do not edit, archive, merge, or promote it as project content.
+
+## Optional naming patterns
+
+Use these when they help; they are conventions, not a required taxonomy.
+
+- `todo.md` — current tasks or loose queue.
+- `plan-<topic>.md` — non-trivial implementation plan.
+- `retrieved-<topic>.md` — cached external research or documentation.
+- `ideas.md` — unvetted ideas and possible future work.
+- `<anything-useful>.md` — scratch files do not need to fit a schema.
+
+For cached external material, record enough provenance to judge whether it is
+still trustworthy, ideally source and retrieval date.
+
+## Lifecycle
+
+New or uncertain knowledge normally starts here. When the directory becomes
+noisy, redundant, stale, or difficult to navigate, follow `cleaning.md`.
+
+Consolidation may keep material in `.dev/`, discard it, or promote durable
+knowledge into shared documentation or agent instructions according to that
+procedure. Promotion is deliberate; nothing here becomes shared truth merely by
+existing.
