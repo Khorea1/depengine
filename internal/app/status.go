@@ -190,12 +190,12 @@ type toolStatus struct {
 	Verification *plan.VerificationResult `json:"verification,omitempty"`
 }
 
-// statusToolOutdated reports whether an installed tool drifted from the
-// schema: either its definition changed since install, or its installed
-// version differs from the pinned one.
+// statusToolOutdated reports whether an installed tool drifted from desired
+// state: either its non-hook definition changed since install, or its installed
+// version differs from the pinned one. Legacy state without DesiredStateHash
+// deliberately skips hash-based health inference until the next state write.
 func statusToolOutdated(ts state.ToolState, stTool *config.Tool, lk *lock.Lock, name string) bool {
-	// Definition drift: the schema definition changed since install.
-	if ts.DefinitionHash != "" && state.DefinitionHash(stTool) != ts.DefinitionHash {
+	if ts.DesiredStateHash != "" && state.DesiredStateHash(stTool) != ts.DesiredStateHash {
 		return true
 	}
 	// Version drift: the installed version differs from the pinned one.
@@ -215,7 +215,7 @@ func reconcileStatusTools(ctx context.Context, rows []toolStatus, installed map[
 		}
 		tool := schema.Tools[row.Name]
 		ts := installed[row.Name]
-		definitionDrift := ts.DefinitionHash != "" && state.DefinitionHash(tool) != ts.DefinitionHash
+		definitionDrift := ts.DesiredStateHash != "" && state.DesiredStateHash(tool) != ts.DesiredStateHash
 		method, methodErr := findTrackedMethodCandidate(tool, ts, ex.DefaultMethodOrder(), ex.NativeManagerName())
 		if methodErr != nil {
 			row.Status = "unknown"

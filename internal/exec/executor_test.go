@@ -2731,3 +2731,100 @@ func TestExecutorRetainsCommittedSourcesWhenPostInstallFails(t *testing.T) {
 		t.Fatalf("committed preparation remained active: plans=%#v journals=%#v", st.PreparationPlans, st.PreparationJournals)
 	}
 }
+
+func TestExecutorCandidateLocalHookDoesNotRunForUnavailableCandidate(t *testing.T) {
+	primary := &availabilityMockAdapter{
+		testMockAdapter: testMockAdapter{kindValue: "native"},
+		checkAvailableFunc: func(string) bool {
+			return false
+		},
+	}
+	fallback := &testMockAdapter{
+		kindValue:   "cargo",
+		checkFunc:   func(string) bool { return false },
+		installFunc: func(string) error { return nil },
+	}
+	runner := &run.FakeRunner{}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(primary, fallback)(ex)
+	WithAllowArbitraryCode()(ex)
+
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"native", "cargo"}},
+		Tools: map[string]*config.Tool{
+			"demo": {
+				Name: "demo",
+				Methods: []*config.MethodCandidate{
+					{
+						Kind:       "native",
+						Config:     map[string]any{"pkg": "demo-native"},
+						PreInstall: []config.Hook{{Run: []string{"native-only-hook"}}},
+					},
+					{Kind: "cargo", Config: map[string]any{"pkg": "demo-cargo"}},
+				},
+			},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), schema, "")
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusInstalled || report.Tools[0].MethodKind != "cargo" {
+		t.Fatalf("result = %+v, want cargo fallback install", report.Tools)
+	}
+	for _, call := range runner.Calls {
+		if call.Name == "native-only-hook" {
+			t.Fatalf("candidate-local hook leaked from unavailable native candidate: calls=%#v", runner.Calls)
+		}
+	}
+	if report.Tools[0].PreinstallDone {
+		t.Fatalf("PreinstallDone = true even though the committing cargo candidate had no pre-hook: %+v", report.Tools[0])
+	}
+}
+
+func TestRunLifecycleHooksExecutesOnlyConcreteTransition(t *testing.T) {
+	runner := &run.FakeRunner{}
+	ex := New()
+	WithRunner(runner)(ex)
+
+	resolved := plan.New("demo", "native", true)
+	resolved.Hooks = []plan.LifecycleHook{
+		{
+			ID:         "candidate/before/0/install",
+			Transition: plan.TransitionInstall,
+			Timing:     plan.HookBefore,
+			Operation: plan.Operation{
+				Kind:          "hook",
+				Effect:        plan.EffectMutation,
+				Command:       []string{"install-hook"},
+				ArbitraryCode: true,
+			},
+			FailurePolicy: plan.HookFailAbort,
+		},
+		{
+			ID:         "candidate/before/0/upgrade",
+			Transition: plan.TransitionUpgrade,
+			Timing:     plan.HookBefore,
+			Operation: plan.Operation{
+				Kind:          "hook",
+				Effect:        plan.EffectMutation,
+				Command:       []string{"upgrade-hook"},
+				ArbitraryCode: true,
+			},
+			FailurePolicy: plan.HookFailAbort,
+		},
+	}
+
+	ran, err := ex.runLifecycleHooks(context.Background(), "demo", &resolved, plan.TransitionUpgrade, plan.HookBefore)
+	if err != nil {
+		t.Fatalf("runLifecycleHooks() error = %v", err)
+	}
+	if !ran {
+		t.Fatal("runLifecycleHooks() ran = false, want true")
+	}
+	if len(runner.Calls) != 1 || runner.Calls[0].Name != "upgrade-hook" {
+		t.Fatalf("calls = %#v, want only upgrade-hook", runner.Calls)
+	}
+}

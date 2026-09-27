@@ -141,6 +141,8 @@ func cloneMethod(method *MethodCandidate) *MethodCandidate {
 	}
 	out := *method
 	out.Requires = append([]string(nil), method.Requires...)
+	out.PreInstall = cloneHooks(method.PreInstall)
+	out.PostInstall = cloneHooks(method.PostInstall)
 	out.Sources = cloneSources(method.Sources)
 	if method.SecretRef != nil {
 		secretRef := *method.SecretRef
@@ -184,14 +186,19 @@ type MethodCandidate struct {
 	// ProjectRoot is inherited from the final project schema after layering.
 	// Adapters may use it for project-relative resources, but must never persist
 	// the machine-specific absolute value.
-	ProjectRoot        string `json:"-"`
-	When               *Condition
-	Config             map[string]any
-	Err                error
-	ArchMap            map[string]string
-	OSMap              map[string]string
-	Requires           []string
-	Sources            []Source
+	ProjectRoot string `json:"-"`
+	When        *Condition
+	Config      map[string]any
+	Err         error
+	ArchMap     map[string]string
+	OSMap       map[string]string
+	Requires    []string
+	Sources     []Source
+	// PreInstall/PostInstall are candidate-local lifecycle hooks. Tool-level
+	// hooks remain supported as generic hooks that are projected onto every
+	// selected candidate.
+	PreInstall         []Hook
+	PostInstall        []Hook
 	SecretRef          *SecretReference
 	ChecksumSecretRef  *SecretReference
 	SignatureSecretRef *SecretReference

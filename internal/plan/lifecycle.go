@@ -37,6 +37,27 @@ const (
 	HookFailContinueReport HookFailurePolicy = "continue_report"
 )
 
+// HookCondition is the serialized, adapter-neutral form of a hook's host
+// predicate. The executor evaluates it using the same matching semantics as
+// config.Condition; keeping the data on the plan prevents hook selection from
+// reaching back into a different candidate's config.
+type HookCondition struct {
+	DistroFamily     []string `json:"distro_family,omitempty"`
+	TargetFamily     []string `json:"target_family,omitempty"`
+	DistroID         []string `json:"distro_id,omitempty"`
+	DistroVersion    []string `json:"distro_version,omitempty"`
+	DistroVersionMin string   `json:"distro_version_min,omitempty"`
+	DistroVersionMax string   `json:"distro_version_max,omitempty"`
+	Arch             []string `json:"arch,omitempty"`
+	OS               []string `json:"os,omitempty"`
+	Kernel           []string `json:"kernel,omitempty"`
+	Libc             []string `json:"libc,omitempty"`
+	InitSystem       []string `json:"init_system,omitempty"`
+	IsWSL            *bool    `json:"is_wsl,omitempty"`
+	IsContainer      *bool    `json:"is_container,omitempty"`
+	IsAndroid        *bool    `json:"is_android,omitempty"`
+}
+
 // LifecycleHook is an event handler attached to the already-selected
 // candidate. Hook operations are always arbitrary code and conservatively
 // classified as mutations because the planner cannot prove a command harmless.
@@ -45,6 +66,7 @@ type LifecycleHook struct {
 	Transition    TransitionKind    `json:"transition"`
 	Timing        HookTiming        `json:"timing"`
 	Operation     Operation         `json:"operation"`
+	When          *HookCondition    `json:"when,omitempty"`
 	FailurePolicy HookFailurePolicy `json:"failure_policy"`
 }
 
@@ -108,10 +130,40 @@ func (p ResolvedInstallPlan) HookSchedule(transition TransitionKind, timing Hook
 	for _, hook := range p.Hooks {
 		if hook.Transition == transition && hook.Timing == timing {
 			hook.Operation = cloneOperation(hook.Operation)
+			hook.When = cloneHookCondition(hook.When)
 			out = append(out, hook)
 		}
 	}
 	return out, nil
+}
+
+func cloneHookCondition(in *HookCondition) *HookCondition {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.DistroFamily = append([]string(nil), in.DistroFamily...)
+	out.TargetFamily = append([]string(nil), in.TargetFamily...)
+	out.DistroID = append([]string(nil), in.DistroID...)
+	out.DistroVersion = append([]string(nil), in.DistroVersion...)
+	out.Arch = append([]string(nil), in.Arch...)
+	out.OS = append([]string(nil), in.OS...)
+	out.Kernel = append([]string(nil), in.Kernel...)
+	out.Libc = append([]string(nil), in.Libc...)
+	out.InitSystem = append([]string(nil), in.InitSystem...)
+	if in.IsWSL != nil {
+		v := *in.IsWSL
+		out.IsWSL = &v
+	}
+	if in.IsContainer != nil {
+		v := *in.IsContainer
+		out.IsContainer = &v
+	}
+	if in.IsAndroid != nil {
+		v := *in.IsAndroid
+		out.IsAndroid = &v
+	}
+	return &out
 }
 
 func validateHooks(hooks []LifecycleHook) error {

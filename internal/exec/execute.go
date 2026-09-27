@@ -209,9 +209,10 @@ func (ex *Executor) attemptMethod(toolCtx context.Context, tool *config.Tool, me
 		ex.gateStaticIntent,
 		ex.gateAdapterAvailable,
 		ex.resolveConcretePlan,
+		ex.selectCandidateForTransition,
 		ex.gateAlreadyInstalled,
 		ex.runCandidatePreinstall,
-		ex.prepareCandidate,
+		ex.requireMethodPrerequisites,
 		ex.installCandidate,
 	} {
 		switch phase(ac, result) {

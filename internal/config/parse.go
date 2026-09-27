@@ -224,6 +224,10 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 		}
 		for _, tool := range tools {
 			expandHooks(tool.PreInstall, backfill)
+			for _, method := range tool.Methods {
+				expandHooks(method.PreInstall, backfill)
+				expandHooks(method.PostInstall, backfill)
+			}
 			expandHooks(tool.PostInstall, backfill)
 		}
 	}
@@ -533,6 +537,14 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 			mc.Requires = toStringSlice(rawRequires)
 			delete(t, "requires")
 		}
+		if rawHooks, ok := t["pre_install"]; ok {
+			mc.PreInstall = parseHooks(rawHooks)
+			delete(t, "pre_install")
+		}
+		if rawHooks, ok := t["post_install"]; ok {
+			mc.PostInstall = parseHooks(rawHooks)
+			delete(t, "post_install")
+		}
 		if rawSources, ok := t["sources"].([]any); ok {
 			mc.Sources = parseSources(rawSources)
 			delete(t, "sources")
@@ -660,6 +672,10 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 		delete(cfg, "arch_map")
 		delete(cfg, "os_map")
 		methodRequires := toStringSlice(cfg["requires"])
+		methodPreInstall := parseHooks(cfg["pre_install"])
+		delete(cfg, "pre_install")
+		methodPostInstall := parseHooks(cfg["post_install"])
+		delete(cfg, "post_install")
 		delete(cfg, "requires")
 		var methodSources []Source
 		if rawSources, ok := cfg["sources"].([]any); ok {
@@ -667,14 +683,16 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 		}
 		delete(cfg, "sources")
 		methods = append(methods, &MethodCandidate{
-			Kind:     "native",
-			Inferred: len(nativeOverrides) == 0 && nativeBlockConfig == nil,
-			When:     when,
-			Config:   cfg,
-			ArchMap:  archMap,
-			OSMap:    osMap,
-			Requires: methodRequires,
-			Sources:  methodSources,
+			Kind:        "native",
+			Inferred:    len(nativeOverrides) == 0 && nativeBlockConfig == nil,
+			When:        when,
+			Config:      cfg,
+			ArchMap:     archMap,
+			OSMap:       osMap,
+			Requires:    methodRequires,
+			Sources:     methodSources,
+			PreInstall:  methodPreInstall,
+			PostInstall: methodPostInstall,
 		})
 	}
 

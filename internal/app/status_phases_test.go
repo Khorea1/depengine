@@ -30,7 +30,7 @@ func TestReconcileStatusToolsUsesDesiredState(t *testing.T) {
 			ex := exec.New()
 			exec.WithAdapters(adapter)(ex)
 			exec.WithRunner(&run.FakeRunner{})(ex)
-			installed := map[string]state.ToolState{"demo": {Method: "go", MethodKind: "go", Version: "v0.4.0", Config: map[string]any{"pkg": "example.test/demo", "version": "v1.0.0"}, DefinitionHash: state.DefinitionHash(tool)}}
+			installed := map[string]state.ToolState{"demo": {Method: "go", MethodKind: "go", Version: "v0.4.0", Config: map[string]any{"pkg": "example.test/demo", "version": "v1.0.0"}, DefinitionHash: state.DefinitionHash(tool), DesiredStateHash: state.DesiredStateHash(tool)}}
 			rows := []toolStatus{{Name: "demo", Status: "outdated"}}
 			got := reconcileStatusTools(context.Background(), rows, installed, &config.Schema{Tools: map[string]*config.Tool{"demo": tool}}, nil, ex, "unknown")
 			if got[0].Status != tc.wantStatus {
@@ -50,7 +50,7 @@ func TestReconcileStatusToolsAppliesExactLockPinToDesiredState(t *testing.T) {
 	ex := exec.New()
 	exec.WithAdapters(adapter)(ex)
 	exec.WithRunner(&run.FakeRunner{})(ex)
-	installed := map[string]state.ToolState{"demo": {Method: "go", MethodKind: "go", Version: "v1.0.0", Config: map[string]any{"pkg": "example.test/demo"}, DefinitionHash: state.DefinitionHash(tool)}}
+	installed := map[string]state.ToolState{"demo": {Method: "go", MethodKind: "go", Version: "v1.0.0", Config: map[string]any{"pkg": "example.test/demo"}, DefinitionHash: state.DefinitionHash(tool), DesiredStateHash: state.DesiredStateHash(tool)}}
 	rows := []toolStatus{{Name: "demo", Status: "installed"}}
 	lk := &lock.Lock{Tools: map[string]lock.ToolPin{"demo/go/0": {Latest: "v1.1.0"}}}
 	got := reconcileStatusTools(context.Background(), rows, installed, &config.Schema{Tools: map[string]*config.Tool{"demo": tool}}, lk, ex, "unknown")
@@ -127,7 +127,7 @@ func TestResolveStatusSchemaPath_EmptyPathWithToolsContinues(t *testing.T) {
 
 func TestStatusToolOutdated_DefinitionDrift(t *testing.T) {
 	tool := &config.Tool{Name: "foo"}
-	ts := state.ToolState{DefinitionHash: "stale-hash"}
+	ts := state.ToolState{DefinitionHash: "legacy-full-hash", DesiredStateHash: "stale-hash"}
 	if !statusToolOutdated(ts, tool, nil, "foo") {
 		t.Fatal("statusToolOutdated = false, want true for definition drift")
 	}
@@ -135,7 +135,7 @@ func TestStatusToolOutdated_DefinitionDrift(t *testing.T) {
 
 func TestStatusToolOutdated_Fresh(t *testing.T) {
 	tool := &config.Tool{Name: "foo"}
-	ts := state.ToolState{DefinitionHash: state.DefinitionHash(tool)}
+	ts := state.ToolState{DefinitionHash: state.DefinitionHash(tool), DesiredStateHash: state.DesiredStateHash(tool)}
 	if statusToolOutdated(ts, tool, nil, "foo") {
 		t.Fatal("statusToolOutdated = true, want false for fresh install")
 	}
@@ -147,7 +147,7 @@ func TestStatusToolOutdated_VersionDrift(t *testing.T) {
 	ts := state.ToolState{
 		Method:         "go",
 		Version:        "1.0.0",
-		DefinitionHash: state.DefinitionHash(tool),
+		DefinitionHash: state.DefinitionHash(tool), DesiredStateHash: state.DesiredStateHash(tool),
 	}
 	lk := &lock.Lock{Tools: map[string]lock.ToolPin{"foo/go/0": {Latest: "2.0.0"}}}
 	if !statusToolOutdated(ts, tool, lk, "foo") {
@@ -161,7 +161,7 @@ func TestStatusToolOutdated_VersionMatchesPin(t *testing.T) {
 	ts := state.ToolState{
 		Method:         "go",
 		Version:        "2.0.0",
-		DefinitionHash: state.DefinitionHash(tool),
+		DefinitionHash: state.DefinitionHash(tool), DesiredStateHash: state.DesiredStateHash(tool),
 	}
 	lk := &lock.Lock{Tools: map[string]lock.ToolPin{"foo/go/0": {Latest: "2.0.0"}}}
 	if statusToolOutdated(ts, tool, lk, "foo") {
@@ -190,7 +190,7 @@ func TestClassifyStatusTools_AllStatuses(t *testing.T) {
 	a := &config.Tool{Name: "a"}
 	s := statusTestSchema("a", "c")
 	installed := map[string]state.ToolState{
-		"a": {Method: "native", DefinitionHash: state.DefinitionHash(a)},
+		"a": {Method: "native", DefinitionHash: state.DefinitionHash(a), DesiredStateHash: state.DesiredStateHash(a)},
 		"b": {Method: "cargo"},
 	}
 	got := classifyStatusTools(installed, s, nil, false)
@@ -236,7 +236,7 @@ func TestClassifyStatusTools_NilSchema(t *testing.T) {
 func TestClassifyStatusTools_Outdated(t *testing.T) {
 	s := statusTestSchema("a")
 	installed := map[string]state.ToolState{
-		"a": {Method: "native", DefinitionHash: "stale"},
+		"a": {Method: "native", DefinitionHash: "legacy", DesiredStateHash: "stale"},
 	}
 	got := classifyStatusTools(installed, s, nil, false)
 	ts, ok := statusOf(got, "a")
@@ -280,5 +280,35 @@ func TestRenderStatusTable_Empty(t *testing.T) {
 	}
 	if err := renderStatusTable(nil, true); err != nil {
 		t.Fatalf("renderStatusTable(nil, true) = %v, want nil", err)
+	}
+}
+
+func TestStatusToolOutdated_IgnoresLifecycleHookChanges(t *testing.T) {
+	installed := &config.Tool{Name: "foo", Methods: []*config.MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "foo"}}}}
+	current := &config.Tool{
+		Name:        "foo",
+		PreInstall:  []config.Hook{{Run: []string{"echo", "new-pre"}}},
+		PostInstall: []config.Hook{{Run: []string{"echo", "new-post"}}},
+		Methods: []*config.MethodCandidate{{
+			Kind:        "native",
+			Config:      map[string]any{"pkg": "foo"},
+			PreInstall:  []config.Hook{{Run: []string{"echo", "candidate-pre"}}},
+			PostInstall: []config.Hook{{Run: []string{"echo", "candidate-post"}}},
+		}},
+	}
+	ts := state.ToolState{
+		DefinitionHash:   state.DefinitionHash(installed),
+		DesiredStateHash: state.DesiredStateHash(installed),
+	}
+	if statusToolOutdated(ts, current, nil, "foo") {
+		t.Fatal("status must not become outdated solely because one-shot hooks changed")
+	}
+}
+
+func TestStatusToolOutdated_LegacyFullHashIsNotHealthEvidence(t *testing.T) {
+	tool := &config.Tool{Name: "foo", PreInstall: []config.Hook{{Run: []string{"echo", "pre"}}}}
+	ts := state.ToolState{DefinitionHash: "stale-hook-sensitive-hash"}
+	if statusToolOutdated(ts, tool, nil, "foo") {
+		t.Fatal("legacy hook-sensitive DefinitionHash must not drive current health")
 	}
 }

@@ -66,13 +66,14 @@ func (ex *Executor) writeState(ctx context.Context, schema *config.Schema, repor
 		}
 		existing, hadExisting := current.Tools[result.Tool]
 		toolState := depstate.ToolState{
-			Method:          result.Method,
-			MethodKind:      result.MethodKind,
-			InstalledAt:     time.Now().UTC().Format(time.RFC3339),
-			PostinstallDone: result.PostinstallDone,
-			DefinitionHash:  depstate.DefinitionHash(tool),
-			RootRequested:   !tool.DependencyOnly,
-			Config:          configForResolvedTarget(&config.MethodCandidate{Kind: result.MethodKind, Config: result.Config}, result.PlanIntent),
+			Method:           result.Method,
+			MethodKind:       result.MethodKind,
+			InstalledAt:      time.Now().UTC().Format(time.RFC3339),
+			PostinstallDone:  result.PostinstallDone,
+			DefinitionHash:   depstate.DefinitionHash(tool),
+			DesiredStateHash: depstate.DesiredStateHash(tool),
+			RootRequested:    !tool.DependencyOnly,
+			Config:           configForResolvedTarget(&config.MethodCandidate{Kind: result.MethodKind, Config: result.Config}, result.PlanIntent),
 		}
 		// A successful Check means depengine did not install anything during this
 		// run. Preserve historical installation metadata instead of rewriting the

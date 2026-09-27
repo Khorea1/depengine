@@ -39,6 +39,8 @@ type candidateAttempt struct {
 	attempt     MethodAttempt
 	prepared    candidateSourcePreparation
 	probed      candidateSourcePreparation
+	transition  plan.TransitionKind
+	preHookRan  bool
 	deferred    bool // availability deferred until missing sources are prepared
 	resources   []plan.ResourceUse
 	toolStart   time.Time
@@ -151,25 +153,22 @@ func (ex *Executor) gateAlreadyInstalled(ac *candidateAttempt, result *ToolResul
 		ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "verification_failed", "error", detail)
 		return nextMethod
 	}
-	switch verification.State {
-	case plan.StateSatisfied:
-		return ex.finishAlreadyInstalled(ac, result)
-	case plan.StateAbsent, plan.StateDrifted:
-		return proceed
-	case plan.StateUnknown, plan.StateBroken:
+	decision, decisionErr := plan.TransitionForVerification(verification)
+	if decisionErr != nil {
 		detail := verificationDetail(verification)
 		if detail == "" {
-			detail = string(verification.State)
+			detail = decisionErr.Error()
 		}
 		detail = fmt.Sprintf("%s: desired state %s: %s", ac.displayKind, verification.State, detail)
 		ex.skipCandidate(ac, result, "failed", detail)
 		ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "verification_"+string(verification.State), "error", detail)
 		return nextMethod
-	default:
-		detail := fmt.Sprintf("%s: invalid verification state %q", ac.displayKind, verification.State)
-		ex.skipCandidate(ac, result, "failed", detail)
-		return nextMethod
 	}
+	if !decision.Required {
+		return ex.finishAlreadyInstalled(ac, result)
+	}
+	ac.transition = decision.Transition
+	return proceed
 }
 
 func (ex *Executor) finishAlreadyInstalled(ac *candidateAttempt, result *ToolResult) attemptOutcome {
@@ -183,21 +182,19 @@ func (ex *Executor) finishAlreadyInstalled(ac *candidateAttempt, result *ToolRes
 	return finishTool
 }
 
-// prepareCandidate probes source presence, validates availability, prepares
-// missing sources transactionally, revalidates after preparation, and
-// installs lazy prerequisites. Every gate that can reject the candidate
-// runs before the next mutation.
-func (ex *Executor) prepareCandidate(ac *candidateAttempt, result *ToolResult) attemptOutcome {
+// selectCandidateForTransition finishes candidate viability checks before a
+// lifecycle hook is allowed to run. Most candidates are selected entirely by
+// read-only probes. A candidate whose repository source is missing may require
+// transactional source preparation before availability can be known; that
+// preparation is rolled back if the subsequent pre-hook fails.
+func (ex *Executor) selectCandidateForTransition(ac *candidateAttempt, result *ToolResult) attemptOutcome {
 	if out := ex.probeSourceAvailability(ac, result); out != proceed {
 		return out
 	}
 	if out := ex.prepareMissingSources(ac, result); out != proceed {
 		return out
 	}
-	if out := ex.recheckPostPrepareAvailability(ac, result); out != proceed {
-		return out
-	}
-	return ex.requireMethodPrerequisites(ac, result)
+	return ex.recheckPostPrepareAvailability(ac, result)
 }
 
 // probeSourceAvailability is the read-only part of candidate selection. A
@@ -262,28 +259,25 @@ func (ex *Executor) recheckPostPrepareAvailability(ac *candidateAttempt, result 
 	return proceed
 }
 
-// runCandidatePreinstall executes a tool-level pre-install hook only after a
-// concrete candidate has survived static, adapter, host-compatibility, and
-// already-installed gates. It stays before source/prerequisite preparation so
-// existing pre-install ordering is preserved while no-op candidates skip it.
-// The PreinstallDone report flag is intentionally NOT set here: it belongs to
-// the candidate/transition that actually commits the install (finishInstalled),
-// so a losing candidate's successful hook must not stamp the tool result when
-// a later candidate fails at its own hook or the tool never installs.
+// runCandidatePreinstall executes only the before-hook schedule for the
+// candidate and concrete transition selected by verification. The report flag
+// is recorded only after that same transition commits.
 func (ex *Executor) runCandidatePreinstall(ac *candidateAttempt, result *ToolResult) attemptOutcome {
-	if len(ac.tool.PreInstall) == 0 {
-		return proceed
-	}
 	preCtx, preCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
-	err := ex.runPreinstall(preCtx, ac.tool)
+	ran, err := ex.runLifecycleHooks(preCtx, ac.tool.Name, ac.resolved, ac.transition, plan.HookBefore)
 	preCancel()
+	ac.preHookRan = ran
 	if err == nil {
 		return proceed
 	}
 
-	detail := fmt.Sprintf("pre-install: %v", err)
+	phase := lifecycleHookPhase(ac.transition, plan.HookBefore)
+	detail := fmt.Sprintf("%s: %v", phase, err)
+	if rollbackErr := ac.prepared.rollback(ac.toolCtx, ex); rollbackErr != nil {
+		detail = fmt.Sprintf("%s; source rollback failed: %v", detail, rollbackErr)
+	}
 	ex.failCandidate(ac, result, detail)
-	ex.logWarn(ac.toolCtx, "preinstall", "tool", ac.tool.Name, "method", ac.displayKind, "error", detail)
+	ex.logWarn(ac.toolCtx, phase, "tool", ac.tool.Name, "method", ac.displayKind, "error", detail)
 	return finishTool
 }
 
@@ -460,11 +454,9 @@ func (ex *Executor) finishWouldInstall(ac *candidateAttempt, result *ToolResult)
 	ac.attempt.Status = "success"
 	result.Methods = append(result.Methods, ac.attempt)
 	ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "would_install")
-	if len(ac.tool.PostInstall) > 0 {
-		postCtx, postCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
-		_ = ex.runPostinstall(postCtx, ac.tool)
-		postCancel()
-	}
+	postCtx, postCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
+	_, _ = ex.runLifecycleHooks(postCtx, ac.tool.Name, ac.reported, ac.transition, plan.HookAfter)
+	postCancel()
 	result.Duration = time.Since(ac.toolStart).String()
 	return finishTool
 }
@@ -477,7 +469,7 @@ func (ex *Executor) finishInstalled(ac *candidateAttempt, result *ToolResult) at
 	// proceeded and its adapter mutation succeeded. Record that transition
 	// before finalizing preparation state so a journal-finalization failure does
 	// not erase the fact that the committed install crossed the hook boundary.
-	result.PreinstallDone = len(ac.tool.PreInstall) > 0
+	result.PreinstallDone = ac.preHookRan
 	if finalizeErr := ac.prepared.finalizeCommit(ac.tool.Name); finalizeErr != nil {
 		result.Status = StatusFailed
 		result.Error = finalizeErr.Error()
@@ -499,23 +491,22 @@ func (ex *Executor) finishInstalled(ac *candidateAttempt, result *ToolResult) at
 	result.ResourceUses = append([]plan.ResourceUse(nil), ac.resources...)
 	result.RebootRequired, _ = ac.method.Config["_reboot_required"].(bool)
 	ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "installed")
-	if len(ac.tool.PostInstall) > 0 {
-		// Postinstall gets a fresh timeout from the tool-level context,
-		// not the cancelled method context.
-		postCtx, postCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
-		perr := ex.runPostinstall(postCtx, ac.tool)
-		postCancel()
-		if perr != nil {
-			result.Status = StatusFailed
-			result.Error = fmt.Sprintf("post-install: %v", perr)
-			// The adapter commit already succeeded. Keep source ownership bound
-			// to the installed tool instead of removing a repository that the
-			// installed package may still depend on for upgrades/removal.
-			result.Duration = time.Since(ac.toolStart).String()
-			return finishTool
-		}
-		result.PostinstallDone = true
+	// Post hooks get a fresh timeout from the tool-level context, not the
+	// cancelled method context. Only this candidate/transition's schedule is
+	// eligible to run.
+	postCtx, postCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
+	postRan, perr := ex.runLifecycleHooks(postCtx, ac.tool.Name, ac.reported, ac.transition, plan.HookAfter)
+	postCancel()
+	if perr != nil {
+		result.Status = StatusFailed
+		result.Error = fmt.Sprintf("%s: %v", lifecycleHookPhase(ac.transition, plan.HookAfter), perr)
+		// The adapter commit already succeeded. Keep source ownership bound
+		// to the installed tool instead of removing a repository that the
+		// installed package may still depend on for upgrades/removal.
+		result.Duration = time.Since(ac.toolStart).String()
+		return finishTool
 	}
+	result.PostinstallDone = postRan
 	result.Duration = time.Since(ac.toolStart).String()
 	return finishTool
 }

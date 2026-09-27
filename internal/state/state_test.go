@@ -575,3 +575,40 @@ func TestSaveLocked(t *testing.T) {
 		t.Fatalf("Method: got %q, want %q", ts.Method, "native")
 	}
 }
+
+func TestDefinitionHashIncludesCandidateHooks(t *testing.T) {
+	base := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "demo"}}}}
+	withHook := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "demo"}, PreInstall: []config.Hook{{Run: []string{"echo", "pre"}}}}}}
+	if DefinitionHash(base) == DefinitionHash(withHook) {
+		t.Fatal("DefinitionHash should include candidate-local hooks")
+	}
+}
+
+func TestDesiredStateHashIgnoresLifecycleHooks(t *testing.T) {
+	base := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "demo"}}}}
+	withHooks := &config.Tool{
+		Name:        "demo",
+		PreInstall:  []config.Hook{{Run: []string{"echo", "tool-pre"}}},
+		PostInstall: []config.Hook{{Run: []string{"echo", "tool-post"}}},
+		Methods: []*config.MethodCandidate{{
+			Kind:        "native",
+			Config:      map[string]any{"pkg": "demo"},
+			PreInstall:  []config.Hook{{Run: []string{"echo", "candidate-pre"}}},
+			PostInstall: []config.Hook{{Run: []string{"echo", "candidate-post"}}},
+		}},
+	}
+	if got, want := DesiredStateHash(withHooks), DesiredStateHash(base); got != want {
+		t.Fatalf("DesiredStateHash changed only because lifecycle hooks changed: got %q want %q", got, want)
+	}
+	if DefinitionHash(withHooks) == DefinitionHash(base) {
+		t.Fatal("full DefinitionHash should still preserve hook provenance")
+	}
+}
+
+func TestDesiredStateHashStillDetectsNonHookDefinitionDrift(t *testing.T) {
+	base := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "demo"}}}}
+	changed := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "demo-next"}}}}
+	if DesiredStateHash(base) == DesiredStateHash(changed) {
+		t.Fatal("DesiredStateHash should change for desired package drift")
+	}
+}

@@ -618,14 +618,15 @@ func upgradedToolState(previous state.ToolState, methodKind string, tool *config
 		version = pinnedVersion
 	}
 	return state.ToolState{
-		Method:          previous.Method,
-		MethodKind:      methodKind,
-		InstalledAt:     installedAt.UTC().Format(time.RFC3339),
-		PostinstallDone: previous.PostinstallDone,
-		DefinitionHash:  state.DefinitionHash(tool),
-		Version:         version,
-		RootRequested:   previous.RootRequested,
-		Config:          method.Config,
+		Method:           previous.Method,
+		MethodKind:       methodKind,
+		InstalledAt:      installedAt.UTC().Format(time.RFC3339),
+		PostinstallDone:  previous.PostinstallDone,
+		DefinitionHash:   state.DefinitionHash(tool),
+		DesiredStateHash: state.DesiredStateHash(tool),
+		Version:          version,
+		RootRequested:    previous.RootRequested,
+		Config:           method.Config,
 	}
 }
 
@@ -667,7 +668,7 @@ func preflightDirectUpgrade(ctx context.Context, ex *exec.Executor, runner run.R
 	if len(tool.EffectiveRequires(facts)) > 0 {
 		return nil, plan.VerificationResult{}, fmt.Errorf("tool declares requires; transactional upgrade dependency handling is required")
 	}
-	if len(tool.PreInstall) > 0 || len(tool.PostInstall) > 0 {
+	if len(tool.PreInstall) > 0 || len(tool.PostInstall) > 0 || len(method.PreInstall) > 0 || len(method.PostInstall) > 0 {
 		return nil, plan.VerificationResult{}, fmt.Errorf("candidate has lifecycle hooks; direct upgrade cannot preserve hook semantics")
 	}
 	if !allowArbitrary && exec.CandidateRunsArbitraryCode(tool, method) {
