@@ -680,7 +680,7 @@ func TestRecoveredCommitDoesNotReplayHooksOrSecurityGate(t *testing.T) {
 	}
 }
 
-func TestRecoveredDependencyOnlyCommitIsRecordedAndNotReplayedLazily(t *testing.T) {
+func TestRecoveredDependencyOnlyCommitWithoutSourcesIsRecordedAndNotReplayedLazily(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	schema := &config.Schema{
 		Defaults: config.Defaults{MethodOrder: []string{"cargo"}},
@@ -690,9 +690,8 @@ func TestRecoveredDependencyOnlyCommitIsRecordedAndNotReplayedLazily(t *testing.
 				DependencyOnly: true,
 				MethodOnly:     []string{"cargo"},
 				Methods: []*config.MethodCandidate{{
-					Kind:    "cargo",
-					Config:  map[string]any{"pkg": "helper"},
-					Sources: []config.Source{{Kind: "brew-tap", Name: "vendor/tools"}},
+					Kind:   "cargo",
+					Config: map[string]any{"pkg": "helper"},
 				}},
 			},
 			"owner": {

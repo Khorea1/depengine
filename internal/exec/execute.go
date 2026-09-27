@@ -367,13 +367,15 @@ func (ex *Executor) executeDependency(ctx context.Context, name string) (ToolRes
 			}
 		}
 		if !blocked {
-			run.result = ex.executeTool(ctx, tool)
+			run.result = ex.executeTool(context.WithValue(ctx, lazyDependencyExecutionKey{}, true), tool)
 		}
 		ex.recordToolResult(ctx, &run.result, ex.report)
 	}
 	close(run.done)
 	return run.result, nil
 }
+
+type lazyDependencyExecutionKey struct{}
 
 func dependencySucceeded(result ToolResult) bool {
 	return result.Status == StatusInstalled || result.Status == StatusAlready || result.Status == StatusWouldInstall || result.Status == StatusVirtual
