@@ -40,7 +40,7 @@ func (r *credentialRecordingRunner) RunWithEnvValidated(ctx context.Context, env
 	if len(sensitive) != 1 || sensitive[0] != env["GIT_CONFIG_VALUE_1"][len("Authorization: Bearer "):] {
 		return run.Result{Err: fmt.Errorf("unexpected sensitive values")}
 	}
-	runResult := r.FakeRunner.Run(ctx, name, args...)
+	runResult := r.Run(ctx, name, args...)
 	if runResult.Err != nil || runResult.ExitCode != 0 {
 		return run.Result{Err: fmt.Errorf("sensitive subprocess execution failed"), ExitCode: runResult.ExitCode}
 	}
