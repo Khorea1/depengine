@@ -586,6 +586,7 @@ func (p ResolvedInstallPlan) redacted() ResolvedInstallPlan {
 	p.Hooks = append([]LifecycleHook(nil), p.Hooks...)
 	for i := range p.Hooks {
 		p.Hooks[i].Operation = redactOperations([]Operation{p.Hooks[i].Operation})[0]
+		p.Hooks[i].When = cloneHookCondition(p.Hooks[i].When)
 	}
 	p.Ensures = append([]EnsureAction(nil), p.Ensures...)
 	for i := range p.Ensures {
@@ -655,6 +656,7 @@ func cloneResolvedInstallPlan(in ResolvedInstallPlan) ResolvedInstallPlan {
 	out.Hooks = append([]LifecycleHook(nil), in.Hooks...)
 	for i := range out.Hooks {
 		out.Hooks[i].Operation = cloneOperation(in.Hooks[i].Operation)
+		out.Hooks[i].When = cloneHookCondition(in.Hooks[i].When)
 	}
 	out.Ensures = append([]EnsureAction(nil), in.Ensures...)
 	for i := range out.Ensures {
