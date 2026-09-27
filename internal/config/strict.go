@@ -257,6 +257,8 @@ func validateMethodValue(raw any, path, declaredKind string, errs *[]string) {
 			case "arch_map", "os_map":
 				validateStringMap(v[key], path+"."+key, errs)
 			case "requires":
+			case "pre_install", "post_install":
+				validateHooks(v[key], path+"."+key, errs)
 				validateStringList(v[key], path+".requires", errs)
 			case "sources":
 				validateSources(v[key], path+".sources", errs)
