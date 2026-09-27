@@ -12,12 +12,12 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 )
 
-// DefinitionHash computes a stable SHA256 hash of a tool's schema definition.
+// definitionHash computes a stable SHA256 hash of a tool's schema definition.
 // The hash covers the tool name, requires, preinstall, postinstall, tags,
 // and every method's kind, config, and when condition. Methods are sorted
 // by (kind, intra-kind ordinal) for reproducible output even with duplicate
 // kinds.
-func DefinitionHash(tool *config.Tool) string {
+func definitionHash(tool *config.Tool) string {
 	h := sha256.New()
 	h.Write([]byte(tool.Name))
 	h.Write([]byte{0})
@@ -56,10 +56,12 @@ func DefinitionHash(tool *config.Tool) string {
 	// duplicate kinds are distinguishable without making the hash depend
 	// on declaration order for non-duplicate entries.
 	type methodEntry struct {
-		kind   string
-		idx    int
-		config map[string]any
-		when   *config.Condition
+		kind        string
+		idx         int
+		config      map[string]any
+		when        *config.Condition
+		preInstall  []config.Hook
+		postInstall []config.Hook
 	}
 	kindCount := map[string]int{}
 	entries := make([]methodEntry, 0, len(tool.Methods))
@@ -67,10 +69,12 @@ func DefinitionHash(tool *config.Tool) string {
 		idx := kindCount[m.Kind]
 		kindCount[m.Kind] = idx + 1
 		entries = append(entries, methodEntry{
-			kind:   m.Kind,
-			idx:    idx,
-			config: m.Config,
-			when:   m.When,
+			kind:        m.Kind,
+			idx:         idx,
+			config:      m.Config,
+			when:        m.When,
+			preInstall:  m.PreInstall,
+			postInstall: m.PostInstall,
 		})
 	}
 
@@ -92,9 +96,47 @@ func DefinitionHash(tool *config.Tool) string {
 			_, _ = h.Write([]byte(strings.Join(e.when.DistroFamily, "\x00")))
 		}
 		h.Write([]byte{0})
+		// Candidate-local hooks are part of the full definition/audit hash, but
+		// only add bytes when present so definitions that predate this surface
+		// keep their historical hash.
+		if len(e.preInstall) > 0 || len(e.postInstall) > 0 {
+			writeHooks(h, e.preInstall)
+			writeHooks(h, e.postInstall)
+		}
 	}
 
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// DefinitionHash computes the complete schema-definition fingerprint, including
+// one-shot lifecycle hooks. It is useful for provenance/audit, but it is not a
+// health signal: a hook having changed or run does not describe current host
+// state.
+func DefinitionHash(tool *config.Tool) string {
+	return definitionHash(tool)
+}
+
+// DesiredStateHash fingerprints the same normalized definition while excluding
+// one-shot lifecycle hooks. Status uses this hash for schema drift so health is
+// never inferred from whether a hook succeeded on an earlier transition.
+func DesiredStateHash(tool *config.Tool) string {
+	if tool == nil {
+		return ""
+	}
+	copyTool := *tool
+	copyTool.PreInstall = nil
+	copyTool.PostInstall = nil
+	copyTool.Methods = append([]*config.MethodCandidate(nil), tool.Methods...)
+	for i, method := range copyTool.Methods {
+		if method == nil {
+			continue
+		}
+		methodCopy := *method
+		methodCopy.PreInstall = nil
+		methodCopy.PostInstall = nil
+		copyTool.Methods[i] = &methodCopy
+	}
+	return definitionHash(&copyTool)
 }
 
 func writeHooks(h hash.Hash, hooks []config.Hook) {
