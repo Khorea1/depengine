@@ -57,6 +57,7 @@ func BuildCandidateIntent(tool *config.Tool, method *config.MethodCandidate) (pl
 	}
 	applyPrerequisites(&p, method)
 	applyMethodOperations(&p, method, contract)
+	ProjectLifecycleHooks(&p, tool, method)
 	if contract.CanRemove {
 		p.Removal = plan.RemovalMetadata{Supported: true, Identity: removalIdentity(p)}
 	} else {
@@ -80,7 +81,14 @@ func BuildValidatedCandidateIntent(tool *config.Tool, method *config.MethodCandi
 	if !ok {
 		return nil, &plan.PlannerError{Class: plan.ErrorUnsupportedCapability, Op: "candidate", Err: fmt.Errorf("unknown method kind %q", method.Kind)}
 	}
-	if err := contract.CheckRequirements(intent, requirements); err != nil {
+	// Hooks and ensure actions are executed by depengine around the adapter, not
+	// by the adapter itself. Keep them in the returned plan (and therefore in
+	// security/explain surfaces) without incorrectly requiring every install
+	// method contract to advertise executor-owned arbitrary-code capability.
+	adapterIntent := intent
+	adapterIntent.Hooks = nil
+	adapterIntent.Ensures = nil
+	if err := contract.CheckRequirements(adapterIntent, requirements); err != nil {
 		return &intent, err
 	}
 	return &intent, nil
