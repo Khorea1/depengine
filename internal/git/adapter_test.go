@@ -1020,6 +1020,11 @@ func TestGitAdapterResolvePlanPinsMutableRefs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mc := &config.MethodCandidate{Kind: "git", Config: map[string]any{"url": "https://example.test/repo.git", tc.field: strings.TrimPrefix(strings.TrimPrefix(tc.ref, "refs/heads/"), "refs/tags/")}}
 			intent := plan.New("demo", "git", true)
+			mode := plan.VersionGitBranch
+			if tc.field == "tag" {
+				mode = plan.VersionGitTag
+			}
+			intent.Identity.RequestedVersion = &plan.VersionIntent{Mode: mode, Value: mc.Config[tc.field].(string)}
 			fr := &run.FakeRunner{Stdout: tc.stdout}
 			resolved, err := NewGitAdapter().ResolvePlan(context.Background(), fr, &config.Tool{Name: "demo"}, mc, &intent)
 			if err != nil {
@@ -1027,6 +1032,10 @@ func TestGitAdapterResolvePlanPinsMutableRefs(t *testing.T) {
 			}
 			if resolved.Identity.Revision != commit {
 				t.Fatalf("revision = %q, want %q", resolved.Identity.Revision, commit)
+			}
+			clone, err := resolvedCloneSourceFromPlan(resolved)
+			if err != nil || clone.Revision != commit || clone.Branch != "" || clone.Tag != "" {
+				t.Fatalf("clone source = %+v, error = %v; want pinned commit", clone, err)
 			}
 			if len(fr.Calls) != 1 || fr.Calls[0].Name != "git" || !reflect.DeepEqual(fr.Calls[0].Args, []string{"ls-remote", "https://example.test/repo.git", tc.ref, tc.ref + "^{}"}) {
 				t.Fatalf("remote lookup = %+v", fr.Calls)
