@@ -37,6 +37,28 @@ func TestValidateResolutionRejectsRewrites(t *testing.T) {
 			p.Identity.RequestedVersion = &VersionIntent{Mode: VersionExact, Value: "9.9.9"}
 		}),
 		"package": rewrite(func(p *ResolvedInstallPlan) { p.Identity.Package = "other" }),
+		"hooks": rewrite(func(p *ResolvedInstallPlan) {
+			p.Hooks = []LifecycleHook{{
+				ID:         "candidate/before/0/install",
+				Transition: TransitionInstall,
+				Timing:     HookBefore,
+				Operation: Operation{
+					Kind:          "hook",
+					Effect:        EffectMutation,
+					Command:       []string{"hook"},
+					ArbitraryCode: true,
+				},
+				FailurePolicy: HookFailAbort,
+			}}
+		}),
+		"ensures": rewrite(func(p *ResolvedInstallPlan) {
+			p.Ensures = []EnsureAction{{
+				ID:       "ensure-demo",
+				Resource: "demo-resource",
+				Check:    Operation{Kind: "check", Effect: EffectReadOnly, Command: []string{"check-demo"}},
+				Apply:    Operation{Kind: "apply", Effect: EffectMutation, Command: []string{"apply-demo"}},
+			}}
+		}),
 	}
 	for name, resolved := range cases {
 		if err := ValidateResolution(base, resolved); err == nil {
