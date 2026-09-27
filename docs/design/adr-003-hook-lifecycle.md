@@ -15,7 +15,9 @@ and a one-time hook run could masquerade as ongoing health.
 
 - Hooks are candidate-local transition events bound to the selected plan and
   one exact transition (`install`/`upgrade`/`repair`/`remove` ×
-  before/after). They run only for the selected plan and matching transition.
+  before/after). Tool-level hooks are generic declarations projected onto the
+  selected candidate; method-local hooks belong only to that candidate. They
+  run only for the selected plan and matching concrete transition.
 - Pre-hook failure aborts the transition before mutation; post-hook failure
   reports against an already-committed transition and never triggers implicit
   compensating uninstall/remove.
@@ -27,13 +29,28 @@ and a one-time hook run could masquerade as ongoing health.
 
 ## Alternatives considered
 
-- Candidate/method-local hook declarations: deferred — only with a strong use
-  case; declarative primitives are preferred over more hook surface.
+- Tool-level hooks only: rejected. A hook that is meaningful only for one
+  candidate (for example native/apt preparation) must not fire when another
+  fallback candidate wins. Candidate-local declarations provide that boundary;
+  declarative primitives remain preferred for durable state.
 - Treating hooks as idempotent state with implicit re-run: rejected — status
   must not report a tool healthy merely because a one-time hook once ran.
+## Integration status
+
+- Manifest/parser, planner, executor, dry-run, and native-batch paths carry
+  candidate-local hooks through the selected `ResolvedInstallPlan`.
+- Resolvers must preserve lifecycle hooks from candidate intent; before-hooks
+  run only after the candidate has survived the availability gates needed to
+  select it, and the exact reconciliation result selects install vs upgrade.
+- Status treats hooks as events rather than desired state. State stores a
+  hook-free desired-state hash for drift detection and never uses historical
+  hook completion as health evidence.
+
 
 ## Open work
 
-- Manifest/parser integration of the candidate-local plan model.
-- Production planner/executor integration (hook cannot leak across candidates).
-- Status integration (checked `EnsureAction` vs one-time hook runs).
+- Expose checked `EnsureAction` declarations through the manifest/status UX if
+  a durable "ensure this state exists" surface is needed.
+- The direct destructive `upgrade` command remains fail-closed for candidates
+  with lifecycle hooks until it can execute the same resolved lifecycle plan;
+  the normal reconciliation executor already preserves hook semantics.
