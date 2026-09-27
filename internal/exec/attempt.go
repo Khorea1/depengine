@@ -163,12 +163,12 @@ func (ex *Executor) gateAlreadyInstalled(ac *candidateAttempt, result *ToolResul
 		ex.skipCandidate(ac, result, "failed", detail)
 		ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "verification_"+string(verification.State), "error", detail)
 		return nextMethod
+	}
 	if !decision.Required {
 		return ex.finishAlreadyInstalled(ac, result)
 	}
 	ac.transition = decision.Transition
 	return proceed
-	}
 }
 
 func (ex *Executor) finishAlreadyInstalled(ac *candidateAttempt, result *ToolResult) attemptOutcome {
@@ -266,7 +266,7 @@ func (ex *Executor) runCandidatePreinstall(ac *candidateAttempt, result *ToolRes
 	preCtx, preCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
 	ran, err := ex.runLifecycleHooks(preCtx, ac.tool.Name, ac.resolved, ac.transition, plan.HookBefore)
 	preCancel()
-		ac.preHookRan = ran
+	ac.preHookRan = ran
 	if err == nil {
 		return proceed
 	}
@@ -505,8 +505,8 @@ func (ex *Executor) finishInstalled(ac *candidateAttempt, result *ToolResult) at
 		// installed package may still depend on for upgrades/removal.
 		result.Duration = time.Since(ac.toolStart).String()
 		return finishTool
-	result.PostinstallDone = postRan
 	}
+	result.PostinstallDone = postRan
 	result.Duration = time.Since(ac.toolStart).String()
 	return finishTool
 }

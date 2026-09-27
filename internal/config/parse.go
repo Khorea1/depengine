@@ -536,6 +536,7 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 		if rawRequires, ok := t["requires"]; ok {
 			mc.Requires = toStringSlice(rawRequires)
 			delete(t, "requires")
+		}
 		if rawHooks, ok := t["pre_install"]; ok {
 			mc.PreInstall = parseHooks(rawHooks)
 			delete(t, "pre_install")
@@ -543,7 +544,6 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 		if rawHooks, ok := t["post_install"]; ok {
 			mc.PostInstall = parseHooks(rawHooks)
 			delete(t, "post_install")
-		}
 		}
 		if rawSources, ok := t["sources"].([]any); ok {
 			mc.Sources = parseSources(rawSources)

@@ -98,6 +98,7 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 			if verification.State != plan.StateAbsent {
 				resolutions[toolName] = resolution
 				break
+			}
 			// A batch commit cannot provide a per-candidate before-transition
 			// boundary. Keep candidates with install pre-hooks on the serial
 			// pipeline; post-hooks remain safe after per-tool verification.
@@ -105,7 +106,6 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 			if hookErr != nil || len(beforeHooks) > 0 {
 				resolutions[toolName] = resolution
 				break
-			}
 			}
 			if !checkAvailable(toolCtx, ex.probeRunner(toolName, method.Kind), adapter, tool, method) {
 				resolutions[toolName] = resolution

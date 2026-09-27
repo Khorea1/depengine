@@ -281,6 +281,7 @@ func TestRenderStatusTable_Empty(t *testing.T) {
 	if err := renderStatusTable(nil, true); err != nil {
 		t.Fatalf("renderStatusTable(nil, true) = %v, want nil", err)
 	}
+}
 
 func TestStatusToolOutdated_IgnoresLifecycleHookChanges(t *testing.T) {
 	installed := &config.Tool{Name: "foo", Methods: []*config.MethodCandidate{{Kind: "native", Config: map[string]any{"pkg": "foo"}}}}
@@ -310,5 +311,4 @@ func TestStatusToolOutdated_LegacyFullHashIsNotHealthEvidence(t *testing.T) {
 	if statusToolOutdated(ts, tool, nil, "foo") {
 		t.Fatal("legacy hook-sensitive DefinitionHash must not drive current health")
 	}
-}
 }
