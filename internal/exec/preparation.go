@@ -137,20 +137,16 @@ func (ex *Executor) probeCandidateSources(ctx context.Context, configured []conf
 		return candidateSourcePreparation{}, err
 	}
 	journalPrerequisite := ctx.Value(lazyDependencyExecutionKey{}) == true
-	if len(missing) == 0 && !journalPrerequisite {
-		return prepared, nil
-	}
 	if len(missing) == 0 {
-		prepared.preparationPlan = &plan.PreparationPlan{}
+		if journalPrerequisite {
+			prepared.preparationPlan = &plan.PreparationPlan{}
+		}
 		return prepared, nil
 	}
 
-	preparationPlan := plan.PreparationPlan{}
-	if len(missing) > 0 {
-		preparationPlan, err = source.PreparationPlan(missing)
-		if err != nil {
-			return candidateSourcePreparation{}, err
-		}
+	preparationPlan, err := source.PreparationPlan(missing)
+	if err != nil {
+		return candidateSourcePreparation{}, err
 	}
 	prepared.preparationPlan = &preparationPlan
 	return prepared, nil

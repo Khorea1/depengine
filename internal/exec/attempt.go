@@ -172,6 +172,10 @@ func (ex *Executor) gateAlreadyInstalled(ac *candidateAttempt, result *ToolResul
 }
 
 func (ex *Executor) finishAlreadyInstalled(ac *candidateAttempt, result *ToolResult) attemptOutcome {
+	if err := ac.prepared.rollback(ac.toolCtx, ex); err != nil {
+		ex.failCandidate(ac, result, fmt.Sprintf("close unused candidate preparation: %v", err))
+		return finishTool
+	}
 	result.Status = StatusAlready
 	result.Method = ac.displayKind
 	result.MethodKind = ac.method.Kind
