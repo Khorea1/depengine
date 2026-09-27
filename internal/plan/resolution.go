@@ -43,5 +43,11 @@ func ValidateResolution(intent, resolved ResolvedInstallPlan) error {
 	if !reflect.DeepEqual(stable(intent.Identity), stable(resolved.Identity)) {
 		return fmt.Errorf("resolver rewrote stable identity fields (only version, revision, digest, source, and artifacts may be enriched)")
 	}
+	if !reflect.DeepEqual(intent.Hooks, resolved.Hooks) {
+		return fmt.Errorf("resolver must preserve lifecycle hooks from candidate intent")
+	}
+	if !reflect.DeepEqual(intent.Ensures, resolved.Ensures) {
+		return fmt.Errorf("resolver must preserve ensure actions from candidate intent")
+	}
 	return nil
 }
