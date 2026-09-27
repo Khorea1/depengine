@@ -67,7 +67,7 @@ func (a *Adapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool,
 	if err != nil {
 		return fmt.Errorf("msi: staging: %w", err)
 	}
-	defer os.RemoveAll(tmp)
+	defer func() { _ = os.RemoveAll(tmp) }()
 	clone := *mc
 	clone.Config = make(map[string]any, len(mc.Config)+3)
 	for key, value := range mc.Config {
@@ -94,7 +94,7 @@ func (a *Adapter) InstallResolved(ctx context.Context, rn run.Runner, tool *conf
 	if err != nil {
 		return fmt.Errorf("msi: staging: %w", err)
 	}
-	defer os.RemoveAll(tmp)
+	defer func() { _ = os.RemoveAll(tmp) }()
 	clone := *mc
 	clone.Config = make(map[string]any, len(mc.Config)+3)
 	for key, value := range mc.Config {

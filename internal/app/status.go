@@ -59,7 +59,7 @@ func runStatus(ctx context.Context, statusSchema, statusManifest *string, status
 	if err != nil {
 		return err
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 
 	st := ls.State()
 
@@ -359,7 +359,7 @@ func renderStatusTable(tools []toolStatus, orphansOnly bool) error {
 		}
 	}
 
-	fmt.Fprintf(c.w, "  %s  %s  %s  %s  %s\n",
+	_, _ = fmt.Fprintf(c.w, "  %s  %s  %s  %s  %s\n",
 		c.dim(padRight("Tool", nameW)), c.dim(padRight("Status", stW)),
 		c.dim(padRight("Method", methW)), c.dim(padRight("Version", verW)), c.dim("Installed"))
 	counts := map[string]int{}
@@ -381,19 +381,19 @@ func renderStatusTable(tools []toolStatus, orphansOnly bool) error {
 		} else if t.Updated != "" {
 			installed = t.Updated
 		}
-		fmt.Fprintf(c.w, "  %s  %s  %s  %s  %s\n",
+		_, _ = fmt.Fprintf(c.w, "  %s  %s  %s  %s  %s\n",
 			padRight(t.Name, nameW), statusStyled(c, padRight(t.Status, stW), t.Status),
 			padRight(method, methW), c.dim(padRight(version, verW)), c.dim(installed))
 	}
 
-	fmt.Fprintln(c.w)
+	_, _ = fmt.Fprintln(c.w)
 	var parts []string
 	for _, st := range []string{"broken", "outdated", "missing", "unknown", "orphaned", "installed"} {
 		if n := counts[st]; n > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", n, st))
 		}
 	}
-	fmt.Fprintf(c.w, "  %s\n", c.dim(strings.Join(parts, "  ·  ")))
+	_, _ = fmt.Fprintf(c.w, "  %s\n", c.dim(strings.Join(parts, "  ·  ")))
 	return nil
 }
 

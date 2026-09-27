@@ -665,13 +665,13 @@ func TestMethodHashRoundTrip(t *testing.T) {
 
 	// Apply with matching hash should not warn.
 	saved := log.Default
-	cap := log.NewTestLogger(t)
-	log.Default = cap.Logger
+	capture := log.NewTestLogger(t)
+	log.Default = capture.Logger
 	defer func() { log.Default = saved }()
 
 	Apply(s, l)
 
-	cap.AssertNotContains(t, "method ordering changed")
+	capture.AssertNotContains(t, "method ordering changed")
 }
 
 func TestApplyMethodReorderingWarning(t *testing.T) {
@@ -700,14 +700,14 @@ func TestApplyMethodReorderingWarning(t *testing.T) {
 
 	// Capture log output.
 	saved := log.Default
-	cap := log.NewTestLogger(t)
-	log.Default = cap.Logger
+	capture := log.NewTestLogger(t)
+	log.Default = capture.Logger
 	defer func() { log.Default = saved }()
 
 	Apply(s, l)
 
-	cap.AssertContains(t, "method ordering changed")
-	cap.AssertContains(t, "tool")
+	capture.AssertContains(t, "method ordering changed")
+	capture.AssertContains(t, "tool")
 }
 
 func TestMethodHashDifferentTools(t *testing.T) {

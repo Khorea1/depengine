@@ -75,7 +75,7 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 		return err
 	}
 	if ls != nil {
-		defer ls.Close()
+		defer func() { _ = ls.Close() }()
 	}
 
 	schemaTools, err := loadRemoveSchemaTools(*removeSchema)

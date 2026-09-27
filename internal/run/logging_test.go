@@ -14,8 +14,8 @@ import (
 
 func TestLoggingRunnerPassesStdoutPipeThrough(t *testing.T) {
 	inner := &FakeRunner{Stdout: "payload"}
-	cap := log.NewTestLogger(t)
-	runner := NewLoggingRunner(inner, cap.Logger)
+	capture := log.NewTestLogger(t)
+	runner := NewLoggingRunner(inner, capture.Logger)
 
 	pipe, err := OpenStdoutPipe(context.Background(), runner, "decoder", "-dc")
 	if err != nil {
@@ -31,14 +31,14 @@ func TestLoggingRunnerPassesStdoutPipeThrough(t *testing.T) {
 	if string(got) != "payload" {
 		t.Fatalf("streamed stdout = %q, want payload", got)
 	}
-	cap.AssertContains(t, "run stream")
-	cap.AssertContains(t, "run stream ok")
+	capture.AssertContains(t, "run stream")
+	capture.AssertContains(t, "run stream ok")
 }
 
 func TestLoggingRunnerPassesResultThrough(t *testing.T) {
 	inner := &FakeRunner{Stdout: "ok", ExitCode: 0}
-	cap := log.NewTestLogger(t)
-	runner := NewLoggingRunner(inner, cap.Logger)
+	capture := log.NewTestLogger(t)
+	runner := NewLoggingRunner(inner, capture.Logger)
 
 	res := runner.Run(context.Background(), "true")
 
@@ -48,8 +48,8 @@ func TestLoggingRunnerPassesResultThrough(t *testing.T) {
 	if res.ExitCode != 0 {
 		t.Fatalf("exit = %d, want 0", res.ExitCode)
 	}
-	cap.AssertContains(t, "true")
-	cap.AssertContains(t, "run ok")
+	capture.AssertContains(t, "true")
+	capture.AssertContains(t, "run ok")
 }
 
 func TestLoggingRunnerPassesWorkingDirectoryThroughOnce(t *testing.T) {
@@ -77,39 +77,39 @@ func TestLoggingRunnerPassesPathLookupThroughOnce(t *testing.T) {
 
 func TestLoggingRunnerLogsNonZeroExit(t *testing.T) {
 	inner := &FakeRunner{ExitCode: 1, Stderr: "permission denied"}
-	cap := log.NewTestLogger(t)
-	runner := NewLoggingRunner(inner, cap.Logger)
+	capture := log.NewTestLogger(t)
+	runner := NewLoggingRunner(inner, capture.Logger)
 
 	runner.Run(context.Background(), "false")
 
-	cap.AssertContains(t, "run exited non-zero")
-	cap.AssertContains(t, "false")
-	cap.AssertContains(t, "permission denied")
+	capture.AssertContains(t, "run exited non-zero")
+	capture.AssertContains(t, "false")
+	capture.AssertContains(t, "permission denied")
 }
 
 func TestLoggingRunnerLogsError(t *testing.T) {
 	inner := &FakeRunner{Err: context.DeadlineExceeded}
-	cap := log.NewTestLogger(t)
-	runner := NewLoggingRunner(inner, cap.Logger)
+	capture := log.NewTestLogger(t)
+	runner := NewLoggingRunner(inner, capture.Logger)
 
 	runner.Run(context.Background(), "slow-cmd")
 
-	cap.AssertContains(t, "run failed")
-	cap.AssertContains(t, "deadline exceeded")
+	capture.AssertContains(t, "run failed")
+	capture.AssertContains(t, "deadline exceeded")
 }
 
 func TestLoggingRunnerRedactsSensitiveSpawnError(t *testing.T) {
 	inner := &FakeRunner{Err: errors.New("spawn failed for https://alice:secret@example.com/api --token argvsecret")}
-	cap := log.NewTestLogger(t)
-	runner := NewLoggingRunner(inner, cap.Logger)
+	capture := log.NewTestLogger(t)
+	runner := NewLoggingRunner(inner, capture.Logger)
 
 	runner.Run(context.Background(), "fetch")
 
 	for _, secret := range []string{"secret", "argvsecret"} {
-		cap.AssertNotContains(t, secret)
+		capture.AssertNotContains(t, secret)
 	}
-	cap.AssertContains(t, "https://***@example.com/api")
-	cap.AssertContains(t, "--token=***")
+	capture.AssertContains(t, "https://***@example.com/api")
+	capture.AssertContains(t, "--token=***")
 }
 
 func TestLoggingRunnerNilLoggerDefaults(t *testing.T) {
@@ -127,15 +127,15 @@ func TestLoggingRunnerNilLoggerDefaults(t *testing.T) {
 
 func TestLoggingRunnerRedactsSensitiveStderr(t *testing.T) {
 	inner := &FakeRunner{ExitCode: 1, Stderr: "request failed for https://alice:secret@example.com/api\nAuthorization: Bearer hidden"}
-	cap := log.NewTestLogger(t)
-	runner := NewLoggingRunner(inner, cap.Logger)
+	capture := log.NewTestLogger(t)
+	runner := NewLoggingRunner(inner, capture.Logger)
 
 	runner.Run(context.Background(), "fetch", "--token", "argvsecret")
 
 	for _, secret := range []string{"secret", "hidden", "argvsecret"} {
-		cap.AssertNotContains(t, secret)
+		capture.AssertNotContains(t, secret)
 	}
-	cap.AssertContains(t, "Authorization: ***")
+	capture.AssertContains(t, "Authorization: ***")
 }
 
 func TestLoggingRunnerRedactsSensitiveURLQuery(t *testing.T) {

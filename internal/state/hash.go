@@ -37,7 +37,7 @@ func definitionHash(tool *config.Tool) string {
 	for _, dep := range deps {
 		h.Write([]byte(dep))
 		h.Write([]byte{0})
-		h.Write([]byte(fmt.Sprintf("%v", tool.RequiresWhen[dep])))
+		_, _ = fmt.Fprintf(h, "%v", tool.RequiresWhen[dep])
 		h.Write([]byte{0})
 	}
 	h.Write([]byte{0})
@@ -89,7 +89,7 @@ func definitionHash(tool *config.Tool) string {
 	for _, e := range entries {
 		_, _ = h.Write([]byte(e.kind))
 		h.Write([]byte{0})
-		_, _ = h.Write([]byte(fmt.Sprintf("%d", e.idx)))
+		_, _ = fmt.Fprintf(h, "%d", e.idx)
 		h.Write([]byte{0})
 		writeMapCanonical(h, e.config)
 		if e.when != nil {
@@ -146,7 +146,7 @@ func writeHooks(h hash.Hash, hooks []config.Hook) {
 			h.Write([]byte{0})
 		}
 		if hook.When != nil {
-			h.Write([]byte(fmt.Sprintf("%v", hook.When)))
+			_, _ = fmt.Fprintf(h, "%v", hook.When)
 		}
 		h.Write([]byte{0})
 	}
@@ -235,9 +235,9 @@ func writeValueCanonical(h hash.Hash, v any) {
 	case string:
 		_, _ = h.Write([]byte(val))
 	case bool:
-		_, _ = h.Write([]byte(fmt.Sprintf("%t", val)))
+		_, _ = fmt.Fprintf(h, "%t", val)
 	case float64:
-		_, _ = h.Write([]byte(fmt.Sprintf("%v", val)))
+		_, _ = fmt.Fprintf(h, "%v", val)
 	case map[string]any:
 		writeMapCanonical(h, val)
 	case []any:
@@ -246,6 +246,6 @@ func writeValueCanonical(h hash.Hash, v any) {
 			h.Write([]byte{0})
 		}
 	default:
-		_, _ = h.Write([]byte(fmt.Sprintf("%v", val)))
+		_, _ = fmt.Fprintf(h, "%v", val)
 	}
 }

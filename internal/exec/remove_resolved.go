@@ -44,10 +44,10 @@ func (ex *Executor) RemoveResolvedCandidate(ctx context.Context, rn run.Runner, 
 
 func removalMethodForResolvedTarget(method *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) (*config.MethodCandidate, error) {
 	projected := methodForResolvedTarget(method, resolved)
-	copy := *projected
-	copy.Config = maps.Clone(projected.Config)
-	if copy.Config == nil {
-		copy.Config = make(map[string]any)
+	methodCopy := *projected
+	methodCopy.Config = maps.Clone(projected.Config)
+	if methodCopy.Config == nil {
+		methodCopy.Config = make(map[string]any)
 	}
 
 	contract, ok := methodkind.Lookup(method.Kind)
@@ -55,18 +55,18 @@ func removalMethodForResolvedTarget(method *config.MethodCandidate, resolved *pl
 		return nil, fmt.Errorf("unknown method kind %q", method.Kind)
 	}
 	if resolved.Identity.Package != "" {
-		copy.Config["pkg"] = resolved.Identity.Package
+		methodCopy.Config["pkg"] = resolved.Identity.Package
 	}
 	if methodkind.IsNativeKind(method.Kind) {
 		// pkg_overrides predates resolved plans and can select a different package.
-		delete(copy.Config, "pkg_overrides")
+		delete(methodCopy.Config, "pkg_overrides")
 	}
 	if resolved.Identity.Version != "" {
-		copy.Config["version"] = resolved.Identity.Version
+		methodCopy.Config["version"] = resolved.Identity.Version
 	}
 	if resolved.Identity.Source != "" {
 		if _, exists := contract.Fields["source"]; exists {
-			copy.Config["source"] = resolved.Identity.Source
+			methodCopy.Config["source"] = resolved.Identity.Source
 		}
 	}
 	if resolved.Identity.Scope != "" && contract.Scopes != nil {
@@ -74,18 +74,18 @@ func removalMethodForResolvedTarget(method *config.MethodCandidate, resolved *pl
 		if err != nil {
 			return nil, err
 		}
-		copy.Config["scope"] = scope
+		methodCopy.Config["scope"] = scope
 	}
 	if resolved.Identity.Architecture != "" {
 		if _, exists := contract.Fields["architecture"]; exists {
-			copy.Config["architecture"] = resolved.Identity.Architecture
+			methodCopy.Config["architecture"] = resolved.Identity.Architecture
 		}
 	}
 	if method.Kind == "scoop" {
-		delete(copy.Config, "bucket")
+		delete(methodCopy.Config, "bucket")
 		if bucket := resolvedSelectionSource(resolved); bucket != "" {
-			copy.Config["bucket"] = bucket
+			methodCopy.Config["bucket"] = bucket
 		}
 	}
-	return &copy, nil
+	return &methodCopy, nil
 }

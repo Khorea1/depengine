@@ -28,7 +28,7 @@ func runForget(toolName string) error {
 		log.Default.Error("state lock", "error", err)
 		return exitWithCode(3)
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 	st := ls.State()
 	if _, ok := st.Tools[toolName]; !ok {
 		log.Default.Error("tool not found in state", "tool", toolName)

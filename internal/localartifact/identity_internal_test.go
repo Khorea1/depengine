@@ -46,7 +46,7 @@ func TestInstallRawMaterializesAlreadyVerifiedOpenFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	oldPath := filepath.Join(dir, "old")
 	if err := os.Rename(sourcePath, oldPath); err != nil {
@@ -88,7 +88,7 @@ func TestSnapshotVerifiedSourceRejectsInPlaceMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	expected, err := checksumOpenFile(f)
 	if err != nil {
 		t.Fatal(err)

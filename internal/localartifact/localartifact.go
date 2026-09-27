@@ -196,7 +196,7 @@ func checksumVerifiedRegularFile(path string, expected os.FileInfo) (string, err
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return checksumOpenFile(f)
 }
 

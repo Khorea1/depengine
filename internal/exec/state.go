@@ -45,7 +45,7 @@ func (ex *Executor) writeState(ctx context.Context, schema *config.Schema, repor
 	if err != nil {
 		return fmt.Errorf("state lock failed: %w", err)
 	}
-	defer lockedState.Close()
+	defer func() { _ = lockedState.Close() }()
 
 	current := lockedState.State()
 	current.SchemaPath = ex.schemaPath

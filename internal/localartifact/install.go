@@ -107,7 +107,7 @@ func Install(resolved Resolved, destination string) error {
 	if err != nil {
 		return fmt.Errorf("revalidate local artifact open: %w", err)
 	}
-	defer source.Close()
+	defer func() { _ = source.Close() }()
 	actualChecksum, err := checksumOpenFile(source)
 	if err != nil {
 		return fmt.Errorf("revalidate local artifact checksum: %w", err)
@@ -687,7 +687,7 @@ func extractTar(source *os.File, destination *os.Root, gzipped bool) (map[string
 		if err != nil {
 			return nil, fmt.Errorf("open local gzip: %w", err)
 		}
-		defer gz.Close()
+		defer func() { _ = gz.Close() }()
 		reader = gz
 	}
 	tr := tar.NewReader(reader)
@@ -710,7 +710,7 @@ func extractTar(source *os.File, destination *os.Root, gzipped bool) (map[string
 			return nil, err
 		}
 		isDir := hdr.Typeflag == tar.TypeDir
-		isFile := hdr.Typeflag == tar.TypeReg || hdr.Typeflag == tar.TypeRegA
+		isFile := hdr.Typeflag == tar.TypeReg
 		if isFile && hdr.Size < 0 {
 			return nil, fmt.Errorf("local archive entry %q has negative size", hdr.Name)
 		}
@@ -733,7 +733,7 @@ func extractTar(source *os.File, destination *os.Root, gzipped bool) (map[string
 				return nil, fmt.Errorf("create archive directory %q: %w", hdr.Name, err)
 			}
 			directoryModes[target] = mode
-		case tar.TypeReg, tar.TypeRegA:
+		case tar.TypeReg:
 			archiveMode, err := tarPermissionMode(hdr.Mode)
 			if err != nil {
 				return nil, fmt.Errorf("archive file %q: %w", hdr.Name, err)

@@ -70,7 +70,7 @@ func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) error {
 			log.Default.Error("load current state", "error", err)
 			return exitWithCode(3)
 		}
-		defer ls.Close()
+		defer func() { _ = ls.Close() }()
 		aState = ls.State()
 		bState, err = state.LoadFrom(bPath)
 		if err != nil {
@@ -114,35 +114,35 @@ func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) error {
 		// entry is one aligned line — a diff is scanned section-first, so the
 		// header must carry the "is there anything here" answer by itself.
 		if onlyA > 0 {
-			fmt.Fprintf(c.w, "\n%s\n", c.bold(fmt.Sprintf("Only in current (%d)", onlyA)))
+			_, _ = fmt.Fprintf(c.w, "\n%s\n", c.bold(fmt.Sprintf("Only in current (%d)", onlyA)))
 			for _, item := range items {
 				if item.Side == "only_a" {
-					fmt.Fprintf(c.w, "  %s %s  %s\n", c.green("+"), item.Name, c.dim(fmt.Sprintf("%s, %s", item.MethodA, item.InstalledAtA)))
+					_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.green("+"), item.Name, c.dim(fmt.Sprintf("%s, %s", item.MethodA, item.InstalledAtA)))
 				}
 			}
 		}
 
 		if onlyB > 0 {
-			fmt.Fprintf(c.w, "\n%s\n", c.bold(fmt.Sprintf("Only in other (%d)", onlyB)))
+			_, _ = fmt.Fprintf(c.w, "\n%s\n", c.bold(fmt.Sprintf("Only in other (%d)", onlyB)))
 			for _, item := range items {
 				if item.Side == "only_b" {
-					fmt.Fprintf(c.w, "  %s %s  %s\n", c.red("-"), item.Name, c.dim(fmt.Sprintf("%s, %s", item.MethodB, item.InstalledAtB)))
+					_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.red("-"), item.Name, c.dim(fmt.Sprintf("%s, %s", item.MethodB, item.InstalledAtB)))
 				}
 			}
 		}
 
 		if diffCount > 0 {
-			fmt.Fprintf(c.w, "\n%s\n", c.bold(fmt.Sprintf("Definition changed (%d)", diffCount)))
+			_, _ = fmt.Fprintf(c.w, "\n%s\n", c.bold(fmt.Sprintf("Definition changed (%d)", diffCount)))
 			for _, item := range items {
 				if item.Side == "different" {
-					fmt.Fprintf(c.w, "  %s %s\n", c.yellow("~"), item.Name)
-					fmt.Fprintf(c.w, "    %s %s %s\n", c.dim("current:"), item.MethodA, c.dim(fmt.Sprintf("(hash: %s)", item.HashA)))
-					fmt.Fprintf(c.w, "    %s %s %s\n", c.dim("other:  "), item.MethodB, c.dim(fmt.Sprintf("(hash: %s)", item.HashB)))
+					_, _ = fmt.Fprintf(c.w, "  %s %s\n", c.yellow("~"), item.Name)
+					_, _ = fmt.Fprintf(c.w, "    %s %s %s\n", c.dim("current:"), item.MethodA, c.dim(fmt.Sprintf("(hash: %s)", item.HashA)))
+					_, _ = fmt.Fprintf(c.w, "    %s %s %s\n", c.dim("other:  "), item.MethodB, c.dim(fmt.Sprintf("(hash: %s)", item.HashB)))
 				}
 			}
 		}
 
-		fmt.Fprintf(c.w, "\n%s\n", c.dim(fmt.Sprintf("%s differ.", plural(len(items), "tool"))))
+		_, _ = fmt.Fprintf(c.w, "\n%s\n", c.dim(fmt.Sprintf("%s differ.", plural(len(items), "tool"))))
 	}
 	return nil
 }

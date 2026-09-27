@@ -426,7 +426,7 @@ func syncInstalledVersions(ctx context.Context, schema *config.Schema, lockPath 
 		lg.Warn("state lock for version sync", "error", err)
 		return
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 	st := ls.State()
 
 	installed := make(map[string]bool, len(report.Tools))

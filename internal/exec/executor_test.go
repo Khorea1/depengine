@@ -2103,7 +2103,6 @@ func TestLookupAdapter(t *testing.T) {
 	}
 }
 func TestExecutorPreAndPostInstall(t *testing.T) {
-
 	mock := &testMockAdapter{
 		kindValue:     "native",
 		availableFunc: func() bool { return true },

@@ -92,7 +92,7 @@ func gpgVerifyWithIdentityCheck(ctx context.Context, rn run.Runner, msys bool, c
 	if err != nil {
 		return fmt.Errorf("gpg: temp homedir: %w", err)
 	}
-	defer os.RemoveAll(homedir)
+	defer func() { _ = os.RemoveAll(homedir) }()
 	if err := os.Chmod(homedir, 0o700); err != nil { // #nosec G302 -- This is a directory mode; the temporary GNUPG home is intentionally owner-only.
 		return fmt.Errorf("gpg: chmod homedir: %w", err)
 	}
@@ -148,7 +148,7 @@ func importSigningKeyFromURL(ctx context.Context, rn run.Runner, msys bool, home
 	if err != nil {
 		return "", fmt.Errorf("gpg: temp dir for key download: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	keyFile := filepath.Join(tmpDir, "pubkey.asc")
 
 	// Download the key file.
@@ -193,7 +193,7 @@ func importSigningKeyFromURL(ctx context.Context, rn run.Runner, msys bool, home
 func importSigningKeyByFingerprint(ctx context.Context, rn run.Runner, msys bool, homedir, signingKey string) (string, error) {
 	res := rn.Run(ctx, "gpg", "--homedir", gpgPath(msys, homedir), "--batch", "--keyserver", DefaultKeyServer, "--recv-keys", signingKey)
 	if res.Err != nil || res.ExitCode != 0 {
-		return "", fmt.Errorf("gpg: failed to import key %s: %v\n%s", signingKey, res.Err, strings.TrimSpace(string(res.Stderr)))
+		return "", fmt.Errorf("gpg: failed to import key %s: %w\n%s", signingKey, res.Err, strings.TrimSpace(string(res.Stderr)))
 	}
 
 	// Extract fingerprint from keyring as sanity check.
