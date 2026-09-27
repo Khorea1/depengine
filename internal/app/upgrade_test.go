@@ -685,6 +685,24 @@ func TestPreflightDirectUpgradeRejectsPreparationBeforeProbes(t *testing.T) {
 		t.Fatalf("adapter calls = %v, want no host probes after static rejection", adapter.calls)
 	}
 }
+func TestPreflightDirectUpgradeRejectsCandidateLifecycleHooksBeforeProbes(t *testing.T) {
+	adapter := &upgradePreflightAdapter{available: true, presence: plan.PresencePresent, targetAvailable: true, canRemove: true}
+	method := &config.MethodCandidate{
+		Kind:       "native",
+		Config:     map[string]any{"pkg": "demo"},
+		PreInstall: []config.Hook{{Run: []string{"prepare-demo"}}},
+	}
+	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
+
+	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, tool, method, adapter, "", true)
+	if err == nil || !strings.Contains(err.Error(), "lifecycle hooks") {
+		t.Fatalf("preflightDirectUpgrade error = %v, want lifecycle-hook rejection", err)
+	}
+	if len(adapter.calls) != 0 {
+		t.Fatalf("adapter calls = %v, want no host probes after lifecycle rejection", adapter.calls)
+	}
+}
+
 
 func TestPreflightDirectUpgradeRequiresInstalledRemovableAvailableTarget(t *testing.T) {
 	method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
@@ -749,6 +767,9 @@ func TestUpgradedToolStatePreservesRootIntent(t *testing.T) {
 	}
 	if got.Version != "v2" || got.Method != "primary" || got.MethodKind != "go" || !got.PostinstallDone {
 		t.Fatalf("upgraded state = %#v, want preserved metadata and pinned fallback version", got)
+	if got.DesiredStateHash != state.DesiredStateHash(tool) {
+		t.Fatalf("DesiredStateHash = %q, want current desired-state hash", got.DesiredStateHash)
+	}
 	}
 	if !reflect.DeepEqual(got.Config, method.Config) {
 		t.Fatalf("upgraded config = %#v, want %#v", got.Config, method.Config)
