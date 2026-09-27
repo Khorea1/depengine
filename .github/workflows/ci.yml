@@ -5,6 +5,12 @@ on:
     branches: [ master ]
   pull_request:
 
+# A new commit supersedes earlier results for the same PR. Keep pushes to
+# master independent so each merged commit still receives its own full run.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-24.04
@@ -285,7 +291,7 @@ jobs:
   # same ruleset can be reused across repositories.
   gate:
     name: gate
-    if: ${{ always() }}
+    if: ${{ !cancelled() }}
     needs:
       - test
       - integration
