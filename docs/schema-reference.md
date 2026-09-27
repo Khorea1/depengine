@@ -686,7 +686,7 @@ mechanism rather than credentials embedded in URLs.
 
 ## Hooks & dependencies
 
-### Pre-install hook (before any method)
+### Pre-install hooks (selected candidate transition)
 
 ```toml
 [tools.myenv]
@@ -696,8 +696,30 @@ pre_install = "curl -fsSL https://setup.example.com | sh"
   pkg = "my-env"
 ```
 
-`pre_install` runs before installation. If it fails, the tool stops. Hooks
-require `--allow-arbitrary-code`.
+A tool-level `pre_install` is a generic hook: it is projected onto whichever
+candidate is actually selected. It runs only when that candidate requires a
+real install/upgrade transition; an already-satisfied or unavailable candidate
+does not consume the hook. If it fails, the transition stops. Hooks require
+`--allow-arbitrary-code`.
+
+When a hook belongs to one install method, put it inside that method table. It
+then cannot leak to a fallback candidate:
+
+```toml
+[tools.myenv.native]
+pkg = "my-env"
+pre_install = { run = ["native-helper", "prepare"] }
+
+[tools.myenv.github]
+repo = "example/myenv"
+asset = "myenv_{os_any}_{arch_any}.tar.gz"
+```
+
+If the native candidate is unavailable and the GitHub candidate wins,
+`native-helper prepare` is not run. Method-local `post_install` has the same
+ownership rule. Tool-level and method-local hooks on the selected candidate run
+in declaration scope order (generic tool hook, then candidate hook) for the
+matching before/after transition.
 
 The string form is a POSIX shorthand and executes as `sh -c <command>`. For
 portable or shell-independent hooks, declare the executable and arguments
@@ -789,7 +811,8 @@ then reports the group as virtual; it does not invent or execute an install
 candidate of its own.
 
 `post_install` accepts the same string, table, and list forms, including
-per-command `when` conditions:
+per-command `when` conditions. It may be declared at tool level (generic to the
+selected candidate) or inside one method table (candidate-local):
 
 ```toml
 post_install = { run = ["fc-cache", "-fv"], when = { target_family = ["unix"] } }
@@ -821,10 +844,11 @@ post_install = { cmd = "fc-cache -fv", when = { target_family = ["unix"] } }
   when       = { target_family = ["unix"] }
 ```
 
-> **Field ownership:** tool-level fields (`requires`, `post_install`,
-> `pre_install`) go _outside_ the method block. Method-specific fields
-> (`kind`, `when`, `requires`, `sources`, `url`, `build`, `checksum`, `extract_to`, `pkg`, `git`) go
-> _inside_.
+> **Field ownership:** `requires`, `pre_install`, and `post_install` may be
+> declared at tool level when they apply generically, or inside a method block
+> when they belong only to that candidate. Method-specific fields such as
+> `kind`, `when`, `sources`, `url`, `build`, `checksum`, `extract_to`, `pkg`,
+> and `git` stay inside the method block.
 
 ### Platform conditions (`when`), multi-dimension gating
 
