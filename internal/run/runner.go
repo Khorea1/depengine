@@ -247,6 +247,10 @@ func (r BlockedRunner) RunWithEnv(context.Context, map[string]string, []string, 
 	return r.blocked()
 }
 
+func (r BlockedRunner) RunWithEnvValidated(context.Context, map[string]string, []string, string, OutputValidator, ...string) Result {
+	return r.blocked()
+}
+
 func (r BlockedRunner) RunInDir(context.Context, string, string, ...string) Result {
 	return r.blocked()
 }
@@ -566,8 +570,12 @@ func (e *redactedWrappedError) Error() string { return e.message }
 func (e *redactedWrappedError) Unwrap() error { return e.cause }
 
 var _ DirectoryRunner = OSExecRunner{}
+var _ EnvironmentRunner = OSExecRunner{}
+var _ ValidatedEnvironmentRunner = OSExecRunner{}
 var _ PathLookupRunner = OSExecRunner{}
 var _ StdoutPipeRunner = OSExecRunner{}
 var _ DirectoryRunner = BlockedRunner{}
+var _ EnvironmentRunner = BlockedRunner{}
+var _ ValidatedEnvironmentRunner = BlockedRunner{}
 var _ PathLookupRunner = BlockedRunner{}
 var _ StdoutPipeRunner = BlockedRunner{}
