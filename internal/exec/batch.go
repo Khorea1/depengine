@@ -29,13 +29,6 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 		if !ok {
 			continue
 		}
-		// Pre-install hooks are transition-scoped. Keep those tools on the
-		// serial candidate pipeline so the hook runs only after a concrete
-		// candidate survives resolution and the already-installed gate.
-		if len(tool.PreInstall) > 0 {
-			remaining = append(remaining, toolName)
-			continue
-		}
 		toolCtx := omitToolSecretEnvironment(ctx, tool)
 		if len(tool.Methods) == 0 {
 			remaining = append(remaining, toolName)
@@ -105,6 +98,14 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 			if verification.State != plan.StateAbsent {
 				resolutions[toolName] = resolution
 				break
+			// A batch commit cannot provide a per-candidate before-transition
+			// boundary. Keep candidates with install pre-hooks on the serial
+			// pipeline; post-hooks remain safe after per-tool verification.
+			beforeHooks, hookErr := resolvedPlan.HookSchedule(plan.TransitionInstall, plan.HookBefore)
+			if hookErr != nil || len(beforeHooks) > 0 {
+				resolutions[toolName] = resolution
+				break
+			}
 			}
 			if !checkAvailable(toolCtx, ex.probeRunner(toolName, method.Kind), adapter, tool, method) {
 				resolutions[toolName] = resolution
