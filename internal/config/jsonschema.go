@@ -162,10 +162,12 @@ func bucketMethodJSONSchema() map[string]any {
 
 func methodObjectJSONSchema(contract *methodkind.Contract, variantKind string) map[string]any {
 	properties := map[string]any{
-		"when":     map[string]any{"$ref": "#/definitions/condition"},
-		"arch_map": stringMapJSONSchema(),
-		"os_map":   stringMapJSONSchema(),
-		"requires": stringArrayJSONSchema(),
+		"when":         map[string]any{"$ref": "#/definitions/condition"},
+		"arch_map":     stringMapJSONSchema(),
+		"os_map":       stringMapJSONSchema(),
+		"requires":     stringArrayJSONSchema(),
+		"pre_install":  map[string]any{"$ref": "#/definitions/hook"},
+		"post_install": map[string]any{"$ref": "#/definitions/hook"},
 		"sources": map[string]any{
 			"type": "array", "minItems": 1,
 			"items": map[string]any{
