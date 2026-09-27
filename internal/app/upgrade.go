@@ -554,7 +554,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		return exitWithCode(3)
 	}
 	if ls != nil {
-		defer ls.Close()
+		defer func() { _ = ls.Close() }()
 	}
 
 	ex, runner, err := buildUpgradeExecutor(s, clan, facts, opts.schema, opts, lg)

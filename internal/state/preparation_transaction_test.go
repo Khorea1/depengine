@@ -76,7 +76,7 @@ func TestLockedStatePersistsExactPreparationPlanForRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 	storedPlan, journal, err := ls.PreparationTransaction(key)
 	if err != nil {
 		t.Fatal(err)
@@ -110,7 +110,7 @@ func TestLockedStatePersistsPreparationCommitBoundaryAndOwnership(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 
 	if got, err := ls.BeginPreparation(key, p); err != nil || got.Status != plan.PreparationPending {
 		t.Fatalf("BeginPreparation() = %#v, %v", got, err)
@@ -174,7 +174,7 @@ func TestLockedStatePersistsRollbackBoundaryBeforeCompensation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 	if _, err := ls.BeginPreparation(key, p); err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestLockedStateRollbackRecoverySkipsDurablyCompletedCompensation(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 	decision, err := ls.PreparationRecovery(key, p, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -291,7 +291,7 @@ func TestLockedStateRollbackWALSurvivesRestartAndRequiresExplicitResolution(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 	decision, err := ls.PreparationRecovery(key, p, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -332,7 +332,7 @@ func TestLockedStateRestoresInMemoryJournalWhenPersistenceFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 	if _, err := ls.BeginPreparation(key, p); err != nil {
 		t.Fatal(err)
 	}
@@ -397,7 +397,7 @@ func TestLockedStateRecoveryBlocksPersistedInFlightPreparationMutation(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 	decision, err := ls.PreparationRecovery(key, p, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -485,7 +485,7 @@ func TestLockedStateResolveApplyingRejectsUnprovenOutcome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 	if _, err := ls.BeginPreparation(key, p); err != nil {
 		t.Fatal(err)
 	}
@@ -529,7 +529,7 @@ func TestLockedStateRecoveryCanResolveCommitAsNotAppliedAndRollback(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 	desired := plan.ResolvedIdentity{Package: "demo", Version: "1.2.3"}
 	absent := plan.Observation{Presence: plan.PresenceAbsent}
 	decision, err := ls.PreparationRecovery(key, p, &desired, &absent)
@@ -594,7 +594,7 @@ func TestLockedStateRecoveryReconcilesPersistedCommitWithoutReplayingIt(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 
 	probe, err := ls.PreparationRecovery(key, p, nil, nil)
 	if err != nil {

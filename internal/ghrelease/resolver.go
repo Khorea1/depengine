@@ -143,7 +143,7 @@ func (r *Resolver) fetchLatestTag(ctx context.Context, owner, repo string, rn ru
 	if err != nil {
 		return "", fmt.Errorf("resolve latest: http: %s", redactToken(err.Error(), token))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("resolve latest: GitHub API returned %s", resp.Status)
@@ -193,7 +193,7 @@ func (r *Resolver) fetchLatestRelease(ctx context.Context, owner, repo string, r
 	if err != nil {
 		return nil, fmt.Errorf("resolve release: http: %s", redactToken(err.Error(), token))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("resolve release: GitHub API returned %s", resp.Status)
@@ -245,7 +245,7 @@ func (r *Resolver) fetchReleaseByTag(ctx context.Context, owner, repo, tag strin
 	if err != nil {
 		return nil, fmt.Errorf("resolve release %s: http: %s", tag, redactToken(err.Error(), token))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("resolve release %s: GitHub API returned %s (does a release/tag named %q exist on %s/%s?)", tag, resp.Status, tag, owner, repo)

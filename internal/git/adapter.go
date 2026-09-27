@@ -381,7 +381,7 @@ func (a *GitAdapter) installResolvedSource(ctx context.Context, rn run.Runner, t
 	if err != nil {
 		return fmt.Errorf("git: temp dir: %w", err)
 	}
-	defer os.RemoveAll(cloneDir)
+	defer func() { _ = os.RemoveAll(cloneDir) }()
 
 	// Build clone args. depth=0 means full history and therefore omits
 	// --depth entirely; git rejects --depth 0.

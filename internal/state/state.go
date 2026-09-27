@@ -173,7 +173,7 @@ func Save(s *State) error {
 		if err != nil {
 			return fmt.Errorf("open state dir for sync: %w", err)
 		}
-		defer dirF.Close()
+		defer func() { _ = dirF.Close() }()
 		if err := dirF.Sync(); err != nil {
 			return fmt.Errorf("sync state dir: %w", err)
 		}
@@ -244,7 +244,7 @@ func SaveLocked(st *State) error {
 	if err != nil {
 		return err
 	}
-	defer lk.Close()
+	defer func() { _ = lk.Close() }()
 	return Save(st)
 }
 

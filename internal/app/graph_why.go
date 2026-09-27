@@ -122,7 +122,7 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 		// working set, so a long level list doesn't start mid-air. Mermaid and
 		// dot are machine-consumed; no decoration there.
 		c := newCLIStyle(os.Stderr)
-		fmt.Fprintf(c.w, "%s\n\n", c.dim(fmt.Sprintf("%d tools in %d levels", len(s.Tools), len(levels))))
+		_, _ = fmt.Fprintf(c.w, "%s\n\n", c.dim(fmt.Sprintf("%d tools in %d levels", len(s.Tools), len(levels))))
 	}
 	switch *graphFormat {
 	case "mermaid":
@@ -276,7 +276,7 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 	}
 
 	c := newCLIStyle(os.Stdout)
-	fmt.Fprintf(c.w, "%s  %s\n\n", c.bold(fmt.Sprintf("Why %s?", toolName)), c.dim(plural(len(attempts), "candidate method")+", first available wins"))
+	_, _ = fmt.Fprintf(c.w, "%s  %s\n\n", c.bold(fmt.Sprintf("Why %s?", toolName)), c.dim(plural(len(attempts), "candidate method")+", first available wins"))
 	kindW := 0
 	names := make([]string, len(attempts))
 	for i, a := range attempts {
@@ -299,22 +299,22 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 		kind := padRight(names[i], kindW)
 		switch a.Status {
 		case "would_install":
-			fmt.Fprintf(c.w, "  %s %s  %s\n", c.green("✓"), kind, c.dim("→ "+reason))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.green("✓"), kind, c.dim("→ "+reason))
 		case "already_installed":
-			fmt.Fprintf(c.w, "  %s %s  %s\n", c.green("✓"), kind, c.dim("already installed: "+reason))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.green("✓"), kind, c.dim("already installed: "+reason))
 		case "skip_when":
-			fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("skipped: "+reason))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("skipped: "+reason))
 		case "skip_unavailable":
-			fmt.Fprintf(c.w, "  %s %s  %s\n", c.red("✗"), c.dim(kind), c.dim("unavailable: "+reason))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.red("✗"), c.dim(kind), c.dim("unavailable: "+reason))
 		case "skip_policy":
-			fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("disallowed: "+reason))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("disallowed: "+reason))
 		case "skip_capability":
-			fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("capability mismatch: "+reason))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("capability mismatch: "+reason))
 		default:
-			fmt.Fprintf(c.w, "  %s %s  %s\n", c.dim("?"), kind, c.dim(reason))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.dim("?"), kind, c.dim(reason))
 		}
 	}
-	fmt.Fprintln(c.w)
+	_, _ = fmt.Fprintln(c.w)
 
 	if *whyFields {
 		if provenance, ok := s.Provenance[toolName]; ok && len(provenance) > 0 {

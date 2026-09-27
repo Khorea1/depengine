@@ -113,7 +113,7 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
 		log.Default.Error("state lock", "error", err)
 		return exitWithCode(3)
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 
 	curState := ls.State()
 	toRemove := diffUndoTools(curState.Tools, snapState.Tools)
@@ -148,14 +148,14 @@ func runUndoList() error {
 		return nil
 	}
 	c := newCLIStyle(os.Stderr)
-	fmt.Fprintln(c.w, c.bold("Available snapshots:"))
+	_, _ = fmt.Fprintln(c.w, c.bold("Available snapshots:"))
 	idxW := len(fmt.Sprintf("%d", len(snapshots)))
 	for i, s := range snapshots {
 		idx := i + 1
 		// Column order answers the choosing question left to right: which
 		// index do I pass, how old is it, what's inside. The full path is
 		// noise in the common case — the filename alone identifies it.
-		fmt.Fprintf(c.w, "  %s  %s  %s  %s\n",
+		_, _ = fmt.Fprintf(c.w, "  %s  %s  %s  %s\n",
 			c.cyan(padRight(fmt.Sprintf("%d", idx), idxW)),
 			padRight(relativeTime(s.Timestamp), 14),
 			c.dim(filepath.Base(s.Path)),

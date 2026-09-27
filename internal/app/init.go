@@ -131,7 +131,7 @@ func runInit(output, addTools *string, interactive *bool) error {
 	if *addTools != "" {
 		msg += fmt.Sprintf(" with %d tools", len(strings.Split(*addTools, ",")))
 	}
-	fmt.Fprintln(c.w, c.green(msg))
+	_, _ = fmt.Fprintln(c.w, c.green(msg))
 	fmt.Fprintln(os.Stderr, "Next: run 'depengine validate' to verify, or 'depengine install' to install.")
 	fmt.Fprintln(os.Stderr, "Share this file with your team: git add schema.toml && git commit")
 	return nil

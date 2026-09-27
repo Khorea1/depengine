@@ -195,7 +195,7 @@ func writeTestArchive(t *testing.T, path, format, name string, body []byte) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if format == "zip" {
 		w := zip.NewWriter(f)
 		entry, err := w.Create(name)

@@ -182,7 +182,7 @@ func copyRegularRootFile(srcRoot, dstRoot *os.Root, srcName, dstName string, exp
 		_ = in.Close()
 		return fmt.Errorf("source %s changed during copy", srcName)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	if err := removeRootCopyTarget(dstRoot, dstName); err != nil {
 		return err

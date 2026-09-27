@@ -440,7 +440,7 @@ func TestLoadSharedReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadShared(): %v", err)
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 
 	st := ls.State()
 	if _, ok := st.Tools["test"]; !ok {

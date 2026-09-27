@@ -59,7 +59,7 @@ func padRight(s string, width int) string {
 // printKV renders an aligned key/value block (two-space indent, dim keys)
 // — the header style install/update/upgrade/graph share.
 func printKV(c *cliStyle, title string, pairs ...[2]string) {
-	fmt.Fprintln(c.w, c.bold(title))
+	_, _ = fmt.Fprintln(c.w, c.bold(title))
 	width := 0
 	for _, kv := range pairs {
 		if len(kv[0]) > width {
@@ -67,9 +67,9 @@ func printKV(c *cliStyle, title string, pairs ...[2]string) {
 		}
 	}
 	for _, kv := range pairs {
-		fmt.Fprintf(c.w, "  %s  %s\n", c.dim(padRight(kv[0], width)), kv[1])
+		_, _ = fmt.Fprintf(c.w, "  %s  %s\n", c.dim(padRight(kv[0], width)), kv[1])
 	}
-	fmt.Fprintln(c.w)
+	_, _ = fmt.Fprintln(c.w)
 }
 
 // cliStyle bundles a writer with its cached color decision so per-line
@@ -94,7 +94,7 @@ func (c *cliStyle) cyan(s string) string { return styled(c.color, ansiCyan, s) }
 // vocabulary of internal/exec's status lines, with the symbol colored.
 func (c *cliStyle) status(symbol, color, format string, args ...any) {
 	line := fmt.Sprintf("  %s %s\n", styled(c.color, color, symbol), fmt.Sprintf(format, args...))
-	fmt.Fprint(c.w, line)
+	_, _ = fmt.Fprint(c.w, line)
 }
 
 func (c *cliStyle) ok(format string, args ...any)    { c.status("✓", ansiGreen, format, args...) }

@@ -170,7 +170,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	}
 
 	if !*updateDryRun {
-		fmt.Fprintln(c.w, c.dim("Run 'depengine install' to apply."))
+		_, _ = fmt.Fprintln(c.w, c.dim("Run 'depengine install' to apply."))
 	}
 	return nil
 }
@@ -187,7 +187,7 @@ func reportVersionDrift(schema *config.Schema, newLock *lock.Lock) {
 	if err != nil {
 		return
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 	st := ls.State()
 	if len(st.Tools) == 0 {
 		return
@@ -212,11 +212,11 @@ func reportVersionDrift(schema *config.Schema, newLock *lock.Lock) {
 	}
 	sort.Strings(drifted)
 	c := newCLIStyle(os.Stderr)
-	fmt.Fprintln(c.w, c.yellow("  ⚠ version drift: installed versions differ from newly-pinned versions"))
+	_, _ = fmt.Fprintln(c.w, c.yellow("  ⚠ version drift: installed versions differ from newly-pinned versions"))
 	for _, d := range drifted {
-		fmt.Fprintf(c.w, "    %s\n", d)
+		_, _ = fmt.Fprintf(c.w, "    %s\n", d)
 	}
-	fmt.Fprintln(c.w, c.dim("    Run 'depengine upgrade' to apply."))
+	_, _ = fmt.Fprintln(c.w, c.dim("    Run 'depengine upgrade' to apply."))
 }
 
 // isTerminal reports whether the given file is connected to a terminal.

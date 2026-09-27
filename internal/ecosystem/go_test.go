@@ -141,7 +141,7 @@ func TestGoAdapterRemoveUsesGOPATHBinWhenGOBINUnset(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(binPath), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(binPath, []byte("x"), 0755); err != nil {
+	if err := os.WriteFile(binPath, []byte("x"), 0600); err != nil {
 		t.Fatal(err)
 	}
 

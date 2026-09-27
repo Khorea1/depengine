@@ -34,7 +34,7 @@ func runSBOM(sbomFormat *string) error {
 		log.Default.Error("load state", "error", err)
 		return exitWithCode(3)
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 
 	st := ls.State()
 

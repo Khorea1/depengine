@@ -409,7 +409,7 @@ func writeZipWithEntry(t *testing.T, path, entryName string) {
 	if err != nil {
 		t.Fatalf("create zip: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	zw := zip.NewWriter(f)
 	w, err := zw.Create(entryName)
 	if err != nil {
@@ -526,7 +526,7 @@ func writeTarGzWithEntry(t *testing.T, path string, hdr *tar.Header, body []byte
 	if err != nil {
 		t.Fatalf("create tar.gz: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	gz := gzip.NewWriter(f)
 	tw := tar.NewWriter(gz)
 	hdr.Size = int64(len(body))

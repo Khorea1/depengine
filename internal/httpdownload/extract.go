@@ -91,14 +91,14 @@ func extractBzip2(ctx context.Context, src, dest, binaryName string, rn run.Runn
 	if err != nil {
 		return fmt.Errorf("bzip2: open %s: %w", src, err)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	tmp, err := os.CreateTemp("", ".depengine-bzip2-*")
 	if err != nil {
 		return fmt.Errorf("bzip2: create temporary file: %w", err)
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer func() { _ = os.Remove(tmpName) }()
 	if _, err := io.Copy(tmp, bzip2.NewReader(in)); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("bzip2: decompress %s: %w", src, err)
@@ -198,13 +198,13 @@ func copyBinary(ctx context.Context, src, destDir, binaryName string, rn run.Run
 	if err != nil {
 		return fmt.Errorf("copy: read %s: %w", src, err)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	tmp, err := os.CreateTemp(destDir, ".depengine-binary-*")
 	if err != nil {
 		return fmt.Errorf("copy: stage %s: %w", dest, err)
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer func() { _ = os.Remove(tmpName) }()
 	if err := tmp.Chmod(0o755); err != nil {
 		_ = tmp.Close()
 		return err

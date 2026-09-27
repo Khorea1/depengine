@@ -370,7 +370,7 @@ func (tx *sourcePreparationTransaction) applyRollbackDecision(ctx context.Contex
 		if removeErr := tx.ex.sources.Remove(ctx, []config.Source{configured}); removeErr != nil {
 			present, probeErr := tx.ex.sources.Present(ctx, configured)
 			if probeErr != nil {
-				return fmt.Errorf("rollback source %s failed: %v; outcome probe failed: %v", configured.Name, removeErr, probeErr)
+				return fmt.Errorf("rollback source %s failed: %w; outcome probe failed: %w", configured.Name, removeErr, probeErr)
 			}
 			outcome := plan.PreparationMutationApplied
 			if present {
@@ -564,7 +564,7 @@ func (ex *Executor) recoverPreparationTransactions(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load preparation recovery state: %w", err)
 	}
-	defer locked.Close()
+	defer func() { _ = locked.Close() }()
 
 	keys := make([]string, 0, len(locked.State().PreparationJournals))
 	for key := range locked.State().PreparationJournals {

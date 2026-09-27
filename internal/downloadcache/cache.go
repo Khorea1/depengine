@@ -270,7 +270,7 @@ func CopyFile(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("open source: %w", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	fi, err := s.Stat()
 	if err != nil {
@@ -281,7 +281,7 @@ func CopyFile(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("create dest: %w", err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 
 	// OpenFile's perm argument only applies when dst is newly created. Atomic
 	// cache staging creates the destination first with mode 0600, and ordinary

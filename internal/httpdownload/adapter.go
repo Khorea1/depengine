@@ -274,7 +274,7 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 	if err != nil {
 		return fmt.Errorf("http: temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Determine the actual filename from the download URL.
 	fileName := resolvedFileName(resolvedURL, ext)
@@ -542,7 +542,7 @@ func (a *HTTPAdapter) fetchChecksumFromURL(ctx context.Context, rn run.Runner, c
 	if err != nil {
 		return "", fmt.Errorf("temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	checksumFile := tmpDir + "/checksum"
 	var checksumBearer string
@@ -581,7 +581,7 @@ func (a *HTTPAdapter) fetchChecksumFromURL(ctx context.Context, rn run.Runner, c
 	if err != nil {
 		return "", fmt.Errorf("open: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var checksums map[string]string
 	switch cc.format {

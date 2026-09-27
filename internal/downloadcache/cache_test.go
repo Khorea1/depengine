@@ -12,7 +12,7 @@ const testURL = "https://github.com/example/repo/releases/download/v1.0/example-
 
 func TestCacheDirDefault(t *testing.T) {
 	// Ensure XDG_CACHE_HOME is not set for this test.
-	os.Unsetenv("XDG_CACHE_HOME")
+	_ = os.Unsetenv("XDG_CACHE_HOME")
 	dir := CacheDir()
 	if !strings.Contains(dir, ".cache") {
 		t.Fatalf("expected .cache in path, got %q", dir)

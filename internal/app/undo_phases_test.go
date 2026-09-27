@@ -293,7 +293,7 @@ func TestFinalizeUndoSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadLocked: %v", err)
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 	curState := ls.State()
 	snapState := &state.State{
 		Version:          state.CurrentVersion,
@@ -326,7 +326,7 @@ func TestFinalizeUndoPartialFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadLocked: %v", err)
 	}
-	defer ls.Close()
+	defer func() { _ = ls.Close() }()
 	curState := ls.State()
 	original := map[string]state.ToolState{
 		"keep": curState.Tools["keep"],

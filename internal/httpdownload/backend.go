@@ -123,7 +123,7 @@ func (d *GoDownloader) download(ctx context.Context, url, dest, bearerCredential
 	if err != nil {
 		return fmt.Errorf("http: get: %w", run.RedactError(err))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return &HTTPStatusError{
@@ -137,7 +137,7 @@ func (d *GoDownloader) download(ctx context.Context, url, dest, bearerCredential
 	if err != nil {
 		return fmt.Errorf("http: create %s: %w", dest, err)
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	written, err := io.Copy(out, resp.Body)
 	if err != nil {

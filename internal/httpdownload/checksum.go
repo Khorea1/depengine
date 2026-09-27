@@ -52,7 +52,7 @@ func HashFile(algorithm, path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("open: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var h hash.Hash
 	switch algorithm {

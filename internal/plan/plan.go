@@ -453,7 +453,7 @@ func ownershipPathKey(value string) (string, error) {
 	if validUnixAbsolutePath(value) {
 		clean := path.Clean(value)
 		if clean != value {
-			return "", fmt.Errorf("Unix path is not canonical; use %q", clean)
+			return "", fmt.Errorf("unix path is not canonical; use %q", clean)
 		}
 		return "unix\x00" + value, nil
 	}
