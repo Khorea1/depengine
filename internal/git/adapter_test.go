@@ -31,6 +31,58 @@ func (r *credentialRecordingRunner) RunWithEnv(ctx context.Context, env map[stri
 	return r.Run(ctx, name, args...)
 }
 
+func (r *credentialRecordingRunner) RunWithEnvValidated(ctx context.Context, env map[string]string, sensitive []string, name string, validate run.OutputValidator, args ...string) run.Result {
+	copyEnv := make(map[string]string, len(env))
+	for key, value := range env {
+		copyEnv[key] = value
+	}
+	r.environments = append(r.environments, copyEnv)
+	if len(sensitive) != 1 || sensitive[0] != env["GIT_CONFIG_VALUE_1"][len("Authorization: Bearer "):] {
+		return run.Result{Err: fmt.Errorf("unexpected sensitive values")}
+	}
+	runResult := r.FakeRunner.Run(ctx, name, args...)
+	if runResult.Err != nil || runResult.ExitCode != 0 {
+		return run.Result{Err: fmt.Errorf("sensitive subprocess execution failed"), ExitCode: runResult.ExitCode}
+	}
+	stdout, err := validate(runResult.Stdout)
+	if err != nil {
+		return run.Result{Err: fmt.Errorf("subprocess output validation failed"), ExitCode: 1}
+	}
+	return run.Result{Stdout: stdout}
+}
+
+func TestGitResolvePrivateBranchWithValidatedLoggingRunner(t *testing.T) {
+	const credential = "private-git-token-sentinel"
+	const revision = "0123456789abcdef0123456789abcdef01234567"
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	inner := &credentialRecordingRunner{FakeRunner: &run.FakeRunner{Stdout: revision + "\trefs/heads/main\n"}}
+	runner := run.NewLoggingRunner(inner, logger)
+	method := &config.MethodCandidate{
+		Kind:      "git",
+		Config:    map[string]any{"url": "https://code.example.test/private/repo.git", "branch": "main"},
+		SecretRef: &config.SecretReference{Provider: "env", Name: "TOKEN"},
+	}
+	ctx := exec.WithGitCredential(context.Background(), credential)
+	intent := plan.New("private-tool", "git", true)
+	resolved, err := NewGitAdapter().ResolvePlan(ctx, runner, &config.Tool{Name: "private-tool"}, method, &intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Identity.Revision != revision {
+		t.Fatalf("revision = %q, want %q", resolved.Identity.Revision, revision)
+	}
+	if len(inner.environments) != 1 || inner.environments[0]["GIT_CONFIG_VALUE_1"] != "Authorization: Bearer "+credential {
+		t.Fatalf("Git credential environment = %#v", inner.environments)
+	}
+	if strings.Contains(logs.String(), credential) {
+		t.Fatalf("credential leaked into logs: %s", logs.String())
+	}
+	if len(inner.Calls) != 1 || strings.Contains(strings.Join(inner.Calls[0].Args, " "), credential) {
+		t.Fatalf("credential appeared in command args: %+v", inner.Calls)
+	}
+}
+
 func TestGitAdapterAvailable(t *testing.T) {
 	fr := &run.FakeRunner{ExitCode: 0}
 	adapter := NewGitAdapter()

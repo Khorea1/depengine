@@ -147,6 +147,25 @@ func (lr *LoggingRunner) RunWithEnv(ctx context.Context, env map[string]string, 
 	return lr.run(ctx, "", env, sensitive, name, args...)
 }
 
+// RunWithEnvValidated logs only command metadata and the validator's safe
+// result; raw child output stays inside the wrapped runner.
+func (lr *LoggingRunner) RunWithEnvValidated(ctx context.Context, env map[string]string, sensitive []string, name string, validate OutputValidator, args ...string) Result {
+	result := RunWithEnvValidated(ctx, lr.inner, env, sensitive, name, validate, args...)
+	attrs := []any{"cmd", name, "args", formatArgsForLog(args), "exit", result.ExitCode}
+	if lr.ctx.Tool != "" {
+		attrs = append(attrs, "tool", lr.ctx.Tool)
+	}
+	if lr.ctx.Method != "" {
+		attrs = append(attrs, "method", lr.ctx.Method)
+	}
+	if result.Err != nil {
+		lr.logger.Warn("run failed", append(attrs, "error", RedactSensitiveText(result.Err.Error()))...)
+	} else {
+		lr.logger.Debug("run ok", attrs...)
+	}
+	return result
+}
+
 // LookPath resolves an executable through the wrapped runner.
 func (lr *LoggingRunner) LookPath(ctx context.Context, name string) bool {
 	found := LookPath(ctx, lr.inner, name)

@@ -307,14 +307,37 @@ func resolveRemoteRevision(ctx context.Context, rn run.Runner, mc *config.Method
 		}
 		sensitive = []string{credential}
 	}
+	if len(sensitive) > 0 {
+		result := run.RunWithEnvValidated(ctx, rn, env, sensitive, "git", func(stdout []byte) ([]byte, error) {
+			revision, err := parseRemoteRevision(stdout, ref)
+			if err != nil {
+				return nil, errors.New("git: invalid authenticated remote revision output")
+			}
+			return []byte(revision), nil
+		}, "ls-remote", source.URL, ref, ref+"^{}")
+		if err := run.CheckResult(result, "git: resolve remote revision"); err != nil {
+			return "", err
+		}
+		return string(result.Stdout), nil
+	}
 	result := runGit(ctx, rn, env, sensitive, "ls-remote", source.URL, ref, ref+"^{}")
 	if err := run.CheckResult(result, "git: resolve remote revision"); err != nil {
 		return "", err
 	}
+	return parseRemoteRevision(result.Stdout, ref)
+}
+
+func parseRemoteRevision(stdout []byte, ref string) (string, error) {
 	refs := make(map[string]string)
-	for _, line := range nonEmptyLines(string(result.Stdout)) {
+	for _, line := range nonEmptyLines(string(stdout)) {
 		fields := strings.Fields(line)
-		if len(fields) != 2 || (len(fields[0]) != 40 && len(fields[0]) != 64) || !isHexSHA(fields[0]) {
+		if len(fields) != 2 {
+			continue
+		}
+		if fields[1] != ref && fields[1] != ref+"^{}" {
+			continue
+		}
+		if (len(fields[0]) != 40 && len(fields[0]) != 64) || !isHexSHA(fields[0]) {
 			return "", fmt.Errorf("git: invalid remote revision for %q", ref)
 		}
 		refs[fields[1]] = fields[0]
