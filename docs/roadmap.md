@@ -67,7 +67,12 @@ Work on the current execution model comes before adding more installer types.
   current per-selector coverage is tabulated in
   [`support-boundary.md`](support-boundary.md).
 - [~] Finish typed package-source selection, trust, ownership, verification,
-  and locking.
+  and locking. Git-backed Brew/Scoop sources with explicit URLs now verify the
+  existing host origin instead of accepting a same-name source blindly;
+  transactional recovery retains the credential-free URL, and legacy lock v1
+  hashes candidate host-source declarations so frozen installs reject source
+  drift. Signing/trust identity and immutable upstream source revisions remain
+  open.
 - [~] Finish recovery for package-source and prerequisite preparation.
 - [x] Keep hooks tied to the candidate/transition that actually runs; status
   must not depend on a one-time hook having succeeded earlier. Tool-level and

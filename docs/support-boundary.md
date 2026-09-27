@@ -64,6 +64,7 @@ Legacy lock v1 covers each selector class as follows:
 | Selectorless kinds (`cask`, `mas`, `aur`, `apm`, `vscode`, ...) | No | There is no selector for the lock to pin. |
 | Artifact method with no `checksum` | No | Downloaded content is unpinned. |
 | Explicit literal selector (`release`, `branch`, `version`, `rev`, or `digest`) | No — fixed by the schema | The same literal value is requested on every run, so the lock adds no constraint of its own. It also records nothing about where a mutable request such as a git `branch` or an exact package `version` resolved. |
+| Candidate host package sources (`sources = [...]`) | Declaration identity only | Lock v1 hashes each source's `kind`/`name`/credential-free `url` and frozen validation rejects drift. It does **not** pin a tap/bucket repository commit, PPA/COPR publication state, or signing-key trust. |
 
 For the legacy lock v1 subset, `depengine install --frozen-lockfile` fails
 closed when the lockfile is missing, unreadable, or written for an unsupported
@@ -72,7 +73,9 @@ was added to the schema after the lock was written; when the stored method
 kind/label ordering no longer matches the schema; or when a required supported
 pin is missing. Required pins currently include repo-backed latest GitHub
 releases, `{latest}` URL templates, implicit local-artifact digests, and
-resolved `*:auto` checksums. Frozen mode does not perform checksum TOFU to
+resolved `*:auto` checksums. Candidate host sources additionally require their
+stored source-identity hash to be present and to match the schema. Frozen mode
+does not perform checksum TOFU to
 create a missing auto-checksum pin. Remote `*:auto` checksums are materialized
 by a normal non-frozen install; `depengine update` alone does not download the
 remote payload needed to compute that digest.
@@ -82,16 +85,17 @@ Frozen validation follows the effective install closure after
 closure are still validated, while deliberately omitted tools do not make a
 partial/profile install fail frozen validation.
 
-`depengine update` is the operation that accepts a changed method identity. It
+`depengine update` is the operation that accepts changed method or package-source
+identity. It
 re-resolves the lockable selectors for every tool in scope — the whole schema,
 or only tools matching `--profile` — and refreshes those pins and their stored
-method identity hashes. Pins the fresh resolution cannot recompute, such as an
+identity hashes. Pins the fresh resolution cannot recompute, such as an
 already-materialized `*:auto` checksum, are carried over from the existing
-lock instead of being dropped, as are the pins and method identities of tools
+lock instead of being dropped, as are the pins and identities of tools
 excluded by `--profile`, provided the existing lock is readable. If the
 existing lock is unreadable or has an unsupported version, `update` warns and
 regenerates from the fresh resolution; it cannot preserve data it cannot
-parse. A plain `depengine install` never changes a stored method identity:
+parse. A plain `depengine install` never changes stored method or package-source identity:
 frozen installs fail validation against a changed identity, and non-frozen
 installs keep the stored hash and only warn.
 
@@ -99,7 +103,8 @@ This check is intentionally narrower than universal immutable resolution.
 Container tags, Git branches/tags, package-manager constraints, channels, and
 other selectors not represented by legacy lock v1 are not made immutable by
 `--frozen-lockfile`. The v1 method identity hash also covers method kind,
-label, and ordering rather than every requested field inside a candidate.
+label, and ordering rather than every requested field inside a candidate;
+candidate host-source declarations are covered separately by source hashes.
 After changing resolver details that keep the same kind/label, run
 `depengine update`; the planned universal lock projection
 ([ADR-001](design/adr-001-universal-lock-projection.md)) is the path that will
@@ -132,6 +137,13 @@ is a separate machine mutation.
 Source setup happens only when the relevant candidate is reached. Cleanup needs
 ownership evidence so depengine does not remove a source shared with other
 tools or created outside depengine.
+
+For Git-backed Brew taps and Scoop buckets with an explicit URL, presence is
+not established by name alone: depengine verifies the configured repository
+origin. A same-name source with a different origin blocks that candidate rather
+than being adopted as external/shared state. Source preparation persists the
+credential-free URL alongside the transactional journal so recovery uses the
+same verification rule.
 
 For containers, `source` is the repository name, including an optional registry
 host. Tags and digests are separate fields.

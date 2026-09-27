@@ -51,6 +51,8 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 			"other/git/0": {Latest: "v0.5.0"},
 			"tool/http/0": {Latest: "v3.0.0", Checksum: "sha256:abc123"},
 		},
+		MethodsHash: map[string]string{"tool": "method-hash"},
+		SourceHash:  map[string]string{"tool/http/0": "source-hash"},
 	}
 
 	if err := Save(path, l); err != nil {
@@ -73,6 +75,12 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if got.Tools["tool/http/0"].Checksum != "sha256:abc123" {
 		t.Errorf("tool/http/0.Checksum = %q, want sha256:abc123", got.Tools["tool/http/0"].Checksum)
+	}
+	if got.MethodsHash["tool"] != "method-hash" {
+		t.Errorf("MethodsHash[tool] = %q, want method-hash", got.MethodsHash["tool"])
+	}
+	if got.SourceHash["tool/http/0"] != "source-hash" {
+		t.Errorf("SourceHash[tool/http/0] = %q, want source-hash", got.SourceHash["tool/http/0"])
 	}
 }
 
@@ -674,6 +682,79 @@ func TestMethodHashRoundTrip(t *testing.T) {
 	capture.AssertNotContains(t, "method ordering changed")
 }
 
+func TestSourceHashRoundTripAndFrozenDriftDetection(t *testing.T) {
+	method := &config.MethodCandidate{
+		Kind:   "native",
+		Config: map[string]any{"pkg": "demo"},
+		Sources: []config.Source{{
+			Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git",
+			SecretRef: &config.SecretReference{Provider: "env", Name: "CORP_TOKEN"},
+		}},
+	}
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"demo": {Name: "demo", Methods: []*config.MethodCandidate{method}},
+	}}
+	l, err := ResolveAll(context.Background(), s, &run.FakeRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := "demo/native/0"
+	if l.SourceHash[key] == "" {
+		t.Fatalf("SourceHash[%q] is empty", key)
+	}
+	if err := ValidateFrozen(s, l); err != nil {
+		t.Fatalf("ValidateFrozen() rejected matching source identity: %v", err)
+	}
+
+	// Authentication reference changes do not alter persisted source identity.
+	method.Sources[0].SecretRef = &config.SecretReference{Provider: "env", Name: "OTHER_TOKEN"}
+	if err := ValidateFrozen(s, l); err != nil {
+		t.Fatalf("ValidateFrozen() treated secret reference as lock identity: %v", err)
+	}
+
+	method.Sources[0].URL = "https://mirror.test/vendor/tools.git"
+	err = ValidateFrozen(s, l)
+	if err == nil || !strings.Contains(err.Error(), "package sources changed") {
+		t.Fatalf("ValidateFrozen() error = %v, want package-source drift", err)
+	}
+}
+
+func TestValidateFrozenRejectsMissingSourceIdentity(t *testing.T) {
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"demo": {
+			Name: "demo",
+			Methods: []*config.MethodCandidate{{
+				Kind: "native", Config: map[string]any{"pkg": "demo"},
+				Sources: []config.Source{{Kind: "apt-ppa", Name: "ppa:vendor/stable"}},
+			}},
+		},
+	}}
+	l := frozenTestLock(s, map[string]ToolPin{})
+	delete(l.SourceHash, "demo/native/0")
+	err := ValidateFrozen(s, l)
+	if err == nil || !strings.Contains(err.Error(), "missing package-source identity") {
+		t.Fatalf("ValidateFrozen() error = %v, want missing package-source identity", err)
+	}
+}
+
+func TestValidateFrozenRejectsRemovedSourceIdentity(t *testing.T) {
+	method := &config.MethodCandidate{
+		Kind:    "native",
+		Config:  map[string]any{"pkg": "demo"},
+		Sources: []config.Source{{Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git"}},
+	}
+	s := &config.Schema{Tools: map[string]*config.Tool{
+		"demo": {Name: "demo", Methods: []*config.MethodCandidate{method}},
+	}}
+	l := frozenTestLock(s, map[string]ToolPin{})
+	method.Sources = nil
+
+	err := ValidateFrozen(s, l)
+	if err == nil || !strings.Contains(err.Error(), "package sources changed") {
+		t.Fatalf("ValidateFrozen() error = %v, want removed package-source drift", err)
+	}
+}
+
 func TestApplyMethodReorderingWarning(t *testing.T) {
 	// Create a lock with a known MethodsHash, then call Apply with a schema
 	// whose methods are reordered (different kind sequence) and verify a warning.
@@ -829,10 +910,19 @@ func frozenTestLock(s *config.Schema, pins map[string]ToolPin) *Lock {
 		Version:     1,
 		Tools:       pins,
 		MethodsHash: make(map[string]string),
+		SourceHash:  make(map[string]string),
 	}
 	for name, tool := range s.Tools {
 		if tool != nil && len(tool.Methods) > 0 {
 			l.MethodsHash[name] = computeMethodsHash(tool.Methods)
+			kindCount := make(map[string]int)
+			for _, method := range tool.Methods {
+				idx := kindCount[method.Kind]
+				kindCount[method.Kind] = idx + 1
+				if sourceHash := computeSourceHash(method); sourceHash != "" {
+					l.SourceHash[toolKey(name, method.Kind, idx)] = sourceHash
+				}
+			}
 		}
 	}
 	return l

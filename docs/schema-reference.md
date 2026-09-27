@@ -783,6 +783,16 @@ Supported source kinds are `apt-ppa`, `dnf-copr`, `scoop-bucket`, and
 `brew-tap`. `url` is supported only for `scoop-bucket` and `brew-tap`;
 `apt-ppa` and `dnf-copr` identify their repositories by `name`.
 
+Explicit `scoop-bucket`/`brew-tap` URLs are repository identity, not an
+unverified add hint. If a bucket/tap with the declared name already exists,
+depengine checks that its configured origin matches the declared URL and fails
+that candidate on a mismatch instead of installing from the other origin.
+Source URLs must be credential-free and cannot contain query strings or
+fragments; use `secret_ref` for supported authentication instead. The exact
+credential-free URL is also retained in the source-preparation journal so
+crash recovery performs the same origin check rather than falling back to a
+name-only probe.
+
 For a Git-backed `scoop-bucket` or `brew-tap` with an explicit, credential-free
 HTTPS `url`, use `secret_ref = { provider = "env", name = "CORP_TOKEN" }` to
 provide an HTTP Bearer token. The value is read only when that candidate needs
@@ -794,7 +804,12 @@ method to be tried. Authentication for `apt-ppa` and `dnf-copr` is rejected
 during schema validation; source roles other than host configuration are
 rejected during planning. The token is not installed as a persistent Git
 credential; later source updates need their own
-host credential setup. Sources are checked before mutation. `dependency_only`
+host credential setup. Sources are checked before mutation. `depengine.lock`
+stores a hash of each candidate's host-source `kind`/`name`/`url` declaration;
+`--frozen-lockfile` requires that identity to exist and match, while
+`depengine update` is the operation that accepts a changed declaration. The
+hash does not pin the Git repository's HEAD or turn the lockfile into a trust
+root. `dependency_only`
 tools are not normal roots, but remain selectable with `--only`.
 
 ### Virtual tools: dependency groups with no methods

@@ -45,8 +45,10 @@ func TestRunUpdatePreservesPinsAndHashesOutsideProfile(t *testing.T) {
 	schemaPath := writeUpdateTestSchema(t, dir, "schema_version = 1\n\n"+
 		"[tools.profiled]\ntags = [\"dev\"]\n\n"+
 		"[tools.profiled.http]\nurl = \"https://example.com/profiled.deb\"\nchecksum = \""+freshChecksum+"\"\n\n"+
+		"[tools.profiled.native]\npkg = \"profiled\"\nsources = [{ kind = \"brew-tap\", name = \"profiled/tools\", url = \"https://example.com/profiled/tools.git\" }]\n\n"+
 		"[tools.outside]\ntags = [\"other\"]\n\n"+
-		"[tools.outside.http]\nurl = \"https://example.com/outside.deb\"\nchecksum = \"sha256:auto\"\n")
+		"[tools.outside.http]\nurl = \"https://example.com/outside.deb\"\nchecksum = \"sha256:auto\"\n\n"+
+		"[tools.outside.native]\npkg = \"outside\"\nsources = [{ kind = \"brew-tap\", name = \"outside/tools\", url = \"https://example.com/outside/tools.git\" }]\n")
 
 	old := &lock.Lock{
 		Version: 1,
@@ -60,6 +62,10 @@ func TestRunUpdatePreservesPinsAndHashesOutsideProfile(t *testing.T) {
 		MethodsHash: map[string]string{
 			"profiled": "stale-profiled-identity",
 			"outside":  "preserve-outside-identity",
+		},
+		SourceHash: map[string]string{
+			"profiled/native/0": "stale-profiled-source",
+			"outside/native/0":  "preserve-outside-source",
 		},
 	}
 	lockPath := lock.DefaultPath(schemaPath)
@@ -84,6 +90,9 @@ func TestRunUpdatePreservesPinsAndHashesOutsideProfile(t *testing.T) {
 	if h := got.MethodsHash["outside"]; h != "preserve-outside-identity" {
 		t.Fatalf("outside methods_hash = %q, want preserved hash", h)
 	}
+	if h := got.SourceHash["outside/native/0"]; h != "preserve-outside-source" {
+		t.Fatalf("outside source_hash = %q, want preserved hash", h)
+	}
 
 	// Tool present in the fresh resolution: fresh checksum wins, the
 	// unresolved Latest field keeps its old value, and update accepts the
@@ -97,6 +106,37 @@ func TestRunUpdatePreservesPinsAndHashesOutsideProfile(t *testing.T) {
 	}
 	if h := got.MethodsHash["profiled"]; h == "" || h == "stale-profiled-identity" {
 		t.Fatalf("profiled methods_hash = %q, want freshly computed hash (identity change accepted)", h)
+	}
+	if h := got.SourceHash["profiled/native/0"]; h == "" || h == "stale-profiled-source" {
+		t.Fatalf("profiled source_hash = %q, want freshly computed hash (source identity change accepted)", h)
+	}
+}
+
+func TestRunUpdateAcceptsRemovedSourceIdentity(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	dir := t.TempDir()
+	schemaPath := writeUpdateTestSchema(t, dir, "schema_version = 1\n\n"+
+		"[tools.demo.native]\npkg = \"demo\"\n")
+	lockPath := lock.DefaultPath(schemaPath)
+	old := &lock.Lock{
+		Version:     1,
+		Tools:       map[string]lock.ToolPin{},
+		MethodsHash: map[string]string{"demo": "stale-method-identity"},
+		SourceHash:  map[string]string{"demo/native/0": "stale-source-identity"},
+	}
+	if err := lock.Save(lockPath, old); err != nil {
+		t.Fatal(err)
+	}
+
+	runTestUpdate(t, schemaPath, "")
+
+	got, err := lock.Load(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got.SourceHash["demo/native/0"]; ok {
+		t.Fatalf("SourceHash = %v, want removed source identity accepted by update", got.SourceHash)
 	}
 }
 

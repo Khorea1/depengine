@@ -360,7 +360,7 @@ func (tx *sourcePreparationTransaction) applyRollbackDecision(ctx context.Contex
 		if operation.Kind != "remove-source" || mutation.Resource.Kind != plan.ResourceSource {
 			return fmt.Errorf("recovery cannot execute rollback operation %q for resource kind %q", operation.Kind, mutation.Resource.Kind)
 		}
-		configured, err := source.FromResourceIdentity(mutation.Resource)
+		configured, err := source.SourceFromPreparationMutation(mutation)
 		if err != nil {
 			return fmt.Errorf("decode rollback source %q: %w", mutation.Resource.Key, err)
 		}
@@ -424,7 +424,7 @@ func (ex *Executor) preparationRecoveryNeedsElevation() bool {
 			if mutation.Resource.Kind != plan.ResourceSource {
 				continue
 			}
-			configured, err := source.FromResourceIdentity(mutation.Resource)
+			configured, err := source.SourceFromPreparationMutation(mutation)
 			if err != nil {
 				continue
 			}
@@ -598,7 +598,7 @@ func (ex *Executor) recoverPreparationTransaction(ctx context.Context, locked *d
 			if mutation.Resource.Kind != plan.ResourceSource || mutation.Apply.Kind != "add-source" {
 				return fmt.Errorf("in-flight mutation %q is not a recoverable source add", mutation.ID)
 			}
-			configured, err := source.FromResourceIdentity(mutation.Resource)
+			configured, err := source.SourceFromPreparationMutation(mutation)
 			if err != nil {
 				return err
 			}
@@ -623,7 +623,7 @@ func (ex *Executor) recoverPreparationTransaction(ctx context.Context, locked *d
 			if mutation.Resource.Kind != plan.ResourceSource || mutation.Rollback == nil || mutation.Rollback.Kind != "remove-source" {
 				return fmt.Errorf("in-flight rollback mutation %q is not a recoverable source removal", mutation.ID)
 			}
-			configured, err := source.FromResourceIdentity(mutation.Resource)
+			configured, err := source.SourceFromPreparationMutation(mutation)
 			if err != nil {
 				return err
 			}

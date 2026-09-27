@@ -64,6 +64,27 @@ func TestSourceURLOnlyAcceptedWhenAddUsesIt(t *testing.T) {
 	}
 }
 
+func TestSourceURLRejectsCredentialBearingOrMutableSuffixes(t *testing.T) {
+	for _, rawURL := range []string{
+		"https://user@example.test/tools.git",
+		"https://example.test/tools.git?token=secret",
+		"https://example.test/tools.git#branch",
+		" https://example.test/tools.git",
+	} {
+		t.Run(rawURL, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "schema.toml")
+			data := "schema_version = 1\n[tools.demo.native]\npkg = \"demo\"\nsources = [{ kind = \"brew-tap\", name = \"vendor/tools\", url = \"" + rawURL + "\" }]\n"
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := ParseProjectSchema(path, nil)
+			if err == nil || !strings.Contains(err.Error(), "must be credential-free") {
+				t.Fatalf("ParseProjectSchema() error = %v, want persistent source URL rejection", err)
+			}
+		})
+	}
+}
+
 func TestParseSourceSecretReferenceRequiresAuthenticatedGitSource(t *testing.T) {
 	for _, method := range []string{"native", "custom"} {
 		t.Run(method, func(t *testing.T) {

@@ -3,6 +3,7 @@ package source
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -191,6 +192,12 @@ func (m *Manager) present(ctx context.Context, source config.Source) (bool, erro
 	if err := validateSourceURLSupport(source); err != nil {
 		return false, err
 	}
+	if source.Kind == "brew-tap" && source.URL != "" {
+		return m.brewTapPresent(ctx, source)
+	}
+	if source.Kind == "scoop-bucket" && source.URL != "" {
+		return m.scoopBucketPresent(ctx, source)
+	}
 	var cmd []string
 	switch source.Kind {
 	case "apt-ppa":
@@ -213,6 +220,107 @@ func (m *Manager) present(ctx context.Context, source config.Source) (bool, erro
 		want = normalizePPA(want)
 	}
 	return strings.Contains(strings.ToLower(string(res.Stdout)), strings.ToLower(want)), nil
+}
+
+func (m *Manager) brewTapPresent(ctx context.Context, source config.Source) (bool, error) {
+	res := m.rn.Run(ctx, "brew", "tap")
+	if err := run.CheckResult(res, "source check"); err != nil {
+		return false, err
+	}
+	if !outputHasSourceName(string(res.Stdout), source.Name) {
+		return false, nil
+	}
+
+	info := m.rn.Run(ctx, "brew", "tap-info", "--json=v1", source.Name)
+	if err := run.CheckResult(info, "source origin check"); err != nil {
+		return false, err
+	}
+	var taps []struct {
+		Name   string `json:"name"`
+		Remote string `json:"remote"`
+	}
+	if err := json.Unmarshal(info.Stdout, &taps); err != nil {
+		return false, fmt.Errorf("source: verify brew-tap %s origin: decode tap metadata: %w", source.Name, err)
+	}
+	for _, tap := range taps {
+		if !strings.EqualFold(tap.Name, source.Name) {
+			continue
+		}
+		if tap.Remote == "" {
+			return false, fmt.Errorf("source: verify brew-tap %s origin: tap metadata has no remote", source.Name)
+		}
+		if !sameSourceURL(tap.Remote, source.URL) {
+			return false, fmt.Errorf("source: brew-tap %s exists with a different origin than configured", source.Name)
+		}
+		return true, nil
+	}
+	return false, fmt.Errorf("source: verify brew-tap %s origin: tap metadata omitted the configured tap", source.Name)
+}
+
+func (m *Manager) scoopBucketPresent(ctx context.Context, source config.Source) (bool, error) {
+	res := m.rn.Run(ctx, "scoop", "bucket", "list")
+	if err := run.CheckResult(res, "source check"); err != nil {
+		return false, err
+	}
+	want := strings.TrimSpace(source.Name)
+	found := false
+	for _, line := range strings.Split(string(res.Stdout), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || !strings.EqualFold(fields[0], want) {
+			continue
+		}
+		found = true
+		if sameSourceURL(fields[1], source.URL) {
+			return true, nil
+		}
+	}
+	if !found {
+		return false, nil
+	}
+	return false, fmt.Errorf("source: scoop-bucket %s exists with a different origin than configured", source.Name)
+}
+
+func outputHasSourceName(output, name string) bool {
+	_, ok := outputSourceLine(output, name)
+	return ok
+}
+
+func outputSourceLine(output, name string) (string, bool) {
+	want := strings.ToLower(strings.TrimSpace(name))
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
+		if !strings.HasPrefix(lower, want) {
+			continue
+		}
+		if len(lower) == len(want) || (len(lower) > len(want) && (lower[len(want)] == ' ' || lower[len(want)] == '\t')) {
+			return trimmed, true
+		}
+	}
+	return "", false
+}
+
+func sameSourceURL(actual, expected string) bool {
+	return canonicalSourceURL(actual) == canonicalSourceURL(expected)
+}
+
+func canonicalSourceURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if !strings.Contains(raw, "://") {
+		return strings.TrimSuffix(raw, "/")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return strings.TrimSuffix(raw, "/")
+	}
+	u.Scheme = strings.ToLower(u.Scheme)
+	u.Host = strings.ToLower(u.Host)
+	u.Path = strings.TrimSuffix(u.Path, "/")
+	switch u.Hostname() {
+	case "github.com", "gitlab.com", "codeberg.org":
+		u.Path = strings.TrimSuffix(u.Path, ".git")
+	}
+	return u.String()
 }
 
 func (m *Manager) add(ctx context.Context, source config.Source) error {
@@ -264,6 +372,19 @@ func (m *Manager) addAuthenticated(ctx context.Context, source config.Source, to
 func validateSourceURLSupport(source config.Source) error {
 	if source.URL != "" && (source.Kind == "apt-ppa" || source.Kind == "dnf-copr") {
 		return fmt.Errorf("source: URL is unsupported for kind %q", source.Kind)
+	}
+	if source.URL != "" {
+		if strings.TrimSpace(source.URL) != source.URL || strings.ContainsRune(source.URL, '\x00') {
+			return fmt.Errorf("source: URL must not contain surrounding whitespace or NUL for kind %q", source.Kind)
+		}
+		if strings.Contains(source.URL, "://") {
+			u, err := url.Parse(source.URL)
+			if err != nil || u.Scheme == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+				return fmt.Errorf("source: URL must be credential-free and must not contain query or fragment for kind %q", source.Kind)
+			}
+		} else if strings.ContainsAny(source.URL, "?#") {
+			return fmt.Errorf("source: URL must not contain query or fragment for kind %q", source.Kind)
+		}
 	}
 	if source.SecretRef != nil {
 		if source.Kind != "scoop-bucket" && source.Kind != "brew-tap" {

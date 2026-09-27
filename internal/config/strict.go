@@ -465,6 +465,8 @@ func validateSources(raw any, path string, errs *[]string) {
 			validateNonEmptyString(rawURL, p+".url", errs)
 			if kind == "apt-ppa" || kind == "dnf-copr" {
 				*errs = append(*errs, p+".url: unsupported for source kind "+kind)
+			} else if sourceURL, ok := rawURL.(string); ok && !validPersistentSourceURL(sourceURL) {
+				*errs = append(*errs, p+".url: must be credential-free and must not contain surrounding whitespace, NUL, query, or fragment")
 			}
 		}
 		if rawRef, exists := m["secret_ref"]; exists {
@@ -482,6 +484,17 @@ func validateSources(raw any, path string, errs *[]string) {
 			}
 		}
 	}
+}
+
+func validPersistentSourceURL(raw string) bool {
+	if strings.TrimSpace(raw) != raw || strings.ContainsRune(raw, '\x00') || raw == "" {
+		return false
+	}
+	if !strings.Contains(raw, "://") {
+		return !strings.ContainsAny(raw, "?#")
+	}
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme != "" && u.User == nil && u.RawQuery == "" && u.Fragment == ""
 }
 
 func validSourceSecretURL(raw string) bool {

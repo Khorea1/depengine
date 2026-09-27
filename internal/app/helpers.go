@@ -284,13 +284,30 @@ func saveLockfile(ctx context.Context, s *config.Schema, lockPath string, oldLoc
 	newLock = lock.Merge(oldLock, newLock)
 	if oldLock != nil {
 		// A regular install may persist newly discovered pin fields, but it must
-		// not bless a changed method identity. Preserve hashes for omitted tools
-		// and for detectable method-map drift; an explicit 'depengine update'
-		// is the operation that accepts a new method identity.
+		// not bless changed method/source identity. Preserve hashes for omitted
+		// tools/candidates and for detectable drift; an explicit
+		// 'depengine update' is the operation that accepts new identity.
 		for name, oldHash := range oldLock.MethodsHash {
 			newHash, exists := newLock.MethodsHash[name]
 			if !exists || newHash != oldHash {
 				newLock.MethodsHash[name] = oldHash
+			}
+		}
+		if newLock.SourceHash == nil {
+			newLock.SourceHash = make(map[string]string, len(oldLock.SourceHash))
+		}
+		for key, oldHash := range oldLock.SourceHash {
+			newHash, exists := newLock.SourceHash[key]
+			if !exists || newHash != oldHash {
+				newLock.SourceHash[key] = oldHash
+			}
+		}
+		for key := range newLock.SourceHash {
+			if _, existed := oldLock.SourceHash[key]; existed {
+				continue
+			}
+			if _, toolWasLocked := oldLock.MethodsHash[lockCandidateToolName(key)]; toolWasLocked {
+				delete(newLock.SourceHash, key)
 			}
 		}
 	}
@@ -301,6 +318,18 @@ func saveLockfile(ctx context.Context, s *config.Schema, lockPath string, oldLoc
 	if diagnose {
 		lg.Debug("lock saved", "path", lockPath, "pinned", len(newLock.Tools))
 	}
+}
+
+func lockCandidateToolName(key string) string {
+	last := strings.LastIndexByte(key, '/')
+	if last <= 0 {
+		return ""
+	}
+	previous := strings.LastIndexByte(key[:last], '/')
+	if previous <= 0 {
+		return ""
+	}
+	return key[:previous]
 }
 
 // hasLatestPlaceholders checks whether any validated method needs a latest
