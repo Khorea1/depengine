@@ -69,8 +69,12 @@ Work on the current execution model comes before adding more installer types.
 - [~] Finish typed package-source selection, trust, ownership, verification,
   and locking.
 - [~] Finish recovery for package-source and prerequisite preparation.
-- [~] Keep hooks tied to the candidate/transition that actually runs; status
-  must not depend on a one-time hook having succeeded earlier.
+- [x] Keep hooks tied to the candidate/transition that actually runs; status
+  must not depend on a one-time hook having succeeded earlier. Tool-level and
+  candidate-local hooks are projected into the selected `ResolvedInstallPlan`,
+  scheduled only for the concrete reconciliation transition, and candidates
+  with before-hooks stay out of native batching. Status drift uses a hook-free
+  desired-state hash; historical hook completion is never health evidence.
 - [x] Generate schema/docs metadata from adapter capabilities instead of
   scattering method-name conditionals across the codebase. JSON schema
   generation, contracttest coverage registration, environment-target
