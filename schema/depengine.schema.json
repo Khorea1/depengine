@@ -28,6 +28,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -431,6 +437,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "release": {
               "type": "string"
             },
@@ -533,6 +545,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -602,6 +620,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -775,6 +799,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "release": {
               "type": "string"
             },
@@ -881,6 +911,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -957,6 +993,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -1026,6 +1068,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -1100,6 +1148,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -1177,6 +1231,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -1246,6 +1306,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "registry": {
               "minLength": 1,
@@ -1423,6 +1489,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "registry": {
               "minLength": 1,
               "type": "string"
@@ -1520,6 +1592,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -1596,6 +1674,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "prerelease": {
               "type": "boolean"
@@ -1677,6 +1761,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -1787,6 +1877,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "prefix": {
               "minLength": 1,
@@ -1917,6 +2013,12 @@
               "minLength": 1,
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -2005,6 +2107,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -2080,6 +2188,12 @@
                 "type": "string"
               },
               "type": "object"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -2157,6 +2271,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -2230,6 +2350,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "remote": {
               "minLength": 1,
@@ -2311,6 +2437,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -2479,6 +2611,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -2620,6 +2758,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "release": {
               "type": "string"
             },
@@ -2720,6 +2864,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -2894,6 +3044,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "release": {
               "type": "string"
             },
@@ -3007,6 +3163,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -3077,6 +3239,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -3248,6 +3416,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "product_name": {
               "minLength": 1,
               "type": "string"
@@ -3355,6 +3529,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -3424,6 +3604,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "registry": {
               "minLength": 1,
@@ -3509,6 +3695,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -3585,6 +3777,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -3655,6 +3853,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -3724,6 +3928,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -3798,6 +4008,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -3876,6 +4092,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -3964,6 +4186,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -4039,6 +4267,12 @@
                 "type": "string"
               },
               "type": "object"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -4116,6 +4350,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -4185,6 +4425,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -4265,6 +4511,12 @@
                 "type": "string"
               },
               "type": "object"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -4348,6 +4600,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -4428,6 +4686,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -4550,6 +4814,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -4633,6 +4903,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -4706,6 +4982,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -4781,6 +5063,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -4850,6 +5138,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -4947,6 +5241,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -5038,6 +5338,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -5107,6 +5413,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -5182,6 +5494,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -5251,6 +5569,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -5328,6 +5652,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -5403,6 +5733,12 @@
                 "type": "string"
               },
               "type": "object"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -5559,6 +5895,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "release": {
               "type": "string"
             },
@@ -5658,6 +6000,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -5829,6 +6177,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "release": {
               "type": "string"
             },
@@ -5939,6 +6293,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -6012,6 +6372,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -6091,6 +6457,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -6164,6 +6536,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "registry": {
               "minLength": 1,
@@ -6345,6 +6723,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "registry": {
               "minLength": 1,
               "type": "string"
@@ -6446,6 +6830,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -6526,6 +6916,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "prerelease": {
               "type": "boolean"
@@ -6611,6 +7007,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -6725,6 +7127,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "prefix": {
               "minLength": 1,
@@ -6853,6 +7261,12 @@
               "minLength": 1,
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -6945,6 +7359,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "remote": {
               "minLength": 1,
               "type": "string"
@@ -7029,6 +7449,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -7195,6 +7621,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -7336,6 +7768,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "release": {
               "type": "string"
             },
@@ -7442,6 +7880,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -7614,6 +8058,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "release": {
               "type": "string"
             },
@@ -7725,6 +8175,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -7801,6 +8257,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -7970,6 +8432,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "product_name": {
               "minLength": 1,
               "type": "string"
@@ -8083,6 +8551,12 @@
               },
               "type": "object"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -8156,6 +8630,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "registry": {
               "minLength": 1,
@@ -8239,6 +8719,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -8316,6 +8802,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -8398,6 +8890,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -8483,6 +8981,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -8574,6 +9078,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -8658,6 +9168,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -8784,6 +9300,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -8871,6 +9393,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -8948,6 +9476,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -9027,6 +9561,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -9100,6 +9640,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
@@ -9201,6 +9747,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -9290,6 +9842,12 @@
             "pkg": {
               "type": "string"
             },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
             "requires": {
               "items": {
                 "type": "string"
@@ -9367,6 +9925,12 @@
             },
             "pkg": {
               "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
             },
             "requires": {
               "items": {
