@@ -275,11 +275,9 @@ func (ex *Executor) reportBatchDryRun(rc *runContext, candidates []batchCandidat
 	}
 	ex.outputf("  ⚡  commit: would batch native install: %s via %s\n", strings.Join(names, ", "), ex.nativeManagerName)
 	for _, c := range candidates {
-		if len(c.tool.PostInstall) > 0 {
-			postCtx, postCancel := context.WithTimeout(omitToolSecretEnvironment(rc.ctx, c.tool), ex.methodTimeout)
-			_ = ex.runPostinstall(postCtx, c.tool)
-			postCancel()
-		}
+		postCtx, postCancel := context.WithTimeout(omitToolSecretEnvironment(rc.ctx, c.tool), ex.methodTimeout)
+		_, _ = ex.runLifecycleHooks(postCtx, c.tool.Name, c.resolvedPlan, plan.TransitionInstall, plan.HookAfter)
+		postCancel()
 		wouldInstall := ToolResult{
 			Tool: c.toolName, Status: StatusWouldInstall, Method: displayMethodKind(c.method),
 			MethodKind: c.method.Kind, Config: c.method.Config, PlanIntent: c.resolvedPlan,
@@ -302,15 +300,14 @@ func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandida
 				MethodKind: c.method.Kind, Config: c.method.Config, PlanIntent: c.resolvedPlan, InstallCommitted: true,
 			}
 			tr.RebootRequired, _ = c.method.Config["_reboot_required"].(bool)
-			if len(c.tool.PostInstall) > 0 {
-				postCtx, postCancel := context.WithTimeout(omitToolSecretEnvironment(rc.ctx, c.tool), ex.methodTimeout)
-				if err := ex.runPostinstall(postCtx, c.tool); err != nil {
-					tr.Status = StatusFailed
-					tr.Error = fmt.Sprintf("post-install: %v", err)
-				} else {
-					tr.PostinstallDone = true
-				}
-				postCancel()
+			postCtx, postCancel := context.WithTimeout(omitToolSecretEnvironment(rc.ctx, c.tool), ex.methodTimeout)
+			postRan, err := ex.runLifecycleHooks(postCtx, c.tool.Name, c.resolvedPlan, plan.TransitionInstall, plan.HookAfter)
+			postCancel()
+			if err != nil {
+				tr.Status = StatusFailed
+				tr.Error = fmt.Sprintf("post-install: %v", err)
+			} else {
+				tr.PostinstallDone = postRan
 			}
 			ex.recordToolResult(rc.ctx, &tr, rc.report)
 		} else {
