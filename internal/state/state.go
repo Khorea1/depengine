@@ -52,8 +52,12 @@ type ToolState struct {
 	InstalledAt string `json:"installed_at"`
 	// PostinstallDone is true if a postinstall script was successfully run.
 	PostinstallDone bool `json:"postinstall_done"`
-	// DefinitionHash is the SHA256 of the tool's schema definition at install time.
+	// DefinitionHash is the SHA256 of the complete tool schema definition at
+	// install time, including one-shot lifecycle hooks.
 	DefinitionHash string `json:"definition_hash"`
+	// DesiredStateHash excludes one-shot lifecycle hooks. Status uses it for
+	// definition drift so historical hook success cannot become health evidence.
+	DesiredStateHash string `json:"desired_state_hash,omitempty"`
 	// Version is the installed tool version when the adapter can determine it
 	// (e.g. the resolved/pinned tag at install time). Empty when unknown.
 	Version string `json:"version,omitempty"`
