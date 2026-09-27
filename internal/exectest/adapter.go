@@ -245,7 +245,6 @@ func TestAdapterConformance(t *testing.T, a exec.AdapterV2) {
 			t.Errorf("invalid presence %q", observation.Presence)
 		}
 	})
-
 }
 
 // SetHome points the process home at dir for the duration of the test.

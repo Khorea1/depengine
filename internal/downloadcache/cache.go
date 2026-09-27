@@ -50,10 +50,10 @@ func maxCacheBytes() int64 {
 
 // evict removes the least-recently-used regular files in dir (by
 // modification time, oldest first) until the total size of the remaining
-// files is at or below max. It is best-effort: files that fail to stat or
+// files is at or below maxBytes. It is best-effort: files that fail to stat or
 // remove are skipped, and it returns the number of files removed.
-func evict(dir string, max int64) int {
-	if max <= 0 {
+func evict(dir string, maxBytes int64) int {
+	if maxBytes <= 0 {
 		return 0
 	}
 	entries, err := os.ReadDir(dir)
@@ -80,13 +80,13 @@ func evict(dir string, max int64) int {
 		items = append(items, item{name: e.Name(), size: info.Size(), mod: info.ModTime()})
 		total += info.Size()
 	}
-	if total <= max {
+	if total <= maxBytes {
 		return 0
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].mod.Before(items[j].mod) })
 	var removed int
 	for _, it := range items {
-		if total <= max {
+		if total <= maxBytes {
 			break
 		}
 		if err := os.Remove(filepath.Join(dir, it.name)); err != nil {

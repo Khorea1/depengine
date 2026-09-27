@@ -141,12 +141,12 @@ func TestExecutorDryRunAndInstallUseEquivalentResolvedPlan(t *testing.T) {
 		return report.Tools[0].PlanIntent
 	}
 	dry := runOnce(true)
-	real := runOnce(false)
-	if dry == nil || real == nil {
-		t.Fatalf("plans = %+v / %+v, want both concrete", dry, real)
+	actual := runOnce(false)
+	if dry == nil || actual == nil {
+		t.Fatalf("plans = %+v / %+v, want both concrete", dry, actual)
 	}
-	if len(dry.Artifacts) == 0 || len(real.Artifacts) == 0 || dry.Artifacts[0].URL != real.Artifacts[0].URL {
-		t.Fatalf("dry-run URL = %+v, install URL = %+v, want identical", dry.Artifacts, real.Artifacts)
+	if len(dry.Artifacts) == 0 || len(actual.Artifacts) == 0 || dry.Artifacts[0].URL != actual.Artifacts[0].URL {
+		t.Fatalf("dry-run URL = %+v, install URL = %+v, want identical", dry.Artifacts, actual.Artifacts)
 	}
 	if dry.Artifacts[0].URL != urlA {
 		t.Fatalf("resolved URL = %q, want %q", dry.Artifacts[0].URL, urlA)

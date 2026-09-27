@@ -19,24 +19,24 @@ func methodForResolvedTarget(method *config.MethodCandidate, resolved *plan.Reso
 		return method
 	}
 
-	copy := *method
-	copy.Config = make(map[string]any, len(method.Config))
+	methodCopy := *method
+	methodCopy.Config = make(map[string]any, len(method.Config))
 	for key, value := range method.Config {
-		copy.Config[key] = value
+		methodCopy.Config[key] = value
 	}
 
 	for _, field := range contract.Environment.Fields() {
-		delete(copy.Config, field)
+		delete(methodCopy.Config, field)
 	}
 
 	target := resolved.Identity.Environment
 	if target != nil {
 		if field, ok := contract.Environment.FieldFor(target.Kind); ok {
-			copy.Config[field] = target.Value
+			methodCopy.Config[field] = target.Value
 		}
 	}
 
-	return &copy
+	return &methodCopy
 }
 
 func configForResolvedTarget(method *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) map[string]any {

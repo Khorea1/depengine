@@ -51,7 +51,6 @@ func newValidateCmd() *cobra.Command {
 }
 
 func runValidate(ctx context.Context, validateSchema, validateManifest *string, validateNoManifest, validateCheckEnv *bool, validateFormat *string, validateStrict *bool) error {
-
 	s, err := config.ParseProjectSchema(*validateSchema, map[string]string{})
 	if err != nil {
 		var sce *config.SchemaCodeError
@@ -140,13 +139,13 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 				for _, e := range result.Errors {
 					// [E_CODE] field — message; the code is what to grep for,
 					// the field is where to fix.
-					_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.red(string(e.Code)), c.dim(string(e.Field)+":"), e.Message)
+					_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.red(string(e.Code)), c.dim(e.Field+":"), e.Message)
 				}
 			}
 			if len(result.Warnings) > 0 {
 				_, _ = fmt.Fprintf(c.w, "\n%s\n", c.yellow(fmt.Sprintf("⚠ %d warning(s)", len(result.Warnings))))
 				for _, w := range result.Warnings {
-					_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow(string(w.Code)), c.dim(string(w.Field)+":"), w.Message)
+					_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow(string(w.Code)), c.dim(w.Field+":"), w.Message)
 				}
 			}
 		}

@@ -315,5 +315,4 @@ func TestVerificationPhaseAdapterFieldProbes(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) { runPair(t, tc.a, tc.b, "demo", "demo") })
 		}
 	})
-
 }

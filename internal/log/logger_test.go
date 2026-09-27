@@ -40,10 +40,10 @@ func TestLevelFromString(t *testing.T) {
 
 func TestNewLoggerTextOutput(t *testing.T) {
 	// Default text handler should produce human-readable output.
-	cap := NewTestLogger(t)
-	cap.Info("hello", "key", "value")
+	capture := NewTestLogger(t)
+	capture.Info("hello", "key", "value")
 
-	output := cap.String()
+	output := capture.String()
 	if !strings.Contains(output, "hello") {
 		t.Fatalf("expected log to contain 'hello', got: %s", output)
 	}
@@ -54,19 +54,19 @@ func TestNewLoggerTextOutput(t *testing.T) {
 }
 
 func TestNewLoggerLevelFiltering(t *testing.T) {
-	cap := NewTestLogger(t)
+	capture := NewTestLogger(t)
 
 	// DEBUG message at DEBUG level should appear.
-	cap.Debug("debug message")
-	debugOut := cap.String()
+	capture.Debug("debug message")
+	debugOut := capture.String()
 	if !strings.Contains(debugOut, "debug message") {
 		t.Fatalf("expected debug message to appear at DEBUG level, got: %s", debugOut)
 	}
 }
 
 func TestWithContextAddsFields(t *testing.T) {
-	cap := NewTestLogger(t)
-	logger := WithContext(cap.Logger, LogContext{
+	capture := NewTestLogger(t)
+	logger := WithContext(capture.Logger, LogContext{
 		TraceID: "trace-xyz",
 		Tool:    "zsh",
 		Method:  "native",
@@ -75,7 +75,7 @@ func TestWithContextAddsFields(t *testing.T) {
 
 	logger.Info("test with context")
 
-	output := cap.String()
+	output := capture.String()
 	if !strings.Contains(output, "trace-xyz") {
 		t.Fatalf("expected trace_id in output, got: %s", output)
 	}
@@ -88,15 +88,15 @@ func TestWithContextAddsFields(t *testing.T) {
 }
 
 func TestWithContextEmptyFieldsOmitted(t *testing.T) {
-	cap := NewTestLogger(t)
-	logger := WithContext(cap.Logger, LogContext{
+	capture := NewTestLogger(t)
+	logger := WithContext(capture.Logger, LogContext{
 		TraceID: "trace-xyz",
 		// Tool, Method, etc. are empty
 	})
 
 	logger.Info("test partial context")
 
-	output := cap.String()
+	output := capture.String()
 	if !strings.Contains(output, "trace-xyz") {
 		t.Fatalf("expected trace_id in output, got: %s", output)
 	}
@@ -108,55 +108,55 @@ func TestWithContextEmptyFieldsOmitted(t *testing.T) {
 
 func TestTestCaptureAssertContains(t *testing.T) {
 	// This test verifies AssertContains works (simulating pass/fail).
-	cap := NewTestLogger(t)
-	cap.Info("hello world")
+	capture := NewTestLogger(t)
+	capture.Info("hello world")
 	// Should pass — "hello" is in output.
-	cap.AssertContains(t, "hello")
+	capture.AssertContains(t, "hello")
 }
 
 func TestTestCaptureAssertNotContains(t *testing.T) {
-	cap := NewTestLogger(t)
-	cap.Info("hello world")
+	capture := NewTestLogger(t)
+	capture.Info("hello world")
 	// Should pass — "goodbye" is not in output.
-	cap.AssertNotContains(t, "goodbye")
+	capture.AssertNotContains(t, "goodbye")
 }
 
 func TestTestCaptureLines(t *testing.T) {
-	cap := NewTestLogger(t)
-	cap.Info("line one")
-	cap.Info("line two")
+	capture := NewTestLogger(t)
+	capture.Info("line one")
+	capture.Info("line two")
 
-	lines := cap.Lines()
+	lines := capture.Lines()
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 lines, got %d: %v", len(lines), lines)
 	}
 }
 
 func TestTestCaptureReset(t *testing.T) {
-	cap := NewTestLogger(t)
-	cap.Info("before")
-	cap.Reset()
-	cap.Info("after")
+	capture := NewTestLogger(t)
+	capture.Info("before")
+	capture.Reset()
+	capture.Info("after")
 
-	if strings.Contains(cap.String(), "before") {
+	if strings.Contains(capture.String(), "before") {
 		t.Fatal("expected 'before' to be cleared after Reset")
 	}
-	if !strings.Contains(cap.String(), "after") {
+	if !strings.Contains(capture.String(), "after") {
 		t.Fatal("expected 'after' to appear after Reset")
 	}
 }
 
 func TestWithContextOnlyNonEmptyFields(t *testing.T) {
-	cap := NewTestLogger(t)
+	capture := NewTestLogger(t)
 	lc := LogContext{
 		Tool:  "my-tool",
 		Phase: "install",
 		// TraceID, Method, Distro, Family are empty
 	}
-	logger := WithContext(cap.Logger, lc)
+	logger := WithContext(capture.Logger, lc)
 	logger.Info("working")
 
-	output := cap.String()
+	output := capture.String()
 	if !strings.Contains(output, "my-tool") {
 		t.Fatalf("expected tool 'my-tool' in output, got: %s", output)
 	}

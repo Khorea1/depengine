@@ -286,7 +286,7 @@ func TestSharedResourceRefcountAndOwnership(t *testing.T) {
 	if removable {
 		t.Fatal("shared resource must not be removable while another dependent remains")
 	}
-	state, removable, err = ReleaseResource(state, "tool-b")
+	_, removable, err = ReleaseResource(state, "tool-b")
 	if err != nil {
 		t.Fatal(err)
 	}

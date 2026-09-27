@@ -575,8 +575,8 @@ func validateCondition(raw any, path string, errs *[]string) {
 			*errs = append(*errs, fieldPath+": unknown condition field")
 		}
 	}
-	if min, minOK := m["distro_version_min"].(string); minOK && strings.TrimSpace(min) != "" {
-		if max, maxOK := m["distro_version_max"].(string); maxOK && strings.TrimSpace(max) != "" && platform.CompareVersion(min, max) > 0 {
+	if minVer, minOK := m["distro_version_min"].(string); minOK && strings.TrimSpace(minVer) != "" {
+		if maxVer, maxOK := m["distro_version_max"].(string); maxOK && strings.TrimSpace(maxVer) != "" && platform.CompareVersion(minVer, maxVer) > 0 {
 			*errs = append(*errs, path+": distro_version_min must not be greater than distro_version_max")
 		}
 	}

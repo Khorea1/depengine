@@ -80,7 +80,6 @@ func TestRetryWithBackoffRetriesRetryableHTTPStatus(t *testing.T) {
 	t.Parallel()
 
 	for _, statusCode := range []int{408, 429, 503} {
-		statusCode := statusCode
 		t.Run(fmt.Sprint(statusCode), func(t *testing.T) {
 			t.Parallel()
 			attempts := 0

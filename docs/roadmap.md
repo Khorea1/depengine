@@ -129,7 +129,7 @@ Work on the current execution model comes before adding more installer types.
   109 (`errcheck` 97, `staticcheck` 9, `errorlint` 2, `gosec` 1) — most of the
   558 had been resolved by prior security/lint work without the roadmap entry
   being updated. Closed the rest: unchecked `Close`/`Fprintf`/`RemoveAll`
-  errors now explicit (`_ = `/`_, _ = `), the two `%v`-for-error `Fprintf`
+  errors now explicit (`_ = `/`_, _ = `), the two `%v`-for-error `Errorf`
   calls now use `%w`, the deprecated `tar.TypeRegA` alias is gone, one
   capitalized error string and four `Write(Sprintf(...))` calls were
   normalized to `Fprintf`, and one test fixture's file mode was tightened to
