@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -36,4 +37,35 @@ func TestLockPinForToolStateFailsClosedForAmbiguousLegacyState(t *testing.T) {
 	if pin, ok := lockPinForToolState(lk, "demo", tool, state.ToolState{Method: "http", MethodKind: "http"}); ok {
 		t.Fatalf("lockPinForToolState accepted ambiguous legacy state: %+v", pin)
 	}
+}
+
+
+func TestFindStateMethodCandidateAmbiguityRemediationUsesOnlyRealLabels(t *testing.T) {
+	t.Run("labeled", func(t *testing.T) {
+		tool := &config.Tool{Methods: []*config.MethodCandidate{
+			{Kind: "http", Label: "primary"},
+			{Kind: "http", Label: "mirror"},
+		}}
+		_, err := findStateMethodCandidate(tool, state.ToolState{Method: "http", MethodKind: "http"})
+		if err == nil || !strings.Contains(err.Error(), `method = "primary"`) {
+			t.Fatalf("error = %v, want labeled remediation", err)
+		}
+	})
+
+	t.Run("unlabeled", func(t *testing.T) {
+		tool := &config.Tool{Methods: []*config.MethodCandidate{
+			{Kind: "http"},
+			{Kind: "http"},
+		}}
+		_, err := findStateMethodCandidate(tool, state.ToolState{Method: "http", MethodKind: "http"})
+		if err == nil {
+			t.Fatal("expected ambiguity error")
+		}
+		if strings.Contains(err.Error(), `method = "http"`) {
+			t.Fatalf("error suggests ineffective kind-only selector: %v", err)
+		}
+		if !strings.Contains(err.Error(), "add distinct labels") {
+			t.Fatalf("error = %v, want actionable label remediation", err)
+		}
+	})
 }

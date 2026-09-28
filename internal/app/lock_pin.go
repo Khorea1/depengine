@@ -98,7 +98,16 @@ func findStateMethodCandidate(tool *config.Tool, ts state.ToolState) (*config.Me
 		}
 		return nil, fmt.Errorf("tracked method kind %q is absent from the current schema", kind)
 	}
-	return nil, fmt.Errorf("tracked method kind %q is ambiguous across %d current schema candidates (%s): state records only kind %q; re-install with a labeled candidate (e.g. method = %q) to disambiguate", kind, len(matches), describeAmbiguousCandidates(tool, matches), kind, candidateDisplayName(matches[0]))
+	return nil, fmt.Errorf("tracked method kind %q is ambiguous across %d current schema candidates (%s): state records only kind %q; %s", kind, len(matches), describeAmbiguousCandidates(tool, matches), kind, ambiguousCandidateRemediation(matches))
+}
+
+func ambiguousCandidateRemediation(matches []*config.MethodCandidate) string {
+	for _, match := range matches {
+		if match != nil && match.Label != "" {
+			return fmt.Sprintf("re-install selecting a labeled candidate (e.g. method = %q) to persist exact candidate identity", match.Label)
+		}
+	}
+	return "add distinct labels to the same-kind candidates, then re-install selecting one label to persist exact candidate identity"
 }
 
 // describeAmbiguousCandidates renders each ambiguous match as `#<ordinal> "<display>"`
