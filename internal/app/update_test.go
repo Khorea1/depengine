@@ -30,6 +30,15 @@ func runTestUpdate(t *testing.T, schemaPath, profile string) {
 		t.Fatalf("runUpdate: %v", err)
 	}
 }
+func TestUpdatePinValueShowsImmutableContainerDigest(t *testing.T) {
+	const digest = "sha256:6123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	got := updatePinValue(lock.ToolPin{ContainerTag: "stable", ContainerDigest: digest})
+	want := "tag:stable @ " + digest
+	if got != want {
+		t.Fatalf("updatePinValue() = %q, want %q", got, want)
+	}
+}
+
 func TestUpdatePinValueShowsImmutableGitRevision(t *testing.T) {
 	const revision = "0123456789abcdef0123456789abcdef01234567"
 	got := updatePinValue(lock.ToolPin{Selector: "branch:main", Revision: revision})

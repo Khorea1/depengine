@@ -58,6 +58,13 @@ func containerRef(mc *config.MethodCandidate) (manager, reference, platform stri
 	source, _ := mc.Config["source"].(string)
 	tag, _ := mc.Config["tag"].(string)
 	digest, _ := mc.Config["digest"].(string)
+	if mc.LockedDigest != "" {
+		if digest != "" {
+			return "", "", "", fmt.Errorf("container: lock digest cannot override an explicit digest")
+		}
+		digest = mc.LockedDigest
+		tag = ""
+	}
 	if !validContainerManager(manager) {
 		return "", "", "", fmt.Errorf("container: manager must be docker or podman")
 	}
@@ -373,6 +380,12 @@ func (a *ContainerAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *co
 		return nil, err
 	}
 	resolved := intent.Clone()
+	if mc.LockedDigest != "" {
+		if err := containerref.ValidateDigest(mc.LockedDigest); err != nil {
+			return nil, fmt.Errorf("container: locked digest: %w", err)
+		}
+		resolved.Identity.Digest = strings.ToLower(mc.LockedDigest)
+	}
 	return &resolved, nil
 }
 

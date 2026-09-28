@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/containerregistry"
 	"github.com/Khorea1/depengine/internal/log"
 	"github.com/Khorea1/depengine/internal/run"
+	"github.com/pelletier/go-toml/v2"
 )
 
 func TestDefaultPath(t *testing.T) {
@@ -46,10 +48,11 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	l := &Lock{
 		Version: 1,
 		Tools: map[string]ToolPin{
-			"ctpv/git/0":  {Latest: "v1.0.0"},
-			"ff/http/0":   {Latest: "v2.1.0"},
-			"other/git/0": {Latest: "v0.5.0"},
-			"tool/http/0": {Latest: "v3.0.0", Checksum: "sha256:abc123"},
+			"ctpv/git/0":        {Latest: "v1.0.0"},
+			"ff/http/0":         {Latest: "v2.1.0"},
+			"other/git/0":       {Latest: "v0.5.0"},
+			"tool/http/0":       {Latest: "v3.0.0", Checksum: "sha256:abc123"},
+			"image/container/0": {ContainerTag: "stable", ContainerDigest: "sha256:" + strings.Repeat("d", 64)},
 		},
 		MethodsHash: map[string]string{"tool": "method-hash"},
 		SourceHash:  map[string]string{"tool/http/0": "source-hash"},
@@ -75,6 +78,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if got.Tools["tool/http/0"].Checksum != "sha256:abc123" {
 		t.Errorf("tool/http/0.Checksum = %q, want sha256:abc123", got.Tools["tool/http/0"].Checksum)
+	}
+	if pin := got.Tools["image/container/0"]; pin.ContainerTag != "stable" || pin.ContainerDigest != "sha256:"+strings.Repeat("d", 64) {
+		t.Errorf("image/container/0 = %+v, want persisted tag+digest", pin)
 	}
 	if got.MethodsHash["tool"] != "method-hash" {
 		t.Errorf("MethodsHash[tool] = %q, want method-hash", got.MethodsHash["tool"])
@@ -1014,6 +1020,11 @@ func TestValidateFrozenRejectsMissingSupportedPins(t *testing.T) {
 			method: &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"git": "https://example.test/tool.git", "tag": "v1"}},
 			want:   "missing resolved Git revision pin",
 		},
+		{
+			name:   "container tag",
+			method: &config.MethodCandidate{Kind: "container", Config: map[string]any{"manager": "docker", "source": "example/tool", "tag": "stable"}},
+			want:   "missing resolved container digest pin",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1054,13 +1065,6 @@ func TestValidateFrozenRejectsMethodIdentityDrift(t *testing.T) {
 func TestValidateFrozenAllowsSelectorsOutsideLegacyLockCoverage(t *testing.T) {
 	explicitChecksum := "sha256:" + strings.Repeat("a", 64)
 	s := &config.Schema{Tools: map[string]*config.Tool{
-		"container": {
-			Name: "container",
-			Methods: []*config.MethodCandidate{{
-				Kind:   "container",
-				Config: map[string]any{"manager": "docker", "source": "example/tool", "tag": "latest"},
-			}},
-		},
 		"snap": {
 			Name: "snap",
 			Methods: []*config.MethodCandidate{{
@@ -1354,5 +1358,157 @@ func TestLoadRejectsMalformedGitPin(t *testing.T) {
 	}
 	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "40- or 64-hex") {
 		t.Fatalf("Load() error = %v, want malformed revision rejection", err)
+	}
+}
+
+func TestResolveAllPinsMutableContainerTag(t *testing.T) {
+	const digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	original := resolveContainerTagDigest
+	resolveContainerTagDigest = func(_ context.Context, source, tag string, credentials *containerregistry.Credentials) (string, error) {
+		if source != "registry.example.test/team/tool" || tag != "stable" {
+			t.Fatalf("resolve args = (%q, %q)", source, tag)
+		}
+		if credentials != nil {
+			t.Fatalf("unexpected credentials: %+v", credentials)
+		}
+		return digest, nil
+	}
+	t.Cleanup(func() { resolveContainerTagDigest = original })
+
+	method := &config.MethodCandidate{Kind: "container", Config: map[string]any{
+		"manager": "docker", "source": "registry.example.test/team/tool", "tag": "stable",
+	}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}}}}
+	lk, err := ResolveAll(context.Background(), schema, &run.FakeRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin := lk.Tools["tool/container/0"]
+	if pin.ContainerTag != "stable" || pin.ContainerDigest != digest {
+		t.Fatalf("pin = %+v", pin)
+	}
+}
+
+func TestResolveAllPinsImplicitLatestContainerTag(t *testing.T) {
+	const digest = "sha256:1123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	original := resolveContainerTagDigest
+	resolveContainerTagDigest = func(_ context.Context, _, tag string, _ *containerregistry.Credentials) (string, error) {
+		if tag != "latest" {
+			t.Fatalf("tag = %q, want latest", tag)
+		}
+		return digest, nil
+	}
+	t.Cleanup(func() { resolveContainerTagDigest = original })
+
+	method := &config.MethodCandidate{Kind: "container", Config: map[string]any{"manager": "podman", "source": "redis"}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"redis": {Name: "redis", Methods: []*config.MethodCandidate{method}}}}
+	lk, err := ResolveAll(context.Background(), schema, &run.FakeRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pin := lk.Tools["redis/container/0"]; pin.ContainerTag != "latest" || pin.ContainerDigest != digest {
+		t.Fatalf("pin = %+v", pin)
+	}
+}
+
+func TestApplyMutableContainerPinReusesDigestWithoutChangingTag(t *testing.T) {
+	const digest = "sha256:2123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	method := &config.MethodCandidate{Kind: "container", Config: map[string]any{"manager": "docker", "source": "example/tool", "tag": "edge"}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}}}}
+	Apply(schema, &Lock{Version: 1, Tools: map[string]ToolPin{
+		"tool/container/0": {ContainerTag: "edge", ContainerDigest: digest},
+	}})
+	if method.LockedDigest != digest {
+		t.Fatalf("LockedDigest = %q, want %q", method.LockedDigest, digest)
+	}
+	if got := method.Config["tag"]; got != "edge" {
+		t.Fatalf("tag = %#v, want original selector preserved", got)
+	}
+}
+
+func TestValidateFrozenRejectsMutableContainerTagDrift(t *testing.T) {
+	const digest = "sha256:3123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	method := &config.MethodCandidate{Kind: "container", Config: map[string]any{"manager": "docker", "source": "example/tool", "tag": "develop"}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}}}}
+	lk := frozenTestLock(schema, map[string]ToolPin{
+		"tool/container/0": {ContainerTag: "main", ContainerDigest: digest},
+	})
+	if err := ValidateFrozen(schema, lk); err == nil || !strings.Contains(err.Error(), "container tag changed") {
+		t.Fatalf("ValidateFrozen() error = %v, want tag drift", err)
+	}
+}
+
+func TestValidateFrozenRequiresMutableContainerDigestPin(t *testing.T) {
+	method := &config.MethodCandidate{Kind: "container", Config: map[string]any{"manager": "docker", "source": "example/tool"}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}}}}
+	if err := ValidateFrozen(schema, frozenTestLock(schema, map[string]ToolPin{})); err == nil || !strings.Contains(err.Error(), "missing resolved container digest pin") {
+		t.Fatalf("ValidateFrozen() error = %v, want missing digest pin", err)
+	}
+}
+
+func TestMergeClearsRemovedMutableContainerPin(t *testing.T) {
+	const digest = "sha256:4123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	existing := &Lock{Version: 1, Tools: map[string]ToolPin{
+		"tool/container/0": {ContainerTag: "latest", ContainerDigest: digest, Checksum: "sha256:abc"},
+	}}
+	fresh := &Lock{Version: 1, Tools: map[string]ToolPin{}, clearContainerDigest: map[string]struct{}{"tool/container/0": {}}}
+	merged := Merge(existing, fresh)
+	pin := merged.Tools["tool/container/0"]
+	if pin.ContainerTag != "" || pin.ContainerDigest != "" || pin.Checksum != "sha256:abc" {
+		t.Fatalf("merged pin = %+v, want only non-container fields retained", pin)
+	}
+}
+
+func TestLoadRejectsMalformedContainerPin(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "depengine.lock")
+	data := []byte("version = 1\n[tools.'tool/container/0']\ncontainer_tag = 'latest'\ncontainer_digest = 'sha256:nope'\n")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "container digest") {
+		t.Fatalf("Load() error = %v, want malformed container digest rejection", err)
+	}
+}
+
+func TestResolveAllContainerTagPassesEnvCredentialWithoutPersistingSecret(t *testing.T) {
+	const (
+		digest      = "sha256:5123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+		secretValue = "registry-secret-value"
+	)
+	t.Setenv("DEPENGINE_CONTAINER_TEST_PASSWORD", secretValue)
+	original := resolveContainerTagDigest
+	resolveContainerTagDigest = func(_ context.Context, source, tag string, credentials *containerregistry.Credentials) (string, error) {
+		if source != "registry.example.test/team/tool" || tag != "stable" {
+			t.Fatalf("resolve args = (%q, %q)", source, tag)
+		}
+		if credentials == nil || credentials.Username != "ci-user" || credentials.Secret != secretValue {
+			t.Fatalf("credentials = %#v", credentials)
+		}
+		return digest, nil
+	}
+	t.Cleanup(func() { resolveContainerTagDigest = original })
+
+	method := &config.MethodCandidate{
+		Kind: "container",
+		Config: map[string]any{
+			"manager": "docker", "source": "registry.example.test/team/tool", "tag": "stable", "auth_username": "ci-user",
+		},
+		SecretRef: &config.SecretReference{Provider: "env", Name: "DEPENGINE_CONTAINER_TEST_PASSWORD"},
+	}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}}}}
+	lk, err := ResolveAll(context.Background(), schema, &run.FakeRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin := lk.Tools["tool/container/0"]
+	if pin.ContainerTag != "stable" || pin.ContainerDigest != digest {
+		t.Fatalf("pin = %+v", pin)
+	}
+	encoded, err := toml.Marshal(lk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), secretValue) {
+		t.Fatal("lock serialization leaked registry secret")
 	}
 }

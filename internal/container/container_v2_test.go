@@ -313,3 +313,82 @@ func TestContainerAdapterV2InstallResolvedUsesConcreteDigestForTag(t *testing.T)
 		t.Fatalf("InstallResolved ran %v %v, want podman %v", last.Name, last.Args, want)
 	}
 }
+
+func TestContainerAdapterV2ResolvePlanProjectsLockedDigestForTag(t *testing.T) {
+	ctx := context.Background()
+	const digest = "sha256:5123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	adapter := NewContainerAdapter()
+	tool := tool("redis")
+	mc := containerMethod(map[string]any{"source": "registry.example.test/team/redis", "tag": "7"})
+	mc.LockedDigest = digest
+	intent, err := planner.BuildCandidateIntent(tool, mc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := adapter.ResolvePlan(ctx, &run.FakeRunner{}, tool, mc, &intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.ValidateResolution(intent, *resolved); err != nil {
+		t.Fatalf("ValidateResolution() error = %v", err)
+	}
+	if resolved.Identity.Digest != digest {
+		t.Fatalf("resolved digest = %q, want %q", resolved.Identity.Digest, digest)
+	}
+	if resolved.Identity.RequestedVersion == nil || resolved.Identity.RequestedVersion.Mode != plan.VersionContainerTag || resolved.Identity.RequestedVersion.Value != "7" {
+		t.Fatalf("requested version = %+v, want original tag intent", resolved.Identity.RequestedVersion)
+	}
+}
+
+func TestContainerAdapterV2ObserveLockedTagUsesDigestIdentity(t *testing.T) {
+	ctx := context.Background()
+	const digest = "sha256:6123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	mc := containerMethod(map[string]any{"source": "ghcr.io/owner/tool", "tag": "stable"})
+	mc.LockedDigest = digest
+	probe := &nameAwareRunner{exitByName: map[string]int{"podman": 0}}
+
+	observation, err := NewContainerAdapter().Observe(ctx, probe, tool("tool"), mc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Source: "ghcr.io/owner/tool", Digest: digest},
+		KnownFields: []plan.IdentityField{plan.FieldSource, plan.FieldDigest},
+	}
+	if !reflect.DeepEqual(observation, want) {
+		t.Fatalf("Observe() = %#v, want %#v", observation, want)
+	}
+	if got := probe.calls[len(probe.calls)-1].Args; !equalArgs(got, []string{"image", "inspect", "ghcr.io/owner/tool@" + digest}) {
+		t.Fatalf("Observe probe argv = %v", got)
+	}
+}
+
+func TestContainerAdapterV2InstallResolvedUsesLockedDigestWithoutTagMutation(t *testing.T) {
+	ctx := context.Background()
+	const digest = "sha256:7123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	adapter := NewContainerAdapter()
+	tool := tool("redis")
+	mc := containerMethod(map[string]any{"source": "registry.example.test/team/redis", "tag": "7"})
+	mc.LockedDigest = digest
+	intent, err := planner.BuildCandidateIntent(tool, mc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := adapter.ResolvePlan(ctx, &run.FakeRunner{}, tool, mc, &intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := &nameAwareRunner{exitByName: map[string]int{"podman": 0}}
+	if err := adapter.InstallResolved(ctx, runner, tool, mc, resolved); err != nil {
+		t.Fatal(err)
+	}
+	last := runner.calls[len(runner.calls)-1]
+	want := []string{"pull", "registry.example.test/team/redis@" + digest}
+	if last.Name != "podman" || !equalArgs(last.Args, want) {
+		t.Fatalf("InstallResolved ran %v %v, want podman %v", last.Name, last.Args, want)
+	}
+	if got := mc.Config["tag"]; got != "7" {
+		t.Fatalf("tag mutated to %#v", got)
+	}
+}
