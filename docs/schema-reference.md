@@ -476,8 +476,8 @@ tag     = "latest"
 | `tag` | no | Defaults to `"latest"`. |
 | `digest` | no | Immutable `sha256:<64 hex>` identity; mutually exclusive with `tag`. |
 | `platform` | no | OCI platform selector `os/arch[/variant]`, e.g. `linux/amd64` or `linux/arm64/v8`. Applied to pull and verified from image metadata. |
-| `auth_username` | with `secret_ref` | Registry account name used for this pull. Colons and control characters are invalid. |
-| `secret_ref` | with `auth_username` | Env-backed registry password or token reference. The value is resolved when this candidate reaches a pull. |
+| `auth_username` | with `secret_ref` | Registry account name used for authenticated tag resolution and pull. Colons and control characters are invalid. |
+| `secret_ref` | with `auth_username` | Env-backed registry password or token reference. The value is resolved only for registry tag resolution and the reached pull; secret material is not written to the lock. |
 
 For a private registry, declare both authentication fields:
 
@@ -496,13 +496,19 @@ file. No `login` command is run. Docker maps an unqualified `source` to the
 Docker Hub auth entry. An authenticated Podman pull requires a registry prefix
 such as `docker.io/team/tool`, because Podman may resolve short names through
 local registry aliases. An explicit reference fails if the environment
-variable is missing or empty.
+variable is missing or empty. For a mutable `tag`, first install and
+`depengine update` also use the credential while resolving the tag through the
+registry API; authenticated token exchange is refused over plaintext HTTP
+except for loopback test/development registries.
 
 `source` is the repository only: tags and digests belong to separate resolved identity fields and are rejected when embedded in `source`. Registry ports such as `registry.example:5000/team/tool` remain valid. Invalid tag syntax is rejected before invoking Docker/Podman.
 
-`Check` looks at `<manager> images -q <source>:<tag>` — non-empty output
-means the image is already pulled. `Remove` runs `<manager> rmi
-<source>:<tag>`.
+A mutable `tag` (including implicit `latest`) is recorded in `depengine.lock`
+with its resolved OCI manifest digest. Once the lock is applied, checks, pulls,
+and removal use `<source>@<digest>` while the original tag remains the requested
+intent used for frozen drift detection. An explicit schema `digest` needs no
+additional lock pin. Without a lock pin, a tag check falls back to
+`<manager> images -q <source>:<tag>`.
 
 ---
 

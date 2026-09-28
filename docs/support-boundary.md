@@ -58,7 +58,7 @@ Legacy lock v1 covers each selector class as follows:
 | Git `branch` or `tag` | Yes | Lock v1 stores the requested selector plus its concrete 40/64-hex commit. Annotated tags use the peeled commit; install reuses the locked commit without `ls-remote`, and frozen mode rejects a missing pin or selector drift. |
 | `cargo` git source (`branch` or `tag`) | Yes | The requested branch/tag remains in schema intent, while lock v1 stores the concrete commit resolved through Git. Install uses `cargo install --git ... --rev <commit>`; frozen mode rejects a missing pin or selector drift. |
 | `cargo` git source (`rev`) | No extra pin | `rev` is already an explicit immutable selector in schema; lock v1 adds no second copy. |
-| Container `tag` | No | The lock records nothing about the pulled image. |
+| Container `tag` (including implicit `latest`) | Yes | Lock v1 stores the requested tag plus the immutable OCI manifest digest resolved through the registry API. Install, status probes, and removal reuse the digest; frozen mode rejects a missing pin or tag drift. |
 | Snap channel or track | No | The lock records no resolved snap revision. |
 | Flatpak `branch` | No | The lock records no resolved commit on that branch. |
 | `sdkman` or `asdf` version | No | The lock records no resolved version. |
@@ -74,8 +74,9 @@ was added to the schema after the lock was written; when the stored method
 kind/label ordering no longer matches the schema; or when a required supported
 pin is missing. Required pins currently include repo-backed latest GitHub
 releases, `{latest}` URL templates, implicit local-artifact digests, resolved
-`*:auto` checksums, and concrete commits for direct-Git or Cargo-Git branch/tag
-selectors. Candidate host sources additionally require their
+`*:auto` checksums, concrete commits for direct-Git or Cargo-Git branch/tag
+selectors, and immutable digests for mutable container tags. Candidate host
+sources additionally require their
 stored source-identity hash to be present and to match the schema. Frozen mode
 does not perform checksum TOFU to
 create a missing auto-checksum pin. Remote `*:auto` checksums are materialized
@@ -104,10 +105,10 @@ supported pins missing from a readable older lock before planning, then persist
 that same resolved value after execution.
 
 This check is intentionally narrower than universal immutable resolution.
-Container tags, package-manager constraints, channels, and other selectors not
-represented by legacy lock v1 are not made immutable by `--frozen-lockfile`.
-Direct Git and Cargo Git branch/tag selectors are the exception: their concrete
-commits are persisted and consumed by lock v1. The v1 method identity hash also covers method kind,
+Package-manager constraints, channels, and other selectors not represented by
+legacy lock v1 are not made immutable by `--frozen-lockfile`. Direct Git and
+Cargo Git branch/tag selectors persist concrete commits, and container tags
+persist concrete OCI manifest digests. The v1 method identity hash also covers method kind,
 label, and ordering rather than every requested field inside a candidate;
 candidate host-source declarations are covered separately by source hashes.
 After changing resolver details that keep the same kind/label, run

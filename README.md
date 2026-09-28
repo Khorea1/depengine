@@ -148,9 +148,10 @@ still resolve through their own registries at install time. Within the legacy
 lock v1 subset, `--frozen-lockfile` fails closed when the lock is missing,
 unreadable, or written for an unsupported lock version; when a tool's method
 identity is missing from the lock or method kind/label ordering is detectably
-stale; or when a required release/checksum pin is absent. This includes
-resolved `*:auto` checksums; frozen mode will not perform checksum TOFU to fill
-a missing pin.
+stale; or when a required release/checksum/immutable-selector pin is absent.
+This includes resolved `*:auto` checksums, Git/Cargo branch or tag commits, and
+container-tag OCI digests; frozen mode will not perform checksum TOFU or remote
+selector resolution to fill a missing pin.
 
 ```sh
 depengine update
