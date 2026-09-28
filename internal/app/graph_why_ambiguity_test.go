@@ -79,3 +79,25 @@ func TestFindStateMethodCandidateAmbiguousListsCandidates(t *testing.T) {
 		t.Fatalf("error = %q, want candidate ordinals", msg)
 	}
 }
+
+
+func TestAmbiguousWhyWarningEmptyForUniqueLabelsWithinKind(t *testing.T) {
+	attempts := []exec.MethodAttempt{
+		{Kind: "http", Label: "primary", Candidate: 0, CandidateKnown: true},
+		{Kind: "http", Label: "mirror", Candidate: 1, CandidateKnown: true},
+	}
+	if warning := ambiguousWhyWarning("demo", attempts); warning != "" {
+		t.Fatalf("warning = %q, want empty for uniquely labeled candidates", warning)
+	}
+}
+
+func TestAmbiguousWhyWarningFlagsDuplicateLabels(t *testing.T) {
+	attempts := []exec.MethodAttempt{
+		{Kind: "http", Label: "mirror", Candidate: 0, CandidateKnown: true},
+		{Kind: "http", Label: "mirror", Candidate: 1, CandidateKnown: true},
+	}
+	warning := ambiguousWhyWarning("demo", attempts)
+	if !strings.Contains(warning, "duplicate label") || !strings.Contains(warning, `"mirror"`) {
+		t.Fatalf("warning = %q, want duplicate-label guidance", warning)
+	}
+}

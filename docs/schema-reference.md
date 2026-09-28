@@ -1114,9 +1114,9 @@ of the two layers.
 Run `depengine why <tool>` to see candidate status together with normalized
 non-secret identity fields (for example version/revision, registry/source,
 scope, environment/prefix, and architecture). Candidates that share a display
-name are suffixed with their zero-based ordinal (`http #0`, `http #1`), and
-`why` warns when several candidates share one method kind: kind-only install
-state cannot select between them, so upgrade, remove, and lock resolution fail
-closed until each candidate carries a distinct label. Add `--fields` to see exactly
+name are suffixed with their zero-based ordinal (`http #0`, `http #1`). `why`
+warns only when same-kind candidates still lack durable unique identity: an
+unlabeled candidate or a duplicated label. Multiple same-kind candidates with
+unique labels are already unambiguous for upgrade, remove, and lock state. Add `--fields` to see exactly
 which layer contributed each field for a given tool; `--json` exposes identity
 metadata under `intent` plus `candidate`/`candidate_known` ordinals.

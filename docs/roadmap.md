@@ -129,8 +129,9 @@ Work on the current execution model comes before adding more installer types.
   instead of hardcoded `extract_to`/`link_dir` paths (fonts and
   installer/native entries keep their explicit forms); `depengine why` shows
   zero-based candidate ordinals in text and JSON, disambiguates colliding
-  display names, warns on same-kind duplicates, and tracked-candidate
-  ambiguity errors name every colliding `#ordinal "label"` candidate.
+  display names, warns only when same-kind candidates are unlabeled or reuse a
+  label, and tracked-candidate ambiguity errors name every colliding
+  `#ordinal "label"` candidate.
 
 ## P3: verification and v1 freeze
 

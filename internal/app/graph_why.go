@@ -227,34 +227,48 @@ func ambiguousWhyWarning(toolName string, attempts []exec.MethodAttempt) string 
 			continue
 		}
 		labels := make([]string, 0, len(group))
+		labelCounts := make(map[string]int)
 		unlabeled := 0
 		for _, a := range group {
 			if a.Label != "" {
+				labelCounts[a.Label]++
 				if a.CandidateKnown {
 					labels = append(labels, fmt.Sprintf("#%d %q", a.Candidate, a.Label))
 				} else {
 					labels = append(labels, fmt.Sprintf("%q", a.Label))
 				}
+				continue
+			}
+			unlabeled++
+			if a.CandidateKnown {
+				labels = append(labels, fmt.Sprintf("#%d %q", a.Candidate, a.Kind))
 			} else {
-				unlabeled++
-				if a.CandidateKnown {
-					labels = append(labels, fmt.Sprintf("#%d %q", a.Candidate, a.Kind))
-				} else {
-					labels = append(labels, fmt.Sprintf("%q", a.Kind))
-				}
+				labels = append(labels, fmt.Sprintf("%q", a.Kind))
 			}
 		}
+		var duplicates []string
+		for label, count := range labelCounts {
+			if count > 1 {
+				duplicates = append(duplicates, fmt.Sprintf("%q", label))
+			}
+		}
+		if unlabeled == 0 && len(duplicates) == 0 {
+			continue
+		}
 		sort.Strings(labels)
-		if unlabeled > 0 {
-			warnings = append(warnings, fmt.Sprintf("tool %q has %d %q candidates (%s); label the unlabeled candidate(s) (kind = %q) or upgrade/remove/lock resolution stays ambiguous for kind-only state", toolName, len(group), kind, strings.Join(labels, ", "), kind))
-		} else {
-			warnings = append(warnings, fmt.Sprintf("tool %q has %d %q candidates (%s); kind-only state cannot select one", toolName, len(group), kind, strings.Join(labels, ", ")))
+		sort.Strings(duplicates)
+		switch {
+		case unlabeled > 0 && len(duplicates) > 0:
+			warnings = append(warnings, fmt.Sprintf("tool %q has ambiguous %q candidate identity (%s); label the unlabeled candidate(s) and make duplicate label(s) %s unique", toolName, kind, strings.Join(labels, ", "), strings.Join(duplicates, ", ")))
+		case unlabeled > 0:
+			warnings = append(warnings, fmt.Sprintf("tool %q has ambiguous %q candidate identity (%s); label the unlabeled candidate(s) so upgrade/remove/lock can persist an exact candidate", toolName, kind, strings.Join(labels, ", ")))
+		default:
+			warnings = append(warnings, fmt.Sprintf("tool %q has ambiguous %q candidate identity (%s); duplicate label(s) %s must be unique", toolName, kind, strings.Join(labels, ", "), strings.Join(duplicates, ", ")))
 		}
 	}
 	sort.Strings(warnings)
 	return strings.Join(warnings, "; ")
 }
-
 func formatWhyIntent(intent map[string]string) string {
 	if len(intent) == 0 {
 		return ""
