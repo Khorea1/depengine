@@ -104,7 +104,11 @@ func TestSplitRepositoryDockerHubDefaults(t *testing.T) {
 		{"owner/tool", "registry-1.docker.io", "owner/tool"},
 		{"ghcr.io/owner/tool", "ghcr.io", "owner/tool"},
 		{"docker.io/library/redis", "registry-1.docker.io", "library/redis"},
+		{"docker.io/redis", "registry-1.docker.io", "library/redis"},
 		{"index.docker.io/library/redis", "registry-1.docker.io", "library/redis"},
+		{"index.docker.io/redis", "registry-1.docker.io", "library/redis"},
+		{"registry-1.docker.io/library/redis", "registry-1.docker.io", "library/redis"},
+		{"registry-1.docker.io/redis", "registry-1.docker.io", "library/redis"},
 		{"localhost:5000/tool", "localhost:5000", "tool"},
 	} {
 		registry, repository := splitRepository(tc.source)

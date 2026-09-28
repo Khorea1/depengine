@@ -101,8 +101,13 @@ func splitRepository(source string) (registry, repository string) {
 	first, rest, hasSlash := strings.Cut(source, "/")
 	if hasSlash && (strings.ContainsAny(first, ".:") || strings.EqualFold(first, "localhost")) {
 		registry := first
-		if strings.EqualFold(registry, "docker.io") || strings.EqualFold(registry, "index.docker.io") {
+		if strings.EqualFold(registry, "docker.io") ||
+			strings.EqualFold(registry, "index.docker.io") ||
+			strings.EqualFold(registry, "registry-1.docker.io") {
 			registry = "registry-1.docker.io"
+			if !strings.Contains(rest, "/") {
+				rest = "library/" + rest
+			}
 		}
 		return registry, rest
 	}
