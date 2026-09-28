@@ -325,3 +325,56 @@ func TestManagerRemovePPARefreshesIndex(t *testing.T) {
 		t.Fatalf("refresh call=%v", refresh)
 	}
 }
+
+func TestBrewTapRevisionVerification(t *testing.T) {
+	const revision = "0123456789012345678901234567890123456789"
+	for _, tc := range []struct {
+		name    string
+		commit  string
+		wantErr bool
+	}{
+		{name: "match", commit: revision},
+		{name: "mismatch", commit: "1123456789012345678901234567890123456789", wantErr: true},
+		{name: "malformed", commit: "not-a-commit", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &scriptedRunner{outputs: []run.Result{
+				{Stdout: []byte("vendor/tools\n")},
+				{Stdout: []byte(`[{"name":"vendor/tools","remote":"https://example.test/vendor/tools.git"}]`)},
+				{Stdout: []byte("/opt/homebrew/Library/Taps/vendor/homebrew-tools\n")},
+				{Stdout: []byte(tc.commit + "\n")},
+			}}
+			source := config.Source{Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git", Revision: revision}
+			present, err := NewManager(runner, false).Present(context.Background(), source)
+			if (err != nil) != tc.wantErr || present != !tc.wantErr {
+				t.Fatalf("Present() = (%t, %v), want present=%t error=%t", present, err, !tc.wantErr, tc.wantErr)
+			}
+			if len(runner.calls) != 4 {
+				t.Fatalf("calls = %#v, want tap list, origin, repo path, and commit probes", runner.calls)
+			}
+			if got := runner.calls[2]; got.Name != "brew" || !reflect.DeepEqual(got.Args, []string{"--repo", source.Name}) {
+				t.Fatalf("repo command = %#v", got)
+			}
+			if got := runner.calls[3]; got.Name != "git" || !reflect.DeepEqual(got.Args, []string{"-C", "/opt/homebrew/Library/Taps/vendor/homebrew-tools", "rev-parse", "--verify", "HEAD^{commit}"}) {
+				t.Fatalf("revision command = %#v", got)
+			}
+		})
+	}
+}
+
+func TestBrewTapRevisionVerifiesAfterAdd(t *testing.T) {
+	const revision = "0123456789012345678901234567890123456789"
+	runner := &scriptedRunner{outputs: []run.Result{
+		{Stdout: []byte("\n")},
+		{},
+		{Stdout: []byte("/opt/homebrew/Library/Taps/vendor/homebrew-tools\n")},
+		{Stdout: []byte(revision + "\n")},
+	}}
+	source := config.Source{Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git", Revision: revision}
+	if _, err := NewManager(runner, false).Ensure(context.Background(), []config.Source{source}); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.calls) != 4 || runner.calls[1].Name != "brew" || !reflect.DeepEqual(runner.calls[1].Args, []string{"tap", source.Name, source.URL}) {
+		t.Fatalf("calls = %#v, want missing probe, add, path, and revision verification", runner.calls)
+	}
+}

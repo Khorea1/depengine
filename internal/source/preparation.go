@@ -68,18 +68,19 @@ func SourceFromPreparationMutation(mutation plan.PreparationMutation) (config.So
 	if err != nil {
 		return config.Source{}, fmt.Errorf("parse source preparation descriptor: %w", err)
 	}
-	if len(values) < 2 || len(values) > 3 || len(values["kind"]) != 1 || len(values["name"]) != 1 || len(values["url"]) > 1 {
+	if len(values) < 2 || len(values) > 4 || len(values["kind"]) != 1 || len(values["name"]) != 1 || len(values["url"]) > 1 || len(values["revision"]) > 1 {
 		return config.Source{}, fmt.Errorf("invalid source preparation descriptor %q", description)
 	}
 	for key := range values {
-		if key != "kind" && key != "name" && key != "url" {
+		if key != "kind" && key != "name" && key != "url" && key != "revision" {
 			return config.Source{}, fmt.Errorf("invalid source preparation descriptor %q", description)
 		}
 	}
 	source := config.Source{
-		Kind: values.Get("kind"),
-		Name: values.Get("name"),
-		URL:  values.Get("url"),
+		Kind:     values.Get("kind"),
+		Name:     values.Get("name"),
+		URL:      values.Get("url"),
+		Revision: values.Get("revision"),
 	}
 	identity, err := ResourceIdentity(source)
 	if err != nil {
@@ -110,6 +111,9 @@ func preparationSourceDescription(source config.Source) (string, error) {
 	values.Set("name", strings.ToLower(strings.TrimSpace(source.Name)))
 	if source.URL != "" {
 		values.Set("url", source.URL)
+	}
+	if source.Revision != "" {
+		values.Set("revision", source.Revision)
 	}
 	return preparationSourcePrefix + values.Encode(), nil
 }

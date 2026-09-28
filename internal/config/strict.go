@@ -451,7 +451,7 @@ func validateSources(raw any, path string, errs *[]string) {
 			continue
 		}
 		for _, key := range sortedMapKeys(m) {
-			if key != "kind" && key != "name" && key != "url" && key != "secret_ref" {
+			if key != "kind" && key != "name" && key != "url" && key != "revision" && key != "secret_ref" {
 				*errs = append(*errs, p+"."+key+": unknown field")
 			}
 		}
@@ -469,6 +469,18 @@ func validateSources(raw any, path string, errs *[]string) {
 				*errs = append(*errs, p+".url: must be credential-free and must not contain surrounding whitespace, NUL, query, or fragment")
 			}
 		}
+		if rawRevision, exists := m["revision"]; exists {
+			validateNonEmptyString(rawRevision, p+".revision", errs)
+			if revision, ok := rawRevision.(string); ok && !validGitRevision(revision) {
+				*errs = append(*errs, p+".revision: must be a full lowercase 40- or 64-character hexadecimal commit ID")
+			}
+			if kind != "brew-tap" {
+				*errs = append(*errs, p+".revision: supported only for brew-tap sources")
+			}
+			if rawURL, ok := m["url"].(string); !ok || rawURL == "" {
+				*errs = append(*errs, p+".url: required when revision is set")
+			}
+		}
 		if rawRef, exists := m["secret_ref"]; exists {
 			validateSecretReference(rawRef, p+".secret_ref", errs)
 			switch kind {
@@ -484,6 +496,18 @@ func validateSources(raw any, path string, errs *[]string) {
 			}
 		}
 	}
+}
+
+func validGitRevision(value string) bool {
+	if len(value) != 40 && len(value) != 64 {
+		return false
+	}
+	for _, char := range value {
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func validPersistentSourceURL(raw string) bool {

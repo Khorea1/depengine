@@ -42,6 +42,7 @@ type SourceReference struct {
 	Kind      string           `json:"kind,omitempty"`
 	Name      string           `json:"name,omitempty"`
 	URL       string           `json:"url,omitempty"`
+	Revision  string           `json:"revision,omitempty"`
 	Owned     bool             `json:"owned,omitempty"`
 	Trust     *SourceTrust     `json:"trust,omitempty"`
 	SecretRef *SecretReference `json:"secret_ref,omitempty"`
@@ -73,6 +74,19 @@ func (s SourceReference) Validate() error {
 		}
 		if err := validateSourceURL(s.URL); err != nil {
 			return fmt.Errorf("source URL: %w", err)
+		}
+	}
+	if s.Revision != "" {
+		if s.Role != SourceHostConfiguration || s.Kind != "brew-tap" || s.URL == "" {
+			return errors.New("source revision is supported only for brew-tap host sources with an explicit URL")
+		}
+		if len(s.Revision) != 40 && len(s.Revision) != 64 {
+			return errors.New("source revision must be a full lowercase 40- or 64-character hexadecimal commit ID")
+		}
+		for _, char := range s.Revision {
+			if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+				return errors.New("source revision must be a full lowercase 40- or 64-character hexadecimal commit ID")
+			}
 		}
 	}
 	if s.SecretRef != nil {

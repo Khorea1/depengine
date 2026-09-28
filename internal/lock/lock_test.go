@@ -1512,3 +1512,14 @@ func TestResolveAllContainerTagPassesEnvCredentialWithoutPersistingSecret(t *tes
 		t.Fatal("lock serialization leaked registry secret")
 	}
 }
+
+func TestValidateFrozenRejectsBrewTapRevisionDrift(t *testing.T) {
+	const revision = "0123456789abcdef0123456789abcdef01234567"
+	method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}, Sources: []config.Source{{Kind: "brew-tap", Name: "corp/tools", URL: "https://example.test/tools.git", Revision: revision}}}
+	s := &config.Schema{Tools: map[string]*config.Tool{"demo": {Name: "demo", Methods: []*config.MethodCandidate{method}}}}
+	l := frozenTestLock(s, nil)
+	method.Sources[0].Revision = "abcdef0123456789abcdef0123456789abcdef01"
+	if err := ValidateFrozen(s, l); err == nil || !strings.Contains(err.Error(), "package sources changed") {
+		t.Fatalf("ValidateFrozen() error = %v, want package sources changed", err)
+	}
+}

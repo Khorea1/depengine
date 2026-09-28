@@ -18,9 +18,9 @@
 //   - mutable direct-Git and cargo --git branch/tag selectors, resolved to a
 //     concrete commit;
 //   - mutable container tags, resolved to immutable registry digests; and
-//   - candidate-scoped host package-source declarations (kind/name/url) as
-//     identity hashes, so frozen installs reject source drift even though the
-//     source repository's mutable contents are not pinned.
+//   - candidate-scoped host package-source declarations (kind/name/url and any
+//     declared Brew tap revision) as identity hashes. Source contents remain
+//     unpinned unless a Brew revision is separately declared and preflighted.
 //
 // It does NOT pin native/ecosystem package versions or channels. Direct Git,
 // cargo --git branches/tags, and container tags are the mutable-selector
@@ -229,8 +229,8 @@ func computeMethodsHash(methods []*config.MethodCandidate) string {
 
 // computeSourceHash returns the requested host-source identity for one method
 // candidate. Secret references are deliberately excluded: authentication is
-// external to the lock contract, while kind/name/url determine which host
-// repository the candidate expects to consume.
+// external to the lock contract, while kind/name/url and declared revision
+// determine the host repository identity expected by the candidate.
 func computeSourceHash(method *config.MethodCandidate) string {
 	if method == nil || len(method.Sources) == 0 {
 		return ""
@@ -243,6 +243,11 @@ func computeSourceHash(method *config.MethodCandidate) string {
 		h.Write([]byte{0})
 		h.Write([]byte(source.URL))
 		h.Write([]byte{0})
+		if source.Revision != "" {
+			h.Write([]byte("revision="))
+			h.Write([]byte(source.Revision))
+			h.Write([]byte{0})
+		}
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

@@ -129,3 +129,24 @@ func TestMissingAndPresentAreObservational(t *testing.T) {
 		}
 	}
 }
+
+func TestPreparationPlanPreservesSourceRevisionForRecovery(t *testing.T) {
+	configured := config.Source{
+		Kind:     "brew-tap",
+		Name:     "vendor/tools",
+		URL:      "https://example.test/vendor/tools.git",
+		Revision: "0123456789abcdef0123456789abcdef01234567",
+	}
+	preparation, err := PreparationPlan([]config.Source{configured})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recovered, err := SourceFromPreparationMutation(preparation.Prepare[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(recovered, configured) {
+		t.Fatalf("recovered source = %+v, want %+v", recovered, configured)
+	}
+}

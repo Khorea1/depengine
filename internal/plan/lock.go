@@ -55,12 +55,13 @@ type LockedArtifact struct {
 // resolution. Secret references are deliberately omitted: authentication
 // remains external to committed lockfiles.
 type LockedSource struct {
-	Role  SourceRole   `json:"role"`
-	Kind  string       `json:"kind,omitempty"`
-	Name  string       `json:"name,omitempty"`
-	URL   string       `json:"url,omitempty"`
-	Owned bool         `json:"owned,omitempty"`
-	Trust *SourceTrust `json:"trust,omitempty"`
+	Role     SourceRole   `json:"role"`
+	Kind     string       `json:"kind,omitempty"`
+	Name     string       `json:"name,omitempty"`
+	URL      string       `json:"url,omitempty"`
+	Revision string       `json:"revision,omitempty"`
+	Owned    bool         `json:"owned,omitempty"`
+	Trust    *SourceTrust `json:"trust,omitempty"`
 }
 
 // LockIdentity is the immutable-resolution projection of ResolvedIdentity.
@@ -170,7 +171,6 @@ func (a LockedArtifact) validate() error {
 	return nil
 }
 
-
 func validateLockedChecksum(value string) error {
 	if value == "" {
 		return nil
@@ -229,12 +229,13 @@ func validDigestAlgorithm(value string) bool {
 
 func (s LockedSource) validate() error {
 	source := SourceReference{
-		Role:  s.Role,
-		Kind:  s.Kind,
-		Name:  s.Name,
-		URL:   s.URL,
-		Owned: s.Owned,
-		Trust: s.Trust,
+		Role:     s.Role,
+		Kind:     s.Kind,
+		Name:     s.Name,
+		URL:      s.URL,
+		Revision: s.Revision,
+		Owned:    s.Owned,
+		Trust:    s.Trust,
 	}
 	if err := source.Validate(); err != nil {
 		return err
@@ -428,11 +429,12 @@ func ProjectLock(p ResolvedInstallPlan) (LockProjection, error) {
 	}
 	for _, source := range canonicalSources {
 		locked := LockedSource{
-			Role:  source.Role,
-			Kind:  strings.ToLower(source.Kind),
-			Name:  strings.ToLower(source.Name),
-			URL:   sanitizeLockReference(source.URL),
-			Owned: source.Owned,
+			Role:     source.Role,
+			Kind:     strings.ToLower(source.Kind),
+			Name:     strings.ToLower(source.Name),
+			URL:      sanitizeLockReference(source.URL),
+			Revision: source.Revision,
+			Owned:    source.Owned,
 		}
 		if source.Trust != nil {
 			trust := *source.Trust
@@ -572,7 +574,7 @@ func lockedSourcesEqual(expected, actual []LockedSource) bool {
 	}
 	for i := range expected {
 		a, b := expected[i], actual[i]
-		if a.Role != b.Role || !strings.EqualFold(a.Kind, b.Kind) || !strings.EqualFold(a.Name, b.Name) || sanitizeLockReference(a.URL) != sanitizeLockReference(b.URL) || a.Owned != b.Owned || !sourceTrustEqual(a.Trust, b.Trust) {
+		if a.Role != b.Role || !strings.EqualFold(a.Kind, b.Kind) || !strings.EqualFold(a.Name, b.Name) || sanitizeLockReference(a.URL) != sanitizeLockReference(b.URL) || a.Revision != b.Revision || a.Owned != b.Owned || !sourceTrustEqual(a.Trust, b.Trust) {
 			return false
 		}
 	}
@@ -1032,7 +1034,7 @@ func (d LockDocument) PinnedPlanFor(intent ResolvedInstallPlan) (ResolvedInstall
 	}
 	out.Sources = make([]SourceReference, len(entry.Identity.Sources))
 	for i, source := range entry.Identity.Sources {
-		out.Sources[i] = SourceReference{Role: source.Role, Kind: source.Kind, Name: source.Name, URL: source.URL, Owned: source.Owned}
+		out.Sources[i] = SourceReference{Role: source.Role, Kind: source.Kind, Name: source.Name, URL: source.URL, Revision: source.Revision, Owned: source.Owned}
 		if source.Trust != nil {
 			trust := *source.Trust
 			out.Sources[i].Trust = &trust
