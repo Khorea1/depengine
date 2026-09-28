@@ -173,6 +173,7 @@ type Artifact struct {
 	ChecksumURL        string       `json:"checksum_url,omitempty"`
 	ChecksumFileFormat string       `json:"checksum_file_format,omitempty"`
 	SignatureURL       string       `json:"signature_url,omitempty"`
+	SignaturePath      string       `json:"signature_path,omitempty"`
 	SigningKey         string       `json:"signing_key,omitempty"`
 }
 

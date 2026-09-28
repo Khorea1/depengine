@@ -228,3 +228,25 @@ func TestAdapterV2ObserveUnknownWhenSourceUnresolvable(t *testing.T) {
 		t.Fatal("Observe() with nil tool succeeded, want error")
 	}
 }
+
+
+func TestAdapterV2CheckAvailableModelsGPGRequirement(t *testing.T) {
+	adapter := localartifactadapter.NewAdapter()
+	ctx := context.Background()
+	plain := localMethod(t.TempDir(), t.TempDir())
+	missing := &run.FakeRunner{LookPaths: map[string]bool{"gpg": false}}
+	if !adapter.CheckAvailable(ctx, missing, &config.Tool{Name: "demo"}, plain) {
+		t.Fatal("plain local candidate should not require gpg")
+	}
+
+	signed := localMethod(t.TempDir(), t.TempDir())
+	signed.Config["signature_path"] = "vendor/demo.sig"
+	signed.Config["signing_key"] = "file:///tmp/key.asc"
+	if adapter.CheckAvailable(ctx, missing, &config.Tool{Name: "demo"}, signed) {
+		t.Fatal("signed local candidate reported available without gpg")
+	}
+	present := &run.FakeRunner{LookPaths: map[string]bool{"gpg": true}}
+	if !adapter.CheckAvailable(ctx, present, &config.Tool{Name: "demo"}, signed) {
+		t.Fatal("signed local candidate should be available when gpg is present")
+	}
+}

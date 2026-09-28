@@ -1,0 +1,4 @@
+# Adversarial: malformed TOML must fail closed at manifest load.
+schema_version = 1
+[packages
+this is not valid TOML [[[

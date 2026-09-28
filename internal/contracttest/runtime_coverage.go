@@ -42,6 +42,8 @@ func init() {
 		"local.local_path":              {Consumer: "internal/localartifactadapter/adapter_v2_test.go", Rationale: "project-relative source determines installed bytes"},
 		"local.checksum":                {Consumer: "internal/localartifactadapter/adapter_v2_test.go", Rationale: "checksum gates materialization of local bytes"},
 		"local.install_dir":             {Consumer: "internal/localartifactadapter/adapter_test.go", Rationale: "install directory selects the owned destination"},
+		"local.signature_path":          {Consumer: "internal/localartifactadapter/signature_test.go", Rationale: "detached signature gates materialization of vendored bytes"},
+		"local.signing_key":             {Consumer: "internal/localartifactadapter/signature_test.go", Rationale: "signing key identity gates detached-signature verification"},
 		"container.manager":             {Consumer: "internal/container/adapter_test.go", Rationale: "manager selects the runtime command and image store"},
 		"container.source":              {Consumer: "internal/container/adapter_test.go", Rationale: "source participates in the pulled image reference"},
 		"container.tag":                 {Consumer: "internal/container/adapter_test.go", Rationale: "tag participates in the pulled image reference"},
@@ -80,7 +82,7 @@ func init() {
 	registerRuntimeFields(PhaseResolveRuntime, "appimage", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "android", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "msi", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
-	registerRuntimeFields(PhaseResolveRuntime, "local", "internal/localartifactadapter/adapter_v2_test.go", "project-relative source and checksum resolve to local content identity", "local_path", "checksum")
+	registerRuntimeFields(PhaseResolveRuntime, "local", "internal/localartifactadapter/adapter_v2_test.go", "project-relative source, checksum, and detached-signature policy resolve to local artifact identity", "local_path", "checksum", "signature_path", "signing_key")
 
 	common := []string{"checksum", "checksum_url", "checksum_file_format", "signature_url", "signing_key"}
 	registerRuntimeFields(PhaseExecute, "http", "internal/httpdownload/resolved_install_test.go", "resolved metadata is consumed by the shared HTTP installer", append(common, "url", "repo", "asset", "extract_to", "binary", "entrypoints", "link_dir", "sudo_required", "strip_components", "scope")...)

@@ -1,0 +1,6 @@
+# A manifest-only tool stays inert unless the manifest opts into new tools:
+# validate passes, but `why newtool` must report it as unknown.
+schema_version = 1
+
+[packages]
+newtool = { native = "newtool-pkg" }

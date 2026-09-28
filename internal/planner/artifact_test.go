@@ -174,3 +174,23 @@ func TestBuildCandidateIntentRejectsSecretReferenceOnUnsupportedMethod(t *testin
 		t.Fatalf("BuildCandidateIntent() error = %v, want unsupported secret_ref for native", err)
 	}
 }
+
+
+func TestBuildCandidateIntentProjectsLocalSignatureIntegrity(t *testing.T) {
+	tool, method := candidate("demo", "local", map[string]any{
+		"local_path": "vendor/demo",
+		"signature_path": "vendor/demo.sig",
+		"signing_key": "release-key-2026",
+	})
+	p, err := planner.BuildCandidateIntent(tool, method)
+	if err != nil {
+		t.Fatalf("BuildCandidateIntent() error: %v", err)
+	}
+	if len(p.Artifacts) != 1 {
+		t.Fatalf("artifacts = %+v, want one local artifact", p.Artifacts)
+	}
+	artifact := p.Artifacts[0]
+	if artifact.LocalPath != "vendor/demo" || artifact.SignaturePath != "vendor/demo.sig" || artifact.SigningKey != "release-key-2026" {
+		t.Fatalf("local artifact integrity metadata = %+v", artifact)
+	}
+}

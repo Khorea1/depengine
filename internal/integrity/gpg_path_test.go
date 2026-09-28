@@ -1,4 +1,4 @@
-package httpdownload
+package integrity
 
 import (
 	"context"

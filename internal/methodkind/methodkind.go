@@ -352,9 +352,14 @@ var Contracts = finalizeContracts([]Contract{
 		"managed_paths": {Type: StringList, Effects: EffectValidate | EffectExecute | EffectVerify},
 	}, MutuallyExclusive: [][]string{{"branch", "tag", "rev"}}, CanRemove: true},
 	{Kind: "local", DefaultOrder: 34, Capabilities: CapabilityLocalArtifact, Fields: map[string]Field{
-		"local_path":  {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
-		"checksum":    {Type: String, Effects: EffectValidate | EffectResolve | EffectExecute | EffectVerify},
-		"install_dir": {Type: String, Effects: EffectExecute | EffectVerify},
+		"local_path":     {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"checksum":       {Type: String, Effects: EffectValidate | EffectResolve | EffectExecute | EffectVerify},
+		"install_dir":    {Type: String, Effects: EffectExecute | EffectVerify},
+		"signature_path": {Type: String, NonEmpty: true, Effects: EffectResolve | EffectValidate | EffectExecute},
+		"signing_key":    {Type: String, Effects: EffectResolve | EffectValidate | EffectExecute},
+	}, Requires: map[string][]string{
+		"signature_path": {"signing_key"},
+		"signing_key":    {"signature_path"},
 	}, CanRemove: true, Checksum: localChecksumContract},
 	{Kind: "github", DefaultOrder: 35, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(withoutField(downloadFields, "url"), map[string]Field{
 		"repo":       {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},

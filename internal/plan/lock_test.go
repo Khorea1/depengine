@@ -1378,3 +1378,46 @@ func TestLockPreservesArtifactIntegritySemantics(t *testing.T) {
 		t.Fatalf("VerifyResolvedPlanAgainstLock() error = %v, want ErrLockMismatch", err)
 	}
 }
+
+
+func TestLockPreservesLocalSignatureIntegrity(t *testing.T) {
+	resolved := plan.New("demo", "local", true)
+	resolved.Artifacts = []plan.Artifact{{
+		Kind:          plan.ArtifactRaw,
+		LocalPath:     "vendor/demo",
+		Checksum:      "sha256:" + strings.Repeat("a", 64),
+		SignaturePath: "vendor/demo.sig",
+		SigningKey:    "release-key-2026",
+	}}
+
+	doc, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{resolved})
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked := doc.Entries[0].Identity.Artifacts[0]
+	if locked.SignaturePath != resolved.Artifacts[0].SignaturePath || locked.SigningKey != resolved.Artifacts[0].SigningKey {
+		t.Fatalf("locked local integrity metadata = %+v", locked)
+	}
+
+	intent := resolved.Clone()
+	intent.Artifacts[0].Checksum = ""
+	pinned, err := doc.PinnedPlanFor(intent)
+	if err != nil {
+		t.Fatalf("PinnedPlanFor() error: %v", err)
+	}
+	if len(pinned.Artifacts) != 1 || pinned.Artifacts[0].SignaturePath != "vendor/demo.sig" || pinned.Artifacts[0].SigningKey != resolved.Artifacts[0].SigningKey {
+		t.Fatalf("pinned local integrity metadata = %+v", pinned.Artifacts)
+	}
+
+	changed := resolved.Clone()
+	changed.Artifacts[0].SignaturePath = "vendor/other.sig"
+	if err := plan.VerifyResolvedPlanAgainstLock(doc.Entries[0], changed); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("VerifyResolvedPlanAgainstLock() signature_path error = %v, want ErrLockMismatch", err)
+	}
+
+	staleIntent := intent.Clone()
+	staleIntent.Artifacts[0].SigningKey = "other-release-key-2026"
+	if _, err := doc.EntryForPlan(staleIntent); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("EntryForPlan() signing_key error = %v, want ErrLockMismatch", err)
+	}
+}

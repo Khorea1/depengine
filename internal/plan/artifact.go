@@ -101,6 +101,15 @@ func (a Artifact) Validate() error {
 			return fmt.Errorf("artifact signature URL: %w", err)
 		}
 	}
+	if a.SignaturePath != "" {
+		clean, err := NormalizeProjectPath(a.SignaturePath)
+		if err != nil {
+			return fmt.Errorf("artifact signature path: %w", err)
+		}
+		if clean != a.SignaturePath {
+			return fmt.Errorf("artifact signature path %q is not canonical; use %q", a.SignaturePath, clean)
+		}
+	}
 	switch a.ChecksumFileFormat {
 	case "", "sha256sum", "bsd", "raw":
 	default:
@@ -123,6 +132,9 @@ func (a Artifact) Validate() error {
 	if a.URL == "" && a.LocalPath == "" {
 		return fmt.Errorf("artifact requires url or local_path")
 	}
+	if a.URL != "" && a.SignaturePath != "" {
+		return fmt.Errorf("remote artifact cannot use signature_path")
+	}
 	if a.LocalPath != "" {
 		clean, err := NormalizeProjectPath(a.LocalPath)
 		if err != nil {
@@ -135,7 +147,13 @@ func (a Artifact) Validate() error {
 			return fmt.Errorf("local artifact cannot use checksum_url; use a concrete checksum")
 		}
 		if a.SignatureURL != "" {
-			return fmt.Errorf("local artifact cannot use signature_url; use a local signature reference")
+			return fmt.Errorf("local artifact cannot use signature_url; use signature_path")
+		}
+		if a.SignaturePath == "" && a.SigningKey != "" {
+			return fmt.Errorf("local artifact signing_key requires signature_path")
+		}
+		if a.SignaturePath != "" && a.SigningKey == "" {
+			return fmt.Errorf("local artifact signature_path requires signing_key")
 		}
 	}
 	return nil

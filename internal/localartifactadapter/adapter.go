@@ -10,12 +10,13 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/integrity"
 	"github.com/Khorea1/depengine/internal/localartifact"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// Adapter installs project-vendored files without network access.
+// Adapter installs project-vendored payloads. Payload resolution itself is local; optional detached-signature verification may resolve a configured signing key over the network unless the key uses file://.
 type Adapter struct{}
 
 func NewAdapter() *Adapter { return &Adapter{} }
@@ -48,13 +49,18 @@ func verifyDestination(resolved localartifact.Resolved, destination string) bool
 	}
 }
 
-func (a *Adapter) Install(_ context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+func (a *Adapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	if rn == nil {
 		return fmt.Errorf("local: runner is required")
 	}
 	resolved, destination, err := resolveCandidate(tool, mc)
 	if err != nil {
 		return fmt.Errorf("local: %w", err)
+	}
+	sigPath, _ := mc.Config["signature_path"].(string)
+	signingKey, _ := mc.Config["signing_key"].(string)
+	if err := verifyDetachedSignature(ctx, rn, mc.ProjectRoot, sigPath, signingKey, resolved.Path); err != nil {
+		return err
 	}
 	if err := localartifact.Install(resolved, destination); err != nil {
 		return fmt.Errorf("local: install: %w", err)
@@ -81,10 +87,15 @@ func (a *Adapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool
 		return nil, fmt.Errorf("local: %w", err)
 	}
 	out := intent.Clone()
+	artifact := resolved.Artifact
 	if len(out.Artifacts) == 0 {
-		out.Artifacts = []plan.Artifact{resolved.Artifact}
+		artifact.SignaturePath, _ = mc.Config["signature_path"].(string)
+		artifact.SigningKey, _ = mc.Config["signing_key"].(string)
+		out.Artifacts = []plan.Artifact{artifact}
 	} else {
-		out.Artifacts[0] = resolved.Artifact
+		artifact.SignaturePath = out.Artifacts[0].SignaturePath
+		artifact.SigningKey = out.Artifacts[0].SigningKey
+		out.Artifacts[0] = artifact
 	}
 	return &out, nil
 }
@@ -116,7 +127,7 @@ func (a *Adapter) Observe(_ context.Context, _ run.Runner, tool *config.Tool, mc
 // resolved; the method candidate supplies only execution-local parameters
 // (project root, install directory). It never re-derives identity from
 // mc.Config local_path/checksum.
-func (a *Adapter) InstallResolved(_ context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+func (a *Adapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
 	if rn == nil {
 		return fmt.Errorf("local: runner is required")
 	}
@@ -140,6 +151,9 @@ func (a *Adapter) InstallResolved(_ context.Context, rn run.Runner, tool *config
 	destination, err := destinationFor(tool, mc, settled.Artifact.Kind)
 	if err != nil {
 		return fmt.Errorf("local: %w", err)
+	}
+	if err := verifyDetachedSignature(ctx, rn, mc.ProjectRoot, artifact.SignaturePath, artifact.SigningKey, settled.Path); err != nil {
+		return err
 	}
 	if err := localartifact.Install(settled, destination); err != nil {
 		return fmt.Errorf("local: install: %w", err)
@@ -177,6 +191,38 @@ func validateResolvedOperations(resolved *plan.ResolvedInstallPlan) error {
 	return nil
 }
 
+// verifyDetachedSignature enforces offline detached-signature verification
+// for vendored artifacts. Without signature_path (and signing_key) it is a
+// no-op, preserving the historical checksum-only behavior. When configured,
+// the project-relative signature file is resolved with the same confinement
+// rules as local_path (relative, no symlinks, regular file inside the
+// project root) and the vendored source bytes are verified against it before
+// any install mutation. Failures are fail-closed: a missing signature, a
+// missing key, an unavailable gpg, or a bad signature all reject the
+// install. InstallResolved receives the signature policy from the resolved
+// artifact, so execution cannot silently re-read changed integrity intent.
+func verifyDetachedSignature(ctx context.Context, rn run.Runner, projectRoot, sigPath, signingKey, sourcePath string) error {
+	if sigPath == "" && signingKey == "" {
+		return nil
+	}
+	if sigPath == "" {
+		return fmt.Errorf("local: signing_key requires signature_path")
+	}
+	if signingKey == "" {
+		return fmt.Errorf("local: signature_path requires signing_key")
+	}
+	if projectRoot == "" || !filepath.IsAbs(projectRoot) {
+		return fmt.Errorf("local: project root is unavailable for signature_path %q", sigPath)
+	}
+	sigResolved, err := localartifact.Resolve(projectRoot, sigPath, "")
+	if err != nil {
+		return fmt.Errorf("local: signature_path: %w", err)
+	}
+	if err := integrity.GPGVerify(ctx, rn, sourcePath, sigResolved.Path, signingKey, nil); err != nil {
+		return fmt.Errorf("local: signature: %w", err)
+	}
+	return nil
+}
 func (a *Adapter) Remove(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	_, destination, err := candidateDestination(tool, mc)
 	if err != nil {
@@ -272,10 +318,19 @@ func destinationFor(tool *config.Tool, mc *config.MethodCandidate, kind plan.Art
 	return destination, nil
 }
 
-// CheckAvailable assumes availability: vendored paths are validated at
-// plan time, so a missing file surfaces during resolution.
-func (a *Adapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
-	return true
+// CheckAvailable reports candidate-scoped runtime requirements that can be
+// determined without resolving or mutating the vendored artifact. Plain local
+// installs need no subprocesses; detached-signature installs require gpg.
+func (a *Adapter) CheckAvailable(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) bool {
+	if mc == nil {
+		return false
+	}
+	sigPath, _ := mc.Config["signature_path"].(string)
+	signingKey, _ := mc.Config["signing_key"].(string)
+	if sigPath == "" && signingKey == "" {
+		return true
+	}
+	return run.LookPath(ctx, rn, "gpg")
 }
 
 // CheckHostCompatibility imposes no host constraints: vendored artifacts

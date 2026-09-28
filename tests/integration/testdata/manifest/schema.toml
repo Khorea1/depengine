@@ -1,0 +1,8 @@
+# Control project schema for manifest merge/gating integration tests.
+# Keep this intentionally small: manifest-only tools must stay absent here,
+# while curl gives the merge test one schema-declared tool to override.
+
+schema_version = 1
+
+[tools]
+curl = { native = "curl" }

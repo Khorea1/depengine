@@ -116,9 +116,25 @@ Work on the current execution model comes before adding more installer types.
 - [ ] Finish lifecycle/version/source behavior for Chocolatey, Homebrew, Cargo,
   Go, Python/Node/Ruby/PHP, Conda, version managers, Snap, Flatpak, Git,
   containers, and Nix.
-- [ ] Add detached-signature support for offline artifacts.
-- [ ] Simplify `schema.example.toml` after scope defaults settle; add better
-  candidate inspection and ambiguity errors.
+- [x] Add detached-signature support for offline artifacts. Done: the `local`
+  method accepts `signature_path` (project-relative detached GPG signature,
+  confined like `local_path`) with a required `signing_key` (key URL or
+  fingerprint); the payload and detached signature stay local, while HTTP(S)
+  key URLs and fingerprint lookup may use the network and `file://` keeps the
+  full verification path offline. Both install paths
+  verify the vendored bytes before any mutation and fail closed on a missing
+  signature, missing key, unavailable `gpg`, or bad signature. Contract,
+  generated JSON schema, parser probes, runtime coverage, and the schema
+  reference cover the new fields.
+- [x] Simplify `schema.example.toml` after scope defaults settle; add better
+  candidate inspection and ambiguity errors. Done: scope defaults settled in
+  ADR-004, so artifact candidates in the example declare `scope = "user"`
+  instead of hardcoded `extract_to`/`link_dir` paths (fonts and
+  installer/native entries keep their explicit forms); `depengine why` shows
+  zero-based candidate ordinals in text and JSON, disambiguates colliding
+  display names, warns only when same-kind candidates are unlabeled or reuse a
+  label, and tracked-candidate ambiguity errors name every colliding
+  `#ordinal "label"` candidate.
 
 ## P3: verification and v1 freeze
 

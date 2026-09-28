@@ -47,6 +47,7 @@ type LockedArtifact struct {
 	ChecksumURL        string       `json:"checksum_url,omitempty"`
 	ChecksumFileFormat string       `json:"checksum_file_format,omitempty"`
 	SignatureURL       string       `json:"signature_url,omitempty"`
+	SignaturePath      string       `json:"signature_path,omitempty"`
 	SigningKey         string       `json:"signing_key,omitempty"`
 }
 
@@ -125,6 +126,18 @@ func (a LockedArtifact) validate() error {
 			return fmt.Errorf("artifact signature URL is not canonical; use %q", canonical)
 		}
 	}
+	if a.SignaturePath != "" {
+		if a.LocalPath == "" {
+			return errors.New("remote artifact cannot persist signature_path")
+		}
+		clean, err := NormalizeProjectPath(a.SignaturePath)
+		if err != nil {
+			return fmt.Errorf("artifact signature path: %w", err)
+		}
+		if clean != a.SignaturePath {
+			return fmt.Errorf("artifact signature path %q is not canonical; use %q", a.SignaturePath, clean)
+		}
+	}
 	if strings.TrimSpace(a.SigningKey) != a.SigningKey || strings.ContainsRune(a.SigningKey, '\x00') {
 		return errors.New("artifact signing key must not contain surrounding whitespace or NUL")
 	}
@@ -144,12 +157,19 @@ func (a LockedArtifact) validate() error {
 		if clean != a.LocalPath {
 			return fmt.Errorf("local path %q is not canonical; use %q", a.LocalPath, clean)
 		}
+		if a.SignaturePath == "" && a.SigningKey != "" {
+			return errors.New("local artifact signing_key requires signature_path")
+		}
+		if a.SignaturePath != "" && a.SigningKey == "" {
+			return errors.New("local artifact signature_path requires signing_key")
+		}
 	}
 	if err := validateLockedChecksum(a.Checksum); err != nil {
 		return err
 	}
 	return nil
 }
+
 
 func validateLockedChecksum(value string) error {
 	if value == "" {
@@ -392,6 +412,7 @@ func ProjectLock(p ResolvedInstallPlan) (LockProjection, error) {
 			ChecksumURL:        sanitizeLockReference(artifact.ChecksumURL),
 			ChecksumFileFormat: artifact.ChecksumFileFormat,
 			SignatureURL:       sanitizeLockReference(artifact.SignatureURL),
+			SignaturePath:      artifact.SignaturePath,
 			SigningKey:         sanitizeSigningKeyReference(artifact.SigningKey),
 		})
 	}
@@ -538,7 +559,7 @@ func lockedArtifactsEqual(expected, actual []LockedArtifact) bool {
 	}
 	for i := range expected {
 		a, b := expected[i], actual[i]
-		if a.Kind != b.Kind || sanitizeLockReference(a.URL) != sanitizeLockReference(b.URL) || a.LocalPath != b.LocalPath || canonicalDigest(a.Checksum) != canonicalDigest(b.Checksum) || sanitizeLockReference(a.ChecksumURL) != sanitizeLockReference(b.ChecksumURL) || a.ChecksumFileFormat != b.ChecksumFileFormat || sanitizeLockReference(a.SignatureURL) != sanitizeLockReference(b.SignatureURL) || sanitizeSigningKeyReference(a.SigningKey) != sanitizeSigningKeyReference(b.SigningKey) {
+		if a.Kind != b.Kind || sanitizeLockReference(a.URL) != sanitizeLockReference(b.URL) || a.LocalPath != b.LocalPath || canonicalDigest(a.Checksum) != canonicalDigest(b.Checksum) || sanitizeLockReference(a.ChecksumURL) != sanitizeLockReference(b.ChecksumURL) || a.ChecksumFileFormat != b.ChecksumFileFormat || sanitizeLockReference(a.SignatureURL) != sanitizeLockReference(b.SignatureURL) || a.SignaturePath != b.SignaturePath || sanitizeSigningKeyReference(a.SigningKey) != sanitizeSigningKeyReference(b.SigningKey) {
 			return false
 		}
 	}
@@ -835,6 +856,9 @@ func (d LockDocument) EntryForPlan(intent ResolvedInstallPlan) (LockProjection, 
 	if field := knownLockIdentityMismatchField(intent.Identity, expected.Identity); field != "" {
 		return LockProjection{}, fmt.Errorf("%w: known %s identity changed", ErrLockMismatch, field)
 	}
+	if field := knownLocalArtifactIntegrityMismatchField(intent.Artifacts, expected.Identity.Artifacts); field != "" {
+		return LockProjection{}, fmt.Errorf("%w: known %s identity changed", ErrLockMismatch, field)
+	}
 	return cloneLockProjection(expected), nil
 }
 
@@ -866,6 +890,28 @@ func knownLockIdentityMismatchField(intent ResolvedIdentity, expected LockIdenti
 	default:
 		return ""
 	}
+}
+
+func knownLocalArtifactIntegrityMismatchField(intent []Artifact, expected []LockedArtifact) string {
+	for _, artifact := range intent {
+		if artifact.LocalPath == "" {
+			continue
+		}
+		idx := slices.IndexFunc(expected, func(locked LockedArtifact) bool {
+			return locked.Kind == artifact.Kind && locked.LocalPath == artifact.LocalPath
+		})
+		if idx < 0 {
+			return "artifact"
+		}
+		locked := expected[idx]
+		if artifact.SignaturePath != locked.SignaturePath {
+			return "artifact signature path"
+		}
+		if sanitizeSigningKeyReference(artifact.SigningKey) != sanitizeSigningKeyReference(locked.SigningKey) {
+			return "artifact signing key"
+		}
+	}
+	return ""
 }
 
 func cloneLockProjection(in LockProjection) LockProjection {

@@ -98,7 +98,47 @@ func findStateMethodCandidate(tool *config.Tool, ts state.ToolState) (*config.Me
 		}
 		return nil, fmt.Errorf("tracked method kind %q is absent from the current schema", kind)
 	}
-	return nil, fmt.Errorf("tracked method kind %q is ambiguous across %d current schema candidates", kind, len(matches))
+	return nil, fmt.Errorf("tracked method kind %q is ambiguous across %d current schema candidates (%s): state records only kind %q; %s", kind, len(matches), describeAmbiguousCandidates(tool, matches), kind, ambiguousCandidateRemediation(matches))
+}
+
+func ambiguousCandidateRemediation(matches []*config.MethodCandidate) string {
+	for _, match := range matches {
+		if match != nil && match.Label != "" {
+			return fmt.Sprintf("re-install selecting a labeled candidate (e.g. method = %q) to persist exact candidate identity", match.Label)
+		}
+	}
+	return "add distinct labels to the same-kind candidates, then re-install selecting one label to persist exact candidate identity"
+}
+
+// describeAmbiguousCandidates renders each ambiguous match as `#<ordinal> "<display>"`
+// so upgrade/remove/lock failures point at the exact schema candidates that
+// collide. Ordinals are positions in the merged Tool.Methods list, matching
+// `depengine why` candidate inspection.
+func describeAmbiguousCandidates(tool *config.Tool, matches []*config.MethodCandidate) string {
+	parts := make([]string, 0, len(matches))
+	for _, match := range matches {
+		ordinal := -1
+		for candidate, declared := range tool.Methods {
+			if declared == match {
+				ordinal = candidate
+				break
+			}
+		}
+		parts = append(parts, fmt.Sprintf("#%d %q", ordinal, candidateDisplayName(match)))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// candidateDisplayName mirrors exec.MethodAttempt.DisplayName without importing
+// the exec package: the custom label when present, otherwise the method kind.
+func candidateDisplayName(method *config.MethodCandidate) string {
+	if method == nil {
+		return ""
+	}
+	if method.Label != "" {
+		return method.Label
+	}
+	return method.Kind
 }
 
 // lockPinForToolState resolves a pin through the exact candidate represented by
