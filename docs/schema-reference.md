@@ -344,7 +344,7 @@ backslashes, Windows drive prefixes, Windows-invalid/reserved path components
 | `checksum` | no | Fixed `sha256:<64 hex>` digest. It is checked while resolving and rechecked immediately before materialization. `:auto` is not supported for local artifacts. |
 | `install_dir` | no | Parent directory. The adapter owns only the child named after the tool. Defaults to `~/.local/bin` for raw files and `~/.local/opt` for archives. |
 | `signature_path` | no | Project-relative detached GPG signature of the vendored file. Requires `signing_key`; the signature is verified before any install mutation and failures are fail-closed. |
-| `signing_key` | no | GPG key URL (including `file://` for air-gapped use) or fingerprint identifying the expected signer. Requires `signature_path`. Fingerprint mode contacts the default keyserver; prefer a vendored `file://` key when the artifact must stay offline. |
+| `signing_key` | no | GPG key URL or fingerprint identifying the expected signer. Requires `signature_path`. The vendored payload and signature are local, but `http://`/`https://` key URLs and fingerprint mode may use the network; use a `file://` key for a fully offline install. |
 
 A raw file becomes `install_dir/<tool>`. An archive is extracted into
 `install_dir/<tool>`, not directly into the shared parent. `remove` deletes only
@@ -354,9 +354,10 @@ that path is rejected. `Check` uses the marker to ensure the installed directory
 came from the currently resolved vendored bytes. Without `signature_path` the
 adapter uses only Go's standard-library filesystem and archive support; it
 does not perform network I/O or invoke a subprocess. With `signature_path`
-configured, install invokes `gpg` to verify the vendored bytes (downloading
-the signing key first unless it is a `file://` reference), so a missing
-`gpg`, an unresolvable key, or a bad signature all fail the install before
+configured, install invokes `gpg` to verify the vendored bytes. Payload and
+signature resolution remain local, but signing-key resolution may use the
+network for HTTP(S) URLs or fingerprints; `file://` keeps the full install
+offline. A missing `gpg`, an unresolvable key, or a bad signature fails before
 anything is materialized. Archive recipes currently do not create PATH launchers
 automatically, so choose an `install_dir`/payload layout appropriate for how the
 tool will be invoked.

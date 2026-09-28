@@ -355,8 +355,8 @@ var Contracts = finalizeContracts([]Contract{
 		"local_path":     {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
 		"checksum":       {Type: String, Effects: EffectValidate | EffectResolve | EffectExecute | EffectVerify},
 		"install_dir":    {Type: String, Effects: EffectExecute | EffectVerify},
-		"signature_path": {Type: String, NonEmpty: true, Effects: EffectValidate | EffectExecute},
-		"signing_key":    {Type: String, Effects: EffectValidate | EffectExecute},
+		"signature_path": {Type: String, NonEmpty: true, Effects: EffectResolve | EffectValidate | EffectExecute},
+		"signing_key":    {Type: String, Effects: EffectResolve | EffectValidate | EffectExecute},
 	}, Requires: map[string][]string{
 		"signature_path": {"signing_key"},
 		"signing_key":    {"signature_path"},

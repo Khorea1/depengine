@@ -82,7 +82,7 @@ func init() {
 	registerRuntimeFields(PhaseResolveRuntime, "appimage", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "android", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "msi", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
-	registerRuntimeFields(PhaseResolveRuntime, "local", "internal/localartifactadapter/adapter_v2_test.go", "project-relative source and checksum resolve to local content identity", "local_path", "checksum")
+	registerRuntimeFields(PhaseResolveRuntime, "local", "internal/localartifactadapter/adapter_v2_test.go", "project-relative source, checksum, and detached-signature policy resolve to local artifact identity", "local_path", "checksum", "signature_path", "signing_key")
 
 	common := []string{"checksum", "checksum_url", "checksum_file_format", "signature_url", "signing_key"}
 	registerRuntimeFields(PhaseExecute, "http", "internal/httpdownload/resolved_install_test.go", "resolved metadata is consumed by the shared HTTP installer", append(common, "url", "repo", "asset", "extract_to", "binary", "entrypoints", "link_dir", "sudo_required", "strip_components", "scope")...)

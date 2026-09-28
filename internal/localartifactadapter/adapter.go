@@ -16,7 +16,7 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// Adapter installs project-vendored files without network access.
+// Adapter installs project-vendored payloads. Payload resolution itself is local; optional detached-signature verification may resolve a configured signing key over the network unless the key uses file://.
 type Adapter struct{}
 
 func NewAdapter() *Adapter { return &Adapter{} }
