@@ -42,6 +42,8 @@ func init() {
 		"local.local_path":              {Consumer: "internal/localartifactadapter/adapter_v2_test.go", Rationale: "project-relative source determines installed bytes"},
 		"local.checksum":                {Consumer: "internal/localartifactadapter/adapter_v2_test.go", Rationale: "checksum gates materialization of local bytes"},
 		"local.install_dir":             {Consumer: "internal/localartifactadapter/adapter_test.go", Rationale: "install directory selects the owned destination"},
+		"local.signature_path":          {Consumer: "internal/localartifactadapter/signature_test.go", Rationale: "detached signature gates materialization of vendored bytes"},
+		"local.signing_key":             {Consumer: "internal/localartifactadapter/signature_test.go", Rationale: "signing key identity gates detached-signature verification"},
 		"container.manager":             {Consumer: "internal/container/adapter_test.go", Rationale: "manager selects the runtime command and image store"},
 		"container.source":              {Consumer: "internal/container/adapter_test.go", Rationale: "source participates in the pulled image reference"},
 		"container.tag":                 {Consumer: "internal/container/adapter_test.go", Rationale: "tag participates in the pulled image reference"},

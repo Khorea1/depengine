@@ -10,6 +10,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/httpdownload"
 	"github.com/Khorea1/depengine/internal/localartifact"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -48,13 +49,16 @@ func verifyDestination(resolved localartifact.Resolved, destination string) bool
 	}
 }
 
-func (a *Adapter) Install(_ context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+func (a *Adapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	if rn == nil {
 		return fmt.Errorf("local: runner is required")
 	}
 	resolved, destination, err := resolveCandidate(tool, mc)
 	if err != nil {
 		return fmt.Errorf("local: %w", err)
+	}
+	if err := verifyDetachedSignature(ctx, rn, mc, resolved.Path); err != nil {
+		return err
 	}
 	if err := localartifact.Install(resolved, destination); err != nil {
 		return fmt.Errorf("local: install: %w", err)
@@ -116,7 +120,7 @@ func (a *Adapter) Observe(_ context.Context, _ run.Runner, tool *config.Tool, mc
 // resolved; the method candidate supplies only execution-local parameters
 // (project root, install directory). It never re-derives identity from
 // mc.Config local_path/checksum.
-func (a *Adapter) InstallResolved(_ context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+func (a *Adapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
 	if rn == nil {
 		return fmt.Errorf("local: runner is required")
 	}
@@ -140,6 +144,9 @@ func (a *Adapter) InstallResolved(_ context.Context, rn run.Runner, tool *config
 	destination, err := destinationFor(tool, mc, settled.Artifact.Kind)
 	if err != nil {
 		return fmt.Errorf("local: %w", err)
+	}
+	if err := verifyDetachedSignature(ctx, rn, mc, settled.Path); err != nil {
+		return err
 	}
 	if err := localartifact.Install(settled, destination); err != nil {
 		return fmt.Errorf("local: install: %w", err)
@@ -173,6 +180,41 @@ func validateResolvedOperations(resolved *plan.ResolvedInstallPlan) error {
 	}
 	if installs != 1 {
 		return reject()
+	}
+	return nil
+}
+
+// verifyDetachedSignature enforces offline detached-signature verification
+// for vendored artifacts. Without signature_path (and signing_key) it is a
+// no-op, preserving the historical checksum-only behavior. When configured,
+// the project-relative signature file is resolved with the same confinement
+// rules as local_path (relative, no symlinks, regular file inside the
+// project root) and the vendored source bytes are verified against it before
+// any install mutation. Failures are fail-closed: a missing signature, a
+// missing key, an unavailable gpg, or a bad signature all reject the
+// install. Like resolveCandidate this is execution-local: verification
+// evidence is not persisted into the plan or lock identity.
+func verifyDetachedSignature(ctx context.Context, rn run.Runner, mc *config.MethodCandidate, sourcePath string) error {
+	sigPath, _ := mc.Config["signature_path"].(string)
+	signingKey, _ := mc.Config["signing_key"].(string)
+	if sigPath == "" && signingKey == "" {
+		return nil
+	}
+	if sigPath == "" {
+		return fmt.Errorf("local: signing_key requires signature_path")
+	}
+	if signingKey == "" {
+		return fmt.Errorf("local: signature_path requires signing_key")
+	}
+	if mc.ProjectRoot == "" || !filepath.IsAbs(mc.ProjectRoot) {
+		return fmt.Errorf("local: project root is unavailable for signature_path %q", sigPath)
+	}
+	sigResolved, err := localartifact.Resolve(mc.ProjectRoot, sigPath, "")
+	if err != nil {
+		return fmt.Errorf("local: signature_path: %w", err)
+	}
+	if err := httpdownload.GPGVerify(ctx, rn, sourcePath, sigResolved.Path, signingKey); err != nil {
+		return fmt.Errorf("local: signature: %w", err)
 	}
 	return nil
 }

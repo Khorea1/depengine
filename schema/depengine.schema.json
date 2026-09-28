@@ -3136,6 +3136,32 @@
         },
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "signature_path"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signing_key"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signature_path"
+                ]
+              }
+            }
+          ],
           "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock, local-artifact. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
           "properties": {
             "arch_map": {
@@ -3174,6 +3200,13 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "signature_path": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "signing_key": {
+              "type": "string"
             },
             "sources": {
               "items": {
@@ -8151,6 +8184,32 @@
       "oneOf": [
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "signature_path"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signing_key"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signature_path"
+                ]
+              }
+            }
+          ],
           "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock, local-artifact. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
           "properties": {
             "arch_map": {
@@ -8186,6 +8245,13 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "signature_path": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "signing_key": {
+              "type": "string"
             },
             "sources": {
               "items": {

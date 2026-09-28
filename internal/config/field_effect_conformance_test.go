@@ -34,6 +34,8 @@ func TestValidateEffectFieldsHaveBehaviorProbes(t *testing.T) {
 		"git.depth":            `depth = "shallow"`,
 		"git.managed_paths":    `managed_paths = [42]`,
 		"local.checksum":       `checksum = 42`,
+		"local.signature_path": `signature_path = ""`,
+		"local.signing_key":    `signing_key = 42`,
 	}
 	used := make(map[string]bool, len(probes))
 	for _, contract := range methodkind.Contracts {
