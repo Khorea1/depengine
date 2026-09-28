@@ -26,14 +26,21 @@ func parseGraphView(value string) (graph.GraphView, error) {
 	}
 }
 
-func projectGraphView(ctx context.Context, declared graph.Graph, schema *config.Schema, view graph.GraphView) (graph.Graph, error) {
+func validateGraphProjectionOptions(view graph.GraphView, includeInactive bool) error {
+	if includeInactive && view == graph.DeclaredView {
+		return fmt.Errorf("--show-inactive requires --view effective or --view resolved")
+	}
+	return nil
+}
+
+func projectGraphView(ctx context.Context, declared graph.Graph, schema *config.Schema, view graph.GraphView, includeInactive bool) (graph.Graph, error) {
 	if view == graph.DeclaredView {
-		return declared.Project(view, graph.ProjectionContext{})
+		return declared.Project(view, graph.ProjectionContext{IncludeInactive: includeInactive})
 	}
 
 	needsGuards, candidateTools := graphProjectionRequirements(declared, view)
 	if !needsGuards && len(candidateTools) == 0 {
-		return declared.Project(view, graph.ProjectionContext{})
+		return declared.Project(view, graph.ProjectionContext{IncludeInactive: includeInactive})
 	}
 
 	facts, err := engine.GatherFacts(run.OSExecRunner{})
@@ -41,7 +48,7 @@ func projectGraphView(ctx context.Context, declared graph.Graph, schema *config.
 		return graph.Graph{}, fmt.Errorf("gather host facts: %w", err)
 	}
 
-	projection := graph.ProjectionContext{}
+	projection := graph.ProjectionContext{IncludeInactive: includeInactive}
 	if needsGuards {
 		projection.GuardActive = func(guard graph.Guard) (bool, error) {
 			return matchGraphGuard(guard, facts)

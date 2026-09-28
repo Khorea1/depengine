@@ -18,6 +18,11 @@ type Schema struct {
 	// It is runtime-only metadata used to resolve project-relative inputs such
 	// as vendored/local artifacts; it is never serialized into plans or state.
 	ProjectRoot string `json:"-"`
+	// LockedRevision is transient lockfile state applied after schema parsing.
+	// It preserves a requested mutable Git branch/tag in Config while forcing
+	// Git-backed plan resolution (git, cargo --git) to reuse the immutable
+	// commit recorded in depengine.lock.
+	LockedRevision string `json:"-"`
 }
 
 // Defaults mirrors the [defaults] table. Omitted fields keep engine-safe
@@ -187,13 +192,18 @@ type MethodCandidate struct {
 	// Adapters may use it for project-relative resources, but must never persist
 	// the machine-specific absolute value.
 	ProjectRoot string `json:"-"`
-	When        *Condition
-	Config      map[string]any
-	Err         error
-	ArchMap     map[string]string
-	OSMap       map[string]string
-	Requires    []string
-	Sources     []Source
+	// LockedRevision is transient lockfile state applied after schema parsing.
+	// It preserves a requested mutable Git branch/tag in Config while forcing
+	// Git-backed plan resolution (git, cargo --git) to reuse the immutable
+	// commit recorded in depengine.lock.
+	LockedRevision string `json:"-"`
+	When           *Condition
+	Config         map[string]any
+	Err            error
+	ArchMap        map[string]string
+	OSMap          map[string]string
+	Requires       []string
+	Sources        []Source
 	// PreInstall/PostInstall are candidate-local lifecycle hooks. Tool-level
 	// hooks remain supported as generic hooks that are projected onto every
 	// selected candidate.

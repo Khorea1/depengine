@@ -12,6 +12,7 @@ import (
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/run"
 )
 
 func TestResolveInstallManifestPath(t *testing.T) {
@@ -163,7 +164,7 @@ func TestResolveInstallLockFrozenRejectsBeforeApplyingStaleLock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := resolveInstallLock(context.Background(), installPlan{schema: schemaPath, frozen: true}, schema, log.Default)
+	_, err := resolveInstallLock(context.Background(), installPlan{schema: schemaPath, frozen: true}, schema, log.Default, nil)
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
 		t.Fatalf("resolveInstallLock() error = %v, want exit code 2", err)
@@ -180,10 +181,60 @@ func TestResolveInstallLockFrozenRejectsUnreadableLock(t *testing.T) {
 	}
 	schema := &config.Schema{Tools: map[string]*config.Tool{}}
 
-	_, err := resolveInstallLock(context.Background(), installPlan{schema: schemaPath, frozen: true}, schema, log.Default)
+	_, err := resolveInstallLock(context.Background(), installPlan{schema: schemaPath, frozen: true}, schema, log.Default, nil)
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
 		t.Fatalf("resolveInstallLock() error = %v, want exit code 2", err)
+	}
+}
+func TestResolveInstallLockCompletesExistingGitPinBeforeExecution(t *testing.T) {
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	schemaPath := filepath.Join(t.TempDir(), "schema.toml")
+	method := &config.MethodCandidate{
+		Kind:   "git",
+		Config: map[string]any{"url": "https://example.test/tool.git", "branch": "main"},
+	}
+	schema := &config.Schema{Tools: map[string]*config.Tool{
+		"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}},
+	}}
+	legacy := &lock.Lock{
+		Version:     1,
+		Tools:       map[string]lock.ToolPin{},
+		MethodsHash: map[string]string{"tool": "legacy-method-hash"},
+	}
+	lockPath := lock.DefaultPath(schemaPath)
+	if err := lock.Save(lockPath, legacy); err != nil {
+		t.Fatal(err)
+	}
+	runner := &run.FakeRunner{Stdout: commit + "\trefs/heads/main\n"}
+
+	resolved, err := resolveInstallLock(context.Background(), installPlan{schema: schemaPath}, schema, log.Default, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method.LockedRevision != commit {
+		t.Fatalf("LockedRevision = %q, want %q before execution", method.LockedRevision, commit)
+	}
+	if pin := resolved.Tools["tool/git/0"]; pin.Selector != "branch:main" || pin.Revision != commit {
+		t.Fatalf("resolved pin = %+v, want branch:main at %s", pin, commit)
+	}
+
+	saveLockfile(context.Background(), schema, lockPath, resolved, log.Default, false, runner)
+	gitCalls := 0
+	for _, call := range runner.Calls {
+		if call.Name == "git" {
+			gitCalls++
+		}
+	}
+	if gitCalls != 1 {
+		t.Fatalf("git resolution calls = %d, want exactly one before execution and save", gitCalls)
+	}
+	persisted, err := lock.Load(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pin := persisted.Tools["tool/git/0"]; pin.Revision != commit {
+		t.Fatalf("persisted revision = %q, want installed revision %q", pin.Revision, commit)
 	}
 }
 
@@ -205,7 +256,7 @@ func TestSaveLockfilePreservesOmittedMethodIdentity(t *testing.T) {
 		SourceHash:  map[string]string{"omitted/http/0": "preserve-source"},
 	}
 
-	saveLockfile(context.Background(), schema, lockPath, old, log.Default, false)
+	saveLockfile(context.Background(), schema, lockPath, old, log.Default, false, nil)
 
 	got, err := lock.Load(lockPath)
 	if err != nil {
@@ -242,7 +293,7 @@ func TestSaveLockfileDoesNotBlessAddedSourceIdentity(t *testing.T) {
 		Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git",
 	}}
 
-	saveLockfile(context.Background(), schema, lockPath, old, log.Default, false)
+	saveLockfile(context.Background(), schema, lockPath, old, log.Default, false, nil)
 
 	got, err := lock.Load(lockPath)
 	if err != nil {
@@ -279,7 +330,7 @@ func TestSaveLockfilePreservesExistingCompositePinFields(t *testing.T) {
 		MethodsHash: map[string]string{"tool": "old-hash"},
 	}
 
-	saveLockfile(context.Background(), schema, lockPath, old, log.Default, false)
+	saveLockfile(context.Background(), schema, lockPath, old, log.Default, false, nil)
 
 	got, err := lock.Load(lockPath)
 	if err != nil {
@@ -324,7 +375,7 @@ func TestResolveInstallLockFrozenAcceptsSelectedSubsetLock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := resolveInstallLock(context.Background(), installPlan{schema: schemaPath, frozen: true}, selected, log.Default)
+	got, err := resolveInstallLock(context.Background(), installPlan{schema: schemaPath, frozen: true}, selected, log.Default, nil)
 	if err != nil {
 		t.Fatalf("resolveInstallLock() rejected selected-scope lock: %v", err)
 	}

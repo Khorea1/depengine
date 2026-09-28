@@ -103,6 +103,7 @@ Show the dependency graph
 | `--only <string>` | local | `` | only show subgraph for specific tool |
 | `--profile <string>` | local | `` | only show tools with matching tag |
 | `--schema <string>` | local | `schema.toml` | path to schema.toml |
+| `--show-inactive` | local | `false` | include guard-inactive edges in effective/resolved views |
 | `--skip <string>` | local | `` | skip specific tools (comma-separated) |
 | `--view <string>` | local | `declared` | graph projection: declared, effective, resolved |
 | `--width <int>` | local | `0` | terminal width for --format graph (0 = detect terminal width) |
@@ -221,7 +222,7 @@ Aliases: `lock`.
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
 | `--profile <string>` | local | `` | only re-resolve tools with matching tag; other pins from a readable lock are preserved |
 | `--schema <string>` | local | `schema.toml` | path to schema.toml |
-| `--v` | local | `false` | detailed output |
+| `-v, --verbose` | local | `false` | detailed output |
 
 ## `depengine upgrade [flags]`
 

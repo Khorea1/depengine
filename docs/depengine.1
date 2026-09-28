@@ -191,6 +191,9 @@ only show tools with matching tag Scope: local. Default: .
 .B "\-\-schema <string>"
 path to schema.toml Scope: local. Default: schema.toml.
 .TP
+.B "\-\-show\-inactive"
+include guard\-inactive edges in effective/resolved views Scope: local. Default: false.
+.TP
 .B "\-\-skip <string>"
 skip specific tools (comma\-separated) Scope: local. Default: .
 .TP
@@ -355,7 +358,7 @@ only re\-resolve tools with matching tag; other pins from a readable lock are pr
 .B "\-\-schema <string>"
 path to schema.toml Scope: local. Default: schema.toml.
 .TP
-.B "\-\-v"
+.B "\-v, \-\-verbose"
 detailed output Scope: local. Default: false.
 .SS "depengine upgrade flags"
 .TP

@@ -14,13 +14,16 @@
 //   - checksums, including `:auto` checksums once a non-frozen install has
 //     materialized them (update alone never downloads a payload to compute
 //     one); and
-//   - local artifact content digests.
+//   - local artifact content digests;
+//   - mutable direct-Git and cargo --git branch/tag selectors, resolved to a
+//     concrete commit; and
 //   - candidate-scoped host package-source declarations (kind/name/url) as
 //     identity hashes, so frozen installs reject source drift even though the
 //     source repository's mutable contents are not pinned.
 //
-// It does NOT pin native/ecosystem package versions, git branches or tags,
-// container tags, or channels — those selectors are outside the legacy lock
+// It does NOT pin native/ecosystem package versions, container tags, or
+// channels. Direct Git and cargo --git branches/tags are the mutable-selector
+// exception and are pinned to immutable commits inside the legacy lock
 // v1 model. On subsequent installs the lockfile is read and the pinned values
 // are substituted into the schema's method config before the adapters see
 // them. Running `depengine update` re-resolves and merges into the existing
@@ -45,10 +48,14 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/ghrelease"
+	gitadapter "github.com/Khorea1/depengine/internal/git"
 	"github.com/Khorea1/depengine/internal/localartifact"
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
+	"github.com/Khorea1/depengine/internal/secret"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -61,6 +68,10 @@ type Lock struct {
 	Tools       map[string]ToolPin `toml:"tools"`
 	MethodsHash map[string]string  `toml:"methods_hash,omitempty" json:"methods_hash,omitempty"`
 	SourceHash  map[string]string  `toml:"source_hash,omitempty" json:"source_hash,omitempty"`
+
+	// clearGitRevision is transient merge policy populated by ResolveAll when a
+	// previously lockable Git selector has been removed. It is never persisted.
+	clearGitRevision map[string]struct{} `toml:"-" json:"-"`
 }
 
 // ToolPin captures resolved values for one tool's {latest} placeholder and/or
@@ -69,6 +80,8 @@ type Lock struct {
 type ToolPin struct {
 	Latest   string `toml:"latest,omitempty"`
 	Checksum string `toml:"checksum,omitempty"` // pinned concrete checksum (e.g. "sha256:abc123...")
+	Revision string `toml:"revision,omitempty"` // immutable Git commit for branch/tag selectors
+	Selector string `toml:"selector,omitempty"` // requested selector, e.g. "branch:main" or "tag:v1.2.3"
 }
 
 // DefaultPath returns the default lockfile path for a given schema file.
@@ -99,9 +112,12 @@ func Load(path string) (*Lock, error) {
 	if l.Version != 1 {
 		return nil, fmt.Errorf("lock: unsupported version %d (supported: 1)", l.Version)
 	}
-	for key := range l.Tools {
+	for key, pin := range l.Tools {
 		if !isCanonicalKey(key) {
 			return nil, fmt.Errorf("lock: invalid tool key %q; expected <tool>/<method>/<index>", key)
+		}
+		if err := validateGitPin(pin); err != nil {
+			return nil, fmt.Errorf("lock: invalid tool pin %q: %w", key, err)
 		}
 	}
 	for key := range l.SourceHash {
@@ -221,10 +237,11 @@ func computeSourceHash(method *config.MethodCandidate) string {
 // values. Empty lock (no tools needing resolution) is still valid.
 func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, error) {
 	l := &Lock{
-		Version:     1,
-		Tools:       make(map[string]ToolPin),
-		MethodsHash: make(map[string]string),
-		SourceHash:  make(map[string]string),
+		Version:          1,
+		Tools:            make(map[string]ToolPin),
+		MethodsHash:      make(map[string]string),
+		SourceHash:       make(map[string]string),
+		clearGitRevision: make(map[string]struct{}),
 	}
 
 	for name, tool := range s.Tools {
@@ -277,7 +294,26 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 				pin.Checksum = resolved.Artifact.Checksum
 			}
 
-			if pin.Latest != "" || pin.Checksum != "" {
+			if selector, mutable := gitMutableSelector(method); mutable {
+				pin.Selector = selector
+				if method.LockedRevision != "" {
+					pin.Revision = method.LockedRevision
+				} else {
+					resolveCtx, err := gitLockResolutionContext(ctx, method)
+					if err != nil {
+						return nil, fmt.Errorf("lock: resolve %s/%s credential: %w", name, method.Kind, err)
+					}
+					revision, err := resolveMutableGitRevision(resolveCtx, rn, tool, method)
+					if err != nil {
+						return nil, fmt.Errorf("lock: resolve %s/%s selector: %w", name, method.Kind, err)
+					}
+					pin.Revision = revision
+				}
+			} else if method.Kind == "git" || method.Kind == "cargo" {
+				l.clearGitRevision[key] = struct{}{}
+			}
+
+			if !toolPinEmpty(pin) {
 				l.Tools[key] = pin
 			}
 		}
@@ -328,7 +364,8 @@ func Merge(existing, fresh *Lock) *Lock {
 	}
 	for key, oldPin := range existing.Tools {
 		newPin, ok := fresh.Tools[key]
-		if !ok {
+		_, clearRevision := fresh.clearGitRevision[key]
+		if !ok && !clearRevision {
 			fresh.Tools[key] = oldPin
 			continue
 		}
@@ -338,7 +375,19 @@ func Merge(existing, fresh *Lock) *Lock {
 		if newPin.Checksum == "" {
 			newPin.Checksum = oldPin.Checksum
 		}
-		fresh.Tools[key] = newPin
+		if !clearRevision {
+			if newPin.Revision == "" {
+				newPin.Revision = oldPin.Revision
+			}
+			if newPin.Selector == "" {
+				newPin.Selector = oldPin.Selector
+			}
+		}
+		if toolPinEmpty(newPin) {
+			delete(fresh.Tools, key)
+		} else {
+			fresh.Tools[key] = newPin
+		}
 	}
 	return fresh
 }
@@ -416,6 +465,17 @@ func ValidateFrozen(s *config.Schema, l *Lock) error {
 				}
 				return fmt.Errorf("lock: frozen lock needs update: missing resolved checksum pin for %q", key)
 			}
+			if selector, mutable := gitMutableSelector(method); mutable {
+				if pin.Revision == "" || pin.Selector == "" {
+					return fmt.Errorf("lock: frozen lock needs update: missing resolved Git revision pin for %q", key)
+				}
+				if err := validateGitPin(pin); err != nil {
+					return fmt.Errorf("lock: frozen lock needs update: invalid Git revision pin for %q: %w", key, err)
+				}
+				if pin.Selector != selector {
+					return fmt.Errorf("lock: frozen lock needs update: Git selector changed for %q", key)
+				}
+			}
 		}
 	}
 	return nil
@@ -483,6 +543,16 @@ func Apply(s *config.Schema, l *Lock) {
 				continue
 			}
 
+			if selector, mutable := gitMutableSelector(method); mutable && pin.Revision != "" && pin.Selector != "" {
+				if err := validateGitPin(pin); err == nil && pin.Selector == selector {
+					method.LockedRevision = pin.Revision
+				} else if pin.Selector != selector {
+					log.Default.Warn("Git selector changed since lock was created",
+						"tool", name, "method", method.Kind,
+						"action", "run 'depengine update' to refresh the revision pin")
+				}
+			}
+
 			// Substitute {latest} in the current URL template with the
 			// pinned version tag.
 			if pin.Latest != "" {
@@ -512,6 +582,93 @@ func Apply(s *config.Schema, l *Lock) {
 			}
 		}
 	}
+}
+
+func gitMutableSelector(method *config.MethodCandidate) (string, bool) {
+	if method == nil || (method.Kind != "git" && method.Kind != "cargo") {
+		return "", false
+	}
+	if method.Kind == "cargo" {
+		source, _ := method.Config["git"].(string)
+		if source == "" {
+			return "", false
+		}
+	}
+	if branch, _ := method.Config["branch"].(string); branch != "" {
+		return "branch:" + branch, true
+	}
+	if tag, _ := method.Config["tag"].(string); tag != "" {
+		return "tag:" + tag, true
+	}
+	return "", false
+}
+
+func resolveMutableGitRevision(ctx context.Context, rn run.Runner, tool *config.Tool, method *config.MethodCandidate) (string, error) {
+	if method.Kind == "git" {
+		return gitadapter.ResolveMutableRevision(ctx, rn, tool, method)
+	}
+	if method.Kind != "cargo" {
+		return "", fmt.Errorf("method %q is not Git-backed", method.Kind)
+	}
+	source, _ := method.Config["git"].(string)
+	if source == "" {
+		return "", fmt.Errorf("cargo git source is required")
+	}
+	gitMethod := &config.MethodCandidate{
+		Kind:           "git",
+		LockedRevision: method.LockedRevision,
+		SecretRef:      method.SecretRef,
+		Config:         map[string]any{"url": source},
+	}
+	if branch, _ := method.Config["branch"].(string); branch != "" {
+		gitMethod.Config["branch"] = branch
+	}
+	if tag, _ := method.Config["tag"].(string); tag != "" {
+		gitMethod.Config["tag"] = tag
+	}
+	return gitadapter.ResolveMutableRevision(ctx, rn, tool, gitMethod)
+}
+
+func gitLockResolutionContext(ctx context.Context, method *config.MethodCandidate) (context.Context, error) {
+	if method == nil || method.SecretRef == nil {
+		return ctx, nil
+	}
+	ref := plan.SecretReference{Provider: method.SecretRef.Provider, Name: method.SecretRef.Name}
+	credential, err := (secret.EnvResolver{}).Resolve(ctx, ref)
+	if err != nil || credential == "" {
+		return nil, fmt.Errorf("declared git credential is unavailable")
+	}
+	if ref.Provider == "env" && ref.Name != "" {
+		ctx = run.WithOmittedEnv(ctx, ref.Name)
+	}
+	return exec.WithGitCredential(ctx, credential), nil
+}
+
+func validateGitPin(pin ToolPin) error {
+	if pin.Revision == "" && pin.Selector == "" {
+		return nil
+	}
+	if pin.Revision == "" || pin.Selector == "" {
+		return fmt.Errorf("git revision and selector must be present together")
+	}
+	if !strings.HasPrefix(pin.Selector, "branch:") && !strings.HasPrefix(pin.Selector, "tag:") {
+		return fmt.Errorf("unsupported git selector %q", pin.Selector)
+	}
+	_, value, _ := strings.Cut(pin.Selector, ":")
+	if value == "" || strings.ContainsRune(value, '\x00') {
+		return fmt.Errorf("git selector must be non-empty and contain no NUL")
+	}
+	if len(pin.Revision) != 40 && len(pin.Revision) != 64 {
+		return fmt.Errorf("git revision must be a 40- or 64-hex commit")
+	}
+	if _, err := hex.DecodeString(pin.Revision); err != nil {
+		return fmt.Errorf("git revision must be hexadecimal")
+	}
+	return nil
+}
+
+func toolPinEmpty(pin ToolPin) bool {
+	return pin.Latest == "" && pin.Checksum == "" && pin.Revision == "" && pin.Selector == ""
 }
 
 func githubUsesLatest(cfg map[string]any) bool {

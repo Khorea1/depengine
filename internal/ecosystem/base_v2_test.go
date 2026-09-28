@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/planner"
 	"github.com/Khorea1/depengine/internal/run"
@@ -134,6 +135,50 @@ func TestBaseAdapterV2ObservePreservesExactVersionDrift(t *testing.T) {
 	verification := plan.Reconcile(plan.ResolvedIdentity{Package: "demo-pkg", Version: "1.2.3"}, observation)
 	if verification.State != plan.StateDrifted || len(verification.Drift) != 1 || verification.Drift[0].Field != plan.FieldVersion {
 		t.Fatalf("verification = %+v, want exact-version drift", verification)
+	}
+}
+
+func TestBaseAdapterExactVersionKindsObserveInstalledDrift(t *testing.T) {
+	fixtures := map[string]string{
+		"pip":      "Name: demo\nVersion: 2.0.0\n",
+		"pipx":     `{"venvs":{"demo":{"main_package":{"package":"demo","package_version":"2.0.0"}}}}`,
+		"uv":       "demo v2.0.0\n- demo\n",
+		"npm":      `{"dependencies":{"demo":{"version":"2.0.0"}}}`,
+		"pnpm":     `[{"dependencies":{"demo":{"version":"2.0.0"}}}]`,
+		"bun":      "└── demo@2.0.0\n",
+		"gem":      "demo (2.0.0)\n",
+		"yarn":     "info \"demo@2.0.0\" has binaries:\n",
+		"composer": "name : demo\nversions : * 2.0.0\n",
+	}
+	for kind, baseConfig := range Configs {
+		if kind == "cargo" || kind == "go" {
+			continue
+		}
+		contract, ok := methodkind.Lookup(kind)
+		if !ok || !contract.Supports(methodkind.CapabilityExactVersion) {
+			continue
+		}
+		stdout, ok := fixtures[kind]
+		if !ok {
+			t.Fatalf("exact-version BaseAdapter kind %q has no drift fixture", kind)
+		}
+		t.Run(kind, func(t *testing.T) {
+			adapter := NewBaseAdapter(baseConfig)
+			tool := &config.Tool{Name: "demo"}
+			method := &config.MethodCandidate{Kind: kind, Config: map[string]any{"pkg": "demo", "version": "1.0.0"}}
+			runner := &run.FakeRunner{LookPaths: map[string]bool{baseConfig.Binary: true}, Stdout: stdout}
+			observation, err := adapter.Observe(context.Background(), runner, tool, method)
+			if err != nil {
+				t.Fatalf("Observe() error = %v", err)
+			}
+			if observation.Presence != plan.PresencePresent || observation.Identity.Version != "2.0.0" {
+				t.Fatalf("Observe() = %+v, want installed version 2.0.0", observation)
+			}
+			verification := plan.Reconcile(plan.ResolvedIdentity{Package: "demo", Version: "1.0.0"}, observation)
+			if verification.State != plan.StateDrifted || len(verification.Drift) != 1 || verification.Drift[0].Field != plan.FieldVersion {
+				t.Fatalf("verification = %+v, want exact-version drift", verification)
+			}
+		})
 	}
 }
 

@@ -36,9 +36,11 @@ The lockfile is the immutable-resolution projection of `ResolvedInstallPlan`:
 
 ## Open work
 
-- Per-adapter concrete fields (native/ecosystem versions, Go/Cargo,
-  Git SHAs, container digests, artifact URLs, version-manager pins,
-  Snap/Flatpak channels).
+- Per-adapter concrete fields (native/ecosystem versions, Go/Cargo package
+  versions, container digests, artifact URLs, version-manager pins, and
+  Snap/Flatpak channels). Legacy lock v1 now persists concrete Git SHAs for
+  direct Git and Cargo Git branch/tag selectors; universal projection migration
+  remains open.
 - `depengine update` meaningful pins for every mutable method class.
 - Install/upgrade wiring consuming the pinned plan and verifier.
 - `update` CLI migration to the pure projection path.

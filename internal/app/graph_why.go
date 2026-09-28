@@ -28,6 +28,7 @@ func newGraphCmd() *cobra.Command {
 	graphFormat := new(string)
 	graphWidth := new(int)
 	graphView := new(string)
+	graphShowInactive := new(bool)
 	graphProfile := new(string)
 	graphOnly := new(string)
 	graphSkip := new(string)
@@ -38,7 +39,7 @@ func newGraphCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runGraphView(cmd.Context(), graphSchema, graphManifest, graphNoManifest, graphFormat, graphWidth, graphView, graphProfile, graphOnly, graphSkip)
+			return runGraphView(cmd.Context(), graphSchema, graphManifest, graphNoManifest, graphFormat, graphWidth, graphView, graphShowInactive, graphProfile, graphOnly, graphSkip)
 		},
 	}
 	f := cmd.Flags()
@@ -48,13 +49,14 @@ func newGraphCmd() *cobra.Command {
 	f.StringVar(graphFormat, "format", "text", "output format: mermaid, dot, text, graph")
 	f.IntVar(graphWidth, "width", 0, "terminal width for --format graph (0 = detect terminal width)")
 	f.StringVar(graphView, "view", "declared", "graph projection: declared, effective, resolved")
+	f.BoolVar(graphShowInactive, "show-inactive", false, "include guard-inactive edges in effective/resolved views")
 	f.StringVar(graphProfile, "profile", "", "only show tools with matching tag")
 	f.StringVar(graphOnly, "only", "", "only show subgraph for specific tool")
 	f.StringVar(graphSkip, "skip", "", "skip specific tools (comma-separated)")
 	return cmd
 }
 
-func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graphNoManifest *bool, graphFormat *string, graphWidth *int, graphView, graphProfile, graphOnly, graphSkip *string) error {
+func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graphNoManifest *bool, graphFormat *string, graphWidth *int, graphView *string, graphShowInactive *bool, graphProfile, graphOnly, graphSkip *string) error {
 	switch *graphFormat {
 	case "mermaid", "dot", "text", "graph":
 	default:
@@ -68,6 +70,10 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 
 	view, err := parseGraphView(*graphView)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return exitWithCode(2)
+	}
+	if err := validateGraphProjectionOptions(view, *graphShowInactive); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return exitWithCode(2)
 	}
@@ -106,7 +112,7 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 	}
 
 	declaredGraph := graph.BuildDeclaredGraph(s.Tools)
-	visibleGraph, err := projectGraphView(ctx, declaredGraph, s, view)
+	visibleGraph, err := projectGraphView(ctx, declaredGraph, s, view, *graphShowInactive)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: project %s graph: %v\n", view, err)
 		return exitWithCode(3)

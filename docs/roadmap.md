@@ -47,11 +47,12 @@ Work on the current execution model comes before adding more installer types.
   reconcile observations against that plan. Native batch gates use the same
   verification as serial execution. Remove and undo verify the tracked target
   and project its resolved identity into the removal adapter.
-- [~] Finish exact-version support and installed-version checks per adapter.
-  The 17 methods that declare exact-version capability are documented in the
-  schema reference. RubyGems now reports the requested version when it is one
-  of several installed versions, matching its presence check. Continue the
-  per-adapter audit before declaring this complete.
+- [x] Finish exact-version support and installed-version checks per adapter.
+  All 17 methods that declare exact-version capability now have an audited
+  observation path. Exact checks remain strict while observations preserve a
+  different installed version as drift instead of conflating it with absence;
+  the BaseAdapter matrix, Windows adapters, Cargo/Go, Conda, SDKMAN, and
+  asdf/mise have regression coverage for that contract.
 - [x] Make lock generation/consumption cover every supported mutable method, or
   narrow the documented reproducibility promise. Done: the promise is narrowed —
   `docs/support-boundary.md` tabulates, per selector class, what lock v1 pins and
@@ -63,15 +64,15 @@ Work on the current execution model comes before adding more installer types.
   materialized `*:auto` checksums and every pin outside `--profile`, breaking
   the next frozen install). Remaining
   selector coverage stays open in the item below and in ADR-001 open work.
-- [ ] Cover the mutable selectors lock v1 still ignores: git `branch`/`tag`,
-  container `tag`, ecosystem/native resolutions, and channels — either by pinning
-  them in `depengine.lock` or by wiring the universal lock projection
-  end-to-end. See
-  [`design/adr-001-universal-lock-projection.md`](design/adr-001-universal-lock-projection.md);
-  current per-selector coverage is tabulated in
-  [`support-boundary.md`](support-boundary.md). Git branch/tag plans now resolve
-  to a concrete commit before execution, including annotated tags; persisting
-  and consuming that commit in the lock remains open.
+- [~] Cover the mutable selectors lock v1 still ignores: container `tag`,
+  ecosystem/native resolutions, and channels — either by pinning them in
+  `depengine.lock` or by wiring the universal lock projection end-to-end.
+  Direct Git and `cargo --git` branch/tag selectors are now covered: lock v1
+  persists both the requested selector and its concrete commit (annotated tags
+  use the peeled commit), frozen installs reject selector drift, and execution
+  reuses the locked commit without another remote lookup. See
+  [`design/adr-001-universal-lock-projection.md`](design/adr-001-universal-lock-projection.md)
+  and [`support-boundary.md`](support-boundary.md).
 - [~] Finish typed package-source selection, trust, ownership, verification,
   and locking. Git-backed Brew/Scoop sources with explicit URLs now verify the
   existing host origin instead of accepting a same-name source blindly;
@@ -157,10 +158,12 @@ Work on the current execution model comes before adding more installer types.
   responsibilities with separate invariants. Done: both files were reviewed;
   each is one cohesive state machine with cross-block coupling, so both remain
   unsplit.
-- [ ] Decide whether tagged `go install github.com/Khorea1/depengine@version`
-  is a supported distribution path. If yes, remove the main-module `replace`
-  directives and add a release/install smoke check; if no, document the
-  unsupported path and point users at the canonical release installation.
+- [x] Decide whether tagged `go install github.com/Khorea1/depengine@version`
+  is a supported distribution path. It is not: the main module intentionally
+  keeps `replace` directives for the transitive `gopkg.in` sources, while Go
+  rejects version-suffixed installation when the providing module contains
+  `replace` directives. The README now points users at GitHub release artifacts
+  or a source-checkout build instead.
 - [x] Tighten the runtime-dependency claim. Distinguish the single-file
   `CGO_ENABLED=0` release contract from platform system interfaces and Unix
   host requirements used by OS detection (`sh` and standard utilities).

@@ -2,6 +2,7 @@ package ecosystem
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -32,20 +33,17 @@ func (a *AsdfAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 	if len(pkg) == 0 || pkg[0] == "" {
 		return false
 	}
+	versions, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, pkg[0])
+	if err != nil || !foundBackend || len(versions) == 0 {
+		return false
+	}
 	desired := asdfVersion(mc)
-	for _, cmd := range []string{"asdf", "mise"} {
-		if run.LookPath(ctx, rn, cmd) {
-			res := rn.Run(ctx, cmd, "list", pkg[0])
-			if res.Err != nil || res.ExitCode != 0 {
-				continue
-			}
-			out := strings.TrimSpace(string(res.Stdout))
-			if desired == "latest" {
-				return out != ""
-			}
-			if hasWord(out, desired) {
-				return true
-			}
+	if desired == "latest" {
+		return true
+	}
+	for _, version := range versions {
+		if version == desired {
+			return true
 		}
 	}
 	return false
@@ -119,6 +117,82 @@ func asdfVersion(mc *config.MethodCandidate) string {
 	return "latest"
 }
 
+func asdfInstalledVersions(output string) []string {
+	versions := make([]string, 0)
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		line = strings.TrimLeft(line, "* ")
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		versions = append(versions, fields[0])
+	}
+	return versions
+}
+
+func miseInstalledVersions(output []byte) ([]string, error) {
+	var rows []struct {
+		Version   string `json:"version"`
+		Installed bool   `json:"installed"`
+	}
+	if err := json.Unmarshal(output, &rows); err != nil {
+		return nil, fmt.Errorf("mise: parse installed versions: %w", err)
+	}
+	versions := make([]string, 0, len(rows))
+	for _, row := range rows {
+		version := strings.TrimSpace(row.Version)
+		if version != "" && row.Installed {
+			versions = append(versions, version)
+		}
+	}
+	return versions, nil
+}
+
+func asdfOrMiseInstalledVersions(ctx context.Context, rn run.Runner, pkg string) ([]string, bool, error) {
+	foundBackend := false
+	succeeded := false
+	var lastErr error
+	for _, backend := range []string{"asdf", "mise"} {
+		if !run.LookPath(ctx, rn, backend) {
+			continue
+		}
+		foundBackend = true
+		var res run.Result
+		if backend == "mise" {
+			res = rn.Run(ctx, backend, "ls", pkg, "--installed", "--json")
+		} else {
+			res = rn.Run(ctx, backend, "list", pkg)
+		}
+		if res.Err != nil || res.ExitCode != 0 {
+			lastErr = fmt.Errorf("%s list %s failed: %w", backend, pkg, run.CheckResult(res, "asdf: observe"))
+			continue
+		}
+		var versions []string
+		var err error
+		if backend == "mise" {
+			versions, err = miseInstalledVersions(res.Stdout)
+		} else {
+			versions = asdfInstalledVersions(string(res.Stdout))
+		}
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		succeeded = true
+		if len(versions) > 0 {
+			return versions, true, nil
+		}
+	}
+	if succeeded || !foundBackend {
+		return nil, foundBackend, nil
+	}
+	return nil, true, lastErr
+}
+
 func (a *AsdfAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
 	if intent == nil {
 		return nil, errors.New("asdf: nil plan intent")
@@ -142,45 +216,43 @@ func (a *AsdfAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 	if len(pkg) == 0 || pkg[0] == "" {
 		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "asdf: no package name"}, nil
 	}
-	desired := asdfVersion(mc)
-	foundBackend := false
-	var lastErr error
-	for _, cmd := range []string{"asdf", "mise"} {
-		if !run.LookPath(ctx, rn, cmd) {
-			continue
-		}
-		foundBackend = true
-		res := rn.Run(ctx, cmd, "list", pkg[0])
-		if res.Err != nil || res.ExitCode != 0 {
-			lastErr = fmt.Errorf("%s list %s failed: %w", cmd, pkg[0], run.CheckResult(res, "asdf: observe"))
-			continue
-		}
-		out := strings.TrimSpace(string(res.Stdout))
-		if out == "" || (desired != "latest" && !hasWord(out, desired)) {
-			continue
-		}
-		identity := plan.ObservedIdentity{Package: pkg[0]}
-		fields := []plan.IdentityField{plan.FieldPackage}
-		if desired != "latest" {
-			identity.Version, fields = desired, append(fields, plan.FieldVersion)
-		}
-		return plan.Observation{Presence: plan.PresencePresent, Identity: identity, KnownFields: fields}, nil
+	versions, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, pkg[0])
+	if err != nil {
+		return plan.Observation{Presence: plan.PresenceBroken, Detail: err.Error()}, err
 	}
-	if lastErr != nil {
-		return plan.Observation{Presence: plan.PresenceBroken, Detail: lastErr.Error()}, lastErr
-	}
-	if !foundBackend {
+	if !foundBackend || len(versions) == 0 {
 		return plan.Observation{Presence: plan.PresenceAbsent}, nil
 	}
-	return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	observation := plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Package: pkg[0]},
+		KnownFields: []plan.IdentityField{plan.FieldPackage},
+	}
+	desired := asdfVersion(mc)
+	if desired == "latest" {
+		return observation, nil
+	}
+	observed := versions[0]
+	for _, version := range versions {
+		if version == desired {
+			observed = desired
+			break
+		}
+	}
+	observation.Identity.Version = observed
+	observation.KnownFields = append(observation.KnownFields, plan.FieldVersion)
+	return observation, nil
 }
 
-// InstalledVersion reports an exact installed version only when the same
-// observation used for desired-state verification can prove it. Unpinned
-// asdf/mise installs deliberately return an empty version: their list output
-// establishes presence but does not provide one portable selected-version
-// contract across both backends.
+// InstalledVersion reports an exact installed version for pinned intent. When
+// another version is installed instead, it reports that concrete version so
+// reconciliation can classify the candidate as drifted rather than absent.
+// Unpinned asdf/mise installs deliberately return an empty version because
+// presence alone does not identify one desired version.
 func (a *AsdfAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (string, error) {
+	if asdfVersion(mc) == "latest" {
+		return "", nil
+	}
 	observation, err := a.Observe(ctx, rn, tool, mc)
 	if err != nil {
 		return "", err
@@ -188,12 +260,7 @@ func (a *AsdfAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool 
 	if observation.Presence != plan.PresencePresent {
 		return "", nil
 	}
-	for _, field := range observation.KnownFields {
-		if field == plan.FieldVersion {
-			return observation.Identity.Version, nil
-		}
-	}
-	return "", nil
+	return observation.Identity.Version, nil
 }
 
 func (a *AsdfAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *config.Tool, _ *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {

@@ -208,6 +208,14 @@ func (a *CargoAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config
 	if resolved.Identity.Package == "" {
 		return nil, errors.New("cargo: no package name in plan intent")
 	}
+	if mc.LockedRevision != "" {
+		gitURL, _ := mc.Config["git"].(string)
+		requested := resolved.Identity.RequestedVersion
+		if gitURL == "" || requested == nil || (requested.Mode != plan.VersionGitBranch && requested.Mode != plan.VersionGitTag) {
+			return nil, errors.New("cargo: locked revision requires a Git branch or tag intent")
+		}
+		resolved.Identity.Revision = mc.LockedRevision
+	}
 	return &resolved, nil
 }
 
@@ -456,10 +464,14 @@ func cargoResolvedConfig(mc *config.MethodCandidate, resolved *plan.ResolvedInst
 	delete(cfg, "rev")
 	if requested := resolved.Identity.RequestedVersion; requested != nil {
 		switch requested.Mode {
-		case plan.VersionGitBranch:
-			cfg["branch"] = requested.Value
-		case plan.VersionGitTag:
-			cfg["tag"] = requested.Value
+		case plan.VersionGitBranch, plan.VersionGitTag:
+			if resolved.Identity.Revision != "" {
+				cfg["rev"] = resolved.Identity.Revision
+			} else if requested.Mode == plan.VersionGitBranch {
+				cfg["branch"] = requested.Value
+			} else {
+				cfg["tag"] = requested.Value
+			}
 		case plan.VersionGitRevision:
 			cfg["rev"] = requested.Value
 		}

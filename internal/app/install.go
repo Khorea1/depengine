@@ -233,23 +233,22 @@ func newInstallExecutor(p installPlan, s *config.Schema, clan string, facts *eng
 	return ex
 }
 
-// resolveInstallLock loads the lockfile and auto-resolves {latest} pins when
-// no lockfile exists (npm/pip style: first install needs no explicit update).
-func resolveInstallLock(ctx context.Context, p installPlan, s *config.Schema, lg *slog.Logger) (*lock.Lock, error) {
+// resolveInstallLock loads the lockfile and completes supported pins that are
+// still absent. Resolving before planning ensures execution and persistence
+// consume the same immutable value, including when migrating an older lock.
+func resolveInstallLock(ctx context.Context, p installPlan, s *config.Schema, lg *slog.Logger, rn run.Runner) (*lock.Lock, error) {
 	lk, err := loadLockfile(p.schema, s, p.frozen, lg)
 	if err != nil {
 		return nil, err
 	}
-	if lk == nil && !p.frozen {
-		if hasLatestPlaceholders(s) {
-			lg.Info("no lockfile found — resolving latest versions")
-			newLock, err := lock.ResolveAll(ctx, s, run.OSExecRunner{})
-			if err != nil {
-				lg.Warn("could not auto-resolve latest", "error", err, "hint", "run 'depengine update' manually")
-			} else if newLock != nil {
-				lock.Apply(s, newLock)
-				lk = newLock
-			}
+	if !p.frozen && (hasLatestPlaceholders(s) || hasLockableMutableSelectors(s)) {
+		lg.Info("resolving missing lockable selectors")
+		fresh, err := lock.ResolveAll(ctx, s, rn)
+		if err != nil {
+			lg.Warn("could not auto-resolve lockable selectors", "error", err, "hint", "run 'depengine update' manually")
+		} else if fresh != nil {
+			lk = mergeInstallLock(lk, fresh)
+			lock.Apply(s, lk)
 		}
 	}
 	return lk, nil
@@ -303,7 +302,7 @@ func installExitForReport(report *exec.ExecReport) error {
 // prints the share hint, and maps the report to the exit error.
 func finishInstallRun(ctx context.Context, report *exec.ExecReport, p installPlan, s *config.Schema, lockPath string, lk *lock.Lock, lg *slog.Logger, cs *cliStyle) error {
 	if !p.dryRun {
-		saveLockfile(ctx, s, lockPath, lk, lg, p.diagnose)
+		saveLockfile(ctx, s, lockPath, lk, lg, p.diagnose, run.OSExecRunner{})
 		// Reconcile recorded versions with the lock: backfill versions the
 		// adapter could not determine (e.g. {latest} pins baked into URLs)
 		// and surface installed-vs-pinned mismatches instead of a silent
@@ -375,7 +374,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	ex := newInstallExecutor(p, s, clan, facts, schemaFile.ModTime(), lg)
 
 	lockPath := lock.DefaultPath(p.schema)
-	lk, err := resolveInstallLock(ctx, p, s, lg)
+	lk, err := resolveInstallLock(ctx, p, s, lg, run.OSExecRunner{})
 	if err != nil {
 		return err
 	}

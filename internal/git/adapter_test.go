@@ -1104,3 +1104,25 @@ func TestGitAdapterResolvePlanRejectsMissingRemoteRef(t *testing.T) {
 		t.Fatalf("ResolvePlan() error = %v, want missing reference", err)
 	}
 }
+
+func TestGitAdapterResolvePlanUsesLockedRevisionWithoutRemoteLookup(t *testing.T) {
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	mc := &config.MethodCandidate{
+		Kind:           "git",
+		LockedRevision: commit,
+		Config:         map[string]any{"url": "https://example.test/repo.git", "branch": "main"},
+	}
+	intent := plan.New("demo", "git", true)
+	intent.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionGitBranch, Value: "main"}
+	runner := &run.FakeRunner{}
+	resolved, err := NewGitAdapter().ResolvePlan(context.Background(), runner, &config.Tool{Name: "demo"}, mc, &intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Identity.Revision != commit {
+		t.Fatalf("revision = %q, want locked commit %q", resolved.Identity.Revision, commit)
+	}
+	if len(runner.Calls) != 0 {
+		t.Fatalf("locked resolution made remote calls: %+v", runner.Calls)
+	}
+}

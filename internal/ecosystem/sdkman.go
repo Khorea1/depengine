@@ -45,7 +45,7 @@ func (a *SDKManAdapter) Available(ctx context.Context, rn run.Runner) bool {
 
 func (a *SDKManAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	candidate := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
-	if len(candidate) == 0 {
+	if len(candidate) == 0 || candidate[0] == "" {
 		return false
 	}
 	root, err := sdkmanRoot()
@@ -53,15 +53,28 @@ func (a *SDKManAdapter) Check(ctx context.Context, rn run.Runner, tool *config.T
 		return false
 	}
 	base := filepath.Join(root, "candidates", candidate[0])
-	if version, ok := mc.Config["version"].(string); ok && version != "" {
-		// Exact-version intent is satisfied only when that version is actually
-		// installed. Checking only the `current` symlink would silently accept
-		// a different SDK version.
-		_, err = os.Stat(filepath.Join(base, version))
-		return err == nil
+	if version := sdkmanVersion(mc); version != "" {
+		return sdkmanVersionDirInstalled(filepath.Join(base, version))
 	}
-	_, err = os.Stat(filepath.Join(base, "current"))
-	return err == nil
+	_, ok := sdkmanCurrentVersion(base)
+	return ok
+}
+
+func sdkmanVersionDirInstalled(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+func sdkmanCurrentVersion(base string) (string, bool) {
+	resolved, err := filepath.EvalSymlinks(filepath.Join(base, "current"))
+	if err != nil || !sdkmanVersionDirInstalled(resolved) {
+		return "", false
+	}
+	version := filepath.Base(resolved)
+	if version == "." || version == string(filepath.Separator) || version == "" {
+		return "", false
+	}
+	return version, true
 }
 
 // InstalledVersion reports the SDKMAN candidate version represented by the
@@ -80,21 +93,19 @@ func (a *SDKManAdapter) InstalledVersion(_ context.Context, _ run.Runner, tool *
 		return "", err
 	}
 	base := filepath.Join(root, "candidates", candidate[0])
-	if version, ok := mc.Config["version"].(string); ok && version != "" {
-		if _, err := os.Stat(filepath.Join(base, version)); err != nil {
-			return "", err
+	if version := sdkmanVersion(mc); version != "" {
+		if sdkmanVersionDirInstalled(filepath.Join(base, version)) {
+			return version, nil
 		}
-		return version, nil
+		if current, ok := sdkmanCurrentVersion(base); ok {
+			return current, nil
+		}
+		return "", os.ErrNotExist
 	}
-	resolved, err := filepath.EvalSymlinks(filepath.Join(base, "current"))
-	if err != nil {
-		return "", err
+	if current, ok := sdkmanCurrentVersion(base); ok {
+		return current, nil
 	}
-	version := filepath.Base(resolved)
-	if version == "." || version == string(filepath.Separator) || version == "" {
-		return "", fmt.Errorf("sdkman: could not determine current version for %s", candidate[0])
-	}
-	return version, nil
+	return "", os.ErrNotExist
 }
 
 func (a *SDKManAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
@@ -176,7 +187,7 @@ func (a *SDKManAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *confi
 	return &resolved, nil
 }
 
-func (a *SDKManAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+func (a *SDKManAdapter) Observe(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
 	if tool == nil || mc == nil {
 		return plan.Observation{}, errors.New("sdkman: tool and method are required")
 	}
@@ -184,14 +195,33 @@ func (a *SDKManAdapter) Observe(ctx context.Context, rn run.Runner, tool *config
 	if len(pkg) == 0 || pkg[0] == "" {
 		return plan.Observation{Presence: plan.PresenceAbsent}, nil
 	}
-	if !a.Check(ctx, rn, tool, mc) {
-		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	root, err := sdkmanRoot()
+	if err != nil {
+		return plan.Observation{Presence: plan.PresenceBroken, Detail: err.Error()}, err
 	}
-	observation := plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg[0]}, KnownFields: []plan.IdentityField{plan.FieldPackage}}
-	if version := sdkmanVersion(mc); version != "" {
-		observation.Identity.Version = version
-		observation.KnownFields = append(observation.KnownFields, plan.FieldVersion)
+	base := filepath.Join(root, "candidates", pkg[0])
+	observation := plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Package: pkg[0]},
+		KnownFields: []plan.IdentityField{plan.FieldPackage},
 	}
+	requested := sdkmanVersion(mc)
+	if requested == "" {
+		if _, ok := sdkmanCurrentVersion(base); !ok {
+			return plan.Observation{Presence: plan.PresenceAbsent}, nil
+		}
+		return observation, nil
+	}
+	observed := requested
+	if !sdkmanVersionDirInstalled(filepath.Join(base, requested)) {
+		current, ok := sdkmanCurrentVersion(base)
+		if !ok {
+			return plan.Observation{Presence: plan.PresenceAbsent}, nil
+		}
+		observed = current
+	}
+	observation.Identity.Version = observed
+	observation.KnownFields = append(observation.KnownFields, plan.FieldVersion)
 	return observation, nil
 }
 

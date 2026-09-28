@@ -53,6 +53,71 @@ func TestProjectEffectiveEvaluatesOnlyGuardedEdges(t *testing.T) {
 	}
 }
 
+func TestProjectEffectiveCanRetainInactiveEdges(t *testing.T) {
+	g := NewGraph()
+	g.AddNode(Node{ID: "app"})
+	g.AddNode(Node{ID: "active"})
+	g.AddNode(Node{ID: "inactive"})
+	g.AddEdge(Edge{From: "active", To: "app", Kind: ToolRequire, Role: Scheduling, Guard: testGuard("yes")})
+	g.AddEdge(Edge{From: "inactive", To: "app", Kind: ToolRequire, Role: Scheduling, Guard: testGuard("no")})
+
+	projected, err := g.Project(EffectiveView, ProjectionContext{
+		IncludeInactive: true,
+		GuardActive: func(guard Guard) (bool, error) {
+			return guard.String() == "yes", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("effective projection failed: %v", err)
+	}
+	if len(projected.Edges) != 2 {
+		t.Fatalf("effective projection edges = %#v", projected.Edges)
+	}
+	states := map[string]EdgeState{}
+	for _, edge := range projected.Edges {
+		states[edge.From] = edge.State
+	}
+	if states["active"] != ActiveEdge || states["inactive"] != InactiveEdge {
+		t.Fatalf("projected states = %v, want active/inactive classification", states)
+	}
+
+	levels, err := SortGraph(projected)
+	if err != nil {
+		t.Fatalf("SortGraph: %v", err)
+	}
+	if len(levels) != 2 || len(levels[0]) != 2 || levels[0][0] != "active" || levels[0][1] != "inactive" || len(levels[1]) != 1 || levels[1][0] != "app" {
+		t.Fatalf("inactive edge constrained scheduling: %#v", levels)
+	}
+}
+
+func TestProjectResolvedStillOmitsUnselectedCandidateWhenIncludingInactive(t *testing.T) {
+	g := NewGraph()
+	g.AddNode(Node{ID: "app"})
+	g.AddEdge(Edge{From: "curl", To: "app", Kind: MethodRequire, Role: Activation, Method: "http", Candidate: 0, CandidateKnown: true})
+	g.AddEdge(Edge{From: "wget", To: "app", Kind: MethodRequire, Role: Activation, Method: "http", Candidate: 1, CandidateKnown: true, Guard: testGuard("must-not-run")})
+
+	guardCalls := 0
+	projected, err := g.Project(ResolvedView, ProjectionContext{
+		IncludeInactive: true,
+		SelectedCandidate: func(toolID string, candidate int) bool {
+			return toolID == "app" && candidate == 0
+		},
+		GuardActive: func(Guard) (bool, error) {
+			guardCalls++
+			return true, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("resolved projection failed: %v", err)
+	}
+	if guardCalls != 0 {
+		t.Fatalf("unselected candidate guard evaluated %d times", guardCalls)
+	}
+	if len(projected.Edges) != 1 || projected.Edges[0].From != "curl" || projected.Edges[0].State != ActiveEdge {
+		t.Fatalf("resolved projection retained an unselected candidate: %#v", projected.Edges)
+	}
+}
+
 func TestProjectEffectiveNeedsEvaluatorOnlyForGuards(t *testing.T) {
 	unguarded := NewGraph()
 	unguarded.AddEdge(Edge{From: "a", To: "b", Kind: ToolRequire, Role: Scheduling})

@@ -351,3 +351,35 @@ func TestCargoAdapterV2InstallResolvedRejectsNonCanonicalOperations(t *testing.T
 		})
 	}
 }
+
+func TestCargoAdapterV2LockedGitBranchInstallsPinnedRevision(t *testing.T) {
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	adapter := NewCargoAdapter()
+	tool := &config.Tool{Name: "demo"}
+	method := &config.MethodCandidate{
+		Kind:           "cargo",
+		LockedRevision: commit,
+		Config: map[string]any{
+			"pkg":    "demo",
+			"git":    "https://example.test/demo.git",
+			"branch": "main",
+		},
+	}
+	intent, err := planner.BuildCandidateIntent(tool, method)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
+	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, method, &intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Identity.Revision != commit || resolved.Identity.RequestedVersion == nil || resolved.Identity.RequestedVersion.Mode != plan.VersionGitBranch {
+		t.Fatalf("resolved identity = %+v, want branch intent pinned to %s", resolved.Identity, commit)
+	}
+	runner := cargoV2Runner("")
+	if err := adapter.InstallResolved(context.Background(), runner, tool, method, resolved); err != nil {
+		t.Fatal(err)
+	}
+	assertLastCargoCall(t, runner, []string{"install", "--git", "https://example.test/demo.git", "--rev", commit, "demo"})
+}

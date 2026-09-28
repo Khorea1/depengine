@@ -55,8 +55,9 @@ Legacy lock v1 covers each selector class as follows:
 | `local_path` artifact | Yes | The content digest is computed during lock resolution even when the schema omits a checksum. |
 | Exact ecosystem version (`version = "1.2.3"` on npm, pip, cargo, go, ...) | No | `version` is never written to the lock, and the dependency graph behind it is not locked either. |
 | Native package install (apt, dnf, pacman, brew, ...) | No | Native methods carry no version field for the lock to record. |
-| Git `branch` or `tag` | No | Host-aware planning resolves the selected ref to a commit for that execution, but the lock records no commit. A later execution may resolve a different commit. |
-| `cargo` git source (`branch`, `tag`, or `rev`) | No | The lock records no commit for the checkout. |
+| Git `branch` or `tag` | Yes | Lock v1 stores the requested selector plus its concrete 40/64-hex commit. Annotated tags use the peeled commit; install reuses the locked commit without `ls-remote`, and frozen mode rejects a missing pin or selector drift. |
+| `cargo` git source (`branch` or `tag`) | Yes | The requested branch/tag remains in schema intent, while lock v1 stores the concrete commit resolved through Git. Install uses `cargo install --git ... --rev <commit>`; frozen mode rejects a missing pin or selector drift. |
+| `cargo` git source (`rev`) | No extra pin | `rev` is already an explicit immutable selector in schema; lock v1 adds no second copy. |
 | Container `tag` | No | The lock records nothing about the pulled image. |
 | Snap channel or track | No | The lock records no resolved snap revision. |
 | Flatpak `branch` | No | The lock records no resolved commit on that branch. |
@@ -72,8 +73,9 @@ lock version; when a tool's method identity is absent from the lock — the tool
 was added to the schema after the lock was written; when the stored method
 kind/label ordering no longer matches the schema; or when a required supported
 pin is missing. Required pins currently include repo-backed latest GitHub
-releases, `{latest}` URL templates, implicit local-artifact digests, and
-resolved `*:auto` checksums. Candidate host sources additionally require their
+releases, `{latest}` URL templates, implicit local-artifact digests, resolved
+`*:auto` checksums, and concrete commits for direct-Git or Cargo-Git branch/tag
+selectors. Candidate host sources additionally require their
 stored source-identity hash to be present and to match the schema. Frozen mode
 does not perform checksum TOFU to
 create a missing auto-checksum pin. Remote `*:auto` checksums are materialized
@@ -97,12 +99,15 @@ existing lock is unreadable or has an unsupported version, `update` warns and
 regenerates from the fresh resolution; it cannot preserve data it cannot
 parse. A plain `depengine install` never changes stored method or package-source identity:
 frozen installs fail validation against a changed identity, and non-frozen
-installs keep the stored hash and only warn.
+installs keep the stored hash and only warn. Non-frozen installs complete any
+supported pins missing from a readable older lock before planning, then persist
+that same resolved value after execution.
 
 This check is intentionally narrower than universal immutable resolution.
-Container tags, Git branches/tags, package-manager constraints, channels, and
-other selectors not represented by legacy lock v1 are not made immutable by
-`--frozen-lockfile`. The v1 method identity hash also covers method kind,
+Container tags, package-manager constraints, channels, and other selectors not
+represented by legacy lock v1 are not made immutable by `--frozen-lockfile`.
+Direct Git and Cargo Git branch/tag selectors are the exception: their concrete
+commits are persisted and consumed by lock v1. The v1 method identity hash also covers method kind,
 label, and ordering rather than every requested field inside a candidate;
 candidate host-source declarations are covered separately by source hashes.
 After changing resolver details that keep the same kind/label, run
