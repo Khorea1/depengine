@@ -1,0 +1,6 @@
+# Positive control: manifest knowledge for a schema-declared tool merges
+# (schema values still win on conflicting fields).
+schema_version = 1
+
+[packages]
+curl = { native = "curl-override" }

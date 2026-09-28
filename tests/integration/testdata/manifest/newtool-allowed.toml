@@ -1,0 +1,8 @@
+# Explicit opt-in: with allow_new_tools the same tool becomes visible.
+schema_version = 1
+
+[manifest]
+allow_new_tools = true
+
+[packages]
+newtool = { native = "newtool-pkg" }

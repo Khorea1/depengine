@@ -1,0 +1,7 @@
+# Adversarial: unknown root fields must be rejected, not ignored.
+schema_version = 1
+
+[backdoor]
+enabled = true
+
+[packages]
