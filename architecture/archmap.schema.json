@@ -46,12 +46,12 @@
     },
     "path": {
       "type": "string",
-      "pattern": "^(?!/)(?!(?:.*/)?\\.\\.(?:/|$))[^\\s\\\\]+$",
+      "pattern": "^(?!/)(?!(?:.*/)?\\.\\.(?:/|$))[^\\s\\\\\\x00-\\x1f]+$",
       "description": "Repo-relative POSIX path (file or directory, '.' allowed). No '..', no leading '/', no whitespace."
     },
     "evidence": {
       "type": "string",
-      "pattern": "^(?!/)(?!(?:.*/)?\\.\\.(?:/|$))[^\\s\\\\:]+(?::[1-9][0-9]*(?:-[1-9][0-9]*)?)?$",
+      "pattern": "^(?!/)(?!(?:.*/)?\\.\\.(?:/|$))[^\\s\\\\:\\x00-\\x1f]+(?::[1-9][0-9]*(?:-[1-9][0-9]*)?)?$",
       "description": "Repo-relative 'path', 'path:LINE' or 'path:START-END' proving the claim."
     },
     "notes": {
