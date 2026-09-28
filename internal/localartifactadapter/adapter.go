@@ -57,7 +57,9 @@ func (a *Adapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool,
 	if err != nil {
 		return fmt.Errorf("local: %w", err)
 	}
-	if err := verifyDetachedSignature(ctx, rn, mc, resolved.Path); err != nil {
+	sigPath, _ := mc.Config["signature_path"].(string)
+	signingKey, _ := mc.Config["signing_key"].(string)
+	if err := verifyDetachedSignature(ctx, rn, mc.ProjectRoot, sigPath, signingKey, resolved.Path); err != nil {
 		return err
 	}
 	if err := localartifact.Install(resolved, destination); err != nil {
@@ -85,10 +87,15 @@ func (a *Adapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool
 		return nil, fmt.Errorf("local: %w", err)
 	}
 	out := intent.Clone()
+	artifact := resolved.Artifact
 	if len(out.Artifacts) == 0 {
-		out.Artifacts = []plan.Artifact{resolved.Artifact}
+		artifact.SignaturePath, _ = mc.Config["signature_path"].(string)
+		artifact.SigningKey, _ = mc.Config["signing_key"].(string)
+		out.Artifacts = []plan.Artifact{artifact}
 	} else {
-		out.Artifacts[0] = resolved.Artifact
+		artifact.SignaturePath = out.Artifacts[0].SignaturePath
+		artifact.SigningKey = out.Artifacts[0].SigningKey
+		out.Artifacts[0] = artifact
 	}
 	return &out, nil
 }
@@ -145,7 +152,7 @@ func (a *Adapter) InstallResolved(ctx context.Context, rn run.Runner, tool *conf
 	if err != nil {
 		return fmt.Errorf("local: %w", err)
 	}
-	if err := verifyDetachedSignature(ctx, rn, mc, settled.Path); err != nil {
+	if err := verifyDetachedSignature(ctx, rn, mc.ProjectRoot, artifact.SignaturePath, artifact.SigningKey, settled.Path); err != nil {
 		return err
 	}
 	if err := localartifact.Install(settled, destination); err != nil {
@@ -192,11 +199,9 @@ func validateResolvedOperations(resolved *plan.ResolvedInstallPlan) error {
 // project root) and the vendored source bytes are verified against it before
 // any install mutation. Failures are fail-closed: a missing signature, a
 // missing key, an unavailable gpg, or a bad signature all reject the
-// install. Like resolveCandidate this is execution-local: verification
-// evidence is not persisted into the plan or lock identity.
-func verifyDetachedSignature(ctx context.Context, rn run.Runner, mc *config.MethodCandidate, sourcePath string) error {
-	sigPath, _ := mc.Config["signature_path"].(string)
-	signingKey, _ := mc.Config["signing_key"].(string)
+// install. InstallResolved receives the signature policy from the resolved
+// artifact, so execution cannot silently re-read changed integrity intent.
+func verifyDetachedSignature(ctx context.Context, rn run.Runner, projectRoot, sigPath, signingKey, sourcePath string) error {
 	if sigPath == "" && signingKey == "" {
 		return nil
 	}
@@ -206,10 +211,10 @@ func verifyDetachedSignature(ctx context.Context, rn run.Runner, mc *config.Meth
 	if signingKey == "" {
 		return fmt.Errorf("local: signature_path requires signing_key")
 	}
-	if mc.ProjectRoot == "" || !filepath.IsAbs(mc.ProjectRoot) {
+	if projectRoot == "" || !filepath.IsAbs(projectRoot) {
 		return fmt.Errorf("local: project root is unavailable for signature_path %q", sigPath)
 	}
-	sigResolved, err := localartifact.Resolve(mc.ProjectRoot, sigPath, "")
+	sigResolved, err := localartifact.Resolve(projectRoot, sigPath, "")
 	if err != nil {
 		return fmt.Errorf("local: signature_path: %w", err)
 	}
@@ -218,7 +223,6 @@ func verifyDetachedSignature(ctx context.Context, rn run.Runner, mc *config.Meth
 	}
 	return nil
 }
-
 func (a *Adapter) Remove(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	_, destination, err := candidateDestination(tool, mc)
 	if err != nil {

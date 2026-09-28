@@ -11,7 +11,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	localartifactadapter "github.com/Khorea1/depengine/internal/localartifactadapter"
-	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/planner"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -149,14 +149,22 @@ func TestLocalInstallResolvedVerifiesDetachedSignature(t *testing.T) {
 	dest := t.TempDir()
 	tool, mc := signatureMethod(root, dest)
 	adapter := localartifactadapter.NewAdapter()
-	intent := &plan.ResolvedInstallPlan{Operations: []plan.Operation{
-		{Kind: "resolve-local-artifact", Effect: plan.EffectReadOnly},
-		{Kind: "install", Effect: plan.EffectMutation},
-	}}
-	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, intent)
+	intent, err := planner.BuildCandidateIntent(tool, mc)
+	if err != nil {
+		t.Fatalf("BuildCandidateIntent() error: %v", err)
+	}
+	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
 	if err != nil {
 		t.Fatalf("ResolvePlan() error: %v", err)
 	}
+	if len(resolved.Artifacts) != 1 || resolved.Artifacts[0].SignaturePath != "vendor/tool.sig" || resolved.Artifacts[0].SigningKey == "" {
+		t.Fatalf("resolved signature policy = %+v", resolved.Artifacts)
+	}
+
+	// Execution must use the resolved plan, not mutable method configuration.
+	mc.Config["signature_path"] = "../changed-after-resolution.sig"
+	mc.Config["signing_key"] = "changed-after-resolution"
+
 	runner := &fakeGPGRunner{fpr: signatureTestFingerprint, gpgPresent: true}
 	if err := adapter.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
 		t.Fatalf("InstallResolved() error: %v", err)
@@ -165,7 +173,6 @@ func TestLocalInstallResolvedVerifiesDetachedSignature(t *testing.T) {
 		t.Fatalf("gpg verification missing: %#v", runner.calls)
 	}
 }
-
 func TestLocalInstallRejectsBadDetachedSignature(t *testing.T) {
 	root := writeSignatureProject(t, []byte("signed payload"))
 	dest := t.TempDir()

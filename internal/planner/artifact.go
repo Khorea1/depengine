@@ -40,10 +40,22 @@ func applyArtifact(p *plan.ResolvedInstallPlan, method *config.MethodCandidate, 
 		if err != nil {
 			return err
 		}
+		signaturePath := stringValue(method.Config, "signature_path")
+		if signaturePath != "" {
+			if matches := config.PlaceholderRe.FindAllString(signaturePath, -1); len(matches) > 0 {
+				return fmt.Errorf("signature_path must be fully resolved before planning; unresolved placeholder(s): %s", strings.Join(matches, ", "))
+			}
+			signaturePath, err = plan.NormalizeProjectPath(signaturePath)
+			if err != nil {
+				return fmt.Errorf("signature_path: %w", err)
+			}
+		}
 		p.Artifacts = append(p.Artifacts, plan.Artifact{
-			Kind:      kind,
-			LocalPath: localPath,
-			Checksum:  checksum,
+			Kind:          kind,
+			LocalPath:     localPath,
+			Checksum:      checksum,
+			SignaturePath: signaturePath,
+			SigningKey:    stringValue(method.Config, "signing_key"),
 		})
 		p.Operations = append(p.Operations, plan.Operation{
 			Kind:        "resolve-local-artifact",
