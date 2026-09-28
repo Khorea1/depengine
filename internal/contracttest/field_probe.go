@@ -50,6 +50,8 @@ var fieldPairs = map[string][2]any{
 	"index":      {"https://index-a.example/simple", "https://index-b.example/simple"},
 	"channels":   {[]any{"chan-a"}, []any{"chan-b"}},
 	"local_path": {"vendor/a.tar.gz", "vendor/b.tar.gz"},
+	"local.signature_path": {"vendor/a.sig", "vendor/b.sig"},
+	"local.signing_key": {"file:///keys/a.asc", "file:///keys/b.asc"},
 	"checksum": {
 		"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 		"sha256:ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
@@ -86,6 +88,8 @@ var baseOverrides = map[string]string{
 	"msi.asset":            "msi+repo",
 	"appimage.asset":       "appimage+repo",
 	"android.asset":        "android+repo",
+	"local.signature_path": "local+signature-path",
+	"local.signing_key":    "local+signing-key",
 }
 
 var baseConfigs = map[string]map[string]any{
@@ -103,7 +107,9 @@ var baseConfigs = map[string]map[string]any{
 	"gem":            {"pkg": "demo"},
 	"conda":          {"pkg": "demo"},
 	"git":            {"url": "https://example.test/demo.git"},
-	"local":          {"local_path": "vendor/tool.tar.gz"},
+	"local":                {"local_path": "vendor/tool.tar.gz"},
+	"local+signature-path": {"local_path": "vendor/tool.tar.gz", "signing_key": "file:///keys/release.asc"},
+	"local+signing-key":    {"local_path": "vendor/tool.tar.gz", "signature_path": "vendor/tool.sig"},
 	"github":         {"repo": "org/demo", "asset": "demo.tar.gz"},
 	"appimage":       {"url": "https://example.test/tool.AppImage"},
 	"appimage+repo":  {"repo": "org/demo", "asset": "demo.tar.gz"},
