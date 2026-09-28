@@ -1,0 +1,9 @@
+archmap: 1
+doc: container
+id: placeholder-db
+summary: "TODO: primary datastore; state which container is its only writer."
+type: database
+path: "TODO/path/to/migrations-or-schema/"
+tech: ["TODO"]
+invariants:
+  - "TODO: e.g. schema changes only through migrations."

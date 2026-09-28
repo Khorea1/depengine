@@ -1,0 +1,45 @@
+# archmap index — entry point. Read this file first, then open only what you need.
+# Placeholders: anything containing "TODO", ids starting with "placeholder-", and the
+# zeroed revision. `tools/validate.py --strict` fails until all of them are replaced.
+archmap: 1
+doc: index
+
+project:
+  id: placeholder-project
+  name: "TODO: human-readable project name"
+  summary: "TODO: one sentence on what the system does and for whom."
+  languages: ["TODO"]
+  source:
+    revision: "0000000"      # commit this model was last verified against
+    verified_on: "1970-01-01"  # quoted ISO date
+    branch: "TODO"
+
+# Actors and third-party systems outside this codebase. Same id namespace as containers.
+externals:
+  placeholder-user:
+    type: person
+    summary: "TODO: who this actor is and what they want from the system."
+  placeholder-payment-gateway:
+    type: system
+    summary: "TODO: third-party system this project depends on or talks to."
+
+# One entry per file in containers/. Summary must match the file's own summary.
+containers:
+  placeholder-api:
+    summary: "TODO: request-handling service; state what it owns and what it must not do."
+  placeholder-db:
+    summary: "TODO: primary datastore; state which container is its only writer."
+
+# One entry per file in flows/. Only the main end-to-end scenarios.
+flows:
+  placeholder-happy-path:
+    summary: "TODO: the most important user-visible scenario, end to end."
+
+# Relations whose source is an external. Everything else lives in the owning container file.
+relations:
+  - {from: placeholder-user, to: placeholder-api, kind: calls, via: "HTTPS", confidence: inferred}
+  - {from: placeholder-payment-gateway, to: placeholder-api, kind: calls, via: "webhook", note: "TODO: what the gateway sends and when.", confidence: inferred}
+
+# Vocabulary a newcomer or an LLM would misread. Delete the section if empty.
+glossary:
+  TODO-term: "TODO: what this word means in this project, which may differ from common usage."
