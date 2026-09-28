@@ -2,6 +2,7 @@ package localartifactadapter_test
 
 import (
 	"context"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -28,6 +29,10 @@ type fakeGPGRunner struct {
 	verifyFails bool
 }
 
+func (r *fakeGPGRunner) LookPath(_ context.Context, name string) bool {
+	return name == "gpg" && r.gpgPresent
+}
+
 func (r *fakeGPGRunner) Run(_ context.Context, name string, args ...string) run.Result {
 	r.calls = append(r.calls, run.FakeCall{Name: name, Args: slices.Clone(args)})
 	if name == "which" {
@@ -51,12 +56,28 @@ func (r *fakeGPGRunner) Run(_ context.Context, name string, args ...string) run.
 	return run.Result{}
 }
 
+func canonicalExistingPath(path string) string {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return filepath.Clean(resolved)
+	}
+	return filepath.Clean(path)
+}
+
 func (r *fakeGPGRunner) sawGPGVerify(source, sig string) bool {
+	source = canonicalExistingPath(source)
+	sig = canonicalExistingPath(sig)
 	for _, call := range r.calls {
 		if call.Name != "gpg" || !slices.Contains(call.Args, "--status-fd=1") {
 			continue
 		}
-		if slices.Contains(call.Args, source) && slices.Contains(call.Args, sig) {
+		seenSource, seenSig := false, false
+		for _, arg := range call.Args {
+			canonical := canonicalExistingPath(arg)
+			seenSource = seenSource || canonical == source
+			seenSig = seenSig || canonical == sig
+		}
+		if seenSource && seenSig {
 			return true
 		}
 	}
@@ -84,12 +105,20 @@ func writeSignatureProject(t *testing.T, payload []byte) string {
 	return root
 }
 
+func fileURL(path string) string {
+	slashPath := filepath.ToSlash(path)
+	if !strings.HasPrefix(slashPath, "/") {
+		slashPath = "/" + slashPath
+	}
+	return (&url.URL{Scheme: "file", Path: slashPath}).String()
+}
+
 func signatureMethod(root, dest string) (*config.Tool, *config.MethodCandidate) {
 	tool := &config.Tool{Name: "tool"}
 	mc := &config.MethodCandidate{Kind: "local", ProjectRoot: root, Config: map[string]any{
 		"local_path":     "vendor/tool",
 		"signature_path": "vendor/tool.sig",
-		"signing_key":    "file://" + filepath.Join(root, "vendor", "key.asc"),
+		"signing_key":    fileURL(filepath.Join(root, "vendor", "key.asc")),
 		"install_dir":    dest,
 	}}
 	return tool, mc
