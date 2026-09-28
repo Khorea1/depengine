@@ -318,10 +318,19 @@ func destinationFor(tool *config.Tool, mc *config.MethodCandidate, kind plan.Art
 	return destination, nil
 }
 
-// CheckAvailable assumes availability: vendored paths are validated at
-// plan time, so a missing file surfaces during resolution.
-func (a *Adapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
-	return true
+// CheckAvailable reports candidate-scoped runtime requirements that can be
+// determined without resolving or mutating the vendored artifact. Plain local
+// installs need no subprocesses; detached-signature installs require gpg.
+func (a *Adapter) CheckAvailable(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) bool {
+	if mc == nil {
+		return false
+	}
+	sigPath, _ := mc.Config["signature_path"].(string)
+	signingKey, _ := mc.Config["signing_key"].(string)
+	if sigPath == "" && signingKey == "" {
+		return true
+	}
+	return run.LookPath(ctx, rn, "gpg")
 }
 
 // CheckHostCompatibility imposes no host constraints: vendored artifacts
