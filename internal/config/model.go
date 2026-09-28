@@ -197,13 +197,17 @@ type MethodCandidate struct {
 	// Git-backed plan resolution (git, cargo --git) to reuse the immutable
 	// commit recorded in depengine.lock.
 	LockedRevision string `json:"-"`
-	When           *Condition
-	Config         map[string]any
-	Err            error
-	ArchMap        map[string]string
-	OSMap          map[string]string
-	Requires       []string
-	Sources        []Source
+	// LockedDigest is the equivalent transient pin for mutable container tags.
+	// Config keeps the requested tag for intent/drift reporting while container
+	// planning, observation, execution, and removal use this immutable digest.
+	LockedDigest string `json:"-"`
+	When         *Condition
+	Config       map[string]any
+	Err          error
+	ArchMap      map[string]string
+	OSMap        map[string]string
+	Requires     []string
+	Sources      []Source
 	// PreInstall/PostInstall are candidate-local lifecycle hooks. Tool-level
 	// hooks remain supported as generic hooks that are projected onto every
 	// selected candidate.

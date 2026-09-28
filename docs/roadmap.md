@@ -64,13 +64,16 @@ Work on the current execution model comes before adding more installer types.
   materialized `*:auto` checksums and every pin outside `--profile`, breaking
   the next frozen install). Remaining
   selector coverage stays open in the item below and in ADR-001 open work.
-- [~] Cover the mutable selectors lock v1 still ignores: container `tag`,
-  ecosystem/native resolutions, and channels — either by pinning them in
-  `depengine.lock` or by wiring the universal lock projection end-to-end.
-  Direct Git and `cargo --git` branch/tag selectors are now covered: lock v1
-  persists both the requested selector and its concrete commit (annotated tags
-  use the peeled commit), frozen installs reject selector drift, and execution
-  reuses the locked commit without another remote lookup. See
+- [~] Cover the mutable selectors lock v1 still ignores: ecosystem/native
+  resolutions and channels — either by pinning them in `depengine.lock` or by
+  wiring the universal lock projection end-to-end. Direct Git and `cargo --git`
+  branch/tag selectors are covered: lock v1 persists both the requested selector
+  and its concrete commit (annotated tags use the peeled commit), frozen installs
+  reject selector drift, and execution reuses the locked commit without another
+  remote lookup. Container tags are covered too: lock v1 resolves the requested
+  tag (including implicit `latest`) through the OCI Distribution API, stores the
+  immutable manifest digest, rejects tag drift in frozen mode, and makes
+  observation/pull/remove use that digest without replacing schema intent. See
   [`design/adr-001-universal-lock-projection.md`](design/adr-001-universal-lock-projection.md)
   and [`support-boundary.md`](support-boundary.md).
 - [~] Finish typed package-source selection, trust, ownership, verification,

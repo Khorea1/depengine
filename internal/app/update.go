@@ -193,6 +193,9 @@ func updatePinValue(pin lock.ToolPin) string {
 	if pin.Selector != "" && pin.Revision != "" {
 		return pin.Selector + " @ " + pin.Revision
 	}
+	if pin.ContainerTag != "" && pin.ContainerDigest != "" {
+		return "tag:" + pin.ContainerTag + " @ " + pin.ContainerDigest
+	}
 	return pin.Revision
 }
 

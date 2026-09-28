@@ -130,13 +130,19 @@ including crate build scripts and procedural macros. An explicit reference
 fails closed when it cannot be resolved.
 
 Typed `container` methods pair `auth_username` with an env-backed `secret_ref`
-for a single Docker or Podman image pull. depengine writes a private temporary
-auth file with one registry entry, passes its location to that child process,
-and removes the file when the pull returns. The secret is absent from argv and
-the child environment; output from the credentialed pull is suppressed.
-Docker's temporary client configuration is isolated from the user's normal
-client configuration for that pull. Authenticated Podman pulls require an
-explicit registry in `source` so the auth entry matches the pull target.
+for registry access. Mutable tags are resolved to OCI manifest digests before
+execution; authentication follows the registry challenge, does not send Basic
+credentials preemptively to the manifest endpoint, refuses bearer-token
+exchange over plaintext HTTP except on loopback, and strips Authorization on
+cross-host redirects. The resulting tag/digest pair may be written to the lock,
+but the credential is not. For the Docker or Podman pull itself, depengine
+writes a private temporary auth file with one registry entry, passes its
+location to that child process, and removes the file when the pull returns. The
+secret is absent from argv and the child environment; output from the
+credentialed pull is suppressed. Docker's temporary client configuration is
+isolated from the user's normal client configuration for that pull.
+Authenticated Podman pulls require an explicit registry in `source` so the auth
+entry matches the pull target.
 
 Bearer credentials are retained across same-origin redirects and removed before
 following a cross-origin redirect. The primary artifact credential is never

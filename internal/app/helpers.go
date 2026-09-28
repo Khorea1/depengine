@@ -337,12 +337,21 @@ func lockCandidateToolName(key string) string {
 // config shape rather than by method kind. Used by install to decide whether
 // auto-resolution is needed when no lockfile exists.
 // hasLockableMutableSelectors reports whether first install must create a lock
-// for a mutable Git selector. Direct git branch/tag and cargo --git branch/tag
-// are the selector classes legacy lock v1 can make immutable.
+// for a mutable selector that legacy lock v1 can make immutable: direct Git or
+// Cargo Git branch/tag selectors and container tags (including implicit latest).
 func hasLockableMutableSelectors(s *config.Schema) bool {
 	for _, tool := range s.Tools {
 		for _, method := range tool.Methods {
-			if method == nil || (method.Kind != "git" && method.Kind != "cargo") {
+			if method == nil {
+				continue
+			}
+			if method.Kind == "container" {
+				if digest, _ := method.Config["digest"].(string); digest == "" {
+					return true
+				}
+				continue
+			}
+			if method.Kind != "git" && method.Kind != "cargo" {
 				continue
 			}
 			if method.Kind == "cargo" {

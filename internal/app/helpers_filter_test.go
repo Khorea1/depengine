@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -29,5 +30,25 @@ func TestFilterToolsAllowsOnlyDependencyOnly(t *testing.T) {
 	got := filterTools(tools, "helper", "", "")
 	if got["helper"] == nil || got["helper"].DependencyOnly {
 		t.Fatal("--only did not promote dependency_only tool to a root")
+	}
+}
+
+func TestHasLockableMutableSelectorsIncludesContainerTags(t *testing.T) {
+	tests := []struct {
+		name   string
+		config map[string]any
+		want   bool
+	}{
+		{name: "explicit tag", config: map[string]any{"source": "example/tool", "tag": "stable"}, want: true},
+		{name: "implicit latest", config: map[string]any{"source": "example/tool"}, want: true},
+		{name: "explicit digest", config: map[string]any{"source": "example/tool", "digest": "sha256:" + strings.Repeat("a", 64)}, want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			schema := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{{Kind: "container", Config: tc.config}}}}}
+			if got := hasLockableMutableSelectors(schema); got != tc.want {
+				t.Fatalf("hasLockableMutableSelectors() = %t, want %t", got, tc.want)
+			}
+		})
 	}
 }
