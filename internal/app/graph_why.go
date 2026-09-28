@@ -182,6 +182,79 @@ func newWhyCmd() *cobra.Command {
 	return cmd
 }
 
+// disambiguatedWhyNames renders one human-facing name per candidate that stays
+// unique even when several candidates share the same kind or label. Colliding
+// display names gain a `#<ordinal>` suffix (for example `http #0`, `http #1`)
+// so `why` text output never collapses two distinct candidates into one row.
+// Labeled candidates keep their `label (kind)` form; synthesized candidates
+// without a declared ordinal keep the plain display name.
+func disambiguatedWhyNames(attempts []exec.MethodAttempt) []string {
+	base := make([]string, len(attempts))
+	counts := make(map[string]int)
+	for i, a := range attempts {
+		name := a.DisplayName()
+		if a.Label != "" {
+			name += " (" + a.Kind + ")"
+		}
+		base[i] = name
+		counts[name]++
+	}
+	names := make([]string, len(attempts))
+	for i, a := range attempts {
+		names[i] = base[i]
+		if counts[base[i]] > 1 && a.CandidateKnown {
+			names[i] = fmt.Sprintf("%s #%d", base[i], a.Candidate)
+		}
+	}
+	return names
+}
+
+// ambiguousWhyWarning reports same-kind candidates that durable state, lock,
+// upgrade, and remove resolution cannot tell apart: kind-only state with more
+// than one matching candidate fails closed. Labeled duplicates are exact but
+// still worth naming; unlabeled duplicates need distinct labels.
+func ambiguousWhyWarning(toolName string, attempts []exec.MethodAttempt) string {
+	byKind := make(map[string][]exec.MethodAttempt)
+	for _, a := range attempts {
+		if a.Kind == "" {
+			continue
+		}
+		byKind[a.Kind] = append(byKind[a.Kind], a)
+	}
+	var warnings []string
+	for kind, group := range byKind {
+		if len(group) < 2 {
+			continue
+		}
+		labels := make([]string, 0, len(group))
+		unlabeled := 0
+		for _, a := range group {
+			if a.Label != "" {
+				if a.CandidateKnown {
+					labels = append(labels, fmt.Sprintf("#%d %q", a.Candidate, a.Label))
+				} else {
+					labels = append(labels, fmt.Sprintf("%q", a.Label))
+				}
+			} else {
+				unlabeled++
+				if a.CandidateKnown {
+					labels = append(labels, fmt.Sprintf("#%d %q", a.Candidate, a.Kind))
+				} else {
+					labels = append(labels, fmt.Sprintf("%q", a.Kind))
+				}
+			}
+		}
+		sort.Strings(labels)
+		if unlabeled > 0 {
+			warnings = append(warnings, fmt.Sprintf("tool %q has %d %q candidates (%s); label the unlabeled candidate(s) (kind = %q) or upgrade/remove/lock resolution stays ambiguous for kind-only state", toolName, len(group), kind, strings.Join(labels, ", "), kind))
+		} else {
+			warnings = append(warnings, fmt.Sprintf("tool %q has %d %q candidates (%s); kind-only state cannot select one", toolName, len(group), kind, strings.Join(labels, ", ")))
+		}
+	}
+	sort.Strings(warnings)
+	return strings.Join(warnings, "; ")
+}
+
 func formatWhyIntent(intent map[string]string) string {
 	if len(intent) == 0 {
 		return ""
@@ -261,16 +334,18 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 	attempts := ex.ExplainTool(ctx, tool, clan)
 	if *whyJSON {
 		type jsonAttempt struct {
-			Kind       string                    `json:"kind"`
-			Label      string                    `json:"label,omitempty"`
-			Status     string                    `json:"status"`
-			Reason     string                    `json:"reason,omitempty"`
-			Intent     map[string]string         `json:"intent,omitempty"`
-			PlanIntent *plan.ResolvedInstallPlan `json:"plan_intent,omitempty"`
+			Kind           string                    `json:"kind"`
+			Label          string                    `json:"label,omitempty"`
+			Candidate      int                       `json:"candidate"`
+			CandidateKnown bool                      `json:"candidate_known"`
+			Status         string                    `json:"status"`
+			Reason         string                    `json:"reason,omitempty"`
+			Intent         map[string]string         `json:"intent,omitempty"`
+			PlanIntent     *plan.ResolvedInstallPlan `json:"plan_intent,omitempty"`
 		}
 		out := make([]jsonAttempt, 0, len(attempts))
 		for _, a := range attempts {
-			out = append(out, jsonAttempt{Kind: a.Kind, Label: a.Label, Status: a.Status, Reason: a.Error, Intent: a.Intent, PlanIntent: a.PlanIntent})
+			out = append(out, jsonAttempt{Kind: a.Kind, Label: a.Label, Candidate: a.Candidate, CandidateKnown: a.CandidateKnown, Status: a.Status, Reason: a.Error, Intent: a.Intent, PlanIntent: a.PlanIntent})
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -284,14 +359,10 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 	c := newCLIStyle(os.Stdout)
 	_, _ = fmt.Fprintf(c.w, "%s  %s\n\n", c.bold(fmt.Sprintf("Why %s?", toolName)), c.dim(plural(len(attempts), "candidate method")+", first available wins"))
 	kindW := 0
-	names := make([]string, len(attempts))
-	for i, a := range attempts {
-		names[i] = a.DisplayName()
-		if a.Label != "" {
-			names[i] += " (" + a.Kind + ")"
-		}
-		if len(names[i]) > kindW {
-			kindW = len(names[i])
+	names := disambiguatedWhyNames(attempts)
+	for _, name := range names {
+		if len(name) > kindW {
+			kindW = len(name)
 		}
 	}
 	for i, a := range attempts {
@@ -321,6 +392,9 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 		}
 	}
 	_, _ = fmt.Fprintln(c.w)
+	if warning := ambiguousWhyWarning(toolName, attempts); warning != "" {
+		_, _ = fmt.Fprintf(c.w, "  %s\n\n", c.yellow("warning: "+warning))
+	}
 
 	if *whyFields {
 		if provenance, ok := s.Provenance[toolName]; ok && len(provenance) > 0 {
