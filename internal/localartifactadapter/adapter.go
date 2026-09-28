@@ -10,7 +10,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
-	"github.com/Khorea1/depengine/internal/httpdownload"
+	"github.com/Khorea1/depengine/internal/integrity"
 	"github.com/Khorea1/depengine/internal/localartifact"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -218,7 +218,7 @@ func verifyDetachedSignature(ctx context.Context, rn run.Runner, projectRoot, si
 	if err != nil {
 		return fmt.Errorf("local: signature_path: %w", err)
 	}
-	if err := httpdownload.GPGVerify(ctx, rn, sourcePath, sigResolved.Path, signingKey); err != nil {
+	if err := integrity.GPGVerify(ctx, rn, sourcePath, sigResolved.Path, signingKey, nil); err != nil {
 		return fmt.Errorf("local: signature: %w", err)
 	}
 	return nil
