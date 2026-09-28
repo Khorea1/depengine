@@ -222,7 +222,7 @@ Aliases: `lock`.
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
 | `--profile <string>` | local | `` | only re-resolve tools with matching tag; other pins from a readable lock are preserved |
 | `--schema <string>` | local | `schema.toml` | path to schema.toml |
-| `--v` | local | `false` | detailed output |
+| `-v, --verbose` | local | `false` | detailed output |
 
 ## `depengine upgrade [flags]`
 

@@ -268,8 +268,8 @@ func loadLockfile(schemaPath string, s *config.Schema, frozen bool, lg *slog.Log
 }
 
 // saveLockfile resolves version pins, merges with any existing lock, and persists.
-func saveLockfile(ctx context.Context, s *config.Schema, lockPath string, oldLock *lock.Lock, lg *slog.Logger, diagnose bool) {
-	newLock, err := lock.ResolveAll(ctx, s, run.OSExecRunner{})
+func saveLockfile(ctx context.Context, s *config.Schema, lockPath string, oldLock *lock.Lock, lg *slog.Logger, diagnose bool, rn run.Runner) {
+	newLock, err := lock.ResolveAll(ctx, s, rn)
 	if err != nil {
 		lg.Warn("resolve lock", "error", err)
 		return
@@ -277,40 +277,7 @@ func saveLockfile(ctx context.Context, s *config.Schema, lockPath string, oldLoc
 	if newLock == nil {
 		return
 	}
-	// lock.Apply concretizes release/checksum selectors before execution, so
-	// ResolveAll may rediscover only one field of an existing composite pin.
-	// Merge field-wise so a normal install cannot silently drop the other
-	// frozen identity, nor drop pins it did not re-resolve.
-	newLock = lock.Merge(oldLock, newLock)
-	if oldLock != nil {
-		// A regular install may persist newly discovered pin fields, but it must
-		// not bless changed method/source identity. Preserve hashes for omitted
-		// tools/candidates and for detectable drift; an explicit
-		// 'depengine update' is the operation that accepts new identity.
-		for name, oldHash := range oldLock.MethodsHash {
-			newHash, exists := newLock.MethodsHash[name]
-			if !exists || newHash != oldHash {
-				newLock.MethodsHash[name] = oldHash
-			}
-		}
-		if newLock.SourceHash == nil {
-			newLock.SourceHash = make(map[string]string, len(oldLock.SourceHash))
-		}
-		for key, oldHash := range oldLock.SourceHash {
-			newHash, exists := newLock.SourceHash[key]
-			if !exists || newHash != oldHash {
-				newLock.SourceHash[key] = oldHash
-			}
-		}
-		for key := range newLock.SourceHash {
-			if _, existed := oldLock.SourceHash[key]; existed {
-				continue
-			}
-			if _, toolWasLocked := oldLock.MethodsHash[lockCandidateToolName(key)]; toolWasLocked {
-				delete(newLock.SourceHash, key)
-			}
-		}
-	}
+	newLock = mergeInstallLock(oldLock, newLock)
 	if err := lock.Save(lockPath, newLock); err != nil {
 		lg.Warn("save lock", "error", err)
 		return
@@ -318,6 +285,39 @@ func saveLockfile(ctx context.Context, s *config.Schema, lockPath string, oldLoc
 	if diagnose {
 		lg.Debug("lock saved", "path", lockPath, "pinned", len(newLock.Tools))
 	}
+}
+
+// mergeInstallLock preserves the existing lock's identity hashes while adding
+// newly resolved pin fields. Only an explicit update may accept identity drift.
+func mergeInstallLock(oldLock, newLock *lock.Lock) *lock.Lock {
+	newLock = lock.Merge(oldLock, newLock)
+	if oldLock == nil {
+		return newLock
+	}
+	for name, oldHash := range oldLock.MethodsHash {
+		newHash, exists := newLock.MethodsHash[name]
+		if !exists || newHash != oldHash {
+			newLock.MethodsHash[name] = oldHash
+		}
+	}
+	if newLock.SourceHash == nil {
+		newLock.SourceHash = make(map[string]string, len(oldLock.SourceHash))
+	}
+	for key, oldHash := range oldLock.SourceHash {
+		newHash, exists := newLock.SourceHash[key]
+		if !exists || newHash != oldHash {
+			newLock.SourceHash[key] = oldHash
+		}
+	}
+	for key := range newLock.SourceHash {
+		if _, existed := oldLock.SourceHash[key]; existed {
+			continue
+		}
+		if _, toolWasLocked := oldLock.MethodsHash[lockCandidateToolName(key)]; toolWasLocked {
+			delete(newLock.SourceHash, key)
+		}
+	}
+	return newLock
 }
 
 func lockCandidateToolName(key string) string {

@@ -11,6 +11,21 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
+type asdfFallbackRunner struct {
+	results map[string]run.Result
+	calls   []string
+}
+
+func (r *asdfFallbackRunner) Run(_ context.Context, name string, _ ...string) run.Result {
+	r.calls = append(r.calls, name)
+	return r.results[name]
+}
+
+func (r *asdfFallbackRunner) LookPath(_ context.Context, name string) bool {
+	_, ok := r.results[name]
+	return ok
+}
+
 func TestAsdfAdapterV2ResolvesAndInstallsAsdf(t *testing.T) {
 	tool, mc := asdfTool("node", "nodejs")
 	mc.Config["version"] = "20.1.0"
@@ -68,6 +83,32 @@ func TestAsdfAdapterV2ObserveAbsentAndBackendError(t *testing.T) {
 	obs, err = a.Observe(context.Background(), &run.FakeRunner{ExitCode: 1, Err: wantErr, LookPaths: map[string]bool{"asdf": true}}, tool, mc)
 	if err == nil || obs.Presence != plan.PresenceBroken {
 		t.Fatalf("error observation = %#v, %v", obs, err)
+	}
+}
+func TestAsdfOrMiseInstalledVersionsFallsBackToMise(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		asdf run.Result
+	}{
+		{name: "asdf failed", asdf: run.Result{ExitCode: 1}},
+		{name: "asdf empty", asdf: run.Result{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &asdfFallbackRunner{results: map[string]run.Result{
+				"asdf": tc.asdf,
+				"mise": {Stdout: []byte(`[{"version":"20.17.0","installed":true}]`)},
+			}}
+			versions, found, err := asdfOrMiseInstalledVersions(context.Background(), runner, "nodejs")
+			if err != nil {
+				t.Fatalf("asdfOrMiseInstalledVersions() error = %v", err)
+			}
+			if !found || !reflect.DeepEqual(versions, []string{"20.17.0"}) {
+				t.Fatalf("versions = %#v, found = %v; want mise version", versions, found)
+			}
+			if !reflect.DeepEqual(runner.calls, []string{"asdf", "mise"}) {
+				t.Fatalf("backend calls = %#v, want asdf then mise", runner.calls)
+			}
+		})
 	}
 }
 

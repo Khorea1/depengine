@@ -153,10 +153,14 @@ func miseInstalledVersions(output []byte) ([]string, error) {
 }
 
 func asdfOrMiseInstalledVersions(ctx context.Context, rn run.Runner, pkg string) ([]string, bool, error) {
+	foundBackend := false
+	succeeded := false
+	var lastErr error
 	for _, backend := range []string{"asdf", "mise"} {
 		if !run.LookPath(ctx, rn, backend) {
 			continue
 		}
+		foundBackend = true
 		var res run.Result
 		if backend == "mise" {
 			res = rn.Run(ctx, backend, "ls", pkg, "--installed", "--json")
@@ -164,15 +168,29 @@ func asdfOrMiseInstalledVersions(ctx context.Context, rn run.Runner, pkg string)
 			res = rn.Run(ctx, backend, "list", pkg)
 		}
 		if res.Err != nil || res.ExitCode != 0 {
-			return nil, true, fmt.Errorf("%s list %s failed: %w", backend, pkg, run.CheckResult(res, "asdf: observe"))
+			lastErr = fmt.Errorf("%s list %s failed: %w", backend, pkg, run.CheckResult(res, "asdf: observe"))
+			continue
 		}
+		var versions []string
+		var err error
 		if backend == "mise" {
-			versions, err := miseInstalledVersions(res.Stdout)
-			return versions, true, err
+			versions, err = miseInstalledVersions(res.Stdout)
+		} else {
+			versions = asdfInstalledVersions(string(res.Stdout))
 		}
-		return asdfInstalledVersions(string(res.Stdout)), true, nil
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		succeeded = true
+		if len(versions) > 0 {
+			return versions, true, nil
+		}
 	}
-	return nil, false, nil
+	if succeeded || !foundBackend {
+		return nil, foundBackend, nil
+	}
+	return nil, true, lastErr
 }
 
 func (a *AsdfAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {

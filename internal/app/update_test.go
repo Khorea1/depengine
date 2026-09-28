@@ -30,6 +30,14 @@ func runTestUpdate(t *testing.T, schemaPath, profile string) {
 		t.Fatalf("runUpdate: %v", err)
 	}
 }
+func TestUpdatePinValueShowsImmutableGitRevision(t *testing.T) {
+	const revision = "0123456789abcdef0123456789abcdef01234567"
+	got := updatePinValue(lock.ToolPin{Selector: "branch:main", Revision: revision})
+	want := "branch:main @ " + revision
+	if got != want {
+		t.Fatalf("updatePinValue() = %q, want %q", got, want)
+	}
+}
 
 // TestRunUpdatePreservesPinsAndHashesOutsideProfile is the regression test for
 // `depengine update --profile` rewriting the whole lock: pins and method

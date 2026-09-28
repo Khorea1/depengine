@@ -99,7 +99,9 @@ existing lock is unreadable or has an unsupported version, `update` warns and
 regenerates from the fresh resolution; it cannot preserve data it cannot
 parse. A plain `depengine install` never changes stored method or package-source identity:
 frozen installs fail validation against a changed identity, and non-frozen
-installs keep the stored hash and only warn.
+installs keep the stored hash and only warn. Non-frozen installs complete any
+supported pins missing from a readable older lock before planning, then persist
+that same resolved value after execution.
 
 This check is intentionally narrower than universal immutable resolution.
 Container tags, package-manager constraints, channels, and other selectors not

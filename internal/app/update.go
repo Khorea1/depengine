@@ -45,7 +45,7 @@ func newUpdateCmd() *cobra.Command {
 	f.StringVar(updateProfile, "profile", "", ifPT("resolver apenas ferramentas com tag correspondente; os demais pins de um lock legível são preservados", "only re-resolve tools with matching tag; other pins from a readable lock are preserved"))
 	f.BoolVar(updateFrozen, "frozen-lockfile", false, "abort if depengine.lock does not exist")
 	f.BoolVar(updateDryRun, "dry-run", false, "show what would be updated without writing lock")
-	f.BoolVar(updateVerbose, "v", false, "detailed output")
+	f.BoolVarP(updateVerbose, "verbose", "v", false, "detailed output")
 	return cmd
 }
 
@@ -86,7 +86,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		[2]string{"tools", fmt.Sprintf("%d", len(s.Tools))},
 	)
 
-	done := spinner(ctx, "Resolving latest versions")
+	done := spinner(ctx, "Resolving lockable selectors")
 	newLock, err := lock.ResolveAll(ctx, s, run.OSExecRunner{})
 	if err != nil {
 		done("FAIL")
@@ -174,7 +174,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		}
 		for _, key := range keys {
 			pin := newLock.Tools[key]
-			fmt.Fprintf(os.Stderr, "  %s  → %s\n", padRight(key, keyW), c.cyan(pin.Latest))
+			fmt.Fprintf(os.Stderr, "  %s  → %s\n", padRight(key, keyW), c.cyan(updatePinValue(pin)))
 			if pin.Checksum != "" {
 				fmt.Fprintf(os.Stderr, "  %s  %s\n", padRight("", keyW), c.dim(pin.Checksum))
 			}
@@ -185,6 +185,15 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		_, _ = fmt.Fprintln(c.w, c.dim("Run 'depengine install' to apply."))
 	}
 	return nil
+}
+func updatePinValue(pin lock.ToolPin) string {
+	if pin.Latest != "" {
+		return pin.Latest
+	}
+	if pin.Selector != "" && pin.Revision != "" {
+		return pin.Selector + " @ " + pin.Revision
+	}
+	return pin.Revision
 }
 
 // reportVersionDrift compares freshly-resolved lock pins against the versions
