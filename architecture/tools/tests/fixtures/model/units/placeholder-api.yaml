@@ -1,0 +1,45 @@
+# One file per architectural unit. A unit can be a subsystem or a runtime/deployable unit.
+# File name = id. Catalogue summary lives only in index.yaml.
+archmap: 2
+doc: unit
+id: placeholder-api
+verified:
+  revision: "0000000"
+  verified_on: "1970-01-01"
+type: subsystem
+paths:
+  - "TODO/path/to/unit/"
+entrypoints: ["TODO/path/to/main-file"]
+tech: ["TODO"]
+status: active
+notes: "notes/placeholder-api.md"
+
+# Important rules are claims too. Confirmed claims carry evidence.
+invariants:
+  - text: "TODO: e.g. only this unit writes to placeholder-db."
+    confidence: inferred
+
+components:
+  placeholder-handler:
+    summary: "TODO: receives external input and delegates; contains no business rules."
+    type: handler
+    paths: ["TODO/path/to/unit/handler/"]
+  placeholder-service:
+    summary: "TODO: business logic for the primary use case."
+    type: service
+    paths: ["TODO/path/to/unit/service/"]
+    invariants:
+      - text: "TODO: what this component guarantees."
+        confidence: inferred
+  placeholder-repository:
+    summary: "TODO: sole access point to placeholder-db from this unit."
+    type: repository
+    paths: ["TODO/path/to/unit/repository/"]
+
+# A relation lives here when its source is this unit or one of its components.
+# '.name' is shorthand for a component of this unit.
+relations:
+  - {from: .placeholder-handler, to: .placeholder-service, kind: calls, via: "in-process", evidence: ["TODO/path/to/unit/handler/file:1"], confidence: confirmed}
+  - {from: .placeholder-service, to: .placeholder-repository, kind: calls, via: "in-process", evidence: ["TODO/path/to/unit/service/file:1"], confidence: confirmed}
+  - {from: .placeholder-repository, to: placeholder-db, kind: writes, via: "TODO: driver or protocol", evidence: ["TODO/path/to/unit/repository/file:1"], confidence: confirmed}
+  - {from: .placeholder-service, to: placeholder-payment-gateway, kind: calls, via: "HTTPS", confidence: inferred}

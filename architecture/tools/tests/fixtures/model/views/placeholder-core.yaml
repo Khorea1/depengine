@@ -1,0 +1,14 @@
+# Views select a useful projection. They never store coordinates, colors or renderer-specific layout.
+archmap: 2
+doc: view
+id: placeholder-core
+verified:
+  revision: "0000000"
+  verified_on: "1970-01-01"
+kind: structure
+elements:
+  - placeholder-user
+  - placeholder-api
+  - placeholder-api.placeholder-service
+  - placeholder-db
+relation_kinds: [calls, writes]

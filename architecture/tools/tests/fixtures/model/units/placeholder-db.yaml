@@ -1,0 +1,13 @@
+archmap: 2
+doc: unit
+id: placeholder-db
+verified:
+  revision: "0000000"
+  verified_on: "1970-01-01"
+type: database
+paths: ["TODO/path/to/migrations-or-schema/"]
+tech: ["TODO"]
+status: active
+invariants:
+  - text: "TODO: e.g. schema changes only through migrations."
+    confidence: inferred

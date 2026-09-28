@@ -1,0 +1,52 @@
+archmap: 2
+doc: unit
+id: cli
+verified:
+  revision: "8d9d2cc"
+  verified_on: "2026-09-28"
+type: cli
+paths:
+  - main.go
+  - internal/app/
+  - internal/i18n/
+  - internal/term/
+entrypoints:
+  - main.go
+  - internal/app/cli.go
+tech: ["Go", "Cobra"]
+status: active
+invariants:
+  - text: "The CLI composes adapters and executor options but method-specific mutation behavior remains behind the adapter seam."
+    confidence: confirmed
+    evidence: ["internal/app/bootstrap.go:13-27", "internal/app/install.go:199-233"]
+relations:
+  - from: cli
+    to: configuration
+    kind: calls
+    via: "in-process"
+    evidence: ["internal/app/helpers.go:80-111"]
+    confidence: confirmed
+  - from: cli
+    to: planning
+    kind: calls
+    via: "in-process graph commands"
+    evidence: ["internal/app/graph_why.go:107-120"]
+    confidence: confirmed
+  - from: cli
+    to: reconciliation
+    kind: calls
+    via: "exec.Executor"
+    evidence: ["internal/app/install.go:374-393", "internal/app/status.go:75-81"]
+    confidence: confirmed
+  - from: cli
+    to: adapters
+    kind: configures
+    via: "adapter registration/composition"
+    evidence: ["internal/app/bootstrap.go:13-27", "internal/app/install.go:201-209"]
+    confidence: confirmed
+  - from: cli
+    to: state-and-lock
+    kind: calls
+    via: "lock/state APIs"
+    evidence: ["internal/app/install.go:376-384", "internal/app/update.go:89-153"]
+    confidence: confirmed

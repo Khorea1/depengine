@@ -1,0 +1,14 @@
+archmap: 2
+doc: view
+id: reproducibility
+verified:
+  revision: "8d9d2cc"
+  verified_on: "2026-09-28"
+kind: data
+elements:
+  - configuration
+  - planning
+  - reconciliation
+  - adapters
+  - state-and-lock
+relation_kinds: [configures, depends-on, calls, writes]

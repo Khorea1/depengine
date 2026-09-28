@@ -1,73 +1,198 @@
-# archmap — architecture model
+# archmap — architecture working model
 
-Machine-checked architecture map, written for LLMs first and humans second.
-The YAML files are the source of truth; diagrams and prose are derived from them.
-Schema: [`archmap.schema.json`](archmap.schema.json) (v1). It is project-agnostic and
-identical across repositories.
+Machine-checked architecture notes optimized for selective reading by humans and
+LLMs. The codebase remains authoritative. The YAML model is the source for
+**derived architecture views only** (DOT/SVG today), not a replacement for code,
+ADRs or durable product documentation.
+
+Schema: [`archmap.schema.json`](archmap.schema.json) (v2).
+
+## Why this exists
+
+Depengine is large enough that reconstructing its architecture from packages on
+every session is wasteful. archmap stores the small amount of semantic structure
+that is expensive to infer repeatedly: ownership, important runtime/data
+relations, invariants and end-to-end flows.
+
+It deliberately does **not** mirror every Go import or package. Mechanically
+recoverable facts should be derived by tools instead of copied into YAML and then
+maintained twice, because humans already invented enough synchronization bugs.
 
 ## Layout
 
 ```
-index.yaml          entry point: project, externals, catalogue of containers/flows, glossary
-containers/<id>.yaml  one per deployable/major unit: components, invariants, relations
-flows/<id>.yaml       one per end-to-end scenario: ordered steps, failure modes
+index.yaml            entry point: project, externals, summaries/catalogues, glossary
+units/<id>.yaml       architectural subsystems or actual runtime/deployable units
+flows/<id>.yaml       ordered end-to-end scenarios
+views/<id>.yaml       named projections: what a diagram should contain, never coordinates
 notes/<id>.md         prose the graph cannot carry: intent, trade-offs, pitfalls
-tools/                validate.py + tests
+tools/validate.py     schema + semantic + code-revision validation
+tools/render.py       view -> Graphviz DOT/SVG
 ```
 
-## Reading protocol (for LLMs and newcomers)
+A `unit` is intentionally broader than a deployable. In a monolithic CLI such as
+Depengine, useful units are usually subsystems such as planning, reconciliation,
+adapters or persistence. If the project later contains actual services/processes,
+those may also be units. Do not lie about deployment topology merely to obtain
+smaller files.
 
-1. Read `index.yaml` only. Summaries are one line each and decide what to open next.
-2. Open the `containers/<id>.yaml` you need, never all of them.
-3. For behaviour across units, open the matching `flows/<id>.yaml`.
-4. Open `notes/<id>.md` for the *why*.
-5. Trust `confidence: confirmed` at the recorded `project.source.revision`; treat
-   `inferred` as a lead to verify in the code. `evidence` gives the file and line.
+## Reading protocol
 
-## Writing rules
+1. Read `index.yaml` only. Its one-line summaries decide what matters.
+2. Open the relevant `units/<id>.yaml`, never all units by default.
+3. For behaviour crossing units, open the matching `flows/<id>.yaml`.
+4. Open `views/<id>.yaml` when deciding which architectural projection to render.
+5. Open `notes/<id>.md` for rationale and pitfalls.
+6. `confidence: confirmed` means the claim was checked at that **document's**
+   `verified.revision`; `evidence` names the supporting path/line at that revision.
+   `inferred` is a useful hypothesis, not a fact.
 
-- **Ids are permanent.** kebab-case, unique per namespace. Renaming breaks references and diffs.
-- **References are dotted:** `container` or `container.component`. In a container file,
-  `.component` is shorthand for its own components. Flows use full references only.
-- **A relation lives in the file that owns its source.** Externals are owned by the index.
-  Never duplicate a relation on both ends.
-- **`confirmed` requires `evidence`** (`path`, `path:LINE`, `path:START-END`). If you did not
-  check the code, write `inferred`.
-- **Summaries are one line** (8–200 chars). The index summary and the file's own summary
-  must be identical; the validator enforces it.
-- **Quote strings that look like other types** (dates, versions). YAML is parsed as 1.2,
-  so `no`/`on` stay strings, but `1.10` and `2026-01-01` do not.
-- Add org-specific fields only under an `x-` prefix.
-- After re-verifying against the code, bump `project.source.revision` and `verified_on`.
+## Model rules
+
+- **Ids are persistent.** They are join keys across files and generated views.
+- **Catalogue summaries live only in `index.yaml`.** Detail files do not duplicate
+  them. The index is deliberately cheap to read.
+- **References are dotted:** `unit` or `unit.component`. Within a unit file,
+  `.component` is shorthand for that unit's own component. Flows/views use full
+  references only.
+- **A relation lives with its source.** External-source relations live in the
+  index; unit/component-source relations live in the owning unit file.
+- **Model semantic architecture, not imports.** `imports` is intentionally not a
+  relation kind. Import graphs can be derived from Go when a view needs them.
+- **Confirmed claims require evidence.** This applies to relations, flow steps and
+  invariants.
+- **Use `paths: []`, not a synthetic common parent.** A subsystem may legitimately
+  span several package roots.
+- **Freshness is per document.** Re-verify and bump only the unit/flow/view that
+  was actually checked. Updating one adapter must not pretend the entire model was
+  reviewed.
+- **Views choose content, renderers choose layout.** Never put coordinates, colors,
+  ranks or Graphviz/Mermaid-specific styling in a view file.
+- **Planned units/components may reference paths that do not exist yet.** Active
+  ones may not.
+- Keep prose rationale in `notes/`; do not turn YAML into an ADR format.
+
+## Evidence and revisions
+
+Each document has:
+
+```yaml
+verified:
+  revision: "0123abc"
+  verified_on: "2026-09-28"
+```
+
+With `--repo`, evidence and paths are checked against that Git revision using the
+repository object database, **not against the current checkout**. This matters:
+a line that exists at HEAD may not have existed when the architectural claim was
+verified.
+
+The index may additionally record the expected branch/ref:
+
+```yaml
+project:
+  source:
+    branch: master
+```
+
+That field is advisory metadata. Freshness comes from each document's recorded
+revision.
+
+## Views
+
+A structural view is only a selection:
+
+```yaml
+archmap: 2
+doc: view
+id: core-pipeline
+verified:
+  revision: "0123abc"
+  verified_on: "2026-09-28"
+kind: structure
+elements:
+  - cli
+  - configuration
+  - planning
+  - reconciliation
+relation_kinds: [calls, reads, writes]
+```
+
+A flow view points at an existing flow:
+
+```yaml
+kind: flow
+flow: install
+```
+
+The renderer decides positions and visual style. A future renderer can produce a
+different presentation without mutating the architecture model.
 
 ## Commands
 
 ```sh
 pip install -r architecture/tools/requirements.txt
 
-python architecture/tools/validate.py                      # schema + semantics
-python architecture/tools/validate.py --repo /path/to/code # + paths, evidence, revision drift
-python architecture/tools/validate.py --strict --repo ...  # warnings are errors (use in CI once filled)
-python architecture/tools/validate.py --json               # machine-readable, for LLM loops
+python architecture/tools/validate.py
+python architecture/tools/validate.py --repo /path/to/depengine
+python architecture/tools/validate.py --strict --repo /path/to/depengine
+python architecture/tools/validate.py --json
+
+python architecture/tools/render.py core-pipeline
+python architecture/tools/render.py core-pipeline --format svg -o /tmp/core.svg
 
 python -m pytest architecture/tools/tests
 ```
 
-`--repo` matters: this branch does not contain the code, so without it paths and evidence
-are not checked.
+`--repo` matters because the dev-notes branch contains the architecture model but
+not the code checkout. Without it, schema and graph semantics are still checked,
+but code paths, evidence and Git freshness are not.
 
-## Filling the template
+`--strict` turns warnings into failures. That is useful once placeholders are gone
+and for deliberate local audits; do not wire it into unrelated CI merely to make
+an orphan notes branch everybody else's problem.
 
-The shipped files are a valid, minimal example. Everything to replace contains `TODO`, an id
-starting with `placeholder-`, or the zeroed revision; the validator counts these per file and
-`--strict` fails until none remain. Rename `placeholder-*` files together with their `id`,
-delete what does not apply, and add one container/flow file per real unit.
+## Current Depengine pilot
 
-Start small: one container, verified with `--repo`, before scaling out.
+The checked-in model is intentionally small and project-specific. It currently
+models six subsystem units, three high-value flows, and five views:
 
-## Using it in another project
+```
+units/
+  cli.yaml
+  configuration.yaml
+  planning.yaml
+  reconciliation.yaml
+  adapters.yaml
+  state-and-lock.yaml
 
-Copy `archmap.schema.json` and `tools/` unchanged, then create that project's own
-`index.yaml`. Do not fork the schema per project: extend through `x-` keys, and change the
-shared schema only with a version bump (`archmap: 2`). Once several projects use it, move
-the schema and tools into a single org-owned repository and vendor from there.
+flows/
+  install.yaml
+  status.yaml
+  update.yaml
+
+views/
+  system-context.yaml
+  core-pipeline.yaml
+  execution.yaml
+  reproducibility.yaml
+  install-flow.yaml
+```
+
+This is a pilot, not an attempt to mirror every package. Add components or units
+when they reduce the cost of understanding/change; do not expand merely to make
+the graph resemble the directory tree. The generic placeholder model used by the
+tool tests lives under `tools/tests/fixtures/model/`, so validator tests do not
+force the real Depengine model to remain a template.
+
+## Scope and lifecycle
+
+This implementation is intentionally project-local while its shape is still
+being proven against Depengine. There is no compatibility promise between
+projects and no requirement to keep a hypothetical organization-wide schema in
+sync. Generalize only after repeated real use demonstrates a stable abstraction.
+
+Because `.dev/` is a separate working-context branch, archmap is not authoritative
+for the code itself. If it becomes release-critical or CI-enforced, promote the
+mature model/tooling into the normal code branch so architecture changes and code
+changes can be reviewed atomically.

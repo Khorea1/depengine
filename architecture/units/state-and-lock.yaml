@@ -1,0 +1,24 @@
+archmap: 2
+doc: unit
+id: state-and-lock
+verified:
+  revision: "8d9d2cc"
+  verified_on: "2026-09-28"
+type: subsystem
+paths:
+  - internal/state/
+  - internal/lock/
+  - internal/formatversion/
+tech: ["Go", "JSON"]
+status: active
+invariants:
+  - text: "State mutation is performed under the state lock before the executor saves reconciled tool state."
+    confidence: confirmed
+    evidence: ["internal/exec/state.go:39-50", "internal/exec/state.go:109-115"]
+relations:
+  - from: state-and-lock
+    to: adapters
+    kind: calls
+    via: "mutable selector and registry/release resolution"
+    evidence: ["internal/lock/lock.go:253-278"]
+    confidence: confirmed

@@ -1,0 +1,44 @@
+archmap: 2
+doc: unit
+id: adapters
+verified:
+  revision: "8d9d2cc"
+  verified_on: "2026-09-28"
+type: subsystem
+paths:
+  - internal/ecosystem/
+  - internal/git/
+  - internal/httpdownload/
+  - internal/container/
+  - internal/containerregistry/
+  - internal/ghrelease/
+  - internal/localartifact/
+  - internal/localartifactadapter/
+  - internal/msi/
+  - internal/native/
+  - internal/source/
+  - internal/artifact/
+  - internal/integrity/
+  - internal/downloadcache/
+tech: ["Go"]
+status: active
+invariants:
+  - text: "Every method backend implements one plan-aware AdapterV2 contract for resolution, observation, install, removal, availability, and compatibility."
+    confidence: confirmed
+    evidence: ["internal/exec/adapter.go:39-77"]
+relations:
+  - from: adapters
+    to: host-os
+    kind: spawns
+    via: "run.Runner and filesystem operations"
+    confidence: inferred
+  - from: adapters
+    to: network-services
+    kind: calls
+    via: "Git/HTTP/release/registry protocols"
+    confidence: inferred
+  - from: adapters
+    to: package-managers
+    kind: spawns
+    via: "native and ecosystem manager CLIs"
+    confidence: inferred

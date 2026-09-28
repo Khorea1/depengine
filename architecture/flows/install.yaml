@@ -1,0 +1,41 @@
+archmap: 2
+doc: flow
+id: install
+verified:
+  revision: "8d9d2cc"
+  verified_on: "2026-09-28"
+trigger: "Operator runs depengine install with a schema/manifest selection."
+steps:
+  - from: operator
+    to: cli
+    action: "Invokes the install command and supplies command-line options."
+    confidence: inferred
+  - from: cli
+    to: configuration
+    action: "Loads target facts, parses the schema/manifest, and validates the effective configuration."
+    evidence: ["internal/app/install.go:339-350", "internal/app/helpers.go:80-111"]
+    confidence: confirmed
+  - from: cli
+    to: state-and-lock
+    action: "Resolves lock semantics and snapshots pre-install state before mutation."
+    evidence: ["internal/app/install.go:369-386"]
+    confidence: confirmed
+  - from: cli
+    to: reconciliation
+    action: "Builds/configures the executor and starts reconciliation for the selected tools."
+    evidence: ["internal/app/install.go:374-393"]
+    confidence: confirmed
+  - from: reconciliation
+    to: adapters
+    action: "Resolves candidate identity, observes the host, and executes the chosen method through AdapterV2."
+    evidence: ["internal/exec/resolution.go:29-54", "internal/exec/adapter.go:39-54"]
+    confidence: confirmed
+  - from: reconciliation
+    to: state-and-lock
+    action: "Persists reconciled installation state under the state lock."
+    evidence: ["internal/exec/state.go:39-57", "internal/exec/state.go:109-115"]
+    confidence: confirmed
+failure_modes:
+  - "Schema/manifest parse or validation failure stops before executor mutation begins."
+  - "Candidate resolution/compatibility failure can reject one method and allow normal fallback to another candidate."
+  - "State-lock or state-save failure makes persistence failure explicit instead of silently claiming success."

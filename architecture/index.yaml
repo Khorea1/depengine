@@ -1,45 +1,75 @@
-# archmap index — entry point. Read this file first, then open only what you need.
-# Placeholders: anything containing "TODO", ids starting with "placeholder-", and the
-# zeroed revision. `tools/validate.py --strict` fails until all of them are replaced.
-archmap: 1
+# Depengine architecture index. Start here; open only the units/flows/views relevant to the task.
+archmap: 2
 doc: index
+verified:
+  revision: "8d9d2cc"
+  verified_on: "2026-09-28"
 
 project:
-  id: placeholder-project
-  name: "TODO: human-readable project name"
-  summary: "TODO: one sentence on what the system does and for whom."
-  languages: ["TODO"]
+  id: depengine
+  name: "Depengine"
+  summary: "Cross-platform declarative CLI that resolves, installs, observes, and locks development-tool dependencies."
+  languages: ["Go", "TOML"]
   source:
-    revision: "0000000"      # commit this model was last verified against
-    verified_on: "1970-01-01"  # quoted ISO date
-    branch: "TODO"
+    branch: master
 
-# Actors and third-party systems outside this codebase. Same id namespace as containers.
 externals:
-  placeholder-user:
+  operator:
     type: person
-    summary: "TODO: who this actor is and what they want from the system."
-  placeholder-payment-gateway:
+    summary: "Developer or maintainer invoking depengine commands and interpreting their results."
+  host-os:
     type: system
-    summary: "TODO: third-party system this project depends on or talks to."
+    summary: "Local operating system, filesystem, process environment, and installed tool state observed or mutated by depengine."
+  network-services:
+    type: system
+    summary: "Remote Git, HTTP, release, artifact, and registry endpoints consulted by source and download methods."
+  package-managers:
+    type: system
+    summary: "Host-native and ecosystem package managers invoked by adapters to inspect or mutate installed tools."
 
-# One entry per file in containers/. Summary must match the file's own summary.
-containers:
-  placeholder-api:
-    summary: "TODO: request-handling service; state what it owns and what it must not do."
-  placeholder-db:
-    summary: "TODO: primary datastore; state which container is its only writer."
+units:
+  cli:
+    summary: "Cobra command surface and composition root; translates user intent into configuration, lock, graph, and executor operations."
+  configuration:
+    summary: "Parses and validates project schema/manifest input and materializes target-aware configuration used by downstream planning."
+  planning:
+    summary: "Represents desired/resolved plans and dependency graphs, including validation and projections used before host mutation."
+  reconciliation:
+    summary: "Generic execution engine that resolves candidates, observes host state, performs mutations, verifies outcomes, and persists state."
+  adapters:
+    summary: "Method-specific backends for native/ecosystem packages, Git, HTTP/releases, containers, MSI, and local artifacts."
+  state-and-lock:
+    summary: "Persists observed installation state and reproducibility lock data, including preparation journaling and format-version policy."
 
-# One entry per file in flows/. Only the main end-to-end scenarios.
 flows:
-  placeholder-happy-path:
-    summary: "TODO: the most important user-visible scenario, end to end."
+  install:
+    summary: "Install path from schema loading through executor reconciliation, adapter mutation, and persisted state."
+  status:
+    summary: "Read-only status path comparing tracked state and desired schema with observations from the host."
+  update:
+    summary: "Lock refresh path that resolves mutable selectors, merges existing pins, writes the lock, and reports version drift."
 
-# Relations whose source is an external. Everything else lives in the owning container file.
+views:
+  system-context:
+    summary: "System boundary around the CLI, host, remote services, package managers, and adapter/execution seams."
+  core-pipeline:
+    summary: "Primary internal pipeline from command/configuration through planning, reconciliation, and durable state."
+  execution:
+    summary: "Executor-to-adapter execution boundary and the external host/network/package-manager systems it can touch."
+  reproducibility:
+    summary: "Configuration, planning, adapter resolution, and state/lock units that establish repeatable installs."
+  install-flow:
+    summary: "Ordered install scenario rendered directly from the confirmed/inferred flow steps."
+
 relations:
-  - {from: placeholder-user, to: placeholder-api, kind: calls, via: "HTTPS", confidence: inferred}
-  - {from: placeholder-payment-gateway, to: placeholder-api, kind: calls, via: "webhook", note: "TODO: what the gateway sends and when.", confidence: inferred}
+  - from: operator
+    to: cli
+    kind: calls
+    via: "command line"
+    evidence: ["main.go:27-31"]
+    confidence: confirmed
 
-# Vocabulary a newcomer or an LLM would misread. Delete the section if empty.
 glossary:
-  TODO-term: "TODO: what this word means in this project, which may differ from common usage."
+  candidate: "One configured installation method considered for a tool before a concrete resolved plan is selected."
+  resolved-plan: "Concrete executable identity produced from a candidate before mutation; lower layers must not silently re-resolve it."
+  observation: "Read-only statement of host presence and identity used to reconcile desired and actual tool state."

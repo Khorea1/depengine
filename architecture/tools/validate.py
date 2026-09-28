@@ -5,9 +5,10 @@ Checks, in order:
   1. YAML 1.2 parse, duplicate keys rejected.
   2. JSON Schema (archmap.schema.json), selected by file location.
   3. Semantics: id/file consistency, reference resolution, relation ownership,
-     duplicates, index/file summary sync, notes links.
-  4. With --repo: paths and evidence exist in the code repo, revision is known
-     and how far behind HEAD it is.
+     view/flow references, duplicates and notes links.
+  4. With --repo: each document's recorded revision is known; paths and evidence
+     are checked at that revision (not at the current working tree); freshness is
+     reported per document.
   5. Placeholders (TODO markers etc.): warnings, errors under --strict.
 
 Exit code: 0 ok, 1 errors (or warnings under --strict), 2 usage/setup problem.
@@ -87,7 +88,7 @@ def _yaml() -> YAML:
 def _kind_for(rel: str) -> str:
     if rel == "index.yaml":
         return "index"
-    return "container" if rel.startswith("containers/") else "flow"
+    return rel.split("/", 1)[0].removesuffix("s")
 
 
 def _fmt_path(parts: Any) -> str:
@@ -98,12 +99,12 @@ def _fmt_path(parts: Any) -> str:
 
 
 def _discover(root: Path, rep: Report) -> list[str]:
-    rels = []
+    rels: list[str] = []
     if (root / "index.yaml").is_file():
         rels.append("index.yaml")
     else:
         rep.error("index.yaml", "", "missing: every model needs an index.yaml")
-    for sub in ("containers", "flows"):
+    for sub in ("units", "flows", "views"):
         d = root / sub
         if not d.is_dir():
             continue
@@ -116,13 +117,18 @@ def _discover(root: Path, rep: Report) -> list[str]:
 
 
 def load_and_validate_schema(root: Path, rep: Report) -> dict[str, dict]:
-    schema = json.loads((root / SCHEMA_FILE).read_text(encoding="utf-8"))
+    try:
+        schema = json.loads((root / SCHEMA_FILE).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        rep.error(SCHEMA_FILE, "", f"cannot load schema: {exc}")
+        return {}
+
     yaml = _yaml()
     docs: dict[str, dict] = {}
     for rel in _discover(root, rep):
         try:
             data = yaml.load((root / rel).read_text(encoding="utf-8"))
-        except YAMLError as exc:
+        except (OSError, YAMLError) as exc:
             rep.error(rel, "", f"YAML error: {str(exc).splitlines()[0]}")
             continue
         if not isinstance(data, dict):
@@ -150,55 +156,80 @@ def load_and_validate_schema(root: Path, rep: Report) -> dict[str, dict]:
 
 
 def _iter_relations(docs: dict[str, dict]) -> Iterator[tuple[str, str, dict, str | None]]:
-    """Yield (file, where, relation, owner_container_or_None)."""
+    """Yield (file, where, relation, owner_unit_or_None)."""
     for rel, d in docs.items():
-        owner = d["id"] if d["doc"] == "container" else None
-        if d["doc"] in ("index", "container"):
-            for i, r in enumerate(d.get("relations", [])):
-                yield rel, f"relations[{i}]", r, owner
+        owner = d["id"] if d["doc"] == "unit" else None
+        if d["doc"] in ("index", "unit"):
+            for i, relation in enumerate(d.get("relations", [])):
+                yield rel, f"relations[{i}]", relation, owner
 
 
 def _iter_steps(docs: dict[str, dict]) -> Iterator[tuple[str, str, dict]]:
     for rel, d in docs.items():
         if d["doc"] == "flow":
-            for i, s in enumerate(d["steps"]):
-                yield rel, f"steps[{i}]", s
+            for i, step in enumerate(d["steps"]):
+                yield rel, f"steps[{i}]", step
+
+
+def _iter_claims(docs: dict[str, dict]) -> Iterator[tuple[str, str, dict]]:
+    for rel, d in docs.items():
+        if d["doc"] != "unit":
+            continue
+        for i, claim in enumerate(d.get("invariants", [])):
+            yield rel, f"invariants[{i}]", claim
+        for cid, component in d.get("components", {}).items():
+            for i, claim in enumerate(component.get("invariants", [])):
+                yield rel, f"components.{cid}.invariants[{i}]", claim
+
+
+def _iter_notes(docs: dict[str, dict]) -> Iterator[tuple[str, str, str]]:
+    for rel, d in docs.items():
+        if d.get("notes"):
+            yield rel, "notes", d["notes"]
+        if d["doc"] == "index":
+            for eid, external in d.get("externals", {}).items():
+                if external.get("notes"):
+                    yield rel, f"externals.{eid}.notes", external["notes"]
 
 
 def check_semantics(root: Path, docs: dict[str, dict], rep: Report) -> dict[str, str]:
-    """Returns the element table {ref: kind}; empty if the index is unusable."""
+    """Return the element table {ref: kind}; empty if index.yaml is unusable."""
     idx = docs.get("index.yaml")
     if idx is None:
         return {}
+
     externals: dict = idx.get("externals", {})
-    containers: dict = idx["containers"]
+    units: dict = idx["units"]
     flows: dict = idx.get("flows", {})
+    views: dict = idx.get("views", {})
 
-    for clash in sorted(set(externals) & set(containers)):
-        rep.error("index.yaml", f"externals.{clash}", "id is used by both an external and a container")
+    for clash in sorted(set(externals) & set(units)):
+        rep.error("index.yaml", f"externals.{clash}", "id is used by both an external and a unit")
 
-    # index <-> files
-    for kind_dir, doc_kind, catalogue in (("containers", "container", containers), ("flows", "flow", flows)):
-        for cid in catalogue:
-            rel = f"{kind_dir}/{cid}.yaml"
+    # index <-> detail files. Summaries intentionally live only in index.yaml.
+    for kind_dir, doc_kind, catalogue in (
+        ("units", "unit", units),
+        ("flows", "flow", flows),
+        ("views", "view", views),
+    ):
+        for item_id in catalogue:
+            rel = f"{kind_dir}/{item_id}.yaml"
             if rel not in docs:
                 if not (root / rel).is_file():
-                    rep.error("index.yaml", f"{kind_dir}.{cid}", f"listed but {rel} does not exist")
+                    rep.error("index.yaml", f"{kind_dir}.{item_id}", f"listed but {rel} does not exist")
                 continue
             d = docs[rel]
-            if d["id"] != cid:
-                rep.error(rel, "id", f"id {d['id']!r} must equal the file name and index key {cid!r}")
-            if d["summary"] != catalogue[cid]["summary"]:
-                rep.error(rel, "summary", "differs from the summary in index.yaml; keep them identical")
+            if d["id"] != item_id:
+                rep.error(rel, "id", f"id {d['id']!r} must equal the file name and index key {item_id!r}")
         for rel, d in docs.items():
             if d["doc"] == doc_kind and Path(rel).stem not in catalogue:
                 rep.error(rel, "", f"file is not listed under '{kind_dir}' in index.yaml")
 
     # element table
     elements: dict[str, str] = {e: "external" for e in externals}
-    elements.update({c: "container" for c in containers})
-    for rel, d in docs.items():
-        if d["doc"] == "container":
+    elements.update({u: "unit" for u in units})
+    for _, d in docs.items():
+        if d["doc"] == "unit":
             for comp in d.get("components", {}):
                 elements[f"{d['id']}.{comp}"] = "component"
 
@@ -206,53 +237,81 @@ def check_semantics(root: Path, docs: dict[str, dict], rep: Report) -> dict[str,
         full = ref
         if ref.startswith("."):
             if owner is None:
-                rep.error(file, where, f"local reference {ref!r} is only allowed inside a container file")
+                rep.error(file, where, f"local reference {ref!r} is only allowed inside a unit file")
                 return None
             full = owner + ref
         if full not in elements:
             hint = difflib.get_close_matches(full, list(elements), n=3, cutoff=0.6)
-            rep.error(file, where, f"unknown element {ref!r}" + (f" (did you mean: {', '.join(hint)}?)" if hint else ""))
+            suffix = f" (did you mean: {', '.join(hint)}?)" if hint else ""
+            rep.error(file, where, f"unknown element {ref!r}{suffix}")
             return None
         return full
 
-    top = lambda ref: ref.split(".")[0]  # noqa: E731
+    def top(ref: str) -> str:
+        return ref.split(".")[0]
 
     # relations
     seen: set[tuple[str, str, str]] = set()
-    for file, where, r, owner in _iter_relations(docs):
-        src = resolve(r["from"], owner, file, f"{where}.from")
-        dst = resolve(r["to"], owner, file, f"{where}.to")
+    for file, where, relation, owner in _iter_relations(docs):
+        src = resolve(relation["from"], owner, file, f"{where}.from")
+        dst = resolve(relation["to"], owner, file, f"{where}.to")
         if src is None or dst is None:
             continue
         if src == dst:
             rep.error(file, where, "from and to are the same element")
         if owner is None:
             if elements[src] != "external":
-                rep.error(file, f"{where}.from", f"{src!r} is not an external; put this relation in containers/{src.split('.')[0]}.yaml")
+                rep.error(file, f"{where}.from", f"{src!r} is not an external; put this relation in units/{top(src)}.yaml")
         elif src != owner and not src.startswith(owner + "."):
-            home = "index.yaml" if elements[src] == "external" else f"containers/{top(src)}.yaml"
+            home = "index.yaml" if elements[src] == "external" else f"units/{top(src)}.yaml"
             rep.error(file, f"{where}.from", f"relation must live in the file that owns its source; move it to {home}")
-        key = (src, dst, r["kind"])
+        key = (src, dst, relation["kind"])
         if key in seen:
-            rep.error(file, where, f"duplicate relation {src} -{r['kind']}-> {dst}")
+            rep.error(file, where, f"duplicate relation {src} -{relation['kind']}-> {dst}")
         seen.add(key)
 
-    # flows
-    pairs = {(s, d) for s, d, _ in seen}
-    top_pairs = {(top(s), top(d)) for s, d in pairs}
-    for file, where, s in _iter_steps(docs):
-        src = resolve(s["from"], None, file, f"{where}.from")
-        dst = resolve(s["to"], None, file, f"{where}.to")
-        if src and dst and (src, dst) not in pairs and (top(src), top(dst)) not in top_pairs:
-            rep.warn(file, where, f"no declared relation between {top(src)} and {top(dst)}; add it to the model or mark the step inferred")
+    # flows. Missing declared relations are useful warnings only for confirmed steps;
+    # an inferred step is explicitly allowed to be a lead not yet present in the model.
+    pairs = {(src, dst) for src, dst, _ in seen}
+    top_pairs = {(top(src), top(dst)) for src, dst in pairs}
+    for file, where, step in _iter_steps(docs):
+        src = resolve(step["from"], None, file, f"{where}.from")
+        dst = resolve(step["to"], None, file, f"{where}.to")
+        if (
+            src
+            and dst
+            and step["confidence"] == "confirmed"
+            and (src, dst) not in pairs
+            and (top(src), top(dst)) not in top_pairs
+        ):
+            rep.warn(file, where, f"confirmed step has no declared relation between {top(src)} and {top(dst)}")
 
-    # notes links + isolated elements
+    # views reference existing elements/flows but carry no layout semantics.
     for file, d in docs.items():
-        n = d.get("notes")
-        if n and not (root / n).is_file():
-            rep.error(file, "notes", f"{n} does not exist")
+        if d["doc"] != "view":
+            continue
+        for i, ref in enumerate(d.get("elements", [])):
+            resolve(ref, None, file, f"elements[{i}]")
+        flow = d.get("flow")
+        if flow is not None and flow not in flows:
+            hint = difflib.get_close_matches(flow, list(flows), n=3, cutoff=0.6)
+            suffix = f" (did you mean: {', '.join(hint)}?)" if hint else ""
+            rep.error(file, "flow", f"unknown flow {flow!r}{suffix}")
+
+    # notes links, including external.notes (previously easy to forget).
+    for file, where, note in _iter_notes(docs):
+        if not (root / note).is_file():
+            rep.error(file, where, f"{note} does not exist")
+
+    # Isolated top-level elements are often accidental and worth surfacing.
     for name, kind in elements.items():
-        if kind != "component" and not any(name == a or name == b or a.startswith(name + ".") or b.startswith(name + ".") for a, b in pairs):
+        if kind == "component":
+            continue
+        connected = any(
+            name == a or name == b or a.startswith(name + ".") or b.startswith(name + ".")
+            for a, b in pairs
+        )
+        if not connected:
             rep.warn("index.yaml", name, f"{kind} {name!r} has no relations")
     return elements
 
@@ -262,59 +321,125 @@ def check_semantics(root: Path, docs: dict[str, dict], rep: Report) -> dict[str,
 # --------------------------------------------------------------------------- #
 
 
-def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", "-c", f"safe.directory={repo}", "-C", str(repo), *args], capture_output=True, text=True)
+
+
+def _is_placeholder(value: str) -> bool:
+    return any(pattern.search(value) for pattern in PLACEHOLDER_RES)
 
 
 def check_repo(repo: Path, docs: dict[str, dict], rep: Report) -> None:
+    commit_ok: dict[str, bool] = {}
+    file_cache: dict[tuple[str, str], str | None] = {}
+
+    def valid_commit(file: str, rev: str) -> bool:
+        if _is_placeholder(rev):
+            return False
+        if rev in commit_ok:
+            return commit_ok[rev]
+        ok = _git(repo, "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}").returncode == 0
+        commit_ok[rev] = ok
+        if not ok:
+            rep.error(file, "verified.revision", f"commit {rev} not found in {repo}")
+        return ok
+
+    # Advisory branch metadata is checked once. It is deliberately not the source
+    # of freshness; each document's verified.revision is.
     idx = docs.get("index.yaml")
     if idx is not None:
-        rev = idx["project"]["source"]["revision"]
-        if not PLACEHOLDER_RES[2].match(rev):
-            if _git(repo, "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}").returncode != 0:
-                rep.error("index.yaml", "project.source.revision", f"commit {rev} not found in {repo}")
-            else:
-                n = _git(repo, "rev-list", "--count", f"{rev}..HEAD").stdout.strip()
-                if n.isdigit() and int(n) > 0:
-                    rep.warn("index.yaml", "project.source.revision", f"model is {n} commit(s) behind HEAD; re-verify and bump the revision")
+        branch = idx.get("project", {}).get("source", {}).get("branch")
+        if branch and not _is_placeholder(branch):
+            if _git(repo, "rev-parse", "--verify", "--quiet", f"{branch}^{{commit}}").returncode != 0:
+                rep.warn("index.yaml", "project.source.branch", f"branch/ref {branch!r} is not resolvable in {repo}")
 
-    def exists(file: str, where: str, p: str) -> None:
-        if not (repo / p).exists():
-            rep.error(file, where, f"path {p!r} does not exist in the repo")
+    # Validate/freshness-check every document independently.
+    for file, d in docs.items():
+        rev = d["verified"]["revision"]
+        if not valid_commit(file, rev):
+            continue
+        ancestor = _git(repo, "merge-base", "--is-ancestor", rev, "HEAD")
+        if ancestor.returncode == 0:
+            n = _git(repo, "rev-list", "--count", f"{rev}..HEAD").stdout.strip()
+            if n.isdigit() and int(n) > 0:
+                rep.warn(file, "verified.revision", f"document is {n} commit(s) behind HEAD; re-verify this document when relevant")
+        else:
+            rep.warn(file, "verified.revision", f"recorded revision {rev} is not an ancestor of HEAD")
 
-    lines: dict[str, int] = {}
+    def object_exists(rev: str, path: str) -> bool:
+        clean = path.rstrip("/") or "."
+        if clean == ".":
+            return True
+        return _git(repo, "cat-file", "-e", f"{rev}:{clean}").returncode == 0
 
-    def check_evidence(file: str, where: str, ev: str) -> None:
+    def exists(file: str, where: str, rev: str, path: str) -> None:
+        if valid_commit(file, rev) and not object_exists(rev, path):
+            rep.error(file, where, f"path {path!r} does not exist at recorded revision {rev}")
+
+    def read_at(file: str, rev: str, path: str) -> str | None:
+        key = (rev, path)
+        if key in file_cache:
+            return file_cache[key]
+        if not valid_commit(file, rev):
+            file_cache[key] = None
+            return None
+        proc = _git(repo, "show", f"{rev}:{path}")
+        if proc.returncode != 0:
+            file_cache[key] = None
+            return None
+        file_cache[key] = proc.stdout
+        return proc.stdout
+
+    def check_evidence(file: str, where: str, rev: str, ev: str) -> None:
         path, _, span = ev.partition(":")
-        target = repo / path
-        if not target.is_file():
-            rep.error(file, where, f"evidence file {path!r} does not exist in the repo")
+        text = read_at(file, rev, path)
+        if text is None:
+            rep.error(file, where, f"evidence file {path!r} does not exist at recorded revision {rev}")
             return
         if span:
-            if path not in lines:
-                lines[path] = len(target.read_text(encoding="utf-8", errors="replace").splitlines())
+            line_count = len(text.splitlines())
             end = int(span.split("-")[-1])
-            if end > lines[path]:
-                rep.error(file, where, f"evidence {ev!r} is past end of file ({lines[path]} lines)")
+            if end > line_count:
+                rep.error(file, where, f"evidence {ev!r} is past end of file at {rev} ({line_count} lines)")
 
+    # Paths are checked at the same revision as their owning unit. Planned units
+    # and components may legitimately point at paths that do not exist yet.
     for file, d in docs.items():
-        if d["doc"] == "container":
-            exists(file, "path", d["path"])
-            for i, p in enumerate(d.get("entrypoints", [])):
-                exists(file, f"entrypoints[{i}]", p)
-            base = d["path"].rstrip("/")
-            for cid, c in d.get("components", {}).items():
-                exists(file, f"components.{cid}.path", c["path"])
-                if base != "." and not (c["path"] == base or c["path"].startswith(base + "/")):
-                    rep.warn(file, f"components.{cid}.path", f"{c['path']!r} is outside the container path {base!r}")
-                for i, p in enumerate(c.get("entrypoints", [])):
-                    exists(file, f"components.{cid}.entrypoints[{i}]", p)
-    for file, where, r, _ in _iter_relations(docs):
-        for i, ev in enumerate(r.get("evidence", [])):
-            check_evidence(file, f"{where}.evidence[{i}]", ev)
-    for file, where, s in _iter_steps(docs):
-        for i, ev in enumerate(s.get("evidence", [])):
-            check_evidence(file, f"{where}.evidence[{i}]", ev)
+        if d["doc"] != "unit":
+            continue
+        rev = d["verified"]["revision"]
+        unit_planned = d.get("status") == "planned"
+        if not unit_planned:
+            for i, path in enumerate(d["paths"]):
+                exists(file, f"paths[{i}]", rev, path)
+            for i, path in enumerate(d.get("entrypoints", [])):
+                exists(file, f"entrypoints[{i}]", rev, path)
+        roots = [p.rstrip("/") for p in d["paths"]]
+        for cid, component in d.get("components", {}).items():
+            component_planned = unit_planned or component.get("status") == "planned"
+            if not component_planned:
+                for i, path in enumerate(component["paths"]):
+                    exists(file, f"components.{cid}.paths[{i}]", rev, path)
+                for i, path in enumerate(component.get("entrypoints", [])):
+                    exists(file, f"components.{cid}.entrypoints[{i}]", rev, path)
+            for path in component["paths"]:
+                clean = path.rstrip("/")
+                if roots != ["."] and not any(clean == root or clean.startswith(root + "/") for root in roots):
+                    rep.warn(file, f"components.{cid}.paths", f"{path!r} is outside all unit paths {d['paths']!r}")
+
+    # Evidence is always read from the document's recorded revision, never HEAD.
+    for file, where, relation, _ in _iter_relations(docs):
+        rev = docs[file]["verified"]["revision"]
+        for i, ev in enumerate(relation.get("evidence", [])):
+            check_evidence(file, f"{where}.evidence[{i}]", rev, ev)
+    for file, where, step in _iter_steps(docs):
+        rev = docs[file]["verified"]["revision"]
+        for i, ev in enumerate(step.get("evidence", [])):
+            check_evidence(file, f"{where}.evidence[{i}]", rev, ev)
+    for file, where, claim in _iter_claims(docs):
+        rev = docs[file]["verified"]["revision"]
+        for i, ev in enumerate(claim.get("evidence", [])):
+            check_evidence(file, f"{where}.evidence[{i}]", rev, ev)
 
 
 # --------------------------------------------------------------------------- #
@@ -324,13 +449,13 @@ def check_repo(repo: Path, docs: dict[str, dict], rep: Report) -> None:
 
 def _walk(node: Any, path: str = "") -> Iterator[tuple[str, str]]:
     if isinstance(node, dict):
-        for k, v in node.items():
-            sub = f"{path}.{k}" if path else str(k)
-            yield sub, str(k)
-            yield from _walk(v, sub)
+        for key, value in node.items():
+            sub = f"{path}.{key}" if path else str(key)
+            yield sub, str(key)
+            yield from _walk(value, sub)
     elif isinstance(node, list):
-        for i, v in enumerate(node):
-            yield from _walk(v, f"{path}[{i}]")
+        for i, value in enumerate(node):
+            yield from _walk(value, f"{path}[{i}]")
     elif isinstance(node, str):
         yield path, node
 
@@ -338,7 +463,7 @@ def _walk(node: Any, path: str = "") -> Iterator[tuple[str, str]]:
 def check_placeholders(docs: dict[str, dict], rep: Report) -> None:
     """One warning per file, so a fresh template does not bury real findings."""
     for file, d in docs.items():
-        hits = [where for where, s in _walk(d) if any(p.search(s) for p in PLACEHOLDER_RES)]
+        hits = [where for where, value in _walk(d) if _is_placeholder(value)]
         if hits:
             shown = ", ".join(hits[:3]) + (", ..." if len(hits) > 3 else "")
             rep.warn(file, "", f"{len(hits)} placeholder value(s) left, e.g. {shown}")
@@ -363,8 +488,8 @@ def run(root: Path, repo: Path | None = None) -> Report:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--root", type=Path, default=DEFAULT_ROOT, help="directory containing index.yaml (default: architecture/)")
-    ap.add_argument("--repo", type=Path, help="code repository to verify paths, evidence and revision against")
-    ap.add_argument("--strict", action="store_true", help="treat warnings (incl. placeholders) as errors")
+    ap.add_argument("--repo", type=Path, help="code repository to verify paths, evidence and per-document revisions against")
+    ap.add_argument("--strict", action="store_true", help="treat warnings (including placeholders and staleness) as errors")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     args = ap.parse_args(argv)
 
@@ -379,11 +504,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps([f.__dict__ for f in rep.findings], indent=2))
     else:
-        for f in rep.findings:
-            print(f)
+        for finding in rep.findings:
+            print(finding)
         print(f"{len(rep.errors)} error(s), {len(rep.warnings)} warning(s)")
         if args.repo is None:
-            print("note: --repo not given; paths, evidence and revision were not verified")
+            print("note: --repo not given; paths, evidence and recorded revisions were not verified")
     failed = bool(rep.errors) or (args.strict and bool(rep.warnings))
     return 1 if failed else 0
 

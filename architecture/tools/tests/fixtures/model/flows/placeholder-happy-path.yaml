@@ -1,0 +1,16 @@
+# One file per end-to-end scenario. File name = id. Catalogue summary lives in index.yaml.
+# Steps are ordered and use full references only.
+archmap: 2
+doc: flow
+id: placeholder-happy-path
+verified:
+  revision: "0000000"
+  verified_on: "1970-01-01"
+trigger: "TODO: what starts it, e.g. user submits the checkout form."
+steps:
+  - {from: placeholder-user, to: placeholder-api.placeholder-handler, action: "TODO: sends the request", confidence: inferred}
+  - {from: placeholder-api.placeholder-handler, to: placeholder-api.placeholder-service, action: "TODO: validates and delegates", evidence: ["TODO/path/to/unit/handler/file:1"], confidence: confirmed}
+  - {from: placeholder-api.placeholder-service, to: placeholder-api.placeholder-repository, action: "TODO: persists the result", evidence: ["TODO/path/to/unit/service/file:1"], confidence: confirmed}
+  - {from: placeholder-api.placeholder-repository, to: placeholder-db, action: "TODO: writes the record", returns: "TODO: what comes back", evidence: ["TODO/path/to/unit/repository/file:1"], confidence: confirmed}
+failure_modes:
+  - "TODO: e.g. gateway times out -> request fails with 502, nothing persisted."

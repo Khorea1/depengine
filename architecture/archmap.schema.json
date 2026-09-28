@@ -1,18 +1,19 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:archmap:schema:1",
-  "title": "archmap v1",
-  "description": "Architecture model designed to be read and written by LLMs. Three document kinds: index (entry point), container (one file per deployable/major unit), flow (one end-to-end scenario). Elements are addressed by dotted references: 'container' or 'container.component'. Inside a container file, '.component' is shorthand for a component of that same container. A relation lives in the file that owns its source ('from'); externals are owned by the index. Extension keys must start with 'x-'.",
+  "$id": "urn:archmap:schema:2",
+  "title": "archmap v2",
+  "description": "Architecture model designed for selective reading by humans and LLMs. Four document kinds: index, unit, flow and view. Units are architectural subsystems or runtime units, not necessarily deployables. Views select a useful projection of the model and intentionally contain no layout coordinates. Elements are addressed by dotted references: 'unit' or 'unit.component'. Inside a unit file, '.component' is shorthand for a component of that same unit. Relations live with their source. Code remains authoritative; this model records verified architectural claims about a specific code revision.",
   "type": "object",
   "required": ["archmap", "doc"],
   "properties": {
-    "archmap": { "const": 1, "description": "Schema major version." },
-    "doc": { "enum": ["index", "container", "flow"] }
+    "archmap": { "const": 2, "description": "Schema major version." },
+    "doc": { "enum": ["index", "unit", "flow", "view"] }
   },
   "allOf": [
     { "if": { "properties": { "doc": { "const": "index" } }, "required": ["doc"] }, "then": { "$ref": "#/$defs/index" } },
-    { "if": { "properties": { "doc": { "const": "container" } }, "required": ["doc"] }, "then": { "$ref": "#/$defs/container" } },
-    { "if": { "properties": { "doc": { "const": "flow" } }, "required": ["doc"] }, "then": { "$ref": "#/$defs/flow" } }
+    { "if": { "properties": { "doc": { "const": "unit" } }, "required": ["doc"] }, "then": { "$ref": "#/$defs/unit" } },
+    { "if": { "properties": { "doc": { "const": "flow" } }, "required": ["doc"] }, "then": { "$ref": "#/$defs/flow" } },
+    { "if": { "properties": { "doc": { "const": "view" } }, "required": ["doc"] }, "then": { "$ref": "#/$defs/view" } }
   ],
 
   "$defs": {
@@ -20,11 +21,11 @@
       "type": "string",
       "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
       "maxLength": 48,
-      "description": "Stable kebab-case identifier. Never rename an id without a deliberate migration: ids are the join key across files and across regenerations."
+      "description": "Stable kebab-case identifier. Treat ids as persistent join keys."
     },
     "ref": {
       "type": "string",
-      "description": "Reference to an element: 'external', 'container', 'container.component', or (container files only) '.component'.",
+      "description": "Reference to an external, unit, unit.component, or (unit files only) .component.",
       "anyOf": [
         { "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*)?$" },
         { "pattern": "^\\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" }
@@ -35,33 +36,41 @@
       "minLength": 8,
       "maxLength": 200,
       "pattern": "^[^\\n\\r]+$",
-      "description": "One line. What it is and why it exists. This is what a reader uses to decide whether to open the rest."
+      "description": "One line. What it is and why a reader might need it. Catalogue summaries live only in index.yaml."
     },
     "line": {
       "type": "string",
       "minLength": 3,
-      "maxLength": 200,
+      "maxLength": 240,
       "pattern": "^[^\\n\\r]+$",
       "description": "Short single-line text."
     },
     "path": {
       "type": "string",
       "pattern": "^(?!/)(?!(?:.*/)?\\.\\.(?:/|$))[^\\s\\\\\\x00-\\x1f]+$",
-      "description": "Repo-relative POSIX path (file or directory, '.' allowed). No '..', no leading '/', no whitespace."
+      "description": "Repo-relative POSIX path (file or directory, '.' allowed). No '..', leading '/', whitespace or backslashes."
+    },
+    "paths": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/path" },
+      "description": "Repo-relative roots owned by or primarily implementing this architectural element."
     },
     "evidence": {
       "type": "string",
       "pattern": "^(?!/)(?!(?:.*/)?\\.\\.(?:/|$))[^\\s\\\\:\\x00-\\x1f]+(?::[1-9][0-9]*(?:-[1-9][0-9]*)?)?$",
-      "description": "Repo-relative 'path', 'path:LINE' or 'path:START-END' proving the claim."
+      "description": "Repo-relative path, path:LINE or path:START-END proving a claim at that document's verified revision."
     },
     "notes": {
       "type": "string",
       "pattern": "^notes/(?!(?:.*/)?\\.\\.(?:/|$))[^\\s\\\\]+\\.md$",
-      "description": "Link to a prose file with rationale, decisions and pitfalls."
+      "description": "Link to prose with rationale, decisions or pitfalls."
     },
     "confidence": {
       "enum": ["confirmed", "inferred"],
-      "description": "confirmed = verified against code at the recorded revision (evidence required). inferred = plausible but not verified."
+      "description": "confirmed = checked against code at this document's verified revision and evidence is required. inferred = useful hypothesis to verify."
     },
     "status": { "enum": ["active", "experimental", "deprecated", "planned"] },
     "tech": {
@@ -76,13 +85,39 @@
       "uniqueItems": true,
       "items": { "$ref": "#/$defs/id" }
     },
+    "verified": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "verified_on"],
+      "properties": {
+        "revision": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+        "verified_on": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "Quoted ISO date." }
+      },
+      "description": "Code revision against which this document was last checked. Freshness is per document, not global."
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "confidence"],
+      "properties": {
+        "text": { "$ref": "#/$defs/line" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" }, "uniqueItems": true, "maxItems": 5 }
+      },
+      "patternProperties": { "^x-": {} },
+      "if": { "properties": { "confidence": { "const": "confirmed" } }, "required": ["confidence"] },
+      "then": { "required": ["evidence"], "properties": { "evidence": { "minItems": 1 } } }
+    },
     "invariants": {
       "type": "array",
-      "maxItems": 10,
-      "items": { "$ref": "#/$defs/line" },
-      "description": "Rules that must stay true (ownership, ordering, idempotency, boundaries). Short, testable statements."
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/claim" },
+      "description": "Architecturally important rules. Confirmed invariants carry evidence like relations do."
     },
-
+    "relation-kind": {
+      "enum": ["calls", "reads", "writes", "publishes", "subscribes", "spawns", "configures", "depends-on"],
+      "description": "Manually model semantic architecture, not mechanically derivable imports. Import graphs belong to derived tooling/views."
+    },
     "relation": {
       "type": "object",
       "additionalProperties": false,
@@ -90,11 +125,8 @@
       "properties": {
         "from": { "$ref": "#/$defs/ref" },
         "to": { "$ref": "#/$defs/ref" },
-        "kind": {
-          "enum": ["calls", "imports", "reads", "writes", "publishes", "subscribes", "spawns", "configures", "depends-on"],
-          "description": "calls = runtime invocation. imports = compile-time/code dependency. reads/writes = data access. publishes/subscribes = async messaging. spawns = starts a process. configures = supplies config. depends-on = any other dependency."
-        },
-        "via": { "type": "string", "minLength": 1, "maxLength": 60, "pattern": "^[^\\n\\r]+$", "description": "Mechanism or protocol (e.g. 'in-process', 'HTTPS', 'AMQP')." },
+        "kind": { "$ref": "#/$defs/relation-kind" },
+        "via": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[^\\n\\r]+$", "description": "Mechanism or protocol, e.g. in-process, HTTPS, filesystem." },
         "note": { "$ref": "#/$defs/line" },
         "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" }, "uniqueItems": true, "maxItems": 5 },
         "confidence": { "$ref": "#/$defs/confidence" }
@@ -103,15 +135,14 @@
       "if": { "properties": { "confidence": { "const": "confirmed" } }, "required": ["confidence"] },
       "then": { "required": ["evidence"], "properties": { "evidence": { "minItems": 1 } } }
     },
-
     "component": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["summary", "type", "path"],
+      "required": ["summary", "type", "paths"],
       "properties": {
         "summary": { "$ref": "#/$defs/summary" },
         "type": { "enum": ["module", "package", "handler", "controller", "service", "repository", "adapter", "client", "model", "config", "middleware", "job", "util", "other"] },
-        "path": { "$ref": "#/$defs/path" },
+        "paths": { "$ref": "#/$defs/paths" },
         "entrypoints": { "type": "array", "items": { "$ref": "#/$defs/path" }, "uniqueItems": true, "maxItems": 8 },
         "tech": { "$ref": "#/$defs/tech" },
         "status": { "$ref": "#/$defs/status" },
@@ -120,18 +151,29 @@
       },
       "patternProperties": { "^x-": {} }
     },
+    "catalogue": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["summary"],
+        "properties": { "summary": { "$ref": "#/$defs/summary" } }
+      }
+    },
 
     "index": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["archmap", "doc", "project", "containers"],
+      "required": ["archmap", "doc", "verified", "project", "units"],
       "properties": {
-        "archmap": { "const": 1 },
+        "archmap": { "const": 2 },
         "doc": { "const": "index" },
+        "verified": { "$ref": "#/$defs/verified" },
         "project": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["id", "name", "summary", "source"],
+          "required": ["id", "name", "summary"],
           "properties": {
             "id": { "$ref": "#/$defs/id" },
             "name": { "$ref": "#/$defs/line" },
@@ -140,12 +182,8 @@
             "source": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["revision", "verified_on"],
-              "description": "The code revision this model was last verified against. Bump both fields whenever the model is re-verified.",
               "properties": {
-                "revision": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
-                "verified_on": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "ISO date, quoted." },
-                "branch": { "type": "string", "minLength": 1, "maxLength": 100, "pattern": "^\\S+$" }
+                "branch": { "type": "string", "minLength": 1, "maxLength": 100, "pattern": "^\\S+$", "description": "Expected code branch/ref. Advisory metadata, checked when --repo is used." }
               }
             }
           },
@@ -165,58 +203,37 @@
             },
             "patternProperties": { "^x-": {} }
           },
-          "description": "Actors and third-party systems outside the codebase. Ids share one namespace with containers."
+          "description": "Actors and third-party systems outside the codebase. Ids share one namespace with units."
         },
-        "containers": {
-          "type": "object",
-          "minProperties": 1,
-          "propertyNames": { "$ref": "#/$defs/id" },
-          "additionalProperties": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["summary"],
-            "properties": { "summary": { "$ref": "#/$defs/summary" } },
-            "description": "Catalogue entry. The detail lives in containers/<id>.yaml; summary must match that file."
-          }
-        },
-        "flows": {
-          "type": "object",
-          "propertyNames": { "$ref": "#/$defs/id" },
-          "additionalProperties": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["summary"],
-            "properties": { "summary": { "$ref": "#/$defs/summary" } },
-            "description": "Catalogue entry. The detail lives in flows/<id>.yaml; summary must match that file."
-          }
-        },
+        "units": { "$ref": "#/$defs/catalogue" },
+        "flows": { "$ref": "#/$defs/catalogue" },
+        "views": { "$ref": "#/$defs/catalogue" },
         "relations": {
           "type": "array",
           "items": { "$ref": "#/$defs/relation" },
-          "description": "Relations whose source is an external. All other relations live in the container file that owns the source."
+          "description": "Relations whose source is an external. All other relations live in the unit file owning the source."
         },
         "glossary": {
           "type": "object",
           "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9 _./-]{0,47}$" },
-          "additionalProperties": { "type": "string", "minLength": 3, "maxLength": 300, "pattern": "^[^\\n\\r]+$" },
-          "description": "Project vocabulary a newcomer (or an LLM) would otherwise misread."
+          "additionalProperties": { "type": "string", "minLength": 3, "maxLength": 300, "pattern": "^[^\\n\\r]+$" }
         }
       },
       "patternProperties": { "^x-": {} }
     },
 
-    "container": {
+    "unit": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["archmap", "doc", "id", "summary", "type", "path"],
+      "required": ["archmap", "doc", "id", "verified", "type", "paths"],
       "properties": {
-        "archmap": { "const": 1 },
-        "doc": { "const": "container" },
+        "archmap": { "const": 2 },
+        "doc": { "const": "unit" },
         "id": { "$ref": "#/$defs/id" },
-        "summary": { "$ref": "#/$defs/summary" },
-        "type": { "enum": ["service", "app", "cli", "library", "worker", "batch", "frontend", "gateway", "database", "queue", "cache", "storage", "infra", "other"] },
-        "path": { "$ref": "#/$defs/path" },
-        "entrypoints": { "type": "array", "items": { "$ref": "#/$defs/path" }, "uniqueItems": true, "maxItems": 8 },
+        "verified": { "$ref": "#/$defs/verified" },
+        "type": { "enum": ["subsystem", "service", "app", "cli", "library", "worker", "batch", "frontend", "gateway", "database", "queue", "cache", "storage", "infra", "other"] },
+        "paths": { "$ref": "#/$defs/paths" },
+        "entrypoints": { "type": "array", "items": { "$ref": "#/$defs/path" }, "uniqueItems": true, "maxItems": 12 },
         "tech": { "$ref": "#/$defs/tech" },
         "status": { "$ref": "#/$defs/status" },
         "notes": { "$ref": "#/$defs/notes" },
@@ -230,7 +247,7 @@
         "relations": {
           "type": "array",
           "items": { "$ref": "#/$defs/relation" },
-          "description": "Relations whose source is this container or one of its components."
+          "description": "Relations whose source is this unit or one of its components."
         }
       },
       "patternProperties": { "^x-": {} }
@@ -239,12 +256,12 @@
     "flow": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["archmap", "doc", "id", "summary", "trigger", "steps"],
+      "required": ["archmap", "doc", "id", "verified", "trigger", "steps"],
       "properties": {
-        "archmap": { "const": 1 },
+        "archmap": { "const": 2 },
         "doc": { "const": "flow" },
         "id": { "$ref": "#/$defs/id" },
-        "summary": { "$ref": "#/$defs/summary" },
+        "verified": { "$ref": "#/$defs/verified" },
         "trigger": { "$ref": "#/$defs/line" },
         "steps": {
           "type": "array",
@@ -272,12 +289,44 @@
         "failure_modes": {
           "type": "array",
           "maxItems": 10,
-          "items": { "$ref": "#/$defs/line" },
-          "description": "What can go wrong along the path and how the system behaves."
+          "items": { "$ref": "#/$defs/line" }
         },
         "notes": { "$ref": "#/$defs/notes" }
       },
       "patternProperties": { "^x-": {} }
+    },
+
+    "view": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archmap", "doc", "id", "verified", "kind"],
+      "properties": {
+        "archmap": { "const": 2 },
+        "doc": { "const": "view" },
+        "id": { "$ref": "#/$defs/id" },
+        "verified": { "$ref": "#/$defs/verified" },
+        "kind": { "enum": ["context", "structure", "execution", "data", "flow", "custom"] },
+        "elements": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 40,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/ref" },
+          "description": "Elements selected for a structural projection. No coordinates or presentation styling belong here."
+        },
+        "relation_kinds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/relation-kind" }
+        },
+        "flow": { "$ref": "#/$defs/id", "description": "Flow id when kind=flow." },
+        "notes": { "$ref": "#/$defs/notes" }
+      },
+      "patternProperties": { "^x-": {} },
+      "allOf": [
+        { "if": { "properties": { "kind": { "const": "flow" } }, "required": ["kind"] }, "then": { "required": ["flow"] }, "else": { "required": ["elements"] } }
+      ]
     }
   }
 }

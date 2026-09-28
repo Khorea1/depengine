@@ -1,0 +1,30 @@
+archmap: 2
+doc: flow
+id: update
+verified:
+  revision: "8d9d2cc"
+  verified_on: "2026-09-28"
+trigger: "Operator runs depengine update to refresh reproducibility pins without applying installations."
+steps:
+  - from: operator
+    to: cli
+    action: "Invokes the update command and selects schema/profile/lock options."
+    confidence: inferred
+  - from: cli
+    to: configuration
+    action: "Loads the effective schema/manifest and target facts."
+    evidence: ["internal/app/update.go:52-77"]
+    confidence: confirmed
+  - from: cli
+    to: state-and-lock
+    action: "Resolves mutable selectors, merges preserved pins, and writes the refreshed lock unless dry-run is active."
+    evidence: ["internal/app/update.go:89-153"]
+    confidence: confirmed
+  - from: state-and-lock
+    to: adapters
+    action: "Uses release, registry, Git, and related resolvers to materialize immutable lock identities."
+    evidence: ["internal/lock/lock.go:253-278"]
+    confidence: confirmed
+failure_modes:
+  - "Resolution failure aborts the lock refresh without writing a partially resolved lock."
+  - "An unreadable old lock cannot contribute preserved pins; update warns and rebuilds from fresh resolution."

@@ -1,0 +1,8 @@
+archmap: 2
+doc: view
+id: install-flow
+verified:
+  revision: "8d9d2cc"
+  verified_on: "2026-09-28"
+kind: flow
+flow: install

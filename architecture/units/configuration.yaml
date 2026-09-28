@@ -1,0 +1,23 @@
+archmap: 2
+doc: unit
+id: configuration
+verified:
+  revision: "8d9d2cc"
+  verified_on: "2026-09-28"
+type: subsystem
+paths:
+  - internal/config/
+  - internal/validate/
+  - schema/
+tech: ["Go", "TOML", "JSON Schema"]
+status: active
+invariants:
+  - text: "Schema validation runs after target facts are available, so downstream units receive target-aware configuration."
+    confidence: confirmed
+    evidence: ["internal/app/helpers.go:92-111"]
+relations:
+  - from: configuration
+    to: planning
+    kind: configures
+    via: "parsed Schema and MethodCandidate values"
+    confidence: inferred

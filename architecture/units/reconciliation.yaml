@@ -1,0 +1,40 @@
+archmap: 2
+doc: unit
+id: reconciliation
+verified:
+  revision: "8d9d2cc"
+  verified_on: "2026-09-28"
+type: subsystem
+paths:
+  - internal/exec/
+  - internal/engine/
+  - internal/run/
+  - internal/secret/
+tech: ["Go"]
+status: active
+invariants:
+  - text: "Candidate resolution and observation are read-only phases; host mutation receives a mutation runner that blocks subprocess execution during dry-run."
+    confidence: confirmed
+    evidence: ["internal/exec/resolution.go:12-28", "internal/exec/executor.go:257-269"]
+  - text: "The executor depends on the AdapterV2 contract rather than importing concrete adapter packages as execution policy."
+    confidence: confirmed
+    evidence: ["internal/exec/adapter.go:39-54", "internal/exec/executor.go:228-233"]
+relations:
+  - from: reconciliation
+    to: planning
+    kind: depends-on
+    via: "resolved plan validation and verification"
+    evidence: ["internal/exec/resolution.go:44-54"]
+    confidence: confirmed
+  - from: reconciliation
+    to: adapters
+    kind: calls
+    via: "AdapterV2"
+    evidence: ["internal/exec/adapter.go:39-54", "internal/exec/resolution.go:44-54"]
+    confidence: confirmed
+  - from: reconciliation
+    to: state-and-lock
+    kind: writes
+    via: "locked state transaction"
+    evidence: ["internal/exec/state.go:39-57", "internal/exec/state.go:109-115"]
+    confidence: confirmed
