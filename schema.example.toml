@@ -218,10 +218,10 @@ pkg_overrides = { apt = "fd-find" } # everywhere else: "fd" (tool name)
 repo = "sharkdp/fd"
 asset = "fd-{version}-{arch_any}-unknown-linux-gnu.tar.gz"
 checksum = "sha256:auto"
-strip_components = 1                  # discard the archive's top-level directory
-extract_to = "~/.local/opt/fd"        # own the complete extracted payload here
-entrypoints = { fd = "fd" }           # expose this payload-relative executable
-link_dir = "~/.local/bin"             # create launchers here without flattening the payload
+strip_components = 1        # discard the archive's top-level directory
+scope = "user"              # portable placement: payload owned under the user
+                            # scope install root, launchers in the scope link dir
+entrypoints = { fd = "fd" } # expose this payload-relative executable
 when = { os = ["linux"], libc = ["glibc"] }
 
 # musl build (Alpine, distroless/scratch containers)
@@ -231,9 +231,8 @@ repo = "sharkdp/fd"
 asset = "fd-{version}-{arch_any}-unknown-linux-musl.tar.gz"
 checksum = "sha256:auto"
 strip_components = 1
-extract_to = "~/.local/opt/fd"
+scope = "user"
 entrypoints = { fd = "fd" }
-link_dir = "~/.local/bin"
 when = { os = ["linux"], libc = ["musl"] }
 
 
@@ -256,8 +255,9 @@ when = { distro_family = ["debian", "mint"] } # .deb is Debian-family only (incl
 repo = "mikefarah/yq"
 asset = "yq_{os_any}_{arch_any}"
 checksum = "sha256:auto"
-extract_to = "~/.local/bin"
-when = { target_family = ["unix"] } # ~/.local/bin is a Unix-specific destination
+scope = "user" # portable placement: raw binary owned under the user scope
+               # install root, with a launcher in the scope link dir
+when = { target_family = ["unix"] }
 
 
 # --- Two mismatches stacked at once: restic and node_exporter tag their
@@ -271,7 +271,7 @@ when = { target_family = ["unix"] } # ~/.local/bin is a Unix-specific destinatio
 [tools.restic.http]
 url = "https://github.com/restic/restic/releases/download/v0.17.3/restic_0.17.3_linux_amd64.bz2"
 checksum = "sha256:auto"
-extract_to = "~/.local/bin"
+scope = "user"
 binary = "restic"
 when = { arch = ["x86_64"], os = ["linux"] }
 
@@ -279,7 +279,7 @@ when = { arch = ["x86_64"], os = ["linux"] }
 kind = "http"
 url = "https://github.com/restic/restic/releases/download/v0.17.3/restic_0.17.3_linux_arm64.bz2"
 checksum = "sha256:auto"
-extract_to = "~/.local/bin"
+scope = "user"
 binary = "restic"
 when = { arch = ["aarch64"], os = ["linux"] }
 
@@ -288,9 +288,8 @@ repo = "prometheus/node_exporter"
 asset = "node_exporter-{version}.{os_any}-{arch_any}.tar.gz"
 checksum = "sha256:auto"
 strip_components = 1
-extract_to = "~/.local/opt/node_exporter"
+scope = "user"
 entrypoints = { node_exporter = "node_exporter" }
-link_dir = "~/.local/bin"
 
 
 # --- Same manager binary name ("pkg"), two unrelated clans (FreeBSD vs
@@ -342,9 +341,8 @@ repo = "neovim/neovim"
 asset = "nvim-{os_any}-{arch_any}.tar.gz"
 checksum = "sha256:auto"
 strip_components = 1
-extract_to = "~/.local/opt/neovim"
+scope = "user"
 entrypoints = { nvim = "bin/nvim" }
-link_dir = "~/.local/bin"
 when = { target_family = ["unix"] }
 
 # Windows installer: exact product identity is required for check/remove.
