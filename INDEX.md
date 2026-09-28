@@ -15,16 +15,6 @@ defines a different policy. It often lives on its own orphaned branch/worktree.
 | `cleaning.md` | Procedure for consolidating scratch material and promoting verified knowledge |
 | `TODO.md` | Session-specific queue and unresolved editorial/CLI ideas |
 | `bad-writing-findings.md` | Two unresolved wording findings in ADR-002 |
-| `archive/lint-triage-2026-09-23.md` | Historical uncapped lint audit; current status is tracked in `docs/roadmap.md` and `docs/gosec-triage.md` |
-| `archive/preparation-exec-map-2026-09-24.md` | Archived preparation/execution mapping |
-| `archive/author-audit-2026-09-23.md` | Archived author audit; result is recorded in `docs/roadmap.md` |
-| `archive/preparation-map-2026-09-23.md` | Archived preparation mapping |
-| `archive/2026-09-16-triaged-work.md` | Archived triaged work and historical decisions |
-| `archive/plans/plan-graph-terminal-renderer.md` | Archived graph terminal renderer plan |
-| `archive/plans/plan-secret-transport.md` | Archived secret transport plan |
-| `archive/adapterv2/retrieved-adapter-v2-adapters.md` | Retrieved adapter-v2 adapter research |
-| `archive/adapterv2/retrieved-adapter-v2-callers.md` | Retrieved adapter-v2 caller research |
-| `archive/adapterv2/retrieved-adapter-v2-contracts.md` | Retrieved adapter-v2 contract research |
 
 ## Lifecycle
 
