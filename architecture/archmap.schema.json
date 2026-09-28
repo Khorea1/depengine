@@ -1,0 +1,283 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:archmap:schema:1",
+  "title": "archmap v1",
+  "description": "Architecture model designed to be read and written by LLMs. Three document kinds: index (entry point), container (one file per deployable/major unit), flow (one end-to-end scenario). Elements are addressed by dotted references: 'container' or 'container.component'. Inside a container file, '.component' is shorthand for a component of that same container. A relation lives in the file that owns its source ('from'); externals are owned by the index. Extension keys must start with 'x-'.",
+  "type": "object",
+  "required": ["archmap", "doc"],
+  "properties": {
+    "archmap": { "const": 1, "description": "Schema major version." },
+    "doc": { "enum": ["index", "container", "flow"] }
+  },
+  "allOf": [
+    { "if": { "properties": { "doc": { "const": "index" } }, "required": ["doc"] }, "then": { "$ref": "#/$defs/index" } },
+    { "if": { "properties": { "doc": { "const": "container" } }, "required": ["doc"] }, "then": { "$ref": "#/$defs/container" } },
+    { "if": { "properties": { "doc": { "const": "flow" } }, "required": ["doc"] }, "then": { "$ref": "#/$defs/flow" } }
+  ],
+
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      "maxLength": 48,
+      "description": "Stable kebab-case identifier. Never rename an id without a deliberate migration: ids are the join key across files and across regenerations."
+    },
+    "ref": {
+      "type": "string",
+      "description": "Reference to an element: 'external', 'container', 'container.component', or (container files only) '.component'.",
+      "anyOf": [
+        { "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*)?$" },
+        { "pattern": "^\\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" }
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 200,
+      "pattern": "^[^\\n\\r]+$",
+      "description": "One line. What it is and why it exists. This is what a reader uses to decide whether to open the rest."
+    },
+    "line": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 200,
+      "pattern": "^[^\\n\\r]+$",
+      "description": "Short single-line text."
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^(?!/)(?!(?:.*/)?\\.\\.(?:/|$))[^\\s\\\\]+$",
+      "description": "Repo-relative POSIX path (file or directory, '.' allowed). No '..', no leading '/', no whitespace."
+    },
+    "evidence": {
+      "type": "string",
+      "pattern": "^(?!/)(?!(?:.*/)?\\.\\.(?:/|$))[^\\s\\\\:]+(?::[1-9][0-9]*(?:-[1-9][0-9]*)?)?$",
+      "description": "Repo-relative 'path', 'path:LINE' or 'path:START-END' proving the claim."
+    },
+    "notes": {
+      "type": "string",
+      "pattern": "^notes/(?!(?:.*/)?\\.\\.(?:/|$))[^\\s\\\\]+\\.md$",
+      "description": "Link to a prose file with rationale, decisions and pitfalls."
+    },
+    "confidence": {
+      "enum": ["confirmed", "inferred"],
+      "description": "confirmed = verified against code at the recorded revision (evidence required). inferred = plausible but not verified."
+    },
+    "status": { "enum": ["active", "experimental", "deprecated", "planned"] },
+    "tech": {
+      "type": "array",
+      "maxItems": 12,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 40, "pattern": "^[^\\n\\r]+$" }
+    },
+    "tags": {
+      "type": "array",
+      "maxItems": 12,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/id" }
+    },
+    "invariants": {
+      "type": "array",
+      "maxItems": 10,
+      "items": { "$ref": "#/$defs/line" },
+      "description": "Rules that must stay true (ownership, ordering, idempotency, boundaries). Short, testable statements."
+    },
+
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "kind", "confidence"],
+      "properties": {
+        "from": { "$ref": "#/$defs/ref" },
+        "to": { "$ref": "#/$defs/ref" },
+        "kind": {
+          "enum": ["calls", "imports", "reads", "writes", "publishes", "subscribes", "spawns", "configures", "depends-on"],
+          "description": "calls = runtime invocation. imports = compile-time/code dependency. reads/writes = data access. publishes/subscribes = async messaging. spawns = starts a process. configures = supplies config. depends-on = any other dependency."
+        },
+        "via": { "type": "string", "minLength": 1, "maxLength": 60, "pattern": "^[^\\n\\r]+$", "description": "Mechanism or protocol (e.g. 'in-process', 'HTTPS', 'AMQP')." },
+        "note": { "$ref": "#/$defs/line" },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" }, "uniqueItems": true, "maxItems": 5 },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      },
+      "patternProperties": { "^x-": {} },
+      "if": { "properties": { "confidence": { "const": "confirmed" } }, "required": ["confidence"] },
+      "then": { "required": ["evidence"], "properties": { "evidence": { "minItems": 1 } } }
+    },
+
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "type", "path"],
+      "properties": {
+        "summary": { "$ref": "#/$defs/summary" },
+        "type": { "enum": ["module", "package", "handler", "controller", "service", "repository", "adapter", "client", "model", "config", "middleware", "job", "util", "other"] },
+        "path": { "$ref": "#/$defs/path" },
+        "entrypoints": { "type": "array", "items": { "$ref": "#/$defs/path" }, "uniqueItems": true, "maxItems": 8 },
+        "tech": { "$ref": "#/$defs/tech" },
+        "status": { "$ref": "#/$defs/status" },
+        "invariants": { "$ref": "#/$defs/invariants" },
+        "tags": { "$ref": "#/$defs/tags" }
+      },
+      "patternProperties": { "^x-": {} }
+    },
+
+    "index": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archmap", "doc", "project", "containers"],
+      "properties": {
+        "archmap": { "const": 1 },
+        "doc": { "const": "index" },
+        "project": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "name", "summary", "source"],
+          "properties": {
+            "id": { "$ref": "#/$defs/id" },
+            "name": { "$ref": "#/$defs/line" },
+            "summary": { "$ref": "#/$defs/summary" },
+            "languages": { "$ref": "#/$defs/tech" },
+            "source": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["revision", "verified_on"],
+              "description": "The code revision this model was last verified against. Bump both fields whenever the model is re-verified.",
+              "properties": {
+                "revision": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+                "verified_on": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "ISO date, quoted." },
+                "branch": { "type": "string", "minLength": 1, "maxLength": 100, "pattern": "^\\S+$" }
+              }
+            }
+          },
+          "patternProperties": { "^x-": {} }
+        },
+        "externals": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "summary"],
+            "properties": {
+              "type": { "enum": ["person", "system"] },
+              "summary": { "$ref": "#/$defs/summary" },
+              "notes": { "$ref": "#/$defs/notes" }
+            },
+            "patternProperties": { "^x-": {} }
+          },
+          "description": "Actors and third-party systems outside the codebase. Ids share one namespace with containers."
+        },
+        "containers": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["summary"],
+            "properties": { "summary": { "$ref": "#/$defs/summary" } },
+            "description": "Catalogue entry. The detail lives in containers/<id>.yaml; summary must match that file."
+          }
+        },
+        "flows": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["summary"],
+            "properties": { "summary": { "$ref": "#/$defs/summary" } },
+            "description": "Catalogue entry. The detail lives in flows/<id>.yaml; summary must match that file."
+          }
+        },
+        "relations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/relation" },
+          "description": "Relations whose source is an external. All other relations live in the container file that owns the source."
+        },
+        "glossary": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9 _./-]{0,47}$" },
+          "additionalProperties": { "type": "string", "minLength": 3, "maxLength": 300, "pattern": "^[^\\n\\r]+$" },
+          "description": "Project vocabulary a newcomer (or an LLM) would otherwise misread."
+        }
+      },
+      "patternProperties": { "^x-": {} }
+    },
+
+    "container": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archmap", "doc", "id", "summary", "type", "path"],
+      "properties": {
+        "archmap": { "const": 1 },
+        "doc": { "const": "container" },
+        "id": { "$ref": "#/$defs/id" },
+        "summary": { "$ref": "#/$defs/summary" },
+        "type": { "enum": ["service", "app", "cli", "library", "worker", "batch", "frontend", "gateway", "database", "queue", "cache", "storage", "infra", "other"] },
+        "path": { "$ref": "#/$defs/path" },
+        "entrypoints": { "type": "array", "items": { "$ref": "#/$defs/path" }, "uniqueItems": true, "maxItems": 8 },
+        "tech": { "$ref": "#/$defs/tech" },
+        "status": { "$ref": "#/$defs/status" },
+        "notes": { "$ref": "#/$defs/notes" },
+        "invariants": { "$ref": "#/$defs/invariants" },
+        "tags": { "$ref": "#/$defs/tags" },
+        "components": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": { "$ref": "#/$defs/component" }
+        },
+        "relations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/relation" },
+          "description": "Relations whose source is this container or one of its components."
+        }
+      },
+      "patternProperties": { "^x-": {} }
+    },
+
+    "flow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["archmap", "doc", "id", "summary", "trigger", "steps"],
+      "properties": {
+        "archmap": { "const": 1 },
+        "doc": { "const": "flow" },
+        "id": { "$ref": "#/$defs/id" },
+        "summary": { "$ref": "#/$defs/summary" },
+        "trigger": { "$ref": "#/$defs/line" },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 40,
+          "description": "Ordered. List position is the sequence.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "to", "action", "confidence"],
+            "properties": {
+              "from": { "$ref": "#/$defs/ref" },
+              "to": { "$ref": "#/$defs/ref" },
+              "action": { "$ref": "#/$defs/line" },
+              "async": { "type": "boolean" },
+              "returns": { "$ref": "#/$defs/line" },
+              "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" }, "uniqueItems": true, "maxItems": 5 },
+              "confidence": { "$ref": "#/$defs/confidence" }
+            },
+            "patternProperties": { "^x-": {} },
+            "if": { "properties": { "confidence": { "const": "confirmed" } }, "required": ["confidence"] },
+            "then": { "required": ["evidence"], "properties": { "evidence": { "minItems": 1 } } }
+          }
+        },
+        "failure_modes": {
+          "type": "array",
+          "maxItems": 10,
+          "items": { "$ref": "#/$defs/line" },
+          "description": "What can go wrong along the path and how the system behaves."
+        },
+        "notes": { "$ref": "#/$defs/notes" }
+      },
+      "patternProperties": { "^x-": {} }
+    }
+  }
+}
