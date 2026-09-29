@@ -210,7 +210,7 @@ completion and validation for `schema.toml`. For Taplo in VS Code:
 ```json
 {
   "taplo.schema.enabled": true,
-  "taplo.schema.url": "https://raw.githubusercontent.com/Khorea1/depengine/main/schema/depengine.schema.json"
+  "taplo.schema.url": "https://raw.githubusercontent.com/Khorea1/depengine/master/schema/depengine.schema.json"
 }
 ```
 
@@ -224,6 +224,7 @@ completion and validation for `schema.toml`. For Taplo in VS Code:
 | `XDG_CONFIG_HOME` | Base directory for the personal manifest |
 | `XDG_CACHE_HOME` | Base directory for downloads |
 | `XDG_STATE_HOME` | Base directory for state |
+| `XDG_DATA_HOME` | Unix base directory for user-scope tool placement |
 | `GITHUB_TOKEN` / `GH_TOKEN` | GitHub API and private release authentication |
 | `NO_COLOR` / `FORCE_COLOR` | Control ANSI color output |
 | `DEPENGINE_TRACE_ID` | Trace ID passed to subprocesses |
