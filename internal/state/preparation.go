@@ -153,6 +153,49 @@ func (ls *LockedState) FinalizePreparationCommit(key string, p plan.PreparationP
 	return clonePreparationJournal(next), nil
 }
 
+// FinalizePreparationCommitWithTool atomically closes a committing candidate,
+// records the tool state, and tracks resource ownership that must survive
+// before a later dependent transaction can add its refcount claim. trackedUses
+// intentionally add no dependent references.
+func (ls *LockedState) FinalizePreparationCommitWithTool(
+	key string,
+	p plan.PreparationPlan,
+	dependent string,
+	toolName string,
+	toolState ToolState,
+	trackedUses []plan.ResourceUse,
+) (plan.PreparationJournal, error) {
+	if strings.TrimSpace(toolName) != toolName || toolName == "" || strings.ContainsRune(toolName, '\x00') {
+		return plan.PreparationJournal{}, errors.New("tool name is invalid")
+	}
+	journal, err := ls.preparationJournal(key, p)
+	if err != nil {
+		return plan.PreparationJournal{}, err
+	}
+	next, owned, err := journal.FinalizeCommit(p, ls.state.OwnedResources, dependent)
+	if err != nil {
+		return plan.PreparationJournal{}, err
+	}
+	owned, err = plan.TrackResourceUses(owned, trackedUses)
+	if err != nil {
+		return plan.PreparationJournal{}, fmt.Errorf("track commit resources: %w", err)
+	}
+	if ls.state.Tools == nil {
+		ls.state.Tools = make(map[string]ToolState)
+	}
+	previousTool, hadTool := ls.state.Tools[toolName]
+	ls.state.Tools[toolName] = toolState
+	if err := ls.persistPreparationCompletion(key, owned); err != nil {
+		if hadTool {
+			ls.state.Tools[toolName] = previousTool
+		} else {
+			delete(ls.state.Tools, toolName)
+		}
+		return plan.PreparationJournal{}, err
+	}
+	return clonePreparationJournal(next), nil
+}
+
 // PlanPreparationRollback durably marks rollback as in progress before any
 // compensating operation is executed and returns the rollback decision for
 // preview/reporting. Callers must journal each actual compensation through

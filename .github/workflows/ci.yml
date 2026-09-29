@@ -221,6 +221,22 @@ jobs:
         copyback: false
         prepare: |
           /usr/sbin/pkg_add pkgin
+          pkg_path="$(sed -n 's/^PKG_PATH=//p' /etc/pkg_install.conf)"
+          selected_repo=""
+          for repo in $(printf '%s\n' "$pkg_path" | tr ';' ' '); do
+            if /usr/bin/ftp -o /dev/null -q 20 "$repo/pkg_summary.bz2" >/dev/null 2>&1 || \
+               /usr/bin/ftp -o /dev/null -q 20 "$repo/pkg_summary.gz" >/dev/null 2>&1; then
+              selected_repo="$repo"
+              break
+            fi
+          done
+          if [ -z "$selected_repo" ]; then
+            echo "no pkgin repository with a downloadable package summary" >&2
+            exit 1
+          fi
+          printf '%s\n' "$selected_repo" > /usr/pkg/etc/pkgin/repositories.conf
+          echo "pkgin repository: $selected_repo"
+          /usr/pkg/bin/pkgin -y update
           /usr/bin/ftp -o /tmp/go.tar.gz https://go.dev/dl/go1.27.1.netbsd-amd64.tar.gz
           test "$(/usr/bin/sha256 -q /tmp/go.tar.gz)" = "4ace14c14e7c6eb1d06890433afe81f8c2dc746d1d5f4df3ae6d2d7dd0481ba2"
           mkdir -p /usr/local

@@ -165,6 +165,68 @@ func TestLockedStatePersistsPreparationCommitBoundaryAndOwnership(t *testing.T) 
 	}
 }
 
+func TestFinalizePreparationCommitWithToolPersistsZeroRefPrerequisiteAtomically(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	const key = "candidate/v1/helper/go/digest"
+	p := plan.PreparationPlan{}
+
+	ls, err := LoadLocked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ls.BeginPreparation(key, p); err != nil {
+		_ = ls.Close()
+		t.Fatal(err)
+	}
+	if _, err := ls.PlanPreparationCommit(key, p); err != nil {
+		_ = ls.Close()
+		t.Fatal(err)
+	}
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		_ = ls.Close()
+		t.Fatal(err)
+	}
+	toolState := ToolState{
+		Method:      "go",
+		MethodKind:  "go",
+		InstalledAt: "2026-09-29T00:00:00Z",
+		Config:      map[string]any{"pkg": "example.test/helper"},
+	}
+	if _, err := ls.FinalizePreparationCommitWithTool(
+		key,
+		p,
+		"helper",
+		"helper",
+		toolState,
+		[]plan.ResourceUse{{Resource: resource, Created: true}},
+	); err != nil {
+		_ = ls.Close()
+		t.Fatal(err)
+	}
+	if err := ls.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := LoadFrom(DefaultPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := loaded.Tools["helper"]; !ok || !reflect.DeepEqual(got, toolState) {
+		t.Fatalf("tool state = %#v, want %#v", got, toolState)
+	}
+	wantOwned := []plan.OwnedResourceState{{
+		Resource:  resource,
+		Ownership: plan.OwnershipDepengine,
+	}}
+	if !reflect.DeepEqual(loaded.OwnedResources, wantOwned) {
+		t.Fatalf("owned resources = %#v, want %#v", loaded.OwnedResources, wantOwned)
+	}
+	if len(loaded.PreparationPlans) != 0 || len(loaded.PreparationJournals) != 0 {
+		t.Fatalf("completed transaction remained active: plans=%#v journals=%#v", loaded.PreparationPlans, loaded.PreparationJournals)
+	}
+}
+
 func TestLockedStatePersistsRollbackBoundaryBeforeCompensation(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	p := preparationTransactionPlan("repo:temporary")

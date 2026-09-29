@@ -177,6 +177,81 @@ func TestFailedCandidateRetainsLazyDependencyExplicitlyInReportAndState(t *testi
 	if _, ok := st.Tools["owner"]; !ok {
 		t.Fatalf("fallback owner is absent from state: %#v", st.Tools)
 	}
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.OwnedResources) != 1 {
+		t.Fatalf("retained prerequisite ownership = %#v, want one zero-ref helper", st.OwnedResources)
+	}
+	got := st.OwnedResources[0]
+	if got.Resource != resource || got.Ownership != plan.OwnershipDepengine || len(got.Dependents) != 0 {
+		t.Fatalf("retained prerequisite ownership = %#v, want depengine-owned zero-ref %#v", got, resource)
+	}
+}
+
+func TestRetryClaimsPersistedZeroRefPrerequisiteWithoutExternalReclassification(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.Save(&state.State{
+		Version: state.CurrentVersion,
+		Tools: map[string]state.ToolState{
+			"helper": {
+				Method:        "go",
+				MethodKind:    "go",
+				InstalledAt:   time.Now().UTC().Format(time.RFC3339),
+				DefinitionHash: "previous",
+				Config:        map[string]any{"pkg": "example.test/helper"},
+			},
+		},
+		OwnedResources: []plan.OwnedResourceState{{
+			Resource:  resource,
+			Ownership: plan.OwnershipDepengine,
+		}},
+		PreparationPlans:    map[string]plan.PreparationPlan{},
+		PreparationJournals: map[string]plan.PreparationJournal{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := &testMockAdapter{
+		kindValue: "go",
+		checkFunc: func(name string) bool {
+			return name == "helper"
+		},
+		installFunc: func(string) error { return nil },
+	}
+	method := func(pkg string, requires ...string) []*config.MethodCandidate {
+		return []*config.MethodCandidate{{Kind: "go", Config: map[string]any{"pkg": pkg}, Requires: requires}}
+	}
+	schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{"go"}}, Tools: map[string]*config.Tool{
+		"helper": {Name: "helper", DependencyOnly: true, Methods: method("example.test/helper")},
+		"owner":  {Name: "owner", Methods: method("example.test/owner", "helper")},
+	}}
+	executor := New()
+	WithAdapters(adapter)(executor)
+	WithSchemaInfo("/test/schema.toml", time.Now())(executor)
+
+	if _, err := executor.Execute(context.Background(), schema, ""); err != nil {
+		t.Fatal(err)
+	}
+	st, err := state.LoadFrom(state.DefaultPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.OwnedResources) != 1 {
+		t.Fatalf("owned resources = %#v, want one helper resource", st.OwnedResources)
+	}
+	got := st.OwnedResources[0]
+	if got.Resource != resource || got.Ownership != plan.OwnershipDepengine {
+		t.Fatalf("prerequisite ownership = %#v, want retained depengine ownership", got)
+	}
+	if want := []string{"owner"}; !reflect.DeepEqual(got.Dependents, want) {
+		t.Fatalf("dependents = %#v, want %#v", got.Dependents, want)
+	}
 }
 
 func TestSuccessfulMethodRequiresClaimsSharedPrerequisiteOwnership(t *testing.T) {

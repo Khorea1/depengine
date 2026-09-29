@@ -374,15 +374,11 @@ type ResourceUse struct {
 	Created  bool             `json:"created"`
 }
 
-// ClaimResourceUses projects runtime resource observations into the canonical
-// ownership/refcount snapshot for one committed dependent. Existing ownership
-// is preserved when the resource merely pre-existed. If a previously external
-// resource disappeared and depengine had to recreate it, ownership transitions
-// to depengine while preserving all existing dependent claims.
-func ClaimResourceUses(states []OwnedResourceState, dependent string, uses []ResourceUse) ([]OwnedResourceState, error) {
-	if err := validateDependent(dependent); err != nil {
-		return nil, err
-	}
+// TrackResourceUses projects runtime resource observations into the canonical
+// ownership snapshot without adding a dependent reference. This is used at
+// crash-safe commit boundaries where depengine must durably remember that it
+// created a resource before the consuming owner can commit its own claim.
+func TrackResourceUses(states []OwnedResourceState, uses []ResourceUse) ([]OwnedResourceState, error) {
 	snapshot, err := ownedResourceSnapshot(states)
 	if err != nil {
 		return nil, err
@@ -407,6 +403,30 @@ func ClaimResourceUses(states []OwnedResourceState, dependent string, uses []Res
 		} else if use.Created && state.Ownership == OwnershipExternal {
 			state.Ownership = OwnershipDepengine
 		}
+		snapshot[use.Resource] = state
+	}
+	return sortedOwnedResourceStates(snapshot), nil
+}
+
+// ClaimResourceUses projects runtime resource observations into the canonical
+// ownership/refcount snapshot for one committed dependent. Existing ownership
+// is preserved when the resource merely pre-existed. If a previously external
+// resource disappeared and depengine had to recreate it, ownership transitions
+// to depengine while preserving all existing dependent claims.
+func ClaimResourceUses(states []OwnedResourceState, dependent string, uses []ResourceUse) ([]OwnedResourceState, error) {
+	if err := validateDependent(dependent); err != nil {
+		return nil, err
+	}
+	tracked, err := TrackResourceUses(states, uses)
+	if err != nil {
+		return nil, err
+	}
+	snapshot, err := ownedResourceSnapshot(tracked)
+	if err != nil {
+		return nil, err
+	}
+	for _, use := range uses {
+		state := snapshot[use.Resource]
 		state, err = ClaimResource(state, dependent)
 		if err != nil {
 			return nil, fmt.Errorf("claim resource use %q/%q: %w", use.Resource.Kind, use.Resource.Key, err)

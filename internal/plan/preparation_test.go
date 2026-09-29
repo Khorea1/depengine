@@ -1569,3 +1569,33 @@ func TestFinalizeReleasedResourceRejectsUnapprovedOrReferencedResource(t *testin
 		})
 	}
 }
+
+func TestTrackResourceUsesPersistsZeroRefCreationAndAdoption(t *testing.T) {
+	resource := ResourceIdentity{Kind: ResourcePrerequisite, Key: "tool:helper"}
+	tracked, err := TrackResourceUses(nil, []ResourceUse{{Resource: resource, Created: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []OwnedResourceState{{Resource: resource, Ownership: OwnershipDepengine}}
+	if !reflect.DeepEqual(tracked, want) {
+		t.Fatalf("tracked = %#v, want %#v", tracked, want)
+	}
+
+	external := []OwnedResourceState{{
+		Resource:   resource,
+		Ownership:  OwnershipExternal,
+		Dependents: []string{"owner"},
+	}}
+	adopted, err := TrackResourceUses(external, []ResourceUse{{Resource: resource, Created: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = []OwnedResourceState{{
+		Resource:   resource,
+		Ownership:  OwnershipDepengine,
+		Dependents: []string{"owner"},
+	}}
+	if !reflect.DeepEqual(adopted, want) {
+		t.Fatalf("adopted = %#v, want %#v", adopted, want)
+	}
+}

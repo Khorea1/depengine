@@ -299,6 +299,119 @@ func TestCandidatePreparationKeyRoundTripsRecoverySubject(t *testing.T) {
 	}
 }
 
+func TestCandidatePreparationPrerequisiteRoleUsesDistinctRecoverableKey(t *testing.T) {
+	schema := sourceBackedSchema()
+	tool := schema.Tools["demo"]
+	method := tool.Methods[0]
+	intent, mismatch := candidatePlanIntent(tool, method)
+	if mismatch != "" || intent == nil {
+		t.Fatalf("intent = %#v, mismatch = %q", intent, mismatch)
+	}
+	normal, err := candidatePreparationKey(tool.Name, method.Kind, intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prerequisite, err := candidatePreparationKeyWithRole(tool.Name, method.Kind, intent, candidatePreparationPrerequisite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normal == prerequisite {
+		t.Fatalf("normal and prerequisite preparation keys are identical: %q", normal)
+	}
+	for _, key := range []string{normal, prerequisite} {
+		gotTool, gotMethod, err := candidatePreparationSubject(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if gotTool != tool.Name || gotMethod != method.Kind {
+			t.Fatalf("subject for %q = %q/%q, want %q/%q", key, gotTool, gotMethod, tool.Name, method.Kind)
+		}
+	}
+}
+
+func TestRecoverLazyPrerequisiteCommitPersistsToolAndZeroRefOwnership(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	method := &config.MethodCandidate{
+		Kind:   "cargo",
+		Config: map[string]any{"pkg": "helper", "version": "1.2.3"},
+	}
+	tool := &config.Tool{Name: "helper", DependencyOnly: true, Methods: []*config.MethodCandidate{method}}
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"cargo"}},
+		Tools:    map[string]*config.Tool{"helper": tool},
+	}
+	intent, mismatch := candidatePlanIntent(tool, method)
+	if mismatch != "" || intent == nil {
+		t.Fatalf("intent = %#v, mismatch = %q", intent, mismatch)
+	}
+	key, err := candidatePreparationKeyWithRole(tool.Name, method.Kind, intent, candidatePreparationPrerequisite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparationPlan := plan.PreparationPlan{}
+	locked, err := state.LoadLocked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := locked.BeginPreparation(key, preparationPlan); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if _, err := locked.PlanPreparationCommit(key, preparationPlan); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if err := locked.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := &recoveryObservationAdapter{
+		testMockAdapter: testMockAdapter{kindValue: "cargo"},
+		observation: plan.Observation{
+			Presence: plan.PresencePresent,
+			Identity: plan.ObservedIdentity{
+				Package: intent.Identity.Package,
+				Version: intent.Identity.Version,
+			},
+			KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion},
+		},
+		version: intent.Identity.Version,
+	}
+	ex := New()
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
+	ex.schema = schema
+	ex.recoveredCommits = make(map[string]recoveredCandidateCommit)
+
+	if err := ex.recoverPreparationTransactions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := ex.recoveredCommits["helper"]; !ok {
+		t.Fatal("recovered prerequisite was not retained as a terminal in-memory result")
+	}
+	st, err := state.LoadFrom(state.DefaultPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.PreparationPlans) != 0 || len(st.PreparationJournals) != 0 {
+		t.Fatalf("recovered prerequisite transaction remained active: plans=%#v journals=%#v", st.PreparationPlans, st.PreparationJournals)
+	}
+	if got, ok := st.Tools["helper"]; !ok || got.RootRequested {
+		t.Fatalf("recovered prerequisite tool state = %#v, present=%t; want dependency-only tracked state", got, ok)
+	}
+	resource, err := plan.PrerequisiteResource("helper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantOwned := []plan.OwnedResourceState{{
+		Resource:  resource,
+		Ownership: plan.OwnershipDepengine,
+	}}
+	if !reflect.DeepEqual(st.OwnedResources, wantOwned) {
+		t.Fatalf("recovered prerequisite ownership = %#v, want %#v", st.OwnedResources, wantOwned)
+	}
+}
+
 func TestRecoverPreparationResolvesInFlightSourceAddAndRollsBack(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	configured := config.Source{Kind: "brew-tap", Name: "vendor/tools"}

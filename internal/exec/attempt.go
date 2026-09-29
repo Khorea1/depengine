@@ -469,30 +469,46 @@ func (ex *Executor) finishWouldInstall(ac *candidateAttempt, result *ToolResult)
 // means the tool is not in the state the schema requires, so the tool is
 // marked failed instead of being silently reported as installed.
 func (ex *Executor) finishInstalled(ac *candidateAttempt, result *ToolResult) attemptOutcome {
-	// finishInstalled is reached only after this candidate's pre-install phase
-	// proceeded and its adapter mutation succeeded. Record that transition
-	// before finalizing preparation state so a journal-finalization failure does
-	// not erase the fact that the committed install crossed the hook boundary.
-	result.PreinstallDone = ac.preHookRan
-	if finalizeErr := ac.prepared.finalizeCommit(ac.tool.Name); finalizeErr != nil {
-		result.Status = StatusFailed
-		result.Error = finalizeErr.Error()
-		result.Method = ac.displayKind
-		result.MethodKind = ac.method.Kind
-		result.Config = configForResolvedTarget(ac.method, ac.resolved)
-		result.PlanIntent = ac.reported
-		result.InstallCommitted = true
-		result.ResourceUses = append([]plan.ResourceUse(nil), ac.resources...)
-		result.Duration = time.Since(ac.toolStart).String()
-		return finishTool
-	}
+	// The adapter mutation already succeeded. Populate the committed result
+	// before closing the WAL so lazy prerequisite state can be projected in the
+	// same durable save as transaction completion.
 	result.Status = StatusInstalled
 	result.InstallCommitted = true
+	result.PreinstallDone = ac.preHookRan
 	result.Method = ac.displayKind
 	result.MethodKind = ac.method.Kind
 	result.Config = configForResolvedTarget(ac.method, ac.resolved)
 	result.PlanIntent = ac.reported
 	result.ResourceUses = append([]plan.ResourceUse(nil), ac.resources...)
+
+	var finalizeErr error
+	if ac.prepared.prerequisite && ac.prepared.tx != nil {
+		current := ac.prepared.tx.locked.State()
+		ex.prepareStateMetadata(current)
+		existing, hadExisting := current.Tools[ac.tool.Name]
+		toolState := ex.toolStateForResult(ac.toolCtx, ac.tool, *result, existing, hadExisting, false)
+		resource, resourceErr := plan.PrerequisiteResource(ac.tool.Name)
+		if resourceErr != nil {
+			_ = ac.prepared.leaveCommitUnresolved()
+			finalizeErr = resourceErr
+		} else {
+			finalizeErr = ac.prepared.finalizeCommitWithTool(
+				ac.tool.Name,
+				ac.tool.Name,
+				toolState,
+				[]plan.ResourceUse{{Resource: resource, Created: true}},
+			)
+		}
+	} else {
+		finalizeErr = ac.prepared.finalizeCommit(ac.tool.Name)
+	}
+	if finalizeErr != nil {
+		result.Status = StatusFailed
+		result.Error = finalizeErr.Error()
+		result.Duration = time.Since(ac.toolStart).String()
+		return finishTool
+	}
+
 	result.RebootRequired, _ = ac.method.Config["_reboot_required"].(bool)
 	ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "installed")
 	// Post hooks get a fresh timeout from the tool-level context, not the

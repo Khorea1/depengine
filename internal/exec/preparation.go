@@ -41,6 +41,7 @@ func (r recoveredCandidateCommit) result() ToolResult {
 
 type candidateSourcePreparation struct {
 	resourceUses    []plan.ResourceUse
+	prerequisite    bool
 	missing         []config.Source
 	added           []config.Source // direct/no-state fallback only
 	preparationPlan *plan.PreparationPlan
@@ -69,13 +70,27 @@ func blockPreparation(format string, args ...any) error {
 	return &preparationBlockedError{err: fmt.Errorf(format, args...)}
 }
 
+type candidatePreparationRole string
+
+const candidatePreparationPrerequisite candidatePreparationRole = "prerequisite"
+
 func candidatePreparationKey(toolName, methodKind string, intent *plan.ResolvedInstallPlan) (string, error) {
+	return candidatePreparationKeyWithRole(toolName, methodKind, intent, "")
+}
+
+func candidatePreparationKeyWithRole(toolName, methodKind string, intent *plan.ResolvedInstallPlan, role candidatePreparationRole) (string, error) {
 	if toolName == "" || methodKind == "" {
 		return "", errors.New("candidate preparation identity requires tool and method")
 	}
 	identity := any(map[string]string{"tool": toolName, "method": methodKind})
 	if intent != nil {
 		identity = intent
+	}
+	if role != "" {
+		identity = struct {
+			Role   candidatePreparationRole `json:"role"`
+			Intent any                      `json:"intent"`
+		}{Role: role, Intent: identity}
 	}
 	data, err := json.Marshal(identity)
 	if err != nil {
@@ -111,9 +126,9 @@ func candidatePreparationSubject(key string) (string, string, error) {
 }
 
 func (ex *Executor) probeCandidateSources(ctx context.Context, configured []config.Source) (candidateSourcePreparation, error) {
-	var prepared candidateSourcePreparation
+	prepared := candidateSourcePreparation{prerequisite: ctx.Value(lazyDependencyExecutionKey{}) == true}
 	if len(configured) == 0 {
-		if ctx.Value(lazyDependencyExecutionKey{}) == true {
+		if prepared.prerequisite {
 			prepared.preparationPlan = &plan.PreparationPlan{}
 		}
 		return prepared, nil
@@ -136,9 +151,8 @@ func (ex *Executor) probeCandidateSources(ctx context.Context, configured []conf
 	if err != nil {
 		return candidateSourcePreparation{}, err
 	}
-	journalPrerequisite := ctx.Value(lazyDependencyExecutionKey{}) == true
 	if len(missing) == 0 {
-		if journalPrerequisite {
+		if prepared.prerequisite {
 			prepared.preparationPlan = &plan.PreparationPlan{}
 		}
 		return prepared, nil
@@ -153,7 +167,7 @@ func (ex *Executor) probeCandidateSources(ctx context.Context, configured []conf
 }
 
 func (ex *Executor) prepareCandidateSources(ctx context.Context, toolName, methodKind string, intent *plan.ResolvedInstallPlan, prepared candidateSourcePreparation) (candidateSourcePreparation, error) {
-	journalPrerequisite := ctx.Value(lazyDependencyExecutionKey{}) == true
+	journalPrerequisite := prepared.prerequisite
 	if len(prepared.missing) == 0 && !journalPrerequisite {
 		return prepared, nil
 	}
@@ -199,7 +213,12 @@ func (ex *Executor) prepareCandidateSources(ctx context.Context, toolName, metho
 		return prepared, nil
 	}
 
-	key, err := candidatePreparationKey(toolName, methodKind, intent)
+	var key string
+	if journalPrerequisite {
+		key, err = candidatePreparationKeyWithRole(toolName, methodKind, intent, candidatePreparationPrerequisite)
+	} else {
+		key, err = candidatePreparationKey(toolName, methodKind, intent)
+	}
 	if err != nil {
 		return candidateSourcePreparation{}, err
 	}
@@ -303,6 +322,23 @@ func (prepared *candidateSourcePreparation) finalizeCommit(dependent string) err
 	if _, err := tx.locked.FinalizePreparationCommit(tx.key, tx.plan, dependent); err != nil {
 		_ = tx.close()
 		return blockPreparation("finalize preparation commit: %v", err)
+	}
+	return tx.close()
+}
+
+func (prepared *candidateSourcePreparation) finalizeCommitWithTool(
+	dependent string,
+	toolName string,
+	toolState depstate.ToolState,
+	trackedUses []plan.ResourceUse,
+) error {
+	if prepared == nil || prepared.tx == nil {
+		return nil
+	}
+	tx := prepared.tx
+	if _, err := tx.locked.FinalizePreparationCommitWithTool(tx.key, tx.plan, dependent, toolName, toolState, trackedUses); err != nil {
+		_ = tx.close()
+		return blockPreparation("finalize prerequisite commit: %v", err)
 	}
 	return tx.close()
 }
@@ -447,50 +483,64 @@ func (ex *Executor) preparationRecoveryNeedsElevation() bool {
 	return false
 }
 
-func (ex *Executor) recoveryCandidate(key string) (*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, AdapterV2, error) {
+func (ex *Executor) recoveryCandidate(key string) (*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, AdapterV2, bool, error) {
 	toolName, methodKind, err := candidatePreparationSubject(key)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, false, err
 	}
 	if ex.schema == nil {
-		return nil, nil, nil, nil, errors.New("current schema is unavailable for commit reconciliation")
+		return nil, nil, nil, nil, false, errors.New("current schema is unavailable for commit reconciliation")
 	}
 	tool := ex.schema.Tools[toolName]
 	if tool == nil {
-		return nil, nil, nil, nil, fmt.Errorf("tool %q no longer exists in the current schema", toolName)
+		return nil, nil, nil, nil, false, fmt.Errorf("tool %q no longer exists in the current schema", toolName)
 	}
 
 	var matched *config.MethodCandidate
 	var matchedIntent *plan.ResolvedInstallPlan
+	matchedPrerequisite := false
 	for _, method := range config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName) {
 		if method.Kind != methodKind {
 			continue
 		}
 		intent, mismatch := candidatePlanIntent(tool, method)
 		candidateKey, keyErr := candidatePreparationKey(toolName, methodKind, intent)
-		if keyErr != nil || candidateKey != key {
+		if keyErr != nil {
+			continue
+		}
+		prerequisiteKey, prerequisiteKeyErr := candidatePreparationKeyWithRole(toolName, methodKind, intent, candidatePreparationPrerequisite)
+		if prerequisiteKeyErr != nil {
+			continue
+		}
+		prerequisite := false
+		switch key {
+		case candidateKey:
+		case prerequisiteKey:
+			prerequisite = true
+		default:
 			continue
 		}
 		if mismatch != "" {
-			return nil, nil, nil, nil, fmt.Errorf("candidate %s/%s no longer satisfies planning requirements: %s", toolName, methodKind, mismatch)
+			return nil, nil, nil, nil, false, fmt.Errorf("candidate %s/%s no longer satisfies planning requirements: %s", toolName, methodKind, mismatch)
 		}
 		if intent == nil {
-			return nil, nil, nil, nil, fmt.Errorf("candidate %s/%s has no resolved identity for commit reconciliation", toolName, methodKind)
+			return nil, nil, nil, nil, false, fmt.Errorf("candidate %s/%s has no resolved identity for commit reconciliation", toolName, methodKind)
 		}
 		if matched != nil {
-			return nil, nil, nil, nil, fmt.Errorf("candidate preparation key %q matches multiple current methods", key)
+			return nil, nil, nil, nil, false, fmt.Errorf("candidate preparation key %q matches multiple current methods", key)
 		}
 		matched = method
 		matchedIntent = intent
+		matchedPrerequisite = prerequisite
 	}
 	if matched == nil {
-		return nil, nil, nil, nil, fmt.Errorf("candidate %s/%s no longer matches the persisted preparation identity", toolName, methodKind)
+		return nil, nil, nil, nil, false, fmt.Errorf("candidate %s/%s no longer matches the persisted preparation identity", toolName, methodKind)
 	}
 	adapter := ex.LookupAdapter(methodKind)
 	if adapter == nil {
-		return nil, nil, nil, nil, fmt.Errorf("adapter %q is unavailable for commit reconciliation", methodKind)
+		return nil, nil, nil, nil, false, fmt.Errorf("adapter %q is unavailable for commit reconciliation", methodKind)
 	}
-	return tool, matched, matchedIntent, adapter, nil
+	return tool, matched, matchedIntent, adapter, matchedPrerequisite, nil
 }
 
 // observeRecoveryCandidate derives identity facts without mutation. The
@@ -536,7 +586,7 @@ func containsIdentityField(fields []plan.IdentityField, wanted plan.IdentityFiel
 }
 
 func (ex *Executor) reconcilePreparationCommit(ctx context.Context, locked *depstate.LockedState, key string, preparationPlan plan.PreparationPlan) error {
-	tool, method, intent, adapter, err := ex.recoveryCandidate(key)
+	tool, method, intent, adapter, prerequisite, err := ex.recoveryCandidate(key)
 	if err != nil {
 		return err
 	}
@@ -548,17 +598,38 @@ func (ex *Executor) reconcilePreparationCommit(ctx context.Context, locked *deps
 	if decision.Action != plan.RecoveryFinalizeCommit {
 		return fmt.Errorf("candidate commit outcome remains unresolved; %s", decision.Detail)
 	}
-	if _, err = locked.FinalizePreparationCommit(key, preparationPlan, tool.Name); err != nil {
-		return err
-	}
 	displayMethod := method.Kind
 	if method.Label != "" {
 		displayMethod = method.Label
 	}
-	ex.recoveredCommits[tool.Name] = recoveredCandidateCommit{
+	recovered := recoveredCandidateCommit{
 		toolName: tool.Name, methodKind: method.Kind, method: displayMethod,
 		config: method.Config, intent: intent,
 	}
+	if prerequisite {
+		result := recovered.result()
+		current := locked.State()
+		ex.prepareStateMetadata(current)
+		existing, hadExisting := current.Tools[tool.Name]
+		toolState := ex.toolStateForResult(ctx, tool, result, existing, hadExisting, false)
+		resource, resourceErr := plan.PrerequisiteResource(tool.Name)
+		if resourceErr != nil {
+			return resourceErr
+		}
+		if _, err = locked.FinalizePreparationCommitWithTool(
+			key,
+			preparationPlan,
+			tool.Name,
+			tool.Name,
+			toolState,
+			[]plan.ResourceUse{{Resource: resource, Created: true}},
+		); err != nil {
+			return err
+		}
+	} else if _, err = locked.FinalizePreparationCommit(key, preparationPlan, tool.Name); err != nil {
+		return err
+	}
+	ex.recoveredCommits[tool.Name] = recovered
 	return nil
 }
 
