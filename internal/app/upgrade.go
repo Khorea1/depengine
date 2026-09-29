@@ -150,7 +150,7 @@ func loadUpgradeState(dryRun bool) (*state.State, *state.LockedState, error) {
 // buildUpgradeExecutor wires the executor for reinstall Install calls:
 // default method order, host adapters, schema info, logging runner, and
 // facts, plus the dry-run/arbitrary-code/quiet gates.
-func buildUpgradeExecutor(s *config.Schema, clan string, facts *engine.Facts, schemaPath string, opts upgradeOptions, lg *slog.Logger) (*exec.Executor, *run.LoggingRunner, error) {
+func buildUpgradeExecutor(s *config.Schema, clan string, facts *engine.Facts, schemaPath string, opts upgradeOptions, lg *slog.Logger, lockDocuments ...*plan.LockDocument) (*exec.Executor, *run.LoggingRunner, error) {
 	schemaFile, err := os.Stat(schemaPath)
 	if err != nil {
 		lg.Error("stat schema", "error", err)
@@ -167,6 +167,9 @@ func buildUpgradeExecutor(s *config.Schema, clan string, facts *engine.Facts, sc
 	runner := run.NewLoggingRunner(run.OSExecRunner{}, lg)
 	exec.WithRunner(runner)(ex)
 	exec.WithFacts(facts)(ex)
+	if len(lockDocuments) > 0 && lockDocuments[0] != nil {
+		exec.WithLockDocument(*lockDocuments[0])(ex)
+	}
 	if opts.dryRun {
 		exec.WithDryRun()(ex)
 	}
@@ -558,7 +561,15 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		defer func() { _ = ls.Close() }()
 	}
 
-	ex, runner, err := buildUpgradeExecutor(s, clan, facts, opts.schema, opts, lg)
+	var lockDocument *plan.LockDocument
+	if lk.Version == lock.CurrentVersion {
+		document, err := lk.ProjectionDocument()
+		if err != nil {
+			return fmt.Errorf("load universal lock projection: %w", err)
+		}
+		lockDocument = &document
+	}
+	ex, runner, err := buildUpgradeExecutor(s, clan, facts, opts.schema, opts, lg, lockDocument)
 	if err != nil {
 		return err
 	}

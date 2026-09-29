@@ -1300,8 +1300,8 @@ func TestValidateFrozenRejectsInvalidInputs(t *testing.T) {
 	if err := ValidateFrozen(s, nil); err == nil {
 		t.Fatal("ValidateFrozen(schema, nil) unexpectedly succeeded")
 	}
-	if err := ValidateFrozen(s, &Lock{Version: 2}); err == nil || !strings.Contains(err.Error(), "unsupported version 2") {
-		t.Fatalf("ValidateFrozen(version 2) error = %v", err)
+	if err := ValidateFrozen(s, &Lock{Version: CurrentVersion}); err == nil || !strings.Contains(err.Error(), "universal projection is unavailable") {
+		t.Fatalf("ValidateFrozen(current version without projection) error = %v", err)
 	}
 
 	withNilTool := &config.Schema{Tools: map[string]*config.Tool{"tool": nil}}

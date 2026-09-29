@@ -16,6 +16,7 @@ import (
 	"github.com/Khorea1/depengine/internal/httpdownload"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
@@ -100,6 +101,7 @@ type installPlan struct {
 	jobs         int
 	allowCode    bool
 	quiet        bool
+	lockDocument *plan.LockDocument
 }
 
 // collectInstallPlan resolves flags into an installPlan plus the logger.
@@ -388,6 +390,14 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	lk, err := resolveInstallLock(ctx, p, s, lg, run.OSExecRunner{})
 	if err != nil {
 		return err
+	}
+	if lk != nil && lk.Version == lock.CurrentVersion {
+		document, err := lk.ProjectionDocument()
+		if err != nil {
+			return fmt.Errorf("load universal lock projection: %w", err)
+		}
+		p.lockDocument = &document
+		exec.WithLockDocument(document)(ex)
 	}
 
 	if !p.dryRun {

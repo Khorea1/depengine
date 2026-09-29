@@ -19,11 +19,19 @@ or desired state from an arbitrary command.
 
 ## Reproducibility
 
-Lock coverage is method-specific today. The table below states, per selector
-class, what `depengine.lock` actually pins and what it leaves alone: supported
-resolved artifact identities and checksums (GitHub or URL-based artifacts and
-local artifact digests) are pinned, but the lock does not capture complete
-immutable resolution for every native or ecosystem package manager.
+Current `depengine.lock` files use format v2. `depengine update` resolves the
+selected install candidate, projects its credential-free immutable identity into
+an adapter-neutral `LockDocument`, and writes that projection alongside the
+method-specific pins retained for migration. `install` and `upgrade` replay the
+pinned plan and reject requested-intent or resolved-identity drift.
+
+Generation is all-or-nothing. If a selected manager cannot expose a stable
+version, revision, digest, checksummed artifact, or required Git-backed source
+revision, `update` fails with `immutable lock identity unavailable`; it never
+writes a partial v2 projection. This closes silent mutable re-resolution without
+pretending unsupported managers are reproducible. Lock v1 remains readable and
+keeps the method-specific behavior documented below; the next successful update
+migrates it to v2.
 
 An exact package version constrains one package. A fully locked package graph
 also needs immutable identities for its dependencies.

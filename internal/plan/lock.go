@@ -1,10 +1,12 @@
 package plan
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"reflect"
 	"slices"
@@ -686,6 +688,12 @@ func lockIdentityUnavailabilityReason(requested *VersionIntent, identity LockIde
 		}
 	}
 
+	for _, source := range identity.Sources {
+		if source.URL != "" && (source.Kind == "brew-tap" || source.Kind == "scoop-bucket") && source.Revision == "" {
+			return fmt.Sprintf("git-backed source %s:%s did not resolve to a concrete revision", source.Kind, source.Name)
+		}
+	}
+
 	for _, artifact := range identity.Artifacts {
 		if artifact.URL == "" && artifact.LocalPath == "" {
 			return "resolved artifact has no stable location identity"
@@ -773,6 +781,41 @@ func canonicalSCPReference(raw string) string {
 type LockDocument struct {
 	Version int              `json:"version"`
 	Entries []LockProjection `json:"entries"`
+}
+
+// DecodeLockDocument parses a persisted universal lock projection. Unknown fields,
+// trailing values, unsupported versions, and invalid entries are rejected rather
+// than silently discarded.
+func DecodeLockDocument(data []byte) (LockDocument, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var document LockDocument
+	if err := decoder.Decode(&document); err != nil {
+		return LockDocument{}, fmt.Errorf("decode lock document: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return LockDocument{}, errors.New("decode lock document: trailing JSON value")
+		}
+		return LockDocument{}, fmt.Errorf("decode lock document: trailing data: %w", err)
+	}
+	if err := document.Validate(); err != nil {
+		return LockDocument{}, fmt.Errorf("decode lock document: %w", err)
+	}
+	return document, nil
+}
+
+// EncodeLockDocument validates and serializes a universal lock projection.
+func EncodeLockDocument(document LockDocument) ([]byte, error) {
+	if err := document.Validate(); err != nil {
+		return nil, fmt.Errorf("encode lock document: %w", err)
+	}
+	data, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode lock document: %w", err)
+	}
+	return append(data, '\n'), nil
 }
 
 // BuildLockDocument projects resolved plans into one deterministic immutable

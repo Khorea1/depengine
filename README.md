@@ -141,18 +141,17 @@ directly when package names differ by distro.
 
 ## Lockfile and dry run
 
-`depengine.lock` stores immutable information for methods that depengine can
-currently resolve that way, including supported release assets and checksums.
-Lock coverage is not universal yet: package-manager and ecosystem installs may
-still resolve through their own registries at install time. Within the legacy
-lock v1 subset, `--frozen-lockfile` fails closed when the lock is missing,
-unreadable, or written for an unsupported lock version; when a tool's method
-identity is missing from the lock or method kind/label ordering is detectably
-stale; or when a required release/checksum/immutable-selector pin is absent.
-This includes resolved `*:auto` checksums, Git/Cargo branch or tag commits,
-container-tag OCI digests, and concrete versions of plain unversioned npm,
-pnpm, and Yarn Classic packages; frozen mode will not perform checksum TOFU or remote
-selector resolution to fill a missing pin.
+`depengine.lock` v2 stores the immutable projection of each selected resolved
+install plan. `depengine update` fails instead of writing a partial lock when a
+manager cannot expose a concrete version, revision, digest, checksummed artifact,
+or required Git-backed source revision. `install --frozen-lockfile` and
+`upgrade` replay that pinned plan and reject schema intent or resolved identity
+drift; they do not re-resolve mutable selectors to fill gaps.
+
+Legacy v1 lockfiles remain readable with their method-specific guarantees
+(resolved checksums/releases, Git commits, container digests, and supported
+npm/pnpm/Yarn Classic package versions). A successful update rewrites them as
+v2. Exact package versions still do not lock transitive dependency graphs.
 
 ```sh
 depengine update

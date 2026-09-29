@@ -49,6 +49,37 @@ type SourceReference struct {
 	SecretRef *SecretReference `json:"secret_ref,omitempty"`
 }
 
+// ApplyResolvedSourceRevision attaches a revision captured after source
+// preparation to the exact typed source reference used by the plan. It refuses
+// missing, ambiguous, or conflicting identities rather than pinning a different
+// source with the same mutable name.
+func (p *ResolvedInstallPlan) ApplyResolvedSourceRevision(kind, name, revision string) error {
+	if p == nil {
+		return errors.New("source revision: nil resolved plan")
+	}
+	if strings.TrimSpace(kind) != kind || kind == "" || strings.TrimSpace(name) != name || name == "" || strings.TrimSpace(revision) != revision || revision == "" {
+		return errors.New("source revision: kind, name, and revision are required without surrounding whitespace")
+	}
+	match := -1
+	for i := range p.Sources {
+		if p.Sources[i].Kind != kind || p.Sources[i].Name != name {
+			continue
+		}
+		if match >= 0 {
+			return fmt.Errorf("source revision: source %q of kind %q is ambiguous", name, kind)
+		}
+		match = i
+	}
+	if match < 0 {
+		return fmt.Errorf("source revision: source %q of kind %q is not in the resolved plan", name, kind)
+	}
+	if existing := p.Sources[match].Revision; existing != "" && existing != revision {
+		return fmt.Errorf("%w: source %q of kind %q resolved revision differs from declared revision", ErrLockMismatch, name, kind)
+	}
+	p.Sources[match].Revision = revision
+	return nil
+}
+
 // Validate enforces source identity and secret-safety independently of any
 // adapter. A source may be identified by name, URL, or both.
 func (s SourceReference) Validate() error {
