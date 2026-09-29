@@ -15,7 +15,7 @@ defines a different policy. It often lives on its own orphaned branch/worktree.
 | `cleaning.md` | Procedure for consolidating scratch material and promoting verified knowledge |
 | `TODO.md` | Session-specific queue and unresolved editorial/CLI ideas |
 | `bad-writing-findings.md` | Two unresolved wording findings in ADR-002 |
-| `architecture/` | archmap: schema-validated architecture working model with per-document code revisions and derived visual views. Start at `architecture/README.md` |
+| `architecture/` | archmap: selective semantic architecture model with code-revision checks, symbol-navigation anchors, and derived visual views. Start at `architecture/README.md` |
 
 ## Lifecycle
 

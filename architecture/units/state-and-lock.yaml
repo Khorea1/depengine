@@ -15,10 +15,21 @@ invariants:
   - text: "State mutation is performed under the state lock before the executor saves reconciled tool state."
     confidence: confirmed
     evidence: ["internal/exec/state.go:39-50", "internal/exec/state.go:109-115"]
+  - text: "Lock refresh only pins selector classes explicitly handled by lock.ResolveAll; install-time AdapterV2 resolution is a separate phase and must not be assumed to backfill missing lock pins."
+    confidence: confirmed
+    evidence: ["internal/lock/lock.go:250-253", "internal/app/update.go:89-120"]
+    symbols:
+      - name: ResolveAll
+        path: internal/lock/lock.go
+        role: "Primary lock-v1 selector materialization entry point; expand this symbol when changing pin coverage."
 relations:
   - from: state-and-lock
     to: adapters
     kind: calls
-    via: "mutable selector and registry/release resolution"
-    evidence: ["internal/lock/lock.go:253-278"]
+    via: "selector-specific release/registry/Git resolver helpers, not AdapterV2"
+    evidence: ["internal/lock/lock.go:253-330"]
+    symbols:
+      - name: ResolveAll
+        path: internal/lock/lock.go
+        role: "Start here, then use symbol references/callees to enumerate the concrete resolver helpers involved."
     confidence: confirmed

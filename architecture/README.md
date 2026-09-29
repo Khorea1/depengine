@@ -11,10 +11,11 @@ Schema: [`archmap.schema.json`](archmap.schema.json).
 
 Depengine is large enough that reconstructing its architecture from packages on
 every session is wasteful. archmap stores the small amount of semantic structure
-that is expensive to infer repeatedly: ownership, important runtime/data relations, invariants and end-to-end flows.
-It deliberately does **not** mirror every Go import or package. Mechanically
-recoverable facts should be derived by tools instead of copied into YAML and then
-maintained twice, because humans already invented enough synchronization bugs.
+that is expensive to infer repeatedly: ownership, important runtime/data relations,
+invariants and end-to-end flows. It deliberately does **not** mirror every Go
+import, symbol or package. Mechanically recoverable facts should be derived by
+tools instead of copied into YAML and then maintained twice, because humans
+already invented enough synchronization bugs.
 
 ## Layout
 
@@ -42,11 +43,44 @@ smaller files.
    capability does not exist.
 1. Open the relevant `units/<id>.yaml`, never all units by default.
 1. For behaviour crossing units, open the matching `flows/<id>.yaml`.
+1. When a relevant claim/step exposes `symbols`, use those as narrow symbol-aware
+   starting points (Serena when available). Expand references/callers/implementations
+   only as the task requires; do not dump a whole package symbol graph into context.
 1. Open `views/<id>.yaml` when deciding which architectural projection to render.
 1. Open `notes/<id>.md` for rationale and pitfalls.
 1. `confidence: confirmed` means the claim was checked at that **document's**
    `verified.revision`; `evidence` names the supporting path/line at that revision.
    `inferred` is a useful hypothesis, not a fact.
+
+## Symbol navigation
+
+archmap and Serena solve different problems and should remain separate layers:
+
+- **archmap stores meaning:** boundaries, invariants, important semantic relations,
+  flow order, and a few deliberately chosen symbol starting points;
+- **Serena derives structure:** declarations, references, callers/callees,
+  implementations and package/file outlines from the current checkout;
+- **text search is fallback:** use it when neither the semantic map nor symbol
+  navigation gives a useful entry point.
+
+`symbols` entries are therefore anchors, not an inventory and not evidence:
+
+```yaml
+symbols:
+  - name: ResolveAll
+    path: internal/lock/lock.go
+    role: "Start here when changing which mutable selectors become lock pins."
+```
+
+Prefer a path-constrained symbol query first, fetch a body only when needed, and
+expand references from a specific declaration rather than issuing broad symbol
+queries. Serena's index can be exhaustive; the prompt context should not be.
+If an anchor is missing, search symbols by the task's concrete nouns before
+falling back to repository-wide text search.
+
+Do **not** grow archmap toward symbol-level completeness. A useful inclusion test
+is: would recovering this fact from code require architectural reasoning, or is it
+mechanically derivable from the language/tooling? Only the former belongs here.
 
 ## Model rules
 
@@ -61,14 +95,17 @@ smaller files.
 - **A relation lives with its source.** External-source relations live in the
   index; unit/component-source relations live in the owning unit file.
 - **Model semantic architecture, not imports.** `imports` is intentionally not a
-  relation kind. Import graphs can be derived from Go when a view needs them.
+  relation kind. Import/symbol/call graphs can be derived from Go when needed.
+- **Symbol anchors are selective.** Add only declarations that materially shorten
+  the jump from a semantic claim to code. Never enumerate every symbol in a unit.
 - **Confirmed claims require evidence.** This applies to relations, flow steps and
   invariants.
 - **Use `paths: []`, not a synthetic common parent.** A subsystem may legitimately
   span several package roots.
-- **Freshness is per document.** Re-verify and bump only the unit/flow/view that
-  was actually checked. Updating one adapter must not pretend the entire model was
-  reviewed.
+- **Freshness is per document.** Re-verify and bump only the document that was
+  actually checked. With `--repo`, commit distance alone is not treated as stale:
+  warnings appear when owned paths, evidence files or symbol-anchor paths changed
+  since that document's recorded revision.
 - **Views choose content, renderers choose layout.** Never put coordinates, colors,
   ranks or Graphviz/Mermaid-specific styling in a view file.
 - **Planned units/components may reference paths that do not exist yet.** Active
@@ -85,10 +122,12 @@ verified:
   verified_on: "2026-09-28"
 ```
 
-With `--repo`, evidence and paths are checked against that Git revision using the
-repository object database, **not against the current checkout**. This matters:
-a line that exists at HEAD may not have existed when the architectural claim was
-verified.
+With `--repo`, evidence, owned paths and symbol-anchor paths are checked against
+that Git revision using the repository object database, **not against the current
+checkout**. This matters: a line that exists at HEAD may not have existed when the
+architectural claim was verified. Freshness warnings additionally compare only
+the document's relevant code paths against HEAD, avoiding useless "N commits
+behind" noise after unrelated changes.
 
 The index may additionally record the expected branch/ref:
 
@@ -163,7 +202,7 @@ an orphan notes branch everybody else's problem.
 ## Current Depengine pilot
 
 The checked-in model is intentionally small and project-specific. It currently
-models six subsystem units, four high-value flows, and five views:
+models six subsystem units, five high-value flows, and five views:
 
 ```
 units/
@@ -178,6 +217,7 @@ flows/
   install.yaml
   status.yaml
   update.yaml
+  upgrade.yaml
   desired-state-observation.yaml
 
 views/
@@ -188,11 +228,12 @@ views/
   install-flow.yaml
 ```
 
-This is a pilot, not an attempt to mirror every package. Add components or units
-when they reduce the cost of understanding/change; do not expand merely to make
-the graph resemble the directory tree. The generic placeholder model used by the
-tool tests lives under `tools/tests/fixtures/model/`, so validator tests do not
-force the real Depengine model to remain a template.
+This is a pilot, not an attempt to mirror every package. Add components, units,
+flows or symbol anchors when they reduce the cost of understanding/change; do not
+expand merely to improve coverage statistics or make the graph resemble the
+directory tree. The generic placeholder model used by the tool tests lives under
+`tools/tests/fixtures/model/`, so validator tests do not force the real Depengine
+model to remain a template.
 
 ## Scope and lifecycle
 

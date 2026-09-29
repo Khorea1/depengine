@@ -53,6 +53,8 @@ flow: placeholder-happy-path
 """
     )
     dot = render.render(model, "placeholder-flow")
-    assert 'label="1. TODO: sends the request"' in dot
-    assert 'label="4. TODO: writes the record"' in dot
-    assert dot.index('label="1. TODO: sends the request"') < dot.index('label="4. TODO: writes the record"')
+    assert "rankdir=TB" in dot
+    assert 'label="1. placeholder-user → placeholder-api.placeholder-handler\\nTODO: sends the request"' in dot
+    assert 'label="4. placeholder-api.placeholder-repository → placeholder-db\\nTODO: writes the record\\nreturns: TODO: what comes back"' in dot
+    assert '"step-1" -> "step-2"' in dot
+    assert dot.index('"step-1"') < dot.index('"step-4"')

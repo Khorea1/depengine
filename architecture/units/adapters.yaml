@@ -29,7 +29,7 @@ invariants:
 relations:
   - from: adapters
     to: host-os
-    kind: spawns
+    kind: executes-on
     via: "run.Runner and filesystem operations"
     confidence: inferred
   - from: adapters

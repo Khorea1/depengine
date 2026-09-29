@@ -140,6 +140,16 @@ def test_import_relation_kind_is_not_manually_modelled(model):
     assert has_error(model, "imports")
 
 
+def test_symbol_anchor_requires_repo_relative_path(model):
+    edit(
+        model,
+        "units/placeholder-api.yaml",
+        "status: active\n",
+        'status: active\nsymbols:\n  - {name: Handle, path: "/abs/handler.go"}\n',
+    )
+    assert has_error(model, "symbols")
+
+
 # ---- semantics ------------------------------------------------------------
 
 
@@ -329,14 +339,35 @@ def test_unknown_document_revision(model, repo):
     assert has_error(model, "commit deadbee not found", repo)
 
 
-def test_stale_revision_warns_per_document(model, repo):
+def test_unrelated_commit_does_not_make_documents_stale(model, repo):
+    real_model(model, repo)
+    (repo / "unrelated.txt").write_text("x\n")
+    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "more"], check=True)
+    rep = validate.run(model, repo)
+    assert not [w for w in rep.warnings if "behind HEAD" in w.message]
+
+
+def test_owned_path_change_marks_only_relevant_documents_stale(model, repo):
     real_model(model, repo)
     (repo / "svc/b.go").write_text("x\n")
     subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", "add", "."], check=True)
     subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "more"], check=True)
     rep = validate.run(model, repo)
     stale = [w for w in rep.warnings if "behind HEAD" in w.message]
-    assert len(stale) == 5  # index + 2 units + flow + view
+    assert len(stale) == 2  # both units own svc/; index/flow cite svc/a.go and the view has no code claims
+    assert all("svc/b.go" in w.message for w in stale)
+
+
+def test_symbol_anchor_path_checked_at_recorded_revision(model, repo):
+    real_model(model, repo)
+    edit(
+        model,
+        "units/placeholder-api.yaml",
+        "status: active\n",
+        'status: active\nsymbols:\n  - {name: Missing, path: "svc/missing.go"}\n',
+    )
+    assert has_error(model, "symbols[0].path", repo)
 
 
 def test_unknown_source_branch_warns(model, repo):

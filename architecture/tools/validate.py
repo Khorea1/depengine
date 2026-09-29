@@ -6,9 +6,9 @@ Checks, in order:
   2. JSON Schema (archmap.schema.json), selected by file location.
   3. Semantics: id/file consistency, reference resolution, relation ownership,
      view/flow references, duplicates and notes links.
-  4. With --repo: each document's recorded revision is known; paths and evidence
-     are checked at that revision (not at the current working tree); freshness is
-     reported per document.
+  4. With --repo: each document's recorded revision is known; paths, evidence and
+     symbol-anchor paths are checked at that revision (not at the current working
+     tree); freshness is reported only when relevant code changed.
   5. Placeholders (TODO markers etc.): warnings, errors under --strict.
 
 Exit code: 0 ok, 1 errors (or warnings under --strict), 2 usage/setup problem.
@@ -182,6 +182,57 @@ def _iter_claims(docs: dict[str, dict]) -> Iterator[tuple[str, str, dict]]:
                 yield rel, f"components.{cid}.invariants[{i}]", claim
 
 
+def _iter_symbol_anchors(docs: dict[str, dict]) -> Iterator[tuple[str, str, dict]]:
+    """Yield every curated symbol anchor without pretending it is evidence."""
+    for rel, d in docs.items():
+        for i, anchor in enumerate(d.get("symbols", [])):
+            yield rel, f"symbols[{i}]", anchor
+        if d["doc"] == "unit":
+            for cid, component in d.get("components", {}).items():
+                for i, anchor in enumerate(component.get("symbols", [])):
+                    yield rel, f"components.{cid}.symbols[{i}]", anchor
+
+    for file, where, relation, _ in _iter_relations(docs):
+        for i, anchor in enumerate(relation.get("symbols", [])):
+            yield file, f"{where}.symbols[{i}]", anchor
+    for file, where, step in _iter_steps(docs):
+        for i, anchor in enumerate(step.get("symbols", [])):
+            yield file, f"{where}.symbols[{i}]", anchor
+    for file, where, claim in _iter_claims(docs):
+        for i, anchor in enumerate(claim.get("symbols", [])):
+            yield file, f"{where}.symbols[{i}]", anchor
+
+
+def _document_watch_paths(file: str, d: dict, docs: dict[str, dict]) -> list[str]:
+    """Code paths whose changes make this document worth re-verifying.
+
+    This is deliberately conservative about *what* is watched, but does not use
+    raw commit distance as a proxy for staleness. Views have no code assertions
+    of their own, so they normally have no watch paths.
+    """
+    paths: set[str] = set()
+    if d["doc"] == "unit":
+        paths.update(d.get("paths", []))
+        paths.update(d.get("entrypoints", []))
+        for component in d.get("components", {}).values():
+            paths.update(component.get("paths", []))
+            paths.update(component.get("entrypoints", []))
+
+    for owner_file, _, relation, _ in _iter_relations(docs):
+        if owner_file == file:
+            paths.update(ev.partition(":")[0] for ev in relation.get("evidence", []))
+    for owner_file, _, step in _iter_steps(docs):
+        if owner_file == file:
+            paths.update(ev.partition(":")[0] for ev in step.get("evidence", []))
+    for owner_file, _, claim in _iter_claims(docs):
+        if owner_file == file:
+            paths.update(ev.partition(":")[0] for ev in claim.get("evidence", []))
+    for owner_file, _, anchor in _iter_symbol_anchors(docs):
+        if owner_file == file:
+            paths.add(anchor["path"])
+    return sorted(paths)
+
+
 def _iter_notes(docs: dict[str, dict]) -> Iterator[tuple[str, str, str]]:
     for rel, d in docs.items():
         if d.get("notes"):
@@ -353,7 +404,9 @@ def check_repo(repo: Path, docs: dict[str, dict], rep: Report) -> None:
             if _git(repo, "rev-parse", "--verify", "--quiet", f"{branch}^{{commit}}").returncode != 0:
                 rep.warn("index.yaml", "project.source.branch", f"branch/ref {branch!r} is not resolvable in {repo}")
 
-    # Validate/freshness-check every document independently.
+    # Validate/freshness-check every document independently. Commit distance by
+    # itself is noise: only warn when code this document owns, cites or anchors
+    # has changed since verification.
     for file, d in docs.items():
         rev = d["verified"]["revision"]
         if not valid_commit(file, rev):
@@ -362,7 +415,16 @@ def check_repo(repo: Path, docs: dict[str, dict], rep: Report) -> None:
         if ancestor.returncode == 0:
             n = _git(repo, "rev-list", "--count", f"{rev}..HEAD").stdout.strip()
             if n.isdigit() and int(n) > 0:
-                rep.warn(file, "verified.revision", f"document is {n} commit(s) behind HEAD; re-verify this document when relevant")
+                watch_paths = _document_watch_paths(file, d, docs)
+                if watch_paths:
+                    changed_proc = _git(repo, "diff", "--name-only", f"{rev}..HEAD", "--", *watch_paths)
+                    if changed_proc.returncode != 0:
+                        rep.warn(file, "verified.revision", f"document is {n} commit(s) behind HEAD; could not determine relevant-path freshness")
+                    else:
+                        changed = [line for line in changed_proc.stdout.splitlines() if line]
+                        if changed:
+                            shown = ", ".join(changed[:3]) + (", ..." if len(changed) > 3 else "")
+                            rep.warn(file, "verified.revision", f"document is {n} commit(s) behind HEAD and relevant code changed: {shown}")
         else:
             rep.warn(file, "verified.revision", f"recorded revision {rev} is not an ancestor of HEAD")
 
@@ -440,6 +502,12 @@ def check_repo(repo: Path, docs: dict[str, dict], rep: Report) -> None:
         rev = docs[file]["verified"]["revision"]
         for i, ev in enumerate(claim.get("evidence", [])):
             check_evidence(file, f"{where}.evidence[{i}]", rev, ev)
+
+    # Symbol anchors are navigation hints, not proof, but a dead anchor path is
+    # still objectively useless and should fail at the recorded revision.
+    for file, where, anchor in _iter_symbol_anchors(docs):
+        rev = docs[file]["verified"]["revision"]
+        exists(file, f"{where}.path", rev, anchor["path"])
 
 
 # --------------------------------------------------------------------------- #

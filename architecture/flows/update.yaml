@@ -17,13 +17,20 @@ steps:
     confidence: confirmed
   - from: cli
     to: state-and-lock
-    action: "Resolves mutable selectors, merges preserved pins, and writes the refreshed lock unless dry-run is active."
+    action: "Runs lock.ResolveAll for selector classes explicitly supported by lock v1, merges preserved pins, and writes the refreshed lock unless dry-run is active."
     evidence: ["internal/app/update.go:89-153"]
+    symbols:
+      - name: ResolveAll
+        path: internal/lock/lock.go
+        role: "Enumerate pin-producing selector branches here before assuming an adapter-resolved selector is persisted in the lock."
     confidence: confirmed
   - from: state-and-lock
     to: adapters
-    action: "Uses release, registry, Git, and related resolvers to materialize immutable lock identities."
+    action: "Uses release, registry, Git, and related resolver helpers directly from lock resolution; this is not the AdapterV2 install-time resolution path."
     evidence: ["internal/lock/lock.go:253-278"]
+    symbols:
+      - name: ResolveAll
+        path: internal/lock/lock.go
     confidence: confirmed
 failure_modes:
   - "Resolution failure aborts the lock refresh without writing a partially resolved lock."

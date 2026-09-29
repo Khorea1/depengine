@@ -85,6 +85,30 @@
       "uniqueItems": true,
       "items": { "$ref": "#/$defs/id" }
     },
+    "symbol-anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "path"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[^\\n\\r]+$",
+          "description": "Selective declaration/name-path query for a symbol-aware navigator such as Serena. This is a starting point, not an exhaustive symbol inventory."
+        },
+        "path": { "$ref": "#/$defs/path" },
+        "role": { "$ref": "#/$defs/line" }
+      },
+      "description": "Stable-ish semantic bridge into derived symbol navigation. Symbol anchors are navigation hints, not verification evidence."
+    },
+    "symbol-anchors": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/symbol-anchor" },
+      "description": "Small, curated symbol starting points. Expand callers/references/implementations with a symbol tool instead of copying that graph into archmap."
+    },
     "verified": {
       "type": "object",
       "additionalProperties": false,
@@ -102,7 +126,8 @@
       "properties": {
         "text": { "$ref": "#/$defs/line" },
         "confidence": { "$ref": "#/$defs/confidence" },
-        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" }, "uniqueItems": true, "maxItems": 5 }
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" }, "uniqueItems": true, "maxItems": 5 },
+        "symbols": { "$ref": "#/$defs/symbol-anchors" }
       },
       "patternProperties": { "^x-": {} },
       "if": { "properties": { "confidence": { "const": "confirmed" } }, "required": ["confidence"] },
@@ -115,7 +140,7 @@
       "description": "Architecturally important rules. Confirmed invariants carry evidence like relations do."
     },
     "relation-kind": {
-      "enum": ["calls", "reads", "writes", "publishes", "subscribes", "spawns", "configures", "depends-on"],
+      "enum": ["calls", "reads", "writes", "publishes", "subscribes", "spawns", "configures", "depends-on", "executes-on"],
       "description": "Manually model semantic architecture, not mechanically derivable imports. Import graphs belong to derived tooling/views."
     },
     "relation": {
@@ -129,6 +154,7 @@
         "via": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[^\\n\\r]+$", "description": "Mechanism or protocol, e.g. in-process, HTTPS, filesystem." },
         "note": { "$ref": "#/$defs/line" },
         "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" }, "uniqueItems": true, "maxItems": 5 },
+        "symbols": { "$ref": "#/$defs/symbol-anchors" },
         "confidence": { "$ref": "#/$defs/confidence" }
       },
       "patternProperties": { "^x-": {} },
@@ -147,7 +173,8 @@
         "tech": { "$ref": "#/$defs/tech" },
         "status": { "$ref": "#/$defs/status" },
         "invariants": { "$ref": "#/$defs/invariants" },
-        "tags": { "$ref": "#/$defs/tags" }
+        "tags": { "$ref": "#/$defs/tags" },
+        "symbols": { "$ref": "#/$defs/symbol-anchors" }
       },
       "patternProperties": { "^x-": {} }
     },
@@ -249,6 +276,7 @@
         "notes": { "$ref": "#/$defs/notes" },
         "invariants": { "$ref": "#/$defs/invariants" },
         "tags": { "$ref": "#/$defs/tags" },
+        "symbols": { "$ref": "#/$defs/symbol-anchors" },
         "components": {
           "type": "object",
           "propertyNames": { "$ref": "#/$defs/id" },
@@ -289,6 +317,7 @@
               "async": { "type": "boolean" },
               "returns": { "$ref": "#/$defs/line" },
               "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" }, "uniqueItems": true, "maxItems": 5 },
+              "symbols": { "$ref": "#/$defs/symbol-anchors" },
               "confidence": { "$ref": "#/$defs/confidence" }
             },
             "patternProperties": { "^x-": {} },

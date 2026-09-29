@@ -13,4 +13,4 @@ elements:
   - host-os
   - network-services
   - package-managers
-relation_kinds: [calls, configures, writes, spawns]
+relation_kinds: [calls, configures, writes, spawns, executes-on]

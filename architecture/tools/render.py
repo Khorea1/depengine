@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 import validate
@@ -120,23 +121,26 @@ def render_structure(docs: dict[str, dict], view: dict) -> str:
 def render_flow(docs: dict[str, dict], view: dict) -> str:
     flow_id = view["flow"]
     flow = docs[f"flows/{flow_id}.yaml"]
-    elements = _elements(docs)
-    refs: list[str] = []
-    for step in flow["steps"]:
-        for ref in (step["from"], step["to"]):
-            if ref not in refs:
-                refs.append(ref)
-
-    lines = ["digraph archmap {", "  rankdir=LR;", '  graph [fontname="sans-serif", nodesep=0.45, ranksep=0.7];', '  node [fontname="sans-serif"];', '  edge [fontname="sans-serif", fontsize=10];']
-    for ref in refs:
-        kind, summary = elements[ref]
-        lines.append(f"  {_quote(ref)} [{_node_attrs(kind, ref, summary)}];")
+    lines = [
+        "digraph archmap {",
+        "  rankdir=TB;",
+        '  graph [fontname="sans-serif", nodesep=0.25, ranksep=0.35];',
+        '  node [fontname="sans-serif", shape=box, style="rounded", margin="0.14,0.10"];',
+        '  edge [fontname="sans-serif", arrowsize=0.7];',
+    ]
     for index, step in enumerate(flow["steps"], start=1):
-        label = f"{index}. {step['action']}"
+        route = f"{index}. {step['from']} → {step['to']}"
+        action = "\n".join(textwrap.wrap(step["action"], width=72))
+        label = f"{route}\n{action}"
+        if step.get("returns"):
+            returns = "\n".join(textwrap.wrap(f"returns: {step['returns']}", width=72))
+            label += f"\n{returns}"
         attrs = [f"label={_quote(label)}"]
         if step["confidence"] == "inferred":
-            attrs.append("style=dashed")
-        lines.append(f"  {_quote(step['from'])} -> {_quote(step['to'])} [{', '.join(a.strip() for a in attrs)}];")
+            attrs.append('style="rounded,dashed"')
+        lines.append(f"  {_quote(f'step-{index}')} [{', '.join(attrs)}];")
+        if index > 1:
+            lines.append(f"  {_quote(f'step-{index - 1}')} -> {_quote(f'step-{index}')};")
     lines.append("}")
     return "\n".join(lines) + "\n"
 

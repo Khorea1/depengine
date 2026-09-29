@@ -15,7 +15,7 @@ project:
 
 scope:
   exhaustive: false
-  fallback: "If no unit or flow matches the task, search the codebase directly before concluding the capability is absent."
+  fallback: "If no unit or flow matches, use symbol-aware navigation (Serena when available), then direct code search before concluding a capability is absent."
 
 externals:
   operator:
@@ -52,6 +52,8 @@ flows:
     summary: "Read-only status path comparing tracked state and desired schema with observations from the host."
   update:
     summary: "Lock refresh path that resolves mutable selectors, merges existing pins, writes the lock, and reports version drift."
+  upgrade:
+    summary: "Pinned-version upgrade path that discovers drift, preflights the exact tracked candidate, removes/reinstalls it, and persists updated state."
   desired-state-observation:
     summary: "Shared read-only path from static candidate intent through concrete resolution, host observation, and desired-state verification."
 
