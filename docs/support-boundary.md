@@ -122,11 +122,12 @@ Yarn Classic packages persist a concrete package version. These pins do not fix 
 label, and ordering rather than every requested field inside a candidate;
 candidate host-source declarations are covered separately by source hashes.
 After changing resolver details that keep the same kind/label, run
-`depengine update`; the planned universal lock projection
-([ADR-001](design/adr-001-universal-lock-projection.md)) is the path that will
-close this requested-identity gap, but it is not implemented end to end yet:
-its projection and verification helpers are exercised only by tests, no
-command consumes them, and nothing persists their output.
+`depengine update`; the universal lock projection
+([ADR-001](design/adr-001-universal-lock-projection.md)) closes this
+requested-identity gap: `update` resolves the selected install candidate,
+projects its immutable identity into a v2 `LockDocument`, and persists it
+alongside the legacy pins, while `install` and `upgrade` replay the pinned
+plan and reject requested-intent or resolved-identity drift.
 
 ## Scope and environments
 

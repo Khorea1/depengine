@@ -312,10 +312,14 @@ func installExitForReport(report *exec.ExecReport) error {
 }
 
 // finishInstallRun persists post-run state (lockfile + version sync),
-// prints the share hint, and maps the report to the exit error.
+// prints the share hint, and maps the report to the exit error. Frozen
+// installs never rewrite the lockfile: they consumed a validated v2/v1 lock
+// and must leave it byte-equivalent.
 func finishInstallRun(ctx context.Context, report *exec.ExecReport, p installPlan, s *config.Schema, lockPath string, lk *lock.Lock, lg *slog.Logger, cs *cliStyle) error {
 	if !p.dryRun {
-		saveLockfile(ctx, s, lockPath, lk, lg, p.diagnose, run.OSExecRunner{})
+		if !p.frozen {
+			saveLockfile(ctx, s, lockPath, lk, lg, p.diagnose, run.OSExecRunner{})
+		}
 		// Reconcile recorded versions with the lock: backfill versions the
 		// adapter could not determine (e.g. {latest} pins baked into URLs)
 		// and surface installed-vs-pinned mismatches instead of a silent

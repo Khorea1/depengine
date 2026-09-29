@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -384,5 +386,135 @@ func TestResolveInstallLockFrozenAcceptsSelectedSubsetLock(t *testing.T) {
 	}
 	if _, ok := got.MethodsHash["omitted"]; ok {
 		t.Fatal("test fixture unexpectedly locked omitted tool")
+	}
+}
+
+func buildV2InstallTestLock(t *testing.T, tools map[string]lock.ToolPin) *lock.Lock {
+	t.Helper()
+	p := plan.New("demo", "http", true)
+	p.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: "1.2.3"}
+	p.Identity.Version = "1.2.3"
+	doc, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{p})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := &lock.Lock{Version: 1, Tools: tools, MethodsHash: map[string]string{}, SourceHash: map[string]string{}}
+	if err := l.SetProjection(doc); err != nil {
+		t.Fatal(err)
+	}
+	return l
+}
+
+func TestSaveLockfilePreservesV2Projection(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), "depengine.lock")
+	schema := &config.Schema{Tools: map[string]*config.Tool{
+		"demo": {
+			Name: "demo",
+			Methods: []*config.MethodCandidate{{
+				Kind:   "http",
+				Config: map[string]any{"url": "https://example.test/demo.tar.gz", "checksum": "sha256:" + strings.Repeat("a", 64)},
+			}},
+		},
+	}}
+	old := buildV2InstallTestLock(t, map[string]lock.ToolPin{
+		"demo/http/0": {Checksum: "sha256:" + strings.Repeat("a", 64)},
+	})
+	wantProjection := old.UniversalProjection
+
+	saveLockfile(context.Background(), schema, lockPath, old, log.Default, false, nil)
+
+	got, err := lock.Load(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != lock.CurrentVersion {
+		t.Fatalf("saved version = %d, want %d (install downgraded v2 to v1)", got.Version, lock.CurrentVersion)
+	}
+	if got.UniversalProjection != wantProjection {
+		t.Fatal("saveLockfile regenerated or dropped the universal projection; want verbatim preservation")
+	}
+}
+
+func TestSaveLockfilePreservesV2ProjectionForPartialScope(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), "depengine.lock")
+	// Schema covers only the in-scope tool, simulating --only/--profile
+	// filtering. The pre-existing v2 projection (and its pins) for the
+	// out-of-scope tool must survive the install save.
+	schema := &config.Schema{Tools: map[string]*config.Tool{
+		"in": {
+			Name: "in",
+			Methods: []*config.MethodCandidate{{
+				Kind:   "http",
+				Config: map[string]any{"url": "https://example.test/in.tar.gz", "checksum": "sha256:" + strings.Repeat("b", 64)},
+			}},
+		},
+	}}
+	old := buildV2InstallTestLock(t, map[string]lock.ToolPin{
+		"in/http/0":  {Checksum: "sha256:" + strings.Repeat("b", 64)},
+		"out/http/0": {Latest: "v9.9.9"},
+	})
+	old.MethodsHash["out"] = "preserve-out"
+	wantProjection := old.UniversalProjection
+
+	saveLockfile(context.Background(), schema, lockPath, old, log.Default, false, nil)
+
+	got, err := lock.Load(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != lock.CurrentVersion {
+		t.Fatalf("saved version = %d, want %d", got.Version, lock.CurrentVersion)
+	}
+	if got.UniversalProjection != wantProjection {
+		t.Fatal("partial install eliminated projection entries; want existing projection preserved")
+	}
+	if pin := got.Tools["out/http/0"]; pin.Latest != "v9.9.9" {
+		t.Fatalf("out-of-scope pin = %#v, want preserved", pin)
+	}
+}
+
+func TestFinishInstallFrozenLeavesV2LockUntouched(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	dir := t.TempDir()
+	schemaPath := filepath.Join(dir, "schema.toml")
+	lockPath := lock.DefaultPath(schemaPath)
+	schema := &config.Schema{Tools: map[string]*config.Tool{
+		"demo": {
+			Name: "demo",
+			Methods: []*config.MethodCandidate{{
+				Kind:   "http",
+				Config: map[string]any{"url": "https://example.test/demo.tar.gz", "checksum": "sha256:" + strings.Repeat("a", 64)},
+			}},
+		},
+	}}
+	old := buildV2InstallTestLock(t, nil)
+	if err := lock.Save(lockPath, old); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(lockPath) // #nosec G304 -- test-controlled temp path.
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report := &exec.ExecReport{Success: 1, Tools: []exec.ToolResult{{Tool: "demo", Status: exec.StatusAlready}}}
+	p := installPlan{frozen: true}
+	cs := newCLIStyle(os.Stderr)
+	if err := finishInstallRun(context.Background(), report, p, schema, lockPath, old, log.Default, cs); err != nil {
+		t.Fatal(err)
+	}
+
+	after, err := os.ReadFile(lockPath) // #nosec G304 -- test-controlled temp path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("frozen install rewrote the v2 lockfile; want byte-equivalent preservation")
+	}
+	got, err := lock.Load(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != lock.CurrentVersion || got.UniversalProjection != old.UniversalProjection {
+		t.Fatal("frozen install downgraded or altered the v2 projection")
 	}
 }

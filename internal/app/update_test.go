@@ -53,6 +53,14 @@ func TestUpdatePinValueShowsImmutableGitRevision(t *testing.T) {
 // identities for tools outside the profile must survive, while tools the fresh
 // resolution covers accept their new pins and (unlike install) their new
 // method identity.
+//
+// Both tools pin `method_only = ["http"]` so universal projection uses the
+// checksummed http candidate deterministically. Without it, the native
+// brew-tap candidate is host-dependent: on machines with brew installed it
+// becomes `would_install` (missing tap) and is selected ahead of http, while
+// on machines without brew it fails and http is selected. That made the test
+// pass on Linux and fail on macOS with "git-backed source did not resolve to
+// a concrete revision".
 func TestRunUpdatePreservesPinsAndHashesOutsideProfile(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
@@ -60,10 +68,10 @@ func TestRunUpdatePreservesPinsAndHashesOutsideProfile(t *testing.T) {
 	freshChecksum := "sha256:" + strings.Repeat("a", 64)
 	materialized := "sha256:" + strings.Repeat("c", 64)
 	schemaPath := writeUpdateTestSchema(t, dir, "schema_version = 1\n\n"+
-		"[tools.profiled]\ntags = [\"dev\"]\n\n"+
+		"[tools.profiled]\ntags = [\"dev\"]\nmethod_only = [\"http\"]\n\n"+
 		"[tools.profiled.http]\nurl = \"https://example.com/profiled\"\nchecksum = \""+freshChecksum+"\"\n\n"+
 		"[tools.profiled.native]\npkg = \"profiled\"\nsources = [{ kind = \"brew-tap\", name = \"profiled/tools\", url = \"https://example.com/profiled/tools.git\" }]\n\n"+
-		"[tools.outside]\ntags = [\"other\"]\n\n"+
+		"[tools.outside]\ntags = [\"other\"]\nmethod_only = [\"http\"]\n\n"+
 		"[tools.outside.http]\nurl = \"https://example.com/outside\"\nchecksum = \"sha256:auto\"\n\n"+
 		"[tools.outside.native]\npkg = \"outside\"\nsources = [{ kind = \"brew-tap\", name = \"outside/tools\", url = \"https://example.com/outside/tools.git\" }]\n")
 

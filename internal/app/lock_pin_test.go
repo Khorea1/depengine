@@ -8,6 +8,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/lock"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/state"
 )
 
@@ -82,6 +83,48 @@ func TestMergeInstallLockKeepsMatchingNPMPin(t *testing.T) {
 	}
 	if pin := merged.Tools["tool/npm/0"]; pin.PackageSelector != selector || pin.PackageVersion != "1.2.3" {
 		t.Fatalf("matching npm pin changed during merge: %+v", pin)
+	}
+}
+
+func buildV2LockForInstallTest(t *testing.T, tools map[string]lock.ToolPin) *lock.Lock {
+	t.Helper()
+	p := plan.New("demo", "http", true)
+	p.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: "1.2.3"}
+	p.Identity.Version = "1.2.3"
+	doc, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{p})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := &lock.Lock{Version: 1, Tools: tools, MethodsHash: map[string]string{}, SourceHash: map[string]string{}}
+	if err := l.SetProjection(doc); err != nil {
+		t.Fatal(err)
+	}
+	return l
+}
+
+func TestMergeInstallLockPreservesV2Projection(t *testing.T) {
+	old := buildV2LockForInstallTest(t, map[string]lock.ToolPin{
+		"outside/http/0": {Latest: "v9.9.9"},
+	})
+	wantProjection := old.UniversalProjection
+	fresh := &lock.Lock{
+		Version:     1,
+		Tools:       map[string]lock.ToolPin{"tool/http/0": {Latest: "v2.0.0"}},
+		MethodsHash: map[string]string{"tool": "fresh"},
+	}
+
+	merged, err := mergeInstallLock(old, fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if merged.Version != lock.CurrentVersion {
+		t.Fatalf("merged version = %d, want %d (install downgraded v2 to v1)", merged.Version, lock.CurrentVersion)
+	}
+	if merged.UniversalProjection != wantProjection {
+		t.Fatal("mergeInstallLock regenerated or dropped the universal projection; want verbatim preservation")
+	}
+	if pin := merged.Tools["outside/http/0"]; pin.Latest != "v9.9.9" {
+		t.Fatalf("partial/profile pin = %#v, want preserved outside entry", pin)
 	}
 }
 

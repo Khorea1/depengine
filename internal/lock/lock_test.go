@@ -1434,6 +1434,74 @@ func TestMergeCarriesToolsAbsentFromFresh(t *testing.T) {
 	}
 }
 
+func v2TestLockWithProjection(t *testing.T, tools map[string]ToolPin) *Lock {
+	t.Helper()
+	p := plan.New("demo", "http", true)
+	p.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: "1.2.3"}
+	p.Identity.Version = "1.2.3"
+	doc, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{p})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := &Lock{Version: 1, Tools: tools, MethodsHash: map[string]string{}, SourceHash: map[string]string{}}
+	if err := l.SetProjection(doc); err != nil {
+		t.Fatal(err)
+	}
+	return l
+}
+
+func TestMergePreservesV2UniversalProjection(t *testing.T) {
+	existing := v2TestLockWithProjection(t, map[string]ToolPin{
+		"outside/http/0": {Latest: "v9.9.9"},
+	})
+	wantProjection := existing.UniversalProjection
+	fresh := &Lock{
+		Version:     1,
+		Tools:       map[string]ToolPin{"profiled/http/0": {Latest: "v2.0.0"}},
+		MethodsHash: map[string]string{"profiled": "fresh-hash"},
+	}
+
+	got := Merge(existing, fresh)
+	if got.Version != CurrentVersion {
+		t.Fatalf("merged version = %d, want %d (v2 downgrade)", got.Version, CurrentVersion)
+	}
+	if got.UniversalProjection != wantProjection {
+		t.Fatal("merged universal projection was regenerated or dropped; want verbatim preservation")
+	}
+	if pin := got.Tools["outside/http/0"]; pin.Latest != "v9.9.9" {
+		t.Fatalf("outside pin = %#v, want preserved for partial/profile scope", pin)
+	}
+	if pin := got.Tools["profiled/http/0"]; pin.Latest != "v2.0.0" {
+		t.Fatalf("fresh pin = %#v, want kept", pin)
+	}
+}
+
+func TestMergeKeepsFreshProjectionWhenPresent(t *testing.T) {
+	existing := v2TestLockWithProjection(t, nil)
+	fresh := v2TestLockWithProjection(t, nil)
+	// Make fresh distinct by rebuilding with a different tool identity.
+	other := plan.New("other", "http", true)
+	other.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: "9.9.9"}
+	other.Identity.Version = "9.9.9"
+	otherDoc, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{other})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherData, err := plan.EncodeLockDocument(otherDoc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh.UniversalProjection = string(otherData)
+
+	got := Merge(existing, fresh)
+	if got.UniversalProjection != fresh.UniversalProjection {
+		t.Fatal("Merge overwrote a fresh v2 projection with the existing one")
+	}
+	if got.Version != CurrentVersion {
+		t.Fatalf("merged version = %d, want %d", got.Version, CurrentVersion)
+	}
+}
+
 func TestResolveAllPinsMutableGitSelectors(t *testing.T) {
 	const commit = "0123456789abcdef0123456789abcdef01234567"
 	cases := []struct {
