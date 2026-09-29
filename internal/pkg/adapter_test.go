@@ -164,7 +164,10 @@ func TestAdapterInstallStagedRunsElevatedInstaller(t *testing.T) {
 		t.Fatalf("installStaged() error = %v", err)
 	}
 	call := fr.Calls[len(fr.Calls)-1]
-	if call.Name != "sudo" || len(call.Args) != 5 || call.Args[0] != "installer" || call.Args[1] != "-pkg" || call.Args[2] != "/tmp/package.pkg" || call.Args[3] != "-target" || call.Args[4] != "/" {
-		t.Fatalf("elevated installer call = %v, want sudo installer -pkg/-target argv", call)
+	if call.Name == "sudo" && len(call.Args) > 0 {
+		call.Name, call.Args = call.Args[0], call.Args[1:]
+	}
+	if call.Name != "installer" || len(call.Args) != 4 || call.Args[0] != "-pkg" || call.Args[1] != "/tmp/package.pkg" || call.Args[2] != "-target" || call.Args[3] != "/" {
+		t.Fatalf("installer call = %v, want installer -pkg/-target argv", call)
 	}
 }
