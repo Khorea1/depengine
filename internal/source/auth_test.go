@@ -71,7 +71,13 @@ func TestAuthenticatedSourceRejectsMissingTransport(t *testing.T) {
 
 type sourceEnvProbeRunner struct{ executable string }
 
-func (sourceEnvProbeRunner) Run(context.Context, string, ...string) run.Result {
+func (sourceEnvProbeRunner) Run(_ context.Context, name string, args ...string) run.Result {
+	if name == "brew" && len(args) == 2 && args[0] == "--repo" {
+		return run.Result{Stdout: []byte("/brew/taps/vendor/homebrew-tools\n")}
+	}
+	if name == "git" && len(args) == 5 && args[0] == "-C" {
+		return run.Result{Stdout: []byte("0123456789012345678901234567890123456789\n")}
+	}
 	return run.Result{Err: context.Canceled}
 }
 
