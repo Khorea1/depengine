@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Khorea1/depengine/internal/gitobject"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -80,13 +81,8 @@ func (s SourceReference) Validate() error {
 		if s.Role != SourceHostConfiguration || s.Kind != "brew-tap" || s.URL == "" {
 			return errors.New("source revision is supported only for brew-tap host sources with an explicit URL")
 		}
-		if len(s.Revision) != 40 && len(s.Revision) != 64 {
+		if !gitobject.ValidID(s.Revision) {
 			return errors.New("source revision must be a full lowercase 40- or 64-character hexadecimal commit ID")
-		}
-		for _, char := range s.Revision {
-			if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
-				return errors.New("source revision must be a full lowercase 40- or 64-character hexadecimal commit ID")
-			}
 		}
 	}
 	if s.SecretRef != nil {

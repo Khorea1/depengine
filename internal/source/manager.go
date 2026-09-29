@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/gitobject"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -285,7 +286,7 @@ func (m *Manager) verifyBrewTapRevision(ctx context.Context, source config.Sourc
 		return fmt.Errorf("source: verify brew-tap %s revision: read HEAD: %w", source.Name, err)
 	}
 	actual := strings.TrimSpace(string(resolved.Stdout))
-	if !validSourceRevision(actual) {
+	if !gitobject.ValidID(actual) {
 		return fmt.Errorf("source: verify brew-tap %s revision: Git returned a malformed commit ID", source.Name)
 	}
 	if actual != source.Revision {
@@ -294,17 +295,6 @@ func (m *Manager) verifyBrewTapRevision(ctx context.Context, source config.Sourc
 	return nil
 }
 
-func validSourceRevision(value string) bool {
-	if len(value) != 40 && len(value) != 64 {
-		return false
-	}
-	for _, char := range value {
-		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
-			return false
-		}
-	}
-	return true
-}
 
 func (m *Manager) scoopBucketPresent(ctx context.Context, source config.Source) (bool, error) {
 	res := m.rn.Run(ctx, "scoop", "bucket", "list")
@@ -446,7 +436,7 @@ func validateSourceURLSupport(source config.Source) error {
 	if source.Revision != "" && (source.Kind != "brew-tap" || source.URL == "") {
 		return fmt.Errorf("source: revision is supported only for brew-tap with an explicit URL")
 	}
-	if source.Revision != "" && !validSourceRevision(source.Revision) {
+	if source.Revision != "" && !gitobject.ValidID(source.Revision) {
 		return fmt.Errorf("source: revision must be a full lowercase 40- or 64-character hexadecimal commit ID")
 	}
 	if source.URL != "" && (source.Kind == "apt-ppa" || source.Kind == "dnf-copr") {

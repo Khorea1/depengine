@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Khorea1/depengine/internal/gitobject"
 	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/platform"
 )
@@ -471,7 +472,7 @@ func validateSources(raw any, path string, errs *[]string) {
 		}
 		if rawRevision, exists := m["revision"]; exists {
 			validateNonEmptyString(rawRevision, p+".revision", errs)
-			if revision, ok := rawRevision.(string); ok && !validGitRevision(revision) {
+			if revision, ok := rawRevision.(string); ok && !gitobject.ValidID(revision) {
 				*errs = append(*errs, p+".revision: must be a full lowercase 40- or 64-character hexadecimal commit ID")
 			}
 			if kind != "brew-tap" {
@@ -498,17 +499,6 @@ func validateSources(raw any, path string, errs *[]string) {
 	}
 }
 
-func validGitRevision(value string) bool {
-	if len(value) != 40 && len(value) != 64 {
-		return false
-	}
-	for _, char := range value {
-		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
-			return false
-		}
-	}
-	return true
-}
 
 func validPersistentSourceURL(raw string) bool {
 	if strings.TrimSpace(raw) != raw || strings.ContainsRune(raw, '\x00') || raw == "" {

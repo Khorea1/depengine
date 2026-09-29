@@ -149,4 +149,46 @@ func TestPreparationPlanPreservesSourceRevisionForRecovery(t *testing.T) {
 	if !reflect.DeepEqual(recovered, configured) {
 		t.Fatalf("recovered source = %+v, want %+v", recovered, configured)
 	}
+	description := preparation.Prepare[0].Apply.Description
+	if !strings.Contains(description, preparationSourceDescriptorVersionKey+"="+preparationSourceDescriptorV2) {
+		t.Fatalf("revision descriptor = %q, want explicit payload version", description)
+	}
+}
+
+func TestSourceFromPreparationMutationRejectsRevisionInUnversionedV1Payload(t *testing.T) {
+	configured := config.Source{Kind: "brew-tap", Name: "vendor/tools"}
+	identity, err := ResourceIdentity(configured)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutation := plan.PreparationMutation{
+		Resource: identity,
+		Apply: plan.Operation{
+			Kind:        "add-source",
+			Description: "source/v1?kind=brew-tap&name=vendor%2Ftools&revision=0123456789abcdef0123456789abcdef01234567&url=https%3A%2F%2Fexample.test%2Fvendor%2Ftools.git",
+			Effect:      plan.EffectMutation,
+		},
+	}
+	if _, err := SourceFromPreparationMutation(mutation); err == nil {
+		t.Fatal("SourceFromPreparationMutation() accepted revision field without a payload version")
+	}
+}
+
+func TestSourceFromPreparationMutationRejectsUnknownStructuredVersion(t *testing.T) {
+	configured := config.Source{Kind: "brew-tap", Name: "vendor/tools"}
+	identity, err := ResourceIdentity(configured)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutation := plan.PreparationMutation{
+		Resource: identity,
+		Apply: plan.Operation{
+			Kind:        "add-source",
+			Description: "source/v2?kind=brew-tap&name=vendor%2Ftools",
+			Effect:      plan.EffectMutation,
+		},
+	}
+	if _, err := SourceFromPreparationMutation(mutation); err == nil || !strings.Contains(err.Error(), "unsupported source preparation descriptor version") {
+		t.Fatalf("SourceFromPreparationMutation() error = %v, want unsupported version", err)
+	}
 }

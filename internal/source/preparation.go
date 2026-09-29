@@ -9,7 +9,11 @@ import (
 	"github.com/Khorea1/depengine/internal/plan"
 )
 
-const preparationSourcePrefix = "source/v1?"
+const (
+	preparationSourcePrefix               = "source/v1?"
+	preparationSourceDescriptorVersionKey = "descriptor_version"
+	preparationSourceDescriptorV2         = "2"
+)
 
 // PreparationPlan builds the durable transaction model for sources that were
 // already observed missing. Every source add is depengine-owned and safely
@@ -62,19 +66,42 @@ func PreparationPlan(missing []config.Source) (plan.PreparationPlan, error) {
 func SourceFromPreparationMutation(mutation plan.PreparationMutation) (config.Source, error) {
 	description := mutation.Apply.Description
 	if !strings.HasPrefix(description, preparationSourcePrefix) {
+		if strings.HasPrefix(description, "source/") {
+			return config.Source{}, fmt.Errorf("unsupported source preparation descriptor version %q", description)
+		}
 		return FromResourceIdentity(mutation.Resource)
 	}
 	values, err := url.ParseQuery(strings.TrimPrefix(description, preparationSourcePrefix))
 	if err != nil {
 		return config.Source{}, fmt.Errorf("parse source preparation descriptor: %w", err)
 	}
-	if len(values) < 2 || len(values) > 4 || len(values["kind"]) != 1 || len(values["name"]) != 1 || len(values["url"]) > 1 || len(values["revision"]) > 1 {
-		return config.Source{}, fmt.Errorf("invalid source preparation descriptor %q", description)
-	}
-	for key := range values {
-		if key != "kind" && key != "name" && key != "url" && key != "revision" {
+	descriptorVersion := values.Get(preparationSourceDescriptorVersionKey)
+	switch descriptorVersion {
+	case "":
+		if len(values) < 2 || len(values) > 3 || len(values["kind"]) != 1 || len(values["name"]) != 1 || len(values["url"]) > 1 {
 			return config.Source{}, fmt.Errorf("invalid source preparation descriptor %q", description)
 		}
+		for key := range values {
+			if key != "kind" && key != "name" && key != "url" {
+				return config.Source{}, fmt.Errorf("invalid source preparation descriptor %q", description)
+			}
+		}
+	case preparationSourceDescriptorV2:
+		if len(values) != 5 ||
+			len(values[preparationSourceDescriptorVersionKey]) != 1 ||
+			len(values["kind"]) != 1 ||
+			len(values["name"]) != 1 ||
+			len(values["url"]) != 1 ||
+			len(values["revision"]) != 1 {
+			return config.Source{}, fmt.Errorf("invalid source preparation descriptor %q", description)
+		}
+		for key := range values {
+			if key != preparationSourceDescriptorVersionKey && key != "kind" && key != "name" && key != "url" && key != "revision" {
+				return config.Source{}, fmt.Errorf("invalid source preparation descriptor %q", description)
+			}
+		}
+	default:
+		return config.Source{}, fmt.Errorf("unsupported source preparation descriptor payload version %q", descriptorVersion)
 	}
 	source := config.Source{
 		Kind:     values.Get("kind"),
@@ -113,6 +140,10 @@ func preparationSourceDescription(source config.Source) (string, error) {
 		values.Set("url", source.URL)
 	}
 	if source.Revision != "" {
+		// Keep the source/v1 envelope so pre-revision readers recognize this
+		// as a structured descriptor and fail closed on the extra fields.
+		// The payload version makes the extended grammar explicit.
+		values.Set(preparationSourceDescriptorVersionKey, preparationSourceDescriptorV2)
 		values.Set("revision", source.Revision)
 	}
 	return preparationSourcePrefix + values.Encode(), nil
