@@ -475,8 +475,8 @@ func validateSources(raw any, path string, errs *[]string) {
 			if revision, ok := rawRevision.(string); ok && !gitobject.ValidID(revision) {
 				*errs = append(*errs, p+".revision: must be a full lowercase 40- or 64-character hexadecimal commit ID")
 			}
-			if kind != "brew-tap" {
-				*errs = append(*errs, p+".revision: supported only for brew-tap sources")
+			if kind != "brew-tap" && kind != "scoop-bucket" {
+				*errs = append(*errs, p+".revision: supported only for brew-tap and scoop-bucket sources")
 			}
 			if rawURL, ok := m["url"].(string); !ok || rawURL == "" {
 				*errs = append(*errs, p+".url: required when revision is set")

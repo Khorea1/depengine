@@ -66,7 +66,7 @@ Legacy lock v1 covers each selector class as follows:
 | Selectorless kinds (`cask`, `mas`, `aur`, `apm`, `vscode`, ...) | No | There is no selector for the lock to pin. |
 | Artifact method with no `checksum` | No | Downloaded content is unpinned. |
 | Explicit literal selector (`release`, `branch`, `version`, `rev`, or `digest`) | No — fixed by the schema | The same literal value is requested on every run, so the lock adds no constraint of its own. It also records nothing about where a mutable request such as a git `branch` or an exact package `version` resolved. |
-| Candidate host package sources (`sources = [...]`) | Declaration identity plus Brew revision preflight | Lock v1 hashes source `kind`/`name`/credential-free `url` and an optional Brew `revision`; frozen validation rejects declaration drift. A declared Brew revision is compared with the local tap HEAD at preflight, but Homebrew may auto-update the tap during install. Scoop revisions, PPA/COPR publication state, and signing-key trust remain unpinned. |
+| Candidate host package sources (`sources = [...]`) | Declaration identity plus Git-backed source revision preflight | Lock v1 hashes source `kind`/`name`/credential-free `url` and an optional Brew/Scoop `revision`; frozen validation rejects declaration drift. A declared revision is compared with the local source HEAD at preflight. Homebrew may auto-update a tap during install; PPA/COPR publication state and signing-key trust remain unpinned. |
 
 For the legacy lock v1 subset, `depengine install --frozen-lockfile` fails
 closed when the lockfile is missing, unreadable, or written for an unsupported

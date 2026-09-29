@@ -85,13 +85,13 @@ Work on the current execution model comes before adding more installer types.
   and locking. Git-backed Brew/Scoop sources with explicit URLs verify the
   existing host origin instead of accepting a same-name source blindly;
   presence probes match source names exactly, and transactional recovery
-  retains the credential-free URL and expected Brew tap revision. A declared
-  Brew tap revision must be a full lowercase Git object ID and is checked
-  read-only against the local tap HEAD before use. This does not pin the source
-  against Homebrew auto-update during package installation. Legacy lock v1
-  source hashes include declared revisions and frozen installs reject
-  declaration drift; this is not a general immutable source lock. Scoop
-  revisions and signing/trust identity remain open.
+  retains the credential-free URL and expected Brew/Scoop source revision. A
+  declared revision must be a full lowercase Git object ID and is checked
+  read-only against the local repository HEAD before use; newly added mismatches
+  are rolled back. Homebrew may still auto-update the tap during package
+  installation. Legacy lock v1 source hashes include declared revisions and
+  frozen installs reject declaration drift; this is not a general immutable
+  source lock. Signing/trust identity remains open.
 - [~] Finish recovery for package-source and prerequisite preparation. Lazy
   `method.requires` installs now cross the candidate WAL commit boundary even
   without package sources, and recovery reconciles their installed identity.

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -263,7 +264,7 @@ func (m *Manager) brewTapPresent(ctx context.Context, source config.Source) (boo
 			return false, fmt.Errorf("source: brew-tap %s exists with a different origin than configured", source.Name)
 		}
 		if source.Revision != "" {
-			if err := m.verifyBrewTapRevision(ctx, source); err != nil {
+			if err := m.verifySourceRevision(ctx, source); err != nil {
 				return false, err
 			}
 		}
@@ -272,27 +273,69 @@ func (m *Manager) brewTapPresent(ctx context.Context, source config.Source) (boo
 	return false, fmt.Errorf("source: verify brew-tap %s origin: tap metadata omitted the configured tap", source.Name)
 }
 
-func (m *Manager) verifyBrewTapRevision(ctx context.Context, source config.Source) error {
-	repo := m.rn.Run(ctx, "brew", "--repo", source.Name)
-	if err := run.CheckResult(repo, "source repository path"); err != nil {
-		return fmt.Errorf("source: verify brew-tap %s revision: locate repository: %w", source.Name, err)
+func (m *Manager) verifySourceRevision(ctx context.Context, source config.Source) error {
+	var path string
+	switch source.Kind {
+	case "brew-tap":
+		repo := m.rn.Run(ctx, "brew", "--repo", source.Name)
+		if err := run.CheckResult(repo, "source repository path"); err != nil {
+			return fmt.Errorf("source: verify brew-tap %s revision: locate repository: %w", source.Name, err)
+		}
+		path = strings.TrimSpace(string(repo.Stdout))
+		if path == "" || strings.ContainsAny(path, "\r\n") {
+			return fmt.Errorf("source: verify brew-tap %s revision: brew returned a malformed repository path", source.Name)
+		}
+	case "scoop-bucket":
+		var err error
+		path, err = m.scoopBucketRepository(ctx, source.Name)
+		if err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("source: revision is unsupported for %s %s", source.Kind, source.Name)
 	}
-	path := strings.TrimSpace(string(repo.Stdout))
-	if path == "" || strings.ContainsAny(path, "\r\n") {
-		return fmt.Errorf("source: verify brew-tap %s revision: brew returned a malformed repository path", source.Name)
-	}
+
 	resolved := m.rn.Run(ctx, "git", "-C", path, "rev-parse", "--verify", "HEAD^{commit}")
 	if err := run.CheckResult(resolved, "source revision check"); err != nil {
-		return fmt.Errorf("source: verify brew-tap %s revision: read HEAD: %w", source.Name, err)
+		return fmt.Errorf("source: verify %s %s revision: read HEAD: %w", source.Kind, source.Name, err)
 	}
 	actual := strings.TrimSpace(string(resolved.Stdout))
 	if !gitobject.ValidID(actual) {
-		return fmt.Errorf("source: verify brew-tap %s revision: Git returned a malformed commit ID", source.Name)
+		return fmt.Errorf("source: verify %s %s revision: Git returned a malformed commit ID", source.Kind, source.Name)
 	}
 	if actual != source.Revision {
-		return fmt.Errorf("source: brew-tap %s revision mismatch: configured %s, observed %s", source.Name, source.Revision, actual)
+		return fmt.Errorf("source: %s %s revision mismatch: configured %s, observed %s", source.Kind, source.Name, source.Revision, actual)
 	}
 	return nil
+}
+
+func (m *Manager) scoopBucketRepository(ctx context.Context, name string) (string, error) {
+	if name == "" || name == "." || name == ".." || filepath.Base(name) != name || strings.ContainsAny(name, "/\\") {
+		return "", fmt.Errorf("source: verify scoop-bucket %s revision: invalid bucket name", name)
+	}
+
+	// Ask Scoop for its own core installation prefix instead of reimplementing
+	// Scoop's root precedence (SCOOP, ROOT_PATH, portable install, user default).
+	// With NO_JUNCTION enabled the final component is a concrete version rather
+	// than "current", but the stable parent shape remains <root>/apps/scoop/*.
+	prefixResult := m.rn.Run(ctx, "scoop", "prefix", "scoop")
+	if err := run.CheckResult(prefixResult, "source repository path"); err != nil {
+		return "", fmt.Errorf("source: verify scoop-bucket %s revision: locate Scoop root: %w", name, err)
+	}
+	prefix := strings.Trim(strings.TrimSpace(string(prefixResult.Stdout)), "\"")
+	if prefix == "" || strings.ContainsAny(prefix, "\r\n") || !filepath.IsAbs(prefix) {
+		return "", fmt.Errorf("source: verify scoop-bucket %s revision: Scoop returned a malformed core prefix", name)
+	}
+	prefix = filepath.Clean(prefix)
+	scoopAppDir := filepath.Dir(prefix)
+	appsDir := filepath.Dir(scoopAppDir)
+	root := filepath.Dir(appsDir)
+	if !strings.EqualFold(filepath.Base(scoopAppDir), "scoop") ||
+		!strings.EqualFold(filepath.Base(appsDir), "apps") ||
+		root == appsDir {
+		return "", fmt.Errorf("source: verify scoop-bucket %s revision: Scoop returned an unexpected core prefix", name)
+	}
+	return filepath.Join(root, "buckets", name), nil
 }
 
 
@@ -310,6 +353,11 @@ func (m *Manager) scoopBucketPresent(ctx context.Context, source config.Source) 
 		}
 		found = true
 		if sameSourceURL(fields[1], source.URL) {
+			if source.Revision != "" {
+				if err := m.verifySourceRevision(ctx, source); err != nil {
+					return false, err
+				}
+			}
 			return true, nil
 		}
 	}
@@ -419,8 +467,8 @@ func (m *Manager) addAuthenticated(ctx context.Context, source config.Source, to
 	if err := run.CheckResult(result, "source add"); err != nil {
 		return err
 	}
-	if source.Kind == "brew-tap" && source.Revision != "" {
-		if err := m.verifyBrewTapRevision(ctx, source); err != nil {
+	if source.Revision != "" {
+		if err := m.verifySourceRevision(ctx, source); err != nil {
 			rollbackSource := source
 			rollbackSource.Revision = ""
 			if rollbackErr := m.remove(ctx, rollbackSource); rollbackErr != nil {
@@ -433,8 +481,8 @@ func (m *Manager) addAuthenticated(ctx context.Context, source config.Source, to
 }
 
 func validateSourceURLSupport(source config.Source) error {
-	if source.Revision != "" && (source.Kind != "brew-tap" || source.URL == "") {
-		return fmt.Errorf("source: revision is supported only for brew-tap with an explicit URL")
+	if source.Revision != "" && ((source.Kind != "brew-tap" && source.Kind != "scoop-bucket") || source.URL == "") {
+		return fmt.Errorf("source: revision is supported only for brew-tap or scoop-bucket with an explicit URL")
 	}
 	if source.Revision != "" && !gitobject.ValidID(source.Revision) {
 		return fmt.Errorf("source: revision must be a full lowercase 40- or 64-character hexadecimal commit ID")

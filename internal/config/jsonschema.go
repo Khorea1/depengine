@@ -176,7 +176,7 @@ func methodObjectJSONSchema(contract *methodkind.Contract, variantKind string) m
 					"kind":       map[string]any{"enum": []string{"apt-ppa", "dnf-copr", "scoop-bucket", "brew-tap"}},
 					"name":       map[string]any{"type": "string", "minLength": 1},
 					"url":        map[string]any{"type": "string", "minLength": 1},
-					"revision":   map[string]any{"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$", "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL."},
+					"revision":   map[string]any{"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$", "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL."},
 					"secret_ref": map[string]any{"$ref": "#/definitions/secretReference"},
 				},
 				"additionalProperties": false,

@@ -78,8 +78,8 @@ func (s SourceReference) Validate() error {
 		}
 	}
 	if s.Revision != "" {
-		if s.Role != SourceHostConfiguration || s.Kind != "brew-tap" || s.URL == "" {
-			return errors.New("source revision is supported only for brew-tap host sources with an explicit URL")
+		if s.Role != SourceHostConfiguration || (s.Kind != "brew-tap" && s.Kind != "scoop-bucket") || s.URL == "" {
+			return errors.New("source revision is supported only for brew-tap and scoop-bucket host sources with an explicit URL")
 		}
 		if !gitobject.ValidID(s.Revision) {
 			return errors.New("source revision must be a full lowercase 40- or 64-character hexadecimal commit ID")

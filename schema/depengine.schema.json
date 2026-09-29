@@ -57,7 +57,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -490,7 +490,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -584,7 +584,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -665,7 +665,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -874,7 +874,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -965,7 +965,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -1052,7 +1052,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -1133,7 +1133,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -1218,7 +1218,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -1305,7 +1305,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -1390,7 +1390,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -1588,7 +1588,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -1681,7 +1681,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -1776,7 +1776,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -1861,7 +1861,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -1986,7 +1986,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -2129,7 +2129,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -2221,7 +2221,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -2308,7 +2308,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -2395,7 +2395,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -2491,7 +2491,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -2583,7 +2583,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -2757,7 +2757,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -2925,7 +2925,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -3014,7 +3014,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -3224,7 +3224,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -3355,7 +3355,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -3437,7 +3437,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -3644,7 +3644,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -3736,7 +3736,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -3821,7 +3821,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -3912,7 +3912,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -3999,7 +3999,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -4080,7 +4080,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -4161,7 +4161,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -4246,7 +4246,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -4342,7 +4342,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -4433,7 +4433,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -4520,7 +4520,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -4607,7 +4607,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -4688,7 +4688,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -4779,7 +4779,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -4879,7 +4879,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -4964,7 +4964,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -5105,7 +5105,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -5190,7 +5190,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -5275,7 +5275,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -5360,7 +5360,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -5441,7 +5441,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -5559,7 +5559,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -5650,7 +5650,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -5731,7 +5731,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -5816,7 +5816,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -5897,7 +5897,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -5984,7 +5984,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -6071,7 +6071,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -6256,7 +6256,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -6348,7 +6348,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -6555,7 +6555,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -6650,7 +6650,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -6735,7 +6735,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -6824,7 +6824,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -6913,7 +6913,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -7115,7 +7115,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -7212,7 +7212,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -7311,7 +7311,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -7400,7 +7400,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -7529,7 +7529,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -7670,7 +7670,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -7777,7 +7777,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -7873,7 +7873,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -8045,7 +8045,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -8213,7 +8213,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -8308,7 +8308,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -8516,7 +8516,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -8645,7 +8645,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -8733,7 +8733,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -8938,7 +8938,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -9036,7 +9036,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -9125,7 +9125,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -9214,7 +9214,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -9303,7 +9303,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -9403,7 +9403,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -9492,7 +9492,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -9600,7 +9600,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -9689,7 +9689,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -9834,7 +9834,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -9923,7 +9923,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -10012,7 +10012,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -10101,7 +10101,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -10186,7 +10186,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -10308,7 +10308,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -10397,7 +10397,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },
@@ -10486,7 +10486,7 @@
                     "type": "string"
                   },
                   "revision": {
-                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap URL.",
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
                     "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
                     "type": "string"
                   },

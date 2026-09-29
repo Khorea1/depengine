@@ -814,13 +814,14 @@ credential-free URL is retained in the source-preparation journal so crash
 recovery performs the same origin check rather than falling back to a name-only
 probe.
 
-A `brew-tap` may also declare `revision = "<full-git-object-id>"` alongside an
-explicit `url`. The value must be a full lowercase 40- or 64-character Git
-object ID. Before the tap is used, depengine checks its local `HEAD` against
-that ID using read-only Git inspection; a newly added tap is checked before
-preparation can complete. This does not fetch, checkout, or reset the tap, and
-does not prevent Homebrew from auto-updating the tap during installation. The
-field is not supported for `scoop-bucket`.
+A `brew-tap` or `scoop-bucket` may also declare
+`revision = "<full-git-object-id>"` alongside an explicit `url`. The value must
+be a full lowercase 40- or 64-character Git object ID. Before the source is
+used, depengine checks its local repository `HEAD` against that ID using
+read-only Git inspection; a newly added source is checked before preparation
+can complete and is removed on mismatch. This does not fetch, checkout, or
+reset the source. Homebrew may still auto-update a verified tap during package
+installation; Scoop package installation uses the verified local bucket.
 
 For example:
 
@@ -845,12 +846,12 @@ rejected during planning. The token is not installed as a persistent Git
 credential; later source updates need their own
 host credential setup. Sources are checked before mutation. `depengine.lock`
 stores a hash of each candidate's host-source `kind`/`name`/`url` declaration
-and any declared Brew tap `revision`; `--frozen-lockfile` requires that
+and any declared Brew/Scoop `revision`; `--frozen-lockfile` requires that
 identity to exist and match, while `depengine update` is the operation that
 accepts a changed declaration. The declaration hash is not a general lock on
-repository contents or a trust root; only a separately declared Brew revision
-is checked against local tap `HEAD`, with the Homebrew auto-update limitation
-described above. `dependency_only`
+repository contents or a trust root; only a separately declared Brew/Scoop
+revision is checked against local source `HEAD`, with the Homebrew auto-update
+limitation described above. `dependency_only`
 tools are not normal roots, but remain selectable with `--only`.
 
 ### Virtual tools: dependency groups with no methods
