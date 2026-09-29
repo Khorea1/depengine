@@ -49,6 +49,55 @@ func TestRemoveResolvedCandidateUsesProvidedRunnerAndClonedIdentity(t *testing.T
 	}
 }
 
+type elevationRemoveCapture struct {
+	resolvedRemoveCapture
+	removedWhileElevated bool
+}
+
+func (a *elevationRemoveCapture) RequiresRemovalElevation(*config.Tool, *config.MethodCandidate) bool {
+	return true
+}
+
+func (a *elevationRemoveCapture) Remove(_ context.Context, rn run.Runner, _ *config.Tool, _ *config.MethodCandidate) error {
+	runner := rn.(*elevationSessionRunner)
+	a.removedWhileElevated = runner.active
+	return nil
+}
+
+type elevationSessionRunner struct {
+	*run.FakeRunner
+	active bool
+	stops  int
+}
+
+func (r *elevationSessionRunner) StartElevationSession(context.Context) (func(), error) {
+	r.active = true
+	return func() {
+		r.active = false
+		r.stops++
+	}, nil
+}
+
+func TestRemoveResolvedCandidateStartsElevationSession(t *testing.T) {
+	adapter := &elevationRemoveCapture{resolvedRemoveCapture: resolvedRemoveCapture{executorAdapterV2Double: executorAdapterV2Double{
+		testMockAdapter: testMockAdapter{kindValue: "mas"},
+	}}}
+	executor := New()
+	WithAdapters(adapter)(executor)
+	runner := &elevationSessionRunner{FakeRunner: &run.FakeRunner{}}
+	tool := &config.Tool{Name: "xcode"}
+	method := &config.MethodCandidate{Kind: "mas", Config: map[string]any{"pkg": "497799835"}}
+	resolved := plan.New("xcode", "mas", true)
+	resolved.Identity.Package = "497799835"
+
+	if err := executor.RemoveResolvedCandidate(context.Background(), runner, tool, method, &resolved); err != nil {
+		t.Fatalf("RemoveResolvedCandidate() error = %v", err)
+	}
+	if !adapter.removedWhileElevated || runner.active || runner.stops != 1 {
+		t.Fatalf("elevation lifecycle: removedWhileElevated=%v active=%v stops=%d", adapter.removedWhileElevated, runner.active, runner.stops)
+	}
+}
+
 func TestRemovalMethodForResolvedTargetProjectsIdentityWithoutMutation(t *testing.T) {
 	tests := []struct {
 		name   string

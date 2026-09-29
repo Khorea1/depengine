@@ -506,6 +506,7 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 }
 
 type upgradePreflightAdapter struct {
+	kind            string
 	available       bool
 	presence        plan.PresenceState
 	observedPackage string
@@ -514,7 +515,12 @@ type upgradePreflightAdapter struct {
 	calls           []string
 }
 
-func (a *upgradePreflightAdapter) Kind() string { return "native" }
+func (a *upgradePreflightAdapter) Kind() string {
+	if a.kind != "" {
+		return a.kind
+	}
+	return "native"
+}
 func (a *upgradePreflightAdapter) Available(context.Context, run.Runner) bool {
 	a.calls = append(a.calls, "available")
 	return a.available
@@ -703,9 +709,8 @@ func TestPreflightDirectUpgradeRejectsCandidateLifecycleHooksBeforeProbes(t *tes
 	}
 }
 
-
 func TestPreflightDirectUpgradeRequiresInstalledRemovableAvailableTarget(t *testing.T) {
-	method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
+	method := &config.MethodCandidate{Kind: "asdf", Config: map[string]any{"pkg": "demo", "version": "1.0.0"}}
 	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
 
 	tests := []struct {
@@ -723,6 +728,7 @@ func TestPreflightDirectUpgradeRequiresInstalledRemovableAvailableTarget(t *test
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt.adapter.kind = "asdf"
 			_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(&tt.adapter), &run.FakeRunner{}, &engine.Facts{}, tool, method, &tt.adapter, "", false)
 			if tt.wantErr == "" {
 				if err != nil {
@@ -735,6 +741,26 @@ func TestPreflightDirectUpgradeRequiresInstalledRemovableAvailableTarget(t *test
 				t.Fatalf("adapter calls = %v, want %v", tt.adapter.calls, tt.wantCalls)
 			}
 		})
+	}
+}
+
+func TestPreflightDirectUpgradeRejectsContractWithoutUpgradeCapability(t *testing.T) {
+	adapter := &upgradePreflightAdapter{
+		available:       true,
+		presence:        plan.PresencePresent,
+		observedPackage: "other",
+		targetAvailable: true,
+		canRemove:       true,
+	}
+	method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
+	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
+
+	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, tool, method, adapter, "", false)
+	if err == nil || !strings.Contains(err.Error(), "missing required capabilities: upgrade") {
+		t.Fatalf("preflightDirectUpgrade error = %v, want upgrade capability rejection", err)
+	}
+	if strings.Join(adapter.calls, ",") != "available,resolve-plan,observe" {
+		t.Fatalf("adapter calls = %v, want no availability probe after capability rejection", adapter.calls)
 	}
 }
 
@@ -767,9 +793,9 @@ func TestUpgradedToolStatePreservesRootIntent(t *testing.T) {
 	}
 	if got.Version != "v2" || got.Method != "primary" || got.MethodKind != "go" || !got.PostinstallDone {
 		t.Fatalf("upgraded state = %#v, want preserved metadata and pinned fallback version", got)
-	if got.DesiredStateHash != state.DesiredStateHash(tool) {
-		t.Fatalf("DesiredStateHash = %q, want current desired-state hash", got.DesiredStateHash)
-	}
+		if got.DesiredStateHash != state.DesiredStateHash(tool) {
+			t.Fatalf("DesiredStateHash = %q, want current desired-state hash", got.DesiredStateHash)
+		}
 	}
 	if !reflect.DeepEqual(got.Config, method.Config) {
 		t.Fatalf("upgraded config = %#v, want %#v", got.Config, method.Config)

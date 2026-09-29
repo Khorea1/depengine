@@ -529,7 +529,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -723,7 +723,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -916,7 +916,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -997,7 +997,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1169,7 +1169,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1250,7 +1250,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1632,7 +1632,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2166,7 +2166,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2253,7 +2253,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2340,7 +2340,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2811,7 +2811,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "required": [
@@ -3076,7 +3076,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -3292,7 +3292,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock, local-artifact. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Method capabilities: source-mutation, check, remove, immutable-lock, local-artifact. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3388,7 +3388,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check.",
+          "description": "Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3511,7 +3511,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Method capabilities: source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -3681,7 +3681,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3857,7 +3857,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3944,7 +3944,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4112,7 +4112,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4378,7 +4378,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4465,7 +4465,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4552,7 +4552,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4724,7 +4724,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5026,7 +5026,7 @@
               }
             }
           ],
-          "description": "Method capabilities: channel, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: channel, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5311,7 +5311,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check.",
+          "description": "Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5392,7 +5392,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check.",
+          "description": "Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5595,7 +5595,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5848,7 +5848,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5929,7 +5929,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6016,7 +6016,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6407,7 +6407,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -6604,7 +6604,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6778,7 +6778,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7166,7 +7166,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8102,7 +8102,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "required": [
@@ -8371,7 +8371,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -8585,7 +8585,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock, local-artifact. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Method capabilities: source-mutation, check, remove, immutable-lock, local-artifact. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8687,7 +8687,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check.",
+          "description": "Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8808,7 +8808,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "description": "Method capabilities: source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
           "oneOf": [
             {
               "not": {
@@ -8984,7 +8984,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -9758,7 +9758,7 @@
               }
             }
           ],
-          "description": "Method capabilities: channel, source-mutation, check, remove, upgrade.",
+          "description": "Method capabilities: channel, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -10055,7 +10055,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check.",
+          "description": "Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -10140,7 +10140,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-mutation, check.",
+          "description": "Method capabilities: source-mutation, check, remove.",
           "properties": {
             "arch_map": {
               "additionalProperties": {

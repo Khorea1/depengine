@@ -664,7 +664,7 @@ are described above or alongside their examples.
 | `flatpak` | Flatpak apps; optional `remote`, `branch`, and `scope` (`user` or `system`) | `spotify = { flatpak = { pkg = "com.spotify.Client", remote = "flathub", branch = "stable", scope = "user" } }` |
 | `snap` | Snap packages; risk shorthand or structured `track`/`risk`/`branch` | `hello = { snap = { pkg = "hello", track = "2.0", risk = "stable" } }` |
 | `cask` | macOS Homebrew casks | `docker = { cask = "docker" }` |
-| `mas` | Mac App Store, by app ID | `xcode = { mas = "497799835" }` |
+| `mas` | Mac App Store, by numeric app ID or bundle ID | `xcode = { mas = "com.apple.dt.Xcode" }` |
 | `appman` | AppImage packages via "AM"/"AppMan" (ivan-hc/AM) | `obsidian = { appman = "obsidian" }` |
 | `container` | Container images via `docker`/`podman pull`; `tag` or immutable `digest`, optional OCI `platform` | `redis = { container = { manager = "podman", source = "redis", platform = "linux/amd64" } }` |
 | `appimage` | Portable `.AppImage` binaries, installed under a stable name | `obsidian = { appimage = { url = "https://…/Obsidian-{latest}.AppImage" } }` |

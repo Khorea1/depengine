@@ -125,24 +125,27 @@ var Configs = map[string]BaseConfig{
 		InstallTmpl: []string{"snap", "install", "{pkg}"},
 		RemoveTmpl:  []string{"snap", "remove", "{pkg}"},
 	},
-	// vscode/vscodium install editor extensions; uninstalling an extension
-	// (`code --uninstall-extension`) only matches exact extension IDs and
-	// removing the editor itself is out of scope. Kept manual.
+	// vscode/vscodium manage editor extensions, never the editor itself. The
+	// extension ID is the single identity for install, check and removal
+	// (`--install-extension`, `--list-extensions`, `--uninstall-extension`
+	// all take the exact publisher.name ID), so removal is the symmetric
+	// inverse of install.
 	"vscode": {
 		KindName:       "vscode",
 		Binary:         "code",
 		CheckTmpl:      []string{"code", "--list-extensions"},
 		CheckOutput:    checkExactLine,
 		InstallTmpl:    []string{"code", "--install-extension", "{pkg}"},
+		RemoveTmpl:     []string{"code", "--uninstall-extension", "{pkg}"},
 		AvailableExtra: "code-insiders",
 	},
-	// vscodium: same extension-based policy as vscode above. Kept manual.
 	"vscodium": {
 		KindName:    "vscodium",
 		Binary:      "codium",
 		CheckTmpl:   []string{"codium", "--list-extensions"},
 		CheckOutput: checkExactLine,
 		InstallTmpl: []string{"codium", "--install-extension", "{pkg}"},
+		RemoveTmpl:  []string{"codium", "--uninstall-extension", "{pkg}"},
 	},
 	"cask": {
 		KindName:    "cask",
@@ -166,8 +169,9 @@ var Configs = map[string]BaseConfig{
 		InstallTmpl: []string{"appman", "-y", "-i", "{pkg}"},
 		RemoveTmpl:  []string{"appman", "-R", "{pkg}"},
 	},
-	// mas installs macOS App Store apps by numeric app id; `mas uninstall`
-	// also requires the numeric id, which {pkg} may not be. Kept manual.
+	// mas installs macOS App Store apps by numeric app id. Removal is not a
+	// RemoveTmpl: `mas uninstall <id>` needs root and a numeric id, so the
+	// specialized MasAdapter (mas.go) wraps this config and owns Remove.
 	"mas": {
 		KindName:    "mas",
 		Binary:      "mas",
@@ -200,8 +204,8 @@ func RegisterAll(aurHelper string) {
 
 	// The rest use the generic BaseAdapter pattern.
 	for name, cfg := range Configs {
-		if name == "cargo" || name == "go" {
-			continue // registered above
+		if name == "cargo" || name == "go" || name == "mas" {
+			continue // registered above or as a specialized adapter below
 		}
 		exec.Register(NewBaseAdapter(cfg))
 	}
@@ -219,6 +223,7 @@ func RegisterAll(aurHelper string) {
 	exec.Register(NewPacstallAdapter())
 	exec.Register(NewCondaAdapter())
 	exec.Register(NewAsdfAdapter())
+	exec.Register(NewMasAdapter())
 }
 
 // ReconfigureAUR replaces the AUR adapter in the global registry with one

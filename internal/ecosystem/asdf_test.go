@@ -3,6 +3,7 @@ package ecosystem
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -245,15 +246,83 @@ func TestAsdfAdapterRemove(t *testing.T) {
 	}
 }
 
-func TestAsdfAdapterRemoveRequiresVersion(t *testing.T) {
+func TestAsdfAdapterRemoveWithoutConfiguredVersion(t *testing.T) {
 	t.Parallel()
-	fr := &run.FakeRunner{ExitCode: 0}
+	// No version in config: removal resolves the single observed installed
+	// version instead of failing, so a default-version install can be removed.
+	fr := &run.FakeRunner{Stdout: "  18.0.0\n", ExitCode: 0}
 
 	a := &AsdfAdapter{}
 	tool := &config.Tool{Name: "nodejs"}
 	mc := &config.MethodCandidate{Kind: "asdf", Config: map[string]any{"pkg": "nodejs"}} // no version
-	if err := a.Remove(context.Background(), fr, tool, mc); err == nil {
-		t.Fatal("expected error when no version is configured")
+	if err := a.Remove(context.Background(), fr, tool, mc); err != nil {
+		t.Fatalf("unexpected Remove error: %v", err)
+	}
+
+	got := fr.Calls
+	last := got[len(got)-1]
+	if last.Name != "asdf" || len(last.Args) < 3 || last.Args[0] != "uninstall" || last.Args[1] != "nodejs" || last.Args[2] != "18.0.0" {
+		t.Errorf("expected 'asdf uninstall nodejs 18.0.0', got %v", last)
+	}
+}
+
+func TestAsdfAdapterRemoveUsesObservedMiseBackend(t *testing.T) {
+	runner := &asdfFallbackRunner{results: map[string]run.Result{
+		"asdf": {},
+		"mise": {Stdout: []byte(`[{"version":"20.17.0","installed":true}]`)},
+	}}
+	tool, method := asdfTool("node", "nodejs")
+
+	if err := NewAsdfAdapter().Remove(context.Background(), runner, tool, method); err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+	want := []string{"asdf", "mise", "mise"}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("backend calls = %#v, want %#v", runner.calls, want)
+	}
+}
+
+func TestAsdfAdapterRemoveLatestConfigResolvesInstalledVersion(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{Stdout: "  20.17.0\n", ExitCode: 0}
+
+	a := &AsdfAdapter{}
+	tool := &config.Tool{Name: "nodejs"}
+	mc := &config.MethodCandidate{Kind: "asdf", Config: map[string]any{"pkg": "nodejs", "version": "latest"}}
+	if err := a.Remove(context.Background(), fr, tool, mc); err != nil {
+		t.Fatalf("unexpected Remove error: %v", err)
+	}
+
+	got := fr.Calls
+	last := got[len(got)-1]
+	if last.Name != "asdf" || len(last.Args) < 3 || last.Args[0] != "uninstall" || last.Args[1] != "nodejs" || last.Args[2] != "20.17.0" {
+		t.Errorf("expected 'asdf uninstall nodejs 20.17.0', got %v", last)
+	}
+}
+
+func TestAsdfAdapterRemoveAmbiguousInstalledVersions(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{Stdout: "  18.0.0\n  20.17.0\n", ExitCode: 0}
+
+	a := &AsdfAdapter{}
+	tool := &config.Tool{Name: "nodejs"}
+	mc := &config.MethodCandidate{Kind: "asdf", Config: map[string]any{"pkg": "nodejs"}} // no version, two installed
+	err := a.Remove(context.Background(), fr, tool, mc)
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("Remove() error = %v, want ambiguity failure", err)
+	}
+}
+
+func TestAsdfAdapterRemoveNoInstalledVersion(t *testing.T) {
+	t.Parallel()
+	fr := &run.FakeRunner{Stdout: "", ExitCode: 0}
+
+	a := &AsdfAdapter{}
+	tool := &config.Tool{Name: "nodejs"}
+	mc := &config.MethodCandidate{Kind: "asdf", Config: map[string]any{"pkg": "nodejs"}} // no version
+	err := a.Remove(context.Background(), fr, tool, mc)
+	if err == nil || !strings.Contains(err.Error(), "none found") {
+		t.Fatalf("Remove() error = %v, want absent-version failure", err)
 	}
 }
 
