@@ -93,10 +93,13 @@ Work on the current execution model comes before adding more installer types.
   frozen installs reject declaration drift; this is not a general immutable
   source lock. Signing/trust identity remains open.
 - [~] Finish recovery for package-source and prerequisite preparation. Lazy
-  `method.requires` installs now cross the candidate WAL commit boundary even
+  `method.requires` installs cross the candidate WAL commit boundary even
   without package sources, and recovery reconciles their installed identity.
-  Atomic ownership projection between recovered prerequisite and dependent
-  remains open; see ADR-002.
+  Prerequisite commit finalization now atomically persists the helper's
+  `ToolState` plus a zero-ref depengine ownership record, including recovered
+  commits, so a crash before the owner claim cannot later reclassify a helper
+  created by depengine as external. The dependent refcount claim is still a
+  separate owner transaction; see ADR-002.
 - [x] Keep hooks tied to the candidate/transition that actually runs; status
   must not depend on a one-time hook having succeeded earlier. Tool-level and
   candidate-local hooks are projected into the selected `ResolvedInstallPlan`,

@@ -49,9 +49,12 @@ write-ahead journal and explicit ownership:
 - Lazy `method.requires` executions use the same candidate WAL, even when no
   package source is missing. Their install crosses the durable committing
   boundary and is reconciled by resolved identity after restart, so an
-  interrupted prerequisite install is not blindly replayed. Once the owner
-  resumes, its normal resource-use projection records the prerequisite
-  relationship.
+  interrupted prerequisite install is not blindly replayed. Finalizing a lazy
+  prerequisite commit atomically records its `ToolState` and a zero-ref
+  depengine-owned prerequisite identity in the same durable state save; crash
+  recovery performs the same projection. Once the owner resumes, its normal
+  resource-use projection adds the dependent reference without losing creator
+  ownership.
 - Before any new host mutation, the executor replays recoverable source
   preparation/rollback work from the persisted plan, reconciles a committing
   candidate through a read-only identity observation, and records a confirmed
@@ -65,9 +68,10 @@ write-ahead journal and explicit ownership:
 
 ## Open work
 
-- Atomic ownership projection across a prerequisite's recovered commit and its
-  dependent candidate remains open: a crash between those transactions can
-  leave the prerequisite installed and recorded without the dependent
-  reference until that candidate is retried. Cleanup must continue to retain
-  unreferenced prerequisite state safely.
+- Binding the prerequisite's dependent refcount claim to the owner candidate's
+  commit remains open. A crash between the helper commit and the owner commit
+  may still leave a zero-ref prerequisite until retry, but creator ownership
+  and tool state are already durable and cannot be reclassified as external.
+  Cleanup must continue to retain that zero-ref state safely until the owner
+  commits or an explicit cleanup path removes it.
 - Richer identity observation for automatic commit finalization.
