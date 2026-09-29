@@ -44,6 +44,28 @@ func TestScopeUserPlacementNeedsNoUnixPaths(t *testing.T) {
 	}
 }
 
+// TestScopeUserPlacementHonorsXDGDataHome binds the public XDG_DATA_HOME claim
+// to runtime behavior: a configured data home changes the user-scope install
+// root instead of merely appearing in documentation.
+func TestScopeUserPlacementHonorsXDGDataHome(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		return
+	}
+	home := t.TempDir()
+	dataHome := filepath.Join(t.TempDir(), "xdg-data")
+	exectest.SetHome(t, home)
+	t.Setenv("XDG_DATA_HOME", dataHome)
+
+	placement, err := ArtifactPlacement(&config.Tool{Name: "ripgrep"}, httpScopeCandidate(map[string]any{"scope": "user"}), "/usr/local/bin", "")
+	if err != nil {
+		t.Fatalf("ArtifactPlacement() error = %v", err)
+	}
+	wantInstall := filepath.Join(dataHome, "depengine", "tools", "ripgrep")
+	if placement.InstallRoot != wantInstall {
+		t.Fatalf("InstallRoot = %q, want XDG_DATA_HOME placement %q", placement.InstallRoot, wantInstall)
+	}
+}
+
 // TestScopeSystemPlacementUsesPlatformSystemDirs resolves the system scope
 // to the conventional Unix system roots.
 func TestScopeSystemPlacementUsesPlatformSystemDirs(t *testing.T) {

@@ -134,14 +134,14 @@ Full one-liner-per-method table (with `git`/`http` field lists):
 [schema-reference.md#method-reference](schema-reference.md#method-reference).
 
 ```
-Native:      native (auto-detects apt/pacman/dnf/brew/...)
+Native:      native, apt, pacman, dnf, brew, ...
 Language:    cargo, go, pip, pipx, uv, npm, pnpm, bun, gem, yarn,
              yarn-berry, composer, apm
 Desktop:     flatpak, snap, vscode, vscodium, cask, mas, appman
 Windows:     winget, scoop, choco, msi
 Specialized: sdkman, steamcmd, pacstall, aur, conda, asdf, nix, container,
              appimage, android
-Other:       git, github, http
+Other:       git, github, http, local
 ```
 
 ---

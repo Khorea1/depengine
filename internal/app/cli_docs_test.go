@@ -168,6 +168,61 @@ func TestInstallYoloAliasesAllowArbitraryCode(t *testing.T) {
 	}
 }
 
+// TestEnvironmentVariableTablesMatch keeps the hand-written environment
+// variable table in README.md and docs/cli-reference.md identical: both are
+// published copies of the same claim and must not drift apart.
+func TestEnvironmentVariableTablesMatch(t *testing.T) {
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatalf("read README: %v", err)
+	}
+	reference, err := os.ReadFile(markdownDocsPath)
+	if err != nil {
+		t.Fatalf("read CLI reference: %v", err)
+	}
+
+	got := environmentVariableTable(string(readme))
+	want := environmentVariableTable(string(reference))
+	if got == "" {
+		t.Fatal("README is missing the environment-variable table")
+	}
+	if want == "" {
+		t.Fatalf("%s is missing the environment-variable table", markdownDocsPath)
+	}
+	if got != want {
+		t.Fatalf("environment-variable tables differ; keep README and %s in sync\n\nREADME:\n%s\n%s:\n%s",
+			markdownDocsPath, got, markdownDocsPath, want)
+	}
+	if !strings.Contains(got, "| `XDG_DATA_HOME` |") {
+		t.Fatal("environment-variable tables must document XDG_DATA_HOME; runtime placement coverage pins its behavior")
+	}
+}
+
+// environmentVariableTable returns the rows of the "Environment variables"
+// table, or "" when the document has none.
+func environmentVariableTable(doc string) string {
+	const heading = "## Environment variables"
+	start := strings.Index(doc, heading)
+	if start < 0 {
+		return ""
+	}
+
+	var table strings.Builder
+	inTable := false
+	for _, line := range strings.Split(doc[start:], "\n") {
+		if !strings.HasPrefix(line, "|") {
+			if inTable {
+				break
+			}
+			continue
+		}
+		inTable = true
+		table.WriteString(line)
+		table.WriteByte('\n')
+	}
+	return table.String()
+}
+
 func commandDocByPath(docs []cliCommandDoc, path string) *cliCommandDoc {
 	for i := range docs {
 		if docs[i].Path == path {
