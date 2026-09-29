@@ -318,6 +318,12 @@ var Contracts = finalizeContracts([]Contract{
 		"environment": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"prefix":      {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 	}), MutuallyExclusive: [][]string{{"environment", "prefix"}}, Requires: map[string][]string{"build": {"version"}}, AllowString: true, AllowTrue: true, CanRemove: true},
+	// nix installs into the user's `nix profile` and is never a blind fallback
+	// (DefaultOrder 0): it mutates a profile and enables experimental features
+	// per invocation, so it must be selected explicitly.
+	{Kind: "nix", Capabilities: CapabilitySourceSelection, Fields: fields(pkgField, map[string]Field{
+		"source": {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute | EffectVerify},
+	}), AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "asdf", DefaultOrder: 29, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify}}), AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "container", DefaultOrder: 30, Package: PackageMetadata{PURLType: "oci"}, Capabilities: CapabilityImmutableIdentity | CapabilityMutableTag | CapabilityArchitecture | CapabilitySourceSelection | CapabilityAuth, Fields: map[string]Field{
 		"manager":       {Type: String, Required: true, NonEmpty: true, Enum: []string{"docker", "podman"}, Effects: EffectExecute | EffectVerify},

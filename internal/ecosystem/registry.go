@@ -223,6 +223,7 @@ func RegisterAll(aurHelper string) {
 	exec.Register(NewPacstallAdapter())
 	exec.Register(NewCondaAdapter())
 	exec.Register(NewAsdfAdapter())
+	exec.Register(NewNixAdapter())
 	exec.Register(NewMasAdapter())
 }
 

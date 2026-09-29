@@ -9,7 +9,7 @@ var executionProbeKinds = map[string]bool{
 	"yarn-berry": true, "composer": true, "apm": true, "vscode": true,
 	"vscodium": true, "flatpak": true, "snap": true, "cask": true,
 	"mas": true, "appman": true, "sdkman": true, "steamcmd": true,
-	"pacstall": true, "aur": true, "conda": true, "asdf": true,
+	"pacstall": true, "aur": true, "conda": true, "asdf": true, "nix": true,
 }
 
 // executionProbeExclusions lists owned EffectExecute fields that the generic

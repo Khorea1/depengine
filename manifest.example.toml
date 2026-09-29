@@ -545,6 +545,15 @@ asdf = "nodejs"
 [packages.erlang-asdf]
 asdf = "erlang"
 
+# --- nix: installs into the user's `nix profile` (never a blind fallback;
+# select it explicitly). `pkg` is the flake attribute, `source` the flake
+# reference (default "nixpkgs"). Nix experimental features (nix-command,
+# flakes) are enabled per invocation, not in your nix.conf. ---
+[packages.ripgrep-nix]
+nix = "ripgrep"
+[packages.hello-nix-pinned]
+nix = { pkg = "hello", source = "github:NixOS/nixpkgs/nixos-24.05" }
+
 # --- container: pulls an image via `docker`/`podman pull` — no shim, no
 # command created on PATH. `manager` is required (docker and podman can
 # coexist on the same host, so it can't be auto-detected); `tag` defaults

@@ -107,7 +107,7 @@ func executionCalls(t *testing.T, kind, field string, value any) []run.FakeCall 
 		t.Fatalf("build %s intent: %v", kind, err)
 	}
 	paths := map[string]bool{}
-	for _, binary := range []string{"scoop", "choco", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm", "bun", "gem", "yarn", "composer", "apm", "code", "codium", "flatpak", "snap", "brew", "appman", "mas", "sdk", "steamcmd", "pacstall", "yay", "conda", "asdf"} {
+	for _, binary := range []string{"scoop", "choco", "cargo", "go", "pipx", "uv", "pip", "npm", "pnpm", "bun", "gem", "yarn", "composer", "apm", "code", "codium", "flatpak", "snap", "brew", "appman", "mas", "sdk", "steamcmd", "pacstall", "yay", "conda", "asdf", "nix"} {
 		paths[binary] = true
 	}
 	runner := &run.FakeRunner{LookPaths: paths}
@@ -145,6 +145,8 @@ func executionAdapter(kind string) exec.AdapterV2 {
 		return ecosystem.NewAURAdapter("yay")
 	case "asdf":
 		return ecosystem.NewAsdfAdapter()
+	case "nix":
+		return ecosystem.NewNixAdapter()
 	case "yarn-berry":
 		return ecosystem.NewYarnBerryAdapter()
 	default:

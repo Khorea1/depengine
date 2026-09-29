@@ -91,6 +91,25 @@ func TestSpecializedVerificationFieldProbes(t *testing.T) {
 		}
 	})
 
+	t.Run("nix package and source", func(t *testing.T) {
+		const profile = `{"version":3,"elements":{"demo":{"active":true,"attrPath":"legacyPackages.x86_64-linux.demo-a","originalUrl":"flake:nixpkgs","url":"github:NixOS/nixpkgs/abc"}}}`
+		adapter := ecosystem.NewNixAdapter()
+		for _, tc := range []struct {
+			name         string
+			a, b         map[string]any
+			wantA, wantB plan.ResolvedIdentity
+		}{
+			{"pkg", map[string]any{"pkg": "demo-a"}, map[string]any{"pkg": "demo-b"}, plan.ResolvedIdentity{Package: "demo-a", Source: "nixpkgs"}, plan.ResolvedIdentity{Package: "demo-b", Source: "nixpkgs"}},
+			{"source", map[string]any{"pkg": "demo-a", "source": "nixpkgs"}, map[string]any{"pkg": "demo-a", "source": "github:example/other"}, plan.ResolvedIdentity{Package: "demo-a", Source: "nixpkgs"}, plan.ResolvedIdentity{Package: "demo-a", Source: "github:example/other"}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				runner := &verifyStateRunner{defaultResponse: profile}
+				methods := [2]*config.MethodCandidate{{Kind: "nix", Config: tc.a}, {Kind: "nix", Config: tc.b}}
+				requireProbeStates(t, adapter, runner, [2]plan.ResolvedIdentity{tc.wantA, tc.wantB}, methods)
+			})
+		}
+	})
+
 	t.Run("aur package", func(t *testing.T) {
 		runner := &verifyStateRunner{exitCodes: map[string]int{"paru -Qi demo-b": 1}}
 		methods := [2]*config.MethodCandidate{{Kind: "aur", Config: map[string]any{"pkg": "demo-a"}}, {Kind: "aur", Config: map[string]any{"pkg": "demo-b"}}}

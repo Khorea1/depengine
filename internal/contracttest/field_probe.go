@@ -97,6 +97,7 @@ var baseConfigs = map[string]map[string]any{
 	"container+auth": {"manager": "docker", "source": "registry.example.test/team/demo", "auth_username": "ci-user"},
 	"native":         {"pkg": "demo"},
 	"winget":         {"pkg": "demo"},
+	"nix":            {"pkg": "demo"},
 	"cargo":          {"pkg": "demo"},
 	"cargo+git":      {"pkg": "demo", "git": "https://example.test/demo.git"},
 	"pipx":           {"pkg": "demo"},
