@@ -84,6 +84,16 @@ def test_unknown_key_rejected(model):
     assert has_error(model, "invented")
 
 
+def test_scope_requires_fallback(model):
+    edit(
+        model,
+        "index.yaml",
+        '  fallback: "If no unit or flow matches the task, search the codebase directly before concluding the capability is absent."\n',
+        "",
+    )
+    assert has_error(model, "fallback")
+
+
 def test_extension_key_allowed(model):
     edit(model, "units/placeholder-db.yaml", "type: database", "type: database\nx-owner: team-a")
     assert errors(model) == []

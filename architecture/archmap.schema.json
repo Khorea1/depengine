@@ -189,6 +189,16 @@
           },
           "patternProperties": { "^x-": {} }
         },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["exhaustive", "fallback"],
+          "properties": {
+            "exhaustive": { "type": "boolean", "description": "Whether absence from the architecture model can be treated as evidence that a code capability is absent." },
+            "fallback": { "$ref": "#/$defs/line", "description": "Reader instruction to use when the selective model has no matching unit or flow." }
+          },
+          "description": "Declares whether the index is exhaustive and how readers should recover when it is intentionally selective."
+        },
         "externals": {
           "type": "object",
           "propertyNames": { "$ref": "#/$defs/id" },

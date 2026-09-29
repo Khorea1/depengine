@@ -26,6 +26,11 @@ steps:
     evidence: ["internal/app/install.go:374-393"]
     confidence: confirmed
   - from: reconciliation
+    to: planning
+    action: "Computes dependency execution order and builds/validates static candidate intent before concrete resolution or host mutation."
+    evidence: ["internal/exec/run.go:130-162", "internal/exec/capability.go:51-76", "internal/exec/attempt.go:77-95"]
+    confidence: confirmed
+  - from: reconciliation
     to: adapters
     action: "Resolves candidate identity, observes the host, and executes the chosen method through AdapterV2."
     evidence: ["internal/exec/resolution.go:29-54", "internal/exec/adapter.go:39-54"]

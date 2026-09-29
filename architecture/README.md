@@ -38,7 +38,10 @@ smaller files.
 
 ## Reading protocol
 
-1. Read `index.yaml` only. Its one-line summaries decide what matters.
+1. Read `index.yaml` only. Its one-line summaries decide what matters. Respect
+   `scope`: when `exhaustive: false`, absence from the model is not evidence of
+   absence from the codebase; use the declared fallback before concluding that a
+   capability does not exist.
 2. Open the relevant `units/<id>.yaml`, never all units by default.
 3. For behaviour crossing units, open the matching `flows/<id>.yaml`.
 4. Open `views/<id>.yaml` when deciding which architectural projection to render.
@@ -52,6 +55,8 @@ smaller files.
 - **Ids are persistent.** They are join keys across files and generated views.
 - **Catalogue summaries live only in `index.yaml`.** Detail files do not duplicate
   them. The index is deliberately cheap to read.
+- **Scope is explicit.** A selective model must say so in the index and tell readers
+  how to fall back to code search when no unit or flow matches the task.
 - **References are dotted:** `unit` or `unit.component`. Within a unit file,
   `.component` is shorthand for that unit's own component. Flows/views use full
   references only.
@@ -155,7 +160,7 @@ an orphan notes branch everybody else's problem.
 ## Current Depengine pilot
 
 The checked-in model is intentionally small and project-specific. It currently
-models six subsystem units, three high-value flows, and five views:
+models six subsystem units, four high-value flows, and five views:
 
 ```
 units/
@@ -170,6 +175,7 @@ flows/
   install.yaml
   status.yaml
   update.yaml
+  desired-state-observation.yaml
 
 views/
   system-context.yaml

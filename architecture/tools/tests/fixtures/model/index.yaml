@@ -15,6 +15,10 @@ project:
   source:
     branch: "TODO"
 
+scope:
+  exhaustive: false
+  fallback: "If no unit or flow matches the task, search the codebase directly before concluding the capability is absent."
+
 # Actors and third-party systems outside this codebase. Same id namespace as units.
 externals:
   placeholder-user:
