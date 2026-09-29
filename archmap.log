@@ -1,1 +1,1 @@
-2026-09-29T16:35:00-03:00 [missing] .dev/architecture/index.yaml — map says to read .dev/architecture/ from the worktree, but the directory only exists in the primary checkout (dev-notes branch); worktrees created by `wt switch` lack it, forcing a read across checkouts.
+2026-09-29T16:35:00-03:00 [resolved] Worktree lookup for architecture — INDEX.md and architecture/README.md now document resolving the dev-notes checkout via git worktree metadata, with git show/archive fallbacks when no checkout exists.

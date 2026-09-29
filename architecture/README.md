@@ -35,6 +35,23 @@ adapters or persistence. If the project later contains actual services/processes
 those may also be units. Do not lie about deployment topology merely to obtain
 smaller files.
 
+## Using archmap from code worktrees
+
+The `dev-notes` branch is commonly checked out as the primary repository's
+nested `.dev/` worktree. Sibling code worktrees created by helpers such as
+`wt switch` therefore should **not** assume that `.dev/architecture/` exists
+under their own root.
+
+Resolve the actual `dev-notes` checkout with `git worktree list --porcelain`
+as documented in `../INDEX.md`, then use
+`<dev-notes-root>/architecture/index.yaml`. If `dev-notes` is not checked out,
+`git show dev-notes:architecture/index.yaml` is sufficient for selective reads;
+`git archive dev-notes architecture` can materialize a temporary tree when the
+validator or renderer needs normal files.
+
+This is deliberately a lookup rule, not a synchronization scheme. Do not copy
+the model into every code worktree and manufacture another stale cache.
+
 ## Reading protocol
 
 1. Read `index.yaml` only. Its one-line summaries decide what matters. Respect

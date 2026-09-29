@@ -8,6 +8,45 @@ prompt, or from `AGENTS.md` when the reference is durable and broadly useful.
 By default, `.dev/` is not merged or committed to `main`, unless the repository
 defines a different policy. It often lives on its own orphaned branch/worktree.
 
+## Access from another worktree
+
+Do not assume the current code worktree contains a nested `.dev/` checkout. All
+worktrees share the repository's refs, so first resolve the checkout that owns
+`dev-notes`:
+
+```sh
+dev_notes_root="$(
+  git worktree list --porcelain |
+  awk '
+    $1 == "worktree" { sub(/^worktree /, ""); wt = $0 }
+    $1 == "branch" && $2 == "refs/heads/dev-notes" { print wt; exit }
+  '
+)"
+```
+
+When that prints a path, read working context through
+`"$dev_notes_root"` (for example
+`"$dev_notes_root/architecture/index.yaml"`). This keeps `wt switch` and other
+sibling worktrees independent without making agents reach into some guessed
+primary-checkout path.
+
+If the branch exists but is not checked out as a worktree, single files remain
+available through Git itself:
+
+```sh
+git show dev-notes:INDEX.md
+git show dev-notes:architecture/index.yaml
+```
+
+For tools that need the whole architecture directory, materialize a disposable
+snapshot instead of copying it into the code worktree:
+
+```sh
+tmp="$(mktemp -d)"
+git archive dev-notes architecture | tar -x -C "$tmp"
+python "$tmp/architecture/tools/validate.py" --root "$tmp/architecture" --repo .
+```
+
 ## File map
 
 | File | Purpose |
