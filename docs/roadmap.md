@@ -64,43 +64,29 @@ Work on the current execution model comes before adding more installer types.
   materialized `*:auto` checksums and every pin outside `--profile`, breaking
   the next frozen install). Remaining
   selector coverage stays open in the item below and in ADR-001 open work.
-- [~] Cover the mutable selectors lock v1 still ignores: ecosystem/native
-  resolutions and channels — either by pinning them in `depengine.lock` or by
-  wiring the universal lock projection end-to-end. Direct Git and `cargo --git`
-  branch/tag selectors are covered: lock v1 persists both the requested selector
-  and its concrete commit (annotated tags use the peeled commit), frozen installs
-  reject selector drift, and execution reuses the locked commit without another
-  remote lookup. Container tags are covered too: lock v1 resolves the requested
-  tag (including implicit `latest`) through the OCI Distribution API, stores the
-  immutable manifest digest, rejects tag drift in frozen mode, and makes
-  observation/pull/remove use that digest without replacing schema intent.
-  Plain unversioned npm, pnpm, and Yarn Classic packages now pin the
-  registry's `latest` dist-tag to a concrete package version in lock v1; frozen installs reject
-  package, registry, or version-request drift and replay the pinned version
-  without a second registry lookup. Their dependency graphs remain outside
-  this pin.
-  See
+- [x] Close mutable-selector locking with the universal v2 projection.
+  `depengine update` now persists the immutable projection of the selected
+  `ResolvedInstallPlan`; install and upgrade materialize and verify that pinned
+  plan before observation or mutation. Generation is all-or-nothing: managers
+  that do not expose a concrete version, revision, digest, checksummed artifact,
+  or required source revision return `LockUnavailable` and no partial v2 lock is
+  written. Legacy v1 remains readable and is migrated by a successful update.
+  Exact package pins still do not lock transitive dependency graphs. See
   [`design/adr-001-universal-lock-projection.md`](design/adr-001-universal-lock-projection.md)
   and [`support-boundary.md`](support-boundary.md).
-- [~] Finish typed package-source selection, trust, ownership, verification,
-  and locking. Git-backed Brew/Scoop sources with explicit URLs verify the
-  existing host origin instead of accepting a same-name source blindly;
-  presence probes match source names exactly, and transactional recovery
-  retains the credential-free URL and expected Brew/Scoop source revision. A
-  declared revision must be a full lowercase Git object ID and is checked
-  read-only against the local repository HEAD before use; newly added mismatches
-  are rolled back. Homebrew may still auto-update the tap during package
-  installation. Legacy lock v1 source hashes include declared revisions and
-  frozen installs reject declaration drift; this is not a general immutable
-  source lock. Signing/trust identity remains open.
-- [~] Finish recovery for package-source and prerequisite preparation. Lazy
-  `method.requires` installs cross the candidate WAL commit boundary even
-  without package sources, and recovery reconciles their installed identity.
-  Prerequisite commit finalization now atomically persists the helper's
-  `ToolState` plus a zero-ref depengine ownership record, including recovered
-  commits, so a crash before the owner claim cannot later reclassify a helper
-  created by depengine as external. The dependent refcount claim is still a
-  separate owner transaction; see ADR-002.
+- [x] Finish the supported typed package-source boundary. Git-backed Brew/Scoop
+  sources with explicit URLs verify exact names and origins, capture a
+  credential-free local HEAD revision, persist it in lock v2, and replay that
+  revision during frozen source preparation. Declared revisions remain strict
+  full lowercase Git object IDs; ownership remains machine-local transactional
+  state rather than reproducibility data. Signing-key trust is not inferred or
+  claimed: adapters without an operational trust identity leave it absent and
+  cannot gain a false lock guarantee from serialized metadata.
+- [x] Finish recovery for package-source and prerequisite preparation. Owner
+  candidate WAL finalization now atomically saves `ToolState`, claims dependent
+  prerequisite/source resources, and removes the journal. Recovered commits use
+  the same idempotent transaction; ambiguous host outcomes remain fail-closed.
+  See ADR-002.
 - [x] Keep hooks tied to the candidate/transition that actually runs; status
   must not depend on a one-time hook having succeeded earlier. Tool-level and
   candidate-local hooks are projected into the selected `ResolvedInstallPlan`,
