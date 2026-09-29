@@ -679,6 +679,7 @@ are described above or alongside their examples.
 | `choco` | Windows, via Chocolatey; exact `version`, `prerelease`, typed `source`, and `architecture` | `firefox = { choco = { pkg = "firefox", version = "128.0.0", source = "https://community.chocolatey.org/api/v2/" } }` |
 | `conda` | Conda packages; deterministic `environment`/`prefix`, exact `version`/`build`, ordered `channels` | `numpy = { conda = { pkg = "numpy", environment = "data", version = "2.1.0", channels = ["conda-forge"] } }` |
 | `asdf` | asdf version manager plugins | `nodejs = { asdf = "nodejs" }` |
+| `nix` | Nix user-profile packages via `nix profile`; `pkg` is the flake attribute, optional `source` flake reference (default `nixpkgs`) | `ripgrep = { nix = { pkg = "ripgrep", source = "nixpkgs" } }` |
 | `git` | Clone + build (see field table above) | `ctpv = { git = { url = "...", build = "make install" } }` |
 | `local` | Install a project-vendored raw file or stdlib-supported archive without network access | `mytool = { local = { local_path = "vendor/mytool", checksum = "sha256:..." } }` |
 | `github` | Recommended for GitHub Releases; matches an asset *pattern* against the real asset list (see above) | `yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }` |

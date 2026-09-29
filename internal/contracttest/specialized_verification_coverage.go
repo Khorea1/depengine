@@ -10,6 +10,8 @@ func init() {
 		"pacstall.pkg":   {Consumer: "PacstallAdapter.Observe", Rationale: "The Pacstall inspection command selects the configured package name."},
 		"yarn-berry.pkg": {Consumer: "YarnBerryAdapter.Observe", Rationale: "Local module resolution is queried for the configured package name."},
 		"snap.pkg":       {Consumer: "BaseAdapter.Observe", Rationale: "Snap list verification selects the configured package name."},
+		"nix.pkg":        {Consumer: "NixAdapter.Observe", Rationale: "The profile element must carry the configured flake attribute path."},
+		"nix.source":     {Consumer: "NixAdapter.Observe", Rationale: "The profile element must originate from the configured flake reference."},
 		"go.pkg":         {Consumer: "GoAdapter.Observe", Rationale: "The configured import path determines the installed binary checked by Go verification."},
 		"go.version":     {Consumer: "GoAdapter.Observe + GoAdapter.Check", Rationale: "Go verification requires the discovered binary version to match the requested version."},
 	})
