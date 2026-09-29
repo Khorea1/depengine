@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestBrewTapRevisionSchemaContract(t *testing.T) {
+func TestGitBackedSourceRevisionSchemaContract(t *testing.T) {
 	const validRevision = "0123456789abcdef0123456789abcdef01234567"
 	tests := []struct {
 		name    string
@@ -17,7 +17,8 @@ func TestBrewTapRevisionSchemaContract(t *testing.T) {
 	}{
 		{name: "valid Brew revision retained", source: `kind = "brew-tap", name = "corp/tools", url = "https://example.test/tools.git", revision = "` + validRevision + `"`, wantRev: validRevision},
 		{name: "revision requires explicit URL", source: `kind = "brew-tap", name = "corp/tools", revision = "` + validRevision + `"`, wantErr: "required when revision is set"},
-		{name: "Scoop revision unsupported", source: `kind = "scoop-bucket", name = "corp/tools", url = "https://example.test/tools.git", revision = "` + validRevision + `"`, wantErr: "supported only for brew-tap sources"},
+		{name: "valid Scoop revision retained", source: `kind = "scoop-bucket", name = "corp-tools", url = "https://example.test/tools.git", revision = "` + validRevision + `"`, wantRev: validRevision},
+		{name: "non-Git-backed source rejected", source: `kind = "apt-ppa", name = "corp/tools", revision = "` + validRevision + `"`, wantErr: "supported only for brew-tap and scoop-bucket sources"},
 		{name: "short revision rejected", source: `kind = "brew-tap", name = "corp/tools", url = "https://example.test/tools.git", revision = "abcdef"`, wantErr: "full lowercase 40- or 64-character hexadecimal commit ID"},
 		{name: "uppercase revision rejected", source: `kind = "brew-tap", name = "corp/tools", url = "https://example.test/tools.git", revision = "0123456789ABCDEF0123456789ABCDEF01234567"`, wantErr: "full lowercase 40- or 64-character hexadecimal commit ID"},
 	}
