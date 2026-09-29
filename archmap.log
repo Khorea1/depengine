@@ -1,1 +1,1 @@
-2026-09-29T16:35:00-03:00 [resolved] Worktree lookup for architecture — INDEX.md and architecture/README.md now document resolving the dev-notes checkout via git worktree metadata, with git show/archive fallbacks when no checkout exists.
+2026-09-29T16:35:00-03:00 [resolved] Architecture lookup from sibling worktrees is documented; dev-notes remains the nested .dev/ worktree of the primary checkout.
