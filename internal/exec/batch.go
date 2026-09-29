@@ -175,6 +175,13 @@ func validBatchPkgName(name string) bool {
 }
 
 func (ex *Executor) batchNativeInstall(ctx context.Context, candidates []batchCandidate) bool {
+	// A one-package "batch" is the same mutation the serial fallback would
+	// perform. Avoid executing it twice when the package manager times out or
+	// otherwise fails.
+	if len(candidates) < 2 {
+		return false
+	}
+
 	pkgs := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
 		if candidate.resolvedPlan == nil || candidate.resolvedPlan.Identity.Package == "" || !validBatchPkgName(candidate.resolvedPlan.Identity.Package) {

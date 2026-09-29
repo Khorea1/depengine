@@ -247,7 +247,17 @@ func (ex *Executor) filterDangerousTools(rc *runContext, executionLevel []string
 func (ex *Executor) runBatchPhase(rc *runContext, survivorLevel []string) ([]string, map[string]*candidateResolutionSeed) {
 	candidates, remaining, resolutions := ex.identifyBatchCandidates(rc.ctx, survivorLevel, rc.schema, rc.report)
 
-	if len(candidates) > 0 && ex.clan != "" {
+	// Batch is only an optimization when at least two candidates can share a
+	// package-manager invocation. A singleton goes straight to the serial path
+	// while retaining the plan resolved during batch preflight.
+	if len(candidates) == 1 && ex.clan != "" {
+		candidate := candidates[0]
+		remaining = append(remaining, candidate.toolName)
+		resolutions[candidate.toolName] = &candidateResolutionSeed{method: candidate.method, resolved: candidate.resolvedPlan}
+		return remaining, resolutions
+	}
+
+	if len(candidates) > 1 && ex.clan != "" {
 		switch {
 		case ex.dryRun:
 			ex.reportBatchDryRun(rc, candidates)

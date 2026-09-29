@@ -310,6 +310,30 @@ func TestBatchDoesNotBypassCandidateCapabilityBoundary(t *testing.T) {
 	}
 }
 
+func TestBatchNativeInstallSkipsSingleton(t *testing.T) {
+	runner := &run.FakeRunner{}
+	ex := New()
+	WithRunner(runner)(ex)
+	ex.clan = "arch"
+	ex.nativeManagerName = "pacman"
+
+	resolved := plan.New("demo", "native", true)
+	resolved.Identity.Package = "demo"
+	candidate := batchCandidate{
+		toolName:     "demo",
+		tool:         &config.Tool{Name: "demo"},
+		method:       &config.MethodCandidate{Kind: "native"},
+		resolvedPlan: &resolved,
+	}
+
+	if ex.batchNativeInstall(context.Background(), []batchCandidate{candidate}) {
+		t.Fatal("batchNativeInstall() accepted a singleton candidate")
+	}
+	if len(runner.Calls) != 0 {
+		t.Fatalf("runner calls = %d, want 0 for singleton batch", len(runner.Calls))
+	}
+}
+
 func TestVerifiedBatchInstallPersistsCommitWhenPostInstallFails(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	checks := 0
@@ -317,12 +341,12 @@ func TestVerifiedBatchInstallPersistsCommitWhenPostInstallFails(t *testing.T) {
 		kindValue: "native",
 		checkFunc: func(string) bool {
 			checks++
-			return checks > 1
+			return checks > 2
 		},
 	}
 	runner := &sequenceRunner{results: []run.Result{
 		{},            // batch install succeeds
-		{ExitCode: 1}, // post-install hook fails
+		{ExitCode: 1}, // demo post-install hook fails
 	}}
 	schema := &config.Schema{
 		Defaults: config.Defaults{MethodOrder: []string{"native"}},
@@ -332,6 +356,12 @@ func TestVerifiedBatchInstallPersistsCommitWhenPostInstallFails(t *testing.T) {
 				PostInstall: []config.Hook{{Run: []string{"post-hook"}}},
 				Methods: []*config.MethodCandidate{{
 					Kind: "native", Config: map[string]any{"pkg": "demo"},
+				}},
+			},
+			"helper": {
+				Name: "helper",
+				Methods: []*config.MethodCandidate{{
+					Kind: "native", Config: map[string]any{"pkg": "helper"},
 				}},
 			},
 		},
@@ -346,18 +376,27 @@ func TestVerifiedBatchInstallPersistsCommitWhenPostInstallFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if checks != 2 {
-		t.Fatalf("native checks = %d, want pre-batch and verification probes", checks)
+	if checks != 4 {
+		t.Fatalf("native checks = %d, want two pre-batch and two verification probes", checks)
 	}
-	if len(report.Tools) != 1 {
-		t.Fatalf("report = %+v, want one result", report.Tools)
+	if len(report.Tools) != 2 {
+		t.Fatalf("report = %+v, want two results", report.Tools)
 	}
-	result := report.Tools[0]
+	var result *ToolResult
+	for i := range report.Tools {
+		if report.Tools[i].Tool == "demo" {
+			result = &report.Tools[i]
+			break
+		}
+	}
+	if result == nil {
+		t.Fatalf("report = %+v, missing demo result", report.Tools)
+	}
 	if result.Status != StatusFailed || !result.InstallCommitted {
-		t.Fatalf("result = %+v, want failed post-install with committed install", result)
+		t.Fatalf("result = %+v, want failed post-install with committed install", *result)
 	}
 	if result.Method != "native" || result.MethodKind != "native" || result.PlanIntent == nil {
-		t.Fatalf("batch result lost method/plan metadata: %+v", result)
+		t.Fatalf("batch result lost method/plan metadata: %+v", *result)
 	}
 	if !strings.Contains(result.Error, "post-install") {
 		t.Fatalf("result error = %q, want post-install failure", result.Error)
