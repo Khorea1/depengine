@@ -99,3 +99,21 @@ func ResolveLatestNPMVersion(ctx context.Context, rn run.Runner, pkg, registry s
 	}
 	return version, nil
 }
+
+// ResolveLatestPNPMVersion reads the npm registry latest dist-tag through pnpm
+// without modifying the host. The returned version is safe to append to a
+// package name as an exact pnpm install target.
+func ResolveLatestPNPMVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
+	if !IsNPMRegistryPackage(pkg) {
+		return "", fmt.Errorf("pnpm: %q is not a plain registry package name", pkg)
+	}
+	result := rn.Run(ctx, "pnpm", "view", pkg, "dist-tags.latest", "--json")
+	if err := run.CheckResult(result, "pnpm: resolve latest version"); err != nil {
+		return "", err
+	}
+	var version string
+	if err := json.Unmarshal(result.Stdout, &version); err != nil || !ValidNPMVersion(version) {
+		return "", fmt.Errorf("pnpm: latest dist-tag for %q did not resolve to a concrete version", pkg)
+	}
+	return version, nil
+}

@@ -242,7 +242,7 @@ func resolveInstallLock(ctx context.Context, p installPlan, s *config.Schema, lg
 		return nil, err
 	}
 	if !p.frozen {
-		if err := validateInstallNPMLockIdentity(s, lk); err != nil {
+		if err := validateInstallPackageLockIdentity(s, lk); err != nil {
 			lg.Error("lockfile identity changed; refusing unpinned install", "error", err)
 			return nil, exitWithCode(2)
 		}

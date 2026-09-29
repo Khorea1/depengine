@@ -150,7 +150,7 @@ unreadable, or written for an unsupported lock version; when a tool's method
 identity is missing from the lock or method kind/label ordering is detectably
 stale; or when a required release/checksum/immutable-selector pin is absent.
 This includes resolved `*:auto` checksums, Git/Cargo branch or tag commits,
-container-tag OCI digests, and concrete versions of plain unversioned npm
+container-tag OCI digests, and concrete versions of plain unversioned npm and pnpm
 packages; frozen mode will not perform checksum TOFU or remote
 selector resolution to fill a missing pin.
 
