@@ -2,7 +2,7 @@
 
 - Status: research / design proposal
 - Scope: `depengine graph` representation, analysis, and terminal rendering
-- Implementation status: typed IR, effective/resolved CLI projections, inactive-edge diagnostics, and the terminal layered renderer are implemented; see `typed-dependency-graph-implementation-status.md`
+- Implementation status: typed IR, effective/resolved CLI projections, inactive-edge diagnostics, the terminal layered renderer, and `--direction`/`--depth` slicing are implemented; see `typed-dependency-graph-implementation-status.md`
 - Naming used in this document: **DPG** = **DePenGine Graph** (project shorthand, not "Program Dependence Graph")
 
 ## Motivation
@@ -754,7 +754,8 @@ FUNCTION SubgraphAround(graph, target, direction, depth):
     stop at requested depth if bounded
 ```
 
-Potential future flags:
+Flags (implemented; `--direction` defaults to `deps`, `--depth` to unbounded,
+and both require `--only`):
 
 ```text
 --direction deps
@@ -776,9 +777,17 @@ Examples:
 `--depth 0` naturally represents "only this node" without redefining
 `--only`.
 
-When non-dependency directions are implemented, graph slicing should occur
-against the complete typed IR rather than pre-filtering the schema, because
-dependent traversal requires successor information from the full graph.
+Slicing occurs against the complete typed IR rather than a pre-filtered
+schema, because dependent traversal requires successor information from the
+full graph. The default (`deps`, unbounded) keeps the historical schema-level
+closure. `both` is the union of the dependency and dependent traversals, not an
+undirected walk, so siblings that merely share a dependency with the root are
+not pulled in. The result is the induced subgraph: every semantic edge between
+two retained nodes is kept, including multiedges and edges between two nodes at
+the depth boundary. Slicing walks declared relations, so it runs before
+projection; a node reachable only through an edge that a later `effective` or
+`resolved` projection drops remains in the output without that edge. `--skip`
+and `--profile` gate only the root, as they do for the dependency closure.
 
 ## Evaluation of `hmdsefi/gograph`
 
@@ -921,6 +930,8 @@ Implemented:
 8. Added `--format graph` with weak-component grouping and
    isolated-node compaction.
 9. Added simple ranked layout and orthogonal routing.
+10. Added `--direction deps|dependents|both` and `--depth N` slicing over the
+    complete typed IR (`Graph.Slice`).
 
 Pending: improve crossing reduction and edge bundling after testing real
 schemas.
