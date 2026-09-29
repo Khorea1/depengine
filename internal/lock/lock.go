@@ -18,7 +18,7 @@
 //   - mutable direct-Git and cargo --git branch/tag selectors, resolved to a
 //     concrete commit;
 //   - mutable container tags, resolved to immutable registry digests;
-//   - unversioned npm packages, resolved to the registry's latest concrete
+//   - unversioned npm or pnpm packages, resolved to the registry's latest concrete
 //     package version; and
 //   - candidate-scoped host package-source declarations (kind/name/url and any
 //     declared Brew tap revision) as identity hashes. Source contents remain
@@ -98,7 +98,7 @@ type ToolPin struct {
 	Selector        string `toml:"selector,omitempty"` // requested Git selector, e.g. "branch:main" or "tag:v1.2.3"
 	ContainerTag    string `toml:"container_tag,omitempty"`
 	ContainerDigest string `toml:"container_digest,omitempty"`
-	PackageVersion  string `toml:"package_version,omitempty"`  // concrete npm package version
+	PackageVersion  string `toml:"package_version,omitempty"`  // concrete npm-registry package version
 	PackageSelector string `toml:"package_selector,omitempty"` // hash of requested package and registry
 }
 
@@ -364,7 +364,7 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 				l.clearContainerDigest[key] = struct{}{}
 			}
 
-			if selector, mutable := npmMutableSelector(name, method); mutable {
+			if selector, mutable := packageMutableSelector(name, method); mutable {
 				pin.PackageSelector = selector
 				if method.LockedVersion != "" {
 					pin.PackageVersion = method.LockedVersion
@@ -374,13 +374,19 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 						pkg = name
 					}
 					registry, _ := method.Config["registry"].(string)
-					version, err := ecosystem.ResolveLatestNPMVersion(ctx, rn, pkg, registry)
+					var version string
+					var err error
+					if method.Kind == "pnpm" {
+						version, err = ecosystem.ResolveLatestPNPMVersion(ctx, rn, pkg)
+					} else {
+						version, err = ecosystem.ResolveLatestNPMVersion(ctx, rn, pkg, registry)
+					}
 					if err != nil {
-						return nil, fmt.Errorf("lock: resolve %s/npm latest: %w", name, err)
+						return nil, fmt.Errorf("lock: resolve %s/%s latest: %w", name, method.Kind, err)
 					}
 					pin.PackageVersion = version
 				}
-			} else if method.Kind == "npm" {
+			} else if method.Kind == "npm" || method.Kind == "pnpm" {
 				l.clearPackageVersion[key] = struct{}{}
 			}
 
@@ -576,18 +582,18 @@ func ValidateFrozen(s *config.Schema, l *Lock) error {
 					return fmt.Errorf("lock: frozen lock needs update: container tag changed for %q", key)
 				}
 			}
-			if selector, mutable := npmMutableSelector(name, method); mutable {
+			if selector, mutable := packageMutableSelector(name, method); mutable {
 				if pin.PackageVersion == "" || pin.PackageSelector == "" {
-					return fmt.Errorf("lock: frozen lock needs update: missing resolved npm package version for %q", key)
+					return fmt.Errorf("lock: frozen lock needs update: missing resolved package version for %q", key)
 				}
 				if err := validatePackagePin(pin); err != nil {
-					return fmt.Errorf("lock: frozen lock needs update: invalid npm package pin for %q: %w", key, err)
+					return fmt.Errorf("lock: frozen lock needs update: invalid package pin for %q: %w", key, err)
 				}
 				if pin.PackageSelector != selector {
-					return fmt.Errorf("lock: frozen lock needs update: npm package or registry changed for %q", key)
+					return fmt.Errorf("lock: frozen lock needs update: package or registry changed for %q", key)
 				}
-			} else if method.Kind == "npm" && (pin.PackageVersion != "" || pin.PackageSelector != "") {
-				return fmt.Errorf("lock: frozen lock needs update: npm version request changed for %q", key)
+			} else if (method.Kind == "npm" || method.Kind == "pnpm") && (pin.PackageVersion != "" || pin.PackageSelector != "") {
+				return fmt.Errorf("lock: frozen lock needs update: package version request changed for %q", key)
 			}
 		}
 	}
@@ -675,11 +681,11 @@ func Apply(s *config.Schema, l *Lock) {
 				}
 			}
 
-			if selector, mutable := npmMutableSelector(name, method); mutable && pin.PackageVersion != "" && pin.PackageSelector != "" {
+			if selector, mutable := packageMutableSelector(name, method); mutable && pin.PackageVersion != "" && pin.PackageSelector != "" {
 				if err := validatePackagePin(pin); err == nil && pin.PackageSelector == selector {
 					method.LockedVersion = pin.PackageVersion
 				} else if pin.PackageSelector != selector {
-					log.Default.Warn("npm package or registry changed since lock was created",
+					log.Default.Warn("package or registry changed since lock was created",
 						"tool", name, "method", method.Kind,
 						"action", "run 'depengine update' to refresh the package version pin")
 				}
@@ -730,8 +736,8 @@ func containerMutableTag(method *config.MethodCandidate) (string, bool) {
 	return tag, true
 }
 
-func npmMutableSelector(toolName string, method *config.MethodCandidate) (string, bool) {
-	if method == nil || method.Kind != "npm" {
+func packageMutableSelector(toolName string, method *config.MethodCandidate) (string, bool) {
+	if method == nil || (method.Kind != "npm" && method.Kind != "pnpm") {
 		return "", false
 	}
 	if version, _ := method.Config["version"].(string); version != "" {
@@ -749,10 +755,10 @@ func npmMutableSelector(toolName string, method *config.MethodCandidate) (string
 	return hex.EncodeToString(hash[:]), true
 }
 
-// MatchesPackagePin checks the requested npm package and registry against a
+// MatchesPackagePin checks the requested npm-registry package and registry against a
 // persisted pin before callers use that pin for status or upgrade decisions.
 func MatchesPackagePin(toolName string, method *config.MethodCandidate, pin ToolPin) bool {
-	selector, ok := npmMutableSelector(toolName, method)
+	selector, ok := packageMutableSelector(toolName, method)
 	return ok && pin.PackageVersion != "" && pin.PackageSelector == selector
 }
 
@@ -856,13 +862,13 @@ func validatePackagePin(pin ToolPin) error {
 		return nil
 	}
 	if !ecosystem.ValidNPMVersion(pin.PackageVersion) {
-		return fmt.Errorf("npm package version must be concrete")
+		return fmt.Errorf("package version must be concrete")
 	}
 	if len(pin.PackageSelector) != 64 {
-		return fmt.Errorf("npm package selector must be a SHA-256 hash")
+		return fmt.Errorf("package selector must be a SHA-256 hash")
 	}
 	if _, err := hex.DecodeString(pin.PackageSelector); err != nil {
-		return fmt.Errorf("npm package selector must be hexadecimal")
+		return fmt.Errorf("package selector must be hexadecimal")
 	}
 	return nil
 }

@@ -79,17 +79,58 @@ func TestNPMLatestLockReplaysConcretePackageVersion(t *testing.T) {
 		t.Fatalf("install = %#v", last)
 	}
 	method.Config["registry"] = "https://other.example.test"
-	if err := ValidateFrozen(schema, locked); err == nil || !strings.Contains(err.Error(), "npm package or registry changed") {
+	if err := ValidateFrozen(schema, locked); err == nil || !strings.Contains(err.Error(), "package or registry changed") {
 		t.Fatalf("registry drift error = %v", err)
 	}
 	method.Config["registry"] = "https://registry.example.test"
 	method.Config["pkg"] = "@example/other"
-	if err := ValidateFrozen(schema, locked); err == nil || !strings.Contains(err.Error(), "npm package or registry changed") {
+	if err := ValidateFrozen(schema, locked); err == nil || !strings.Contains(err.Error(), "package or registry changed") {
 		t.Fatalf("package drift error = %v", err)
 	}
 	method.Config["pkg"] = "@example/tool"
 	method.Config["version"] = "1.2.3"
-	if err := ValidateFrozen(schema, locked); err == nil || !strings.Contains(err.Error(), "npm version request changed") {
+	if err := ValidateFrozen(schema, locked); err == nil || !strings.Contains(err.Error(), "package version request changed") {
+		t.Fatalf("version intent drift error = %v", err)
+	}
+}
+func TestPNPMLatestLockReplaysConcretePackageVersion(t *testing.T) {
+	method := &config.MethodCandidate{Kind: "pnpm", Config: map[string]any{"pkg": "@example/tool"}}
+	tool := &config.Tool{Name: "tool", Methods: []*config.MethodCandidate{method}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": tool}}
+	resolver := &run.FakeRunner{Stdout: `"2.3.4"`}
+	locked, err := ResolveAll(context.Background(), schema, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolver.Calls) != 1 || resolver.Calls[0].Name != "pnpm" || strings.Join(resolver.Calls[0].Args, " ") != "view @example/tool dist-tags.latest --json" {
+		t.Fatalf("resolution calls = %#v", resolver.Calls)
+	}
+	if err := ValidateFrozen(schema, locked); err != nil {
+		t.Fatalf("frozen validation: %v", err)
+	}
+	Apply(schema, locked)
+	intent, err := planner.BuildCandidateIntent(tool, method)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := ecosystem.NewBaseAdapter(ecosystem.Configs["pnpm"])
+	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{Err: os.ErrPermission}, tool, method, &intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Identity.Version != "2.3.4" {
+		t.Fatalf("resolved version = %q", resolved.Identity.Version)
+	}
+	runner := &run.FakeRunner{LookPaths: map[string]bool{"pnpm": true}}
+	if err := adapter.InstallResolved(context.Background(), runner, tool, method, resolved); err != nil {
+		t.Fatal(err)
+	}
+	last := runner.Calls[len(runner.Calls)-1]
+	if last.Name != "pnpm" || strings.Join(last.Args, " ") != "add -g @example/tool@2.3.4" {
+		t.Fatalf("install = %#v", last)
+	}
+	method.Config["version"] = "2.3.4"
+	if err := ValidateFrozen(schema, locked); err == nil || !strings.Contains(err.Error(), "package version request changed") {
 		t.Fatalf("version intent drift error = %v", err)
 	}
 }
@@ -1599,7 +1640,6 @@ func TestResolveAllContainerTagPassesEnvCredentialWithoutPersistingSecret(t *tes
 		t.Fatal("lock serialization leaked registry secret")
 	}
 }
-
 
 func TestValidateFrozenRejectsBrewTapRevisionDrift(t *testing.T) {
 	const revision = "0123456789abcdef0123456789abcdef01234567"

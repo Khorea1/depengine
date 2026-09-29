@@ -37,17 +37,17 @@ func TestValidateInstallNPMLockIdentityRejectsDriftBeforeResolution(t *testing.T
 	schema := &config.Schema{Tools: map[string]*config.Tool{
 		"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}},
 	}}
-	if err := validateInstallNPMLockIdentity(schema, lk); err == nil || !strings.Contains(err.Error(), "npm package, registry, or version request changed") {
-		t.Fatalf("validateInstallNPMLockIdentity() error = %v, want stale identity rejection", err)
+	if err := validateInstallPackageLockIdentity(schema, lk); err == nil || !strings.Contains(err.Error(), "package, registry, or version request changed") {
+		t.Fatalf("validateInstallPackageLockIdentity() error = %v, want stale identity rejection", err)
 	}
 
 	method.Config["pkg"] = "old-package"
-	if err := validateInstallNPMLockIdentity(schema, lk); err != nil {
+	if err := validateInstallPackageLockIdentity(schema, lk); err != nil {
 		t.Fatalf("matching identity rejected: %v", err)
 	}
 
 	method.Config["version"] = "1.2.3"
-	if err := validateInstallNPMLockIdentity(schema, lk); err == nil {
+	if err := validateInstallPackageLockIdentity(schema, lk); err == nil {
 		t.Fatal("explicit version request accepted against stale unversioned npm pin")
 	}
 }
@@ -60,7 +60,7 @@ func TestMergeInstallLockRejectsNPMSelectorDrift(t *testing.T) {
 		"tool/npm/0": {PackageSelector: strings.Repeat("b", 64), PackageVersion: "2.0.0"},
 	}}
 	merged, err := mergeInstallLock(old, fresh)
-	if err == nil || !strings.Contains(err.Error(), "npm package or registry changed") {
+	if err == nil || !strings.Contains(err.Error(), "package or registry changed") {
 		t.Fatalf("mergeInstallLock() error = %v, want npm selector drift rejection", err)
 	}
 	if merged != nil {

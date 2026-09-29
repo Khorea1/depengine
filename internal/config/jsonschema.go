@@ -211,7 +211,7 @@ func methodObjectJSONSchema(contract *methodkind.Contract, variantKind string) m
 			// The capability only says a concrete identity mechanism exists.
 			// depengine.lock pins far less than that; never imply otherwise in
 			// editor-facing text (see docs/support-boundary.md).
-			description += " immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages."
+			description += " immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm and pnpm packages."
 		}
 		schema["description"] = description
 	}

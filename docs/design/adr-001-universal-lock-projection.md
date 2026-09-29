@@ -40,8 +40,8 @@ The lockfile is the immutable-resolution projection of `ResolvedInstallPlan`:
   versions, artifact URLs, version-manager pins, and Snap/Flatpak channels).
   Legacy lock v1 now persists concrete Git SHAs for direct Git and Cargo Git
   branch/tag selectors, OCI manifest digests for container tags, and concrete
-  package versions for plain unversioned npm requests. npm transitive dependencies
-  remain unpinned; universal projection migration remains open.
+  package versions for plain unversioned npm and pnpm requests. Their transitive
+  dependencies remain unpinned; universal projection migration remains open.
 - `depengine update` meaningful pins for every mutable method class.
 - Install/upgrade wiring consuming the pinned plan and verifier.
 - `update` CLI migration to the pure projection path.

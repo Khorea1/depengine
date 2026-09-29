@@ -293,10 +293,10 @@ func saveLockfile(ctx context.Context, s *config.Schema, lockPath string, oldLoc
 	}
 }
 
-// validateInstallNPMLockIdentity rejects stale npm identity before any remote
+// validateInstallPackageLockIdentity rejects stale mutable package identity before any remote
 // resolution. This closes the failure path where resolving the new selector
 // itself fails and install might otherwise continue without a concrete pin.
-func validateInstallNPMLockIdentity(s *config.Schema, l *lock.Lock) error {
+func validateInstallPackageLockIdentity(s *config.Schema, l *lock.Lock) error {
 	if s == nil || l == nil {
 		return nil
 	}
@@ -311,7 +311,7 @@ func validateInstallNPMLockIdentity(s *config.Schema, l *lock.Lock) error {
 			}
 			idx := kindCount[method.Kind]
 			kindCount[method.Kind] = idx + 1
-			if method.Kind != "npm" {
+			if method.Kind != "npm" && method.Kind != "pnpm" {
 				continue
 			}
 			key := fmt.Sprintf("%s/%s/%d", name, method.Kind, idx)
@@ -320,7 +320,7 @@ func validateInstallNPMLockIdentity(s *config.Schema, l *lock.Lock) error {
 				continue
 			}
 			if !lock.MatchesPackagePin(name, method, pin) {
-				return fmt.Errorf("lock: npm package, registry, or version request changed for %q; run 'depengine update' to accept the change", key)
+				return fmt.Errorf("lock: package, registry, or version request changed for %q; run 'depengine update' to accept the change", key)
 			}
 		}
 	}
@@ -329,7 +329,7 @@ func validateInstallNPMLockIdentity(s *config.Schema, l *lock.Lock) error {
 
 // mergeInstallLock preserves the existing lock's identity hashes while adding
 // newly resolved pin fields. Only an explicit update may accept identity drift.
-// A changed npm package or registry is rejected before merge so install cannot
+// A changed package identity is rejected before merge so install cannot
 // silently execute an unpinned request while retaining the stale lock identity.
 func mergeInstallLock(oldLock, newLock *lock.Lock) (*lock.Lock, error) {
 	if oldLock != nil && newLock != nil {
@@ -341,7 +341,7 @@ func mergeInstallLock(oldLock, newLock *lock.Lock) (*lock.Lock, error) {
 			if !ok || freshPin.PackageSelector == "" || freshPin.PackageSelector == oldPin.PackageSelector {
 				continue
 			}
-			return nil, fmt.Errorf("lock: npm package or registry changed for %q; run 'depengine update' to accept the change", key)
+			return nil, fmt.Errorf("lock: package or registry changed for %q; run 'depengine update' to accept the change", key)
 		}
 	}
 	newLock = lock.Merge(oldLock, newLock)
@@ -392,14 +392,14 @@ func lockCandidateToolName(key string) string {
 // auto-resolution is needed when no lockfile exists.
 // hasLockableMutableSelectors reports whether first install must create a lock
 // for a mutable selector that legacy lock v1 can make immutable: direct Git or
-// Cargo Git branch/tag selectors, container tags, and plain unversioned npm packages.
+// Cargo Git branch/tag selectors, container tags, and plain unversioned npm or pnpm packages.
 func hasLockableMutableSelectors(s *config.Schema) bool {
 	for _, tool := range s.Tools {
 		for _, method := range tool.Methods {
 			if method == nil {
 				continue
 			}
-			if method.Kind == "npm" {
+			if method.Kind == "npm" || method.Kind == "pnpm" {
 				if version, _ := method.Config["version"].(string); version == "" {
 					pkg, _ := method.Config["pkg"].(string)
 					if pkg == "" {
