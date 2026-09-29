@@ -5,14 +5,18 @@ notes, drafts, plans, research, decisions. It is **not** a source of truth and i
 not auto-injected into sessions. Link the specific file that matters from a task
 prompt, or from `AGENTS.md` when the reference is durable and broadly useful.
 
-By default, `.dev/` is not merged or committed to `main`, unless the repository
-defines a different policy. It often lives on its own orphaned branch/worktree.
+In Depengine, `.dev/` is a worktree of the orphaned `dev-notes` branch nested
+inside the primary repository checkout. The filesystem workspace may also contain
+ignored or symlinked control metadata that is intentionally absent from the
+branch itself. In particular, `cleaning.md` is supplied from local dotfiles and
+must not be committed to `dev-notes`.
 
 ## Access from another worktree
 
-Do not assume the current code worktree contains a nested `.dev/` checkout. All
-worktrees share the repository's refs, so first resolve the checkout that owns
-`dev-notes`:
+The nested `.dev/` path exists only in the primary checkout that contains that
+worktree. Sibling code worktrees created by helpers such as `wt switch` should
+resolve the checkout that owns `dev-notes` instead of assuming their own
+`.dev/` path exists:
 
 ```sh
 dev_notes_root="$(
@@ -26,9 +30,8 @@ dev_notes_root="$(
 
 When that prints a path, read working context through
 `"$dev_notes_root"` (for example
-`"$dev_notes_root/architecture/index.yaml"`). This keeps `wt switch` and other
-sibling worktrees independent without making agents reach into some guessed
-primary-checkout path.
+`"$dev_notes_root/architecture/index.yaml"`). This preserves the intentional
+nested-worktree layout without hard-coding the location of the primary checkout.
 
 If the branch exists but is not checked out as a worktree, single files remain
 available through Git itself:
@@ -51,7 +54,7 @@ python "$tmp/architecture/tools/validate.py" --root "$tmp/architecture" --repo .
 
 | File | Purpose |
 |------|---------|
-| `cleaning.md` | Procedure for consolidating scratch material and promoting verified knowledge |
+| `cleaning.md` | Local-only cleanup procedure supplied from dotfiles; intentionally ignored by the `dev-notes` branch |
 | `TODO.md` | Session-specific queue and unresolved editorial/CLI ideas |
 | `bad-writing-findings.md` | Two unresolved wording findings in ADR-002 |
 | `architecture/` | archmap: selective semantic architecture model with code-revision checks, symbol-navigation anchors, and derived visual views. Start at `architecture/README.md` |
@@ -60,8 +63,8 @@ python "$tmp/architecture/tools/validate.py" --root "$tmp/architecture" --repo .
 
 Keep active files current. When something is finished, superseded, or no longer
 actionable, delete it, or move it to `archive/` if the history has expected future
-value. Do not let archived material look active. See `cleaning.md` for the full
-cleanup procedure.
+value. Do not let archived material look active. The local `cleaning.md` control
+file defines the full cleanup procedure when present in the workspace.
 
 Cached external material records its source URL or document ID, retrieval date,
 and relevant product/API/version. Refresh it before relying on it for freshness-
@@ -73,4 +76,5 @@ sensitive decisions.
   `retrieved-`) where relevant.
 - Put current state at the top of long-lived files, not buried in chronology.
 - Do not promote `.dev/` content to `AGENTS.md` automatically. Only verified,
-  durable, repo-specific facts qualify (see `cleaning.md`).
+  durable, repo-specific facts qualify; the local `cleaning.md` control file
+  defines that promotion procedure.
