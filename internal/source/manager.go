@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,11 +21,12 @@ import (
 
 // Manager checks and adds candidate-scoped package sources.
 type Manager struct {
-	rn       run.Runner
-	mutator  run.Runner
-	dryRun   bool
-	mu       sync.Mutex
-	aptDirty bool
+	rn        run.Runner
+	mutator   run.Runner
+	dryRun    bool
+	mu        sync.Mutex
+	aptDirty  bool
+	revisions map[string]SourceRevision
 }
 
 func NewManager(rn run.Runner, dryRun bool) *Manager {
@@ -32,7 +34,77 @@ func NewManager(rn run.Runner, dryRun bool) *Manager {
 	if dryRun {
 		mutator = run.BlockedRunner{Reason: "dry-run: source mutation is disabled"}
 	}
-	return &Manager{rn: rn, mutator: mutator, dryRun: dryRun}
+	return &Manager{rn: rn, mutator: mutator, dryRun: dryRun, revisions: make(map[string]SourceRevision)}
+}
+
+// SourceRevision is the credential-free identity captured from a configured local Git source.
+type SourceRevision struct {
+	Kind     string
+	Name     string
+	Revision string
+}
+
+// SourceRevisions returns a deterministic snapshot of Git-backed source revisions observed during preparation.
+func (m *Manager) SourceRevisions() []SourceRevision {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]SourceRevision, 0, len(m.revisions))
+	for _, revision := range m.revisions {
+		out = append(out, revision)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
+func (m *Manager) captureSourceRevision(ctx context.Context, source config.Source) error {
+	if source.Revision != "" || source.URL == "" || (source.Kind != "brew-tap" && source.Kind != "scoop-bucket") {
+		return nil
+	}
+	revision, err := m.resolveSourceRevision(ctx, source)
+	if err != nil {
+		return err
+	}
+	key := strings.ToLower(strings.TrimSpace(source.Kind)) + "\x00" + strings.ToLower(strings.TrimSpace(source.Name))
+	m.revisions[key] = SourceRevision{Kind: strings.ToLower(strings.TrimSpace(source.Kind)), Name: strings.TrimSpace(source.Name), Revision: revision}
+	return nil
+}
+
+func (m *Manager) resolveSourceRevision(ctx context.Context, source config.Source) (string, error) {
+	var path string
+	switch source.Kind {
+	case "brew-tap":
+		repo := m.rn.Run(ctx, "brew", "--repo", source.Name)
+		if err := run.CheckResult(repo, "source repository path"); err != nil {
+			return "", fmt.Errorf("source: verify brew-tap %s revision: locate repository: %w", source.Name, err)
+		}
+		path = strings.TrimSpace(string(repo.Stdout))
+		if path == "" || strings.ContainsAny(path, "\r\n") {
+			return "", fmt.Errorf("source: verify brew-tap %s revision: brew returned a malformed repository path", source.Name)
+		}
+	case "scoop-bucket":
+		var err error
+		path, err = m.scoopBucketRepository(ctx, source.Name)
+		if err != nil {
+			return "", err
+		}
+	default:
+		return "", fmt.Errorf("source: revision is unsupported for %s %s", source.Kind, source.Name)
+	}
+
+	resolved := m.rn.Run(ctx, "git", "-C", path, "rev-parse", "--verify", "HEAD^{commit}")
+	if err := run.CheckResult(resolved, "source revision check"); err != nil {
+		return "", fmt.Errorf("source: verify %s %s revision: read HEAD: %w", source.Kind, source.Name, err)
+	}
+	actual := strings.TrimSpace(string(resolved.Stdout))
+	if !gitobject.ValidID(actual) {
+		return "", fmt.Errorf("source: verify %s %s revision: Git returned a malformed commit ID", source.Kind, source.Name)
+	}
+	return actual, nil
 }
 
 // EnsureResult distinguishes sources that were merely observed as missing from
@@ -88,6 +160,14 @@ func (m *Manager) AddAuthenticated(ctx context.Context, source config.Source, to
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.addAuthenticated(ctx, source, token); err != nil {
+		return err
+	}
+	if err := m.captureSourceRevision(ctx, source); err != nil {
+		rollbackSource := source
+		rollbackSource.Revision = ""
+		if rollbackErr := m.remove(ctx, rollbackSource); rollbackErr != nil {
+			return errors.Join(err, fmt.Errorf("remove source after revision capture failed: %w", rollbackErr))
+		}
 		return err
 	}
 	if source.Kind == "apt-ppa" {
@@ -267,6 +347,8 @@ func (m *Manager) brewTapPresent(ctx context.Context, source config.Source) (boo
 			if err := m.verifySourceRevision(ctx, source); err != nil {
 				return false, err
 			}
+		} else if err := m.captureSourceRevision(ctx, source); err != nil {
+			return false, err
 		}
 		return true, nil
 	}
@@ -274,34 +356,9 @@ func (m *Manager) brewTapPresent(ctx context.Context, source config.Source) (boo
 }
 
 func (m *Manager) verifySourceRevision(ctx context.Context, source config.Source) error {
-	var path string
-	switch source.Kind {
-	case "brew-tap":
-		repo := m.rn.Run(ctx, "brew", "--repo", source.Name)
-		if err := run.CheckResult(repo, "source repository path"); err != nil {
-			return fmt.Errorf("source: verify brew-tap %s revision: locate repository: %w", source.Name, err)
-		}
-		path = strings.TrimSpace(string(repo.Stdout))
-		if path == "" || strings.ContainsAny(path, "\r\n") {
-			return fmt.Errorf("source: verify brew-tap %s revision: brew returned a malformed repository path", source.Name)
-		}
-	case "scoop-bucket":
-		var err error
-		path, err = m.scoopBucketRepository(ctx, source.Name)
-		if err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("source: revision is unsupported for %s %s", source.Kind, source.Name)
-	}
-
-	resolved := m.rn.Run(ctx, "git", "-C", path, "rev-parse", "--verify", "HEAD^{commit}")
-	if err := run.CheckResult(resolved, "source revision check"); err != nil {
-		return fmt.Errorf("source: verify %s %s revision: read HEAD: %w", source.Kind, source.Name, err)
-	}
-	actual := strings.TrimSpace(string(resolved.Stdout))
-	if !gitobject.ValidID(actual) {
-		return fmt.Errorf("source: verify %s %s revision: Git returned a malformed commit ID", source.Kind, source.Name)
+	actual, err := m.resolveSourceRevision(ctx, source)
+	if err != nil {
+		return err
 	}
 	if actual != source.Revision {
 		return fmt.Errorf("source: %s %s revision mismatch: configured %s, observed %s", source.Kind, source.Name, source.Revision, actual)
@@ -338,7 +395,6 @@ func (m *Manager) scoopBucketRepository(ctx context.Context, name string) (strin
 	return filepath.Join(root, "buckets", name), nil
 }
 
-
 func (m *Manager) scoopBucketPresent(ctx context.Context, source config.Source) (bool, error) {
 	res := m.rn.Run(ctx, "scoop", "bucket", "list")
 	if err := run.CheckResult(res, "source check"); err != nil {
@@ -357,6 +413,8 @@ func (m *Manager) scoopBucketPresent(ctx context.Context, source config.Source) 
 				if err := m.verifySourceRevision(ctx, source); err != nil {
 					return false, err
 				}
+			} else if err := m.captureSourceRevision(ctx, source); err != nil {
+				return false, err
 			}
 			return true, nil
 		}

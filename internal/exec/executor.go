@@ -234,6 +234,14 @@ func New() *Executor {
 	return ex
 }
 
+// SourceRevisions returns credential-free Git HEAD observations captured while candidate sources were prepared.
+func (ex *Executor) SourceRevisions() []source.SourceRevision {
+	if ex.sources == nil {
+		return nil
+	}
+	return ex.sources.SourceRevisions()
+}
+
 // LookupAdapter returns the adapter for the given kind from the executor's
 // per-instance registry. Returns nil if no adapter is registered for that kind.
 func (ex *Executor) LookupAdapter(kind string) AdapterV2 {

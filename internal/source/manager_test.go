@@ -148,35 +148,64 @@ func TestManagerPassesSupportedSourceURLToAdd(t *testing.T) {
 func TestManagerVerifiesExistingGitBackedSourceOrigin(t *testing.T) {
 	t.Run("brew tap", func(t *testing.T) {
 		configured := config.Source{Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git"}
+		const revision = "0123456789012345678901234567890123456789"
 		runner := &scriptedRunner{outputs: []run.Result{
 			{Stdout: []byte("vendor/tools\n")},
 			{Stdout: []byte(`[{"name":"vendor/tools","remote":"https://EXAMPLE.test/vendor/tools.git/"}]`)},
+			{Stdout: []byte("/brew/taps/vendor/homebrew-tools\n")},
+			{Stdout: []byte(revision + "\n")},
 		}}
-		missing, err := NewManager(runner, false).Missing(context.Background(), []config.Source{configured})
+		manager := NewManager(runner, false)
+		missing, err := manager.Missing(context.Background(), []config.Source{configured})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if len(missing) != 0 {
 			t.Fatalf("missing = %v, want source verified present", missing)
 		}
-		if len(runner.calls) != 2 || runner.calls[1].Name != "brew" || !reflect.DeepEqual(runner.calls[1].Args, []string{"tap-info", "--json=v1", "vendor/tools"}) {
-			t.Fatalf("calls = %#v, want tap listing plus tap-info origin probe", runner.calls)
+		if got := manager.SourceRevisions(); !reflect.DeepEqual(got, []SourceRevision{{Kind: "brew-tap", Name: "vendor/tools", Revision: revision}}) {
+			t.Fatalf("SourceRevisions() = %#v", got)
 		}
 	})
 
 	t.Run("scoop bucket", func(t *testing.T) {
-		configured := config.Source{Kind: "scoop-bucket", Name: " vendor ", URL: "https://example.test/vendor/bucket.git"}
-		runner := &scriptedRunner{outputs: []run.Result{{Stdout: []byte("Name Source Updated Manifests\nvendor https://EXAMPLE.test/vendor/bucket.git/ 2026-09-26 42\n")}}}
-		missing, err := NewManager(runner, false).Missing(context.Background(), []config.Source{configured})
+		configured := config.Source{Kind: "scoop-bucket", Name: "vendor", URL: "https://example.test/vendor/bucket.git"}
+		const revision = "1123456789012345678901234567890123456789"
+		root := filepath.Join(t.TempDir(), "scoop-root")
+		runner := &scriptedRunner{outputs: []run.Result{
+			{Stdout: []byte("Name Source Updated Manifests\nvendor https://EXAMPLE.test/vendor/bucket.git/ 2026-09-26 42\n")},
+			{Stdout: []byte(filepath.Join(root, "apps", "scoop", "current") + "\n")},
+			{Stdout: []byte(revision + "\n")},
+		}}
+		manager := NewManager(runner, false)
+		missing, err := manager.Missing(context.Background(), []config.Source{configured})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if len(missing) != 0 {
 			t.Fatalf("missing = %v, want source verified present", missing)
 		}
+		if got := manager.SourceRevisions(); !reflect.DeepEqual(got, []SourceRevision{{Kind: "scoop-bucket", Name: "vendor", Revision: revision}}) {
+			t.Fatalf("SourceRevisions() = %#v", got)
+		}
 	})
 }
-
+func TestManagerCapturesRevisionAfterAddingExplicitGitSource(t *testing.T) {
+	const revision = "0123456789012345678901234567890123456789"
+	source := config.Source{Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git"}
+	runner := &scriptedRunner{outputs: []run.Result{
+		{}, // brew tap <name> <url>
+		{Stdout: []byte("/brew/taps/vendor/homebrew-tools\n")},
+		{Stdout: []byte(revision + "\n")},
+	}}
+	manager := NewManager(runner, false)
+	if err := manager.Add(context.Background(), source); err != nil {
+		t.Fatal(err)
+	}
+	if got := manager.SourceRevisions(); !reflect.DeepEqual(got, []SourceRevision{{Kind: "brew-tap", Name: "vendor/tools", Revision: revision}}) {
+		t.Fatalf("SourceRevisions() = %#v", got)
+	}
+}
 func TestManagerRejectsExistingSourceWithDifferentOrigin(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -420,7 +449,6 @@ func TestBrewTapRevisionRollbackFailureIsJoined(t *testing.T) {
 		t.Fatalf("EnsureTracked() error = %v, want mismatch plus rollback failure", err)
 	}
 }
-
 
 func TestScoopBucketRevisionVerification(t *testing.T) {
 	const revision = "0123456789012345678901234567890123456789"
