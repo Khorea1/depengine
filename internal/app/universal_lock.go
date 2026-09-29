@@ -37,7 +37,7 @@ func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, cl
 		var resolved *plan.ResolvedInstallPlan
 		for i := range attempts {
 			attempt := &attempts[i]
-			if attempt.PlanIntent != nil && (attempt.Status == "would_install" || attempt.Status == "already_installed") {
+			if attempt.PlanIntent != nil && attempt.Error == "" && (attempt.Status == "would_install" || attempt.Status == "already_installed") {
 				resolved = attempt.PlanIntent
 				break
 			}
