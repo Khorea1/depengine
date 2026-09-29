@@ -1,0 +1,7 @@
+schema_version = 1
+
+[tools.depengine-native-missing]
+method_only = ["native"]
+
+[tools.depengine-native-missing.native]
+pkg = "depengine-package-guaranteed-missing-7f31d2a9"

@@ -156,7 +156,9 @@ jobs:
     - name: Run native Homebrew lifecycle smoke test
       env:
         HOMEBREW_NO_AUTO_UPDATE: "1"
-      run: tests/platform/native-lifecycle.sh tests/platform/fixtures/native-hello.toml depengine-native-smoke
+      run: |
+        tests/platform/native-lifecycle.sh tests/platform/fixtures/native-hello.toml depengine-native-smoke
+        tests/platform/native-failure.sh tests/platform/fixtures/native-missing.toml depengine-native-missing
 
   # Real FreeBSD VM: compile/test the Go code on the target OS, then exercise
   # the same native package-manager lifecycle contract used by macOS.
@@ -182,6 +184,7 @@ jobs:
           go version
           go test ./...
           tests/platform/native-lifecycle.sh tests/platform/fixtures/native-hello.toml depengine-native-smoke
+          tests/platform/native-failure.sh tests/platform/fixtures/native-missing.toml depengine-native-missing
 
   # Real OpenBSD VM: run the Go suite on the target OS and exercise pkg_add.
   test-openbsd:
@@ -206,6 +209,7 @@ jobs:
           go version
           go test ./...
           tests/platform/native-lifecycle.sh tests/platform/fixtures/openbsd-pkgadd.toml depengine-openbsd-smoke
+          tests/platform/native-failure.sh tests/platform/fixtures/native-missing.toml depengine-native-missing
 
   # Real NetBSD VM: run the Go suite on the target OS and exercise pkgin.
   test-netbsd:
@@ -247,6 +251,7 @@ jobs:
           go version
           go test ./...
           tests/platform/native-lifecycle.sh tests/platform/fixtures/netbsd-pkgin.toml depengine-netbsd-smoke
+          tests/platform/native-failure.sh tests/platform/fixtures/native-missing.toml depengine-native-missing
 
   # Real Android emulator: cross-build the CLI with the Android NDK, execute it
   # through adb, and assert depengine detects the runtime as Android. This is
@@ -301,7 +306,9 @@ jobs:
       shell: bash
       env:
         DEPENGINE_BIN: ./depengine.exe
-      run: tests/platform/native-lifecycle.sh tests/platform/fixtures/windows-choco.toml depengine-windows-smoke
+      run: |
+        tests/platform/native-lifecycle.sh tests/platform/fixtures/windows-choco.toml depengine-windows-smoke
+        tests/platform/native-failure.sh tests/platform/fixtures/native-missing.toml depengine-native-missing
 
   # Stable branch-protection status check. Keep this job name unchanged so the
   # same ruleset can be reused across repositories.
