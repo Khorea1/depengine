@@ -1,0 +1,6 @@
+schema_version = 1
+
+[tools]
+# Leading '-' would be interpreted as a package-manager option if it reached
+# execution. Validation must reject it before any adapter can consume argv.
+argument-injection = { native = { pkg = "--preserve-root" } }

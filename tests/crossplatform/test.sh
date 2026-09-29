@@ -113,6 +113,11 @@ echo "Testing removal command again..."
 
 # Validation tests (using existing schema.toml)
 echo "Running validation tests..."
+# Re-run canonical invalid/adversarial fixtures through the built CLI on every
+# distro. Unit tests already cover the validators; this catches differences in
+# command wiring, exit codes, JSON diagnostics, and platform registration.
+DEPENGINE_BIN="$BIN" tests/crossplatform/validation-adversarial.sh
+
 # --strict promotes the :auto-checksum TOFU warnings to errors, so it must
 # fail on this schema: assert the rejection instead of a pass.
 if $BIN validate --schema "$SCHEMA" --strict; then

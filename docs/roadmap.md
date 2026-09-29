@@ -145,7 +145,12 @@ Work on the current execution model comes before adding more installer types.
 
 ## P3: verification and v1 freeze
 
-- [ ] Expand cross-platform manifest fixtures with invalid and adversarial cases.
+- [~] Expand cross-platform manifest fixtures with invalid and adversarial cases.
+  The Debian/Arch/Fedora/Alpine CLI matrix now replays canonical cycle,
+  dangling-reference, malformed-URL, duplicate-tool, and unknown-placeholder
+  fixtures plus an unsafe package-name injection fixture, asserting stable
+  JSON diagnostic codes and strict-mode exit behavior. Native-runner-specific
+  adversarial lifecycle fixtures remain open.
 - [ ] Cover each method contract across validation, identity, dry-run, version,
   source, scope, environment, lock, lifecycle, idempotency, errors, and secret
   redaction.
