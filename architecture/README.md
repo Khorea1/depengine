@@ -5,15 +5,13 @@ LLMs. The codebase remains authoritative. The YAML model is the source for
 **derived architecture views only** (DOT/SVG today), not a replacement for code,
 ADRs or durable product documentation.
 
-Schema: [`archmap.schema.json`](archmap.schema.json) (v2).
+Schema: [`archmap.schema.json`](archmap.schema.json).
 
 ## Why this exists
 
 Depengine is large enough that reconstructing its architecture from packages on
 every session is wasteful. archmap stores the small amount of semantic structure
-that is expensive to infer repeatedly: ownership, important runtime/data
-relations, invariants and end-to-end flows.
-
+that is expensive to infer repeatedly: ownership, important runtime/data relations, invariants and end-to-end flows.
 It deliberately does **not** mirror every Go import or package. Mechanically
 recoverable facts should be derived by tools instead of copied into YAML and then
 maintained twice, because humans already invented enough synchronization bugs.
@@ -42,11 +40,11 @@ smaller files.
    `scope`: when `exhaustive: false`, absence from the model is not evidence of
    absence from the codebase; use the declared fallback before concluding that a
    capability does not exist.
-2. Open the relevant `units/<id>.yaml`, never all units by default.
-3. For behaviour crossing units, open the matching `flows/<id>.yaml`.
-4. Open `views/<id>.yaml` when deciding which architectural projection to render.
-5. Open `notes/<id>.md` for rationale and pitfalls.
-6. `confidence: confirmed` means the claim was checked at that **document's**
+1. Open the relevant `units/<id>.yaml`, never all units by default.
+1. For behaviour crossing units, open the matching `flows/<id>.yaml`.
+1. Open `views/<id>.yaml` when deciding which architectural projection to render.
+1. Open `notes/<id>.md` for rationale and pitfalls.
+1. `confidence: confirmed` means the claim was checked at that **document's**
    `verified.revision`; `evidence` names the supporting path/line at that revision.
    `inferred` is a useful hypothesis, not a fact.
 
@@ -134,6 +132,11 @@ The renderer decides positions and visual style. A future renderer can produce a
 different presentation without mutating the architecture model.
 
 ## Commands
+
+Python dependencies are sufficient for validation and DOT rendering. SVG
+rendering additionally requires the Graphviz `dot` executable on `PATH`;
+Graphviz is a system dependency and is therefore not part of
+`tools/requirements.txt`.
 
 ```sh
 pip install -r architecture/tools/requirements.txt

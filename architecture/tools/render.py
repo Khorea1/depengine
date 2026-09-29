@@ -154,7 +154,12 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("view", help="view id from views/<id>.yaml")
     ap.add_argument("--root", type=Path, default=DEFAULT_ROOT, help="directory containing index.yaml")
-    ap.add_argument("--format", choices=("dot", "svg"), default="dot")
+    ap.add_argument(
+        "--format",
+        choices=("dot", "svg"),
+        default="dot",
+        help="output format; svg requires Graphviz 'dot' on PATH",
+    )
     ap.add_argument("-o", "--output", type=Path, help="write output to this file instead of stdout")
     args = ap.parse_args(argv)
 
