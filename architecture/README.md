@@ -37,10 +37,10 @@ smaller files.
 
 ## Using archmap from code worktrees
 
-The `dev-notes` branch is commonly checked out as the primary repository's
-nested `.dev/` worktree. Sibling code worktrees created by helpers such as
-`wt switch` therefore should **not** assume that `.dev/architecture/` exists
-under their own root.
+The `dev-notes` branch is checked out as the primary repository's nested
+`.dev/` worktree. Sibling code worktrees created by helpers such as `wt switch`
+therefore should **not** assume that `.dev/architecture/` exists under their
+own root.
 
 Resolve the actual `dev-notes` checkout with `git worktree list --porcelain`
 as documented in `../INDEX.md`, then use
@@ -50,7 +50,10 @@ as documented in `../INDEX.md`, then use
 validator or renderer needs normal files.
 
 This is deliberately a lookup rule, not a synchronization scheme. Do not copy
-the model into every code worktree and manufacture another stale cache.
+the model into every code worktree and manufacture another stale cache. Also do
+not infer branch completeness from the filesystem workspace: `.dev/` may contain
+ignored or symlinked local control files, such as the cleanup procedure supplied
+from the maintainer's dotfiles.
 
 ## Reading protocol
 
