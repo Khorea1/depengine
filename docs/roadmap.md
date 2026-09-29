@@ -74,8 +74,8 @@ Work on the current execution model comes before adding more installer types.
   tag (including implicit `latest`) through the OCI Distribution API, stores the
   immutable manifest digest, rejects tag drift in frozen mode, and makes
   observation/pull/remove use that digest without replacing schema intent.
-  Plain unversioned npm and pnpm packages now pin the registry's `latest`
-  dist-tag to a concrete package version in lock v1; frozen installs reject
+  Plain unversioned npm, pnpm, and Yarn Classic packages now pin the
+  registry's `latest` dist-tag to a concrete package version in lock v1; frozen installs reject
   package, registry, or version-request drift and replay the pinned version
   without a second registry lookup. Their dependency graphs remain outside
   this pin.

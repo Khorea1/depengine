@@ -655,7 +655,7 @@ are described above or alongside their examples.
 | `pnpm` | Global pnpm packages; optional exact `version`, verified from `pnpm ls --json`. A plain package without `version` pins the registry's latest package version in `depengine.lock` (dependency graph remains unpinned). | `prettier = { pnpm = "prettier" }` |
 | `bun` | Global bun packages | `tsx = { bun = "tsx" }` |
 | `gem` | Ruby gems | `sass = { gem = "sass" }` |
-| `yarn` | Global yarn packages | `typescript = { yarn = "typescript" }` |
+| `yarn` | Global Yarn Classic packages; optional exact `version`, verified from `yarn global list`. A plain package without `version` pins the registry's latest package version in `depengine.lock` (dependency graph remains unpinned). | `typescript = { yarn = "typescript" }` |
 | `yarn-berry` | Yarn Berry (v2+) global packages | `typescript = { yarn-berry = "typescript" }` |
 | `composer` | Global PHP Composer packages | `php-cs-fixer = { composer = "friendsofphp/php-cs-fixer" }` |
 | `apm` | Atom package manager (legacy) | `atom-beautify = { apm = "atom-beautify" }` |

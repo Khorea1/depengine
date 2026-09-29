@@ -103,6 +103,28 @@ func ResolveLatestNPMVersion(ctx context.Context, rn run.Runner, pkg, registry s
 // ResolveLatestPNPMVersion reads the npm registry latest dist-tag through pnpm
 // without modifying the host. The returned version is safe to append to a
 // package name as an exact pnpm install target.
+type yarnInfoOutput struct {
+	Type string `json:"type"`
+	Data string `json:"data"`
+}
+
+// ResolveLatestYarnVersion reads the npm registry latest dist-tag through Yarn
+// Classic without modifying the host.
+func ResolveLatestYarnVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
+	if !IsNPMRegistryPackage(pkg) {
+		return "", fmt.Errorf("yarn: %q is not a plain registry package name", pkg)
+	}
+	result := rn.Run(ctx, "yarn", "info", pkg, "version", "--json")
+	if err := run.CheckResult(result, "yarn: resolve latest version"); err != nil {
+		return "", err
+	}
+	var output yarnInfoOutput
+	if err := json.Unmarshal(result.Stdout, &output); err != nil || output.Type != "inspect" || !ValidNPMVersion(output.Data) {
+		return "", fmt.Errorf("yarn: latest dist-tag for %q did not resolve to a concrete version", pkg)
+	}
+	return output.Data, nil
+}
+
 func ResolveLatestPNPMVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
 	if !IsNPMRegistryPackage(pkg) {
 		return "", fmt.Errorf("pnpm: %q is not a plain registry package name", pkg)

@@ -40,6 +40,16 @@ func TestResolveLatestNPMVersionRejectsUnresolvedOutput(t *testing.T) {
 	}
 }
 
+func TestResolveLatestYarnVersionRejectsUnresolvedOutput(t *testing.T) {
+	for _, output := range []string{`null`, `"1.2.3"`, `{"type":"inspect","data":"latest"}`, `{"type":"error","data":"1.2.3"}`} {
+		t.Run(output, func(t *testing.T) {
+			_, err := ResolveLatestYarnVersion(context.Background(), &run.FakeRunner{Stdout: output}, "pkg")
+			if err == nil || !strings.Contains(err.Error(), "did not resolve to a concrete version") {
+				t.Fatalf("output %s: error = %v", output, err)
+			}
+		})
+	}
+}
 func TestValidNPMVersionRequiresConcreteSemver(t *testing.T) {
 	for _, version := range []string{"0.0.0", "1.2.3", "1.2.3-alpha.1", "1.2.3+build.01", "1.2.3-alpha.1+build.7"} {
 		if !ValidNPMVersion(version) {

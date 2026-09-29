@@ -198,7 +198,7 @@ func (a *BaseAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.
 	if resolved.Identity.Package == "" {
 		return nil, errors.New(a.config.KindName + ": no package name in plan intent")
 	}
-	if (a.config.KindName == "npm" || a.config.KindName == "pnpm") && mc.LockedVersion != "" {
+	if (a.config.KindName == "npm" || a.config.KindName == "pnpm" || a.config.KindName == "yarn") && mc.LockedVersion != "" {
 		if version, _ := mc.Config["version"].(string); version != "" {
 			return nil, fmt.Errorf("%s: locked version requires an unversioned request", a.config.KindName)
 		}

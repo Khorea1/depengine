@@ -18,7 +18,7 @@
 //   - mutable direct-Git and cargo --git branch/tag selectors, resolved to a
 //     concrete commit;
 //   - mutable container tags, resolved to immutable registry digests;
-//   - unversioned npm or pnpm packages, resolved to the registry's latest concrete
+//   - unversioned npm, pnpm, or Yarn Classic packages, resolved to the registry's latest concrete
 //     package version; and
 //   - candidate-scoped host package-source declarations (kind/name/url and any
 //     declared Brew tap revision) as identity hashes. Source contents remain
@@ -376,9 +376,12 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 					registry, _ := method.Config["registry"].(string)
 					var version string
 					var err error
-					if method.Kind == "pnpm" {
+					switch method.Kind {
+					case "pnpm":
 						version, err = ecosystem.ResolveLatestPNPMVersion(ctx, rn, pkg)
-					} else {
+					case "yarn":
+						version, err = ecosystem.ResolveLatestYarnVersion(ctx, rn, pkg)
+					default:
 						version, err = ecosystem.ResolveLatestNPMVersion(ctx, rn, pkg, registry)
 					}
 					if err != nil {
@@ -386,7 +389,7 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 					}
 					pin.PackageVersion = version
 				}
-			} else if method.Kind == "npm" || method.Kind == "pnpm" {
+			} else if method.Kind == "npm" || method.Kind == "pnpm" || method.Kind == "yarn" {
 				l.clearPackageVersion[key] = struct{}{}
 			}
 
@@ -592,7 +595,7 @@ func ValidateFrozen(s *config.Schema, l *Lock) error {
 				if pin.PackageSelector != selector {
 					return fmt.Errorf("lock: frozen lock needs update: package or registry changed for %q", key)
 				}
-			} else if (method.Kind == "npm" || method.Kind == "pnpm") && (pin.PackageVersion != "" || pin.PackageSelector != "") {
+			} else if (method.Kind == "npm" || method.Kind == "pnpm" || method.Kind == "yarn") && (pin.PackageVersion != "" || pin.PackageSelector != "") {
 				return fmt.Errorf("lock: frozen lock needs update: package version request changed for %q", key)
 			}
 		}
@@ -737,7 +740,7 @@ func containerMutableTag(method *config.MethodCandidate) (string, bool) {
 }
 
 func packageMutableSelector(toolName string, method *config.MethodCandidate) (string, bool) {
-	if method == nil || (method.Kind != "npm" && method.Kind != "pnpm") {
+	if method == nil || (method.Kind != "npm" && method.Kind != "pnpm" && method.Kind != "yarn") {
 		return "", false
 	}
 	if version, _ := method.Config["version"].(string); version != "" {
