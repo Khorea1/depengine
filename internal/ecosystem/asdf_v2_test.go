@@ -98,12 +98,12 @@ func TestAsdfOrMiseInstalledVersionsFallsBackToMise(t *testing.T) {
 				"asdf": tc.asdf,
 				"mise": {Stdout: []byte(`[{"version":"20.17.0","installed":true}]`)},
 			}}
-			versions, found, err := asdfOrMiseInstalledVersions(context.Background(), runner, "nodejs")
+			installed, found, err := asdfOrMiseInstalledVersions(context.Background(), runner, "nodejs")
 			if err != nil {
 				t.Fatalf("asdfOrMiseInstalledVersions() error = %v", err)
 			}
-			if !found || !reflect.DeepEqual(versions, []string{"20.17.0"}) {
-				t.Fatalf("versions = %#v, found = %v; want mise version", versions, found)
+			if !found || installed.Backend != "mise" || !reflect.DeepEqual(installed.Versions, []string{"20.17.0"}) {
+				t.Fatalf("installed = %#v, found = %v; want mise version", installed, found)
 			}
 			if !reflect.DeepEqual(runner.calls, []string{"asdf", "mise"}) {
 				t.Fatalf("backend calls = %#v, want asdf then mise", runner.calls)

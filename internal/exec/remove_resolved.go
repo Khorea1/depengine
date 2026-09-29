@@ -38,6 +38,15 @@ func (ex *Executor) RemoveResolvedCandidate(ctx context.Context, rn run.Runner, 
 	if err != nil {
 		return err
 	}
+	if requirer, ok := adapter.(RemovalElevationRequirer); ok && requirer.RequiresRemovalElevation(tool, projected) {
+		if session, ok := rn.(run.ElevationSession); ok {
+			stop, err := session.StartElevationSession(ctx)
+			if err != nil {
+				return fmt.Errorf("elevation: %w", err)
+			}
+			defer stop()
+		}
+	}
 	ctx = run.WithOmittedEnv(ctx, methodSecretEnvNames(method)...)
 	return adapter.Remove(ctx, rn, tool, projected)
 }

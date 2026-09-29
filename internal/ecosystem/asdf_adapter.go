@@ -33,15 +33,15 @@ func (a *AsdfAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 	if len(pkg) == 0 || pkg[0] == "" {
 		return false
 	}
-	versions, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, pkg[0])
-	if err != nil || !foundBackend || len(versions) == 0 {
+	installed, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, pkg[0])
+	if err != nil || !foundBackend || len(installed.Versions) == 0 {
 		return false
 	}
 	desired := asdfVersion(mc)
 	if desired == "latest" {
 		return true
 	}
-	for _, version := range versions {
+	for _, version := range installed.Versions {
 		if version == desired {
 			return true
 		}
@@ -152,7 +152,12 @@ func miseInstalledVersions(output []byte) ([]string, error) {
 	return versions, nil
 }
 
-func asdfOrMiseInstalledVersions(ctx context.Context, rn run.Runner, pkg string) ([]string, bool, error) {
+type asdfBackendObservation struct {
+	Backend  string
+	Versions []string
+}
+
+func asdfOrMiseInstalledVersions(ctx context.Context, rn run.Runner, pkg string) (asdfBackendObservation, bool, error) {
 	foundBackend := false
 	succeeded := false
 	var lastErr error
@@ -184,13 +189,13 @@ func asdfOrMiseInstalledVersions(ctx context.Context, rn run.Runner, pkg string)
 		}
 		succeeded = true
 		if len(versions) > 0 {
-			return versions, true, nil
+			return asdfBackendObservation{Backend: backend, Versions: versions}, true, nil
 		}
 	}
 	if succeeded || !foundBackend {
-		return nil, foundBackend, nil
+		return asdfBackendObservation{}, foundBackend, nil
 	}
-	return nil, true, lastErr
+	return asdfBackendObservation{}, true, lastErr
 }
 
 func (a *AsdfAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
@@ -216,11 +221,11 @@ func (a *AsdfAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 	if len(pkg) == 0 || pkg[0] == "" {
 		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "asdf: no package name"}, nil
 	}
-	versions, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, pkg[0])
+	installed, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, pkg[0])
 	if err != nil {
 		return plan.Observation{Presence: plan.PresenceBroken, Detail: err.Error()}, err
 	}
-	if !foundBackend || len(versions) == 0 {
+	if !foundBackend || len(installed.Versions) == 0 {
 		return plan.Observation{Presence: plan.PresenceAbsent}, nil
 	}
 	observation := plan.Observation{
@@ -232,8 +237,8 @@ func (a *AsdfAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 	if desired == "latest" {
 		return observation, nil
 	}
-	observed := versions[0]
-	for _, version := range versions {
+	observed := installed.Versions[0]
+	for _, version := range installed.Versions {
 		if version == desired {
 			observed = desired
 			break
@@ -290,39 +295,57 @@ func (a *AsdfAdapter) CanRemove() bool { return true }
 // Remove uninstalls a specific version of a tool via asdf or mise.
 //
 // asdf/mise uninstall are version-dependent: `asdf uninstall <plugin> <version>`
-// and `mise uninstall
-// <plugin>@<version>` require an exact installed version. The version is read
-// from mc.Config["version"]; when absent, removal cannot proceed and a manual
-// command is suggested.
+// and `mise uninstall <plugin>@<version>` require an exact installed version.
+// The version is read from mc.Config["version"]; a missing or "latest" value
+// falls back to the observed installed version so a default-version install
+// can be removed. Multiple installed versions without a configured version are
+// ambiguous ownership and fail closed; absence fails closed too.
 func (a *AsdfAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	pkg := exec.SubstitutePkg([]string{"{pkg}"}, tool, mc)
 	if len(pkg) == 0 || pkg[0] == "" {
 		return fmt.Errorf("asdf: no package name")
 	}
-	version, ok := mc.Config["version"].(string)
-	if !ok || version == "" {
-		return fmt.Errorf("asdf: removal is version-dependent; set config version = \"<exact installed version>\" or run `asdf uninstall %s <version>` manually", pkg[0])
+	version := asdfVersion(mc)
+	if version == "latest" {
+		installed, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, pkg[0])
+		if err != nil {
+			return fmt.Errorf("asdf: resolve installed version for removal: %w", err)
+		}
+		if !foundBackend {
+			return errors.New("asdf: neither asdf nor mise found")
+		}
+		if len(installed.Versions) == 0 {
+			return fmt.Errorf("asdf: removal requires an installed version; none found for %q", pkg[0])
+		}
+		if len(installed.Versions) > 1 {
+			return fmt.Errorf("asdf: removal of %q without a configured version is ambiguous (installed: %s); set config version = \"<exact installed version>\" or uninstall manually",
+				pkg[0], strings.Join(installed.Versions, ", "))
+		}
+		version = installed.Versions[0]
+		return removeAsdfVersion(ctx, rn, installed.Backend, pkg[0], version)
 	}
-	for _, cmd := range []string{"asdf", "mise"} {
-		if !run.LookPath(ctx, rn, cmd) {
-			continue
+	for _, backend := range []string{"asdf", "mise"} {
+		if run.LookPath(ctx, rn, backend) {
+			return removeAsdfVersion(ctx, rn, backend, pkg[0], version)
 		}
-		var res run.Result
-		if cmd == "mise" {
-			res = rn.Run(ctx, cmd, "uninstall", pkg[0]+"@"+version)
-		} else {
-			res = rn.Run(ctx, cmd, "uninstall", pkg[0], version)
-		}
-		if res.Err != nil {
-			return fmt.Errorf("%s: remove failed: %w", cmd, res.Err)
-		}
-		if res.ExitCode != 0 {
-			stderr := strings.TrimSpace(string(res.Stderr))
-			return fmt.Errorf("%s: remove exited %d: %s", cmd, res.ExitCode, stderr)
-		}
-		return nil
 	}
 	return fmt.Errorf("asdf: neither asdf nor mise found")
+}
+
+func removeAsdfVersion(ctx context.Context, rn run.Runner, backend, pkg, version string) error {
+	var res run.Result
+	if backend == "mise" {
+		res = rn.Run(ctx, backend, "uninstall", pkg+"@"+version)
+	} else {
+		res = rn.Run(ctx, backend, "uninstall", pkg, version)
+	}
+	if res.Err != nil {
+		return fmt.Errorf("%s: remove failed: %w", backend, res.Err)
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("%s: remove exited %d: %s", backend, res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	return nil
 }
 
 // CheckAvailable assumes availability: asdf has no cheap local index to

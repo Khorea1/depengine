@@ -761,8 +761,8 @@ func TestLifecycleCapabilityMetadataMatchesAdapterContract(t *testing.T) {
 		if got := contract.Supports(methodkind.CapabilityRemove); got != contract.CanRemove {
 			t.Errorf("%s CapabilityRemove=%t, CanRemove=%t", contract.Kind, got, contract.CanRemove)
 		}
-		if got := contract.Supports(methodkind.CapabilityUpgrade); got != contract.CanRemove {
-			t.Errorf("%s CapabilityUpgrade=%t, CanRemove=%t; current upgrade is remove+install", contract.Kind, got, contract.CanRemove)
+		if got := contract.Supports(methodkind.CapabilityUpgrade); got != (contract.CanRemove && (contract.Supports(methodkind.CapabilityExactVersion) || contract.Supports(methodkind.CapabilityRevision) || contract.Supports(methodkind.CapabilityImmutableIdentity))) {
+			t.Errorf("%s CapabilityUpgrade=%t, CanRemove=%t; upgrade must require a concrete removal target", contract.Kind, got, contract.CanRemove)
 		}
 	}
 }

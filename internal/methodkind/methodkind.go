@@ -288,8 +288,8 @@ var Contracts = finalizeContracts([]Contract{
 		"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 	}), AllowString: true, AllowTrue: true, CanRemove: true},
 	packageContract("apm", 16, false),
-	packageContract("vscode", 17, false),
-	packageContract("vscodium", 18, false),
+	packageContract("vscode", 17, true),
+	packageContract("vscodium", 18, true),
 	{Kind: "flatpak", DefaultOrder: 19, Package: PackageMetadata{PURLType: "flatpak"}, Capabilities: CapabilitySourceSelection | CapabilityScope | CapabilityRevision, Scopes: &ScopeContract{AdapterValues: map[plan.Scope]string{plan.ScopeUser: "user", plan.ScopeSystem: "system"}}, Fields: fields(pkgField, map[string]Field{
 		"remote": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 		"branch": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
@@ -303,7 +303,7 @@ var Contracts = finalizeContracts([]Contract{
 		"branch":      {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
 	}), MutuallyExclusive: [][]string{{"channel", "track"}, {"channel", "risk"}, {"channel", "branch"}}, AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "cask", DefaultOrder: 21, Fields: pkgField, ImplicitDistroFamily: []string{"macos"}, AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "mas", DefaultOrder: 22, Package: PackageMetadata{PURLType: "mas"}, Fields: pkgField, ImplicitDistroFamily: []string{"macos"}, AllowString: true, AllowTrue: true},
+	{Kind: "mas", DefaultOrder: 22, Package: PackageMetadata{PURLType: "mas"}, Fields: pkgField, ImplicitDistroFamily: []string{"macos"}, AllowString: true, AllowTrue: true, CanRemove: true},
 	packageContract("appman", 23, true),
 	{Kind: "sdkman", DefaultOrder: 24, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify}}), AllowString: true, AllowTrue: true},
 	{Kind: "steamcmd", DefaultOrder: 25, Fields: map[string]Field{
@@ -402,7 +402,16 @@ func finalizeContracts(contracts []Contract) []Contract {
 		// least observe whether its target is installed.
 		contracts[i].Capabilities |= CapabilityCheck
 		if contracts[i].CanRemove {
-			contracts[i].Capabilities |= CapabilityRemove | CapabilityUpgrade
+			contracts[i].Capabilities |= CapabilityRemove
+			// Upgrade is advertised only when removal can target a concrete
+			// identity: an exact version, a revision, or an immutable
+			// identity. Methods that can remove but carry no version/revision
+			// (native, cask, snap channels) cannot participate in a
+			// remove/reinstall upgrade driven by a pinned target, so claiming
+			// upgrade would overstate lifecycle support.
+			if contracts[i].Capabilities&(CapabilityExactVersion|CapabilityRevision|CapabilityImmutableIdentity) != 0 {
+				contracts[i].Capabilities |= CapabilityUpgrade
+			}
 		}
 
 		// Immutable locking is advertised only when the contract exposes a

@@ -493,8 +493,8 @@ func TestSteamCMDCheckWithEmptyInstallDir(t *testing.T) {
 // BaseAdapter-driven kinds in Configs. Kinds with a RemoveTmpl must be
 // removable; kinds deliberately left manual must not.
 func TestRemovalMatrixRegistryKinds(t *testing.T) {
-	removable := []string{"cargo", "pip", "pipx", "uv", "npm", "pnpm", "bun", "gem", "yarn", "composer", "flatpak", "snap", "cask", "appman"}
-	manual := []string{"go", "apm", "vscode", "vscodium", "mas"}
+	removable := []string{"cargo", "pip", "pipx", "uv", "npm", "pnpm", "bun", "gem", "yarn", "composer", "flatpak", "snap", "cask", "appman", "vscode", "vscodium"}
+	manual := []string{"go", "apm"}
 
 	for _, kind := range removable {
 		t.Run(kind+"/removable", func(t *testing.T) {
@@ -1205,5 +1205,44 @@ func TestYarnCheckExactVersion(t *testing.T) {
 	mc.Config["version"] = "5.7.0"
 	if adapter.Check(context.Background(), fr, &config.Tool{Name: "typescript"}, mc) {
 		t.Fatal("yarn version drift should fail")
+	}
+}
+
+// TestEditorExtensionRemoveMirrorsInstall locks the extension ID as the single
+// identity across install and removal for the editor-extension kinds, including
+// the code-insiders drop-in fallback admitted through AvailableExtra.
+func TestEditorExtensionRemoveMirrorsInstall(t *testing.T) {
+	const id = "golang.go"
+	cases := []struct {
+		kind       string
+		lookPaths  map[string]bool
+		wantBinary string
+	}{
+		{"vscode", map[string]bool{"code": true}, "code"},
+		{"vscode", map[string]bool{"code": false, "code-insiders": true}, "code-insiders"},
+		{"vscodium", map[string]bool{"codium": true}, "codium"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.kind+"/"+tc.wantBinary, func(t *testing.T) {
+			fr := &run.FakeRunner{LookPaths: tc.lookPaths}
+			adapter := NewBaseAdapter(Configs[tc.kind])
+			tl, mc := tool("ext", id)
+
+			if err := adapter.Remove(context.Background(), fr, tl, mc); err != nil {
+				t.Fatalf("Remove() error = %v", err)
+			}
+			got := fr.Calls[len(fr.Calls)-1]
+			if got.Name != tc.wantBinary || strings.Join(got.Args, " ") != "--uninstall-extension "+id {
+				t.Fatalf("Remove() call = %s %v, want %s --uninstall-extension %s", got.Name, got.Args, tc.wantBinary, id)
+			}
+		})
+	}
+}
+
+func TestEditorExtensionRemoveReportsFailure(t *testing.T) {
+	fr := &run.FakeRunner{LookPaths: map[string]bool{"code": true}, ExitCode: 1}
+	tl, mc := tool("ext", "golang.go")
+	if err := NewBaseAdapter(Configs["vscode"]).Remove(context.Background(), fr, tl, mc); err == nil {
+		t.Fatal("Remove() must surface a non-zero exit")
 	}
 }

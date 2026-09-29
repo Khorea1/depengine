@@ -86,6 +86,14 @@ type ElevationRequirer interface {
 	RequiresElevation(tool *config.Tool, mc *config.MethodCandidate) bool
 }
 
+// RemovalElevationRequirer is the removal-specific counterpart to
+// ElevationRequirer. It avoids prompting for adapters that need elevation to
+// install but perform user-scoped removal without it.
+type RemovalElevationRequirer interface {
+	AdapterV2
+	RequiresRemovalElevation(tool *config.Tool, mc *config.MethodCandidate) bool
+}
+
 // checkAvailable consults the adapter's CheckAvailable. Adapters that
 // Every registered adapter must implement this package-availability probe.
 func checkAvailable(ctx context.Context, rn run.Runner, adapter AdapterV2, tool *config.Tool, mc *config.MethodCandidate) bool {

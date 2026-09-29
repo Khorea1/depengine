@@ -16,6 +16,7 @@ import (
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
@@ -709,6 +710,13 @@ func preflightDirectUpgrade(ctx context.Context, ex *exec.Executor, runner run.R
 		return nil, plan.VerificationResult{}, fmt.Errorf("tracked installation verification is broken: %s", verification.Detail)
 	case plan.StateSatisfied:
 		return resolved, verification, nil
+	}
+	contract, ok := methodkind.Lookup(method.Kind)
+	if !ok {
+		return nil, plan.VerificationResult{}, fmt.Errorf("unknown method kind %q", method.Kind)
+	}
+	if err := contract.CheckRequirements(*resolved, methodkind.CandidateRequirements{Transition: plan.TransitionUpgrade}); err != nil {
+		return nil, plan.VerificationResult{}, err
 	}
 	if !adapter.CheckAvailable(ctx, probeRunner, tool, method) {
 		return nil, plan.VerificationResult{}, fmt.Errorf("target is not available from configured repositories")
