@@ -18,9 +18,9 @@ change to one format does not require the others to change.
 
 All three formats are still pre-freeze. The schema/manifest uses version `1`,
 installed state uses version `4`, and `depengine.lock` is written as version
-`1` or `2` (`depengine update` promotes it to `2`). None of these numbers is
-yet a promise that every future depengine release will read every file written
-today.
+`1` or `2` (a whole-schema `depengine update` promotes it to `2`). None of
+these numbers is yet a promise that every future depengine release will read
+every file written today.
 
 Until the [v1 freeze gate](specs/format-v1-freeze.md) is complete:
 
@@ -57,9 +57,10 @@ Lock compatibility is independent of schema compatibility. A lock records
 resolved identities, so an unknown lock version must be rejected before entries
 are consumed.
 
-Reading a lock never rewrites it. `depengine update` is the only operation that
-promotes a version `1` lock to version `2`; an install that rewrites the lock
-keeps the version it read.
+Reading a lock never rewrites it. `depengine update` is the only operation
+that promotes a version `1` lock to version `2`, and only a run that resolves
+the whole schema does so; an install that rewrites the lock keeps the version
+it read.
 
 A future lock migration must convert representation without re-resolving
 mutable dependencies. Re-resolution is an update, not a format migration.
