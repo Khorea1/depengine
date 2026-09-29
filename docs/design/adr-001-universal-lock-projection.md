@@ -1,6 +1,6 @@
 # ADR-001: Lockfile as immutable-resolution projection of the resolved plan
 
-- Status: decided, partially implemented (2026-09)
+- Status: accepted and implemented (2026-09)
 - Origin: implementation working notes, condensed into this ADR
 
 ## Context
@@ -31,18 +31,18 @@ The lockfile is the immutable-resolution projection of `ResolvedInstallPlan`:
 - The projection/document is versioned and rejects unknown versions.
   `VerifyResolvedPlanAgainstLock` rejects identity, requested-intent, and
   tool-set drift against an immutable `LockDocument`.
-- Until universal locking exists, product claims stay qualified to the
-  methods actually pinned (P3.6).
+- Persisted lock v2 embeds the validated projection. `update` writes it only
+  when every selected plan is immutable; `install` and `upgrade` materialize
+  and verify the pinned plan before observation or mutation.
+- Lock v1 remains readable for compatibility and is migrated by the next
+  successful update. It retains only its documented method-specific guarantees.
 
-## Open work
+## Operational boundary
 
-- Per-adapter concrete fields (native/ecosystem versions, Go/Cargo package
-  versions, artifact URLs, version-manager pins, and Snap/Flatpak channels).
-  Legacy lock v1 now persists concrete Git SHAs for direct Git and Cargo Git
-  branch/tag selectors, OCI manifest digests for container tags, and concrete
-  package versions for plain unversioned npm, pnpm, and Yarn Classic requests.
-  Their transitive dependencies remain unpinned; universal projection migration remains open.
-- `depengine update` meaningful pins for every mutable method class.
-- Install/upgrade wiring consuming the pinned plan and verifier.
-- `update` CLI migration to the pure projection path.
-- Persisted legacy `depengine.lock` migration policy.
+Adapters that do not expose a concrete identity remain usable without a frozen
+v2 lock, but they cannot produce one: update fails closed instead of persisting
+an incomplete projection. Exact package pins still do not lock transitive
+registry dependency graphs. Git-backed Brew/Scoop sources with explicit URLs
+require a concrete local HEAD revision; frozen replay verifies that revision
+before package installation. Signing-key trust is not inferred or serialized
+unless an adapter supplies an operational trust identity.

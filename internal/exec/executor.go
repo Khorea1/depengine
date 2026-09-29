@@ -9,6 +9,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/secret"
 	"github.com/Khorea1/depengine/internal/source"
@@ -37,7 +38,8 @@ type Executor struct {
 	nativeManagerName  string   // resolved from clan via native.Lookup
 
 	// system facts for when-condition evaluation
-	facts *engine.Facts
+	facts        *engine.Facts
+	lockDocument *plan.LockDocument
 
 	// schema info for state tracking
 	schemaPath    string
@@ -212,6 +214,13 @@ func WithDefaultMethodOrder(order []string) Option {
 }
 func WithFacts(f *engine.Facts) Option {
 	return func(ex *Executor) { ex.facts = f }
+}
+
+// WithLockDocument makes candidate resolution consume and verify the immutable
+// identities persisted in the universal lock projection.
+func WithLockDocument(document plan.LockDocument) Option {
+	copy := document
+	return func(ex *Executor) { ex.lockDocument = &copy }
 }
 func New() *Executor {
 	ex := &Executor{

@@ -115,6 +115,33 @@ func TestProjectLockUnresolvedManagerIsExplicitlyUnavailable(t *testing.T) {
 	}
 }
 
+func TestProjectLockGitBackedSourceRequiresRevision(t *testing.T) {
+	p := plan.New("tool", "native", true)
+	p.Identity.Version = "1.0.0"
+	p.Sources = []plan.SourceReference{{
+		Role: plan.SourceHostConfiguration,
+		Kind: "brew-tap",
+		Name: "owner/tools",
+		URL:  "https://example.test/owner/tools.git",
+	}}
+
+	got, err := plan.ProjectLock(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Stability != plan.LockUnavailable || !strings.Contains(got.Reason, "concrete revision") {
+		t.Fatalf("ProjectLock() = %#v, want unavailable source revision", got)
+	}
+
+	p.Sources[0].Revision = "0123456789abcdef0123456789abcdef01234567"
+	got, err = plan.ProjectLock(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Stability != plan.LockImmutable {
+		t.Fatalf("Stability = %q, want immutable", got.Stability)
+	}
+}
 func TestLockProjectionRejectsUnknownSchemaVersion(t *testing.T) {
 	p := plan.LockProjection{
 		Version:   plan.CurrentLockVersion + 1,
@@ -174,6 +201,73 @@ func TestBuildLockDocumentIsDeterministicAndAllOrNothing(t *testing.T) {
 	unpinnable := plan.New("zzz", "native", true)
 	if _, err := plan.BuildLockDocument(append(plans, unpinnable)); !errors.Is(err, plan.ErrLockUnavailable) {
 		t.Fatalf("BuildLockDocument(unpinnable) = %v, want ErrLockUnavailable", err)
+	}
+}
+
+func TestLockDocumentCodecValidatesAndRejectsTrailingOrUnknownData(t *testing.T) {
+	p := plan.New("tool", "native", true)
+	p.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: "1.2.3"}
+	p.Identity.Version = "1.2.3"
+	document, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{p})
+	if err != nil {
+		t.Fatalf("BuildLockDocument() error: %v", err)
+	}
+	encoded, err := plan.EncodeLockDocument(document)
+	if err != nil {
+		t.Fatalf("EncodeLockDocument() error: %v", err)
+	}
+	got, err := plan.DecodeLockDocument(encoded)
+	if err != nil {
+		t.Fatalf("DecodeLockDocument() error: %v", err)
+	}
+	if !reflect.DeepEqual(got, document) {
+		t.Fatalf("decoded document differs\n got: %#v\nwant: %#v", got, document)
+	}
+
+	for name, input := range map[string][]byte{
+		"unknown field":   []byte(strings.Replace(string(encoded), `"version":`, `"unknown": true, "version":`, 1)),
+		"trailing value":  append(append([]byte(nil), encoded...), []byte(`{} `)...),
+		"unknown version": []byte(strings.Replace(string(encoded), `"version": 1`, `"version": 999`, 1)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := plan.DecodeLockDocument(input); err == nil {
+				t.Fatal("DecodeLockDocument() unexpectedly accepted invalid data")
+			}
+		})
+	}
+}
+
+func TestApplyResolvedSourceRevisionRequiresExactUniqueIdentity(t *testing.T) {
+	const revision = "0123456789abcdef0123456789abcdef01234567"
+	t.Run("exact reference", func(t *testing.T) {
+		p := plan.New("tool", "brew", true)
+		p.Sources = []plan.SourceReference{{Role: plan.SourceHostConfiguration, Kind: "brew", Name: "homebrew/core"}}
+		if err := p.ApplyResolvedSourceRevision("brew", "homebrew/core", revision); err != nil {
+			t.Fatalf("ApplyResolvedSourceRevision() error: %v", err)
+		}
+		if got := p.Sources[0].Revision; got != revision {
+			t.Fatalf("revision = %q, want %q", got, revision)
+		}
+	})
+
+	for name, sources := range map[string][]plan.SourceReference{
+		"absent": nil,
+		"ambiguous": {
+			{Role: plan.SourceHostConfiguration, Kind: "brew", Name: "homebrew/core"},
+			{Role: plan.SourceSelection, Kind: "brew", Name: "homebrew/core"},
+		},
+		"conflicting declaration": {{Role: plan.SourceHostConfiguration, Kind: "brew", Name: "homebrew/core", Revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := plan.New("tool", "brew", true)
+			p.Sources = sources
+			if err := p.ApplyResolvedSourceRevision("brew", "homebrew/core", revision); err == nil {
+				t.Fatal("ApplyResolvedSourceRevision() unexpectedly accepted invalid source identity")
+			}
+			if name == "absent" && len(p.Sources) != 0 {
+				t.Fatalf("failed attachment mutated sources: %#v", p.Sources)
+			}
+		})
 	}
 }
 
@@ -1378,7 +1472,6 @@ func TestLockPreservesArtifactIntegritySemantics(t *testing.T) {
 		t.Fatalf("VerifyResolvedPlanAgainstLock() error = %v, want ErrLockMismatch", err)
 	}
 }
-
 
 func TestLockPreservesLocalSignatureIntegrity(t *testing.T) {
 	resolved := plan.New("demo", "local", true)

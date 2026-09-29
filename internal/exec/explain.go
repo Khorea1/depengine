@@ -194,7 +194,14 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 		if ex.sources == nil {
 			ex.sources = source.NewManager(ex.rn, true)
 		}
-		sourceProbe, probeErr := ex.probeCandidateSources(ctx, method.Sources)
+		sources, sourceErr := sourcesForResolvedPlan(method.Sources, resolvedPlan)
+		if sourceErr != nil {
+			attempt.Status = "failed"
+			attempt.Error = sourceErr.Error()
+			appendAttempt(attempt, method)
+			continue
+		}
+		sourceProbe, probeErr := ex.probeCandidateSources(ctx, sources)
 		if probeErr != nil {
 			attempt.Status = "failed"
 			attempt.Error = probeErr.Error()

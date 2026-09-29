@@ -79,6 +79,9 @@ type Lock struct {
 	Tools       map[string]ToolPin `toml:"tools"`
 	MethodsHash map[string]string  `toml:"methods_hash,omitempty" json:"methods_hash,omitempty"`
 	SourceHash  map[string]string  `toml:"source_hash,omitempty" json:"source_hash,omitempty"`
+	// UniversalProjection is the adapter-neutral plan.LockDocument encoded as JSON.
+	// It is present in v2 lockfiles; v1 remains readable for migration.
+	UniversalProjection string `toml:"universal_projection,omitempty"`
 
 	// clearGitRevision/clearContainerDigest are transient merge policy populated
 	// by ResolveAll when a previously lockable mutable selector has been removed.
@@ -127,8 +130,16 @@ func Load(path string) (*Lock, error) {
 	if err := toml.Unmarshal(data, &l); err != nil {
 		return nil, fmt.Errorf("lock: parse %s: %w", path, err)
 	}
-	if l.Version != 1 {
-		return nil, fmt.Errorf("lock: unsupported version %d (supported: 1)", l.Version)
+	if l.Version != 1 && l.Version != CurrentVersion {
+		return nil, fmt.Errorf("lock: unsupported version %d (supported: 1, %d)", l.Version, CurrentVersion)
+	}
+	if l.Version == 1 && l.UniversalProjection != "" {
+		return nil, fmt.Errorf("lock: version 1 cannot contain a universal projection")
+	}
+	if l.Version == CurrentVersion {
+		if _, err := l.ProjectionDocument(); err != nil {
+			return nil, err
+		}
 	}
 	for key, pin := range l.Tools {
 		if !isCanonicalKey(key) {
@@ -503,8 +514,13 @@ func ValidateFrozen(s *config.Schema, l *Lock) error {
 	if l == nil {
 		return fmt.Errorf("lock: frozen validation requires lockfile")
 	}
-	if l.Version != 1 {
-		return fmt.Errorf("lock: unsupported version %d (supported: 1)", l.Version)
+	if l.Version != 1 && l.Version != CurrentVersion {
+		return fmt.Errorf("lock: unsupported version %d (supported: 1, %d)", l.Version, CurrentVersion)
+	}
+	if l.Version == CurrentVersion {
+		if _, err := l.ProjectionDocument(); err != nil {
+			return err
+		}
 	}
 
 	names := make([]string, 0, len(s.Tools))

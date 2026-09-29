@@ -206,7 +206,12 @@ func (ex *Executor) selectCandidateForTransition(ac *candidateAttempt, result *T
 // the manager's current repository index: "not found" may be exactly what
 // the declared source is meant to change.
 func (ex *Executor) probeSourceAvailability(ac *candidateAttempt, result *ToolResult) attemptOutcome {
-	sourceProbe, err := ex.probeCandidateSources(ac.toolCtx, ac.method.Sources)
+	sources, err := sourcesForResolvedPlan(ac.method.Sources, ac.resolved)
+	if err != nil {
+		ex.skipCandidate(ac, result, "failed", err.Error())
+		return nextMethod
+	}
+	sourceProbe, err := ex.probeCandidateSources(ac.toolCtx, sources)
 	if err != nil {
 		ex.skipCandidate(ac, result, "failed", err.Error())
 		return nextMethod

@@ -61,10 +61,10 @@ func TestRunUpdatePreservesPinsAndHashesOutsideProfile(t *testing.T) {
 	materialized := "sha256:" + strings.Repeat("c", 64)
 	schemaPath := writeUpdateTestSchema(t, dir, "schema_version = 1\n\n"+
 		"[tools.profiled]\ntags = [\"dev\"]\n\n"+
-		"[tools.profiled.http]\nurl = \"https://example.com/profiled.deb\"\nchecksum = \""+freshChecksum+"\"\n\n"+
+		"[tools.profiled.http]\nurl = \"https://example.com/profiled\"\nchecksum = \""+freshChecksum+"\"\n\n"+
 		"[tools.profiled.native]\npkg = \"profiled\"\nsources = [{ kind = \"brew-tap\", name = \"profiled/tools\", url = \"https://example.com/profiled/tools.git\" }]\n\n"+
 		"[tools.outside]\ntags = [\"other\"]\n\n"+
-		"[tools.outside.http]\nurl = \"https://example.com/outside.deb\"\nchecksum = \"sha256:auto\"\n\n"+
+		"[tools.outside.http]\nurl = \"https://example.com/outside\"\nchecksum = \"sha256:auto\"\n\n"+
 		"[tools.outside.native]\npkg = \"outside\"\nsources = [{ kind = \"brew-tap\", name = \"outside/tools\", url = \"https://example.com/outside/tools.git\" }]\n")
 
 	old := &lock.Lock{
@@ -134,7 +134,7 @@ func TestRunUpdateAcceptsRemovedSourceIdentity(t *testing.T) {
 
 	dir := t.TempDir()
 	schemaPath := writeUpdateTestSchema(t, dir, "schema_version = 1\n\n"+
-		"[tools.demo.native]\npkg = \"demo\"\n")
+		"[tools.demo.http]\nurl = \"https://example.com/demo\"\nchecksum = \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n")
 	lockPath := lock.DefaultPath(schemaPath)
 	old := &lock.Lock{
 		Version:     1,
@@ -155,6 +155,16 @@ func TestRunUpdateAcceptsRemovedSourceIdentity(t *testing.T) {
 	if _, ok := got.SourceHash["demo/native/0"]; ok {
 		t.Fatalf("SourceHash = %v, want removed source identity accepted by update", got.SourceHash)
 	}
+	if got.Version != lock.CurrentVersion {
+		t.Fatalf("lock version = %d, want %d", got.Version, lock.CurrentVersion)
+	}
+	document, err := got.ProjectionDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(document.Entries) != 1 || document.Entries[0].Tool.Name != "demo" {
+		t.Fatalf("universal projection = %#v, want demo entry", document.Entries)
+	}
 }
 
 // TestRunUpdatePreservesMaterializedAutoChecksumPin is the regression test for
@@ -168,8 +178,8 @@ func TestRunUpdatePreservesMaterializedAutoChecksumPin(t *testing.T) {
 	freshChecksum := "sha256:" + strings.Repeat("d", 64)
 	materialized := "sha256:" + strings.Repeat("e", 64)
 	schemaPath := writeUpdateTestSchema(t, dir, "schema_version = 1\n\n"+
-		"[tools.auto.http]\nurl = \"https://example.com/auto.deb\"\nchecksum = \"sha256:auto\"\n\n"+
-		"[tools.pinned.http]\nurl = \"https://example.com/pinned.deb\"\nchecksum = \""+freshChecksum+"\"\n")
+		"[tools.auto.http]\nurl = \"https://example.com/auto\"\nchecksum = \"sha256:auto\"\n\n"+
+		"[tools.pinned.http]\nurl = \"https://example.com/pinned\"\nchecksum = \""+freshChecksum+"\"\n")
 
 	old := &lock.Lock{
 		Version: 1,
@@ -222,7 +232,7 @@ func TestRunUpdateRegeneratesUnreadableLock(t *testing.T) {
 	dir := t.TempDir()
 	checksum := "sha256:" + strings.Repeat("a", 64)
 	schemaPath := writeUpdateTestSchema(t, dir, "schema_version = 1\n\n"+
-		"[tools.demo.http]\nurl = \"https://example.com/demo.deb\"\nchecksum = \""+checksum+"\"\n")
+		"[tools.demo.http]\nurl = \"https://example.com/demo\"\nchecksum = \""+checksum+"\"\n")
 	lockPath := lock.DefaultPath(schemaPath)
 	if err := os.WriteFile(lockPath, []byte("not valid toml = ["), 0o600); err != nil {
 		t.Fatal(err)

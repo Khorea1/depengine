@@ -37,6 +37,19 @@ func (ex *Executor) resolveCandidatePlan(
 	if intent == nil {
 		return nil, nil
 	}
+	var expected *plan.LockProjection
+	if ex.lockDocument != nil {
+		entry, err := ex.lockDocument.EntryForPlan(*intent)
+		if err != nil {
+			return intent, fmt.Errorf("%s: frozen lock: %w", displayKind, err)
+		}
+		pinned, err := ex.lockDocument.PinnedPlanFor(*intent)
+		if err != nil {
+			return intent, fmt.Errorf("%s: frozen lock: %w", displayKind, err)
+		}
+		intent = &pinned
+		expected = &entry
+	}
 	resolveCtx, err := ex.githubCredentialContext(ctx, method)
 	if err != nil {
 		return intent, fmt.Errorf("%s: %w", displayKind, err)
@@ -51,7 +64,42 @@ func (ex *Executor) resolveCandidatePlan(
 	if err := plan.ValidateResolution(*intent, *resolved); err != nil {
 		return intent, fmt.Errorf("%s: resolve plan: %w", displayKind, err)
 	}
+	if expected != nil {
+		if err := plan.VerifyResolvedPlanAgainstLock(*expected, *resolved); err != nil {
+			return intent, fmt.Errorf("%s: frozen lock: %w", displayKind, err)
+		}
+	}
 	return resolved, nil
+}
+
+// sourcesForResolvedPlan overlays immutable source revisions from a locked plan
+// onto runtime source preparation without mutating the parsed schema.
+func sourcesForResolvedPlan(configured []config.Source, resolved *plan.ResolvedInstallPlan) ([]config.Source, error) {
+	if resolved == nil || len(configured) == 0 || len(resolved.Sources) == 0 {
+		return configured, nil
+	}
+	result := configured
+	cloned := false
+	for i := range configured {
+		for _, locked := range resolved.Sources {
+			if locked.Kind != configured[i].Kind || locked.Name != configured[i].Name || locked.Revision == "" {
+				continue
+			}
+			if configured[i].Revision != "" && configured[i].Revision != locked.Revision {
+				return nil, fmt.Errorf("source %s:%s revision changed from locked %s", configured[i].Kind, configured[i].Name, locked.Revision)
+			}
+			if configured[i].Revision == locked.Revision {
+				break
+			}
+			if !cloned {
+				result = append([]config.Source(nil), configured...)
+				cloned = true
+			}
+			result[i].Revision = locked.Revision
+			break
+		}
+	}
+	return result, nil
 }
 
 // observeResolvedCandidate is the single read-only desired-state observation

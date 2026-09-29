@@ -140,6 +140,21 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 			newLock.SourceHash[key] = oldHash
 		}
 	}
+	// Resolve the universal projection from the concrete pins computed above.
+	// This also carries forward materialized sha256:auto values from the existing lock.
+	lock.Apply(s, newLock)
+	document, err := resolveUniversalLockDocument(ctx, s, clan, facts, *updateSchema, lg, oldLock)
+	if err != nil {
+		done("FAIL")
+		lg.Error("resolve universal lock", "error", err)
+		return exitWithCode(2)
+	}
+	if err := newLock.SetProjection(document); err != nil {
+		done("FAIL")
+		lg.Error("build universal lock", "error", err)
+		return exitWithCode(2)
+	}
+
 	pinned := len(newLock.Tools)
 	if *updateDryRun {
 		done(c.cyan("dry-run"))
