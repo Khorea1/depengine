@@ -133,7 +133,7 @@ depengine currently supports:
 | Native | `native`, plus package-manager aliases such as `apt`, `pacman`, `dnf`, `brew`, `winget`, `scoop`, `choco` |
 | Languages | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `pnpm`, `bun`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
 | Desktop | `flatpak`, `snap`, `vscode`, `vscodium`, `cask`, `mas`, `appman` |
-| Specialized | `sdkman`, `steamcmd`, `pacstall`, `aur`, `conda`, `asdf`, `nix`, `container`, `appimage`, `android`, `msi` |
+| Specialized | `sdkman`, `steamcmd`, `pacstall`, `aur`, `conda`, `asdf`, `nix`, `container`, `appimage`, `android`, `msi`, `exe`, `msix`, `appx` |
 | Artifacts/builds | `git`, `local`, `github`, `http` |
 
 `native` detects the host package manager. A tool can also name a manager

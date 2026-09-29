@@ -670,6 +670,9 @@ are described above or alongside their examples.
 | `appimage` | Portable `.AppImage` binaries, installed under a stable name | `obsidian = { appimage = { url = "https://…/Obsidian-{latest}.AppImage" } }` |
 | `android` | Download a `.apk` and hand it to Termux's package installer | `obsidian = { android = { url = "https://…/obsidian-{latest}-android.apk" }, when = { is_android = true } }` |
 | `msi` | Install/remove a Windows Installer product by exact registry identity | `nvim = { msi = { repo = "neovim/neovim", asset = "nvim-win64.msi", product_name = "Neovim" } }` |
+| `exe` | Install/remove a tokenized executable installer by exact Add/Remove Programs identity | `demo = { exe = { url = "https://…/demo.exe", product_name = "Demo", publisher = "Example", install_args = ["/quiet"], uninstall_exe = "C:\\Program Files\\Demo\\uninstall.exe", uninstall_args = ["/quiet"] } }` |
+| `msix` | Install/remove a signed per-user MSIX package by exact package name and publisher | `demo = { msix = { url = "https://…/demo.msix", pkg = "Example.Demo", publisher = "CN=Example" } }` |
+| `appx` | Install/remove a signed per-user AppX package by exact package name and publisher | `demo = { appx = { url = "https://…/demo.appx", pkg = "Example.Demo", publisher = "CN=Example" } }` |
 | `sdkman` | SDKMAN! JVM SDKs | `java17 = { sdkman = "java" }` |
 | `steamcmd` | SteamCMD game server tools | `cs2 = { steamcmd = "730" }` |
 | `pacstall` | Pacstall packages (Debian-based AUR-like) | `neofetch = { pacstall = "neofetch" }` |

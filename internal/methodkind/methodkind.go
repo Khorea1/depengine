@@ -204,6 +204,10 @@ var msiArtifactContract = &artifact.Contract{
 	ArtifactFields:     []string{"url", "asset"},
 	RequiredExtensions: []string{".msi"},
 }
+var exeArtifactContract = &artifact.Contract{URLFields: []string{"url", "checksum_url", "signature_url"}, AllowedSchemes: []string{"http", "https"}, ArtifactFields: []string{"url", "asset"}, RequiredExtensions: []string{".exe"}}
+var msixArtifactContract = &artifact.Contract{URLFields: []string{"url", "checksum_url", "signature_url"}, AllowedSchemes: []string{"http", "https"}, ArtifactFields: []string{"url", "asset"}, RequiredExtensions: []string{".msix"}}
+var appxArtifactContract = &artifact.Contract{URLFields: []string{"url", "checksum_url", "signature_url"}, AllowedSchemes: []string{"http", "https"}, ArtifactFields: []string{"url", "asset"}, RequiredExtensions: []string{".appx"}}
+var windowsUserScopeContract = &ScopeContract{AdapterValues: map[plan.Scope]string{plan.ScopeUser: "user"}}
 
 // Contracts is the single source of truth for method kinds, ordering and
 // adapter-facing schema fields. Keep entries in default preference order;
@@ -380,6 +384,16 @@ var Contracts = finalizeContracts([]Contract{
 		"product_name": {Type: String, Required: true, NonEmpty: true, Effects: EffectVerify | EffectExecute},
 		"publisher":    {Type: String, Effects: EffectVerify | EffectExecute},
 	}), Requires: httpBearerSecretRequirements, SourceAlternatives: artifactSourceAlternatives, Artifact: msiArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, ImplicitDistroFamily: []string{"windows"}, CanRemove: true},
+	{Kind: "exe", DefaultOrder: 38, Fields: fields(artifactFields, httpBearerSecretFields, map[string]Field{
+		"product_name": {Type: String, Required: true, NonEmpty: true, Effects: EffectVerify | EffectExecute}, "publisher": {Type: String, Required: true, NonEmpty: true, Effects: EffectVerify | EffectExecute},
+		"install_args": {Type: StringList, Required: true, Effects: EffectExecute}, "uninstall_exe": {Type: String, Required: true, NonEmpty: true, Effects: EffectExecute}, "uninstall_args": {Type: StringList, Effects: EffectExecute},
+	}), Requires: httpBearerSecretRequirements, SourceAlternatives: artifactSourceAlternatives, Artifact: exeArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, ImplicitDistroFamily: []string{"windows"}, CanRemove: true},
+	{Kind: "msix", DefaultOrder: 39, Capabilities: CapabilityScope, Scopes: windowsUserScopeContract, Fields: fields(artifactFields, httpBearerSecretFields, map[string]Field{
+		"pkg": {Type: String, Required: true, NonEmpty: true, Effects: EffectExecute | EffectVerify}, "publisher": {Type: String, Required: true, NonEmpty: true, Effects: EffectVerify | EffectExecute}, "scope": {Type: String, Enum: []string{"user"}, Effects: EffectExecute},
+	}), Requires: httpBearerSecretRequirements, SourceAlternatives: artifactSourceAlternatives, Artifact: msixArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, ImplicitDistroFamily: []string{"windows"}, CanRemove: true},
+	{Kind: "appx", DefaultOrder: 40, Capabilities: CapabilityScope, Scopes: windowsUserScopeContract, Fields: fields(artifactFields, httpBearerSecretFields, map[string]Field{
+		"pkg": {Type: String, Required: true, NonEmpty: true, Effects: EffectExecute | EffectVerify}, "publisher": {Type: String, Required: true, NonEmpty: true, Effects: EffectVerify | EffectExecute}, "scope": {Type: String, Enum: []string{"user"}, Effects: EffectExecute},
+	}), Requires: httpBearerSecretRequirements, SourceAlternatives: artifactSourceAlternatives, Artifact: appxArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, ImplicitDistroFamily: []string{"windows"}, CanRemove: true},
 })
 
 // finalizeContracts adds capabilities implied by the adapter interface and by
