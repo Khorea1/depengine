@@ -143,9 +143,9 @@ Work on the current execution model comes before adding more installer types.
   dangling-reference, malformed-URL, duplicate-tool, and unknown-placeholder
   fixtures plus an unsafe package-name injection fixture, asserting stable
   JSON diagnostic codes and strict-mode exit behavior. macOS, FreeBSD, OpenBSD,
-  NetBSD, and Windows native runners now also require a real package-manager
-  install failure to remain absent from live observation and persisted removal
-  state. Termux-specific adversarial lifecycle coverage remains open.
+  NetBSD, and Windows native runners now also require a missing native package
+  to remain absent from live observation and persisted removal state after an
+  attempted install. Termux-specific adversarial lifecycle coverage remains open.
 - [ ] Cover each method contract across validation, identity, dry-run, version,
   source, scope, environment, lock, lifecycle, idempotency, errors, and secret
   redaction.

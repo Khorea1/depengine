@@ -21,9 +21,9 @@ still happen on the runner or VM itself, so this suite is intended for
 disposable environments.
 
 `native-failure.sh` complements the success lifecycle with a package name
-reserved for the test suite. It requires the real native manager to reject the
-install, then proves that live observation remains absent and no removable
-tracked state was committed.
+reserved for the test suite. It attempts installation through the real native selection path, then proves
+that live observation remains absent and no removable tracked state was
+committed. Candidate exhaustion and manager errors are both valid outcomes.
 
 Current native lifecycle coverage uses `native-hello.toml` on the
 GitHub-hosted macOS runner (Homebrew) and the real FreeBSD VM (`pkg`).

@@ -29,10 +29,9 @@ mkdir -p "$XDG_CONFIG_HOME" "$XDG_STATE_HOME"
 
 "$BIN" validate --schema "$SCHEMA" --no-manifest
 
-if "$BIN" install --schema "$SCHEMA" --only "$TOOL"; then
-    echo "unexpectedly installed nonexistent native package: $TOOL" >&2
-    exit 1
-fi
+# Candidate exhaustion is a successful no-op, while a reached manager may return
+# an error. Both outcomes are valid here; host state is the contract under test.
+"$BIN" install --schema "$SCHEMA" --only "$TOOL" || true
 
 if "$BIN" check --schema "$SCHEMA" --no-manifest --live "$TOOL"; then
     echo "failed native install was reported as present: $TOOL" >&2
