@@ -443,6 +443,14 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 // apply their own identity policy: a regular install must not bless changed
 // method/source identity, while `depengine update` accepts freshly resolved
 // identity. That policy belongs to each caller, not to the pin merge.
+//
+// Version and UniversalProjection are preserved: when the existing lock is v2
+// and the fresh resolution carries no projection (ResolveAll only produces
+// legacy v1 pins; promotion to v2 happens via SetProjection in update), the
+// merged result keeps the existing v2 version and projection verbatim.
+// Install must not regenerate or drop the universal projection — update is
+// the operation that accepts/recalculates identity. When fresh already
+// carries a projection, it wins.
 func Merge(existing, fresh *Lock) *Lock {
 	if fresh == nil {
 		return existing
@@ -497,6 +505,10 @@ func Merge(existing, fresh *Lock) *Lock {
 		} else {
 			fresh.Tools[key] = newPin
 		}
+	}
+	if existing.Version == CurrentVersion && existing.UniversalProjection != "" && fresh.UniversalProjection == "" {
+		fresh.Version = CurrentVersion
+		fresh.UniversalProjection = existing.UniversalProjection
 	}
 	return fresh
 }

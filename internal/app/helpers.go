@@ -331,6 +331,10 @@ func validateInstallPackageLockIdentity(s *config.Schema, l *lock.Lock) error {
 // newly resolved pin fields. Only an explicit update may accept identity drift.
 // A changed package identity is rejected before merge so install cannot
 // silently execute an unpinned request while retaining the stale lock identity.
+// A v2 universal projection is preserved verbatim: install consumes it but
+// never regenerates it — update is the operation that accepts/recalculates
+// identity. Partial/profile installs therefore keep projection entries for
+// tools outside the current resolution scope.
 func mergeInstallLock(oldLock, newLock *lock.Lock) (*lock.Lock, error) {
 	if oldLock != nil && newLock != nil {
 		for key, oldPin := range oldLock.Tools {
@@ -347,6 +351,16 @@ func mergeInstallLock(oldLock, newLock *lock.Lock) (*lock.Lock, error) {
 	newLock = lock.Merge(oldLock, newLock)
 	if oldLock == nil {
 		return newLock, nil
+	}
+	// Preserve the v2 universal projection verbatim. lock.Merge already does
+	// this when fresh carries no projection, but install must not depend on
+	// that detail: a v2 lock consumed by install stays v2 with an unchanged
+	// projection even if the fresh resolution ever carries its own.
+	if oldLock.Version == lock.CurrentVersion && oldLock.UniversalProjection != "" {
+		if newLock.UniversalProjection == "" {
+			newLock.UniversalProjection = oldLock.UniversalProjection
+		}
+		newLock.Version = lock.CurrentVersion
 	}
 	for name, oldHash := range oldLock.MethodsHash {
 		newHash, exists := newLock.MethodsHash[name]
