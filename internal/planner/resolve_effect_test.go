@@ -28,11 +28,15 @@ var resolveEffectExclusions = map[string]resolveEffectExclusion{
 	"github.release":       {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
 	"http.release":         {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
 	"msi.release":          {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
+	"macpkg.release":       {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
+	"dmg.release":          {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
 	"appimage.release":     {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
 	"android.release":      {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
 	"github.branch":        {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
 	"http.branch":          {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
 	"msi.branch":           {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
+	"macpkg.branch":        {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
+	"dmg.branch":           {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
 	"appimage.branch":      {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
 	"android.branch":       {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
 	"git.url":              {"consumed by the git adapter at clone time", "internal/git/adapter.go"},
@@ -72,7 +76,7 @@ func TestResolveEffectFieldsMoveStaticIntent(t *testing.T) {
 
 			build := func(value any) (any, error) {
 				cfg, _ := contracttest.BaseConfig(contract.Kind, name)
-				if (contract.Kind == "http" || contract.Kind == "appimage" || contract.Kind == "android" || contract.Kind == "msi") && (name == "secret_ref" || name == "checksum_secret_ref" || name == "signature_secret_ref") || (contract.Kind == "github" || contract.Kind == "git" || contract.Kind == "cargo" || contract.Kind == "container") && name == "secret_ref" {
+				if (contract.Kind == "http" || contract.Kind == "appimage" || contract.Kind == "android" || contract.Kind == "msi" || contract.Kind == "macpkg" || contract.Kind == "dmg") && (name == "secret_ref" || name == "checksum_secret_ref" || name == "signature_secret_ref") || (contract.Kind == "github" || contract.Kind == "git" || contract.Kind == "cargo" || contract.Kind == "container") && name == "secret_ref" {
 					ref := value.(map[string]any)
 					method := &config.MethodCandidate{
 						Kind:   contract.Kind,

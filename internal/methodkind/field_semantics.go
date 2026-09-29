@@ -23,6 +23,8 @@ const (
 
 var fieldSemantics = map[string]FieldSemantic{
 	"architecture":         SemanticPolicy,
+	"allow_untrusted":      SemanticPolicy,
+	"app":                  SemanticArtifactIdentity,
 	"auth_username":        SemanticAuthentication,
 	"artifact":             SemanticArtifactIdentity,
 	"asset":                SemanticArtifactIdentity,
@@ -58,6 +60,7 @@ var fieldSemantics = map[string]FieldSemantic{
 	"pkg_overrides":        SemanticPackageIdentity,
 	"platform":             SemanticPolicy,
 	"prefix":               SemanticPlacement,
+	"package_id":           SemanticVerificationIdentity,
 	"prerelease":           SemanticVersionIdentity,
 	"product_name":         SemanticVerificationIdentity,
 	"publisher":            SemanticVerificationIdentity,
