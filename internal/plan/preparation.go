@@ -106,9 +106,10 @@ type PreparationMutation struct {
 // preparation and commit. Mutations are not probes and must not be required to
 // merely answer whether a candidate could work.
 type PreparationPlan struct {
-	Probe   []Operation           `json:"probe,omitempty"`
-	Prepare []PreparationMutation `json:"prepare,omitempty"`
-	Commit  []Operation           `json:"commit,omitempty"`
+	Probe      []Operation           `json:"probe,omitempty"`
+	Prepare    []PreparationMutation `json:"prepare,omitempty"`
+	Commit     []Operation           `json:"commit,omitempty"`
+	CommitUses []ResourceUse         `json:"commit_uses,omitempty"`
 }
 
 // Validate enforces the transactional boundary independently of adapters.
@@ -143,6 +144,16 @@ func (p PreparationPlan) Validate() error {
 		if op.Effect != EffectMutation {
 			return fmt.Errorf("commit operation %d (%q) must be a mutation", i, op.Kind)
 		}
+	}
+	commitUses := make(map[ResourceIdentity]struct{}, len(p.CommitUses))
+	for i, use := range p.CommitUses {
+		if err := use.Resource.Validate(); err != nil {
+			return fmt.Errorf("commit resource use %d: %w", i, err)
+		}
+		if _, duplicate := commitUses[use.Resource]; duplicate {
+			return fmt.Errorf("duplicate commit resource use %q/%q", use.Resource.Kind, use.Resource.Key)
+		}
+		commitUses[use.Resource] = struct{}{}
 	}
 	return nil
 }

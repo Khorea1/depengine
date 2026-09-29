@@ -412,6 +412,86 @@ func TestRecoverLazyPrerequisiteCommitPersistsToolAndZeroRefOwnership(t *testing
 	}
 }
 
+func TestRecoverOwnerCommitAtomicallyClaimsPrerequisite(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	helperMethod := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"pkg": "helper"}}
+	helper := &config.Tool{Name: "helper", DependencyOnly: true, Methods: []*config.MethodCandidate{helperMethod}}
+	ownerMethod := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"pkg": "owner"}, Requires: []string{"helper"}}
+	owner := &config.Tool{Name: "owner", Methods: []*config.MethodCandidate{ownerMethod}}
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"cargo"}},
+		Tools:    map[string]*config.Tool{"helper": helper, "owner": owner},
+	}
+	intent, mismatch := candidatePlanIntent(owner, ownerMethod)
+	if mismatch != "" || intent == nil {
+		t.Fatalf("owner intent = %#v, mismatch = %q", intent, mismatch)
+	}
+	key, err := candidatePreparationKey(owner.Name, ownerMethod.Kind, intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	helperResource, err := plan.PrerequisiteResource(helper.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	helperState := state.ToolState{Method: "cargo", MethodKind: "cargo", InstalledAt: time.Now().UTC().Format(time.RFC3339), Config: helperMethod.Config}
+	if err := state.Save(&state.State{
+		Version:          state.CurrentVersion,
+		Tools:            map[string]state.ToolState{"helper": helperState},
+		OwnedResources:   []plan.OwnedResourceState{{Resource: helperResource, Ownership: plan.OwnershipDepengine}},
+		PreparationPlans: map[string]plan.PreparationPlan{}, PreparationJournals: map[string]plan.PreparationJournal{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	preparationPlan := plan.PreparationPlan{}
+	locked, err := state.LoadLocked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := locked.BeginPreparation(key, preparationPlan); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if _, err := locked.PlanPreparationCommitWithUses(key, preparationPlan, []plan.ResourceUse{{Resource: helperResource, Created: true}}); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if err := locked.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := &recoveryObservationAdapter{
+		testMockAdapter: testMockAdapter{kindValue: "cargo"},
+		observation: plan.Observation{
+			Presence:    plan.PresencePresent,
+			Identity:    plan.ObservedIdentity{Package: intent.Identity.Package, Version: intent.Identity.Version},
+			KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion},
+		},
+	}
+	ex := New()
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
+	ex.schema = schema
+	ex.recoveredCommits = make(map[string]recoveredCandidateCommit)
+	if err := ex.recoverPreparationTransactions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := state.LoadFrom(state.DefaultPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := st.Tools["owner"]; !ok {
+		t.Fatalf("recovered owner ToolState missing: %#v", st.Tools)
+	}
+	if len(st.OwnedResources) != 1 || st.OwnedResources[0].Resource != helperResource || st.OwnedResources[0].Ownership != plan.OwnershipDepengine || !reflect.DeepEqual(st.OwnedResources[0].Dependents, []string{"owner"}) {
+		t.Fatalf("recovered prerequisite claim = %#v, want owner reference", st.OwnedResources)
+	}
+	if len(st.PreparationPlans) != 0 || len(st.PreparationJournals) != 0 {
+		t.Fatalf("recovered owner transaction remains active: plans=%#v journals=%#v", st.PreparationPlans, st.PreparationJournals)
+	}
+}
+
 func TestRecoverPreparationResolvesInFlightSourceAddAndRollsBack(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	configured := config.Source{Kind: "brew-tap", Name: "vendor/tools"}

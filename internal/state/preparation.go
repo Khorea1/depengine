@@ -102,15 +102,27 @@ func (ls *LockedState) ResolvePreparationApplying(key string, p plan.Preparation
 // a persisted committing journal must reconcile the desired/observed install
 // state instead of automatically rolling preparation back.
 func (ls *LockedState) PlanPreparationCommit(key string, p plan.PreparationPlan) (plan.PreparationJournal, error) {
+	return ls.PlanPreparationCommitWithUses(key, p, p.CommitUses)
+}
+
+// PlanPreparationCommitWithUses durably stores the exact resources the
+// candidate will claim together with the committing boundary. Recovery can
+// therefore finalize ownership without reconstructing it from a later schema.
+func (ls *LockedState) PlanPreparationCommitWithUses(key string, p plan.PreparationPlan, uses []plan.ResourceUse) (plan.PreparationJournal, error) {
 	journal, err := ls.preparationJournal(key, p)
 	if err != nil {
 		return plan.PreparationJournal{}, err
 	}
-	next, err := journal.PlanCommit(p)
+	nextPlan := clonePreparationPlan(p)
+	nextPlan.CommitUses = append([]plan.ResourceUse(nil), uses...)
+	if err := nextPlan.Validate(); err != nil {
+		return plan.PreparationJournal{}, fmt.Errorf("preparation commit uses: %w", err)
+	}
+	next, err := journal.PlanCommit(nextPlan)
 	if err != nil {
 		return plan.PreparationJournal{}, err
 	}
-	if err := ls.persistPreparationJournal(key, next); err != nil {
+	if err := ls.persistPreparationCommit(key, nextPlan, next); err != nil {
 		return plan.PreparationJournal{}, err
 	}
 	return clonePreparationJournal(next), nil
@@ -147,6 +159,10 @@ func (ls *LockedState) FinalizePreparationCommit(key string, p plan.PreparationP
 	if err != nil {
 		return plan.PreparationJournal{}, err
 	}
+	owned, err = plan.ClaimResourceUses(owned, dependent, p.CommitUses)
+	if err != nil {
+		return plan.PreparationJournal{}, fmt.Errorf("claim commit resources: %w", err)
+	}
 	if err := ls.persistPreparationCompletion(key, owned); err != nil {
 		return plan.PreparationJournal{}, err
 	}
@@ -154,9 +170,9 @@ func (ls *LockedState) FinalizePreparationCommit(key string, p plan.PreparationP
 }
 
 // FinalizePreparationCommitWithTool atomically closes a committing candidate,
-// records the tool state, and tracks resource ownership that must survive
-// before a later dependent transaction can add its refcount claim. trackedUses
-// intentionally add no dependent references.
+// records its tool state and claims the resource uses persisted in the WAL plan.
+// trackedUses are resources created by this commit that must remain owned even
+// when they have no dependent reference yet.
 func (ls *LockedState) FinalizePreparationCommitWithTool(
 	key string,
 	p plan.PreparationPlan,
@@ -175,6 +191,10 @@ func (ls *LockedState) FinalizePreparationCommitWithTool(
 	next, owned, err := journal.FinalizeCommit(p, ls.state.OwnedResources, dependent)
 	if err != nil {
 		return plan.PreparationJournal{}, err
+	}
+	owned, err = plan.ClaimResourceUses(owned, dependent, p.CommitUses)
+	if err != nil {
+		return plan.PreparationJournal{}, fmt.Errorf("claim commit resources: %w", err)
 	}
 	owned, err = plan.TrackResourceUses(owned, trackedUses)
 	if err != nil {
@@ -412,6 +432,27 @@ func (ls *LockedState) persistPreparationJournal(key string, journal plan.Prepar
 // persistPreparationCompletion atomically replaces the active journal with
 // the resulting ownership snapshot. A successful completion has no recovery
 // work left, so terminal journals are not retained indefinitely.
+func (ls *LockedState) persistPreparationCommit(key string, preparationPlan plan.PreparationPlan, journal plan.PreparationJournal) error {
+	if ls == nil || ls.state == nil {
+		return errors.New("locked state is nil")
+	}
+	previousPlan, hadPlan := ls.state.PreparationPlans[key]
+	previousJournal, hadJournal := ls.state.PreparationJournals[key]
+	previousChecksum := ls.state.Checksum
+	if !hadPlan || !hadJournal {
+		return fmt.Errorf("preparation transaction %q is incomplete in state", key)
+	}
+	ls.state.PreparationPlans[key] = clonePreparationPlan(preparationPlan)
+	ls.state.PreparationJournals[key] = clonePreparationJournal(journal)
+	if err := ls.Save(); err != nil {
+		ls.state.PreparationPlans[key] = previousPlan
+		ls.state.PreparationJournals[key] = previousJournal
+		ls.state.Checksum = previousChecksum
+		return err
+	}
+	return nil
+}
+
 func (ls *LockedState) persistPreparationCompletion(key string, owned []plan.OwnedResourceState) error {
 	if ls == nil || ls.state == nil {
 		return errors.New("locked state is nil")
@@ -466,6 +507,7 @@ func clonePreparationPlan(preparationPlan plan.PreparationPlan) plan.Preparation
 	out := preparationPlan
 	out.Probe = cloneOperations(preparationPlan.Probe)
 	out.Commit = cloneOperations(preparationPlan.Commit)
+	out.CommitUses = append([]plan.ResourceUse(nil), preparationPlan.CommitUses...)
 	if preparationPlan.Prepare != nil {
 		out.Prepare = make([]plan.PreparationMutation, len(preparationPlan.Prepare))
 		for i, mutation := range preparationPlan.Prepare {
@@ -498,7 +540,7 @@ func cloneStateOperation(operation plan.Operation) plan.Operation {
 }
 
 func preparationPlansEqual(left, right plan.PreparationPlan) bool {
-	if len(left.Probe) != len(right.Probe) || len(left.Prepare) != len(right.Prepare) || len(left.Commit) != len(right.Commit) {
+	if len(left.Probe) != len(right.Probe) || len(left.Prepare) != len(right.Prepare) || len(left.Commit) != len(right.Commit) || len(left.CommitUses) != len(right.CommitUses) {
 		return false
 	}
 	for i := range left.Probe {
@@ -520,6 +562,11 @@ func preparationPlansEqual(left, right plan.PreparationPlan) bool {
 	}
 	for i := range left.Commit {
 		if !operationsEqual(left.Commit[i], right.Commit[i]) {
+			return false
+		}
+	}
+	for i := range left.CommitUses {
+		if left.CommitUses[i] != right.CommitUses[i] {
 			return false
 		}
 	}
