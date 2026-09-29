@@ -70,8 +70,12 @@ expect_strict_warning() {
 expect_valid() {
     fixture=$1
     output=$(mktemp)
-    if ! run_validate "$output" --schema "$fixture"; then
+    if run_validate "$output" --schema "$fixture"; then
+        status=0
+    else
         status=$?
+    fi
+    if [ "$status" -ne 0 ]; then
         cat "$output" >&2
         rm -f "$output"
         fail "$fixture failed validation with status $status"
