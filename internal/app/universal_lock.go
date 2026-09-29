@@ -14,9 +14,10 @@ import (
 )
 
 // resolveUniversalLockDocument uses the executor's read-only plan resolution
-// path. It never invokes an installer and only returns a complete immutable
-// projection; unsupported or ambiguous mutable identities fail closed.
-func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, clan string, facts *engine.Facts, schemaPath string, logger *slog.Logger, previous *lock.Lock) (plan.LockDocument, error) {
+// path. It never invokes an installer and only returns an immutable projection
+// with exact coverage of expectedTools; unsupported identities or incomplete
+// retained coverage fail closed.
+func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, clan string, facts *engine.Facts, schemaPath string, logger *slog.Logger, previous *lock.Lock, expectedTools []string) (plan.LockDocument, error) {
 	if schema == nil {
 		return plan.LockDocument{}, fmt.Errorf("universal lock: schema is required")
 	}
@@ -28,6 +29,10 @@ func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, cl
 	sort.Strings(names)
 	resolvedPlans := make([]plan.ResolvedInstallPlan, 0, len(names))
 	resolvedNames := make(map[string]struct{}, len(names))
+	expectedNames := make(map[string]struct{}, len(expectedTools))
+	for _, name := range expectedTools {
+		expectedNames[name] = struct{}{}
+	}
 	for _, name := range names {
 		tool := schema.Tools[name]
 		if tool == nil || len(tool.Methods) == 0 {
@@ -64,6 +69,9 @@ func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, cl
 			return plan.LockDocument{}, err
 		}
 		for _, entry := range old.Entries {
+			if _, expected := expectedNames[entry.Tool.Name]; !expected {
+				continue
+			}
 			if _, replaced := resolvedNames[entry.Tool.Name]; replaced {
 				continue
 			}
@@ -91,7 +99,25 @@ func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, cl
 	if err != nil {
 		return plan.LockDocument{}, fmt.Errorf("universal lock: %w", err)
 	}
+	if err := document.VerifyCoverage(expectedTools); err != nil {
+		return plan.LockDocument{}, fmt.Errorf("universal lock: incomplete install-closure coverage: %w", err)
+	}
 	return document, nil
+}
+
+// universalLockCoverageNames returns the non-virtual tools in an effective
+// install closure. Virtual dependency-group tools have no selected candidate
+// and therefore no lock projection entry.
+func universalLockCoverageNames(tools map[string]*config.Tool) []string {
+	names := make([]string, 0, len(tools))
+	for name, tool := range tools {
+		if tool == nil || len(tool.Methods) == 0 {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // canPersistProjection reports whether this update may build and persist the
@@ -101,8 +127,9 @@ func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, cl
 // closed for any tool the projection does not contain. Coverage can only be
 // proven in two ways:
 //
-//   - the previous lock is already v2: its projection supplies entries for the
-//     tools this run did not resolve, which is what --profile relies on; or
+//   - the previous lock is already v2: its projection may supply entries for
+//     tools this run did not resolve, which is what --profile relies on; exact
+//     coverage is still verified against the current full install closure; or
 //   - this run resolved the whole schema (no --profile filter), so the fresh
 //     document covers the install closure by construction.
 //

@@ -32,12 +32,16 @@ The lockfile is the immutable-resolution projection of `ResolvedInstallPlan`:
   `VerifyResolvedPlanAgainstLock` rejects identity, requested-intent, and
   tool-set drift against an immutable `LockDocument`.
 - Persisted lock v2 embeds the validated projection. `update` writes it only
-  when every selected plan is immutable and the document covers the whole
-  install closure: a `--profile` run over a v1 lock refreshes that profile's
-  v1 pins instead of persisting a partial projection, because the tools it
-  left out have no entry for the v2 consumer to replay. `install` and
-  `upgrade` materialize and verify the pinned plan before observation or
-  mutation.
+  when every selected plan is immutable and the document exactly covers every
+  non-virtual tool in the current whole-schema install closure. Coverage is
+  checked explicitly against
+  that closure rather than inferred from the previous lock version. A
+  `--profile` run over a v1 lock refreshes that profile's v1 pins instead of
+  persisting a partial projection. A profiled run over v2 may retain immutable
+  entries for omitted tools that are still in the current closure, drops entries
+  for removed tools, and fails without rewriting the lock if a newly added
+  out-of-profile tool has no retained entry. `install` and `upgrade` materialize
+  and verify the pinned plan before observation or mutation.
 - Lock v1 remains readable for compatibility and is migrated by the next
   successful whole-schema update. It retains only its documented
   method-specific guarantees.

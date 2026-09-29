@@ -153,8 +153,11 @@ Legacy v1 lockfiles remain readable with their method-specific guarantees
 npm/pnpm/Yarn Classic package versions). A successful whole-schema update
 rewrites them as v2; `depengine update --profile` only refreshes that profile's
 v1 pins, because a partial resolution cannot prove a projection for the tools it
-left out. Exact package versions still do not lock transitive dependency
-graphs.
+left out. On an existing v2 lock, a profiled update carries forward omitted
+entries only when the resulting projection still exactly covers every
+non-virtual tool in the current whole-schema install closure; otherwise it
+fails and requires a whole-schema
+update. Exact package versions still do not lock transitive dependency graphs.
 
 ```sh
 depengine update

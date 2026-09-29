@@ -472,6 +472,27 @@ func TestVerifyResolvedPlansAgainstLockRequiresExactToolSet(t *testing.T) {
 	}
 }
 
+func TestLockDocumentVerifyCoverageRequiresExactToolSet(t *testing.T) {
+	plans := []plan.ResolvedInstallPlan{gitRevisionPlan(), nativePackagePlan(), githubArtifactPlan()}
+	doc, err := plan.BuildLockDocument(plans)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := doc.VerifyCoverage([]string{plans[2].Tool.Name, plans[0].Tool.Name, plans[1].Tool.Name}); err != nil {
+		t.Fatalf("reordered equivalent coverage rejected: %v", err)
+	}
+	if err := doc.VerifyCoverage([]string{plans[0].Tool.Name, plans[1].Tool.Name}); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("missing expected tool error = %v, want ErrLockMismatch", err)
+	}
+	if err := doc.VerifyCoverage([]string{plans[0].Tool.Name, plans[1].Tool.Name, plans[2].Tool.Name, "extra"}); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("extra expected tool error = %v, want ErrLockMismatch", err)
+	}
+	if err := doc.VerifyCoverage([]string{plans[0].Tool.Name, plans[0].Tool.Name, plans[2].Tool.Name}); !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("duplicate expected tool error = %v, want ErrLockMismatch", err)
+	}
+}
+
 func TestLockDocumentUsesSharedFormatVersionPolicy(t *testing.T) {
 	doc := plan.LockDocument{Version: plan.CurrentLockVersion + 1}
 	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), "lock format version") {
