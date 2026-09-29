@@ -1,0 +1,36 @@
+archmap: 2
+doc: flow
+id: desired-state-observation
+verified:
+  revision: "8d9d2cc"
+  verified_on: "2026-09-28"
+trigger: "A consumer needs to determine whether one selected candidate satisfies desired state without mutating the host."
+steps:
+  - from: reconciliation
+    to: planning
+    action: "Builds and validates static candidate intent before any host probe or mutation."
+    evidence: ["internal/exec/capability.go:51-76", "internal/exec/attempt.go:77-95"]
+    confidence: confirmed
+  - from: reconciliation
+    to: adapters
+    action: "Resolves the static intent to a concrete executable identity and validates that resolution preserves the intent."
+    evidence: ["internal/exec/resolution.go:12-28", "internal/exec/resolution.go:44-54"]
+    confidence: confirmed
+  - from: reconciliation
+    to: adapters
+    action: "Projects the resolved identity back into the candidate consumed by Observe, then probes exactly that target without performing host mutation."
+    evidence: ["internal/exec/environment_target.go:9-45", "internal/exec/resolution.go:57-78"]
+    symbols:
+      - name: methodForResolvedTarget
+        path: internal/exec/environment_target.go
+        role: "Compatibility projection that binds Observe/legacy adapter inputs to the already-resolved target."
+    confidence: confirmed
+  - from: reconciliation
+    to: planning
+    action: "Reconciles the observation with the resolved desired identity into the shared VerificationResult consumed by higher-level workflows."
+    evidence: ["internal/exec/verification.go:13-44", "internal/plan/verification.go:100-115", "internal/plan/verification.go:183-203"]
+    confidence: confirmed
+failure_modes:
+  - "Concrete resolution failure stops before host observation and mutation."
+  - "Observation errors or invalid presence values are normalized to a broken verification state."
+  - "Known identity drift and unverifiable identity remain distinct verification outcomes rather than collapsing to simple presence."

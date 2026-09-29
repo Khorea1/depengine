@@ -1,0 +1,65 @@
+archmap: 2
+doc: flow
+id: upgrade
+verified:
+  revision: "8d9d2cc"
+  verified_on: "2026-09-28"
+trigger: "Operator runs depengine upgrade to move tracked installations to versions already pinned in the lockfile."
+steps:
+  - from: operator
+    to: cli
+    action: "Invokes the upgrade command and selects schema, manifest, dry-run, filtering, and safety options."
+    confidence: inferred
+  - from: cli
+    to: configuration
+    action: "Loads the effective schema/manifest and target facts used to interpret the tracked installation candidates."
+    evidence: ["internal/app/upgrade.go:523-544"]
+    confidence: confirmed
+  - from: cli
+    to: state-and-lock
+    action: "Loads lock/state, projects lock pins into the schema, and identifies outdated tools through each exact tracked candidate rather than a kind-only match."
+    evidence: ["internal/app/upgrade.go:546-568", "internal/app/upgrade.go:197-240", "internal/app/lock_pin.go:40-60"]
+    symbols:
+      - name: collectOutdatedTools
+        path: internal/app/upgrade.go
+        role: "Drift discovery and exact tracked-candidate selection."
+      - name: lockPinForCandidate
+        path: internal/app/lock_pin.go
+        role: "Canonical candidate-specific lock-pin lookup used by upgrade discovery."
+    confidence: confirmed
+  - from: cli
+    to: reconciliation
+    action: "Preflights each outdated candidate at the pinned target through the executor and fails closed before removal when direct-upgrade semantics cannot be preserved."
+    evidence: ["internal/app/upgrade.go:331-336", "internal/app/upgrade.go:651-700"]
+    symbols:
+      - name: preflightDirectUpgrade
+        path: internal/app/upgrade.go
+        role: "Safety boundary before the destructive remove/reinstall transition."
+    confidence: confirmed
+  - from: cli
+    to: adapters
+    action: "Removes the tracked installation through the exact adapter only after preflight succeeds and dry-run has been ruled out."
+    evidence: ["internal/app/upgrade.go:338-370"]
+    symbols:
+      - name: upgradeSingleTool
+        path: internal/app/upgrade.go
+    confidence: confirmed
+  - from: cli
+    to: reconciliation
+    action: "Reinstalls the already-resolved candidate through Executor.InstallResolvedCandidate so upgrade cannot silently fall back to another candidate."
+    evidence: ["internal/app/upgrade.go:373-381", "internal/app/upgrade.go:429-443"]
+    symbols:
+      - name: reinstallUpgradeTool
+        path: internal/app/upgrade.go
+        role: "Carries the preflight-resolved plan across the destructive transition into reinstall."
+    confidence: confirmed
+  - from: cli
+    to: state-and-lock
+    action: "Persists the updated tracked state after the upgrade loop unless dry-run is active."
+    evidence: ["internal/app/upgrade.go:588-596"]
+    confidence: confirmed
+failure_modes:
+  - "Missing lock data stops upgrade and directs the operator to refresh pins first."
+  - "Ambiguous or missing tracked-candidate identity becomes a discovery failure instead of selecting an arbitrary same-kind candidate."
+  - "Unsupported preparation, dependency, hook, or arbitrary-code semantics fail preflight before a working installation is removed."
+  - "Reinstall failure records the destructive transition in state/resource ownership instead of pretending the removed tool is still installed."

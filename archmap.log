@@ -1,0 +1,1 @@
+2026-09-29T16:35:00-03:00 [missing] .dev/architecture/index.yaml — map says to read .dev/architecture/ from the worktree, but the directory only exists in the primary checkout (dev-notes branch); worktrees created by `wt switch` lack it, forcing a read across checkouts.
