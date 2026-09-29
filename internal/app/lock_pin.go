@@ -9,6 +9,13 @@ import (
 	"github.com/Khorea1/depengine/internal/state"
 )
 
+func pinnedVersion(pin lock.ToolPin) string {
+	if pin.Latest != "" {
+		return pin.Latest
+	}
+	return pin.PackageVersion
+}
+
 // lockPinFor looks up a tool's canonical "<tool>/<kind>/<idx>" pin only when
 // that lookup is unambiguous. Callers with durable candidate identity should
 // use lockPinForToolState or lockPinForCandidate instead.
@@ -53,7 +60,13 @@ func lockPinForCandidate(l *lock.Lock, toolName string, tool *config.Tool, candi
 		if method == candidate {
 			key := fmt.Sprintf("%s/%s/%d", toolName, candidate.Kind, kindIndex)
 			pin, ok := l.Tools[key]
-			return pin, ok && pin.Latest != ""
+			if !ok || pinnedVersion(pin) == "" {
+				return lock.ToolPin{}, false
+			}
+			if pin.PackageVersion != "" && !lock.MatchesPackagePin(toolName, candidate, pin) {
+				return lock.ToolPin{}, false
+			}
+			return pin, true
 		}
 		kindIndex++
 	}

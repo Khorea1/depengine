@@ -234,7 +234,8 @@ func collectOutdatedTools(st *state.State, s *config.Schema, lk *lock.Lock, only
 			continue
 		}
 		pin, ok := lockPinForCandidate(lk, name, tool, method)
-		if !ok || pin.Latest == "" {
+		version := pinnedVersion(pin)
+		if !ok || version == "" {
 			continue
 		}
 
@@ -243,14 +244,14 @@ func collectOutdatedTools(st *state.State, s *config.Schema, lk *lock.Lock, only
 			continue
 		}
 
-		if !state.VersionOutdated(ts.Version, pin.Latest) {
+		if !state.VersionOutdated(ts.Version, version) {
 			continue
 		}
 
 		outdated = append(outdated, upgradeOutdatedTool{
 			name:       name,
 			ts:         ts,
-			pinnedVer:  pin.Latest,
+			pinnedVer:  version,
 			tool:       tool,
 			method:     method,
 			methodKind: methodKind,
@@ -605,7 +606,7 @@ func hasPinnedVersionForKind(l *lock.Lock, toolName, kind string) bool {
 	}
 	prefix := toolName + "/" + kind + "/"
 	for key, pin := range l.Tools {
-		if strings.HasPrefix(key, prefix) && pin.Latest != "" {
+		if strings.HasPrefix(key, prefix) && pinnedVersion(pin) != "" {
 			return true
 		}
 	}

@@ -73,7 +73,12 @@ Work on the current execution model comes before adding more installer types.
   remote lookup. Container tags are covered too: lock v1 resolves the requested
   tag (including implicit `latest`) through the OCI Distribution API, stores the
   immutable manifest digest, rejects tag drift in frozen mode, and makes
-  observation/pull/remove use that digest without replacing schema intent. See
+  observation/pull/remove use that digest without replacing schema intent.
+  Plain unversioned npm packages now pin the registry's `latest` dist-tag to a
+  concrete package version in lock v1; frozen installs reject package,
+  registry, or version-request drift and replay the pinned version without a
+  second registry lookup. The npm dependency graph is still outside this pin.
+  See
   [`design/adr-001-universal-lock-projection.md`](design/adr-001-universal-lock-projection.md)
   and [`support-boundary.md`](support-boundary.md).
 - [~] Finish typed package-source selection, trust, ownership, verification,

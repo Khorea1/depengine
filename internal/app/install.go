@@ -241,13 +241,24 @@ func resolveInstallLock(ctx context.Context, p installPlan, s *config.Schema, lg
 	if err != nil {
 		return nil, err
 	}
+	if !p.frozen {
+		if err := validateInstallNPMLockIdentity(s, lk); err != nil {
+			lg.Error("lockfile identity changed; refusing unpinned install", "error", err)
+			return nil, exitWithCode(2)
+		}
+	}
 	if !p.frozen && (hasLatestPlaceholders(s) || hasLockableMutableSelectors(s)) {
 		lg.Info("resolving missing lockable selectors")
 		fresh, err := lock.ResolveAll(ctx, s, rn)
 		if err != nil {
 			lg.Warn("could not auto-resolve lockable selectors", "error", err, "hint", "run 'depengine update' manually")
 		} else if fresh != nil {
-			lk = mergeInstallLock(lk, fresh)
+			merged, mergeErr := mergeInstallLock(lk, fresh)
+			if mergeErr != nil {
+				lg.Error("lockfile identity changed; refusing unpinned install", "error", mergeErr)
+				return nil, exitWithCode(2)
+			}
+			lk = merged
 			lock.Apply(s, lk)
 		}
 	}
@@ -442,8 +453,8 @@ func syncInstalledVersions(ctx context.Context, schema *config.Schema, lockPath 
 			continue
 		}
 		tool := schema.Tools[name]
-		if pin, ok := lockPinForToolState(lk, name, tool, ts); ok && pin.Latest != "" {
-			ts.Version = pin.Latest
+		if pin, ok := lockPinForToolState(lk, name, tool, ts); ok && pinnedVersion(pin) != "" {
+			ts.Version = pinnedVersion(pin)
 			st.Tools[name] = ts
 			changed = true
 		}
@@ -460,13 +471,14 @@ func syncInstalledVersions(ctx context.Context, schema *config.Schema, lockPath 
 			continue
 		}
 		pin, ok := lockPinForToolState(lk, tr.Tool, schema.Tools[tr.Tool], ts)
-		if !ok || pin.Latest == "" {
+		version := pinnedVersion(pin)
+		if !ok || version == "" {
 			continue
 		}
-		if state.VersionOutdated(ts.Version, pin.Latest) {
+		if state.VersionOutdated(ts.Version, version) {
 			s := newCLIStyle(os.Stderr)
 			s.warn("%s: installed version %s differs from pinned %s (run 'depengine upgrade')",
-				tr.Tool, ts.Version, pin.Latest)
+				tr.Tool, ts.Version, version)
 		}
 	}
 

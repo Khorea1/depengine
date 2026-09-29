@@ -651,7 +651,7 @@ are described above or alongside their examples.
 | `pip` | Python packages; optional exact `version`, verified with `pip show` | `ruff = { pip = { pkg = "ruff", version = "0.13.1" } }` |
 | `pipx` | Python CLI tools, isolated environments | `organize = { pipx = "organize-tool" }` |
 | `uv` | Python packages via `uv tool` | `organize = { uv = "organize-tool" }` |
-| `npm` | Global npm packages; optional exact `version`, verified from `npm ls --json` | `typescript = { npm = { pkg = "typescript", version = "5.9.2" } }` |
+| `npm` | Global npm packages; optional exact `version`, verified from `npm ls --json`. A plain package without `version` pins the registry's latest package version in `depengine.lock` (dependency graph remains unpinned). | `typescript = { npm = { pkg = "typescript", version = "5.9.2" } }` |
 | `pnpm` | Global pnpm packages | `prettier = { pnpm = "prettier" }` |
 | `bun` | Global bun packages | `tsx = { bun = "tsx" }` |
 | `gem` | Ruby gems | `sass = { gem = "sass" }` |

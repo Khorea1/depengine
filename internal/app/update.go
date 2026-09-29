@@ -196,6 +196,9 @@ func updatePinValue(pin lock.ToolPin) string {
 	if pin.ContainerTag != "" && pin.ContainerDigest != "" {
 		return "tag:" + pin.ContainerTag + " @ " + pin.ContainerDigest
 	}
+	if pin.PackageVersion != "" {
+		return pin.PackageVersion
+	}
 	return pin.Revision
 }
 
@@ -224,11 +227,12 @@ func reportVersionDrift(schema *config.Schema, newLock *lock.Lock) {
 		}
 		tool := schema.Tools[name]
 		pin, ok := lockPinForToolState(newLock, name, tool, ts)
-		if !ok || pin.Latest == "" {
+		version := pinnedVersion(pin)
+		if !ok || version == "" {
 			continue
 		}
-		if state.VersionOutdated(ts.Version, pin.Latest) {
-			drifted = append(drifted, fmt.Sprintf("%s: installed %s, pinned %s", name, ts.Version, pin.Latest))
+		if state.VersionOutdated(ts.Version, version) {
+			drifted = append(drifted, fmt.Sprintf("%s: installed %s, pinned %s", name, ts.Version, version))
 		}
 	}
 	if len(drifted) == 0 {
