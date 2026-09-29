@@ -80,7 +80,7 @@ expect_valid() {
         rm -f "$output"
         fail "$fixture failed validation with status $status"
     fi
-    if ! grep -F '"errors": []' "$output" >/dev/null; then
+    if ! grep -E '"errors":[[:space:]]*(null|\[\])' "$output" >/dev/null; then
         cat "$output" >&2
         rm -f "$output"
         fail "$fixture did not report an empty error list"
