@@ -201,7 +201,10 @@ type MethodCandidate struct {
 	// Config keeps the requested tag for intent/drift reporting while container
 	// planning, observation, execution, and removal use this immutable digest.
 	LockedDigest string `json:"-"`
-	When         *Condition
+	// LockedVersion is a concrete ecosystem package version applied from the
+	// lock while Config keeps its original mutable version request.
+	LockedVersion string `json:"-"`
+	When          *Condition
 	Config       map[string]any
 	Err          error
 	ArchMap      map[string]string

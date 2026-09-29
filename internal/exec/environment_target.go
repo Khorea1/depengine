@@ -15,7 +15,7 @@ func methodForResolvedTarget(method *config.MethodCandidate, resolved *plan.Reso
 	}
 
 	contract, ok := methodkind.Lookup(method.Kind)
-	if !ok || (contract.Environment == nil && (method.Kind != "git" || resolved.Identity.Revision == "")) {
+	if !ok || (contract.Environment == nil && (method.Kind != "git" || resolved.Identity.Revision == "") && (method.Kind != "npm" || resolved.Identity.Version == "")) {
 		return method
 	}
 
@@ -39,6 +39,9 @@ func methodForResolvedTarget(method *config.MethodCandidate, resolved *plan.Reso
 		delete(methodCopy.Config, "branch")
 		delete(methodCopy.Config, "tag")
 		methodCopy.Config["rev"] = resolved.Identity.Revision
+	}
+	if method.Kind == "npm" && resolved.Identity.Version != "" {
+		methodCopy.Config["version"] = resolved.Identity.Version
 	}
 
 	return &methodCopy

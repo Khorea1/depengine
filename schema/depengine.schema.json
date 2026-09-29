@@ -364,7 +364,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "oneOf": [
             {
               "not": {
@@ -723,7 +723,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "oneOf": [
             {
               "not": {
@@ -1084,7 +1084,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1337,7 +1337,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1501,7 +1501,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1713,7 +1713,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, architecture, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1812,7 +1812,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -1919,7 +1919,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, environment-profile, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, environment-profile, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2056,7 +2056,7 @@
               }
             }
           ],
-          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2427,7 +2427,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, scope, revision, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: source-selection, scope, revision, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2523,7 +2523,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2630,7 +2630,7 @@
               }
             }
           ],
-          "description": "Method capabilities: arbitrary-code, revision, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: arbitrary-code, revision, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -2811,7 +2811,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "oneOf": [
             {
               "required": [
@@ -2965,7 +2965,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3076,7 +3076,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "oneOf": [
             {
               "not": {
@@ -3292,7 +3292,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock, local-artifact. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock, local-artifact. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -3511,7 +3511,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "oneOf": [
             {
               "not": {
@@ -3768,7 +3768,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4193,7 +4193,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4282,7 +4282,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4639,7 +4639,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4811,7 +4811,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -4915,7 +4915,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5222,7 +5222,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5473,7 +5473,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -5682,7 +5682,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6133,7 +6133,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "oneOf": [
             {
               "not": {
@@ -6407,7 +6407,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "oneOf": [
             {
               "not": {
@@ -6689,7 +6689,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -6863,7 +6863,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7031,7 +7031,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, architecture, revision, environment-profile, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7251,7 +7251,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, architecture, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7354,7 +7354,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7465,7 +7465,7 @@
               }
             }
           ],
-          "description": "Method capabilities: exact-version, source-selection, environment-profile, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, environment-profile, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7600,7 +7600,7 @@
               }
             }
           ],
-          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: immutable-identity, source-selection, architecture, mutable-tag, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7716,7 +7716,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: source-selection, scope, revision, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: source-selection, scope, revision, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7816,7 +7816,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -7921,7 +7921,7 @@
               }
             }
           ],
-          "description": "Method capabilities: arbitrary-code, revision, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: arbitrary-code, revision, source-mutation, auth, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8102,7 +8102,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "oneOf": [
             {
               "required": [
@@ -8262,7 +8262,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8371,7 +8371,7 @@
               }
             }
           ],
-          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "oneOf": [
             {
               "not": {
@@ -8585,7 +8585,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock, local-artifact. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock, local-artifact. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -8808,7 +8808,7 @@
               }
             }
           ],
-          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "oneOf": [
             {
               "not": {
@@ -9075,7 +9075,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -9253,7 +9253,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -9346,7 +9346,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -9446,7 +9446,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -9535,7 +9535,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -9643,7 +9643,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -9962,7 +9962,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -10225,7 +10225,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-selection, architecture, scope, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {
@@ -10351,7 +10351,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, and mutable Git branch/tag commits (including cargo --git sources).",
+          "description": "Method capabilities: exact-version, source-mutation, check, remove, upgrade, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm packages.",
           "properties": {
             "arch_map": {
               "additionalProperties": {

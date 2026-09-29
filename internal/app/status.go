@@ -200,7 +200,7 @@ func statusToolOutdated(ts state.ToolState, stTool *config.Tool, lk *lock.Lock, 
 	}
 	// Version drift: the installed version differs from the pinned one.
 	if ts.Version != "" {
-		if pin, ok := lockPinForToolState(lk, name, stTool, ts); ok && state.VersionOutdated(ts.Version, pin.Latest) {
+		if pin, ok := lockPinForToolState(lk, name, stTool, ts); ok && state.VersionOutdated(ts.Version, pinnedVersion(pin)) {
 			return true
 		}
 	}
@@ -226,7 +226,7 @@ func reconcileStatusTools(ctx context.Context, rows []toolStatus, installed map[
 		ex.SetHostContext(clan)
 		desiredVersion := ""
 		if pin, ok := lockPinForCandidate(lk, row.Name, tool, method); ok {
-			desiredVersion = pin.Latest
+			desiredVersion = pinnedVersion(pin)
 		}
 		_, verification, err := ex.ResolveAndVerifyCandidateAtVersion(ctx, tool, method, desiredVersion)
 		if err != nil {

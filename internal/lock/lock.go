@@ -17,14 +17,16 @@
 //   - local artifact content digests;
 //   - mutable direct-Git and cargo --git branch/tag selectors, resolved to a
 //     concrete commit;
-//   - mutable container tags, resolved to immutable registry digests; and
+//   - mutable container tags, resolved to immutable registry digests;
+//   - unversioned npm packages, resolved to the registry's latest concrete
+//     package version; and
 //   - candidate-scoped host package-source declarations (kind/name/url and any
 //     declared Brew tap revision) as identity hashes. Source contents remain
 //     unpinned unless a Brew revision is separately declared and preflighted.
 //
-// It does NOT pin native/ecosystem package versions or channels. Direct Git,
-// cargo --git branches/tags, and container tags are the mutable-selector
-// classes pinned to immutable identities inside the legacy lock v1 model. On
+// It does NOT pin native package versions, channels, or most ecosystem
+// package versions. Direct Git, cargo --git, containers, and unversioned npm
+// packages are the mutable-selector classes pinned inside legacy lock v1. On
 // subsequent installs the lockfile is read and the pinned values are applied
 // before adapters resolve plans: artifact pins may patch method config, while
 // Git/container pins remain transient immutable state so requested selectors
@@ -53,6 +55,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/containerref"
 	"github.com/Khorea1/depengine/internal/containerregistry"
+	"github.com/Khorea1/depengine/internal/ecosystem"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/ghrelease"
 	gitadapter "github.com/Khorea1/depengine/internal/git"
@@ -82,6 +85,7 @@ type Lock struct {
 	// They are never persisted.
 	clearGitRevision     map[string]struct{} `toml:"-" json:"-"`
 	clearContainerDigest map[string]struct{} `toml:"-" json:"-"`
+	clearPackageVersion  map[string]struct{} `toml:"-" json:"-"`
 }
 
 // ToolPin captures resolved values for one tool's {latest} placeholder and/or
@@ -94,6 +98,8 @@ type ToolPin struct {
 	Selector        string `toml:"selector,omitempty"` // requested Git selector, e.g. "branch:main" or "tag:v1.2.3"
 	ContainerTag    string `toml:"container_tag,omitempty"`
 	ContainerDigest string `toml:"container_digest,omitempty"`
+	PackageVersion  string `toml:"package_version,omitempty"`  // concrete npm package version
+	PackageSelector string `toml:"package_selector,omitempty"` // hash of requested package and registry
 }
 
 // DefaultPath returns the default lockfile path for a given schema file.
@@ -132,6 +138,9 @@ func Load(path string) (*Lock, error) {
 			return nil, fmt.Errorf("lock: invalid tool pin %q: %w", key, err)
 		}
 		if err := validateContainerPin(pin); err != nil {
+			return nil, fmt.Errorf("lock: invalid tool pin %q: %w", key, err)
+		}
+		if err := validatePackagePin(pin); err != nil {
 			return nil, fmt.Errorf("lock: invalid tool pin %q: %w", key, err)
 		}
 	}
@@ -263,6 +272,7 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 		SourceHash:           make(map[string]string),
 		clearGitRevision:     make(map[string]struct{}),
 		clearContainerDigest: make(map[string]struct{}),
+		clearPackageVersion:  make(map[string]struct{}),
 	}
 
 	for name, tool := range s.Tools {
@@ -354,6 +364,26 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 				l.clearContainerDigest[key] = struct{}{}
 			}
 
+			if selector, mutable := npmMutableSelector(name, method); mutable {
+				pin.PackageSelector = selector
+				if method.LockedVersion != "" {
+					pin.PackageVersion = method.LockedVersion
+				} else {
+					pkg, _ := method.Config["pkg"].(string)
+					if pkg == "" {
+						pkg = name
+					}
+					registry, _ := method.Config["registry"].(string)
+					version, err := ecosystem.ResolveLatestNPMVersion(ctx, rn, pkg, registry)
+					if err != nil {
+						return nil, fmt.Errorf("lock: resolve %s/npm latest: %w", name, err)
+					}
+					pin.PackageVersion = version
+				}
+			} else if method.Kind == "npm" {
+				l.clearPackageVersion[key] = struct{}{}
+			}
+
 			if !toolPinEmpty(pin) {
 				l.Tools[key] = pin
 			}
@@ -407,7 +437,8 @@ func Merge(existing, fresh *Lock) *Lock {
 		newPin, ok := fresh.Tools[key]
 		_, clearRevision := fresh.clearGitRevision[key]
 		_, clearContainer := fresh.clearContainerDigest[key]
-		if !ok && !clearRevision && !clearContainer {
+		_, clearPackage := fresh.clearPackageVersion[key]
+		if !ok && !clearRevision && !clearContainer && !clearPackage {
 			fresh.Tools[key] = oldPin
 			continue
 		}
@@ -431,6 +462,14 @@ func Merge(existing, fresh *Lock) *Lock {
 			}
 			if newPin.ContainerDigest == "" {
 				newPin.ContainerDigest = oldPin.ContainerDigest
+			}
+		}
+		if !clearPackage {
+			if newPin.PackageVersion == "" {
+				newPin.PackageVersion = oldPin.PackageVersion
+			}
+			if newPin.PackageSelector == "" {
+				newPin.PackageSelector = oldPin.PackageSelector
 			}
 		}
 		if toolPinEmpty(newPin) {
@@ -537,6 +576,19 @@ func ValidateFrozen(s *config.Schema, l *Lock) error {
 					return fmt.Errorf("lock: frozen lock needs update: container tag changed for %q", key)
 				}
 			}
+			if selector, mutable := npmMutableSelector(name, method); mutable {
+				if pin.PackageVersion == "" || pin.PackageSelector == "" {
+					return fmt.Errorf("lock: frozen lock needs update: missing resolved npm package version for %q", key)
+				}
+				if err := validatePackagePin(pin); err != nil {
+					return fmt.Errorf("lock: frozen lock needs update: invalid npm package pin for %q: %w", key, err)
+				}
+				if pin.PackageSelector != selector {
+					return fmt.Errorf("lock: frozen lock needs update: npm package or registry changed for %q", key)
+				}
+			} else if method.Kind == "npm" && (pin.PackageVersion != "" || pin.PackageSelector != "") {
+				return fmt.Errorf("lock: frozen lock needs update: npm version request changed for %q", key)
+			}
 		}
 	}
 	return nil
@@ -623,6 +675,16 @@ func Apply(s *config.Schema, l *Lock) {
 				}
 			}
 
+			if selector, mutable := npmMutableSelector(name, method); mutable && pin.PackageVersion != "" && pin.PackageSelector != "" {
+				if err := validatePackagePin(pin); err == nil && pin.PackageSelector == selector {
+					method.LockedVersion = pin.PackageVersion
+				} else if pin.PackageSelector != selector {
+					log.Default.Warn("npm package or registry changed since lock was created",
+						"tool", name, "method", method.Kind,
+						"action", "run 'depengine update' to refresh the package version pin")
+				}
+			}
+
 			// Substitute {latest} in the current URL template with the
 			// pinned version tag.
 			if pin.Latest != "" {
@@ -666,6 +728,32 @@ func containerMutableTag(method *config.MethodCandidate) (string, bool) {
 		tag = "latest"
 	}
 	return tag, true
+}
+
+func npmMutableSelector(toolName string, method *config.MethodCandidate) (string, bool) {
+	if method == nil || method.Kind != "npm" {
+		return "", false
+	}
+	if version, _ := method.Config["version"].(string); version != "" {
+		return "", false
+	}
+	pkg, _ := method.Config["pkg"].(string)
+	if pkg == "" {
+		pkg = toolName
+	}
+	if !ecosystem.IsNPMRegistryPackage(pkg) {
+		return "", false
+	}
+	registry, _ := method.Config["registry"].(string)
+	hash := sha256.Sum256([]byte(pkg + "\x00" + registry))
+	return hex.EncodeToString(hash[:]), true
+}
+
+// MatchesPackagePin checks the requested npm package and registry against a
+// persisted pin before callers use that pin for status or upgrade decisions.
+func MatchesPackagePin(toolName string, method *config.MethodCandidate, pin ToolPin) bool {
+	selector, ok := npmMutableSelector(toolName, method)
+	return ok && pin.PackageVersion != "" && pin.PackageSelector == selector
 }
 
 func containerLockCredentials(ctx context.Context, method *config.MethodCandidate) (*containerregistry.Credentials, error) {
@@ -763,6 +851,22 @@ func validateContainerPin(pin ToolPin) error {
 	return nil
 }
 
+func validatePackagePin(pin ToolPin) error {
+	if pin.PackageVersion == "" && pin.PackageSelector == "" {
+		return nil
+	}
+	if !ecosystem.ValidNPMVersion(pin.PackageVersion) {
+		return fmt.Errorf("npm package version must be concrete")
+	}
+	if len(pin.PackageSelector) != 64 {
+		return fmt.Errorf("npm package selector must be a SHA-256 hash")
+	}
+	if _, err := hex.DecodeString(pin.PackageSelector); err != nil {
+		return fmt.Errorf("npm package selector must be hexadecimal")
+	}
+	return nil
+}
+
 func validateGitPin(pin ToolPin) error {
 	if pin.Revision == "" && pin.Selector == "" {
 		return nil
@@ -787,7 +891,7 @@ func validateGitPin(pin ToolPin) error {
 }
 
 func toolPinEmpty(pin ToolPin) bool {
-	return pin.Latest == "" && pin.Checksum == "" && pin.Revision == "" && pin.Selector == "" && pin.ContainerTag == "" && pin.ContainerDigest == ""
+	return pin.Latest == "" && pin.Checksum == "" && pin.Revision == "" && pin.Selector == "" && pin.ContainerTag == "" && pin.ContainerDigest == "" && pin.PackageVersion == "" && pin.PackageSelector == ""
 }
 
 func githubUsesLatest(cfg map[string]any) bool {

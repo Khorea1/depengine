@@ -10,10 +10,97 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/containerregistry"
+	"github.com/Khorea1/depengine/internal/ecosystem"
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/planner"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/pelletier/go-toml/v2"
 )
+
+func TestNPMLatestLockReplaysConcretePackageVersion(t *testing.T) {
+	method := &config.MethodCandidate{Kind: "npm", Config: map[string]any{
+		"pkg": "@example/tool", "registry": "https://registry.example.test",
+	}}
+	tool := &config.Tool{Name: "tool", Methods: []*config.MethodCandidate{method}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": tool}}
+	resolver := &run.FakeRunner{Stdout: `"1.2.3"`}
+	fresh, err := ResolveAll(context.Background(), schema, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolver.Calls) != 1 || resolver.Calls[0].Name != "npm" || strings.Join(resolver.Calls[0].Args, " ") != "view @example/tool dist-tags.latest --json --registry https://registry.example.test" {
+		t.Fatalf("resolution calls = %#v", resolver.Calls)
+	}
+	path := filepath.Join(t.TempDir(), "depengine.lock")
+	if err := Save(path, fresh); err != nil {
+		t.Fatal(err)
+	}
+	locked, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateFrozen(schema, locked); err != nil {
+		t.Fatalf("frozen validation: %v", err)
+	}
+	Apply(schema, locked)
+	if method.LockedVersion != "1.2.3" {
+		t.Fatalf("locked version = %q", method.LockedVersion)
+	}
+	if _, present := method.Config["version"]; present {
+		t.Fatal("lock rewrote requested version intent")
+	}
+	intent, err := planner.BuildCandidateIntent(tool, method)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := ecosystem.NewBaseAdapter(ecosystem.Configs["npm"])
+	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{Err: os.ErrPermission}, tool, method, &intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.ValidateResolution(intent, *resolved); err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Identity.Version != "1.2.3" {
+		t.Fatalf("resolved version = %q", resolved.Identity.Version)
+	}
+	runner := &run.FakeRunner{LookPaths: map[string]bool{"npm": true}}
+	if err := adapter.InstallResolved(context.Background(), runner, tool, method, resolved); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range runner.Calls {
+		if call.Name == "npm" && len(call.Args) > 0 && call.Args[0] == "view" {
+			t.Fatalf("install re-resolved latest: %#v", runner.Calls)
+		}
+	}
+	last := runner.Calls[len(runner.Calls)-1]
+	if last.Name != "npm" || strings.Join(last.Args, " ") != "install -g @example/tool@1.2.3 --registry https://registry.example.test" {
+		t.Fatalf("install = %#v", last)
+	}
+	method.Config["registry"] = "https://other.example.test"
+	if err := ValidateFrozen(schema, locked); err == nil || !strings.Contains(err.Error(), "npm package or registry changed") {
+		t.Fatalf("registry drift error = %v", err)
+	}
+	method.Config["registry"] = "https://registry.example.test"
+	method.Config["pkg"] = "@example/other"
+	if err := ValidateFrozen(schema, locked); err == nil || !strings.Contains(err.Error(), "npm package or registry changed") {
+		t.Fatalf("package drift error = %v", err)
+	}
+	method.Config["pkg"] = "@example/tool"
+	method.Config["version"] = "1.2.3"
+	if err := ValidateFrozen(schema, locked); err == nil || !strings.Contains(err.Error(), "npm version request changed") {
+		t.Fatalf("version intent drift error = %v", err)
+	}
+}
+
+func TestNPMVersionPinRejectsMutableOrMalformedVersion(t *testing.T) {
+	for _, version := range []string{"latest", "^1.2.3", "1.2.3 --prefix=/tmp", "01.2.3", "1.2.3-..", "1.2.3-01"} {
+		if err := validatePackagePin(ToolPin{PackageVersion: version, PackageSelector: strings.Repeat("a", 64)}); err == nil {
+			t.Errorf("accepted %q", version)
+		}
+	}
+}
 
 func TestDefaultPath(t *testing.T) {
 	got := DefaultPath("/home/user/dotfiles/schema.toml")
@@ -1512,6 +1599,7 @@ func TestResolveAllContainerTagPassesEnvCredentialWithoutPersistingSecret(t *tes
 		t.Fatal("lock serialization leaked registry secret")
 	}
 }
+
 
 func TestValidateFrozenRejectsBrewTapRevisionDrift(t *testing.T) {
 	const revision = "0123456789abcdef0123456789abcdef01234567"

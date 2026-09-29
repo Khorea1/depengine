@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/ecosystem"
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
@@ -277,7 +278,12 @@ func saveLockfile(ctx context.Context, s *config.Schema, lockPath string, oldLoc
 	if newLock == nil {
 		return
 	}
-	newLock = mergeInstallLock(oldLock, newLock)
+	merged, err := mergeInstallLock(oldLock, newLock)
+	if err != nil {
+		lg.Warn("refusing to rewrite lock identity during install", "error", err, "hint", "run 'depengine update' to accept the change")
+		return
+	}
+	newLock = merged
 	if err := lock.Save(lockPath, newLock); err != nil {
 		lg.Warn("save lock", "error", err)
 		return
@@ -287,12 +293,60 @@ func saveLockfile(ctx context.Context, s *config.Schema, lockPath string, oldLoc
 	}
 }
 
+// validateInstallNPMLockIdentity rejects stale npm identity before any remote
+// resolution. This closes the failure path where resolving the new selector
+// itself fails and install might otherwise continue without a concrete pin.
+func validateInstallNPMLockIdentity(s *config.Schema, l *lock.Lock) error {
+	if s == nil || l == nil {
+		return nil
+	}
+	for name, tool := range s.Tools {
+		if tool == nil {
+			continue
+		}
+		kindCount := make(map[string]int)
+		for _, method := range tool.Methods {
+			if method == nil {
+				continue
+			}
+			idx := kindCount[method.Kind]
+			kindCount[method.Kind] = idx + 1
+			if method.Kind != "npm" {
+				continue
+			}
+			key := fmt.Sprintf("%s/%s/%d", name, method.Kind, idx)
+			pin, ok := l.Tools[key]
+			if !ok || pin.PackageSelector == "" {
+				continue
+			}
+			if !lock.MatchesPackagePin(name, method, pin) {
+				return fmt.Errorf("lock: npm package, registry, or version request changed for %q; run 'depengine update' to accept the change", key)
+			}
+		}
+	}
+	return nil
+}
+
 // mergeInstallLock preserves the existing lock's identity hashes while adding
 // newly resolved pin fields. Only an explicit update may accept identity drift.
-func mergeInstallLock(oldLock, newLock *lock.Lock) *lock.Lock {
+// A changed npm package or registry is rejected before merge so install cannot
+// silently execute an unpinned request while retaining the stale lock identity.
+func mergeInstallLock(oldLock, newLock *lock.Lock) (*lock.Lock, error) {
+	if oldLock != nil && newLock != nil {
+		for key, oldPin := range oldLock.Tools {
+			if oldPin.PackageSelector == "" {
+				continue
+			}
+			freshPin, ok := newLock.Tools[key]
+			if !ok || freshPin.PackageSelector == "" || freshPin.PackageSelector == oldPin.PackageSelector {
+				continue
+			}
+			return nil, fmt.Errorf("lock: npm package or registry changed for %q; run 'depengine update' to accept the change", key)
+		}
+	}
 	newLock = lock.Merge(oldLock, newLock)
 	if oldLock == nil {
-		return newLock
+		return newLock, nil
 	}
 	for name, oldHash := range oldLock.MethodsHash {
 		newHash, exists := newLock.MethodsHash[name]
@@ -317,7 +371,7 @@ func mergeInstallLock(oldLock, newLock *lock.Lock) *lock.Lock {
 			delete(newLock.SourceHash, key)
 		}
 	}
-	return newLock
+	return newLock, nil
 }
 
 func lockCandidateToolName(key string) string {
@@ -338,11 +392,23 @@ func lockCandidateToolName(key string) string {
 // auto-resolution is needed when no lockfile exists.
 // hasLockableMutableSelectors reports whether first install must create a lock
 // for a mutable selector that legacy lock v1 can make immutable: direct Git or
-// Cargo Git branch/tag selectors and container tags (including implicit latest).
+// Cargo Git branch/tag selectors, container tags, and plain unversioned npm packages.
 func hasLockableMutableSelectors(s *config.Schema) bool {
 	for _, tool := range s.Tools {
 		for _, method := range tool.Methods {
 			if method == nil {
+				continue
+			}
+			if method.Kind == "npm" {
+				if version, _ := method.Config["version"].(string); version == "" {
+					pkg, _ := method.Config["pkg"].(string)
+					if pkg == "" {
+						pkg = tool.Name
+					}
+					if ecosystem.IsNPMRegistryPackage(pkg) {
+						return true
+					}
+				}
 				continue
 			}
 			if method.Kind == "container" {

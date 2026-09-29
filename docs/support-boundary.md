@@ -54,6 +54,7 @@ Legacy lock v1 covers each selector class as follows:
 | `checksum = "<algo>:auto"` | Yes, once materialized | The digest the adapter resolves from the declared checksum source is recorded by a normal non-frozen install. Frozen validation requires that pin and never computes one, and `depengine update` does not download payloads. |
 | `local_path` artifact | Yes | The content digest is computed during lock resolution even when the schema omits a checksum. |
 | Exact ecosystem version (`version = "1.2.3"` on npm, pip, cargo, go, ...) | No | `version` is never written to the lock, and the dependency graph behind it is not locked either. |
+| Plain npm registry package without `version` | Yes, package version only | The registry's `latest` dist-tag is resolved to a concrete version. The lock also hashes the requested package and declared registry; frozen installs reject drift and install `pkg@version` without re-querying `latest`. npm dependencies and an undeclared registry selected by local npm configuration are not pinned. An explicit `version = "latest"`, package alias, URL, path, or already-versioned package spec is outside this coverage. |
 | Native package install (apt, dnf, pacman, brew, ...) | No | Native methods carry no version field for the lock to record. |
 | Git `branch` or `tag` | Yes | Lock v1 stores the requested selector plus its concrete 40/64-hex commit. Annotated tags use the peeled commit; install reuses the locked commit without `ls-remote`, and frozen mode rejects a missing pin or selector drift. |
 | `cargo` git source (`branch` or `tag`) | Yes | The requested branch/tag remains in schema intent, while lock v1 stores the concrete commit resolved through Git. Install uses `cargo install --git ... --rev <commit>`; frozen mode rejects a missing pin or selector drift. |
@@ -75,8 +76,8 @@ kind/label ordering no longer matches the schema; or when a required supported
 pin is missing. Required pins currently include repo-backed latest GitHub
 releases, `{latest}` URL templates, implicit local-artifact digests, resolved
 `*:auto` checksums, concrete commits for direct-Git or Cargo-Git branch/tag
-selectors, and immutable digests for mutable container tags. Candidate host
-sources additionally require their
+selectors, immutable digests for mutable container tags, and concrete versions
+for plain unversioned npm packages. Candidate host sources additionally require their
 stored source-identity hash to be present and to match the schema. Frozen mode
 does not perform checksum TOFU to
 create a missing auto-checksum pin. Remote `*:auto` checksums are materialized
@@ -107,8 +108,10 @@ that same resolved value after execution.
 This check is intentionally narrower than universal immutable resolution.
 Package-manager constraints, channels, and other selectors not represented by
 legacy lock v1 are not made immutable by `--frozen-lockfile`. Direct Git and
-Cargo Git branch/tag selectors persist concrete commits, and container tags
-persist concrete OCI manifest digests. The v1 method identity hash also covers method kind,
+Cargo Git branch/tag selectors persist concrete commits, container tags
+persist concrete OCI manifest digests, and plain unversioned npm packages
+persist a concrete package version. The npm pin does not fix its dependency
+graph. The v1 method identity hash also covers method kind,
 label, and ordering rather than every requested field inside a candidate;
 candidate host-source declarations are covered separately by source hashes.
 After changing resolver details that keep the same kind/label, run
