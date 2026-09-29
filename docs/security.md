@@ -178,8 +178,8 @@ strings or fragments; authenticated source setup uses the typed `secret_ref`
 transport instead. Transaction recovery retains that credential-free URL so an
 interrupted add/remove is not reconciled using weaker name-only evidence.
 
-Legacy lock v1 hashes candidate host-source `kind`/`name`/`url` declarations
-and frozen installs reject missing or changed source identity. This protects
+Lockfiles hash candidate host-source `kind`/`name`/`url` declarations and
+frozen installs reject missing or changed source identity. This protects
 the project's requested source configuration from silent drift; it does not
 pin mutable repository contents or prove publisher trust.
 
@@ -191,13 +191,12 @@ be conservative.
 `depengine.lock` improves reproducibility; it is not a trust root. Review lock
 changes like source changes and protect the repository that stores them.
 
-`--frozen-lockfile` does not leave the file untouched: a successful frozen
-install still rewrites `depengine.lock`. Its guarantee is about what the run
-consumes — validation runs before execution and fails closed when a required
-pin or a stored method identity is missing or no longer matches, so no existing
-pin or method identity is silently re-resolved or dropped from the rewritten
-file. It cannot tell you whether an upstream registry, package, signing key, or
-mutable reference is trustworthy.
+`depengine install --frozen-lockfile` never writes `depengine.lock`: a
+successful frozen install consumes the file it validated and leaves it
+byte-for-byte unchanged. Validation runs before execution and fails closed when
+a required pin or a stored method identity is missing or no longer matches, so
+nothing is re-resolved or dropped to fill a gap. It cannot tell you whether an
+upstream registry, package, signing key, or mutable reference is trustworthy.
 
 Lock coverage is not universal yet. See
 [support boundaries](support-boundary.md) for the current limits.
