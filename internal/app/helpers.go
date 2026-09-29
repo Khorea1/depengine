@@ -311,7 +311,7 @@ func validateInstallPackageLockIdentity(s *config.Schema, l *lock.Lock) error {
 			}
 			idx := kindCount[method.Kind]
 			kindCount[method.Kind] = idx + 1
-			if method.Kind != "npm" && method.Kind != "pnpm" {
+			if method.Kind != "npm" && method.Kind != "pnpm" && method.Kind != "yarn" {
 				continue
 			}
 			key := fmt.Sprintf("%s/%s/%d", name, method.Kind, idx)
@@ -392,14 +392,14 @@ func lockCandidateToolName(key string) string {
 // auto-resolution is needed when no lockfile exists.
 // hasLockableMutableSelectors reports whether first install must create a lock
 // for a mutable selector that legacy lock v1 can make immutable: direct Git or
-// Cargo Git branch/tag selectors, container tags, and plain unversioned npm or pnpm packages.
+// Cargo Git branch/tag selectors, container tags, and plain unversioned npm, pnpm, or Yarn Classic packages.
 func hasLockableMutableSelectors(s *config.Schema) bool {
 	for _, tool := range s.Tools {
 		for _, method := range tool.Methods {
 			if method == nil {
 				continue
 			}
-			if method.Kind == "npm" || method.Kind == "pnpm" {
+			if method.Kind == "npm" || method.Kind == "pnpm" || method.Kind == "yarn" {
 				if version, _ := method.Config["version"].(string); version == "" {
 					pkg, _ := method.Config["pkg"].(string)
 					if pkg == "" {

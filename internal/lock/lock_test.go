@@ -134,6 +134,40 @@ func TestPNPMLatestLockReplaysConcretePackageVersion(t *testing.T) {
 		t.Fatalf("version intent drift error = %v", err)
 	}
 }
+func TestYarnLatestLockReplaysConcretePackageVersion(t *testing.T) {
+	method := &config.MethodCandidate{Kind: "yarn", Config: map[string]any{"pkg": "@example/tool"}}
+	tool := &config.Tool{Name: "tool", Methods: []*config.MethodCandidate{method}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": tool}}
+	resolver := &run.FakeRunner{Stdout: `{"type":"inspect","data":"3.4.5"}`}
+	locked, err := ResolveAll(context.Background(), schema, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolver.Calls) != 1 || resolver.Calls[0].Name != "yarn" || strings.Join(resolver.Calls[0].Args, " ") != "info @example/tool version --json" {
+		t.Fatalf("resolution calls = %#v", resolver.Calls)
+	}
+	if err := ValidateFrozen(schema, locked); err != nil {
+		t.Fatalf("frozen validation: %v", err)
+	}
+	Apply(schema, locked)
+	intent, err := planner.BuildCandidateIntent(tool, method)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter := ecosystem.NewBaseAdapter(ecosystem.Configs["yarn"])
+	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{Err: os.ErrPermission}, tool, method, &intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := &run.FakeRunner{LookPaths: map[string]bool{"yarn": true}}
+	if err := adapter.InstallResolved(context.Background(), runner, tool, method, resolved); err != nil {
+		t.Fatal(err)
+	}
+	last := runner.Calls[len(runner.Calls)-1]
+	if last.Name != "yarn" || strings.Join(last.Args, " ") != "global add @example/tool@3.4.5" {
+		t.Fatalf("install = %#v", last)
+	}
+}
 
 func TestNPMVersionPinRejectsMutableOrMalformedVersion(t *testing.T) {
 	for _, version := range []string{"latest", "^1.2.3", "1.2.3 --prefix=/tmp", "01.2.3", "1.2.3-..", "1.2.3-01"} {
