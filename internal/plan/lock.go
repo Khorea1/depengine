@@ -984,32 +984,64 @@ func cloneLockProjection(in LockProjection) LockProjection {
 	return out
 }
 
+// VerifyCoverage proves that the document covers exactly the supplied tool
+// set. Coverage is deliberately a relation between a lock document and an
+// expected install closure rather than an intrinsic property of the document:
+// only the caller knows which schema/profile closure the lock is meant to
+// cover. Missing, extra, or duplicate expected tools are mismatches rather than
+// opportunities to resolve mutable identity implicitly.
+func (d LockDocument) VerifyCoverage(toolNames []string) error {
+	if err := d.Validate(); err != nil {
+		return fmt.Errorf("lock document: %w", err)
+	}
+
+	expected := make(map[string]struct{}, len(toolNames))
+	for _, name := range toolNames {
+		if strings.TrimSpace(name) != name || name == "" {
+			return fmt.Errorf("%w: invalid expected tool %q", ErrLockMismatch, name)
+		}
+		if _, duplicate := expected[name]; duplicate {
+			return fmt.Errorf("%w: duplicate expected tool %q", ErrLockMismatch, name)
+		}
+		expected[name] = struct{}{}
+	}
+
+	locked := make(map[string]struct{}, len(d.Entries))
+	for _, entry := range d.Entries {
+		name := entry.Tool.Name
+		locked[name] = struct{}{}
+		if _, ok := expected[name]; !ok {
+			return fmt.Errorf("%w: lock contains unexpected tool %q", ErrLockMismatch, name)
+		}
+	}
+	for name := range expected {
+		if _, ok := locked[name]; !ok {
+			return fmt.Errorf("%w: tool %q is not present in lock", ErrLockMismatch, name)
+		}
+	}
+	return nil
+}
+
 // VerifyResolvedPlansAgainstLock verifies an exact resolved plan set against a
 // persisted immutable lock document. Tool membership is part of the contract:
 // missing, extra, or duplicate plans are mismatches rather than opportunities
 // to resolve new mutable identity implicitly.
 func VerifyResolvedPlansAgainstLock(doc LockDocument, plans []ResolvedInstallPlan) error {
-	if err := doc.Validate(); err != nil {
-		return fmt.Errorf("lock document: %w", err)
+	toolNames := make([]string, len(plans))
+	for i, resolved := range plans {
+		toolNames[i] = resolved.Tool.Name
 	}
-	if len(plans) != len(doc.Entries) {
-		return fmt.Errorf("%w: resolved tool set size changed", ErrLockMismatch)
+	if err := doc.VerifyCoverage(toolNames); err != nil {
+		return err
 	}
+
 	byTool := make(map[string]LockProjection, len(doc.Entries))
 	for _, entry := range doc.Entries {
 		byTool[entry.Tool.Name] = entry
 	}
-	seen := make(map[string]struct{}, len(plans))
 	for _, resolved := range plans {
 		name := resolved.Tool.Name
-		if _, duplicate := seen[name]; duplicate {
-			return fmt.Errorf("%w: duplicate resolved tool %q", ErrLockMismatch, name)
-		}
-		seen[name] = struct{}{}
-		expected, ok := byTool[name]
-		if !ok {
-			return fmt.Errorf("%w: resolved tool %q is not present in lock", ErrLockMismatch, name)
-		}
+		expected := byTool[name]
 		if err := VerifyResolvedPlanAgainstLock(expected, resolved); err != nil {
 			return fmt.Errorf("tool %q: %w", name, err)
 		}

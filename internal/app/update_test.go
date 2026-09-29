@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -21,13 +22,19 @@ func writeUpdateTestSchema(t *testing.T, dir, content string) string {
 	return path
 }
 
-// runTestUpdate drives runUpdate in-process with hermetic flags: no manifest,
-// no frozen check, no dry-run, so the resolved lock is merged and saved.
-func runTestUpdate(t *testing.T, schemaPath, profile string) {
+// runTestUpdateResult drives runUpdate in-process with hermetic flags: no
+// manifest, no frozen check, no dry-run, so the resolved lock is merged and
+// saved when the update succeeds.
+func runTestUpdateResult(t *testing.T, schemaPath, profile string) error {
 	t.Helper()
 	noManifest, frozen, dryRun, verbose := true, false, false, false
 	manifest, lockFlag := "", ""
-	if err := runUpdate(context.Background(), &schemaPath, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose); err != nil {
+	return runUpdate(context.Background(), &schemaPath, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose)
+}
+
+func runTestUpdate(t *testing.T, schemaPath, profile string) {
+	t.Helper()
+	if err := runTestUpdateResult(t, schemaPath, profile); err != nil {
 		t.Fatalf("runUpdate: %v", err)
 	}
 }
@@ -317,6 +324,123 @@ func TestRunUpdateRebuildsProjectionForProfileOnV2Lock(t *testing.T) {
 	}
 	if outside.Identity.Version != "9.9.9" {
 		t.Fatalf("outside projection = %#v, want retained 9.9.9 entry", outside.Identity)
+	}
+}
+
+// TestRunUpdateProfileOnV2RequiresCurrentFullCoverage proves that merely
+// having a previous v2 lock is not enough to justify another profiled v2
+// write. If the current full install closure gained a tool outside the selected
+// profile, the previous projection cannot supply that identity and update must
+// fail without rewriting the lock.
+func TestRunUpdateProfileOnV2RequiresCurrentFullCoverage(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	dir := t.TempDir()
+	checksum := "sha256:" + strings.Repeat("a", 64)
+	schemaPath := writeUpdateTestSchema(t, dir, "schema_version = 1\n\n"+
+		"[tools.profiled]\ntags = [\"dev\"]\nmethod_only = [\"http\"]\n\n"+
+		"[tools.profiled.http]\nurl = \"https://example.com/profiled\"\nchecksum = \""+checksum+"\"\n\n"+
+		"[tools.outside]\ntags = [\"other\"]\nmethod_only = [\"http\"]\n\n"+
+		"[tools.outside.http]\nurl = \"https://example.com/outside\"\nchecksum = \""+checksum+"\"\n\n"+
+		"[tools.added]\ntags = [\"other\"]\nmethod_only = [\"http\"]\n\n"+
+		"[tools.added.http]\nurl = \"https://example.com/added\"\nchecksum = \""+checksum+"\"\n")
+
+	seeded := func(name, version string) plan.ResolvedInstallPlan {
+		p := plan.New(name, "http", true)
+		p.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: version}
+		p.Identity.Version = version
+		return p
+	}
+	previous, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{
+		seeded("profiled", "1.0.0"),
+		seeded("outside", "1.0.0"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousLock := &lock.Lock{
+		Version: 1,
+		Tools: map[string]lock.ToolPin{
+			"profiled/http/0": {Checksum: checksum},
+			"outside/http/0":  {Checksum: checksum},
+		},
+		MethodsHash: map[string]string{"profiled": "old", "outside": "old"},
+	}
+	if err := previousLock.SetProjection(previous); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := lock.DefaultPath(schemaPath)
+	if err := lock.Save(lockPath, previousLock); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(lockPath) // #nosec G304 -- test-controlled temp path.
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runTestUpdateResult(t, schemaPath, "dev"); err == nil {
+		t.Fatal("profiled update succeeded with a v2 projection that cannot cover the current full install closure")
+	}
+
+	after, err := os.ReadFile(lockPath) // #nosec G304 -- test-controlled temp path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("failed profiled update rewrote depengine.lock; want the previous valid v2 lock left untouched")
+	}
+}
+
+// TestRunUpdateProfileOnV2PrunesRemovedCoverage proves the other side of exact
+// coverage: entries for tools no longer in the current full install closure are
+// not retained merely because an older v2 document contained them.
+func TestRunUpdateProfileOnV2PrunesRemovedCoverage(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	dir := t.TempDir()
+	checksum := "sha256:" + strings.Repeat("a", 64)
+	schemaPath := writeUpdateTestSchema(t, dir, "schema_version = 1\n\n"+
+		"[tools.profiled]\ntags = [\"dev\"]\nmethod_only = [\"http\"]\n\n"+
+		"[tools.profiled.http]\nurl = \"https://example.com/profiled\"\nchecksum = \""+checksum+"\"\n")
+
+	seeded := func(name string) plan.ResolvedInstallPlan {
+		p := plan.New(name, "http", true)
+		p.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: "1.0.0"}
+		p.Identity.Version = "1.0.0"
+		return p
+	}
+	previous, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{seeded("profiled"), seeded("removed")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousLock := &lock.Lock{
+		Version:     1,
+		Tools:       map[string]lock.ToolPin{"profiled/http/0": {Checksum: checksum}},
+		MethodsHash: map[string]string{"profiled": "old"},
+	}
+	if err := previousLock.SetProjection(previous); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := lock.DefaultPath(schemaPath)
+	if err := lock.Save(lockPath, previousLock); err != nil {
+		t.Fatal(err)
+	}
+
+	runTestUpdate(t, schemaPath, "dev")
+
+	got, err := lock.Load(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := got.ProjectionDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := document.VerifyCoverage([]string{"profiled"}); err != nil {
+		t.Fatalf("projection does not exactly cover current install closure: %v", err)
+	}
+	if len(document.Entries) != 1 || document.Entries[0].Tool.Name != "profiled" {
+		t.Fatalf("projection entries = %#v, want only current tool profiled", document.Entries)
 	}
 }
 

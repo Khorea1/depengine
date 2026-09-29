@@ -70,7 +70,10 @@ Work on the current execution model comes before adding more installer types.
   plan before observation or mutation. Generation is all-or-nothing: managers
   that do not expose a concrete version, revision, digest, checksummed artifact,
   or required source revision return `LockUnavailable` and no partial v2 lock is
-  written. Legacy v1 remains readable and is migrated by a successful update.
+  written. Persisted v2 projections are checked for exact coverage of every
+  non-virtual tool in the current whole-schema install closure, including after
+  profiled updates; legacy
+  v1 remains readable and is migrated by a successful whole-schema update.
   Exact package pins still do not lock transitive dependency graphs. See
   [`design/adr-001-universal-lock-projection.md`](design/adr-001-universal-lock-projection.md)
   and [`support-boundary.md`](support-boundary.md).

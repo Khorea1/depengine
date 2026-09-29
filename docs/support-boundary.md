@@ -107,8 +107,14 @@ lock instead of being dropped, as are the pins and identities of tools
 excluded by `--profile`, provided the existing lock is readable. A `--profile`
 update over a lock that is not yet v2 refreshes only that profile's v1 pins and
 writes no projection: a partial resolution cannot prove identity for the tools
-it left out, so the next whole-schema update performs the v2 migration. If the
-existing lock is unreadable or has an unsupported version, `update` warns and
+it left out, so the next whole-schema update performs the v2 migration. On an
+existing v2 lock, omitted entries are retained only for installable tools still
+in the current whole-schema install closure, and the final projection must cover
+every non-virtual tool in that closure exactly. If the schema added an
+out-of-profile tool that the previous
+projection cannot supply, the profiled update fails without rewriting the lock;
+a whole-schema update is required. If the existing lock is unreadable or has an
+unsupported version, `update` warns and
 regenerates from the fresh resolution; it cannot preserve data it cannot
 parse. A plain `depengine install` never changes stored method or package-source identity:
 frozen installs fail validation against a changed identity, and non-frozen

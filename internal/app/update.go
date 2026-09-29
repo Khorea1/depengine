@@ -74,6 +74,12 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		ecosystem.ReconfigureAUR(helper)
 	}
 
+	// Preserve the effective whole-schema install closure before applying the
+	// update profile. A persisted v2 projection is only sound if its final tool
+	// set exactly covers this closure, including tools outside --profile that
+	// must be retained from an existing v2 lock.
+	fullInstallTools := filterTools(s.Tools, "", "", "")
+	projectionCoverage := universalLockCoverageNames(fullInstallTools)
 	s.Tools = filterTools(s.Tools, "", "", *updateProfile)
 
 	// Aligned KV block up front — same header language as install — so the
@@ -145,12 +151,14 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	// carried over from the existing lock.
 	lock.Apply(s, newLock)
 	// Building the projection is what promotes the lock to v2, and a v2 lock
-	// is only valid when its document covers every tool a later full install
-	// plans. A --profile run over a v1 (or missing) lock cannot prove that
-	// coverage, so it refreshes the profile's v1 pins and leaves the
-	// migration to a full-scope update.
+	// is only valid when its document exactly covers every non-virtual tool a
+	// later full install plans. A --profile run over a v1 (or missing) lock
+	// cannot prove that coverage, so it refreshes the profile's v1 pins and
+	// leaves the migration to a full-scope update. A --profile run over v2 may
+	// retain omitted entries, but resolveUniversalLockDocument still verifies
+	// them against the current full closure before anything is persisted.
 	if canPersistProjection(oldLock, *updateProfile) {
-		document, err := resolveUniversalLockDocument(ctx, s, clan, facts, *updateSchema, lg, oldLock)
+		document, err := resolveUniversalLockDocument(ctx, s, clan, facts, *updateSchema, lg, oldLock, projectionCoverage)
 		if err != nil {
 			done("FAIL")
 			lg.Error("resolve universal lock", "error", err)
