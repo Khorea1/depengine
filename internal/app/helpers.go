@@ -353,9 +353,10 @@ func mergeInstallLock(oldLock, newLock *lock.Lock) (*lock.Lock, error) {
 		return newLock, nil
 	}
 	// Preserve the v2 universal projection verbatim. lock.Merge already does
-	// this when fresh carries no projection, but install must not depend on
-	// that detail: a v2 lock consumed by install stays v2 with an unchanged
-	// projection even if the fresh resolution ever carries its own.
+	// this when fresh carries no projection — the only shape ResolveAll
+	// produces today, so install always keeps the existing projection here.
+	// A projection carried by fresh would win instead (as in lock.Merge);
+	// install never regenerates one either way.
 	if oldLock.Version == lock.CurrentVersion && oldLock.UniversalProjection != "" {
 		if newLock.UniversalProjection == "" {
 			newLock.UniversalProjection = oldLock.UniversalProjection

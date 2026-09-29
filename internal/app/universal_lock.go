@@ -94,6 +94,30 @@ func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, cl
 	return document, nil
 }
 
+// canPersistProjection reports whether this update may build and persist the
+// universal projection, the step that promotes depengine.lock to v2.
+//
+// A v2 lock is consumed through plan.LockDocument.EntryForPlan, which fails
+// closed for any tool the projection does not contain. Coverage can only be
+// proven in two ways:
+//
+//   - the previous lock is already v2: its projection supplies entries for the
+//     tools this run did not resolve, which is what --profile relies on; or
+//   - this run resolved the whole schema (no --profile filter), so the fresh
+//     document covers the install closure by construction.
+//
+// `update --profile` over a v1 or missing lock has neither: the fresh document
+// omits tools outside the profile and a v1 lock carries no projection to
+// recover them from. Persisting it would leave legacy pins that the v2
+// consumer can no longer look up, so the lock keeps its v1 shape and the next
+// full-scope update performs the migration.
+func canPersistProjection(previous *lock.Lock, profile string) bool {
+	if previous != nil && previous.Version == lock.CurrentVersion {
+		return true
+	}
+	return profile == ""
+}
+
 func lockedArtifacts(entries []plan.LockedArtifact) []plan.Artifact {
 	artifacts := make([]plan.Artifact, len(entries))
 	for i, entry := range entries {

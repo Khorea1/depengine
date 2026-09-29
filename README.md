@@ -150,8 +150,11 @@ drift; they do not re-resolve mutable selectors to fill gaps.
 
 Legacy v1 lockfiles remain readable with their method-specific guarantees
 (resolved checksums/releases, Git commits, container digests, and supported
-npm/pnpm/Yarn Classic package versions). A successful update rewrites them as
-v2. Exact package versions still do not lock transitive dependency graphs.
+npm/pnpm/Yarn Classic package versions). A successful whole-schema update
+rewrites them as v2; `depengine update --profile` only refreshes that profile's
+v1 pins, because a partial resolution cannot prove a projection for the tools it
+left out. Exact package versions still do not lock transitive dependency
+graphs.
 
 ```sh
 depengine update

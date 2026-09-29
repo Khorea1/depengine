@@ -140,19 +140,27 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 			newLock.SourceHash[key] = oldHash
 		}
 	}
-	// Resolve the universal projection from the concrete pins computed above.
-	// This also carries forward materialized sha256:auto values from the existing lock.
+	// Apply the merged pins to the schema so the projection below resolves
+	// against concrete values, including materialized sha256:auto checksums
+	// carried over from the existing lock.
 	lock.Apply(s, newLock)
-	document, err := resolveUniversalLockDocument(ctx, s, clan, facts, *updateSchema, lg, oldLock)
-	if err != nil {
-		done("FAIL")
-		lg.Error("resolve universal lock", "error", err)
-		return exitWithCode(2)
-	}
-	if err := newLock.SetProjection(document); err != nil {
-		done("FAIL")
-		lg.Error("build universal lock", "error", err)
-		return exitWithCode(2)
+	// Building the projection is what promotes the lock to v2, and a v2 lock
+	// is only valid when its document covers every tool a later full install
+	// plans. A --profile run over a v1 (or missing) lock cannot prove that
+	// coverage, so it refreshes the profile's v1 pins and leaves the
+	// migration to a full-scope update.
+	if canPersistProjection(oldLock, *updateProfile) {
+		document, err := resolveUniversalLockDocument(ctx, s, clan, facts, *updateSchema, lg, oldLock)
+		if err != nil {
+			done("FAIL")
+			lg.Error("resolve universal lock", "error", err)
+			return exitWithCode(2)
+		}
+		if err := newLock.SetProjection(document); err != nil {
+			done("FAIL")
+			lg.Error("build universal lock", "error", err)
+			return exitWithCode(2)
+		}
 	}
 
 	pinned := len(newLock.Tools)

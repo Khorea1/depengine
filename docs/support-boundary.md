@@ -30,8 +30,8 @@ version, revision, digest, checksummed artifact, or required Git-backed source
 revision, `update` fails with `immutable lock identity unavailable`; it never
 writes a partial v2 projection. This closes silent mutable re-resolution without
 pretending unsupported managers are reproducible. Lock v1 remains readable and
-keeps the method-specific behavior documented below; the next successful update
-migrates it to v2.
+keeps the method-specific behavior documented below; the next successful
+whole-schema update migrates it to v2.
 
 An exact package version constrains one package. A fully locked package graph
 also needs immutable identities for its dependencies.
@@ -104,7 +104,10 @@ or only tools matching `--profile` — and refreshes those pins and their stored
 identity hashes. Pins the fresh resolution cannot recompute, such as an
 already-materialized `*:auto` checksum, are carried over from the existing
 lock instead of being dropped, as are the pins and identities of tools
-excluded by `--profile`, provided the existing lock is readable. If the
+excluded by `--profile`, provided the existing lock is readable. A `--profile`
+update over a lock that is not yet v2 refreshes only that profile's v1 pins and
+writes no projection: a partial resolution cannot prove identity for the tools
+it left out, so the next whole-schema update performs the v2 migration. If the
 existing lock is unreadable or has an unsupported version, `update` warns and
 regenerates from the fresh resolution; it cannot preserve data it cannot
 parse. A plain `depengine install` never changes stored method or package-source identity:
