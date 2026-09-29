@@ -724,6 +724,7 @@ func parseSources(rawSources []any) []Source {
 		source.Kind, _ = m["kind"].(string)
 		source.Name, _ = m["name"].(string)
 		source.URL, _ = m["url"].(string)
+		source.Revision, _ = m["revision"].(string)
 		if rawRef, ok := m["secret_ref"].(map[string]any); ok {
 			source.SecretRef = parseSecretReference(rawRef)
 		}

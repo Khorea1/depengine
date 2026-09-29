@@ -4,6 +4,7 @@ package source
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/gitobject"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -149,7 +151,9 @@ func (m *Manager) Remove(ctx context.Context, sources []config.Source) error {
 	defer m.mu.Unlock()
 	for i := len(sources) - 1; i >= 0; i-- {
 		source := sources[i]
-		present, err := m.present(ctx, source)
+		probeSource := source
+		probeSource.Revision = ""
+		present, err := m.present(ctx, probeSource)
 		if err != nil {
 			return err
 		}
@@ -258,10 +262,39 @@ func (m *Manager) brewTapPresent(ctx context.Context, source config.Source) (boo
 		if !sameSourceURL(tap.Remote, source.URL) {
 			return false, fmt.Errorf("source: brew-tap %s exists with a different origin than configured", source.Name)
 		}
+		if source.Revision != "" {
+			if err := m.verifyBrewTapRevision(ctx, source); err != nil {
+				return false, err
+			}
+		}
 		return true, nil
 	}
 	return false, fmt.Errorf("source: verify brew-tap %s origin: tap metadata omitted the configured tap", source.Name)
 }
+
+func (m *Manager) verifyBrewTapRevision(ctx context.Context, source config.Source) error {
+	repo := m.rn.Run(ctx, "brew", "--repo", source.Name)
+	if err := run.CheckResult(repo, "source repository path"); err != nil {
+		return fmt.Errorf("source: verify brew-tap %s revision: locate repository: %w", source.Name, err)
+	}
+	path := strings.TrimSpace(string(repo.Stdout))
+	if path == "" || strings.ContainsAny(path, "\r\n") {
+		return fmt.Errorf("source: verify brew-tap %s revision: brew returned a malformed repository path", source.Name)
+	}
+	resolved := m.rn.Run(ctx, "git", "-C", path, "rev-parse", "--verify", "HEAD^{commit}")
+	if err := run.CheckResult(resolved, "source revision check"); err != nil {
+		return fmt.Errorf("source: verify brew-tap %s revision: read HEAD: %w", source.Name, err)
+	}
+	actual := strings.TrimSpace(string(resolved.Stdout))
+	if !gitobject.ValidID(actual) {
+		return fmt.Errorf("source: verify brew-tap %s revision: Git returned a malformed commit ID", source.Name)
+	}
+	if actual != source.Revision {
+		return fmt.Errorf("source: brew-tap %s revision mismatch: configured %s, observed %s", source.Name, source.Revision, actual)
+	}
+	return nil
+}
+
 
 func (m *Manager) scoopBucketPresent(ctx context.Context, source config.Source) (bool, error) {
 	res := m.rn.Run(ctx, "scoop", "bucket", "list")
@@ -383,10 +416,29 @@ func (m *Manager) addAuthenticated(ctx context.Context, source config.Source, to
 	} else {
 		result = m.mutator.Run(ctx, cmd[0], cmd[1:]...)
 	}
-	return run.CheckResult(result, "source add")
+	if err := run.CheckResult(result, "source add"); err != nil {
+		return err
+	}
+	if source.Kind == "brew-tap" && source.Revision != "" {
+		if err := m.verifyBrewTapRevision(ctx, source); err != nil {
+			rollbackSource := source
+			rollbackSource.Revision = ""
+			if rollbackErr := m.remove(ctx, rollbackSource); rollbackErr != nil {
+				return errors.Join(err, fmt.Errorf("remove newly added mismatched source: %w", rollbackErr))
+			}
+			return err
+		}
+	}
+	return nil
 }
 
 func validateSourceURLSupport(source config.Source) error {
+	if source.Revision != "" && (source.Kind != "brew-tap" || source.URL == "") {
+		return fmt.Errorf("source: revision is supported only for brew-tap with an explicit URL")
+	}
+	if source.Revision != "" && !gitobject.ValidID(source.Revision) {
+		return fmt.Errorf("source: revision must be a full lowercase 40- or 64-character hexadecimal commit ID")
+	}
 	if source.URL != "" && (source.Kind == "apt-ppa" || source.Kind == "dnf-copr") {
 		return fmt.Errorf("source: URL is unsupported for kind %q", source.Kind)
 	}

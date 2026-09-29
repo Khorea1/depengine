@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Khorea1/depengine/internal/gitobject"
 	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/platform"
 )
@@ -451,7 +452,7 @@ func validateSources(raw any, path string, errs *[]string) {
 			continue
 		}
 		for _, key := range sortedMapKeys(m) {
-			if key != "kind" && key != "name" && key != "url" && key != "secret_ref" {
+			if key != "kind" && key != "name" && key != "url" && key != "revision" && key != "secret_ref" {
 				*errs = append(*errs, p+"."+key+": unknown field")
 			}
 		}
@@ -467,6 +468,18 @@ func validateSources(raw any, path string, errs *[]string) {
 				*errs = append(*errs, p+".url: unsupported for source kind "+kind)
 			} else if sourceURL, ok := rawURL.(string); ok && !validPersistentSourceURL(sourceURL) {
 				*errs = append(*errs, p+".url: must be credential-free and must not contain surrounding whitespace, NUL, query, or fragment")
+			}
+		}
+		if rawRevision, exists := m["revision"]; exists {
+			validateNonEmptyString(rawRevision, p+".revision", errs)
+			if revision, ok := rawRevision.(string); ok && !gitobject.ValidID(revision) {
+				*errs = append(*errs, p+".revision: must be a full lowercase 40- or 64-character hexadecimal commit ID")
+			}
+			if kind != "brew-tap" {
+				*errs = append(*errs, p+".revision: supported only for brew-tap sources")
+			}
+			if rawURL, ok := m["url"].(string); !ok || rawURL == "" {
+				*errs = append(*errs, p+".url: required when revision is set")
 			}
 		}
 		if rawRef, exists := m["secret_ref"]; exists {
@@ -485,6 +498,7 @@ func validateSources(raw any, path string, errs *[]string) {
 		}
 	}
 }
+
 
 func validPersistentSourceURL(raw string) bool {
 	if strings.TrimSpace(raw) != raw || strings.ContainsRune(raw, '\x00') || raw == "" {

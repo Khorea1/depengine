@@ -810,9 +810,27 @@ depengine checks that its configured origin matches the declared URL and fails
 that candidate on a mismatch instead of installing from the other origin.
 Source URLs must be credential-free and cannot contain query strings or
 fragments; use `secret_ref` for supported authentication instead. The exact
-credential-free URL is also retained in the source-preparation journal so
-crash recovery performs the same origin check rather than falling back to a
-name-only probe.
+credential-free URL is retained in the source-preparation journal so crash
+recovery performs the same origin check rather than falling back to a name-only
+probe.
+
+A `brew-tap` may also declare `revision = "<full-git-object-id>"` alongside an
+explicit `url`. The value must be a full lowercase 40- or 64-character Git
+object ID. Before the tap is used, depengine checks its local `HEAD` against
+that ID using read-only Git inspection; a newly added tap is checked before
+preparation can complete. This does not fetch, checkout, or reset the tap, and
+does not prevent Homebrew from auto-updating the tap during installation. The
+field is not supported for `scoop-bucket`.
+
+For example:
+
+```toml
+[[tools.example.sources]]
+kind = "brew-tap"
+name = "corp/tools"
+url = "https://github.com/corp/homebrew-tools.git"
+revision = "0123456789abcdef0123456789abcdef01234567"
+```
 
 For a Git-backed `scoop-bucket` or `brew-tap` with an explicit, credential-free
 HTTPS `url`, use `secret_ref = { provider = "env", name = "CORP_TOKEN" }` to
@@ -826,11 +844,13 @@ during schema validation; source roles other than host configuration are
 rejected during planning. The token is not installed as a persistent Git
 credential; later source updates need their own
 host credential setup. Sources are checked before mutation. `depengine.lock`
-stores a hash of each candidate's host-source `kind`/`name`/`url` declaration;
-`--frozen-lockfile` requires that identity to exist and match, while
-`depengine update` is the operation that accepts a changed declaration. The
-hash does not pin the Git repository's HEAD or turn the lockfile into a trust
-root. `dependency_only`
+stores a hash of each candidate's host-source `kind`/`name`/`url` declaration
+and any declared Brew tap `revision`; `--frozen-lockfile` requires that
+identity to exist and match, while `depengine update` is the operation that
+accepts a changed declaration. The declaration hash is not a general lock on
+repository contents or a trust root; only a separately declared Brew revision
+is checked against local tap `HEAD`, with the Homebrew auto-update limitation
+described above. `dependency_only`
 tools are not normal roots, but remain selectable with `--only`.
 
 ### Virtual tools: dependency groups with no methods

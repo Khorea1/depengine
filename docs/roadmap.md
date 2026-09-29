@@ -77,14 +77,16 @@ Work on the current execution model comes before adding more installer types.
   [`design/adr-001-universal-lock-projection.md`](design/adr-001-universal-lock-projection.md)
   and [`support-boundary.md`](support-boundary.md).
 - [~] Finish typed package-source selection, trust, ownership, verification,
-  and locking. Git-backed Brew/Scoop sources with explicit URLs now verify the
+  and locking. Git-backed Brew/Scoop sources with explicit URLs verify the
   existing host origin instead of accepting a same-name source blindly;
-  Brew/Scoop presence probes now match source names exactly rather than by
-  substring;
-  transactional recovery retains the credential-free URL, and legacy lock v1
-  hashes candidate host-source declarations so frozen installs reject source
-  drift. Signing/trust identity and immutable upstream source revisions remain
-  open.
+  presence probes match source names exactly, and transactional recovery
+  retains the credential-free URL and expected Brew tap revision. A declared
+  Brew tap revision must be a full lowercase Git object ID and is checked
+  read-only against the local tap HEAD before use. This does not pin the source
+  against Homebrew auto-update during package installation. Legacy lock v1
+  source hashes include declared revisions and frozen installs reject
+  declaration drift; this is not a general immutable source lock. Scoop
+  revisions and signing/trust identity remain open.
 - [~] Finish recovery for package-source and prerequisite preparation. Lazy
   `method.requires` installs now cross the candidate WAL commit boundary even
   without package sources, and recovery reconciles their installed identity.

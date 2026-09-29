@@ -223,6 +223,7 @@ type Source struct {
 	Kind      string
 	Name      string
 	URL       string
+	Revision  string
 	SecretRef *SecretReference
 }
 
