@@ -214,7 +214,6 @@ func (ex *Executor) prepareCandidateSources(ctx context.Context, toolName, metho
 	}
 
 	var key string
-	var err error
 	if journalPrerequisite {
 		key, err = candidatePreparationKeyWithRole(toolName, methodKind, intent, candidatePreparationPrerequisite)
 	} else {
