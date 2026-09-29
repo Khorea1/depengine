@@ -294,7 +294,31 @@ func (ex *Executor) runCandidatePreinstall(ac *candidateAttempt, result *ToolRes
 // mutations too, so they run only after the candidate has survived every
 // availability gate that can be answered before the target install.
 func (ex *Executor) requireMethodPrerequisites(ac *candidateAttempt, result *ToolResult) attemptOutcome {
-	prerequisiteUses, err := ex.ensureMethodDependencies(ac.toolCtx, ac.tool, ac.method)
+	var prerequisiteUses []plan.ResourceUse
+	var err error
+	if ac.prepared.tx != nil {
+		err = ac.prepared.tx.suspend()
+	}
+	if err == nil {
+		prerequisiteUses, err = ex.ensureMethodDependencies(ac.toolCtx, ac.tool, ac.method)
+	}
+	if ac.prepared.tx != nil {
+		if resumeErr := ac.prepared.tx.resume(); err == nil {
+			err = resumeErr
+		}
+	}
+	if err == nil && len(ac.method.Requires) > 0 && ac.prepared.tx == nil {
+		prepared := ac.prepared
+		prepared.transactionRequired = true
+		if prepared.preparationPlan == nil {
+			empty := plan.PreparationPlan{}
+			prepared.preparationPlan = &empty
+		}
+		prepared, err = ex.prepareCandidateSources(ac.toolCtx, ac.tool.Name, ac.method.Kind, ac.planIntent, prepared)
+		if err == nil {
+			ac.prepared = prepared
+		}
+	}
 	if err != nil {
 		rollbackErr := ac.prepared.rollback(ac.toolCtx, ex)
 		detail := err.Error()
@@ -331,6 +355,27 @@ func (ex *Executor) requireMethodPrerequisites(ac *candidateAttempt, result *Too
 // installCandidate executes the dry-run terminal or the real commit+install
 // sequence. Plain install failures fall through to the next method; every
 // other path finishes the tool.
+func (ex *Executor) reconcileFailedOwnerCommit(ac *candidateAttempt) (committed, notApplied bool, err error) {
+	if ac == nil || ac.prepared.tx == nil || ac.planIntent == nil || ac.adapter == nil {
+		return false, false, errors.New("owner commit recovery context is incomplete")
+	}
+	observation := ex.observeRecoveryCandidate(ac.toolCtx, ac.tool, ac.method, ac.planIntent, ac.adapter)
+	decision, err := ac.prepared.tx.locked.PreparationRecovery(ac.prepared.tx.key, ac.prepared.tx.plan, &ac.planIntent.Identity, &observation)
+	if err != nil {
+		return false, false, err
+	}
+	if decision.Action == plan.RecoveryFinalizeCommit {
+		return true, false, nil
+	}
+	if observation.Presence != plan.PresenceAbsent {
+		return false, false, nil
+	}
+	if _, err := ac.prepared.tx.locked.ResolvePreparationCommitNotApplied(ac.prepared.tx.key, ac.prepared.tx.plan); err != nil {
+		return false, false, err
+	}
+	return false, true, nil
+}
+
 func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) attemptOutcome {
 	if ex.dryRun {
 		return ex.finishWouldInstall(ac, result)
@@ -359,7 +404,7 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 	// Persist the commit boundary before the adapter can mutate the target. If
 	// the install process dies after this point, recovery must reconcile the
 	// target instead of assuming candidate preparation is safe to undo.
-	if err := ac.prepared.planCommit(); err != nil {
+	if err := ac.prepared.planCommit(ac.resources); err != nil {
 		methodCancel()
 		rollbackErr := ac.prepared.rollback(ac.toolCtx, ex)
 		detail := err.Error()
@@ -385,6 +430,20 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 	}
 
 	if ac.prepared.tx != nil {
+		if !ac.prepared.prerequisite && len(ac.prepared.tx.plan.Prepare) == 0 && len(ac.prepared.tx.plan.CommitUses) > 0 {
+			committed, notApplied, probeErr := ex.reconcileFailedOwnerCommit(ac)
+			if probeErr == nil && committed {
+				return ex.finishInstalled(ac, result)
+			}
+			if probeErr == nil && notApplied {
+				if rollbackErr := ac.prepared.rollback(ac.toolCtx, ex); rollbackErr != nil {
+					ex.failCandidate(ac, result, fmt.Sprintf("install failed: %v; preparation rollback failed: %v", err, rollbackErr))
+					return finishTool
+				}
+				ex.skipCandidate(ac, result, "failed", err.Error())
+				return nextMethod
+			}
+		}
 		_ = ac.prepared.leaveCommitUnresolved()
 		ex.failCandidate(ac, result, fmt.Sprintf("install failed after transactional preparation: %v; commit outcome is unresolved and recovery is required", err))
 		ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "commit_unresolved", "error", result.Error)
@@ -487,21 +546,27 @@ func (ex *Executor) finishInstalled(ac *candidateAttempt, result *ToolResult) at
 	result.ResourceUses = append([]plan.ResourceUse(nil), ac.resources...)
 
 	var finalizeErr error
-	if ac.prepared.prerequisite && ac.prepared.tx != nil {
+	if ac.prepared.tx != nil {
 		current := ac.prepared.tx.locked.State()
 		ex.prepareStateMetadata(current)
 		existing, hadExisting := current.Tools[ac.tool.Name]
-		toolState := ex.toolStateForResult(ac.toolCtx, ac.tool, *result, existing, hadExisting, false)
-		resource, resourceErr := plan.PrerequisiteResource(ac.tool.Name)
-		if resourceErr != nil {
-			_ = ac.prepared.leaveCommitUnresolved()
-			finalizeErr = resourceErr
-		} else {
+		toolState := ex.toolStateForResult(ac.toolCtx, ac.tool, *result, existing, hadExisting, !ac.tool.DependencyOnly)
+		var trackedUses []plan.ResourceUse
+		if ac.prepared.prerequisite {
+			resource, resourceErr := plan.PrerequisiteResource(ac.tool.Name)
+			if resourceErr != nil {
+				_ = ac.prepared.leaveCommitUnresolved()
+				finalizeErr = resourceErr
+			} else {
+				trackedUses = []plan.ResourceUse{{Resource: resource, Created: true}}
+			}
+		}
+		if finalizeErr == nil {
 			finalizeErr = ac.prepared.finalizeCommitWithTool(
 				ac.tool.Name,
 				ac.tool.Name,
 				toolState,
-				[]plan.ResourceUse{{Resource: resource, Created: true}},
+				trackedUses,
 			)
 		}
 	} else {

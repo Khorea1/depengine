@@ -40,12 +40,13 @@ func (r recoveredCandidateCommit) result() ToolResult {
 }
 
 type candidateSourcePreparation struct {
-	resourceUses    []plan.ResourceUse
-	prerequisite    bool
-	missing         []config.Source
-	added           []config.Source // direct/no-state fallback only
-	preparationPlan *plan.PreparationPlan
-	tx              *sourcePreparationTransaction
+	resourceUses        []plan.ResourceUse
+	prerequisite        bool
+	transactionRequired bool
+	missing             []config.Source
+	added               []config.Source // direct/no-state fallback only
+	preparationPlan     *plan.PreparationPlan
+	tx                  *sourcePreparationTransaction
 }
 
 type sourcePreparationTransaction struct {
@@ -168,7 +169,7 @@ func (ex *Executor) probeCandidateSources(ctx context.Context, configured []conf
 
 func (ex *Executor) prepareCandidateSources(ctx context.Context, toolName, methodKind string, intent *plan.ResolvedInstallPlan, prepared candidateSourcePreparation) (candidateSourcePreparation, error) {
 	journalPrerequisite := prepared.prerequisite
-	if len(prepared.missing) == 0 && !journalPrerequisite {
+	if len(prepared.missing) == 0 && !journalPrerequisite && !prepared.transactionRequired {
 		return prepared, nil
 	}
 	if prepared.preparationPlan == nil {
@@ -303,14 +304,18 @@ func (ex *Executor) resolveSourceSecrets(ctx context.Context, missing []config.S
 	return tokens, nil
 }
 
-func (prepared *candidateSourcePreparation) planCommit() error {
+func (prepared *candidateSourcePreparation) planCommit(uses []plan.ResourceUse) error {
 	if prepared == nil || prepared.tx == nil {
 		return nil
 	}
-	_, err := prepared.tx.locked.PlanPreparationCommit(prepared.tx.key, prepared.tx.plan)
+	if prepared.tx.locked == nil {
+		return errors.New("preparation state lock is not held")
+	}
+	_, err := prepared.tx.locked.PlanPreparationCommitWithUses(prepared.tx.key, prepared.tx.plan, uses)
 	if err != nil {
 		return blockPreparation("persist preparation commit boundary: %v", err)
 	}
+	prepared.tx.plan.CommitUses = append([]plan.ResourceUse(nil), uses...)
 	return nil
 }
 
@@ -366,6 +371,9 @@ func (prepared *candidateSourcePreparation) leaveCommitUnresolved() error {
 func (tx *sourcePreparationTransaction) rollback(ctx context.Context) error {
 	if tx == nil || tx.closed {
 		return nil
+	}
+	if err := tx.resume(); err != nil {
+		return err
 	}
 	_, decision, err := tx.locked.PlanPreparationRollback(tx.key, tx.plan)
 	if err != nil {
@@ -438,11 +446,37 @@ func (tx *sourcePreparationTransaction) applyRollbackDecision(ctx context.Contex
 	return nil
 }
 
-func (tx *sourcePreparationTransaction) close() error {
+func (tx *sourcePreparationTransaction) suspend() error {
 	if tx == nil || tx.closed || tx.locked == nil {
 		return nil
 	}
+	if err := tx.locked.Close(); err != nil {
+		return err
+	}
+	tx.locked = nil
+	return nil
+}
+
+func (tx *sourcePreparationTransaction) resume() error {
+	if tx == nil || tx.closed || tx.locked != nil {
+		return nil
+	}
+	locked, err := depstate.LoadLocked()
+	if err != nil {
+		return fmt.Errorf("resume preparation state lock: %w", err)
+	}
+	tx.locked = locked
+	return nil
+}
+
+func (tx *sourcePreparationTransaction) close() error {
+	if tx == nil || tx.closed {
+		return nil
+	}
 	tx.closed = true
+	if tx.locked == nil {
+		return nil
+	}
 	return tx.locked.Close()
 }
 
@@ -606,27 +640,27 @@ func (ex *Executor) reconcilePreparationCommit(ctx context.Context, locked *deps
 		toolName: tool.Name, methodKind: method.Kind, method: displayMethod,
 		config: method.Config, intent: intent,
 	}
+	result := recovered.result()
+	current := locked.State()
+	ex.prepareStateMetadata(current)
+	existing, hadExisting := current.Tools[tool.Name]
+	toolState := ex.toolStateForResult(ctx, tool, result, existing, hadExisting, !tool.DependencyOnly)
+	var trackedUses []plan.ResourceUse
 	if prerequisite {
-		result := recovered.result()
-		current := locked.State()
-		ex.prepareStateMetadata(current)
-		existing, hadExisting := current.Tools[tool.Name]
-		toolState := ex.toolStateForResult(ctx, tool, result, existing, hadExisting, false)
 		resource, resourceErr := plan.PrerequisiteResource(tool.Name)
 		if resourceErr != nil {
 			return resourceErr
 		}
-		if _, err = locked.FinalizePreparationCommitWithTool(
-			key,
-			preparationPlan,
-			tool.Name,
-			tool.Name,
-			toolState,
-			[]plan.ResourceUse{{Resource: resource, Created: true}},
-		); err != nil {
-			return err
-		}
-	} else if _, err = locked.FinalizePreparationCommit(key, preparationPlan, tool.Name); err != nil {
+		trackedUses = []plan.ResourceUse{{Resource: resource, Created: true}}
+	}
+	if _, err = locked.FinalizePreparationCommitWithTool(
+		key,
+		preparationPlan,
+		tool.Name,
+		tool.Name,
+		toolState,
+		trackedUses,
+	); err != nil {
 		return err
 	}
 	ex.recoveredCommits[tool.Name] = recovered
