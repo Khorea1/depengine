@@ -156,7 +156,10 @@ Work on the current execution model comes before adding more installer types.
   purity, shared-resource refcounts, serialization redaction, reconciliation
   validity, valid lock-reference normalization reaching a stable fixed point,
   and successful preparation-WAL state-machine transitions. Persisted-state
-  invariant fuzzing outside the plan layer remains open.
+  properties now also cover deterministic round-trips of canonical ownership
+  and active preparation journals plus the validation-before-mutation boundary:
+  rejected states cannot replace the last known-good state file. Broader
+  lifecycle/state invariants outside persistence remain open.
 - [ ] Keep public claims aligned with behavior the implementation actually
   enforces.
 - [ ] Complete [`specs/format-v1-freeze.md`](specs/format-v1-freeze.md) and run

@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -308,7 +309,7 @@ func LoadFrom(path string) (*State, error) {
 
 func validateStateSemantics(s *State) error {
 	if s == nil {
-		return nil
+		return errors.New("state is nil")
 	}
 	if err := formatversion.ValidateReadVersion(formatversion.State, s.Version); err != nil {
 		return err
