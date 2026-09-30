@@ -149,9 +149,14 @@ Work on the current execution model comes before adding more installer types.
 - [ ] Cover each method contract across validation, identity, dry-run, version,
   source, scope, environment, lock, lifecycle, idempotency, errors, and secret
   redaction.
-- [ ] Add planner fuzz/property tests and lifecycle/state invariant tests,
+- [~] Add planner fuzz/property tests and lifecycle/state invariant tests,
   including command-bearing fields, secret/redaction boundaries, source/URL
-  normalization, and lock identity invariants.
+  normalization, and lock identity invariants. Plan-level properties now cover
+  project-path confinement, source canonicalization, lock-document ordering and
+  purity, shared-resource refcounts, serialization redaction, reconciliation
+  validity, valid lock-reference normalization reaching a stable fixed point,
+  and successful preparation-WAL state-machine transitions. Persisted-state
+  invariant fuzzing outside the plan layer remains open.
 - [ ] Keep public claims aligned with behavior the implementation actually
   enforces.
 - [ ] Complete [`specs/format-v1-freeze.md`](specs/format-v1-freeze.md) and run
