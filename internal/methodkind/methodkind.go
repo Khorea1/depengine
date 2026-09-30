@@ -205,6 +205,20 @@ var msiArtifactContract = &artifact.Contract{
 	RequiredExtensions: []string{".msi"},
 }
 
+var pkgArtifactContract = &artifact.Contract{
+	URLFields:          []string{"url", "checksum_url", "signature_url"},
+	AllowedSchemes:     []string{"http", "https"},
+	ArtifactFields:     []string{"url", "asset"},
+	RequiredExtensions: []string{".pkg"},
+}
+
+var dmgArtifactContract = &artifact.Contract{
+	URLFields:          []string{"url", "checksum_url", "signature_url"},
+	AllowedSchemes:     []string{"http", "https"},
+	ArtifactFields:     []string{"url", "asset"},
+	RequiredExtensions: []string{".dmg"},
+}
+
 // Contracts is the single source of truth for method kinds, ordering and
 // adapter-facing schema fields. Keep entries in default preference order;
 // kinds with DefaultOrder zero are valid but never injected as blind fallbacks.
@@ -380,6 +394,13 @@ var Contracts = finalizeContracts([]Contract{
 		"product_name": {Type: String, Required: true, NonEmpty: true, Effects: EffectVerify | EffectExecute},
 		"publisher":    {Type: String, Effects: EffectVerify | EffectExecute},
 	}), Requires: httpBearerSecretRequirements, SourceAlternatives: artifactSourceAlternatives, Artifact: msiArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, ImplicitDistroFamily: []string{"windows"}, CanRemove: true},
+	{Kind: "macpkg", DefaultOrder: 38, Fields: fields(artifactFields, httpBearerSecretFields, map[string]Field{
+		"package_id":      {Type: String, Required: true, NonEmpty: true, Effects: EffectVerify},
+		"allow_untrusted": {Type: Boolean, Effects: EffectExecute},
+	}), Requires: httpBearerSecretRequirements, SourceAlternatives: artifactSourceAlternatives, Artifact: pkgArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, ImplicitDistroFamily: []string{"macos"}},
+	{Kind: "dmg", DefaultOrder: 39, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(artifactFields, artifactScopeField, httpBearerSecretFields, map[string]Field{
+		"app": {Type: String, Required: true, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+	}), Requires: httpBearerSecretRequirements, SourceAlternatives: artifactSourceAlternatives, Artifact: dmgArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, ImplicitDistroFamily: []string{"macos"}, CanRemove: true},
 })
 
 // finalizeContracts adds capabilities implied by the adapter interface and by

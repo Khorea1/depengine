@@ -353,6 +353,21 @@ product_name = "Neovim"
 publisher = "neovim.io"
 when = { target_family = ["windows"] }
 
+# macOS Installer package: tracked by package receipt; removal is manual.
+[tools.neovim.macpkg]
+repo = "neovim/neovim"
+asset = "nvim-macos.pkg"
+package_id = "com.neovim.Nvim"
+when = { os = ["darwin"] }
+
+# macOS disk image: installs exactly the declared .app into ~/Applications.
+[tools.neovim.dmg]
+repo = "neovim/neovim"
+asset = "nvim-macos.dmg"
+app = "Neovim.app"
+scope = "user"
+when = { os = ["darwin"] }
+
 
 # --- Kernel-specific DKMS package ---
 [tools.v4l2loopback]

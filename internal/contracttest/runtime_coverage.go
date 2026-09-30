@@ -15,6 +15,10 @@ func init() {
 		"android.branch":       {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
 		"msi.release":          {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
 		"msi.branch":           {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
+		"macpkg.release":       {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
+		"macpkg.branch":        {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
+		"dmg.release":          {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
+		"dmg.branch":           {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
 	})
 	RegisterCoverage(PhaseExecute, map[string]Coverage{
 		"github.secret_ref":             {Consumer: "internal/exec/TestInstallResolvedCandidatePassesResolvedGitHubSecretContext", Rationale: "the canonical resolved-plan installer re-resolves and transports the typed token for asset execution"},
@@ -71,17 +75,24 @@ func init() {
 		"container.platform":   {Consumer: "internal/container/adapter_test.go", Rationale: "observation compares the installed image platform"},
 		"msi.product_name":     {Consumer: "internal/msi/adapter_v2_test.go", Rationale: "verification looks up the configured product name"},
 		"msi.publisher":        {Consumer: "internal/msi/adapter_v2_test.go", Rationale: "verification looks up the configured publisher"},
+		"macpkg.package_id":    {Consumer: "internal/pkg/adapter_test.go", Rationale: "verification queries the exact Installer receipt identity"},
+		"dmg.app":              {Consumer: "internal/dmg/adapter_test.go", Rationale: "verification checks the exact declared application bundle"},
+		"dmg.scope":            {Consumer: "internal/dmg/adapter_test.go", Rationale: "verification checks the scope-mapped Applications destination"},
 	})
 	registerRuntimeFields(PhaseResolveRuntime, "http", "internal/httpdownload/resolved_install_test.go", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "http", "internal/planner/resolve_effect_test.go", "static planning projects typed secret references into the candidate plan without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
 	registerRuntimeFields(PhaseResolveRuntime, "appimage", "internal/planner/resolve_effect_test.go", "static planning projects typed wrapper secret references without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
 	registerRuntimeFields(PhaseResolveRuntime, "android", "internal/planner/resolve_effect_test.go", "static planning projects typed wrapper secret references without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
 	registerRuntimeFields(PhaseResolveRuntime, "msi", "internal/planner/resolve_effect_test.go", "static planning projects typed wrapper secret references without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
+	registerRuntimeFields(PhaseResolveRuntime, "macpkg", "internal/planner/resolve_effect_test.go", "static planning projects typed wrapper secret references without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
+	registerRuntimeFields(PhaseResolveRuntime, "dmg", "internal/planner/resolve_effect_test.go", "static planning projects typed wrapper secret references without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
 	registerRuntimeFields(PhaseResolveRuntime, "cargo", "internal/planner/resolve_effect_test.go", "static planning projects the typed Cargo Git reference without resolving its value", "secret_ref")
 	registerRuntimeFields(PhaseResolveRuntime, "github", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "appimage", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "android", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "msi", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
+	registerRuntimeFields(PhaseResolveRuntime, "macpkg", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
+	registerRuntimeFields(PhaseResolveRuntime, "dmg", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "local", "internal/localartifactadapter/adapter_v2_test.go", "project-relative source, checksum, and detached-signature policy resolve to local artifact identity", "local_path", "checksum", "signature_path", "signing_key")
 
 	common := []string{"checksum", "checksum_url", "checksum_file_format", "signature_url", "signing_key"}
@@ -91,6 +102,11 @@ func init() {
 	registerRuntimeFields(PhaseExecute, "appimage", "internal/httpdownload/appimage_adapter_test.go", "AppImage delegates download and archive execution to the shared HTTP installer", append(common, "url", "repo", "asset", "binary", "entrypoints", "link_dir", "sudo_required", "strip_components", "install_dir", "desktop", "scope")...)
 	registerRuntimeFields(PhaseExecute, "android", "internal/httpdownload/android_adapter_test.go", "Android delegates download and integrity checks to the shared HTTP installer", append(common, "url", "repo", "asset", "sudo_required")...)
 	registerRuntimeFields(PhaseExecute, "msi", "internal/msi/adapter_v2_test.go", "MSI delegates artifact integrity and source handling to HTTP before msiexec", append(common, "url", "repo", "asset")...)
+	for _, kind := range []string{"macpkg", "dmg"} {
+		registerRuntimeFields(PhaseExecute, kind, "internal/pkg/adapter_test.go and internal/dmg/adapter_test.go", "macOS installers delegate artifact integrity and source handling to HTTP before invoking dedicated platform tools", append(common, "url", "repo", "asset", "secret_ref", "checksum_secret_ref", "signature_secret_ref")...)
+	}
+	registerRuntimeFields(PhaseExecute, "macpkg", "internal/pkg/adapter_test.go", "package installation enforces the explicit signature trust policy", "allow_untrusted")
+	registerRuntimeFields(PhaseExecute, "dmg", "internal/dmg/adapter_test.go", "DMG installation copies the declared bundle into the scope-mapped Applications directory", "app", "scope")
 	registerRuntimeFields(PhaseExecute, "git", "internal/git/adapter_test.go", "Git execution transports an explicit credential only to scoped HTTPS Git operations and consumes install settings", "secret_ref", "branch", "tag", "rev", "depth", "submodules", "build", "extract_to", "binary")
 
 	registerRuntimeFields(PhaseVerify, "http", "internal/httpdownload/http_v2_test.go", "observation checks configured payload and launcher locations", "extract_to", "binary", "entrypoints", "link_dir", "scope")

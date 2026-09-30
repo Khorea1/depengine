@@ -2,12 +2,14 @@ package app
 
 import (
 	"github.com/Khorea1/depengine/internal/container"
+	"github.com/Khorea1/depengine/internal/dmg"
 	"github.com/Khorea1/depengine/internal/ecosystem"
 	"github.com/Khorea1/depengine/internal/exec"
 	gitadapter "github.com/Khorea1/depengine/internal/git"
 	"github.com/Khorea1/depengine/internal/httpdownload"
 	"github.com/Khorea1/depengine/internal/localartifactadapter"
 	"github.com/Khorea1/depengine/internal/msi"
+	pkgadapter "github.com/Khorea1/depengine/internal/pkg"
 )
 
 func InitAdapters() {
@@ -22,6 +24,8 @@ func InitAdapters() {
 	exec.Register(httpdownload.NewAndroidAdapter())
 	exec.Register(msi.NewAdapter())
 	exec.Register(container.NewContainerAdapter())
+	exec.Register(pkgadapter.NewAdapter())
+	exec.Register(dmg.NewAdapter())
 	for _, adapter := range exec.WindowsAdapters() {
 		exec.Register(adapter)
 	}
