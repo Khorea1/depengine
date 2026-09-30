@@ -17,11 +17,10 @@ write-ahead journal and explicit ownership:
 - `plan.PreparationPlan` enforces read-only probes vs mutating
   prepare/commit phases. Every transition validates the persisted journal as
   an exact ordered prefix of the current plan.
-- Each prepare mutation crosses a persisted `applying` boundary before host
-  mutation and is confirmed afterward; commit planning persists `committing`
-  before host-side commit, rollback planning persists `rolling_back` before
-  compensation, each rollback compensation crossing symmetric
-  `rollback_applying`/`rollback_applied` boundaries. Terminal
+- Each prepare mutation is persisted as `applying` before the host mutation and
+  confirmed afterward. Commit and rollback are likewise persisted as
+  `committing` and `rolling_back` before host-side work. Each rollback
+  compensation crosses `rollback_applying` then `rollback_applied`. Terminal
   `committed`/`rolled_back` is reached only after host mutations complete.
 - Ambiguous outcomes stay blocked: `applying`/`rollback_applying` records
   close only on explicit `applied`/`not_applied` evidence; unknown commit
@@ -32,9 +31,10 @@ write-ahead journal and explicit ownership:
   v3), so restart recovery cannot reconstruct a different transaction;
   journal/plan keys pair 1:1.
 - Capability/condition gates and source-presence probes are read-only: no
-  source is added merely to answer "could this candidate work?". An absent
-  declared source enters durable preparation, availability is revalidated
-  after, and an unavailable target compensates the source before fallback.
+  source is added merely to answer "could this candidate work?". After
+  preparing an absent declared source, the executor revalidates candidate
+  availability. If the target remains unavailable, the executor compensates
+  the source before fallback.
 - Ownership is explicit: `ResourceIdentity`/`OwnershipKind`/
   `OwnedResourceState` with sorted unique dependents and refcounts.
   `FinalizeCommit` projects prepared sources into a canonical snapshot;
