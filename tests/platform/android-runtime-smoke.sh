@@ -99,9 +99,16 @@ copy_into_termux() {
 
 copy_into_termux "${build_dir}/depengine" "${termux_home}/depengine" 0755
 copy_into_termux tests/platform/native-lifecycle.sh "${termux_home}/tests/platform/native-lifecycle.sh" 0755
+copy_into_termux tests/platform/native-failure.sh "${termux_home}/tests/platform/native-failure.sh" 0755
 copy_into_termux tests/platform/fixtures/termux-native.toml "${termux_home}/tests/platform/fixtures/termux-native.toml" 0644
+copy_into_termux tests/platform/fixtures/native-missing.toml "${termux_home}/tests/platform/fixtures/native-missing.toml" 0644
+
+termux_env="export PREFIX=${termux_prefix}; export HOME=${termux_home}; export TMPDIR=${termux_prefix}/tmp; export TERMUX_VERSION=${termux_version}; export PATH=${termux_prefix}/bin:/system/bin; export DEPENGINE_BIN=${termux_home}/depengine; export CI=1; export LANG=C; export LC_ALL=C; cd ${termux_home}"
 
 echo "Running native pkg lifecycle inside Termux..."
-adb shell "run-as ${termux_package} /system/bin/sh -c 'export PREFIX=${termux_prefix}; export HOME=${termux_home}; export TMPDIR=${termux_prefix}/tmp; export TERMUX_VERSION=${termux_version}; export PATH=${termux_prefix}/bin:/system/bin; export DEPENGINE_BIN=${termux_home}/depengine; export CI=1; export LANG=C; export LC_ALL=C; cd ${termux_home}; exec ${termux_prefix}/bin/sh ${termux_home}/tests/platform/native-lifecycle.sh ${termux_home}/tests/platform/fixtures/termux-native.toml depengine-termux-smoke'"
+adb shell "run-as ${termux_package} /system/bin/sh -c '${termux_env}; exec ${termux_prefix}/bin/sh ${termux_home}/tests/platform/native-lifecycle.sh ${termux_home}/tests/platform/fixtures/termux-native.toml depengine-termux-smoke'"
 
-echo "Termux native lifecycle smoke test passed."
+echo "Checking failed native install state inside Termux..."
+adb shell "run-as ${termux_package} /system/bin/sh -c '${termux_env}; exec ${termux_prefix}/bin/sh ${termux_home}/tests/platform/native-failure.sh ${termux_home}/tests/platform/fixtures/native-missing.toml depengine-native-missing'"
+
+echo "Termux native lifecycle tests passed."

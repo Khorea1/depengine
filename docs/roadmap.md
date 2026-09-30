@@ -1,6 +1,6 @@
 # Roadmap
 
-Long-lived unfinished work. Last reviewed: 2026-09-26.
+Long-lived unfinished work. Last reviewed: 2026-09-29.
 
 Work on the current execution model comes before adding more installer types.
 
@@ -112,7 +112,7 @@ Work on the current execution model comes before adding more installer types.
 
 ## P2: installer coverage
 
-- [ ] Add typed macOS PKG/DMG and Windows EXE/MSIX/AppX installers.
+- [x] Add typed macOS PKG/DMG and Windows EXE/MSIX/AppX installers.
 - [ ] Finish lifecycle/version/source behavior for Chocolatey, Homebrew, Cargo,
   Go, Python/Node/Ruby/PHP, Conda, version managers, Snap, Flatpak, Git,
   containers, and Nix.
@@ -138,14 +138,14 @@ Work on the current execution model comes before adding more installer types.
 
 ## P3: verification and v1 freeze
 
-- [~] Expand cross-platform manifest fixtures with invalid and adversarial cases.
-  The Debian/Arch/Fedora/Alpine CLI matrix now replays canonical cycle,
+- [x] Expand cross-platform manifest fixtures with invalid and adversarial cases.
+  The Debian/Arch/Fedora/Alpine CLI matrix replays canonical cycle,
   dangling-reference, malformed-URL, duplicate-tool, and unknown-placeholder
   fixtures plus an unsafe package-name injection fixture, asserting stable
   JSON diagnostic codes and strict-mode exit behavior. macOS, FreeBSD, OpenBSD,
-  NetBSD, and Windows native runners now also require a missing native package
-  to remain absent from live observation and persisted removal state after an
-  attempted install. Termux-specific adversarial lifecycle coverage remains open.
+  NetBSD, Windows, and the real-emulator Termux runner also require a missing
+  native package to remain absent from live observation and persisted removal
+  state after an attempted install.
 - [ ] Cover each method contract across validation, identity, dry-run, version,
   source, scope, environment, lock, lifecycle, idempotency, errors, and secret
   redaction.

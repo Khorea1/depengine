@@ -35,7 +35,8 @@ suite inside their VMs, so support is validated beyond cross-compilation.
 Android has two real-emulator layers in the same job. The first cross-builds
 the CLI with the Android NDK, executes it through ADB, and asserts that
 depengine's own OS detection resolves the device as Android. The second installs
-a pinned official Termux GitHub-debug APK and reuses `native-lifecycle.sh`
-inside the app sandbox to exercise the real Termux `pkg` install/check/
-idempotency/remove contract. The Android APK adapter's interactive package-
-installer handoff remains outside this automated lifecycle coverage.
+a pinned official Termux GitHub-debug APK and reuses the native lifecycle
+harnesses inside the app sandbox to exercise the real Termux `pkg`
+install/check/idempotency/remove contract plus failed-install state handling.
+The Android APK adapter's interactive package-installer handoff remains outside
+this automated lifecycle coverage.
