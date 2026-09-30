@@ -21,8 +21,8 @@ FAIL=0
 FAILED_SCENARIOS=""
 
 header()  { echo ""; echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; echo "  $1"; echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; }
-pass()    { echo "  ✅ $1"; ((PASS++)); }
-fail()    { echo "  ❌ $1"; ((FAIL++)); FAILED_SCENARIOS="$FAILED_SCENARIOS - $1"$'\n'; }
+pass()    { echo "  ✅ $1"; ((++PASS)); }
+fail()    { echo "  ❌ $1"; ((++FAIL)); FAILED_SCENARIOS="$FAILED_SCENARIOS - $1"$'\n'; }
 
 # ── 0. Build do binário local ──────────────────────────────────
 header "Build do binário"
