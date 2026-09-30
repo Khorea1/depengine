@@ -133,7 +133,7 @@ depengine currently supports:
 | Native | `native`, plus package-manager aliases such as `apt`, `pacman`, `dnf`, `brew`, `winget`, `scoop`, `choco` |
 | Languages | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `pnpm`, `bun`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
 | Desktop | `flatpak`, `snap`, `vscode`, `vscodium`, `cask`, `mas`, `appman` |
-| Specialized | `sdkman`, `steamcmd`, `pacstall`, `aur`, `conda`, `asdf`, `nix`, `container`, `appimage`, `android`, `msi`, `exe`, `msix`, `appx` |
+| Specialized | `sdkman`, `steamcmd`, `pacstall`, `aur`, `conda`, `asdf`, `nix`, `container`, `appimage`, `android`, `msi`, `macpkg`, `dmg` |
 | Artifacts/builds | `git`, `local`, `github`, `http` |
 
 `native` detects the host package manager. A tool can also name a manager
@@ -188,7 +188,7 @@ support release-asset checksum discovery or signatures.
 
 Credentials must not be embedded in HTTP(S) URLs. Private GitHub methods,
 private HTTPS `git` methods, Git-backed Cargo sources, container image pulls,
-and HTTP-backed artifact methods (`http`, `appimage`, `android`, and `msi`) can
+and HTTP-backed artifact methods (`http`, `appimage`, `android`, `msi`, `macpkg`, and `dmg`) can
 declare typed env-backed secret references so the credential is part of project
 intent without storing its value. HTTP-backed artifact credentials are scoped to the
 specific primary/checksum/signature request and require HTTPS for remote URLs

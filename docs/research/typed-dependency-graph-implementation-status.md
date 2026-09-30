@@ -36,6 +36,7 @@ The research proposal in `docs/research/typed-dependency-graph.md` identified th
 - layout-only route bundling for semantic multiedges with identical endpoints, using the strongest visible line style while retaining every member annotation;
 - `depengine graph --format graph`, an orthogonal terminal renderer with explicit `--width` input (0 detects terminal width through `internal/term`), per-component compact dependency-edge fallback when the layout exceeds the width, line-style edge semantics with an annotations section, and a wrapped isolated-node list;
 - terminal-width detection through `internal/term` on Unix and Windows, with non-terminal streams falling back to the default width;
+- `Graph.Slice` and `depengine graph --only <tool> --direction deps|dependents|both --depth N`: breadth-first slicing over the complete typed IR that returns the induced subgraph (multiedges and boundary edges retained), with the historical `--only` closure preserved as the default;
 - compatibility wrappers for existing graph APIs;
 - unit coverage for builders, guards, candidate multiplicity, multiedges, canonicalization, projections, scheduling roles, renderers, CLI view parsing, guard adaptation, and exact candidate selection.
 
