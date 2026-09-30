@@ -10,6 +10,7 @@ import (
 	"github.com/Khorea1/depengine/internal/localartifactadapter"
 	"github.com/Khorea1/depengine/internal/msi"
 	pkgadapter "github.com/Khorea1/depengine/internal/pkg"
+	"github.com/Khorea1/depengine/internal/windowsinstaller"
 )
 
 func InitAdapters() {
@@ -24,6 +25,9 @@ func InitAdapters() {
 	exec.Register(httpdownload.NewAndroidAdapter())
 	exec.Register(msi.NewAdapter())
 	exec.Register(container.NewContainerAdapter())
+	exec.Register(windowsinstaller.NewEXEAdapter())
+	exec.Register(windowsinstaller.NewMSIXAdapter())
+	exec.Register(windowsinstaller.NewAPPXAdapter())
 	exec.Register(pkgadapter.NewAdapter())
 	exec.Register(dmg.NewAdapter())
 	for _, adapter := range exec.WindowsAdapters() {
