@@ -96,6 +96,8 @@ Show the dependency graph
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
+| `--depth <int>` | local | `-1` | with --only: maximum traversal depth in edges (-1 = unbounded, 0 = only the tool itself) |
+| `--direction <string>` | local | `deps` | with --only: traversal direction: deps, dependents, both |
 | `--format <string>` | local | `text` | output format: mermaid, dot, text, graph |
 | `-h, --help` | local | `false` | help for graph |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |

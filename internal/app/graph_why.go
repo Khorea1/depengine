@@ -32,6 +32,8 @@ func newGraphCmd() *cobra.Command {
 	graphProfile := new(string)
 	graphOnly := new(string)
 	graphSkip := new(string)
+	graphDirection := new(string)
+	graphDepth := new(int)
 
 	cmd := &cobra.Command{
 		Use:     "graph",
@@ -39,7 +41,7 @@ func newGraphCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runGraphView(cmd.Context(), graphSchema, graphManifest, graphNoManifest, graphFormat, graphWidth, graphView, graphShowInactive, graphProfile, graphOnly, graphSkip)
+			return runGraphView(cmd.Context(), graphSchema, graphManifest, graphNoManifest, graphFormat, graphWidth, graphView, graphShowInactive, graphProfile, graphOnly, graphSkip, graphDirection, graphDepth)
 		},
 	}
 	f := cmd.Flags()
@@ -53,10 +55,12 @@ func newGraphCmd() *cobra.Command {
 	f.StringVar(graphProfile, "profile", "", "only show tools with matching tag")
 	f.StringVar(graphOnly, "only", "", "only show subgraph for specific tool")
 	f.StringVar(graphSkip, "skip", "", "skip specific tools (comma-separated)")
+	f.StringVar(graphDirection, "direction", graph.DirectionDeps.String(), "with --only: traversal direction: deps, dependents, both")
+	f.IntVar(graphDepth, "depth", graph.Unbounded, "with --only: maximum traversal depth in edges (-1 = unbounded, 0 = only the tool itself)")
 	return cmd
 }
 
-func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graphNoManifest *bool, graphFormat *string, graphWidth *int, graphView *string, graphShowInactive *bool, graphProfile, graphOnly, graphSkip *string) error {
+func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graphNoManifest *bool, graphFormat *string, graphWidth *int, graphView *string, graphShowInactive *bool, graphProfile, graphOnly, graphSkip, graphDirection *string, graphDepth *int) error {
 	switch *graphFormat {
 	case "mermaid", "dot", "text", "graph":
 	default:
@@ -74,6 +78,16 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 		return exitWithCode(2)
 	}
 	if err := validateGraphProjectionOptions(view, *graphShowInactive); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return exitWithCode(2)
+	}
+
+	direction, err := graph.ParseDirection(*graphDirection)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return exitWithCode(2)
+	}
+	if err := validateGraphSliceOptions(*graphOnly, direction, *graphDepth); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return exitWithCode(2)
 	}
@@ -104,14 +118,31 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
 		}
 	}
-	s.Tools = filterTools(s.Tools, *graphOnly, *graphSkip, *graphProfile)
-
-	if len(s.Tools) == 0 {
-		fmt.Fprintln(os.Stderr, "no tools matching filters")
-		return nil
+	// The historical `--only` closure keeps its schema-level filtering. Any
+	// other direction or depth slices the complete typed IR instead, because
+	// dependent traversal needs successor information that a pre-filtered
+	// schema no longer has. s.Tools stays complete in that case so resolved
+	// candidate selection can still see every tool it may probe.
+	var declaredGraph graph.Graph
+	if graphSliceRequested(direction, *graphDepth) {
+		var ok bool
+		declaredGraph, ok, err = sliceDeclaredGraph(s.Tools, *graphOnly, *graphSkip, *graphProfile, direction, *graphDepth)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			return exitWithCode(2)
+		}
+		if !ok {
+			fmt.Fprintln(os.Stderr, "no tools matching filters")
+			return nil
+		}
+	} else {
+		s.Tools = filterTools(s.Tools, *graphOnly, *graphSkip, *graphProfile)
+		if len(s.Tools) == 0 {
+			fmt.Fprintln(os.Stderr, "no tools matching filters")
+			return nil
+		}
+		declaredGraph = graph.BuildDeclaredGraph(s.Tools)
 	}
-
-	declaredGraph := graph.BuildDeclaredGraph(s.Tools)
 	visibleGraph, err := projectGraphView(ctx, declaredGraph, s, view, *graphShowInactive)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: project %s graph: %v\n", view, err)
@@ -128,7 +159,7 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 		// working set, so a long level list doesn't start mid-air. Mermaid and
 		// dot are machine-consumed; no decoration there.
 		c := newCLIStyle(os.Stderr)
-		_, _ = fmt.Fprintf(c.w, "%s\n\n", c.dim(fmt.Sprintf("%d tools in %d levels", len(s.Tools), len(levels))))
+		_, _ = fmt.Fprintf(c.w, "%s\n\n", c.dim(fmt.Sprintf("%d tools in %d levels", len(visibleGraph.Nodes), len(levels))))
 	}
 	switch *graphFormat {
 	case "mermaid":

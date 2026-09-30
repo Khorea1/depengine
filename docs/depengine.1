@@ -170,6 +170,12 @@ path to other state file (used when no args) Scope: local. Default: .
 help for forget Scope: local. Default: false.
 .SS "depengine graph flags"
 .TP
+.B "\-\-depth <int>"
+with \-\-only: maximum traversal depth in edges (\-1 = unbounded, 0 = only the tool itself) Scope: local. Default: \-1.
+.TP
+.B "\-\-direction <string>"
+with \-\-only: traversal direction: deps, dependents, both Scope: local. Default: deps.
+.TP
 .B "\-\-format <string>"
 output format: mermaid, dot, text, graph Scope: local. Default: text.
 .TP

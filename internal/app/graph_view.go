@@ -26,6 +26,42 @@ func parseGraphView(value string) (graph.GraphView, error) {
 	}
 }
 
+// graphSliceRequested reports whether the graph command must slice the typed
+// IR. The default (dependency direction, unbounded depth) is the historical
+// `--only` closure and keeps using schema-level filtering.
+func graphSliceRequested(direction graph.Direction, depth int) bool {
+	return direction != graph.DirectionDeps || depth != graph.Unbounded
+}
+
+// validateGraphSliceOptions rejects slicing flags that have no root to slice
+// from, instead of silently ignoring them.
+func validateGraphSliceOptions(only string, direction graph.Direction, depth int) error {
+	if depth < graph.Unbounded {
+		return fmt.Errorf("--depth must be >= 0, or %d for unbounded", graph.Unbounded)
+	}
+	if graphSliceRequested(direction, depth) && only == "" {
+		return fmt.Errorf("--direction and --depth require --only")
+	}
+	return nil
+}
+
+// sliceDeclaredGraph builds the declared IR from the complete tool set and
+// slices it around the --only root.
+//
+// --skip and --profile keep their existing meaning: they decide whether the
+// root itself is eligible and never remove nodes reached by the traversal.
+// ok is false when the root is missing or filtered out.
+func sliceDeclaredGraph(tools map[string]*config.Tool, only, skip, profile string, direction graph.Direction, depth int) (sliced graph.Graph, ok bool, err error) {
+	if len(filterTools(tools, only, skip, profile)) == 0 {
+		return graph.Graph{}, false, nil
+	}
+	sliced, err = graph.BuildDeclaredGraph(tools).Slice([]string{only}, direction, depth)
+	if err != nil {
+		return graph.Graph{}, false, err
+	}
+	return sliced, true, nil
+}
+
 func validateGraphProjectionOptions(view graph.GraphView, includeInactive bool) error {
 	if includeInactive && view == graph.DeclaredView {
 		return fmt.Errorf("--show-inactive requires --view effective or --view resolved")
