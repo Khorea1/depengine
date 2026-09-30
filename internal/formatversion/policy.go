@@ -1,6 +1,8 @@
-// Package formatversion centralizes the independent on-disk format versions
-// used by depengine. Manifest, lock, and state formats intentionally evolve
-// independently; none of these numbers is the depengine binary version.
+// Package formatversion centralizes version policies for document families that
+// currently have an exact, single-version pre-freeze reader contract. The
+// depengine.lock envelope is intentionally not modeled here: internal/lock
+// accepts both envelope v1 and v2 during the explicit universal-lock migration.
+// None of these numbers is the depengine binary version.
 package formatversion
 
 import "fmt"
@@ -9,9 +11,9 @@ import "fmt"
 type Kind string
 
 const (
-	Manifest Kind = "manifest"
-	Lock     Kind = "lock"
-	State    Kind = "state"
+	Manifest       Kind = "manifest"
+	LockProjection Kind = "lock projection"
+	State          Kind = "state"
 )
 
 // Stability describes whether a public compatibility promise has been made
@@ -25,8 +27,8 @@ const (
 )
 
 const (
-	CurrentManifestVersion = 1
-	CurrentLockVersion     = 1
+	CurrentManifestVersion       = 1
+	CurrentLockProjectionVersion = 1
 	// State v4 records whether a tracked tool has durable root intent. That bit,
 	// together with prerequisite ownership/refcounts, is required before remove
 	// can safely garbage-collect depengine-created lazy prerequisites. v3 files
@@ -52,8 +54,8 @@ func PolicyFor(kind Kind) (Policy, error) {
 	switch kind {
 	case Manifest:
 		return Policy{Kind: Manifest, Current: CurrentManifestVersion, Stability: PreFreeze}, nil
-	case Lock:
-		return Policy{Kind: Lock, Current: CurrentLockVersion, Stability: PreFreeze}, nil
+	case LockProjection:
+		return Policy{Kind: LockProjection, Current: CurrentLockProjectionVersion, Stability: PreFreeze}, nil
 	case State:
 		return Policy{Kind: State, Current: CurrentStateVersion, Stability: PreFreeze}, nil
 	default:
