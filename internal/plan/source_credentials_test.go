@@ -43,6 +43,16 @@ func TestValidateCredentialFreeReference(t *testing.T) {
 	}
 }
 
+func TestValidateCredentialFreeReferenceRejectsInvalidUTF8(t *testing.T) {
+	raw := "A://[::%25\x80]"
+	if err := validateCredentialFreeReference(raw); err == nil {
+		t.Fatal("expected invalid UTF-8 reference to be rejected")
+	}
+	if err := validateIdentityReference(raw); err == nil {
+		t.Fatal("expected invalid UTF-8 identity reference to be rejected")
+	}
+}
+
 func TestSourceRejectsSensitiveURLFragment(t *testing.T) {
 	s := SourceReference{Role: SourceRegistry, URL: "https://example.test/index#access_token=secret"}
 	if err := s.Validate(); err == nil {

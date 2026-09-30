@@ -341,7 +341,7 @@ func upgradeSingleTool(ctx context.Context, ex *exec.Executor, runner *run.Loggi
 	}
 
 	if opts.dryRun {
-		if verification.State == plan.StateSatisfied {
+		if verificationEstablishesPinnedVersion(verification) {
 			res.Status = "already-current"
 			res.NewVer = verification.Observed.Version
 			return res
@@ -353,7 +353,7 @@ func upgradeSingleTool(ctx context.Context, ex *exec.Executor, runner *run.Loggi
 		}
 		return res
 	}
-	if verification.State == plan.StateSatisfied {
+	if verificationEstablishesPinnedVersion(verification) {
 		res.Status = "already-current"
 		res.NewVer = verification.Observed.Version
 		st.Tools[ot.name] = upgradedToolState(ot.ts, ot.methodKind, ot.tool, ot.method, verification.Observed.Version, ot.pinnedVer, time.Now().UTC())
@@ -394,6 +394,23 @@ func upgradeSingleTool(ctx context.Context, ex *exec.Executor, runner *run.Loggi
 		c.ok("%s: %s → %s", ot.name, ot.ts.Version, res.NewVer)
 	}
 	return res
+}
+
+// verificationEstablishesPinnedVersion distinguishes a verified current
+// version from a merely satisfied non-version identity. Upgrade discovery has
+// already established state/lock version drift; methods whose contracts cannot
+// observe versions must continue through the upgrade rather than treating an
+// empty verification projection as proof that the pin is installed.
+func verificationEstablishesPinnedVersion(verification plan.VerificationResult) bool {
+	if verification.State != plan.StateSatisfied {
+		return false
+	}
+	for _, field := range verification.KnownFields {
+		if field == plan.FieldVersion {
+			return true
+		}
+	}
+	return false
 }
 
 // upgradeContext scopes child-process environment filtering to the tracked

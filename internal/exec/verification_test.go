@@ -50,6 +50,58 @@ func TestVerifyResolvedCandidateReconcilesResolvedIdentity(t *testing.T) {
 	}
 }
 
+func TestVerifyResolvedCandidateIgnoresExecuteOnlyIdentityDimensions(t *testing.T) {
+	adapter := &verificationAdapter{
+		executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "cargo"}},
+		observation: plan.Observation{
+			Presence:    plan.PresencePresent,
+			Identity:    plan.ObservedIdentity{Package: "demo"},
+			KnownFields: []plan.IdentityField{plan.FieldPackage},
+		},
+	}
+	ex := New()
+	WithAdapters(adapter)(ex)
+	tool := &config.Tool{Name: "demo"}
+	method := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"pkg": "demo", "git": "https://example.test/demo.git"}}
+	resolved := plan.New("demo", "cargo", true)
+	resolved.Identity.Package = "demo"
+	resolved.Identity.Source = "https://example.test/demo.git"
+
+	verification, err := ex.VerifyResolvedCandidate(context.Background(), tool, method, &resolved)
+	if err != nil {
+		t.Fatalf("VerifyResolvedCandidate: %v", err)
+	}
+	if verification.State != plan.StateSatisfied {
+		t.Fatalf("verification = %+v, want satisfied without unverifiable cargo.git identity", verification)
+	}
+}
+
+func TestVerifyResolvedCandidateKeepsDeclaredVerificationDimensions(t *testing.T) {
+	adapter := &verificationAdapter{
+		executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "winget"}},
+		observation: plan.Observation{
+			Presence:    plan.PresencePresent,
+			Identity:    plan.ObservedIdentity{Package: "Demo.Tool"},
+			KnownFields: []plan.IdentityField{plan.FieldPackage},
+		},
+	}
+	ex := New()
+	WithAdapters(adapter)(ex)
+	tool := &config.Tool{Name: "demo"}
+	method := &config.MethodCandidate{Kind: "winget", Config: map[string]any{"pkg": "Demo.Tool", "source": "winget"}}
+	resolved := plan.New("demo", "winget", true)
+	resolved.Identity.Package = "Demo.Tool"
+	resolved.Identity.Source = "winget"
+
+	verification, err := ex.VerifyResolvedCandidate(context.Background(), tool, method, &resolved)
+	if err != nil {
+		t.Fatalf("VerifyResolvedCandidate: %v", err)
+	}
+	if verification.State != plan.StateUnknown || len(verification.Unverifiable) != 1 || verification.Unverifiable[0] != plan.FieldSource {
+		t.Fatalf("verification = %+v, want unverifiable declared source identity", verification)
+	}
+}
+
 func TestResolveAndVerifyCandidateAtVersionProjectsDesiredIdentity(t *testing.T) {
 	adapter := &verificationAdapter{
 		executorAdapterV2Double: executorAdapterV2Double{

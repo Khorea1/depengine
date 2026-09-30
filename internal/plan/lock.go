@@ -19,7 +19,7 @@ import (
 // CurrentLockVersion is the schema version of the adapter-neutral lock
 // projection. Breaking changes must increment this value; readers must reject
 // unknown versions until an explicit migration is implemented.
-const CurrentLockVersion = formatversion.CurrentLockVersion
+const CurrentLockVersion = formatversion.CurrentLockProjectionVersion
 
 // LockStability describes whether a resolved plan contains enough concrete
 // identity to prevent mutable intent from being re-resolved on reinstall.
@@ -597,7 +597,7 @@ func canonicalTrustFingerprint(value string) string {
 // Validate checks lock schema and stability invariants without consulting an
 // adapter or the host.
 func (p LockProjection) Validate() error {
-	if err := formatversion.ValidateReadVersion(formatversion.Lock, p.Version); err != nil {
+	if err := formatversion.ValidateReadVersion(formatversion.LockProjection, p.Version); err != nil {
 		return err
 	}
 	if strings.TrimSpace(p.Tool.Name) != p.Tool.Name || p.Tool.Name == "" || strings.ContainsRune(p.Tool.Name, '\x00') {
@@ -728,6 +728,12 @@ func sanitizeLockReference(raw string) string {
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme == "" || u.Host == "" {
+		// A credential-free opaque reference is already persistence-safe. Generic
+		// text redaction can reinterpret malformed URL punctuation and manufacture
+		// userinfo (for example, moving a fragment before @ into authority).
+		if validateIdentityReference(raw) == nil {
+			return raw
+		}
 		return run.RedactSensitiveText(raw)
 	}
 	u.Scheme = strings.ToLower(u.Scheme)
@@ -1050,7 +1056,7 @@ func VerifyResolvedPlansAgainstLock(doc LockDocument, plans []ResolvedInstallPla
 }
 
 func (d LockDocument) Validate() error {
-	if err := formatversion.ValidateReadVersion(formatversion.Lock, d.Version); err != nil {
+	if err := formatversion.ValidateReadVersion(formatversion.LockProjection, d.Version); err != nil {
 		return err
 	}
 	seen := make(map[string]struct{}, len(d.Entries))

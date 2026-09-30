@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Khorea1/depengine/internal/formatversion"
 	"github.com/Khorea1/depengine/internal/gitobject"
 	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/platform"
@@ -67,8 +68,8 @@ func validateSchemaVersion(raw any, errs *[]string) {
 		*errs = append(*errs, fmt.Sprintf("schema_version: expected integer, got %T", raw))
 		return
 	}
-	if version != 1 {
-		*errs = append(*errs, fmt.Sprintf("schema_version: unsupported version %d (supported: 1)", version))
+	if version != int64(formatversion.CurrentManifestVersion) {
+		*errs = append(*errs, fmt.Sprintf("schema_version: unsupported version %d (supported: %d)", version, formatversion.CurrentManifestVersion))
 	}
 }
 
@@ -498,7 +499,6 @@ func validateSources(raw any, path string, errs *[]string) {
 		}
 	}
 }
-
 
 func validPersistentSourceURL(raw string) bool {
 	if strings.TrimSpace(raw) != raw || strings.ContainsRune(raw, '\x00') || raw == "" {

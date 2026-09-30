@@ -3,6 +3,7 @@ package ecosystem
 import (
 	"context"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -113,6 +114,56 @@ func TestBaseAdapterV2ObservePresentAbsentAndVersion(t *testing.T) {
 	}
 	if _, err := adapter.Observe(context.Background(), testV2BaseRunner(), tool, nil); err == nil {
 		t.Fatal("Observe(nil method) should fail")
+	}
+}
+
+func TestBaseAdapterV2ObserveProjectsOnlyVerifiedScopes(t *testing.T) {
+	tests := []struct {
+		name      string
+		kind      string
+		config    map[string]any
+		stdout    string
+		wantScope string
+		wantKnown bool
+	}{
+		{
+			name:      "pipx global",
+			kind:      "pipx",
+			config:    map[string]any{"pkg": "demo", "version": "1.0.0", "scope": "global"},
+			stdout:    `{"venvs":{"demo":{"main_package":{"package":"demo","package_version":"1.0.0"}}}}`,
+			wantScope: string(plan.ScopeSystem),
+			wantKnown: true,
+		},
+		{
+			name:      "flatpak user",
+			kind:      "flatpak",
+			config:    map[string]any{"pkg": "org.demo.App", "scope": "user"},
+			wantScope: string(plan.ScopeUser),
+			wantKnown: true,
+		},
+		{
+			name:      "gem execute-only scope",
+			kind:      "gem",
+			config:    map[string]any{"pkg": "demo", "scope": "user"},
+			stdout:    "demo (1.0.0)\n",
+			wantKnown: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adapter := NewBaseAdapter(Configs[tt.kind])
+			method := &config.MethodCandidate{Kind: tt.kind, Config: tt.config}
+			runner := &run.FakeRunner{LookPaths: map[string]bool{Configs[tt.kind].Binary: true}, Stdout: tt.stdout}
+			observation, err := adapter.Observe(context.Background(), runner, &config.Tool{Name: "demo"}, method)
+			if err != nil {
+				t.Fatalf("Observe() error = %v", err)
+			}
+			known := slices.Contains(observation.KnownFields, plan.FieldScope)
+			if known != tt.wantKnown || observation.Identity.Scope != tt.wantScope {
+				t.Fatalf("Observe() scope=%q fields=%#v, want scope=%q known=%v", observation.Identity.Scope, observation.KnownFields, tt.wantScope, tt.wantKnown)
+			}
+		})
 	}
 }
 

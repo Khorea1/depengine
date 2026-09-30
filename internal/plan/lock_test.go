@@ -493,10 +493,10 @@ func TestLockDocumentVerifyCoverageRequiresExactToolSet(t *testing.T) {
 	}
 }
 
-func TestLockDocumentUsesSharedFormatVersionPolicy(t *testing.T) {
+func TestLockDocumentUsesSharedProjectionFormatVersionPolicy(t *testing.T) {
 	doc := plan.LockDocument{Version: plan.CurrentLockVersion + 1}
-	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), "lock format version") {
-		t.Fatalf("Validate() error = %v, want shared lock format-version diagnostic", err)
+	if err := doc.Validate(); err == nil || !strings.Contains(err.Error(), "lock projection format version") {
+		t.Fatalf("Validate() error = %v, want shared lock-projection format-version diagnostic", err)
 	}
 }
 

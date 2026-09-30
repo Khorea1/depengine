@@ -1,6 +1,6 @@
 # Roadmap
 
-Long-lived unfinished work. Last reviewed: 2026-09-26.
+Long-lived unfinished work. Last reviewed: 2026-09-29.
 
 Work on the current execution model comes before adding more installer types.
 
@@ -112,7 +112,7 @@ Work on the current execution model comes before adding more installer types.
 
 ## P2: installer coverage
 
-- [ ] Add typed macOS PKG/DMG and Windows EXE/MSIX/AppX installers.
+- [x] Add typed macOS PKG/DMG and Windows EXE/MSIX/AppX installers.
 - [ ] Finish lifecycle/version/source behavior for Chocolatey, Homebrew, Cargo,
   Go, Python/Node/Ruby/PHP, Conda, version managers, Snap, Flatpak, Git,
   containers, and Nix.
@@ -138,20 +138,32 @@ Work on the current execution model comes before adding more installer types.
 
 ## P3: verification and v1 freeze
 
-- [~] Expand cross-platform manifest fixtures with invalid and adversarial cases.
-  The Debian/Arch/Fedora/Alpine CLI matrix now replays canonical cycle,
+- [x] Expand cross-platform manifest fixtures with invalid and adversarial cases.
+  The Debian/Arch/Fedora/Alpine CLI matrix replays canonical cycle,
   dangling-reference, malformed-URL, duplicate-tool, and unknown-placeholder
   fixtures plus an unsafe package-name injection fixture, asserting stable
   JSON diagnostic codes and strict-mode exit behavior. macOS, FreeBSD, OpenBSD,
-  NetBSD, and Windows native runners now also require a missing native package
-  to remain absent from live observation and persisted removal state after an
-  attempted install. Termux-specific adversarial lifecycle coverage remains open.
-- [ ] Cover each method contract across validation, identity, dry-run, version,
+  NetBSD, Windows, and the real-emulator Termux runner also require a missing
+  native package to remain absent from live observation and persisted removal
+  state after an attempted install.
+- [~] Cover each method contract across validation, identity, dry-run, version,
   source, scope, environment, lock, lifecycle, idempotency, errors, and secret
-  redaction.
-- [ ] Add planner fuzz/property tests and lifecycle/state invariant tests,
+  redaction. Runtime reconciliation now projects resolved identity through each
+  field's `EffectVerify` contract instead of requiring execute-only identity to
+  be observable. Scoped probes also report the target evidence they actually
+  establish for Cargo roots, Conda environments/prefixes, and verified
+  BaseAdapter scopes. Broader per-method lifecycle coverage remains open.
+- [~] Add planner fuzz/property tests and lifecycle/state invariant tests,
   including command-bearing fields, secret/redaction boundaries, source/URL
-  normalization, and lock identity invariants.
+  normalization, and lock identity invariants. Plan-level properties now cover
+  project-path confinement, source canonicalization, lock-document ordering and
+  purity, shared-resource refcounts, serialization redaction, reconciliation
+  validity, valid lock-reference normalization reaching a stable fixed point,
+  and successful preparation-WAL state-machine transitions. Persisted-state
+  properties now also cover deterministic round-trips of canonical ownership
+  and active preparation journals plus the validation-before-mutation boundary:
+  rejected states cannot replace the last known-good state file. Broader
+  lifecycle/state invariants outside persistence remain open.
 - [ ] Keep public claims aligned with behavior the implementation actually
   enforces.
 - [ ] Complete [`specs/format-v1-freeze.md`](specs/format-v1-freeze.md) and run

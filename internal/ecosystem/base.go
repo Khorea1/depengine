@@ -230,11 +230,13 @@ func (a *BaseAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 		if err != nil || installedVersion == "" {
 			return absent, nil
 		}
-		return plan.Observation{
+		observation := plan.Observation{
 			Presence:    plan.PresencePresent,
 			Identity:    plan.ObservedIdentity{Package: pkg, Version: installedVersion},
 			KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion},
-		}, nil
+		}
+		projectObservedScope(a.config.KindName, mc, &observation)
+		return observation, nil
 	}
 	if !a.Check(ctx, rn, tool, mc) {
 		return absent, nil
@@ -248,7 +250,32 @@ func (a *BaseAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 		observation.Identity.Version = requestedVersion
 		observation.KnownFields = append(observation.KnownFields, plan.FieldVersion)
 	}
+	projectObservedScope(a.config.KindName, mc, &observation)
 	return observation, nil
+}
+
+func projectObservedScope(kind string, mc *config.MethodCandidate, observation *plan.Observation) {
+	if mc == nil || observation == nil || observation.Presence != plan.PresencePresent {
+		return
+	}
+	contract, ok := methodkind.Lookup(kind)
+	if !ok {
+		return
+	}
+	field, ok := contract.Fields["scope"]
+	if !ok || field.Effects&methodkind.EffectVerify == 0 {
+		return
+	}
+	raw, _ := mc.Config["scope"].(string)
+	if raw == "" {
+		return
+	}
+	scope, err := contract.NormalizeScope(raw)
+	if err != nil {
+		return
+	}
+	observation.Identity.Scope = string(scope)
+	observation.KnownFields = append(observation.KnownFields, plan.FieldScope)
 }
 
 // InstallResolved executes only the identity and source selection resolved

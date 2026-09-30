@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Khorea1/depengine/internal/gitobject"
 	"github.com/Khorea1/depengine/internal/run"
@@ -213,6 +214,9 @@ var scpLikeReference = regexp.MustCompile(`^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:[^/\
 // secret, for SSH transports (ssh://git@host); for every other scheme it can
 // be a token (https://<token>@host) and is forbidden too.
 func validateCredentialFreeReference(raw string) error {
+	if !utf8.ValidString(raw) {
+		return errors.New("reference must be valid UTF-8")
+	}
 	if strings.TrimSpace(raw) != raw {
 		return errors.New("reference must not contain leading or trailing whitespace")
 	}

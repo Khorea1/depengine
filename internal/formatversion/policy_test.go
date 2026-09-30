@@ -13,7 +13,7 @@ func TestPoliciesAreIndependentAndPreFreeze(t *testing.T) {
 		current int
 	}{
 		{formatversion.Manifest, formatversion.CurrentManifestVersion},
-		{formatversion.Lock, formatversion.CurrentLockVersion},
+		{formatversion.LockProjection, formatversion.CurrentLockProjectionVersion},
 		{formatversion.State, formatversion.CurrentStateVersion},
 	} {
 		p, err := formatversion.PolicyFor(tc.kind)
@@ -30,7 +30,7 @@ func TestPoliciesAreIndependentAndPreFreeze(t *testing.T) {
 }
 
 func TestValidateReadVersionFailClosed(t *testing.T) {
-	for _, kind := range []formatversion.Kind{formatversion.Manifest, formatversion.Lock, formatversion.State} {
+	for _, kind := range []formatversion.Kind{formatversion.Manifest, formatversion.LockProjection, formatversion.State} {
 		p, err := formatversion.PolicyFor(kind)
 		if err != nil {
 			t.Fatal(err)
@@ -47,6 +47,12 @@ func TestValidateReadVersionFailClosed(t *testing.T) {
 				t.Fatalf("error %q does not identify format %q", err, kind)
 			}
 		}
+	}
+}
+
+func TestPersistedLockEnvelopeIsNotASingleVersionPolicy(t *testing.T) {
+	if _, err := formatversion.PolicyFor("lock"); err == nil {
+		t.Fatal("PolicyFor accepted depengine.lock envelope despite its explicit v1/v2 read policy")
 	}
 }
 

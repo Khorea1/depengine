@@ -3,6 +3,7 @@ package ecosystem
 import (
 	"context"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -103,6 +104,10 @@ func TestCondaAdapterV2ObserveExactIdentityAndErrors(t *testing.T) {
 	if err != nil || observed.Presence != plan.PresencePresent || observed.Identity.Version != "2.1.0" || observed.Identity.Revision != "py312_0" || observed.Identity.Source != "conda-forge" {
 		t.Fatalf("Observe() = %#v, error %v", observed, err)
 	}
+	wantEnvironment := &plan.EnvironmentTarget{Kind: plan.EnvironmentPrefix, Value: "/envs/data"}
+	if !reflect.DeepEqual(observed.Identity.Environment, wantEnvironment) || !slices.Contains(observed.KnownFields, plan.FieldEnvironment) {
+		t.Fatalf("Observe() environment = %#v fields=%#v, want queried prefix evidence", observed.Identity.Environment, observed.KnownFields)
+	}
 	if verification := plan.Reconcile(plan.ResolvedIdentity{Package: "numpy", Version: "2.0.0"}, observed); verification.State != plan.StateDrifted {
 		t.Fatalf("Reconcile() = %+v, want exact-version drift", verification)
 	}
@@ -116,6 +121,27 @@ func TestCondaAdapterV2ObserveExactIdentityAndErrors(t *testing.T) {
 	missing, err := adapter.Observe(context.Background(), &run.FakeRunner{Stdout: `[]`}, tool, mc)
 	if err != nil || missing.Presence != plan.PresenceAbsent {
 		t.Fatalf("missing package = %#v, error %v; want absent", missing, err)
+	}
+}
+
+func TestCondaObservedEnvironment(t *testing.T) {
+	tests := []struct {
+		name   string
+		config map[string]any
+		want   *plan.EnvironmentTarget
+		ok     bool
+	}{
+		{name: "named", config: map[string]any{"environment": "analysis"}, want: &plan.EnvironmentTarget{Kind: plan.EnvironmentNamed, Value: "analysis"}, ok: true},
+		{name: "prefix", config: map[string]any{"prefix": "/envs/data"}, want: &plan.EnvironmentTarget{Kind: plan.EnvironmentPrefix, Value: "/envs/data"}, ok: true},
+		{name: "default", config: map[string]any{}, ok: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := condaObservedEnvironment(&config.MethodCandidate{Kind: "conda", Config: tt.config})
+			if ok != tt.ok || !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("condaObservedEnvironment() = %#v, %v; want %#v, %v", got, ok, tt.want, tt.ok)
+			}
+		})
 	}
 }
 
