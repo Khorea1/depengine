@@ -11,8 +11,8 @@ Work on the current execution model comes before adding more installer types.
   execution and verification probes cover every declared field.
 - [x] Add typed secret references to planning and runtime resolution for the
   supported transports: Git-backed `brew-tap` and `scoop-bucket` source setup;
-  request-scoped Bearer credentials for `http`, `appimage`, `android`, and `msi`
-  artifact, explicit checksum, and signature downloads; GitHub release/API and
+  request-scoped Bearer credentials for `http`, `appimage`, `android`, `msi`,
+  `exe`, `msix`, `appx`, `macpkg`, and `dmg` artifact, explicit checksum, and signature downloads; GitHub release/API and
   asset authentication; origin-scoped Bearer credentials for private HTTPS
   `git` clone/fetch/same-origin recursive submodules and `cargo.git` prefetch;
   and temporary registry auth files for Docker/Podman pulls. References resolve

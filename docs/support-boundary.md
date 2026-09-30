@@ -57,7 +57,7 @@ Legacy lock v1 covers each selector class as follows:
 | Selector requested in schema.toml | Pinned in depengine.lock? | Note |
 |---|---|---|
 | `{latest}` inside a literal `url` | Yes | The resolved release tag is stored as a pin and substituted into the URL before adapters see it. |
-| Latest release of a repo-backed method: `repo` present, `release` empty or `"latest"`, and no `branch` (the `repo` + `asset` forms of `github`, `http`, `appimage`, `android`, and `msi` qualify) | Yes | The latest release tag at resolution time is stored as a pin; installation resolves the asset only within that pinned release. |
+| Latest release of a repo-backed method: `repo` present, `release` empty or `"latest"`, and no `branch` (the `repo` + `asset` forms of `github`, `http`, `appimage`, `android`, `msi`, `exe`, `msix`, `appx`, `macpkg`, and `dmg` qualify) | Yes | The latest release tag at resolution time is stored as a pin; installation resolves the asset only within that pinned release. |
 | Literal `checksum = "<algo>:<hex>"` | Yes | Recorded alongside the method. The schema's literal value still governs, because the lock only substitutes a checksum into `*:auto` and checksum-less local declarations. |
 | `checksum = "<algo>:auto"` | Yes, once materialized | The digest the adapter resolves from the declared checksum source is recorded by a normal non-frozen install. Frozen validation requires that pin and never computes one, and `depengine update` does not download payloads. |
 | `local_path` artifact | Yes | The content digest is computed during lock resolution even when the schema omits a checksum. |

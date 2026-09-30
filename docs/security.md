@@ -89,7 +89,8 @@ retain secret reference names and therefore cannot identify those variables
 for exclusion. References declared only in a personal manifest are likewise
 unavailable to removal.
 
-Typed `http`, `appimage`, `android`, and `msi` methods can reference
+Typed `http`, `appimage`, `android`, `msi`, `exe`, `msix`, `appx`, `macpkg`,
+and `dmg` methods can reference
 env-backed credentials with `secret_ref`, `checksum_secret_ref`, and
 `signature_secret_ref`. Typed `github` methods can use `secret_ref` for
 release API resolution and GitHub asset transport. Secret values are not placed
