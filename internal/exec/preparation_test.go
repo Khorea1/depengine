@@ -771,6 +771,63 @@ func TestObserveRecoveryCandidateNeverFinalizesAmbiguousCommit(t *testing.T) {
 	}
 }
 
+func TestExecutorCommitRecoveryIgnoresExecuteOnlyIdentity(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	schema := sourceBackedSchema()
+	tool := schema.Tools["demo"]
+	method := tool.Methods[0]
+	method.Config["git"] = "https://example.test/demo.git"
+
+	intent, mismatch := candidatePlanIntent(tool, method)
+	if mismatch != "" || intent == nil {
+		t.Fatalf("intent = %#v, mismatch = %q", intent, mismatch)
+	}
+	if intent.Identity.Source == "" {
+		t.Fatal("cargo git source was not projected into resolved identity")
+	}
+	key, err := candidatePreparationKey(tool.Name, method.Kind, intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	preparationPlan := plan.PreparationPlan{}
+	locked, err := state.LoadLocked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := locked.BeginPreparation(key, preparationPlan); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if _, err := locked.PlanPreparationCommit(key, preparationPlan); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if err := locked.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ex := New()
+	WithAdapters(&testMockAdapter{kindValue: "cargo", checkFunc: func(string) bool { return true }})(ex)
+	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
+	ex.schema = schema
+	ex.recoveredCommits = make(map[string]recoveredCandidateCommit)
+	if err := ex.recoverPreparationTransactions(context.Background()); err != nil {
+		t.Fatalf("recoverPreparationTransactions() error = %v", err)
+	}
+
+	st, err := state.LoadFrom(state.DefaultPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.PreparationJournals) != 0 || len(st.PreparationPlans) != 0 {
+		t.Fatalf("recovery retained execute-only identity transaction: plans=%#v journals=%#v", st.PreparationPlans, st.PreparationJournals)
+	}
+	if _, ok := ex.recoveredCommits[tool.Name]; !ok {
+		t.Fatal("recovered commit was not retained as a terminal in-memory result")
+	}
+}
+
 func TestExecutorCommitRecoveryRequiresMatchingVersionEvidence(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	schema := sourceBackedVersionedSchema("1.2.3")

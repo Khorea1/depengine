@@ -625,7 +625,8 @@ func (ex *Executor) reconcilePreparationCommit(ctx context.Context, locked *deps
 		return err
 	}
 	observation := ex.observeRecoveryCandidate(ctx, tool, method, intent, adapter)
-	decision, err := locked.PreparationRecovery(key, preparationPlan, &intent.Identity, &observation)
+	desired := projectVerificationIdentity(method.Kind, intent.Identity)
+	decision, err := locked.PreparationRecovery(key, preparationPlan, &desired, &observation)
 	if err != nil {
 		return err
 	}

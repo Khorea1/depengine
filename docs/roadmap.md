@@ -146,9 +146,13 @@ Work on the current execution model comes before adding more installer types.
   NetBSD, Windows, and the real-emulator Termux runner also require a missing
   native package to remain absent from live observation and persisted removal
   state after an attempted install.
-- [ ] Cover each method contract across validation, identity, dry-run, version,
+- [~] Cover each method contract across validation, identity, dry-run, version,
   source, scope, environment, lock, lifecycle, idempotency, errors, and secret
-  redaction.
+  redaction. Runtime reconciliation now projects resolved identity through each
+  field's `EffectVerify` contract instead of requiring execute-only identity to
+  be observable. Scoped probes also report the target evidence they actually
+  establish for Cargo roots, Conda environments/prefixes, and verified
+  BaseAdapter scopes. Broader per-method lifecycle coverage remains open.
 - [~] Add planner fuzz/property tests and lifecycle/state invariant tests,
   including command-bearing fields, secret/redaction boundaries, source/URL
   normalization, and lock identity invariants. Plan-level properties now cover

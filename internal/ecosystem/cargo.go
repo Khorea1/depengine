@@ -244,11 +244,13 @@ func (a *CargoAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.
 	if requested, _ := mc.Config["version"].(string); requested != "" && sameCargoVersion(version, requested) {
 		version = requested
 	}
-	return plan.Observation{
-		Presence:    plan.PresencePresent,
-		Identity:    plan.ObservedIdentity{Package: pkg, Version: version},
-		KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion},
-	}, nil
+	identity := plan.ObservedIdentity{Package: pkg, Version: version}
+	known := []plan.IdentityField{plan.FieldPackage, plan.FieldVersion}
+	if root, _ := mc.Config["root"].(string); root != "" {
+		identity.Environment = &plan.EnvironmentTarget{Kind: plan.EnvironmentPrefix, Value: root}
+		known = append(known, plan.FieldEnvironment)
+	}
+	return plan.Observation{Presence: plan.PresencePresent, Identity: identity, KnownFields: known}, nil
 }
 
 // InstallResolved executes only the identity resolved into the plan. Source,

@@ -107,6 +107,26 @@ func TestCargoAdapterV2ObserveReportsInstalledVersion(t *testing.T) {
 	}
 }
 
+func TestCargoAdapterV2ObserveProjectsQueriedRoot(t *testing.T) {
+	adapter := NewCargoAdapter()
+	tool := &config.Tool{Name: "friendly-name"}
+	method := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"pkg": "crate-name", "root": "~/.cargo-tools"}}
+
+	observation, err := adapter.Observe(context.Background(), cargoV2Runner(`crate-name v1.2.3:
+    crate-name
+`), tool, method)
+	if err != nil {
+		t.Fatalf("Observe() error = %v", err)
+	}
+	wantEnvironment := &plan.EnvironmentTarget{Kind: plan.EnvironmentPrefix, Value: "~/.cargo-tools"}
+	if observation.Presence != plan.PresencePresent || !reflect.DeepEqual(observation.Identity.Environment, wantEnvironment) {
+		t.Fatalf("Observe() = %#v, want queried cargo root evidence", observation)
+	}
+	if !reflect.DeepEqual(observation.KnownFields, []plan.IdentityField{plan.FieldPackage, plan.FieldVersion, plan.FieldEnvironment}) {
+		t.Fatalf("KnownFields = %#v, want package/version/environment", observation.KnownFields)
+	}
+}
+
 func TestCargoAdapterV2ObserveReportsDriftedVersion(t *testing.T) {
 	adapter := NewCargoAdapter()
 	tool := &config.Tool{Name: "friendly-name"}

@@ -213,7 +213,24 @@ func (a *CondaAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.
 	if identity.Source != "" {
 		known = append(known, plan.FieldSource)
 	}
+	if environment, ok := condaObservedEnvironment(mc); ok {
+		identity.Environment = environment
+		known = append(known, plan.FieldEnvironment)
+	}
 	return plan.Observation{Presence: plan.PresencePresent, Identity: identity, KnownFields: known}, nil
+}
+
+func condaObservedEnvironment(mc *config.MethodCandidate) (*plan.EnvironmentTarget, bool) {
+	if mc == nil {
+		return nil, false
+	}
+	if environment, _ := mc.Config["environment"].(string); environment != "" {
+		return &plan.EnvironmentTarget{Kind: plan.EnvironmentNamed, Value: environment}, true
+	}
+	if prefix, _ := mc.Config["prefix"].(string); prefix != "" {
+		return &plan.EnvironmentTarget{Kind: plan.EnvironmentPrefix, Value: prefix}, true
+	}
+	return nil, false
 }
 
 func (a *CondaAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
