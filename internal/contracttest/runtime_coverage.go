@@ -15,6 +15,12 @@ func init() {
 		"android.branch":       {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
 		"msi.release":          {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
 		"msi.branch":           {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
+		"exe.release":          {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
+		"exe.branch":           {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
+		"msix.release":         {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
+		"msix.branch":          {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
+		"appx.release":         {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
+		"appx.branch":          {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
 		"macpkg.release":       {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
 		"macpkg.branch":        {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
 		"dmg.release":          {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
@@ -75,6 +81,12 @@ func init() {
 		"container.platform":   {Consumer: "internal/container/adapter_test.go", Rationale: "observation compares the installed image platform"},
 		"msi.product_name":     {Consumer: "internal/msi/adapter_v2_test.go", Rationale: "verification looks up the configured product name"},
 		"msi.publisher":        {Consumer: "internal/msi/adapter_v2_test.go", Rationale: "verification looks up the configured publisher"},
+		"exe.product_name":     {Consumer: "internal/windowsinstaller/adapter_test.go", Rationale: "verification looks up the exact Add/Remove Programs product name"},
+		"exe.publisher":        {Consumer: "internal/windowsinstaller/adapter_test.go", Rationale: "verification narrows the exact Add/Remove Programs identity"},
+		"msix.pkg":             {Consumer: "internal/windowsinstaller/adapter_test.go", Rationale: "verification looks up the exact package name"},
+		"msix.publisher":       {Consumer: "internal/windowsinstaller/adapter_test.go", Rationale: "verification narrows the exact package identity"},
+		"appx.pkg":             {Consumer: "internal/windowsinstaller/adapter_test.go", Rationale: "verification looks up the exact package name"},
+		"appx.publisher":       {Consumer: "internal/windowsinstaller/adapter_test.go", Rationale: "verification narrows the exact package identity"},
 		"macpkg.package_id":    {Consumer: "internal/pkg/adapter_test.go", Rationale: "verification queries the exact Installer receipt identity"},
 		"dmg.app":              {Consumer: "internal/dmg/adapter_test.go", Rationale: "verification checks the exact declared application bundle"},
 		"dmg.scope":            {Consumer: "internal/dmg/adapter_test.go", Rationale: "verification checks the scope-mapped Applications destination"},
@@ -84,6 +96,9 @@ func init() {
 	registerRuntimeFields(PhaseResolveRuntime, "appimage", "internal/planner/resolve_effect_test.go", "static planning projects typed wrapper secret references without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
 	registerRuntimeFields(PhaseResolveRuntime, "android", "internal/planner/resolve_effect_test.go", "static planning projects typed wrapper secret references without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
 	registerRuntimeFields(PhaseResolveRuntime, "msi", "internal/planner/resolve_effect_test.go", "static planning projects typed wrapper secret references without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
+	registerRuntimeFields(PhaseResolveRuntime, "exe", "internal/planner/resolve_effect_test.go", "static planning projects typed wrapper secret references without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
+	registerRuntimeFields(PhaseResolveRuntime, "msix", "internal/planner/resolve_effect_test.go", "static planning projects typed wrapper secret references without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
+	registerRuntimeFields(PhaseResolveRuntime, "appx", "internal/planner/resolve_effect_test.go", "static planning projects typed wrapper secret references without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
 	registerRuntimeFields(PhaseResolveRuntime, "macpkg", "internal/planner/resolve_effect_test.go", "static planning projects typed wrapper secret references without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
 	registerRuntimeFields(PhaseResolveRuntime, "dmg", "internal/planner/resolve_effect_test.go", "static planning projects typed wrapper secret references without resolving their values", "secret_ref", "checksum_secret_ref", "signature_secret_ref")
 	registerRuntimeFields(PhaseResolveRuntime, "cargo", "internal/planner/resolve_effect_test.go", "static planning projects the typed Cargo Git reference without resolving its value", "secret_ref")
@@ -91,6 +106,9 @@ func init() {
 	registerRuntimeFields(PhaseResolveRuntime, "appimage", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "android", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "msi", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
+	registerRuntimeFields(PhaseResolveRuntime, "exe", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
+	registerRuntimeFields(PhaseResolveRuntime, "msix", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
+	registerRuntimeFields(PhaseResolveRuntime, "appx", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "macpkg", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "dmg", "TestRuntimeReleaseAndBranchResolution", "runtime source resolution supplies the concrete artifact", "url", "repo", "asset")
 	registerRuntimeFields(PhaseResolveRuntime, "local", "internal/localartifactadapter/adapter_v2_test.go", "project-relative source, checksum, and detached-signature policy resolve to local artifact identity", "local_path", "checksum", "signature_path", "signing_key")
@@ -102,6 +120,12 @@ func init() {
 	registerRuntimeFields(PhaseExecute, "appimage", "internal/httpdownload/appimage_adapter_test.go", "AppImage delegates download and archive execution to the shared HTTP installer", append(common, "url", "repo", "asset", "binary", "entrypoints", "link_dir", "sudo_required", "strip_components", "install_dir", "desktop", "scope")...)
 	registerRuntimeFields(PhaseExecute, "android", "internal/httpdownload/android_adapter_test.go", "Android delegates download and integrity checks to the shared HTTP installer", append(common, "url", "repo", "asset", "sudo_required")...)
 	registerRuntimeFields(PhaseExecute, "msi", "internal/msi/adapter_v2_test.go", "MSI delegates artifact integrity and source handling to HTTP before msiexec", append(common, "url", "repo", "asset")...)
+	for _, kind := range []string{"exe", "msix", "appx"} {
+		registerRuntimeFields(PhaseExecute, kind, "internal/windowsinstaller/adapter_test.go", "Windows installers delegate artifact integrity and source handling to HTTP before invoking the dedicated installer", append(common, "url", "repo", "asset", "secret_ref", "checksum_secret_ref", "signature_secret_ref")...)
+	}
+	registerRuntimeFields(PhaseExecute, "exe", "internal/windowsinstaller/adapter_test.go", "EXE installation and removal consume exact identity and explicit tokenized commands", "product_name", "publisher", "install_args", "uninstall_exe", "uninstall_args")
+	registerRuntimeFields(PhaseExecute, "msix", "internal/windowsinstaller/adapter_test.go", "MSIX installation and removal consume exact package identity in current-user scope", "pkg", "publisher", "scope")
+	registerRuntimeFields(PhaseExecute, "appx", "internal/windowsinstaller/adapter_test.go", "AppX installation and removal consume exact package identity in current-user scope", "pkg", "publisher", "scope")
 	for _, kind := range []string{"macpkg", "dmg"} {
 		registerRuntimeFields(PhaseExecute, kind, "internal/pkg/adapter_test.go and internal/dmg/adapter_test.go", "macOS installers delegate artifact integrity and source handling to HTTP before invoking dedicated platform tools", append(common, "url", "repo", "asset", "secret_ref", "checksum_secret_ref", "signature_secret_ref")...)
 	}

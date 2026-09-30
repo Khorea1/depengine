@@ -50,6 +50,7 @@ var fieldSemantics = map[string]FieldSemantic{
 	"index":                SemanticSourceIdentity,
 	"index_url":            SemanticSourceIdentity,
 	"install_dir":          SemanticPlacement,
+	"install_args":         SemanticExecution,
 	"installer_type":       SemanticPolicy,
 	"link_dir":             SemanticPlacement,
 	"local_path":           SemanticArtifactIdentity,
@@ -85,6 +86,8 @@ var fieldSemantics = map[string]FieldSemantic{
 	"tag":                  SemanticVersionIdentity,
 	"target":               SemanticPolicy,
 	"track":                SemanticVersionIdentity,
+	"uninstall_args":       SemanticExecution,
+	"uninstall_exe":        SemanticExecution,
 	"url":                  SemanticSourceIdentity,
 	"version":              SemanticVersionIdentity,
 }
