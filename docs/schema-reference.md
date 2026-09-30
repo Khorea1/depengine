@@ -639,6 +639,26 @@ are treated as successful installs. It accepts the same request-scoped
 artifact and explicit sidecar downloads; GitHub release API discovery remains
 unauthenticated.
 
+`macpkg` installs a macOS Installer package and tracks it by its required
+`package_id` receipt identity. The package signature is verified with
+`pkgutil --check-signature` before installation unless `allow_untrusted =
+true` explicitly opts into an untrusted package (never infer that on the
+user's behalf). Installation runs the fixed `installer -pkg … -target /`
+argv through the elevation seam — never a shell. Removal is unsupported by
+contract: Installer packages can run arbitrary scripts outside their
+receipt, so depengine does not claim reversible removal.
+
+`dmg` mounts a macOS disk image read-only at a controlled mount point with
+no auto-open, validates that the required `app` (a plain `.app` bundle name
+containing `Contents/Info.plist`) exists on the volume, and copies exactly
+that bundle into the Applications directory for the portable `scope`
+(default `user` → `~/Applications`, `system` → `/Applications` via the
+elevation seam). The image is detached in every outcome. Removal deletes
+only the exact owned bundle after re-validating its name and root; a
+bundle path that is not a scoped Applications bundle is refused.
+`extract_to`, `binary`, and `link_dir` are not accepted for these installer
+methods.
+
 One-line syntax for every supported method. All accept `when` (see
 [Platform targeting](#platform-targeting)); methods with richer configuration
 are described above or alongside their examples.
@@ -670,6 +690,8 @@ are described above or alongside their examples.
 | `appimage` | Portable `.AppImage` binaries, installed under a stable name | `obsidian = { appimage = { url = "https://…/Obsidian-{latest}.AppImage" } }` |
 | `android` | Download a `.apk` and hand it to Termux's package installer | `obsidian = { android = { url = "https://…/obsidian-{latest}-android.apk" }, when = { is_android = true } }` |
 | `msi` | Install/remove a Windows Installer product by exact registry identity | `nvim = { msi = { repo = "neovim/neovim", asset = "nvim-win64.msi", product_name = "Neovim" } }` |
+| `macpkg` | Install a signed macOS Installer package by receipt `package_id`; removal is manual | `nvim = { macpkg = { url = "https://…/nvim.pkg", package_id = "com.neovim.Nvim" } }` |
+| `dmg` | Install one declared `.app` bundle from a read-only disk image into the scope Applications directory; removal targets exactly that bundle | `nvim = { dmg = { url = "https://…/nvim.dmg", app = "Neovim.app", scope = "user" } }` |
 | `sdkman` | SDKMAN! JVM SDKs | `java17 = { sdkman = "java" }` |
 | `steamcmd` | SteamCMD game server tools | `cs2 = { steamcmd = "730" }` |
 | `pacstall` | Pacstall packages (Debian-based AUR-like) | `neofetch = { pacstall = "neofetch" }` |

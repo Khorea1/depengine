@@ -2166,6 +2166,222 @@
         },
         {
           "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "url",
+                  "repo"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "release",
+                  "branch"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "checksum_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "checksum_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signature_url"
+                ]
+              }
+            }
+          ],
+          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "oneOf": [
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "repo"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "asset"
+                    ]
+                  }
+                ]
+              },
+              "required": [
+                "url"
+              ]
+            },
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "url"
+                    ]
+                  }
+                ]
+              },
+              "required": [
+                "repo",
+                "asset"
+              ]
+            }
+          ],
+          "properties": {
+            "app": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "asset": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "branch": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "checksum": {
+              "type": "string"
+            },
+            "checksum_file_format": {
+              "enum": [
+                "sha256sum",
+                "bsd",
+                "raw"
+              ],
+              "type": "string"
+            },
+            "checksum_secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "checksum_url": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "dmg"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "release": {
+              "type": "string"
+            },
+            "repo": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "requires": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "enum": [
+                "user",
+                "system"
+              ],
+              "type": "string"
+            },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "signature_secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "signature_url": {
+              "type": "string"
+            },
+            "signing_key": {
+              "type": "string"
+            },
+            "sources": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "apt-ppa",
+                      "dnf-copr",
+                      "scoop-bucket",
+                      "brew-tap"
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "revision": {
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
+                    "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+                    "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
+                  "url": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "url": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind",
+            "app"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
           "description": "Method capabilities: source-selection, source-mutation, check, remove.",
           "properties": {
             "arch_map": {
@@ -3383,6 +3599,218 @@
           "required": [
             "kind",
             "local_path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "url",
+                  "repo"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "release",
+                  "branch"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "checksum_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "checksum_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signature_url"
+                ]
+              }
+            }
+          ],
+          "description": "Method capabilities: source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "oneOf": [
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "repo"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "asset"
+                    ]
+                  }
+                ]
+              },
+              "required": [
+                "url"
+              ]
+            },
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "url"
+                    ]
+                  }
+                ]
+              },
+              "required": [
+                "repo",
+                "asset"
+              ]
+            }
+          ],
+          "properties": {
+            "allow_untrusted": {
+              "type": "boolean"
+            },
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "asset": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "branch": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "checksum": {
+              "type": "string"
+            },
+            "checksum_file_format": {
+              "enum": [
+                "sha256sum",
+                "bsd",
+                "raw"
+              ],
+              "type": "string"
+            },
+            "checksum_secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "checksum_url": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "macpkg"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "package_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "release": {
+              "type": "string"
+            },
+            "repo": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "requires": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "signature_secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "signature_url": {
+              "type": "string"
+            },
+            "signing_key": {
+              "type": "string"
+            },
+            "sources": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "apt-ppa",
+                      "dnf-copr",
+                      "scoop-bucket",
+                      "brew-tap"
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "revision": {
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
+                    "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+                    "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
+                  "url": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "url": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind",
+            "package_id"
           ],
           "type": "object"
         },
@@ -7791,6 +8219,222 @@
         }
       ]
     },
+    "method_dmg": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "url",
+                  "repo"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "release",
+                  "branch"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "checksum_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "checksum_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signature_url"
+                ]
+              }
+            }
+          ],
+          "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "oneOf": [
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "repo"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "asset"
+                    ]
+                  }
+                ]
+              },
+              "required": [
+                "url"
+              ]
+            },
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "url"
+                    ]
+                  }
+                ]
+              },
+              "required": [
+                "repo",
+                "asset"
+              ]
+            }
+          ],
+          "properties": {
+            "app": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "asset": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "branch": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "checksum": {
+              "type": "string"
+            },
+            "checksum_file_format": {
+              "enum": [
+                "sha256sum",
+                "bsd",
+                "raw"
+              ],
+              "type": "string"
+            },
+            "checksum_secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "checksum_url": {
+              "type": "string"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "release": {
+              "type": "string"
+            },
+            "repo": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "requires": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "enum": [
+                "user",
+                "system"
+              ],
+              "type": "string"
+            },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "signature_secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "signature_url": {
+              "type": "string"
+            },
+            "signing_key": {
+              "type": "string"
+            },
+            "sources": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "apt-ppa",
+                      "dnf-copr",
+                      "scoop-bucket",
+                      "brew-tap"
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "revision": {
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
+                    "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+                    "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
+                  "url": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "url": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "app"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "method_flatpak": {
       "oneOf": [
         {
@@ -8757,6 +9401,218 @@
           },
           "required": [
             "local_path"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "method_macpkg": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "not": {
+                "required": [
+                  "url",
+                  "repo"
+                ]
+              }
+            },
+            {
+              "not": {
+                "required": [
+                  "release",
+                  "branch"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "checksum_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "checksum_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_secret_ref"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signature_url"
+                ]
+              }
+            }
+          ],
+          "description": "Method capabilities: source-mutation, check, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
+          "oneOf": [
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "repo"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "asset"
+                    ]
+                  }
+                ]
+              },
+              "required": [
+                "url"
+              ]
+            },
+            {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "url"
+                    ]
+                  }
+                ]
+              },
+              "required": [
+                "repo",
+                "asset"
+              ]
+            }
+          ],
+          "properties": {
+            "allow_untrusted": {
+              "type": "boolean"
+            },
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "asset": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "branch": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "checksum": {
+              "type": "string"
+            },
+            "checksum_file_format": {
+              "enum": [
+                "sha256sum",
+                "bsd",
+                "raw"
+              ],
+              "type": "string"
+            },
+            "checksum_secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "checksum_url": {
+              "type": "string"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "package_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "release": {
+              "type": "string"
+            },
+            "repo": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "requires": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "signature_secret_ref": {
+              "$ref": "#/definitions/secretReference"
+            },
+            "signature_url": {
+              "type": "string"
+            },
+            "signing_key": {
+              "type": "string"
+            },
+            "sources": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "apt-ppa",
+                      "dnf-copr",
+                      "scoop-bucket",
+                      "brew-tap"
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "revision": {
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
+                    "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+                    "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
+                  "url": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "url": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "package_id"
           ],
           "type": "object"
         }
@@ -10797,6 +11653,9 @@
           "default": false,
           "type": "boolean"
         },
+        "dmg": {
+          "$ref": "#/definitions/method_dmg"
+        },
         "dnf": {
           "$ref": "#/definitions/method_native"
         },
@@ -10826,6 +11685,9 @@
         },
         "local": {
           "$ref": "#/definitions/method_local"
+        },
+        "macpkg": {
+          "$ref": "#/definitions/method_macpkg"
         },
         "mas": {
           "$ref": "#/definitions/method_mas"

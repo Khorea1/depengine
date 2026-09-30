@@ -19,6 +19,8 @@ func TestValidateEffectFieldsHaveBehaviorProbes(t *testing.T) {
 		"appimage":  `url = "https://example.test/demo.AppImage"`,
 		"android":   `url = "https://example.test/demo.apk"`,
 		"msi":       "url = \"https://example.test/demo.msi\"\nproduct_name = \"Demo\"",
+		"macpkg":    "url = \"https://example.test/demo.pkg\"\npackage_id = \"com.example.demo\"",
+		"dmg":       "url = \"https://example.test/demo.dmg\"\napp = \"Demo.app\"",
 		"container": "manager = \"docker\"\nsource = \"example/demo\"",
 		"git":       `url = "https://example.test/demo.git"`,
 		"local":     `local_path = "vendor/demo.tar.gz"`,
