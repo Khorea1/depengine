@@ -345,7 +345,32 @@ scope = "user"
 entrypoints = { nvim = "bin/nvim" }
 when = { target_family = ["unix"] }
 
-# Windows installer: exact product identity is required for check/remove.
+# Windows installers use dedicated methods rather than generic HTTP handling.
+# EXE commands are argv arrays; exact Add/Remove Programs identity and an
+# explicit absolute uninstaller path make observation and removal deterministic.
+[tools.windows-exe-example.exe]
+url = "https://example.com/tool.exe"
+product_name = "Example Tool"
+publisher = "Example Corp"
+install_args = ["/quiet", "/norestart"]
+uninstall_exe = 'C:\Program Files\Example Tool\uninstall.exe'
+uninstall_args = ["/quiet", "/norestart"]
+
+# MSIX and AppX currently support current-user installation only. Package name
+# and publisher are matched exactly for observation and removal.
+[tools.windows-msix-example.msix]
+url = "https://example.com/tool.msix"
+pkg = "Example.Tool"
+publisher = "CN=Example Corp"
+scope = "user"
+
+[tools.windows-appx-example.appx]
+url = "https://example.com/tool.appx"
+pkg = "Example.Tool"
+publisher = "CN=Example Corp"
+scope = "user"
+
+# MSI retains its product-identity contract.
 [tools.neovim.msi]
 repo = "neovim/neovim"
 asset = "nvim-win64.msi"
