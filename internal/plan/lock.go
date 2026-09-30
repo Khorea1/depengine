@@ -728,6 +728,12 @@ func sanitizeLockReference(raw string) string {
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme == "" || u.Host == "" {
+		// A credential-free opaque reference is already persistence-safe. Generic
+		// text redaction can reinterpret malformed URL punctuation and manufacture
+		// userinfo (for example, moving a fragment before @ into authority).
+		if validateIdentityReference(raw) == nil {
+			return raw
+		}
 		return run.RedactSensitiveText(raw)
 	}
 	u.Scheme = strings.ToLower(u.Scheme)

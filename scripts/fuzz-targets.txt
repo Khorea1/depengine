@@ -7,3 +7,7 @@
 ./internal/plan FuzzSharedResourceRefcountProperties
 ./internal/plan FuzzNormalizeProjectPathStaysInsideProjectRoot
 ./internal/plan FuzzCanonicalSourcesIsOrderIndependentAndIdempotent
+./internal/plan FuzzPreparationJournalSuccessfulTransitionsStayValid
+./internal/plan FuzzSanitizeLockReferenceCanonicalizesValidIdentity
+./internal/state FuzzStatePersistenceRoundTripPreservesInvariants
+./internal/state FuzzRejectedStateNeverReplacesPersistedState

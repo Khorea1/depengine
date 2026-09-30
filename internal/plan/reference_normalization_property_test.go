@@ -15,6 +15,7 @@ func FuzzSanitizeLockReferenceCanonicalizesValidIdentity(f *testing.F) {
 		"HTTPS://[FE80::1%25eth0]/repo?z=2&a=1",
 		"conda-forge",
 		"file:///tmp/tool",
+		"A://#@00000000000",
 		"",
 	} {
 		f.Add(seed)
