@@ -56,7 +56,6 @@ python "$tmp/architecture/tools/validate.py" --root "$tmp/architecture" --repo .
 |------|---------|
 | `cleaning.md` | Local-only cleanup procedure supplied from dotfiles; intentionally ignored by the `dev-notes` branch |
 | `TODO.md` | Session-specific queue and unresolved editorial/CLI ideas |
-| `bad-writing-findings.md` | Two unresolved wording findings in ADR-002 |
 | `architecture/` | archmap: selective semantic architecture model with code-revision checks, symbol-navigation anchors, and derived visual views. Start at `architecture/README.md` |
 
 ## Lifecycle
