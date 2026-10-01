@@ -66,14 +66,15 @@ func formatToolResult(tool string, status StatusEnum, method, errMsg string) str
 	}
 }
 
-func (ex *Executor) recordToolResult(ctx context.Context, result *ToolResult, report *ExecReport) {
+func (ex *Executor) recordToolResult(ctx context.Context, rc *runContext, result *ToolResult) {
 	if result.Provider == "" {
-		result.Provider = ex.providerForMethodKind(result.MethodKind)
+		result.Provider = ex.providerForMethodKind(result.MethodKind, rc.nativeManagerName)
 	}
 	presentedMethod := result.Method
 	if result.Provider != "" {
 		presentedMethod = result.Provider
 	}
+	report := rc.report
 	report.mu.Lock()
 	defer report.mu.Unlock()
 	report.Tools = append(report.Tools, *result)
@@ -107,12 +108,13 @@ func (ex *Executor) recordToolResult(ctx context.Context, result *ToolResult, re
 	}
 }
 
-func (ex *Executor) recordBlockedTool(ctx context.Context, toolName string, report *ExecReport) {
-	ex.recordToolResult(ctx, &ToolResult{
+func (ex *Executor) recordBlockedTool(ctx context.Context, rc *runContext, toolName string) {
+	ex.recordToolResult(ctx, rc, &ToolResult{
 		Tool:   toolName,
 		Status: StatusSkippedUnavailable,
 		Error:  "requires --allow-arbitrary-code (tool has arbitrary code execution capability)",
-	}, report)
+	})
+	report := rc.report
 	report.mu.Lock()
 	report.Failed++
 	report.mu.Unlock()

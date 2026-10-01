@@ -119,7 +119,7 @@ func TestResolveAndVerifyCandidateAtVersionProjectsDesiredIdentity(t *testing.T)
 	method := &config.MethodCandidate{Kind: "cargo", Config: map[string]any{"pkg": "demo"}}
 	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
 
-	resolved, verification, err := ex.ResolveAndVerifyCandidateAtVersion(context.Background(), tool, method, "v2.0.0")
+	resolved, verification, err := ex.ResolveAndVerifyCandidateAtVersion(context.Background(), tool, method, "v2.0.0", "")
 	if err != nil {
 		t.Fatalf("ResolveAndVerifyCandidateAtVersion: %v", err)
 	}
@@ -152,5 +152,35 @@ func TestVerifyResolvedCandidateUsesResolvedTargetAndCanonicalizesObserveError(t
 	}
 	if got := adapter.seen.Config["environment"]; got != "new" {
 		t.Fatalf("observed environment=%v, want new", got)
+	}
+}
+
+func TestResolveCandidatePlanUsesExplicitClanOverridesOnSameExecutor(t *testing.T) {
+	method := &config.MethodCandidate{
+		Kind: "native",
+		Config: map[string]any{
+			"pkg":           "fd",
+			"pkg_overrides": map[string]any{"apt": "fd-find", "pacman": "fd"},
+		},
+	}
+	tool := &config.Tool{Name: "fd", Methods: []*config.MethodCandidate{method}}
+	ex := New()
+	WithAdapters(&testMockAdapter{kindValue: "native"})(ex)
+
+	for _, tc := range []struct {
+		clan string
+		pkg  string
+	}{
+		{clan: "debian", pkg: "fd-find"},
+		{clan: "arch", pkg: "fd"},
+		{clan: "debian", pkg: "fd-find"},
+	} {
+		resolved, err := ex.ResolveCandidatePlan(context.Background(), tool, method, tc.clan)
+		if err != nil {
+			t.Fatalf("ResolveCandidatePlan(%q): %v", tc.clan, err)
+		}
+		if resolved.Identity.Package != tc.pkg {
+			t.Errorf("ResolveCandidatePlan(%q) package = %q, want %q", tc.clan, resolved.Identity.Package, tc.pkg)
+		}
 	}
 }

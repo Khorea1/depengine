@@ -196,7 +196,7 @@ func phaseTestDriftFixture() (*state.State, *config.Schema, *lock.Lock) {
 
 func TestCollectOutdatedToolsFindsDriftOnly(t *testing.T) {
 	st, s, lk := phaseTestDriftFixture()
-	outdated, failures := collectOutdatedTools(st, s, lk, "", []string{"go"}, "")
+	outdated, failures := collectOutdatedTools(st, s, lk, "", upgradeExecutorForMethodOrder([]string{"go"}), "")
 	if len(failures) != 0 {
 		t.Fatalf("failures = %+v, want none", failures)
 	}
@@ -211,7 +211,7 @@ func TestCollectOutdatedToolsFindsDriftOnly(t *testing.T) {
 
 func TestCollectOutdatedToolsOnlyFilter(t *testing.T) {
 	st, s, lk := phaseTestDriftFixture()
-	outdated, failures := collectOutdatedTools(st, s, lk, "current", []string{"go"}, "")
+	outdated, failures := collectOutdatedTools(st, s, lk, "current", upgradeExecutorForMethodOrder([]string{"go"}), "")
 	if len(outdated) != 0 || len(failures) != 0 {
 		t.Fatalf("outdated = %+v, failures = %+v, want both empty", outdated, failures)
 	}
@@ -227,7 +227,7 @@ func TestCollectOutdatedToolsDiscoveryFailure(t *testing.T) {
 	st := &state.State{Tools: map[string]state.ToolState{
 		"amb": {Method: "go", MethodKind: "go", Version: "v0.1.0"},
 	}}
-	outdated, failures := collectOutdatedTools(st, s, lk, "", []string{"go"}, "")
+	outdated, failures := collectOutdatedTools(st, s, lk, "", upgradeExecutorForMethodOrder([]string{"go"}), "")
 	if len(outdated) != 0 {
 		t.Fatalf("outdated = %+v, want none", outdated)
 	}
@@ -286,7 +286,7 @@ func TestUpgradeSingleToolNoAdapter(t *testing.T) {
 		name: "demo", ts: state.ToolState{Method: "phase-test-no-such-kind", MethodKind: "phase-test-no-such-kind", Version: "v0.1.0"},
 		pinnedVer: "v0.2.0", tool: tool, method: method, methodKind: "phase-test-no-such-kind",
 	}
-	res := upgradeSingleTool(context.Background(), ex, phaseTestRunner(), &engine.Facts{}, st, ot, upgradeOptions{quiet: true}, nil)
+	res := upgradeSingleTool(context.Background(), ex, phaseTestRunner(), &engine.Facts{}, "", st, ot, upgradeOptions{quiet: true}, nil)
 	if res.Status != "failed" || !strings.Contains(res.Error, "no adapter for method") {
 		t.Fatalf("result = %+v, want failed/no-adapter", res)
 	}
@@ -304,7 +304,7 @@ func TestUpgradeSingleToolDryRunSkipsMutation(t *testing.T) {
 		name: "demo", ts: st.Tools["demo"],
 		pinnedVer: "v0.2.0", tool: tool, method: method, methodKind: "go",
 	}
-	res := upgradeSingleTool(context.Background(), ex, phaseTestRunner(), &engine.Facts{}, st, ot,
+	res := upgradeSingleTool(context.Background(), ex, phaseTestRunner(), &engine.Facts{}, "", st, ot,
 		upgradeOptions{dryRun: true, quiet: true}, nil)
 	if res.Status != "would_upgrade" || res.NewVer != "v0.2.0" {
 		t.Fatalf("result = %+v, want would_upgrade/v0.2.0", res)
@@ -324,7 +324,7 @@ func TestRunUpgradeLoopTalliesDiscoveryFailures(t *testing.T) {
 		Tool: "amb", Status: "failed", OldVer: "v0.1.0", Method: "go",
 		Error: "cannot resolve tracked candidate: boom",
 	}}
-	results, counts := runUpgradeLoop(context.Background(), ex, phaseTestRunner(), &engine.Facts{},
+	results, counts := runUpgradeLoop(context.Background(), ex, phaseTestRunner(), &engine.Facts{}, "",
 		st, nil, failures, upgradeOptions{quiet: true}, nil)
 	if len(results) != 1 || results[0].Tool != "amb" {
 		t.Fatalf("results = %+v, want the seeded failure", results)

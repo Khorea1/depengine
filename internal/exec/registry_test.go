@@ -11,12 +11,13 @@ import (
 type mockAdapter struct {
 	v2TestStub
 	kindValue string
+	available bool
 }
 
 var _ AdapterV2 = (*mockAdapter)(nil)
 
-func (*mockAdapter) Available(context.Context, run.Runner) bool { return true }
-func (m *mockAdapter) Kind() string                             { return m.kindValue }
+func (m *mockAdapter) Available(context.Context, run.Runner) bool { return m.available }
+func (m *mockAdapter) Kind() string                               { return m.kindValue }
 
 func TestRegisterAndLookup(t *testing.T) {
 	r := NewRegistry()
@@ -106,5 +107,31 @@ func TestRegistriesAreIndependent(t *testing.T) {
 	a.Register(&mockAdapter{kindValue: "only-a"})
 	if got := b.Lookup("only-a"); got != nil {
 		t.Fatalf("fresh registry sees another instance's adapter: %v", got)
+	}
+}
+func TestExecutorAdapterOverridesAreIsolated(t *testing.T) {
+	const kind = "registry-test-isolation"
+	seed := &mockAdapter{kindValue: kind, available: false}
+	defaultRegistry.Register(seed)
+	t.Cleanup(func() {
+		defaultRegistry.mu.Lock()
+		delete(defaultRegistry.adapters, kind)
+		defaultRegistry.mu.Unlock()
+	})
+
+	first := New()
+	WithAdapters(&mockAdapter{kindValue: kind, available: true})(first)
+	second := New()
+	WithAdapters(&mockAdapter{kindValue: kind, available: false})(second)
+	third := New()
+
+	if adapter := first.LookupAdapter(kind); adapter == nil || !adapter.Available(context.Background(), nil) {
+		t.Fatal("first executor did not use its available override")
+	}
+	if adapter := second.LookupAdapter(kind); adapter == nil || adapter.Available(context.Background(), nil) {
+		t.Fatal("second executor did not use its unavailable override")
+	}
+	if adapter := third.LookupAdapter(kind); adapter == nil || adapter.Available(context.Background(), nil) {
+		t.Fatal("third executor did not retain the unavailable seeded adapter")
 	}
 }

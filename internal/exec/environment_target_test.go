@@ -138,7 +138,9 @@ func TestExecutorUsesResolvedEnvironmentForObservationAndStateProbe(t *testing.T
 	method := &config.MethodCandidate{Kind: "conda", Config: map[string]any{"pkg": "numpy", "environment": "tools"}}
 	tool := &config.Tool{Name: "numpy", MethodOnly: []string{"conda"}, Methods: []*config.MethodCandidate{method}}
 	result := ToolResult{Tool: tool.Name}
-	ex.tryMethods(context.Background(), tool, &result, time.Now())
+	ctx := context.Background()
+	rc := ex.newRunContext(ctx, nil, "")
+	ex.tryMethods(ctx, rc, tool, &result, time.Now())
 	if result.Status != StatusAlready || adapter.observedTarget != "tools" {
 		t.Fatalf("status = %v, observed target = %q", result.Status, adapter.observedTarget)
 	}

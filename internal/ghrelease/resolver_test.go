@@ -517,3 +517,59 @@ func TestResolveLatestTagHandlesExplicitDefaultGitHubPort(t *testing.T) {
 		t.Fatalf("API path = %q", gotPath)
 	}
 }
+
+// TestRepoReferenceAndGitHubURLClassification documents the distinct contracts:
+// splitRepo accepts strict repository references, while githubRepoFromURL (and
+// IsGitHubURL) classify HTTP(S) URLs under a GitHub repository, including paths
+// below that repository.
+func TestRepoReferenceAndGitHubURLClassification(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		splitOwner string
+		splitRepo  string
+		splitOK    bool
+		urlOwner   string
+		urlRepo    string
+		urlOK      bool
+	}{
+		{name: "owner/repo reference", input: "owner/repo", splitOwner: "owner", splitRepo: "repo", splitOK: true},
+		{name: "github.com reference", input: "github.com/owner/repo", splitOwner: "owner", splitRepo: "repo", splitOK: true},
+		{name: "HTTPS repository URL", input: "https://github.com/owner/repo", splitOwner: "owner", splitRepo: "repo", splitOK: true, urlOwner: "owner", urlRepo: "repo", urlOK: true},
+		{name: "repository URL with git suffix", input: "https://github.com/owner/repo.git", splitOwner: "owner", splitRepo: "repo", splitOK: true, urlOwner: "owner", urlRepo: "repo", urlOK: true},
+		{name: "URL trailing slash", input: "https://github.com/owner/repo/", splitOwner: "owner", splitRepo: "repo", splitOK: true, urlOwner: "owner", urlRepo: "repo", urlOK: true},
+		{name: "bare reference trailing slash", input: "github.com/owner/repo/", splitOwner: "owner", splitRepo: "repo", splitOK: true},
+		{name: "uppercase scheme and host", input: "HTTPS://GITHUB.COM/owner/repo", splitOwner: "owner", splitRepo: "repo", splitOK: true, urlOwner: "owner", urlRepo: "repo", urlOK: true},
+		{name: "mixed-case host", input: "https://GitHub.Com/owner/repo", splitOwner: "owner", splitRepo: "repo", splitOK: true, urlOwner: "owner", urlRepo: "repo", urlOK: true},
+		{name: "userinfo", input: "https://user@github.com/owner/repo", splitOwner: "owner", splitRepo: "repo", splitOK: true, urlOwner: "owner", urlRepo: "repo", urlOK: true},
+		{name: "default HTTPS port", input: "https://github.com:443/owner/repo", urlOwner: "owner", urlRepo: "repo", urlOK: true},
+		{name: "HTTP repository URL", input: "http://github.com/owner/repo", splitOwner: "owner", splitRepo: "repo", splitOK: true, urlOwner: "owner", urlRepo: "repo", urlOK: true},
+		{name: "default HTTP port", input: "http://github.com:80/owner/repo", urlOwner: "owner", urlRepo: "repo", urlOK: true},
+		{name: "non-default port", input: "https://github.com:444/owner/repo"},
+		{name: "query and fragment", input: "https://github.com/owner/repo?tab=readme#top", urlOwner: "owner", urlRepo: "repo", urlOK: true},
+		{name: "repository subpath", input: "https://github.com/owner/repo/releases/download/v1/tool", urlOwner: "owner", urlRepo: "repo", urlOK: true},
+		{name: "GitLab URL", input: "https://gitlab.com/owner/repo"},
+		{name: "Codeberg URL", input: "https://codeberg.org/owner/repo"},
+		{name: "SCP-like Git reference", input: "git@github.com:owner/repo.git", splitOwner: "git@github.com:owner", splitRepo: "repo", splitOK: true},
+		{name: "owner only", input: "owner"},
+		{name: "extra repository path segment", input: "owner/repo/extra"},
+		{name: "URL with empty repository", input: "https://github.com/owner/"},
+		{name: "malformed URL", input: "https://["},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			owner, repo, ok := splitRepo(tt.input)
+			if owner != tt.splitOwner || repo != tt.splitRepo || ok != tt.splitOK {
+				t.Errorf("splitRepo(%q) = (%q, %q, %v), want (%q, %q, %v)", tt.input, owner, repo, ok, tt.splitOwner, tt.splitRepo, tt.splitOK)
+			}
+
+			owner, repo, ok = githubRepoFromURL(tt.input)
+			if owner != tt.urlOwner || repo != tt.urlRepo || ok != tt.urlOK {
+				t.Errorf("githubRepoFromURL(%q) = (%q, %q, %v), want (%q, %q, %v)", tt.input, owner, repo, ok, tt.urlOwner, tt.urlRepo, tt.urlOK)
+			}
+			if got := IsGitHubURL(tt.input); got != tt.urlOK {
+				t.Errorf("IsGitHubURL(%q) = %v, want %v", tt.input, got, tt.urlOK)
+			}
+		})
+	}
+}

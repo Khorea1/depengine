@@ -28,6 +28,7 @@ const (
 // phases in order and each phase either advances, skips to the next
 // candidate, or finishes the tool.
 type candidateAttempt struct {
+	run         *runContext
 	toolCtx     context.Context
 	tool        *config.Tool
 	method      *config.MethodCandidate
@@ -78,7 +79,7 @@ func (ex *Executor) failCandidate(ac *candidateAttempt, result *ToolResult, err 
 // and when gates. No host probes or mutations happen here.
 func (ex *Executor) gateStaticIntent(ac *candidateAttempt, result *ToolResult) attemptOutcome {
 	planIntent, mismatch := candidatePlanIntent(ac.tool, ac.method)
-	ac.planIntent = ex.hostResolvedPlanIntent(ac.method, planIntent)
+	ac.planIntent = ex.hostResolvedPlanIntent(ac.method, planIntent, ac.run.clan)
 	ac.attempt.PlanIntent = ac.planIntent
 
 	if mismatch != "" {
@@ -132,7 +133,7 @@ func (ex *Executor) resolveConcretePlan(ac *candidateAttempt, result *ToolResult
 	ac.resolved = resolved
 	ac.attempt.PlanIntent = resolved
 
-	if compatibilityErr := ac.adapter.CheckHostCompatibility(ac.tool, ac.method, ac.resolved, ex.facts, ex.clan); compatibilityErr != nil {
+	if compatibilityErr := ac.adapter.CheckHostCompatibility(ac.tool, ac.method, ac.resolved, ex.facts, ac.run.clan); compatibilityErr != nil {
 		ex.skipCandidate(ac, result, "skip_unavailable", compatibilityErr.Error())
 		ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "skip_incompatible_host", "reason", compatibilityErr.Error())
 		return nextMethod
@@ -172,7 +173,7 @@ func (ex *Executor) gateAlreadyInstalled(ac *candidateAttempt, result *ToolResul
 }
 
 func (ex *Executor) finishAlreadyInstalled(ac *candidateAttempt, result *ToolResult) attemptOutcome {
-	if err := ac.prepared.rollback(ac.toolCtx, ex); err != nil {
+	if err := ac.prepared.rollback(ac.toolCtx); err != nil {
 		ex.failCandidate(ac, result, fmt.Sprintf("close unused candidate preparation: %v", err))
 		return finishTool
 	}
@@ -211,7 +212,7 @@ func (ex *Executor) probeSourceAvailability(ac *candidateAttempt, result *ToolRe
 		ex.skipCandidate(ac, result, "failed", err.Error())
 		return nextMethod
 	}
-	sourceProbe, err := ex.probeCandidateSources(ac.toolCtx, sources)
+	sourceProbe, err := probeCandidateSources(ac.toolCtx, ac.run.sources, sources)
 	if err != nil {
 		ex.skipCandidate(ac, result, "failed", err.Error())
 		return nextMethod
@@ -231,7 +232,7 @@ func (ex *Executor) probeSourceAvailability(ac *candidateAttempt, result *ToolRe
 // resolved release: persisting the resolved plan here would break recovery
 // identity across runs.
 func (ex *Executor) prepareMissingSources(ac *candidateAttempt, result *ToolResult) attemptOutcome {
-	prepared, err := ex.prepareCandidateSources(ac.toolCtx, ac.tool.Name, ac.method.Kind, ac.planIntent, ac.probed)
+	prepared, err := ex.prepareCandidateSources(ac.toolCtx, ac.run.sources, ac.tool.Name, ac.method.Kind, ac.planIntent, ac.probed)
 	if err != nil {
 		ex.skipCandidate(ac, result, "failed", err.Error())
 		if preparationBlocked(err) {
@@ -257,7 +258,7 @@ func (ex *Executor) recheckPostPrepareAvailability(ac *candidateAttempt, result 
 	// inconclusive. If the target is still unavailable, compensate the
 	// source transaction and allow fallback.
 	if ac.deferred && !ex.dryRun && !checkAvailable(ac.toolCtx, ex.probeRunner(ac.tool.Name, ac.displayKind), ac.adapter, ac.tool, ac.method) {
-		if rollbackErr := ac.prepared.rollback(ac.toolCtx, ex); rollbackErr != nil {
+		if rollbackErr := ac.prepared.rollback(ac.toolCtx); rollbackErr != nil {
 			ex.failCandidate(ac, result, fmt.Sprintf("%s: package not found after source preparation; source rollback failed: %v", ac.displayKind, rollbackErr))
 			return finishTool
 		}
@@ -282,7 +283,7 @@ func (ex *Executor) runCandidatePreinstall(ac *candidateAttempt, result *ToolRes
 
 	phase := lifecycleHookPhase(ac.transition, plan.HookBefore)
 	detail := fmt.Sprintf("%s: %v", phase, err)
-	if rollbackErr := ac.prepared.rollback(ac.toolCtx, ex); rollbackErr != nil {
+	if rollbackErr := ac.prepared.rollback(ac.toolCtx); rollbackErr != nil {
 		detail = fmt.Sprintf("%s; source rollback failed: %v", detail, rollbackErr)
 	}
 	ex.failCandidate(ac, result, detail)
@@ -300,7 +301,7 @@ func (ex *Executor) requireMethodPrerequisites(ac *candidateAttempt, result *Too
 		err = ac.prepared.tx.suspend()
 	}
 	if err == nil {
-		prerequisiteUses, err = ex.ensureMethodDependencies(ac.toolCtx, ac.tool, ac.method)
+		prerequisiteUses, err = ex.ensureMethodDependencies(ac.toolCtx, ac.run, ac.tool, ac.method)
 	}
 	if ac.prepared.tx != nil {
 		if resumeErr := ac.prepared.tx.resume(); err == nil {
@@ -314,13 +315,13 @@ func (ex *Executor) requireMethodPrerequisites(ac *candidateAttempt, result *Too
 			empty := plan.PreparationPlan{}
 			prepared.preparationPlan = &empty
 		}
-		prepared, err = ex.prepareCandidateSources(ac.toolCtx, ac.tool.Name, ac.method.Kind, ac.planIntent, prepared)
+		prepared, err = ex.prepareCandidateSources(ac.toolCtx, ac.run.sources, ac.tool.Name, ac.method.Kind, ac.planIntent, prepared)
 		if err == nil {
 			ac.prepared = prepared
 		}
 	}
 	if err != nil {
-		rollbackErr := ac.prepared.rollback(ac.toolCtx, ex)
+		rollbackErr := ac.prepared.rollback(ac.toolCtx)
 		detail := err.Error()
 		if rollbackErr != nil {
 			detail = fmt.Sprintf("%s; source rollback failed: %v", detail, rollbackErr)
@@ -392,7 +393,7 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 	if credentialErr != nil {
 		methodCancel()
 		detail := credentialErr.Error()
-		if rollbackErr := ac.prepared.rollback(ac.toolCtx, ex); rollbackErr != nil {
+		if rollbackErr := ac.prepared.rollback(ac.toolCtx); rollbackErr != nil {
 			detail += "; source rollback failed"
 			ex.failCandidate(ac, result, detail)
 			return finishTool
@@ -407,7 +408,7 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 	// target instead of assuming candidate preparation is safe to undo.
 	if err := ac.prepared.planCommit(ac.resources); err != nil {
 		methodCancel()
-		rollbackErr := ac.prepared.rollback(ac.toolCtx, ex)
+		rollbackErr := ac.prepared.rollback(ac.toolCtx)
 		detail := err.Error()
 		if rollbackErr != nil {
 			detail = fmt.Sprintf("%s; source rollback failed: %v", detail, rollbackErr)
@@ -437,7 +438,7 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 				return ex.finishInstalled(ac, result)
 			}
 			if probeErr == nil && notApplied {
-				if rollbackErr := ac.prepared.rollback(ac.toolCtx, ex); rollbackErr != nil {
+				if rollbackErr := ac.prepared.rollback(ac.toolCtx); rollbackErr != nil {
 					ex.failCandidate(ac, result, fmt.Sprintf("install failed: %v; preparation rollback failed: %v", err, rollbackErr))
 					return finishTool
 				}
@@ -450,7 +451,7 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 		ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "commit_unresolved", "error", result.Error)
 		return finishTool
 	}
-	if rollbackErr := ac.prepared.rollback(ac.toolCtx, ex); rollbackErr != nil {
+	if rollbackErr := ac.prepared.rollback(ac.toolCtx); rollbackErr != nil {
 		ex.failCandidate(ac, result, fmt.Sprintf("install failed: %v; source rollback failed: %v", err, rollbackErr))
 		ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "rollback_failed", "error", result.Error)
 		return finishTool

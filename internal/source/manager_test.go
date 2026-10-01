@@ -262,6 +262,63 @@ func TestManagerMatchesGitBackedSourceNamesExactly(t *testing.T) {
 	}
 }
 
+func TestCanonicalSourceURL(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "trim whitespace", raw: "  owner/repo  ", want: "owner/repo"},
+		{name: "bare reference trailing slash", raw: "owner/repo/", want: "owner/repo"},
+		{name: "scheme-less host reference", raw: "github.com/Owner/Repo", want: "github.com/Owner/Repo"},
+		{name: "host case and trailing slash", raw: "HTTPS://GITHUB.COM/Owner/Repo/", want: "https://github.com/Owner/Repo"},
+		{name: "github git suffix", raw: "https://github.com/Owner/Repo.git", want: "https://github.com/Owner/Repo"},
+		{name: "gitlab git suffix", raw: "https://GITLAB.COM/group/repo.git/", want: "https://gitlab.com/group/repo"},
+		{name: "codeberg git suffix", raw: "https://CODEBERG.ORG/group/repo.git", want: "https://codeberg.org/group/repo"},
+		{name: "other host retains git suffix", raw: "https://example.test/group/repo.git/", want: "https://example.test/group/repo.git"},
+		{name: "username userinfo preserved", raw: "https://User@GITHUB.COM/Owner/Repo.git", want: "https://User@github.com/Owner/Repo"},
+		{name: "default port preserved", raw: "https://github.com:443/Owner/Repo.git", want: "https://github.com:443/Owner/Repo"},
+		{name: "non-default port preserved", raw: "https://github.com:8443/Owner/Repo.git", want: "https://github.com:8443/Owner/Repo"},
+		{name: "query and fragment preserved", raw: "https://github.com/Owner/Repo.git/?ref=main#section", want: "https://github.com/Owner/Repo?ref=main#section"},
+		{name: "subpath preserved", raw: "https://github.com/Owner/Repo/releases/download/v1/file", want: "https://github.com/Owner/Repo/releases/download/v1/file"},
+		{name: "scp reference unchanged apart from trailing slash", raw: "git@github.com:Owner/Repo.git/", want: "git@github.com:Owner/Repo.git"},
+		{name: "malformed URL fallback", raw: "https://[::1/path/", want: "https://[::1/path"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := canonicalSourceURL(tc.raw); got != tc.want {
+				t.Fatalf("canonicalSourceURL(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSameSourceURLComparisonSemantics(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		left  string
+		right string
+		same  bool
+	}{
+		{name: "non-git host keeps git suffix significant", left: "https://EXAMPLE.test/vendor/tools.git/", right: "https://example.TEST/vendor/tools", same: false},
+		{name: "github git suffix", left: "https://github.com/vendor/tools.git", right: "https://github.com/vendor/tools", same: true},
+		{name: "gitlab git suffix", left: "https://gitlab.com/vendor/tools.git", right: "https://gitlab.com/vendor/tools", same: true},
+		{name: "codeberg git suffix", left: "https://codeberg.org/vendor/tools.git", right: "https://codeberg.org/vendor/tools", same: true},
+		{name: "scp trailing slash", left: "git@github.com:vendor/tools.git/", right: "git@github.com:vendor/tools.git", same: true},
+		{name: "username userinfo remains significant", left: "https://user@example.test/vendor/tools", right: "https://example.test/vendor/tools", same: false},
+		{name: "port remains significant", left: "https://example.test:443/vendor/tools", right: "https://example.test/vendor/tools", same: false},
+		{name: "query remains significant", left: "https://example.test/vendor/tools?ref=main", right: "https://example.test/vendor/tools", same: false},
+		{name: "fragment remains significant", left: "https://example.test/vendor/tools#main", right: "https://example.test/vendor/tools", same: false},
+		{name: "subpath remains significant", left: "https://example.test/vendor/tools/releases", right: "https://example.test/vendor/tools", same: false},
+		{name: "invalid inputs compare by fallback string", left: "https://[::1/path/", right: "https://[::1/path", same: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sameSourceURL(tc.left, tc.right); got != tc.same {
+				t.Fatalf("sameSourceURL(%q, %q) = %t, want %t", tc.left, tc.right, got, tc.same)
+			}
+		})
+	}
+}
+
 func TestManagerPropagatesCheckFailure(t *testing.T) {
 	runner := &scriptedRunner{outputs: []run.Result{{Err: context.DeadlineExceeded, ExitCode: 1}}}
 	_, err := NewManager(runner, false).Ensure(context.Background(), []config.Source{{Kind: "brew-tap", Name: "user/tap"}})

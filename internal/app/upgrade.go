@@ -159,10 +159,13 @@ func buildUpgradeExecutor(s *config.Schema, clan string, facts *engine.Facts, sc
 	}
 	ex := exec.New()
 	exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
-	// Every other adapter comes from the process registry so composition-root
-	// reconfiguration (e.g. defaults.aur_helper) reaches upgrade reinstalls;
-	// only native is clan-specific.
-	exec.WithAdapters(exec.NewNativeAdapter(clan))(ex)
+	// Keep schema-specific AUR configuration local to this executor. All other
+	// adapters are inherited from the registry snapshot created by exec.New.
+	if helper := s.Defaults.AurHelper; helper != "" {
+		exec.WithAdapters(exec.NewNativeAdapter(clan), ecosystem.NewAURAdapter(helper))(ex)
+	} else {
+		exec.WithAdapters(exec.NewNativeAdapter(clan))(ex)
+	}
 	exec.WithSchemaInfo(schemaPath, schemaFile.ModTime())(ex)
 	exec.WithLogger(lg)(ex)
 	runner := run.NewLoggingRunner(run.OSExecRunner{}, lg)
@@ -204,7 +207,7 @@ func loadUpgradeLock(schemaPath string, lg *slog.Logger) (*lock.Lock, error) {
 // arbitrary first match could upgrade from/to the wrong artifact. Unresolvable
 // candidates with a pin for their kind are terminal discovery failures that
 // participate in the same report. Output is sorted for determinism.
-func collectOutdatedTools(st *state.State, s *config.Schema, lk *lock.Lock, only string, defaultOrder []string, nativeManager string) ([]upgradeOutdatedTool, []upgradeResult) {
+func collectOutdatedTools(st *state.State, s *config.Schema, lk *lock.Lock, only string, ex *exec.Executor, clan string) ([]upgradeOutdatedTool, []upgradeResult) {
 	var (
 		outdated          []upgradeOutdatedTool
 		discoveryFailures []upgradeResult
@@ -227,7 +230,7 @@ func collectOutdatedTools(st *state.State, s *config.Schema, lk *lock.Lock, only
 			methodKind = ts.Method
 		}
 
-		method, methodErr := findTrackedMethodCandidate(tool, ts, defaultOrder, nativeManager)
+		method, methodErr := findTrackedMethodCandidate(tool, ts, ex.SelectedMethods(tool, clan))
 		if methodErr != nil {
 			if hasPinnedVersionForKind(lk, name, methodKind) {
 				discoveryFailures = append(discoveryFailures, upgradeResult{
@@ -308,7 +311,7 @@ func confirmUpgradeProceed(outdated []upgradeOutdatedTool, c *cliStyle) bool {
 // adapter lookup, fail-closed preflight, then remove, reinstall, probe, and
 // state update. Every outcome is a result value; the whole run is never
 // aborted from here.
-func upgradeSingleTool(ctx context.Context, ex *exec.Executor, runner *run.LoggingRunner, facts *engine.Facts, st *state.State, ot upgradeOutdatedTool, opts upgradeOptions, c *cliStyle) upgradeResult {
+func upgradeSingleTool(ctx context.Context, ex *exec.Executor, runner *run.LoggingRunner, facts *engine.Facts, clan string, st *state.State, ot upgradeOutdatedTool, opts upgradeOptions, c *cliStyle) upgradeResult {
 	// The selected candidate's typed environment references are application
 	// secrets. Keep them available to in-process resolvers, but prevent every
 	// child process in this tool's upgrade lifecycle from inheriting them.
@@ -335,7 +338,7 @@ func upgradeSingleTool(ctx context.Context, ex *exec.Executor, runner *run.Loggi
 
 	// The direct Remove/Install path fails closed on semantics it cannot preserve,
 	// avoiding removal of a working tool before an incompatible reinstall.
-	resolved, verification, err := preflightDirectUpgrade(ctx, ex, runner, facts, ot.tool, ot.method, adapter, ot.pinnedVer, opts.allowArbitrary)
+	resolved, verification, err := preflightDirectUpgrade(ctx, ex, runner, facts, clan, ot.tool, ot.method, adapter, ot.pinnedVer, opts.allowArbitrary)
 	if err != nil {
 		return fail("upgrade preflight failed: %v", err)
 	}
@@ -467,7 +470,7 @@ func reinstallUpgradeTool(ctx context.Context, ex *exec.Executor, resolved *plan
 
 // runUpgradeLoop upgrades each outdated tool in order, seeding the report
 // with the already-terminal candidate discovery failures.
-func runUpgradeLoop(ctx context.Context, ex *exec.Executor, runner *run.LoggingRunner, facts *engine.Facts, st *state.State, outdated []upgradeOutdatedTool, discoveryFailures []upgradeResult, opts upgradeOptions, c *cliStyle) ([]upgradeResult, upgradeCounts) {
+func runUpgradeLoop(ctx context.Context, ex *exec.Executor, runner *run.LoggingRunner, facts *engine.Facts, clan string, st *state.State, outdated []upgradeOutdatedTool, discoveryFailures []upgradeResult, opts upgradeOptions, c *cliStyle) ([]upgradeResult, upgradeCounts) {
 	results := append([]upgradeResult(nil), discoveryFailures...)
 	counts := upgradeCounts{failed: len(discoveryFailures)}
 	for _, res := range discoveryFailures {
@@ -477,7 +480,7 @@ func runUpgradeLoop(ctx context.Context, ex *exec.Executor, runner *run.LoggingR
 	}
 
 	for _, ot := range outdated {
-		res := upgradeSingleTool(ctx, ex, runner, facts, st, ot, opts, c)
+		res := upgradeSingleTool(ctx, ex, runner, facts, clan, st, ot, opts, c)
 		results = append(results, res)
 		switch res.Status {
 		case "upgraded":
@@ -561,9 +564,6 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 	if manifestAuto && manifestCount > 0 {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
 	}
-	if helper := s.Defaults.AurHelper; helper != "" {
-		ecosystem.ReconfigureAUR(helper)
-	}
 
 	lk, err := loadUpgradeLock(opts.schema, lg)
 	if err != nil {
@@ -595,7 +595,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 	// Project lock pins into the schema before drift collection and reinstall planning.
 	lock.Apply(s, lk)
 
-	outdated, discoveryFailures := collectOutdatedTools(st, s, lk, opts.only, ex.DefaultMethodOrder(), ex.NativeManagerName())
+	outdated, discoveryFailures := collectOutdatedTools(st, s, lk, opts.only, ex, clan)
 	if len(outdated) == 0 && len(discoveryFailures) == 0 {
 		return reportUpgradeUpToDate(opts.jsonOut)
 	}
@@ -617,7 +617,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 
 	// Upgrade each outdated tool: preflight, then Remove and Install. Candidate
 	// discovery failures are already terminal and participate in the same report.
-	results, counts := runUpgradeLoop(ctx, ex, runner, facts, st, outdated, discoveryFailures, opts, c)
+	results, counts := runUpgradeLoop(ctx, ex, runner, facts, clan, st, outdated, discoveryFailures, opts, c)
 
 	if !opts.dryRun {
 		if err := ls.Save(); err != nil {
@@ -678,7 +678,7 @@ func recordFailedUpgradeRemoval(st *state.State, toolName string) error {
 	return nil
 }
 
-func preflightDirectUpgrade(ctx context.Context, ex *exec.Executor, runner run.Runner, facts *engine.Facts, tool *config.Tool, method *config.MethodCandidate, adapter exec.AdapterV2, targetVersion string, allowArbitrary bool) (*plan.ResolvedInstallPlan, plan.VerificationResult, error) {
+func preflightDirectUpgrade(ctx context.Context, ex *exec.Executor, runner run.Runner, facts *engine.Facts, clan string, tool *config.Tool, method *config.MethodCandidate, adapter exec.AdapterV2, targetVersion string, allowArbitrary bool) (*plan.ResolvedInstallPlan, plan.VerificationResult, error) {
 	if tool == nil || method == nil || adapter == nil {
 		return nil, plan.VerificationResult{}, fmt.Errorf("tool, method, and adapter are required")
 	}
@@ -711,7 +711,7 @@ func preflightDirectUpgrade(ctx context.Context, ex *exec.Executor, runner run.R
 	if !adapter.Available(ctx, probeRunner) {
 		return nil, plan.VerificationResult{}, fmt.Errorf("adapter %q is unavailable", method.Kind)
 	}
-	resolved, verification, err := ex.ResolveAndVerifyCandidateAtVersion(ctx, tool, method, targetVersion)
+	resolved, verification, err := ex.ResolveAndVerifyCandidateAtVersion(ctx, tool, method, targetVersion, clan)
 	if err != nil {
 		return nil, plan.VerificationResult{}, err
 	}
@@ -772,13 +772,13 @@ func findMethodCandidate(tool *config.Tool, kind string, defaultOrder []string, 
 // candidate represented by durable ToolState. Candidate identity comes from
 // findStateMethodCandidate; this additional gate ensures the current method
 // policy still selects it before a destructive upgrade.
-func findTrackedMethodCandidate(tool *config.Tool, ts state.ToolState, defaultOrder []string, nativeManagerName string) (*config.MethodCandidate, error) {
+func findTrackedMethodCandidate(tool *config.Tool, ts state.ToolState, selected []*config.MethodCandidate) (*config.MethodCandidate, error) {
 	candidate, err := findStateMethodCandidate(tool, ts)
 	if err != nil {
 		return nil, err
 	}
-	for _, selected := range config.SelectMethods(tool, defaultOrder, nativeManagerName) {
-		if selected == candidate {
+	for _, selectedCandidate := range selected {
+		if selectedCandidate == candidate {
 			return candidate, nil
 		}
 	}

@@ -4,21 +4,19 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/native"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/secret"
-	"github.com/Khorea1/depengine/internal/source"
 )
 
 // Executor orchestrates the installation of all tools in a schema.
 // Use New() to create, then configure with Option funcs.
 type Executor struct {
-	clan               string
 	rn                 run.Runner
 	toolTimeout        time.Duration
 	methodTimeout      time.Duration
@@ -34,8 +32,7 @@ type Executor struct {
 
 	batchTimeout time.Duration // per-batch timeout, scaled by package count
 
-	defaultMethodOrder []string // from config.Defaults.MethodOrder; default = config.DefaultMethodOrder
-	nativeManagerName  string   // resolved from clan via native.Lookup
+	configuredMethodOrder []string // from config.Defaults.MethodOrder; default = config.DefaultMethodOrder
 
 	// system facts for when-condition evaluation
 	facts        *engine.Facts
@@ -47,13 +44,7 @@ type Executor struct {
 
 	color bool // whether to emit ANSI color codes in status output
 
-	schema           *config.Schema
-	report           *ExecReport
-	sources          *source.Manager
-	secretResolver   secret.SecretResolver
-	recoveredCommits map[string]recoveredCandidateCommit
-	dependencyMu     sync.Mutex
-	dependencies     map[string]*dependencyRun
+	secretResolver secret.SecretResolver
 }
 
 type dependencyRun struct {
@@ -206,9 +197,10 @@ func WithSchemaInfo(path string, modTime time.Time) Option {
 }
 
 func WithDefaultMethodOrder(order []string) Option {
+	configuredOrder := append([]string(nil), order...)
 	return func(ex *Executor) {
-		if len(order) > 0 {
-			ex.defaultMethodOrder = order
+		if len(configuredOrder) > 0 {
+			ex.configuredMethodOrder = append([]string(nil), configuredOrder...)
 		}
 	}
 }
@@ -224,15 +216,15 @@ func WithLockDocument(document plan.LockDocument) Option {
 }
 func New() *Executor {
 	ex := &Executor{
-		rn:                 run.OSExecRunner{},
-		secretResolver:     secret.EnvResolver{},
-		toolTimeout:        5 * time.Minute,
-		methodTimeout:      2 * time.Minute,
-		maxJobs:            1,
-		adapters:           make(map[string]AdapterV2),
-		outWriter:          os.Stderr,
-		defaultMethodOrder: config.DefaultMethodOrder,
-		color:              shouldUseColor(),
+		rn:                    run.OSExecRunner{},
+		secretResolver:        secret.EnvResolver{},
+		toolTimeout:           5 * time.Minute,
+		methodTimeout:         2 * time.Minute,
+		maxJobs:               1,
+		adapters:              make(map[string]AdapterV2),
+		outWriter:             os.Stderr,
+		configuredMethodOrder: append([]string(nil), config.DefaultMethodOrder...),
+		color:                 shouldUseColor(),
 	}
 	// Pre-populate from the default adapter registry.
 	// Adapters registered at the composition root are available to every
@@ -243,18 +235,19 @@ func New() *Executor {
 	return ex
 }
 
-// SourceRevisions returns credential-free Git HEAD observations captured while candidate sources were prepared.
-func (ex *Executor) SourceRevisions() []source.SourceRevision {
-	if ex.sources == nil {
-		return nil
-	}
-	return ex.sources.SourceRevisions()
-}
-
 // LookupAdapter returns the adapter for the given kind from the executor's
 // per-instance registry. Returns nil if no adapter is registered for that kind.
 func (ex *Executor) LookupAdapter(kind string) AdapterV2 {
 	return ex.adapters[kind]
+}
+
+// SelectedMethods returns candidates selected for clan without changing the executor.
+func (ex *Executor) SelectedMethods(tool *config.Tool, clan string) []*config.MethodCandidate {
+	managerName := ""
+	if manager, ok := native.Lookup(clan); ok {
+		managerName = manager.Name
+	}
+	return config.SelectMethods(tool, ex.configuredMethodOrder, managerName)
 }
 
 // probeRunner returns ex.rn tagged as a probe for the given tool/method, so
@@ -284,17 +277,4 @@ func (ex *Executor) mutationRunner(tool, method string) run.Runner {
 		return lr.WithContext(run.Context{Tool: tool, Method: method})
 	}
 	return ex.rn
-}
-
-// DefaultMethodOrder returns the effective default method order for the
-// executor. Used by callers that need to resolve method ordering outside
-// the normal Execute path (e.g. upgrade).
-func (ex *Executor) DefaultMethodOrder() []string {
-	return ex.defaultMethodOrder
-}
-
-// NativeManagerName returns the resolved native package manager name
-// (e.g. "apt", "pacman"). Empty when no clan is set.
-func (ex *Executor) NativeManagerName() string {
-	return ex.nativeManagerName
 }

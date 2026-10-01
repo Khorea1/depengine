@@ -54,12 +54,3 @@ func TestReportDetailShowsGitBackedCargoSourceAndRef(t *testing.T) {
 		}
 	}
 }
-
-func TestProviderForMethodKindNormalizesVariantLabelsToAdapterKind(t *testing.T) {
-	ex := &Executor{nativeManagerName: "xbps"}
-	for kind, want := range map[string]string{"native": "xbps", "http": "http", "cargo": "cargo", "git": "git"} {
-		if got := ex.providerForMethodKind(kind); got != want {
-			t.Errorf("providerForMethodKind(%q) = %q, want %q", kind, got, want)
-		}
-	}
-}

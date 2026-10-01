@@ -125,14 +125,15 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
 		return nil
 	}
 
-	facts := ensureUndoNativeAdapter()
+	facts := gatherUndoFacts()
+	clan := engine.ResolveFamily(facts)
 	executor := exec.New()
 	exec.WithRunner(run.OSExecRunner{})(executor)
 	if facts != nil {
 		exec.WithFacts(facts)(executor)
-		executor.SetHostContext(engine.ResolveFamily(facts))
+		exec.WithAdapters(exec.NewNativeAdapter(clan))(executor)
 	}
-	originalTools, succeeded, hadFailure := removeUndoTools(ctx, toRemove, curState, executor)
+	originalTools, succeeded, hadFailure := removeUndoTools(ctx, toRemove, curState, executor, clan)
 	return finalizeUndo(ls, curState, snapState, toRemove, originalTools, succeeded, hadFailure)
 }
 
@@ -228,19 +229,10 @@ func resolveUndoMethodKind(toolState state.ToolState) string {
 	return toolState.Method // fallback for old state files
 }
 
-// ensureUndoNativeAdapter makes the OS-resolved native adapter authoritative,
-// the same way install/upgrade already do, so removal uses the correct
-// check/remove commands for this machine instead of PATH-probing.
-func ensureUndoNativeAdapter() *engine.Facts {
-	// The global "native" adapter (registered in main.go) is constructed
-	// with an empty clan and falls back to PATH-probing, which is ambiguous
-	// for manager binaries shared across clans (e.g. "pkg" on both termux
-	// and freebsd — same install command, different check/remove commands).
-	// Resolve the real clan from OS facts and make it authoritative here,
-	// the same way install/upgrade already do, so removal always uses the
-	// correct check/remove commands for this machine.
+// gatherUndoFacts reads OS facts for the executor-local native adapter. On
+// failure, the default bootstrap adapter retains its existing PATH fallback.
+func gatherUndoFacts() *engine.Facts {
 	if facts, err := engine.GatherFacts(run.OSExecRunner{}); err == nil {
-		exec.Replace(exec.NewNativeAdapter(engine.ResolveFamily(facts)))
 		return facts
 	} else {
 		log.Default.Warn("could not gather OS facts; falling back to PATH-probing for native manager detection", "error", err)
@@ -252,7 +244,7 @@ func ensureUndoNativeAdapter() *engine.Facts {
 // remove.go's state-driven Remover shape). It returns a copy of the
 // pre-removal tool map, the per-tool success set, and whether any removal
 // failed. Callers merge state with mergeUndoTools.
-func removeUndoTools(ctx context.Context, toRemove []string, curState *state.State, executor *exec.Executor) (map[string]state.ToolState, map[string]bool, bool) {
+func removeUndoTools(ctx context.Context, toRemove []string, curState *state.State, executor *exec.Executor, clan string) (map[string]state.ToolState, map[string]bool, bool) {
 	// Capture original state before removal, so failed tools can be preserved.
 	originalTools := make(map[string]state.ToolState, len(curState.Tools))
 	for k, v := range curState.Tools {
@@ -279,7 +271,7 @@ func removeUndoTools(ctx context.Context, toRemove []string, curState *state.Sta
 			Config: toolState.Config,
 		}
 		tool := &config.Tool{Name: name}
-		resolved, verification, err := executor.ResolveAndVerifyCandidate(ctx, tool, mc)
+		resolved, verification, err := executor.ResolveAndVerifyCandidate(ctx, tool, mc, clan)
 		if err != nil {
 			log.Default.Error("verify removal target during undo", "tool", name, "error", err)
 			hadFailure = true

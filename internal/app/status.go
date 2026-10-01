@@ -216,19 +216,19 @@ func reconcileStatusTools(ctx context.Context, rows []toolStatus, installed map[
 		tool := schema.Tools[row.Name]
 		ts := installed[row.Name]
 		definitionDrift := ts.DesiredStateHash != "" && state.DesiredStateHash(tool) != ts.DesiredStateHash
-		method, methodErr := findTrackedMethodCandidate(tool, ts, ex.DefaultMethodOrder(), ex.NativeManagerName())
+		selected := ex.SelectedMethods(tool, clan)
+		method, methodErr := findTrackedMethodCandidate(tool, ts, selected)
 		if methodErr != nil {
 			row.Status = "unknown"
 			verification := plan.VerificationResult{State: plan.StateUnknown, Detail: methodErr.Error()}
 			row.Verification = &verification
 			continue
 		}
-		ex.SetHostContext(clan)
 		desiredVersion := ""
 		if pin, ok := lockPinForCandidate(lk, row.Name, tool, method); ok {
 			desiredVersion = pinnedVersion(pin)
 		}
-		_, verification, err := ex.ResolveAndVerifyCandidateAtVersion(ctx, tool, method, desiredVersion)
+		_, verification, err := ex.ResolveAndVerifyCandidateAtVersion(ctx, tool, method, desiredVersion, clan)
 		if err != nil {
 			row.Status = "unknown"
 			v := plan.VerificationResult{State: plan.StateUnknown, Detail: err.Error()}

@@ -178,12 +178,15 @@ jobs:
         copyback: false
         prepare: |
           env ASSUME_ALWAYS_YES=yes pkg bootstrap -f
+          env ASSUME_ALWAYS_YES=yes pkg install -y git
           fetch -qo /tmp/go.tar.gz https://go.dev/dl/go1.27.1.freebsd-amd64.tar.gz
           sha256 -c 9761194512938a640948ae5ba273df73a441f4229ea21a1503937e55c69bf107 /tmp/go.tar.gz
           rm -rf /usr/local/go
           tar -C /usr/local -xzf /tmp/go.tar.gz
         run: |
           export PATH="/usr/local/go/bin:$PATH"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -C "$GITHUB_WORKSPACE" status --porcelain=v1 >/dev/null
           go version
           go test ./...
           tests/platform/native-lifecycle.sh tests/platform/fixtures/native-hello.toml depengine-native-smoke
@@ -202,13 +205,15 @@ jobs:
         release: "7.9"
         copyback: false
         prepare: |
-          pkg_add unzip--
+          pkg_add unzip-- git
           ftp -o /tmp/go.tar.gz https://go.dev/dl/go1.27.1.openbsd-amd64.tar.gz
           test "$(sha256 -q /tmp/go.tar.gz)" = "db0566b3b3ddf6eda09cb3434a9401eb2583ffa539475e45592812813f11c792"
           rm -rf /usr/local/go
           tar -C /usr/local -xzf /tmp/go.tar.gz
         run: |
           export PATH="/usr/local/go/bin:$PATH"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -C "$GITHUB_WORKSPACE" status --porcelain=v1 >/dev/null
           go version
           go test ./...
           tests/platform/native-lifecycle.sh tests/platform/fixtures/openbsd-pkgadd.toml depengine-openbsd-smoke
@@ -244,6 +249,7 @@ jobs:
           printf '%s\n' "$selected_repo" > /usr/pkg/etc/pkgin/repositories.conf
           echo "pkgin repository: $selected_repo"
           /usr/pkg/bin/pkgin -y update
+          /usr/pkg/bin/pkgin -y install git
           /usr/bin/ftp -o /tmp/go.tar.gz https://go.dev/dl/go1.27.1.netbsd-amd64.tar.gz
           test "$(/usr/bin/sha256 -q /tmp/go.tar.gz)" = "4ace14c14e7c6eb1d06890433afe81f8c2dc746d1d5f4df3ae6d2d7dd0481ba2"
           mkdir -p /usr/local
@@ -251,6 +257,8 @@ jobs:
           tar -C /usr/local -xzf /tmp/go.tar.gz
         run: |
           export PATH="/usr/local/go/bin:/usr/pkg/bin:/usr/pkg/sbin:$PATH"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -C "$GITHUB_WORKSPACE" status --porcelain=v1 >/dev/null
           go version
           go test ./...
           tests/platform/native-lifecycle.sh tests/platform/fixtures/netbsd-pkgin.toml depengine-netbsd-smoke

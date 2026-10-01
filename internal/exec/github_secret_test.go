@@ -92,7 +92,7 @@ func TestResolveCandidatePlanPassesResolvedGitHubSecretContext(t *testing.T) {
 	WithSecretResolver(resolver)(ex)
 	WithAdapters(adapter)(ex)
 
-	_, err := ex.ResolveCandidatePlan(context.Background(), githubSecretTestTool(githubSecretTestMethod()), githubSecretTestMethod())
+	_, err := ex.ResolveCandidatePlan(context.Background(), githubSecretTestTool(githubSecretTestMethod()), githubSecretTestMethod(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

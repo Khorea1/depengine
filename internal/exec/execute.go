@@ -18,20 +18,20 @@ import (
 // hasApplicableNativeMethod reports whether the schema contains a native
 // method that applies to the current system. If none applies, both index sync
 // and the upfront elevation prompt can be skipped.
-func (ex *Executor) hasApplicableNativeMethod(s *config.Schema, clan string) bool {
-	if s == nil {
+func (ex *Executor) hasApplicableNativeMethod(rc *runContext) bool {
+	if rc == nil || rc.schema == nil {
 		return false
 	}
-	for _, tool := range s.Tools {
-		for _, mc := range config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName) {
+	for _, tool := range rc.schema.Tools {
+		for _, mc := range rc.selectedMethods(tool) {
 			if mc.When != nil && !mc.When.Match(ex.facts) {
 				continue
 			}
-			if mc.Kind == "native" || mc.Kind == clan {
+			if mc.Kind == "native" || mc.Kind == rc.clan {
 				return true
 			}
 			// Also check native manager aliases (apt, dnf, pacman, etc.).
-			if nm, ok := native.ManagerNameToClan(mc.Kind); ok && nm == clan {
+			if nm, ok := native.ManagerNameToClan(mc.Kind); ok && nm == rc.clan {
 				return true
 			}
 		}
@@ -40,17 +40,17 @@ func (ex *Executor) hasApplicableNativeMethod(s *config.Schema, clan string) boo
 }
 
 // needsElevation reports whether any applicable method will need root.
-func (ex *Executor) needsElevation(s *config.Schema, clan string) bool {
+func (ex *Executor) needsElevation(rc *runContext) bool {
 	if ex.preparationRecoveryNeedsElevation() {
 		return true
 	}
-	mgr, ok := native.Lookup(clan)
-	if ok && mgr.SudoRequired && ex.hasApplicableNativeMethod(s, clan) {
+	mgr, ok := native.Lookup(rc.clan)
+	if ok && mgr.SudoRequired && ex.hasApplicableNativeMethod(rc) {
 		return true
 	}
 
-	for _, tool := range s.Tools {
-		for _, mc := range config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName) {
+	for _, tool := range rc.schema.Tools {
+		for _, mc := range rc.selectedMethods(tool) {
 			if mc.When != nil && !mc.When.Match(ex.facts) {
 				continue
 			}
@@ -71,10 +71,11 @@ func (ex *Executor) needsElevation(s *config.Schema, clan string) bool {
 
 func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) (*ExecReport, error) {
 	start := time.Now()
-	report := &ExecReport{}
+	rc := ex.newRunContext(ctx, s, clan)
+	report := rc.report
 	housekeepingCtx := run.WithOmittedEnv(ctx, schemaSecretEnvNames(s)...)
 
-	stop, err := ex.initializeRun(housekeepingCtx, s, clan, report)
+	stop, err := ex.initializeRun(housekeepingCtx, rc)
 	if err != nil {
 		return nil, err
 	}
@@ -82,21 +83,18 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 		defer stop()
 	}
 
-	if err := ex.recoverAndRecord(housekeepingCtx, report); err != nil {
+	if err := ex.recoverAndRecord(housekeepingCtx, rc); err != nil {
 		return nil, err
 	}
 
-	ex.syncNativeIndex(housekeepingCtx, s, clan)
+	ex.syncNativeIndex(housekeepingCtx, rc)
 
 	levels, err := ex.sortExecutionLevels(ctx, s)
 	if err != nil {
 		return nil, err
 	}
 
-	// failedTools accumulates tools that did not get installed (failed or
-	// unavailable), so dependents in later levels (requires) are blocked
-	// instead of silently proceeding and reporting themselves installed.
-	rc := &runContext{ctx: ctx, schema: s, report: report, failed: make(map[string]string)}
+	// Failed tools remain in the run context so dependent tools are blocked.
 	for _, level := range levels {
 		ex.runLevel(rc, level)
 	}
@@ -104,15 +102,15 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 	return ex.finishRun(ctx, s, report, start)
 }
 
-func (ex *Executor) executeTool(ctx context.Context, tool *config.Tool) ToolResult {
-	return ex.executeToolWithResolution(ctx, tool, nil)
+func (ex *Executor) executeTool(ctx context.Context, rc *runContext, tool *config.Tool) ToolResult {
+	return ex.executeToolWithResolution(ctx, rc, tool, nil)
 }
 
-func (ex *Executor) executeToolWithResolution(ctx context.Context, tool *config.Tool, resolution *candidateResolutionSeed) ToolResult {
+func (ex *Executor) executeToolWithResolution(ctx context.Context, rc *runContext, tool *config.Tool, resolution *candidateResolutionSeed) ToolResult {
 	ctx = omitToolSecretEnvironment(ctx, tool)
 	toolStart := time.Now()
 	result := ToolResult{Tool: tool.Name}
-	methods := config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
+	methods := rc.selectedMethods(tool)
 	if len(methods) == 0 {
 		result.Status = StatusVirtual
 		ex.logDebug(ctx, "tool", "tool", tool.Name, "status", "virtual")
@@ -123,7 +121,7 @@ func (ex *Executor) executeToolWithResolution(ctx context.Context, tool *config.
 	// Security gate for every arbitrary-code execution surface. Keep this as a
 	// defensive duplicate of Execute's phase-1 gate for direct callers.
 	if !ex.allowArbitraryCode {
-		if ex.hasArbitraryCode(tool) {
+		if ex.hasDangerousMethod(rc, tool) {
 			detail := "config includes commands that may execute arbitrary code"
 			ex.outputf("  ⚠  %s: %s. Use --allow-arbitrary-code to permit execution.\n", tool.Name, detail)
 			ex.logWarn(ctx, "security", "tool", tool.Name, "warning", detail)
@@ -149,7 +147,7 @@ func (ex *Executor) executeToolWithResolution(ctx context.Context, tool *config.
 		defer cancel()
 	}
 
-	ex.tryMethodsWithResolution(toolCtx, tool, &result, toolStart, resolution)
+	ex.tryMethodsWithResolution(toolCtx, rc, tool, &result, toolStart, resolution)
 	return result
 }
 
@@ -161,13 +159,13 @@ func (ex *Executor) executeToolWithResolution(ctx context.Context, tool *config.
 // gating, adapter availability, concrete-plan resolution, already-installed
 // check, source preparation with availability gates, then commit+install.
 // See candidateAttempt and the phase methods in attempt.go.
-func (ex *Executor) tryMethods(toolCtx context.Context, tool *config.Tool, result *ToolResult, toolStart time.Time) {
-	ex.tryMethodsWithResolution(toolCtx, tool, result, toolStart, nil)
+func (ex *Executor) tryMethods(toolCtx context.Context, rc *runContext, tool *config.Tool, result *ToolResult, toolStart time.Time) {
+	ex.tryMethodsWithResolution(toolCtx, rc, tool, result, toolStart, nil)
 }
 
-func (ex *Executor) tryMethodsWithResolution(toolCtx context.Context, tool *config.Tool, result *ToolResult, toolStart time.Time, resolution *candidateResolutionSeed) {
+func (ex *Executor) tryMethodsWithResolution(toolCtx context.Context, rc *runContext, tool *config.Tool, result *ToolResult, toolStart time.Time, resolution *candidateResolutionSeed) {
 	var lastMethodKind string
-	orderedMethods := config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
+	orderedMethods := rc.selectedMethods(tool)
 	for _, method := range orderedMethods {
 		lastMethodKind = method.Kind
 		select {
@@ -184,7 +182,7 @@ func (ex *Executor) tryMethodsWithResolution(toolCtx context.Context, tool *conf
 		if resolution != nil && resolution.method == method {
 			methodResolution = resolution
 		}
-		if ex.attemptMethod(toolCtx, tool, method, result, toolStart, methodResolution) {
+		if ex.attemptMethod(toolCtx, rc, tool, method, result, toolStart, methodResolution) {
 			return
 		}
 	}
@@ -195,8 +193,9 @@ func (ex *Executor) tryMethodsWithResolution(toolCtx context.Context, tool *conf
 // attemptMethod runs one method candidate through the attempt pipeline.
 // It returns true when the tool result is terminal and tryMethods must
 // return, false when the next candidate should be tried.
-func (ex *Executor) attemptMethod(toolCtx context.Context, tool *config.Tool, method *config.MethodCandidate, result *ToolResult, toolStart time.Time, resolution *candidateResolutionSeed) bool {
+func (ex *Executor) attemptMethod(toolCtx context.Context, rc *runContext, tool *config.Tool, method *config.MethodCandidate, result *ToolResult, toolStart time.Time, resolution *candidateResolutionSeed) bool {
 	ac := &candidateAttempt{
+		run:         rc,
 		toolCtx:     toolCtx,
 		tool:        tool,
 		method:      method,
@@ -297,11 +296,11 @@ func rootTools(tools map[string]*config.Tool) map[string]*config.Tool {
 	return out
 }
 
-func (ex *Executor) ensureMethodDependencies(ctx context.Context, owner *config.Tool, method *config.MethodCandidate) ([]plan.ResourceUse, error) {
+func (ex *Executor) ensureMethodDependencies(ctx context.Context, rc *runContext, owner *config.Tool, method *config.MethodCandidate) ([]plan.ResourceUse, error) {
 	uses := make([]plan.ResourceUse, 0, len(method.Requires))
 	seen := make(map[plan.ResourceIdentity]struct{}, len(method.Requires))
 	for _, name := range method.Requires {
-		result, err := ex.executeDependency(ctx, name)
+		result, err := ex.executeDependency(ctx, rc, name)
 		if err != nil {
 			return nil, fmt.Errorf("%s: method %s requires %s: %w", owner.Name, method.Kind, name, err)
 		}
@@ -327,17 +326,17 @@ func (ex *Executor) ensureMethodDependencies(ctx context.Context, owner *config.
 	return uses, nil
 }
 
-func (ex *Executor) executeDependency(ctx context.Context, name string) (ToolResult, error) {
+func (ex *Executor) executeDependency(ctx context.Context, rc *runContext, name string) (ToolResult, error) {
 	// Startup recovery has already reconciled and recorded this exact candidate.
 	// A lazy method.requires edge must consume that terminal result rather than
 	// probing or installing the dependency a second time.
-	if recovered, ok := ex.recoveredCommits[name]; ok {
+	if recovered, ok := rc.recoveredCommits[name]; ok {
 		return recovered.result(), nil
 	}
 
-	ex.dependencyMu.Lock()
-	if existing := ex.dependencies[name]; existing != nil {
-		ex.dependencyMu.Unlock()
+	rc.dependencyMu.Lock()
+	if existing := rc.dependencies[name]; existing != nil {
+		rc.dependencyMu.Unlock()
 		select {
 		case <-ctx.Done():
 			return ToolResult{}, ctx.Err()
@@ -346,16 +345,16 @@ func (ex *Executor) executeDependency(ctx context.Context, name string) (ToolRes
 		}
 	}
 	run := &dependencyRun{done: make(chan struct{})}
-	ex.dependencies[name] = run
-	ex.dependencyMu.Unlock()
+	rc.dependencies[name] = run
+	rc.dependencyMu.Unlock()
 
-	tool := ex.schema.Tools[name]
+	tool := rc.schema.Tools[name]
 	if tool == nil {
 		run.result = ToolResult{Tool: name, Status: StatusFailed, Error: "dependency is not defined"}
 	} else {
 		blocked := false
 		for _, dependency := range tool.EffectiveRequires(ex.facts) {
-			result, err := ex.executeDependency(ctx, dependency)
+			result, err := ex.executeDependency(ctx, rc, dependency)
 			if err != nil || !dependencySucceeded(result) {
 				reason := result.Error
 				if err != nil {
@@ -367,9 +366,9 @@ func (ex *Executor) executeDependency(ctx context.Context, name string) (ToolRes
 			}
 		}
 		if !blocked {
-			run.result = ex.executeTool(context.WithValue(ctx, lazyDependencyExecutionKey{}, true), tool)
+			run.result = ex.executeTool(context.WithValue(ctx, lazyDependencyExecutionKey{}, true), rc, tool)
 		}
-		ex.recordToolResult(ctx, &run.result, ex.report)
+		ex.recordToolResult(ctx, rc, &run.result)
 	}
 	close(run.done)
 	return run.result, nil
@@ -398,7 +397,7 @@ func recordedResult(report *ExecReport, toolName string) *ToolResult {
 // executeLevelParallel runs all tools in a topological level concurrently,
 // limiting concurrency to ex.maxJobs. Results are collected thread-safely
 // via recordToolResult.
-func (ex *Executor) executeLevelParallel(ctx context.Context, s *config.Schema, level []string, report *ExecReport, resolutions map[string]*candidateResolutionSeed) {
+func (ex *Executor) executeLevelParallel(ctx context.Context, rc *runContext, level []string, resolutions map[string]*candidateResolutionSeed) {
 	toolCh := make(chan string, len(level))
 	resultCh := make(chan ToolResult, len(level))
 
@@ -420,11 +419,11 @@ func (ex *Executor) executeLevelParallel(ctx context.Context, s *config.Schema, 
 		go func() {
 			defer wg.Done()
 			for toolName := range toolCh {
-				tool, ok := s.Tools[toolName]
+				tool, ok := rc.schema.Tools[toolName]
 				if !ok {
 					continue
 				}
-				result := ex.executeToolWithResolution(ctx, tool, resolutions[toolName])
+				result := ex.executeToolWithResolution(ctx, rc, tool, resolutions[toolName])
 				resultCh <- result
 			}
 		}()
@@ -443,7 +442,7 @@ func (ex *Executor) executeLevelParallel(ctx context.Context, s *config.Schema, 
 		return results[i].Tool < results[j].Tool
 	})
 	for i := range results {
-		ex.recordToolResult(ctx, &results[i], report)
+		ex.recordToolResult(ctx, rc, &results[i])
 	}
 }
 
