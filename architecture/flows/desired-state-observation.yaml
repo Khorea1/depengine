@@ -2,8 +2,8 @@ archmap: 2
 doc: flow
 id: desired-state-observation
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "6bb3223"
+  verified_on: "2026-10-01"
 trigger: "A consumer needs to determine whether one selected candidate satisfies desired state without mutating the host."
 steps:
   - from: reconciliation
@@ -13,13 +13,13 @@ steps:
     confidence: confirmed
   - from: reconciliation
     to: adapters
-    action: "Resolves the static intent to a concrete executable identity and validates that resolution preserves the intent."
-    evidence: ["internal/exec/resolution.go:12-28", "internal/exec/resolution.go:44-54"]
+    action: "Applies any configured universal lock projection to the static intent, resolves it to a concrete executable identity, and validates both intent preservation and frozen-lock identity."
+    evidence: ["internal/exec/resolution.go:12-64"]
     confidence: confirmed
   - from: reconciliation
     to: adapters
     action: "Projects the resolved identity back into the candidate consumed by Observe, then probes exactly that target without performing host mutation."
-    evidence: ["internal/exec/environment_target.go:9-45", "internal/exec/resolution.go:57-78"]
+    evidence: ["internal/exec/environment_target.go:9-45", "internal/exec/resolution.go:105-145"]
     symbols:
       - name: methodForResolvedTarget
         path: internal/exec/environment_target.go
@@ -32,5 +32,6 @@ steps:
     confidence: confirmed
 failure_modes:
   - "Concrete resolution failure stops before host observation and mutation."
+  - "A configured universal-lock entry that is missing or identity-mismatched fails closed before observation."
   - "Observation errors or invalid presence values are normalized to a broken verification state."
   - "Known identity drift and unverifiable identity remain distinct verification outcomes rather than collapsing to simple presence."

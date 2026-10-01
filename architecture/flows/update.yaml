@@ -2,8 +2,8 @@ archmap: 2
 doc: flow
 id: update
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "6bb3223"
+  verified_on: "2026-10-01"
 trigger: "Operator runs depengine update to refresh reproducibility pins without applying installations."
 steps:
   - from: operator
@@ -12,26 +12,49 @@ steps:
     confidence: inferred
   - from: cli
     to: configuration
-    action: "Loads the effective schema/manifest and target facts."
-    evidence: ["internal/app/update.go:52-77"]
+    action: "Loads the effective schema/manifest and target facts, preserving the full install closure before applying an update profile."
+    evidence: ["internal/app/update.go:52-82"]
     confidence: confirmed
   - from: cli
     to: state-and-lock
-    action: "Runs lock.ResolveAll for selector classes explicitly supported by lock v1, merges preserved pins, and writes the refreshed lock unless dry-run is active."
-    evidence: ["internal/app/update.go:89-153"]
+    action: "Refreshes legacy method-specific selector pins with lock.ResolveAll, merges readable preserved pins, and applies the merged pins back to the schema."
+    evidence: ["internal/app/update.go:92-148", "internal/lock/lock.go:278-330"]
     symbols:
       - name: ResolveAll
         path: internal/lock/lock.go
-        role: "Enumerate pin-producing selector branches here before assuming an adapter-resolved selector is persisted in the lock."
+        role: "Legacy selector-pin materialization retained for compatibility alongside the universal projection."
     confidence: confirmed
   - from: state-and-lock
     to: adapters
-    action: "Uses release, registry, Git, and related resolver helpers directly from lock resolution; this is not the AdapterV2 install-time resolution path."
-    evidence: ["internal/lock/lock.go:253-278"]
+    action: "Legacy pin refresh uses release, registry, Git, and related resolver helpers directly; this remains distinct from AdapterV2 install-time resolution."
+    evidence: ["internal/lock/lock.go:278-352"]
     symbols:
       - name: ResolveAll
         path: internal/lock/lock.go
     confidence: confirmed
+  - from: cli
+    to: reconciliation
+    action: "When projection coverage can be proven, resolves one exact immutable plan per covered tool through the executor's read-only explanation path and captures source revisions."
+    evidence: ["internal/app/update.go:150-168", "internal/app/universal_lock.go:19-89", "internal/source/manager.go:47-88"]
+    symbols:
+      - name: resolveUniversalLockDocument
+        path: internal/app/universal_lock.go
+        role: "Adapter-neutral v2 projection builder; no installer is invoked."
+    confidence: confirmed
+  - from: cli
+    to: state-and-lock
+    action: "Builds and verifies the universal LockDocument against the exact full install closure, persists it as lock v2 when safe, then writes the lock unless dry-run is active."
+    evidence: ["internal/app/universal_lock.go:82-105", "internal/plan/lock.go:827-878", "internal/plan/lock.go:999-1015", "internal/lock/universal.go:9-40", "internal/app/update.go:156-181"]
+    symbols:
+      - name: VerifyCoverage
+        path: internal/plan/lock.go
+        role: "Exact install-closure coverage gate."
+      - name: SetProjection
+        path: internal/lock/universal.go
+        role: "Persists the validated projection and promotes the lock format to v2."
+    confidence: confirmed
 failure_modes:
-  - "Resolution failure aborts the lock refresh without writing a partially resolved lock."
-  - "An unreadable old lock cannot contribute preserved pins; update warns and rebuilds from fresh resolution."
+  - "Legacy selector resolution failure aborts the lock refresh without writing a partially refreshed lock."
+  - "An unreadable old lock cannot contribute preserved pins; update warns and rebuilds what can be resolved safely."
+  - "A profile update over v1 or a missing lock does not promote to v2 because full install-closure coverage cannot be proven."
+  - "Universal projection resolution, immutability, identity, or coverage failure aborts before a v2 projection is persisted."

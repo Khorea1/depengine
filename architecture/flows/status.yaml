@@ -2,8 +2,8 @@ archmap: 2
 doc: flow
 id: status
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "6bb3223"
+  verified_on: "2026-10-01"
 trigger: "Operator runs depengine status to compare desired, tracked, and observed host state."
 steps:
   - from: operator
@@ -13,22 +13,22 @@ steps:
   - from: cli
     to: state-and-lock
     action: "Loads shared tracked state and determines the schema path to compare."
-    evidence: ["internal/app/status.go:54-71", "internal/app/status.go:111-118"]
+    evidence: ["internal/app/status.go:58-71", "internal/app/status.go:111-124"]
     confidence: confirmed
   - from: cli
     to: configuration
     action: "Loads the schema and lock inputs used to classify desired tools."
-    evidence: ["internal/app/status.go:66-73"]
+    evidence: ["internal/app/status.go:71-73"]
     confidence: confirmed
   - from: cli
     to: reconciliation
     action: "Creates a read-only executor context and reconciles desired tools with observations."
-    evidence: ["internal/app/status.go:73-82"]
+    evidence: ["internal/app/status.go:73-82", "internal/app/status.go:210-250"]
     confidence: confirmed
   - from: reconciliation
     to: adapters
     action: "Observes concrete targets through the same AdapterV2 seam used by install."
-    evidence: ["internal/exec/resolution.go:57-78", "internal/exec/adapter.go:49-54"]
+    evidence: ["internal/exec/resolution.go:105-145", "internal/exec/adapter.go:49-76"]
     confidence: confirmed
 failure_modes:
   - "If host facts cannot be gathered, affected tracked tools are reported as unknown rather than assumed healthy."
