@@ -111,60 +111,17 @@ func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan str
 			Candidate:      candidate,
 			CandidateKnown: candidateKnown,
 		}
-		planIntent, mismatch := candidatePlanIntent(tool, method)
-		planIntent = ex.hostResolvedPlanIntent(method, planIntent, clan)
-		attempt.PlanIntent = planIntent
-
-		// Reject semantic intent this method contract cannot honor before any
-		// availability probe. Parsed schemas normally catch this earlier, but
-		// ExplainTool also supports programmatically constructed candidates.
-		if mismatch != "" {
-			attempt.Status = "skip_capability"
-			attempt.Error = mismatch
+		selection := ex.resolveCandidateForSelection(ctx, tool, method, clan)
+		attempt.PlanIntent = selection.intent
+		if selection.err != nil {
+			attempt.Status = selection.status
+			attempt.Error = selection.err.Error()
 			appendAttempt(attempt, method)
 			continue
 		}
-
-		// Check when condition.
-		if method.When != nil && !method.When.Match(ex.facts) {
-			attempt.Status = "skip_when"
-			attempt.Error = fmt.Sprintf("when condition not met: %+v", method.When)
-			appendAttempt(attempt, method)
-			continue
-		}
-		adapter := ex.LookupAdapter(method.Kind)
-		if adapter == nil {
-			attempt.Status = "skip_unavailable"
-			attempt.Error = fmt.Sprintf("no adapter registered for kind %q", displayKind)
-			appendAttempt(attempt, method)
-			continue
-		}
-
-		// Check if the adapter is available on this system.
-		if !adapter.Available(ctx, ex.rn) {
-			attempt.Status = "skip_unavailable"
-			attempt.Error = fmt.Sprintf("adapter %q not available (binary not on PATH)", displayKind)
-			appendAttempt(attempt, method)
-			continue
-		}
-
-		// Same single read-only resolution point as Execute: dry-run, why,
-		// and real install obtain the concrete identity from this function.
-		resolvedPlan, resolveErr := ex.resolveCandidatePlan(ctx, tool, method, adapter, planIntent, displayKind)
-		if resolveErr != nil {
-			attempt.Status = "failed"
-			attempt.Error = resolveErr.Error()
-			appendAttempt(attempt, method)
-			continue
-		}
+		adapter := selection.adapter
+		resolvedPlan := selection.resolved
 		attempt.PlanIntent = resolvedPlan
-
-		if compatibilityErr := adapter.CheckHostCompatibility(tool, method, resolvedPlan, ex.facts, clan); compatibilityErr != nil {
-			attempt.Status = "skip_unavailable"
-			attempt.Error = compatibilityErr.Error()
-			appendAttempt(attempt, method)
-			continue
-		}
 
 		verification, verifyErr := ex.VerifyResolvedCandidate(ctx, tool, method, resolvedPlan)
 		if verifyErr != nil {

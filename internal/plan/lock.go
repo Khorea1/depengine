@@ -913,6 +913,22 @@ func (d LockDocument) EntryForPlan(intent ResolvedInstallPlan) (LockProjection, 
 	return cloneLockProjection(expected), nil
 }
 
+// EntryForTool returns the immutable lock entry for a uniquely named tool.
+// The document is validated before lookup, and the returned entry is a deep
+// copy so callers cannot mutate persisted lock identity through shared slices.
+func (d LockDocument) EntryForTool(name string) (LockProjection, bool) {
+	if err := d.Validate(); err != nil {
+		return LockProjection{}, false
+	}
+	idx, found := slices.BinarySearchFunc(d.Entries, name, func(entry LockProjection, name string) int {
+		return strings.Compare(entry.Tool.Name, name)
+	})
+	if !found {
+		return LockProjection{}, false
+	}
+	return cloneLockProjection(d.Entries[idx]), true
+}
+
 // knownLockIdentityMismatchField compares only identity dimensions already
 // known in a static plan. Empty concrete values are unresolved, not wildcards
 // for values that the manifest explicitly configured elsewhere.
@@ -964,6 +980,9 @@ func knownLocalArtifactIntegrityMismatchField(intent []Artifact, expected []Lock
 	}
 	return ""
 }
+
+// Clone returns a deep copy of the projection's mutable nested values.
+func (p LockProjection) Clone() LockProjection { return cloneLockProjection(p) }
 
 func cloneLockProjection(in LockProjection) LockProjection {
 	out := in

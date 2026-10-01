@@ -1,0 +1,615 @@
+package exec
+
+import (
+	"context"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/run"
+	"github.com/Khorea1/depengine/internal/state"
+)
+
+type replacementRecoveryAdapter struct {
+	executorAdapterV2Double
+	installed map[string]string
+	order     []string
+	removed   []string
+}
+
+func (*replacementRecoveryAdapter) Kind() string { return "npm" }
+
+func (a *replacementRecoveryAdapter) Observe(_ context.Context, _ run.Runner, tool *config.Tool, method *config.MethodCandidate) (plan.Observation, error) {
+	version, present := a.installed[tool.Name]
+	if !present {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	pkg, _ := method.Config["pkg"].(string)
+	return plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Package: pkg, Version: version},
+		KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion},
+	}, nil
+}
+
+func (a *replacementRecoveryAdapter) InstallResolved(_ context.Context, _ run.Runner, tool *config.Tool, _ *config.MethodCandidate, desired *plan.ResolvedInstallPlan) error {
+	if a.installed == nil {
+		a.installed = make(map[string]string)
+	}
+	a.installed[tool.Name] = desired.Identity.Version
+	a.order = append(a.order, tool.Name)
+	return nil
+}
+
+func (a *replacementRecoveryAdapter) Remove(_ context.Context, _ run.Runner, tool *config.Tool, _ *config.MethodCandidate) error {
+	a.removed = append(a.removed, tool.Name)
+	delete(a.installed, tool.Name)
+	return nil
+}
+func (*replacementRecoveryAdapter) CanRemove() bool { return true }
+
+func TestExactReplacementMethodRequiresPersistedIdentity(t *testing.T) {
+	cases := []struct {
+		name      string
+		methods   []*config.MethodCandidate
+		identity  plan.CandidateIdentity
+		label     string
+		wantLabel string
+		wantError bool
+	}{
+		{name: "unique legacy kind", methods: []*config.MethodCandidate{{Kind: "npm"}}, identity: plan.CandidateIdentity{Method: "npm", Explicit: true}},
+		{name: "ambiguous legacy kind", methods: []*config.MethodCandidate{{Kind: "npm", Label: "one"}, {Kind: "npm", Label: "two"}}, identity: plan.CandidateIdentity{Method: "npm", Explicit: true}, wantError: true},
+		{name: "exact label", methods: []*config.MethodCandidate{{Kind: "npm", Label: "one"}, {Kind: "npm", Label: "two"}}, identity: plan.CandidateIdentity{Method: "npm", Explicit: true}, label: "two", wantLabel: "two"},
+		{name: "missing exact label", methods: []*config.MethodCandidate{{Kind: "npm", Label: "one"}}, identity: plan.CandidateIdentity{Method: "npm", Explicit: true}, label: "missing", wantError: true},
+		{name: "explicitness changed", methods: []*config.MethodCandidate{{Kind: "npm", Inferred: true}}, identity: plan.CandidateIdentity{Method: "npm", Explicit: true}, wantError: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			method, err := exactReplacementMethod(&config.Tool{Name: "demo", Methods: tc.methods}, tc.identity, tc.label)
+			if tc.wantError {
+				if err == nil {
+					t.Fatal("expected identity mismatch or ambiguity")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if method == nil || method.Label != tc.wantLabel {
+				t.Fatalf("method = %#v, want label %q", method, tc.wantLabel)
+			}
+		})
+	}
+}
+
+func TestExecutorRecoversReplacementTransactionsInSortedOrder(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	adapter := &replacementRecoveryAdapter{executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "npm"}}, installed: make(map[string]string)}
+	methods := make(map[string]*config.Tool)
+	for _, name := range []string{"zeta", "alpha"} {
+		method := &config.MethodCandidate{Kind: "npm", Config: map[string]any{"pkg": name, "version": "2.0.0"}}
+		methods[name] = &config.Tool{Name: name, Methods: []*config.MethodCandidate{method}}
+	}
+
+	locked, err := state.LoadLocked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name := range methods {
+		previous := state.ToolState{Method: "npm", MethodKind: "npm", Version: "1.0.0", Config: map[string]any{"pkg": name, "version": "1.0.0"}}
+		locked.State().Tools[name] = previous
+		resolved := plan.New(name, "npm", true)
+		resolved.Identity.Package = name
+		resolved.Identity.Version = "2.0.0"
+		desired, err := plan.ProjectLock(resolved)
+		if err != nil {
+			t.Fatal(err)
+		}
+		candidate := state.ReplacementCandidate{Identity: desired.Candidate}
+		if err := locked.BeginReplacement(name, "npm", candidate, candidate, previous, desired, "", nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := locked.PlanReplacementRemoval(name); err != nil {
+			t.Fatal(err)
+		}
+		if err := locked.RecordReplacementRemoved(name); err != nil {
+			t.Fatal(err)
+		}
+		if err := locked.PlanReplacementInstall(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := locked.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex)
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("schema.yaml", time.Time{})(ex)
+	schema := &config.Schema{Tools: methods}
+	rc := ex.newRunContext(context.Background(), schema, "")
+	if err := ex.recoverAndRecord(context.Background(), rc); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"alpha", "zeta"}; !reflect.DeepEqual(adapter.order, want) {
+		t.Fatalf("recovery install order = %v, want %v", adapter.order, want)
+	}
+	if len(rc.recoveredCommits) != 2 {
+		t.Fatalf("recovered commits = %d, want 2", len(rc.recoveredCommits))
+	}
+	persisted, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"alpha", "zeta"} {
+		if got := persisted.Tools[name].Version; got != "2.0.0" {
+			t.Errorf("persisted %s version = %q, want locked 2.0.0", name, got)
+		}
+		if _, ok := persisted.ReplacementTransactions[name]; ok {
+			t.Errorf("replacement WAL for %s remained", name)
+		}
+	}
+}
+func TestExecuteResolvedCandidateReplacesTrackedVersionAtomically(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	const name = "tool"
+	method := &config.MethodCandidate{Kind: "npm", Config: map[string]any{"pkg": name, "version": "2.0.0"}}
+	tool := &config.Tool{Name: name, Methods: []*config.MethodCandidate{method}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{name: tool}}
+	adapter := &replacementRecoveryAdapter{
+		executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "npm"}},
+		installed:               map[string]string{name: "1.0.0"},
+	}
+	previous := state.ToolState{Method: "npm", MethodKind: "npm", Version: "1.0.0", RootRequested: true, Config: map[string]any{"pkg": name, "version": "1.0.0"}}
+	locked, err := state.LoadLocked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked.State().Tools[name] = previous
+	if err := locked.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if err := locked.Close(); err != nil {
+		t.Fatal(err)
+	}
+	desired := plan.New(name, "npm", true)
+	desired.Identity.Package = name
+	desired.Identity.Version = "2.0.0"
+	ex := New()
+	runner := &replacementBoundaryRunner{t: t}
+	WithRunner(runner)(ex)
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("schema.yaml", time.Time{})(ex)
+	result, err := ex.ExecuteResolvedUpgradeCandidate(context.Background(), schema, "", tool, method, &desired, previous)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusInstalled {
+		t.Fatalf("status = %v, want installed: %+v", result.Status, result)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("runner calls = %v, want no hooks for replacement without configured hooks", runner.calls)
+	}
+	if !reflect.DeepEqual(adapter.removed, []string{name}) || !reflect.DeepEqual(adapter.order, []string{name}) {
+		t.Fatalf("remove/install order = %v/%v, want tool/tool", adapter.removed, adapter.order)
+	}
+	persisted, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := persisted.Tools[name]; got.Version != "2.0.0" || !got.RootRequested {
+		t.Fatalf("persisted state = %+v, want version 2.0.0 with root intent", got)
+	}
+	if len(persisted.ReplacementTransactions) != 0 || len(persisted.PreparationJournals) != 0 {
+		t.Fatalf("replacement/preparation WALs remain: %d/%d", len(persisted.ReplacementTransactions), len(persisted.PreparationJournals))
+	}
+}
+
+func TestReplacementFindsPersistedLabelEqualToKind(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	const name = "tool"
+	oldMethod := &config.MethodCandidate{Kind: "npm", Label: "npm", Config: map[string]any{"pkg": name, "version": "1.0.0"}}
+	newMethod := &config.MethodCandidate{Kind: "npm", Label: "next", Config: map[string]any{"pkg": name, "version": "2.0.0"}}
+	tool := &config.Tool{Name: name, Methods: []*config.MethodCandidate{oldMethod, newMethod}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{name: tool}}
+	adapter := &replacementRecoveryAdapter{executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "npm"}}, installed: map[string]string{name: "1.0.0"}}
+	previous := state.ToolState{Method: "npm", MethodKind: "npm", Version: "1.0.0", RootRequested: true, Config: map[string]any{"pkg": name, "version": "1.0.0"}}
+	locked, err := state.LoadLocked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked.State().Tools[name] = previous
+	if err := locked.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if err := locked.Close(); err != nil {
+		t.Fatal(err)
+	}
+	desired := plan.New(name, "npm", true)
+	desired.Identity.Package = name
+	desired.Identity.Version = "2.0.0"
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex)
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("schema.yaml", time.Time{})(ex)
+	result, err := ex.ExecuteResolvedUpgradeCandidate(context.Background(), schema, "", tool, newMethod, &desired, previous)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusInstalled {
+		t.Fatalf("status = %v, want installed: %+v", result.Status, result)
+	}
+	if !reflect.DeepEqual(adapter.removed, []string{name}) || !reflect.DeepEqual(adapter.order, []string{name}) {
+		t.Fatalf("remove/install order = %v/%v, want tool/tool", adapter.removed, adapter.order)
+	}
+}
+
+func TestReplacementRecoveryUsesPersistedLabelForDuplicateKindCandidates(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	const name = "demo"
+	methods := []*config.MethodCandidate{
+		{Kind: "npm", Label: "mirror-a", Config: map[string]any{"pkg": "package-a"}},
+		{Kind: "npm", Label: "mirror-b", Config: map[string]any{"pkg": "package-b"}},
+	}
+	tool := &config.Tool{Name: name, Methods: methods}
+	desired := plan.New(name, "npm", true)
+	desired.Identity.Package = "package-b"
+	desired.Identity.Version = "2.0.0"
+	projection, err := plan.ProjectLock(desired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := state.ToolState{Method: "mirror-b", MethodKind: "npm", Version: "1.0.0", Config: map[string]any{"pkg": "package-b"}}
+	persistReplacementAtInstalling(t, name, previous, projection, "mirror-b", "mirror-b", nil, nil)
+
+	adapter := &replacementRecoveryAdapter{
+		executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "npm"}},
+		installed:               map[string]string{name: "2.0.0"},
+	}
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex)
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("schema.yaml", time.Time{})(ex)
+	rc := ex.newRunContext(context.Background(), &config.Schema{Tools: map[string]*config.Tool{name: tool}}, "")
+	if err := ex.recoverAndRecord(context.Background(), rc); err != nil {
+		t.Fatal(err)
+	}
+	if len(adapter.order) != 0 || len(adapter.removed) != 0 {
+		t.Fatalf("already-satisfied labeled replacement mutated adapter: install=%v remove=%v", adapter.order, adapter.removed)
+	}
+	if _, ok := rc.recoveredCommits[name]; !ok {
+		t.Fatal("recovery did not commit the exact labeled candidate")
+	}
+}
+
+func TestReplacementRecoveryRejectsLegacyWALWithoutResourceIdentity(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	const name = "demo"
+	method := &config.MethodCandidate{Kind: "npm", Sources: []config.Source{{Kind: "brew-tap", Name: "vendor/tools"}}, Config: map[string]any{"pkg": "package-demo"}}
+	tool := &config.Tool{Name: name, Methods: []*config.MethodCandidate{method}}
+	desired := plan.New(name, "npm", true)
+	desired.Identity.Package = "package-demo"
+	desired.Identity.Version = "2.0.0"
+	projection, err := plan.ProjectLock(desired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := state.ToolState{Method: "npm", MethodKind: "npm", Version: "1.0.0", Config: map[string]any{"pkg": "package-demo"}}
+	persistReplacementAtInstalling(t, name, previous, projection, "", "", nil, nil)
+	adapter := &replacementRecoveryAdapter{executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "npm"}}, installed: map[string]string{name: "2.0.0"}}
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex)
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("schema.yaml", time.Time{})(ex)
+	rc := ex.newRunContext(context.Background(), &config.Schema{Tools: map[string]*config.Tool{name: tool}}, "")
+	if err := ex.recoverAndRecord(context.Background(), rc); err == nil || !strings.Contains(err.Error(), "lacks resource ownership identity") {
+		t.Fatalf("recovery error = %v, want missing legacy resource identity", err)
+	}
+	if len(adapter.order) != 0 || len(adapter.removed) != 0 {
+		t.Fatalf("legacy resource failure mutated adapter: install=%v remove=%v", adapter.order, adapter.removed)
+	}
+	persisted, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tx, ok := persisted.ReplacementTransactions[name]; !ok || tx.Journal.Phase != plan.ReplacementInstalling {
+		t.Fatalf("replacement evidence = %+v, want installing WAL retained", tx)
+	}
+}
+
+func TestReplacementRecoveryClaimsPersistedResourcesWithoutPreparationWAL(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	const name = "demo"
+	method := &config.MethodCandidate{Kind: "npm", Config: map[string]any{"pkg": "package-demo"}}
+	tool := &config.Tool{Name: name, Methods: []*config.MethodCandidate{method}}
+	desired := plan.New(name, "npm", true)
+	desired.Identity.Package = "package-demo"
+	desired.Identity.Version = "2.0.0"
+	projection, err := plan.ProjectLock(desired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uses := []plan.ResourceUse{
+		{Resource: plan.ResourceIdentity{Kind: plan.ResourceSource, Key: "repo:stable"}},
+		{Resource: plan.ResourceIdentity{Kind: plan.ResourcePrerequisite, Key: "compiler:go"}},
+	}
+	wantOwned, err := plan.ClaimResourceUses(nil, name, uses)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantOwned, err = plan.ClaimResourceUses(wantOwned, "other-tool", uses)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := state.ToolState{Method: "npm", MethodKind: "npm", Version: "1.0.0", Config: map[string]any{"pkg": "package-demo"}}
+	persistReplacementAtInstalling(t, name, previous, projection, "", "", uses, wantOwned)
+
+	adapter := &replacementRecoveryAdapter{
+		executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "npm"}},
+		installed:               map[string]string{name: "2.0.0"},
+	}
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex)
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("schema.yaml", time.Time{})(ex)
+	rc := ex.newRunContext(context.Background(), &config.Schema{Tools: map[string]*config.Tool{name: tool}}, "")
+	if err := ex.recoverAndRecord(context.Background(), rc); err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(persisted.OwnedResources, wantOwned) {
+		t.Fatalf("recovered resource ownership = %+v, want %+v", persisted.OwnedResources, wantOwned)
+	}
+	if len(adapter.order) != 0 {
+		t.Fatalf("already-satisfied replacement reinstalled target: %v", adapter.order)
+	}
+}
+
+func persistReplacementAtInstalling(
+	t *testing.T,
+	name string,
+	previous state.ToolState,
+	desired plan.LockProjection,
+	previousLabel, candidateLabel string,
+	uses []plan.ResourceUse,
+	owned []plan.OwnedResourceState,
+) {
+	t.Helper()
+	locked, err := state.LoadLocked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked.State().Tools[name] = previous
+	locked.State().OwnedResources = append([]plan.OwnedResourceState(nil), owned...)
+	candidate := state.ReplacementCandidate{Identity: desired.Candidate, Label: candidateLabel}
+	prior := state.ReplacementCandidate{Identity: desired.Candidate, Label: previousLabel}
+	if err := locked.BeginReplacement(name, desired.Candidate.Method, prior, candidate, previous, desired, "", uses); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if err := locked.PlanReplacementRemoval(name); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if err := locked.RecordReplacementRemoved(name); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if err := locked.PlanReplacementInstall(name); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if err := locked.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type replacementBoundaryRunner struct {
+	t        *testing.T
+	exitCode int
+	calls    []string
+	phases   []plan.ReplacementPhase
+}
+
+func (r *replacementBoundaryRunner) Run(_ context.Context, name string, args ...string) run.Result {
+	r.calls = append(r.calls, name+" "+strings.Join(args, " "))
+	persisted, err := state.Load()
+	if err != nil {
+		r.t.Errorf("load state at hook boundary: %v", err)
+		return run.Result{ExitCode: r.exitCode}
+	}
+	if tx, ok := persisted.ReplacementTransactions["demo"]; ok {
+		r.phases = append(r.phases, tx.Journal.Phase)
+	} else {
+		r.phases = append(r.phases, "")
+	}
+	return run.Result{ExitCode: r.exitCode}
+}
+
+func TestResolvedReplacementHookLifecycleAndFailureState(t *testing.T) {
+	cases := []struct {
+		name         string
+		timing       string
+		exitCode     int
+		wantStatus   StatusEnum
+		wantRemove   int
+		wantInstall  int
+		wantPhase    plan.ReplacementPhase
+		wantVersion  string
+		wantPostDone bool
+	}{
+		{"before-success", "before", 0, StatusInstalled, 1, 1, "", "2.0.0", false},
+		{"before-failure", "before", 1, StatusFailed, 0, 0, "", "1.0.0", true},
+		{"after-success", "after", 0, StatusInstalled, 1, 1, plan.ReplacementPostHookRunning, "2.0.0", true},
+		{"after-failure", "after", 1, StatusFailed, 1, 1, plan.ReplacementPostHookRunning, "2.0.0", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("XDG_STATE_HOME", t.TempDir())
+			method := &config.MethodCandidate{Kind: "npm", Config: map[string]any{"pkg": "package-demo", "version": "2.0.0"}}
+			hook := config.Hook{Run: []string{"lifecycle-hook", tc.name}}
+			tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
+			if tc.timing == "before" {
+				tool.PreInstall = []config.Hook{hook}
+			} else {
+				tool.PostInstall = []config.Hook{hook}
+			}
+			schema := &config.Schema{Tools: map[string]*config.Tool{"demo": tool}}
+			previous := state.ToolState{Method: "npm", MethodKind: "npm", Version: "1.0.0", PostinstallDone: true, RootRequested: true, Config: map[string]any{"pkg": "package-demo", "version": "1.0.0"}}
+			locked, err := state.LoadLocked()
+			if err != nil {
+				t.Fatal(err)
+			}
+			locked.State().Tools["demo"] = previous
+			if err := locked.Save(); err != nil {
+				_ = locked.Close()
+				t.Fatal(err)
+			}
+			if err := locked.Close(); err != nil {
+				t.Fatal(err)
+			}
+			resolved := plan.New("demo", "npm", true)
+			resolved.Identity.Package = "package-demo"
+			resolved.Identity.Version = "2.0.0"
+			timing := plan.HookBefore
+			if tc.timing == "after" {
+				timing = plan.HookAfter
+			}
+			resolved.Hooks = []plan.LifecycleHook{{ID: "lifecycle", Transition: plan.TransitionUpgrade, Timing: timing, Operation: plan.Operation{Kind: "hook", Effect: plan.EffectMutation, Command: []string{"lifecycle-hook", tc.name}, ArbitraryCode: true}, FailurePolicy: plan.HookFailAbort}}
+			adapter := &replacementRecoveryAdapter{executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "npm"}}, installed: map[string]string{"demo": "1.0.0"}}
+			runner := &replacementBoundaryRunner{t: t, exitCode: tc.exitCode}
+			ex := New()
+			WithRunner(runner)(ex)
+			WithAdapters(adapter)(ex)
+			WithSchemaInfo("schema.yaml", time.Time{})(ex)
+			WithAllowArbitraryCode()(ex)
+			result, err := ex.ExecuteResolvedUpgradeCandidate(context.Background(), schema, "", tool, method, &resolved, previous)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Status != tc.wantStatus {
+				t.Fatalf("status = %v, want %v: %+v", result.Status, tc.wantStatus, result)
+			}
+			if len(adapter.removed) != tc.wantRemove || len(adapter.order) != tc.wantInstall {
+				t.Fatalf("adapter calls remove/install = %d/%d, want %d/%d", len(adapter.removed), len(adapter.order), tc.wantRemove, tc.wantInstall)
+			}
+			if len(runner.calls) != 1 || runner.phases[0] != tc.wantPhase {
+				t.Fatalf("hook calls/phases = %v/%v, want one call at phase %q", runner.calls, runner.phases, tc.wantPhase)
+			}
+			persisted, err := state.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			tracked := persisted.Tools["demo"]
+			if tracked.Version != tc.wantVersion || tracked.PostinstallDone != tc.wantPostDone {
+				t.Fatalf("tracked state = %+v, want version=%s postinstall_done=%t", tracked, tc.wantVersion, tc.wantPostDone)
+			}
+			if _, ok := persisted.ReplacementTransactions["demo"]; ok {
+				t.Fatal("completed or returned-failure replacement retained its WAL")
+			}
+		})
+	}
+}
+
+func TestReplacementRecoveryRunsHookWithoutReinstallAfterVerifiedInstall(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	const name = "demo"
+	method := &config.MethodCandidate{Kind: "npm", PostInstall: []config.Hook{{Run: []string{"recovered-hook"}}}, Config: map[string]any{"pkg": "package-demo"}}
+	tool := &config.Tool{Name: name, Methods: []*config.MethodCandidate{method}}
+	desired := plan.New(name, "npm", true)
+	desired.Identity.Package = "package-demo"
+	desired.Identity.Version = "2.0.0"
+	projection, err := plan.ProjectLock(desired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := state.ToolState{Method: "npm", MethodKind: "npm", Version: "1.0.0", Config: map[string]any{"pkg": "package-demo"}}
+	persistReplacementAtInstalling(t, name, previous, projection, "", "", nil, nil)
+	adapter := &replacementRecoveryAdapter{executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "npm"}}, installed: map[string]string{name: "2.0.0"}}
+	runner := &replacementBoundaryRunner{t: t}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("schema.yaml", time.Time{})(ex)
+	WithAllowArbitraryCode()(ex)
+	rc := ex.newRunContext(context.Background(), &config.Schema{Tools: map[string]*config.Tool{name: tool}}, "")
+	if err := ex.recoverAndRecord(context.Background(), rc); err != nil {
+		t.Fatal(err)
+	}
+	if len(adapter.order) != 0 || len(adapter.removed) != 0 {
+		t.Fatalf("recovery duplicated adapter mutation: install=%v remove=%v", adapter.order, adapter.removed)
+	}
+	if len(runner.calls) != 1 || runner.phases[0] != plan.ReplacementPostHookRunning {
+		t.Fatalf("recovered hook calls/phases = %v/%v", runner.calls, runner.phases)
+	}
+	persisted, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Tools[name].Version != "2.0.0" || !persisted.Tools[name].PostinstallDone {
+		t.Fatalf("recovered tool state = %+v", persisted.Tools[name])
+	}
+	if _, ok := persisted.ReplacementTransactions[name]; ok {
+		t.Fatal("successful recovered hook retained replacement WAL")
+	}
+}
+
+func TestReplacementRecoveryBlocksRunningHookWithoutReplay(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	const name = "demo"
+	method := &config.MethodCandidate{Kind: "npm", PostInstall: []config.Hook{{Run: []string{"recovered-hook"}}}, Config: map[string]any{"pkg": "package-demo"}}
+	tool := &config.Tool{Name: name, Methods: []*config.MethodCandidate{method}}
+	desired := plan.New(name, "npm", true)
+	desired.Identity.Package = "package-demo"
+	desired.Identity.Version = "2.0.0"
+	projection, err := plan.ProjectLock(desired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := state.ToolState{Method: "npm", MethodKind: "npm", Version: "1.0.0", Config: map[string]any{"pkg": "package-demo"}}
+	persistReplacementAtInstalling(t, name, previous, projection, "", "", nil, nil)
+	locked, err := state.LoadLocked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed := state.ToolState{Method: "npm", MethodKind: "npm", Version: "2.0.0", Config: map[string]any{"pkg": "package-demo"}}
+	if err := locked.CommitReplacementInstallWithPreparation(name, installed, nil, "", plan.PreparationPlan{}, name); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if err := locked.PlanReplacementPostHook(name); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if err := locked.Close(); err != nil {
+		t.Fatal(err)
+	}
+	adapter := &replacementRecoveryAdapter{executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "npm"}}, installed: map[string]string{name: "2.0.0"}}
+	runner := &replacementBoundaryRunner{t: t}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("schema.yaml", time.Time{})(ex)
+	WithAllowArbitraryCode()(ex)
+	rc := ex.newRunContext(context.Background(), &config.Schema{Tools: map[string]*config.Tool{name: tool}}, "")
+	if err := ex.recoverAndRecord(context.Background(), rc); err == nil {
+		t.Fatal("recovery accepted an ambiguous running hook")
+	}
+	if len(runner.calls) != 0 || len(adapter.order) != 0 || len(adapter.removed) != 0 {
+		t.Fatalf("ambiguous hook recovery replayed work: hooks=%v install=%v remove=%v", runner.calls, adapter.order, adapter.removed)
+	}
+	persisted, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tx := persisted.ReplacementTransactions[name]; tx.Journal.Phase != plan.ReplacementPostHookRunning {
+		t.Fatalf("running hook WAL = %+v", tx)
+	}
+}

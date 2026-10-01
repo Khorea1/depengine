@@ -16,26 +16,11 @@ import (
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
-	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
 
 	"github.com/pelletier/go-toml/v2"
 )
-
-func TestFindMethodCandidateRespectsLabelSelection(t *testing.T) {
-	tool := &config.Tool{
-		MethodOnly: []string{"gh_linux"},
-		Methods: []*config.MethodCandidate{
-			{Kind: "github", Label: "gh_apk"},
-			{Kind: "github", Label: "gh_linux"},
-		},
-	}
-	got := findMethodCandidate(tool, "github", []string{"github"}, "")
-	if got == nil || got.Label != "gh_linux" {
-		t.Fatalf("findMethodCandidate() = %+v, want gh_linux", got)
-	}
-}
 
 // writeTestLock writes a depengine.lock file in the schema directory.
 func writeTestLock(t *testing.T, schemaDir string, tools map[string]lock.ToolPin) {
@@ -504,121 +489,18 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 	}
 }
 
-type upgradePreflightAdapter struct {
-	kind            string
-	available       bool
-	presence        plan.PresenceState
-	observedPackage string
-	targetAvailable bool
-	canRemove       bool
-	calls           []string
-}
-
-func (a *upgradePreflightAdapter) Kind() string {
-	if a.kind != "" {
-		return a.kind
-	}
-	return "native"
-}
-func (a *upgradePreflightAdapter) Available(context.Context, run.Runner) bool {
-	a.calls = append(a.calls, "available")
-	return a.available
-}
-func (a *upgradePreflightAdapter) Check(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
-	a.calls = append(a.calls, "check")
-	return a.presence == plan.PresencePresent
-}
-func (a *upgradePreflightAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
-	a.calls = append(a.calls, "check-available")
-	return a.targetAvailable
-}
-func (a *upgradePreflightAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
-	return nil
-}
-func (a *upgradePreflightAdapter) Install(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
-	a.calls = append(a.calls, "install")
-	return nil
-}
-func (a *upgradePreflightAdapter) Remove(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
-	a.calls = append(a.calls, "remove")
-	return nil
-}
-func (a *upgradePreflightAdapter) CanRemove() bool { return a.canRemove }
-
-func (a *upgradePreflightAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
-	a.calls = append(a.calls, "resolve-plan")
-	resolved := intent.Clone()
-	return &resolved, nil
-}
-
-func (a *upgradePreflightAdapter) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
-	a.calls = append(a.calls, "observe")
-	pkg := a.observedPackage
-	if pkg == "" {
-		pkg = "demo"
-	}
-	return plan.Observation{Presence: a.presence, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
-}
-
-func (a *upgradePreflightAdapter) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
-	a.calls = append(a.calls, "install-resolved")
-	return nil
-}
-
-var _ exec.AdapterV2 = (*upgradePreflightAdapter)(nil)
-
-func testUpgradeExecutor(adapter exec.AdapterV2) *exec.Executor {
-	ex := exec.New()
-	exec.WithRunner(&run.FakeRunner{})(ex)
-	exec.WithAdapters(adapter)(ex)
-	return ex
-}
 func upgradeExecutorForMethodOrder(order []string) *exec.Executor {
 	ex := exec.New()
 	exec.WithDefaultMethodOrder(order)(ex)
 	return ex
 }
 
-func TestPreflightDirectUpgradeUsesV2ResolveAndObserveWithoutCheck(t *testing.T) {
-	adapter := &upgradePreflightAdapter{
-		available: true, targetAvailable: true, canRemove: true,
-		presence: plan.PresencePresent,
-	}
-	method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
-	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, "", &config.Tool{Name: "demo"}, method, adapter, "", false)
-	if err != nil {
-		t.Fatalf("preflightDirectUpgrade: %v", err)
-	}
-	if got, want := strings.Join(adapter.calls, ","), "available,resolve-plan,observe"; got != want {
-		t.Fatalf("adapter calls = %s, want %s", got, want)
-	}
-}
-
-func TestPreflightDirectUpgradeV2FailsClosedForNonPresent(t *testing.T) {
-	for _, presence := range []plan.PresenceState{plan.PresenceAbsent, plan.PresenceUnknown, plan.PresenceBroken} {
-		t.Run(string(presence), func(t *testing.T) {
-			adapter := &upgradePreflightAdapter{
-				available: true, targetAvailable: true, canRemove: true,
-				presence: presence,
-			}
-			method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
-			_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, "", &config.Tool{Name: "demo"}, method, adapter, "", false)
-			if err == nil || !strings.Contains(err.Error(), string(presence)) {
-				t.Fatalf("preflightDirectUpgrade error = %v, want not-present rejection", err)
-			}
-			if strings.Contains(strings.Join(adapter.calls, ","), "check") {
-				t.Fatalf("V2 path called legacy Check: %v", adapter.calls)
-			}
-		})
-	}
-}
-
 func TestLockPinForRejectsAmbiguousKind(t *testing.T) {
-	lk := &lock.Lock{Tools: map[string]lock.ToolPin{
+	lk := &lock.Lock{Version: 1, Tools: map[string]lock.ToolPin{
 		"demo/http/0": {Latest: "v1"},
 		"demo/http/1": {Latest: "v2"},
 	}}
-	if _, ok := lockPinFor(lk, "demo", "http"); ok {
+	if _, ok := legacyV1PinFor(lk, "demo", "http"); ok {
 		t.Fatal("lockPinFor accepted ambiguous same-kind pins")
 	}
 }
@@ -628,14 +510,14 @@ func TestLockPinForCandidateUsesKindOrdinal(t *testing.T) {
 	other := &config.MethodCandidate{Kind: "git", Label: "source"}
 	second := &config.MethodCandidate{Kind: "http", Label: "mirror"}
 	tool := &config.Tool{Methods: []*config.MethodCandidate{first, other, second}}
-	lk := &lock.Lock{Tools: map[string]lock.ToolPin{
+	lk := &lock.Lock{Version: 1, Tools: map[string]lock.ToolPin{
 		"demo/http/0": {Latest: "v1"},
 		"demo/http/1": {Latest: "v2"},
 	}}
 
-	pin, ok := lockPinForCandidate(lk, "demo", tool, second)
+	pin, ok := legacyV1PinForCandidate(lk, "demo", tool, second)
 	if !ok || pin.Latest != "v2" {
-		t.Fatalf("lockPinForCandidate(second) = %+v, %v; want v2, true", pin, ok)
+		t.Fatalf("legacyV1PinForCandidate(second) = %+v, %v; want v2, true", pin, ok)
 	}
 }
 
@@ -678,96 +560,6 @@ func TestFindTrackedMethodCandidateLegacyKindResolvesSingleLabeledCandidate(t *t
 	}
 }
 
-func TestPreflightDirectUpgradeRejectsPreparationBeforeProbes(t *testing.T) {
-	adapter := &upgradePreflightAdapter{available: true, presence: plan.PresencePresent, targetAvailable: true, canRemove: true}
-	method := &config.MethodCandidate{
-		Kind:    "native",
-		Config:  map[string]any{"pkg": "demo"},
-		Sources: []config.Source{{Kind: "apt", Name: "demo"}},
-	}
-	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
-
-	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, "", tool, method, adapter, "", false)
-	if err == nil || !strings.Contains(err.Error(), "transactional upgrade preparation") {
-		t.Fatalf("preflightDirectUpgrade error = %v, want preparation rejection", err)
-	}
-	if len(adapter.calls) != 0 {
-		t.Fatalf("adapter calls = %v, want no host probes after static rejection", adapter.calls)
-	}
-}
-func TestPreflightDirectUpgradeRejectsCandidateLifecycleHooksBeforeProbes(t *testing.T) {
-	adapter := &upgradePreflightAdapter{available: true, presence: plan.PresencePresent, targetAvailable: true, canRemove: true}
-	method := &config.MethodCandidate{
-		Kind:       "native",
-		Config:     map[string]any{"pkg": "demo"},
-		PreInstall: []config.Hook{{Run: []string{"prepare-demo"}}},
-	}
-	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
-
-	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, "", tool, method, adapter, "", true)
-	if err == nil || !strings.Contains(err.Error(), "lifecycle hooks") {
-		t.Fatalf("preflightDirectUpgrade error = %v, want lifecycle-hook rejection", err)
-	}
-	if len(adapter.calls) != 0 {
-		t.Fatalf("adapter calls = %v, want no host probes after lifecycle rejection", adapter.calls)
-	}
-}
-
-func TestPreflightDirectUpgradeRequiresInstalledRemovableAvailableTarget(t *testing.T) {
-	method := &config.MethodCandidate{Kind: "asdf", Config: map[string]any{"pkg": "demo", "version": "1.0.0"}}
-	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
-
-	tests := []struct {
-		name      string
-		adapter   upgradePreflightAdapter
-		wantErr   string
-		wantCalls []string
-	}{
-		{name: "adapter unavailable", adapter: upgradePreflightAdapter{}, wantErr: "unavailable", wantCalls: []string{"available"}},
-		{name: "installation missing", adapter: upgradePreflightAdapter{available: true, presence: plan.PresenceAbsent}, wantErr: "absent", wantCalls: []string{"available", "resolve-plan", "observe"}},
-		{name: "target unavailable", adapter: upgradePreflightAdapter{available: true, presence: plan.PresencePresent, observedPackage: "other"}, wantErr: "not available", wantCalls: []string{"available", "resolve-plan", "observe", "check-available"}},
-		{name: "removal unsupported", adapter: upgradePreflightAdapter{available: true, presence: plan.PresencePresent, observedPackage: "other", targetAvailable: true}, wantErr: "does not support removal", wantCalls: []string{"available", "resolve-plan", "observe", "check-available"}},
-		{name: "valid", adapter: upgradePreflightAdapter{available: true, presence: plan.PresencePresent, observedPackage: "other", targetAvailable: true, canRemove: true}, wantCalls: []string{"available", "resolve-plan", "observe", "check-available"}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.adapter.kind = "asdf"
-			_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(&tt.adapter), &run.FakeRunner{}, &engine.Facts{}, "", tool, method, &tt.adapter, "", false)
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("preflightDirectUpgrade: %v", err)
-				}
-			} else if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("preflightDirectUpgrade error = %v, want substring %q", err, tt.wantErr)
-			}
-			if strings.Join(tt.adapter.calls, ",") != strings.Join(tt.wantCalls, ",") {
-				t.Fatalf("adapter calls = %v, want %v", tt.adapter.calls, tt.wantCalls)
-			}
-		})
-	}
-}
-
-func TestPreflightDirectUpgradeRejectsContractWithoutUpgradeCapability(t *testing.T) {
-	adapter := &upgradePreflightAdapter{
-		available:       true,
-		presence:        plan.PresencePresent,
-		observedPackage: "other",
-		targetAvailable: true,
-		canRemove:       true,
-	}
-	method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
-	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
-
-	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, "", tool, method, adapter, "", false)
-	if err == nil || !strings.Contains(err.Error(), "missing required capabilities: upgrade") {
-		t.Fatalf("preflightDirectUpgrade error = %v, want upgrade capability rejection", err)
-	}
-	if strings.Join(adapter.calls, ",") != "available,resolve-plan,observe" {
-		t.Fatalf("adapter calls = %v, want no availability probe after capability rejection", adapter.calls)
-	}
-}
-
 func TestFindTrackedMethodCandidateRejectsCandidateExcludedByCurrentPolicy(t *testing.T) {
 	primary := &config.MethodCandidate{Kind: "http", Label: "primary"}
 	mirror := &config.MethodCandidate{Kind: "http", Label: "mirror"}
@@ -782,73 +574,6 @@ func TestFindTrackedMethodCandidateRejectsCandidateExcludedByCurrentPolicy(t *te
 	}
 }
 
-func TestUpgradedToolStatePreservesRootIntent(t *testing.T) {
-	previous := state.ToolState{
-		Method: "primary", MethodKind: "go", PostinstallDone: true,
-		Version: "v1", RootRequested: true, Config: map[string]any{"pkg": "old"},
-	}
-	tool := &config.Tool{Name: "demo"}
-	method := &config.MethodCandidate{Kind: "go", Config: map[string]any{"pkg": "example.test/cmd/demo"}}
-	at := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
-
-	got := upgradedToolState(previous, "go", tool, method, "", "v2", at)
-	if !got.RootRequested {
-		t.Fatal("upgraded state cleared root_requested")
-	}
-	if got.Version != "v2" || got.Method != "primary" || got.MethodKind != "go" || !got.PostinstallDone {
-		t.Fatalf("upgraded state = %#v, want preserved metadata and pinned fallback version", got)
-		if got.DesiredStateHash != state.DesiredStateHash(tool) {
-			t.Fatalf("DesiredStateHash = %q, want current desired-state hash", got.DesiredStateHash)
-		}
-	}
-	if !reflect.DeepEqual(got.Config, method.Config) {
-		t.Fatalf("upgraded config = %#v, want %#v", got.Config, method.Config)
-	}
-}
-
-func TestRecordFailedUpgradeRemovalReleasesClaimsWithoutCleaningResources(t *testing.T) {
-	resource, err := plan.PrerequisiteResource("helper")
-	if err != nil {
-		t.Fatal(err)
-	}
-	st := &state.State{
-		Version: state.CurrentVersion,
-		Tools: map[string]state.ToolState{
-			"owner":  {Method: "go", RootRequested: true},
-			"helper": {Method: "go"},
-		},
-		OwnedResources: []plan.OwnedResourceState{{
-			Resource: resource, Ownership: plan.OwnershipDepengine, Dependents: []string{"owner"},
-		}},
-	}
-	if err := recordFailedUpgradeRemoval(st, "owner"); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := st.Tools["owner"]; ok {
-		t.Fatalf("failed-upgrade owner still tracked: %#v", st.Tools)
-	}
-	if _, ok := st.Tools["helper"]; !ok {
-		t.Fatalf("helper unexpectedly removed: %#v", st.Tools)
-	}
-	if len(st.OwnedResources) != 1 || st.OwnedResources[0].RefCount() != 0 || st.OwnedResources[0].Resource != resource {
-		t.Fatalf("owned resources = %#v, want retained zero-ref helper", st.OwnedResources)
-	}
-}
-
-func TestPreflightDirectUpgradeRejectsStaticRequiresBeforeProbes(t *testing.T) {
-	adapter := &upgradePreflightAdapter{available: true, presence: plan.PresencePresent, targetAvailable: true, canRemove: true}
-	method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
-	tool := &config.Tool{Name: "demo", Requires: []string{"helper"}, Methods: []*config.MethodCandidate{method}}
-
-	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, "", tool, method, adapter, "", false)
-	if err == nil || !strings.Contains(err.Error(), "transactional upgrade dependency handling") {
-		t.Fatalf("preflightDirectUpgrade error = %v, want static requires rejection", err)
-	}
-	if len(adapter.calls) != 0 {
-		t.Fatalf("adapter calls = %v, want no host probes after static rejection", adapter.calls)
-	}
-}
-
 // TestBuildUpgradeExecutorUsesSchemaAURHelper verifies configured helper
 // selection is executor-local for install and upgrade paths.
 func TestBuildUpgradeExecutorUsesSchemaAURHelper(t *testing.T) {
@@ -859,7 +584,7 @@ func TestBuildUpgradeExecutorUsesSchemaAURHelper(t *testing.T) {
 			t.Fatal(err)
 		}
 		schema := &config.Schema{Defaults: config.Defaults{AurHelper: helper}}
-		ex, _, err := buildUpgradeExecutor(schema, "arch", &engine.Facts{}, schemaPath, upgradeOptions{}, slog.New(slog.DiscardHandler))
+		ex, err := buildUpgradeExecutor(schema, "arch", &engine.Facts{}, schemaPath, upgradeOptions{}, slog.New(slog.DiscardHandler))
 		if err != nil {
 			t.Fatalf("buildUpgradeExecutor() error = %v", err)
 		}
@@ -911,5 +636,15 @@ func TestBuildUpgradeExecutorUsesSchemaAURHelper(t *testing.T) {
 	}
 	if got := installWithFake(paruExecutor); got.Name != "paru" || !reflect.DeepEqual(got.Args, []string{"-S", "--noconfirm", "demo"}) {
 		t.Errorf("paru runner call = %#v", got)
+	}
+}
+func TestFindTrackedMethodCandidateRejectsDuplicatePersistedLabel(t *testing.T) {
+	tool := &config.Tool{Methods: []*config.MethodCandidate{
+		{Kind: "http", Label: "mirror"},
+		{Kind: "http", Label: "mirror"},
+	}}
+	_, err := findTrackedMethodCandidate(tool, state.ToolState{Method: "mirror", MethodKind: "http"}, config.SelectMethods(tool, []string{"http"}, ""))
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("findTrackedMethodCandidate error = %v, want duplicate-label ambiguity", err)
 	}
 }

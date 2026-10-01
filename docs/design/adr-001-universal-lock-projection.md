@@ -31,17 +31,35 @@ The lockfile is the immutable-resolution projection of `ResolvedInstallPlan`:
 - The projection/document is versioned and rejects unknown versions.
   `VerifyResolvedPlanAgainstLock` rejects identity, requested-intent, and
   tool-set drift against an immutable `LockDocument`.
-- Persisted lock v2 embeds the validated projection. `update` writes it only
-  when every selected plan is immutable and the document exactly covers every
-  non-virtual tool in the current whole-schema install closure. Coverage is
-  checked explicitly against
-  that closure rather than inferred from the previous lock version. A
-  `--profile` run over a v1 lock refreshes that profile's v1 pins instead of
-  persisting a partial projection. A profiled run over v2 may retain immutable
-  entries for omitted tools that are still in the current closure, drops entries
-  for removed tools, and fails without rewriting the lock if a newly added
-  out-of-profile tool has no retained entry. `install` and `upgrade` materialize
-  and verify the pinned plan before observation or mutation.
+- Persisted lock v2 embeds the validated projection. When generating a v2
+  document, `update` resolves selected candidates through the executor's
+  read-only `AdapterV2` plan-resolution path, then writes only when every
+  selected plan is immutable and the
+  document exactly covers every non-virtual tool in the current whole-schema
+  install closure. Coverage is checked explicitly against that closure rather
+  than inferred from the previous lock version. A `--profile` run over a v1 lock
+  refreshes that profile's v1 pins instead of persisting a partial projection.
+  A profiled run over v2 may retain immutable entries for omitted tools that are
+  still in the current closure, drops entries for removed tools, and fails
+  without rewriting the lock if a newly added out-of-profile tool has no
+  retained entry. `install`, `status`, and `upgrade` use the v2
+  `LockDocument` as resolved-identity authority; compatibility pins do not
+  override it.
+- `MethodsHash` and `SourceHash` retain requested method/source identity for
+  frozen-intent validation and update drift detection. They do not resolve or
+  supply the v2 concrete target; that identity comes from `LockDocument`.
+  `MethodsHash` identifies candidate kind/label intent, not a source URL or
+  artifact. In particular, equal v1 `MethodsHash` values do not prove that a
+  historical HTTP checksum belongs to the newly resolved artifact. Migration
+  therefore never carries an unverifiable v1 checksum into the v2 projection;
+  checksum carry-forward is limited to an exact artifact-configuration match
+  in an existing v2 projection.
+- A retained v2 entry is refreshed when method metadata is absent or differs,
+  or when its source metadata is absent, changed, or removed. Source keys are
+  split from the right so slash-containing tool names remain unambiguous.
+  `update` constructs v2 locks with `lock.NewUniversal`, which validates the
+  projection while carrying optional v1 compatibility payloads without making
+  those payloads authoritative.
 - Lock v1 remains readable for compatibility and is migrated by the next
   successful whole-schema update. It retains only its documented
   method-specific guarantees.

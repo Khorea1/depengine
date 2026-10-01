@@ -9,6 +9,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/secret"
+	"github.com/Khorea1/depengine/internal/state"
 )
 
 // attemptOutcome tells attemptMethod what to do after a candidate phase runs.
@@ -28,33 +29,38 @@ const (
 // phases in order and each phase either advances, skips to the next
 // candidate, or finishes the tool.
 type candidateAttempt struct {
-	run         *runContext
-	toolCtx     context.Context
-	tool        *config.Tool
-	method      *config.MethodCandidate
-	displayKind string
-	adapter     AdapterV2
-	planIntent  *plan.ResolvedInstallPlan
-	resolved    *plan.ResolvedInstallPlan
-	reported    *plan.ResolvedInstallPlan
-	attempt     MethodAttempt
-	prepared    candidateSourcePreparation
-	probed      candidateSourcePreparation
-	transition  plan.TransitionKind
-	preHookRan  bool
-	deferred    bool // availability deferred until missing sources are prepared
-	resources   []plan.ResourceUse
-	toolStart   time.Time
-	resolution  *candidateResolutionSeed
+	run                     *runContext
+	toolCtx                 context.Context
+	tool                    *config.Tool
+	method                  *config.MethodCandidate
+	displayKind             string
+	adapter                 AdapterV2
+	planIntent              *plan.ResolvedInstallPlan
+	resolved                *plan.ResolvedInstallPlan
+	reported                *plan.ResolvedInstallPlan
+	attempt                 MethodAttempt
+	prepared                candidateSourcePreparation
+	probed                  candidateSourcePreparation
+	transition              plan.TransitionKind
+	preHookRan              bool
+	replacementCommitted    bool
+	replacementPlanPostHook func() error
+	replacementComplete     func(*ToolResult) error
+	deferred                bool // availability deferred until missing sources are prepared
+	resources               []plan.ResourceUse
+	toolStart               time.Time
+	resolution              *candidateResolutionSeed
 }
 
 // candidateResolutionSeed carries a resolution already performed by an
 // earlier read-only planning phase (currently native batch preflight). It lets
 // serial fallback preserve the one-resolution-per-candidate invariant.
 type candidateResolutionSeed struct {
-	method   *config.MethodCandidate
-	resolved *plan.ResolvedInstallPlan
-	err      error
+	method           *config.MethodCandidate
+	resolved         *plan.ResolvedInstallPlan
+	err              error
+	requireUpgrade   bool
+	expectedPrevious *state.ToolState
 }
 
 // skipCandidate records a non-terminal attempt (skip or recoverable failure)
@@ -153,6 +159,18 @@ func (ex *Executor) gateAlreadyInstalled(ac *candidateAttempt, result *ToolResul
 		ex.skipCandidate(ac, result, "failed", detail)
 		ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "verification_failed", "error", detail)
 		return nextMethod
+	}
+	if ac.resolution != nil && ac.resolution.requireUpgrade {
+		if verification.State == plan.StateSatisfied {
+			return ex.finishAlreadyInstalled(ac, result)
+		}
+		if verification.State != plan.StateDrifted {
+			detail := fmt.Sprintf("upgrade requires an observed tracked installation; desired state is %s: %s; run install/repair before upgrade", verification.State, verificationDetail(verification))
+			ex.failCandidate(ac, result, detail)
+			return finishTool
+		}
+		ac.transition = plan.TransitionUpgrade
+		return proceed
 	}
 	decision, decisionErr := plan.TransitionForVerification(verification)
 	if decisionErr != nil {
@@ -403,6 +421,14 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 	}
 	methodCtx = credentialCtx
 
+	// Replacement owns its own WAL ordering: remove old, commit prepared sources,
+	// then install the exact target. Ordinary installs persist commit intent here.
+	if ac.transition == plan.TransitionUpgrade {
+		outcome := ex.replaceCandidate(ac, result, runner, methodCtx)
+		methodCancel()
+		return outcome
+	}
+
 	// Persist the commit boundary before the adapter can mutate the target. If
 	// the install process dies after this point, recovery must reconcile the
 	// target instead of assuming candidate preparation is safe to undo.
@@ -422,8 +448,6 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 		return finishTool
 	}
 
-	// method-timeout applies to each individual attempt. The adapter receives
-	// the exact plan projected after prerequisite preparation.
 	err := ac.adapter.InstallResolved(methodCtx, runner, ac.tool, ac.method, ac.reported)
 	methodCancel()
 
@@ -531,13 +555,10 @@ func (ex *Executor) finishWouldInstall(ac *candidateAttempt, result *ToolResult)
 	return finishTool
 }
 
-// finishInstalled records a successful install. A failing post-install hook
-// means the tool is not in the state the schema requires, so the tool is
-// marked failed instead of being silently reported as installed.
+// finishInstalled records a successful install. Replacement state/resources
+// are already committed under an active WAL; the WAL closes only after the
+// after-upgrade hook has returned.
 func (ex *Executor) finishInstalled(ac *candidateAttempt, result *ToolResult) attemptOutcome {
-	// The adapter mutation already succeeded. Populate the committed result
-	// before closing the WAL so lazy prerequisite state can be projected in the
-	// same durable save as transaction completion.
 	result.Status = StatusInstalled
 	result.InstallCommitted = true
 	result.PreinstallDone = ac.preHookRan
@@ -548,7 +569,9 @@ func (ex *Executor) finishInstalled(ac *candidateAttempt, result *ToolResult) at
 	result.ResourceUses = append([]plan.ResourceUse(nil), ac.resources...)
 
 	var finalizeErr error
-	if ac.prepared.tx != nil {
+	if ac.replacementCommitted {
+		// The installed ToolState and ownership are already durable with the WAL.
+	} else if ac.prepared.tx != nil {
 		current := ac.prepared.tx.locked.State()
 		ex.prepareStateMetadata(current)
 		existing, hadExisting := current.Tools[ac.tool.Name]
@@ -564,12 +587,7 @@ func (ex *Executor) finishInstalled(ac *candidateAttempt, result *ToolResult) at
 			}
 		}
 		if finalizeErr == nil {
-			finalizeErr = ac.prepared.finalizeCommitWithTool(
-				ac.tool.Name,
-				ac.tool.Name,
-				toolState,
-				trackedUses,
-			)
+			finalizeErr = ac.prepared.finalizeCommitWithTool(ac.tool.Name, ac.tool.Name, toolState, trackedUses)
 		}
 	} else {
 		finalizeErr = ac.prepared.finalizeCommit(ac.tool.Name)
@@ -583,22 +601,58 @@ func (ex *Executor) finishInstalled(ac *candidateAttempt, result *ToolResult) at
 
 	result.RebootRequired, _ = ac.method.Config["_reboot_required"].(bool)
 	ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "installed")
-	// Post hooks get a fresh timeout from the tool-level context, not the
-	// cancelled method context. Only this candidate/transition's schedule is
-	// eligible to run.
+	if ac.replacementCommitted {
+		hooks, err := ac.reported.HookSchedule(ac.transition, plan.HookAfter)
+		if err != nil {
+			result.Status = StatusFailed
+			result.Error = fmt.Sprintf("resolve replacement after-upgrade hook: %v", err)
+			result.Duration = time.Since(ac.toolStart).String()
+			return finishTool
+		}
+		if len(hooks) > 0 {
+			if ac.replacementPlanPostHook == nil {
+				result.Status = StatusFailed
+				result.Error = "replacement post-hook boundary is unavailable"
+				return finishTool
+			}
+			if err := ac.replacementPlanPostHook(); err != nil {
+				result.Status = StatusFailed
+				result.Error = fmt.Sprintf("persist replacement post-hook boundary: %v", err)
+				result.Duration = time.Since(ac.toolStart).String()
+				return finishTool
+			}
+		}
+	}
+
 	postCtx, postCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
 	postRan, perr := ex.runLifecycleHooks(postCtx, ac.tool.Name, ac.reported, ac.transition, plan.HookAfter)
 	postCancel()
 	if perr != nil {
 		result.Status = StatusFailed
 		result.Error = fmt.Sprintf("%s: %v", lifecycleHookPhase(ac.transition, plan.HookAfter), perr)
-		// The adapter commit already succeeded. Keep source ownership bound
-		// to the installed tool instead of removing a repository that the
-		// installed package may still depend on for upgrades/removal.
+		result.PostinstallDone = false
+		if ac.replacementCommitted && ac.replacementComplete != nil {
+			if err := ac.replacementComplete(result); err != nil {
+				result.Error += fmt.Sprintf("; resolve replacement WAL: %v", err)
+			}
+		}
 		result.Duration = time.Since(ac.toolStart).String()
 		return finishTool
 	}
 	result.PostinstallDone = postRan
+	if ac.replacementCommitted {
+		if ac.replacementComplete == nil {
+			result.Status = StatusFailed
+			result.Error = "replacement completion is unavailable"
+			return finishTool
+		}
+		if err := ac.replacementComplete(result); err != nil {
+			result.Status = StatusFailed
+			result.Error = fmt.Sprintf("complete replacement state: %v", err)
+			result.Duration = time.Since(ac.toolStart).String()
+			return finishTool
+		}
+	}
 	result.Duration = time.Since(ac.toolStart).String()
 	return finishTool
 }

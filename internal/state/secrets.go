@@ -87,6 +87,18 @@ func ValidateNoSecrets(s *State) error {
 			return err
 		}
 	}
+	for name, transaction := range s.ReplacementTransactions {
+		path := "replacement_transactions." + name
+		if err := validateValueNoSecrets(transaction.ToolName, path+".tool_name"); err != nil {
+			return err
+		}
+		if err := validateValueNoSecrets(transaction.MethodKind, path+".method_kind"); err != nil {
+			return err
+		}
+		if err := validateValueNoSecrets(transaction.Previous.Config, path+".previous.config"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

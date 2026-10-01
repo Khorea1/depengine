@@ -15,6 +15,7 @@ import (
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/source"
+	depstate "github.com/Khorea1/depengine/internal/state"
 )
 
 // runContext carries execution-wide mutable state across run levels:
@@ -97,6 +98,9 @@ func (ex *Executor) startElevation(ctx context.Context, rc *runContext) (func(),
 // transactions can be recovered automatically from source presence;
 // ambiguous candidate commits remain fail-closed.
 func (ex *Executor) recoverAndRecord(ctx context.Context, rc *runContext) error {
+	if err := ex.recoverReplacementTransactions(ctx, rc); err != nil {
+		return fmt.Errorf("replacement recovery: %w", err)
+	}
 	if err := ex.recoverPreparationTransactions(ctx, rc.sources, rc); err != nil {
 		return fmt.Errorf("preparation recovery: %w", err)
 	}
@@ -115,6 +119,389 @@ func (ex *Executor) recoverAndRecord(ctx context.Context, rc *runContext) error 
 		ex.recordToolResult(ctx, rc, &result)
 	}
 	return nil
+}
+
+// recoverReplacementTransactions runs before preparation recovery or any new
+// host mutation. It observes the exact persisted old and desired candidates,
+// then resumes only the journaled destructive step. Candidate names are sorted
+// so partial recovery has stable ordering across runs.
+func (ex *Executor) recoverReplacementTransactions(ctx context.Context, rc *runContext) error {
+	if ex.dryRun || ex.schemaPath == "" {
+		return nil
+	}
+	locked, err := depstate.LoadLocked()
+	if err != nil {
+		return fmt.Errorf("load replacement recovery state: %w", err)
+	}
+	defer func() { _ = locked.Close() }()
+	names := make([]string, 0, len(locked.State().ReplacementTransactions))
+	for name := range locked.State().ReplacementTransactions {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if err := ex.recoverReplacementTransaction(ctx, rc, locked, name); err != nil {
+			return fmt.Errorf("recover replacement %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func (ex *Executor) recoverReplacementTransaction(ctx context.Context, rc *runContext, locked *depstate.LockedState, name string) error {
+	tx, err := locked.ReplacementTransaction(name)
+	if err != nil {
+		return err
+	}
+	tool, ok := rc.schema.Tools[name]
+	if !ok || tool == nil {
+		return fmt.Errorf("replacement tool %q is absent from the current schema", name)
+	}
+	method, err := exactReplacementMethod(tool, tx.Candidate, tx.CandidateLabel)
+	if err != nil {
+		return err
+	}
+	oldMethod, err := exactReplacementMethod(tool, tx.PreviousCandidate, tx.PreviousCandidateLabel)
+	if err != nil {
+		return fmt.Errorf("old candidate: %w", err)
+	}
+	oldMethod.Config = cloneMethodConfig(tx.Previous.Config)
+	oldAdapter := ex.LookupAdapter(oldMethod.Kind)
+	desiredAdapter := ex.LookupAdapter(method.Kind)
+	if oldAdapter == nil || desiredAdapter == nil {
+		return fmt.Errorf("replacement adapters are unavailable for old=%q desired=%q", oldMethod.Kind, method.Kind)
+	}
+	desiredPlan, err := resolvedReplacementTarget(tx.Desired)
+	if err != nil {
+		return err
+	}
+	oldPlan := plan.New(name, tx.PreviousCandidate.Method, tx.PreviousCandidate.Explicit)
+	oldPlan.Identity.Package = packageName(tool, oldMethod)
+	oldPlan.Identity.Version = tx.Previous.Version
+	if err := oldPlan.Validate(); err != nil {
+		return fmt.Errorf("persisted old candidate: %w", err)
+	}
+
+	oldObservation := ex.observeRecoveryCandidate(ctx, tool, oldMethod, &oldPlan, ex.LookupAdapter(oldMethod.Kind))
+	desiredObservation := ex.observeRecoveryCandidate(ctx, tool, method, desiredPlan, ex.LookupAdapter(method.Kind))
+	oldVerification := plan.Reconcile(projectVerificationIdentity(oldMethod.Kind, oldPlan.Identity), oldObservation)
+	if tx.Previous.Version == "" && oldVerification.State == plan.StateSatisfied {
+		oldVerification = plan.VerificationResult{State: plan.StateUnknown, Detail: "tracked old candidate has no persisted concrete version"}
+	}
+	desiredVerification := plan.Reconcile(projectVerificationIdentity(method.Kind, desiredPlan.Identity), desiredObservation)
+	if err := oldVerification.Validate(); err != nil {
+		return fmt.Errorf("old candidate observation: %w", err)
+	}
+	if err := desiredVerification.Validate(); err != nil {
+		return fmt.Errorf("desired candidate observation: %w", err)
+	}
+	action, err := locked.ReplacementRecovery(name, oldVerification, desiredVerification)
+	if err != nil {
+		return err
+	}
+	if action == plan.ReplacementBlocked {
+		return fmt.Errorf("replacement recovery is ambiguous: old=%s desired=%s phase=%s", oldVerification.State, desiredVerification.State, tx.Journal.Phase)
+	}
+
+	runner := ex.mutationRunner(name, method.Kind)
+	switch action {
+	case plan.ReplacementRetryRemoval:
+		oldAdapter := ex.LookupAdapter(oldMethod.Kind)
+		if oldAdapter == nil || !oldAdapter.CanRemove() {
+			return fmt.Errorf("old adapter %q cannot remove the tracked candidate", oldMethod.Kind)
+		}
+		if err := locked.PlanReplacementRemoval(name); err != nil {
+			return err
+		}
+		removeCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		removeErr := oldAdapter.Remove(removeCtx, runner, tool, methodForResolvedTarget(oldMethod, &oldPlan))
+		cancel()
+		if removeErr != nil {
+			return fmt.Errorf("remove tracked candidate: %w", removeErr)
+		}
+		oldVerification, desiredVerification, err = ex.observeReplacementPair(ctx, tool, oldMethod, method, &oldPlan, desiredPlan)
+		if err != nil {
+			return err
+		}
+		if oldVerification.State != plan.StateAbsent || desiredVerification.State != plan.StateAbsent {
+			return fmt.Errorf("replacement removal outcome is ambiguous: old=%s desired=%s", oldVerification.State, desiredVerification.State)
+		}
+		if err := locked.RecordReplacementRemoved(name); err != nil {
+			return err
+		}
+		if err := ex.planReplacementPreparationCommit(locked, tx); err != nil {
+			return err
+		}
+		if err := locked.PlanReplacementInstall(name); err != nil {
+			return err
+		}
+		return ex.resumeReplacementInstall(ctx, rc, locked, tool, method, oldMethod, &oldPlan, desiredPlan, tx)
+	case plan.ReplacementRecordRemoved:
+		if err := locked.RecordReplacementRemoved(name); err != nil {
+			return err
+		}
+		if err := ex.planReplacementPreparationCommit(locked, tx); err != nil {
+			return err
+		}
+		if err := locked.PlanReplacementInstall(name); err != nil {
+			return err
+		}
+		return ex.resumeReplacementInstall(ctx, rc, locked, tool, method, oldMethod, &oldPlan, desiredPlan, tx)
+	case plan.ReplacementStartInstall:
+		if tx.Journal.Phase == plan.ReplacementRemoved {
+			if err := ex.planReplacementPreparationCommit(locked, tx); err != nil {
+				return err
+			}
+			if err := locked.PlanReplacementInstall(name); err != nil {
+				return err
+			}
+		} else if tx.Journal.Phase != plan.ReplacementInstalling {
+			return fmt.Errorf("cannot resume exact install from phase %q", tx.Journal.Phase)
+		}
+		return ex.resumeReplacementInstall(ctx, rc, locked, tool, method, oldMethod, &oldPlan, desiredPlan, tx)
+	case plan.ReplacementRecordInstalled:
+		if tx.Journal.Phase == plan.ReplacementRemoved {
+			if err := ex.planReplacementPreparationCommit(locked, tx); err != nil {
+				return err
+			}
+			if err := locked.PlanReplacementInstall(name); err != nil {
+				return err
+			}
+		} else if tx.Journal.Phase != plan.ReplacementInstalling {
+			return fmt.Errorf("cannot record verified install from phase %q", tx.Journal.Phase)
+		}
+		result, err := ex.commitRecoveredReplacementInstall(ctx, rc, locked, tool, method, desiredPlan, tx)
+		if err != nil {
+			return err
+		}
+		return ex.continueRecoveredReplacement(ctx, rc, locked, tool, method, desiredPlan, result)
+	case plan.ReplacementContinueInstalled:
+		result := replacementResult(tool, method, desiredPlan)
+		return ex.continueRecoveredReplacement(ctx, rc, locked, tool, method, desiredPlan, result)
+	default:
+		return fmt.Errorf("unsupported replacement recovery action %q", action)
+	}
+}
+
+func exactReplacementMethod(tool *config.Tool, identity plan.CandidateIdentity, label string) (*config.MethodCandidate, error) {
+	var match *config.MethodCandidate
+	for _, method := range tool.Methods {
+		if method == nil || method.Kind != identity.Method || (!method.Inferred) != identity.Explicit {
+			continue
+		}
+		if label != "" && method.Label != label {
+			continue
+		}
+		if match != nil {
+			return nil, fmt.Errorf("candidate identity %q with label %q is ambiguous in current schema", identity.Method, label)
+		}
+		copy := *method
+		match = &copy
+	}
+	if match == nil {
+		return nil, fmt.Errorf("candidate identity %q with label %q is absent from current schema", identity.Method, label)
+	}
+	return match, nil
+}
+
+func cloneMethodConfig(input map[string]any) map[string]any {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]any, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
+}
+
+func resolvedReplacementTarget(projection plan.LockProjection) (*plan.ResolvedInstallPlan, error) {
+	if err := projection.RequireImmutable(); err != nil {
+		return nil, err
+	}
+	resolved := plan.New(projection.Tool.Name, projection.Candidate.Method, projection.Candidate.Explicit)
+	resolved.Identity = plan.ResolvedIdentity{
+		Package: projection.Identity.Package, Version: projection.Identity.Version,
+		Revision: projection.Identity.Revision, Digest: projection.Identity.Digest,
+		Source: projection.Identity.Source, Registry: projection.Identity.Registry,
+		Scope: projection.Identity.Scope, Environment: projection.Identity.Environment,
+		Architecture: projection.Identity.Architecture, Platform: projection.Identity.Platform,
+	}
+	if projection.RequestedIntent != nil {
+		intent := *projection.RequestedIntent
+		if intent.Channel != nil {
+			channel := *intent.Channel
+			intent.Channel = &channel
+		}
+		resolved.Identity.RequestedVersion = &intent
+	}
+	for _, artifact := range projection.Identity.Artifacts {
+		resolved.Artifacts = append(resolved.Artifacts, plan.Artifact(artifact))
+	}
+	for _, source := range projection.Identity.Sources {
+		resolved.Sources = append(resolved.Sources, plan.SourceReference{
+			Role: source.Role, Kind: source.Kind, Name: source.Name, URL: source.URL,
+			Revision: source.Revision, Owned: source.Owned, Trust: source.Trust,
+		})
+	}
+	if err := resolved.Validate(); err != nil {
+		return nil, fmt.Errorf("persisted desired candidate: %w", err)
+	}
+	return &resolved, nil
+}
+
+func (ex *Executor) observeReplacementPair(ctx context.Context, tool *config.Tool, oldMethod, desiredMethod *config.MethodCandidate, oldPlan, desiredPlan *plan.ResolvedInstallPlan) (plan.VerificationResult, plan.VerificationResult, error) {
+	oldObservation := ex.observeRecoveryCandidate(ctx, tool, oldMethod, oldPlan, ex.LookupAdapter(oldMethod.Kind))
+	desiredObservation := ex.observeRecoveryCandidate(ctx, tool, desiredMethod, desiredPlan, ex.LookupAdapter(desiredMethod.Kind))
+	oldVerification := plan.Reconcile(projectVerificationIdentity(oldMethod.Kind, oldPlan.Identity), oldObservation)
+	desiredVerification := plan.Reconcile(projectVerificationIdentity(desiredMethod.Kind, desiredPlan.Identity), desiredObservation)
+	if err := oldVerification.Validate(); err != nil {
+		return oldVerification, desiredVerification, err
+	}
+	if err := desiredVerification.Validate(); err != nil {
+		return oldVerification, desiredVerification, err
+	}
+	return oldVerification, desiredVerification, nil
+}
+
+func (ex *Executor) planReplacementPreparationCommit(locked *depstate.LockedState, tx depstate.ReplacementTransaction) error {
+	if tx.PreparationKey == "" {
+		return nil
+	}
+	p, journal, err := locked.PreparationTransaction(tx.PreparationKey)
+	if err != nil {
+		return err
+	}
+	if journal.Status == plan.PreparationCommitting {
+		return nil
+	}
+	if journal.Status != plan.PreparationReady {
+		return fmt.Errorf("preparation transaction %q is %s, not ready to commit", tx.PreparationKey, journal.Status)
+	}
+	_, err = locked.PlanPreparationCommitWithUses(tx.PreparationKey, p, p.CommitUses)
+	return err
+}
+
+func (ex *Executor) resumeReplacementInstall(ctx context.Context, rc *runContext, locked *depstate.LockedState, tool *config.Tool, method, oldMethod *config.MethodCandidate, oldPlan, desiredPlan *plan.ResolvedInstallPlan, tx depstate.ReplacementTransaction) error {
+	adapter := ex.LookupAdapter(method.Kind)
+	if adapter == nil {
+		return fmt.Errorf("desired adapter %q is unavailable", method.Kind)
+	}
+	methodCtx, cancel := context.WithTimeout(ctx, ex.methodTimeout)
+	defer cancel()
+	credentialCtx, err := ex.executionCredentialContext(methodCtx, method)
+	if err != nil {
+		return fmt.Errorf("resolve replacement credentials: %w", err)
+	}
+	if err := adapter.InstallResolved(credentialCtx, ex.mutationRunner(tool.Name, method.Kind), tool, method, desiredPlan); err != nil {
+		return fmt.Errorf("resume exact replacement install: %w", err)
+	}
+	oldVerification, desiredVerification, err := ex.observeReplacementPair(ctx, tool, oldMethod, method, oldPlan, desiredPlan)
+	if err != nil {
+		return err
+	}
+	if (oldVerification.State != plan.StateAbsent && oldVerification.State != plan.StateDrifted) || desiredVerification.State != plan.StateSatisfied {
+		return fmt.Errorf("replacement install verification is ambiguous: old=%s desired=%s", oldVerification.State, desiredVerification.State)
+	}
+	result, err := ex.commitRecoveredReplacementInstall(ctx, rc, locked, tool, method, desiredPlan, tx)
+	if err != nil {
+		return err
+	}
+	return ex.continueRecoveredReplacement(ctx, rc, locked, tool, method, desiredPlan, result)
+}
+
+func replacementRequiresResourceIdentity(tx depstate.ReplacementTransaction, tool *config.Tool, method *config.MethodCandidate) bool {
+	return len(tx.Desired.Identity.Sources) > 0 || len(method.Sources) > 0 || len(method.Requires) > 0 || len(tool.Requires) > 0
+}
+
+func (ex *Executor) commitRecoveredReplacementInstall(ctx context.Context, rc *runContext, locked *depstate.LockedState, tool *config.Tool, method *config.MethodCandidate, desired *plan.ResolvedInstallPlan, tx depstate.ReplacementTransaction) (*ToolResult, error) {
+	result := replacementResult(tool, method, desired)
+	current := locked.State()
+	ex.prepareStateMetadata(current)
+	previous, hadPrevious := current.Tools[tool.Name]
+	toolState := ex.toolStateForResult(ctx, tool, *result, previous, hadPrevious, !tool.DependencyOnly)
+	if desired.Identity.Version != "" {
+		toolState.Version = desired.Identity.Version
+	}
+	release, err := plan.ReleaseDependentResources(current.OwnedResources, tool.Name)
+	if err != nil {
+		return nil, err
+	}
+	var preparationPlan plan.PreparationPlan
+	if tx.PreparationKey != "" {
+		preparationPlan, _, err = locked.PreparationTransaction(tx.PreparationKey)
+		if err != nil {
+			return nil, err
+		}
+	}
+	resourceUses := tx.ResourceUses
+	if resourceUses == nil && tx.PreparationKey != "" {
+		resourceUses = append([]plan.ResourceUse(nil), preparationPlan.CommitUses...)
+	}
+	if resourceUses == nil && replacementRequiresResourceIdentity(tx, tool, method) {
+		return nil, fmt.Errorf("legacy replacement WAL lacks resource ownership identity for %q", tool.Name)
+	}
+	owned, err := plan.ClaimResourceUses(release.Updated, tool.Name, resourceUses)
+	if err != nil {
+		return nil, fmt.Errorf("claim recovered replacement resources: %w", err)
+	}
+	if err := locked.CommitReplacementInstallWithPreparation(tool.Name, toolState, owned, tx.PreparationKey, preparationPlan, tool.Name); err != nil {
+		return nil, fmt.Errorf("commit recovered replacement install: %w", err)
+	}
+	return result, nil
+}
+
+func (ex *Executor) continueRecoveredReplacement(ctx context.Context, rc *runContext, locked *depstate.LockedState, tool *config.Tool, method *config.MethodCandidate, desired *plan.ResolvedInstallPlan, result *ToolResult) error {
+	hookPlan, mismatch := candidatePlanIntent(tool, method)
+	if mismatch != "" {
+		return fmt.Errorf("resolve replacement lifecycle hooks: %s", mismatch)
+	}
+	var hooks []plan.LifecycleHook
+	if hookPlan != nil {
+		var err error
+		hooks, err = hookPlan.HookSchedule(plan.TransitionUpgrade, plan.HookAfter)
+		if err != nil {
+			return fmt.Errorf("resolve replacement lifecycle hooks: %w", err)
+		}
+	}
+	if len(hooks) > 0 {
+		if err := locked.PlanReplacementPostHook(tool.Name); err != nil {
+			return fmt.Errorf("persist replacement post-hook boundary: %w", err)
+		}
+		postCtx, cancel := context.WithTimeout(ctx, ex.methodTimeout)
+		postRan, hookErr := ex.runLifecycleHooks(postCtx, tool.Name, hookPlan, plan.TransitionUpgrade, plan.HookAfter)
+		cancel()
+		toolState := locked.State().Tools[tool.Name]
+		toolState.PostinstallDone = postRan && hookErr == nil
+		if err := locked.CompleteReplacement(tool.Name, toolState); err != nil {
+			return fmt.Errorf("complete recovered replacement after post-hook: %w", err)
+		}
+		if hookErr != nil {
+			return fmt.Errorf("replacement after-upgrade hook failed: %w", hookErr)
+		}
+	} else {
+		toolState, ok := locked.State().Tools[tool.Name]
+		if !ok {
+			return fmt.Errorf("replacement installed state for %q is missing", tool.Name)
+		}
+		toolState.PostinstallDone = false
+		if err := locked.CompleteReplacement(tool.Name, toolState); err != nil {
+			return fmt.Errorf("complete recovered replacement: %w", err)
+		}
+	}
+	if result.Method == "" {
+		result.Method = method.Kind
+	}
+	recovered := recoveredCandidateCommit{toolName: tool.Name, methodKind: method.Kind, method: result.Method, config: result.Config, intent: desired}
+	rc.recoveredCommits[tool.Name] = recovered
+	return nil
+}
+
+func replacementResult(tool *config.Tool, method *config.MethodCandidate, desired *plan.ResolvedInstallPlan) *ToolResult {
+	name := method.Label
+	if name == "" {
+		name = method.Kind
+	}
+	return &ToolResult{Tool: tool.Name, Status: StatusInstalled, InstallCommitted: true, Method: name, MethodKind: method.Kind, Config: configForResolvedTarget(method, desired), PlanIntent: desired}
 }
 
 // syncNativeIndex syncs the native package index only when at least one

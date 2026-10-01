@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"strings"
@@ -16,20 +17,20 @@ func TestLockPinForToolStateUsesPersistedLabel(t *testing.T) {
 	primary := &config.MethodCandidate{Kind: "http", Label: "primary"}
 	mirror := &config.MethodCandidate{Kind: "http", Label: "mirror"}
 	tool := &config.Tool{Methods: []*config.MethodCandidate{primary, mirror}}
-	lk := &lock.Lock{Tools: map[string]lock.ToolPin{
+	lk := &lock.Lock{Version: 1, Tools: map[string]lock.ToolPin{
 		"demo/http/0": {Latest: "v1"},
 		"demo/http/1": {Latest: "v2"},
 	}}
 
-	pin, ok := lockPinForToolState(lk, "demo", tool, state.ToolState{Method: "mirror", MethodKind: "http"})
+	pin, ok := legacyV1PinForToolState(lk, "demo", tool, state.ToolState{Method: "mirror", MethodKind: "http"})
 	if !ok || pin.Latest != "v2" {
-		t.Fatalf("lockPinForToolState = %+v, %v; want v2, true", pin, ok)
+		t.Fatalf("legacyV1PinForToolState = %+v, %v; want v2, true", pin, ok)
 	}
 }
 
 func TestValidateInstallNPMLockIdentityRejectsDriftBeforeResolution(t *testing.T) {
 	selector := fmt.Sprintf("%x", sha256.Sum256([]byte("old-package\x00https://registry.example.test")))
-	lk := &lock.Lock{Tools: map[string]lock.ToolPin{
+	lk := &lock.Lock{Version: 1, Tools: map[string]lock.ToolPin{
 		"tool/npm/0": {PackageSelector: selector, PackageVersion: "1.2.3"},
 	}}
 	method := &config.MethodCandidate{Kind: "npm", Config: map[string]any{
@@ -50,6 +51,20 @@ func TestValidateInstallNPMLockIdentityRejectsDriftBeforeResolution(t *testing.T
 	method.Config["version"] = "1.2.3"
 	if err := validateInstallPackageLockIdentity(schema, lk); err == nil {
 		t.Fatal("explicit version request accepted against stale unversioned npm pin")
+	}
+}
+func TestValidateInstallPackageLockIdentityIgnoresV2CompatibilityPins(t *testing.T) {
+	lk := buildV2LockForInstallTest(t, map[string]lock.ToolPin{
+		"demo/npm/0": {PackageSelector: strings.Repeat("a", 64), PackageVersion: "1.2.3"},
+	})
+	method := &config.MethodCandidate{Kind: "npm", Config: map[string]any{
+		"pkg": "changed-package", "registry": "https://registry.example.test",
+	}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{
+		"demo": {Name: "demo", Methods: []*config.MethodCandidate{method}},
+	}}
+	if err := validateInstallPackageLockIdentity(schema, lk); err != nil {
+		t.Fatalf("v2 validation consulted the compatibility package pin: %v", err)
 	}
 }
 
@@ -133,18 +148,18 @@ func TestNPMPackageVersionPinDrivesUpgradeDiscovery(t *testing.T) {
 	tool := &config.Tool{Name: "tool", Methods: []*config.MethodCandidate{method}}
 	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": tool}}
 	selector := fmt.Sprintf("%x", sha256.Sum256([]byte("tool\x00")))
-	lk := &lock.Lock{Tools: map[string]lock.ToolPin{
+	lk := &lock.Lock{Version: 1, Tools: map[string]lock.ToolPin{
 		"tool/npm/0": {PackageSelector: selector, PackageVersion: "1.3.0"},
 	}}
 	st := &state.State{Tools: map[string]state.ToolState{
 		"tool": {Method: "npm", MethodKind: "npm", Version: "1.2.3"},
 	}}
-	outdated, failures := collectOutdatedTools(st, schema, lk, "", upgradeExecutorForMethodOrder([]string{"npm"}), "")
+	outdated, failures := collectOutdatedTools(context.Background(), st, schema, lk, "", upgradeExecutorForMethodOrder([]string{"npm"}), "")
 	if len(failures) != 0 || len(outdated) != 1 || outdated[0].pinnedVer != "1.3.0" {
 		t.Fatalf("outdated = %+v, failures = %+v", outdated, failures)
 	}
 	method.Config["pkg"] = "other"
-	outdated, failures = collectOutdatedTools(st, schema, lk, "", upgradeExecutorForMethodOrder([]string{"npm"}), "")
+	outdated, failures = collectOutdatedTools(context.Background(), st, schema, lk, "", upgradeExecutorForMethodOrder([]string{"npm"}), "")
 	if len(outdated) != 0 || len(failures) != 0 {
 		t.Fatalf("stale pin drove upgrade: outdated = %+v, failures = %+v", outdated, failures)
 	}
@@ -155,13 +170,13 @@ func TestLockPinForToolStateFailsClosedForAmbiguousLegacyState(t *testing.T) {
 		{Kind: "http", Label: "primary"},
 		{Kind: "http", Label: "mirror"},
 	}}
-	lk := &lock.Lock{Tools: map[string]lock.ToolPin{
+	lk := &lock.Lock{Version: 1, Tools: map[string]lock.ToolPin{
 		"demo/http/0": {Latest: "v1"},
 		"demo/http/1": {Latest: "v2"},
 	}}
 
-	if pin, ok := lockPinForToolState(lk, "demo", tool, state.ToolState{Method: "http", MethodKind: "http"}); ok {
-		t.Fatalf("lockPinForToolState accepted ambiguous legacy state: %+v", pin)
+	if pin, ok := legacyV1PinForToolState(lk, "demo", tool, state.ToolState{Method: "http", MethodKind: "http"}); ok {
+		t.Fatalf("legacyV1PinForToolState accepted ambiguous legacy state: %+v", pin)
 	}
 }
 
@@ -193,4 +208,18 @@ func TestFindStateMethodCandidateAmbiguityRemediationUsesOnlyRealLabels(t *testi
 			t.Fatalf("error = %v, want actionable label remediation", err)
 		}
 	})
+}
+
+func TestLegacyV1PinLookupsIgnoreV2CompatibilityPins(t *testing.T) {
+	lk := buildV2LockForInstallTest(t, map[string]lock.ToolPin{
+		"demo/http/0": {Latest: "v9.9.9"},
+	})
+	method := &config.MethodCandidate{Kind: "http"}
+	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
+	if _, ok := legacyV1PinForCandidate(lk, "demo", tool, method); ok {
+		t.Fatal("v1 candidate lookup consumed v2 compatibility ToolPin")
+	}
+	if _, ok := legacyV1PinForToolState(lk, "demo", tool, state.ToolState{MethodKind: "http"}); ok {
+		t.Fatal("v1 state lookup consumed v2 compatibility ToolPin")
+	}
 }

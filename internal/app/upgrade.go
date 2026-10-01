@@ -8,7 +8,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/ecosystem"
@@ -16,7 +15,6 @@ import (
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
-	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
@@ -47,7 +45,7 @@ func newUpgradeCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:     "upgrade",
-		Short:   ifPT("Atualizar ferramentas para as versões fixadas no depengine.lock", "Upgrade installed tools to the versions pinned in depengine.lock"),
+		Short:   ifPT("Atualizar ferramentas para os alvos fixados no depengine.lock", "Upgrade installed tools to the targets pinned in depengine.lock"),
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -67,13 +65,15 @@ func newUpgradeCmd() *cobra.Command {
 	return cmd
 }
 
-// upgradeOutdatedTool is a state-tracked tool whose installed version lags
-// the lockfile pin, with the exact schema candidate resolved before any
+// upgradeOutdatedTool is a state-tracked tool whose observed identity differs
+// from its locked target, with the exact schema candidate resolved before any
 // destructive transition.
 type upgradeOutdatedTool struct {
 	name       string
 	ts         state.ToolState
 	pinnedVer  string
+	resolved   *plan.ResolvedInstallPlan
+	schema     *config.Schema
 	tool       *config.Tool
 	method     *config.MethodCandidate
 	methodKind string
@@ -148,14 +148,13 @@ func loadUpgradeState(dryRun bool) (*state.State, *state.LockedState, error) {
 	return ls.State(), ls, nil
 }
 
-// buildUpgradeExecutor wires the executor for reinstall Install calls:
-// default method order, host adapters, schema info, logging runner, and
-// facts, plus the dry-run/arbitrary-code/quiet gates.
-func buildUpgradeExecutor(s *config.Schema, clan string, facts *engine.Facts, schemaPath string, opts upgradeOptions, lg *slog.Logger, lockDocuments ...*plan.LockDocument) (*exec.Executor, *run.LoggingRunner, error) {
+// buildUpgradeExecutor wires the executor with the upgrade schema, host adapters,
+// resolved lock, runner, and execution gates.
+func buildUpgradeExecutor(s *config.Schema, clan string, facts *engine.Facts, schemaPath string, opts upgradeOptions, lg *slog.Logger, lockDocuments ...*plan.LockDocument) (*exec.Executor, error) {
 	schemaFile, err := os.Stat(schemaPath)
 	if err != nil {
 		lg.Error("stat schema", "error", err)
-		return nil, nil, exitWithCode(1)
+		return nil, exitWithCode(1)
 	}
 	ex := exec.New()
 	exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
@@ -183,7 +182,7 @@ func buildUpgradeExecutor(s *config.Schema, clan string, facts *engine.Facts, sc
 	if opts.quiet {
 		exec.WithQuiet()(ex)
 	}
-	return ex, runner, nil
+	return ex, nil
 }
 
 // loadUpgradeLock loads the lockfile, warning on corruption. A missing
@@ -201,13 +200,11 @@ func loadUpgradeLock(schemaPath string, lg *slog.Logger) (*lock.Lock, error) {
 	return lk, nil
 }
 
-// collectOutdatedTools compares installed-tool state against lockfile pins.
-// Same-kind candidates have independent lock identities, so each tool is
-// resolved to its exact tracked candidate before looking up its pin — an
-// arbitrary first match could upgrade from/to the wrong artifact. Unresolvable
-// candidates with a pin for their kind are terminal discovery failures that
-// participate in the same report. Output is sorted for determinism.
-func collectOutdatedTools(st *state.State, s *config.Schema, lk *lock.Lock, only string, ex *exec.Executor, clan string) ([]upgradeOutdatedTool, []upgradeResult) {
+// collectOutdatedTools compares host reconciliation with the locked target for
+// v2 and recorded versions with legacy pins for v1. Each state entry must map
+// to its exact selected candidate; unresolved locked targets are terminal
+// discovery failures. Output is sorted for determinism.
+func collectOutdatedTools(ctx context.Context, st *state.State, s *config.Schema, lk *lock.Lock, only string, ex *exec.Executor, clan string) ([]upgradeOutdatedTool, []upgradeResult) {
 	var (
 		outdated          []upgradeOutdatedTool
 		discoveryFailures []upgradeResult
@@ -232,7 +229,7 @@ func collectOutdatedTools(st *state.State, s *config.Schema, lk *lock.Lock, only
 
 		method, methodErr := findTrackedMethodCandidate(tool, ts, ex.SelectedMethods(tool, clan))
 		if methodErr != nil {
-			if hasPinnedVersionForKind(lk, name, methodKind) {
+			if hasUpgradeLockTarget(lk, name, methodKind) {
 				discoveryFailures = append(discoveryFailures, upgradeResult{
 					Tool: name, Status: "failed", OldVer: ts.Version, Method: ts.Method,
 					Error: fmt.Sprintf("cannot resolve tracked candidate: %v", methodErr),
@@ -240,25 +237,54 @@ func collectOutdatedTools(st *state.State, s *config.Schema, lk *lock.Lock, only
 			}
 			continue
 		}
-		pin, ok := lockPinForCandidate(lk, name, tool, method)
-		version := pinnedVersion(pin)
-		if !ok || version == "" {
-			continue
-		}
-
-		if ts.Version == "" {
-			// Unknown installed version — can't determine drift. Skip.
-			continue
-		}
-
-		if !state.VersionOutdated(ts.Version, version) {
-			continue
+		var resolved *plan.ResolvedInstallPlan
+		var err error
+		version := ""
+		if lk.Version == lock.CurrentVersion {
+			var verification plan.VerificationResult
+			resolved, verification, err = ex.ResolveAndVerifyCandidate(ctx, tool, method, clan)
+			if err == nil {
+				var decision plan.ReconciliationDecision
+				decision, err = plan.TransitionForVerification(verification)
+				if err == nil && decision.Transition == plan.TransitionInstall {
+					err = fmt.Errorf("locked target is absent; run install before upgrade")
+				}
+				if err == nil && decision.Transition != plan.TransitionUpgrade {
+					continue
+				}
+			}
+			if err != nil {
+				discoveryFailures = append(discoveryFailures, upgradeResult{
+					Tool: name, Status: "failed", OldVer: ts.Version, Method: ts.Method,
+					Error: fmt.Sprintf("cannot resolve locked target: %v", err),
+				})
+				continue
+			}
+			if resolved != nil {
+				version = resolved.Identity.Version
+			}
+		} else {
+			if pin, ok := legacyV1PinForCandidate(lk, name, tool, method); ok {
+				version = legacyV1PinnedVersion(pin)
+				if version != "" {
+					resolved, _, err = ex.ResolveAndVerifyCandidateAtVersion(ctx, tool, method, version, clan)
+					if err != nil {
+						discoveryFailures = append(discoveryFailures, upgradeResult{Tool: name, Status: "failed", OldVer: ts.Version, Method: ts.Method, Error: fmt.Sprintf("cannot resolve legacy pinned target: %v", err)})
+						continue
+					}
+				}
+			}
+			if version == "" || ts.Version == "" || !state.VersionOutdated(ts.Version, version) {
+				continue
+			}
 		}
 
 		outdated = append(outdated, upgradeOutdatedTool{
 			name:       name,
 			ts:         ts,
 			pinnedVer:  version,
+			resolved:   resolved,
+			schema:     s,
 			tool:       tool,
 			method:     method,
 			methodKind: methodKind,
@@ -307,170 +333,58 @@ func confirmUpgradeProceed(outdated []upgradeOutdatedTool, c *cliStyle) bool {
 	return confirmationAccepted(os.Stdin)
 }
 
-// upgradeSingleTool runs the Remove→Install sequencing for one outdated tool:
-// adapter lookup, fail-closed preflight, then remove, reinstall, probe, and
-// state update. Every outcome is a result value; the whole run is never
-// aborted from here.
-func upgradeSingleTool(ctx context.Context, ex *exec.Executor, runner *run.LoggingRunner, facts *engine.Facts, clan string, st *state.State, ot upgradeOutdatedTool, opts upgradeOptions, c *cliStyle) upgradeResult {
-	// The selected candidate's typed environment references are application
-	// secrets. Keep them available to in-process resolvers, but prevent every
-	// child process in this tool's upgrade lifecycle from inheriting them.
-	ctx = upgradeContext(ctx, ot.method)
-
-	res := upgradeResult{
-		Tool:   ot.name,
-		OldVer: ot.ts.Version,
-		Method: ot.ts.Method,
-	}
-	fail := func(format string, args ...any) upgradeResult {
+// upgradeSingleTool delegates one previously resolved candidate to the executor.
+func upgradeSingleTool(ctx context.Context, ex *exec.Executor, clan string, ot upgradeOutdatedTool, opts upgradeOptions, c *cliStyle) upgradeResult {
+	res := upgradeResult{Tool: ot.name, Status: "failed", OldVer: ot.ts.Version, Method: ot.ts.Method}
+	if ot.resolved == nil {
 		res.Status = "failed"
-		res.Error = fmt.Sprintf(format, args...)
+		res.Error = "upgrade target was not resolved during discovery"
+		return res
+	}
+	result, err := ex.ExecuteResolvedUpgradeCandidate(ctx, ot.schema, clan, ot.tool, ot.method, ot.resolved, ot.ts)
+	if err != nil {
+		res.Error = err.Error()
 		if !opts.quiet {
 			c.fail("%s: %s", ot.name, res.Error)
 		}
 		return res
 	}
-
-	adapter := ex.LookupAdapter(ot.methodKind)
-	if adapter == nil {
-		return fail("no adapter for method %q", ot.methodKind)
-	}
-
-	// The direct Remove/Install path fails closed on semantics it cannot preserve,
-	// avoiding removal of a working tool before an incompatible reinstall.
-	resolved, verification, err := preflightDirectUpgrade(ctx, ex, runner, facts, clan, ot.tool, ot.method, adapter, ot.pinnedVer, opts.allowArbitrary)
-	if err != nil {
-		return fail("upgrade preflight failed: %v", err)
-	}
-
-	if opts.dryRun {
-		if verificationEstablishesPinnedVersion(verification) {
-			res.Status = "already-current"
-			res.NewVer = verification.Observed.Version
-			return res
-		}
-		res.Status = "would_upgrade"
-		res.NewVer = ot.pinnedVer
+	res.NewVer = ot.pinnedVer
+	switch result.Status {
+	case exec.StatusInstalled:
+		res.Status = "upgraded"
 		if !opts.quiet {
-			c.arrow("%s: %s → %s (dry-run)", ot.name, ot.ts.Version, ot.pinnedVer)
+			c.ok("%s: %s → %s", ot.name, ot.ts.Version, res.NewVer)
 		}
-		return res
-	}
-	if verificationEstablishesPinnedVersion(verification) {
+	case exec.StatusAlready:
 		res.Status = "already-current"
-		res.NewVer = verification.Observed.Version
-		st.Tools[ot.name] = upgradedToolState(ot.ts, ot.methodKind, ot.tool, ot.method, verification.Observed.Version, ot.pinnedVer, time.Now().UTC())
-		return res
-	}
-
-	remover := adapter
-	if !remover.CanRemove() {
-		// Adapter can't remove — skip with a clear message.
+	case exec.StatusWouldInstall:
+		res.Status = "would_upgrade"
+		if !opts.quiet {
+			c.arrow("%s: %s → %s (dry-run)", ot.name, ot.ts.Version, res.NewVer)
+		}
+	case exec.StatusSkippedUnavailable, exec.StatusSkippedWhen:
 		res.Status = "skipped"
-		res.Error = fmt.Sprintf("adapter %q does not support removal — remove manually and reinstall", ot.methodKind)
+		res.Error = result.Error
 		if !opts.quiet {
 			c.skip("%s: %s", ot.name, res.Error)
 		}
-		return res
-	}
-	tr := runner.WithContext(run.Context{Tool: ot.name, Method: ot.methodKind})
-	if err := removeInstalledTool(ctx, remover, tr, ot); err != nil {
-		return fail("remove failed: %v", err)
-	}
-
-	// Install the exact candidate resolved before the destructive
-	// transition. Never fall back to another candidate of the same kind.
-	newVer, err := reinstallUpgradeTool(ctx, ex, resolved, tr, st, ot)
-	if err != nil {
-		return fail("reinstall failed: %v", err)
-	}
-
-	newTS := upgradedToolState(ot.ts, ot.methodKind, ot.tool, ot.method, newVer, ot.pinnedVer, time.Now().UTC())
-	st.Tools[ot.name] = newTS
-
-	res.Status = "upgraded"
-	res.NewVer = newVer
-	if res.NewVer == "" {
-		res.NewVer = ot.pinnedVer
-	}
-	if !opts.quiet {
-		c.ok("%s: %s → %s", ot.name, ot.ts.Version, res.NewVer)
+	default:
+		res.Status = "failed"
+		res.Error = result.Error
+		if res.Error == "" {
+			res.Error = "executor did not complete the upgrade"
+		}
+		if !opts.quiet {
+			c.fail("%s: %s", ot.name, res.Error)
+		}
 	}
 	return res
 }
 
-// verificationEstablishesPinnedVersion distinguishes a verified current
-// version from a merely satisfied non-version identity. Upgrade discovery has
-// already established state/lock version drift; methods whose contracts cannot
-// observe versions must continue through the upgrade rather than treating an
-// empty verification projection as proof that the pin is installed.
-func verificationEstablishesPinnedVersion(verification plan.VerificationResult) bool {
-	if verification.State != plan.StateSatisfied {
-		return false
-	}
-	for _, field := range verification.KnownFields {
-		if field == plan.FieldVersion {
-			return true
-		}
-	}
-	return false
-}
-
-// upgradeContext scopes child-process environment filtering to the tracked
-// candidate selected for this tool, rather than every method in its schema.
-func upgradeContext(ctx context.Context, method *config.MethodCandidate) context.Context {
-	var names []string
-	appendRef := func(ref *config.SecretReference) {
-		if ref != nil && ref.Provider == "env" && ref.Name != "" {
-			names = append(names, ref.Name)
-		}
-	}
-	if method != nil {
-		appendRef(method.SecretRef)
-		appendRef(method.ChecksumSecretRef)
-		appendRef(method.SignatureSecretRef)
-		for i := range method.Sources {
-			appendRef(method.Sources[i].SecretRef)
-		}
-	}
-	return run.WithOmittedEnv(ctx, names...)
-}
-
-// removeInstalledTool removes the tracked installation, recovering method
-// config from the schema when state config is empty.
-func removeInstalledTool(ctx context.Context, remover exec.AdapterV2, tr run.Runner, ot upgradeOutdatedTool) error {
-	mc := &config.MethodCandidate{
-		Kind:   ot.methodKind,
-		Config: ot.ts.Config,
-	}
-	if ot.ts.Config == nil {
-		mc.Config = findMethodConfig(ot.tool, ot.methodKind)
-	}
-	removeCtx, removeCancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer removeCancel()
-	return remover.Remove(removeCtx, tr, ot.tool, mc)
-}
-
-// reinstallUpgradeTool installs the already-resolved candidate and probes the
-// installed version. On reinstall failure the tool's shared-resource claims
-// are released so state does not pretend a missing tool still holds refs;
-// newly zero-ref resources stay on the host for explicit retry/cleanup.
-func reinstallUpgradeTool(ctx context.Context, ex *exec.Executor, resolved *plan.ResolvedInstallPlan, tr run.Runner, st *state.State, ot upgradeOutdatedTool) (string, error) {
-	installCtx, installCancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer installCancel()
-	if err := ex.InstallResolvedCandidate(installCtx, tr, ot.tool, ot.method, resolved); err != nil {
-		if releaseErr := recordFailedUpgradeRemoval(st, ot.name); releaseErr != nil {
-			log.Default.Error("release failed-upgrade resources", "tool", ot.name, "error", releaseErr)
-		}
-		return "", err
-	}
-	adapter := ex.LookupAdapter(ot.method.Kind)
-	return probeVersion(ctx, adapter, tr, ot.tool, ot.method), nil
-}
-
 // runUpgradeLoop upgrades each outdated tool in order, seeding the report
 // with the already-terminal candidate discovery failures.
-func runUpgradeLoop(ctx context.Context, ex *exec.Executor, runner *run.LoggingRunner, facts *engine.Facts, clan string, st *state.State, outdated []upgradeOutdatedTool, discoveryFailures []upgradeResult, opts upgradeOptions, c *cliStyle) ([]upgradeResult, upgradeCounts) {
+func runUpgradeLoop(ctx context.Context, ex *exec.Executor, clan string, outdated []upgradeOutdatedTool, discoveryFailures []upgradeResult, opts upgradeOptions, c *cliStyle) ([]upgradeResult, upgradeCounts) {
 	results := append([]upgradeResult(nil), discoveryFailures...)
 	counts := upgradeCounts{failed: len(discoveryFailures)}
 	for _, res := range discoveryFailures {
@@ -480,7 +394,7 @@ func runUpgradeLoop(ctx context.Context, ex *exec.Executor, runner *run.LoggingR
 	}
 
 	for _, ot := range outdated {
-		res := upgradeSingleTool(ctx, ex, runner, facts, clan, st, ot, opts, c)
+		res := upgradeSingleTool(ctx, ex, clan, ot, opts, c)
 		results = append(results, res)
 		switch res.Status {
 		case "upgraded":
@@ -540,11 +454,9 @@ func writeUpgradeReport(jsonOut, dryRun bool, counts upgradeCounts, results []up
 	return nil
 }
 
-// runUpgrade upgrades installed tools whose recorded version is outdated
-// relative to the pinned version in depengine.lock. Each upgrade preflights an
-// exact candidate before removal, installs that resolved candidate, then updates
-// state. The function orchestrates schema/lock loading, executor wiring, drift
-// collection, confirmation, execution, persistence, and reporting.
+// runUpgrade reconciles installed tools against depengine.lock, then executes
+// exact targets for drifted candidates. It orchestrates schema/lock loading,
+// executor wiring, discovery, confirmation, execution, and reporting.
 func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool) error {
 	lg := log.Default
 	opts := newUpgradeOptions(upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary)
@@ -576,7 +488,11 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		return exitWithCode(3)
 	}
 	if ls != nil {
-		defer func() { _ = ls.Close() }()
+		defer func() {
+			if ls != nil {
+				_ = ls.Close()
+			}
+		}()
 	}
 
 	var lockDocument *plan.LockDocument
@@ -587,15 +503,18 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		}
 		lockDocument = &document
 	}
-	ex, runner, err := buildUpgradeExecutor(s, clan, facts, opts.schema, opts, lg, lockDocument)
+	ex, err := buildUpgradeExecutor(s, clan, facts, opts.schema, opts, lg, lockDocument)
 	if err != nil {
 		return err
 	}
 
-	// Project lock pins into the schema before drift collection and reinstall planning.
-	lock.Apply(s, lk)
+	// V1 pins are projected for legacy compatibility; v2 resolution uses the
+	// LockDocument passed to the executor and never reads ToolPin payloads.
+	if lk.Version == 1 {
+		lock.ApplyLegacyV1(s, lk)
+	}
 
-	outdated, discoveryFailures := collectOutdatedTools(st, s, lk, opts.only, ex, clan)
+	outdated, discoveryFailures := collectOutdatedTools(ctx, st, s, lk, opts.only, ex, clan)
 	if len(outdated) == 0 && len(discoveryFailures) == 0 {
 		return reportUpgradeUpToDate(opts.jsonOut)
 	}
@@ -615,16 +534,15 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		}
 	}
 
-	// Upgrade each outdated tool: preflight, then Remove and Install. Candidate
-	// discovery failures are already terminal and participate in the same report.
-	results, counts := runUpgradeLoop(ctx, ex, runner, facts, clan, st, outdated, discoveryFailures, opts, c)
-
-	if !opts.dryRun {
-		if err := ls.Save(); err != nil {
-			lg.Error("state save failed", "error", err)
-			return exitWithCode(3)
+	// Delegate each exact resolved candidate to the executor. Discovery failures
+	// are already terminal and participate in the same report.
+	if ls != nil {
+		if err := ls.Close(); err != nil {
+			return fmt.Errorf("release upgrade state lock: %w", err)
 		}
+		ls = nil
 	}
+	results, counts := runUpgradeLoop(ctx, ex, clan, outdated, discoveryFailures, opts, c)
 
 	return writeUpgradeReport(opts.jsonOut, opts.dryRun, counts, results)
 }
@@ -635,137 +553,27 @@ func hasPinnedVersionForKind(l *lock.Lock, toolName, kind string) bool {
 	}
 	prefix := toolName + "/" + kind + "/"
 	for key, pin := range l.Tools {
-		if strings.HasPrefix(key, prefix) && pinnedVersion(pin) != "" {
+		if strings.HasPrefix(key, prefix) && legacyV1PinnedVersion(pin) != "" {
 			return true
 		}
 	}
 	return false
 }
 
-func upgradedToolState(previous state.ToolState, methodKind string, tool *config.Tool, method *config.MethodCandidate, observedVersion, pinnedVersion string, installedAt time.Time) state.ToolState {
-	version := observedVersion
-	if version == "" {
-		version = pinnedVersion
+// hasUpgradeLockTarget checks the universal projection for v2 and the method-specific pin for v1.
+func hasUpgradeLockTarget(lk *lock.Lock, toolName, kind string) bool {
+	if lk == nil {
+		return false
 	}
-	return state.ToolState{
-		Method:           previous.Method,
-		MethodKind:       methodKind,
-		InstalledAt:      installedAt.UTC().Format(time.RFC3339),
-		PostinstallDone:  previous.PostinstallDone,
-		DefinitionHash:   state.DefinitionHash(tool),
-		DesiredStateHash: state.DesiredStateHash(tool),
-		Version:          version,
-		RootRequested:    previous.RootRequested,
-		Config:           method.Config,
-	}
-}
-
-// recordFailedUpgradeRemoval updates durable ownership after a destructive
-// upgrade removed the tracked tool but reinstall failed. Shared resources are
-// released from the missing dependent, but last-reference resources are kept
-// as explicit zero-ref state instead of triggering more host mutation from an
-// already-failed upgrade.
-func recordFailedUpgradeRemoval(st *state.State, toolName string) error {
-	if st == nil {
-		return fmt.Errorf("state is required")
-	}
-	release, err := plan.ReleaseDependentResources(st.OwnedResources, toolName)
-	if err != nil {
-		return err
-	}
-	st.OwnedResources = release.Updated
-	delete(st.Tools, toolName)
-	return nil
-}
-
-func preflightDirectUpgrade(ctx context.Context, ex *exec.Executor, runner run.Runner, facts *engine.Facts, clan string, tool *config.Tool, method *config.MethodCandidate, adapter exec.AdapterV2, targetVersion string, allowArbitrary bool) (*plan.ResolvedInstallPlan, plan.VerificationResult, error) {
-	if tool == nil || method == nil || adapter == nil {
-		return nil, plan.VerificationResult{}, fmt.Errorf("tool, method, and adapter are required")
-	}
-	if method.When != nil && !method.When.Match(facts) {
-		return nil, plan.VerificationResult{}, fmt.Errorf("tracked candidate no longer matches its when condition")
-	}
-	_, err := exec.CandidatePlanIntent(tool, method)
-	if err != nil {
-		return nil, plan.VerificationResult{}, err
-	}
-	if len(method.Sources) > 0 {
-		return nil, plan.VerificationResult{}, fmt.Errorf("candidate declares sources; transactional upgrade preparation is required")
-	}
-	if len(method.Requires) > 0 {
-		return nil, plan.VerificationResult{}, fmt.Errorf("candidate declares method.requires; transactional upgrade preparation is required")
-	}
-	if len(tool.EffectiveRequires(facts)) > 0 {
-		return nil, plan.VerificationResult{}, fmt.Errorf("tool declares requires; transactional upgrade dependency handling is required")
-	}
-	if len(tool.PreInstall) > 0 || len(tool.PostInstall) > 0 || len(method.PreInstall) > 0 || len(method.PostInstall) > 0 {
-		return nil, plan.VerificationResult{}, fmt.Errorf("candidate has lifecycle hooks; direct upgrade cannot preserve hook semantics")
-	}
-	if !allowArbitrary && exec.CandidateRunsArbitraryCode(tool, method) {
-		return nil, plan.VerificationResult{}, fmt.Errorf("candidate may execute arbitrary code; pass --allow-arbitrary-code to permit it")
-	}
-	probeRunner := runner
-	if lr, ok := runner.(*run.LoggingRunner); ok {
-		probeRunner = lr.WithContext(run.Context{Tool: tool.Name, Method: method.Kind, Probe: true})
-	}
-	if !adapter.Available(ctx, probeRunner) {
-		return nil, plan.VerificationResult{}, fmt.Errorf("adapter %q is unavailable", method.Kind)
-	}
-	resolved, verification, err := ex.ResolveAndVerifyCandidateAtVersion(ctx, tool, method, targetVersion, clan)
-	if err != nil {
-		return nil, plan.VerificationResult{}, err
-	}
-	if resolved == nil {
-		return nil, plan.VerificationResult{}, fmt.Errorf("tracked installation is not present; run install/repair instead of destructive upgrade")
-	}
-	switch verification.State {
-	case plan.StateAbsent:
-		return nil, plan.VerificationResult{}, fmt.Errorf("tracked installation is absent; run install/repair instead of destructive upgrade")
-	case plan.StateUnknown:
-		return nil, plan.VerificationResult{}, fmt.Errorf("tracked installation identity is unknown; run install/repair instead of destructive upgrade")
-	case plan.StateBroken:
-		return nil, plan.VerificationResult{}, fmt.Errorf("tracked installation verification is broken: %s", verification.Detail)
-	case plan.StateSatisfied:
-		return resolved, verification, nil
-	}
-	contract, ok := methodkind.Lookup(method.Kind)
-	if !ok {
-		return nil, plan.VerificationResult{}, fmt.Errorf("unknown method kind %q", method.Kind)
-	}
-	if err := contract.CheckRequirements(*resolved, methodkind.CandidateRequirements{Transition: plan.TransitionUpgrade}); err != nil {
-		return nil, plan.VerificationResult{}, err
-	}
-	if !adapter.CheckAvailable(ctx, probeRunner, tool, method) {
-		return nil, plan.VerificationResult{}, fmt.Errorf("target is not available from configured repositories")
-	}
-	if !adapter.CanRemove() {
-		return nil, plan.VerificationResult{}, fmt.Errorf("adapter %q does not support removal", method.Kind)
-	}
-	return resolved, verification, nil
-}
-
-// findMethodConfig extracts the config map for the first method matching kind.
-func findMethodConfig(tool *config.Tool, kind string) map[string]any {
-	for _, m := range tool.Methods {
-		if m.Kind == kind {
-			return m.Config
+	if lk.Version == lock.CurrentVersion {
+		document, err := lk.ProjectionDocument()
+		if err != nil {
+			return true // malformed v2 identity must fail closed in discovery.
 		}
+		_, ok := document.EntryForTool(toolName)
+		return ok
 	}
-	return nil
-}
-
-// findMethodCandidate returns the first selected MethodCandidate of kind. It is
-// retained for non-stateful callers; destructive state reconciliation must use
-// findTrackedMethodCandidate so duplicate same-kind candidates cannot be picked
-// arbitrarily.
-func findMethodCandidate(tool *config.Tool, kind string, defaultOrder []string, nativeManagerName string) *config.MethodCandidate {
-	ordered := config.SelectMethods(tool, defaultOrder, nativeManagerName)
-	for _, m := range ordered {
-		if m.Kind == kind {
-			return m
-		}
-	}
-	return nil
+	return hasPinnedVersionForKind(lk, toolName, kind)
 }
 
 // findTrackedMethodCandidate resolves the exact currently-selected schema
@@ -787,19 +595,4 @@ func findTrackedMethodCandidate(tool *config.Tool, ts state.ToolState, selected 
 		display = candidate.Label
 	}
 	return nil, fmt.Errorf("tracked candidate %q (kind %q) is not selected by the current schema", display, candidate.Kind)
-}
-
-// probeVersion calls the adapter's InstalledVersion if it implements Versioner.
-func probeVersion(ctx context.Context, adapter exec.AdapterV2, runner run.Runner, tool *config.Tool, mc *config.MethodCandidate) string {
-	v, ok := adapter.(exec.Versioner)
-	if !ok {
-		return ""
-	}
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	ver, err := v.InstalledVersion(ctx, runner, tool, mc)
-	if err != nil || ver == "" {
-		return ""
-	}
-	return ver
 }

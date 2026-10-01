@@ -200,11 +200,11 @@ func TestRetryClaimsPersistedZeroRefPrerequisiteWithoutExternalReclassification(
 		Version: state.CurrentVersion,
 		Tools: map[string]state.ToolState{
 			"helper": {
-				Method:        "go",
-				MethodKind:    "go",
-				InstalledAt:   time.Now().UTC().Format(time.RFC3339),
+				Method:         "go",
+				MethodKind:     "go",
+				InstalledAt:    time.Now().UTC().Format(time.RFC3339),
 				DefinitionHash: "previous",
-				Config:        map[string]any{"pkg": "example.test/helper"},
+				Config:         map[string]any{"pkg": "example.test/helper"},
 			},
 		},
 		OwnedResources: []plan.OwnedResourceState{{

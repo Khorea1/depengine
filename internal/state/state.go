@@ -29,13 +29,14 @@ const currentStateVersion = CurrentVersion
 
 // State is the on-disk schema for the depengine state file.
 type State struct {
-	Version             int                                `json:"version"`
-	SchemaPath          string                             `json:"schema_path"`
-	SchemaModifiedAt    string                             `json:"schema_modified_at"`
-	Tools               map[string]ToolState               `json:"tools"`
-	OwnedResources      []plan.OwnedResourceState          `json:"owned_resources,omitempty"`
-	PreparationPlans    map[string]plan.PreparationPlan    `json:"preparation_plans,omitempty"`
-	PreparationJournals map[string]plan.PreparationJournal `json:"preparation_journals,omitempty"`
+	Version                 int                                `json:"version"`
+	SchemaPath              string                             `json:"schema_path"`
+	SchemaModifiedAt        string                             `json:"schema_modified_at"`
+	Tools                   map[string]ToolState               `json:"tools"`
+	OwnedResources          []plan.OwnedResourceState          `json:"owned_resources,omitempty"`
+	PreparationPlans        map[string]plan.PreparationPlan    `json:"preparation_plans,omitempty"`
+	PreparationJournals     map[string]plan.PreparationJournal `json:"preparation_journals,omitempty"`
+	ReplacementTransactions map[string]ReplacementTransaction  `json:"replacement_transactions,omitempty"`
 	// Checksum is the SHA256 hex digest of the canonical JSON of the state
 	// with this field zeroed. It is written by Save and verified by LoadFrom
 	// to detect corrupted or tampered state files. Current state formats require this field
@@ -256,10 +257,11 @@ func LoadFrom(path string) (*State, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &State{
-				Version:             currentStateVersion,
-				Tools:               make(map[string]ToolState),
-				PreparationPlans:    make(map[string]plan.PreparationPlan),
-				PreparationJournals: make(map[string]plan.PreparationJournal),
+				Version:                 currentStateVersion,
+				Tools:                   make(map[string]ToolState),
+				PreparationPlans:        make(map[string]plan.PreparationPlan),
+				PreparationJournals:     make(map[string]plan.PreparationJournal),
+				ReplacementTransactions: make(map[string]ReplacementTransaction),
 			}, nil
 		}
 		return nil, fmt.Errorf("read state: %w", err)
@@ -344,6 +346,11 @@ func validateStateSemantics(s *State) error {
 		}
 		if _, exists := s.PreparationJournals[key]; !exists {
 			return fmt.Errorf("preparation plan %q has no active journal", key)
+		}
+	}
+	for key, transaction := range s.ReplacementTransactions {
+		if err := validateReplacementTransaction(key, transaction); err != nil {
+			return err
 		}
 	}
 	return nil
