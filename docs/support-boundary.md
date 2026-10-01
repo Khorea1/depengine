@@ -19,11 +19,19 @@ or desired state from an arbitrary command.
 
 ## Reproducibility
 
-Current `depengine.lock` files use format v2. `depengine update` resolves the
-selected install candidate, projects its credential-free immutable identity into
-an adapter-neutral `LockDocument`, and writes that projection alongside the
-method-specific pins retained for migration. `install` and `upgrade` replay the
-pinned plan and reject requested-intent or resolved-identity drift.
+Current `depengine.lock` files use format v2. When producing a v2 lock,
+`depengine update` resolves selected install candidates through the executor's
+read-only `AdapterV2` plan resolution, then projects credential-free immutable
+identities into an adapter-neutral `LockDocument`. Generation requires complete
+supported coverage. A profiled update over v1 remains on the bounded v1 path.
+The document is persisted alongside method-specific pins retained as
+compatibility/migration payload. In a v2 lock, `LockDocument` is the sole
+operational resolved-identity authority for install, status, and upgrade;
+`ToolPin` entries do not drive resolution or version selection. `MethodsHash`
+and `SourceHash` validate requested method/source intent during frozen checks
+and identify update drift; they do not supply concrete resolved identity.
+Lock v1 continues to use its method pins through the bounded legacy
+resolver/application path and remains readable.
 
 Generation is all-or-nothing. If a selected manager cannot expose a stable
 version, revision, digest, checksummed artifact, or required Git-backed source

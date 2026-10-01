@@ -228,7 +228,7 @@ Aliases: `lock`.
 
 ## `depengine upgrade [flags]`
 
-Upgrade installed tools to the versions pinned in depengine.lock
+Upgrade installed tools to the targets pinned in depengine.lock
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|

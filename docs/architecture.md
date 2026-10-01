@@ -49,7 +49,7 @@ adapter registration, and the final exit code. CLI behavior lives in
 | `internal/httpdownload` | Download, extraction, placement, checksum/signature checks |
 | `internal/source` | Package-source setup such as PPA, COPR, Brew taps, and Scoop buckets |
 | `internal/msi` | Windows MSI install/remove lifecycle |
-| `internal/lock` | `depengine.lock` resolution and verification |
+| `internal/lock` | `depengine.lock` persistence and validation, with bounded legacy v1 resolution |
 | `internal/state` | Installed-tool state and cross-platform file locking |
 | `internal/validate` | Structural, semantic, and environment validation |
 | `internal/sbom` | CycloneDX and SPDX export |
@@ -117,6 +117,56 @@ For each tool, in dependency order, the executor:
 
 `method_prefer` changes candidate priority but keeps fallbacks. `method_only`
 restricts the candidate list.
+
+## Lock, status, and upgrade flows
+
+For lock v2, `LockDocument` is the operational resolved-identity authority.
+When producing a v2 document, `depengine update` obtains candidate plans
+through the executor's read-only resolution path and `AdapterV2`, then persists
+them only with complete supported coverage. Profiled updates over v1 remain on
+the legacy path rather than writing partial v2 coverage. `MethodsHash` and `SourceHash` remain
+requested method/source-intent metadata used for frozen validation and update
+drift checks; they are not a second concrete-identity resolver. Legacy v1
+method pins remain readable and are applied only through the bounded v1
+compatibility path.
+
+For a retained v2 projection entry, `update --profile` refreshes the entry
+when its `MethodsHash` or source metadata is missing or differs from the
+current schema. Source metadata keys are parsed from the right so tool names
+containing slashes remain intact. V2 lock construction uses
+`lock.NewUniversal`; compatibility `ToolPin` payloads do not override the
+projection. `MethodsHash` records candidate kind/label intent, not an HTTP URL
+or artifact identity.
+
+`status` loads the v2 document into the executor and reconciles observation
+against that locked resolved target directly. Its v1 path retains legacy pin
+application.
+
+`upgrade` captures the tracked `ToolState` during discovery and passes it to the
+required `ExecuteResolvedUpgradeCandidate` API. That API deep-clones its config
+before run initialization, recovery, or prerequisite work can mutate shared input.
+Under the state lock, the executor deep-compares current tracked state with that
+discovery snapshot before creating replacement WAL or removing anything. It
+resolves the old schema candidate with `config.FindMethodCandidate` using its
+persisted method kind and label rather than reconstructing it from the desired
+candidate. The executor owns replacement: a checksummed state WAL records
+intent, exact old/new candidate identities, and resource-use claims before
+removal. It persists
+each removal/install boundary before host mutation and installs and verifies the
+resolved target. Verified tool state, release of old dependent claims, and new
+replacement resource ownership are committed atomically while the replacement
+WAL remains active; recovery uses
+the persisted old state and target rather than resolving a new candidate. The
+after-upgrade hook has its own persisted boundary. The postinstall-completion
+flag and WAL removal are saved together, including when the hook reports
+failure. If the process stops after that
+boundary but before the result is saved, recovery blocks rather than replaying a
+hook with unknown side effects.
+
+The `sbom` command reports a concrete version already recorded in state first.
+If absent, it uses a matching-method immutable v2 projection entry; only a v1
+lock may supply a legacy method pin. Malformed or unavailable lock data is
+best-effort and does not prevent export; unknown versions remain `0.0.0`.
 
 ## Desired-state observation
 

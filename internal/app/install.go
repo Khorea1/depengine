@@ -239,13 +239,19 @@ func newInstallExecutor(p installPlan, s *config.Schema, clan string, facts *eng
 	return ex
 }
 
-// resolveInstallLock loads the lockfile and completes supported pins that are
-// still absent. Resolving before planning ensures execution and persistence
-// consume the same immutable value, including when migrating an older lock.
+// resolveInstallLock consumes an existing v2 projection without entering
+// legacy resolution. Missing or v1 locks retain the compatibility resolver
+// and persistence path; update is the promotion point to v2.
 func resolveInstallLock(ctx context.Context, p installPlan, s *config.Schema, lg *slog.Logger, rn run.Runner) (*lock.Lock, error) {
 	lk, err := loadLockfile(p.schema, s, p.frozen, lg)
 	if err != nil {
 		return nil, err
+	}
+	if lk != nil && lk.Version == lock.CurrentVersion {
+		if _, err := lk.ProjectionDocument(); err != nil {
+			return nil, fmt.Errorf("load universal lock projection: %w", err)
+		}
+		return lk, nil
 	}
 	if !p.frozen {
 		if err := validateInstallPackageLockIdentity(s, lk); err != nil {
@@ -255,7 +261,7 @@ func resolveInstallLock(ctx context.Context, p installPlan, s *config.Schema, lg
 	}
 	if !p.frozen && (hasLatestPlaceholders(s) || hasLockableMutableSelectors(s)) {
 		lg.Info("resolving missing lockable selectors")
-		fresh, err := lock.ResolveAll(ctx, s, rn)
+		fresh, err := lock.ResolveLegacyV1(ctx, s, rn)
 		if err != nil {
 			lg.Warn("could not auto-resolve lockable selectors", "error", err, "hint", "run 'depengine update' manually")
 		} else if fresh != nil {
@@ -265,7 +271,7 @@ func resolveInstallLock(ctx context.Context, p installPlan, s *config.Schema, lg
 				return nil, exitWithCode(2)
 			}
 			lk = merged
-			lock.Apply(s, lk)
+			lock.ApplyLegacyV1(s, lk)
 		}
 	}
 	return lk, nil
@@ -315,14 +321,14 @@ func installExitForReport(report *exec.ExecReport) error {
 	return nil
 }
 
-// finishInstallRun persists post-run state (lockfile + version sync),
-// prints the share hint, and maps the report to the exit error. Frozen
-// installs never rewrite the lockfile: they consumed a validated v2/v1 lock
-// and must leave it byte-equivalent.
+// finishInstallRun persists the legacy lock for v1 installs, synchronizes
+// recorded versions, prints the share hint, and maps the report to an exit.
+// Frozen installs and existing v2 locks are never rewritten; v2 identity is
+// owned by update, not by the legacy resolver.
 func finishInstallRun(ctx context.Context, report *exec.ExecReport, p installPlan, s *config.Schema, lockPath string, lk *lock.Lock, lg *slog.Logger, cs *cliStyle) error {
 	if !p.dryRun {
-		if !p.frozen {
-			saveLockfile(ctx, s, lockPath, lk, lg, p.diagnose, run.OSExecRunner{})
+		if !p.frozen && (lk == nil || lk.Version != lock.CurrentVersion) {
+			saveLegacyInstallLock(ctx, s, lockPath, lk, lg, p.diagnose, run.OSExecRunner{})
 		}
 		// Reconcile recorded versions with the lock: backfill versions the
 		// adapter could not determine (e.g. {latest} pins baked into URLs)
@@ -442,8 +448,38 @@ func syncInstalledVersions(ctx context.Context, schema *config.Schema, lockPath 
 		lg.Warn("load lock for version sync", "error", err)
 		return
 	}
-	if lk == nil || len(lk.Tools) == 0 {
+	if lk == nil {
 		return
+	}
+	versions := make(map[string]string)
+	if lk.Version == lock.CurrentVersion {
+		document, err := lk.ProjectionDocument()
+		if err != nil {
+			lg.Warn("load universal lock projection for version sync", "error", err)
+			return
+		}
+		for _, entry := range document.Entries {
+			if entry.Identity.Version != "" {
+				versions[entry.Tool.Name] = entry.Identity.Version
+			}
+		}
+		if len(versions) == 0 {
+			return
+		}
+	} else if len(lk.Tools) == 0 {
+		return
+	}
+	versionFor := func(name string, tool *config.Tool, ts state.ToolState) (string, bool) {
+		if lk.Version == lock.CurrentVersion {
+			version, ok := versions[name]
+			return version, ok
+		}
+		pin, ok := legacyV1PinForToolState(lk, name, tool, ts)
+		if !ok {
+			return "", false
+		}
+		version := legacyV1PinnedVersion(pin)
+		return version, version != ""
 	}
 
 	ls, err := state.LoadLocked()
@@ -467,9 +503,8 @@ func syncInstalledVersions(ctx context.Context, schema *config.Schema, lockPath 
 		if ts.Version != "" || !installed[name] {
 			continue
 		}
-		tool := schema.Tools[name]
-		if pin, ok := lockPinForToolState(lk, name, tool, ts); ok && pinnedVersion(pin) != "" {
-			ts.Version = pinnedVersion(pin)
+		if version, ok := versionFor(name, schema.Tools[name], ts); ok {
+			ts.Version = version
 			st.Tools[name] = ts
 			changed = true
 		}
@@ -485,8 +520,7 @@ func syncInstalledVersions(ctx context.Context, schema *config.Schema, lockPath 
 		if !ok || ts.Version == "" {
 			continue
 		}
-		pin, ok := lockPinForToolState(lk, tr.Tool, schema.Tools[tr.Tool], ts)
-		version := pinnedVersion(pin)
+		version, ok := versionFor(tr.Tool, schema.Tools[tr.Tool], ts)
 		if !ok || version == "" {
 			continue
 		}

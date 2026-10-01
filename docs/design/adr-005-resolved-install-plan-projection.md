@@ -22,16 +22,25 @@ reconciliation, reporting, and execution. Validation checks static intent
 without probing the host. Explanations may show static intent for candidates
 that are filtered before host resolution.
 
-Commands may project information from the plan:
+Commands use the plan and, for lock v2, the universal `LockDocument` as the
+resolved-identity authority. When producing v2, `update` resolves candidates
+through the executor/`AdapterV2`; a profiled update over v1 remains on the v1
+compatibility path:
 
 - `install`: execute transitions;
 - `dry-run`: render transitions without mutation;
 - `why`: explain candidate selection;
-- `status`: compare installed state with planned identity;
+- `status`: resolve/observe the selected candidate against the v2 document and
+  reconcile observed identity; v1 retains its bounded pin-application path;
 - `remove` and `undo`: verify the tracked target, then project its resolved
   identity into the removal adapter; ownership release uses persisted state;
-- `upgrade`: verify the tracked candidate and install the exact resolved new
-  target after removing the previously tracked installation.
+- `upgrade`: capture tracked state during discovery, resolve and verify the
+  exact target, then call `ExecuteResolvedUpgradeCandidate` with that mandatory
+  snapshot. The API deep-clones the snapshot config before initialization,
+  recovery, or prerequisites; the executor compares it with current state under
+  lock before WAL creation/removal and uses `config.FindMethodCandidate` to
+  resolve the old candidate by its persisted kind and label, then journals and
+  installs/verifies the exact target.
 
 Native batch installation uses the same resolved-target verification as serial
 execution before deciding a tool is already installed and after the batch

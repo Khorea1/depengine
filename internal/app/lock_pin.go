@@ -9,18 +9,18 @@ import (
 	"github.com/Khorea1/depengine/internal/state"
 )
 
-func pinnedVersion(pin lock.ToolPin) string {
+// legacyV1PinnedVersion returns the version fields carried by legacy v1 ToolPin data.
+func legacyV1PinnedVersion(pin lock.ToolPin) string {
 	if pin.Latest != "" {
 		return pin.Latest
 	}
 	return pin.PackageVersion
 }
 
-// lockPinFor looks up a tool's canonical "<tool>/<kind>/<idx>" pin only when
-// that lookup is unambiguous. Callers with durable candidate identity should
-// use lockPinForToolState or lockPinForCandidate instead.
-func lockPinFor(l *lock.Lock, tool, kind string) (lock.ToolPin, bool) {
-	if l == nil {
+// legacyV1PinFor looks up a v1 canonical ToolPin only when the lookup is
+// unambiguous. V2 consumers must use LockDocument.
+func legacyV1PinFor(l *lock.Lock, tool, kind string) (lock.ToolPin, bool) {
+	if l == nil || l.Version != 1 {
 		return lock.ToolPin{}, false
 	}
 	prefix := tool + "/"
@@ -44,12 +44,12 @@ func lockPinFor(l *lock.Lock, tool, kind string) (lock.ToolPin, bool) {
 	return matched, found
 }
 
-// lockPinForCandidate resolves the exact lock key for a concrete schema
-// candidate. The index is ordinal within its method kind, matching internal/lock's
-// canonical writer. Pointer identity is deliberate: callers resolve the
-// candidate from the same normalized Tool whose Methods slice lock.Apply uses.
-func lockPinForCandidate(l *lock.Lock, toolName string, tool *config.Tool, candidate *config.MethodCandidate) (lock.ToolPin, bool) {
-	if l == nil || tool == nil || candidate == nil {
+// legacyV1PinForCandidate resolves the exact v1 ToolPin key for a concrete schema
+// candidate. V2 callers must use LockDocument. The index is ordinal within its
+// method kind, matching the legacy lock writer; pointer identity requires the
+// candidate to come from the same normalized Tool.
+func legacyV1PinForCandidate(l *lock.Lock, toolName string, tool *config.Tool, candidate *config.MethodCandidate) (lock.ToolPin, bool) {
+	if l == nil || l.Version != 1 || tool == nil || candidate == nil {
 		return lock.ToolPin{}, false
 	}
 	kindIndex := 0
@@ -60,7 +60,7 @@ func lockPinForCandidate(l *lock.Lock, toolName string, tool *config.Tool, candi
 		if method == candidate {
 			key := fmt.Sprintf("%s/%s/%d", toolName, candidate.Kind, kindIndex)
 			pin, ok := l.Tools[key]
-			if !ok || pinnedVersion(pin) == "" {
+			if !ok || legacyV1PinnedVersion(pin) == "" {
 				return lock.ToolPin{}, false
 			}
 			if pin.PackageVersion != "" && !lock.MatchesPackagePin(toolName, candidate, pin) {
@@ -154,13 +154,13 @@ func candidateDisplayName(method *config.MethodCandidate) string {
 	return method.Kind
 }
 
-// lockPinForToolState resolves a pin through the exact candidate represented by
+// legacyV1PinForToolState resolves a v1 pin through the exact candidate represented by
 // durable state. It deliberately returns false for ambiguous legacy state
 // instead of selecting an arbitrary same-kind pin.
-func lockPinForToolState(l *lock.Lock, toolName string, tool *config.Tool, ts state.ToolState) (lock.ToolPin, bool) {
+func legacyV1PinForToolState(l *lock.Lock, toolName string, tool *config.Tool, ts state.ToolState) (lock.ToolPin, bool) {
 	candidate, err := findStateMethodCandidate(tool, ts)
 	if err != nil {
 		return lock.ToolPin{}, false
 	}
-	return lockPinForCandidate(l, toolName, tool, candidate)
+	return legacyV1PinForCandidate(l, toolName, tool, candidate)
 }

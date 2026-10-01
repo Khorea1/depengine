@@ -25,7 +25,7 @@ func TestNPMLatestLockReplaysConcretePackageVersion(t *testing.T) {
 	tool := &config.Tool{Name: "tool", Methods: []*config.MethodCandidate{method}}
 	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": tool}}
 	resolver := &run.FakeRunner{Stdout: `"1.2.3"`}
-	fresh, err := ResolveAll(context.Background(), schema, resolver)
+	fresh, err := ResolveLegacyV1(context.Background(), schema, resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestNPMLatestLockReplaysConcretePackageVersion(t *testing.T) {
 	if err := ValidateFrozen(schema, locked); err != nil {
 		t.Fatalf("frozen validation: %v", err)
 	}
-	Apply(schema, locked)
+	ApplyLegacyV1(schema, locked)
 	if method.LockedVersion != "1.2.3" {
 		t.Fatalf("locked version = %q", method.LockedVersion)
 	}
@@ -98,7 +98,7 @@ func TestPNPMLatestLockReplaysConcretePackageVersion(t *testing.T) {
 	tool := &config.Tool{Name: "tool", Methods: []*config.MethodCandidate{method}}
 	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": tool}}
 	resolver := &run.FakeRunner{Stdout: `"2.3.4"`}
-	locked, err := ResolveAll(context.Background(), schema, resolver)
+	locked, err := ResolveLegacyV1(context.Background(), schema, resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestPNPMLatestLockReplaysConcretePackageVersion(t *testing.T) {
 	if err := ValidateFrozen(schema, locked); err != nil {
 		t.Fatalf("frozen validation: %v", err)
 	}
-	Apply(schema, locked)
+	ApplyLegacyV1(schema, locked)
 	intent, err := planner.BuildCandidateIntent(tool, method)
 	if err != nil {
 		t.Fatal(err)
@@ -139,7 +139,7 @@ func TestYarnLatestLockReplaysConcretePackageVersion(t *testing.T) {
 	tool := &config.Tool{Name: "tool", Methods: []*config.MethodCandidate{method}}
 	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": tool}}
 	resolver := &run.FakeRunner{Stdout: `{"type":"inspect","data":"3.4.5"}`}
-	locked, err := ResolveAll(context.Background(), schema, resolver)
+	locked, err := ResolveLegacyV1(context.Background(), schema, resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestYarnLatestLockReplaysConcretePackageVersion(t *testing.T) {
 	if err := ValidateFrozen(schema, locked); err != nil {
 		t.Fatalf("frozen validation: %v", err)
 	}
-	Apply(schema, locked)
+	ApplyLegacyV1(schema, locked)
 	intent, err := planner.BuildCandidateIntent(tool, method)
 	if err != nil {
 		t.Fatal(err)
@@ -276,7 +276,7 @@ func TestLoadRejectsNonCanonicalKeys(t *testing.T) {
 	}
 }
 
-func TestResolveAllNoLatest(t *testing.T) {
+func TestResolveLegacyV1NoLatest(t *testing.T) {
 	// Schema with no {latest} URLs — captures concrete checksums only.
 	s := &config.Schema{
 		Tools: map[string]*config.Tool{
@@ -307,9 +307,9 @@ func TestResolveAllNoLatest(t *testing.T) {
 		},
 	}
 
-	l, err := ResolveAll(context.Background(), s, run.OSExecRunner{})
+	l, err := ResolveLegacyV1(context.Background(), s, run.OSExecRunner{})
 	if err != nil {
-		t.Fatalf("ResolveAll: %v", err)
+		t.Fatalf("ResolveLegacyV1: %v", err)
 	}
 	if l == nil || l.Version != 1 {
 		t.Fatalf("expected valid lock, got %+v", l)
@@ -332,7 +332,7 @@ func TestResolveAllNoLatest(t *testing.T) {
 	}
 }
 
-func TestResolveAllPinsGitHubLatestReleases(t *testing.T) {
+func TestResolveLegacyV1PinsGitHubLatestReleases(t *testing.T) {
 	original := resolveLatestReleaseTag
 	resolveLatestReleaseTag = func(_ context.Context, repo string, _ run.Runner) (string, error) {
 		return "v1.2.3-" + filepath.Base(repo), nil
@@ -346,9 +346,9 @@ func TestResolveAllPinsGitHubLatestReleases(t *testing.T) {
 		"branch":   {Name: "branch", Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{"repo": "owner/branch", "asset": "tool-{arch_any}", "branch": "edge"}}}},
 	}}
 
-	l, err := ResolveAll(context.Background(), s, &run.FakeRunner{})
+	l, err := ResolveLegacyV1(context.Background(), s, &run.FakeRunner{})
 	if err != nil {
-		t.Fatalf("ResolveAll: %v", err)
+		t.Fatalf("ResolveLegacyV1: %v", err)
 	}
 	if got := l.Tools["implicit/github/0"].Latest; got != "v1.2.3-implicit" {
 		t.Errorf("implicit latest pin = %q", got)
@@ -377,14 +377,14 @@ func TestReleasePinDispatchIsKindAgnostic(t *testing.T) {
 	s := &config.Schema{Tools: map[string]*config.Tool{
 		"httprepo": {Name: "httprepo", Methods: []*config.MethodCandidate{{Kind: "http", Config: map[string]any{"repo": "owner/httprepo", "asset": "tool.tar.gz"}}}},
 	}}
-	l, err := ResolveAll(context.Background(), s, &run.FakeRunner{})
+	l, err := ResolveLegacyV1(context.Background(), s, &run.FakeRunner{})
 	if err != nil {
-		t.Fatalf("ResolveAll: %v", err)
+		t.Fatalf("ResolveLegacyV1: %v", err)
 	}
 	if got := l.Tools["httprepo/http/0"].Latest; got != "v9.9.9-httprepo" {
 		t.Fatalf("repo-backed http pin = %q, want v9.9.9-httprepo", got)
 	}
-	Apply(s, l)
+	ApplyLegacyV1(s, l)
 	if got := s.Tools["httprepo"].Methods[0].Config["release"]; got != "v9.9.9-httprepo" {
 		t.Fatalf("applied release = %v, want v9.9.9-httprepo", got)
 	}
@@ -404,7 +404,7 @@ func TestApplyPinsGitHubReleaseWithoutOverwritingExplicitRefs(t *testing.T) {
 		"branch/github/0":   {Latest: "v4.0.0"},
 	}}
 
-	Apply(s, l)
+	ApplyLegacyV1(s, l)
 
 	if got := s.Tools["implicit"].Methods[0].Config["release"]; got != "v1.0.0" {
 		t.Errorf("implicit release = %v", got)
@@ -445,7 +445,7 @@ func TestApplyPinsURLs(t *testing.T) {
 		},
 	}
 
-	Apply(s, l)
+	ApplyLegacyV1(s, l)
 
 	mc := s.Tools["ff"].Methods[0]
 	got := mc.Config["url"].(string)
@@ -479,7 +479,7 @@ func TestApplySkipsMethodsWithoutLockEntry(t *testing.T) {
 
 	// Lock has no entry for ff/git.
 	l := &Lock{Version: 1, Tools: map[string]ToolPin{}}
-	Apply(s, l)
+	ApplyLegacyV1(s, l)
 
 	mc := s.Tools["ff"].Methods[0]
 	got := mc.Config["url"].(string)
@@ -515,7 +515,7 @@ func TestApplyChecksumOnlyPin(t *testing.T) {
 		},
 	}
 
-	Apply(s, l)
+	ApplyLegacyV1(s, l)
 
 	mc := s.Tools["tool"].Methods[0]
 	// URL should be unchanged.
@@ -554,7 +554,7 @@ func TestSaveLoadFile(t *testing.T) {
 	}
 }
 
-func TestResolveAllCapturesChecksumResolved(t *testing.T) {
+func TestResolveLegacyV1CapturesChecksumResolved(t *testing.T) {
 	s := &config.Schema{
 		Tools: map[string]*config.Tool{
 			"tool": {
@@ -573,9 +573,9 @@ func TestResolveAllCapturesChecksumResolved(t *testing.T) {
 		},
 	}
 
-	l, err := ResolveAll(context.Background(), s, run.OSExecRunner{})
+	l, err := ResolveLegacyV1(context.Background(), s, run.OSExecRunner{})
 	if err != nil {
-		t.Fatalf("ResolveAll: %v", err)
+		t.Fatalf("ResolveLegacyV1: %v", err)
 	}
 	if l == nil {
 		t.Fatal("expected non-nil lock")
@@ -591,7 +591,7 @@ func TestResolveAllCapturesChecksumResolved(t *testing.T) {
 	}
 }
 
-func TestResolveAllSkipsAutoChecksum(t *testing.T) {
+func TestResolveLegacyV1SkipsAutoChecksum(t *testing.T) {
 	s := &config.Schema{
 		Tools: map[string]*config.Tool{
 			"tool": {
@@ -609,9 +609,9 @@ func TestResolveAllSkipsAutoChecksum(t *testing.T) {
 		},
 	}
 
-	l, err := ResolveAll(context.Background(), s, run.OSExecRunner{})
+	l, err := ResolveLegacyV1(context.Background(), s, run.OSExecRunner{})
 	if err != nil {
-		t.Fatalf("ResolveAll: %v", err)
+		t.Fatalf("ResolveLegacyV1: %v", err)
 	}
 
 	// :auto checksums should NOT be captured as pins.
@@ -647,7 +647,7 @@ func TestChecksumPinRoundTrip(t *testing.T) {
 		},
 	}
 
-	Apply(s, l)
+	ApplyLegacyV1(s, l)
 
 	mc := s.Tools["tool"].Methods[0]
 	got := mc.Config["checksum"].(string)
@@ -691,7 +691,7 @@ func TestApplySurvivesURLTemplateChange(t *testing.T) {
 		},
 	}
 
-	Apply(s, l)
+	ApplyLegacyV1(s, l)
 
 	mc := s.Tools["ff"].Methods[0]
 	got := mc.Config["url"].(string)
@@ -732,7 +732,7 @@ func TestApplyDuplicateMethodKinds(t *testing.T) {
 		},
 	}
 
-	Apply(s, l)
+	ApplyLegacyV1(s, l)
 
 	mc0 := s.Tools["tool"].Methods[0]
 	got0 := mc0.Config["url"].(string)
@@ -754,7 +754,7 @@ func TestApplyDuplicateMethodKinds(t *testing.T) {
 	}
 }
 
-func TestResolveAllDuplicateMethodKinds(t *testing.T) {
+func TestResolveLegacyV1DuplicateMethodKinds(t *testing.T) {
 	s := &config.Schema{
 		Tools: map[string]*config.Tool{
 			"tool": {
@@ -779,9 +779,9 @@ func TestResolveAllDuplicateMethodKinds(t *testing.T) {
 		},
 	}
 
-	l, err := ResolveAll(context.Background(), s, run.OSExecRunner{})
+	l, err := ResolveLegacyV1(context.Background(), s, run.OSExecRunner{})
 	if err != nil {
-		t.Fatalf("ResolveAll: %v", err)
+		t.Fatalf("ResolveLegacyV1: %v", err)
 	}
 
 	// Both methods should have distinct lock entries.
@@ -808,8 +808,8 @@ func TestResolveAllDuplicateMethodKinds(t *testing.T) {
 }
 
 func TestMethodHashRoundTrip(t *testing.T) {
-	// Verify that ResolveAll populates MethodsHash for tools with methods,
-	// and that Apply can read it without warning when the hash matches.
+	// Verify that ResolveLegacyV1 populates MethodsHash for tools with methods,
+	// and that ApplyLegacyV1 can read it without warning when the hash matches.
 	s := &config.Schema{
 		Tools: map[string]*config.Tool{
 			"tool": {
@@ -822,15 +822,15 @@ func TestMethodHashRoundTrip(t *testing.T) {
 		},
 	}
 
-	l, err := ResolveAll(context.Background(), s, run.OSExecRunner{})
+	l, err := ResolveLegacyV1(context.Background(), s, run.OSExecRunner{})
 	if err != nil {
-		t.Fatalf("ResolveAll: %v", err)
+		t.Fatalf("ResolveLegacyV1: %v", err)
 	}
 
 	// MethodsHash should be populated.
 	h := l.MethodsHash["tool"]
 	if h == "" {
-		t.Fatal("MethodsHash should not be empty after ResolveAll")
+		t.Fatal("MethodsHash should not be empty after ResolveLegacyV1")
 	}
 
 	// Verify hash is deterministic.
@@ -845,7 +845,7 @@ func TestMethodHashRoundTrip(t *testing.T) {
 	log.Default = capture.Logger
 	defer func() { log.Default = saved }()
 
-	Apply(s, l)
+	ApplyLegacyV1(s, l)
 
 	capture.AssertNotContains(t, "method ordering changed")
 }
@@ -862,7 +862,7 @@ func TestSourceHashRoundTripAndFrozenDriftDetection(t *testing.T) {
 	s := &config.Schema{Tools: map[string]*config.Tool{
 		"demo": {Name: "demo", Methods: []*config.MethodCandidate{method}},
 	}}
-	l, err := ResolveAll(context.Background(), s, &run.FakeRunner{})
+	l, err := ResolveLegacyV1(context.Background(), s, &run.FakeRunner{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -939,9 +939,9 @@ func TestApplyMethodReorderingWarning(t *testing.T) {
 	}
 
 	// Create a lock with the correct hash for the schema.
-	l, err := ResolveAll(context.Background(), s, run.OSExecRunner{})
+	l, err := ResolveLegacyV1(context.Background(), s, run.OSExecRunner{})
 	if err != nil {
-		t.Fatalf("ResolveAll: %v", err)
+		t.Fatalf("ResolveLegacyV1: %v", err)
 	}
 
 	// Now reorder the schema methods.
@@ -953,7 +953,7 @@ func TestApplyMethodReorderingWarning(t *testing.T) {
 	log.Default = capture.Logger
 	defer func() { log.Default = saved }()
 
-	Apply(s, l)
+	ApplyLegacyV1(s, l)
 
 	capture.AssertContains(t, "method ordering changed")
 	capture.AssertContains(t, "tool")
@@ -1014,7 +1014,7 @@ func TestMethodHashDetectsSameKindReordering(t *testing.T) {
 	}
 }
 
-func TestResolveAllPinsLocalArtifactContentWithoutAbsolutePath(t *testing.T) {
+func TestResolveLegacyV1PinsLocalArtifactContentWithoutAbsolutePath(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "vendor"), 0o700); err != nil {
 		t.Fatal(err)
@@ -1036,7 +1036,7 @@ func TestResolveAllPinsLocalArtifactContentWithoutAbsolutePath(t *testing.T) {
 		},
 	}
 
-	l, err := ResolveAll(context.Background(), s, &run.FakeRunner{})
+	l, err := ResolveLegacyV1(context.Background(), s, &run.FakeRunner{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1048,7 +1048,7 @@ func TestResolveAllPinsLocalArtifactContentWithoutAbsolutePath(t *testing.T) {
 		t.Fatalf("local pin leaked project root: %#v", pin)
 	}
 
-	Apply(s, l)
+	ApplyLegacyV1(s, l)
 	got, _ := s.Tools["demo"].Methods[0].Config["checksum"].(string)
 	if got != pin.Checksum {
 		t.Fatalf("applied checksum = %q, want %q", got, pin.Checksum)
@@ -1067,7 +1067,7 @@ func TestApplyLocalPinDoesNotOverrideExplicitChecksum(t *testing.T) {
 			}},
 		},
 	}}
-	Apply(s, &Lock{Version: 1, Tools: map[string]ToolPin{"demo/local/0": {Checksum: locked}}})
+	ApplyLegacyV1(s, &Lock{Version: 1, Tools: map[string]ToolPin{"demo/local/0": {Checksum: locked}}})
 	if got := s.Tools["demo"].Methods[0].Config["checksum"]; got != explicit {
 		t.Fatalf("explicit checksum overridden: got %v want %s", got, explicit)
 	}
@@ -1187,6 +1187,11 @@ func TestValidateFrozenRejectsMissingSupportedPins(t *testing.T) {
 			method: &config.MethodCandidate{Kind: "container", Config: map[string]any{"manager": "docker", "source": "example/tool", "tag": "stable"}},
 			want:   "missing resolved container digest pin",
 		},
+		{
+			name:   "mutable npm package selector",
+			method: &config.MethodCandidate{Kind: "npm", Config: map[string]any{"pkg": "@example/tool"}},
+			want:   "missing resolved package version",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1221,6 +1226,17 @@ func TestValidateFrozenRejectsMethodIdentityDrift(t *testing.T) {
 	err := ValidateFrozen(s, l)
 	if err == nil || !strings.Contains(err.Error(), "methods changed for tool") {
 		t.Fatalf("ValidateFrozen() error = %v, want method drift", err)
+	}
+}
+
+func TestValidateFrozenRejectsMethodLabelDrift(t *testing.T) {
+	method := &config.MethodCandidate{Kind: "http", Label: "primary", Config: map[string]any{"url": "https://example.test/tool.tar.gz"}}
+	s := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}}}}
+	l := frozenTestLock(s, map[string]ToolPin{})
+
+	method.Label = "mirror"
+	if err := ValidateFrozen(s, l); err == nil || !strings.Contains(err.Error(), "methods changed for tool") {
+		t.Fatalf("ValidateFrozen() error = %v, want method label drift", err)
 	}
 }
 
@@ -1304,6 +1320,11 @@ func TestValidateFrozenRejectsInvalidInputs(t *testing.T) {
 		t.Fatalf("ValidateFrozen(current version without projection) error = %v", err)
 	}
 
+	invalidProjection := &Lock{Version: CurrentVersion, UniversalProjection: "not json"}
+	if err := ValidateFrozen(s, invalidProjection); err == nil || !strings.Contains(err.Error(), "invalid universal projection") {
+		t.Fatalf("ValidateFrozen(invalid projection) error = %v", err)
+	}
+
 	withNilTool := &config.Schema{Tools: map[string]*config.Tool{"tool": nil}}
 	if err := ValidateFrozen(withNilTool, &Lock{Version: 1}); err == nil {
 		t.Fatal("ValidateFrozen(nil tool) unexpectedly succeeded")
@@ -1313,6 +1334,105 @@ func TestValidateFrozenRejectsInvalidInputs(t *testing.T) {
 	}}
 	if err := ValidateFrozen(withNilMethod, &Lock{Version: 1}); err == nil {
 		t.Fatal("ValidateFrozen(nil method) unexpectedly succeeded")
+	}
+}
+
+func frozenV2TestLock(t *testing.T, schema *config.Schema, names ...string) *Lock {
+	t.Helper()
+	methods, sources, err := SnapshotIntentMetadata(schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plans := make([]plan.ResolvedInstallPlan, 0, len(names))
+	for _, name := range names {
+		tool := schema.Tools[name]
+		resolved := plan.New(name, tool.Methods[0].Kind, true)
+		resolved.Identity.Version = "1.0.0"
+		plans = append(plans, resolved)
+	}
+	doc, err := plan.BuildLockDocument(plans)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frozen, err := NewUniversal(doc, methods, sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return frozen
+}
+
+func TestValidateFrozenV2AcceptsProjectionWithoutLegacyTools(t *testing.T) {
+	schema := &config.Schema{Tools: map[string]*config.Tool{
+		"tool": {Name: "tool", Methods: []*config.MethodCandidate{{
+			Kind: "http", Config: map[string]any{"url": "https://example.test/{latest}/tool.tar.gz"},
+		}}},
+	}}
+	frozen := frozenV2TestLock(t, schema, "tool")
+	if len(frozen.Tools) != 0 {
+		t.Fatalf("legacy Tools = %#v, want empty", frozen.Tools)
+	}
+	if err := ValidateFrozen(schema, frozen); err != nil {
+		t.Fatalf("ValidateFrozen() rejected v2 projection without legacy pins: %v", err)
+	}
+}
+
+func TestValidateFrozenV2RejectsRequestedMethodAndSourceDrift(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*config.MethodCandidate)
+	}{
+		{
+			name: "method label",
+			mutate: func(method *config.MethodCandidate) {
+				method.Label = "changed-label"
+			},
+		},
+		{
+			name: "source identity",
+			mutate: func(method *config.MethodCandidate) {
+				method.Sources[0].URL = "https://example.test/changed.git"
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			method := &config.MethodCandidate{
+				Kind:    "http",
+				Config:  map[string]any{"url": "https://example.test/tool.tar.gz"},
+				Sources: []config.Source{{Kind: "brew", Name: "core", URL: "https://example.test/core.git"}},
+			}
+			schema := &config.Schema{Tools: map[string]*config.Tool{
+				"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}},
+			}}
+			frozen := frozenV2TestLock(t, schema, "tool")
+			tc.mutate(method)
+			if err := ValidateFrozen(schema, frozen); err == nil {
+				t.Fatal("ValidateFrozen() accepted changed requested identity")
+			}
+		})
+	}
+}
+
+func TestValidateFrozenV2RejectsMissingProjectionEntry(t *testing.T) {
+	schema := &config.Schema{Tools: map[string]*config.Tool{
+		"selected": {Name: "selected", Methods: []*config.MethodCandidate{{Kind: "http", Config: map[string]any{"url": "https://example.test/tool.tar.gz"}}}},
+		"outside":  {Name: "outside", Methods: []*config.MethodCandidate{{Kind: "http", Config: map[string]any{"url": "https://example.test/outside.tar.gz"}}}},
+	}}
+	frozen := frozenV2TestLock(t, schema, "outside")
+	filtered := &config.Schema{Tools: map[string]*config.Tool{"selected": schema.Tools["selected"]}}
+	if err := ValidateFrozen(filtered, frozen); err == nil {
+		t.Fatal("ValidateFrozen() accepted a concrete candidate missing from the projection")
+	}
+}
+
+func TestValidateFrozenV2AllowsExtraProjectionEntries(t *testing.T) {
+	schema := &config.Schema{Tools: map[string]*config.Tool{
+		"selected": {Name: "selected", Methods: []*config.MethodCandidate{{Kind: "http", Config: map[string]any{"url": "https://example.test/tool.tar.gz"}}}},
+		"outside":  {Name: "outside", Methods: []*config.MethodCandidate{{Kind: "http", Config: map[string]any{"url": "https://example.test/outside.tar.gz"}}}},
+	}}
+	frozen := frozenV2TestLock(t, schema, "selected", "outside")
+	filtered := &config.Schema{Tools: map[string]*config.Tool{"selected": schema.Tools["selected"]}}
+	if err := ValidateFrozen(filtered, frozen); err != nil {
+		t.Fatalf("ValidateFrozen() rejected extra lock entry outside effective schema: %v", err)
 	}
 }
 
@@ -1502,7 +1622,7 @@ func TestMergeKeepsFreshProjectionWhenPresent(t *testing.T) {
 	}
 }
 
-func TestResolveAllPinsMutableGitSelectors(t *testing.T) {
+func TestResolveLegacyV1PinsMutableGitSelectors(t *testing.T) {
 	const commit = "0123456789abcdef0123456789abcdef01234567"
 	cases := []struct {
 		name   string
@@ -1528,7 +1648,7 @@ func TestResolveAllPinsMutableGitSelectors(t *testing.T) {
 			schema := &config.Schema{Tools: map[string]*config.Tool{
 				"tool": {Name: "tool", Methods: []*config.MethodCandidate{tc.method}},
 			}}
-			lk, err := ResolveAll(context.Background(), schema, &run.FakeRunner{Stdout: tc.stdout})
+			lk, err := ResolveLegacyV1(context.Background(), schema, &run.FakeRunner{Stdout: tc.stdout})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1544,7 +1664,7 @@ func TestApplyMutableGitPinReusesCommitWithoutChangingSelector(t *testing.T) {
 	const commit = "0123456789abcdef0123456789abcdef01234567"
 	method := &config.MethodCandidate{Kind: "git", Config: map[string]any{"url": "https://example.test/tool.git", "branch": "main"}}
 	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}}}}
-	Apply(schema, &Lock{Version: 1, Tools: map[string]ToolPin{
+	ApplyLegacyV1(schema, &Lock{Version: 1, Tools: map[string]ToolPin{
 		"tool/git/0": {Selector: "branch:main", Revision: commit},
 	}})
 	if method.LockedRevision != commit {
@@ -1591,7 +1711,7 @@ func TestLoadRejectsMalformedGitPin(t *testing.T) {
 	}
 }
 
-func TestResolveAllPinsMutableContainerTag(t *testing.T) {
+func TestResolveLegacyV1PinsMutableContainerTag(t *testing.T) {
 	const digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	original := resolveContainerTagDigest
 	resolveContainerTagDigest = func(_ context.Context, source, tag string, credentials *containerregistry.Credentials) (string, error) {
@@ -1609,7 +1729,7 @@ func TestResolveAllPinsMutableContainerTag(t *testing.T) {
 		"manager": "docker", "source": "registry.example.test/team/tool", "tag": "stable",
 	}}
 	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}}}}
-	lk, err := ResolveAll(context.Background(), schema, &run.FakeRunner{})
+	lk, err := ResolveLegacyV1(context.Background(), schema, &run.FakeRunner{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1619,7 +1739,7 @@ func TestResolveAllPinsMutableContainerTag(t *testing.T) {
 	}
 }
 
-func TestResolveAllPinsImplicitLatestContainerTag(t *testing.T) {
+func TestResolveLegacyV1PinsImplicitLatestContainerTag(t *testing.T) {
 	const digest = "sha256:1123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	original := resolveContainerTagDigest
 	resolveContainerTagDigest = func(_ context.Context, _, tag string, _ *containerregistry.Credentials) (string, error) {
@@ -1632,7 +1752,7 @@ func TestResolveAllPinsImplicitLatestContainerTag(t *testing.T) {
 
 	method := &config.MethodCandidate{Kind: "container", Config: map[string]any{"manager": "podman", "source": "redis"}}
 	schema := &config.Schema{Tools: map[string]*config.Tool{"redis": {Name: "redis", Methods: []*config.MethodCandidate{method}}}}
-	lk, err := ResolveAll(context.Background(), schema, &run.FakeRunner{})
+	lk, err := ResolveLegacyV1(context.Background(), schema, &run.FakeRunner{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1645,7 +1765,7 @@ func TestApplyMutableContainerPinReusesDigestWithoutChangingTag(t *testing.T) {
 	const digest = "sha256:2123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	method := &config.MethodCandidate{Kind: "container", Config: map[string]any{"manager": "docker", "source": "example/tool", "tag": "edge"}}
 	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}}}}
-	Apply(schema, &Lock{Version: 1, Tools: map[string]ToolPin{
+	ApplyLegacyV1(schema, &Lock{Version: 1, Tools: map[string]ToolPin{
 		"tool/container/0": {ContainerTag: "edge", ContainerDigest: digest},
 	}})
 	if method.LockedDigest != digest {
@@ -1656,6 +1776,20 @@ func TestApplyMutableContainerPinReusesDigestWithoutChangingTag(t *testing.T) {
 	}
 }
 
+func TestValidateFrozenRejectsMutablePackageSelectorDrift(t *testing.T) {
+	method := &config.MethodCandidate{Kind: "npm", Config: map[string]any{"pkg": "@example/old"}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}}}}
+	selector, ok := packageMutableSelector("tool", method)
+	if !ok {
+		t.Fatal("npm package was not recognized as a mutable selector")
+	}
+	l := frozenTestLock(schema, map[string]ToolPin{"tool/npm/0": {PackageSelector: selector, PackageVersion: "1.2.3"}})
+	method.Config["pkg"] = "@example/new"
+
+	if err := ValidateFrozen(schema, l); err == nil || !strings.Contains(err.Error(), "package or registry changed") {
+		t.Fatalf("ValidateFrozen() error = %v, want package selector drift", err)
+	}
+}
 func TestValidateFrozenRejectsMutableContainerTagDrift(t *testing.T) {
 	const digest = "sha256:3123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	method := &config.MethodCandidate{Kind: "container", Config: map[string]any{"manager": "docker", "source": "example/tool", "tag": "develop"}}
@@ -1700,7 +1834,7 @@ func TestLoadRejectsMalformedContainerPin(t *testing.T) {
 	}
 }
 
-func TestResolveAllContainerTagPassesEnvCredentialWithoutPersistingSecret(t *testing.T) {
+func TestResolveLegacyV1ContainerTagPassesEnvCredentialWithoutPersistingSecret(t *testing.T) {
 	const (
 		digest      = "sha256:5123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 		secretValue = "registry-secret-value"
@@ -1726,7 +1860,7 @@ func TestResolveAllContainerTagPassesEnvCredentialWithoutPersistingSecret(t *tes
 		SecretRef: &config.SecretReference{Provider: "env", Name: "DEPENGINE_CONTAINER_TEST_PASSWORD"},
 	}
 	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}}}}
-	lk, err := ResolveAll(context.Background(), schema, &run.FakeRunner{})
+	lk, err := ResolveLegacyV1(context.Background(), schema, &run.FakeRunner{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1751,5 +1885,15 @@ func TestValidateFrozenRejectsBrewTapRevisionDrift(t *testing.T) {
 	method.Sources[0].Revision = "abcdef0123456789abcdef0123456789abcdef01"
 	if err := ValidateFrozen(s, l); err == nil || !strings.Contains(err.Error(), "package sources changed") {
 		t.Fatalf("ValidateFrozen() error = %v, want package sources changed", err)
+	}
+}
+
+func TestApplyLegacyV1IgnoresV2ToolPins(t *testing.T) {
+	method := &config.MethodCandidate{Kind: "http", Config: map[string]any{"url": "https://example.test/{latest}/tool.tar.gz"}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}}}}
+	lk := &Lock{Version: CurrentVersion, Tools: map[string]ToolPin{"tool/http/0": {Latest: "v9.9.9"}}}
+	ApplyLegacyV1(schema, lk)
+	if got := method.Config["url"]; got != "https://example.test/{latest}/tool.tar.gz" {
+		t.Fatalf("v2 compatibility ToolPin changed schema URL to %v", got)
 	}
 }

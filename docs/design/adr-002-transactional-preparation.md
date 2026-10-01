@@ -41,6 +41,19 @@ write-ahead journal and explicit ownership:
   `FinalizeRollback` persists every retained source/prerequisite (including
   zero-ref orphans) instead of silently forgetting them. Plan-aware cleanup
   removes only `RollbackSafe` resources (`RollbackRetain` stays explicit).
+- State v5 adds a checksummed replacement WAL before destructive upgrades. It
+  persists the tracked old state, exact desired target, and resource-use claims
+  before removal, then journals removal and installation boundaries before
+  those host mutations. After exact-target verification, installed tool state,
+  release of the old dependent claims, and the target's replacement ownership
+  claims are committed atomically with the `Installed` phase while the
+  replacement WAL remains active. Recovery observes old and desired identity independently
+  and resumes only an evidenced step; ambiguous observations block. The after-upgrade hook is preceded by a
+  persisted `PostHookRunning` boundary. The postinstall-completion flag and WAL
+  removal are saved together, including when the hook reports failure; if a
+  restart finds `PostHookRunning`, it blocks rather than replaying a hook with
+  unknown side effects. A reported post-hook failure does not undo
+  the committed installation.
 - State v4 persists sticky `root_requested` intent: last-reference
   depengine-owned lazy prerequisites are recursively removed, shared helpers
   wait for the final owner, root/external prerequisites are retained.

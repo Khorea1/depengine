@@ -58,6 +58,29 @@ A missing known field is not an empty value: `KnownFields` determines which repo
 
 In state-tracked execution, preparation and candidate commit use a write-ahead journal. The journal records an applying/committing boundary before host mutation; recovery may finalize a commit only when reconciliation proves `satisfied`. An ambiguous external outcome remains blocked until explicit evidence resolves it. Do not replay commit or rollback mutations merely because a process restarted. Ownership is finalized with the commit and shared resources are removed only under their recorded ownership/refcount rules.
 
+State-tracked upgrades pass the discovery-time `ToolState` into the required
+`ExecuteResolvedUpgradeCandidate` API. At API entry it deep-clones the snapshot
+config before initialization, recovery, or prerequisite execution can mutate
+shared input. Under the state lock, the executor deep-compares it with current
+durable state before creating replacement WAL or crossing the removal
+boundary; stale or missing state fails closed. `config.FindMethodCandidate`
+looks up the previous schema candidate by its persisted method kind and label.
+The WAL stores the previous tracked state, exact immutable replacement target,
+and resource-use claims before removal. The executor journals removal and
+installation boundaries before those mutations, then verifies the exact target.
+Installed `ToolState`, release of the old dependent resource claims, new
+replacement ownership claims, preparation completion, and the `Installed`
+phase are persisted together while the replacement WAL remains active. Recovery independently observes old and desired identities and
+resumes only a phase justified by those observations; unknown, broken,
+conflicting, or ambiguous states block. For legacy transactions, resource
+claims may be recovered from a matching preparation plan; if required claims
+cannot be established, recovery fails closed. The after-upgrade hook is marked
+`PostHookRunning` before execution. The postinstall-completion flag and WAL
+removal are saved atomically, including when the hook reports failure; a
+restart in `PostHookRunning` blocks rather than replaying an arbitrary hook
+whose outcome is unknown. A post-hook error leaves the new
+installation committed and does not trigger compensating removal.
+
 Library callers that leave `schemaPath` empty use the existing best-effort preparation branch instead: it does not persist the durable WAL and provides no restart recovery for those preparations. These state-tracking and recovery guarantees do not apply to that untracked branch.
 
 The failure domain of a failed tool is its transitive dependent closure, not its prerequisite closure: declared and lazy prerequisites propagate failure to dependents, and the failed tool's descendants are blocked. Independent siblings and unrelated branches continue; failure is not a global abort. In state-tracked execution, a recovered, proven commit may satisfy a dependency without replaying its host operations. This documents the executor/recovery contract, not a scheduler or retry policy.
@@ -66,6 +89,7 @@ The failure domain of a failed tool is its transitive dependent closure, not its
 
 - [ADR-001 — Universal lock projection](adr-001-universal-lock-projection.md)
 - [ADR-002 — Transactional preparation](adr-002-transactional-preparation.md)
+- [ADR-003 — Hook lifecycle](adr-003-hook-lifecycle.md)
 - [ADR-005 — Resolved install plan projection](adr-005-resolved-install-plan-projection.md)
 - [Support boundary](../support-boundary.md)
 - [Schema reference](../schema-reference.md)

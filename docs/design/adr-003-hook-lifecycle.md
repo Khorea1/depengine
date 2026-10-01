@@ -45,12 +45,14 @@ and a one-time hook run could masquerade as ongoing health.
 - Status treats hooks as events rather than desired state. State stores a
   hook-free desired-state hash for drift detection and never uses historical
   hook completion as health evidence.
-
+- State-tracked replacement persists `PostHookRunning` before an after-upgrade
+  hook. The postinstall-completion flag and replacement-WAL removal are saved
+  together, including when the hook reports failure. A restart in that phase
+  blocks rather than replaying a hook whose side effects may have completed; a
+  returned hook failure leaves the replacement installed and does not trigger
+  compensation. The CLI upgrade flow uses this resolved replacement path.
 
 ## Open work
 
 - Expose checked `EnsureAction` declarations through the manifest/status UX if
   a durable "ensure this state exists" surface is needed.
-- The direct destructive `upgrade` command remains fail-closed for candidates
-  with lifecycle hooks until it can execute the same resolved lifecycle plan;
-  the normal reconciliation executor already preserves hook semantics.

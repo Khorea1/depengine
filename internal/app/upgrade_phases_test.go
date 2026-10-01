@@ -1,13 +1,10 @@
 package app
 
-// Unit tests for the runUpgrade phase helpers. These run fully in-process:
-// no helper binary is spawned and no test asserts via process exit —
-// outcomes are checked through returned values and ExitError codes.
+// Unit tests for upgrade discovery, reporting, and orchestration phases.
 
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 
@@ -15,129 +12,51 @@ import (
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
-	"github.com/Khorea1/depengine/internal/log"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
 )
 
-// phaseTestAdapter is a self-contained stub for the single-tool upgrade path.
-// Probe results are canned so no host subprocess ever runs.
+// phaseTestAdapter is a self-contained probe adapter shared by app phase tests.
 type phaseTestAdapter struct {
 	available   bool
-	installed   bool
-	canRemove   bool
 	observation *plan.Observation
-	calls       []string
 }
 
-func (a *phaseTestAdapter) Kind() string { return "go" }
-func (a *phaseTestAdapter) Available(context.Context, run.Runner) bool {
-	a.calls = append(a.calls, "available")
-	return a.available
+func (*phaseTestAdapter) Kind() string                                 { return "go" }
+func (a *phaseTestAdapter) Available(context.Context, run.Runner) bool { return a.available }
+func (*phaseTestAdapter) Check(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
+	return false
 }
-func (a *phaseTestAdapter) Check(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
-	a.calls = append(a.calls, "check")
-	return a.installed
-}
-func (a *phaseTestAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
-	a.calls = append(a.calls, "check-available")
+func (*phaseTestAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
 	return true
 }
-func (a *phaseTestAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (*phaseTestAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
 	return nil
 }
-func (a *phaseTestAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
-	a.calls = append(a.calls, "resolve-plan")
+func (*phaseTestAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
 	resolved := intent.Clone()
 	return &resolved, nil
 }
 func (a *phaseTestAdapter) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
-	a.calls = append(a.calls, "observe")
 	if a.observation != nil {
 		return *a.observation, nil
 	}
-	presence := plan.PresenceAbsent
-	if a.installed {
-		presence = plan.PresencePresent
-	}
-	return plan.Observation{Presence: presence, Identity: plan.ObservedIdentity{Package: "example.test/demo", Version: "v0.1.0"}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion}}, nil
+	return plan.Observation{}, nil
 }
-func (a *phaseTestAdapter) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
-	a.calls = append(a.calls, "install-resolved")
+func (*phaseTestAdapter) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
 	return nil
 }
 
 var _ exec.AdapterV2 = (*phaseTestAdapter)(nil)
 
-func (a *phaseTestAdapter) Install(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
-	a.calls = append(a.calls, "install")
+func (*phaseTestAdapter) Install(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
 	return nil
 }
-func (a *phaseTestAdapter) Remove(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
-	a.calls = append(a.calls, "remove")
+func (*phaseTestAdapter) Remove(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
 	return nil
 }
-func (a *phaseTestAdapter) CanRemove() bool { return a.canRemove }
-
-func phaseTestGoTool(pkg string) (*config.Tool, *config.MethodCandidate) {
-	method := &config.MethodCandidate{Kind: "go", Config: map[string]any{"pkg": pkg, "version": "v0.2.0"}}
-	return &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}, method
-}
-
-func phaseTestRunner() *run.LoggingRunner {
-	return run.NewLoggingRunner(&run.FakeRunner{}, log.Default)
-}
-
-func TestUpgradeEnvironmentChild(t *testing.T) {
-	if os.Getenv("DEPENGINE_UPGRADE_ENV_CHILD") != "1" {
-		return
-	}
-	for _, name := range []string{
-		"DEPENGINE_UPGRADE_ARTIFACT_SECRET",
-		"DEPENGINE_UPGRADE_CHECKSUM_SECRET",
-		"DEPENGINE_UPGRADE_SIGNATURE_SECRET",
-		"DEPENGINE_UPGRADE_SOURCE_SECRET",
-	} {
-		if value, ok := os.LookupEnv(name); ok {
-			t.Errorf("typed secret %s reached child with value %q", name, value)
-		}
-	}
-	for _, name := range []string{"DEPENGINE_UPGRADE_OTHER_METHOD_SECRET", "DEPENGINE_UPGRADE_UNRELATED"} {
-		if got := os.Getenv(name); got != "preserved" {
-			t.Errorf("unrelated environment %s = %q, want preserved", name, got)
-		}
-	}
-}
-
-func TestUpgradeContextOmitsOnlySelectedMethodEnvSecrets(t *testing.T) {
-	for _, name := range []string{
-		"DEPENGINE_UPGRADE_ARTIFACT_SECRET",
-		"DEPENGINE_UPGRADE_CHECKSUM_SECRET",
-		"DEPENGINE_UPGRADE_SIGNATURE_SECRET",
-		"DEPENGINE_UPGRADE_SOURCE_SECRET",
-		"DEPENGINE_UPGRADE_OTHER_METHOD_SECRET",
-		"DEPENGINE_UPGRADE_UNRELATED",
-	} {
-		t.Setenv(name, "preserved")
-	}
-	t.Setenv("DEPENGINE_UPGRADE_ENV_CHILD", "1")
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	selected := &config.MethodCandidate{
-		SecretRef:          &config.SecretReference{Provider: "env", Name: "DEPENGINE_UPGRADE_ARTIFACT_SECRET"},
-		ChecksumSecretRef:  &config.SecretReference{Provider: "env", Name: "DEPENGINE_UPGRADE_CHECKSUM_SECRET"},
-		SignatureSecretRef: &config.SecretReference{Provider: "env", Name: "DEPENGINE_UPGRADE_SIGNATURE_SECRET"},
-		Sources:            []config.Source{{SecretRef: &config.SecretReference{Provider: "env", Name: "DEPENGINE_UPGRADE_SOURCE_SECRET"}}},
-	}
-	ctx := upgradeContext(context.Background(), selected)
-	result := (run.OSExecRunner{}).Run(ctx, exe, "-test.run=^TestUpgradeEnvironmentChild$")
-	if result.Err != nil || result.ExitCode != 0 {
-		t.Fatalf("child failed: exit=%d err=%v stderr=%s", result.ExitCode, result.Err, result.Stderr)
-	}
-}
+func (*phaseTestAdapter) CanRemove() bool { return false }
 
 func TestResolveUpgradeManifestPathPassthrough(t *testing.T) {
 	cases := []struct {
@@ -180,7 +99,7 @@ func phaseTestDriftFixture() (*state.State, *config.Schema, *lock.Lock) {
 		"current": {Name: "current", Methods: []*config.MethodCandidate{curMethod}},
 		"unknown": {Name: "unknown", Methods: []*config.MethodCandidate{unkMethod}},
 	}}
-	lk := &lock.Lock{Tools: map[string]lock.ToolPin{
+	lk := &lock.Lock{Version: 1, Tools: map[string]lock.ToolPin{
 		"old/go/0":     {Latest: "v0.2.0"},
 		"current/go/0": {Latest: "v0.1.0"},
 		"unknown/go/0": {Latest: "v0.2.0"},
@@ -196,7 +115,7 @@ func phaseTestDriftFixture() (*state.State, *config.Schema, *lock.Lock) {
 
 func TestCollectOutdatedToolsFindsDriftOnly(t *testing.T) {
 	st, s, lk := phaseTestDriftFixture()
-	outdated, failures := collectOutdatedTools(st, s, lk, "", upgradeExecutorForMethodOrder([]string{"go"}), "")
+	outdated, failures := collectOutdatedTools(context.Background(), st, s, lk, "", upgradeExecutorForMethodOrder([]string{"go"}), "")
 	if len(failures) != 0 {
 		t.Fatalf("failures = %+v, want none", failures)
 	}
@@ -211,7 +130,7 @@ func TestCollectOutdatedToolsFindsDriftOnly(t *testing.T) {
 
 func TestCollectOutdatedToolsOnlyFilter(t *testing.T) {
 	st, s, lk := phaseTestDriftFixture()
-	outdated, failures := collectOutdatedTools(st, s, lk, "current", upgradeExecutorForMethodOrder([]string{"go"}), "")
+	outdated, failures := collectOutdatedTools(context.Background(), st, s, lk, "current", upgradeExecutorForMethodOrder([]string{"go"}), "")
 	if len(outdated) != 0 || len(failures) != 0 {
 		t.Fatalf("outdated = %+v, failures = %+v, want both empty", outdated, failures)
 	}
@@ -223,11 +142,11 @@ func TestCollectOutdatedToolsDiscoveryFailure(t *testing.T) {
 		{Kind: "go", Label: "b", Config: map[string]any{"pkg": "example.test/b"}},
 	}}
 	s := &config.Schema{Tools: map[string]*config.Tool{"amb": tool}}
-	lk := &lock.Lock{Tools: map[string]lock.ToolPin{"amb/go/0": {Latest: "v0.9.0"}}}
+	lk := &lock.Lock{Version: 1, Tools: map[string]lock.ToolPin{"amb/go/0": {Latest: "v0.9.0"}}}
 	st := &state.State{Tools: map[string]state.ToolState{
 		"amb": {Method: "go", MethodKind: "go", Version: "v0.1.0"},
 	}}
-	outdated, failures := collectOutdatedTools(st, s, lk, "", upgradeExecutorForMethodOrder([]string{"go"}), "")
+	outdated, failures := collectOutdatedTools(context.Background(), st, s, lk, "", upgradeExecutorForMethodOrder([]string{"go"}), "")
 	if len(outdated) != 0 {
 		t.Fatalf("outdated = %+v, want none", outdated)
 	}
@@ -278,58 +197,106 @@ func TestWriteUpgradeReportExitCodes(t *testing.T) {
 	}
 }
 
-func TestUpgradeSingleToolNoAdapter(t *testing.T) {
-	tool, method := phaseTestGoTool("example.test/demo")
-	ex := exec.New()
-	st := &state.State{Tools: map[string]state.ToolState{}}
-	ot := upgradeOutdatedTool{
-		name: "demo", ts: state.ToolState{Method: "phase-test-no-such-kind", MethodKind: "phase-test-no-such-kind", Version: "v0.1.0"},
-		pinnedVer: "v0.2.0", tool: tool, method: method, methodKind: "phase-test-no-such-kind",
-	}
-	res := upgradeSingleTool(context.Background(), ex, phaseTestRunner(), &engine.Facts{}, "", st, ot, upgradeOptions{quiet: true}, nil)
-	if res.Status != "failed" || !strings.Contains(res.Error, "no adapter for method") {
-		t.Fatalf("result = %+v, want failed/no-adapter", res)
-	}
-}
-
-func TestUpgradeSingleToolDryRunSkipsMutation(t *testing.T) {
-	tool, method := phaseTestGoTool("example.test/demo")
-	adapter := &phaseTestAdapter{available: true, installed: true, canRemove: true}
-	ex := exec.New()
-	exec.WithAdapters(adapter)(ex)
-	st := &state.State{Tools: map[string]state.ToolState{
-		"demo": {Method: "go", MethodKind: "go", Version: "v0.1.0"},
-	}}
-	ot := upgradeOutdatedTool{
-		name: "demo", ts: st.Tools["demo"],
-		pinnedVer: "v0.2.0", tool: tool, method: method, methodKind: "go",
-	}
-	res := upgradeSingleTool(context.Background(), ex, phaseTestRunner(), &engine.Facts{}, "", st, ot,
-		upgradeOptions{dryRun: true, quiet: true}, nil)
-	if res.Status != "would_upgrade" || res.NewVer != "v0.2.0" {
-		t.Fatalf("result = %+v, want would_upgrade/v0.2.0", res)
-	}
-	if strings.Join(adapter.calls, ",") != "available,resolve-plan,observe,check-available" {
-		t.Fatalf("adapter calls = %v, want probes only (no remove/install)", adapter.calls)
-	}
-	if st.Tools["demo"].Version != "v0.1.0" {
-		t.Fatalf("state mutated by dry-run: %+v", st.Tools["demo"])
-	}
-}
-
 func TestRunUpgradeLoopTalliesDiscoveryFailures(t *testing.T) {
 	ex := exec.New()
-	st := &state.State{Tools: map[string]state.ToolState{}}
 	failures := []upgradeResult{{
 		Tool: "amb", Status: "failed", OldVer: "v0.1.0", Method: "go",
 		Error: "cannot resolve tracked candidate: boom",
 	}}
-	results, counts := runUpgradeLoop(context.Background(), ex, phaseTestRunner(), &engine.Facts{}, "",
-		st, nil, failures, upgradeOptions{quiet: true}, nil)
+	results, counts := runUpgradeLoop(context.Background(), ex, "", nil, failures, upgradeOptions{quiet: true}, nil)
 	if len(results) != 1 || results[0].Tool != "amb" {
 		t.Fatalf("results = %+v, want the seeded failure", results)
 	}
 	if counts.failed != 1 || counts.upgraded != 0 || counts.skipped != 0 || counts.wouldUpgrade != 0 {
 		t.Fatalf("counts = %+v, want exactly one failure", counts)
+	}
+}
+func TestCollectOutdatedToolsUsesV2ReconciliationInsteadOfRecordedVersion(t *testing.T) {
+	method := &config.MethodCandidate{Kind: "go", Config: map[string]any{"pkg": "example.test/demo"}}
+	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"demo": tool}}
+	desired := plan.New("demo", "go", true)
+	desired.Identity.Package = "example.test/demo"
+	desired.Identity.Version = "1.0.0"
+	document, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{desired})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lk, err := lock.NewUniversal(document, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation := plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Package: "example.test/old", Version: "1.0.0"},
+		KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion},
+	}
+	ex := exec.New()
+	exec.WithAdapters(&phaseTestAdapter{available: true, observation: &observation})(ex)
+	exec.WithDefaultMethodOrder([]string{"go"})(ex)
+	exec.WithLockDocument(document)(ex)
+	st := &state.State{Tools: map[string]state.ToolState{
+		"demo": {Method: "go", MethodKind: "go", Version: ""},
+	}}
+	outdated, failures := collectOutdatedTools(context.Background(), st, schema, lk, "", ex, "")
+	if len(failures) != 0 {
+		t.Fatalf("failures = %+v, want none", failures)
+	}
+	if len(outdated) != 1 || outdated[0].resolved == nil || outdated[0].pinnedVer != "1.0.0" {
+		t.Fatalf("outdated = %+v, want the drifted locked target despite absent recorded version and equal version string", outdated)
+	}
+}
+
+func TestCollectOutdatedToolsReportsV2TrackedCandidateFailureWithoutLegacyPins(t *testing.T) {
+	tool := &config.Tool{Name: "amb", Methods: []*config.MethodCandidate{
+		{Kind: "go", Label: "a", Config: map[string]any{"pkg": "example.test/a"}},
+		{Kind: "go", Label: "b", Config: map[string]any{"pkg": "example.test/b"}},
+	}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"amb": tool}}
+	desired := plan.New("amb", "go", true)
+	desired.Identity.Version = "1.0.0"
+	document, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{desired})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lk, err := lock.NewUniversal(document, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := &state.State{Tools: map[string]state.ToolState{
+		"amb": {Method: "go", MethodKind: "go", Version: "0.9.0"},
+	}}
+	outdated, failures := collectOutdatedTools(context.Background(), st, schema, lk, "", upgradeExecutorForMethodOrder([]string{"go"}), "")
+	if len(outdated) != 0 || len(failures) != 1 || failures[0].Tool != "amb" {
+		t.Fatalf("outdated = %+v, failures = %+v, want a terminal failure for the v2-tracked tool", outdated, failures)
+	}
+}
+
+func TestCollectOutdatedToolsFailsClosedOnUnknownV2Observation(t *testing.T) {
+	method := &config.MethodCandidate{Kind: "go", Config: map[string]any{"pkg": "example.test/demo"}}
+	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"demo": tool}}
+	desired := plan.New("demo", "go", true)
+	desired.Identity.Package = "example.test/demo"
+	desired.Identity.Version = "1.0.0"
+	document, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{desired})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lk, err := lock.NewUniversal(document, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation := plan.Observation{Presence: plan.PresenceUnknown, Detail: "probe failed"}
+	ex := exec.New()
+	exec.WithAdapters(&phaseTestAdapter{available: true, observation: &observation})(ex)
+	exec.WithDefaultMethodOrder([]string{"go"})(ex)
+	exec.WithLockDocument(document)(ex)
+	st := &state.State{Tools: map[string]state.ToolState{
+		"demo": {Method: "go", MethodKind: "go", Version: "0.9.0"},
+	}}
+	outdated, failures := collectOutdatedTools(context.Background(), st, schema, lk, "", ex, "")
+	if len(outdated) != 0 || len(failures) != 1 || failures[0].Status != "failed" {
+		t.Fatalf("outdated = %+v, failures = %+v, want unknown observation blocked as failure", outdated, failures)
 	}
 }

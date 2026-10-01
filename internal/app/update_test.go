@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,6 +61,73 @@ func runTestInstallDryRun(t *testing.T, schemaPath string) error {
 	return cmd.ExecuteContext(context.Background())
 }
 
+func TestRunUpdateCreatesUniversalLockWithoutLegacyPins(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	dir := t.TempDir()
+	checksum := "sha256:" + strings.Repeat("a", 64)
+	schemaPath := writeUpdateTestSchema(t, dir, "schema_version = 1\n\n"+
+		"[tools.first.http]\nurl = \"https://example.com/first\"\nchecksum = \""+checksum+"\"\n\n"+
+		"[tools.second.http]\nurl = \"https://example.com/second\"\nchecksum = \""+checksum+"\"\n")
+
+	runTestUpdate(t, schemaPath, "")
+	got, err := lock.Load(lock.DefaultPath(schemaPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Version != lock.CurrentVersion {
+		t.Fatalf("updated lock = %#v, want version %d", got, lock.CurrentVersion)
+	}
+	if len(got.Tools) != 0 {
+		t.Fatalf("legacy tools = %#v, want empty for new universal lock", got.Tools)
+	}
+	document, err := got.ProjectionDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := document.VerifyCoverage([]string{"first", "second"}); err != nil {
+		t.Fatalf("universal projection coverage: %v", err)
+	}
+}
+
+func TestRunUpdateDryRunPreviewsUniversalProjection(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	dir := t.TempDir()
+	checksum := "sha256:" + strings.Repeat("a", 64)
+	schemaPath := writeUpdateTestSchema(t, dir, "schema_version = 1\n\n"+
+		"[tools.preview.http]\nurl = \"https://example.com/preview\"\nchecksum = \""+checksum+"\"\n")
+	previous := &lock.Lock{Version: 1, Tools: map[string]lock.ToolPin{
+		"preview/http/0": {Latest: "legacy-version"},
+		"orphan/http/0":  {Latest: "legacy-orphan"},
+	}}
+	if err := lock.Save(lock.DefaultPath(schemaPath), previous); err != nil {
+		t.Fatal(err)
+	}
+
+	noManifest, frozen, dryRun, verbose := true, false, true, false
+	manifest, lockFlag, profile := "", "", ""
+	oldStderr := os.Stderr
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = writer
+	runErr := runUpdate(context.Background(), &schemaPath, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose)
+	_ = writer.Close()
+	os.Stderr = oldStderr
+	output, readErr := io.ReadAll(reader)
+	_ = reader.Close()
+	if runErr != nil {
+		t.Fatalf("runUpdate dry-run: %v", runErr)
+	}
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	text := string(output)
+	if !strings.Contains(text, "would write 1 pins") || !strings.Contains(text, "preview") || strings.Contains(text, "legacy-orphan") || strings.Contains(text, "legacy-version") {
+		t.Fatalf("dry-run preview = %q, want one projection entry for preview and no legacy orphan", text)
+	}
+}
+
 func TestUpdatePinValueShowsImmutableContainerDigest(t *testing.T) {
 	const digest = "sha256:6123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	got := updatePinValue(lock.ToolPin{ContainerTag: "stable", ContainerDigest: digest})
@@ -75,6 +143,17 @@ func TestUpdatePinValueShowsImmutableGitRevision(t *testing.T) {
 	want := "branch:main @ " + revision
 	if got != want {
 		t.Fatalf("updatePinValue() = %q, want %q", got, want)
+	}
+}
+
+func TestUpdateProjectionValueUsesLockedIdentity(t *testing.T) {
+	entry := plan.LockProjection{Identity: plan.LockIdentity{Version: "2.4.1", Digest: "sha256:abc"}}
+	if got := updateProjectionValue(entry); got != "sha256:abc" {
+		t.Fatalf("updateProjectionValue() = %q, want projection digest", got)
+	}
+	entry.Identity.Digest = ""
+	if got := updateProjectionValue(entry); got != "2.4.1" {
+		t.Fatalf("updateProjectionValue() = %q, want projected version", got)
 	}
 }
 
@@ -247,7 +326,7 @@ func TestFullInstallAfterProfiledUpdateKeepsToolsOutsideProfileConsumable(t *tes
 // profiled-v1 regression test above. When the previous lock is already v2, its
 // projection is the only source of identity for tools outside the profile, so
 // update must rebuild and persist it: the profiled tool accepts fresh identity
-// while the omitted tool keeps its previous entry.
+// while the omitted tool with stale metadata is freshly resolved.
 func TestRunUpdateRebuildsProjectionForProfileOnV2Lock(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
@@ -260,8 +339,8 @@ func TestRunUpdateRebuildsProjectionForProfileOnV2Lock(t *testing.T) {
 		"[tools.outside.http]\nurl = \"https://example.com/outside\"\nchecksum = \""+checksum+"\"\n")
 
 	// Previous v2 lock whose projection deliberately seeds identities that a
-	// fresh resolution must replace for the profiled tool and preserve for the
-	// tool outside the profile.
+	// fresh resolution must replace for the profiled tool and refresh for the
+	// omitted tool whose intent metadata is missing.
 	seeded := func(name, version string) plan.ResolvedInstallPlan {
 		p := plan.New(name, "http", true)
 		p.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: version}
@@ -282,7 +361,7 @@ func TestRunUpdateRebuildsProjectionForProfileOnV2Lock(t *testing.T) {
 			"profiled/http/0": {Checksum: checksum},
 			"outside/http/0":  {Checksum: checksum},
 		},
-		MethodsHash: map[string]string{"profiled": "stale", "outside": "stale"},
+		MethodsHash: map[string]string{"profiled": "stale"},
 	}
 	if err := previousLock.SetProjection(previous); err != nil {
 		t.Fatal(err)
@@ -299,6 +378,9 @@ func TestRunUpdateRebuildsProjectionForProfileOnV2Lock(t *testing.T) {
 	}
 	if got == nil {
 		t.Fatal("runUpdate did not write a lock")
+	}
+	if got.MethodsHash["outside"] == "stale" {
+		t.Fatal("out-of-profile method metadata drift was not refreshed")
 	}
 	if got.Version != lock.CurrentVersion {
 		t.Fatalf("lock version = %d, want %d (profiled update left a v2 lock behind)", got.Version, lock.CurrentVersion)
@@ -322,8 +404,11 @@ func TestRunUpdateRebuildsProjectionForProfileOnV2Lock(t *testing.T) {
 	if !ok {
 		t.Fatalf("projection entries = %v, want retained outside entry", entries)
 	}
-	if outside.Identity.Version != "9.9.9" {
-		t.Fatalf("outside projection = %#v, want retained 9.9.9 entry", outside.Identity)
+	if outside.Identity.Version == "9.9.9" {
+		t.Fatalf("outside projection = %#v, stale identity survived metadata drift", outside.Identity)
+	}
+	if got.MethodsHash["outside"] == "stale" {
+		t.Fatal("out-of-profile method hash was not refreshed")
 	}
 }
 
@@ -444,11 +529,13 @@ func TestRunUpdateProfileOnV2PrunesRemovedCoverage(t *testing.T) {
 	}
 }
 
-func TestRunUpdateAcceptsRemovedSourceIdentity(t *testing.T) {
+func TestRunUpdateAcceptsChangedSourceIdentity(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
 	dir := t.TempDir()
 	schemaPath := writeUpdateTestSchema(t, dir, "schema_version = 1\n\n"+
+		"[tools.demo]\nmethod_only = [\"http\"]\n\n"+
+		"[tools.demo.native]\npkg = \"demo\"\nsources = [{ kind = \"brew-tap\", name = \"corp/tools\", url = \"https://example.test/tools.git\", revision = \"0123456789abcdef0123456789abcdef01234567\" }]\n\n"+
 		"[tools.demo.http]\nurl = \"https://example.com/demo\"\nchecksum = \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n")
 	lockPath := lock.DefaultPath(schemaPath)
 	old := &lock.Lock{
@@ -467,8 +554,8 @@ func TestRunUpdateAcceptsRemovedSourceIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := got.SourceHash["demo/native/0"]; ok {
-		t.Fatalf("SourceHash = %v, want removed source identity accepted by update", got.SourceHash)
+	if sourceHash := got.SourceHash["demo/native/0"]; sourceHash == "" || sourceHash == "stale-source-identity" {
+		t.Fatalf("SourceHash[demo/native/0] = %q, want updated package-source identity", sourceHash)
 	}
 	if got.Version != lock.CurrentVersion {
 		t.Fatalf("lock version = %d, want %d", got.Version, lock.CurrentVersion)
@@ -482,10 +569,9 @@ func TestRunUpdateAcceptsRemovedSourceIdentity(t *testing.T) {
 	}
 }
 
-// TestRunUpdatePreservesMaterializedAutoChecksumPin is the regression test for
-// `depengine update` dropping a materialized `sha256:auto` pin: ResolveAll
-// deliberately skips `:auto`, so without the merge the next
-// `install --frozen-lockfile` fails immediately after a successful update.
+// TestRunUpdatePreservesMaterializedAutoChecksumPin verifies that a canonical
+// update carries a previous materialized `sha256:auto` checksum into the v2
+// projection, without treating legacy ToolPin data as authoritative.
 func TestRunUpdatePreservesMaterializedAutoChecksumPin(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
@@ -496,17 +582,22 @@ func TestRunUpdatePreservesMaterializedAutoChecksumPin(t *testing.T) {
 		"[tools.auto.http]\nurl = \"https://example.com/auto\"\nchecksum = \"sha256:auto\"\n\n"+
 		"[tools.pinned.http]\nurl = \"https://example.com/pinned\"\nchecksum = \""+freshChecksum+"\"\n")
 
-	old := &lock.Lock{
-		Version: 1,
-		Tools: map[string]lock.ToolPin{
-			"auto/http/0":   {Checksum: materialized},
-			"pinned/http/0": {Checksum: "sha256:" + strings.Repeat("f", 64)},
-		},
-		MethodsHash: map[string]string{
-			"auto":   "stale-auto-identity",
-			"pinned": "stale-pinned-identity",
-		},
+	autoPlan := plan.New("auto", "http", false)
+	autoPlan.Artifacts = []plan.Artifact{{URL: "https://example.com/auto", Checksum: materialized}}
+	pinnedPlan := plan.New("pinned", "http", false)
+	pinnedPlan.Artifacts = []plan.Artifact{{URL: "https://example.com/pinned", Checksum: "sha256:" + strings.Repeat("f", 64)}}
+	previousDocument, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{autoPlan, pinnedPlan})
+	if err != nil {
+		t.Fatal(err)
 	}
+	old, err := lock.NewUniversal(previousDocument, map[string]string{"auto": "stale-auto-identity", "pinned": "stale-pinned-identity"}, nil, map[string]lock.ToolPin{
+		"auto/http/0":   {Checksum: "sha256:" + strings.Repeat("1", 64)},
+		"pinned/http/0": {Checksum: "sha256:" + strings.Repeat("f", 64)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	lockPath := lock.DefaultPath(schemaPath)
 	if err := lock.Save(lockPath, old); err != nil {
 		t.Fatal(err)
@@ -522,22 +613,42 @@ func TestRunUpdatePreservesMaterializedAutoChecksumPin(t *testing.T) {
 		t.Fatal("runUpdate did not write a lock")
 	}
 
-	// The :auto tool is covered by the fresh schema, so its method identity
-	// is recomputed — but ResolveAll produced no checksum pin for it, so the
-	// materialized checksum must be carried over field-wise.
-	if pin := got.Tools["auto/http/0"]; pin.Checksum != materialized {
-		t.Fatalf("auto pin = %#v, want preserved materialized checksum", pin)
+	// V2 retains legacy pins as compatibility payload; the projection is the
+	// authoritative fresh identity. The materialized auto checksum must be
+	// carried into that projection without reusing mutable legacy values.
+	if pin := got.Tools["auto/http/0"]; pin.Checksum != "sha256:"+strings.Repeat("1", 64) {
+		t.Fatalf("auto legacy pin = %#v, want unchanged conflicting compatibility payload", pin)
+	}
+	if pin := got.Tools["pinned/http/0"]; pin.Checksum != "sha256:"+strings.Repeat("f", 64) {
+		t.Fatalf("pinned legacy pin = %#v, want unchanged compatibility payload", pin)
 	}
 	if h := got.MethodsHash["auto"]; h == "" || h == "stale-auto-identity" {
 		t.Fatalf("auto methods_hash = %q, want freshly computed hash (identity change accepted)", h)
 	}
-
-	// A tool with a re-resolvable checksum gets the fresh value.
-	if pin := got.Tools["pinned/http/0"]; pin.Checksum != freshChecksum {
-		t.Fatalf("pinned checksum = %q, want fresh %q", pin.Checksum, freshChecksum)
-	}
 	if h := got.MethodsHash["pinned"]; h == "" || h == "stale-pinned-identity" {
 		t.Fatalf("pinned methods_hash = %q, want freshly computed hash", h)
+	}
+	document, err := got.ProjectionDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectedChecksum := func(name string) string {
+		entry, ok := document.EntryForTool(name)
+		if !ok {
+			return ""
+		}
+		for _, artifact := range entry.Identity.Artifacts {
+			if artifact.Checksum != "" {
+				return artifact.Checksum
+			}
+		}
+		return ""
+	}
+	if got := projectedChecksum("auto"); got != materialized {
+		t.Fatalf("auto projection checksum = %q, want carried materialized checksum", got)
+	}
+	if got := projectedChecksum("pinned"); got != freshChecksum {
+		t.Fatalf("pinned projection checksum = %q, want fresh %q", got, freshChecksum)
 	}
 }
 
@@ -562,10 +673,56 @@ func TestRunUpdateRegeneratesUnreadableLock(t *testing.T) {
 	if got == nil {
 		t.Fatal("runUpdate did not regenerate the unreadable lock")
 	}
-	if pin := got.Tools["demo/http/0"]; pin.Checksum != checksum {
-		t.Fatalf("regenerated pin = %#v, want checksum %q", pin, checksum)
+	if got.Version != lock.CurrentVersion {
+		t.Fatalf("regenerated lock version = %d, want canonical version %d", got.Version, lock.CurrentVersion)
+	}
+	document, err := got.ProjectionDocument()
+	if err != nil {
+		t.Fatalf("regenerated projection: %v", err)
+	}
+	entry, ok := document.EntryForTool("demo")
+	if !ok || len(entry.Identity.Artifacts) != 1 || entry.Identity.Artifacts[0].Checksum != checksum {
+		t.Fatalf("regenerated projection entry = %#v, want artifact checksum %q", entry, checksum)
 	}
 	if got.MethodsHash["demo"] == "" {
 		t.Fatal("regenerated lock is missing the fresh method identity")
+	}
+}
+
+func TestRunUpdateFailsClosedWhenRequiredChecksumIsUnresolved(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	dir := t.TempDir()
+	schemaPath := writeUpdateTestSchema(t, dir, "schema_version = 1\n\n"+
+		"[tools.demo.http]\nurl = \"https://example.com/demo\"\nchecksum = \"sha256:auto\"\n")
+	lockPath := lock.DefaultPath(schemaPath)
+	if err := runTestUpdateResult(t, schemaPath, ""); err == nil {
+		t.Fatal("update accepted unresolved required artifact integrity")
+	}
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Fatalf("lock after unresolved-integrity failure: stat error = %v, want no file", err)
+	}
+}
+
+func TestRunUpdateMigratesV1LockOnFullUpdate(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	dir := t.TempDir()
+	checksum := "sha256:" + strings.Repeat("a", 64)
+	schemaPath := writeUpdateTestSchema(t, dir, "schema_version = 1\n\n"+
+		"[tools.demo.http]\nurl = \"https://example.com/demo\"\nchecksum = \""+checksum+"\"\n")
+	lockPath := lock.DefaultPath(schemaPath)
+	previous := &lock.Lock{Version: 1, Tools: map[string]lock.ToolPin{"demo/http/0": {Checksum: checksum}}}
+	if err := lock.Save(lockPath, previous); err != nil {
+		t.Fatal(err)
+	}
+	runTestUpdate(t, schemaPath, "")
+	got, err := lock.Load(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Version != lock.CurrentVersion {
+		t.Fatalf("full update lock = %#v, want v%d migration", got, lock.CurrentVersion)
+	}
+	if _, err := got.ProjectionDocument(); err != nil {
+		t.Fatalf("migrated lock projection: %v", err)
 	}
 }

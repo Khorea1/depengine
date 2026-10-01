@@ -6,6 +6,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/sbom"
 	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
@@ -38,16 +39,32 @@ func runSBOM(sbomFormat *string) error {
 
 	st := ls.State()
 
-	// Fall back to lock pins for tools whose recorded version is empty
-	// (e.g. state files written before version tracking): 0.0.0 should only
-	// appear when nothing is knowable.
+	// Fill missing state versions from the authoritative lock format. V2
+	// projection data is decoded once and never falls back to its legacy payload.
 	if st.SchemaPath != "" {
 		if lk, lerr := lock.Load(lock.DefaultPath(st.SchemaPath)); lerr == nil && lk != nil {
+			var projection plan.LockDocument
+			hasProjection := false
+			if lk.Version == lock.CurrentVersion {
+				if document, err := lk.ProjectionDocument(); err == nil {
+					projection = document
+					hasProjection = true
+				}
+			}
 			for name, ts := range st.Tools {
 				if ts.Version != "" {
 					continue
 				}
-				if pin, ok := lockPinFor(lk, name, ts.MethodKind); ok && pin.Latest != "" {
+				if lk.Version == lock.CurrentVersion {
+					if hasProjection {
+						if entry, ok := projection.EntryForTool(name); ok && entry.Stability == plan.LockImmutable && entry.Identity.Version != "" && ts.MethodKind != "" && entry.Candidate.Method == ts.MethodKind {
+							ts.Version = entry.Identity.Version
+							st.Tools[name] = ts
+						}
+					}
+					continue
+				}
+				if pin, ok := legacyV1PinFor(lk, name, ts.MethodKind); ok && pin.Latest != "" {
 					ts.Version = pin.Latest
 					st.Tools[name] = ts
 				}

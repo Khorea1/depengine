@@ -73,7 +73,10 @@ var (
 	resolveContainerTagDigest = containerregistry.ResolveTagDigest
 )
 
-// Lock pins resolved placeholder values for reproducible installs.
+// A v2 lock uses UniversalProjection as its operational resolved identity.
+// Tools remains readable compatibility payload; v2 consumers must not let it
+// override the universal projection. Version 1 uses Tools for legacy pins.
+// V2 locks persist the canonical resolved identity in UniversalProjection.
 type Lock struct {
 	Version     int                `toml:"version"`
 	Tools       map[string]ToolPin `toml:"tools"`
@@ -84,16 +87,17 @@ type Lock struct {
 	UniversalProjection string `toml:"universal_projection,omitempty"`
 
 	// clearGitRevision/clearContainerDigest are transient merge policy populated
-	// by ResolveAll when a previously lockable mutable selector has been removed.
+	// by ResolveLegacyV1 when a previously lockable mutable selector has been removed.
 	// They are never persisted.
 	clearGitRevision     map[string]struct{} `toml:"-" json:"-"`
 	clearContainerDigest map[string]struct{} `toml:"-" json:"-"`
 	clearPackageVersion  map[string]struct{} `toml:"-" json:"-"`
 }
 
-// ToolPin captures resolved values for one tool's {latest} placeholder and/or
-// checksum. The key in Lock.Tools is "<toolName>/<methodKind>/<idx>" so that methods
-// of the same kind (e.g. two http methods as mirrors) each get their own pin.
+// ToolPin captures resolved values for legacy lock v1 compatibility. If a v2
+// universal projection is present, Tools is compatibility data and cannot
+// override the resolved identity in operational paths. Keys in Lock.Tools use
+// the form "<toolName>/<methodKind>/<idx>" so same-kind candidates remain distinct.
 type ToolPin struct {
 	Latest          string `toml:"latest,omitempty"`
 	Checksum        string `toml:"checksum,omitempty"` // pinned concrete checksum (e.g. "sha256:abc123...")
@@ -272,15 +276,57 @@ func computeSourceHash(method *config.MethodCandidate) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// ResolveAll resolves every selector class supported by legacy lock v1 and
+// SnapshotIntentMetadata derives requested method/source identity hashes without
+// resolving mutable selectors or mutating the schema.
+func SnapshotIntentMetadata(s *config.Schema) (map[string]string, map[string]string, error) {
+	if s == nil {
+		return nil, nil, fmt.Errorf("lock: intent metadata requires schema")
+	}
+	methods := make(map[string]string)
+	sources := make(map[string]string)
+	for name, tool := range s.Tools {
+		if tool == nil {
+			return nil, nil, fmt.Errorf("lock: intent metadata requires valid tool %q", name)
+		}
+		if len(tool.Methods) == 0 {
+			continue
+		}
+		for _, method := range tool.Methods {
+			if method == nil {
+				return nil, nil, fmt.Errorf("lock: intent metadata requires valid method for tool %q", name)
+			}
+		}
+		methods[name] = computeMethodsHash(tool.Methods)
+		kindCount := make(map[string]int)
+		for _, method := range tool.Methods {
+			if method == nil {
+				return nil, nil, fmt.Errorf("lock: intent metadata requires valid method for tool %q", name)
+			}
+			idx := kindCount[method.Kind]
+			kindCount[method.Kind] = idx + 1
+			if hash := computeSourceHash(method); hash != "" {
+				sources[toolKey(name, method.Kind, idx)] = hash
+			}
+		}
+	}
+	return methods, sources, nil
+}
+
+// ResolveLegacyV1 resolves every selector class supported by legacy lock v1 and
 // returns their immutable pins plus method/source identity hashes. Empty lock
 // (no tools needing resolution) is still valid.
-func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, error) {
+// This compatibility resolver is for lock envelope v1 only. New v2 code must
+// resolve through internal/exec AdapterV2.ResolvePlan.
+func ResolveLegacyV1(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, error) {
+	methodsHash, sourceHash, err := SnapshotIntentMetadata(s)
+	if err != nil {
+		return nil, err
+	}
 	l := &Lock{
 		Version:              1,
 		Tools:                make(map[string]ToolPin),
-		MethodsHash:          make(map[string]string),
-		SourceHash:           make(map[string]string),
+		MethodsHash:          methodsHash,
+		SourceHash:           sourceHash,
 		clearGitRevision:     make(map[string]struct{}),
 		clearContainerDigest: make(map[string]struct{}),
 		clearPackageVersion:  make(map[string]struct{}),
@@ -292,9 +338,6 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 			idx := kindCount[method.Kind]
 			kindCount[method.Kind] = idx + 1
 			key := toolKey(name, method.Kind, idx)
-			if sourceHash := computeSourceHash(method); sourceHash != "" {
-				l.SourceHash[key] = sourceHash
-			}
 			pin := ToolPin{}
 
 			// Resolve {latest} in URL fields (git and http methods only).
@@ -408,28 +451,23 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 				l.Tools[key] = pin
 			}
 		}
-		// Compute and store methods-ordering hash so Apply can detect
-		// if methods of the same kind have been reordered.
-		if len(tool.Methods) > 0 {
-			l.MethodsHash[name] = computeMethodsHash(tool.Methods)
-		}
 	}
 
 	return l, nil
 }
 
 // Merge folds the pins of an existing lock (typically the lock already on
-// disk) into fresh (typically a lock just produced by ResolveAll) and returns
+// disk) into fresh (typically a lock just produced by ResolveLegacyV1) and returns
 // the result that callers save.
 //
 // Tool pins merge field by field. For a pin key present in both locks, a
 // non-empty field in fresh wins and an empty field in fresh keeps the value
-// from existing. This matters for composite pins: ResolveAll may rediscover
-// only one field of an existing identity (lock.Apply concretizes release and
+// from existing. This matters for composite pins: ResolveLegacyV1 may rediscover
+// only one field of an existing identity (lock.ApplyLegacyV1 concretizes release and
 // checksum selectors before execution, and `:auto` checksums are skipped
 // until materialized), so replacing a pin wholesale would silently drop the
 // half it did not re-resolve. Pin keys only present in existing are carried
-// over wholesale — they cover pins ResolveAll deliberately skips and tools
+// over wholesale — they cover pins ResolveLegacyV1 deliberately skips and tools
 // the fresh resolution did not cover (e.g. filtered out by --profile). Pin
 // keys only present in fresh are kept as resolved.
 //
@@ -445,7 +483,7 @@ func ResolveAll(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, er
 // identity. That policy belongs to each caller, not to the pin merge.
 //
 // Version and UniversalProjection are preserved: when the existing lock is v2
-// and the fresh resolution carries no projection (ResolveAll only produces
+// and the fresh resolution carries no projection (ResolveLegacyV1 only produces
 // legacy v1 pins; promotion to v2 happens via SetProjection in update), the
 // merged result keeps the existing v2 version and projection verbatim.
 // Install must not regenerate or drop the universal projection — update is
@@ -513,12 +551,13 @@ func Merge(existing, fresh *Lock) *Lock {
 	return fresh
 }
 
-// ValidateFrozen verifies that a lock can be consumed without silently
-// re-resolving identities that legacy lock v1 already knows how to pin.
+// ValidateFrozen dispatches frozen validation by lock envelope version.
+// Version 1 retains legacy ToolPin requirements; version 2 trusts the universal
+// projection for resolved identity and checks requested method/source hashes.
 //
-// The v1 methods hash covers candidate kind/label ordering. It deliberately
-// does not claim to encode every requested field inside a candidate; selectors
-// outside the legacy lock model remain documented as unsupported.
+// V1 method hashes cover candidate kind/label ordering, not every requested
+// field inside a candidate; selectors outside legacy lock coverage remain
+// documented as unsupported.
 func ValidateFrozen(s *config.Schema, l *Lock) error {
 	if s == nil {
 		return fmt.Errorf("lock: frozen validation requires schema")
@@ -529,12 +568,13 @@ func ValidateFrozen(s *config.Schema, l *Lock) error {
 	if l.Version != 1 && l.Version != CurrentVersion {
 		return fmt.Errorf("lock: unsupported version %d (supported: 1, %d)", l.Version, CurrentVersion)
 	}
-	if l.Version == CurrentVersion {
-		if _, err := l.ProjectionDocument(); err != nil {
-			return err
-		}
+	if l.Version == 1 {
+		return validateFrozenV1(s, l)
 	}
+	return validateFrozenV2(s, l)
+}
 
+func validateFrozenV1(s *config.Schema, l *Lock) error {
 	names := make([]string, 0, len(s.Tools))
 	for name := range s.Tools {
 		names = append(names, name)
@@ -631,6 +671,64 @@ func ValidateFrozen(s *config.Schema, l *Lock) error {
 	return nil
 }
 
+func validateFrozenV2(s *config.Schema, l *Lock) error {
+	doc, err := l.ProjectionDocument()
+	if err != nil {
+		return err
+	}
+	currentMethods, currentSources, err := SnapshotIntentMetadata(s)
+	if err != nil {
+		return err
+	}
+
+	projected := make(map[string]struct{}, len(doc.Entries))
+	for _, entry := range doc.Entries {
+		projected[entry.Tool.Name] = struct{}{}
+	}
+	names := make([]string, 0, len(s.Tools))
+	for name := range s.Tools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		tool := s.Tools[name]
+		if len(tool.Methods) == 0 {
+			continue
+		}
+		storedMethodHash, ok := l.MethodsHash[name]
+		if !ok || storedMethodHash == "" {
+			return fmt.Errorf("lock: frozen lock needs update: missing method identity for tool %q", name)
+		}
+		if storedMethodHash != currentMethods[name] {
+			return fmt.Errorf("lock: frozen lock needs update: methods changed for tool %q", name)
+		}
+		if _, ok := projected[name]; !ok {
+			return fmt.Errorf("lock: frozen lock needs update: tool %q is not present in universal projection", name)
+		}
+
+		kindCount := make(map[string]int)
+		for _, method := range tool.Methods {
+			idx := kindCount[method.Kind]
+			kindCount[method.Kind] = idx + 1
+			key := toolKey(name, method.Kind, idx)
+			currentSourceHash := currentSources[key]
+			storedSourceHash, hasStoredSourceHash := l.SourceHash[key]
+			if currentSourceHash != "" {
+				if !hasStoredSourceHash || storedSourceHash == "" {
+					return fmt.Errorf("lock: frozen lock needs update: missing package-source identity for %q", key)
+				}
+				if storedSourceHash != currentSourceHash {
+					return fmt.Errorf("lock: frozen lock needs update: package sources changed for %q", key)
+				}
+			} else if hasStoredSourceHash && storedSourceHash != "" {
+				return fmt.Errorf("lock: frozen lock needs update: package sources changed for %q", key)
+			}
+		}
+	}
+	return nil
+}
+
 func requiresLatestPin(method *config.MethodCandidate) bool {
 	if method == nil {
 		return false
@@ -653,12 +751,15 @@ func requiresChecksumPin(method *config.MethodCandidate) bool {
 	return localPath != "" && checksum == ""
 }
 
-// Apply projects persisted pins onto the parsed schema before planning.
-// Artifact release/checksum pins patch Config where legacy behavior requires
-// it; Git revisions and container digests stay in transient fields so mutable
-// branch/tag intent remains available for drift reporting.
-func Apply(s *config.Schema, l *Lock) {
+// ApplyLegacyV1 projects lock-envelope v1 pins onto the parsed schema before
+// planning. It is a compatibility operation only; non-v1 envelopes are left
+// unchanged. Artifact pins patch Config, while Git revisions and container
+// digests stay transient so mutable intent remains visible for drift reporting.
+func ApplyLegacyV1(s *config.Schema, l *Lock) {
 	if l == nil {
+		return
+	}
+	if l.Version != 1 {
 		return
 	}
 	for name, tool := range s.Tools {

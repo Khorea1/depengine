@@ -204,6 +204,40 @@ func TestBuildLockDocumentIsDeterministicAndAllOrNothing(t *testing.T) {
 	}
 }
 
+func TestLockDocumentEntryForToolReturnsCloneAndMissingResult(t *testing.T) {
+	p := githubArtifactPlan()
+	p.Sources = []plan.SourceReference{{
+		Role:  plan.SourceRegistry,
+		Kind:  "cargo-registry",
+		Name:  "corp",
+		URL:   "https://packages.example.test/index",
+		Trust: &plan.SourceTrust{Fingerprint: "SHA256:abc"},
+	}}
+	doc, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{p})
+	if err != nil {
+		t.Fatalf("BuildLockDocument() error: %v", err)
+	}
+	want := doc.Entries[0]
+	got, ok := doc.EntryForTool(p.Tool.Name)
+	if !ok {
+		t.Fatalf("EntryForTool(%q) did not find existing tool", p.Tool.Name)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("EntryForTool(%q) = %#v, want %#v", p.Tool.Name, got, want)
+	}
+
+	got.Identity.Artifacts[0].URL = "https://example.test/changed.tar.gz"
+	got.Identity.Sources[0].Name = "changed"
+	got.Identity.Sources[0].Trust.Fingerprint = "changed"
+	if !reflect.DeepEqual(doc.Entries[0], want) {
+		t.Fatal("mutating returned entry changed the lock document")
+	}
+
+	if missing, found := doc.EntryForTool("missing"); found || !reflect.DeepEqual(missing, plan.LockProjection{}) {
+		t.Fatalf("EntryForTool(missing) = (%#v, %t), want zero entry and false", missing, found)
+	}
+}
+
 func TestLockDocumentCodecValidatesAndRejectsTrailingOrUnknownData(t *testing.T) {
 	p := plan.New("tool", "native", true)
 	p.Identity.RequestedVersion = &plan.VersionIntent{Mode: plan.VersionExact, Value: "1.2.3"}

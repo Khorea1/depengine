@@ -17,7 +17,7 @@ import (
 // path. It never invokes an installer and only returns an immutable projection
 // with exact coverage of expectedTools; unsupported identities or incomplete
 // retained coverage fail closed.
-func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, clan string, facts *engine.Facts, schemaPath string, logger *slog.Logger, previous *lock.Lock, expectedTools []string) (plan.LockDocument, error) {
+func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, clan string, facts *engine.Facts, schemaPath string, logger *slog.Logger, previous *lock.Lock, expectedTools []string, methodsHash map[string]string) (plan.LockDocument, error) {
 	if schema == nil {
 		return plan.LockDocument{}, fmt.Errorf("universal lock: schema is required")
 	}
@@ -33,42 +33,30 @@ func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, cl
 	for _, name := range expectedTools {
 		expectedNames[name] = struct{}{}
 	}
+	var previousDocument plan.LockDocument
+	if previous != nil && previous.Version == lock.CurrentVersion {
+		var err error
+		previousDocument, err = previous.ProjectionDocument()
+		if err != nil {
+			return plan.LockDocument{}, err
+		}
+	}
 	for _, name := range names {
 		tool := schema.Tools[name]
 		if tool == nil || len(tool.Methods) == 0 {
 			continue
 		}
-		attempts, sourceRevisions := resolver.ExplainToolWithSourceRevisions(ctx, tool, clan)
-		var resolved *plan.ResolvedInstallPlan
-		for i := range attempts {
-			attempt := &attempts[i]
-			if attempt.PlanIntent != nil && attempt.Error == "" && (attempt.Status == "would_install" || attempt.Status == "already_installed") {
-				resolved = attempt.PlanIntent
-				break
-			}
+		selected, err := resolver.ResolveLockCandidate(ctx, tool, clan)
+		if err != nil {
+			return plan.LockDocument{}, fmt.Errorf("universal lock: %w: no resolvable install candidate for tool %q: %w", plan.ErrLockUnavailable, name, err)
 		}
-		if resolved == nil {
-			return plan.LockDocument{}, fmt.Errorf("universal lock: %w: no resolvable install candidate for tool %q", plan.ErrLockUnavailable, name)
-		}
-		for _, revision := range sourceRevisions {
-			for _, source := range resolved.Sources {
-				if source.Kind == revision.Kind && source.Name == revision.Name {
-					if err := resolved.ApplyResolvedSourceRevision(revision.Kind, revision.Name, revision.Revision); err != nil {
-						return plan.LockDocument{}, fmt.Errorf("universal lock: source revision for tool %q: %w", name, err)
-					}
-					break
-				}
-			}
-		}
-		resolvedPlans = append(resolvedPlans, resolved.Clone())
+		resolved := selected.Plan.Clone()
+		carryForwardArtifactIntegrity(&resolved, previous, previousDocument)
+		resolvedPlans = append(resolvedPlans, resolved)
 		resolvedNames[name] = struct{}{}
 	}
 	if previous != nil && previous.Version == lock.CurrentVersion {
-		old, err := previous.ProjectionDocument()
-		if err != nil {
-			return plan.LockDocument{}, err
-		}
-		for _, entry := range old.Entries {
+		for _, entry := range previousDocument.Entries {
 			if _, expected := expectedNames[entry.Tool.Name]; !expected {
 				continue
 			}
@@ -103,6 +91,67 @@ func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, cl
 		return plan.LockDocument{}, fmt.Errorf("universal lock: incomplete install-closure coverage: %w", err)
 	}
 	return document, nil
+}
+
+// carryForwardArtifactIntegrity preserves only a checksum for an identical
+// artifact configuration in a previous v2 projection. V1 pins lack artifact
+// identity, so their checksums cannot be proven safe to reuse. Candidate
+// identity is always freshly resolved.
+func carryForwardArtifactIntegrity(current *plan.ResolvedInstallPlan, previous *lock.Lock, previousDocument plan.LockDocument) {
+	if current == nil || previous == nil || previous.Version != lock.CurrentVersion {
+		return
+	}
+	var prior *plan.LockProjection
+	for i := range previousDocument.Entries {
+		entry := &previousDocument.Entries[i]
+		if entry.Tool.Name == current.Tool.Name {
+			prior = entry
+			break
+		}
+	}
+	for i := range current.Artifacts {
+		artifact := &current.Artifacts[i]
+		if artifact.Checksum != "" && artifact.Checksum != "sha256:auto" || prior == nil {
+			continue
+		}
+		for _, old := range prior.Identity.Artifacts {
+			if old.Kind == artifact.Kind && old.URL == artifact.URL && old.LocalPath == artifact.LocalPath &&
+				old.ChecksumURL == artifact.ChecksumURL && old.ChecksumFileFormat == artifact.ChecksumFileFormat &&
+				old.SignatureURL == artifact.SignatureURL && old.SignaturePath == artifact.SignaturePath && old.SigningKey == artifact.SigningKey &&
+				old.Checksum != "" && old.Checksum != "sha256:auto" {
+				artifact.Checksum = old.Checksum
+				break
+			}
+		}
+	}
+}
+
+// universalLockIntentDrifted requires refreshed metadata for retained entries.
+// A tool absent from the projection is left to the caller's coverage check.
+func universalLockIntentDrifted(previous *lock.Lock, previousDocument plan.LockDocument, name string, methodsHash, sourceHash map[string]string) bool {
+	if previous == nil {
+		return false
+	}
+	if _, retained := previousDocument.EntryForTool(name); !retained {
+		return false
+	}
+	previousMethods, exists := previous.MethodsHash[name]
+	if !exists || previousMethods != methodsHash[name] {
+		return true
+	}
+	for key, current := range sourceHash {
+		if lockCandidateToolName(key) == name && previous.SourceHash[key] != current {
+			return true
+		}
+	}
+	for key := range previous.SourceHash {
+		if lockCandidateToolName(key) == name {
+			if _, exists := sourceHash[key]; !exists {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // universalLockCoverageNames returns the non-virtual tools in an effective

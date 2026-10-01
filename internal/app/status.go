@@ -69,6 +69,14 @@ func runStatus(ctx context.Context, statusSchema, statusManifest *string, status
 	}
 
 	s, lk := loadStatusSchema(schemaPath, statusManifest, statusNoManifest)
+	var lockDocument *plan.LockDocument
+	if lk != nil && lk.Version == lock.CurrentVersion {
+		document, err := lk.ProjectionDocument()
+		if err != nil {
+			return fmt.Errorf("load universal lock projection for status: %w", err)
+		}
+		lockDocument = &document
+	}
 
 	tools := classifyStatusTools(st.Tools, s, lk, *statusOrphans)
 	if s != nil && !*statusOrphans {
@@ -78,6 +86,9 @@ func runStatus(ctx context.Context, statusSchema, statusManifest *string, status
 			exec.WithRunner(run.OSExecRunner{})(ex)
 			exec.WithFacts(facts)(ex)
 			exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
+			if lockDocument != nil {
+				exec.WithLockDocument(*lockDocument)(ex)
+			}
 			tools = reconcileStatusTools(ctx, tools, st.Tools, s, lk, ex, engine.ResolveFamily(facts))
 		} else {
 			log.Default.Warn("gather host facts for status", "error", factsErr)
@@ -199,8 +210,8 @@ func statusToolOutdated(ts state.ToolState, stTool *config.Tool, lk *lock.Lock, 
 		return true
 	}
 	// Version drift: the installed version differs from the pinned one.
-	if ts.Version != "" {
-		if pin, ok := lockPinForToolState(lk, name, stTool, ts); ok && state.VersionOutdated(ts.Version, pinnedVersion(pin)) {
+	if ts.Version != "" && (lk == nil || lk.Version != lock.CurrentVersion) {
+		if pin, ok := legacyV1PinForToolState(lk, name, stTool, ts); ok && state.VersionOutdated(ts.Version, legacyV1PinnedVersion(pin)) {
 			return true
 		}
 	}
@@ -224,11 +235,17 @@ func reconcileStatusTools(ctx context.Context, rows []toolStatus, installed map[
 			row.Verification = &verification
 			continue
 		}
-		desiredVersion := ""
-		if pin, ok := lockPinForCandidate(lk, row.Name, tool, method); ok {
-			desiredVersion = pinnedVersion(pin)
+		var verification plan.VerificationResult
+		var err error
+		if lk != nil && lk.Version == lock.CurrentVersion {
+			_, verification, err = ex.ResolveAndVerifyCandidate(ctx, tool, method, clan)
+		} else {
+			desiredVersion := ""
+			if pin, ok := legacyV1PinForCandidate(lk, row.Name, tool, method); ok {
+				desiredVersion = legacyV1PinnedVersion(pin)
+			}
+			_, verification, err = ex.ResolveAndVerifyCandidateAtVersion(ctx, tool, method, desiredVersion, clan)
 		}
-		_, verification, err := ex.ResolveAndVerifyCandidateAtVersion(ctx, tool, method, desiredVersion, clan)
 		if err != nil {
 			row.Status = "unknown"
 			v := plan.VerificationResult{State: plan.StateUnknown, Detail: err.Error()}

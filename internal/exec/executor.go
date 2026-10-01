@@ -45,6 +45,9 @@ type Executor struct {
 	color bool // whether to emit ANSI color codes in status output
 
 	secretResolver secret.SecretResolver
+	// beforeReplacementSave is an instance-local fault-injection seam for
+	// deterministic replacement-boundary persistence tests.
+	beforeReplacementSave func(string)
 }
 
 type dependencyRun struct {

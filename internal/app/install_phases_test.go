@@ -221,7 +221,7 @@ func TestResolveInstallLockCompletesExistingGitPinBeforeExecution(t *testing.T) 
 		t.Fatalf("resolved pin = %+v, want branch:main at %s", pin, commit)
 	}
 
-	saveLockfile(context.Background(), schema, lockPath, resolved, log.Default, false, runner)
+	saveLegacyInstallLock(context.Background(), schema, lockPath, resolved, log.Default, false, runner)
 	gitCalls := 0
 	for _, call := range runner.Calls {
 		if call.Name == "git" {
@@ -258,7 +258,7 @@ func TestSaveLockfilePreservesOmittedMethodIdentity(t *testing.T) {
 		SourceHash:  map[string]string{"omitted/http/0": "preserve-source"},
 	}
 
-	saveLockfile(context.Background(), schema, lockPath, old, log.Default, false, nil)
+	saveLegacyInstallLock(context.Background(), schema, lockPath, old, log.Default, false, nil)
 
 	got, err := lock.Load(lockPath)
 	if err != nil {
@@ -287,7 +287,7 @@ func TestSaveLockfileDoesNotBlessAddedSourceIdentity(t *testing.T) {
 	schema := &config.Schema{Tools: map[string]*config.Tool{
 		"tool": {Name: "tool", Methods: []*config.MethodCandidate{method}},
 	}}
-	old, err := lock.ResolveAll(context.Background(), schema, nil)
+	old, err := lock.ResolveLegacyV1(context.Background(), schema, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +295,7 @@ func TestSaveLockfileDoesNotBlessAddedSourceIdentity(t *testing.T) {
 		Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git",
 	}}
 
-	saveLockfile(context.Background(), schema, lockPath, old, log.Default, false, nil)
+	saveLegacyInstallLock(context.Background(), schema, lockPath, old, log.Default, false, nil)
 
 	got, err := lock.Load(lockPath)
 	if err != nil {
@@ -332,7 +332,7 @@ func TestSaveLockfilePreservesExistingCompositePinFields(t *testing.T) {
 		MethodsHash: map[string]string{"tool": "old-hash"},
 	}
 
-	saveLockfile(context.Background(), schema, lockPath, old, log.Default, false, nil)
+	saveLegacyInstallLock(context.Background(), schema, lockPath, old, log.Default, false, nil)
 
 	got, err := lock.Load(lockPath)
 	if err != nil {
@@ -369,7 +369,7 @@ func TestResolveInstallLockFrozenAcceptsSelectedSubsetLock(t *testing.T) {
 		},
 	}}
 	selected := &config.Schema{Tools: filterTools(full.Tools, "selected", "", "")}
-	lk, err := lock.ResolveAll(context.Background(), selected, nil)
+	lk, err := lock.ResolveLegacyV1(context.Background(), selected, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,7 +421,7 @@ func TestSaveLockfilePreservesV2Projection(t *testing.T) {
 	})
 	wantProjection := old.UniversalProjection
 
-	saveLockfile(context.Background(), schema, lockPath, old, log.Default, false, nil)
+	saveLegacyInstallLock(context.Background(), schema, lockPath, old, log.Default, false, nil)
 
 	got, err := lock.Load(lockPath)
 	if err != nil {
@@ -456,7 +456,7 @@ func TestSaveLockfilePreservesV2ProjectionForPartialScope(t *testing.T) {
 	old.MethodsHash["out"] = "preserve-out"
 	wantProjection := old.UniversalProjection
 
-	saveLockfile(context.Background(), schema, lockPath, old, log.Default, false, nil)
+	saveLegacyInstallLock(context.Background(), schema, lockPath, old, log.Default, false, nil)
 
 	got, err := lock.Load(lockPath)
 	if err != nil {

@@ -237,10 +237,9 @@ func filterTools(tools map[string]*config.Tool, only, skip, profile string) map[
 	return filtered
 }
 
-// loadLockfile reads, frozen-validates, then applies the lockfile for a schema.
-// Non-frozen installs tolerate a corrupt lock and continue without it. Frozen
-// installs fail closed for a missing, unreadable, detectably stale, or
-// incomplete lock.
+// loadLockfile reads, frozen-validates, and applies legacy v1 pins. V2 locks
+// are decoded by universal-lock consumers and never mutate the schema through
+// their compatibility ToolPin payload.
 func loadLockfile(schemaPath string, s *config.Schema, frozen bool, lg *slog.Logger) (*lock.Lock, error) {
 	lockPath := lock.DefaultPath(schemaPath)
 	lk, err := lock.Load(lockPath)
@@ -263,14 +262,20 @@ func loadLockfile(schemaPath string, s *config.Schema, frozen bool, lg *slog.Log
 		}
 	}
 	if lk != nil {
-		lock.Apply(s, lk)
+		if lk.Version == lock.CurrentVersion {
+			if _, err := lk.ProjectionDocument(); err != nil {
+				return nil, fmt.Errorf("load universal lock projection: %w", err)
+			}
+		} else {
+			lock.ApplyLegacyV1(s, lk)
+		}
 	}
 	return lk, nil
 }
 
-// saveLockfile resolves version pins, merges with any existing lock, and persists.
-func saveLockfile(ctx context.Context, s *config.Schema, lockPath string, oldLock *lock.Lock, lg *slog.Logger, diagnose bool, rn run.Runner) {
-	newLock, err := lock.ResolveAll(ctx, s, rn)
+// saveLegacyInstallLock resolves version pins, merges with any existing lock, and persists.
+func saveLegacyInstallLock(ctx context.Context, s *config.Schema, lockPath string, oldLock *lock.Lock, lg *slog.Logger, diagnose bool, rn run.Runner) {
+	newLock, err := lock.ResolveLegacyV1(ctx, s, rn)
 	if err != nil {
 		lg.Warn("resolve lock", "error", err)
 		return
@@ -298,6 +303,9 @@ func saveLockfile(ctx context.Context, s *config.Schema, lockPath string, oldLoc
 // itself fails and install might otherwise continue without a concrete pin.
 func validateInstallPackageLockIdentity(s *config.Schema, l *lock.Lock) error {
 	if s == nil || l == nil {
+		return nil
+	}
+	if l.Version == lock.CurrentVersion {
 		return nil
 	}
 	for name, tool := range s.Tools {
@@ -353,7 +361,7 @@ func mergeInstallLock(oldLock, newLock *lock.Lock) (*lock.Lock, error) {
 		return newLock, nil
 	}
 	// Preserve the v2 universal projection verbatim. lock.Merge already does
-	// this when fresh carries no projection — the only shape ResolveAll
+	// this when fresh carries no projection — the only shape ResolveLegacyV1
 	// produces today, so install always keeps the existing projection here.
 	// A projection carried by fresh would win instead (as in lock.Merge);
 	// install never regenerates one either way.
