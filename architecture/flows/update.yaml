@@ -2,36 +2,36 @@ archmap: 2
 doc: flow
 id: update
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "b161bd80ede490f81bee1d6e64aaa0f8a2d6553c"
+  verified_on: "2026-10-01"
 trigger: "Operator runs depengine update to refresh reproducibility pins without applying installations."
 steps:
   - from: operator
     to: cli
-    action: "Invokes the update command and selects schema/profile/lock options."
+    action: "Invokes update with schema, profile, lock, frozen-lockfile, and dry-run options."
     confidence: inferred
   - from: cli
     to: configuration
-    action: "Loads the effective schema/manifest and target facts."
-    evidence: ["internal/app/update.go:52-77"]
+    action: "Loads effective schema/manifest and target facts, snapshots intent metadata, and filters tools for the requested profile."
+    evidence: ["internal/app/update.go:51-90"]
     confidence: confirmed
   - from: cli
     to: state-and-lock
-    action: "Runs lock.ResolveAll for selector classes explicitly supported by lock v1, merges preserved pins, and writes the refreshed lock unless dry-run is active."
-    evidence: ["internal/app/update.go:89-153"]
+    action: "Refreshes v2 projection entries for selected tools and retained entries whose intent metadata is missing or drifted, then builds the v2 lock with NewUniversal; v1 uses explicit legacy resolution and merge."
+    evidence: ["internal/app/update.go:91-186", "internal/app/universal_lock.go:20-151", "internal/lock/universal.go:13-74", "internal/lock/lock.go:320-344"]
     symbols:
-      - name: ResolveAll
-        path: internal/lock/lock.go
-        role: "Enumerate pin-producing selector branches here before assuming an adapter-resolved selector is persisted in the lock."
+      - name: runUpdate
+        path: internal/app/update.go
+        role: "Chooses profile refresh behavior and constructs/saves the versioned lock."
+      - name: resolveUniversalLockDocument
+        path: internal/app/universal_lock.go
+        role: "Resolves exact v2 projection candidates through the executor's read-only resolution path."
     confidence: confirmed
   - from: state-and-lock
     to: adapters
-    action: "Uses release, registry, Git, and related resolver helpers directly from lock resolution; this is not the AdapterV2 install-time resolution path."
-    evidence: ["internal/lock/lock.go:253-278"]
-    symbols:
-      - name: ResolveAll
-        path: internal/lock/lock.go
+    action: "V2 projection resolution uses the executor lock-candidate API and AdapterV2 resolution; lock-v1 retains its dedicated legacy resolver path."
+    evidence: ["internal/app/universal_lock.go:20-56", "internal/exec/lock_resolution.go:64-100", "internal/lock/lock.go:320-344"]
     confidence: confirmed
 failure_modes:
-  - "Resolution failure aborts the lock refresh without writing a partially resolved lock."
-  - "An unreadable old lock cannot contribute preserved pins; update warns and rebuilds from fresh resolution."
+  - "Resolution failure aborts refresh before writing a partial lock."
+  - "Missing or drifted v2 metadata for a retained profiled tool requires its projection entry to be refreshed."

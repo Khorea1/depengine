@@ -2,8 +2,8 @@ archmap: 2
 doc: unit
 id: state-and-lock
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "b161bd80ede490f81bee1d6e64aaa0f8a2d6553c"
+  verified_on: "2026-10-01"
 type: subsystem
 paths:
   - internal/state/
@@ -12,24 +12,16 @@ paths:
 tech: ["Go", "JSON"]
 status: active
 invariants:
-  - text: "State mutation is performed under the state lock before the executor saves reconciled tool state."
+  - text: "Replacement WAL records prior/desired candidate identity and resource uses before removal; verified installed state and ownership commit while the WAL remains active through the after-upgrade hook boundary."
     confidence: confirmed
-    evidence: ["internal/exec/state.go:39-50", "internal/exec/state.go:109-115"]
-  - text: "Lock refresh only pins selector classes explicitly handled by lock.ResolveAll; install-time AdapterV2 resolution is a separate phase and must not be assumed to backfill missing lock pins."
+    evidence: ["internal/state/replacement.go:36-45", "internal/state/replacement.go:111-150", "internal/state/replacement.go:179-280"]
+  - text: "A v2 universal lock stores an encoded plan projection; legacy v1 pins may remain compatibility data but do not override v2 operational identity."
     confidence: confirmed
-    evidence: ["internal/lock/lock.go:250-253", "internal/app/update.go:89-120"]
-    symbols:
-      - name: ResolveAll
-        path: internal/lock/lock.go
-        role: "Primary lock-v1 selector materialization entry point; expand this symbol when changing pin coverage."
+    evidence: ["internal/lock/universal.go:13-34", "internal/lock/universal.go:47-74"]
 relations:
   - from: state-and-lock
     to: adapters
     kind: calls
-    via: "selector-specific release/registry/Git resolver helpers, not AdapterV2"
-    evidence: ["internal/lock/lock.go:253-330"]
-    symbols:
-      - name: ResolveAll
-        path: internal/lock/lock.go
-        role: "Start here, then use symbol references/callees to enumerate the concrete resolver helpers involved."
+    via: "Executor v2 resolver; explicit legacy v1 resolver."
+    evidence: ["internal/app/universal_lock.go:20-56", "internal/exec/lock_resolution.go:64-100", "internal/lock/lock.go:320-344"]
     confidence: confirmed

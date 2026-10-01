@@ -2,8 +2,8 @@ archmap: 2
 doc: unit
 id: reconciliation
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "b161bd80ede490f81bee1d6e64aaa0f8a2d6553c"
+  verified_on: "2026-10-01"
 type: subsystem
 paths:
   - internal/exec/
@@ -35,6 +35,6 @@ relations:
   - from: reconciliation
     to: state-and-lock
     kind: writes
-    via: "locked state transaction"
-    evidence: ["internal/exec/state.go:39-57", "internal/exec/state.go:109-115"]
+    via: "Executor-owned replacement transaction lifecycle"
+    evidence: ["internal/exec/replacement.go", "internal/state/replacement.go", "internal/plan/replacement.go"]
     confidence: confirmed
