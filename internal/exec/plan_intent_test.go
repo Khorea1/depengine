@@ -35,7 +35,8 @@ func TestArbitraryCodeGateFailsClosedWhenPlanningRejectsCandidate(t *testing.T) 
 			"url": "https://example.test/demo.git", "build": []any{"make"}, "no_such_field": "x",
 		},
 	}}}
-	if !ex.hasDangerousMethod(tool) {
+	rc := ex.newRunContext(context.Background(), &config.Schema{}, "")
+	if !ex.hasDangerousMethod(rc, tool) {
 		t.Fatal("candidate with a command field and an unplannable extra field bypassed the gate")
 	}
 }

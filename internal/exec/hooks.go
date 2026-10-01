@@ -15,8 +15,8 @@ import (
 // (methodkind.Command), not on the raw TOML representation of the value. This
 // keeps string commands, structured argv commands, aliases, and future command
 // fields behind the same --allow-arbitrary-code gate.
-func (ex *Executor) hasDangerousMethod(tool *config.Tool) bool {
-	for _, method := range config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName) {
+func (ex *Executor) hasDangerousMethod(rc *runContext, tool *config.Tool) bool {
+	for _, method := range rc.selectedMethods(tool) {
 		if methodRunsArbitraryCode(tool, method) {
 			return true
 		}
@@ -59,8 +59,8 @@ func configuredCommand(method *config.MethodCandidate) bool {
 	return false
 }
 
-func (ex *Executor) hasArbitraryCode(tool *config.Tool) bool {
-	return len(tool.PreInstall) > 0 || len(tool.PostInstall) > 0 || ex.hasDangerousMethod(tool)
+func (ex *Executor) hasArbitraryCode(rc *runContext, tool *config.Tool) bool {
+	return len(tool.PreInstall) > 0 || len(tool.PostInstall) > 0 || ex.hasDangerousMethod(rc, tool)
 }
 
 // runLifecycleHooks executes only hooks carried by the selected resolved plan

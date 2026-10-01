@@ -139,12 +139,12 @@ func TestNPMPackageVersionPinDrivesUpgradeDiscovery(t *testing.T) {
 	st := &state.State{Tools: map[string]state.ToolState{
 		"tool": {Method: "npm", MethodKind: "npm", Version: "1.2.3"},
 	}}
-	outdated, failures := collectOutdatedTools(st, schema, lk, "", []string{"npm"}, "")
+	outdated, failures := collectOutdatedTools(st, schema, lk, "", upgradeExecutorForMethodOrder([]string{"npm"}), "")
 	if len(failures) != 0 || len(outdated) != 1 || outdated[0].pinnedVer != "1.3.0" {
 		t.Fatalf("outdated = %+v, failures = %+v", outdated, failures)
 	}
 	method.Config["pkg"] = "other"
-	outdated, failures = collectOutdatedTools(st, schema, lk, "", []string{"npm"}, "")
+	outdated, failures = collectOutdatedTools(st, schema, lk, "", upgradeExecutorForMethodOrder([]string{"npm"}), "")
 	if len(outdated) != 0 || len(failures) != 0 {
 		t.Fatalf("stale pin drove upgrade: outdated = %+v, failures = %+v", outdated, failures)
 	}

@@ -138,14 +138,14 @@ func resolvedGraphCandidates(ctx context.Context, schema *config.Schema, facts *
 	}
 
 	clan := engine.ResolveFamily(facts)
-	if helper := schema.Defaults.AurHelper; helper != "" {
-		ecosystem.ReconfigureAUR(helper)
-	}
 
 	executor := exec.New()
 	exec.WithRunner(run.OSExecRunner{})(executor)
 	exec.WithFacts(facts)(executor)
 	exec.WithDefaultMethodOrder(schema.Defaults.MethodOrder)(executor)
+	if helper := schema.Defaults.AurHelper; helper != "" {
+		exec.WithAdapters(ecosystem.NewAURAdapter(helper))(executor)
+	}
 
 	names := make([]string, 0, len(candidateTools))
 	for name := range candidateTools {

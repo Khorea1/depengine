@@ -18,12 +18,12 @@ func TestLockedNPMVersionIsObservedByExecutor(t *testing.T) {
 	ex := exec.New()
 	exec.WithAdapters(NewBaseAdapter(Configs["npm"]))(ex)
 	exec.WithRunner(runner)(ex)
-	_, verification, err := ex.ResolveAndVerifyCandidate(context.Background(), tool, method)
+	_, verification, err := ex.ResolveAndVerifyCandidate(context.Background(), tool, method, "")
 	if err != nil || verification.State != plan.StateSatisfied {
 		t.Fatalf("pinned npm verification = %+v, err = %v", verification, err)
 	}
 	runner.Stdout = `{"dependencies":{"tool":{"version":"1.2.4"}}}`
-	_, verification, err = ex.ResolveAndVerifyCandidate(context.Background(), tool, method)
+	_, verification, err = ex.ResolveAndVerifyCandidate(context.Background(), tool, method, "")
 	if err != nil || verification.State != plan.StateDrifted {
 		t.Fatalf("drifted npm verification = %+v, err = %v", verification, err)
 	}

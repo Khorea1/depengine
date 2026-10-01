@@ -5,33 +5,51 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/planner"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
+var registerAURAliasesForTest sync.Once
+
 func TestAURAdapterV2AliasesConform(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		adapter *AURAdapter
-		kind    string
-	}{
-		{"aur", NewAURAdapter("paru"), "aur"},
-		{"paru", NewAURAdapter("paru"), "paru"},
-		{"yay", NewAURAdapter("yay"), "yay"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
+	registerAURAliasesForTest.Do(RegisterAURAliases)
+
+	contract, ok := methodkind.Lookup("aur")
+	if !ok || contract == nil {
+		t.Fatal("methodkind.Lookup(aur) did not return a contract")
+	}
+	if len(contract.Aliases) == 0 {
+		t.Fatal("aur method contract has no aliases")
+	}
+
+	for _, alias := range contract.Aliases {
+		t.Run(alias, func(t *testing.T) {
+			adapter, ok := exec.Lookup(alias).(*AURByNameAdapter)
+			if !ok {
+				t.Fatalf("registered adapter for %q = %T, want *AURByNameAdapter", alias, exec.Lookup(alias))
+			}
+			if adapter.Kind() != alias {
+				t.Fatalf("adapter kind = %q, want %q", adapter.Kind(), alias)
+			}
+			if adapter.helper != alias {
+				t.Fatalf("adapter helper = %q, want %q", adapter.helper, alias)
+			}
+
 			tool := &config.Tool{Name: "tool"}
-			mc := &config.MethodCandidate{Kind: tc.kind, Config: map[string]any{"pkg": "aur-tool"}}
+			mc := &config.MethodCandidate{Kind: alias, Config: map[string]any{"pkg": "aur-tool"}}
 			intent, err := planner.BuildCandidateIntent(tool, mc)
 			if err != nil {
 				t.Fatal(err)
 			}
 			intent.Identity.Package = "planner-package"
-			resolved, err := tc.adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
+			resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -43,21 +61,22 @@ func TestAURAdapterV2AliasesConform(t *testing.T) {
 			}
 
 			runner := &run.FakeRunner{ExitCode: 0}
-			observation, err := tc.adapter.Observe(context.Background(), runner, tool, mc)
+			observation, err := adapter.Observe(context.Background(), runner, tool, mc)
 			if err != nil || observation.Presence != plan.PresencePresent {
 				t.Fatalf("Observe() = %#v, error = %v", observation, err)
 			}
-			if want := (run.FakeCall{Name: tc.adapter.helper, Args: []string{"-Qi", "aur-tool"}}); !reflect.DeepEqual(runner.Calls[0], want) {
-				t.Fatalf("observe call = %#v, want %#v", runner.Calls[0], want)
+			wantObserve := run.FakeCall{Name: alias, Args: []string{"-Qi", "aur-tool"}}
+			if !reflect.DeepEqual(runner.Calls, []run.FakeCall{wantObserve}) {
+				t.Fatalf("observe calls = %#v, want %#v", runner.Calls, []run.FakeCall{wantObserve})
 			}
 
 			runner = &run.FakeRunner{}
-			if err := tc.adapter.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
+			if err := adapter.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
 				t.Fatal(err)
 			}
-			want := run.FakeCall{Name: tc.adapter.helper, Args: []string{"-S", "--noconfirm", "planner-package"}}
-			if !reflect.DeepEqual(runner.Calls, []run.FakeCall{want}) {
-				t.Fatalf("install calls = %#v, want %#v", runner.Calls, []run.FakeCall{want})
+			wantInstall := run.FakeCall{Name: alias, Args: []string{"-S", "--noconfirm", "planner-package"}}
+			if !reflect.DeepEqual(runner.Calls, []run.FakeCall{wantInstall}) {
+				t.Fatalf("install calls = %#v, want %#v", runner.Calls, []run.FakeCall{wantInstall})
 			}
 		})
 	}

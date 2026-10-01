@@ -58,8 +58,8 @@ func verificationDetail(v plan.VerificationResult) string {
 
 // ResolveAndVerifyCandidate resolves one candidate through the executor's
 // canonical resolver, then verifies exactly that resolved target.
-func (ex *Executor) ResolveAndVerifyCandidate(ctx context.Context, tool *config.Tool, method *config.MethodCandidate) (*plan.ResolvedInstallPlan, plan.VerificationResult, error) {
-	return ex.ResolveAndVerifyCandidateAtVersion(ctx, tool, method, "")
+func (ex *Executor) ResolveAndVerifyCandidate(ctx context.Context, tool *config.Tool, method *config.MethodCandidate, clan string) (*plan.ResolvedInstallPlan, plan.VerificationResult, error) {
+	return ex.ResolveAndVerifyCandidateAtVersion(ctx, tool, method, "", clan)
 }
 
 // ResolveAndVerifyCandidateAtVersion resolves a candidate through the canonical
@@ -69,8 +69,8 @@ func (ex *Executor) ResolveAndVerifyCandidate(ctx context.Context, tool *config.
 // The version projection belongs here rather than in command workflows so
 // status, upgrade, and future lock consumers cannot accidentally verify a
 // different identity from the one they resolved.
-func (ex *Executor) ResolveAndVerifyCandidateAtVersion(ctx context.Context, tool *config.Tool, method *config.MethodCandidate, desiredVersion string) (*plan.ResolvedInstallPlan, plan.VerificationResult, error) {
-	resolved, err := ex.ResolveCandidatePlan(ctx, tool, method)
+func (ex *Executor) ResolveAndVerifyCandidateAtVersion(ctx context.Context, tool *config.Tool, method *config.MethodCandidate, desiredVersion, clan string) (*plan.ResolvedInstallPlan, plan.VerificationResult, error) {
+	resolved, err := ex.ResolveCandidatePlan(ctx, tool, method, clan)
 	if err != nil {
 		return nil, plan.VerificationResult{}, err
 	}
@@ -88,7 +88,7 @@ func (ex *Executor) ResolveAndVerifyCandidateAtVersion(ctx context.Context, tool
 
 // ResolveCandidatePlan resolves one selected candidate through the executor's
 // canonical path without probing the host.
-func (ex *Executor) ResolveCandidatePlan(ctx context.Context, tool *config.Tool, method *config.MethodCandidate) (*plan.ResolvedInstallPlan, error) {
+func (ex *Executor) ResolveCandidatePlan(ctx context.Context, tool *config.Tool, method *config.MethodCandidate, clan string) (*plan.ResolvedInstallPlan, error) {
 	if tool == nil || method == nil {
 		return nil, fmt.Errorf("tool and method are required")
 	}
@@ -104,7 +104,7 @@ func (ex *Executor) ResolveCandidatePlan(ctx context.Context, tool *config.Tool,
 	if adapter == nil {
 		return nil, fmt.Errorf("no adapter registered for %q", method.Kind)
 	}
-	intent = ex.hostResolvedPlanIntent(method, intent)
+	intent = ex.hostResolvedPlanIntent(method, intent, clan)
 	resolved, err := ex.resolveCandidatePlan(ctx, tool, method, adapter, intent, displayMethodKind(method))
 	if err != nil {
 		return nil, err

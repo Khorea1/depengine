@@ -226,14 +226,3 @@ func RegisterAll(aurHelper string) {
 	exec.Register(NewNixAdapter())
 	exec.Register(NewMasAdapter())
 }
-
-// ReconfigureAUR replaces the AUR adapter in the global registry with one
-// configured to use the given helper binary. This allows the schema's
-// defaults.aur_helper setting to override the init-time default ("paru").
-// If helper is empty, the call is a no-op (keep the current default).
-func ReconfigureAUR(helper string) {
-	if helper == "" {
-		return
-	}
-	exec.Replace(NewAURAdapter(helper))
-}

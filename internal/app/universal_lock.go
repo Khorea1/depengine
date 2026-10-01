@@ -38,7 +38,7 @@ func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, cl
 		if tool == nil || len(tool.Methods) == 0 {
 			continue
 		}
-		attempts := resolver.ExplainTool(ctx, tool, clan)
+		attempts, sourceRevisions := resolver.ExplainToolWithSourceRevisions(ctx, tool, clan)
 		var resolved *plan.ResolvedInstallPlan
 		for i := range attempts {
 			attempt := &attempts[i]
@@ -50,7 +50,7 @@ func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, cl
 		if resolved == nil {
 			return plan.LockDocument{}, fmt.Errorf("universal lock: %w: no resolvable install candidate for tool %q", plan.ErrLockUnavailable, name)
 		}
-		for _, revision := range resolver.SourceRevisions() {
+		for _, revision := range sourceRevisions {
 			for _, source := range resolved.Sources {
 				if source.Kind == revision.Kind && source.Name == revision.Name {
 					if err := resolved.ApplyResolvedSourceRevision(revision.Kind, revision.Name, revision.Revision); err != nil {

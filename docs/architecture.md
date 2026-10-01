@@ -62,8 +62,26 @@ explicitly during startup. Each adapter resolves an intent to a concrete
 identity. The executor looks adapters up by method kind and does not call
 package managers directly.
 
-Tests can supply an isolated registry with `WithAdapters()`. Production uses
-the process registry populated by `app.InitAdapters()`.
+Tests and callers can supply per-executor adapters with `WithAdapters()`.
+Production uses the process registry populated by `app.InitAdapters()`.
+
+An `Executor` holds configuration shared across its calls, including its adapter
+snapshot, per-instance overrides, and an owned copy of the configured method order.
+Each `Execute` creates a fresh `runContext` with its effective clan, native manager,
+and method order: a schema override applies only to that run; otherwise the
+configured order applies. The context also owns the schema, report, failure and
+recovery state, dependency maps, and source manager used for candidate preparation.
+Host selection and source observations are not retained on the executor.
+
+`ExplainTool` keeps its attempts-only caller contract and creates a fresh,
+read-only `source.Manager` for each call. The universal lock resolver uses
+`ExplainToolWithSourceRevisions(ctx, tool, clan)` to obtain method attempts and
+source revisions together, without retaining source observations on the executor.
+
+Read-only selection and candidate resolution receive the clan explicitly.
+`SelectedMethods(tool, clan)` uses the configured order without modifying the
+executor; resolution and verification apply native package overrides for that
+call's clan. Status, upgrade, removal, and undo do not depend on a preceding run.
 
 Subprocesses go through `internal/run.Runner`. Adapters should not call
 `exec.Command` directly.
@@ -116,18 +134,30 @@ distinct; `unknown` means the adapter cannot prove the desired identity, while
 fail closed for unknown/broken targets. Remove accepts drift, and a proven
 absent target releases state and ownership without invoking the remover.
 
+Desired-state verification uses the normative [state model](design/state-model.md) for
+reconciliation states, authority boundaries, lock coverage, preparation journals, and
+ownership invariants.
+
+## Bootstrap and adapter snapshots
+
+`app.InitAdapters()` registers production adapters in the default registry during startup. Each
+`Executor` snapshots that registry when constructed; `WithAdapters` supplies per-instance
+overrides, which take precedence over the snapshot. The default registry is populated during
+bootstrap; runtime-specific adapter choices belong to the executor instance. Adapter authors
+should follow the [adapter authoring contract](adapter-authoring.md).
+
 ## Process-wide defaults
 
 A few defaults are shared for one process:
 
 | Default | Reason |
 |---|---|
-| adapter registry | Production has one registered adapter set |
+| default adapter registry | Composition root registers production adapters; executors snapshot it at construction |
 | elevation config | One CLI invocation uses one elevation policy |
 | GitHub release resolver | Reuses release lookups during one run |
 | logger | One process writes one log stream |
 
-Tests can create isolated instances where isolation matters.
+Tests can create isolated instances where isolation matters, including a per-executor adapter override.
 
 ## Checks
 

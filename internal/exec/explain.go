@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/native"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/source"
@@ -68,8 +67,20 @@ func declaredCandidateOrdinal(tool *config.Tool, method *config.MethodCandidate)
 //
 // This is the engine behind `depengine why <tool>`.
 func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan string) []MethodAttempt {
+	return ex.explainTool(ctx, tool, clan, source.NewManager(ex.rn, true))
+}
+
+// ExplainToolWithSourceRevisions returns attempts and credential-free Git HEAD
+// observations from this read-only explanation, without retaining them on ex.
+func (ex *Executor) ExplainToolWithSourceRevisions(ctx context.Context, tool *config.Tool, clan string) ([]MethodAttempt, []source.SourceRevision) {
+	manager := source.NewManager(ex.rn, true)
+	attempts := ex.explainTool(ctx, tool, clan, manager)
+	return attempts, manager.SourceRevisions()
+}
+
+func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan string, manager *source.Manager) []MethodAttempt {
 	ctx = omitToolSecretEnvironment(ctx, tool)
-	orderedMethods := ex.selectedMethods(tool, clan)
+	orderedMethods := ex.SelectedMethods(tool, clan)
 	methods := orderedMethods
 	if len(tool.Methods) == 0 {
 		return []MethodAttempt{{Kind: "", Status: "virtual", Error: "dependency group (no methods declared)"}}
@@ -101,7 +112,7 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 			CandidateKnown: candidateKnown,
 		}
 		planIntent, mismatch := candidatePlanIntent(tool, method)
-		planIntent = ex.hostResolvedPlanIntent(method, planIntent)
+		planIntent = ex.hostResolvedPlanIntent(method, planIntent, clan)
 		attempt.PlanIntent = planIntent
 
 		// Reject semantic intent this method contract cannot honor before any
@@ -191,9 +202,6 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 		// Execute: a missing declared source makes the repository/index
 		// answer inconclusive, so availability is deferred rather than
 		// rejecting the candidate on a stale index.
-		if ex.sources == nil {
-			ex.sources = source.NewManager(ex.rn, true)
-		}
 		sources, sourceErr := sourcesForResolvedPlan(method.Sources, resolvedPlan)
 		if sourceErr != nil {
 			attempt.Status = "failed"
@@ -201,7 +209,7 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 			appendAttempt(attempt, method)
 			continue
 		}
-		sourceProbe, probeErr := ex.probeCandidateSources(ctx, sources)
+		sourceProbe, probeErr := probeCandidateSources(ctx, manager, sources)
 		if probeErr != nil {
 			attempt.Status = "failed"
 			attempt.Error = probeErr.Error()
@@ -283,7 +291,7 @@ func (ex *Executor) CheckDesiredState(ctx context.Context, tool *config.Tool, cl
 	ctx = omitToolSecretEnvironment(ctx, tool)
 	var first CheckResult
 	haveFirst := false
-	for _, method := range ex.selectedMethods(tool, clan) {
+	for _, method := range ex.SelectedMethods(tool, clan) {
 		if method.When != nil && !method.When.Match(ex.facts) {
 			continue
 		}
@@ -299,7 +307,7 @@ func (ex *Executor) CheckDesiredState(ctx context.Context, tool *config.Tool, cl
 		if mismatch != "" {
 			continue
 		}
-		intent = ex.hostResolvedPlanIntent(method, intent)
+		intent = ex.hostResolvedPlanIntent(method, intent, clan)
 		resolved, err := ex.resolveCandidatePlan(ctx, tool, method, adapter, intent, method.Kind)
 		if err != nil {
 			continue
@@ -336,18 +344,4 @@ func (ex *Executor) CheckDesiredState(ctx context.Context, tool *config.Tool, cl
 func (ex *Executor) CheckInstalled(ctx context.Context, tool *config.Tool, clan string, live bool) (string, bool) {
 	checked, err := ex.CheckDesiredState(ctx, tool, clan, live)
 	return checked.Method, err == nil && checked.Verification.State == plan.StateSatisfied
-}
-
-func (ex *Executor) selectedMethods(tool *config.Tool, clan string) []*config.MethodCandidate {
-	ex.SetHostContext(clan)
-	return config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
-}
-
-// SetHostContext selects host-specific defaults used during candidate planning.
-func (ex *Executor) SetHostContext(clan string) {
-	ex.clan = clan
-	ex.nativeManagerName = ""
-	if mgr, ok := native.Lookup(clan); ok {
-		ex.nativeManagerName = mgr.Name
-	}
 }

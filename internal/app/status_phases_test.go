@@ -43,6 +43,47 @@ func TestReconcileStatusToolsUsesDesiredState(t *testing.T) {
 	}
 }
 
+func TestReconcileStatusToolsSelectsNativeTrackedMethodOnFirstCall(t *testing.T) {
+	native := &config.MethodCandidate{Kind: "native", Config: map[string]any{
+		"pkg":           "demo",
+		"pkg_overrides": map[string]any{"apt": "demo-debian"},
+	}}
+	tool := &config.Tool{
+		Name:       "demo",
+		MethodOnly: []string{"apt"},
+		Methods: []*config.MethodCandidate{
+			native,
+			{Kind: "go", Config: map[string]any{"pkg": "example.test/demo"}},
+		},
+	}
+	observation := plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Package: "demo-debian"},
+		KnownFields: []plan.IdentityField{plan.FieldPackage},
+	}
+	adapter := &statusNativeAdapter{phaseTestAdapter: &phaseTestAdapter{available: true, observation: &observation}}
+	ex := exec.New()
+	exec.WithDefaultMethodOrder([]string{"apt", "go"})(ex)
+	exec.WithAdapters(adapter)(ex)
+	exec.WithRunner(&run.FakeRunner{})(ex)
+	installed := map[string]state.ToolState{"demo": {Method: "native", MethodKind: "native", Config: native.Config}}
+	rows := []toolStatus{{Name: "demo", Status: "installed"}}
+
+	got := reconcileStatusTools(context.Background(), rows, installed, &config.Schema{Tools: map[string]*config.Tool{"demo": tool}}, nil, ex, "debian")
+	if got[0].Status != "installed" {
+		t.Fatalf("status = %q, want installed (verification=%+v)", got[0].Status, got[0].Verification)
+	}
+	if got[0].Verification == nil || got[0].Verification.State != plan.StateSatisfied {
+		t.Fatalf("verification = %+v, want satisfied native package identity", got[0].Verification)
+	}
+}
+
+type statusNativeAdapter struct {
+	*phaseTestAdapter
+}
+
+func (*statusNativeAdapter) Kind() string { return "native" }
+
 func TestReconcileStatusToolsAppliesExactLockPinToDesiredState(t *testing.T) {
 	observation := plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: "example.test/demo", Version: "v1.0.0"}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion}}
 	adapter := &phaseTestAdapter{available: true, observation: &observation}

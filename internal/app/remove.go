@@ -62,14 +62,29 @@ type removeSession struct {
 	removedThisRun   map[string]bool
 }
 
-// runRemove removes tools using the adapter that installed them. It orchestrates
-// validation, state/schema loading, adapter resolution, confirmation, removal,
-// and state persistence.
+// runRemove validates flags and configures a run-scoped executor before
+// delegating the state, selection, removal, ownership, and persistence flow.
 func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce *bool) error {
 	if err := validateRemoveFlags(removeAll, removeOnly); err != nil {
 		return err
 	}
 
+	facts := gatherRemoveFacts()
+	executor := exec.New()
+	exec.WithRunner(run.OSExecRunner{})(executor)
+	if facts != nil {
+		clan := engine.ResolveFamily(facts)
+		exec.WithFacts(facts)(executor)
+		exec.WithDefaultMethodOrder(config.DefaultMethodOrder)(executor)
+		exec.WithAdapters(exec.NewNativeAdapter(clan))(executor)
+	}
+	return runRemoveWithExecutor(ctx, removeArgs, removeAll, removeDryRun, removeSchema, removeOnly, removeForce, executor, facts)
+}
+
+// runRemoveWithExecutor runs the complete state-driven removal flow using the
+// supplied executor. Keeping executor construction outside this seam lets
+// in-process callers inject adapters without changing the process registry.
+func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce *bool, executor *exec.Executor, facts *engine.Facts) error {
 	st, ls, err := loadRemoveState(*removeDryRun)
 	if err != nil {
 		return err
@@ -81,14 +96,6 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 	schemaTools, err := loadRemoveSchemaTools(*removeSchema)
 	if err != nil {
 		return err
-	}
-
-	facts := ensureRemoveNativeAdapter()
-	executor := exec.New()
-	exec.WithRunner(run.OSExecRunner{})(executor)
-	if facts != nil {
-		exec.WithFacts(facts)(executor)
-		exec.WithDefaultMethodOrder(config.DefaultMethodOrder)(executor)
 	}
 
 	sess := &removeSession{
@@ -166,15 +173,11 @@ func loadRemoveSchemaTools(schemaPath string) (map[string]*config.Tool, error) {
 	return s.Tools, nil
 }
 
-// ensureRemoveNativeAdapter resolves the real distro clan from OS facts and
-// makes it authoritative for native removal. The global "native" adapter
-// (registered in main.go) is constructed with an empty clan and falls back
-// to PATH-probing, which is ambiguous for manager binaries shared across
-// clans (e.g. "pkg" on both termux and freebsd — same install command,
-// different check/remove commands). Same treatment install/upgrade already do.
-func ensureRemoveNativeAdapter() *engine.Facts {
+// gatherRemoveFacts resolves the real distro clan from OS facts. The caller
+// applies the resulting native adapter only to its executor; on failure the
+// bootstrap adapter remains available for its existing PATH-probing fallback.
+func gatherRemoveFacts() *engine.Facts {
 	if facts, err := engine.GatherFacts(run.OSExecRunner{}); err == nil {
-		exec.Replace(exec.NewNativeAdapter(engine.ResolveFamily(facts)))
 		return facts
 	} else {
 		log.Default.Warn("could not gather OS facts; falling back to PATH-probing for native manager detection", "error", err)
@@ -262,8 +265,7 @@ func (s *removeSession) verifyRemovalTarget(ctx context.Context, toolName string
 	if s.executor == nil {
 		return verifiedRemovalTarget{}, fmt.Errorf("removal verifier is unavailable")
 	}
-	s.executor.SetHostContext(s.clan)
-	returnedPlan, verification, err := s.executor.ResolveAndVerifyCandidate(ctx, tool, method)
+	returnedPlan, verification, err := s.executor.ResolveAndVerifyCandidate(ctx, tool, method, s.clan)
 	if err != nil {
 		return verifiedRemovalTarget{}, err
 	}

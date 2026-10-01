@@ -6,12 +6,10 @@ import (
 )
 
 // Registry is an injectable adapter registry: a Kind-keyed adapter set.
-// It replaces the former package-global map so the registry can be
-// constructed and passed explicitly instead of living in process-wide
-// mutable state. The package-level Register/Lookup/Replace/RegisteredKinds
-// functions below delegate to defaultRegistry, preserving behavior for the
-// composition root and existing callers; New Executor instances snapshot it
-// at construction (overridable per instance via WithAdapters).
+// The package-level Register/Lookup/RegisteredKinds functions delegate to
+// defaultRegistry for composition-root bootstrap and lookups. New Executor
+// instances snapshot that registry at construction and can apply per-instance
+// overrides with WithAdapters.
 //
 // A Registry must not be copied after first use.
 type Registry struct {
@@ -62,10 +60,10 @@ func (r *Registry) Kinds() []string {
 	return out
 }
 
-// Replace inserts or replaces an adapter. Unlike Register, it does not
-// panic if the kind is already registered — it overwrites the existing
-// entry silently. Use for runtime reconfiguration (e.g. swapping the AUR
-// adapter's helper binary).
+// Replace inserts or replaces an adapter in this registry. Unlike Register,
+// it does not panic if the kind is already registered — it overwrites the
+// existing entry silently. This affects only this Registry; Executors seeded
+// from defaultRegistry are unaffected.
 func (r *Registry) Replace(a AdapterV2) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -83,15 +81,9 @@ func (r *Registry) snapshot() map[string]AdapterV2 {
 	return out
 }
 
-// defaultRegistry backs the package-level functions. The binary's
-// composition root populates it before constructing commands or executors.
-//
-// INTENTIONAL process-global boundary (not tech debt): the registry needs
-// exactly one populated instance per process, and threading it through
-// every adapter call site adds no isolation (adapters are stateless
-// w.r.t. the registry). Per-instance registries remain available via the
-// Registry type and WithAdapters for tests; see "Process-global shims"
-// in docs/architecture.md.
+// defaultRegistry backs package-level bootstrap registration and lookup. The
+// composition root populates it before constructing commands or executors;
+// each Executor then keeps its own snapshot and optional instance overrides.
 var defaultRegistry = NewRegistry()
 
 // Register inserts an adapter into the default registry. Panics if a
@@ -116,12 +108,4 @@ func Lookup(kind string) AdapterV2 {
 // registry (for debug logging and schema validation).
 func RegisteredKinds() []string {
 	return defaultRegistry.Kinds()
-}
-
-// Replace inserts or replaces an adapter in the default registry.
-// Unlike Register, it does not panic if the kind is already registered —
-// it overwrites the existing entry silently. Use for runtime reconfiguration
-// (e.g. swapping the AUR adapter's helper binary).
-func Replace(a AdapterV2) {
-	defaultRegistry.Replace(a)
 }
