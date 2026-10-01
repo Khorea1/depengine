@@ -185,6 +185,8 @@ jobs:
           tar -C /usr/local -xzf /tmp/go.tar.gz
         run: |
           export PATH="/usr/local/go/bin:$PATH"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -C "$GITHUB_WORKSPACE" status --porcelain=v1 >/dev/null
           go version
           go test ./...
           tests/platform/native-lifecycle.sh tests/platform/fixtures/native-hello.toml depengine-native-smoke
@@ -210,6 +212,8 @@ jobs:
           tar -C /usr/local -xzf /tmp/go.tar.gz
         run: |
           export PATH="/usr/local/go/bin:$PATH"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -C "$GITHUB_WORKSPACE" status --porcelain=v1 >/dev/null
           go version
           go test ./...
           tests/platform/native-lifecycle.sh tests/platform/fixtures/openbsd-pkgadd.toml depengine-openbsd-smoke
@@ -253,6 +257,8 @@ jobs:
           tar -C /usr/local -xzf /tmp/go.tar.gz
         run: |
           export PATH="/usr/local/go/bin:/usr/pkg/bin:/usr/pkg/sbin:$PATH"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -C "$GITHUB_WORKSPACE" status --porcelain=v1 >/dev/null
           go version
           go test ./...
           tests/platform/native-lifecycle.sh tests/platform/fixtures/netbsd-pkgin.toml depengine-netbsd-smoke
