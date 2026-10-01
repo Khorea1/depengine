@@ -2,8 +2,8 @@
 archmap: 2
 doc: index
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "6bb3223"
+  verified_on: "2026-10-01"
 
 project:
   id: depengine
@@ -39,11 +39,11 @@ units:
   planning:
     summary: "Represents desired/resolved plans and dependency graphs, including validation and projections used before host mutation."
   reconciliation:
-    summary: "Generic execution engine that resolves candidates, observes host state, performs mutations, verifies outcomes, and persists state."
+    summary: "Generic execution engine that resolves candidates, isolates effective host/method/source state per run, recovers durable preparation transactions, observes or mutates the host, verifies outcomes, and persists state."
   adapters:
-    summary: "Method-specific backends for native/ecosystem packages, Git, HTTP/releases, containers, MSI, and local artifacts."
+    summary: "Method-specific AdapterV2 backends for native/ecosystem packages, Git, HTTP/releases, containers, OS installer/package formats, and local artifacts."
   state-and-lock:
-    summary: "Persists observed installation state and reproducibility lock data, including preparation journaling and format-version policy."
+    summary: "Persists installed-tool state, preparation journals, legacy selector pins, and the v2 universal LockDocument projection used for frozen reproducibility."
 
 flows:
   install:
@@ -51,7 +51,7 @@ flows:
   status:
     summary: "Read-only status path comparing tracked state and desired schema with observations from the host."
   update:
-    summary: "Lock refresh path that resolves mutable selectors, merges existing pins, writes the lock, and reports version drift."
+    summary: "Lock refresh path that refreshes legacy pins, builds or retains a coverage-complete universal projection when safe, writes the lock, and reports version drift."
   upgrade:
     summary: "Pinned-version upgrade path that discovers drift, preflights the exact tracked candidate, removes/reinstalls it, and persists updated state."
   desired-state-observation:
@@ -81,3 +81,4 @@ glossary:
   candidate: "One configured installation method considered for a tool before a concrete resolved plan is selected."
   resolved-plan: "Concrete executable identity produced from a candidate before mutation; lower layers must not silently re-resolve it."
   observation: "Read-only statement of host presence and identity used to reconcile desired and actual tool state."
+  lock-projection: "Immutable adapter-neutral LockDocument persisted in depengine.lock v2; it pins one exact selected plan identity per covered tool and is consumed fail-closed."

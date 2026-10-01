@@ -2,8 +2,8 @@ archmap: 2
 doc: unit
 id: state-and-lock
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "6bb3223"
+  verified_on: "2026-10-01"
 type: subsystem
 paths:
   - internal/state/
@@ -14,22 +14,38 @@ status: active
 invariants:
   - text: "State mutation is performed under the state lock before the executor saves reconciled tool state."
     confidence: confirmed
-    evidence: ["internal/exec/state.go:39-50", "internal/exec/state.go:109-115"]
-  - text: "Lock refresh only pins selector classes explicitly handled by lock.ResolveAll; install-time AdapterV2 resolution is a separate phase and must not be assumed to backfill missing lock pins."
+    evidence: ["internal/exec/state.go:90-131"]
+  - text: "Legacy method-specific pins are still refreshed by lock.ResolveAll and merged with preserved pins; they remain distinct from the adapter-neutral universal projection."
     confidence: confirmed
-    evidence: ["internal/lock/lock.go:250-253", "internal/app/update.go:89-120"]
+    evidence: ["internal/lock/lock.go:278-330", "internal/app/update.go:92-148"]
     symbols:
       - name: ResolveAll
         path: internal/lock/lock.go
-        role: "Primary lock-v1 selector materialization entry point; expand this symbol when changing pin coverage."
+        role: "Legacy selector-pin materialization entry point retained alongside lock v2."
+  - text: "depengine.lock v2 persists a universal LockDocument projection only when exact full-install-closure coverage can be proven; missing, extra, mutable, or mismatched identities fail closed."
+    confidence: confirmed
+    evidence: ["internal/lock/universal.go:9-40", "internal/app/universal_lock.go:19-105", "internal/plan/lock.go:827-878", "internal/plan/lock.go:999-1015"]
+    symbols:
+      - name: resolveUniversalLockDocument
+        path: internal/app/universal_lock.go
+        role: "Builds the adapter-neutral projection through read-only executor resolution and verifies install-closure coverage."
+      - name: VerifyCoverage
+        path: internal/plan/lock.go
+        role: "Fail-closed exact coverage check before persistence or reuse."
 relations:
   - from: state-and-lock
     to: adapters
     kind: calls
     via: "selector-specific release/registry/Git resolver helpers, not AdapterV2"
-    evidence: ["internal/lock/lock.go:253-330"]
+    evidence: ["internal/lock/lock.go:278-352"]
     symbols:
       - name: ResolveAll
         path: internal/lock/lock.go
         role: "Start here, then use symbol references/callees to enumerate the concrete resolver helpers involved."
+    confidence: confirmed
+  - from: state-and-lock
+    to: planning
+    kind: depends-on
+    via: "universal LockDocument projection"
+    evidence: ["internal/lock/universal.go:13-40", "internal/plan/lock.go:787-878"]
     confidence: confirmed

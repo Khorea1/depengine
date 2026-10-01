@@ -2,8 +2,8 @@ archmap: 2
 doc: unit
 id: planning
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "6bb3223"
+  verified_on: "2026-10-01"
 type: subsystem
 paths:
   - internal/plan/
@@ -15,4 +15,7 @@ status: active
 invariants:
   - text: "A resolved install plan must preserve the static candidate intent before it can proceed to mutation."
     confidence: confirmed
-    evidence: ["internal/exec/resolution.go:12-28", "internal/exec/resolution.go:44-54"]
+    evidence: ["internal/exec/resolution.go:12-64"]
+  - text: "A universal LockDocument is an immutable adapter-neutral projection of resolved plans; exact candidate identity and install-closure coverage are validated fail-closed before it is consumed."
+    confidence: confirmed
+    evidence: ["internal/plan/lock.go:787-878", "internal/plan/lock.go:999-1015", "internal/exec/resolution.go:31-63"]

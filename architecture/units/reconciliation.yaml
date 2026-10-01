@@ -2,8 +2,8 @@ archmap: 2
 doc: unit
 id: reconciliation
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "6bb3223"
+  verified_on: "2026-10-01"
 type: subsystem
 paths:
   - internal/exec/
@@ -15,26 +15,40 @@ status: active
 invariants:
   - text: "Candidate resolution and observation are read-only phases; host mutation receives a mutation runner that blocks subprocess execution during dry-run."
     confidence: confirmed
-    evidence: ["internal/exec/resolution.go:12-28", "internal/exec/executor.go:257-269"]
+    evidence: ["internal/exec/resolution.go:12-64", "internal/exec/executor.go:253-279"]
   - text: "The executor depends on the AdapterV2 contract rather than importing concrete adapter packages as execution policy."
     confidence: confirmed
-    evidence: ["internal/exec/adapter.go:39-54", "internal/exec/executor.go:228-233"]
+    evidence: ["internal/exec/adapter.go:39-76", "internal/exec/executor.go:217-240"]
+  - text: "Each Execute call owns a fresh runContext containing effective clan, native manager, method order, source manager, report/failure state, and dependency bookkeeping; run-specific host/source observations are not retained on Executor."
+    confidence: confirmed
+    evidence: ["internal/exec/run.go:25-67", "internal/exec/execute.go:72-103"]
+    symbols:
+      - name: newRunContext
+        path: internal/exec/run.go
+        role: "Per-run isolation boundary for effective host, method-selection, source, report, and dependency state."
+  - text: "Durable preparation transactions are recovered before new host mutation begins; ambiguous committed transitions remain fail-closed until read-only observation can reconcile them."
+    confidence: confirmed
+    evidence: ["internal/exec/execute.go:84-90", "internal/exec/preparation.go:673-735"]
+    symbols:
+      - name: recoverPreparationTransactions
+        path: internal/exec/preparation.go
+        role: "Recovery boundary executed before graph mutation phases."
 relations:
   - from: reconciliation
     to: planning
     kind: depends-on
     via: "resolved plan validation and verification"
-    evidence: ["internal/exec/resolution.go:44-54"]
+    evidence: ["internal/exec/resolution.go:31-64", "internal/exec/verification.go:13-44"]
     confidence: confirmed
   - from: reconciliation
     to: adapters
     kind: calls
     via: "AdapterV2"
-    evidence: ["internal/exec/adapter.go:39-54", "internal/exec/resolution.go:44-54"]
+    evidence: ["internal/exec/adapter.go:39-76", "internal/exec/resolution.go:31-64"]
     confidence: confirmed
   - from: reconciliation
     to: state-and-lock
     kind: writes
     via: "locked state transaction"
-    evidence: ["internal/exec/state.go:39-57", "internal/exec/state.go:109-115"]
+    evidence: ["internal/exec/state.go:90-131"]
     confidence: confirmed

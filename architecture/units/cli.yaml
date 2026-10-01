@@ -2,8 +2,8 @@ archmap: 2
 doc: unit
 id: cli
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "6bb3223"
+  verified_on: "2026-10-01"
 type: cli
 paths:
   - main.go
@@ -18,35 +18,35 @@ status: active
 invariants:
   - text: "The CLI composes adapters and executor options but method-specific mutation behavior remains behind the adapter seam."
     confidence: confirmed
-    evidence: ["internal/app/bootstrap.go:13-27", "internal/app/install.go:199-233"]
+    evidence: ["internal/app/bootstrap.go:16-34", "internal/app/install.go:201-235"]
 relations:
   - from: cli
     to: configuration
     kind: calls
     via: "in-process"
-    evidence: ["internal/app/helpers.go:80-111"]
+    evidence: ["internal/app/helpers.go:81-111"]
     confidence: confirmed
   - from: cli
     to: planning
     kind: calls
     via: "in-process graph commands"
-    evidence: ["internal/app/graph_why.go:107-120"]
+    evidence: ["internal/app/graph_why.go:94-148"]
     confidence: confirmed
   - from: cli
     to: reconciliation
     kind: calls
     via: "exec.Executor"
-    evidence: ["internal/app/install.go:374-393", "internal/app/status.go:75-81"]
+    evidence: ["internal/app/install.go:400-423", "internal/app/status.go:71-82"]
     confidence: confirmed
   - from: cli
     to: adapters
     kind: configures
     via: "adapter registration/composition"
-    evidence: ["internal/app/bootstrap.go:13-27", "internal/app/install.go:201-209"]
+    evidence: ["internal/app/bootstrap.go:16-34", "internal/app/install.go:201-220"]
     confidence: confirmed
   - from: cli
     to: state-and-lock
     kind: calls
     via: "lock/state APIs"
-    evidence: ["internal/app/install.go:376-384", "internal/app/update.go:89-153"]
+    evidence: ["internal/app/install.go:400-413", "internal/app/update.go:92-175"]
     confidence: confirmed

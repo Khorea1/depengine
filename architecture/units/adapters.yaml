@@ -2,8 +2,8 @@ archmap: 2
 doc: unit
 id: adapters
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "6bb3223"
+  verified_on: "2026-10-01"
 type: subsystem
 paths:
   - internal/ecosystem/
@@ -15,6 +15,9 @@ paths:
   - internal/localartifact/
   - internal/localartifactadapter/
   - internal/msi/
+  - internal/windowsinstaller/
+  - internal/pkg/
+  - internal/dmg/
   - internal/native/
   - internal/source/
   - internal/artifact/
@@ -25,7 +28,7 @@ status: active
 invariants:
   - text: "Every method backend implements one plan-aware AdapterV2 contract for resolution, observation, install, removal, availability, and compatibility."
     confidence: confirmed
-    evidence: ["internal/exec/adapter.go:39-77"]
+    evidence: ["internal/exec/adapter.go:39-76", "internal/app/bootstrap.go:16-34"]
 relations:
   - from: adapters
     to: host-os
