@@ -380,13 +380,12 @@ func TestRecoverLazyPrerequisiteCommitPersistsToolAndZeroRefOwnership(t *testing
 	ex := New()
 	WithAdapters(adapter)(ex)
 	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
-	ex.schema = schema
-	ex.recoveredCommits = make(map[string]recoveredCandidateCommit)
+	rc := ex.newRunContext(context.Background(), schema)
 
-	if err := ex.recoverPreparationTransactions(context.Background()); err != nil {
+	if err := ex.recoverPreparationTransactions(context.Background(), rc.sources, rc); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := ex.recoveredCommits["helper"]; !ok {
+	if _, ok := rc.recoveredCommits["helper"]; !ok {
 		t.Fatal("recovered prerequisite was not retained as a terminal in-memory result")
 	}
 	st, err := state.LoadFrom(state.DefaultPath())
@@ -471,9 +470,8 @@ func TestRecoverOwnerCommitAtomicallyClaimsPrerequisite(t *testing.T) {
 	ex := New()
 	WithAdapters(adapter)(ex)
 	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
-	ex.schema = schema
-	ex.recoveredCommits = make(map[string]recoveredCandidateCommit)
-	if err := ex.recoverPreparationTransactions(context.Background()); err != nil {
+	rc := ex.newRunContext(context.Background(), schema)
+	if err := ex.recoverPreparationTransactions(context.Background(), rc.sources, rc); err != nil {
 		t.Fatal(err)
 	}
 
@@ -526,8 +524,9 @@ func TestRecoverPreparationResolvesInFlightSourceAddAndRollsBack(t *testing.T) {
 	ex := New()
 	WithRunner(runner)(ex)
 	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
-	ex.sources = source.NewManager(runner, false)
-	if err := ex.recoverPreparationTransactions(context.Background()); err != nil {
+	rc := ex.newRunContext(context.Background(), nil)
+	rc.sources = source.NewManager(runner, false)
+	if err := ex.recoverPreparationTransactions(context.Background(), rc.sources, rc); err != nil {
 		t.Fatal(err)
 	}
 
@@ -810,9 +809,8 @@ func TestExecutorCommitRecoveryIgnoresExecuteOnlyIdentity(t *testing.T) {
 	ex := New()
 	WithAdapters(&testMockAdapter{kindValue: "cargo", checkFunc: func(string) bool { return true }})(ex)
 	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
-	ex.schema = schema
-	ex.recoveredCommits = make(map[string]recoveredCandidateCommit)
-	if err := ex.recoverPreparationTransactions(context.Background()); err != nil {
+	rc := ex.newRunContext(context.Background(), schema)
+	if err := ex.recoverPreparationTransactions(context.Background(), rc.sources, rc); err != nil {
 		t.Fatalf("recoverPreparationTransactions() error = %v", err)
 	}
 
@@ -823,7 +821,7 @@ func TestExecutorCommitRecoveryIgnoresExecuteOnlyIdentity(t *testing.T) {
 	if len(st.PreparationJournals) != 0 || len(st.PreparationPlans) != 0 {
 		t.Fatalf("recovery retained execute-only identity transaction: plans=%#v journals=%#v", st.PreparationPlans, st.PreparationJournals)
 	}
-	if _, ok := ex.recoveredCommits[tool.Name]; !ok {
+	if _, ok := rc.recoveredCommits[tool.Name]; !ok {
 		t.Fatal("recovered commit was not retained as a terminal in-memory result")
 	}
 }

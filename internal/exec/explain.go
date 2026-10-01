@@ -68,6 +68,18 @@ func declaredCandidateOrdinal(tool *config.Tool, method *config.MethodCandidate)
 //
 // This is the engine behind `depengine why <tool>`.
 func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan string) []MethodAttempt {
+	return ex.explainTool(ctx, tool, clan, source.NewManager(ex.rn, true))
+}
+
+// ExplainToolWithSourceRevisions returns attempts and credential-free Git HEAD
+// observations from this read-only explanation, without retaining them on ex.
+func (ex *Executor) ExplainToolWithSourceRevisions(ctx context.Context, tool *config.Tool, clan string) ([]MethodAttempt, []source.SourceRevision) {
+	manager := source.NewManager(ex.rn, true)
+	attempts := ex.explainTool(ctx, tool, clan, manager)
+	return attempts, manager.SourceRevisions()
+}
+
+func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan string, manager *source.Manager) []MethodAttempt {
 	ctx = omitToolSecretEnvironment(ctx, tool)
 	orderedMethods := ex.selectedMethods(tool, clan)
 	methods := orderedMethods
@@ -191,9 +203,6 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 		// Execute: a missing declared source makes the repository/index
 		// answer inconclusive, so availability is deferred rather than
 		// rejecting the candidate on a stale index.
-		if ex.sources == nil {
-			ex.sources = source.NewManager(ex.rn, true)
-		}
 		sources, sourceErr := sourcesForResolvedPlan(method.Sources, resolvedPlan)
 		if sourceErr != nil {
 			attempt.Status = "failed"
@@ -201,7 +210,7 @@ func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan str
 			appendAttempt(attempt, method)
 			continue
 		}
-		sourceProbe, probeErr := ex.probeCandidateSources(ctx, sources)
+		sourceProbe, probeErr := probeCandidateSources(ctx, manager, sources)
 		if probeErr != nil {
 			attempt.Status = "failed"
 			attempt.Error = probeErr.Error()

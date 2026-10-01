@@ -143,7 +143,8 @@ func TestVerifyBatchV2OnlyPresentCommitsBatchResult(t *testing.T) {
 			}
 			candidate := batchCandidate{toolName: tool.Name, tool: tool, method: tool.Methods[0], resolvedPlan: resolved}
 			report := &ExecReport{}
-			rc := &runContext{ctx: context.Background(), report: report}
+			rc := ex.newRunContext(context.Background(), nil)
+			rc.report = report
 			remaining := ex.verifyBatchInstall(rc, []batchCandidate{candidate}, nil, nil)
 			if len(remaining) != tt.wantRemaining || len(report.Tools) != tt.wantTools {
 				t.Fatalf("verifyBatchInstall() = remaining %d, report tools %d; want %d, %d", len(remaining), len(report.Tools), tt.wantRemaining, tt.wantTools)
@@ -197,7 +198,9 @@ func TestBatchDryRunReportsResolvedPlanAndResolvesOnce(t *testing.T) {
 		t.Fatal("batch candidate has nil resolved plan")
 	}
 
-	ex.reportBatchDryRun(&runContext{ctx: context.Background(), report: report}, candidates)
+	rc := ex.newRunContext(context.Background(), nil)
+	rc.report = report
+	ex.reportBatchDryRun(rc, candidates)
 	if len(report.Tools) != 1 || report.Tools[0].Status != StatusWouldInstall {
 		t.Fatalf("report = %+v, want one would-install result", report.Tools)
 	}
@@ -223,7 +226,8 @@ func TestVerifiedBatchInstallReportsSameResolvedPlan(t *testing.T) {
 	}
 
 	adapter.presence = plan.PresencePresent
-	rc := &runContext{ctx: context.Background(), report: report}
+	rc := ex.newRunContext(context.Background(), nil)
+	rc.report = report
 	remaining = ex.verifyBatchInstall(rc, candidates, remaining, make(map[string]*candidateResolutionSeed))
 	if len(remaining) != 0 || len(report.Tools) != 1 || report.Tools[0].Status != StatusInstalled {
 		t.Fatalf("verified batch = remaining %d, report %+v; want installed", len(remaining), report.Tools)
@@ -250,7 +254,9 @@ func TestBatchFallbackReusesResolvedPlan(t *testing.T) {
 	}
 
 	seed := &candidateResolutionSeed{method: candidates[0].method, resolved: candidates[0].resolvedPlan}
-	result := ex.executeToolWithResolution(context.Background(), tool, seed)
+	ctx := context.Background()
+	rc := ex.newRunContext(ctx, nil)
+	result := ex.executeToolWithResolution(ctx, rc, tool, seed)
 	if result.Status != StatusInstalled {
 		t.Fatalf("fallback result = %+v, want installed", result)
 	}

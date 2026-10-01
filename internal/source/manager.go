@@ -460,6 +460,7 @@ func sameSourceURL(actual, expected string) bool {
 	return canonicalSourceURL(actual) == canonicalSourceURL(expected)
 }
 
+// canonicalSourceURL compares package-source remotes; it is not a general GitHub repo-reference parser.
 func canonicalSourceURL(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if !strings.Contains(raw, "://") {

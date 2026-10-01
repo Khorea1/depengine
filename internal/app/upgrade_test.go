@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/ecosystem"
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
@@ -845,29 +844,67 @@ func TestPreflightDirectUpgradeRejectsStaticRequiresBeforeProbes(t *testing.T) {
 	}
 }
 
-// buildUpgradeExecutor must not shadow the process registry: composition-root
-// reconfiguration (defaults.aur_helper) has to reach upgrade reinstalls.
-func TestBuildUpgradeExecutorHonorsReconfiguredAURHelper(t *testing.T) {
-	ecosystem.ReconfigureAUR("yay")
-	t.Cleanup(func() { ecosystem.ReconfigureAUR("paru") })
+// TestBuildUpgradeExecutorUsesSchemaAURHelper verifies configured helper
+// selection is executor-local for install and upgrade paths.
+func TestBuildUpgradeExecutorUsesSchemaAURHelper(t *testing.T) {
+	build := func(helper string) *exec.Executor {
+		t.Helper()
+		schemaPath := filepath.Join(t.TempDir(), "schema.toml")
+		if err := os.WriteFile(schemaPath, []byte("schema_version = 1\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		schema := &config.Schema{Defaults: config.Defaults{AurHelper: helper}}
+		ex, _, err := buildUpgradeExecutor(schema, "arch", &engine.Facts{}, schemaPath, upgradeOptions{}, slog.New(slog.DiscardHandler))
+		if err != nil {
+			t.Fatalf("buildUpgradeExecutor() error = %v", err)
+		}
+		return ex
+	}
 
-	schemaPath := filepath.Join(t.TempDir(), "schema.toml")
-	if err := os.WriteFile(schemaPath, []byte("schema_version = 1\n"), 0o600); err != nil {
-		t.Fatal(err)
+	before := exec.Lookup("aur")
+	installSchema := &config.Schema{Defaults: config.Defaults{AurHelper: "yay"}}
+	installExecutor := newInstallExecutor(installPlan{schema: "schema.toml"}, installSchema, "arch", &engine.Facts{}, time.Time{}, slog.New(slog.DiscardHandler))
+	yayExecutor := build("yay")
+	paruExecutor := build("")
+	if got := exec.Lookup("aur"); got != before {
+		t.Fatal("building a schema executor changed the process AUR registry")
 	}
-	ex, _, err := buildUpgradeExecutor(&config.Schema{}, "arch", &engine.Facts{}, schemaPath, upgradeOptions{}, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatalf("buildUpgradeExecutor() error = %v", err)
-	}
-	if got, want := ex.LookupAdapter("aur"), exec.Lookup("aur"); got != want {
-		t.Fatalf("aur adapter = %p, want registry adapter %p (configured helper was shadowed)", got, want)
-	}
-	for _, kind := range exec.RegisteredKinds() {
-		if kind == "native" {
-			continue // intentionally clan-specific
+
+	for _, ex := range []*exec.Executor{installExecutor, yayExecutor, paruExecutor} {
+		for _, kind := range exec.RegisteredKinds() {
+			if ex.LookupAdapter(kind) == nil {
+				t.Errorf("executor lost registered adapter %q", kind)
+			}
 		}
-		if ex.LookupAdapter(kind) == nil {
-			t.Errorf("registered kind %q missing from upgrade executor", kind)
+	}
+
+	installWithFake := func(ex *exec.Executor) run.FakeCall {
+		t.Helper()
+		fake := &run.FakeRunner{}
+		exec.WithRunner(fake)(ex)
+		aur, ok := ex.LookupAdapter("aur").(interface {
+			Install(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error
+		})
+		if !ok {
+			t.Fatal("aur adapter does not implement Install")
 		}
+		method := &config.MethodCandidate{Kind: "aur", Config: map[string]any{"pkg": "demo"}}
+		if err := aur.Install(context.Background(), fake, &config.Tool{Name: "demo"}, method); err != nil {
+			t.Fatalf("aur Install() error = %v", err)
+		}
+		if len(fake.Calls) != 1 {
+			t.Fatalf("runner calls = %v, want one call", fake.Calls)
+		}
+		return fake.Calls[0]
+	}
+
+	if got := installWithFake(installExecutor); got.Name != "yay" || !reflect.DeepEqual(got.Args, []string{"-S", "--noconfirm", "demo"}) {
+		t.Errorf("install runner call = %#v", got)
+	}
+	if got := installWithFake(yayExecutor); got.Name != "yay" || !reflect.DeepEqual(got.Args, []string{"-S", "--noconfirm", "demo"}) {
+		t.Errorf("yay runner call = %#v", got)
+	}
+	if got := installWithFake(paruExecutor); got.Name != "paru" || !reflect.DeepEqual(got.Args, []string{"-S", "--noconfirm", "demo"}) {
+		t.Errorf("paru runner call = %#v", got)
 	}
 }

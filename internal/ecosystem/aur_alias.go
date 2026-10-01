@@ -2,11 +2,11 @@ package ecosystem
 
 import (
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/methodkind"
 )
 
-// AURByNameAdapter registers an AUR helper by its binary name (e.g. "paru",
-// "yay"). This lets schema entries like `paru = "pkg"` or `yay = "pkg"`
-// resolve to the AUR adapter directly, bypassing the need for a
+// AURByNameAdapter registers an AUR helper under its binary name. This lets
+// schema entries resolve to the AUR adapter directly, bypassing the need for a
 // `defaults.aur_helper` indirection.
 type AURByNameAdapter struct {
 	*AURAdapter
@@ -15,10 +15,15 @@ type AURByNameAdapter struct {
 
 func (a *AURByNameAdapter) Kind() string { return a.name }
 
-// RegisterAURAliases registers "paru" and "yay" as named adapter kinds,
+// RegisterAURAliases registers the AUR method aliases as named adapter kinds,
 // each delegating to AURAdapter with the corresponding helper binary.
 func RegisterAURAliases() {
-	for _, name := range []string{"paru", "yay"} {
+	contract, ok := methodkind.Lookup("aur")
+	if !ok || contract == nil {
+		panic("ecosystem: missing aur method contract")
+	}
+
+	for _, name := range contract.Aliases {
 		exec.Register(&AURByNameAdapter{
 			AURAdapter: NewAURAdapter(name),
 			name:       name,

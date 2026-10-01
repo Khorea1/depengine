@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -147,6 +146,52 @@ func TestSchemaReferenceCompleteExamplesMatchRuntimeContract(t *testing.T) {
 	}
 }
 
+func TestREADMEQuickStartMatchesRuntimeContract(t *testing.T) {
+	readme, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatalf("README Quick Start: read: %v", err)
+	}
+	document, err := firstTOMLBlockInREADMEQuickStart(string(readme))
+	if err != nil {
+		t.Fatalf("README Quick Start: %v", err)
+	}
+
+	schema, err := config.ParseProjectSchema(writeContractFixture(t, document), nil)
+	if err != nil {
+		t.Fatalf("README Quick Start: parse: %v", err)
+	}
+	result := validate.ValidateSchema(schema, exec.RegisteredKinds())
+	if result.HasErrors() {
+		t.Fatalf("README Quick Start: semantic validation:\n%s", formatValidationErrors(result.Errors))
+	}
+}
+
+// firstTOMLBlockInREADMEQuickStart extracts only the first TOML fence in the
+// README Quick start section; it is deliberately not a general Markdown parser.
+func firstTOMLBlockInREADMEQuickStart(markdown string) (string, error) {
+	const heading = "## Quick start"
+	const headingLine = "\n" + heading + "\n"
+	headingStart := strings.Index(markdown, headingLine)
+	if headingStart == -1 {
+		return "", fmt.Errorf("section %q not found", heading)
+	}
+	section := markdown[headingStart+len(headingLine):]
+	if nextHeading := strings.Index(section, "\n## "); nextHeading >= 0 {
+		section = section[:nextHeading]
+	}
+	const openingFence = "```toml\n"
+	fenceStart := strings.Index(section, openingFence)
+	if fenceStart == -1 {
+		return "", fmt.Errorf("first TOML code block not found in %q", heading)
+	}
+	contentStart := fenceStart + len(openingFence)
+	closingFence := strings.Index(section[contentStart:], "\n```")
+	if closingFence == -1 {
+		return "", fmt.Errorf("first TOML code block in %q is unterminated", heading)
+	}
+	return section[contentStart : contentStart+closingFence+1], nil
+}
+
 func TestDocumentedPlaceholderOwnership(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -211,11 +256,18 @@ func TestDocumentedManifestNewToolPolicy(t *testing.T) {
 
 func writeContractFixture(t *testing.T, document string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "contract.toml")
-	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
+	fixture, err := os.CreateTemp(t.TempDir(), "contract-*.toml")
+	if err != nil {
 		t.Fatal(err)
 	}
-	return path
+	if _, err := fixture.WriteString(document); err != nil {
+		_ = fixture.Close()
+		t.Fatal(err)
+	}
+	if err := fixture.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return fixture.Name()
 }
 
 func neovimToolIdentities(schema *config.Schema) []string {

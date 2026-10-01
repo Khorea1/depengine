@@ -671,8 +671,10 @@ func TestExecutorMethodOnlyExcludesDeclaredFallback(t *testing.T) {
 			{Kind: "http", Config: map[string]any{"url": "https://example.com/tool"}},
 		},
 	}
+	ctx := context.Background()
+	rc := ex.newRunContext(ctx, nil)
 	result := &ToolResult{Tool: tool.Name}
-	ex.tryMethods(context.Background(), tool, result, time.Now())
+	ex.tryMethods(ctx, rc, tool, result, time.Now())
 	if strings.Join(tried, ",") != "cargo" {
 		t.Fatalf("tried methods = %v, want only cargo", tried)
 	}
@@ -2384,8 +2386,10 @@ func TestExecutorReordersMethodsByExpandedOrder(t *testing.T) {
 	}
 
 	// tryMethods directly
+	ctx := context.Background()
+	rc := ex.newRunContext(ctx, s)
 	result := &ToolResult{Tool: "tool1"}
-	ex.tryMethods(context.Background(), s.Tools["tool1"], result, time.Now())
+	ex.tryMethods(ctx, rc, s.Tools["tool1"], result, time.Now())
 
 	// First method tried should be "native" (expanded from "apt"), second "cargo"
 	if len(attemptOrder) < 2 {
@@ -2499,7 +2503,9 @@ func TestCapabilityMismatchSkipsCandidateBeforeAdapterProbe(t *testing.T) {
 		}},
 	}
 
-	result := ex.executeTool(context.Background(), tool)
+	ctx := context.Background()
+	rc := ex.newRunContext(ctx, nil)
+	result := ex.executeTool(ctx, rc, tool)
 	if probes != 0 {
 		t.Fatalf("adapter probed %d times; capability mismatch must be rejected first", probes)
 	}

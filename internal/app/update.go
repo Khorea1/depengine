@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/ecosystem"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
 	"github.com/Khorea1/depengine/internal/run"
@@ -69,9 +68,6 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	}
 	if manifestAuto && manifestCount > 0 {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
-	}
-	if helper := s.Defaults.AurHelper; helper != "" {
-		ecosystem.ReconfigureAUR(helper)
 	}
 
 	// Preserve the effective whole-schema install closure before applying the

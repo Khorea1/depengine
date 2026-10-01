@@ -159,10 +159,13 @@ func buildUpgradeExecutor(s *config.Schema, clan string, facts *engine.Facts, sc
 	}
 	ex := exec.New()
 	exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
-	// Every other adapter comes from the process registry so composition-root
-	// reconfiguration (e.g. defaults.aur_helper) reaches upgrade reinstalls;
-	// only native is clan-specific.
-	exec.WithAdapters(exec.NewNativeAdapter(clan))(ex)
+	// Keep schema-specific AUR configuration local to this executor. All other
+	// adapters are inherited from the registry snapshot created by exec.New.
+	if helper := s.Defaults.AurHelper; helper != "" {
+		exec.WithAdapters(exec.NewNativeAdapter(clan), ecosystem.NewAURAdapter(helper))(ex)
+	} else {
+		exec.WithAdapters(exec.NewNativeAdapter(clan))(ex)
+	}
 	exec.WithSchemaInfo(schemaPath, schemaFile.ModTime())(ex)
 	exec.WithLogger(lg)(ex)
 	runner := run.NewLoggingRunner(run.OSExecRunner{}, lg)
@@ -560,9 +563,6 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 	}
 	if manifestAuto && manifestCount > 0 {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
-	}
-	if helper := s.Defaults.AurHelper; helper != "" {
-		ecosystem.ReconfigureAUR(helper)
 	}
 
 	lk, err := loadUpgradeLock(opts.schema, lg)

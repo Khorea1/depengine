@@ -40,6 +40,7 @@ func (r recoveredCandidateCommit) result() ToolResult {
 }
 
 type candidateSourcePreparation struct {
+	sources             *source.Manager
 	resourceUses        []plan.ResourceUse
 	prerequisite        bool
 	transactionRequired bool
@@ -50,11 +51,11 @@ type candidateSourcePreparation struct {
 }
 
 type sourcePreparationTransaction struct {
-	ex     *Executor
-	locked *depstate.LockedState
-	key    string
-	plan   plan.PreparationPlan
-	closed bool
+	sources *source.Manager
+	locked  *depstate.LockedState
+	key     string
+	plan    plan.PreparationPlan
+	closed  bool
 }
 
 type preparationBlockedError struct{ err error }
@@ -126,16 +127,16 @@ func candidatePreparationSubject(key string) (string, string, error) {
 	return string(toolBytes), string(methodBytes), nil
 }
 
-func (ex *Executor) probeCandidateSources(ctx context.Context, configured []config.Source) (candidateSourcePreparation, error) {
-	prepared := candidateSourcePreparation{prerequisite: ctx.Value(lazyDependencyExecutionKey{}) == true}
+func probeCandidateSources(ctx context.Context, manager *source.Manager, configured []config.Source) (candidateSourcePreparation, error) {
+	prepared := candidateSourcePreparation{sources: manager, prerequisite: ctx.Value(lazyDependencyExecutionKey{}) == true}
 	if len(configured) == 0 {
 		if prepared.prerequisite {
 			prepared.preparationPlan = &plan.PreparationPlan{}
 		}
 		return prepared, nil
 	}
-	if ex.sources == nil {
-		ex.sources = source.NewManager(ex.rn, ex.dryRun)
+	if manager == nil {
+		return prepared, errors.New("source manager is not initialized")
 	}
 
 	// Validate every ownership identity before any mutation and reject duplicate
@@ -143,7 +144,7 @@ func (ex *Executor) probeCandidateSources(ctx context.Context, configured []conf
 	if _, err := sourceResourceUses(configured, nil); err != nil {
 		return prepared, err
 	}
-	missing, err := ex.sources.Missing(ctx, configured)
+	missing, err := manager.Missing(ctx, configured)
 	if err != nil {
 		return prepared, err
 	}
@@ -167,7 +168,8 @@ func (ex *Executor) probeCandidateSources(ctx context.Context, configured []conf
 	return prepared, nil
 }
 
-func (ex *Executor) prepareCandidateSources(ctx context.Context, toolName, methodKind string, intent *plan.ResolvedInstallPlan, prepared candidateSourcePreparation) (candidateSourcePreparation, error) {
+func (ex *Executor) prepareCandidateSources(ctx context.Context, manager *source.Manager, toolName, methodKind string, intent *plan.ResolvedInstallPlan, prepared candidateSourcePreparation) (candidateSourcePreparation, error) {
+	prepared.sources = manager
 	journalPrerequisite := prepared.prerequisite
 	if len(prepared.missing) == 0 && !journalPrerequisite && !prepared.transactionRequired {
 		return prepared, nil
@@ -196,15 +198,15 @@ func (ex *Executor) prepareCandidateSources(ctx context.Context, toolName, metho
 			return prepared, nil
 		}
 		for i, configured := range missing {
-			if err := ex.sources.AddAuthenticated(ctx, configured, tokens[i]); err != nil {
-				present, probeErr := ex.sources.Present(ctx, configured)
+			if err := manager.AddAuthenticated(ctx, configured, tokens[i]); err != nil {
+				present, probeErr := manager.Present(ctx, configured)
 				if probeErr != nil {
 					return candidateSourcePreparation{}, blockPreparation("source preparation outcome is ambiguous for %s %s: add failed: %v; probe failed: %v", configured.Kind, configured.Name, err, probeErr)
 				}
 				if present {
 					prepared.added = append(prepared.added, configured)
 				}
-				if rollbackErr := ex.sources.Remove(ctx, prepared.added); rollbackErr != nil {
+				if rollbackErr := manager.Remove(ctx, prepared.added); rollbackErr != nil {
 					return candidateSourcePreparation{}, blockPreparation("source preparation failed: %v; rollback failed: %v", err, rollbackErr)
 				}
 				return candidateSourcePreparation{}, fmt.Errorf("source preparation failed: %w", err)
@@ -227,7 +229,7 @@ func (ex *Executor) prepareCandidateSources(ctx context.Context, toolName, metho
 	if err != nil {
 		return candidateSourcePreparation{}, fmt.Errorf("state lock for source preparation: %w", err)
 	}
-	tx := &sourcePreparationTransaction{ex: ex, locked: locked, key: key, plan: preparationPlan}
+	tx := &sourcePreparationTransaction{sources: manager, locked: locked, key: key, plan: preparationPlan}
 	if _, err := locked.BeginPreparation(key, preparationPlan); err != nil {
 		_ = tx.close()
 		return candidateSourcePreparation{}, fmt.Errorf("begin source preparation: %w", err)
@@ -240,8 +242,8 @@ func (ex *Executor) prepareCandidateSources(ctx context.Context, toolName, metho
 			_ = tx.close()
 			return candidateSourcePreparation{}, blockPreparation("persist source preparation boundary: %v", err)
 		}
-		if addErr := ex.sources.AddAuthenticated(ctx, configured, tokens[i]); addErr != nil {
-			present, probeErr := ex.sources.Present(ctx, configured)
+		if addErr := manager.AddAuthenticated(ctx, configured, tokens[i]); addErr != nil {
+			present, probeErr := manager.Present(ctx, configured)
 			if probeErr != nil {
 				_ = tx.close()
 				return candidateSourcePreparation{}, blockPreparation("source preparation outcome is ambiguous for %s %s: add failed: %v; probe failed: %v", configured.Kind, configured.Name, addErr, probeErr)
@@ -348,7 +350,7 @@ func (prepared *candidateSourcePreparation) finalizeCommitWithTool(
 	return tx.close()
 }
 
-func (prepared *candidateSourcePreparation) rollback(ctx context.Context, ex *Executor) error {
+func (prepared *candidateSourcePreparation) rollback(ctx context.Context) error {
 	if prepared == nil {
 		return nil
 	}
@@ -358,7 +360,7 @@ func (prepared *candidateSourcePreparation) rollback(ctx context.Context, ex *Ex
 	if len(prepared.added) == 0 {
 		return nil
 	}
-	return ex.sources.Remove(ctx, prepared.added)
+	return prepared.sources.Remove(ctx, prepared.added)
 }
 
 func (prepared *candidateSourcePreparation) leaveCommitUnresolved() error {
@@ -422,8 +424,8 @@ func (tx *sourcePreparationTransaction) applyRollbackDecision(ctx context.Contex
 		if _, _, err := tx.locked.PlanPreparationRollbackApply(tx.key, tx.plan, id); err != nil {
 			return err
 		}
-		if removeErr := tx.ex.sources.Remove(ctx, []config.Source{configured}); removeErr != nil {
-			present, probeErr := tx.ex.sources.Present(ctx, configured)
+		if removeErr := tx.sources.Remove(ctx, []config.Source{configured}); removeErr != nil {
+			present, probeErr := tx.sources.Present(ctx, configured)
 			if probeErr != nil {
 				return fmt.Errorf("rollback source %s failed: %w; outcome probe failed: %w", configured.Name, removeErr, probeErr)
 			}
@@ -517,15 +519,15 @@ func (ex *Executor) preparationRecoveryNeedsElevation() bool {
 	return false
 }
 
-func (ex *Executor) recoveryCandidate(key string) (*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, AdapterV2, bool, error) {
+func (ex *Executor) recoveryCandidate(rc *runContext, key string) (*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, AdapterV2, bool, error) {
 	toolName, methodKind, err := candidatePreparationSubject(key)
 	if err != nil {
 		return nil, nil, nil, nil, false, err
 	}
-	if ex.schema == nil {
+	if rc.schema == nil {
 		return nil, nil, nil, nil, false, errors.New("current schema is unavailable for commit reconciliation")
 	}
-	tool := ex.schema.Tools[toolName]
+	tool := rc.schema.Tools[toolName]
 	if tool == nil {
 		return nil, nil, nil, nil, false, fmt.Errorf("tool %q no longer exists in the current schema", toolName)
 	}
@@ -619,8 +621,8 @@ func containsIdentityField(fields []plan.IdentityField, wanted plan.IdentityFiel
 	return false
 }
 
-func (ex *Executor) reconcilePreparationCommit(ctx context.Context, locked *depstate.LockedState, key string, preparationPlan plan.PreparationPlan) error {
-	tool, method, intent, adapter, prerequisite, err := ex.recoveryCandidate(key)
+func (ex *Executor) reconcilePreparationCommit(ctx context.Context, rc *runContext, locked *depstate.LockedState, key string, preparationPlan plan.PreparationPlan) error {
+	tool, method, intent, adapter, prerequisite, err := ex.recoveryCandidate(rc, key)
 	if err != nil {
 		return err
 	}
@@ -664,7 +666,7 @@ func (ex *Executor) reconcilePreparationCommit(ctx context.Context, locked *deps
 	); err != nil {
 		return err
 	}
-	ex.recoveredCommits[tool.Name] = recovered
+	rc.recoveredCommits[tool.Name] = recovered
 	return nil
 }
 
@@ -673,7 +675,7 @@ func (ex *Executor) reconcilePreparationCommit(ctx context.Context, locked *deps
 // A journal already in commit remains fail-closed until observation establishes
 // a fully matching installed identity: replaying or rolling it back would
 // guess whether the install operation took effect.
-func (ex *Executor) recoverPreparationTransactions(ctx context.Context) error {
+func (ex *Executor) recoverPreparationTransactions(ctx context.Context, manager *source.Manager, rc *runContext) error {
 	if ex.dryRun || ex.schemaPath == "" {
 		return nil
 	}
@@ -689,14 +691,14 @@ func (ex *Executor) recoverPreparationTransactions(ctx context.Context) error {
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		if err := ex.recoverPreparationTransaction(ctx, locked, key); err != nil {
+		if err := ex.recoverPreparationTransaction(ctx, manager, rc, locked, key); err != nil {
 			return fmt.Errorf("recover preparation %q: %w", key, err)
 		}
 	}
 	return nil
 }
 
-func (ex *Executor) recoverPreparationTransaction(ctx context.Context, locked *depstate.LockedState, key string) error {
+func (ex *Executor) recoverPreparationTransaction(ctx context.Context, manager *source.Manager, rc *runContext, locked *depstate.LockedState, key string) error {
 	for {
 		preparationPlan, journal, err := locked.PreparationTransaction(key)
 		if err != nil {
@@ -719,7 +721,7 @@ func (ex *Executor) recoverPreparationTransaction(ctx context.Context, locked *d
 			if err != nil {
 				return err
 			}
-			present, err := ex.sources.Present(ctx, configured)
+			present, err := manager.Present(ctx, configured)
 			if err != nil {
 				return fmt.Errorf("probe in-flight source add %s: %w", configured.Name, err)
 			}
@@ -744,7 +746,7 @@ func (ex *Executor) recoverPreparationTransaction(ctx context.Context, locked *d
 			if err != nil {
 				return err
 			}
-			present, err := ex.sources.Present(ctx, configured)
+			present, err := manager.Present(ctx, configured)
 			if err != nil {
 				return fmt.Errorf("probe in-flight source rollback %s: %w", configured.Name, err)
 			}
@@ -768,20 +770,20 @@ func (ex *Executor) recoverPreparationTransaction(ctx context.Context, locked *d
 			if err != nil {
 				return err
 			}
-			tx := &sourcePreparationTransaction{ex: ex, locked: locked, key: key, plan: preparationPlan}
+			tx := &sourcePreparationTransaction{sources: manager, locked: locked, key: key, plan: preparationPlan}
 			if err := tx.applyRollbackDecision(ctx, rollback); err != nil {
 				return err
 			}
 			_, err = locked.FinalizePreparationRollback(key, preparationPlan)
 			return err
 		case plan.RecoveryResumeRollback:
-			tx := &sourcePreparationTransaction{ex: ex, locked: locked, key: key, plan: preparationPlan}
+			tx := &sourcePreparationTransaction{sources: manager, locked: locked, key: key, plan: preparationPlan}
 			if err := tx.resumeRollback(ctx, decision.Rollback); err != nil {
 				return err
 			}
 			return nil
 		case plan.RecoveryReconcileCommit:
-			return ex.reconcilePreparationCommit(ctx, locked, key, preparationPlan)
+			return ex.reconcilePreparationCommit(ctx, rc, locked, key, preparationPlan)
 		case plan.RecoveryFinalizeCommit:
 			return fmt.Errorf("unexpected commit-finalize recovery decision without reconciliation evidence")
 		case plan.RecoveryBlocked:

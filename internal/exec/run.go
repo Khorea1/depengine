@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -22,21 +23,32 @@ import (
 // unavailable), so dependents in later levels are blocked instead of
 // silently proceeding.
 type runContext struct {
-	ctx    context.Context
-	schema *config.Schema
-	report *ExecReport
-	failed map[string]string
+	ctx              context.Context
+	sources          *source.Manager
+	schema           *config.Schema
+	report           *ExecReport
+	failed           map[string]string
+	recoveredCommits map[string]recoveredCandidateCommit
+	dependencies     map[string]*dependencyRun
+	dependencyMu     sync.Mutex
 }
 
-// initializeRun sets the executor's per-run state and establishes the
-// upfront interactive elevation session when the run needs it. It returns
-// the session stop func for the caller to defer; a nil stop needs no defer.
-func (ex *Executor) initializeRun(ctx context.Context, s *config.Schema, clan string, report *ExecReport) (func(), error) {
-	ex.schema = s
-	ex.report = report
-	ex.sources = source.NewManager(ex.rn, ex.dryRun)
-	ex.recoveredCommits = make(map[string]recoveredCandidateCommit)
-	ex.dependencies = make(map[string]*dependencyRun)
+func (ex *Executor) newRunContext(ctx context.Context, s *config.Schema) *runContext {
+	return &runContext{
+		ctx:              ctx,
+		sources:          source.NewManager(ex.rn, ex.dryRun),
+		schema:           s,
+		report:           &ExecReport{},
+		failed:           make(map[string]string),
+		recoveredCommits: make(map[string]recoveredCandidateCommit),
+		dependencies:     make(map[string]*dependencyRun),
+	}
+}
+
+// initializeRun selects host/method defaults and establishes upfront interactive
+// elevation. Execution state belongs to rc; a nil stop needs no defer.
+func (ex *Executor) initializeRun(ctx context.Context, rc *runContext, clan string) (func(), error) {
+	s := rc.schema
 
 	ex.clan = clan
 
@@ -78,8 +90,8 @@ func (ex *Executor) startElevation(ctx context.Context, s *config.Schema, clan s
 // reconciled commit exactly once before graph execution. Source-only
 // transactions can be recovered automatically from source presence;
 // ambiguous candidate commits remain fail-closed.
-func (ex *Executor) recoverAndRecord(ctx context.Context, report *ExecReport) error {
-	if err := ex.recoverPreparationTransactions(ctx); err != nil {
+func (ex *Executor) recoverAndRecord(ctx context.Context, rc *runContext) error {
+	if err := ex.recoverPreparationTransactions(ctx, rc.sources, rc); err != nil {
 		return fmt.Errorf("preparation recovery: %w", err)
 	}
 
@@ -87,14 +99,14 @@ func (ex *Executor) recoverAndRecord(ctx context.Context, report *ExecReport) er
 	// DependencyOnly tools that may not appear in the root graph at all. The
 	// root and lazy-dependency paths treat these entries as terminal and
 	// must not probe, replay hooks, or invoke an installer again.
-	recoveredNames := make([]string, 0, len(ex.recoveredCommits))
-	for name := range ex.recoveredCommits {
+	recoveredNames := make([]string, 0, len(rc.recoveredCommits))
+	for name := range rc.recoveredCommits {
 		recoveredNames = append(recoveredNames, name)
 	}
 	sort.Strings(recoveredNames)
 	for _, name := range recoveredNames {
-		result := ex.recoveredCommits[name].result()
-		ex.recordToolResult(ctx, &result, report)
+		result := rc.recoveredCommits[name].result()
+		ex.recordToolResult(ctx, &result, rc.report)
 	}
 	return nil
 }
@@ -173,7 +185,7 @@ func (ex *Executor) runLevel(rc *runContext, level []string) {
 	// so no transient second probe or host mutation can replay the transition.
 	executionLevel := make([]string, 0, len(level))
 	for _, toolName := range level {
-		if _, ok := ex.recoveredCommits[toolName]; ok {
+		if _, ok := rc.recoveredCommits[toolName]; ok {
 			continue
 		}
 		executionLevel = append(executionLevel, toolName)
@@ -339,12 +351,12 @@ func (ex *Executor) runRemaining(rc *runContext, remaining []string, resolutions
 			if !ok {
 				continue
 			}
-			result := ex.executeToolWithResolution(rc.ctx, tool, resolutions[toolName])
+			result := ex.executeToolWithResolution(rc.ctx, rc, tool, resolutions[toolName])
 			ex.recordToolResult(rc.ctx, &result, rc.report)
 		}
 		return
 	}
-	ex.executeLevelParallel(rc.ctx, rc.schema, remaining, rc.report, resolutions)
+	ex.executeLevelParallel(rc.ctx, rc, remaining, resolutions)
 }
 
 // recordLevelFailures registers this level's failures so dependents in

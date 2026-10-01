@@ -354,9 +354,6 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 	if factsErr == nil {
 		clan = engine.ResolveFamily(facts)
 	}
-	if helper := s.Defaults.AurHelper; helper != "" {
-		ecosystem.ReconfigureAUR(helper)
-	}
 
 	if warnings, verr := config.Validate(s, exec.RegisteredKinds()); verr != nil {
 		log.Default.Error("schema validation", "error", verr)
@@ -376,6 +373,9 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 	ex := exec.New()
 	exec.WithRunner(run.OSExecRunner{})(ex)
 	exec.WithFacts(facts)(ex)
+	if helper := s.Defaults.AurHelper; helper != "" {
+		exec.WithAdapters(ecosystem.NewAURAdapter(helper))(ex)
+	}
 	attempts := ex.ExplainTool(ctx, tool, clan)
 	if *whyJSON {
 		type jsonAttempt struct {

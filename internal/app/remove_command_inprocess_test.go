@@ -15,7 +15,8 @@ import (
 // or child depengine process is involved.
 func TestRunRemoveInvokesAdapterRemover(t *testing.T) {
 	adapter := &recordingRemoveAdapter{}
-	exec.Replace(adapter)
+	executor := exec.New()
+	exec.WithAdapters(adapter)(executor)
 
 	stateHome := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateHome)
@@ -25,7 +26,7 @@ func TestRunRemoveInvokesAdapterRemover(t *testing.T) {
 
 	all, dryRun, force := false, false, false
 	schema, only := "", "tool"
-	if err := runRemove(context.Background(), nil, &all, &dryRun, &schema, &only, &force); err != nil {
+	if err := runRemoveWithExecutor(context.Background(), nil, &all, &dryRun, &schema, &only, &force, executor, nil); err != nil {
 		t.Fatalf("runRemove: %v", err)
 	}
 	if !adapter.called {
@@ -44,7 +45,8 @@ func TestRunRemoveInvokesAdapterRemover(t *testing.T) {
 
 func TestRunRemoveAdapterFailureRetainsState(t *testing.T) {
 	adapter := &recordingRemoveAdapter{err: errors.New("remove failed")}
-	exec.Replace(adapter)
+	executor := exec.New()
+	exec.WithAdapters(adapter)(executor)
 
 	stateHome := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateHome)
@@ -54,7 +56,7 @@ func TestRunRemoveAdapterFailureRetainsState(t *testing.T) {
 
 	all, dryRun, force := false, false, false
 	schema, only := "", "tool"
-	if code := requireExitCode(t, runRemove(context.Background(), nil, &all, &dryRun, &schema, &only, &force)); code != 1 {
+	if code := requireExitCode(t, runRemoveWithExecutor(context.Background(), nil, &all, &dryRun, &schema, &only, &force, executor, nil)); code != 1 {
 		t.Fatalf("runRemove exit code = %d, want 1", code)
 	}
 	if !adapter.called {
@@ -67,7 +69,8 @@ func TestRunRemoveAdapterFailureRetainsState(t *testing.T) {
 
 func TestRunRemoveDryRunDoesNotInvokeAdapterRemover(t *testing.T) {
 	adapter := &recordingRemoveAdapter{}
-	exec.Replace(adapter)
+	executor := exec.New()
+	exec.WithAdapters(adapter)(executor)
 
 	stateHome := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateHome)
@@ -77,7 +80,7 @@ func TestRunRemoveDryRunDoesNotInvokeAdapterRemover(t *testing.T) {
 
 	all, dryRun, force := false, true, false
 	schema, only := "", "tool"
-	if err := runRemove(context.Background(), nil, &all, &dryRun, &schema, &only, &force); err != nil {
+	if err := runRemoveWithExecutor(context.Background(), nil, &all, &dryRun, &schema, &only, &force, executor, nil); err != nil {
 		t.Fatalf("runRemove dry-run: %v", err)
 	}
 	if adapter.called {

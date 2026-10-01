@@ -227,7 +227,9 @@ func TestExecutorChecksCompatibilityAfterResolution(t *testing.T) {
 
 	tool := schema.Tools["demo"]
 	result := &ToolResult{Tool: tool.Name}
-	ex.tryMethods(context.Background(), tool, result, time.Now())
+	ctx := context.Background()
+	rc := ex.newRunContext(ctx, schema)
+	ex.tryMethods(ctx, rc, tool, result, time.Now())
 
 	if primary.resolveCalls != 1 {
 		t.Fatalf("resolve calls = %d, want 1", primary.resolveCalls)

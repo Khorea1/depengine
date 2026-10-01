@@ -4,7 +4,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -12,7 +11,6 @@ import (
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/secret"
-	"github.com/Khorea1/depengine/internal/source"
 )
 
 // Executor orchestrates the installation of all tools in a schema.
@@ -47,13 +45,7 @@ type Executor struct {
 
 	color bool // whether to emit ANSI color codes in status output
 
-	schema           *config.Schema
-	report           *ExecReport
-	sources          *source.Manager
-	secretResolver   secret.SecretResolver
-	recoveredCommits map[string]recoveredCandidateCommit
-	dependencyMu     sync.Mutex
-	dependencies     map[string]*dependencyRun
+	secretResolver secret.SecretResolver
 }
 
 type dependencyRun struct {
@@ -241,14 +233,6 @@ func New() *Executor {
 		ex.adapters[k] = a
 	}
 	return ex
-}
-
-// SourceRevisions returns credential-free Git HEAD observations captured while candidate sources were prepared.
-func (ex *Executor) SourceRevisions() []source.SourceRevision {
-	if ex.sources == nil {
-		return nil
-	}
-	return ex.sources.SourceRevisions()
 }
 
 // LookupAdapter returns the adapter for the given kind from the executor's

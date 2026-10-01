@@ -125,12 +125,14 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
 		return nil
 	}
 
-	facts := ensureUndoNativeAdapter()
+	facts := gatherUndoFacts()
 	executor := exec.New()
 	exec.WithRunner(run.OSExecRunner{})(executor)
 	if facts != nil {
+		clan := engine.ResolveFamily(facts)
 		exec.WithFacts(facts)(executor)
-		executor.SetHostContext(engine.ResolveFamily(facts))
+		exec.WithAdapters(exec.NewNativeAdapter(clan))(executor)
+		executor.SetHostContext(clan)
 	}
 	originalTools, succeeded, hadFailure := removeUndoTools(ctx, toRemove, curState, executor)
 	return finalizeUndo(ls, curState, snapState, toRemove, originalTools, succeeded, hadFailure)
@@ -228,19 +230,10 @@ func resolveUndoMethodKind(toolState state.ToolState) string {
 	return toolState.Method // fallback for old state files
 }
 
-// ensureUndoNativeAdapter makes the OS-resolved native adapter authoritative,
-// the same way install/upgrade already do, so removal uses the correct
-// check/remove commands for this machine instead of PATH-probing.
-func ensureUndoNativeAdapter() *engine.Facts {
-	// The global "native" adapter (registered in main.go) is constructed
-	// with an empty clan and falls back to PATH-probing, which is ambiguous
-	// for manager binaries shared across clans (e.g. "pkg" on both termux
-	// and freebsd — same install command, different check/remove commands).
-	// Resolve the real clan from OS facts and make it authoritative here,
-	// the same way install/upgrade already do, so removal always uses the
-	// correct check/remove commands for this machine.
+// gatherUndoFacts reads OS facts for the executor-local native adapter. On
+// failure, the default bootstrap adapter retains its existing PATH fallback.
+func gatherUndoFacts() *engine.Facts {
 	if facts, err := engine.GatherFacts(run.OSExecRunner{}); err == nil {
-		exec.Replace(exec.NewNativeAdapter(engine.ResolveFamily(facts)))
 		return facts
 	} else {
 		log.Default.Warn("could not gather OS facts; falling back to PATH-probing for native manager detection", "error", err)

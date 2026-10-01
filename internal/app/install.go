@@ -203,12 +203,16 @@ func printInstallHeader(cs *cliStyle, p installPlan, s *config.Schema, clan stri
 func newInstallExecutor(p installPlan, s *config.Schema, clan string, facts *engine.Facts, schemaModTime time.Time, lg *slog.Logger) *exec.Executor {
 	ex := exec.New()
 	exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
-	exec.WithAdapters(
+	adapters := []exec.AdapterV2{
 		git.NewGitAdapter(),
 		httpdownload.NewHTTPAdapter(),
 		container.NewContainerAdapter(),
 		exec.NewNativeAdapter(clan),
-	)(ex)
+	}
+	if helper := s.Defaults.AurHelper; helper != "" {
+		adapters = append(adapters, ecosystem.NewAURAdapter(helper))
+	}
+	exec.WithAdapters(adapters...)(ex)
 	exec.WithSchemaInfo(p.schema, schemaModTime)(ex)
 	exec.WithLogger(lg)(ex)
 	exec.WithRunner(run.NewLoggingRunner(run.OSExecRunner{}, lg))(ex)
@@ -362,9 +366,6 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		}
 		lg.Error("load schema", "error", err)
 		return exitWithCode(exitCodeForError(err))
-	}
-	if helper := s.Defaults.AurHelper; helper != "" {
-		ecosystem.ReconfigureAUR(helper)
 	}
 
 	if shouldWarnDeprecatedVerbose(cmd) {
