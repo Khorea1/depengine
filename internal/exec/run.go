@@ -23,46 +23,52 @@ import (
 // unavailable), so dependents in later levels are blocked instead of
 // silently proceeding.
 type runContext struct {
-	ctx              context.Context
-	sources          *source.Manager
-	schema           *config.Schema
-	report           *ExecReport
-	failed           map[string]string
-	recoveredCommits map[string]recoveredCandidateCommit
-	dependencies     map[string]*dependencyRun
-	dependencyMu     sync.Mutex
+	ctx               context.Context
+	clan              string
+	nativeManagerName string
+	methodOrder       []string
+	sources           *source.Manager
+	schema            *config.Schema
+	report            *ExecReport
+	failed            map[string]string
+	recoveredCommits  map[string]recoveredCandidateCommit
+	dependencies      map[string]*dependencyRun
+	dependencyMu      sync.Mutex
 }
 
-func (ex *Executor) newRunContext(ctx context.Context, s *config.Schema) *runContext {
+func (ex *Executor) newRunContext(ctx context.Context, s *config.Schema, clan string) *runContext {
+	configuredMethodOrder := ex.configuredMethodOrder
+	if s != nil && s.Defaults.MethodOrder != nil {
+		configuredMethodOrder = s.Defaults.MethodOrder
+	}
+	methodOrder := append([]string{}, configuredMethodOrder...)
+	managerName := ""
+	if manager, ok := native.Lookup(clan); ok {
+		managerName = manager.Name
+	}
 	return &runContext{
-		ctx:              ctx,
-		sources:          source.NewManager(ex.rn, ex.dryRun),
-		schema:           s,
-		report:           &ExecReport{},
-		failed:           make(map[string]string),
-		recoveredCommits: make(map[string]recoveredCandidateCommit),
-		dependencies:     make(map[string]*dependencyRun),
+		ctx:               ctx,
+		sources:           source.NewManager(ex.rn, ex.dryRun),
+		schema:            s,
+		clan:              clan,
+		nativeManagerName: managerName,
+		methodOrder:       methodOrder,
+		report:            &ExecReport{},
+		failed:            make(map[string]string),
+		recoveredCommits:  make(map[string]recoveredCandidateCommit),
+		dependencies:      make(map[string]*dependencyRun),
 	}
 }
 
-// initializeRun selects host/method defaults and establishes upfront interactive
-// elevation. Execution state belongs to rc; a nil stop needs no defer.
-func (ex *Executor) initializeRun(ctx context.Context, rc *runContext, clan string) (func(), error) {
-	s := rc.schema
+func (rc *runContext) selectedMethods(tool *config.Tool) []*config.MethodCandidate {
+	return config.SelectMethods(tool, rc.methodOrder, rc.nativeManagerName)
+}
 
-	ex.clan = clan
-
-	// Resolve native manager name from clan for method_order expansion.
-	if mgr, ok := native.Lookup(clan); ok {
-		ex.nativeManagerName = mgr.Name
-	}
-	if len(s.Defaults.MethodOrder) > 0 {
-		ex.defaultMethodOrder = s.Defaults.MethodOrder
-	}
-
-	ex.logDebug(ctx, "executor", "phase", "init", "clan", clan, "tools", len(s.Tools))
-
-	return ex.startElevation(ctx, s, clan)
+// initializeRun establishes upfront interactive elevation. Effective host
+// and method selection state was captured when rc was created.
+func (ex *Executor) initializeRun(ctx context.Context, rc *runContext) (func(), error) {
+	ex.logDebug(ctx, "executor", "phase", "init", "clan", rc.clan, "tools", len(rc.schema.Tools))
+	return ex.startElevation(ctx, rc)
 }
 
 // startElevation asks the production runner to obtain elevation once,
@@ -73,9 +79,9 @@ func (ex *Executor) initializeRun(ctx context.Context, rc *runContext, clan stri
 // terminal): elevation would silently fail on every run that isn't
 // already NOPASSWD. This is skipped in dry-run: a plan should never
 // prompt for credentials it won't use.
-func (ex *Executor) startElevation(ctx context.Context, s *config.Schema, clan string) (func(), error) {
+func (ex *Executor) startElevation(ctx context.Context, rc *runContext) (func(), error) {
 	session, ok := ex.rn.(run.ElevationSession)
-	if ex.dryRun || !ex.needsElevation(s, clan) || !ok {
+	if ex.dryRun || !ex.needsElevation(rc) || !ok {
 		return nil, nil
 	}
 	stop, err := session.StartElevationSession(ctx)
@@ -106,7 +112,7 @@ func (ex *Executor) recoverAndRecord(ctx context.Context, rc *runContext) error 
 	sort.Strings(recoveredNames)
 	for _, name := range recoveredNames {
 		result := rc.recoveredCommits[name].result()
-		ex.recordToolResult(ctx, &result, rc.report)
+		ex.recordToolResult(ctx, rc, &result)
 	}
 	return nil
 }
@@ -114,16 +120,16 @@ func (ex *Executor) recoverAndRecord(ctx context.Context, rc *runContext) error 
 // syncNativeIndex syncs the native package index only when at least one
 // tool uses a native method. Sync() never returns a fatal error: a failed
 // index sync is a soft failure and installation proceeds regardless.
-func (ex *Executor) syncNativeIndex(ctx context.Context, s *config.Schema, clan string) {
-	if !ex.hasApplicableNativeMethod(s, clan) {
+func (ex *Executor) syncNativeIndex(ctx context.Context, rc *runContext) {
+	if !ex.hasApplicableNativeMethod(rc) {
 		return
 	}
-	syncMgr := NewSyncManager(ex.mutationRunner("native-index", "sync"), clan)
+	syncMgr := NewSyncManager(ex.mutationRunner("native-index", "sync"), rc.clan)
 	if !syncMgr.NeedsSync() {
 		return
 	}
 	if ex.dryRun {
-		ex.outputf("  package index: would sync via %s\n", ex.nativeManagerName)
+		ex.outputf("  package index: would sync via %s\n", rc.nativeManagerName)
 		ex.logDebug(ctx, "sync", "status", "would_sync")
 		return
 	}
@@ -232,7 +238,7 @@ func (ex *Executor) filterDangerousTools(rc *runContext, executionLevel []string
 			failed := ToolResult{
 				Tool: toolName, Status: StatusFailed, Error: msg,
 			}
-			ex.recordToolResult(rc.ctx, &failed, rc.report)
+			ex.recordToolResult(rc.ctx, rc, &failed)
 			continue
 		}
 		tool, ok := rc.schema.Tools[toolName]
@@ -241,11 +247,11 @@ func (ex *Executor) filterDangerousTools(rc *runContext, executionLevel []string
 			continue
 		}
 		if !ex.allowArbitraryCode {
-			hasDanger := ex.hasArbitraryCode(tool)
+			hasDanger := ex.hasDangerousMethod(rc, tool)
 			if hasDanger {
 				ex.outputf("  ⚠  %s: has hooks or build scripts that may execute arbitrary code. Use --allow-arbitrary-code to permit execution.\n", toolName)
 				ex.logWarn(rc.ctx, "security", "tool", toolName, "warning", "has dangerous hooks")
-				ex.recordBlockedTool(rc.ctx, toolName, rc.report)
+				ex.recordBlockedTool(rc.ctx, rc, toolName)
 				continue
 			}
 		}
@@ -257,23 +263,23 @@ func (ex *Executor) filterDangerousTools(rc *runContext, executionLevel []string
 // runBatchPhase attempts the optimistic batch native install and returns
 // the tool names still needing per-tool execution.
 func (ex *Executor) runBatchPhase(rc *runContext, survivorLevel []string) ([]string, map[string]*candidateResolutionSeed) {
-	candidates, remaining, resolutions := ex.identifyBatchCandidates(rc.ctx, survivorLevel, rc.schema, rc.report)
+	candidates, remaining, resolutions := ex.identifyBatchCandidates(rc.ctx, rc, survivorLevel)
 
 	// Batch is only an optimization when at least two candidates can share a
 	// package-manager invocation. A singleton goes straight to the serial path
 	// while retaining the plan resolved during batch preflight.
-	if len(candidates) == 1 && ex.clan != "" {
+	if len(candidates) == 1 && rc.clan != "" {
 		candidate := candidates[0]
 		remaining = append(remaining, candidate.toolName)
 		resolutions[candidate.toolName] = &candidateResolutionSeed{method: candidate.method, resolved: candidate.resolvedPlan}
 		return remaining, resolutions
 	}
 
-	if len(candidates) > 1 && ex.clan != "" {
+	if len(candidates) > 1 && rc.clan != "" {
 		switch {
 		case ex.dryRun:
 			ex.reportBatchDryRun(rc, candidates)
-		case ex.batchNativeInstall(omitBatchSecretEnvironment(rc.ctx, candidates), candidates):
+		case ex.batchNativeInstall(omitBatchSecretEnvironment(rc.ctx, candidates), rc, candidates):
 			remaining = ex.verifyBatchInstall(rc, candidates, remaining, resolutions)
 		default:
 			// Batch failed — transparent fallback to per-tool.
@@ -295,7 +301,7 @@ func (ex *Executor) reportBatchDryRun(rc *runContext, candidates []batchCandidat
 	for i, c := range candidates {
 		names[i] = c.toolName
 	}
-	ex.outputf("  ⚡  commit: would batch native install: %s via %s\n", strings.Join(names, ", "), ex.nativeManagerName)
+	ex.outputf("  ⚡  commit: would batch native install: %s via %s\n", strings.Join(names, ", "), rc.nativeManagerName)
 	for _, c := range candidates {
 		postCtx, postCancel := context.WithTimeout(omitToolSecretEnvironment(rc.ctx, c.tool), ex.methodTimeout)
 		_, _ = ex.runLifecycleHooks(postCtx, c.tool.Name, c.resolvedPlan, plan.TransitionInstall, plan.HookAfter)
@@ -304,7 +310,7 @@ func (ex *Executor) reportBatchDryRun(rc *runContext, candidates []batchCandidat
 			Tool: c.toolName, Status: StatusWouldInstall, Method: displayMethodKind(c.method),
 			MethodKind: c.method.Kind, Config: c.method.Config, PlanIntent: c.resolvedPlan,
 		}
-		ex.recordToolResult(rc.ctx, &wouldInstall, rc.report)
+		ex.recordToolResult(rc.ctx, rc, &wouldInstall)
 	}
 }
 
@@ -331,7 +337,7 @@ func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandida
 			} else {
 				tr.PostinstallDone = postRan
 			}
-			ex.recordToolResult(rc.ctx, &tr, rc.report)
+			ex.recordToolResult(rc.ctx, rc, &tr)
 		} else {
 			remaining = append(remaining, c.toolName)
 			if resolutions != nil {
@@ -352,7 +358,7 @@ func (ex *Executor) runRemaining(rc *runContext, remaining []string, resolutions
 				continue
 			}
 			result := ex.executeToolWithResolution(rc.ctx, rc, tool, resolutions[toolName])
-			ex.recordToolResult(rc.ctx, &result, rc.report)
+			ex.recordToolResult(rc.ctx, rc, &result)
 		}
 		return
 	}

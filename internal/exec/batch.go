@@ -21,11 +21,11 @@ type batchCandidate struct {
 	resolvedPlan *plan.ResolvedInstallPlan
 }
 
-func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string, s *config.Schema, report *ExecReport) (candidates []batchCandidate, remaining []string, resolutions map[string]*candidateResolutionSeed) {
+func (ex *Executor) identifyBatchCandidates(ctx context.Context, rc *runContext, level []string) (candidates []batchCandidate, remaining []string, resolutions map[string]*candidateResolutionSeed) {
 	remaining = make([]string, 0, len(level))
 	resolutions = make(map[string]*candidateResolutionSeed)
 	for _, toolName := range level {
-		tool, ok := s.Tools[toolName]
+		tool, ok := rc.schema.Tools[toolName]
 		if !ok {
 			continue
 		}
@@ -36,12 +36,12 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 		}
 
 		foundNative := false
-		for _, method := range config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName) {
+		for _, method := range rc.selectedMethods(tool) {
 			if method.When != nil && !method.When.Match(ex.facts) {
 				continue
 			}
 			planIntent, mismatch := candidatePlanIntent(tool, method)
-			planIntent = ex.hostResolvedPlanIntent(method, planIntent)
+			planIntent = ex.hostResolvedPlanIntent(method, planIntent, rc.clan)
 			if mismatch != "" {
 				// Batch is only an optimization. A candidate rejected by the static
 				// planning boundary must fall back to the serial path, which records
@@ -58,14 +58,14 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 			if len(method.Requires) > 0 || len(method.Sources) > 0 {
 				break
 			}
-			if !native.IsBatchCapable(ex.clan) {
+			if !native.IsBatchCapable(rc.clan) {
 				break
 			}
 
 			// Batch planning crosses the same read-only resolution boundary as
 			// serial execution. Preserve the result for any later serial fallback
 			// so a dynamic release/tag/asset lookup is never repeated.
-			resolvedPlan, resolveErr := ex.resolveCandidatePlan(toolCtx, tool, method, adapter, planIntent, displayMethodKind(method))
+			resolvedPlan, resolveErr := ex.resolveCandidatePlan(toolCtx, tool, method, adapter, planIntent, method.Kind)
 			resolution := &candidateResolutionSeed{method: method, resolved: resolvedPlan, err: resolveErr}
 			if resolveErr != nil {
 				resolutions[toolName] = resolution
@@ -75,7 +75,7 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 				resolutions[toolName] = resolution
 				break
 			}
-			if err := adapter.CheckHostCompatibility(tool, method, resolvedPlan, ex.facts, ex.clan); err != nil {
+			if err := adapter.CheckHostCompatibility(tool, method, resolvedPlan, ex.facts, rc.clan); err != nil {
 				resolutions[toolName] = resolution
 				break
 			}
@@ -88,10 +88,10 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, level []string,
 				break
 			}
 			if verification.State == plan.StateSatisfied {
-				ex.recordToolResult(toolCtx, &ToolResult{
+				ex.recordToolResult(toolCtx, rc, &ToolResult{
 					Tool: toolName, Status: StatusAlready, Method: displayMethodKind(method),
 					MethodKind: method.Kind, Config: method.Config, PlanIntent: resolvedPlan,
-				}, report)
+				})
 				foundNative = true
 				break
 			}
@@ -143,9 +143,9 @@ func displayMethodKind(method *config.MethodCandidate) string {
 	return method.Kind
 }
 
-func (ex *Executor) providerForMethodKind(kind string) string {
+func (ex *Executor) providerForMethodKind(kind, nativeManagerName string) string {
 	if kind == "native" {
-		return ex.nativeManagerName
+		return nativeManagerName
 	}
 	if native.IsNativeManagerName(kind) || methodkind.IsKnownKind(kind) {
 		return kind
@@ -153,7 +153,7 @@ func (ex *Executor) providerForMethodKind(kind string) string {
 	return ""
 }
 
-func (ex *Executor) hostResolvedPlanIntent(method *config.MethodCandidate, intent *plan.ResolvedInstallPlan) *plan.ResolvedInstallPlan {
+func (ex *Executor) hostResolvedPlanIntent(method *config.MethodCandidate, intent *plan.ResolvedInstallPlan, clan string) *plan.ResolvedInstallPlan {
 	if intent == nil || method == nil {
 		return intent
 	}
@@ -162,7 +162,7 @@ func (ex *Executor) hostResolvedPlanIntent(method *config.MethodCandidate, inten
 	}
 	resolved := *intent
 	resolved.Identity = intent.Identity
-	if pkg := pkgFromConfig(method, ex.clan); pkg != "" {
+	if pkg := pkgFromConfig(method, clan); pkg != "" {
 		resolved.Identity.Package = pkg
 	}
 	return &resolved
@@ -174,7 +174,7 @@ func validBatchPkgName(name string) bool {
 	return pkgNameRegexp.MatchString(name)
 }
 
-func (ex *Executor) batchNativeInstall(ctx context.Context, candidates []batchCandidate) bool {
+func (ex *Executor) batchNativeInstall(ctx context.Context, rc *runContext, candidates []batchCandidate) bool {
 	// A one-package "batch" is the same mutation the serial fallback would
 	// perform. Avoid executing it twice when the package manager times out or
 	// otherwise fails.
@@ -189,7 +189,7 @@ func (ex *Executor) batchNativeInstall(ctx context.Context, candidates []batchCa
 		}
 		pkgs = append(pkgs, candidate.resolvedPlan.Identity.Package)
 	}
-	cmd := native.BuildBatchInstallCmd(ex.clan, pkgs)
+	cmd := native.BuildBatchInstallCmd(rc.clan, pkgs)
 	if cmd == nil {
 		return false
 	}
@@ -205,15 +205,15 @@ func (ex *Executor) batchNativeInstall(ctx context.Context, candidates []batchCa
 	defer cancel()
 
 	runner := ex.mutationRunner("batch", "native")
-	ex.outputf("  ⚡  batch installing %d packages via %s (1 elevation)\n", len(pkgs), ex.nativeManagerName)
-	ex.logDebug(ctx, "batch", "clan", ex.clan, "packages", strings.Join(pkgs, " "), "status", "started")
+	ex.outputf("  ⚡  batch installing %d packages via %s (1 elevation)\n", len(pkgs), rc.nativeManagerName)
+	ex.logDebug(ctx, "batch", "clan", rc.clan, "packages", strings.Join(pkgs, " "), "status", "started")
 	result := runner.Run(batchCtx, cmd[0], cmd[1:]...)
 	if result.Err != nil || result.ExitCode != 0 {
 		ex.outputf("  ⚡  batch install failed (%s), falling back to per-tool install\n", formatBatchError(result))
-		ex.logWarn(ctx, "batch", "clan", ex.clan, "packages", strings.Join(pkgs, " "), "status", "failed", "error", result.Err, "exit_code", result.ExitCode)
+		ex.logWarn(ctx, "batch", "clan", rc.clan, "packages", strings.Join(pkgs, " "), "status", "failed", "error", result.Err, "exit_code", result.ExitCode)
 		return false
 	}
-	ex.logDebug(ctx, "batch", "clan", ex.clan, "packages", strings.Join(pkgs, " "), "status", "succeeded")
+	ex.logDebug(ctx, "batch", "clan", rc.clan, "packages", strings.Join(pkgs, " "), "status", "succeeded")
 	return true
 }
 

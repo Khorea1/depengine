@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/native"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/source"
@@ -81,7 +80,7 @@ func (ex *Executor) ExplainToolWithSourceRevisions(ctx context.Context, tool *co
 
 func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan string, manager *source.Manager) []MethodAttempt {
 	ctx = omitToolSecretEnvironment(ctx, tool)
-	orderedMethods := ex.selectedMethods(tool, clan)
+	orderedMethods := ex.SelectedMethods(tool, clan)
 	methods := orderedMethods
 	if len(tool.Methods) == 0 {
 		return []MethodAttempt{{Kind: "", Status: "virtual", Error: "dependency group (no methods declared)"}}
@@ -113,7 +112,7 @@ func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan str
 			CandidateKnown: candidateKnown,
 		}
 		planIntent, mismatch := candidatePlanIntent(tool, method)
-		planIntent = ex.hostResolvedPlanIntent(method, planIntent)
+		planIntent = ex.hostResolvedPlanIntent(method, planIntent, clan)
 		attempt.PlanIntent = planIntent
 
 		// Reject semantic intent this method contract cannot honor before any
@@ -292,7 +291,7 @@ func (ex *Executor) CheckDesiredState(ctx context.Context, tool *config.Tool, cl
 	ctx = omitToolSecretEnvironment(ctx, tool)
 	var first CheckResult
 	haveFirst := false
-	for _, method := range ex.selectedMethods(tool, clan) {
+	for _, method := range ex.SelectedMethods(tool, clan) {
 		if method.When != nil && !method.When.Match(ex.facts) {
 			continue
 		}
@@ -308,7 +307,7 @@ func (ex *Executor) CheckDesiredState(ctx context.Context, tool *config.Tool, cl
 		if mismatch != "" {
 			continue
 		}
-		intent = ex.hostResolvedPlanIntent(method, intent)
+		intent = ex.hostResolvedPlanIntent(method, intent, clan)
 		resolved, err := ex.resolveCandidatePlan(ctx, tool, method, adapter, intent, method.Kind)
 		if err != nil {
 			continue
@@ -345,18 +344,4 @@ func (ex *Executor) CheckDesiredState(ctx context.Context, tool *config.Tool, cl
 func (ex *Executor) CheckInstalled(ctx context.Context, tool *config.Tool, clan string, live bool) (string, bool) {
 	checked, err := ex.CheckDesiredState(ctx, tool, clan, live)
 	return checked.Method, err == nil && checked.Verification.State == plan.StateSatisfied
-}
-
-func (ex *Executor) selectedMethods(tool *config.Tool, clan string) []*config.MethodCandidate {
-	ex.SetHostContext(clan)
-	return config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
-}
-
-// SetHostContext selects host-specific defaults used during candidate planning.
-func (ex *Executor) SetHostContext(clan string) {
-	ex.clan = clan
-	ex.nativeManagerName = ""
-	if mgr, ok := native.Lookup(clan); ok {
-		ex.nativeManagerName = mgr.Name
-	}
 }

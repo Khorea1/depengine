@@ -17,10 +17,15 @@ func batchProbeExecutor(adapter AdapterV2) *Executor {
 	ex := New()
 	WithRunner(&run.FakeRunner{})(ex)
 	WithAdapters(adapter)(ex)
-	ex.clan = "arch"
-	ex.nativeManagerName = "native"
-	ex.defaultMethodOrder = []string{"native"}
+	WithDefaultMethodOrder([]string{"native"})(ex)
 	return ex
+}
+func batchProbeRunContext(ex *Executor, s *config.Schema, report *ExecReport) *runContext {
+	rc := ex.newRunContext(context.Background(), s, "arch")
+	if report != nil {
+		rc.report = report
+	}
+	return rc
 }
 
 func batchProbeTool() *config.Tool {
@@ -94,7 +99,9 @@ func TestBatchV2ProbeStatesPreserveSerialFallback(t *testing.T) {
 			}
 			ex := batchProbeExecutor(adapter)
 			report := &ExecReport{}
-			candidates, remaining, _ := ex.identifyBatchCandidates(context.Background(), []string{"demo"}, &config.Schema{Tools: map[string]*config.Tool{"demo": batchProbeTool()}}, report)
+			schema := &config.Schema{Tools: map[string]*config.Tool{"demo": batchProbeTool()}}
+			rc := batchProbeRunContext(ex, schema, report)
+			candidates, remaining, _ := ex.identifyBatchCandidates(context.Background(), rc, []string{"demo"})
 			if len(candidates) != tt.wantCandidates || len(remaining) != tt.wantRemaining {
 				t.Fatalf("identifyBatchCandidates() = candidates %d, remaining %d; want %d, %d", len(candidates), len(remaining), tt.wantCandidates, tt.wantRemaining)
 			}
@@ -137,14 +144,13 @@ func TestVerifyBatchV2OnlyPresentCommitsBatchResult(t *testing.T) {
 			}
 			ex := batchProbeExecutor(adapter)
 			tool := batchProbeTool()
-			resolved, err := ex.ResolveCandidatePlan(context.Background(), tool, tool.Methods[0])
+			resolved, err := ex.ResolveCandidatePlan(context.Background(), tool, tool.Methods[0], "arch")
 			if err != nil {
 				t.Fatalf("ResolveCandidatePlan() error = %v", err)
 			}
 			candidate := batchCandidate{toolName: tool.Name, tool: tool, method: tool.Methods[0], resolvedPlan: resolved}
 			report := &ExecReport{}
-			rc := ex.newRunContext(context.Background(), nil)
-			rc.report = report
+			rc := batchProbeRunContext(ex, nil, report)
 			remaining := ex.verifyBatchInstall(rc, []batchCandidate{candidate}, nil, nil)
 			if len(remaining) != tt.wantRemaining || len(report.Tools) != tt.wantTools {
 				t.Fatalf("verifyBatchInstall() = remaining %d, report tools %d; want %d, %d", len(remaining), len(report.Tools), tt.wantRemaining, tt.wantTools)
@@ -170,7 +176,9 @@ func TestBatchLegacyProbeStillUsesCheck(t *testing.T) {
 	}
 	ex := batchProbeExecutor(adapter)
 	report := &ExecReport{}
-	candidates, remaining, _ := ex.identifyBatchCandidates(context.Background(), []string{"demo"}, &config.Schema{Tools: map[string]*config.Tool{"demo": batchProbeTool()}}, report)
+	schema := &config.Schema{Tools: map[string]*config.Tool{"demo": batchProbeTool()}}
+	rc := batchProbeRunContext(ex, schema, report)
+	candidates, remaining, _ := ex.identifyBatchCandidates(context.Background(), rc, []string{"demo"})
 	if len(candidates) != 0 || len(remaining) != 0 || len(report.Tools) != 1 || report.Tools[0].Status != StatusAlready {
 		t.Fatalf("legacy batch result = candidates %d, remaining %d, report %+v; want already", len(candidates), len(remaining), report.Tools)
 	}
@@ -187,7 +195,9 @@ func TestBatchDryRunReportsResolvedPlanAndResolvesOnce(t *testing.T) {
 	ex := batchProbeExecutor(adapter)
 	report := &ExecReport{}
 	tool := batchProbeTool()
-	candidates, remaining, _ := ex.identifyBatchCandidates(context.Background(), []string{tool.Name}, &config.Schema{Tools: map[string]*config.Tool{tool.Name: tool}}, report)
+	schema := &config.Schema{Tools: map[string]*config.Tool{tool.Name: tool}}
+	rc := batchProbeRunContext(ex, schema, report)
+	candidates, remaining, _ := ex.identifyBatchCandidates(context.Background(), rc, []string{tool.Name})
 	if len(candidates) != 1 || len(remaining) != 0 {
 		t.Fatalf("identifyBatchCandidates() = candidates %d, remaining %d; want 1, 0", len(candidates), len(remaining))
 	}
@@ -198,8 +208,6 @@ func TestBatchDryRunReportsResolvedPlanAndResolvesOnce(t *testing.T) {
 		t.Fatal("batch candidate has nil resolved plan")
 	}
 
-	rc := ex.newRunContext(context.Background(), nil)
-	rc.report = report
 	ex.reportBatchDryRun(rc, candidates)
 	if len(report.Tools) != 1 || report.Tools[0].Status != StatusWouldInstall {
 		t.Fatalf("report = %+v, want one would-install result", report.Tools)
@@ -220,14 +228,14 @@ func TestVerifiedBatchInstallReportsSameResolvedPlan(t *testing.T) {
 	ex := batchProbeExecutor(adapter)
 	tool := batchProbeTool()
 	report := &ExecReport{}
-	candidates, remaining, _ := ex.identifyBatchCandidates(context.Background(), []string{tool.Name}, &config.Schema{Tools: map[string]*config.Tool{tool.Name: tool}}, report)
+	schema := &config.Schema{Tools: map[string]*config.Tool{tool.Name: tool}}
+	rc := batchProbeRunContext(ex, schema, report)
+	candidates, remaining, _ := ex.identifyBatchCandidates(context.Background(), rc, []string{tool.Name})
 	if len(candidates) != 1 || len(remaining) != 0 {
 		t.Fatalf("identifyBatchCandidates() = candidates %d, remaining %d; want 1, 0", len(candidates), len(remaining))
 	}
 
 	adapter.presence = plan.PresencePresent
-	rc := ex.newRunContext(context.Background(), nil)
-	rc.report = report
 	remaining = ex.verifyBatchInstall(rc, candidates, remaining, make(map[string]*candidateResolutionSeed))
 	if len(remaining) != 0 || len(report.Tools) != 1 || report.Tools[0].Status != StatusInstalled {
 		t.Fatalf("verified batch = remaining %d, report %+v; want installed", len(remaining), report.Tools)
@@ -248,14 +256,15 @@ func TestBatchFallbackReusesResolvedPlan(t *testing.T) {
 	ex := batchProbeExecutor(adapter)
 	tool := batchProbeTool()
 	report := &ExecReport{}
-	candidates, remaining, _ := ex.identifyBatchCandidates(context.Background(), []string{tool.Name}, &config.Schema{Tools: map[string]*config.Tool{tool.Name: tool}}, report)
+	schema := &config.Schema{Tools: map[string]*config.Tool{tool.Name: tool}}
+	rc := batchProbeRunContext(ex, schema, report)
+	candidates, remaining, _ := ex.identifyBatchCandidates(context.Background(), rc, []string{tool.Name})
 	if len(candidates) != 1 || len(remaining) != 0 {
 		t.Fatalf("identifyBatchCandidates() = candidates %d, remaining %d; want 1, 0", len(candidates), len(remaining))
 	}
 
 	seed := &candidateResolutionSeed{method: candidates[0].method, resolved: candidates[0].resolvedPlan}
 	ctx := context.Background()
-	rc := ex.newRunContext(ctx, nil)
 	result := ex.executeToolWithResolution(ctx, rc, tool, seed)
 	if result.Status != StatusInstalled {
 		t.Fatalf("fallback result = %+v, want installed", result)
@@ -320,8 +329,7 @@ func TestBatchNativeInstallSkipsSingleton(t *testing.T) {
 	runner := &run.FakeRunner{}
 	ex := New()
 	WithRunner(runner)(ex)
-	ex.clan = "arch"
-	ex.nativeManagerName = "pacman"
+	rc := ex.newRunContext(context.Background(), nil, "arch")
 
 	resolved := plan.New("demo", "native", true)
 	resolved.Identity.Package = "demo"
@@ -332,7 +340,7 @@ func TestBatchNativeInstallSkipsSingleton(t *testing.T) {
 		resolvedPlan: &resolved,
 	}
 
-	if ex.batchNativeInstall(context.Background(), []batchCandidate{candidate}) {
+	if ex.batchNativeInstall(context.Background(), rc, []batchCandidate{candidate}) {
 		t.Fatal("batchNativeInstall() accepted a singleton candidate")
 	}
 	if len(runner.Calls) != 0 {

@@ -265,8 +265,7 @@ func (s *removeSession) verifyRemovalTarget(ctx context.Context, toolName string
 	if s.executor == nil {
 		return verifiedRemovalTarget{}, fmt.Errorf("removal verifier is unavailable")
 	}
-	s.executor.SetHostContext(s.clan)
-	returnedPlan, verification, err := s.executor.ResolveAndVerifyCandidate(ctx, tool, method)
+	returnedPlan, verification, err := s.executor.ResolveAndVerifyCandidate(ctx, tool, method, s.clan)
 	if err != nil {
 		return verifiedRemovalTarget{}, err
 	}

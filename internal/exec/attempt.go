@@ -79,7 +79,7 @@ func (ex *Executor) failCandidate(ac *candidateAttempt, result *ToolResult, err 
 // and when gates. No host probes or mutations happen here.
 func (ex *Executor) gateStaticIntent(ac *candidateAttempt, result *ToolResult) attemptOutcome {
 	planIntent, mismatch := candidatePlanIntent(ac.tool, ac.method)
-	ac.planIntent = ex.hostResolvedPlanIntent(ac.method, planIntent)
+	ac.planIntent = ex.hostResolvedPlanIntent(ac.method, planIntent, ac.run.clan)
 	ac.attempt.PlanIntent = ac.planIntent
 
 	if mismatch != "" {
@@ -133,7 +133,7 @@ func (ex *Executor) resolveConcretePlan(ac *candidateAttempt, result *ToolResult
 	ac.resolved = resolved
 	ac.attempt.PlanIntent = resolved
 
-	if compatibilityErr := ac.adapter.CheckHostCompatibility(ac.tool, ac.method, ac.resolved, ex.facts, ex.clan); compatibilityErr != nil {
+	if compatibilityErr := ac.adapter.CheckHostCompatibility(ac.tool, ac.method, ac.resolved, ex.facts, ac.run.clan); compatibilityErr != nil {
 		ex.skipCandidate(ac, result, "skip_unavailable", compatibilityErr.Error())
 		ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "skip_incompatible_host", "reason", compatibilityErr.Error())
 		return nextMethod

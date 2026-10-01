@@ -10,7 +10,7 @@ Use this checklist when adding or changing an installation adapter. It is a revi
 
 ## Discovery and host compatibility
 
-- [ ] `AdapterV2.Available(ctx, runner)` is a read-only, fast check of whether the backend can be used. Missing binaries or repositories return unavailable; discovery must not install prerequisites, refresh indexes, or otherwise mutate the host.
+- [ ] `AdapterV2.Available(ctx, runner)` is a read-only, fast check of backend availability on the host (for example, whether its binary is present). Missing candidate packages or repositories belong in `CheckAvailable`; discovery must not install prerequisites, refresh indexes, or otherwise mutate the host.
 - [ ] Run external probes through `run.Runner`, never direct `exec.Command` or another subprocess API. Consider the configured runner, cancellation, output capture, and dry-run behavior.
 - [ ] Keep per-tool/method feasibility in `CheckAvailable`; keep OS, architecture, and other host suitability in `CheckHostCompatibility`. Neither check is permission to mutate state.
 - [ ] State any unavoidable environmental assumptions and how a failed or inconclusive probe is distinguished from a confirmed negative result.

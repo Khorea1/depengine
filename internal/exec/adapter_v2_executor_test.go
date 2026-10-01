@@ -100,7 +100,7 @@ func v2ExecutorAttempt(t *testing.T, adapter AdapterV2) ToolResult {
 	}
 	result := ToolResult{Tool: tool.Name}
 	ctx := context.Background()
-	rc := ex.newRunContext(ctx, nil)
+	rc := ex.newRunContext(ctx, nil, "")
 	ex.tryMethods(ctx, rc, tool, &result, time.Now())
 	return result
 }

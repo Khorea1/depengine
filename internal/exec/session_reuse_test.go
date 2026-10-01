@@ -3,14 +3,14 @@ package exec
 import (
 	"context"
 	"errors"
-	"io"
-	"sync"
-	"testing"
-
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
+	"io"
+	"strings"
+	"sync"
+	"testing"
 )
 
 type sessionReuseAdapter struct {
@@ -172,5 +172,162 @@ func TestExecuteReinstallsNamedLazyDependencyForNewSchemaIdentity(t *testing.T) 
 	}
 	if got := adapter.installCounts(); got["shared-helper"] != 2 {
 		t.Fatalf("shared-helper installs = %d, want one for each Execute()", got["shared-helper"])
+	}
+}
+func TestExecuteUsesSchemaMethodOrderThenConfiguredFallback(t *testing.T) {
+	var installed []string
+	cargo := &testMockAdapter{kindValue: "cargo", installFunc: func(string) error {
+		installed = append(installed, "cargo")
+		return nil
+	}}
+	http := &testMockAdapter{kindValue: "http", installFunc: func(string) error {
+		installed = append(installed, "http")
+		return nil
+	}}
+	executor := New()
+	WithRunner(&run.FakeRunner{})(executor)
+	WithOutput(io.Discard)(executor)
+	WithDefaultMethodOrder([]string{"cargo", "http"})(executor)
+	WithAdapters(cargo, http)(executor)
+	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{
+		{Kind: "cargo", Config: map[string]any{"pkg": "demo"}},
+		{Kind: "http", Config: map[string]any{"url": "https://example.com/demo"}},
+	}}
+
+	firstSchema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"http", "cargo"}},
+		Tools:    map[string]*config.Tool{"demo": tool},
+	}
+	if _, err := executor.Execute(context.Background(), firstSchema, ""); err != nil {
+		t.Fatalf("first Execute() error = %v", err)
+	}
+	secondSchema := &config.Schema{Tools: map[string]*config.Tool{"demo": tool}}
+	if _, err := executor.Execute(context.Background(), secondSchema, ""); err != nil {
+		t.Fatalf("second Execute() error = %v", err)
+	}
+	if got := strings.Join(installed, ","); got != "http,cargo" {
+		t.Fatalf("installed methods = %q, want schema override then configured fallback", got)
+	}
+}
+
+func TestSelectedMethodsHostInterleavingDoesNotAffectExecute(t *testing.T) {
+	var installed []string
+	nativeAdapter := &testMockAdapter{kindValue: "native", installFunc: func(string) error {
+		installed = append(installed, "native")
+		return nil
+	}}
+	cargoAdapter := &testMockAdapter{kindValue: "cargo", installFunc: func(string) error {
+		installed = append(installed, "cargo")
+		return nil
+	}}
+	executor := New()
+	WithRunner(&run.FakeRunner{})(executor)
+	WithOutput(io.Discard)(executor)
+	WithDefaultMethodOrder([]string{"apt", "pacman", "cargo"})(executor)
+	WithAdapters(nativeAdapter, cargoAdapter)(executor)
+	tool := &config.Tool{
+		Name:         "demo",
+		MethodPrefer: []string{"apt"},
+		Methods: []*config.MethodCandidate{
+			{Kind: "native", Config: map[string]any{"pkg": "demo"}},
+			{Kind: "cargo", Config: map[string]any{"pkg": "demo"}},
+		},
+	}
+
+	debianFirst := executor.SelectedMethods(tool, "debian")
+	arch := executor.SelectedMethods(tool, "arch")
+	debianAgain := executor.SelectedMethods(tool, "debian")
+	if len(debianFirst) != 2 || debianFirst[0].Kind != "native" {
+		t.Fatalf("Debian selection = %v, want native first", methodKinds(debianFirst))
+	}
+	if len(arch) != 2 || arch[0].Kind != "native" {
+		t.Fatalf("Arch selection = %v, want pacman-backed native method first", methodKinds(arch))
+	}
+	if len(debianAgain) != 2 || debianAgain[0] != debianFirst[0] || debianAgain[1] != debianFirst[1] {
+		t.Fatalf("second Debian selection = %v, want same candidates as first selection %v", methodKinds(debianAgain), methodKinds(debianFirst))
+	}
+	unknown := executor.SelectedMethods(tool, "unknown")
+	if len(unknown) != 2 || unknown[0].Kind != "cargo" {
+		t.Fatalf("unknown-clan selection = %v, want configured cargo fallback before native", methodKinds(unknown))
+	}
+	if _, err := executor.Execute(context.Background(), &config.Schema{Tools: map[string]*config.Tool{"demo": tool}}, "debian"); err != nil {
+		t.Fatalf("Execute() after interleaved selection queries error = %v", err)
+	}
+	if got := strings.Join(installed, ","); got != "native" {
+		t.Fatalf("Execute() installed methods = %q, want Debian native method regardless of prior queries", got)
+	}
+}
+
+func TestWithDefaultMethodOrderCopiesInput(t *testing.T) {
+	order := []string{"cargo", "http"}
+	executor := New()
+	WithDefaultMethodOrder(order)(executor)
+	order[0] = "http"
+	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{
+		{Kind: "cargo"},
+		{Kind: "http"},
+	}}
+	selected := executor.SelectedMethods(tool, "unknown")
+	if len(selected) != 2 || selected[0].Kind != "cargo" {
+		t.Fatalf("selection after caller mutates option input = %v, want cargo first", methodKinds(selected))
+	}
+}
+
+func methodKinds(methods []*config.MethodCandidate) []string {
+	kinds := make([]string, len(methods))
+	for i, method := range methods {
+		kinds[i] = method.Kind
+	}
+	return kinds
+}
+
+type sessionReusePlanAdapter struct {
+	*executorAdapterV2Double
+	packages []string
+}
+
+func (a *sessionReusePlanAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, method *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+	a.packages = append(a.packages, resolved.Identity.Package)
+	return a.executorAdapterV2Double.InstallResolved(ctx, rn, tool, method, resolved)
+}
+
+func TestExecuteUsesCurrentClanPackageOverrideForEachRun(t *testing.T) {
+	adapter := &sessionReusePlanAdapter{executorAdapterV2Double: &executorAdapterV2Double{
+		testMockAdapter: testMockAdapter{kindValue: "native"},
+		presence:        plan.PresenceAbsent,
+	}}
+	executor := New()
+	WithRunner(&run.FakeRunner{})(executor)
+	WithOutput(io.Discard)(executor)
+	WithAdapters(adapter)(executor)
+	tool := &config.Tool{
+		Name:       "demo",
+		MethodOnly: []string{"native"},
+		Methods: []*config.MethodCandidate{{
+			Kind: "native",
+			Config: map[string]any{
+				"pkg": "base-pkg",
+				"pkg_overrides": map[string]any{
+					"apt":    "debian-pkg",
+					"pacman": "arch-pkg",
+				},
+			},
+		}},
+	}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"demo": tool}}
+
+	for _, clan := range []string{"debian", "arch", "unknown"} {
+		if _, err := executor.Execute(context.Background(), schema, clan); err != nil {
+			t.Fatalf("Execute(%q) error = %v", clan, err)
+		}
+	}
+	want := []string{"debian-pkg", "arch-pkg", "base-pkg"}
+	if len(adapter.packages) != len(want) {
+		t.Fatalf("installed packages = %v, want %v", adapter.packages, want)
+	}
+	for i := range want {
+		if adapter.packages[i] != want[i] {
+			t.Fatalf("installed packages = %v, want Debian apt, Arch pacman, then the unoverridden base package %v", adapter.packages, want)
+		}
 	}
 }

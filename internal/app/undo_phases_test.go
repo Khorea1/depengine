@@ -84,7 +84,7 @@ func TestRemoveUndoToolsUsesResolvedTargetAndReleasesAbsentState(t *testing.T) {
 			current := &state.State{Tools: map[string]state.ToolState{
 				"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "tool", "version": "1.0.0"}},
 			}}
-			original, succeeded, failed := removeUndoTools(context.Background(), []string{"tool"}, current, undoPlanExecutor(adapter))
+			original, succeeded, failed := removeUndoTools(context.Background(), []string{"tool"}, current, undoPlanExecutor(adapter), "")
 			if failed || !succeeded["tool"] {
 				t.Fatalf("removeUndoTools failed=%t succeeded=%v", failed, succeeded)
 			}
@@ -116,7 +116,7 @@ func TestRemoveUndoToolsPreservesTrackingOnUnverifiableTarget(t *testing.T) {
 			current := &state.State{Tools: map[string]state.ToolState{
 				"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "tool"}},
 			}}
-			_, succeeded, failed := removeUndoTools(context.Background(), []string{"tool"}, current, undoPlanExecutor(adapter))
+			_, succeeded, failed := removeUndoTools(context.Background(), []string{"tool"}, current, undoPlanExecutor(adapter), "")
 			if !failed || succeeded["tool"] {
 				t.Fatalf("removeUndoTools failed=%t succeeded=%v, want failure", failed, succeeded)
 			}
@@ -132,7 +132,7 @@ func TestRemoveUndoToolsPreservesPartialFailureAfterResolvedRemovalError(t *test
 	current := &state.State{Tools: map[string]state.ToolState{
 		"tool": {Method: "cargo", MethodKind: "cargo", Config: map[string]any{"pkg": "tool"}},
 	}}
-	original, succeeded, failed := removeUndoTools(context.Background(), []string{"tool"}, current, undoPlanExecutor(adapter))
+	original, succeeded, failed := removeUndoTools(context.Background(), []string{"tool"}, current, undoPlanExecutor(adapter), "")
 	if !failed || succeeded["tool"] || !adapter.removed {
 		t.Fatalf("failed=%t succeeded=%v removed=%t", failed, succeeded, adapter.removed)
 	}

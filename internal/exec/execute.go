@@ -18,20 +18,20 @@ import (
 // hasApplicableNativeMethod reports whether the schema contains a native
 // method that applies to the current system. If none applies, both index sync
 // and the upfront elevation prompt can be skipped.
-func (ex *Executor) hasApplicableNativeMethod(s *config.Schema, clan string) bool {
-	if s == nil {
+func (ex *Executor) hasApplicableNativeMethod(rc *runContext) bool {
+	if rc == nil || rc.schema == nil {
 		return false
 	}
-	for _, tool := range s.Tools {
-		for _, mc := range config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName) {
+	for _, tool := range rc.schema.Tools {
+		for _, mc := range rc.selectedMethods(tool) {
 			if mc.When != nil && !mc.When.Match(ex.facts) {
 				continue
 			}
-			if mc.Kind == "native" || mc.Kind == clan {
+			if mc.Kind == "native" || mc.Kind == rc.clan {
 				return true
 			}
 			// Also check native manager aliases (apt, dnf, pacman, etc.).
-			if nm, ok := native.ManagerNameToClan(mc.Kind); ok && nm == clan {
+			if nm, ok := native.ManagerNameToClan(mc.Kind); ok && nm == rc.clan {
 				return true
 			}
 		}
@@ -40,17 +40,17 @@ func (ex *Executor) hasApplicableNativeMethod(s *config.Schema, clan string) boo
 }
 
 // needsElevation reports whether any applicable method will need root.
-func (ex *Executor) needsElevation(s *config.Schema, clan string) bool {
+func (ex *Executor) needsElevation(rc *runContext) bool {
 	if ex.preparationRecoveryNeedsElevation() {
 		return true
 	}
-	mgr, ok := native.Lookup(clan)
-	if ok && mgr.SudoRequired && ex.hasApplicableNativeMethod(s, clan) {
+	mgr, ok := native.Lookup(rc.clan)
+	if ok && mgr.SudoRequired && ex.hasApplicableNativeMethod(rc) {
 		return true
 	}
 
-	for _, tool := range s.Tools {
-		for _, mc := range config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName) {
+	for _, tool := range rc.schema.Tools {
+		for _, mc := range rc.selectedMethods(tool) {
 			if mc.When != nil && !mc.When.Match(ex.facts) {
 				continue
 			}
@@ -71,11 +71,11 @@ func (ex *Executor) needsElevation(s *config.Schema, clan string) bool {
 
 func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) (*ExecReport, error) {
 	start := time.Now()
-	rc := ex.newRunContext(ctx, s)
+	rc := ex.newRunContext(ctx, s, clan)
 	report := rc.report
 	housekeepingCtx := run.WithOmittedEnv(ctx, schemaSecretEnvNames(s)...)
 
-	stop, err := ex.initializeRun(housekeepingCtx, rc, clan)
+	stop, err := ex.initializeRun(housekeepingCtx, rc)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 		return nil, err
 	}
 
-	ex.syncNativeIndex(housekeepingCtx, s, clan)
+	ex.syncNativeIndex(housekeepingCtx, rc)
 
 	levels, err := ex.sortExecutionLevels(ctx, s)
 	if err != nil {
@@ -110,7 +110,7 @@ func (ex *Executor) executeToolWithResolution(ctx context.Context, rc *runContex
 	ctx = omitToolSecretEnvironment(ctx, tool)
 	toolStart := time.Now()
 	result := ToolResult{Tool: tool.Name}
-	methods := config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
+	methods := rc.selectedMethods(tool)
 	if len(methods) == 0 {
 		result.Status = StatusVirtual
 		ex.logDebug(ctx, "tool", "tool", tool.Name, "status", "virtual")
@@ -121,7 +121,7 @@ func (ex *Executor) executeToolWithResolution(ctx context.Context, rc *runContex
 	// Security gate for every arbitrary-code execution surface. Keep this as a
 	// defensive duplicate of Execute's phase-1 gate for direct callers.
 	if !ex.allowArbitraryCode {
-		if ex.hasArbitraryCode(tool) {
+		if ex.hasDangerousMethod(rc, tool) {
 			detail := "config includes commands that may execute arbitrary code"
 			ex.outputf("  ⚠  %s: %s. Use --allow-arbitrary-code to permit execution.\n", tool.Name, detail)
 			ex.logWarn(ctx, "security", "tool", tool.Name, "warning", detail)
@@ -165,7 +165,7 @@ func (ex *Executor) tryMethods(toolCtx context.Context, rc *runContext, tool *co
 
 func (ex *Executor) tryMethodsWithResolution(toolCtx context.Context, rc *runContext, tool *config.Tool, result *ToolResult, toolStart time.Time, resolution *candidateResolutionSeed) {
 	var lastMethodKind string
-	orderedMethods := config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName)
+	orderedMethods := rc.selectedMethods(tool)
 	for _, method := range orderedMethods {
 		lastMethodKind = method.Kind
 		select {
@@ -368,7 +368,7 @@ func (ex *Executor) executeDependency(ctx context.Context, rc *runContext, name 
 		if !blocked {
 			run.result = ex.executeTool(context.WithValue(ctx, lazyDependencyExecutionKey{}, true), rc, tool)
 		}
-		ex.recordToolResult(ctx, &run.result, rc.report)
+		ex.recordToolResult(ctx, rc, &run.result)
 	}
 	close(run.done)
 	return run.result, nil
@@ -442,7 +442,7 @@ func (ex *Executor) executeLevelParallel(ctx context.Context, rc *runContext, le
 		return results[i].Tool < results[j].Tool
 	})
 	for i := range results {
-		ex.recordToolResult(ctx, &results[i], rc.report)
+		ex.recordToolResult(ctx, rc, &results[i])
 	}
 }
 

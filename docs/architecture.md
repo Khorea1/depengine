@@ -66,16 +66,22 @@ Tests and callers can supply per-executor adapters with `WithAdapters()`.
 Production uses the process registry populated by `app.InitAdapters()`.
 
 An `Executor` holds configuration shared across its calls, including its adapter
-snapshot and per-instance overrides. Each `Execute` creates a fresh `runContext`
-for that run's schema, report, failure and recovery state, and dependency maps.
-The run context owns the source manager used for candidate preparation, so source
-observations and revisions are scoped to one execution rather than retained on
-the executor.
+snapshot, per-instance overrides, and an owned copy of the configured method order.
+Each `Execute` creates a fresh `runContext` with its effective clan, native manager,
+and method order: a schema override applies only to that run; otherwise the
+configured order applies. The context also owns the schema, report, failure and
+recovery state, dependency maps, and source manager used for candidate preparation.
+Host selection and source observations are not retained on the executor.
 
 `ExplainTool` keeps its attempts-only caller contract and creates a fresh,
 read-only `source.Manager` for each call. The universal lock resolver uses
 `ExplainToolWithSourceRevisions(ctx, tool, clan)` to obtain method attempts and
 source revisions together, without retaining source observations on the executor.
+
+Read-only selection and candidate resolution receive the clan explicitly.
+`SelectedMethods(tool, clan)` uses the configured order without modifying the
+executor; resolution and verification apply native package overrides for that
+call's clan. Status, upgrade, removal, and undo do not depend on a preceding run.
 
 Subprocesses go through `internal/run.Runner`. Adapters should not call
 `exec.Command` directly.

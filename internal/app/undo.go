@@ -126,15 +126,14 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
 	}
 
 	facts := gatherUndoFacts()
+	clan := engine.ResolveFamily(facts)
 	executor := exec.New()
 	exec.WithRunner(run.OSExecRunner{})(executor)
 	if facts != nil {
-		clan := engine.ResolveFamily(facts)
 		exec.WithFacts(facts)(executor)
 		exec.WithAdapters(exec.NewNativeAdapter(clan))(executor)
-		executor.SetHostContext(clan)
 	}
-	originalTools, succeeded, hadFailure := removeUndoTools(ctx, toRemove, curState, executor)
+	originalTools, succeeded, hadFailure := removeUndoTools(ctx, toRemove, curState, executor, clan)
 	return finalizeUndo(ls, curState, snapState, toRemove, originalTools, succeeded, hadFailure)
 }
 
@@ -245,7 +244,7 @@ func gatherUndoFacts() *engine.Facts {
 // remove.go's state-driven Remover shape). It returns a copy of the
 // pre-removal tool map, the per-tool success set, and whether any removal
 // failed. Callers merge state with mergeUndoTools.
-func removeUndoTools(ctx context.Context, toRemove []string, curState *state.State, executor *exec.Executor) (map[string]state.ToolState, map[string]bool, bool) {
+func removeUndoTools(ctx context.Context, toRemove []string, curState *state.State, executor *exec.Executor, clan string) (map[string]state.ToolState, map[string]bool, bool) {
 	// Capture original state before removal, so failed tools can be preserved.
 	originalTools := make(map[string]state.ToolState, len(curState.Tools))
 	for k, v := range curState.Tools {
@@ -272,7 +271,7 @@ func removeUndoTools(ctx context.Context, toRemove []string, curState *state.Sta
 			Config: toolState.Config,
 		}
 		tool := &config.Tool{Name: name}
-		resolved, verification, err := executor.ResolveAndVerifyCandidate(ctx, tool, mc)
+		resolved, verification, err := executor.ResolveAndVerifyCandidate(ctx, tool, mc, clan)
 		if err != nil {
 			log.Default.Error("verify removal target during undo", "tool", name, "error", err)
 			hadFailure = true

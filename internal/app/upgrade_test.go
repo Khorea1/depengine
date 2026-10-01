@@ -573,6 +573,11 @@ func testUpgradeExecutor(adapter exec.AdapterV2) *exec.Executor {
 	exec.WithAdapters(adapter)(ex)
 	return ex
 }
+func upgradeExecutorForMethodOrder(order []string) *exec.Executor {
+	ex := exec.New()
+	exec.WithDefaultMethodOrder(order)(ex)
+	return ex
+}
 
 func TestPreflightDirectUpgradeUsesV2ResolveAndObserveWithoutCheck(t *testing.T) {
 	adapter := &upgradePreflightAdapter{
@@ -580,7 +585,7 @@ func TestPreflightDirectUpgradeUsesV2ResolveAndObserveWithoutCheck(t *testing.T)
 		presence: plan.PresencePresent,
 	}
 	method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
-	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, &config.Tool{Name: "demo"}, method, adapter, "", false)
+	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, "", &config.Tool{Name: "demo"}, method, adapter, "", false)
 	if err != nil {
 		t.Fatalf("preflightDirectUpgrade: %v", err)
 	}
@@ -597,7 +602,7 @@ func TestPreflightDirectUpgradeV2FailsClosedForNonPresent(t *testing.T) {
 				presence: presence,
 			}
 			method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
-			_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, &config.Tool{Name: "demo"}, method, adapter, "", false)
+			_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, "", &config.Tool{Name: "demo"}, method, adapter, "", false)
 			if err == nil || !strings.Contains(err.Error(), string(presence)) {
 				t.Fatalf("preflightDirectUpgrade error = %v, want not-present rejection", err)
 			}
@@ -639,7 +644,7 @@ func TestFindTrackedMethodCandidateUsesPersistedLabel(t *testing.T) {
 	mirror := &config.MethodCandidate{Kind: "http", Label: "mirror"}
 	tool := &config.Tool{Methods: []*config.MethodCandidate{primary, mirror}}
 
-	got, err := findTrackedMethodCandidate(tool, state.ToolState{Method: "mirror", MethodKind: "http"}, []string{"http"}, "")
+	got, err := findTrackedMethodCandidate(tool, state.ToolState{Method: "mirror", MethodKind: "http"}, config.SelectMethods(tool, []string{"http"}, ""))
 	if err != nil {
 		t.Fatalf("findTrackedMethodCandidate: %v", err)
 	}
@@ -654,7 +659,7 @@ func TestFindTrackedMethodCandidateLegacyKindFailsClosedWhenAmbiguous(t *testing
 		{Kind: "http", Label: "mirror"},
 	}}
 
-	_, err := findTrackedMethodCandidate(tool, state.ToolState{Method: "http", MethodKind: "http"}, []string{"http"}, "")
+	_, err := findTrackedMethodCandidate(tool, state.ToolState{Method: "http", MethodKind: "http"}, config.SelectMethods(tool, []string{"http"}, ""))
 	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
 		t.Fatalf("findTrackedMethodCandidate error = %v, want ambiguous", err)
 	}
@@ -664,7 +669,7 @@ func TestFindTrackedMethodCandidateLegacyKindResolvesSingleLabeledCandidate(t *t
 	candidate := &config.MethodCandidate{Kind: "http", Label: "primary"}
 	tool := &config.Tool{Methods: []*config.MethodCandidate{candidate}}
 
-	got, err := findTrackedMethodCandidate(tool, state.ToolState{Method: "http", MethodKind: "http"}, []string{"http"}, "")
+	got, err := findTrackedMethodCandidate(tool, state.ToolState{Method: "http", MethodKind: "http"}, config.SelectMethods(tool, []string{"http"}, ""))
 	if err != nil {
 		t.Fatalf("findTrackedMethodCandidate: %v", err)
 	}
@@ -682,7 +687,7 @@ func TestPreflightDirectUpgradeRejectsPreparationBeforeProbes(t *testing.T) {
 	}
 	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
 
-	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, tool, method, adapter, "", false)
+	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, "", tool, method, adapter, "", false)
 	if err == nil || !strings.Contains(err.Error(), "transactional upgrade preparation") {
 		t.Fatalf("preflightDirectUpgrade error = %v, want preparation rejection", err)
 	}
@@ -699,7 +704,7 @@ func TestPreflightDirectUpgradeRejectsCandidateLifecycleHooksBeforeProbes(t *tes
 	}
 	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
 
-	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, tool, method, adapter, "", true)
+	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, "", tool, method, adapter, "", true)
 	if err == nil || !strings.Contains(err.Error(), "lifecycle hooks") {
 		t.Fatalf("preflightDirectUpgrade error = %v, want lifecycle-hook rejection", err)
 	}
@@ -728,7 +733,7 @@ func TestPreflightDirectUpgradeRequiresInstalledRemovableAvailableTarget(t *test
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.adapter.kind = "asdf"
-			_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(&tt.adapter), &run.FakeRunner{}, &engine.Facts{}, tool, method, &tt.adapter, "", false)
+			_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(&tt.adapter), &run.FakeRunner{}, &engine.Facts{}, "", tool, method, &tt.adapter, "", false)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("preflightDirectUpgrade: %v", err)
@@ -754,7 +759,7 @@ func TestPreflightDirectUpgradeRejectsContractWithoutUpgradeCapability(t *testin
 	method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
 	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
 
-	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, tool, method, adapter, "", false)
+	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, "", tool, method, adapter, "", false)
 	if err == nil || !strings.Contains(err.Error(), "missing required capabilities: upgrade") {
 		t.Fatalf("preflightDirectUpgrade error = %v, want upgrade capability rejection", err)
 	}
@@ -771,7 +776,7 @@ func TestFindTrackedMethodCandidateRejectsCandidateExcludedByCurrentPolicy(t *te
 		MethodOnly: []string{"primary"},
 	}
 
-	_, err := findTrackedMethodCandidate(tool, state.ToolState{Method: "mirror", MethodKind: "http"}, []string{"http"}, "")
+	_, err := findTrackedMethodCandidate(tool, state.ToolState{Method: "mirror", MethodKind: "http"}, config.SelectMethods(tool, []string{"http"}, ""))
 	if err == nil || !strings.Contains(err.Error(), "not selected") {
 		t.Fatalf("findTrackedMethodCandidate error = %v, want current-policy rejection", err)
 	}
@@ -835,7 +840,7 @@ func TestPreflightDirectUpgradeRejectsStaticRequiresBeforeProbes(t *testing.T) {
 	method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "demo"}}
 	tool := &config.Tool{Name: "demo", Requires: []string{"helper"}, Methods: []*config.MethodCandidate{method}}
 
-	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, tool, method, adapter, "", false)
+	_, _, err := preflightDirectUpgrade(context.Background(), testUpgradeExecutor(adapter), &run.FakeRunner{}, &engine.Facts{}, "", tool, method, adapter, "", false)
 	if err == nil || !strings.Contains(err.Error(), "transactional upgrade dependency handling") {
 		t.Fatalf("preflightDirectUpgrade error = %v, want static requires rejection", err)
 	}

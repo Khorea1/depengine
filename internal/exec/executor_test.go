@@ -672,7 +672,7 @@ func TestExecutorMethodOnlyExcludesDeclaredFallback(t *testing.T) {
 		},
 	}
 	ctx := context.Background()
-	rc := ex.newRunContext(ctx, nil)
+	rc := ex.newRunContext(ctx, nil, "")
 	result := &ToolResult{Tool: tool.Name}
 	ex.tryMethods(ctx, rc, tool, result, time.Now())
 	if strings.Join(tried, ",") != "cargo" {
@@ -2005,7 +2005,8 @@ func TestHasDangerousMethodUsesCommandFieldSemantics(t *testing.T) {
 							Config: map[string]any{fieldName: form.value},
 						}},
 					}
-					if !ex.hasDangerousMethod(tool) {
+					rc := ex.newRunContext(context.Background(), &config.Schema{}, "")
+					if !ex.hasDangerousMethod(rc, tool) {
 						t.Fatalf("%s.%s must require --allow-arbitrary-code", contract.Kind, fieldName)
 					}
 				})
@@ -2017,7 +2018,7 @@ func TestHasDangerousMethodUsesCommandFieldSemantics(t *testing.T) {
 	}
 
 	tool := &config.Tool{Name: "safe", Methods: []*config.MethodCandidate{{Kind: "aur", Config: map[string]any{"pkg": "foo"}}}}
-	if ex.hasDangerousMethod(tool) {
+	if ex.hasDangerousMethod(ex.newRunContext(context.Background(), &config.Schema{}, ""), tool) {
 		t.Error("non-command method fields must not be classified as arbitrary code")
 	}
 }
@@ -2033,7 +2034,8 @@ func TestHasArbitraryCodeCoversHooks(t *testing.T) {
 		{name: "structured-build", tool: &config.Tool{Name: "x", Methods: []*config.MethodCandidate{{Kind: "git", Config: map[string]any{"build": map[string]any{"run": []any{"make"}}}}}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if !ex.hasArbitraryCode(tc.tool) {
+			rc := ex.newRunContext(context.Background(), &config.Schema{}, "")
+			if !ex.hasArbitraryCode(rc, tc.tool) {
 				t.Fatal("expected arbitrary-code surface to be gated")
 			}
 		})
@@ -2356,7 +2358,7 @@ func (m *orderTrackingAdapter) Install(ctx context.Context, rn run.Runner, tool 
 }
 
 func TestExecutorReordersMethodsByExpandedOrder(t *testing.T) {
-	// Set up an executor with a custom defaultMethodOrder that includes a native
+	// Set up an executor with a configured method order that includes a native
 	// manager name. The executor should expand it (e.g. "apt" → "native") before
 	// using it to order methods.
 	var attemptOrder []string
@@ -2368,9 +2370,6 @@ func TestExecutorReordersMethodsByExpandedOrder(t *testing.T) {
 	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
 	WithDefaultMethodOrder([]string{"apt", "cargo"})(ex) // "apt" will be expanded
 	WithAdapters(nativeAdapter, cargoAdapter)(ex)
-
-	// Set nativeManagerName directly (simulating what Execute would do)
-	ex.nativeManagerName = "apt"
 
 	s := &config.Schema{
 		Defaults: config.Defaults{Manager: "native", MethodOrder: []string{"apt", "cargo"}},
@@ -2387,7 +2386,7 @@ func TestExecutorReordersMethodsByExpandedOrder(t *testing.T) {
 
 	// tryMethods directly
 	ctx := context.Background()
-	rc := ex.newRunContext(ctx, s)
+	rc := ex.newRunContext(ctx, s, "debian")
 	result := &ToolResult{Tool: "tool1"}
 	ex.tryMethods(ctx, rc, s.Tools["tool1"], result, time.Now())
 
@@ -2413,7 +2412,6 @@ func TestExplainToolRespectsExpandedOrder(t *testing.T) {
 	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
 	WithDefaultMethodOrder([]string{"cargo", "apt"})(ex) // "apt" will be expanded
 	WithAdapters(nativeAdapter, cargoAdapter)(ex)
-	ex.nativeManagerName = "apt"
 
 	tool := &config.Tool{
 		Name: "tool1",
@@ -2504,7 +2502,7 @@ func TestCapabilityMismatchSkipsCandidateBeforeAdapterProbe(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	rc := ex.newRunContext(ctx, nil)
+	rc := ex.newRunContext(ctx, nil, "")
 	result := ex.executeTool(ctx, rc, tool)
 	if probes != 0 {
 		t.Fatalf("adapter probed %d times; capability mismatch must be rejected first", probes)

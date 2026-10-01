@@ -535,7 +535,7 @@ func (ex *Executor) recoveryCandidate(rc *runContext, key string) (*config.Tool,
 	var matched *config.MethodCandidate
 	var matchedIntent *plan.ResolvedInstallPlan
 	matchedPrerequisite := false
-	for _, method := range config.SelectMethods(tool, ex.defaultMethodOrder, ex.nativeManagerName) {
+	for _, method := range rc.selectedMethods(tool) {
 		if method.Kind != methodKind {
 			continue
 		}

@@ -380,7 +380,7 @@ func TestRecoverLazyPrerequisiteCommitPersistsToolAndZeroRefOwnership(t *testing
 	ex := New()
 	WithAdapters(adapter)(ex)
 	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
-	rc := ex.newRunContext(context.Background(), schema)
+	rc := ex.newRunContext(context.Background(), schema, "")
 
 	if err := ex.recoverPreparationTransactions(context.Background(), rc.sources, rc); err != nil {
 		t.Fatal(err)
@@ -470,7 +470,7 @@ func TestRecoverOwnerCommitAtomicallyClaimsPrerequisite(t *testing.T) {
 	ex := New()
 	WithAdapters(adapter)(ex)
 	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
-	rc := ex.newRunContext(context.Background(), schema)
+	rc := ex.newRunContext(context.Background(), schema, "")
 	if err := ex.recoverPreparationTransactions(context.Background(), rc.sources, rc); err != nil {
 		t.Fatal(err)
 	}
@@ -524,7 +524,7 @@ func TestRecoverPreparationResolvesInFlightSourceAddAndRollsBack(t *testing.T) {
 	ex := New()
 	WithRunner(runner)(ex)
 	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
-	rc := ex.newRunContext(context.Background(), nil)
+	rc := ex.newRunContext(context.Background(), nil, "")
 	rc.sources = source.NewManager(runner, false)
 	if err := ex.recoverPreparationTransactions(context.Background(), rc.sources, rc); err != nil {
 		t.Fatal(err)
@@ -565,7 +565,8 @@ func TestNeedsElevationIncludesPersistedSourceRecovery(t *testing.T) {
 
 	ex := New()
 	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
-	if !ex.needsElevation(&config.Schema{Tools: map[string]*config.Tool{}}, "") {
+	rc := ex.newRunContext(context.Background(), &config.Schema{Tools: map[string]*config.Tool{}}, "")
+	if !ex.needsElevation(rc) {
 		t.Fatal("persisted apt source recovery must request an elevation session")
 	}
 }
@@ -809,7 +810,7 @@ func TestExecutorCommitRecoveryIgnoresExecuteOnlyIdentity(t *testing.T) {
 	ex := New()
 	WithAdapters(&testMockAdapter{kindValue: "cargo", checkFunc: func(string) bool { return true }})(ex)
 	WithSchemaInfo("/test/schema.toml", time.Now())(ex)
-	rc := ex.newRunContext(context.Background(), schema)
+	rc := ex.newRunContext(context.Background(), schema, "")
 	if err := ex.recoverPreparationTransactions(context.Background(), rc.sources, rc); err != nil {
 		t.Fatalf("recoverPreparationTransactions() error = %v", err)
 	}
