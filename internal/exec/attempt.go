@@ -161,14 +161,14 @@ func (ex *Executor) gateAlreadyInstalled(ac *candidateAttempt, result *ToolResul
 		return nextMethod
 	}
 	if ac.resolution != nil && ac.resolution.requireUpgrade {
-		if verification.State == plan.StateSatisfied {
-			return ex.finishAlreadyInstalled(ac, result)
-		}
-		if verification.State != plan.StateDrifted {
+		if verification.State != plan.StateSatisfied && verification.State != plan.StateDrifted {
 			detail := fmt.Sprintf("upgrade requires an observed tracked installation; desired state is %s: %s; run install/repair before upgrade", verification.State, verificationDetail(verification))
 			ex.failCandidate(ac, result, detail)
 			return finishTool
 		}
+		// The caller selected this candidate because its tracked version is stale.
+		// Adapter observations may only prove package presence, not version equality,
+		// so StateSatisfied must not suppress an explicit upgrade.
 		ac.transition = plan.TransitionUpgrade
 		return proceed
 	}
