@@ -146,7 +146,9 @@ install plan. `depengine update` fails instead of writing a partial lock when a
 manager cannot expose a concrete version, revision, digest, checksummed artifact,
 or required Git-backed source revision. `install --frozen-lockfile` and
 `upgrade` replay that pinned plan and reject schema intent or resolved identity
-drift; they do not re-resolve mutable selectors to fill gaps.
+drift; they do not re-resolve mutable selectors to fill gaps. For tracked tools
+whose versions are outdated, `upgrade` performs the replacement even when an
+adapter can only observe that the target is present, not verify its version.
 
 Legacy v1 lockfiles remain readable with their method-specific guarantees
 (resolved checksums/releases, Git commits, container digests, and supported

@@ -436,21 +436,24 @@ func TestUpgradeJSONOutput(t *testing.T) {
 
 // TestUpgradeHTTPToolFailsOnDownload tests that an HTTP download failure aborts
 // the upgrade after removal. A local server keeps the failure deterministic.
+
 func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 	stateHome := t.TempDir()
 	homeDir := t.TempDir()
 	schemaDir := t.TempDir()
+	downloadRequests := make(chan struct{}, 4)
 	downloadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		downloadRequests <- struct{}{}
 		http.Error(w, "download unavailable", http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(downloadServer.Close)
 
 	// Keep the target outside shared system directories to avoid real elevation.
-	sharedDir := filepath.Join(t.TempDir(), "tools")
-	if err := os.MkdirAll(sharedDir, 0700); err != nil {
+	installDir := filepath.Join(homeDir, "tools")
+	if err := os.MkdirAll(installDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sharedDir, "httptool"), []byte("old"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(installDir, "httptool"), []byte("old"), 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -458,7 +461,7 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 		"[tools.httptool]\n" +
 		// Literal string (single quotes): Windows paths carry backslashes,
 		// which are escapes in TOML basic strings.
-		"http = {url = \"" + downloadServer.URL + "/tool.tar.gz\", extract_to = '" + sharedDir + "'}\n"
+		"http = {url = \"" + downloadServer.URL + "/tool.tar.gz\", checksum = \"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\", extract_to = '" + installDir + "'}\n"
 	if err := os.WriteFile(filepath.Join(schemaDir, "schema.toml"), []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -472,7 +475,7 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 			MethodKind:  "http",
 			InstalledAt: "2026-08-01T00:00:00Z",
 			Version:     "v1.0.0",
-			Config:      map[string]any{"url": downloadServer.URL + "/tool.tar.gz", "extract_to": sharedDir},
+			Config:      map[string]any{"url": "https://example.invalid/old-tool.tar.gz", "extract_to": installDir},
 		},
 	})
 
@@ -484,6 +487,11 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 		"-schema", filepath.Join(schemaDir, "schema.toml"),
 		"-force",
 	)
+	select {
+	case <-downloadRequests:
+	default:
+		t.Fatal("upgrade did not request the failing download")
+	}
 
 	// Upgrade fails (non-zero exit) because the local server rejects the download.
 	if code == 0 {
