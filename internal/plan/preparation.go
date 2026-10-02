@@ -375,11 +375,10 @@ func ValidateOwnedResourceSnapshot(states []OwnedResourceState) error {
 	return nil
 }
 
-// ResourceUse is a runtime observation that a committed tool uses one shared
-// host resource. Created is true only when depengine created/re-created the
-// resource during this transaction; otherwise a newly observed resource is
-// classified as external. It is intentionally not persisted as transaction
-// state: ownership/refcounts are the durable projection.
+// ResourceUse records use of a shared host resource by a committed or
+// in-flight operation. Created reports whether that operation created or
+// re-created the resource. Durable owners may persist these observations for
+// crash-safe commit and recovery.
 type ResourceUse struct {
 	Resource ResourceIdentity `json:"resource"`
 	Created  bool             `json:"created"`

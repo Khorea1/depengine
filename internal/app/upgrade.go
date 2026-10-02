@@ -130,9 +130,10 @@ func resolveUpgradeManifestPath(noManifest bool, flag string) (string, bool) {
 
 // loadUpgradeState snapshots installed-tool state. Dry-runs take an unlocked
 // read (never creating the state lock file — saves use atomic rename, so an
-// unlocked read observes a complete old or new file); real upgrades hold the
-// exclusive lock for the read-modify-write transaction. The caller owns the
-// returned lock and must Close it.
+// unlocked read observes a complete old or new file). Real upgrades return the
+// exclusive lock to the caller for discovery; runUpgrade releases it before
+// per-candidate execution, which locks each mutation transaction. The caller
+// owns the returned lock and must Close it.
 func loadUpgradeState(dryRun bool) (*state.State, *state.LockedState, error) {
 	if dryRun {
 		st, err := state.Load()
