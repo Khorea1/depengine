@@ -49,6 +49,12 @@ func newRootCmd() *cobra.Command {
 		Short:         short,
 		SilenceErrors: true,
 		SilenceUsage:  true,
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			flag := cmd.Flags().Lookup("schema")
+			if flag != nil && !flag.Changed {
+				warnMultipleSchemaFiles(cmd.ErrOrStderr())
+			}
+		},
 		// Command handlers return typed exit errors after deferred cleanup;
 		// only main translates those errors into process exit codes.
 		RunE: func(cmd *cobra.Command, args []string) error {

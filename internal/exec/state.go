@@ -29,7 +29,7 @@ func (ex *Executor) installedVersion(ctx context.Context, tool *config.Tool, res
 	method := methodForResolvedTarget(&config.MethodCandidate{Kind: result.MethodKind, Config: result.Config}, result.PlanIntent)
 	probeCtx, cancel := context.WithTimeout(ctx, versionProbeTimeout)
 	defer cancel()
-	version, err := versioner.InstalledVersion(probeCtx, ex.rn, tool, method)
+	version, err := versioner.InstalledVersion(probeCtx, ex.probeRunner(tool.Name, result.MethodKind), tool, method)
 	if err != nil {
 		return ""
 	}

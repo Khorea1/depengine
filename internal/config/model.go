@@ -52,7 +52,6 @@ type Tool struct {
 	MethodOnly     []string              `merge:"overwrite"`
 	IsSimple       bool                  `merge:"overwrite"`
 	Tags           []string              `merge:"union"`
-	Ecosystem      string                `merge:"overwrite"`
 	DependencyOnly bool                  `merge:"overwrite"`
 }
 
@@ -205,12 +204,12 @@ type MethodCandidate struct {
 	// lock while Config keeps its original mutable version request.
 	LockedVersion string `json:"-"`
 	When          *Condition
-	Config       map[string]any
-	Err          error
-	ArchMap      map[string]string
-	OSMap        map[string]string
-	Requires     []string
-	Sources      []Source
+	Config        map[string]any
+	Err           error
+	ArchMap       map[string]string
+	OSMap         map[string]string
+	Requires      []string
+	Sources       []Source
 	// PreInstall/PostInstall are candidate-local lifecycle hooks. Tool-level
 	// hooks remain supported as generic hooks that are projected onto every
 	// selected candidate.

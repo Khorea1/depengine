@@ -142,7 +142,6 @@ func TestExtractCompressedTarRejectsCorruptGzip(t *testing.T) {
 	}
 }
 
-
 func TestExtractCompressedTarRejectsCorruptGzipTrailer(t *testing.T) {
 	t.Parallel()
 	plain := makeCompressedTarFixture(t, []compressedTarFixtureEntry{{

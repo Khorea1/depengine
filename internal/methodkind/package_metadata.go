@@ -15,7 +15,7 @@ const (
 // retain their existing identity.
 type PackageMetadata struct {
 	ComponentType string
-	PURLType       string
+	PURLType      string
 }
 
 // PackageMetadataFor resolves package metadata for a method kind without
@@ -26,7 +26,7 @@ type PackageMetadata struct {
 func PackageMetadataFor(kind string) PackageMetadata {
 	metadata := PackageMetadata{
 		ComponentType: PackageComponentApplication,
-		PURLType:       kind,
+		PURLType:      kind,
 	}
 	contract, ok := Lookup(kind)
 	if !ok {

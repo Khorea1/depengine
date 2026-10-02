@@ -381,6 +381,26 @@ func ManagerNames() []string {
 	return out
 }
 
+// ManagerExecutables returns the concrete package-manager executables used to
+// perform native installs. It is derived from the registry rather than kept as
+// a second hand-maintained list, so environment validation automatically tracks
+// newly registered native managers.
+func ManagerExecutables() []string {
+	seen := map[string]bool{}
+	for _, m := range managers {
+		if len(m.InstallCmd) == 0 || m.InstallCmd[0] == "" {
+			continue
+		}
+		seen[m.InstallCmd[0]] = true
+	}
+	out := make([]string, 0, len(seen))
+	for name := range seen {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // KnownClans returns every clan that maps to a functioning native manager (a
 // clan in clanToManagerKey whose key also exists in the managers map).
 // Used by schema validation to warn on unreachable when.distro_family.

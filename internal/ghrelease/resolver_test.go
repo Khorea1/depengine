@@ -394,6 +394,41 @@ func TestSplitRepoAcceptsCanonicalGitForms(t *testing.T) {
 	}
 }
 
+func TestSplitRepoRejectsURLSignificantAndTraversalSegments(t *testing.T) {
+	for _, input := range []string{
+		"owner/repo?ref=main",
+		"owner/repo#fragment",
+		"owner/repo%2Fother",
+		"owner/%2e%2e",
+		"owner/..",
+		"./repo",
+		`owner/repo\other`,
+		"git@github.com:owner/repo.git",
+	} {
+		if owner, repo, ok := splitRepo(input); ok {
+			t.Errorf("splitRepo(%q) = (%q, %q, true), want rejection", input, owner, repo)
+		}
+	}
+}
+
+func TestResolveLatestReleaseTagUsesCanonicalRepositoryPath(t *testing.T) {
+	var gotPath string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"tag_name":"v1.2.3"}`)
+	}))
+	t.Cleanup(ts.Close)
+	r := newTestResolver(ts.URL)
+
+	if _, err := r.ResolveLatestReleaseTag(context.Background(), "owner/repo.name", &run.FakeRunner{ExitCode: 1}); err != nil {
+		t.Fatalf("ResolveLatestReleaseTag: %v", err)
+	}
+	if gotPath != "/repos/owner/repo.name/releases/latest" {
+		t.Fatalf("API path = %q", gotPath)
+	}
+}
+
 func TestGithubTokenNilRunnerWithoutEnvIsSafe(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")
@@ -550,7 +585,7 @@ func TestRepoReferenceAndGitHubURLClassification(t *testing.T) {
 		{name: "repository subpath", input: "https://github.com/owner/repo/releases/download/v1/tool", urlOwner: "owner", urlRepo: "repo", urlOK: true},
 		{name: "GitLab URL", input: "https://gitlab.com/owner/repo"},
 		{name: "Codeberg URL", input: "https://codeberg.org/owner/repo"},
-		{name: "SCP-like Git reference", input: "git@github.com:owner/repo.git", splitOwner: "git@github.com:owner", splitRepo: "repo", splitOK: true},
+		{name: "SCP-like Git reference", input: "git@github.com:owner/repo.git"},
 		{name: "owner only", input: "owner"},
 		{name: "extra repository path segment", input: "owner/repo/extra"},
 		{name: "URL with empty repository", input: "https://github.com/owner/"},

@@ -120,7 +120,7 @@ func (r *Resolver) fetchLatestTag(ctx context.Context, owner, repo string, rn ru
 	}
 
 	// Fetch latest release from GitHub API.
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", url.PathEscape(owner), url.PathEscape(repo))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("resolve latest: request: %w", err)
@@ -172,7 +172,7 @@ func (r *Resolver) fetchLatestRelease(ctx context.Context, owner, repo string, r
 		return v.(*release), nil
 	}
 
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", url.PathEscape(owner), url.PathEscape(repo))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("resolve release: request: %w", err)
@@ -224,7 +224,7 @@ func (r *Resolver) fetchReleaseByTag(ctx context.Context, owner, repo, tag strin
 		return v.(*release), nil
 	}
 
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, url.PathEscape(tag))
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(tag))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("resolve release %s: request: %w", tag, err)
@@ -378,10 +378,36 @@ func splitRepo(repo string) (owner, name string, ok bool) {
 		return "", "", false
 	}
 	parts[1] = strings.TrimSuffix(parts[1], ".git")
-	if parts[1] == "" {
+	if !validGitHubOwner(parts[0]) || !validGitHubRepo(parts[1]) {
 		return "", "", false
 	}
 	return parts[0], parts[1], true
+}
+
+func validGitHubOwner(owner string) bool {
+	if owner == "" || len(owner) > 39 || owner[0] == '-' || owner[len(owner)-1] == '-' {
+		return false
+	}
+	for _, r := range owner {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validGitHubRepo(repo string) bool {
+	if repo == "" || repo == "." || repo == ".." || len(repo) > 100 {
+		return false
+	}
+	for _, r := range repo {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // GithubToken returns a GitHub personal access token from environment.
@@ -462,7 +488,7 @@ func githubRepoFromURL(rawURL string) (owner, repo string, ok bool) {
 		return "", "", false
 	}
 	repo = strings.TrimSuffix(parts[1], ".git")
-	if repo == "" {
+	if !validGitHubOwner(parts[0]) || !validGitHubRepo(repo) {
 		return "", "", false
 	}
 	return parts[0], repo, true

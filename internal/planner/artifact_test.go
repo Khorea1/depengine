@@ -175,12 +175,11 @@ func TestBuildCandidateIntentRejectsSecretReferenceOnUnsupportedMethod(t *testin
 	}
 }
 
-
 func TestBuildCandidateIntentProjectsLocalSignatureIntegrity(t *testing.T) {
 	tool, method := candidate("demo", "local", map[string]any{
-		"local_path": "vendor/demo",
+		"local_path":     "vendor/demo",
 		"signature_path": "vendor/demo.sig",
-		"signing_key": "release-key-2026",
+		"signing_key":    "release-key-2026",
 	})
 	p, err := planner.BuildCandidateIntent(tool, method)
 	if err != nil {

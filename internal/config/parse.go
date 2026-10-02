@@ -428,7 +428,6 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 								valMap[m] = true
 							}
 						}
-						tool.Ecosystem = k
 						delete(valMap, k)
 					}
 				case string:
@@ -437,7 +436,6 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 							valMap[m] = tv
 						}
 					}
-					tool.Ecosystem = k
 					delete(valMap, k)
 				case map[string]any:
 					shared := tv
@@ -450,7 +448,6 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 							valMap[m] = cloned
 						}
 					}
-					tool.Ecosystem = k
 					delete(valMap, k)
 				}
 			}
@@ -906,14 +903,20 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 			// Build prefix hints for variant detection (e.g. "http-musl" → "http").
 			prefixHints := map[string]string{}
 			for _, uk := range unknownKinds {
+				best := ""
 				for known := range set {
-					if strings.HasPrefix(uk, known) {
-						prefixHints[uk] = fmt.Sprintf(
-							"\n  note: %q looks like a variant of %q — set kind = %q in the method block",
-							uk, known, known,
-						)
-						break
+					if !strings.HasPrefix(uk, known) {
+						continue
 					}
+					if len(known) > len(best) || len(known) == len(best) && known < best {
+						best = known
+					}
+				}
+				if best != "" {
+					prefixHints[uk] = fmt.Sprintf(
+						"\n  note: %q looks like a variant of %q — set kind = %q in the method block",
+						uk, best, best,
+					)
 				}
 			}
 			for _, uk := range unknownKinds {

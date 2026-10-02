@@ -1,6 +1,9 @@
 package config
 
-import "reflect"
+import (
+	"reflect"
+	"sort"
+)
 
 // decodeStructFields populates dst (a pointer to a struct) from raw using
 // each field's `cfg` struct tag as the TOML key to read. This replaces the
@@ -46,5 +49,6 @@ func decodeStructFields(dst any, raw map[string]any) (leftover []string) {
 			leftover = append(leftover, k)
 		}
 	}
+	sort.Strings(leftover)
 	return leftover
 }

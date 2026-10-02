@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Khorea1/depengine/internal/native"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -46,7 +47,7 @@ func TestCheckEnv_NoTools(t *testing.T) {
 
 func TestCheckEnv_AllFound(t *testing.T) {
 	all := map[string]bool{}
-	for _, entry := range envToolBinaries {
+	for _, entry := range envToolBinaries() {
 		all[entry.Name] = true
 	}
 	result := CheckEnv(context.Background(), fakeRunnerFor{available: all})
@@ -87,7 +88,7 @@ func TestCheckEnv_Deduplicates(t *testing.T) {
 	// Verify that duplicate binary names are only checked once.
 	result := CheckEnv(context.Background(), fakeRunnerFor{
 		available: map[string]bool{
-			"pkg":          true, // appears in envToolBinaries for both termux and freebsd
+			"pkg":          true, // shared by termux and freebsd in the native registry
 			"apt":          true,
 			"pacman":       true,
 			"brew":         true,
@@ -133,6 +134,23 @@ func TestCheckEnv_SortedOrder(t *testing.T) {
 		if prev.Kind > cur.Kind || (prev.Kind == cur.Kind && prev.Name > cur.Name) {
 			t.Errorf("checks not sorted at index %d: %s/%s > %s/%s",
 				i, prev.Kind, prev.Name, cur.Kind, cur.Name)
+		}
+	}
+}
+
+func TestCheckEnvIncludesEveryRegisteredNativeManagerExecutable(t *testing.T) {
+	checks := make(map[string]string)
+	for _, entry := range envToolBinaries() {
+		checks[entry.Name] = entry.Kind
+	}
+	for _, name := range native.ManagerExecutables() {
+		if checks[name] != "native" {
+			t.Errorf("registered native manager executable %q missing from --check-env native probes", name)
+		}
+	}
+	for _, name := range []string{"winget", "pkgin"} {
+		if checks[name] != "native" {
+			t.Errorf("expected drift regression executable %q in native checks", name)
 		}
 	}
 }

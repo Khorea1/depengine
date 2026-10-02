@@ -1855,3 +1855,21 @@ local_path = "vendor/demo"
 		t.Fatalf("method ProjectRoot = %q, want %q", got, want)
 	}
 }
+
+func TestValidateUnknownMethodHintPrefersLongestPrefix(t *testing.T) {
+	s := &Schema{Tools: map[string]*Tool{
+		"demo": {
+			Name:    "demo",
+			Methods: []*MethodCandidate{{Kind: "msix-custom"}},
+		},
+	}}
+	for i := 0; i < 50; i++ {
+		_, err := Validate(s, []string{"msi", "msix"})
+		if err == nil {
+			t.Fatal("Validate() error = nil")
+		}
+		if !strings.Contains(err.Error(), `variant of "msix"`) {
+			t.Fatalf("hint did not choose longest prefix: %v", err)
+		}
+	}
+}

@@ -66,4 +66,3 @@ func TestArchiveExpansionBudgetCapsPathComplexity(t *testing.T) {
 		t.Fatal("over-deep entry path unexpectedly accepted")
 	}
 }
-

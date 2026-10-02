@@ -44,38 +44,41 @@ func confirmationAccepted(input io.Reader) bool {
 // auto-detection.
 var schemaCandidateNames = []string{"schema.toml", "depengine.toml", "depends.toml"}
 
-// defaultSchemaPath returns the default schema file path, trying common names
-// in schemaCandidateNames order. If none exist, returns "schema.toml" so the
-// caller gets the original "file not found" error instead of a confusing one.
-//
-// If MORE THAN ONE candidate exists simultaneously, this is almost always a
-// mistake (e.g. a leftover file from migrating between naming conventions,
-// or a merge that landed two of them side by side) rather than intentional —
-// silently picking the first one by priority means the user can edit the
-// "wrong" file and see their changes never take effect, with no indication
-// why. So instead of guessing quietly, we print a loud, explicit warning to
-// stderr naming every candidate found and which one was selected, so the
-// ambiguity is visible instead of silent. This only fires for the *default*
-// (auto-detected) path — passing --schema explicitly bypasses this function
-// entirely and is never second-guessed.
-func defaultSchemaPath() string {
+// schemaCandidatesFound returns auto-detected schema names in priority order.
+// It deliberately has no user-visible side effects: command construction calls
+// defaultSchemaPath for several subcommands, and diagnostics during construction
+// would otherwise be duplicated before Cobra even selects a command.
+func schemaCandidatesFound() []string {
 	var found []string
 	for _, c := range schemaCandidateNames {
 		if _, err := os.Stat(c); err == nil {
 			found = append(found, c)
 		}
 	}
+	return found
+}
+
+// defaultSchemaPath returns the default schema file path without emitting
+// diagnostics. If none exist, it returns "schema.toml" so the eventual loader
+// produces the ordinary file-not-found error.
+func defaultSchemaPath() string {
+	found := schemaCandidatesFound()
 	if len(found) == 0 {
 		return "schema.toml"
 	}
-	if len(found) > 1 {
-		fmt.Fprintf(os.Stderr,
-			"warning: multiple schema files found (%s) — using %q. "+
-				"This is ambiguous: pass --schema explicitly to silence this warning, "+
-				"or remove the file(s) you don't intend to use.\n",
-			strings.Join(found, ", "), found[0])
-	}
 	return found[0]
+}
+
+func warnMultipleSchemaFiles(w io.Writer) {
+	found := schemaCandidatesFound()
+	if len(found) < 2 {
+		return
+	}
+	fmt.Fprintf(w,
+		"warning: multiple schema files found (%s) — using %q. "+
+			"This is ambiguous: pass --schema explicitly to silence this warning, "+
+			"or remove the file(s) you don't intend to use.\n",
+		strings.Join(found, ", "), found[0])
 }
 
 // loadSchema reads and validates a schema.toml from path, gathering OS facts.

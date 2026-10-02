@@ -28,6 +28,15 @@ jobs:
     - name: Install dependencies
       run: go mod download
 
+    - name: Check gofmt
+      run: |
+        unformatted=$(gofmt -l .)
+        if [ -n "$unformatted" ]; then
+          echo "::error::Go sources are not gofmt-clean"
+          printf '%s\n' "$unformatted"
+          exit 1
+        fi
+
     - name: Run tests
       run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
 
