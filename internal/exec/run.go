@@ -170,7 +170,7 @@ func (ex *Executor) recoverReplacementTransaction(ctx context.Context, rc *runCo
 	if oldAdapter == nil || desiredAdapter == nil {
 		return fmt.Errorf("replacement adapters are unavailable for old=%q desired=%q", oldMethod.Kind, method.Kind)
 	}
-	desiredPlan, err := resolvedReplacementTarget(tx.Desired)
+	desiredPlan, err := replacementRecoveryDesiredPlan(tool, method, tx.Desired)
 	if err != nil {
 		return err
 	}
@@ -209,14 +209,16 @@ func (ex *Executor) recoverReplacementTransaction(ctx context.Context, rc *runCo
 		if oldAdapter == nil || !oldAdapter.CanRemove() {
 			return fmt.Errorf("old adapter %q cannot remove the tracked candidate", oldMethod.Kind)
 		}
+		removeMethod := methodForResolvedTarget(oldMethod, &oldPlan)
+		removeCredentials, err := ex.executionCredentialContext(ctx, removeMethod)
+		if err != nil {
+			return fmt.Errorf("resolve tracked removal credentials: %w", err)
+		}
 		if err := locked.PlanReplacementRemoval(name); err != nil {
 			return err
 		}
-		removeCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-		removeErr := oldAdapter.Remove(removeCtx, runner, tool, methodForResolvedTarget(oldMethod, &oldPlan))
-		cancel()
-		if removeErr != nil {
-			return fmt.Errorf("remove tracked candidate: %w", removeErr)
+		if err := runReplacementRemoval(removeCredentials, runner, tool, removeMethod, oldAdapter); err != nil {
+			return err
 		}
 		oldVerification, desiredVerification, err = ex.observeReplacementPair(ctx, tool, oldMethod, method, &oldPlan, desiredPlan)
 		if err != nil {
@@ -314,39 +316,24 @@ func cloneMethodConfig(input map[string]any) map[string]any {
 	return out
 }
 
-func resolvedReplacementTarget(projection plan.LockProjection) (*plan.ResolvedInstallPlan, error) {
-	if err := projection.RequireImmutable(); err != nil {
-		return nil, err
+// replacementRecoveryDesiredPlan validates current intent against the persisted pin before recovery observes or mutates the host.
+func replacementRecoveryDesiredPlan(tool *config.Tool, method *config.MethodCandidate, persisted plan.LockProjection) (*plan.ResolvedInstallPlan, error) {
+	intent, err := candidatePlanIntentErr(tool, method)
+	if err != nil {
+		return nil, fmt.Errorf("reconstruct replacement recovery intent for %q: %w", tool.Name, err)
 	}
-	resolved := plan.New(projection.Tool.Name, projection.Candidate.Method, projection.Candidate.Explicit)
-	resolved.Identity = plan.ResolvedIdentity{
-		Package: projection.Identity.Package, Version: projection.Identity.Version,
-		Revision: projection.Identity.Revision, Digest: projection.Identity.Digest,
-		Source: projection.Identity.Source, Registry: projection.Identity.Registry,
-		Scope: projection.Identity.Scope, Environment: projection.Identity.Environment,
-		Architecture: projection.Identity.Architecture, Platform: projection.Identity.Platform,
+	if intent == nil {
+		return nil, fmt.Errorf("reconstruct replacement recovery intent for %q: no static intent", tool.Name)
 	}
-	if projection.RequestedIntent != nil {
-		intent := *projection.RequestedIntent
-		if intent.Channel != nil {
-			channel := *intent.Channel
-			intent.Channel = &channel
-		}
-		resolved.Identity.RequestedVersion = &intent
+	doc := plan.LockDocument{
+		Version: plan.CurrentLockVersion,
+		Entries: []plan.LockProjection{persisted.Clone()},
 	}
-	for _, artifact := range projection.Identity.Artifacts {
-		resolved.Artifacts = append(resolved.Artifacts, plan.Artifact(artifact))
+	pinned, err := doc.PinnedPlanFor(*intent)
+	if err != nil {
+		return nil, fmt.Errorf("pin replacement recovery intent for %q: %w", tool.Name, err)
 	}
-	for _, source := range projection.Identity.Sources {
-		resolved.Sources = append(resolved.Sources, plan.SourceReference{
-			Role: source.Role, Kind: source.Kind, Name: source.Name, URL: source.URL,
-			Revision: source.Revision, Owned: source.Owned, Trust: source.Trust,
-		})
-	}
-	if err := resolved.Validate(); err != nil {
-		return nil, fmt.Errorf("persisted desired candidate: %w", err)
-	}
-	return &resolved, nil
+	return &pinned, nil
 }
 
 func (ex *Executor) observeReplacementPair(ctx context.Context, tool *config.Tool, oldMethod, desiredMethod *config.MethodCandidate, oldPlan, desiredPlan *plan.ResolvedInstallPlan) (plan.VerificationResult, plan.VerificationResult, error) {
@@ -451,24 +438,16 @@ func (ex *Executor) commitRecoveredReplacementInstall(ctx context.Context, rc *r
 }
 
 func (ex *Executor) continueRecoveredReplacement(ctx context.Context, rc *runContext, locked *depstate.LockedState, tool *config.Tool, method *config.MethodCandidate, desired *plan.ResolvedInstallPlan, result *ToolResult) error {
-	hookPlan, mismatch := candidatePlanIntent(tool, method)
-	if mismatch != "" {
-		return fmt.Errorf("resolve replacement lifecycle hooks: %s", mismatch)
-	}
-	var hooks []plan.LifecycleHook
-	if hookPlan != nil {
-		var err error
-		hooks, err = hookPlan.HookSchedule(plan.TransitionUpgrade, plan.HookAfter)
-		if err != nil {
-			return fmt.Errorf("resolve replacement lifecycle hooks: %w", err)
-		}
+	hooks, err := desired.HookSchedule(plan.TransitionUpgrade, plan.HookAfter)
+	if err != nil {
+		return fmt.Errorf("resolve replacement lifecycle hooks: %w", err)
 	}
 	if len(hooks) > 0 {
 		if err := locked.PlanReplacementPostHook(tool.Name); err != nil {
 			return fmt.Errorf("persist replacement post-hook boundary: %w", err)
 		}
 		postCtx, cancel := context.WithTimeout(ctx, ex.methodTimeout)
-		postRan, hookErr := ex.runLifecycleHooks(postCtx, tool.Name, hookPlan, plan.TransitionUpgrade, plan.HookAfter)
+		postRan, hookErr := ex.runLifecycleHooks(postCtx, tool.Name, desired, plan.TransitionUpgrade, plan.HookAfter)
 		cancel()
 		toolState := locked.State().Tools[tool.Name]
 		toolState.PostinstallDone = postRan && hookErr == nil

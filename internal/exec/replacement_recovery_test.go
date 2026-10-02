@@ -1,7 +1,10 @@
 package exec
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -15,14 +18,16 @@ import (
 
 type replacementRecoveryAdapter struct {
 	executorAdapterV2Double
-	installed map[string]string
-	order     []string
-	removed   []string
+	installed    map[string]string
+	observations int
+	order        []string
+	removed      []string
 }
 
 func (*replacementRecoveryAdapter) Kind() string { return "npm" }
 
 func (a *replacementRecoveryAdapter) Observe(_ context.Context, _ run.Runner, tool *config.Tool, method *config.MethodCandidate) (plan.Observation, error) {
+	a.observations++
 	version, present := a.installed[tool.Name]
 	if !present {
 		return plan.Observation{Presence: plan.PresenceAbsent}, nil
@@ -101,10 +106,13 @@ func TestExecutorRecoversReplacementTransactionsInSortedOrder(t *testing.T) {
 	for name := range methods {
 		previous := state.ToolState{Method: "npm", MethodKind: "npm", Version: "1.0.0", Config: map[string]any{"pkg": name, "version": "1.0.0"}}
 		locked.State().Tools[name] = previous
-		resolved := plan.New(name, "npm", true)
-		resolved.Identity.Package = name
+		resolved, err := candidatePlanIntentErr(methods[name], methods[name].Methods[0])
+		if err != nil || resolved == nil {
+			_ = locked.Close()
+			t.Fatalf("candidatePlanIntentErr(%q) = %v, %v", name, resolved, err)
+		}
 		resolved.Identity.Version = "2.0.0"
-		desired, err := plan.ProjectLock(resolved)
+		desired, err := plan.ProjectLock(*resolved)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -266,9 +274,12 @@ func TestReplacementRecoveryUsesPersistedLabelForDuplicateKindCandidates(t *test
 	previous := state.ToolState{Method: "mirror-b", MethodKind: "npm", Version: "1.0.0", Config: map[string]any{"pkg": "package-b"}}
 	persistReplacementAtInstalling(t, name, previous, projection, "mirror-b", "mirror-b", nil, nil)
 
-	adapter := &replacementRecoveryAdapter{
-		executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "npm"}},
-		installed:               map[string]string{name: "2.0.0"},
+	adapter := &replacementRecoveryMutableResolverAdapter{
+		replacementRecoveryAdapter: &replacementRecoveryAdapter{
+			executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "npm"}},
+			installed:               map[string]string{name: "2.0.0"},
+		},
+		mutableVersion: "9.9.9",
 	}
 	ex := New()
 	WithRunner(&run.FakeRunner{})(ex)
@@ -281,8 +292,18 @@ func TestReplacementRecoveryUsesPersistedLabelForDuplicateKindCandidates(t *test
 	if len(adapter.order) != 0 || len(adapter.removed) != 0 {
 		t.Fatalf("already-satisfied labeled replacement mutated adapter: install=%v remove=%v", adapter.order, adapter.removed)
 	}
-	if _, ok := rc.recoveredCommits[name]; !ok {
+	recovered, ok := rc.recoveredCommits[name]
+	if !ok {
 		t.Fatal("recovery did not commit the exact labeled candidate")
+	}
+	if recovered.intent == nil || recovered.intent.Identity.Package != "package-b" || recovered.intent.Identity.Version != "2.0.0" {
+		t.Fatalf("recovered desired identity = %+v, want persisted package-b@2.0.0", recovered.intent)
+	}
+	if adapter.resolveCall != 0 {
+		t.Fatalf("mutable ResolvePlan() calls = %d, want 0", adapter.resolveCall)
+	}
+	if adapter.observations == 0 {
+		t.Fatal("compatible persisted candidate was rejected before recovery observation")
 	}
 }
 
@@ -369,6 +390,127 @@ func TestReplacementRecoveryClaimsPersistedResourcesWithoutPreparationWAL(t *tes
 	}
 	if len(adapter.order) != 0 {
 		t.Fatalf("already-satisfied replacement reinstalled target: %v", adapter.order)
+	}
+}
+
+func TestReplacementRecoveryRejectsCurrentIntentDriftBeforeMutation(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	const name = "demo"
+	method := &config.MethodCandidate{Kind: "npm", Label: "stable", Config: map[string]any{"pkg": "package-b"}}
+	tool := &config.Tool{Name: name, Methods: []*config.MethodCandidate{method}}
+	desired := plan.New(name, "npm", true)
+	desired.Identity.Package = "package-a"
+	desired.Identity.Version = "2.0.0"
+	projection, err := plan.ProjectLock(desired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := state.ToolState{Method: "stable", MethodKind: "npm", Version: "1.0.0", Config: map[string]any{"pkg": "package-a"}}
+	locked, err := state.LoadLocked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked.State().Tools[name] = previous
+	candidate := state.ReplacementCandidate{Identity: projection.Candidate, Label: "stable"}
+	if err := locked.BeginReplacement(name, projection.Candidate.Method, candidate, candidate, previous, projection, "", nil); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if err := locked.PlanReplacementRemoval(name); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if err := locked.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := &replacementRecoveryAdapter{
+		executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "npm"}},
+		installed:               map[string]string{name: "1.0.0"},
+	}
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex)
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("schema.yaml", time.Time{})(ex)
+	rc := ex.newRunContext(context.Background(), &config.Schema{Tools: map[string]*config.Tool{name: tool}}, "")
+	err = ex.recoverAndRecord(context.Background(), rc)
+	if !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("recoverAndRecord() error = %v, want ErrLockMismatch", err)
+	}
+	if adapter.observations != 0 || len(adapter.removed) != 0 || len(adapter.order) != 0 {
+		t.Fatalf("recovery observed or mutated host before rejecting drift: observes=%d remove=%v install=%v", adapter.observations, adapter.removed, adapter.order)
+	}
+	persisted, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := persisted.ReplacementTransactions[name]; !ok || got.Journal.Phase != plan.ReplacementRemoving {
+		t.Fatalf("replacement WAL = %+v, want retained Removing transaction", got)
+	}
+	if got, ok := persisted.Tools[name]; !ok || !reflect.DeepEqual(got, previous) {
+		t.Fatalf("tracked old tool state = %+v, want unchanged %+v", got, previous)
+	}
+}
+
+func TestReplacementRecoveryRejectsRequestedVersionIntentDriftBeforeMutation(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	const name = "demo"
+	method := &config.MethodCandidate{Kind: "npm", Label: "stable", Config: map[string]any{"pkg": "package-a", "version": "2.0.0"}}
+	tool := &config.Tool{Name: name, Methods: []*config.MethodCandidate{method}}
+	desired, err := candidatePlanIntentErr(tool, method)
+	if err != nil || desired == nil {
+		t.Fatalf("candidatePlanIntentErr() = %v, %v", desired, err)
+	}
+	desired.Identity.Version = "2.0.0"
+	projection, err := plan.ProjectLock(*desired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	method.Config["version"] = "3.0.0"
+	previous := state.ToolState{Method: "stable", MethodKind: "npm", Version: "1.0.0", Config: map[string]any{"pkg": "package-a", "version": "1.0.0"}}
+	locked, err := state.LoadLocked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked.State().Tools[name] = previous
+	candidate := state.ReplacementCandidate{Identity: projection.Candidate, Label: "stable"}
+	if err := locked.BeginReplacement(name, projection.Candidate.Method, candidate, candidate, previous, projection, "", nil); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if err := locked.PlanReplacementRemoval(name); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if err := locked.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := &replacementRecoveryAdapter{
+		executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "npm"}},
+		installed:               map[string]string{name: "1.0.0"},
+	}
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex)
+	WithAdapters(adapter)(ex)
+	WithSchemaInfo("schema.yaml", time.Time{})(ex)
+	rc := ex.newRunContext(context.Background(), &config.Schema{Tools: map[string]*config.Tool{name: tool}}, "")
+	err = ex.recoverAndRecord(context.Background(), rc)
+	if !errors.Is(err, plan.ErrLockMismatch) {
+		t.Fatalf("recoverAndRecord() error = %v, want ErrLockMismatch", err)
+	}
+	if adapter.observations != 0 || len(adapter.removed) != 0 || len(adapter.order) != 0 {
+		t.Fatalf("recovery observed or mutated host before rejecting version drift: observes=%d remove=%v install=%v", adapter.observations, adapter.removed, adapter.order)
+	}
+	persisted, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := persisted.ReplacementTransactions[name]; !ok || got.Journal.Phase != plan.ReplacementRemoving {
+		t.Fatalf("replacement WAL = %+v, want retained Removing transaction", got)
+	}
+	if got, ok := persisted.Tools[name]; !ok || !reflect.DeepEqual(got, previous) {
+		t.Fatalf("tracked old tool state = %+v, want unchanged %+v", got, previous)
 	}
 }
 
@@ -558,6 +700,294 @@ func TestReplacementRecoveryRunsHookWithoutReinstallAfterVerifiedInstall(t *test
 	}
 	if _, ok := persisted.ReplacementTransactions[name]; ok {
 		t.Fatal("successful recovered hook retained replacement WAL")
+	}
+}
+
+type replacementRecoveryMutableResolverAdapter struct {
+	*replacementRecoveryAdapter
+	mutableVersion string
+}
+
+func (a *replacementRecoveryMutableResolverAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	a.resolveCall++
+	resolved := intent.Clone()
+	resolved.Identity.Version = a.mutableVersion
+	return &resolved, nil
+}
+
+func TestReplacementRecoveryRetryRemovalUsesRemovalElevation(t *testing.T) {
+	tests := []struct {
+		name       string
+		startErr   error
+		removeErr  error
+		wantErr    bool
+		wantRemove int
+		wantStops  int
+		wantWAL    bool
+	}{
+		{name: "elevated removal succeeds", wantRemove: 1, wantStops: 1},
+		{name: "elevation startup fails", startErr: errors.New("elevation unavailable"), wantErr: true, wantWAL: true},
+		{name: "remove fails and elevation stops", removeErr: errors.New("remove failed"), wantErr: true, wantRemove: 1, wantStops: 1, wantWAL: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &replacementRecoveryElevationRunner{FakeRunner: &run.FakeRunner{}, startErr: tc.startErr}
+			resolver := &githubSecretTestResolver{}
+			ex, rc, oldAdapter, previous := replacementRetryRemovalFixture(t, runner, resolver, nil, true)
+			oldAdapter.removeErr = tc.removeErr
+
+			err := ex.recoverAndRecord(context.Background(), rc)
+			if tc.wantErr && err == nil {
+				t.Fatal("recoverAndRecord() succeeded, want removal error")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("recoverAndRecord() error = %v", err)
+			}
+			if oldAdapter.removeCalls != tc.wantRemove {
+				t.Fatalf("Remove calls = %d, want %d", oldAdapter.removeCalls, tc.wantRemove)
+			}
+			if oldAdapter.removeCalls != 0 && (oldAdapter.removedLabel != "old" || oldAdapter.removedURL != "https://example.test/old.git") {
+				t.Fatalf("Remove target = %q %q, want old candidate URL", oldAdapter.removedLabel, oldAdapter.removedURL)
+			}
+			if oldAdapter.removeCalls != 0 && !oldAdapter.removeWhileElevated {
+				t.Fatal("Remove did not run while the elevation session was active")
+			}
+			if runner.starts != 1 || runner.stops != tc.wantStops || runner.active {
+				t.Fatalf("elevation lifecycle: starts=%d stops=%d active=%v", runner.starts, runner.stops, runner.active)
+			}
+			if oldAdapter.removeCalls != 0 && (oldAdapter.remainingTimeout <= time.Minute || oldAdapter.remainingTimeout > 2*time.Minute) {
+				t.Fatalf("removal context deadline remaining = %s, want a two-minute timeout", oldAdapter.remainingTimeout)
+			}
+
+			persisted, loadErr := state.Load()
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			tx, retained := persisted.ReplacementTransactions["demo"]
+			if retained != tc.wantWAL {
+				t.Fatalf("replacement WAL retained = %v, want %v", retained, tc.wantWAL)
+			}
+			if tc.wantWAL {
+				if tx.Journal.Phase != plan.ReplacementRemoving {
+					t.Fatalf("replacement phase = %q, want Removing", tx.Journal.Phase)
+				}
+				if !reflect.DeepEqual(persisted.Tools["demo"], previous) {
+					t.Fatalf("tracked previous state changed after blocked removal: %+v", persisted.Tools["demo"])
+				}
+			}
+		})
+	}
+}
+
+func TestReplacementRecoveryRetryRemovalUsesMethodScopedCredentials(t *testing.T) {
+	t.Run("resolved credential remains ephemeral", func(t *testing.T) {
+		resolver := &githubSecretTestResolver{results: []githubSecretResult{{value: gitTestSentinel}}}
+		ex, rc, oldAdapter, _ := replacementRetryRemovalFixture(
+			t, &run.FakeRunner{}, resolver,
+			&config.SecretReference{Provider: "env", Name: gitTestRefName}, false,
+		)
+		if err := ex.recoverAndRecord(context.Background(), rc); err != nil {
+			t.Fatal(err)
+		}
+		if resolver.calls != 1 || len(resolver.refs) != 1 || resolver.refs[0].Name != gitTestRefName {
+			t.Fatalf("secret resolution = calls:%d refs:%+v", resolver.calls, resolver.refs)
+		}
+		if oldAdapter.removeCalls != 1 || !oldAdapter.hasCredential || oldAdapter.credential != gitTestSentinel {
+			t.Fatalf("Remove credential = %q, %v; calls=%d", oldAdapter.credential, oldAdapter.hasCredential, oldAdapter.removeCalls)
+		}
+		if oldAdapter.remainingTimeout <= time.Minute || oldAdapter.remainingTimeout > 2*time.Minute {
+			t.Fatalf("removal context deadline remaining = %s, want a two-minute timeout", oldAdapter.remainingTimeout)
+		}
+		if oldAdapter.installCalls != 1 {
+			t.Fatalf("desired install calls = %d, want recovery to continue after removal", oldAdapter.installCalls)
+		}
+		persisted, err := state.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertReplacementStateOmitsSecret(t, persisted, gitTestSentinel)
+	})
+
+	t.Run("resolution failure blocks removal and retains WAL", func(t *testing.T) {
+		resolver := &githubSecretTestResolver{results: []githubSecretResult{{err: errors.New("private resolver detail")}}}
+		ex, rc, oldAdapter, previous := replacementRetryRemovalFixture(
+			t, &run.FakeRunner{}, resolver,
+			&config.SecretReference{Provider: "env", Name: gitTestRefName}, false,
+		)
+		err := ex.recoverAndRecord(context.Background(), rc)
+		if err == nil || strings.Contains(err.Error(), "private resolver detail") || strings.Contains(err.Error(), gitTestSentinel) {
+			t.Fatalf("credential resolution error = %v, want sanitized failure", err)
+		}
+		if resolver.calls != 1 || oldAdapter.removeCalls != 0 || oldAdapter.installCalls != 0 {
+			t.Fatalf("blocked recovery mutated: resolves=%d removes=%d installs=%d", resolver.calls, oldAdapter.removeCalls, oldAdapter.installCalls)
+		}
+		persisted, loadErr := state.Load()
+		if loadErr != nil {
+			t.Fatal(loadErr)
+		}
+		tx, ok := persisted.ReplacementTransactions["demo"]
+		if !ok || tx.Journal.Phase != plan.ReplacementRemoving {
+			t.Fatalf("replacement transaction = %+v, want retained Removing WAL", tx)
+		}
+		if !reflect.DeepEqual(persisted.Tools["demo"], previous) {
+			t.Fatalf("tracked previous state changed after credential failure: %+v", persisted.Tools["demo"])
+		}
+		assertReplacementStateOmitsSecret(t, persisted, gitTestSentinel)
+	})
+}
+
+func replacementRetryRemovalFixture(
+	t *testing.T,
+	runner run.Runner,
+	resolver *githubSecretTestResolver,
+	secretRef *config.SecretReference,
+	requiresElevation bool,
+) (*Executor, *runContext, *replacementRetryRemovalAdapter, state.ToolState) {
+	t.Helper()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	const name = "demo"
+	oldMethod := &config.MethodCandidate{Kind: "git", Label: "old", Config: map[string]any{"url": "https://example.test/old.git"}, SecretRef: secretRef}
+	desiredMethod := &config.MethodCandidate{Kind: "git", Label: "new", Config: map[string]any{"url": "https://example.test/new.git", "rev": "2222222222222222222222222222222222222222"}}
+	tool := &config.Tool{Name: name, Methods: []*config.MethodCandidate{oldMethod, desiredMethod}}
+	desired, err := candidatePlanIntentErr(tool, desiredMethod)
+	if err != nil {
+		t.Fatal(err)
+	}
+	desired.Identity.Revision = desiredMethod.Config["rev"].(string)
+	projection, err := plan.ProjectLock(*desired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := state.ToolState{Method: "old", MethodKind: "git", Version: "1.0.0", Config: map[string]any{"url": "https://example.test/old.git"}}
+	locked, err := state.LoadLocked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked.State().Tools[name] = previous
+	prior := state.ReplacementCandidate{Identity: plan.CandidateIdentity{Method: "git", Explicit: true}, Label: "old"}
+	candidate := state.ReplacementCandidate{Identity: projection.Candidate, Label: "new"}
+	if err := locked.BeginReplacement(name, "git", prior, candidate, previous, projection, "", nil); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if err := locked.PlanReplacementRemoval(name); err != nil {
+		_ = locked.Close()
+		t.Fatal(err)
+	}
+	if err := locked.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	oldAdapter := &replacementRetryRemovalAdapter{
+		executorAdapterV2Double: executorAdapterV2Double{testMockAdapter: testMockAdapter{kindValue: "git"}},
+		oldPresent:              true, requiresElevation: requiresElevation,
+	}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(oldAdapter)(ex)
+	WithSecretResolver(resolver)(ex)
+	WithSchemaInfo("schema.yaml", time.Time{})(ex)
+	rc := ex.newRunContext(context.Background(), &config.Schema{Tools: map[string]*config.Tool{name: tool}}, "")
+	return ex, rc, oldAdapter, previous
+}
+
+type replacementRetryRemovalAdapter struct {
+	executorAdapterV2Double
+	oldPresent          bool
+	desiredPresent      bool
+	installCalls        int
+	requiresElevation   bool
+	removeErr           error
+	removeCalls         int
+	removedLabel        string
+	removedURL          string
+	removeWhileElevated bool
+	credential          string
+	hasCredential       bool
+	remainingTimeout    time.Duration
+}
+
+func (a *replacementRetryRemovalAdapter) Observe(_ context.Context, _ run.Runner, _ *config.Tool, method *config.MethodCandidate) (plan.Observation, error) {
+	present, version := a.oldPresent, "1.0.0"
+	if method.Label == "new" {
+		present, version = a.desiredPresent, "2.0.0"
+	}
+	if !present {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	if method.Label == "new" {
+		url, _ := method.Config["url"].(string)
+		return plan.Observation{
+			Presence:    plan.PresencePresent,
+			Identity:    plan.ObservedIdentity{Package: "demo", Source: url, Revision: "2222222222222222222222222222222222222222"},
+			KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldSource, plan.FieldRevision},
+		}, nil
+	}
+	return plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Package: "demo", Version: version},
+		KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion},
+	}, nil
+}
+
+func (a *replacementRetryRemovalAdapter) InstallResolved(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, _ *plan.ResolvedInstallPlan) error {
+	a.installCalls++
+	a.desiredPresent = true
+	return nil
+}
+
+func (a *replacementRetryRemovalAdapter) Remove(ctx context.Context, runner run.Runner, _ *config.Tool, method *config.MethodCandidate) error {
+	a.removeCalls++
+	a.removedLabel = method.Label
+	a.removedURL, _ = method.Config["url"].(string)
+	if session, ok := runner.(*replacementRecoveryElevationRunner); ok {
+		a.removeWhileElevated = session.active
+	}
+	a.credential, a.hasCredential = GitCredential(ctx)
+	if deadline, ok := ctx.Deadline(); ok {
+		a.remainingTimeout = time.Until(deadline)
+	}
+	if a.removeErr != nil {
+		return a.removeErr
+	}
+	a.oldPresent = false
+	return nil
+}
+
+func (*replacementRetryRemovalAdapter) CanRemove() bool { return true }
+
+func (a *replacementRetryRemovalAdapter) RequiresRemovalElevation(*config.Tool, *config.MethodCandidate) bool {
+	return a.requiresElevation
+}
+
+type replacementRecoveryElevationRunner struct {
+	*run.FakeRunner
+	active   bool
+	starts   int
+	stops    int
+	startErr error
+}
+
+func (r *replacementRecoveryElevationRunner) StartElevationSession(context.Context) (func(), error) {
+	r.starts++
+	if r.startErr != nil {
+		return nil, r.startErr
+	}
+	r.active = true
+	return func() {
+		r.active = false
+		r.stops++
+	}, nil
+}
+
+func assertReplacementStateOmitsSecret(t *testing.T, persisted *state.State, secret string) {
+	t.Helper()
+	encoded, err := json.Marshal(persisted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte(secret)) {
+		t.Fatal("persisted replacement state contains the resolved credential")
 	}
 }
 

@@ -119,26 +119,8 @@ func (ex *Executor) replaceCandidate(ac *candidateAttempt, result *ToolResult, r
 	if err := locked.PlanReplacementRemoval(ac.tool.Name); err != nil {
 		return ex.failReplacement(ac, result, fmt.Errorf("persist removal boundary: %w", err))
 	}
-	removeCtx, cancelRemove := context.WithTimeout(removeCredentials, 2*time.Minute)
-	removeCtx = run.WithOmittedEnv(removeCtx, methodSecretEnvNames(oldMethod)...)
-	var stopElevation func()
-	if requirer, ok := oldAdapter.(RemovalElevationRequirer); ok && requirer.RequiresRemovalElevation(ac.tool, oldMethod) {
-		if session, ok := runner.(run.ElevationSession); ok {
-			var elevationErr error
-			stopElevation, elevationErr = session.StartElevationSession(removeCtx)
-			if elevationErr != nil {
-				cancelRemove()
-				return ex.failReplacement(ac, result, fmt.Errorf("removal elevation: %w", elevationErr))
-			}
-		}
-	}
-	removeErr := oldAdapter.Remove(removeCtx, runner, ac.tool, oldMethod)
-	if stopElevation != nil {
-		stopElevation()
-	}
-	cancelRemove()
-	if removeErr != nil {
-		return ex.failReplacement(ac, result, fmt.Errorf("remove tracked installation: %w", removeErr))
+	if err := runReplacementRemoval(removeCredentials, runner, ac.tool, oldMethod, oldAdapter); err != nil {
+		return ex.failReplacement(ac, result, err)
 	}
 	if err := locked.RecordReplacementRemoved(ac.tool.Name); err != nil {
 		return ex.failReplacement(ac, result, fmt.Errorf("persist removed state: %w", err))
@@ -212,6 +194,32 @@ func (ex *Executor) replaceCandidate(ac *candidateAttempt, result *ToolResult, r
 		return locked.CompleteReplacement(ac.tool.Name, finalState)
 	}
 	return ex.finishInstalled(ac, result)
+}
+
+// runReplacementRemoval applies the shared execution safeguards to a replacement removal.
+// ctx must already carry credentials scoped to method; elevation lasts only for this removal.
+func runReplacementRemoval(ctx context.Context, runner run.Runner, tool *config.Tool, method *config.MethodCandidate, adapter AdapterV2) error {
+	removeCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	removeCtx = run.WithOmittedEnv(removeCtx, methodSecretEnvNames(method)...)
+	if requirer, ok := adapter.(RemovalElevationRequirer); ok && requirer.RequiresRemovalElevation(tool, method) {
+		if session, ok := runner.(run.ElevationSession); ok {
+			stop, err := session.StartElevationSession(removeCtx)
+			if err != nil {
+				if stop != nil {
+					stop()
+				}
+				return fmt.Errorf("removal elevation: %w", err)
+			}
+			if stop != nil {
+				defer stop()
+			}
+		}
+	}
+	if err := adapter.Remove(removeCtx, runner, tool, method); err != nil {
+		return fmt.Errorf("remove tracked installation: %w", err)
+	}
+	return nil
 }
 
 func (ex *Executor) failReplacement(ac *candidateAttempt, result *ToolResult, err error) attemptOutcome {
