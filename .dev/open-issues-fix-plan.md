@@ -25,6 +25,7 @@ Onda B aplicada nesta branch:
 - [x] `#114` — `newProjectExecutor` liga o native adapter ao clan detectado nos caminhos read-only.
 - [x] `#128` — provider AUR concreto é persistido no state; executores de projeto respeitam `aur_helper`; remove/undo reconstroem AUR pelo provider histórico e falham fechado quando ele é desconhecido.
 - [x] `#129` — `--check-env` deriva executáveis nativos do registry via `ManagerExecutableNames`, preservando apenas language/system tools como suplementos explícitos.
+- [x] `#130` — identidade GitHub `owner/repo` é canonicalizada antes de requests; sintaxe ambígua é rejeitada e segmentos são escapados separadamente.
 - [x] `#133` — state version probes passam por `probeRunner`.
 - [x] `#104` — finalização/bookkeeping usa o housekeeping context sem schema-secret env, inclusive em resolved upgrade candidate.
 

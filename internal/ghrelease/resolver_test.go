@@ -394,6 +394,62 @@ func TestSplitRepoAcceptsCanonicalGitForms(t *testing.T) {
 	}
 }
 
+func TestSplitRepoRejectsURLSignificantAndTraversalSegments(t *testing.T) {
+	for _, input := range []string{
+		"owner/repo?ref=main",
+		"owner/repo#fragment",
+		"owner/repo%2Fother",
+		"owner/%2e%2e",
+		"owner/..",
+		"./repo",
+		`owner/repo\other`,
+		"owner/repo.git.git",
+		"owner/repo\x00bad",
+		"git@github.com:owner/repo.git",
+		"https://user@github.com/owner/repo",
+		"https://github.com/owner/repo?ref=main",
+		"https://github.com/owner/repo#fragment",
+		"https://github.com/owner/re%2Fother",
+		"https://github.com/owner/%2e%2e",
+	} {
+		if owner, repo, ok := splitRepo(input); ok {
+			t.Errorf("splitRepo(%q) = (%q, %q, true), want rejection", input, owner, repo)
+		}
+	}
+}
+
+func TestGitHubURLClassificationRejectsAmbiguousIdentitySegments(t *testing.T) {
+	for _, input := range []string{
+		"https://user@github.com/owner/repo",
+		"https://github.com/owner/re%2Fother/releases/latest",
+		"https://github.com/owner/%2e%2e/releases/latest",
+		"https://github.com/owner/repo.git.git/releases/latest",
+		`https://github.com/owner/repo%5Cother/releases/latest`,
+	} {
+		if owner, repo, ok := githubRepoFromURL(input); ok {
+			t.Errorf("githubRepoFromURL(%q) = (%q, %q, true), want rejection", input, owner, repo)
+		}
+	}
+}
+
+func TestResolveLatestReleaseTagUsesCanonicalRepositoryPath(t *testing.T) {
+	var gotPath string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"tag_name":"v1.2.3"}`)
+	}))
+	t.Cleanup(ts.Close)
+	r := newTestResolver(ts.URL)
+
+	if _, err := r.ResolveLatestReleaseTag(context.Background(), "owner/repo.name", &run.FakeRunner{ExitCode: 1}); err != nil {
+		t.Fatalf("ResolveLatestReleaseTag: %v", err)
+	}
+	if gotPath != "/repos/owner/repo.name/releases/latest" {
+		t.Fatalf("API path = %q", gotPath)
+	}
+}
+
 func TestGithubTokenNilRunnerWithoutEnvIsSafe(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "")
 	t.Setenv("GH_TOKEN", "")
@@ -541,16 +597,16 @@ func TestRepoReferenceAndGitHubURLClassification(t *testing.T) {
 		{name: "bare reference trailing slash", input: "github.com/owner/repo/", splitOwner: "owner", splitRepo: "repo", splitOK: true},
 		{name: "uppercase scheme and host", input: "HTTPS://GITHUB.COM/owner/repo", splitOwner: "owner", splitRepo: "repo", splitOK: true, urlOwner: "owner", urlRepo: "repo", urlOK: true},
 		{name: "mixed-case host", input: "https://GitHub.Com/owner/repo", splitOwner: "owner", splitRepo: "repo", splitOK: true, urlOwner: "owner", urlRepo: "repo", urlOK: true},
-		{name: "userinfo", input: "https://user@github.com/owner/repo", splitOwner: "owner", splitRepo: "repo", splitOK: true, urlOwner: "owner", urlRepo: "repo", urlOK: true},
-		{name: "default HTTPS port", input: "https://github.com:443/owner/repo", urlOwner: "owner", urlRepo: "repo", urlOK: true},
+		{name: "userinfo", input: "https://user@github.com/owner/repo"},
+		{name: "default HTTPS port", input: "https://github.com:443/owner/repo", splitOwner: "owner", splitRepo: "repo", splitOK: true, urlOwner: "owner", urlRepo: "repo", urlOK: true},
 		{name: "HTTP repository URL", input: "http://github.com/owner/repo", splitOwner: "owner", splitRepo: "repo", splitOK: true, urlOwner: "owner", urlRepo: "repo", urlOK: true},
-		{name: "default HTTP port", input: "http://github.com:80/owner/repo", urlOwner: "owner", urlRepo: "repo", urlOK: true},
+		{name: "default HTTP port", input: "http://github.com:80/owner/repo", splitOwner: "owner", splitRepo: "repo", splitOK: true, urlOwner: "owner", urlRepo: "repo", urlOK: true},
 		{name: "non-default port", input: "https://github.com:444/owner/repo"},
 		{name: "query and fragment", input: "https://github.com/owner/repo?tab=readme#top", urlOwner: "owner", urlRepo: "repo", urlOK: true},
 		{name: "repository subpath", input: "https://github.com/owner/repo/releases/download/v1/tool", urlOwner: "owner", urlRepo: "repo", urlOK: true},
 		{name: "GitLab URL", input: "https://gitlab.com/owner/repo"},
 		{name: "Codeberg URL", input: "https://codeberg.org/owner/repo"},
-		{name: "SCP-like Git reference", input: "git@github.com:owner/repo.git", splitOwner: "git@github.com:owner", splitRepo: "repo", splitOK: true},
+		{name: "SCP-like Git reference", input: "git@github.com:owner/repo.git"},
 		{name: "owner only", input: "owner"},
 		{name: "extra repository path segment", input: "owner/repo/extra"},
 		{name: "URL with empty repository", input: "https://github.com/owner/"},

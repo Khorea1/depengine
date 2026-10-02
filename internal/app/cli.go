@@ -121,7 +121,7 @@ func prepareAutoSchemaSelection(cmd *cobra.Command) error {
 		return err
 	}
 	if len(discovery.Found) > 1 {
-		fmt.Fprintf(os.Stderr,
+		fmt.Fprintf(cmd.ErrOrStderr(),
 			"warning: multiple schema files found (%s) — using %q. "+
 				"This is ambiguous: pass --schema explicitly to silence this warning, "+
 				"or remove the file(s) you don't intend to use.\n",
