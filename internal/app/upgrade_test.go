@@ -445,8 +445,8 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 	}))
 	t.Cleanup(downloadServer.Close)
 
-	// Create a /bin-suffixed dir so isSharedDir returns true.
-	sharedDir := filepath.Join(t.TempDir(), "bin")
+	// Keep the target outside shared system directories to avoid real elevation.
+	sharedDir := filepath.Join(t.TempDir(), "tools")
 	if err := os.MkdirAll(sharedDir, 0700); err != nil {
 		t.Fatal(err)
 	}
