@@ -214,7 +214,6 @@ func importSigningKeyByFingerprint(ctx context.Context, rn run.Runner, msys bool
 	return fpr, nil
 }
 
-
 func downloadPublicKey(ctx context.Context, rawURL, dest string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {

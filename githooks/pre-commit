@@ -15,6 +15,8 @@ trap 'exit 1' 1 2 3 15
 git -C "$root" checkout-index --all --prefix="$snapshot/"
 cd "$snapshot"
 
+echo "pre-commit: checking gofmt"
+scripts/check-gofmt.sh
 echo "pre-commit: building staged tree"
 go build ./...
 echo "pre-commit: vetting staged tree"

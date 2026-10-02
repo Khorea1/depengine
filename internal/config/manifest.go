@@ -378,12 +378,12 @@ func mergeMethodConfigs(lower, upper *MethodCandidate, pc *provenanceCollector) 
 	}
 	if len(upper.Sources) == 0 {
 		result.Sources = cloneSources(lower.Sources)
-	if len(upper.PreInstall) == 0 {
-		result.PreInstall = cloneHooks(lower.PreInstall)
-	}
-	if len(upper.PostInstall) == 0 {
-		result.PostInstall = cloneHooks(lower.PostInstall)
-	}
+		if len(upper.PreInstall) == 0 {
+			result.PreInstall = cloneHooks(lower.PreInstall)
+		}
+		if len(upper.PostInstall) == 0 {
+			result.PostInstall = cloneHooks(lower.PostInstall)
+		}
 	}
 	if upper.SecretRef == nil && lower.SecretRef != nil {
 		secretRef := *lower.SecretRef

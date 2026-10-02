@@ -36,6 +36,7 @@ while read -r local_ref local_oid remote_ref remote_oid; do
 	echo "pre-push: validating $local_ref ($commit)"
 	git worktree add --quiet --detach "$checkout" "$commit" </dev/null
 	cd "$checkout"
+	scripts/check-gofmt.sh </dev/null
 	go build ./... </dev/null
 	go vet ./... </dev/null
 	go test -race ./... </dev/null

@@ -169,7 +169,6 @@ func TestDetectorDarwinBSDAndWindows(t *testing.T) {
 	})
 }
 
-
 func TestDetectorCoversEveryKnownNativeClan(t *testing.T) {
 	type fixture struct {
 		files    map[string]string
@@ -205,19 +204,19 @@ func TestDetectorCoversEveryKnownNativeClan(t *testing.T) {
 		},
 		"freebsd": {
 			commands: map[string]string{"uname -s": "FreeBSD", "uname -r": "15.0", "uname -m": "amd64"},
-			goos: "freebsd",
+			goos:     "freebsd",
 		},
 		"openbsd": {
 			commands: map[string]string{"uname -s": "OpenBSD", "uname -r": "7.8", "uname -m": "amd64"},
-			goos: "openbsd",
+			goos:     "openbsd",
 		},
 		"netbsd": {
 			commands: map[string]string{"uname -s": "NetBSD", "uname -r": "10.1", "uname -m": "amd64"},
-			goos: "netbsd",
+			goos:     "netbsd",
 		},
 		"windows": {
 			commands: map[string]string{"cmd.exe /d /c ver": "Microsoft Windows [Version 10.0.26100.4652]"},
-			goos: "windows", goarch: "amd64",
+			goos:     "windows", goarch: "amd64",
 		},
 	}
 
