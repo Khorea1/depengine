@@ -108,6 +108,7 @@ type blockingMockAdapter struct {
 	availableFunc func() bool
 	checkFunc     func(string) bool
 	block         chan struct{}
+	started       chan string
 }
 
 func (m *blockingMockAdapter) Kind() string { return m.kindValue }
@@ -134,6 +135,9 @@ func (m *blockingMockAdapter) InstallResolved(ctx context.Context, rn run.Runner
 }
 
 func (m *blockingMockAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+	if m.started != nil {
+		m.started <- tool.Name
+	}
 	select {
 	case <-m.block:
 		return nil
@@ -1972,8 +1976,14 @@ func TestExecutorBlocksDangerous(t *testing.T) {
 	if len(report.Tools) != 1 {
 		t.Fatalf("expected 1 tool result, got %d", len(report.Tools))
 	}
-	if report.Tools[0].Status != StatusSkippedUnavailable {
-		t.Fatalf("expected StatusSkippedUnavailable, got %v", report.Tools[0].Status)
+	if report.Tools[0].Status != StatusFailed {
+		t.Fatalf("expected StatusFailed, got %v", report.Tools[0].Status)
+	}
+	if report.Failed != 1 || report.Skipped != 0 || report.Already != 0 || report.WouldInstall != 0 {
+		t.Fatalf("security-block counters = failed:%d skipped:%d already:%d would:%d", report.Failed, report.Skipped, report.Already, report.WouldInstall)
+	}
+	if report.Success+report.Failed+report.Skipped+report.Already+report.WouldInstall != len(report.Tools) {
+		t.Fatalf("terminal counters do not match tool results: report=%+v", report)
 	}
 }
 
@@ -2077,7 +2087,7 @@ func TestExecutorBlocksStructuredBuildWithoutPermission(t *testing.T) {
 	if installed {
 		t.Fatal("structured build bypassed --allow-arbitrary-code gate")
 	}
-	if len(report.Tools) != 1 || report.Tools[0].Status != StatusSkippedUnavailable {
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusFailed {
 		t.Fatalf("blocked result = %+v", report.Tools)
 	}
 }
@@ -2295,6 +2305,225 @@ func TestFormatToolResult(t *testing.T) {
 	}
 }
 
+func TestExecutionClosureFiltersRequiresWhenBeforeDependencyOnlyTraversal(t *testing.T) {
+	adapter := &testMockAdapter{kindValue: "mock"}
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"mock"}},
+		Tools: map[string]*config.Tool{
+			"helper": {
+				Name:           "helper",
+				DependencyOnly: true,
+				Methods:        []*config.MethodCandidate{{Kind: "mock"}},
+			},
+			"root": {
+				Name:         "root",
+				Requires:     []string{"helper"},
+				RequiresWhen: map[string]*config.Condition{"helper": {OS: []string{"windows"}}},
+				Methods:      []*config.MethodCandidate{{Kind: "mock"}},
+			},
+		},
+	}
+
+	ex := New()
+	WithAdapters(adapter)(ex)
+	WithFacts(&engine.Facts{OS: "linux"})(ex)
+	levels, err := ex.sortExecutionLevels(context.Background(), schema)
+	if err != nil {
+		t.Fatalf("sortExecutionLevels() error = %v", err)
+	}
+	if !reflect.DeepEqual(levels, [][]string{{"root"}}) {
+		t.Fatalf("linux levels = %#v, want only root", levels)
+	}
+	report, err := ex.Execute(context.Background(), schema, "")
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Tool != "root" {
+		t.Fatalf("report tools = %+v, want only root", report.Tools)
+	}
+
+	ex = New()
+	WithAdapters(adapter)(ex)
+	WithFacts(&engine.Facts{OS: "windows"})(ex)
+	levels, err = ex.sortExecutionLevels(context.Background(), schema)
+	if err != nil {
+		t.Fatalf("sortExecutionLevels() with matching gate error = %v", err)
+	}
+	if !reflect.DeepEqual(levels, [][]string{{"helper"}, {"root"}}) {
+		t.Fatalf("windows levels = %#v, want helper then root", levels)
+	}
+	report, err = ex.Execute(context.Background(), schema, "")
+	if err != nil {
+		t.Fatalf("Execute() with matching gate error = %v", err)
+	}
+	if len(report.Tools) != 2 || report.Tools[0].Tool != "helper" || report.Tools[1].Tool != "root" {
+		t.Fatalf("matching gate report tools = %+v, want helper then root", report.Tools)
+	}
+}
+
+func TestExecutionClosureKeepsDependencyReachedByAnotherEffectiveEdge(t *testing.T) {
+	adapter := &testMockAdapter{kindValue: "mock"}
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"mock"}},
+		Tools: map[string]*config.Tool{
+			"helper": {Name: "helper", DependencyOnly: true, Methods: []*config.MethodCandidate{{Kind: "mock"}}},
+			"gated": {
+				Name:         "gated",
+				Requires:     []string{"helper"},
+				RequiresWhen: map[string]*config.Condition{"helper": {OS: []string{"windows"}}},
+				Methods:      []*config.MethodCandidate{{Kind: "mock"}},
+			},
+			"plain": {Name: "plain", Requires: []string{"helper"}, Methods: []*config.MethodCandidate{{Kind: "mock"}}},
+		},
+	}
+
+	ex := New()
+	WithAdapters(adapter)(ex)
+	WithFacts(&engine.Facts{OS: "linux"})(ex)
+	report, err := ex.Execute(context.Background(), schema, "")
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	seen := map[string]bool{}
+	for _, tr := range report.Tools {
+		seen[tr.Tool] = true
+	}
+	for _, name := range []string{"helper", "gated", "plain"} {
+		if !seen[name] {
+			t.Fatalf("effective edge closure omitted %q: %+v", name, report.Tools)
+		}
+	}
+}
+
+func TestCancellationStopsLaterLevelsAndPreservesPartialReport(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	started := make(chan string, 1)
+	blocking := &blockingMockAdapter{kindValue: "blocker", block: make(chan struct{}), started: started}
+	fast := &testMockAdapter{kindValue: "fast"}
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"fast", "blocker"}},
+		Tools: map[string]*config.Tool{
+			"done":  {Name: "done", Methods: []*config.MethodCandidate{{Kind: "fast"}}},
+			"block": {Name: "block", Requires: []string{"done"}, Methods: []*config.MethodCandidate{{Kind: "blocker"}}},
+			"later": {Name: "later", Requires: []string{"block"}, Methods: []*config.MethodCandidate{{Kind: "fast"}}},
+		},
+	}
+
+	ex := New()
+	WithAdapters(fast, blocking)(ex)
+	WithSchemaInfo("/tmp/cancelled-schema.toml", time.Now())(ex)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	type outcome struct {
+		report *ExecReport
+		err    error
+	}
+	resultCh := make(chan outcome, 1)
+	go func() {
+		report, err := ex.Execute(ctx, schema, "")
+		resultCh <- outcome{report: report, err: err}
+	}()
+
+	select {
+	case got := <-started:
+		if got != "block" {
+			t.Fatalf("started tool = %q, want block", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("block tool did not start")
+	}
+	cancel()
+
+	var got outcome
+	select {
+	case got = <-resultCh:
+	case <-time.After(time.Second):
+		t.Fatal("Execute did not return after cancellation")
+	}
+	if !errors.Is(got.err, context.Canceled) {
+		t.Fatalf("Execute error = %v, want context.Canceled", got.err)
+	}
+	if got.report == nil {
+		t.Fatal("expected partial report on cancellation")
+	}
+	if len(got.report.Tools) != 2 {
+		t.Fatalf("partial report tools = %+v, want done and block only", got.report.Tools)
+	}
+	if got.report.Tools[0].Tool != "done" || got.report.Tools[0].Status != StatusInstalled {
+		t.Fatalf("first result = %+v, want completed done tool", got.report.Tools[0])
+	}
+	if got.report.Tools[1].Tool != "block" || got.report.Tools[1].Status != StatusFailed || !strings.Contains(got.report.Tools[1].Error, "execution cancelled") {
+		t.Fatalf("cancelled result = %+v, want block cancellation", got.report.Tools[1])
+	}
+	for _, tr := range got.report.Tools {
+		if tr.Tool == "later" {
+			t.Fatalf("later level was scheduled after cancellation: %+v", got.report.Tools)
+		}
+	}
+	persisted, err := state.Load()
+	if err != nil {
+		t.Fatalf("load state after cancellation: %v", err)
+	}
+	if _, ok := persisted.Tools["done"]; !ok {
+		t.Fatalf("completed tool was not persisted after cancellation: %+v", persisted.Tools)
+	}
+	if _, ok := persisted.Tools["block"]; ok {
+		t.Fatalf("cancelled tool must not be persisted as installed: %+v", persisted.Tools["block"])
+	}
+	if _, ok := persisted.Tools["later"]; ok {
+		t.Fatalf("unscheduled tool unexpectedly persisted: %+v", persisted.Tools["later"])
+	}
+}
+
+func TestParallelCancellationDoesNotStartQueuedJobs(t *testing.T) {
+	started := make(chan string, 4)
+	blocking := &blockingMockAdapter{kindValue: "blocker", block: make(chan struct{}), started: started}
+	schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{"blocker"}}, Tools: map[string]*config.Tool{}}
+	for _, name := range []string{"a", "b", "c", "d"} {
+		schema.Tools[name] = &config.Tool{Name: name, Methods: []*config.MethodCandidate{{Kind: "blocker"}}}
+	}
+
+	ex := New()
+	WithAdapters(blocking)(ex)
+	WithMaxJobs(2)(ex)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	type outcome struct {
+		report *ExecReport
+		err    error
+	}
+	resultCh := make(chan outcome, 1)
+	go func() {
+		report, err := ex.Execute(ctx, schema, "")
+		resultCh <- outcome{report: report, err: err}
+	}()
+
+	for range 2 {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("parallel workers did not start")
+		}
+	}
+	cancel()
+
+	var got outcome
+	select {
+	case got = <-resultCh:
+	case <-time.After(time.Second):
+		t.Fatal("parallel Execute did not return after cancellation")
+	}
+	if !errors.Is(got.err, context.Canceled) {
+		t.Fatalf("Execute error = %v, want context.Canceled", got.err)
+	}
+	if got.report == nil || len(got.report.Tools) != 2 {
+		t.Fatalf("partial report = %+v, want exactly two in-flight tools", got.report)
+	}
+	if extra := len(started); extra != 0 {
+		t.Fatalf("%d queued jobs started after cancellation", extra)
+	}
+}
+
 func TestToolTimeout(t *testing.T) {
 	blocking := &blockingMockAdapter{
 		kindValue: "blocker",
@@ -2331,8 +2560,8 @@ func TestToolTimeout(t *testing.T) {
 	if report.Tools[0].Status != StatusFailed {
 		t.Fatalf("expected tool to fail due to timeout, got status %v", report.Tools[0].Status)
 	}
-	if report.Tools[0].Error == "" {
-		t.Fatal("expected non-empty error message on timeout")
+	if !strings.Contains(report.Tools[0].Error, "tool timeout") {
+		t.Fatalf("timeout error = %q, want tool timeout classification", report.Tools[0].Error)
 	}
 }
 

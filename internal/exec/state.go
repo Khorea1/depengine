@@ -21,6 +21,9 @@ type Versioner interface {
 const versionProbeTimeout = 15 * time.Second
 
 func (ex *Executor) installedVersion(ctx context.Context, tool *config.Tool, result ToolResult) string {
+	if ctx.Err() != nil {
+		return ""
+	}
 	adapter := ex.LookupAdapter(result.MethodKind)
 	versioner, ok := adapter.(Versioner)
 	if !ok {

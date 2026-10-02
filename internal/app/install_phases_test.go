@@ -134,6 +134,15 @@ func TestInstallExitForReport(t *testing.T) {
 	}
 }
 
+func TestExitCodeForErrorClassifiesRuntimeFailures(t *testing.T) {
+	if got := exitCodeForError(errors.New("runtime failure")); got != 3 {
+		t.Fatalf("runtime exit code = %d, want 3", got)
+	}
+	if got := exitCodeForError(&config.ParseSchemaError{Err: errors.New("invalid schema")}); got != 2 {
+		t.Fatalf("schema exit code = %d, want 2", got)
+	}
+}
+
 func TestShouldShareInstallHint(t *testing.T) {
 	if !shouldShareInstallHint(&exec.ExecReport{Success: 1}, false) {
 		t.Fatal("successful real install should hint")

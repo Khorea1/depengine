@@ -277,13 +277,13 @@ func TestPreInstallBlockedWithoutAllowArbitraryCode(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// VERIFICATION 1: The tool must NOT have been installed — it should be skipped.
+	// VERIFICATION 1: The tool must NOT have been installed — the security gate is a terminal failure.
 	if len(report.Tools) == 0 {
 		t.Fatal("expected at least one tool result")
 	}
 	result := report.Tools[0]
-	if result.Status != StatusSkippedUnavailable {
-		t.Fatalf("expected StatusSkippedUnavailable, got %v (status=%v)", result.Status, result.Status)
+	if result.Status != StatusFailed {
+		t.Fatalf("expected StatusFailed, got %v (status=%v)", result.Status, result.Status)
 	}
 	if result.Tool != "evil-tool" {
 		t.Fatalf("expected tool 'evil-tool', got %q", result.Tool)

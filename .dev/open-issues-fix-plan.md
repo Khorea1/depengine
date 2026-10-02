@@ -5,7 +5,7 @@
 **Público-alvo:** agentes/LLMs de baixa capacidade executando tarefas pequenas e verificáveis  
 **Princípio:** corrigir o defeito existente com a menor mudança arquitetural suficiente. Não aproveitar a tarefa para “melhorar” subsistemas adjacentes sem relação com o aceite.
 
-## Progresso acumulado (`fix/open-issues-wave-b`)
+## Progresso acumulado (`fix/open-issues-best-of-both`)
 
 Implementação iniciada sobre a baseline auditada do plano. A primeira onda foi aplicada como um lote de baixo conflito:
 
@@ -29,7 +29,15 @@ Onda B aplicada nesta branch:
 - [x] `#133` — state version probes passam por `probeRunner`.
 - [x] `#104` — finalização/bookkeeping usa o housekeeping context sem schema-secret env, inclusive em resolved upgrade candidate.
 
-Validação local executada nesta branch: `scripts/check-gofmt.sh`, `git diff --check` e `go test ./internal/native`. O gate Go completo continua bloqueado porque o sandbox recebeu toolchain e `GOCACHE`, mas não o source module cache de `go-toml`, Cobra/pflag e não possui rede para materializá-lo. `deadcode ./...` alcançou a mesma limitação de imports externos. Portanto `go build ./...`, `go test -race ./...`, `go vet ./...` e `golangci-lint run` permanecem obrigatórios antes de integração.
+Onda C parcialmente aplicada nesta branch:
+
+- [x] `#111` — a closure de execução é derivada da view já filtrada por host facts; `requires_when` falso não mantém `dependency_only` órfão executável.
+- [x] `#115` — security-block é um único resultado terminal `failed`; removido o incremento manual que também o contabilizava como `skipped`.
+- [x] `#112` — erros estruturais/runtime devolvidos por `Executor.Execute` passam por `exitCodeForError`; runtime fica em 3 e parse/config permanece em 2.
+- [x] `#116` — timeout próprio e cancelamento herdado têm causas distintas; cancelamento interrompe novos níveis/jobs, preserva report parcial e persiste resultados já commitados sem iniciar version probe com contexto cancelado.
+- [ ] `#117` — próximo item da Onda C; mantido fora deste lote porque altera o contrato de wait/runner e merece validação própria.
+
+Validação local executada nesta branch: `scripts/check-gofmt.sh`, `git diff --check` e `go test ./internal/run ./internal/native`. A tentativa focada de `go test ./internal/exec ./internal/app` continua bloqueada antes da compilação porque o sandbox recebeu toolchain e `GOCACHE`, mas não o source module cache de `github.com/pelletier/go-toml/v2`, Cobra/pflag e não possui rede para materializá-lo. Portanto os novos testes de regressão de `#111/#112/#115/#116`, além de `go build ./...`, `go test -race ./...`, `go vet ./...` e `golangci-lint run`, permanecem obrigatórios antes de integração em ambiente com o module cache completo.
 
 ---
 

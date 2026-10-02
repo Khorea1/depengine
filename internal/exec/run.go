@@ -515,12 +515,14 @@ func (ex *Executor) syncNativeIndex(ctx context.Context, rc *runContext) {
 // requires are edges only on matching platforms) and returns the
 // topological levels of root tools to execute in order.
 func (ex *Executor) sortExecutionLevels(ctx context.Context, s *config.Schema) ([][]string, error) {
-	// Graph sees facts-filtered requires: a gated dep (requires_when) is an
-	// edge only on platforms where its condition matches.
-	if _, err := graph.Sort(allDependencyEdges(config.FilteredTools(s.Tools, ex.facts))); err != nil {
+	// Build one host-filtered graph view first. The execution closure must be
+	// derived from effective requires, otherwise a gated dependency_only tool
+	// can leak into the run after its edge has been filtered away.
+	filtered := config.FilteredTools(s.Tools, ex.facts)
+	if _, err := graph.Sort(allDependencyEdges(filtered)); err != nil {
 		return nil, fmt.Errorf("dependency resolution: %w", err)
 	}
-	toolsForGraph := config.FilteredTools(rootTools(s.Tools), ex.facts)
+	toolsForGraph := rootTools(filtered)
 	levels, err := graph.Sort(toolsForGraph, graph.WithLogger(ex.logger))
 	if err != nil {
 		return nil, fmt.Errorf("dependency resolution: %w", err)
@@ -719,6 +721,9 @@ func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandida
 func (ex *Executor) runRemaining(rc *runContext, remaining []string, resolutions map[string]*candidateResolutionSeed) {
 	if ex.maxJobs <= 1 || len(remaining) <= 1 {
 		for _, toolName := range remaining {
+			if rc.ctx.Err() != nil {
+				return
+			}
 			tool, ok := rc.schema.Tools[toolName]
 			if !ok {
 				continue
@@ -779,7 +784,7 @@ func (ex *Executor) finishRun(ctx context.Context, s *config.Schema, report *Exe
 
 	if !ex.dryRun {
 		if err := ex.writeState(ctx, s, report); err != nil {
-			return nil, fmt.Errorf("persisting state: %w", err)
+			return report, fmt.Errorf("persisting state: %w", err)
 		}
 	}
 
