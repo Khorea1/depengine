@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -432,13 +434,16 @@ func TestUpgradeJSONOutput(t *testing.T) {
 	}
 }
 
-// TestUpgradeHTTPToolFailsOnDownload tests that an HTTP tool with an
-// unreachable URL fails during upgrade (Remove succeeds, Install fails
-// because the download URL is invalid).
+// TestUpgradeHTTPToolFailsOnDownload tests that an HTTP download failure aborts
+// the upgrade after removal. A local server keeps the failure deterministic.
 func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 	stateHome := t.TempDir()
 	homeDir := t.TempDir()
 	schemaDir := t.TempDir()
+	downloadServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "download unavailable", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(downloadServer.Close)
 
 	// Create a /bin-suffixed dir so isSharedDir returns true.
 	sharedDir := filepath.Join(t.TempDir(), "bin")
@@ -453,7 +458,7 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 		"[tools.httptool]\n" +
 		// Literal string (single quotes): Windows paths carry backslashes,
 		// which are escapes in TOML basic strings.
-		"http = {url = \"https://example.invalid/tool.tar.gz\", extract_to = '" + sharedDir + "'}\n"
+		"http = {url = \"" + downloadServer.URL + "/tool.tar.gz\", extract_to = '" + sharedDir + "'}\n"
 	if err := os.WriteFile(filepath.Join(schemaDir, "schema.toml"), []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -467,7 +472,7 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 			MethodKind:  "http",
 			InstalledAt: "2026-08-01T00:00:00Z",
 			Version:     "v1.0.0",
-			Config:      map[string]any{"url": "https://example.invalid/tool.tar.gz", "extract_to": sharedDir},
+			Config:      map[string]any{"url": downloadServer.URL + "/tool.tar.gz", "extract_to": sharedDir},
 		},
 	})
 
@@ -480,7 +485,7 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 		"-force",
 	)
 
-	// Upgrade fails (non-zero exit) because the download URL is unreachable.
+	// Upgrade fails (non-zero exit) because the local server rejects the download.
 	if code == 0 {
 		t.Fatalf("upgrade exit = 0, want non-zero (output: %s)", out)
 	}
