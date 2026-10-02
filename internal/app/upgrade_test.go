@@ -483,6 +483,7 @@ func TestUpgradeHTTPToolFailsOnDownload(t *testing.T) {
 		[]string{
 			"XDG_STATE_HOME=" + stateHome,
 			"HOME=" + homeDir,
+			"USERPROFILE=" + homeDir,
 		},
 		"-schema", filepath.Join(schemaDir, "schema.toml"),
 		"-force",
