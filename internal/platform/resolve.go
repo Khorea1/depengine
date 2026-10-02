@@ -1,6 +1,9 @@
 package platform
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 // idToFamily covers the common case: the distro_id is recognized directly.
 // Keys are lowercase (Facts.DistroID already comes lowercase from the
@@ -62,6 +65,36 @@ var likeTokenPriority = []struct {
 	{"opkg", "opkg"},
 }
 
+// NormalizeFamily applies the same case normalization used by
+// MatchesDistroFamily. Whitespace is intentionally not trimmed here because
+// runtime matching does not trim configured family values either.
+func NormalizeFamily(family string) string {
+	return strings.ToLower(family)
+}
+
+// KnownFamilies returns every value ResolveFamily can produce. Validation
+// consumes this list so accepted schema vocabulary cannot drift from runtime
+// classification when a new family is added.
+func KnownFamilies() []string {
+	set := map[string]struct{}{
+		"android": {},
+		"unknown": {},
+	}
+	for _, family := range idToFamily {
+		set[family] = struct{}{}
+	}
+	for _, rule := range likeTokenPriority {
+		set[rule.Family] = struct{}{}
+	}
+
+	out := make([]string, 0, len(set))
+	for family := range set {
+		out = append(out, family)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // ResolveFamily translates raw Facts (distro_id / distro_id_like) into the
 // "clan" used both to select the native manager (via native.Lookup) and
 // to evaluate `when = { distro_family = [...] }` in schema.toml.
@@ -106,8 +139,9 @@ func ResolveFamily(f *Facts) string {
 // `when` compares against stays a clan even when the manager side grows
 // finer keys.
 func MatchesDistroFamily(clan string, allowed []string) bool {
+	normalizedClan := NormalizeFamily(clan)
 	for _, fam := range allowed {
-		if strings.EqualFold(fam, clan) {
+		if NormalizeFamily(fam) == normalizedClan {
 			return true
 		}
 	}

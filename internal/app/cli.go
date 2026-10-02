@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/Khorea1/depengine/internal/i18n"
 	"github.com/spf13/cobra"
@@ -49,6 +50,9 @@ func newRootCmd() *cobra.Command {
 		Short:         short,
 		SilenceErrors: true,
 		SilenceUsage:  true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			return prepareAutoSchemaSelection(cmd)
+		},
 		// Command handlers return typed exit errors after deferred cleanup;
 		// only main translates those errors into process exit codes.
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -89,6 +93,41 @@ func newRootCmd() *cobra.Command {
 	root.SetHelpCommand(newHelpCmd(root))
 
 	return root
+}
+
+// prepareAutoSchemaSelection refreshes the pure auto-discovery result at
+// invocation time and reports ambiguity exactly once. Commands whose --schema
+// flag is optional/empty (status/remove/init) are not auto-discovery users,
+// and an explicit --schema always wins silently.
+func prepareAutoSchemaSelection(cmd *cobra.Command) error {
+	flag := cmd.Flags().Lookup("schema")
+	if flag == nil || flag.Changed {
+		return nil
+	}
+
+	usesAutoDefault := false
+	for _, candidate := range schemaCandidateNames {
+		if flag.DefValue == candidate {
+			usesAutoDefault = true
+			break
+		}
+	}
+	if !usesAutoDefault {
+		return nil
+	}
+
+	discovery := discoverDefaultSchema()
+	if err := flag.Value.Set(discovery.Selected); err != nil {
+		return err
+	}
+	if len(discovery.Found) > 1 {
+		fmt.Fprintf(os.Stderr,
+			"warning: multiple schema files found (%s) — using %q. "+
+				"This is ambiguous: pass --schema explicitly to silence this warning, "+
+				"or remove the file(s) you don't intend to use.\n",
+			strings.Join(discovery.Found, ", "), discovery.Selected)
+	}
+	return nil
 }
 
 func NewRootCmd() *cobra.Command { return newRootCmd() }

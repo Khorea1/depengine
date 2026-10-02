@@ -1,6 +1,9 @@
 package config
 
-import "reflect"
+import (
+	"reflect"
+	"sort"
+)
 
 // decodeStructFields populates dst (a pointer to a struct) from raw using
 // each field's `cfg` struct tag as the TOML key to read. This replaces the
@@ -8,10 +11,11 @@ import "reflect"
 // every field the struct wants to accept is declared once, on the field
 // itself, instead of once in the struct and again in a decode function.
 //
-// Supported destination field kinds: []string (via toStringSlice, so bool/
-// string/[]any leaves all normalize the same way) and *bool (via
-// parseBoolPtr). Unrecognized value shapes for a matched key leave the
-// field at its zero value, exactly as the old switch-based code did.
+// Supported destination field kinds: string, []string (via toStringSlice, so
+// bool/string/[]any leaves all normalize the same way), and *bool (via
+// parseBoolPtr). Unrecognized value shapes for a matched key leave the field
+// at its zero value; strict schema validation is responsible for rejecting
+// incompatible TOML types before a normalized schema is accepted.
 //
 // A field with no `cfg` tag, or tag "-", is never populated. Keys in raw
 // that don't match any tag are returned in leftover so callers can log or
@@ -33,11 +37,19 @@ func decodeStructFields(dst any, raw map[string]any) (leftover []string) {
 		consumed[tag] = true
 
 		fv := v.Field(i)
-		switch fv.Interface().(type) {
-		case []string:
-			fv.Set(reflect.ValueOf(toStringSlice(val)))
-		case *bool:
-			fv.Set(reflect.ValueOf(parseBoolPtr(val)))
+		switch fv.Kind() {
+		case reflect.String:
+			if s, ok := val.(string); ok {
+				fv.SetString(s)
+			}
+		case reflect.Slice:
+			if fv.Type().Elem().Kind() == reflect.String {
+				fv.Set(reflect.ValueOf(toStringSlice(val)))
+			}
+		case reflect.Pointer:
+			if fv.Type().Elem().Kind() == reflect.Bool {
+				fv.Set(reflect.ValueOf(parseBoolPtr(val)))
+			}
 		}
 	}
 
@@ -46,5 +58,6 @@ func decodeStructFields(dst any, raw map[string]any) (leftover []string) {
 			leftover = append(leftover, k)
 		}
 	}
+	sort.Strings(leftover)
 	return leftover
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/Khorea1/depengine/internal/containerref"
 	"github.com/Khorea1/depengine/internal/graph"
 	"github.com/Khorea1/depengine/internal/methodkind"
+	"github.com/Khorea1/depengine/internal/platform"
 )
 
 // validateCycles detects dependency cycles using graph.Sort.
@@ -25,12 +26,6 @@ func validateCycles(s *config.Schema) *Result {
 				Code:    ErrCycle,
 				Field:   "tools",
 				Message: fmt.Sprintf("dependency cycle detected: %s", strings.Join(cycleErr.Cycle, " → ")),
-			})
-		} else {
-			r.Add(ValidationError{
-				Code:    ErrCycle,
-				Field:   "tools",
-				Message: err.Error(),
 			})
 		}
 	}
@@ -218,7 +213,7 @@ func validateUnknownDistroFamily(s *config.Schema) *Result {
 				continue
 			}
 			for _, family := range mc.When.DistroFamily {
-				if !knownDistroFamilies[family] {
+				if !knownDistroFamilies[platform.NormalizeFamily(family)] {
 					r.Add(ValidationError{
 						Code:    WarnUnknownDistroFamily,
 						Field:   fieldPath(toolName, i, "when.distro_family"),

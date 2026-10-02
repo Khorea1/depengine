@@ -52,7 +52,6 @@ type Tool struct {
 	MethodOnly     []string              `merge:"overwrite"`
 	IsSimple       bool                  `merge:"overwrite"`
 	Tags           []string              `merge:"union"`
-	Ecosystem      string                `merge:"overwrite"`
 	DependencyOnly bool                  `merge:"overwrite"`
 }
 

@@ -428,7 +428,6 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 								valMap[m] = true
 							}
 						}
-						tool.Ecosystem = k
 						delete(valMap, k)
 					}
 				case string:
@@ -437,7 +436,6 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 							valMap[m] = tv
 						}
 					}
-					tool.Ecosystem = k
 					delete(valMap, k)
 				case map[string]any:
 					shared := tv
@@ -450,7 +448,6 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 							valMap[m] = cloned
 						}
 					}
-					tool.Ecosystem = k
 					delete(valMap, k)
 				}
 			}
@@ -854,6 +851,11 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 	for _, k := range knownKinds {
 		set[k] = struct{}{}
 	}
+	sortedKnownKinds := make([]string, 0, len(set))
+	for kind := range set {
+		sortedKnownKinds = append(sortedKnownKinds, kind)
+	}
+	sort.Strings(sortedKnownKinds)
 
 	var hardErrors []string
 	var warnings []string
@@ -903,26 +905,17 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 			}
 		}
 		if len(unknownKinds) > 0 {
-			// Build prefix hints for variant detection (e.g. "http-musl" → "http").
-			prefixHints := map[string]string{}
-			for _, uk := range unknownKinds {
-				for known := range set {
-					if strings.HasPrefix(uk, known) {
-						prefixHints[uk] = fmt.Sprintf(
-							"\n  note: %q looks like a variant of %q — set kind = %q in the method block",
-							uk, known, known,
-						)
-						break
-					}
-				}
-			}
+			sort.Strings(unknownKinds)
 			for _, uk := range unknownKinds {
 				msg := fmt.Sprintf(
 					"method kind %q for tool %q is not a registered adapter — if this is a variant of an existing method kind (e.g. \"http-musl\" of \"http\"), add kind = \"<kind>\" to the method block",
 					uk, toolName,
 				)
-				if hint := prefixHints[uk]; hint != "" {
-					msg += hint
+				if known, ok := bestKnownKindPrefix(uk, sortedKnownKinds); ok {
+					msg += fmt.Sprintf(
+						"\n  note: %q looks like a variant of %q — set kind = %q in the method block",
+						uk, known, known,
+					)
 				}
 				hardErrors = append(hardErrors, msg)
 			}
@@ -974,18 +967,8 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 
 		// Every selector must match a declared candidate by label or kind.
 		checkOrderSlice := func(slice []string, fieldName string) {
-			for _, selector := range ExpandBuckets(slice) {
-				if methodkind.IsNativeKind(selector) {
-					selector = "native"
-				}
-				matched := false
-				for _, method := range tool.Methods {
-					if methodMatchesSelector(method, selector) {
-						matched = true
-						break
-					}
-				}
-				if !matched {
+			for _, selector := range slice {
+				if !selectorMatchesDeclaredMethod(selector, tool.Methods) {
 					hardErrors = append(hardErrors, fmt.Sprintf(
 						"tool %q: %s entry %q does not match a declared method label or kind",
 						toolName, fieldName, selector,
@@ -1006,4 +989,35 @@ func Validate(s *Schema, knownKinds []string) ([]string, error) {
 		return warnings, &ParseSchemaError{Err: errors.New(strings.Join(hardErrors, "\n"))}
 	}
 	return warnings, nil
+}
+
+func bestKnownKindPrefix(unknown string, knownKinds []string) (string, bool) {
+	best := ""
+	for _, known := range knownKinds {
+		if !strings.HasPrefix(unknown, known) {
+			continue
+		}
+		if len(known) > len(best) || len(known) == len(best) && known < best {
+			best = known
+		}
+	}
+	return best, best != ""
+}
+
+func selectorMatchesDeclaredMethod(selector string, methods []*MethodCandidate) bool {
+	selectors := []string{selector}
+	if bucket, ok := DefaultBuckets[selector]; ok {
+		selectors = bucket
+	}
+	for _, candidateSelector := range selectors {
+		if methodkind.IsNativeKind(candidateSelector) {
+			candidateSelector = "native"
+		}
+		for _, method := range methods {
+			if methodMatchesSelector(method, candidateSelector) {
+				return true
+			}
+		}
+	}
+	return false
 }

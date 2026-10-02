@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/native"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -137,17 +137,17 @@ func buildPlaceholderLookup() map[string]bool {
 	return m
 }
 
-// knownDistroFamilies is the set of values returned by engine.ResolveFamily
-// as clans. Used to validate when.distro_family entries.
-var knownDistroFamilies map[string]bool
+// knownDistroFamilies is derived from platform's canonical family vocabulary,
+// the same source used by runtime family matching.
+var knownDistroFamilies = buildKnownDistroFamilies()
 
-func init() {
-	clans := native.AllClans()
-	knownDistroFamilies = make(map[string]bool, len(clans)+1)
-	for _, c := range clans {
-		knownDistroFamilies[c] = true
+func buildKnownDistroFamilies() map[string]bool {
+	families := platform.KnownFamilies()
+	out := make(map[string]bool, len(families))
+	for _, family := range families {
+		out[platform.NormalizeFamily(family)] = true
 	}
-	knownDistroFamilies["unknown"] = true
+	return out
 }
 
 // fieldPath builds a dotted path string for a tool and method.

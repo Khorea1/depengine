@@ -244,3 +244,32 @@ func TestDetectorCoversEveryKnownNativeClan(t *testing.T) {
 		})
 	}
 }
+
+func TestKnownFamiliesCoverResolveFamilyOutputs(t *testing.T) {
+	known := make(map[string]bool)
+	for _, family := range KnownFamilies() {
+		known[family] = true
+	}
+
+	for id, want := range idToFamily {
+		got := ResolveFamily(&Facts{DistroID: id})
+		if got != want {
+			t.Fatalf("ResolveFamily(%q) = %q, want %q", id, got, want)
+		}
+		if !known[got] {
+			t.Fatalf("ResolveFamily(%q) produced family %q missing from KnownFamilies", id, got)
+		}
+	}
+	for _, rule := range likeTokenPriority {
+		got := ResolveFamily(&Facts{DistroID: "derivative", DistroIDLike: rule.Token})
+		if !known[got] {
+			t.Fatalf("ID_LIKE %q produced family %q missing from KnownFamilies", rule.Token, got)
+		}
+	}
+	for _, facts := range []*Facts{nil, &Facts{IsAndroid: true}} {
+		got := ResolveFamily(facts)
+		if !known[got] {
+			t.Fatalf("ResolveFamily(%#v) produced family %q missing from KnownFamilies", facts, got)
+		}
+	}
+}
