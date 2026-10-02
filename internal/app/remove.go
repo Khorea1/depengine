@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/ecosystem"
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/log"
@@ -57,6 +58,7 @@ type removeSession struct {
 	clan             string
 	state            *state.State
 	schemaTools      map[string]*config.Tool
+	schemaAURHelper  string
 	dryRun           bool
 	requestedRemoval map[string]bool
 	removedThisRun   map[string]bool
@@ -93,7 +95,7 @@ func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, 
 		defer func() { _ = ls.Close() }()
 	}
 
-	schemaTools, err := loadRemoveSchemaTools(*removeSchema)
+	schemaTools, schemaAURHelper, err := loadRemoveSchemaTools(*removeSchema)
 	if err != nil {
 		return err
 	}
@@ -104,6 +106,7 @@ func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, 
 		executor:         executor,
 		state:            st,
 		schemaTools:      schemaTools,
+		schemaAURHelper:  schemaAURHelper,
 		clan:             engine.ResolveFamily(facts),
 		dryRun:           *removeDryRun,
 		requestedRemoval: collectRemovalTargets(st, removeAll, removeOnly, removeArgs),
@@ -161,16 +164,16 @@ func loadRemoveState(dryRun bool) (*state.State, *state.LockedState, error) {
 
 // loadRemoveSchemaTools optionally loads schema tools for validation.
 // An empty path disables validation and returns a nil map.
-func loadRemoveSchemaTools(schemaPath string) (map[string]*config.Tool, error) {
+func loadRemoveSchemaTools(schemaPath string) (map[string]*config.Tool, string, error) {
 	if schemaPath == "" {
-		return nil, nil
+		return nil, "", nil
 	}
 	s, _, _, err := loadSchema(schemaPath)
 	if err != nil {
 		log.Default.Error("load schema", "error", err)
-		return nil, exitWithCode(2)
+		return nil, "", exitWithCode(2)
 	}
-	return s.Tools, nil
+	return s.Tools, s.Defaults.AurHelper, nil
 }
 
 // gatherRemoveFacts resolves the real distro clan from OS facts. The caller
@@ -224,6 +227,17 @@ func (s *removeSession) lookupRemovalAdapter(toolName string, toolState state.To
 	methodKind := toolState.MethodKind
 	if methodKind == "" {
 		methodKind = toolState.Method // fallback for explicitly constructed current-format state
+	}
+	if methodKind == "aur" {
+		provider := strings.TrimSpace(toolState.Provider)
+		if provider == "" {
+			provider = strings.TrimSpace(s.schemaAURHelper)
+		}
+		if provider == "" {
+			log.Default.Warn("AUR provider is unknown; provide the original schema or state with provider metadata", "tool", toolName)
+			return nil, methodKind, false
+		}
+		exec.WithAdapters(ecosystem.NewAURAdapter(provider))(s.executor)
 	}
 	adapter := s.executor.LookupAdapter(methodKind)
 	if adapter == nil {

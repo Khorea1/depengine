@@ -7,6 +7,20 @@ import (
 	"github.com/Khorea1/depengine/internal/platform"
 )
 
+// fieldPresence records declaration metadata used only while layering.
+type fieldPresence map[string]bool
+
+func clonePresence(in fieldPresence) fieldPresence {
+	if in == nil {
+		return nil
+	}
+	out := make(fieldPresence, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
 // Schema is the fully-normalized in-memory form of schema.toml after parsing.
 type Schema struct {
 	Version       int
@@ -23,6 +37,11 @@ type Schema struct {
 	// Git-backed plan resolution (git, cargo --git) to reuse the immutable
 	// commit recorded in depengine.lock.
 	LockedRevision string `json:"-"`
+
+	// defaultsPresence records fields explicitly declared in [defaults]. It is
+	// runtime-only merge metadata so explicit zero/empty values can override
+	// lower layers without leaking into state/lock serialization.
+	defaultsPresence fieldPresence
 }
 
 // Defaults mirrors the [defaults] table. Omitted fields keep engine-safe
@@ -45,7 +64,7 @@ type Tool struct {
 	Name           string                `merge:"overwrite"`
 	PreInstall     []Hook                `merge:"overwrite"`
 	PostInstall    []Hook                `merge:"overwrite"`
-	RequiresWhen   map[string]*Condition `merge:"overwrite"`
+	RequiresWhen   map[string]*Condition `merge:"map"`
 	Requires       []string              `merge:"overwrite"`
 	Methods        []*MethodCandidate    `merge:"methods"`
 	MethodPrefer   []string              `merge:"overwrite"`
@@ -53,6 +72,10 @@ type Tool struct {
 	IsSimple       bool                  `merge:"overwrite"`
 	Tags           []string              `merge:"union"`
 	DependencyOnly bool                  `merge:"overwrite"`
+
+	// presence records fields explicitly declared by this layer. It keeps
+	// layering semantics distinct from Go zero values (false, "", [] and {}).
+	presence fieldPresence
 }
 
 // Hook is an explicitly tokenized command. Run[0] is the executable and the
@@ -102,13 +125,18 @@ func cloneTool(tool *Tool) *Tool {
 		return nil
 	}
 	out := *tool
+	out.presence = clonePresence(tool.presence)
 	out.PreInstall = cloneHooks(tool.PreInstall)
 	out.PostInstall = cloneHooks(tool.PostInstall)
 	out.Requires = append([]string{}, tool.Requires...)
 	if tool.RequiresWhen != nil {
 		out.RequiresWhen = make(map[string]*Condition, len(tool.RequiresWhen))
 		for dependency, condition := range tool.RequiresWhen {
-			out.RequiresWhen[dependency] = condition
+			if condition == nil {
+				out.RequiresWhen[dependency] = nil
+				continue
+			}
+			out.RequiresWhen[dependency] = cloneCondition(condition)
 		}
 	}
 	out.Tags = append([]string{}, tool.Tags...)
@@ -124,8 +152,7 @@ func cloneHooks(hooks []Hook) []Hook {
 		out[i] = hook
 		out[i].Run = append([]string(nil), hook.Run...)
 		if hook.When != nil {
-			condition := *hook.When
-			out[i].When = &condition
+			out[i].When = cloneCondition(hook.When)
 		}
 	}
 	return out
@@ -144,10 +171,13 @@ func cloneMethod(method *MethodCandidate) *MethodCandidate {
 		return nil
 	}
 	out := *method
+	out.presence = clonePresence(method.presence)
 	out.Requires = append([]string(nil), method.Requires...)
 	out.PreInstall = cloneHooks(method.PreInstall)
 	out.PostInstall = cloneHooks(method.PostInstall)
 	out.Sources = cloneSources(method.Sources)
+	out.ArchMap = cloneStringMap(method.ArchMap)
+	out.OSMap = cloneStringMap(method.OSMap)
 	if method.SecretRef != nil {
 		secretRef := *method.SecretRef
 		out.SecretRef = &secretRef
@@ -160,15 +190,79 @@ func cloneMethod(method *MethodCandidate) *MethodCandidate {
 		secretRef := *method.SignatureSecretRef
 		out.SignatureSecretRef = &secretRef
 	}
-	out.Config = make(map[string]any, len(method.Config))
-	for key, value := range method.Config {
-		out.Config[key] = value
-	}
+	out.Config = cloneAnyMap(method.Config)
 	if method.When != nil {
-		condition := *method.When
-		out.When = &condition
+		out.When = cloneCondition(method.When)
 	}
 	return &out
+}
+
+func cloneCondition(in *Condition) *Condition {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.DistroFamily = append([]string(nil), in.DistroFamily...)
+	out.TargetFamily = append([]string(nil), in.TargetFamily...)
+	out.DistroID = append([]string(nil), in.DistroID...)
+	out.DistroVersion = append([]string(nil), in.DistroVersion...)
+	out.Arch = append([]string(nil), in.Arch...)
+	out.OS = append([]string(nil), in.OS...)
+	out.Kernel = append([]string(nil), in.Kernel...)
+	out.Libc = append([]string(nil), in.Libc...)
+	out.InitSystem = append([]string(nil), in.InitSystem...)
+	if in.IsWSL != nil {
+		v := *in.IsWSL
+		out.IsWSL = &v
+	}
+	if in.IsContainer != nil {
+		v := *in.IsContainer
+		out.IsContainer = &v
+	}
+	if in.IsAndroid != nil {
+		v := *in.IsAndroid
+		out.IsAndroid = &v
+	}
+	return &out
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneAnyMap(in map[string]any) map[string]any {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = cloneAny(v)
+	}
+	return out
+}
+
+func cloneAny(v any) any {
+	switch value := v.(type) {
+	case map[string]any:
+		return cloneAnyMap(value)
+	case []any:
+		out := make([]any, len(value))
+		for i := range value {
+			out[i] = cloneAny(value[i])
+		}
+		return out
+	case []string:
+		return append([]string(nil), value...)
+	default:
+		return value
+	}
 }
 
 func cloneSources(sources []Source) []Source {
@@ -218,6 +312,10 @@ type MethodCandidate struct {
 	SecretRef          *SecretReference
 	ChecksumSecretRef  *SecretReference
 	SignatureSecretRef *SecretReference
+
+	// presence records typed metadata explicitly supplied by this layer.
+	// Config already preserves key presence directly.
+	presence fieldPresence
 }
 
 // Source is repository configuration scoped to a single method candidate.

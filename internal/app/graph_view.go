@@ -6,7 +6,6 @@ import (
 	"sort"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/ecosystem"
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/graph"
@@ -69,7 +68,7 @@ func validateGraphProjectionOptions(view graph.GraphView, includeInactive bool) 
 	return nil
 }
 
-func projectGraphView(ctx context.Context, declared graph.Graph, schema *config.Schema, view graph.GraphView, includeInactive bool) (graph.Graph, error) {
+func projectGraphView(ctx context.Context, declared graph.Graph, schema *config.Schema, facts *engine.Facts, view graph.GraphView, includeInactive bool) (graph.Graph, error) {
 	if view == graph.DeclaredView {
 		return declared.Project(view, graph.ProjectionContext{IncludeInactive: includeInactive})
 	}
@@ -79,9 +78,8 @@ func projectGraphView(ctx context.Context, declared graph.Graph, schema *config.
 		return declared.Project(view, graph.ProjectionContext{IncludeInactive: includeInactive})
 	}
 
-	facts, err := engine.GatherFacts(run.OSExecRunner{})
-	if err != nil {
-		return graph.Graph{}, fmt.Errorf("gather host facts: %w", err)
+	if facts == nil {
+		return graph.Graph{}, fmt.Errorf("host facts are required for %s graph projection", view)
 	}
 
 	projection := graph.ProjectionContext{IncludeInactive: includeInactive}
@@ -139,13 +137,7 @@ func resolvedGraphCandidates(ctx context.Context, schema *config.Schema, facts *
 
 	clan := engine.ResolveFamily(facts)
 
-	executor := exec.New()
-	exec.WithRunner(run.OSExecRunner{})(executor)
-	exec.WithFacts(facts)(executor)
-	exec.WithDefaultMethodOrder(schema.Defaults.MethodOrder)(executor)
-	if helper := schema.Defaults.AurHelper; helper != "" {
-		exec.WithAdapters(ecosystem.NewAURAdapter(helper))(executor)
-	}
+	executor := newProjectExecutor(schema, clan, facts, run.OSExecRunner{})
 
 	names := make([]string, 0, len(candidateTools))
 	for name := range candidateTools {

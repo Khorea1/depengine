@@ -5,7 +5,7 @@
 **Público-alvo:** agentes/LLMs de baixa capacidade executando tarefas pequenas e verificáveis  
 **Princípio:** corrigir o defeito existente com a menor mudança arquitetural suficiente. Não aproveitar a tarefa para “melhorar” subsistemas adjacentes sem relação com o aceite.
 
-## Progresso nesta branch (`fix/open-issues-wave-a`)
+## Progresso acumulado (`fix/open-issues-wave-b`)
 
 Implementação iniciada sobre a baseline auditada do plano. A primeira onda foi aplicada como um lote de baixo conflito:
 
@@ -17,7 +17,18 @@ Implementação iniciada sobre a baseline auditada do plano. A primeira onda foi
 - [x] `#131` — hints/leftovers determinísticos; `Tool.Ecosystem` removido após confirmação de ausência de consumidores semânticos.
 - [x] `#132` — discovery de schema ficou puro; ambiguity warning é emitido somente na invocação de comando que usa auto-discovery.
 
-Validação local executada nesta branch: `scripts/check-gofmt.sh`, `git diff --check` e `go test ./internal/platform`. O gate Go completo requer o source module cache (`go-toml`, Cobra/pflag etc.); o sandbox recebeu toolchain e `GOCACHE`, mas não o module cache e não possui rede para materializá-lo. Portanto os checks globais permanecem obrigatórios antes de integração.
+Onda B aplicada nesta branch:
+
+- [x] `#110` — layering passou a usar presença declarada para defaults/tool/method metadata; `requires_when` usa map merge; project+manifest usam o mesmo fact map no loader host-aware.
+- [x] `#126` — schema consumido por fluxos de projeto é resolvido para arquivo absoluto/canônico antes de parse, lock e persistência.
+- [x] `#113` — `loadProject` centraliza facts, parse, manifest merge e validação para install/check/status/graph/why e fluxos adjacentes.
+- [x] `#114` — `newProjectExecutor` liga o native adapter ao clan detectado nos caminhos read-only.
+- [x] `#128` — provider AUR concreto é persistido no state; executores de projeto respeitam `aur_helper`; remove/undo reconstroem AUR pelo provider histórico e falham fechado quando ele é desconhecido.
+- [x] `#129` — `--check-env` deriva executáveis nativos do registry via `ManagerExecutableNames`, preservando apenas language/system tools como suplementos explícitos.
+- [x] `#133` — state version probes passam por `probeRunner`.
+- [x] `#104` — finalização/bookkeeping usa o housekeeping context sem schema-secret env, inclusive em resolved upgrade candidate.
+
+Validação local executada nesta branch: `scripts/check-gofmt.sh`, `git diff --check` e `go test ./internal/native`. O gate Go completo continua bloqueado porque o sandbox recebeu toolchain e `GOCACHE`, mas não o source module cache de `go-toml`, Cobra/pflag e não possui rede para materializá-lo. `deadcode ./...` alcançou a mesma limitação de imports externos. Portanto `go build ./...`, `go test -race ./...`, `go vet ./...` e `golangci-lint run` permanecem obrigatórios antes de integração.
 
 ---
 

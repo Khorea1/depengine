@@ -143,9 +143,20 @@ func displayMethodKind(method *config.MethodCandidate) string {
 	return method.Kind
 }
 
+type providerNamer interface {
+	ProviderName() string
+}
+
 func (ex *Executor) providerForMethodKind(kind, nativeManagerName string) string {
 	if kind == "native" {
 		return nativeManagerName
+	}
+	if adapter := ex.LookupAdapter(kind); adapter != nil {
+		if named, ok := adapter.(providerNamer); ok {
+			if provider := strings.TrimSpace(named.ProviderName()); provider != "" {
+				return provider
+			}
+		}
 	}
 	if native.IsNativeManagerName(kind) || methodkind.IsKnownKind(kind) {
 		return kind

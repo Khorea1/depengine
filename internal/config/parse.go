@@ -173,7 +173,7 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 		rawTools = map[string]any{}
 	}
 
-	defaults := extractDefaults(raw["defaults"])
+	defaults, defaultsPresence := extractDefaultsWithPresence(raw["defaults"])
 
 	tools, err := normalizeTools(path, rawTools, defaults)
 	if err != nil {
@@ -260,7 +260,7 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 	projectRoot := filepath.Dir(absPath)
 	bindProjectRoot(tools, projectRoot)
 
-	return &Schema{Version: 1, Defaults: defaults, Tools: tools, AllowNewTools: allowNewTools, ProjectRoot: projectRoot}, nil
+	return &Schema{Version: 1, Defaults: defaults, Tools: tools, AllowNewTools: allowNewTools, ProjectRoot: projectRoot, defaultsPresence: defaultsPresence}, nil
 }
 
 func bindProjectRoot(tools map[string]*Tool, projectRoot string) {
@@ -279,46 +279,63 @@ func bindProjectRoot(tools map[string]*Tool, projectRoot string) {
 var DefaultMethodOrder = methodkind.DefaultMethodOrder
 
 func extractDefaults(raw any) Defaults {
+	d, _ := extractDefaultsWithPresence(raw)
+	return d
+}
+
+func extractDefaultsWithPresence(raw any) (Defaults, fieldPresence) {
 	d := Defaults{
 		Manager:     "native",
 		AurHelper:   "paru",
-		MethodOrder: DefaultMethodOrder,
+		MethodOrder: append([]string(nil), DefaultMethodOrder...),
 	}
+	presence := fieldPresence{}
 	if raw == nil {
-		return d
+		return d, presence
 	}
 	rm, ok := raw.(map[string]any)
 	if !ok {
-		return d
+		return d, presence
+	}
+	if _, ok := rm["manager"]; ok {
+		presence["Manager"] = true
 	}
 	if v, ok := rm["manager"].(string); ok && v != "" {
 		d.Manager = v
+	}
+	if _, ok := rm["aur_helper"]; ok {
+		presence["AurHelper"] = true
 	}
 	if v, ok := rm["aur_helper"].(string); ok && v != "" {
 		d.AurHelper = v
 	}
 	if v, ok := rm["arch_map"]; ok {
+		presence["ArchMap"] = true
 		d.ArchMap = normalizeAliasMap(v)
 	}
 	if v, ok := rm["os_map"]; ok {
+		presence["OSMap"] = true
 		d.OSMap = normalizeAliasMap(v)
 	}
-	rawOrder := rm["method_prefer"]
+	rawOrder, hasOrder := rm["method_prefer"]
 	fieldName := "method_prefer"
-	if rawOrder == nil {
-		rawOrder = rm["method_order"] // compatibility alias; method_prefer is canonical
+	if !hasOrder {
+		rawOrder, hasOrder = rm["method_order"] // compatibility alias; method_prefer is canonical
 		fieldName = "method_order"
 	}
-	if v, ok := rawOrder.([]any); ok {
-		order := make([]string, 0, len(v))
-		for _, item := range v {
-			if s, ok := item.(string); ok {
-				order = append(order, s)
-			} else {
-				log.Default.Debug("extractDefaults: ignoring non-string method preference item", "field", fieldName, "value", item)
+	if hasOrder {
+		presence["MethodOrder"] = true
+		if v, ok := rawOrder.([]any); ok {
+			order := make([]string, 0, len(v))
+			for _, item := range v {
+				if str, ok := item.(string); ok {
+					order = append(order, str)
+				} else {
+					log.Default.Debug("extractDefaults: ignoring non-string method preference item", "field", fieldName, "value", item)
+				}
 			}
-		}
-		if len(order) > 0 {
+			// Defaults method_prefer is a priority prefix. An explicitly empty
+			// prefix therefore resets a lower-layer preference to engine order.
 			seen := make(map[string]bool, len(order))
 			merged := make([]string, 0, len(DefaultMethodOrder))
 			merged = append(merged, order...)
@@ -333,7 +350,7 @@ func extractDefaults(raw any) Defaults {
 			d.MethodOrder = merged
 		}
 	}
-	return d
+	return d, presence
 }
 
 func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (map[string]*Tool, error) {
@@ -358,10 +375,12 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 			tools[name] = &Tool{
 				Name:     name,
 				IsSimple: true,
+				presence: fieldPresence{"Name": true, "IsSimple": true},
 				Methods: []*MethodCandidate{{
 					Kind:     defaults.Manager,
 					Inferred: true,
 					Config:   map[string]any{"pkg": name},
+					presence: fieldPresence{"Inferred": true},
 				}},
 			}
 		}
@@ -379,22 +398,31 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 				Msg:  fmt.Sprintf("tool %q redeclared (simple + inline table)", name),
 			}
 		}
-		tool := &Tool{Name: name}
+		tool := &Tool{Name: name, presence: fieldPresence{"Name": true, "IsSimple": true}}
 		valMap, ok := val.(map[string]any)
 		if !ok {
 			line, _ := findLineInFile(path, name)
 			return nil, fmt.Errorf("%s:%d: tool %q: expected inline table, got %T", path, line, name, val)
 		}
 
+		if _, ok := valMap["requires"]; ok {
+			tool.presence["Requires"] = true
+		}
 		if r, ok := valMap["requires"].([]any); ok {
 			tool.Requires = anySliceToStrings(r)
 			if len(tool.Requires) == 0 {
 				tool.Requires = nil
 			}
 		}
+		if _, ok := valMap["dependency_only"]; ok {
+			tool.presence["DependencyOnly"] = true
+		}
 		tool.DependencyOnly, _ = valMap["dependency_only"].(bool)
 		// requires_when gates individual deps by platform facts:
 		// `requires_when = { fontconfig = { target_family = ["unix"] } }`.
+		if _, ok := valMap["requires_when"]; ok {
+			tool.presence["RequiresWhen"] = true
+		}
 		if rw, ok := valMap["requires_when"].(map[string]any); ok {
 			tool.RequiresWhen = make(map[string]*Condition, len(rw))
 			for dep, v := range rw {
@@ -406,8 +434,17 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 				tool.RequiresWhen[dep] = parseCondition(wm)
 			}
 		}
+		if _, ok := valMap["pre_install"]; ok {
+			tool.presence["PreInstall"] = true
+		}
+		if _, ok := valMap["post_install"]; ok {
+			tool.presence["PostInstall"] = true
+		}
 		tool.PreInstall = parseHooks(valMap["pre_install"])
 		tool.PostInstall = parseHooks(valMap["post_install"])
+		if _, ok := valMap["tags"]; ok {
+			tool.presence["Tags"] = true
+		}
 		if t, ok := valMap["tags"].([]any); ok {
 			tool.Tags = anySliceToStrings(t)
 		}
@@ -457,17 +494,17 @@ func normalizeTools(path string, rawTools map[string]any, defaults Defaults) (ma
 		// schema still using it now gets its value treated like any other
 		// unrecognized key — see buildMethods/Validate for the resulting
 		// diagnostics.
+		if _, ok := valMap["method_prefer"]; ok {
+			tool.presence["MethodPrefer"] = true
+		}
 		if mp, ok := valMap["method_prefer"].([]any); ok {
-			order := anySliceToStrings(mp)
-			if len(order) > 0 {
-				tool.MethodPrefer = order
-			}
+			tool.MethodPrefer = anySliceToStrings(mp)
+		}
+		if _, ok := valMap["method_only"]; ok {
+			tool.presence["MethodOnly"] = true
 		}
 		if mo, ok := valMap["method_only"].([]any); ok {
-			order := anySliceToStrings(mo)
-			if len(order) > 0 {
-				tool.MethodOnly = order
-			}
+			tool.MethodOnly = anySliceToStrings(mo)
 		}
 
 		tool.Methods = OrderMethods(buildMethods(name, valMap), defaults.MethodOrder)
@@ -496,7 +533,7 @@ func buildPlatformMethodConditions() map[string]Condition {
 }
 
 func parseMethod(kind string, val any) (*MethodCandidate, error) {
-	mc := &MethodCandidate{Kind: kind, Config: map[string]any{}}
+	mc := &MethodCandidate{Kind: kind, Config: map[string]any{}, presence: fieldPresence{}}
 
 	switch t := val.(type) {
 	case string:
@@ -512,6 +549,7 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 	case map[string]any:
 		// `when` and `kind` are hoisted out; everything else stays in Config.
 		if rawWhen, ok := t["when"]; ok {
+			mc.presence["When"] = true
 			mc.When = parseCondition(rawWhen)
 			delete(t, "when")
 		}
@@ -523,42 +561,53 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 			}
 		}
 		if rawArchMap, ok := t["arch_map"]; ok {
+			mc.presence["ArchMap"] = true
 			mc.ArchMap = normalizeAliasMap(rawArchMap)
 			delete(t, "arch_map")
 		}
 		if rawOSMap, ok := t["os_map"]; ok {
+			mc.presence["OSMap"] = true
 			mc.OSMap = normalizeAliasMap(rawOSMap)
 			delete(t, "os_map")
 		}
 		if rawRequires, ok := t["requires"]; ok {
+			mc.presence["Requires"] = true
 			mc.Requires = toStringSlice(rawRequires)
 			delete(t, "requires")
 		}
 		if rawHooks, ok := t["pre_install"]; ok {
+			mc.presence["PreInstall"] = true
 			mc.PreInstall = parseHooks(rawHooks)
 			delete(t, "pre_install")
 		}
 		if rawHooks, ok := t["post_install"]; ok {
+			mc.presence["PostInstall"] = true
 			mc.PostInstall = parseHooks(rawHooks)
 			delete(t, "post_install")
+		}
+		if _, ok := t["sources"]; ok {
+			mc.presence["Sources"] = true
 		}
 		if rawSources, ok := t["sources"].([]any); ok {
 			mc.Sources = parseSources(rawSources)
 			delete(t, "sources")
 		}
 		if rawSecretRef, ok := t["secret_ref"]; ok {
+			mc.presence["SecretRef"] = true
 			if ref, ok := rawSecretRef.(map[string]any); ok {
 				mc.SecretRef = parseSecretReference(ref)
 			}
 			delete(t, "secret_ref")
 		}
 		if rawSecretRef, ok := t["checksum_secret_ref"]; ok {
+			mc.presence["ChecksumSecretRef"] = true
 			if ref, ok := rawSecretRef.(map[string]any); ok {
 				mc.ChecksumSecretRef = parseSecretReference(ref)
 			}
 			delete(t, "checksum_secret_ref")
 		}
 		if rawSecretRef, ok := t["signature_secret_ref"]; ok {
+			mc.presence["SignatureSecretRef"] = true
 			if ref, ok := rawSecretRef.(map[string]any); ok {
 				mc.SignatureSecretRef = parseSecretReference(ref)
 			}
@@ -655,8 +704,10 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 		for k, v := range nativeBlockConfig {
 			cfg[k] = v
 		}
+		methodPresence := fieldPresence{"Inferred": true}
 		var when *Condition
 		if rawWhen, ok := cfg["when"]; ok {
+			methodPresence["When"] = true
 			when = parseCondition(rawWhen)
 			delete(cfg, "when")
 		}
@@ -664,10 +715,25 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 		// native = { ... } block ever needs to override the {arch}/{os}
 		// spelling (native pkg names rarely template on arch/os, but the
 		// mechanism should be consistent across every method Config).
+		if _, ok := cfg["arch_map"]; ok {
+			methodPresence["ArchMap"] = true
+		}
+		if _, ok := cfg["os_map"]; ok {
+			methodPresence["OSMap"] = true
+		}
 		archMap := normalizeAliasMap(cfg["arch_map"])
 		osMap := normalizeAliasMap(cfg["os_map"])
 		delete(cfg, "arch_map")
 		delete(cfg, "os_map")
+		if _, ok := cfg["requires"]; ok {
+			methodPresence["Requires"] = true
+		}
+		if _, ok := cfg["pre_install"]; ok {
+			methodPresence["PreInstall"] = true
+		}
+		if _, ok := cfg["post_install"]; ok {
+			methodPresence["PostInstall"] = true
+		}
 		methodRequires := toStringSlice(cfg["requires"])
 		methodPreInstall := parseHooks(cfg["pre_install"])
 		delete(cfg, "pre_install")
@@ -675,6 +741,9 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 		delete(cfg, "post_install")
 		delete(cfg, "requires")
 		var methodSources []Source
+		if _, ok := cfg["sources"]; ok {
+			methodPresence["Sources"] = true
+		}
 		if rawSources, ok := cfg["sources"].([]any); ok {
 			methodSources = parseSources(rawSources)
 		}
@@ -690,6 +759,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 			Sources:     methodSources,
 			PreInstall:  methodPreInstall,
 			PostInstall: methodPostInstall,
+			presence:    methodPresence,
 		})
 	}
 

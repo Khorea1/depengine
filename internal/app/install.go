@@ -363,7 +363,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		return err
 	}
 
-	s, clan, facts, manifestCount, err := loadSchemaWithManifest(p.schema, p.manifestPath)
+	project, err := loadProject(p.schema, projectLoadOptions{ManifestPath: p.manifestPath, Provenance: true})
 	if err != nil {
 		if os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "error: %s not found\n", p.schema)
@@ -373,6 +373,8 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		lg.Error("load schema", "error", err)
 		return exitWithCode(exitCodeForError(err))
 	}
+	p.schema = project.SchemaPath
+	s, clan, facts, manifestCount := project.Schema, project.Clan, project.Facts, project.ManifestCount
 
 	if shouldWarnDeprecatedVerbose(cmd) {
 		fmt.Fprintln(os.Stderr, "depengine: --verbose is deprecated; detailed output is already the default. Use --quiet to suppress live per-tool status lines.")

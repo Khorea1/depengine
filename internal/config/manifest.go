@@ -102,7 +102,7 @@ func ResolveSchemaFromFiles(schemaPath string, manifestPaths ...string) (*Schema
 //   - If a tool exists in multiple layers, fields are merged per their
 //     MergeStrategy (Overwrite, LocalOnly, UnionSlice, or Methods).
 //   - If a tool only exists in one layer, that version is used.
-//   - Defaults come from the most specific layer that has them.
+//   - Defaults merge field-by-field by declared presence; omitted fields inherit.
 //   - Method ordering is preserved from the merged schema's defaults.
 func MergeLayers(layers ...*Schema) *Schema {
 	return MergeLayersWithOpts(nil, layers...)
@@ -122,33 +122,44 @@ func MergeLayersWithOpts(opts *mergeConfig, layers ...*Schema) *Schema {
 			Defaults: Defaults{
 				Manager:     "native",
 				AurHelper:   "paru",
-				MethodOrder: methodkind.DefaultMethodOrder,
+				MethodOrder: append([]string(nil), methodkind.DefaultMethodOrder...),
 			},
+			Tools: make(map[string]*Tool),
 		}
 	}
 
-	// Defaults from the most specific layer.
-	result := &Schema{
-		Version:     layers[len(layers)-1].Version,
-		Defaults:    layers[len(layers)-1].Defaults,
-		Tools:       make(map[string]*Tool),
-		Provenance:  make(map[string][]FieldSource),
-		ProjectRoot: layers[len(layers)-1].ProjectRoot,
+	// Project metadata belongs to the most-specific (project schema) layer.
+	var mostSpecific *Schema
+	for i := len(layers) - 1; i >= 0; i-- {
+		if layers[i] != nil {
+			mostSpecific = layers[i]
+			break
+		}
+	}
+	if mostSpecific == nil {
+		return MergeLayersWithOpts(opts)
 	}
 
-	// Iterate layers in order; later layers overwrite earlier ones field-by-field.
+	result := &Schema{
+		Version:       mostSpecific.Version,
+		Defaults:      defaultEngineDefaults(),
+		Tools:         make(map[string]*Tool),
+		AllowNewTools: mostSpecific.AllowNewTools,
+		Provenance:    make(map[string][]FieldSource),
+		ProjectRoot:   mostSpecific.ProjectRoot,
+	}
+
 	for _, layer := range layers {
 		if layer == nil {
 			continue
 		}
+		mergeDefaultsInto(result, layer)
 		for name, tool := range layer.Tools {
 			existing, exists := result.Tools[name]
 			if !exists {
-				// First occurrence: clone and use as-is.
 				result.Tools[name] = cloneTool(tool)
 				continue
 			}
-			// Merge tool: existing is lower priority, tool is higher priority.
 			var pc *provenanceCollector
 			if opts != nil && opts.collectProvenance {
 				pc = &provenanceCollector{toolName: name}
@@ -162,10 +173,41 @@ func MergeLayersWithOpts(opts *mergeConfig, layers ...*Schema) *Schema {
 
 	// Local/project-relative resources always resolve against the project
 	// schema directory, even when a lower-priority personal manifest supplied
-	// the field. This keeps one portable root for the final merged project and
-	// avoids persisting per-machine manifest locations into method semantics.
+	// the field.
 	bindProjectRoot(result.Tools, result.ProjectRoot)
 	return result
+}
+
+func defaultEngineDefaults() Defaults {
+	return Defaults{
+		Manager:     "native",
+		AurHelper:   "paru",
+		MethodOrder: append([]string(nil), methodkind.DefaultMethodOrder...),
+	}
+}
+
+func mergeDefaultsInto(result, layer *Schema) {
+	if result == nil || layer == nil {
+		return
+	}
+	if result.defaultsPresence == nil {
+		result.defaultsPresence = fieldPresence{}
+	}
+	for field := range layer.defaultsPresence {
+		switch field {
+		case "Manager":
+			result.Defaults.Manager = layer.Defaults.Manager
+		case "AurHelper":
+			result.Defaults.AurHelper = layer.Defaults.AurHelper
+		case "MethodOrder":
+			result.Defaults.MethodOrder = append([]string(nil), layer.Defaults.MethodOrder...)
+		case "ArchMap":
+			result.Defaults.ArchMap = cloneStringMap(layer.Defaults.ArchMap)
+		case "OSMap":
+			result.Defaults.OSMap = cloneStringMap(layer.Defaults.OSMap)
+		}
+		result.defaultsPresence[field] = true
+	}
 }
 
 // toolMergeField pairs a Tool struct field (by index) with the strategy
@@ -201,6 +243,8 @@ func buildToolMergeFields() []toolMergeField {
 			strategy = MergeLocalOnly
 		case "union":
 			strategy = MergeUnionSlice
+		case "map":
+			strategy = MergeMapMerge
 		case "methods":
 			strategy = MergeMethods
 		default:
@@ -211,23 +255,8 @@ func buildToolMergeFields() []toolMergeField {
 	return fields
 }
 
-// fieldIsSet reports whether v (a field of *Tool) holds a non-default value,
-// using the same per-kind zero test the old field-name switch used to encode
-// one case at a time: strings compare to "", bools to false, slices/maps to
-// length 0, pointers to nil.
-func fieldIsSet(v reflect.Value) bool {
-	switch v.Kind() {
-	case reflect.String:
-		return v.String() != ""
-	case reflect.Bool:
-		return v.Bool()
-	case reflect.Slice, reflect.Map:
-		return v.Len() > 0
-	case reflect.Pointer, reflect.Interface:
-		return !v.IsNil()
-	default:
-		return !v.IsZero()
-	}
+func fieldDeclared(tool *Tool, name string) bool {
+	return tool != nil && tool.presence != nil && tool.presence[name]
 }
 
 // assignField copies src into dst. String-slice fields are copied
@@ -243,6 +272,18 @@ func assignField(dst, src reflect.Value) {
 		cp := reflect.MakeSlice(src.Type(), src.Len(), src.Len())
 		reflect.Copy(cp, src)
 		dst.Set(cp)
+		return
+	}
+	if conditions, ok := src.Interface().(map[string]*Condition); ok {
+		cloned := make(map[string]*Condition, len(conditions))
+		for key, condition := range conditions {
+			if condition == nil {
+				cloned[key] = nil
+				continue
+			}
+			cloned[key] = cloneCondition(condition)
+		}
+		dst.Set(reflect.ValueOf(cloned))
 		return
 	}
 	dst.Set(src)
@@ -271,8 +312,10 @@ func unionStringSlice(dst, upper reflect.Value) {
 // lower-priority (less specific) layer, upper is the higher-priority one.
 // The result is a new *Tool (cloned).
 func mergeTools(lower, upper *Tool, pc *provenanceCollector) *Tool {
-	// Start with the lower layer as base.
 	result := cloneTool(lower)
+	if result.presence == nil {
+		result.presence = fieldPresence{}
+	}
 
 	rv := reflect.ValueOf(result).Elem()
 	uv := reflect.ValueOf(upper).Elem()
@@ -282,48 +325,87 @@ func mergeTools(lower, upper *Tool, pc *provenanceCollector) *Tool {
 		dstField := rv.Field(tf.index)
 		upperField := uv.Field(tf.index)
 		lowerField := lv.Field(tf.index)
-		schemeVal, manifestVal := upperField.Interface(), lowerField.Interface()
+		schemaVal, manifestVal := upperField.Interface(), lowerField.Interface()
+		upperDeclared := fieldDeclared(upper, tf.name)
+		lowerDeclared := fieldDeclared(lower, tf.name)
 
 		switch tf.strategy {
 		case MergeOverwrite:
-			// Use upper (more specific) value if it's set.
-			if fieldIsSet(upperField) {
+			if upperDeclared {
 				assignField(dstField, upperField)
-				pc.record(tf.name, "schema", schemeVal, manifestVal, dstField.Interface())
+				result.presence[tf.name] = true
+				pc.record(tf.name, "schema", schemaVal, manifestVal, dstField.Interface())
 			} else {
-				pc.record(tf.name, "manifest", schemeVal, manifestVal, lowerField.Interface())
+				pc.record(tf.name, "manifest", schemaVal, manifestVal, lowerField.Interface())
 			}
 
 		case MergeLocalOnly:
-			// Only set from upper (schema) layer; ignore lower layer values.
-			switch {
-			case fieldIsSet(upperField):
+			if upperDeclared {
 				assignField(dstField, upperField)
-				pc.record(tf.name, "schema", schemeVal, manifestVal, dstField.Interface())
-			case fieldIsSet(lowerField):
-				// Lower had it but MergeLocalOnly means propagate only if upper also has it.
-				// But we clear it because lower shouldn't have set it.
+				result.presence[tf.name] = true
+				pc.record(tf.name, "schema", schemaVal, manifestVal, dstField.Interface())
+			} else if lowerDeclared {
 				dstField.Set(reflect.Zero(dstField.Type()))
-				pc.record(tf.name, "schema", schemeVal, manifestVal, nil)
-			default:
-				pc.record(tf.name, "manifest", schemeVal, manifestVal, "-")
+				delete(result.presence, tf.name)
+				pc.record(tf.name, "schema", schemaVal, manifestVal, nil)
 			}
 
 		case MergeUnionSlice:
-			// Union of lower's and upper's elements without duplicates.
-			if fieldIsSet(lowerField) || fieldIsSet(upperField) {
+			if lowerDeclared || upperDeclared {
 				unionStringSlice(dstField, upperField)
-				pc.record(tf.name, "both", schemeVal, manifestVal, dstField.Interface())
+				result.presence[tf.name] = true
+				pc.record(tf.name, "both", schemaVal, manifestVal, dstField.Interface())
+			}
+
+		case MergeMapMerge:
+			if upperDeclared {
+				merged := cloneConditionMap(lower.RequiresWhen)
+				if merged == nil {
+					merged = map[string]*Condition{}
+				}
+				for key, condition := range upper.RequiresWhen {
+					if condition == nil {
+						merged[key] = nil
+						continue
+					}
+					merged[key] = cloneCondition(condition)
+				}
+				result.RequiresWhen = merged
+				result.presence[tf.name] = true
+			}
+			if lowerDeclared || upperDeclared {
+				source := "both"
+				if upperDeclared && !lowerDeclared {
+					source = "schema"
+				} else if lowerDeclared && !upperDeclared {
+					source = "manifest"
+				}
+				pc.record(tf.name, source, schemaVal, manifestVal, result.RequiresWhen)
 			}
 
 		case MergeMethods:
 			merged := mergeMethodSlices(lower.Methods, upper.Methods, pc)
 			result.Methods = merged
-			pc.record("Methods", "both", lower.Methods, upper.Methods, merged)
+			pc.record("Methods", "both", upper.Methods, lower.Methods, merged)
 		}
 	}
 
 	return result
+}
+
+func cloneConditionMap(in map[string]*Condition) map[string]*Condition {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]*Condition, len(in))
+	for key, condition := range in {
+		if condition == nil {
+			out[key] = nil
+			continue
+		}
+		out[key] = cloneCondition(condition)
+	}
+	return out
 }
 
 // mergeMethodSlices merges two MethodCandidate slices by identity (Kind + Label).
@@ -371,63 +453,97 @@ func methodKey(m *MethodCandidate) string {
 // mergeMethodConfigs merges two MethodCandidate values for the same Kind.
 // lower is lower priority, upper is higher priority.
 func mergeMethodConfigs(lower, upper *MethodCandidate, pc *provenanceCollector) *MethodCandidate {
-	// Start with upper as base (more specific).
-	result := cloneMethod(upper)
-	if len(upper.Requires) == 0 {
-		result.Requires = append([]string(nil), lower.Requires...)
+	result := cloneMethod(lower)
+	if result.presence == nil {
+		result.presence = fieldPresence{}
 	}
-	if len(upper.Sources) == 0 {
-		result.Sources = cloneSources(lower.Sources)
-		if len(upper.PreInstall) == 0 {
-			result.PreInstall = cloneHooks(lower.PreInstall)
+	// Identity/runtime metadata is tied to the more-specific candidate.
+	result.Kind = upper.Kind
+	result.Label = upper.Label
+	result.ProjectRoot = upper.ProjectRoot
+	result.LockedRevision = upper.LockedRevision
+	result.LockedDigest = upper.LockedDigest
+	result.LockedVersion = upper.LockedVersion
+	result.Err = upper.Err
+
+	if upper.presence["Inferred"] {
+		result.Inferred = upper.Inferred
+		result.presence["Inferred"] = true
+	}
+	if upper.presence["When"] {
+		if upper.When == nil {
+			result.When = nil
+		} else {
+			result.When = cloneCondition(upper.When)
 		}
-		if len(upper.PostInstall) == 0 {
-			result.PostInstall = cloneHooks(lower.PostInstall)
-		}
+		result.presence["When"] = true
 	}
-	if upper.SecretRef == nil && lower.SecretRef != nil {
-		secretRef := *lower.SecretRef
-		result.SecretRef = &secretRef
+	if upper.presence["ArchMap"] {
+		result.ArchMap = cloneStringMap(upper.ArchMap)
+		result.presence["ArchMap"] = true
 	}
-	if upper.ChecksumSecretRef == nil && lower.ChecksumSecretRef != nil {
-		secretRef := *lower.ChecksumSecretRef
-		result.ChecksumSecretRef = &secretRef
+	if upper.presence["OSMap"] {
+		result.OSMap = cloneStringMap(upper.OSMap)
+		result.presence["OSMap"] = true
 	}
-	if upper.SignatureSecretRef == nil && lower.SignatureSecretRef != nil {
-		secretRef := *lower.SignatureSecretRef
-		result.SignatureSecretRef = &secretRef
+	if upper.presence["Requires"] {
+		result.Requires = append([]string(nil), upper.Requires...)
+		result.presence["Requires"] = true
+	}
+	if upper.presence["Sources"] {
+		result.Sources = cloneSources(upper.Sources)
+		result.presence["Sources"] = true
+	}
+	if upper.presence["PreInstall"] {
+		result.PreInstall = cloneHooks(upper.PreInstall)
+		result.presence["PreInstall"] = true
+	}
+	if upper.presence["PostInstall"] {
+		result.PostInstall = cloneHooks(upper.PostInstall)
+		result.presence["PostInstall"] = true
+	}
+	if upper.presence["SecretRef"] {
+		result.SecretRef = cloneSecretReference(upper.SecretRef)
+		result.presence["SecretRef"] = true
+	}
+	if upper.presence["ChecksumSecretRef"] {
+		result.ChecksumSecretRef = cloneSecretReference(upper.ChecksumSecretRef)
+		result.presence["ChecksumSecretRef"] = true
+	}
+	if upper.presence["SignatureSecretRef"] {
+		result.SignatureSecretRef = cloneSecretReference(upper.SignatureSecretRef)
+		result.presence["SignatureSecretRef"] = true
 	}
 
-	// For each key in lower.Config that upper doesn't have, copy it up.
-	for key, lowerVal := range lower.Config {
-		upperVal, inUpper := upper.Config[key]
-		if !inUpper {
-			result.Config[key] = lowerVal
-			continue
-		}
-
-		// Both have the key. Check the merge strategy.
-		strategy := MethodConfigFieldStrategy[key]
-		if strategy == MergeMapMerge {
-			// Merge inner maps.
-			upperMap, upperOk := upperVal.(map[string]any)
-			lowerMap, lowerOk := lowerVal.(map[string]any)
-			if upperOk && lowerOk {
-				merged := make(map[string]any, len(upperMap)+len(lowerMap))
-				for k, v := range lowerMap {
-					merged[k] = v
-				}
+	if result.Config == nil {
+		result.Config = map[string]any{}
+	}
+	for key, upperVal := range upper.Config {
+		lowerVal, inLower := result.Config[key]
+		if inLower && MethodConfigFieldStrategy[key] == MergeMapMerge {
+			upperMap, upperOK := upperVal.(map[string]any)
+			lowerMap, lowerOK := lowerVal.(map[string]any)
+			if upperOK && lowerOK {
+				merged := cloneAnyMap(lowerMap)
 				for k, v := range upperMap {
-					merged[k] = v
+					merged[k] = cloneAny(v)
 				}
 				result.Config[key] = merged
+				continue
 			}
-			// If either isn't a map, fall back to Overwrite (upper wins)
 		}
-		// For MergeOverwrite or any other strategy: upper already in place.
+		result.Config[key] = cloneAny(upperVal)
 	}
 
 	return result
+}
+
+func cloneSecretReference(in *SecretReference) *SecretReference {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	return &out
 }
 
 // ValidateManifestNewTools checks that the manifest does not introduce tools

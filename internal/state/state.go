@@ -50,6 +50,9 @@ type ToolState struct {
 	Method string `json:"method"`
 	// MethodKind is the technical method kind (e.g. "http"), not the display label.
 	MethodKind string `json:"method_kind,omitempty"`
+	// Provider records the concrete runtime provider when it differs from the
+	// logical method kind (for example, "yay" for method kind "aur").
+	Provider string `json:"provider,omitempty"`
 	// InstalledAt is the RFC3339 timestamp of when the tool was installed.
 	InstalledAt string `json:"installed_at"`
 	// PostinstallDone is true if a postinstall script was successfully run.

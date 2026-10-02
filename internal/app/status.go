@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
@@ -68,7 +67,11 @@ func runStatus(ctx context.Context, statusSchema, statusManifest *string, status
 		return nil
 	}
 
-	s, lk := loadStatusSchema(schemaPath, statusManifest, statusNoManifest)
+	project, lk := loadStatusSchema(schemaPath, statusManifest, statusNoManifest)
+	var s *config.Schema
+	if project != nil {
+		s = project.Schema
+	}
 	var lockDocument *plan.LockDocument
 	if lk != nil && lk.Version == lock.CurrentVersion {
 		document, err := lk.ProjectionDocument()
@@ -79,28 +82,12 @@ func runStatus(ctx context.Context, statusSchema, statusManifest *string, status
 	}
 
 	tools := classifyStatusTools(st.Tools, s, lk, *statusOrphans)
-	if s != nil && !*statusOrphans {
-		facts, factsErr := engine.GatherFacts(run.OSExecRunner{})
-		if factsErr == nil {
-			ex := exec.New()
-			exec.WithRunner(run.OSExecRunner{})(ex)
-			exec.WithFacts(facts)(ex)
-			exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
-			if lockDocument != nil {
-				exec.WithLockDocument(*lockDocument)(ex)
-			}
-			tools = reconcileStatusTools(ctx, tools, st.Tools, s, lk, ex, engine.ResolveFamily(facts))
-		} else {
-			log.Default.Warn("gather host facts for status", "error", factsErr)
-			for i := range tools {
-				if tools[i].Status == "orphaned" || tools[i].Status == "missing" {
-					continue
-				}
-				tools[i].Status = "unknown"
-				verification := plan.VerificationResult{State: plan.StateUnknown, Detail: factsErr.Error()}
-				tools[i].Verification = &verification
-			}
+	if project != nil && !*statusOrphans {
+		ex := newProjectExecutor(s, project.Clan, project.Facts, run.OSExecRunner{})
+		if lockDocument != nil {
+			exec.WithLockDocument(*lockDocument)(ex)
 		}
+		tools = reconcileStatusTools(ctx, tools, st.Tools, s, lk, ex, project.Clan)
 	}
 
 	if *statusFormat == "json" {
@@ -150,45 +137,32 @@ func resolveStatusSchemaPath(st *state.State, statusSchema *string) (string, boo
 // installed-vs-pinned version comparisons (outdated detection). A missing
 // lock is fine. A schema that fails to parse (or a manifest that fails to
 // merge) degrades to state-only reporting with a warning.
-func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifest *bool) (*config.Schema, *lock.Lock) {
-	var lk *lock.Lock
-	if schemaPath != "" {
-		lk, _ = lock.Load(lock.DefaultPath(schemaPath))
+func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifest *bool) (*loadedProject, *lock.Lock) {
+	if schemaPath == "" {
+		return nil, nil
 	}
 
-	var s *config.Schema
-	if schemaPath != "" {
-		var err error
-		s, err = config.ParseProjectSchema(schemaPath, nil)
-		if err != nil {
-			log.Default.Warn("load schema for comparison", "error", err)
-			s = nil
-		}
-
-		if s != nil {
-			noManifest := *statusNoManifest
-			manifestPath := *statusManifest
-			manifestAuto := false
-			if !noManifest && manifestPath == "" {
-				manifestPath = config.DefaultManifestPath()
-				if manifestPath != "" {
-					manifestAuto = true
-				}
-			}
-			if manifestPath != "" {
-				merged, count, merr := mergeManifest(s, manifestPath, false)
-				if merr != nil {
-					log.Default.Warn("load manifest", "error", merr)
-				} else if count > 0 {
-					s = merged
-					if manifestAuto {
-						fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
-					}
-				}
-			}
+	noManifest := *statusNoManifest
+	manifestPath := *statusManifest
+	manifestAuto := false
+	if !noManifest && manifestPath == "" {
+		manifestPath = config.DefaultManifestPath()
+		if manifestPath != "" {
+			manifestAuto = true
 		}
 	}
-	return s, lk
+
+	project, err := loadProject(schemaPath, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto})
+	if err != nil {
+		log.Default.Warn("load schema for comparison", "error", err)
+		lk, _ := lock.Load(lock.DefaultPath(schemaPath))
+		return nil, lk
+	}
+	if project.ManifestCount > 0 && project.ManifestAuto {
+		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", project.ManifestPath, project.ManifestCount)
+	}
+	lk, _ := lock.Load(lock.DefaultPath(project.SchemaPath))
+	return project, lk
 }
 
 // toolStatus is one row of the status report.

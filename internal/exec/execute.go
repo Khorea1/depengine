@@ -99,7 +99,7 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 		ex.runLevel(rc, level)
 	}
 
-	return ex.finishRun(ctx, s, report, start)
+	return ex.finishRun(housekeepingCtx, s, report, start)
 }
 
 func (ex *Executor) executeTool(ctx context.Context, rc *runContext, tool *config.Tool) ToolResult {

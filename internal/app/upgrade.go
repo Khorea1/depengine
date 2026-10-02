@@ -464,7 +464,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 
 	manifestPath, manifestAuto := resolveUpgradeManifestPath(opts.noManifest, opts.manifest)
 
-	s, clan, facts, manifestCount, err := loadSchemaWithManifest(opts.schema, manifestPath)
+	project, err := loadProject(opts.schema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true})
 	if err != nil {
 		if os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "error: %s not found\n", opts.schema)
@@ -474,6 +474,8 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		lg.Error("load schema", "error", err)
 		return exitWithCode(exitCodeForError(err))
 	}
+	opts.schema = project.SchemaPath
+	s, clan, facts, manifestCount := project.Schema, project.Clan, project.Facts, project.ManifestCount
 	if manifestAuto && manifestCount > 0 {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
 	}

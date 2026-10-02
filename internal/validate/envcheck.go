@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/Khorea1/depengine/internal/native"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -31,27 +32,13 @@ func (r *EnvCheckResult) AddWarning(name, kind, message string) {
 	})
 }
 
-// envToolBinaries lists the common tool binaries to check, grouped by kind.
-// These cover the native package managers, language-ecosystem tools, and
-// CLI utilities used by depengine adapters.
-var envToolBinaries = []struct {
+// supplementalEnvToolBinaries contains non-native tools that are not owned by
+// the native package-manager registry. Native executables are derived from
+// native.ManagerExecutableNames at check time.
+var supplementalEnvToolBinaries = []struct {
 	Name string
 	Kind string
 }{
-	// Native package managers (distro / OS).
-	{"apt", "native"},
-	{"apt-get", "native"},
-	{"dnf", "native"},
-	{"pacman", "native"},
-	{"zypper", "native"},
-	{"brew", "native"},
-	{"apk", "native"},
-	{"xbps-install", "native"},
-	{"emerge", "native"},
-	{"opkg", "native"},
-	{"pkg", "native"},
-	{"pkg_add", "native"},
-
 	// Language-ecosystem package managers.
 	{"cargo", "lang"},
 	{"go", "lang"},
@@ -69,22 +56,42 @@ var envToolBinaries = []struct {
 	{"wget", "system"},
 }
 
+func effectiveEnvToolBinaries() []struct {
+	Name string
+	Kind string
+} {
+	type entry = struct {
+		Name string
+		Kind string
+	}
+	byName := make(map[string]entry, len(supplementalEnvToolBinaries)+len(native.ManagerExecutableNames()))
+	for _, supplemental := range supplementalEnvToolBinaries {
+		byName[supplemental.Name] = entry(supplemental)
+	}
+	// Native wins on kind when a binary is also present in a supplemental list.
+	for _, name := range native.ManagerExecutableNames() {
+		byName[name] = entry{Name: name, Kind: "native"}
+	}
+	out := make([]entry, 0, len(byName))
+	for _, item := range byName {
+		out = append(out, item)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
 // CheckEnv probes for each known tool binary on PATH via `which`.
 // All findings are warnings — a missing tool is environment-specific
 // and does not necessarily indicate a schema problem.
 func CheckEnv(ctx context.Context, rn run.Runner) *EnvCheckResult {
 	result := &EnvCheckResult{}
 
-	// Deduplicate binary names across entries (some names appear in
-	// multiple places, e.g. "pkg" for both termux and freebsd).
-	seen := make(map[string]bool)
-
-	for _, entry := range envToolBinaries {
-		if seen[entry.Name] {
-			continue
-		}
-		seen[entry.Name] = true
-
+	for _, entry := range effectiveEnvToolBinaries() {
 		found := run.LookPath(ctx, rn, entry.Name)
 		check := EnvCheck{
 			Name:  entry.Name,
