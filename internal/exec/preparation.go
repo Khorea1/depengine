@@ -225,7 +225,7 @@ func (ex *Executor) prepareCandidateSources(ctx context.Context, manager *source
 	if err != nil {
 		return candidateSourcePreparation{}, err
 	}
-	locked, err := depstate.LoadLocked()
+	locked, err := depstate.LoadLockedContext(ctx)
 	if err != nil {
 		return candidateSourcePreparation{}, fmt.Errorf("state lock for source preparation: %w", err)
 	}
@@ -374,7 +374,7 @@ func (tx *sourcePreparationTransaction) rollback(ctx context.Context) error {
 	if tx == nil || tx.closed {
 		return nil
 	}
-	if err := tx.resume(); err != nil {
+	if err := tx.resume(ctx); err != nil {
 		return err
 	}
 	_, decision, err := tx.locked.PlanPreparationRollback(tx.key, tx.plan)
@@ -459,11 +459,11 @@ func (tx *sourcePreparationTransaction) suspend() error {
 	return nil
 }
 
-func (tx *sourcePreparationTransaction) resume() error {
+func (tx *sourcePreparationTransaction) resume(ctx context.Context) error {
 	if tx == nil || tx.closed || tx.locked != nil {
 		return nil
 	}
-	locked, err := depstate.LoadLocked()
+	locked, err := depstate.LoadLockedContext(ctx)
 	if err != nil {
 		return fmt.Errorf("resume preparation state lock: %w", err)
 	}
@@ -679,7 +679,7 @@ func (ex *Executor) recoverPreparationTransactions(ctx context.Context, manager 
 	if ex.dryRun || ex.schemaPath == "" {
 		return nil
 	}
-	locked, err := depstate.LoadLocked()
+	locked, err := depstate.LoadLockedContext(ctx)
 	if err != nil {
 		return fmt.Errorf("load preparation recovery state: %w", err)
 	}

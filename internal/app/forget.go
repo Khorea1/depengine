@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"github.com/Khorea1/depengine/internal/log"
 	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
@@ -13,8 +14,8 @@ func newForgetCmd() *cobra.Command {
 		Short:   ifPT("Esquecer uma ferramenta sem tentar removê-la do sistema", "Forget a tool from state without removing it from the system"),
 		GroupID: groupManage,
 		Args:    cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			return runForget(args[0])
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runForgetContext(cmd.Context(), args[0])
 		},
 	}
 }
@@ -22,8 +23,10 @@ func newForgetCmd() *cobra.Command {
 // runForget removes a tool from state without attempting system removal.
 // Body unchanged from the pre-Cobra version — Cobra's cobra.ExactArgs(1)
 // now enforces the argument count that the old manual length check did.
-func runForget(toolName string) error {
-	ls, err := state.LoadLocked()
+func runForget(toolName string) error { return runForgetContext(context.Background(), toolName) }
+
+func runForgetContext(ctx context.Context, toolName string) error {
+	ls, err := state.LoadLockedContext(ctx)
 	if err != nil {
 		log.Default.Error("state lock", "error", err)
 		return exitWithCode(3)

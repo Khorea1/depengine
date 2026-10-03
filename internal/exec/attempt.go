@@ -322,7 +322,7 @@ func (ex *Executor) requireMethodPrerequisites(ac *candidateAttempt, result *Too
 		prerequisiteUses, err = ex.ensureMethodDependencies(ac.toolCtx, ac.run, ac.tool, ac.method)
 	}
 	if ac.prepared.tx != nil {
-		if resumeErr := ac.prepared.tx.resume(); err == nil {
+		if resumeErr := ac.prepared.tx.resume(ac.toolCtx); err == nil {
 			err = resumeErr
 		}
 	}

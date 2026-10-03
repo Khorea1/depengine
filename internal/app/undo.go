@@ -110,7 +110,7 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
 		return exitWithCode(3)
 	}
 
-	ls, err := state.LoadLocked()
+	ls, err := state.LoadLockedContext(ctx)
 	if err != nil {
 		log.Default.Error("state lock", "error", err)
 		return exitWithCode(3)

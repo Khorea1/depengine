@@ -487,7 +487,7 @@ func syncInstalledVersions(ctx context.Context, schema *config.Schema, lockPath 
 		return version, version != ""
 	}
 
-	ls, err := state.LoadLocked()
+	ls, err := state.LoadLockedContext(ctx)
 	if err != nil {
 		lg.Warn("state lock for version sync", "error", err)
 		return

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -20,8 +21,8 @@ func newDiffCmd() *cobra.Command {
 		Short:   ifPT("Comparar dois arquivos de estado", "Compare two state files"),
 		GroupID: groupInspect,
 		Args:    cobra.MaximumNArgs(2),
-		RunE: func(_ *cobra.Command, args []string) error {
-			return runDiff(args, diffOther, diffJSON)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDiffContext(cmd.Context(), args, diffOther, diffJSON)
 		},
 	}
 	f := cmd.Flags()
@@ -35,6 +36,10 @@ func newDiffCmd() *cobra.Command {
 // args Cobra already separated out, and cobra.MaximumNArgs(2) replaces the
 // old `default:` branch of the length switch below.
 func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) error {
+	return runDiffContext(context.Background(), diffArgs, diffOther, diffJSON)
+}
+
+func runDiffContext(ctx context.Context, diffArgs []string, diffOther *string, diffJSON *bool) error {
 	var aPath, bPath string
 	var aState, bState *state.State
 	var ls *state.LockedState
@@ -65,7 +70,7 @@ func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) error {
 	}
 
 	if len(diffArgs) != 2 {
-		ls, err = state.LoadShared()
+		ls, err = state.LoadSharedContext(ctx)
 		if err != nil {
 			log.Default.Error("load current state", "error", err)
 			return exitWithCode(3)

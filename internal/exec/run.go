@@ -129,7 +129,7 @@ func (ex *Executor) recoverReplacementTransactions(ctx context.Context, rc *runC
 	if ex.dryRun || ex.schemaPath == "" {
 		return nil
 	}
-	locked, err := depstate.LoadLocked()
+	locked, err := depstate.LoadLockedContext(ctx)
 	if err != nil {
 		return fmt.Errorf("load replacement recovery state: %w", err)
 	}

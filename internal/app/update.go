@@ -206,7 +206,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	// Warn about installed tools whose versions no longer match the pins
 	// that were just resolved. Warn-only: applying the new versions is a
 	// separate install step.
-	reportVersionDrift(s, newLock)
+	reportVersionDrift(ctx, s, newLock)
 
 	if *updateVerbose && projection != nil {
 		for _, entry := range projection.Entries {
@@ -290,7 +290,7 @@ func reportVersionDrift(schema *config.Schema, newLock *lock.Lock) {
 			return
 		}
 	}
-	ls, err := state.LoadShared()
+	ls, err := state.LoadSharedContext(ctx)
 	if err != nil {
 		return
 	}

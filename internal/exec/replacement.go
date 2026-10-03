@@ -32,7 +32,7 @@ func (ex *Executor) replaceCandidate(ac *candidateAttempt, result *ToolResult, r
 	if ac.prepared.tx != nil {
 		locked = ac.prepared.tx.locked
 	} else {
-		locked, err = depstate.LoadLocked()
+		locked, err = depstate.LoadLockedContext(methodCtx)
 		if err != nil {
 			return ex.failReplacement(ac, result, fmt.Errorf("lock replacement state: %w", err))
 		}

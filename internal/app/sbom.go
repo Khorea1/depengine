@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -21,16 +22,18 @@ func newSBOMCmd() *cobra.Command {
 		Short:   ifPT("Exportar um SBOM do estado instalado", "Export a software bill of materials of installed state"),
 		GroupID: groupExport,
 		Args:    cobra.NoArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
-			return runSBOM(sbomFormat)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSBOMContext(cmd.Context(), sbomFormat)
 		},
 	}
 	cmd.Flags().StringVar(sbomFormat, "format", "cyclonedx", "output format: cyclonedx or spdx")
 	return cmd
 }
 
-func runSBOM(sbomFormat *string) error {
-	ls, err := state.LoadShared()
+func runSBOM(sbomFormat *string) error { return runSBOMContext(context.Background(), sbomFormat) }
+
+func runSBOMContext(ctx context.Context, sbomFormat *string) error {
+	ls, err := state.LoadSharedContext(ctx)
 	if err != nil {
 		log.Default.Error("load state", "error", err)
 		return exitWithCode(3)

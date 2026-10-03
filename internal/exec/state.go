@@ -98,7 +98,7 @@ func (ex *Executor) writeState(ctx context.Context, schema *config.Schema, repor
 		ex.logWarn(ctx, "state not persisted: no schema path configured (install may not be trackable)")
 		return nil
 	}
-	lockedState, err := depstate.LoadLocked()
+	lockedState, err := depstate.LoadLockedContext(ctx)
 	if err != nil {
 		return fmt.Errorf("state lock failed: %w", err)
 	}

@@ -134,7 +134,7 @@ func resolveUpgradeManifestPath(noManifest bool, flag string) (string, bool) {
 // exclusive lock to the caller for discovery; runUpgrade releases it before
 // per-candidate execution, which locks each mutation transaction. The caller
 // owns the returned lock and must Close it.
-func loadUpgradeState(dryRun bool) (*state.State, *state.LockedState, error) {
+func loadUpgradeState(ctx context.Context, dryRun bool) (*state.State, *state.LockedState, error) {
 	if dryRun {
 		st, err := state.Load()
 		if err != nil {
@@ -142,7 +142,7 @@ func loadUpgradeState(dryRun bool) (*state.State, *state.LockedState, error) {
 		}
 		return st, nil, nil
 	}
-	ls, err := state.LoadLocked()
+	ls, err := state.LoadLockedContext(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -485,7 +485,7 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 		return err
 	}
 
-	st, ls, err := loadUpgradeState(opts.dryRun)
+	st, ls, err := loadUpgradeState(ctx, opts.dryRun)
 	if err != nil {
 		lg.Error("load state", "error", err)
 		return exitWithCode(3)

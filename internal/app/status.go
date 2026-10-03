@@ -54,7 +54,7 @@ func newStatusCmd() *cobra.Command {
 func runStatus(ctx context.Context, statusSchema, statusManifest *string, statusNoManifest *bool, statusFormat *string, statusJSON, statusOrphans *bool) error {
 	normalizeStatusFormat(statusFormat, statusJSON)
 
-	ls, err := openStatusState()
+	ls, err := openStatusState(ctx)
 	if err != nil {
 		return err
 	}
@@ -107,8 +107,8 @@ func normalizeStatusFormat(statusFormat *string, statusJSON *bool) {
 }
 
 // openStatusState loads the shared state file for reading.
-func openStatusState() (*state.LockedState, error) {
-	ls, err := state.LoadShared()
+func openStatusState(ctx) (*state.LockedState, error) {
+	ls, err := state.LoadSharedContext(ctx)
 	if err != nil {
 		log.Default.Error("state lock", "error", err)
 		return nil, exitWithCode(3)

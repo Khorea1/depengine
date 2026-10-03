@@ -87,7 +87,7 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 // supplied executor. Keeping executor construction outside this seam lets
 // in-process callers inject adapters without changing the process registry.
 func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce *bool, executor *exec.Executor, facts *engine.Facts) error {
-	st, ls, err := loadRemoveState(*removeDryRun)
+	st, ls, err := loadRemoveState(ctx, *removeDryRun)
 	if err != nil {
 		return err
 	}
@@ -145,7 +145,7 @@ func validateRemoveFlags(removeAll *bool, removeOnly *string) error {
 // loadRemoveState loads removal state. Dry-run uses an unlocked read so it
 // neither creates a lock file nor rewrites state; atomic state writes ensure
 // that read still observes a complete state file. Real removals take the lock.
-func loadRemoveState(dryRun bool) (*state.State, *state.LockedState, error) {
+func loadRemoveState(ctx context.Context, dryRun bool) (*state.State, *state.LockedState, error) {
 	if dryRun {
 		st, err := state.Load()
 		if err != nil {
@@ -154,7 +154,7 @@ func loadRemoveState(dryRun bool) (*state.State, *state.LockedState, error) {
 		}
 		return st, nil, nil
 	}
-	ls, err := state.LoadLocked()
+	ls, err := state.LoadLockedContext(ctx)
 	if err != nil {
 		log.Default.Error("load state", "error", err)
 		return nil, nil, exitWithCode(3)
