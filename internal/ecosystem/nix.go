@@ -181,7 +181,7 @@ func (a *NixAdapter) listProfile(ctx context.Context, rn run.Runner) ([]nixProfi
 		return nil, errors.New("nix: nix binary not found")
 	}
 	res := rn.Run(ctx, "nix", nixCommand("profile", "list", "--json")...)
-	if err := run.CheckResult(res, "nix: list profile"); err != nil {
+	if err := run.CheckResultCompleteOutput(res, "nix: list profile"); err != nil {
 		return nil, err
 	}
 	return parseNixProfileList(res.Stdout)

@@ -85,7 +85,7 @@ func detectDarwinVersion(r run.Runner) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	res := r.Run(ctx, "sw_vers", "-productVersion")
-	if res.Err != nil || res.ExitCode != 0 {
+	if res.Err != nil || res.ExitCode != 0 || res.WaitErr != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(res.Stdout))
@@ -98,7 +98,7 @@ func detectWindowsVersion(r run.Runner) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	res := r.Run(ctx, "cmd.exe", "/d", "/c", "ver")
-	if res.Err != nil || res.ExitCode != 0 {
+	if res.Err != nil || res.ExitCode != 0 || res.WaitErr != nil {
 		return ""
 	}
 	return parseWindowsVersion(string(res.Stdout))

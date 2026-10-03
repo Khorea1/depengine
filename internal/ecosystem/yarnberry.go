@@ -35,7 +35,7 @@ func (a *YarnBerryAdapter) Kind() string { return "yarn-berry" }
 
 func (a *YarnBerryAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	res := rn.Run(ctx, "yarn", "--version")
-	if res.Err != nil || res.ExitCode != 0 {
+	if res.Err != nil || res.ExitCode != 0 || res.WaitErr != nil {
 		return false
 	}
 	version := strings.TrimSpace(string(res.Stdout))

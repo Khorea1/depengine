@@ -90,7 +90,7 @@ func ResolveLatestNPMVersion(ctx context.Context, rn run.Runner, pkg, registry s
 		args = append(args, "--registry", registry)
 	}
 	result := rn.Run(ctx, "npm", args...)
-	if err := run.CheckResult(result, "npm: resolve latest version"); err != nil {
+	if err := run.CheckResultCompleteOutput(result, "npm: resolve latest version"); err != nil {
 		return "", err
 	}
 	var version string
@@ -115,7 +115,7 @@ func ResolveLatestYarnVersion(ctx context.Context, rn run.Runner, pkg string) (s
 		return "", fmt.Errorf("yarn: %q is not a plain registry package name", pkg)
 	}
 	result := rn.Run(ctx, "yarn", "info", pkg, "version", "--json")
-	if err := run.CheckResult(result, "yarn: resolve latest version"); err != nil {
+	if err := run.CheckResultCompleteOutput(result, "yarn: resolve latest version"); err != nil {
 		return "", err
 	}
 	var output yarnInfoOutput
@@ -130,7 +130,7 @@ func ResolveLatestPNPMVersion(ctx context.Context, rn run.Runner, pkg string) (s
 		return "", fmt.Errorf("pnpm: %q is not a plain registry package name", pkg)
 	}
 	result := rn.Run(ctx, "pnpm", "view", pkg, "dist-tags.latest", "--json")
-	if err := run.CheckResult(result, "pnpm: resolve latest version"); err != nil {
+	if err := run.CheckResultCompleteOutput(result, "pnpm: resolve latest version"); err != nil {
 		return "", err
 	}
 	var version string

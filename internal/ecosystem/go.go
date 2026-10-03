@@ -348,7 +348,7 @@ func (a *GoAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *c
 		return "", fmt.Errorf("go: %w", err)
 	}
 	res := rn.Run(ctx, "go", "version", "-m", target)
-	if err := run.CheckResult(res, "go: inspect installed build info"); err != nil {
+	if err := run.CheckResultCompleteOutput(res, "go: inspect installed build info"); err != nil {
 		return "", err
 	}
 	expectedPath := importPathFromTool(tool, mc)

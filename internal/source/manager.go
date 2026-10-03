@@ -79,7 +79,7 @@ func (m *Manager) resolveSourceRevision(ctx context.Context, source config.Sourc
 	switch source.Kind {
 	case "brew-tap":
 		repo := m.rn.Run(ctx, "brew", "--repo", source.Name)
-		if err := run.CheckResult(repo, "source repository path"); err != nil {
+		if err := run.CheckResultCompleteOutput(repo, "source repository path"); err != nil {
 			return "", fmt.Errorf("source: verify brew-tap %s revision: locate repository: %w", source.Name, err)
 		}
 		path = strings.TrimSpace(string(repo.Stdout))
@@ -97,7 +97,7 @@ func (m *Manager) resolveSourceRevision(ctx context.Context, source config.Sourc
 	}
 
 	resolved := m.rn.Run(ctx, "git", "-C", path, "rev-parse", "--verify", "HEAD^{commit}")
-	if err := run.CheckResult(resolved, "source revision check"); err != nil {
+	if err := run.CheckResultCompleteOutput(resolved, "source revision check"); err != nil {
 		return "", fmt.Errorf("source: verify %s %s revision: read HEAD: %w", source.Kind, source.Name, err)
 	}
 	actual := strings.TrimSpace(string(resolved.Stdout))
@@ -297,7 +297,7 @@ func (m *Manager) present(ctx context.Context, source config.Source) (bool, erro
 		return false, fmt.Errorf("source: unsupported kind %q", source.Kind)
 	}
 	res := m.rn.Run(ctx, cmd[0], cmd[1:]...)
-	if err := run.CheckResult(res, "source check"); err != nil {
+	if err := run.CheckResultCompleteOutput(res, "source check"); err != nil {
 		return false, err
 	}
 	want := source.Name
@@ -315,7 +315,7 @@ func (m *Manager) present(ctx context.Context, source config.Source) (bool, erro
 
 func (m *Manager) brewTapPresent(ctx context.Context, source config.Source) (bool, error) {
 	res := m.rn.Run(ctx, "brew", "tap")
-	if err := run.CheckResult(res, "source check"); err != nil {
+	if err := run.CheckResultCompleteOutput(res, "source check"); err != nil {
 		return false, err
 	}
 	if !outputHasSourceName(string(res.Stdout), source.Name) {
@@ -323,7 +323,7 @@ func (m *Manager) brewTapPresent(ctx context.Context, source config.Source) (boo
 	}
 
 	info := m.rn.Run(ctx, "brew", "tap-info", "--json=v1", source.Name)
-	if err := run.CheckResult(info, "source origin check"); err != nil {
+	if err := run.CheckResultCompleteOutput(info, "source origin check"); err != nil {
 		return false, err
 	}
 	var taps []struct {
@@ -376,7 +376,7 @@ func (m *Manager) scoopBucketRepository(ctx context.Context, name string) (strin
 	// With NO_JUNCTION enabled the final component is a concrete version rather
 	// than "current", but the stable parent shape remains <root>/apps/scoop/*.
 	prefixResult := m.rn.Run(ctx, "scoop", "prefix", "scoop")
-	if err := run.CheckResult(prefixResult, "source repository path"); err != nil {
+	if err := run.CheckResultCompleteOutput(prefixResult, "source repository path"); err != nil {
 		return "", fmt.Errorf("source: verify scoop-bucket %s revision: locate Scoop root: %w", name, err)
 	}
 	prefix := strings.Trim(strings.TrimSpace(string(prefixResult.Stdout)), "\"")
@@ -397,7 +397,7 @@ func (m *Manager) scoopBucketRepository(ctx context.Context, name string) (strin
 
 func (m *Manager) scoopBucketPresent(ctx context.Context, source config.Source) (bool, error) {
 	res := m.rn.Run(ctx, "scoop", "bucket", "list")
-	if err := run.CheckResult(res, "source check"); err != nil {
+	if err := run.CheckResultCompleteOutput(res, "source check"); err != nil {
 		return false, err
 	}
 	want := strings.TrimSpace(source.Name)

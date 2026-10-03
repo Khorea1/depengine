@@ -69,7 +69,7 @@ func runWithRunner(ctx context.Context, args []string, rn runpkg.Runner) error {
 
 func moduleRoot(ctx context.Context, rn runpkg.Runner) (string, error) {
 	res := rn.Run(ctx, "go", "env", "GOMOD")
-	if err := runpkg.CheckResult(res, "resolve module root"); err != nil {
+	if err := runpkg.CheckResultCompleteOutput(res, "resolve module root"); err != nil {
 		return "", err
 	}
 	gomod := strings.TrimSpace(string(res.Stdout))
@@ -195,7 +195,7 @@ func isFuzzSignature(fn *ast.FuncType, testingAliases map[string]bool) bool {
 
 func discoverTargets(ctx context.Context, root string, rn runpkg.Runner) ([]Target, error) {
 	res := runpkg.RunInDir(ctx, rn, root, "go", "list", "-f", "{{.Dir}}", "./...")
-	if err := runpkg.CheckResult(res, "go list ./..."); err != nil {
+	if err := runpkg.CheckResultCompleteOutput(res, "go list ./..."); err != nil {
 		return nil, err
 	}
 	canonicalRoot := canonicalPath(root)
@@ -242,7 +242,7 @@ func canonicalPath(path string) string {
 
 func discoverPackageTargets(ctx context.Context, root, pkg string, rn runpkg.Runner) ([]Target, error) {
 	res := runpkg.RunInDir(ctx, rn, root, "go", "test", "-list=^Fuzz", "-run=^$", pkg)
-	if err := runpkg.CheckResult(res, "go test -list fuzz targets for "+pkg); err != nil {
+	if err := runpkg.CheckResultCompleteOutput(res, "go test -list fuzz targets for "+pkg); err != nil {
 		return nil, err
 	}
 	var targets []Target

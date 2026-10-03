@@ -21,8 +21,9 @@ import (
 	"time"
 )
 
-// Result captures everything a caller needs to decide what happened:
-// stdout/stderr (for logging + error messages) and the exit code.
+// Result captures both the direct child's execution status and the lifecycle
+// of its captured output. These are intentionally separate: a child may exit
+// successfully while os/exec gives up waiting for inherited pipes to close.
 type Result struct {
 	Stdout   []byte
 	Stderr   []byte
@@ -31,6 +32,11 @@ type Result struct {
 	// killed (timeout, signal, binary not found). A non-zero exit code
 	// alone does NOT set Err.
 	Err error
+	// WaitErr reports output-lifecycle failures after the direct child has
+	// otherwise completed, notably exec.ErrWaitDelay when a descendant keeps
+	// an inherited pipe open. Callers that parse stdout must reject WaitErr;
+	// callers concerned only with the direct child's exit may ignore it.
+	WaitErr error
 }
 
 type omittedEnvKey struct{}
@@ -193,6 +199,9 @@ func redactResult(result Result, sensitive []string) Result {
 		result.Stderr = nil
 		if result.Err != nil {
 			result.Err = errors.New("sensitive subprocess execution failed")
+		}
+		if result.WaitErr != nil {
+			result.WaitErr = errors.New("sensitive subprocess output incomplete")
 		}
 	}
 	return result
@@ -390,6 +399,9 @@ func (OSExecRunner) RunWithEnvValidated(ctx context.Context, env map[string]stri
 	if raw.Err != nil || raw.ExitCode != 0 {
 		return Result{Err: errors.New("sensitive subprocess execution failed"), ExitCode: raw.ExitCode}
 	}
+	if raw.WaitErr != nil {
+		return Result{WaitErr: errors.New("sensitive subprocess output incomplete"), ExitCode: raw.ExitCode}
+	}
 	stdout, err := validate(raw.Stdout)
 	if err != nil {
 		return Result{Err: errors.New("subprocess output validation failed"), ExitCode: 1}
@@ -456,6 +468,12 @@ func commandResult(ctx context.Context, cmd *exec.Cmd, runErr error, stdout, std
 	exit := 0
 	if cmd.ProcessState != nil {
 		exit = cmd.ProcessState.ExitCode()
+	}
+
+	var waitErr error
+	if errors.Is(runErr, exec.ErrWaitDelay) {
+		waitErr = exec.ErrWaitDelay
+		runErr = nil
 	}
 
 	// os/exec returns a non-nil *exec.ExitError for any ordinary non-zero
@@ -554,6 +572,22 @@ func CheckResult(res Result, prefix string) error {
 	if res.ExitCode != 0 {
 		stderr := RedactSensitiveText(strings.TrimSpace(string(res.Stderr)))
 		return fmt.Errorf("%s: exited %d: %s", prefix, res.ExitCode, stderr)
+	}
+	return nil
+}
+
+// CheckResultCompleteOutput is CheckResult plus an output-integrity check. Use
+// it whenever stdout is parsed as structured data, an identity, a version, a
+// listing, or any other value where truncation could change the decision.
+func CheckResultCompleteOutput(res Result, prefix string) error {
+	if err := CheckResult(res, prefix); err != nil {
+		return err
+	}
+	if res.WaitErr != nil {
+		return &redactedWrappedError{
+			message: fmt.Sprintf("%s: output incomplete: %s", prefix, RedactSensitiveText(res.WaitErr.Error())),
+			cause:   res.WaitErr,
+		}
 	}
 	return nil
 }

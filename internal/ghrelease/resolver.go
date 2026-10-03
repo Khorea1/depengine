@@ -529,7 +529,7 @@ func (r *Resolver) ghCLIToken(ctx context.Context, rn run.Runner) string {
 	}
 	r.tokCached = true
 	res := rn.Run(ctx, "gh", "auth", "token")
-	if res.Err != nil || res.ExitCode != 0 {
+	if res.Err != nil || res.ExitCode != 0 || res.WaitErr != nil {
 		r.tokValue = ""
 		return ""
 	}
