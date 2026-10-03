@@ -70,7 +70,24 @@ func (ex *Executor) needsElevation(rc *runContext) bool {
 	return false
 }
 
-var errToolTimeout = errors.New("tool timeout")
+var (
+	errToolTimeout               = errors.New("tool timeout")
+	errMethodTimeout             = errors.New("method timeout")
+	errReplacementRemovalTimeout = errors.New("replacement removal timeout")
+)
+
+func methodTimeoutError(cause error, toolTimeout, methodTimeout time.Duration, err error) error {
+	if errors.Is(err, errReplacementRemovalTimeout) {
+		return err
+	}
+	if errors.Is(cause, errToolTimeout) {
+		return fmt.Errorf("tool timeout (%v) exceeded", toolTimeout)
+	}
+	if errors.Is(cause, errMethodTimeout) {
+		return fmt.Errorf("method timeout (%v) exceeded", methodTimeout)
+	}
+	return err
+}
 
 func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) (*ExecReport, error) {
 	start := time.Now()

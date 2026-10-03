@@ -293,7 +293,7 @@ func (ex *Executor) recheckPostPrepareAvailability(ac *candidateAttempt, result 
 // candidate and concrete transition selected by verification. The report flag
 // is recorded only after that same transition commits.
 func (ex *Executor) runCandidatePreinstall(ac *candidateAttempt, result *ToolResult) attemptOutcome {
-	preCtx, preCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
+	preCtx, preCancel := context.WithTimeoutCause(ac.toolCtx, ex.methodTimeout, errMethodTimeout)
 	ran, err := ex.runLifecycleHooks(preCtx, ac.tool.Name, ac.resolved, ac.transition, plan.HookBefore)
 	preCancel()
 	ac.preHookRan = ran
@@ -302,7 +302,7 @@ func (ex *Executor) runCandidatePreinstall(ac *candidateAttempt, result *ToolRes
 	}
 
 	phase := lifecycleHookPhase(ac.transition, plan.HookBefore)
-	detail := fmt.Sprintf("%s: %v", phase, err)
+	detail := fmt.Sprintf("%s: %v", phase, methodTimeoutError(context.Cause(preCtx), ex.toolTimeout, ex.methodTimeout, err))
 	if rollbackErr := ac.prepared.rollback(ac.toolCtx); rollbackErr != nil {
 		detail = fmt.Sprintf("%s; source rollback failed: %v", detail, rollbackErr)
 	}
@@ -408,11 +408,7 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 	methodCtx := ac.toolCtx
 	methodCancel := func() {}
 	if ex.methodTimeout > 0 {
-		if ex.toolTimeout > 0 {
-			methodCtx, methodCancel = context.WithTimeoutCause(ac.toolCtx, ex.methodTimeout, errToolTimeout)
-		} else {
-			methodCtx, methodCancel = context.WithTimeout(ac.toolCtx, ex.methodTimeout)
-		}
+		methodCtx, methodCancel = context.WithTimeoutCause(ac.toolCtx, ex.methodTimeout, errMethodTimeout)
 	}
 
 	// Resolve auth only after this candidate survives every planning and
@@ -461,10 +457,11 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 	err := ac.adapter.InstallResolved(methodCtx, runner, ac.tool, ac.method, ac.reported)
 	methodCause := context.Cause(methodCtx)
 	methodCancel()
-	if err != nil && ex.toolTimeout > 0 && errors.Is(methodCause, errToolTimeout) {
+	if err != nil && errors.Is(methodCause, errToolTimeout) {
 		err = fmt.Errorf("tool timeout (%v) exceeded", ex.toolTimeout)
+	} else if err != nil && errors.Is(methodCause, errMethodTimeout) {
+		err = fmt.Errorf("method timeout (%v) exceeded", ex.methodTimeout)
 	}
-
 	if err == nil {
 		return ex.finishInstalled(ac, result)
 	}
@@ -562,7 +559,7 @@ func (ex *Executor) finishWouldInstall(ac *candidateAttempt, result *ToolResult)
 	ac.attempt.Status = "success"
 	result.Methods = append(result.Methods, ac.attempt)
 	ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "would_install")
-	postCtx, postCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
+	postCtx, postCancel := context.WithTimeoutCause(ac.toolCtx, ex.methodTimeout, errMethodTimeout)
 	_, _ = ex.runLifecycleHooks(postCtx, ac.tool.Name, ac.reported, ac.transition, plan.HookAfter)
 	postCancel()
 	result.Duration = time.Since(ac.toolStart).String()
@@ -638,11 +635,13 @@ func (ex *Executor) finishInstalled(ac *candidateAttempt, result *ToolResult) at
 		}
 	}
 
-	postCtx, postCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
+	postCtx, postCancel := context.WithTimeoutCause(ac.toolCtx, ex.methodTimeout, errMethodTimeout)
 	postRan, perr := ex.runLifecycleHooks(postCtx, ac.tool.Name, ac.reported, ac.transition, plan.HookAfter)
+	postCause := context.Cause(postCtx)
 	postCancel()
 	if perr != nil {
 		result.Status = StatusFailed
+		perr = methodTimeoutError(postCause, ex.toolTimeout, ex.methodTimeout, perr)
 		result.Error = fmt.Sprintf("%s: %v", lifecycleHookPhase(ac.transition, plan.HookAfter), perr)
 		result.PostinstallDone = false
 		if ac.replacementCommitted && ac.replacementComplete != nil {

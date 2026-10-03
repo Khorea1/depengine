@@ -95,7 +95,7 @@ func (ex *Executor) replaceCandidate(ac *candidateAttempt, result *ToolResult, r
 	if ac.prepared.tx != nil {
 		preparationKey = ac.prepared.tx.key
 	}
-	removeCredentials, credentialErr := ex.executionCredentialContext(ac.toolCtx, oldMethod)
+	removeCredentials, credentialErr := ex.executionCredentialContext(methodCtx, oldMethod)
 	if credentialErr != nil {
 		return ex.failReplacement(ac, result, fmt.Errorf("resolve tracked removal credentials: %w", credentialErr))
 	}
@@ -123,6 +123,7 @@ func (ex *Executor) replaceCandidate(ac *candidateAttempt, result *ToolResult, r
 		return ex.failReplacement(ac, result, fmt.Errorf("persist removal boundary: %w", err))
 	}
 	if err := runReplacementRemoval(removeCredentials, runner, ac.tool, oldMethod, oldAdapter); err != nil {
+		err = methodTimeoutError(context.Cause(methodCtx), ex.toolTimeout, ex.methodTimeout, err)
 		return ex.failReplacement(ac, result, err)
 	}
 	if err := locked.RecordReplacementRemoved(ac.tool.Name); err != nil {
@@ -138,16 +139,17 @@ func (ex *Executor) replaceCandidate(ac *candidateAttempt, result *ToolResult, r
 		return ex.failReplacement(ac, result, fmt.Errorf("persist install boundary: %w", err))
 	}
 	if err := ac.adapter.InstallResolved(methodCtx, runner, ac.tool, ac.method, ac.reported); err != nil {
+		err = methodTimeoutError(context.Cause(methodCtx), ex.toolTimeout, ex.methodTimeout, err)
 		return ex.failReplacement(ac, result, fmt.Errorf("install exact replacement target: %w", err))
 	}
 	verification, err := ex.VerifyResolvedCandidate(methodCtx, ac.tool, ac.method, ac.resolved)
 	if err != nil || verification.State != plan.StateSatisfied {
+		err = methodTimeoutError(context.Cause(methodCtx), ex.toolTimeout, ex.methodTimeout, err)
 		if err == nil {
 			err = fmt.Errorf("replacement verification returned %s: %s", verification.State, verification.Detail)
 		}
 		return ex.failReplacement(ac, result, fmt.Errorf("verify exact replacement target: %w", err))
 	}
-
 	result.Status = StatusInstalled
 	result.InstallCommitted = true
 	result.PreinstallDone = ac.preHookRan
@@ -202,7 +204,7 @@ func (ex *Executor) replaceCandidate(ac *candidateAttempt, result *ToolResult, r
 // runReplacementRemoval applies the shared execution safeguards to a replacement removal.
 // ctx must already carry credentials scoped to method; elevation lasts only for this removal.
 func runReplacementRemoval(ctx context.Context, runner run.Runner, tool *config.Tool, method *config.MethodCandidate, adapter AdapterV2) error {
-	removeCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	removeCtx, cancel := context.WithTimeoutCause(ctx, 2*time.Minute, errReplacementRemovalTimeout)
 	defer cancel()
 	removeCtx = run.WithOmittedEnv(removeCtx, methodSecretEnvNames(method)...)
 	if requirer, ok := adapter.(RemovalElevationRequirer); ok && requirer.RequiresRemovalElevation(tool, method) {
@@ -212,6 +214,9 @@ func runReplacementRemoval(ctx context.Context, runner run.Runner, tool *config.
 				if stop != nil {
 					stop()
 				}
+				if context.Cause(removeCtx) == errReplacementRemovalTimeout {
+					return fmt.Errorf("%w (2m) exceeded", errReplacementRemovalTimeout)
+				}
 				return fmt.Errorf("removal elevation: %w", err)
 			}
 			if stop != nil {
@@ -220,6 +225,9 @@ func runReplacementRemoval(ctx context.Context, runner run.Runner, tool *config.
 		}
 	}
 	if err := adapter.Remove(removeCtx, runner, tool, method); err != nil {
+		if context.Cause(removeCtx) == errReplacementRemovalTimeout {
+			return fmt.Errorf("%w (2m) exceeded", errReplacementRemovalTimeout)
+		}
 		return fmt.Errorf("remove tracked installation: %w", err)
 	}
 	return nil

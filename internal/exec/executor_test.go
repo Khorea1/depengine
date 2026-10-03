@@ -2535,8 +2535,8 @@ func TestToolTimeout(t *testing.T) {
 	ex := New()
 	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
 	WithAdapters(blocking)(ex)
-	WithToolTimeout(10 * time.Millisecond)(ex)
-	WithMethodTimeout(5 * time.Millisecond)(ex)
+	WithToolTimeout(20 * time.Millisecond)(ex)
+	WithMethodTimeout(100 * time.Millisecond)(ex)
 
 	s := &config.Schema{
 		Defaults: config.Defaults{Manager: "native", MethodOrder: []string{"blocker"}},
@@ -2560,8 +2560,57 @@ func TestToolTimeout(t *testing.T) {
 	if report.Tools[0].Status != StatusFailed {
 		t.Fatalf("expected tool to fail due to timeout, got status %v", report.Tools[0].Status)
 	}
-	if !strings.Contains(report.Tools[0].Error, "tool timeout") {
-		t.Fatalf("timeout error = %q, want tool timeout classification", report.Tools[0].Error)
+	if !strings.Contains(report.Tools[0].Error, "tool timeout (20ms)") {
+		t.Fatalf("timeout error = %q, want global timeout classification and duration", report.Tools[0].Error)
+	}
+	if strings.Contains(report.Tools[0].Error, "method timeout") {
+		t.Fatalf("global timeout was also classified as method timeout: %q", report.Tools[0].Error)
+	}
+	duration, err := time.ParseDuration(report.Tools[0].Duration)
+	if err != nil {
+		t.Fatalf("invalid duration %q: %v", report.Tools[0].Duration, err)
+	}
+	if duration < 15*time.Millisecond || duration >= 100*time.Millisecond {
+		t.Fatalf("duration = %v, want global timeout near 20ms and below method timeout", duration)
+	}
+}
+
+func TestMethodTimeout(t *testing.T) {
+	blocking := &blockingMockAdapter{kindValue: "blocker", block: make(chan struct{})}
+	blocking.availableFunc = func() bool { return true }
+	blocking.checkFunc = func(string) bool { return false }
+
+	ex := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
+	WithAdapters(blocking)(ex)
+	WithToolTimeout(500 * time.Millisecond)(ex)
+	WithMethodTimeout(20 * time.Millisecond)(ex)
+	s := &config.Schema{
+		Defaults: config.Defaults{Manager: "native", MethodOrder: []string{"blocker"}},
+		Tools: map[string]*config.Tool{
+			"tool1": {Name: "tool1", Methods: []*config.MethodCandidate{{Kind: "blocker", Config: map[string]any{"pkg": "tool1"}}}},
+		},
+	}
+
+	report, err := ex.Execute(context.Background(), s, "arch")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusFailed {
+		t.Fatalf("expected one failed tool, got %+v", report.Tools)
+	}
+	if !strings.Contains(report.Tools[0].Error, "method timeout (20ms)") {
+		t.Fatalf("timeout error = %q, want method timeout classification and duration", report.Tools[0].Error)
+	}
+	if strings.Contains(report.Tools[0].Error, "tool timeout") {
+		t.Fatalf("method timeout was also classified as global timeout: %q", report.Tools[0].Error)
+	}
+	duration, err := time.ParseDuration(report.Tools[0].Duration)
+	if err != nil {
+		t.Fatalf("invalid duration %q: %v", report.Tools[0].Duration, err)
+	}
+	if duration < 15*time.Millisecond || duration >= 200*time.Millisecond {
+		t.Fatalf("duration = %v, want method timeout near 20ms and below global timeout", duration)
 	}
 }
 

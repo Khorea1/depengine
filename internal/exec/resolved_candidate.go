@@ -57,7 +57,7 @@ func (ex *Executor) ExecuteResolvedUpgradeCandidate(ctx context.Context, schema 
 	toolCtx := omitToolSecretEnvironment(housekeepingCtx, tool)
 	if ex.toolTimeout > 0 {
 		var cancel context.CancelFunc
-		toolCtx, cancel = context.WithTimeout(toolCtx, ex.toolTimeout)
+		toolCtx, cancel = context.WithTimeoutCause(toolCtx, ex.toolTimeout, errToolTimeout)
 		defer cancel()
 	}
 	for _, dependency := range tool.EffectiveRequires(ex.facts) {

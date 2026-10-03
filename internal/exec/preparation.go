@@ -584,13 +584,14 @@ func (ex *Executor) recoveryCandidate(rc *runContext, key string) (*config.Tool,
 // Other identity dimensions remain unverifiable, which deliberately leaves
 // the committing journal blocked rather than guessing.
 func (ex *Executor) observeRecoveryCandidate(ctx context.Context, tool *config.Tool, method *config.MethodCandidate, intent *plan.ResolvedInstallPlan, adapter AdapterV2) plan.Observation {
-	probeCtx, cancel := context.WithTimeout(ctx, ex.methodTimeout)
+	probeCtx, cancel := context.WithTimeoutCause(ctx, ex.methodTimeout, errMethodTimeout)
 	defer cancel()
 	runner := ex.probeRunner(tool.Name, method.Kind)
 	var observation plan.Observation
 	var err error
 	observation, err = adapter.Observe(probeCtx, runner, tool, methodForResolvedTarget(method, intent))
 	if err != nil {
+		err = methodTimeoutError(context.Cause(probeCtx), ex.toolTimeout, ex.methodTimeout, err)
 		return plan.Observation{
 			Presence: plan.PresenceBroken,
 			Detail:   "observe recovery candidate failed: " + run.RedactSensitiveText(err.Error()),

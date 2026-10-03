@@ -373,13 +373,14 @@ func (ex *Executor) resumeReplacementInstall(ctx context.Context, rc *runContext
 	if adapter == nil {
 		return fmt.Errorf("desired adapter %q is unavailable", method.Kind)
 	}
-	methodCtx, cancel := context.WithTimeout(ctx, ex.methodTimeout)
+	methodCtx, cancel := context.WithTimeoutCause(ctx, ex.methodTimeout, errMethodTimeout)
 	defer cancel()
 	credentialCtx, err := ex.executionCredentialContext(methodCtx, method)
 	if err != nil {
 		return fmt.Errorf("resolve replacement credentials: %w", err)
 	}
 	if err := adapter.InstallResolved(credentialCtx, ex.mutationRunner(tool.Name, method.Kind), tool, method, desiredPlan); err != nil {
+		err = methodTimeoutError(context.Cause(methodCtx), ex.toolTimeout, ex.methodTimeout, err)
 		return fmt.Errorf("resume exact replacement install: %w", err)
 	}
 	oldVerification, desiredVerification, err := ex.observeReplacementPair(ctx, tool, oldMethod, method, oldPlan, desiredPlan)
@@ -446,9 +447,11 @@ func (ex *Executor) continueRecoveredReplacement(ctx context.Context, rc *runCon
 		if err := locked.PlanReplacementPostHook(tool.Name); err != nil {
 			return fmt.Errorf("persist replacement post-hook boundary: %w", err)
 		}
-		postCtx, cancel := context.WithTimeout(ctx, ex.methodTimeout)
+		postCtx, cancel := context.WithTimeoutCause(ctx, ex.methodTimeout, errMethodTimeout)
 		postRan, hookErr := ex.runLifecycleHooks(postCtx, tool.Name, desired, plan.TransitionUpgrade, plan.HookAfter)
+		postCause := context.Cause(postCtx)
 		cancel()
+		hookErr = methodTimeoutError(postCause, ex.toolTimeout, ex.methodTimeout, hookErr)
 		toolState := locked.State().Tools[tool.Name]
 		toolState.PostinstallDone = postRan && hookErr == nil
 		if err := locked.CompleteReplacement(tool.Name, toolState); err != nil {
@@ -671,7 +674,7 @@ func (ex *Executor) reportBatchDryRun(rc *runContext, candidates []batchCandidat
 	}
 	ex.outputf("  ⚡  commit: would batch native install: %s via %s\n", strings.Join(names, ", "), rc.nativeManagerName)
 	for _, c := range candidates {
-		postCtx, postCancel := context.WithTimeout(omitToolSecretEnvironment(rc.ctx, c.tool), ex.methodTimeout)
+		postCtx, postCancel := context.WithTimeoutCause(omitToolSecretEnvironment(rc.ctx, c.tool), ex.methodTimeout, errMethodTimeout)
 		_, _ = ex.runLifecycleHooks(postCtx, c.tool.Name, c.resolvedPlan, plan.TransitionInstall, plan.HookAfter)
 		postCancel()
 		wouldInstall := ToolResult{
@@ -696,10 +699,12 @@ func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandida
 				MethodKind: c.method.Kind, Config: c.method.Config, PlanIntent: c.resolvedPlan, InstallCommitted: true,
 			}
 			tr.RebootRequired, _ = c.method.Config["_reboot_required"].(bool)
-			postCtx, postCancel := context.WithTimeout(omitToolSecretEnvironment(rc.ctx, c.tool), ex.methodTimeout)
+			postCtx, postCancel := context.WithTimeoutCause(omitToolSecretEnvironment(rc.ctx, c.tool), ex.methodTimeout, errMethodTimeout)
 			postRan, err := ex.runLifecycleHooks(postCtx, c.tool.Name, c.resolvedPlan, plan.TransitionInstall, plan.HookAfter)
+			postCause := context.Cause(postCtx)
 			postCancel()
 			if err != nil {
+				err = methodTimeoutError(postCause, ex.toolTimeout, ex.methodTimeout, err)
 				tr.Status = StatusFailed
 				tr.Error = fmt.Sprintf("post-install: %v", err)
 			} else {
