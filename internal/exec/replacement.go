@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"time"
@@ -214,7 +215,7 @@ func runReplacementRemoval(ctx context.Context, runner run.Runner, tool *config.
 				if stop != nil {
 					stop()
 				}
-				if context.Cause(removeCtx) == errReplacementRemovalTimeout {
+				if errors.Is(context.Cause(removeCtx), errReplacementRemovalTimeout) {
 					return fmt.Errorf("%w (2m) exceeded", errReplacementRemovalTimeout)
 				}
 				return fmt.Errorf("removal elevation: %w", err)
@@ -225,7 +226,7 @@ func runReplacementRemoval(ctx context.Context, runner run.Runner, tool *config.
 		}
 	}
 	if err := adapter.Remove(removeCtx, runner, tool, method); err != nil {
-		if context.Cause(removeCtx) == errReplacementRemovalTimeout {
+		if errors.Is(context.Cause(removeCtx), errReplacementRemovalTimeout) {
 			return fmt.Errorf("%w (2m) exceeded", errReplacementRemovalTimeout)
 		}
 		return fmt.Errorf("remove tracked installation: %w", err)

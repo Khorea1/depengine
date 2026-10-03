@@ -36,7 +36,7 @@ func TestRunRemoveAURWithoutSchemaUsesPersistedProvider(t *testing.T) {
 	if _, ok := loadTestState(t, stateHome).Tools["demo"]; ok {
 		t.Fatal("removed AUR tool remained in persisted state")
 	}
-	calls, err := os.ReadFile(callsPath)
+	calls, err := os.ReadFile(callsPath) // #nosec G304 -- callsPath is created inside this test’s t.TempDir.
 	if err != nil {
 		t.Fatalf("read helper calls: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestUndoLegacyAURWithoutProviderDoesNotCallArbitraryHelper(t *testing.T) {
 		t.Fatalf("legacy AUR tool was mutated despite missing Provider: %v", err)
 	}
 	if _, err := os.Stat(callsPath); !os.IsNotExist(err) {
-		calls, _ := os.ReadFile(callsPath)
+		calls, _ := os.ReadFile(callsPath) // #nosec G304 -- callsPath is created inside this test’s t.TempDir.
 		t.Fatalf("undo attempted arbitrary AUR helper: calls = %q, stat error = %v", calls, err)
 	}
 }
@@ -116,7 +116,7 @@ case "$1" in
   *) printf 'unexpected helper arguments: %s\n' "$*" >&2; exit 64 ;;
 esac
 `
-	if err := os.WriteFile(filepath.Join(helperDir, helperName), []byte(helper), 0o700); err != nil {
+	if err := os.WriteFile(filepath.Join(helperDir, helperName), []byte(helper), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatalf("write controlled %s helper: %v", helperName, err)
 	}
 	return installedPath, callsPath

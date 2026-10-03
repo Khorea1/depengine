@@ -53,7 +53,7 @@ case "$1" in
   *) printf 'unexpected helper arguments: %s\n' "$*" >&2; exit 64 ;;
 esac
 `
-	if err := os.WriteFile(filepath.Join(helperDir, "yay"), []byte(helper), 0o700); err != nil {
+	if err := os.WriteFile(filepath.Join(helperDir, "yay"), []byte(helper), 0o700); err != nil { // #nosec G306 -- executable test fixture requires owner execute permission.
 		t.Fatalf("write controlled yay helper: %v", err)
 	}
 
@@ -97,7 +97,7 @@ esac
 	if toolState.MethodKind != "aur" || toolState.Provider != "yay" {
 		t.Fatalf("persisted tool state = %+v, want MethodKind aur and Provider yay", toolState)
 	}
-	calls, err := os.ReadFile(callsPath)
+	calls, err := os.ReadFile(callsPath) // #nosec G304 -- callsPath is created inside this test’s t.TempDir.
 	if err != nil {
 		t.Fatalf("read controlled helper calls: %v", err)
 	}
