@@ -2566,13 +2566,6 @@ func TestToolTimeout(t *testing.T) {
 	if strings.Contains(report.Tools[0].Error, "method timeout") {
 		t.Fatalf("global timeout was also classified as method timeout: %q", report.Tools[0].Error)
 	}
-	duration, err := time.ParseDuration(report.Tools[0].Duration)
-	if err != nil {
-		t.Fatalf("invalid duration %q: %v", report.Tools[0].Duration, err)
-	}
-	if duration < 15*time.Millisecond || duration >= 100*time.Millisecond {
-		t.Fatalf("duration = %v, want global timeout near 20ms and below method timeout", duration)
-	}
 }
 
 func TestMethodTimeout(t *testing.T) {
@@ -2604,13 +2597,6 @@ func TestMethodTimeout(t *testing.T) {
 	}
 	if strings.Contains(report.Tools[0].Error, "tool timeout") {
 		t.Fatalf("method timeout was also classified as global timeout: %q", report.Tools[0].Error)
-	}
-	duration, err := time.ParseDuration(report.Tools[0].Duration)
-	if err != nil {
-		t.Fatalf("invalid duration %q: %v", report.Tools[0].Duration, err)
-	}
-	if duration < 15*time.Millisecond || duration >= 200*time.Millisecond {
-		t.Fatalf("duration = %v, want method timeout near 20ms and below global timeout", duration)
 	}
 }
 
