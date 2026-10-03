@@ -26,6 +26,9 @@ func NewAURAdapter(helper string) *AURAdapter {
 
 func (a *AURAdapter) Kind() string { return "aur" }
 
+// ProviderName reports the concrete helper used for the logical AUR method.
+func (a *AURAdapter) ProviderName() string { return a.helper }
+
 func (a *AURAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	if a.helper == "" {
 		return false

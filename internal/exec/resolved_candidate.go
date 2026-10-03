@@ -57,7 +57,7 @@ func (ex *Executor) ExecuteResolvedUpgradeCandidate(ctx context.Context, schema 
 	toolCtx := omitToolSecretEnvironment(housekeepingCtx, tool)
 	if ex.toolTimeout > 0 {
 		var cancel context.CancelFunc
-		toolCtx, cancel = context.WithTimeout(toolCtx, ex.toolTimeout)
+		toolCtx, cancel = context.WithTimeoutCause(toolCtx, ex.toolTimeout, errToolTimeout)
 		defer cancel()
 	}
 	for _, dependency := range tool.EffectiveRequires(ex.facts) {
@@ -69,7 +69,7 @@ func (ex *Executor) ExecuteResolvedUpgradeCandidate(ctx context.Context, schema 
 			}
 			result := ToolResult{Tool: tool.Name, Status: StatusFailed, Error: fmt.Sprintf("requires failed dependency: %s (%s)", dependency, reason)}
 			rc.report.Tools = append(rc.report.Tools, result)
-			if _, err := ex.finishRun(ctx, schema, rc.report, start); err != nil {
+			if _, err := ex.finishRun(housekeepingCtx, schema, rc.report, start); err != nil {
 				return result, err
 			}
 			return result, nil
@@ -81,7 +81,7 @@ func (ex *Executor) ExecuteResolvedUpgradeCandidate(ctx context.Context, schema 
 		ex.finishExhausted(&result, method.Kind, start)
 	}
 	rc.report.Tools = append(rc.report.Tools, result)
-	if _, err := ex.finishRun(ctx, schema, rc.report, start); err != nil {
+	if _, err := ex.finishRun(housekeepingCtx, schema, rc.report, start); err != nil {
 		return result, err
 	}
 	return result, nil

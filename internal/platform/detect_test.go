@@ -169,7 +169,6 @@ func TestDetectorDarwinBSDAndWindows(t *testing.T) {
 	})
 }
 
-
 func TestDetectorCoversEveryKnownNativeClan(t *testing.T) {
 	type fixture struct {
 		files    map[string]string
@@ -205,19 +204,19 @@ func TestDetectorCoversEveryKnownNativeClan(t *testing.T) {
 		},
 		"freebsd": {
 			commands: map[string]string{"uname -s": "FreeBSD", "uname -r": "15.0", "uname -m": "amd64"},
-			goos: "freebsd",
+			goos:     "freebsd",
 		},
 		"openbsd": {
 			commands: map[string]string{"uname -s": "OpenBSD", "uname -r": "7.8", "uname -m": "amd64"},
-			goos: "openbsd",
+			goos:     "openbsd",
 		},
 		"netbsd": {
 			commands: map[string]string{"uname -s": "NetBSD", "uname -r": "10.1", "uname -m": "amd64"},
-			goos: "netbsd",
+			goos:     "netbsd",
 		},
 		"windows": {
 			commands: map[string]string{"cmd.exe /d /c ver": "Microsoft Windows [Version 10.0.26100.4652]"},
-			goos: "windows", goarch: "amd64",
+			goos:     "windows", goarch: "amd64",
 		},
 	}
 
@@ -243,5 +242,34 @@ func TestDetectorCoversEveryKnownNativeClan(t *testing.T) {
 				t.Fatalf("ResolveFamily(%#v) = %q, want %q", facts, got, clan)
 			}
 		})
+	}
+}
+
+func TestKnownFamiliesCoverResolveFamilyOutputs(t *testing.T) {
+	known := make(map[string]bool)
+	for _, family := range KnownFamilies() {
+		known[family] = true
+	}
+
+	for id, want := range idToFamily {
+		got := ResolveFamily(&Facts{DistroID: id})
+		if got != want {
+			t.Fatalf("ResolveFamily(%q) = %q, want %q", id, got, want)
+		}
+		if !known[got] {
+			t.Fatalf("ResolveFamily(%q) produced family %q missing from KnownFamilies", id, got)
+		}
+	}
+	for _, rule := range likeTokenPriority {
+		got := ResolveFamily(&Facts{DistroID: "derivative", DistroIDLike: rule.Token})
+		if !known[got] {
+			t.Fatalf("ID_LIKE %q produced family %q missing from KnownFamilies", rule.Token, got)
+		}
+	}
+	for _, facts := range []*Facts{nil, &Facts{IsAndroid: true}} {
+		got := ResolveFamily(facts)
+		if !known[got] {
+			t.Fatalf("ResolveFamily(%#v) produced family %q missing from KnownFamilies", facts, got)
+		}
 	}
 }

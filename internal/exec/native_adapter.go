@@ -608,7 +608,7 @@ func (a *NativeByManagerAdapter) InstalledVersion(ctx context.Context, rn run.Ru
 		cmd = append(cmd, "--source", source)
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if err := run.CheckResult(res, "winget: version check"); err != nil {
+	if err := run.CheckResultCompleteOutput(res, "winget: version check"); err != nil {
 		return "", err
 	}
 	version, _, ok := wingetPackageFromOutput(res.Stdout, pkg)

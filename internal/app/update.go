@@ -62,11 +62,13 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		}
 	}
 
-	s, clan, facts, manifestCount, err := loadSchemaWithManifest(*updateSchema, manifestPath)
+	project, err := loadProject(*updateSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true})
 	if err != nil {
 		log.Default.Error("load schema", "error", err)
 		return exitWithCode(exitCodeForError(err))
 	}
+	*updateSchema = project.SchemaPath
+	s, clan, facts, manifestCount := project.Schema, project.Clan, project.Facts, project.ManifestCount
 	if manifestAuto && manifestCount > 0 {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
 	}
@@ -204,7 +206,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	// Warn about installed tools whose versions no longer match the pins
 	// that were just resolved. Warn-only: applying the new versions is a
 	// separate install step.
-	reportVersionDrift(s, newLock)
+	reportVersionDrift(ctx, s, newLock)
 
 	if *updateVerbose && projection != nil {
 		for _, entry := range projection.Entries {
@@ -276,7 +278,7 @@ func updatePinValue(pin lock.ToolPin) string {
 // recorded in state and warns about installed tools that are now out of date.
 // Warn-only by design: `depengine update` refreshes the lock; applying the new
 // versions is a separate install step.
-func reportVersionDrift(schema *config.Schema, newLock *lock.Lock) {
+func reportVersionDrift(ctx context.Context, schema *config.Schema, newLock *lock.Lock) {
 	if newLock == nil || (newLock.Version != lock.CurrentVersion && len(newLock.Tools) == 0) {
 		return
 	}
@@ -288,7 +290,7 @@ func reportVersionDrift(schema *config.Schema, newLock *lock.Lock) {
 			return
 		}
 	}
-	ls, err := state.LoadShared()
+	ls, err := state.LoadSharedContext(ctx)
 	if err != nil {
 		return
 	}

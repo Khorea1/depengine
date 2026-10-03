@@ -143,9 +143,20 @@ func displayMethodKind(method *config.MethodCandidate) string {
 	return method.Kind
 }
 
+type providerNamer interface {
+	ProviderName() string
+}
+
 func (ex *Executor) providerForMethodKind(kind, nativeManagerName string) string {
 	if kind == "native" {
 		return nativeManagerName
+	}
+	if adapter := ex.LookupAdapter(kind); adapter != nil {
+		if named, ok := adapter.(providerNamer); ok {
+			if provider := strings.TrimSpace(named.ProviderName()); provider != "" {
+				return provider
+			}
+		}
 	}
 	if native.IsNativeManagerName(kind) || methodkind.IsKnownKind(kind) {
 		return kind
@@ -198,16 +209,21 @@ func (ex *Executor) batchNativeInstall(ctx context.Context, rc *runContext, cand
 	if ex.batchTimeout > 0 {
 		timeout = ex.batchTimeout
 	}
-	if ex.toolTimeout > 0 && timeout > ex.toolTimeout {
+	timeoutCause := errMethodTimeout
+	if ex.toolTimeout > 0 && timeout >= ex.toolTimeout {
 		timeout = ex.toolTimeout
+		timeoutCause = errToolTimeout
 	}
-	batchCtx, cancel := context.WithTimeout(ctx, timeout)
+	batchCtx, cancel := context.WithTimeoutCause(ctx, timeout, timeoutCause)
 	defer cancel()
 
 	runner := ex.mutationRunner("batch", "native")
 	ex.outputf("  ⚡  batch installing %d packages via %s (1 elevation)\n", len(pkgs), rc.nativeManagerName)
 	ex.logDebug(ctx, "batch", "clan", rc.clan, "packages", strings.Join(pkgs, " "), "status", "started")
 	result := runner.Run(batchCtx, cmd[0], cmd[1:]...)
+	if result.Err != nil {
+		result.Err = methodTimeoutError(context.Cause(batchCtx), ex.toolTimeout, timeout, result.Err)
+	}
 	if result.Err != nil || result.ExitCode != 0 {
 		ex.outputf("  ⚡  batch install failed (%s), falling back to per-tool install\n", formatBatchError(result))
 		ex.logWarn(ctx, "batch", "clan", rc.clan, "packages", strings.Join(pkgs, " "), "status", "failed", "error", result.Err, "exit_code", result.ExitCode)

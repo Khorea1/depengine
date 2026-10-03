@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/ecosystem"
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/log"
@@ -57,6 +58,7 @@ type removeSession struct {
 	clan             string
 	state            *state.State
 	schemaTools      map[string]*config.Tool
+	schemaAURHelper  string
 	dryRun           bool
 	requestedRemoval map[string]bool
 	removedThisRun   map[string]bool
@@ -85,7 +87,7 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 // supplied executor. Keeping executor construction outside this seam lets
 // in-process callers inject adapters without changing the process registry.
 func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce *bool, executor *exec.Executor, facts *engine.Facts) error {
-	st, ls, err := loadRemoveState(*removeDryRun)
+	st, ls, err := loadRemoveState(ctx, *removeDryRun)
 	if err != nil {
 		return err
 	}
@@ -93,7 +95,7 @@ func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, 
 		defer func() { _ = ls.Close() }()
 	}
 
-	schemaTools, err := loadRemoveSchemaTools(*removeSchema)
+	schemaTools, schemaAURHelper, err := loadRemoveSchemaTools(*removeSchema)
 	if err != nil {
 		return err
 	}
@@ -104,6 +106,7 @@ func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, 
 		executor:         executor,
 		state:            st,
 		schemaTools:      schemaTools,
+		schemaAURHelper:  schemaAURHelper,
 		clan:             engine.ResolveFamily(facts),
 		dryRun:           *removeDryRun,
 		requestedRemoval: collectRemovalTargets(st, removeAll, removeOnly, removeArgs),
@@ -142,7 +145,7 @@ func validateRemoveFlags(removeAll *bool, removeOnly *string) error {
 // loadRemoveState loads removal state. Dry-run uses an unlocked read so it
 // neither creates a lock file nor rewrites state; atomic state writes ensure
 // that read still observes a complete state file. Real removals take the lock.
-func loadRemoveState(dryRun bool) (*state.State, *state.LockedState, error) {
+func loadRemoveState(ctx context.Context, dryRun bool) (*state.State, *state.LockedState, error) {
 	if dryRun {
 		st, err := state.Load()
 		if err != nil {
@@ -151,7 +154,7 @@ func loadRemoveState(dryRun bool) (*state.State, *state.LockedState, error) {
 		}
 		return st, nil, nil
 	}
-	ls, err := state.LoadLocked()
+	ls, err := state.LoadLockedContext(ctx)
 	if err != nil {
 		log.Default.Error("load state", "error", err)
 		return nil, nil, exitWithCode(3)
@@ -161,16 +164,16 @@ func loadRemoveState(dryRun bool) (*state.State, *state.LockedState, error) {
 
 // loadRemoveSchemaTools optionally loads schema tools for validation.
 // An empty path disables validation and returns a nil map.
-func loadRemoveSchemaTools(schemaPath string) (map[string]*config.Tool, error) {
+func loadRemoveSchemaTools(schemaPath string) (map[string]*config.Tool, string, error) {
 	if schemaPath == "" {
-		return nil, nil
+		return nil, "", nil
 	}
 	s, _, _, err := loadSchema(schemaPath)
 	if err != nil {
 		log.Default.Error("load schema", "error", err)
-		return nil, exitWithCode(2)
+		return nil, "", exitWithCode(2)
 	}
-	return s.Tools, nil
+	return s.Tools, s.Defaults.AurHelper, nil
 }
 
 // gatherRemoveFacts resolves the real distro clan from OS facts. The caller
@@ -224,6 +227,17 @@ func (s *removeSession) lookupRemovalAdapter(toolName string, toolState state.To
 	methodKind := toolState.MethodKind
 	if methodKind == "" {
 		methodKind = toolState.Method // fallback for explicitly constructed current-format state
+	}
+	if methodKind == "aur" {
+		provider := strings.TrimSpace(toolState.Provider)
+		if provider == "" {
+			provider = strings.TrimSpace(s.schemaAURHelper)
+		}
+		if provider == "" {
+			log.Default.Warn("AUR provider is unknown; provide the original schema or state with provider metadata", "tool", toolName)
+			return nil, methodKind, false
+		}
+		exec.WithAdapters(ecosystem.NewAURAdapter(provider))(s.executor)
 	}
 	adapter := s.executor.LookupAdapter(methodKind)
 	if adapter == nil {

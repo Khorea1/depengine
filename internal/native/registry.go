@@ -311,15 +311,38 @@ func ManagerNameToClan(name string) (string, bool) {
 	return clan, ok
 }
 
-// ManagerBinaryNames returns the set of all manager binary names registered
-// in the reverse map (managerNameToClan). Used by RegisterNativeManagerAliases
-// to ensure binary-name method kinds (e.g. "emerge", "yum") get adapter
-// registrations even when they differ from Manager.Name.
+// ManagerBinaryNames returns binary-name aliases accepted as native method
+// kinds (for example, "yum" and "dnf5"). The result is deterministic.
 func ManagerBinaryNames() []string {
 	out := make([]string, 0, len(managerNameToClan))
 	for name := range managerNameToClan {
 		out = append(out, name)
 	}
+	sort.Strings(out)
+	return out
+}
+
+// ManagerExecutableNames returns the concrete executables used to perform
+// native installs. Unlike ManagerNames/ManagerBinaryNames, this is runtime
+// environment data rather than schema method vocabulary.
+func ManagerExecutableNames() []string {
+	seen := make(map[string]bool, len(managers)*3)
+	for _, manager := range managers {
+		if manager.Name != "" {
+			seen[manager.Name] = true
+		}
+		if len(manager.SyncCmd) > 0 && manager.SyncCmd[0] != "" {
+			seen[manager.SyncCmd[0]] = true
+		}
+		if len(manager.InstallCmd) > 0 && manager.InstallCmd[0] != "" {
+			seen[manager.InstallCmd[0]] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for name := range seen {
+		out = append(out, name)
+	}
+	sort.Strings(out)
 	return out
 }
 

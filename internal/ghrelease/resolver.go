@@ -120,7 +120,7 @@ func (r *Resolver) fetchLatestTag(ctx context.Context, owner, repo string, rn ru
 	}
 
 	// Fetch latest release from GitHub API.
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", url.PathEscape(owner), url.PathEscape(repo))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("resolve latest: request: %w", err)
@@ -172,7 +172,7 @@ func (r *Resolver) fetchLatestRelease(ctx context.Context, owner, repo string, r
 		return v.(*release), nil
 	}
 
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", url.PathEscape(owner), url.PathEscape(repo))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("resolve release: request: %w", err)
@@ -224,7 +224,7 @@ func (r *Resolver) fetchReleaseByTag(ctx context.Context, owner, repo, tag strin
 		return v.(*release), nil
 	}
 
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, url.PathEscape(tag))
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(tag))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("resolve release %s: request: %w", tag, err)
@@ -356,32 +356,134 @@ func (r *Resolver) ResolveAssetURL(ctx context.Context, repo, assetPattern, targ
 		rel.TagName, repo, assetPattern, targetArch, targetOS, strings.Join(names, ", "))
 }
 
-// splitRepo parses an "owner/repo" reference, also accepting a full
-// "https://github.com/owner/repo" URL for convenience/copy-paste.
-func splitRepo(repo string) (owner, name string, ok bool) {
-	repo = strings.TrimSpace(repo)
-	if strings.Contains(repo, "://") {
-		u, err := url.Parse(repo)
-		if err != nil || !strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https") || !strings.EqualFold(u.Host, "github.com") {
-			return "", "", false
-		}
-		if u.RawQuery != "" || u.Fragment != "" {
-			return "", "", false
-		}
-		repo = strings.Trim(u.Path, "/")
-	} else if len(repo) >= len("github.com/") && strings.EqualFold(repo[:len("github.com/")], "github.com/") {
-		repo = repo[len("github.com/"):]
-	}
-	repo = strings.TrimSuffix(repo, "/")
-	parts := strings.Split(repo, "/")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+type repositoryID struct {
+	Owner string
+	Name  string
+}
+
+// splitRepo parses an exact repository identity. It accepts the documented
+// owner/repo forms and canonical GitHub HTTP(S) URLs, but rejects syntax that
+// could change path/query semantics before any API endpoint is constructed.
+func splitRepo(raw string) (owner, name string, ok bool) {
+	id, err := parseRepositoryID(raw)
+	if err != nil {
 		return "", "", false
 	}
-	parts[1] = strings.TrimSuffix(parts[1], ".git")
-	if parts[1] == "" {
-		return "", "", false
+	return id.Owner, id.Name, true
+}
+
+func parseRepositoryID(raw string) (repositoryID, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return repositoryID{}, fmt.Errorf("empty repository reference")
 	}
-	return parts[0], parts[1], true
+	if strings.Contains(raw, "://") {
+		return parseGitHubRepositoryURL(raw, true)
+	}
+	if len(raw) >= len("github.com/") && strings.EqualFold(raw[:len("github.com/")], "github.com/") {
+		raw = raw[len("github.com/"):]
+	}
+
+	// Bare references are not URLs. Reject URL/path syntax instead of trying to
+	// decode it, which keeps owner/repo identity unambiguous.
+	if containsControl(raw) || strings.ContainsAny(raw, `\\?#%@:`) {
+		return repositoryID{}, fmt.Errorf("ambiguous repository reference")
+	}
+	raw = strings.TrimSuffix(raw, "/")
+	parts := strings.Split(raw, "/")
+	if len(parts) != 2 {
+		return repositoryID{}, fmt.Errorf("repository reference must be owner/repo")
+	}
+	return canonicalRepositoryID(parts[0], parts[1])
+}
+
+// parseGitHubRepositoryURL extracts the repository identity from a GitHub URL.
+// exact requires the URL itself to identify only the repository; non-exact mode
+// is used by IsGitHubURL/URL templates and may contain paths, query, or fragment
+// below the repository while still validating the first two path segments.
+func parseGitHubRepositoryURL(raw string, exact bool) (repositoryID, error) {
+	u, err := url.Parse(raw)
+	if err != nil || (!strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https")) || !strings.EqualFold(u.Hostname(), "github.com") {
+		return repositoryID{}, fmt.Errorf("not a GitHub HTTP(S) repository URL")
+	}
+	if u.User != nil {
+		return repositoryID{}, fmt.Errorf("GitHub repository URL must not contain userinfo")
+	}
+	if port := u.Port(); port != "" {
+		if strings.EqualFold(u.Scheme, "https") && port != "443" {
+			return repositoryID{}, fmt.Errorf("unsupported GitHub HTTPS port")
+		}
+		if strings.EqualFold(u.Scheme, "http") && port != "80" {
+			return repositoryID{}, fmt.Errorf("unsupported GitHub HTTP port")
+		}
+	}
+	if exact && (u.RawQuery != "" || u.Fragment != "") {
+		return repositoryID{}, fmt.Errorf("repository URL must not contain query or fragment")
+	}
+
+	escapedPath := u.EscapedPath()
+	if !strings.HasPrefix(escapedPath, "/") {
+		return repositoryID{}, fmt.Errorf("repository URL has no absolute path")
+	}
+	escapedPath = strings.TrimPrefix(escapedPath, "/")
+	if exact && strings.HasSuffix(escapedPath, "/") {
+		escapedPath = strings.TrimSuffix(escapedPath, "/")
+	}
+	parts := strings.Split(escapedPath, "/")
+	if exact {
+		if len(parts) != 2 {
+			return repositoryID{}, fmt.Errorf("repository URL must identify exactly owner/repo")
+		}
+	} else if len(parts) < 2 {
+		return repositoryID{}, fmt.Errorf("repository URL is missing owner/repo")
+	}
+	if parts[0] == "" || parts[1] == "" {
+		return repositoryID{}, fmt.Errorf("repository URL contains an empty identity segment")
+	}
+	owner, err := url.PathUnescape(parts[0])
+	if err != nil {
+		return repositoryID{}, fmt.Errorf("decode GitHub owner: %w", err)
+	}
+	name, err := url.PathUnescape(parts[1])
+	if err != nil {
+		return repositoryID{}, fmt.Errorf("decode GitHub repository: %w", err)
+	}
+	return canonicalRepositoryID(owner, name)
+}
+
+func canonicalRepositoryID(owner, name string) (repositoryID, error) {
+	if strings.HasSuffix(name, ".git") {
+		name = strings.TrimSuffix(name, ".git")
+		if strings.HasSuffix(name, ".git") {
+			return repositoryID{}, fmt.Errorf("repository has repeated .git suffix")
+		}
+	}
+	if err := validateRepositorySegment(owner); err != nil {
+		return repositoryID{}, fmt.Errorf("invalid GitHub owner: %w", err)
+	}
+	if err := validateRepositorySegment(name); err != nil {
+		return repositoryID{}, fmt.Errorf("invalid GitHub repository: %w", err)
+	}
+	return repositoryID{Owner: owner, Name: name}, nil
+}
+
+func validateRepositorySegment(segment string) error {
+	if segment == "" || segment == "." || segment == ".." {
+		return fmt.Errorf("empty or traversal segment")
+	}
+	if containsControl(segment) || strings.ContainsAny(segment, `/\\?#%@:`) {
+		return fmt.Errorf("segment contains path or URL syntax")
+	}
+	return nil
+}
+
+func containsControl(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 // GithubToken returns a GitHub personal access token from environment.
@@ -427,7 +529,7 @@ func (r *Resolver) ghCLIToken(ctx context.Context, rn run.Runner) string {
 	}
 	r.tokCached = true
 	res := rn.Run(ctx, "gh", "auth", "token")
-	if res.Err != nil || res.ExitCode != 0 {
+	if res.Err != nil || res.ExitCode != 0 || res.WaitErr != nil {
 		r.tokValue = ""
 		return ""
 	}
@@ -445,25 +547,9 @@ func IsGitHubURL(rawURL string) bool {
 }
 
 func githubRepoFromURL(rawURL string) (owner, repo string, ok bool) {
-	u, err := url.Parse(rawURL)
-	if err != nil || (!strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https")) || !strings.EqualFold(u.Hostname(), "github.com") {
+	id, err := parseGitHubRepositoryURL(rawURL, false)
+	if err != nil {
 		return "", "", false
 	}
-	if port := u.Port(); port != "" {
-		if strings.EqualFold(u.Scheme, "https") && port != "443" {
-			return "", "", false
-		}
-		if strings.EqualFold(u.Scheme, "http") && port != "80" {
-			return "", "", false
-		}
-	}
-	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
-		return "", "", false
-	}
-	repo = strings.TrimSuffix(parts[1], ".git")
-	if repo == "" {
-		return "", "", false
-	}
-	return parts[0], repo, true
+	return id.Owner, id.Name, true
 }

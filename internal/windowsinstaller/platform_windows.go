@@ -47,6 +47,9 @@ Get-AppxPackage -Name $name -ErrorAction Stop |
 	if res.ExitCode != 0 {
 		return "", false, fmt.Errorf("PowerShell package query exited %d: %s", res.ExitCode, strings.TrimSpace(string(res.Stderr)))
 	}
+	if res.WaitErr != nil {
+		return "", false, fmt.Errorf("PowerShell package query output incomplete: %w", res.WaitErr)
+	}
 	identity := strings.TrimSpace(string(res.Stdout))
 	return identity, identity != "", nil
 }

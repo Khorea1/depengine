@@ -80,7 +80,6 @@ func TestFindStateMethodCandidateAmbiguousListsCandidates(t *testing.T) {
 	}
 }
 
-
 func TestAmbiguousWhyWarningEmptyForUniqueLabelsWithinKind(t *testing.T) {
 	attempts := []exec.MethodAttempt{
 		{Kind: "http", Label: "primary", Candidate: 0, CandidateKnown: true},

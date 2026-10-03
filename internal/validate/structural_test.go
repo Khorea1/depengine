@@ -909,8 +909,15 @@ func TestValidateMultipleErrors_CountAndTypes(t *testing.T) {
 	// Required method fields are now rejected by config.ParseProjectSchema before
 	// semantic validation. This fixture stays parseable so ValidateSchema can
 	// demonstrate aggregation of independent graph and URL errors.
-	if codes[ErrCycle] == 0 {
-		t.Error("expected ErrCycle (self_ref + x→y cycle)")
+	cycleFound := false
+	for _, err := range r.Errors {
+		if err.Code == ErrCycle && (strings.Contains(err.Message, "self_ref") || (strings.Contains(err.Message, "x") && strings.Contains(err.Message, "y"))) {
+			cycleFound = true
+			break
+		}
+	}
+	if !cycleFound {
+		t.Errorf("expected a cycle finding identifying self_ref or the x/y cycle; got: %+v", r.Errors)
 	}
 	if codes[ErrDanglingRef] == 0 {
 		t.Error("expected ErrDanglingRef (needs_missing→i_dont_exist)")

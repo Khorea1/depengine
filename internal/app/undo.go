@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/ecosystem"
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/log"
@@ -108,7 +110,7 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
 		return exitWithCode(3)
 	}
 
-	ls, err := state.LoadLocked()
+	ls, err := state.LoadLockedContext(ctx)
 	if err != nil {
 		log.Default.Error("state lock", "error", err)
 		return exitWithCode(3)
@@ -258,6 +260,15 @@ func removeUndoTools(ctx context.Context, toRemove []string, curState *state.Sta
 		log.Default.Info("removing tool added after snapshot", "tool", name, "method", toolState.Method)
 
 		methodKind := resolveUndoMethodKind(toolState)
+		if methodKind == "aur" {
+			provider := strings.TrimSpace(toolState.Provider)
+			if provider == "" {
+				log.Default.Warn("AUR provider is unknown; undo cannot safely reconstruct the removal adapter", "tool", name)
+				hadFailure = true
+				continue
+			}
+			exec.WithAdapters(ecosystem.NewAURAdapter(provider))(executor)
+		}
 
 		adapter := executor.LookupAdapter(methodKind)
 		if adapter == nil {

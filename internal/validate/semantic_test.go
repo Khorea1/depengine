@@ -71,6 +71,22 @@ func TestValidateCycles_NoCycle(t *testing.T) {
 	}
 }
 
+func TestValidateCycles_DanglingDependencyIsNotCycle(t *testing.T) {
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
+			"a": tool("a", nil, []string{"missing"}),
+		},
+	}
+	cycles := validateCycles(s)
+	if cycles.HasErrors() {
+		t.Fatalf("dangling dependency reported as cycle: %v", cycles.Errors)
+	}
+	dangling := validateDanglingReferences(s)
+	if len(dangling.Errors) != 1 || dangling.Errors[0].Code != ErrDanglingRef {
+		t.Fatalf("dangling diagnostics = %v, want one %s", dangling.Errors, ErrDanglingRef)
+	}
+}
+
 func TestValidateCycles_DirectCycle(t *testing.T) {
 	s := &config.Schema{
 		Tools: map[string]*config.Tool{
@@ -300,6 +316,20 @@ func TestValidateUnknownDistroFamily_Valid(t *testing.T) {
 	r := validateUnknownDistroFamily(s)
 	if len(r.Warnings) > 0 {
 		t.Errorf("expected no warnings, got: %v", r.Warnings)
+	}
+}
+
+func TestValidateUnknownDistroFamily_RuntimeVocabularyAndCase(t *testing.T) {
+	s := &config.Schema{
+		Tools: map[string]*config.Tool{
+			"app": tool("app", []*config.MethodCandidate{
+				mc("native", cond("Android", "DEBIAN", "aRcH"), map[string]any{}),
+			}, nil),
+		},
+	}
+	r := validateUnknownDistroFamily(s)
+	if len(r.Warnings) != 0 {
+		t.Fatalf("runtime-accepted families should validate: %v", r.Warnings)
 	}
 }
 

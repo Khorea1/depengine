@@ -72,7 +72,7 @@ func installAsdfOrMise(ctx context.Context, rn run.Runner, pkg, version string) 
 
 func installAsdf(ctx context.Context, rn run.Runner, pkg, version string) error {
 	plugins := rn.Run(ctx, "asdf", "plugin", "list")
-	if plugins.Err != nil || plugins.ExitCode != 0 || !asdfPluginListed(plugins.Stdout, pkg) {
+	if plugins.Err != nil || plugins.ExitCode != 0 || plugins.WaitErr != nil || !asdfPluginListed(plugins.Stdout, pkg) {
 		res := rn.Run(ctx, "asdf", "plugin", "add", pkg)
 		// Older asdf releases used exit code 2 for "already exists". Keep
 		// accepting that result while using the non-hyphenated command form

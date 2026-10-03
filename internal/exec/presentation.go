@@ -111,11 +111,7 @@ func (ex *Executor) recordToolResult(ctx context.Context, rc *runContext, result
 func (ex *Executor) recordBlockedTool(ctx context.Context, rc *runContext, toolName string) {
 	ex.recordToolResult(ctx, rc, &ToolResult{
 		Tool:   toolName,
-		Status: StatusSkippedUnavailable,
+		Status: StatusFailed,
 		Error:  "requires --allow-arbitrary-code (tool has arbitrary code execution capability)",
 	})
-	report := rc.report
-	report.mu.Lock()
-	report.Failed++
-	report.mu.Unlock()
 }

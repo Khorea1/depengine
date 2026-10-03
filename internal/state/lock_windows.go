@@ -3,11 +3,13 @@
 package state
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -18,94 +20,68 @@ var (
 )
 
 const (
-	LOCKFILE_EXCLUSIVE_LOCK = 2
+	LOCKFILE_FAIL_IMMEDIATELY = 1
+	LOCKFILE_EXCLUSIVE_LOCK   = 2
+	lockPollInterval          = 50 * time.Millisecond
+	errorLockViolation        = syscall.Errno(33)
 )
 
-// overlapped mirrors the Windows OVERLAPPED structure for synchronous
-// byte-range locking calls. All fields zeroed means lock from offset 0.
 type overlapped struct {
-	Internal     uintptr
-	InternalHigh uintptr
-	Offset       uint32
-	OffsetHigh   uint32
-	HEvent       uintptr
+	Internal, InternalHigh uintptr
+	Offset, OffsetHigh     uint32
+	HEvent                 uintptr
 }
-
-// fileLock implements io.Closer for a LockFileEx/UnlockFileEx-based lock.
-type fileLock struct {
-	f *os.File
-}
+type fileLock struct{ f *os.File }
 
 func (l *fileLock) Close() error {
-	// Release the lock, then close the file.
-	hFile := l.f.Fd()
-	overlap := &overlapped{}
-
-	// Best-effort: the file is about to be closed regardless, and the OS
-	// releases the lock on close even if the explicit unlock fails.
-	_, _, _ = syscall.Syscall6(
-		procUnlockFileEx.Addr(),
-		5,
-		hFile,
-		0, // dwReserved
-		1, // nNumberOfBytesToLockLow  — unlock the same 1 byte we locked
-		0, // nNumberOfBytesToLockHigh
-		uintptr(unsafe.Pointer(overlap)),
-		0,
-	)
+	o := &overlapped{}
+	_, _, _ = syscall.Syscall6(procUnlockFileEx.Addr(), 5, l.f.Fd(), 0, 1, 0, uintptr(unsafe.Pointer(o)), 0)
 	return l.f.Close()
 }
-
-// lock acquires an exclusive file lock on state.json.lock.
-func lock() (io.Closer, error) {
-	return lockWithMode(true, "acquire lock")
+func lock() (io.Closer, error) { return lockContext(context.Background()) }
+func lockContext(ctx context.Context) (io.Closer, error) {
+	return lockWithModeContext(ctx, true, "acquire lock")
 }
-
-// lockShared acquires a shared (read) file lock on state.json.lock.
-func lockShared() (io.Closer, error) {
-	return lockWithMode(false, "acquire shared lock")
+func lockShared() (io.Closer, error) { return lockSharedContext(context.Background()) }
+func lockSharedContext(ctx context.Context) (io.Closer, error) {
+	return lockWithModeContext(ctx, false, "acquire shared lock")
 }
-
-// lockWithMode is the shared implementation for lock and lockShared.
-// exclusive=true requests an exclusive lock; false requests a shared (read) lock.
-// desc is used in error messages.
-func lockWithMode(exclusive bool, desc string) (io.Closer, error) {
+func lockWithModeContext(ctx context.Context, exclusive bool, desc string) (io.Closer, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	path := DefaultPath() + ".lock"
-	dir := filepath.Dir(path)
-	if err := ensurePrivateDir(dir); err != nil {
+	if err := ensurePrivateDir(filepath.Dir(path)); err != nil {
 		return nil, fmt.Errorf("create private lock dir: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("open lock file: %w", err)
 	}
-
-	hFile := f.Fd()
-	overlap := &overlapped{}
-
-	// dwFlags=2 → exclusive (waits); dwFlags=0 → shared (waits).
-	// We do NOT set LOCKFILE_FAIL_IMMEDIATELY so the call blocks until the
-	// lock is available (same blocking behaviour as the flock-based Unix path).
-	var flags uint32
+	flags := uint32(LOCKFILE_FAIL_IMMEDIATELY)
 	if exclusive {
-		flags = LOCKFILE_EXCLUSIVE_LOCK
+		flags |= LOCKFILE_EXCLUSIVE_LOCK
 	}
-
-	// BOOL LockFileEx(HANDLE, DWORD, DWORD, DWORD, DWORD, LPOVERLAPPED)
-	ret, _, callErr := syscall.Syscall6(
-		procLockFileEx.Addr(),
-		6,
-		hFile,
-		uintptr(flags),
-		0, // dwReserved
-		1, // nNumberOfBytesToLockLow  — lock 1 byte at offset 0
-		0, // nNumberOfBytesToLockHigh
-		uintptr(unsafe.Pointer(overlap)),
-	)
-	if ret == 0 {
-		_ = f.Close()
-		return nil, fmt.Errorf("%s: %w", desc, callErr)
+	ticker := time.NewTicker(lockPollInterval)
+	defer ticker.Stop()
+	for {
+		o := &overlapped{}
+		ret, _, callErr := syscall.Syscall6(procLockFileEx.Addr(), 6, f.Fd(), uintptr(flags), 0, 1, 0, uintptr(unsafe.Pointer(o)))
+		if ret != 0 {
+			return &fileLock{f: f}, nil
+		}
+		if callErr != errorLockViolation {
+			_ = f.Close()
+			return nil, fmt.Errorf("%s: %w", desc, callErr)
+		}
+		select {
+		case <-ctx.Done():
+			_ = f.Close()
+			return nil, ctx.Err()
+		case <-ticker.C:
+		}
 	}
-
-	return &fileLock{f: f}, nil
 }

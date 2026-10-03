@@ -2,8 +2,8 @@ package httpdownload
 
 import (
 	"compress/bzip2"
-	"context"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io"

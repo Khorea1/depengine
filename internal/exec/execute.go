@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -69,6 +70,25 @@ func (ex *Executor) needsElevation(rc *runContext) bool {
 	return false
 }
 
+var (
+	errToolTimeout               = errors.New("tool timeout")
+	errMethodTimeout             = errors.New("method timeout")
+	errReplacementRemovalTimeout = errors.New("replacement removal timeout")
+)
+
+func methodTimeoutError(cause error, toolTimeout, methodTimeout time.Duration, err error) error {
+	if errors.Is(err, errReplacementRemovalTimeout) {
+		return err
+	}
+	if errors.Is(cause, errToolTimeout) {
+		return fmt.Errorf("tool timeout (%v) exceeded", toolTimeout)
+	}
+	if errors.Is(cause, errMethodTimeout) {
+		return fmt.Errorf("method timeout (%v) exceeded", methodTimeout)
+	}
+	return err
+}
+
 func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) (*ExecReport, error) {
 	start := time.Now()
 	rc := ex.newRunContext(ctx, s, clan)
@@ -87,7 +107,12 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 		return nil, err
 	}
 
-	ex.syncNativeIndex(housekeepingCtx, rc)
+	var runErr error
+	if err := ctx.Err(); err != nil {
+		runErr = err
+	} else {
+		ex.syncNativeIndex(housekeepingCtx, rc)
+	}
 
 	levels, err := ex.sortExecutionLevels(ctx, s)
 	if err != nil {
@@ -96,10 +121,28 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 
 	// Failed tools remain in the run context so dependent tools are blocked.
 	for _, level := range levels {
+		if runErr != nil {
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			runErr = err
+			break
+		}
 		ex.runLevel(rc, level)
+		if err := ctx.Err(); err != nil {
+			runErr = err
+			break
+		}
 	}
 
-	return ex.finishRun(ctx, s, report, start)
+	finished, finishErr := ex.finishRun(housekeepingCtx, s, report, start)
+	if runErr != nil {
+		if finishErr != nil {
+			return finished, errors.Join(runErr, finishErr)
+		}
+		return finished, runErr
+	}
+	return finished, finishErr
 }
 
 func (ex *Executor) executeTool(ctx context.Context, rc *runContext, tool *config.Tool) ToolResult {
@@ -143,7 +186,7 @@ func (ex *Executor) executeToolWithResolution(ctx context.Context, rc *runContex
 	toolCtx := ctx
 	if ex.toolTimeout > 0 {
 		var cancel context.CancelFunc
-		toolCtx, cancel = context.WithTimeout(ctx, ex.toolTimeout)
+		toolCtx, cancel = context.WithTimeoutCause(ctx, ex.toolTimeout, errToolTimeout)
 		defer cancel()
 	}
 
@@ -168,14 +211,8 @@ func (ex *Executor) tryMethodsWithResolution(toolCtx context.Context, rc *runCon
 	orderedMethods := rc.selectedMethods(tool)
 	for _, method := range orderedMethods {
 		lastMethodKind = method.Kind
-		select {
-		case <-toolCtx.Done():
-			result.Status = StatusFailed
-			result.Error = fmt.Sprintf("tool timeout (%v) exceeded", ex.toolTimeout)
-			ex.logWarn(toolCtx, "tool", "tool", tool.Name, "status", "timeout", "duration", ex.toolTimeout)
-			result.Duration = time.Since(toolStart).String()
+		if ex.recordContextFailure(toolCtx, tool, result, toolStart) {
 			return
-		default:
 		}
 
 		var methodResolution *candidateResolutionSeed
@@ -183,11 +220,44 @@ func (ex *Executor) tryMethodsWithResolution(toolCtx context.Context, rc *runCon
 			methodResolution = resolution
 		}
 		if ex.attemptMethod(toolCtx, rc, tool, method, result, toolStart, methodResolution) {
+			if result.Status == StatusFailed {
+				_ = ex.recordContextFailure(toolCtx, tool, result, toolStart)
+			}
+			return
+		}
+		if ex.recordContextFailure(toolCtx, tool, result, toolStart) {
 			return
 		}
 	}
 
+	if ex.recordContextFailure(toolCtx, tool, result, toolStart) {
+		return
+	}
 	ex.finishExhausted(result, lastMethodKind, toolStart)
+}
+
+func (ex *Executor) recordContextFailure(ctx context.Context, tool *config.Tool, result *ToolResult, toolStart time.Time) bool {
+	if ctx.Err() == nil {
+		return false
+	}
+
+	result.Status = StatusFailed
+	cause := context.Cause(ctx)
+	if errors.Is(cause, errToolTimeout) {
+		result.Error = fmt.Sprintf("tool timeout (%v) exceeded", ex.toolTimeout)
+		ex.logWarn(ctx, "tool", "tool", tool.Name, "status", "timeout", "duration", ex.toolTimeout)
+	} else {
+		if cause == nil {
+			cause = ctx.Err()
+		}
+		result.Error = "execution cancelled"
+		if cause != nil && !errors.Is(cause, context.Canceled) {
+			result.Error += ": " + cause.Error()
+		}
+		ex.logWarn(ctx, "tool", "tool", tool.Name, "status", "cancelled", "error", cause)
+	}
+	result.Duration = time.Since(toolStart).String()
+	return true
 }
 
 // attemptMethod runs one method candidate through the attempt pipeline.
@@ -418,17 +488,30 @@ func (ex *Executor) executeLevelParallel(ctx context.Context, rc *runContext, le
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for toolName := range toolCh {
-				tool, ok := rc.schema.Tools[toolName]
-				if !ok {
-					continue
+			for {
+				if ctx.Err() != nil {
+					return
 				}
-				result := ex.executeToolWithResolution(ctx, rc, tool, resolutions[toolName])
-				resultCh <- result
+				select {
+				case <-ctx.Done():
+					return
+				case toolName, ok := <-toolCh:
+					if !ok {
+						return
+					}
+					if ctx.Err() != nil {
+						return
+					}
+					tool, ok := rc.schema.Tools[toolName]
+					if !ok {
+						continue
+					}
+					result := ex.executeToolWithResolution(ctx, rc, tool, resolutions[toolName])
+					resultCh <- result
+				}
 			}
 		}()
 	}
-
 	wg.Wait()
 	close(resultCh)
 

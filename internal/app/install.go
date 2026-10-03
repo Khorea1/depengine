@@ -363,7 +363,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		return err
 	}
 
-	s, clan, facts, manifestCount, err := loadSchemaWithManifest(p.schema, p.manifestPath)
+	project, err := loadProject(p.schema, projectLoadOptions{ManifestPath: p.manifestPath, Provenance: true})
 	if err != nil {
 		if os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "error: %s not found\n", p.schema)
@@ -373,6 +373,8 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		lg.Error("load schema", "error", err)
 		return exitWithCode(exitCodeForError(err))
 	}
+	p.schema = project.SchemaPath
+	s, clan, facts, manifestCount := project.Schema, project.Clan, project.Facts, project.ManifestCount
 
 	if shouldWarnDeprecatedVerbose(cmd) {
 		fmt.Fprintln(os.Stderr, "depengine: --verbose is deprecated; detailed output is already the default. Use --quiet to suppress live per-tool status lines.")
@@ -412,7 +414,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	}
 
 	if !p.dryRun {
-		if _, err := state.SaveSnapshot(); err != nil {
+		if _, err := state.SaveSnapshotContext(ctx); err != nil {
 			lg.Warn("could not save pre-install snapshot", "error", err)
 		}
 	}
@@ -424,8 +426,11 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 
 	report, err := ex.Execute(ctx, s, clan)
 	if err != nil {
+		if report != nil {
+			renderInstallReport(report, p, cs)
+		}
 		lg.Error("execute failed", "error", err)
-		return exitWithCode(2)
+		return exitWithCode(exitCodeForError(err))
 	}
 
 	renderInstallReport(report, p, cs)
@@ -482,7 +487,7 @@ func syncInstalledVersions(ctx context.Context, schema *config.Schema, lockPath 
 		return version, version != ""
 	}
 
-	ls, err := state.LoadLocked()
+	ls, err := state.LoadLockedContext(ctx)
 	if err != nil {
 		lg.Warn("state lock for version sync", "error", err)
 		return

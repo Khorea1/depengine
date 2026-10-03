@@ -9,8 +9,6 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/ecosystem"
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/graph"
 	"github.com/Khorea1/depengine/internal/log"
@@ -92,12 +90,6 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 		return exitWithCode(2)
 	}
 
-	s, err := config.ParseProjectSchema(*graphSchema, nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		return exitWithCode(exitCodeForError(err))
-	}
-
 	noManifest := *graphNoManifest
 	manifestPath := *graphManifest
 	manifestAuto := false
@@ -107,16 +99,15 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 			manifestAuto = true
 		}
 	}
-	if manifestPath != "" {
-		var count int
-		s, count, err = mergeManifest(s, manifestPath, false)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", err)
-			return exitWithCode(2)
-		}
-		if count > 0 && manifestAuto {
-			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
-		}
+	project, err := loadProject(*graphSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return exitWithCode(exitCodeForError(err))
+	}
+	*graphSchema = project.SchemaPath
+	s := project.Schema
+	if project.ManifestCount > 0 && project.ManifestAuto {
+		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", project.ManifestPath, project.ManifestCount)
 	}
 	// The historical `--only` closure keeps its schema-level filtering. Any
 	// other direction or depth slices the complete typed IR instead, because
@@ -143,7 +134,7 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 		}
 		declaredGraph = graph.BuildDeclaredGraph(s.Tools)
 	}
-	visibleGraph, err := projectGraphView(ctx, declaredGraph, s, view, *graphShowInactive)
+	visibleGraph, err := projectGraphView(ctx, declaredGraph, s, project.Facts, view, *graphShowInactive)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: project %s graph: %v\n", view, err)
 		return exitWithCode(3)
@@ -323,12 +314,6 @@ func formatWhyIntent(intent map[string]string) string {
 // length check did, and toolName arrives as a plain argument instead of
 // remain[0].
 func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string, whyNoManifest, whyJSON, whyFields *bool) error {
-	s, err := config.ParseProjectSchema(*whySchema, nil)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		return exitWithCode(1)
-	}
-
 	noManifest := *whyNoManifest
 	manifestPath := *whyManifest
 	manifestAuto := false
@@ -338,30 +323,15 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 			manifestAuto = true
 		}
 	}
-	if manifestPath != "" {
-		var count int
-		s, count, err = mergeManifest(s, manifestPath, *whyFields)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", err)
-			return exitWithCode(2)
-		}
-		if count > 0 && manifestAuto {
-			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
-		}
+	project, err := loadProject(*whySchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: *whyFields})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		return exitWithCode(exitCodeForError(err))
 	}
-	facts, factsErr := engine.GatherFacts(run.OSExecRunner{})
-	clan := ""
-	if factsErr == nil {
-		clan = engine.ResolveFamily(facts)
-	}
-
-	if warnings, verr := config.Validate(s, exec.RegisteredKinds()); verr != nil {
-		log.Default.Error("schema validation", "error", verr)
-		return exitWithCode(exitCodeForError(verr))
-	} else if len(warnings) > 0 {
-		for _, w := range warnings {
-			log.Default.Warn(w)
-		}
+	*whySchema = project.SchemaPath
+	s, facts, clan := project.Schema, project.Facts, project.Clan
+	if project.ManifestCount > 0 && project.ManifestAuto {
+		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", project.ManifestPath, project.ManifestCount)
 	}
 
 	tool, ok := s.Tools[toolName]
@@ -370,12 +340,7 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 		return exitWithCode(1)
 	}
 
-	ex := exec.New()
-	exec.WithRunner(run.OSExecRunner{})(ex)
-	exec.WithFacts(facts)(ex)
-	if helper := s.Defaults.AurHelper; helper != "" {
-		exec.WithAdapters(ecosystem.NewAURAdapter(helper))(ex)
-	}
+	ex := newProjectExecutor(s, clan, facts, run.OSExecRunner{})
 	attempts := ex.ExplainTool(ctx, tool, clan)
 	if *whyJSON {
 		type jsonAttempt struct {

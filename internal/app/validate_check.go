@@ -157,6 +157,9 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 	} else if *validateStrict && len(result.Warnings) > 0 {
 		exitCode = 1
 	}
+	if exitCode == 0 {
+		return nil
+	}
 	return exitWithCode(exitCode)
 }
 
@@ -208,11 +211,13 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 		}
 	}
 
-	s, clan, facts, manifestCount, err := loadSchemaWithManifest(*checkSchema, manifestPath)
+	project, err := loadProject(*checkSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true})
 	if err != nil {
 		log.Default.Error("load schema", "error", err)
 		return exitWithCode(exitCodeForError(err))
 	}
+	*checkSchema = project.SchemaPath
+	s, clan, facts, manifestCount := project.Schema, project.Clan, project.Facts, project.ManifestCount
 	if manifestAuto && manifestCount > 0 {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
 	}
@@ -224,10 +229,7 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 	}
 	useJSON := *checkJSON || *checkFormat == "json"
 
-	ex := exec.New()
-	exec.WithRunner(run.OSExecRunner{})(ex)
-	exec.WithFacts(facts)(ex)
-	exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
+	ex := newProjectExecutor(s, clan, facts, run.OSExecRunner{})
 	checked, checkErr := ex.CheckDesiredState(ctx, tool, clan, *checkLive)
 	if checkErr != nil {
 		checked.Verification = plan.VerificationResult{State: plan.StateBroken, Detail: checkErr.Error()}

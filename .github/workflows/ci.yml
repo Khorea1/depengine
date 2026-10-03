@@ -28,6 +28,9 @@ jobs:
     - name: Install dependencies
       run: go mod download
 
+    - name: Check gofmt
+      run: scripts/check-gofmt.sh
+
     - name: Run tests
       run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
 

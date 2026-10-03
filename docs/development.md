@@ -18,7 +18,9 @@ review the project. Keep temporary task notes in `.dev/`.
 
 A simple rule: if the note should be reviewed with a code change because future
 work depends on it, commit it. If it only helps the current task, keep it in
-`.dev/`.
+`.dev/`. Environment checks should distinguish required runtime executable
+availability from evidence that the package manager has installed the requested
+tool version; runtime presence alone does not establish tool installation.
 
 ## `.dev/`
 

@@ -18,6 +18,9 @@ func queryReceipt(ctx context.Context, rn run.Runner, packageID string) (present
 	}
 	switch res.ExitCode {
 	case 0:
+		if res.WaitErr != nil {
+			return false, "", res.WaitErr
+		}
 	case 1:
 		// pkgutil exits 1 when the package has no receipt.
 		return false, "", nil

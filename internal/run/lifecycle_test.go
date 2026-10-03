@@ -54,8 +54,14 @@ func TestRunUnblocksWhenGrandchildIgnoresSIGTERM(t *testing.T) {
 	res := OSExecRunner{}.Run(context.Background(), "sh", "-c", `trap "" TERM; sleep 60 & exec sleep 1`)
 	elapsed := time.Since(start)
 
-	if !errors.Is(res.Err, exec.ErrWaitDelay) {
-		t.Fatalf("Err = %v, want ErrWaitDelay", res.Err)
+	if res.Err != nil {
+		t.Fatalf("Err = %v, want nil for successful direct child", res.Err)
+	}
+	if res.ExitCode != 0 {
+		t.Fatalf("ExitCode = %d, want 0 for successful direct child", res.ExitCode)
+	}
+	if !errors.Is(res.WaitErr, exec.ErrWaitDelay) {
+		t.Fatalf("WaitErr = %v, want ErrWaitDelay for incomplete output lifecycle", res.WaitErr)
 	}
 	// ~1s of child lifetime plus the 5s WaitDelay must stay far below
 	// the 60s the grandchild would otherwise impose.

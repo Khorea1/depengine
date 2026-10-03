@@ -185,7 +185,7 @@ func (w *winAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *
 	switch w.kind {
 	case "choco":
 		res := rn.Run(ctx, "choco", "list", "--exact", "--limit-output", pkg)
-		if err := run.CheckResult(res, "choco: version check"); err != nil {
+		if err := run.CheckResultCompleteOutput(res, "choco: version check"); err != nil {
 			return "", err
 		}
 		version, ok := chocoVersionFromOutput(res.Stdout, pkg)
@@ -199,7 +199,7 @@ func (w *winAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *
 			args = append(args, "--global")
 		}
 		res := rn.Run(ctx, "scoop", args...)
-		if err := run.CheckResult(res, "scoop: version check"); err != nil {
+		if err := run.CheckResultCompleteOutput(res, "scoop: version check"); err != nil {
 			return "", err
 		}
 		version, _, ok := scoopPackageFromOutput(res.Stdout, pkg)

@@ -18,6 +18,7 @@ type FakeRunner struct {
 	Stderr   string
 	ExitCode int
 	Err      error
+	WaitErr  error
 	// LookPaths overrides executable lookup results by name. Unlisted names
 	// retain the default result derived from Err and ExitCode.
 	LookPaths map[string]bool
@@ -60,6 +61,9 @@ func (f *FakeRunner) RunWithEnvValidated(ctx context.Context, _ map[string]strin
 	if result.Err != nil || result.ExitCode != 0 {
 		return Result{Err: errors.New("sensitive subprocess execution failed"), ExitCode: result.ExitCode}
 	}
+	if result.WaitErr != nil {
+		return Result{WaitErr: errors.New("sensitive subprocess output incomplete"), ExitCode: result.ExitCode}
+	}
 	stdout, err := validate(result.Stdout)
 	if err != nil {
 		return Result{Err: errors.New("subprocess output validation failed"), ExitCode: 1}
@@ -99,6 +103,7 @@ func (f *FakeRunner) run(ctx context.Context, dir, name string, args ...string) 
 		Stderr:   []byte(f.Stderr),
 		ExitCode: f.ExitCode,
 		Err:      f.Err,
+		WaitErr:  f.WaitErr,
 	}
 }
 

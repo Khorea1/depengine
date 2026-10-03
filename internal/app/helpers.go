@@ -44,21 +44,15 @@ func confirmationAccepted(input io.Reader) bool {
 // auto-detection.
 var schemaCandidateNames = []string{"schema.toml", "depengine.toml", "depends.toml"}
 
-// defaultSchemaPath returns the default schema file path, trying common names
-// in schemaCandidateNames order. If none exist, returns "schema.toml" so the
-// caller gets the original "file not found" error instead of a confusing one.
-//
-// If MORE THAN ONE candidate exists simultaneously, this is almost always a
-// mistake (e.g. a leftover file from migrating between naming conventions,
-// or a merge that landed two of them side by side) rather than intentional —
-// silently picking the first one by priority means the user can edit the
-// "wrong" file and see their changes never take effect, with no indication
-// why. So instead of guessing quietly, we print a loud, explicit warning to
-// stderr naming every candidate found and which one was selected, so the
-// ambiguity is visible instead of silent. This only fires for the *default*
-// (auto-detected) path — passing --schema explicitly bypasses this function
-// entirely and is never second-guessed.
-func defaultSchemaPath() string {
+type schemaDiscovery struct {
+	Selected string
+	Found    []string
+}
+
+// discoverDefaultSchema is deliberately side-effect-free. Command
+// construction calls it to choose a default value; presentation of ambiguity
+// happens only when a schema-consuming command is actually invoked.
+func discoverDefaultSchema() schemaDiscovery {
 	var found []string
 	for _, c := range schemaCandidateNames {
 		if _, err := os.Stat(c); err == nil {
@@ -66,83 +60,138 @@ func defaultSchemaPath() string {
 		}
 	}
 	if len(found) == 0 {
-		return "schema.toml"
+		return schemaDiscovery{Selected: "schema.toml"}
 	}
-	if len(found) > 1 {
-		fmt.Fprintf(os.Stderr,
-			"warning: multiple schema files found (%s) — using %q. "+
-				"This is ambiguous: pass --schema explicitly to silence this warning, "+
-				"or remove the file(s) you don't intend to use.\n",
-			strings.Join(found, ", "), found[0])
-	}
-	return found[0]
+	return schemaDiscovery{Selected: found[0], Found: found}
 }
 
-// loadSchema reads and validates a schema.toml from path, gathering OS facts.
-// Returns the parsed Schema, clan name, Facts, or an error for exitCodeForError.
-func loadSchema(path string) (*config.Schema, string, *engine.Facts, error) {
-	info, err := os.Stat(path)
+func defaultSchemaPath() string {
+	return discoverDefaultSchema().Selected
+}
+
+type loadedProject struct {
+	Schema        *config.Schema
+	Facts         *engine.Facts
+	Clan          string
+	SchemaPath    string
+	ManifestPath  string
+	ManifestCount int
+	ManifestAuto  bool
+}
+
+type projectLoadOptions struct {
+	ManifestPath string
+	ManifestAuto bool
+	Provenance   bool
+}
+
+// resolveSchemaFilePath resolves the exact schema file consumed by project
+// commands. Directory inputs retain the historical <dir>/schema.toml rule,
+// while every successful result is clean and absolute for state/lock identity.
+func resolveSchemaFilePath(input string) (string, error) {
+	if input == "" {
+		return "", os.ErrNotExist
+	}
+	candidate := input
+	info, err := os.Stat(candidate)
+	if err == nil && info.IsDir() {
+		candidate = filepath.Join(candidate, "schema.toml")
+	}
+	abs, err := filepath.Abs(candidate)
 	if err != nil {
-		return nil, "", nil, err
+		return "", err
+	}
+	abs = filepath.Clean(abs)
+	info, err = os.Stat(abs)
+	if err != nil {
+		return "", err
 	}
 	if info.IsDir() {
-		path = filepath.Join(path, "schema.toml")
+		return "", fmt.Errorf("schema path %s is a directory", abs)
 	}
-	log.Default.Debug("loading schema", "path", path)
+	return abs, nil
+}
+
+// loadProject is the single fact-aware project loading pipeline. Project and
+// manifest are expanded with the same host map and validation runs exactly
+// once against the final merged schema.
+func loadProject(schemaPath string, opts projectLoadOptions) (*loadedProject, error) {
+	resolvedSchema, err := resolveSchemaFilePath(schemaPath)
+	if err != nil {
+		return nil, err
+	}
+	log.Default.Debug("loading schema", "path", resolvedSchema)
 
 	facts, err := engine.GatherFacts(run.OSExecRunner{})
 	if err != nil {
-		return nil, "", nil, err
+		return nil, err
 	}
 	clan := engine.ResolveFamily(facts)
-	s, err := config.ParseProjectSchema(path, config.BuildMap(facts, clan))
+	factMap := config.BuildMap(facts, clan)
+
+	schema, err := config.ParseProjectSchema(resolvedSchema, factMap)
+	if err != nil {
+		return nil, err
+	}
+
+	count := 0
+	if opts.ManifestPath != "" {
+		manifest, err := config.ParseManifest(opts.ManifestPath, factMap)
+		if err != nil {
+			return nil, err
+		}
+		config.FilterManifestTools(schema, manifest)
+		if err := config.ValidateManifestLayer(manifest); err != nil {
+			return nil, err
+		}
+		if err := config.ValidateManifestNewTools(schema, manifest); err != nil {
+			return nil, err
+		}
+		count = len(manifest.Tools)
+		if count > 0 {
+			if opts.Provenance {
+				schema = config.MergeLayersWithProvenance(manifest, schema)
+			} else {
+				schema = config.MergeLayers(manifest, schema)
+			}
+		}
+	}
+
+	vr := validate.ValidateSchema(schema, exec.RegisteredKinds())
+	if vr.HasErrors() {
+		for _, validationErr := range vr.Errors {
+			log.Default.Error(validationErr.Error())
+		}
+		return nil, &config.ParseSchemaError{Err: errors.New("schema validation failed")}
+	}
+	for _, warning := range vr.Warnings {
+		log.Default.Warn(warning.Error())
+	}
+
+	return &loadedProject{
+		Schema:        schema,
+		Facts:         facts,
+		Clan:          clan,
+		SchemaPath:    resolvedSchema,
+		ManifestPath:  opts.ManifestPath,
+		ManifestCount: count,
+		ManifestAuto:  opts.ManifestAuto,
+	}, nil
+}
+
+// loadSchema preserves the older tuple API for call sites that only need a
+// schema, while delegating to the canonical project loader.
+func loadSchema(path string) (*config.Schema, string, *engine.Facts, error) {
+	project, err := loadProject(path, projectLoadOptions{})
 	if err != nil {
 		return nil, "", nil, err
 	}
-	vr := validate.ValidateSchema(s, exec.RegisteredKinds())
-	if vr.HasErrors() {
-		for _, e := range vr.Errors {
-			log.Default.Error(e.Error())
-		}
-		return nil, "", nil, &config.ParseSchemaError{Err: errors.New("schema validation failed")}
-	}
-	for _, w := range vr.Warnings {
-		log.Default.Warn(w.Error())
-	}
-	return s, clan, facts, nil
+	return project.Schema, project.Clan, project.Facts, nil
 }
 
-// loadSchemaWithManifest reads and resolves a schema, merging methods from
-// the personal manifest at manifestPath. If manifestPath is empty, calls
-// loadSchema directly. Returns the resolved schema, clan, facts, number of
-// manifest tools that contributed (0 when no manifest), and any error.
-// On manifest parse errors the function returns the error (caller decides exit).
-func loadSchemaWithManifest(schemaPath, manifestPath string) (*config.Schema, string, *engine.Facts, int, error) {
-	s, clan, facts, err := loadSchema(schemaPath)
-	if err != nil {
-		return nil, "", nil, 0, err
-	}
-	if manifestPath == "" {
-		return s, clan, facts, 0, nil
-	}
-
-	merged, count, err := mergeManifest(s, manifestPath, true)
-	if err != nil {
-		return nil, "", nil, 0, err
-	}
-	if count > 0 {
-		s = merged
-		vr := validate.ValidateSchema(merged, exec.RegisteredKinds())
-		if vr.HasErrors() {
-			for _, e := range vr.Errors {
-				log.Default.Error(e.Error())
-			}
-			return nil, "", nil, 0, &config.ParseSchemaError{Err: errors.New("schema validation failed after manifest merge")}
-		}
-	}
-	return s, clan, facts, count, nil
-}
-
+// mergeManifest remains for the syntax-only validate command. Host-aware
+// commands use loadProject so project and manifest never receive different
+// placeholder maps.
 func mergeManifest(schema *config.Schema, path string, provenance bool) (*config.Schema, int, error) {
 	manifest, err := config.ParseManifest(path, nil)
 	if err != nil {
@@ -163,6 +212,25 @@ func mergeManifest(schema *config.Schema, path string, provenance bool) (*config
 		return config.MergeLayersWithProvenance(manifest, schema), count, nil
 	}
 	return config.MergeLayers(manifest, schema), count, nil
+}
+
+// newProjectExecutor wires the host-specific adapters and selection policy
+// consistently for install-adjacent read-only operations.
+func newProjectExecutor(schema *config.Schema, clan string, facts *engine.Facts, rn run.Runner) *exec.Executor {
+	executor := exec.New()
+	exec.WithRunner(rn)(executor)
+	exec.WithFacts(facts)(executor)
+	if schema != nil {
+		exec.WithDefaultMethodOrder(schema.Defaults.MethodOrder)(executor)
+		adapters := []exec.AdapterV2{exec.NewNativeAdapter(clan)}
+		if helper := schema.Defaults.AurHelper; helper != "" {
+			adapters = append(adapters, ecosystem.NewAURAdapter(helper))
+		}
+		exec.WithAdapters(adapters...)(executor)
+	} else {
+		exec.WithAdapters(exec.NewNativeAdapter(clan))(executor)
+	}
+	return executor
 }
 
 func exitCodeForError(err error) int {

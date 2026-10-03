@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Khorea1/depengine/internal/native"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -20,11 +21,17 @@ func (fakeRunner) Run(_ context.Context, name string, args ...string) run.Result
 // fakeRunnerFor returns success only for the specified binary name.
 type fakeRunnerFor struct {
 	available map[string]bool
+	calls     map[string]int
 }
 
 func (f fakeRunnerFor) Run(_ context.Context, name string, args ...string) run.Result {
-	if name == "which" && len(args) == 1 && f.available[args[0]] {
-		return run.Result{ExitCode: 0}
+	if name == "which" && len(args) == 1 {
+		if f.calls != nil {
+			f.calls[args[0]]++
+		}
+		if f.available[args[0]] {
+			return run.Result{ExitCode: 0}
+		}
 	}
 	return run.Result{ExitCode: 1}
 }
@@ -46,7 +53,7 @@ func TestCheckEnv_NoTools(t *testing.T) {
 
 func TestCheckEnv_AllFound(t *testing.T) {
 	all := map[string]bool{}
-	for _, entry := range envToolBinaries {
+	for _, entry := range effectiveEnvToolBinaries() {
 		all[entry.Name] = true
 	}
 	result := CheckEnv(context.Background(), fakeRunnerFor{available: all})
@@ -87,7 +94,7 @@ func TestCheckEnv_Deduplicates(t *testing.T) {
 	// Verify that duplicate binary names are only checked once.
 	result := CheckEnv(context.Background(), fakeRunnerFor{
 		available: map[string]bool{
-			"pkg":          true, // appears in envToolBinaries for both termux and freebsd
+			"pkg":          true, // shared by multiple native clans
 			"apt":          true,
 			"pacman":       true,
 			"brew":         true,
@@ -122,6 +129,23 @@ func TestCheckEnv_Deduplicates(t *testing.T) {
 	}
 }
 
+func TestCheckEnv_IncludesNativeRuntimeAndInstallExecutables(t *testing.T) {
+	calls := make(map[string]int)
+	result := CheckEnv(context.Background(), fakeRunnerFor{calls: calls})
+	checks := make(map[string]int)
+	for _, check := range result.Checks {
+		checks[check.Name]++
+	}
+	for _, name := range native.ManagerExecutableNames() {
+		if checks[name] != 1 {
+			t.Errorf("native binary %q check count = %d, want 1", name, checks[name])
+		}
+		if calls[name] != 1 {
+			t.Errorf("native binary %q probe count = %d, want 1", name, calls[name])
+		}
+	}
+}
+
 func TestCheckEnv_SortedOrder(t *testing.T) {
 	result := CheckEnv(context.Background(), fakeRunner{})
 	if len(result.Checks) < 2 {
@@ -133,6 +157,40 @@ func TestCheckEnv_SortedOrder(t *testing.T) {
 		if prev.Kind > cur.Kind || (prev.Kind == cur.Kind && prev.Name > cur.Name) {
 			t.Errorf("checks not sorted at index %d: %s/%s > %s/%s",
 				i, prev.Kind, prev.Name, cur.Kind, cur.Name)
+		}
+	}
+}
+
+func TestCheckEnv_CoversNativeRegistryExactlyOnce(t *testing.T) {
+	result := CheckEnv(context.Background(), fakeRunner{})
+	counts := make(map[string]int, len(result.Checks))
+	kinds := make(map[string]string, len(result.Checks))
+	for _, check := range result.Checks {
+		counts[check.Name]++
+		kinds[check.Name] = check.Kind
+	}
+	for _, name := range native.ManagerExecutableNames() {
+		if counts[name] != 1 {
+			t.Fatalf("native binary %q check count = %d, want 1", name, counts[name])
+		}
+		if kinds[name] != "native" {
+			t.Fatalf("native binary %q kind = %q, want native", name, kinds[name])
+		}
+	}
+	if counts["winget"] != 1 {
+		t.Fatalf("winget check count = %d, want 1", counts["winget"])
+	}
+}
+
+func TestEffectiveEnvToolBinaries_PreservesSupplementalTools(t *testing.T) {
+	entries := effectiveEnvToolBinaries()
+	got := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		got[entry.Name] = entry.Kind
+	}
+	for name, kind := range map[string]string{"cargo": "lang", "go": "lang", "git": "system", "curl": "system", "wget": "system"} {
+		if got[name] != kind {
+			t.Fatalf("%s kind = %q, want %q", name, got[name], kind)
 		}
 	}
 }

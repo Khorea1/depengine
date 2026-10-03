@@ -327,7 +327,7 @@ func (d hostDetector) commandText(ctx context.Context, name string, args ...stri
 	cmdCtx, cancel := context.WithTimeout(ctx, detectionCommandTimeout)
 	defer cancel()
 	res := d.runner.Run(cmdCtx, name, args...)
-	if res.Err != nil || res.ExitCode != 0 {
+	if res.Err != nil || res.ExitCode != 0 || res.WaitErr != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(res.Stdout))

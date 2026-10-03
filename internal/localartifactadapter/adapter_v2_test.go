@@ -229,7 +229,6 @@ func TestAdapterV2ObserveUnknownWhenSourceUnresolvable(t *testing.T) {
 	}
 }
 
-
 func TestAdapterV2CheckAvailableModelsGPGRequirement(t *testing.T) {
 	adapter := localartifactadapter.NewAdapter()
 	ctx := context.Background()

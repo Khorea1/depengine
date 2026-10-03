@@ -17,6 +17,16 @@ var version = "dev"
 //go:embed docs/depengine.1
 var manPage string
 
+func interruptContext(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-ctx.Done()
+		// Restore default handlers after graceful cancellation starts so a second signal terminates immediately.
+		stop()
+	}()
+	return ctx, stop
+}
+
 func main() {
 	app.InitAdapters()
 	app.Version = version
@@ -25,7 +35,7 @@ func main() {
 	// process mid-mutation: adapter subprocesses receive SIGTERM as a
 	// group (see internal/run) and the preparation journal stays in a
 	// recoverable state for the next run.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := interruptContext(context.Background())
 	defer stop()
 
 	root := app.NewRootCmd()

@@ -3,19 +3,21 @@
 package state
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/Khorea1/depengine/internal/log"
 )
 
-// fileLock implements io.Closer for a flock-based lock.
-type fileLock struct {
-	f *os.File
-}
+const lockPollInterval = 50 * time.Millisecond
+
+type fileLock struct{ f *os.File }
 
 func (l *fileLock) Close() error {
 	if err := syscall.Flock(int(l.f.Fd()), syscall.LOCK_UN); err != nil {
@@ -24,25 +26,27 @@ func (l *fileLock) Close() error {
 	return l.f.Close()
 }
 
-// lock acquires an exclusive file lock on state.json.lock.
-func lock() (io.Closer, error) {
-	return lockWithMode(syscall.LOCK_EX, "acquire lock")
+func lock() (io.Closer, error) { return lockContext(context.Background()) }
+func lockContext(ctx context.Context) (io.Closer, error) {
+	return lockWithModeContext(ctx, syscall.LOCK_EX, "acquire lock")
+}
+func lockShared() (io.Closer, error) { return lockSharedContext(context.Background()) }
+func lockSharedContext(ctx context.Context) (io.Closer, error) {
+	return lockWithModeContext(ctx, syscall.LOCK_SH, "acquire shared lock")
 }
 
-// lockShared acquires a shared (read) file lock on state.json.lock.
-func lockShared() (io.Closer, error) {
-	return lockWithMode(syscall.LOCK_SH, "acquire shared lock")
-}
-
-// lockWithMode is the shared implementation for lock and lockShared.
-// mode is syscall.LOCK_EX or syscall.LOCK_SH; desc is used in error messages.
-func lockWithMode(mode int, desc string) (io.Closer, error) {
+func lockWithModeContext(ctx context.Context, mode int, desc string) (io.Closer, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	path := DefaultPath() + ".lock"
-	dir := filepath.Dir(path)
-	if err := ensurePrivateDir(dir); err != nil {
+	if err := ensurePrivateDir(filepath.Dir(path)); err != nil {
 		return nil, fmt.Errorf("create private lock dir: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600) // #nosec G304 -- path is the generated lock file under the owner-only state directory.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600) // #nosec G304 -- generated owner-only lock path.
 	if err != nil {
 		return nil, fmt.Errorf("open lock file: %w", err)
 	}
@@ -50,18 +54,25 @@ func lockWithMode(mode int, desc string) (io.Closer, error) {
 		_ = f.Close()
 		return nil, fmt.Errorf("tighten lock file permissions: %w", err)
 	}
-
-	// Retry on EINTR — flock can be interrupted by signals on some systems.
+	ticker := time.NewTicker(lockPollInterval)
+	defer ticker.Stop()
 	for {
-		if err := syscall.Flock(int(f.Fd()), mode); err != nil {
-			if err == syscall.EINTR {
-				continue
-			}
+		err := syscall.Flock(int(f.Fd()), mode|syscall.LOCK_NB)
+		if err == nil {
+			return &fileLock{f: f}, nil
+		}
+		if errors.Is(err, syscall.EINTR) {
+			continue
+		}
+		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
 			_ = f.Close()
 			return nil, fmt.Errorf("%s: %w", desc, err)
 		}
-		break
+		select {
+		case <-ctx.Done():
+			_ = f.Close()
+			return nil, ctx.Err()
+		case <-ticker.C:
+		}
 	}
-
-	return &fileLock{f: f}, nil
 }

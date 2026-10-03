@@ -335,13 +335,13 @@ func resolveRemoteRevision(ctx context.Context, rn run.Runner, mc *config.Method
 			}
 			return []byte(revision), nil
 		}, "ls-remote", source.URL, ref, ref+"^{}")
-		if err := run.CheckResult(result, "git: resolve remote revision"); err != nil {
+		if err := run.CheckResultCompleteOutput(result, "git: resolve remote revision"); err != nil {
 			return "", err
 		}
 		return string(result.Stdout), nil
 	}
 	result := runGit(ctx, rn, env, sensitive, "ls-remote", source.URL, ref, ref+"^{}")
-	if err := run.CheckResult(result, "git: resolve remote revision"); err != nil {
+	if err := run.CheckResultCompleteOutput(result, "git: resolve remote revision"); err != nil {
 		return "", err
 	}
 	return parseRemoteRevision(result.Stdout, ref)

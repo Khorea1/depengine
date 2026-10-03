@@ -1435,6 +1435,49 @@ func TestValidateAcceptsBucketNames(t *testing.T) {
 	}
 }
 
+func TestValidateBucketSelectorNeedsAnyDeclaredMember(t *testing.T) {
+	tests := []struct {
+		name      string
+		prefer    []string
+		only      []string
+		kind      string
+		wantFirst string
+	}{
+		{name: "prefer python with only pip", prefer: []string{"python"}, kind: "pip", wantFirst: "pip"},
+		{name: "only python with only uv", only: []string{"python"}, kind: "uv", wantFirst: "uv"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tool := &Tool{
+				Name:         "demo",
+				MethodPrefer: tt.prefer,
+				MethodOnly:   tt.only,
+				Methods:      []*MethodCandidate{{Kind: tt.kind, Config: map[string]any{"pkg": "demo"}}},
+			}
+			s := &Schema{Defaults: Defaults{MethodOrder: []string{"native"}}, Tools: map[string]*Tool{"demo": tool}}
+			if _, err := Validate(s, []string{"native", "pip", "pipx", "uv"}); err != nil {
+				t.Fatalf("Validate rejected bucket with declared member: %v", err)
+			}
+			selected := SelectMethods(tool, s.Defaults.MethodOrder, "")
+			if len(selected) == 0 || selected[0].Kind != tt.wantFirst {
+				t.Fatalf("SelectMethods first = %+v, want %q", selected, tt.wantFirst)
+			}
+		})
+	}
+
+	tool := &Tool{
+		Name:         "demo",
+		MethodPrefer: []string{"python"},
+		Methods:      []*MethodCandidate{{Kind: "cargo", Config: map[string]any{"pkg": "demo"}}},
+	}
+	s := &Schema{Tools: map[string]*Tool{"demo": tool}}
+	_, err := Validate(s, []string{"cargo", "pip", "pipx", "uv"})
+	if err == nil || !strings.Contains(err.Error(), `method_prefer entry "python"`) {
+		t.Fatalf("Validate error = %v, want original bucket selector", err)
+	}
+}
+
 func TestValidateRejectsUnknownKindInMethodPrefer(t *testing.T) {
 	// method_prefer with nonexistent kind should be a hard error
 	s := &Schema{
@@ -1477,6 +1520,52 @@ func TestValidateRejectsUnknownKindInMethodPrefer(t *testing.T) {
 	}
 }
 
+func TestValidateUnknownKindHintDeterministic(t *testing.T) {
+	s := &Schema{Tools: map[string]*Tool{
+		"demo": {
+			Name:    "demo",
+			Methods: []*MethodCandidate{{Kind: "http-download-musl", Config: map[string]any{}}},
+		},
+	}}
+
+	var first string
+	for i := 0; i < 100; i++ {
+		_, err := Validate(s, []string{"http", "http-download", "native"})
+		if err == nil {
+			t.Fatal("expected unknown method kind error")
+		}
+		got := err.Error()
+		if !strings.Contains(got, `variant of "http-download"`) {
+			t.Fatalf("hint = %q, want longest known prefix", got)
+		}
+		if i == 0 {
+			first = got
+			continue
+		}
+		if got != first {
+			t.Fatalf("diagnostic changed between runs:\nfirst: %s\nnow: %s", first, got)
+		}
+	}
+}
+
+func TestDecodeStructFieldsSortsLeftovers(t *testing.T) {
+	type decoded struct {
+		Known string `cfg:"known"`
+	}
+	var dst decoded
+	leftover := decodeStructFields(&dst, map[string]any{
+		"zeta":  true,
+		"known": "value",
+		"alpha": true,
+	})
+	if dst.Known != "value" {
+		t.Fatalf("Known = %q, want value", dst.Known)
+	}
+	if got, want := strings.Join(leftover, ","), "alpha,zeta"; got != want {
+		t.Fatalf("leftover = %q, want %q", got, want)
+	}
+}
+
 func TestParseConditionNewFields(t *testing.T) {
 	// Each new field parses correctly in isolation
 	tests := []struct {
@@ -1501,6 +1590,12 @@ func TestParseConditionNewFields(t *testing.T) {
 		}},
 		{"init_system", map[string]any{"init_system": []any{"systemd"}}, func(c *Condition) bool {
 			return len(c.InitSystem) == 1 && c.InitSystem[0] == "systemd"
+		}},
+		{"distro_version_min", map[string]any{"distro_version_min": "12"}, func(c *Condition) bool {
+			return c.DistroVersionMin == "12"
+		}},
+		{"distro_version_max", map[string]any{"distro_version_max": "24.04"}, func(c *Condition) bool {
+			return c.DistroVersionMax == "24.04"
 		}},
 		{"is_wsl true", map[string]any{"is_wsl": true}, func(c *Condition) bool {
 			return c.IsWSL != nil && *c.IsWSL == true
@@ -1541,20 +1636,34 @@ func TestParseConditionNewFields(t *testing.T) {
 	}
 }
 
+func TestParseProjectSchemaRejectsNumericDistroVersionBound(t *testing.T) {
+	p := writeSchema(t, `
+[tools.demo.native]
+pkg = "demo"
+when = { distro_version_min = 12 }
+`)
+	_, err := ParseProjectSchema(p, fixedMap())
+	if err == nil || !strings.Contains(err.Error(), "distro_version_min") || !strings.Contains(err.Error(), "string") {
+		t.Fatalf("ParseProjectSchema error = %v, want distro_version_min string type error", err)
+	}
+}
+
 func TestParseConditionAllFields(t *testing.T) {
 	// Multiple fields together — all should parse
 	raw := map[string]any{
-		"distro_family": []any{"debian"},
-		"distro_id":     []any{"ubuntu"},
-		"arch":          []any{"x86_64"},
-		"os":            []any{"linux"},
-		"kernel":        []any{"6.7.0"},
-		"target_family": []any{"unix"},
-		"libc":          []any{"glibc"},
-		"init_system":   []any{"systemd"},
-		"is_wsl":        false,
-		"is_container":  false,
-		"is_android":    true,
+		"distro_family":      []any{"debian"},
+		"distro_id":          []any{"ubuntu"},
+		"arch":               []any{"x86_64"},
+		"os":                 []any{"linux"},
+		"kernel":             []any{"6.7.0"},
+		"target_family":      []any{"unix"},
+		"libc":               []any{"glibc"},
+		"init_system":        []any{"systemd"},
+		"distro_version_min": "22.04",
+		"distro_version_max": "24.04",
+		"is_wsl":             false,
+		"is_container":       false,
+		"is_android":         true,
 	}
 	cond := parseCondition(raw)
 	if cond == nil {
@@ -1584,6 +1693,9 @@ func TestParseConditionAllFields(t *testing.T) {
 	}
 	if len(cond.TargetFamily) != 1 || cond.TargetFamily[0] != "unix" {
 		t.Errorf("TargetFamily: expected [unix], got %v", cond.TargetFamily)
+	}
+	if cond.DistroVersionMin != "22.04" || cond.DistroVersionMax != "24.04" {
+		t.Errorf("distro version range: got %q..%q", cond.DistroVersionMin, cond.DistroVersionMax)
 	}
 	if cond.IsWSL == nil || *cond.IsWSL != false {
 		t.Errorf("IsWSL: expected false, got %v", cond.IsWSL)
@@ -1853,5 +1965,23 @@ local_path = "vendor/demo"
 	}
 	if got := tool.Methods[0].ProjectRoot; got != want {
 		t.Fatalf("method ProjectRoot = %q, want %q", got, want)
+	}
+}
+
+func TestValidateUnknownMethodHintPrefersLongestPrefix(t *testing.T) {
+	s := &Schema{Tools: map[string]*Tool{
+		"demo": {
+			Name:    "demo",
+			Methods: []*MethodCandidate{{Kind: "msix-custom"}},
+		},
+	}}
+	for i := 0; i < 50; i++ {
+		_, err := Validate(s, []string{"msi", "msix"})
+		if err == nil {
+			t.Fatal("Validate() error = nil")
+		}
+		if !strings.Contains(err.Error(), `variant of "msix"`) {
+			t.Fatalf("hint did not choose longest prefix: %v", err)
+		}
 	}
 }

@@ -128,6 +128,10 @@ func (lr *LoggingRunner) OpenStdoutPipe(ctx context.Context, name string, args .
 				lr.logger.Log(ctx, failLevel, "run stream exited non-zero", append(attrs,
 					"stderr", truncateStderr(result.Stderr),
 				)...)
+			case result.WaitErr != nil:
+				lr.logger.Log(ctx, failLevel, "run stream output incomplete", append(attrs,
+					"error", RedactSensitiveText(result.WaitErr.Error()),
+				)...)
 			default:
 				lr.logger.Debug("run stream ok", attrs...)
 			}
@@ -158,9 +162,14 @@ func (lr *LoggingRunner) RunWithEnvValidated(ctx context.Context, env map[string
 	if lr.ctx.Method != "" {
 		attrs = append(attrs, "method", lr.ctx.Method)
 	}
-	if result.Err != nil {
+	switch {
+	case result.Err != nil:
 		lr.logger.Warn("run failed", append(attrs, "error", RedactSensitiveText(result.Err.Error()))...)
-	} else {
+	case result.ExitCode != 0:
+		lr.logger.Warn("run exited non-zero", attrs...)
+	case result.WaitErr != nil:
+		lr.logger.Warn("run output incomplete", append(attrs, "error", RedactSensitiveText(result.WaitErr.Error()))...)
+	default:
 		lr.logger.Debug("run ok", attrs...)
 	}
 	return result
@@ -229,6 +238,12 @@ func (lr *LoggingRunner) run(ctx context.Context, dir string, env map[string]str
 		// Process ran but exited non-zero.
 		lr.logger.Log(ctx, failLevel, "run exited non-zero", append(attrs,
 			"stderr", truncateStderr(result.Stderr),
+		)...)
+	case result.WaitErr != nil:
+		// The direct child succeeded, but inherited output pipes did not close
+		// before WaitDelay. This is not a child execution failure.
+		lr.logger.Log(ctx, failLevel, "run output incomplete", append(attrs,
+			"error", RedactSensitiveText(result.WaitErr.Error()),
 		)...)
 	default:
 		lr.logger.Debug("run ok", attrs...)

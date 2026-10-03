@@ -99,23 +99,34 @@ func TestReplacementExecutorSaveFailuresStopMutationsAndPreserveRecoveryState(t 
 				t.Fatal(err)
 			}
 
-			blocker := state.DefaultPath() + ".tmp"
+			statePath := state.DefaultPath()
+			blockedPath := statePath + ".blocked"
+			blocked := false
 			blockSave := func() {
 				t.Helper()
-				if err := os.Mkdir(blocker, 0700); err != nil {
-					t.Fatalf("create state-save blocker: %v", err)
+				if err := os.Rename(statePath, blockedPath); err != nil {
+					t.Fatalf("move durable state aside to block save: %v", err)
 				}
+				if err := os.Mkdir(statePath, 0700); err != nil {
+					_ = os.Rename(blockedPath, statePath)
+					t.Fatalf("create state-file destination blocker: %v", err)
+				}
+				blocked = true
 			}
 			unblockSave := func() {
 				t.Helper()
-				if _, err := os.Stat(blocker); err == nil {
-					if err := os.Remove(blocker); err != nil {
-						t.Fatalf("remove state-save blocker: %v", err)
-					}
-				} else if !errors.Is(err, os.ErrNotExist) {
-					t.Fatalf("stat state-save blocker: %v", err)
+				if !blocked {
+					return
 				}
+				if err := os.Remove(statePath); err != nil {
+					t.Fatalf("remove state-file destination blocker: %v", err)
+				}
+				if err := os.Rename(blockedPath, statePath); err != nil {
+					t.Fatalf("restore durable state after blocked save: %v", err)
+				}
+				blocked = false
 			}
+			t.Cleanup(unblockSave)
 
 			adapter := &replacementSaveBoundaryAdapter{
 				replacementRecoveryAdapter: &replacementRecoveryAdapter{
@@ -125,8 +136,6 @@ func TestReplacementExecutorSaveFailuresStopMutationsAndPreserveRecoveryState(t 
 			}
 			runner := &replacementSaveBoundaryRunner{}
 			switch tc.fault {
-			case "begin":
-				blockSave()
 			case "remove-failure":
 				adapter.removeErr = errors.New("remove refused")
 			case "removed-state":
@@ -151,9 +160,9 @@ func TestReplacementExecutorSaveFailuresStopMutationsAndPreserveRecoveryState(t 
 			}}
 
 			ex := New()
-			if tc.saveBoundary != "" {
+			if tc.fault == "begin" || tc.saveBoundary != "" {
 				ex.beforeReplacementSave = func(boundary string) {
-					if boundary == tc.saveBoundary {
+					if boundary == tc.saveBoundary || tc.fault == "begin" && boundary == "begin" {
 						blockSave()
 					}
 				}

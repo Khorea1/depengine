@@ -107,6 +107,9 @@ func probeImage(ctx context.Context, rn run.Runner, manager, reference, platform
 		if res.Err != nil {
 			return false, "container: inspect platform: " + res.Err.Error()
 		}
+		if res.WaitErr != nil {
+			return false, "container: inspect platform output: " + res.WaitErr.Error()
+		}
 		if res.ExitCode != 0 {
 			return false, ""
 		}
@@ -129,6 +132,9 @@ func probeImage(ctx context.Context, rn run.Runner, manager, reference, platform
 	}
 	if res.ExitCode != 0 {
 		return false, ""
+	}
+	if res.WaitErr != nil {
+		return false, "container: list images output: " + res.WaitErr.Error()
 	}
 	return strings.TrimSpace(string(res.Stdout)) != "", ""
 }

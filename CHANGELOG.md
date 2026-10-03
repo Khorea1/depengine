@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Report global tool and method timeout failures with the correct timeout scope and configured duration.
 - Replacement recovery now reconstructs the configured candidate intent and pins it to the persisted immutable plan before observing or mutating the host; retries resolve method-scoped removal credentials and use the same timeout, environment omission, and elevation safeguards.
 - Upgrade replacement now requires and clones the discovery-time tracked state, then compares it with durable state under lock before writing replacement WAL or removing the old installation. The previous method is resolved by `config.FindMethodCandidate` using its exact configured kind and label.
 - Lock migration no longer treats matching `MethodsHash` values as proof that a historical v1 checksum belongs to a newly resolved artifact. Checksum carry-forward is limited to an exact artifact match in a prior v2 projection.

@@ -370,7 +370,7 @@ type cargoMetadata struct {
 func cargoCheckoutPackagePath(ctx context.Context, rn run.Runner, checkoutDir, pkg string) (string, error) {
 	manifest := filepath.Join(checkoutDir, "Cargo.toml")
 	res := rn.Run(ctx, "cargo", "metadata", "--format-version", "1", "--no-deps", "--manifest-path", manifest)
-	if err := run.CheckResult(res, "cargo: metadata"); err != nil {
+	if err := run.CheckResultCompleteOutput(res, "cargo: metadata"); err != nil {
 		return "", err
 	}
 	var metadata cargoMetadata
