@@ -114,6 +114,63 @@ app = { requires = ["a", "b"], requires_when = { a = { os = ["darwin"] } }, nati
 	}
 }
 
+func TestMergeLayersPreservesImplicitPlatformGuard(t *testing.T) {
+	manifest := parseLayerForMerge(t, true, `
+[packages]
+app = { aur = { pkg = "manifest", when = { distro_family = ["debian"] } } }
+`, nil)
+	project := parseLayerForMerge(t, false, `
+[tools]
+app = { aur = { pkg = "project" } }
+`, nil)
+
+	merged := MergeLayers(manifest, project)
+	methods := merged.Tools["app"].Methods
+	if len(methods) != 1 || methods[0].Kind != "aur" {
+		t.Fatalf("merged methods = %+v, want one aur candidate", methods)
+	}
+	if got := methods[0].Config["pkg"]; got != "project" {
+		t.Fatalf("merged aur package = %v, want project", got)
+	}
+	if methods[0].When == nil || !reflect.DeepEqual(methods[0].When.DistroFamily, []string{"arch"}) {
+		t.Fatalf("merged aur condition = %+v, want distro_family [arch]", methods[0].When)
+	}
+}
+
+func TestMergeLayersPreservesDistinctMethodLabels(t *testing.T) {
+	lower := &Schema{Tools: map[string]*Tool{
+		"app": {Name: "app", Methods: []*MethodCandidate{{Kind: "http", Label: "primary"}}},
+	}}
+	upper := &Schema{Tools: map[string]*Tool{
+		"app": {Name: "app", Methods: []*MethodCandidate{{Kind: "http", Label: "mirror"}}},
+	}}
+
+	merged := MergeLayers(lower, upper)
+	methods := merged.Tools["app"].Methods
+	if len(methods) != 2 || methods[0].Label != "primary" || methods[1].Label != "mirror" {
+		t.Fatalf("merged labeled methods = %+v, want distinct primary and mirror candidates", methods)
+	}
+}
+
+func TestParseMethodImplicitPlatformGuardDoesNotAliasDefaults(t *testing.T) {
+	first, err := parseMethod("winget", true)
+	if err != nil {
+		t.Fatalf("parse first method: %v", err)
+	}
+	second, err := parseMethod("winget", true)
+	if err != nil {
+		t.Fatalf("parse second method: %v", err)
+	}
+
+	first.When.DistroFamily[0] = "linux"
+	if got := second.When.DistroFamily; !reflect.DeepEqual(got, []string{"windows"}) {
+		t.Fatalf("second implicit guard after first mutation = %v, want [windows]", got)
+	}
+	if got := platformMethodConditions["winget"].DistroFamily; !reflect.DeepEqual(got, []string{"windows"}) {
+		t.Fatalf("default implicit guard after parsed method mutation = %v, want [windows]", got)
+	}
+}
+
 func TestMergeLayersMethodMetadataPresenceAndHookIndependence(t *testing.T) {
 	manifest := parseLayerForMerge(t, true, `
 [packages]
@@ -165,7 +222,8 @@ app = { native = { pkg_overrides = { pacman = "app-upper" } } }
 	merged.Tools["app"].RequiresWhen["a"].OS[0] = "mutated"
 	for _, method := range merged.Tools["app"].Methods {
 		if overrides, ok := method.Config["pkg_overrides"].(map[string]any); ok {
-			overrides["apt"] = "mutated"
+			overrides["apt"] = "mutated-lower"
+			overrides["pacman"] = "mutated-upper"
 		}
 	}
 

@@ -623,7 +623,8 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 	// Apply implicit platform condition if user didn't set explicit when.
 	if mc.When == nil {
 		if cond, ok := platformMethodConditions[kind]; ok {
-			mc.When = &cond
+			mc.When = cloneCondition(&cond)
+			mc.presence["When"] = true
 		}
 	}
 

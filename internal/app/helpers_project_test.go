@@ -9,7 +9,7 @@ import (
 func TestResolveSchemaFilePathCanonicalizesFileAndDirectory(t *testing.T) {
 	root := t.TempDir()
 	projectDir := filepath.Join(root, "nested", "project")
-	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+	if err := os.MkdirAll(projectDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	schemaPath := filepath.Join(projectDir, "schema.toml")

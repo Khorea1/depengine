@@ -326,8 +326,14 @@ func ManagerBinaryNames() []string {
 // native installs. Unlike ManagerNames/ManagerBinaryNames, this is runtime
 // environment data rather than schema method vocabulary.
 func ManagerExecutableNames() []string {
-	seen := make(map[string]bool, len(managers))
+	seen := make(map[string]bool, len(managers)*3)
 	for _, manager := range managers {
+		if manager.Name != "" {
+			seen[manager.Name] = true
+		}
+		if len(manager.SyncCmd) > 0 && manager.SyncCmd[0] != "" {
+			seen[manager.SyncCmd[0]] = true
+		}
 		if len(manager.InstallCmd) > 0 && manager.InstallCmd[0] != "" {
 			seen[manager.InstallCmd[0]] = true
 		}

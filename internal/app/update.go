@@ -278,7 +278,7 @@ func updatePinValue(pin lock.ToolPin) string {
 // recorded in state and warns about installed tools that are now out of date.
 // Warn-only by design: `depengine update` refreshes the lock; applying the new
 // versions is a separate install step.
-func reportVersionDrift(schema *config.Schema, newLock *lock.Lock) {
+func reportVersionDrift(ctx context.Context, schema *config.Schema, newLock *lock.Lock) {
 	if newLock == nil || (newLock.Version != lock.CurrentVersion && len(newLock.Tools) == 0) {
 		return
 	}

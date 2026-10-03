@@ -189,14 +189,6 @@ func loadSchema(path string) (*config.Schema, string, *engine.Facts, error) {
 	return project.Schema, project.Clan, project.Facts, nil
 }
 
-func loadSchemaWithManifest(schemaPath, manifestPath string) (*config.Schema, string, *engine.Facts, int, error) {
-	project, err := loadProject(schemaPath, projectLoadOptions{ManifestPath: manifestPath, Provenance: true})
-	if err != nil {
-		return nil, "", nil, 0, err
-	}
-	return project.Schema, project.Clan, project.Facts, project.ManifestCount, nil
-}
-
 // mergeManifest remains for the syntax-only validate command. Host-aware
 // commands use loadProject so project and manifest never receive different
 // placeholder maps.

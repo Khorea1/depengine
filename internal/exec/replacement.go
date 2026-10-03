@@ -107,6 +107,9 @@ func (ex *Executor) replaceCandidate(ac *candidateAttempt, result *ToolResult, r
 		Identity: ac.resolved.Candidate,
 		Label:    ac.method.Label,
 	}
+	if ex.beforeReplacementSave != nil {
+		ex.beforeReplacementSave("begin")
+	}
 	if err := locked.BeginReplacement(
 		ac.tool.Name, oldKind, previousCandidate, desiredCandidate,
 		previous, projection, preparationKey, ac.resources,

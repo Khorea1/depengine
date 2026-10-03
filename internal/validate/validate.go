@@ -232,6 +232,36 @@ func validatePackageNames(s *config.Schema) *Result {
 	return r
 }
 
+// withoutDanglingCycleDependencies retains only graph edges that can participate
+// in a cycle. Missing references are reported separately and must not suppress
+// cycle findings for otherwise valid dependencies.
+func withoutDanglingCycleDependencies(s *config.Schema) *config.Schema {
+	copySchema := *s
+	copySchema.Tools = make(map[string]*config.Tool, len(s.Tools))
+	for name, tool := range s.Tools {
+		copyTool := *tool
+		copyTool.Requires = filterExistingDependencies(tool.Requires, s.Tools)
+		copyTool.Methods = append([]*config.MethodCandidate(nil), tool.Methods...)
+		for i, method := range tool.Methods {
+			copyMethod := *method
+			copyMethod.Requires = filterExistingDependencies(method.Requires, s.Tools)
+			copyTool.Methods[i] = &copyMethod
+		}
+		copySchema.Tools[name] = &copyTool
+	}
+	return &copySchema
+}
+
+func filterExistingDependencies(dependencies []string, tools map[string]*config.Tool) []string {
+	filtered := make([]string, 0, len(dependencies))
+	for _, dependency := range dependencies {
+		if _, exists := tools[dependency]; exists {
+			filtered = append(filtered, dependency)
+		}
+	}
+	return filtered
+}
+
 // ValidateSchema runs structural and semantic validation on a parsed schema,
 // including method-kind checks when knownKinds is non-nil (callers that want
 // adapter registration verification pass exec.RegisteredKinds(); tests that
@@ -265,7 +295,11 @@ func ValidateSchema(s *config.Schema, knownKinds []string) *Result {
 	r.Merge(validatePackageNames(s))
 
 	// Semantic checks.
-	r.Merge(validateCycles(s))
+	// Cycle detection and dangling-reference reporting are independent checks.
+	// The graph sorter rejects missing nodes before checking for cycles, so give
+	// it a copy with unresolved dependency edges removed; the original schema
+	// remains available to validateDanglingReferences above.
+	r.Merge(validateCycles(withoutDanglingCycleDependencies(s)))
 	r.Merge(validateDanglingReferences(s))
 	r.Merge(validateMalformedURLs(s))
 	r.Merge(validateContainerReferences(s))

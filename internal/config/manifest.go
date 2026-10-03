@@ -444,10 +444,7 @@ func mergeMethodSlices(lower, upper []*MethodCandidate, pc *provenanceCollector)
 // Label with a NUL separator so that Kind="http"+Label="mirror" does not
 // collide with Kind="http-mirror"+Label="".
 func methodKey(m *MethodCandidate) string {
-	if m.Label != "" {
-		return m.Kind + "\x00" + m.Label
-	}
-	return m.Kind
+	return m.Kind + "\x00" + m.Label
 }
 
 // mergeMethodConfigs merges two MethodCandidate values for the same Kind.
@@ -470,7 +467,10 @@ func mergeMethodConfigs(lower, upper *MethodCandidate, pc *provenanceCollector) 
 		result.Inferred = upper.Inferred
 		result.presence["Inferred"] = true
 	}
-	if upper.presence["When"] {
+	// A non-nil guard is itself a value even if declaration metadata was
+	// lost by an intermediate candidate transformation. Presence remains
+	// necessary to propagate an explicit nil/empty override.
+	if upper.presence["When"] || upper.When != nil {
 		if upper.When == nil {
 			result.When = nil
 		} else {

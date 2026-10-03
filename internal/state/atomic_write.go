@@ -17,7 +17,7 @@ func atomicWritePrivateFileWithSync(path string, data []byte, mode fs.FileMode, 
 	if err := ensurePrivateDir(dir); err != nil {
 		return fmt.Errorf("create private file dir: %w", err)
 	}
-	f, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	f, err := os.CreateTemp(dir, ".atomic-write-*")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}

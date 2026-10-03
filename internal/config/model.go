@@ -128,7 +128,7 @@ func cloneTool(tool *Tool) *Tool {
 	out.presence = clonePresence(tool.presence)
 	out.PreInstall = cloneHooks(tool.PreInstall)
 	out.PostInstall = cloneHooks(tool.PostInstall)
-	out.Requires = append([]string{}, tool.Requires...)
+	out.Requires = append([]string(nil), tool.Requires...)
 	if tool.RequiresWhen != nil {
 		out.RequiresWhen = make(map[string]*Condition, len(tool.RequiresWhen))
 		for dependency, condition := range tool.RequiresWhen {
@@ -139,14 +139,17 @@ func cloneTool(tool *Tool) *Tool {
 			out.RequiresWhen[dependency] = cloneCondition(condition)
 		}
 	}
-	out.Tags = append([]string{}, tool.Tags...)
-	out.MethodPrefer = append([]string{}, tool.MethodPrefer...)
-	out.MethodOnly = append([]string{}, tool.MethodOnly...)
+	out.Tags = append([]string(nil), tool.Tags...)
+	out.MethodPrefer = append([]string(nil), tool.MethodPrefer...)
+	out.MethodOnly = append([]string(nil), tool.MethodOnly...)
 	out.Methods = cloneMethods(tool.Methods)
 	return &out
 }
 
 func cloneHooks(hooks []Hook) []Hook {
+	if hooks == nil {
+		return nil
+	}
 	out := make([]Hook, len(hooks))
 	for i, hook := range hooks {
 		out[i] = hook
@@ -159,6 +162,9 @@ func cloneHooks(hooks []Hook) []Hook {
 }
 
 func cloneMethods(methods []*MethodCandidate) []*MethodCandidate {
+	if methods == nil {
+		return nil
+	}
 	out := make([]*MethodCandidate, len(methods))
 	for i, method := range methods {
 		out[i] = cloneMethod(method)
@@ -252,6 +258,8 @@ func cloneAny(v any) any {
 	switch value := v.(type) {
 	case map[string]any:
 		return cloneAnyMap(value)
+	case map[string]string:
+		return cloneStringMap(value)
 	case []any:
 		out := make([]any, len(value))
 		for i := range value {

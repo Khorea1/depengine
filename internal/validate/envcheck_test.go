@@ -21,11 +21,17 @@ func (fakeRunner) Run(_ context.Context, name string, args ...string) run.Result
 // fakeRunnerFor returns success only for the specified binary name.
 type fakeRunnerFor struct {
 	available map[string]bool
+	calls     map[string]int
 }
 
 func (f fakeRunnerFor) Run(_ context.Context, name string, args ...string) run.Result {
-	if name == "which" && len(args) == 1 && f.available[args[0]] {
-		return run.Result{ExitCode: 0}
+	if name == "which" && len(args) == 1 {
+		if f.calls != nil {
+			f.calls[args[0]]++
+		}
+		if f.available[args[0]] {
+			return run.Result{ExitCode: 0}
+		}
 	}
 	return run.Result{ExitCode: 1}
 }
@@ -120,6 +126,23 @@ func TestCheckEnv_Deduplicates(t *testing.T) {
 			t.Errorf("duplicate check for %s", ch.Name)
 		}
 		names[ch.Name] = true
+	}
+}
+
+func TestCheckEnv_IncludesNativeRuntimeAndInstallExecutables(t *testing.T) {
+	calls := make(map[string]int)
+	result := CheckEnv(context.Background(), fakeRunnerFor{calls: calls})
+	checks := make(map[string]int)
+	for _, check := range result.Checks {
+		checks[check.Name]++
+	}
+	for _, name := range native.ManagerExecutableNames() {
+		if checks[name] != 1 {
+			t.Errorf("native binary %q check count = %d, want 1", name, checks[name])
+		}
+		if calls[name] != 1 {
+			t.Errorf("native binary %q probe count = %d, want 1", name, calls[name])
+		}
 	}
 }
 

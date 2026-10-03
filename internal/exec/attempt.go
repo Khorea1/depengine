@@ -12,6 +12,8 @@ import (
 	"github.com/Khorea1/depengine/internal/state"
 )
 
+const unresolvedCommitMessage = "commit outcome is unresolved and recovery is required"
+
 // attemptOutcome tells attemptMethod what to do after a candidate phase runs.
 type attemptOutcome int
 
@@ -403,7 +405,15 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 
 	ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "installing")
 	runner := ex.mutationRunner(ac.tool.Name, ac.displayKind)
-	methodCtx, methodCancel := context.WithTimeout(ac.toolCtx, ex.methodTimeout)
+	methodCtx := ac.toolCtx
+	methodCancel := func() {}
+	if ex.methodTimeout > 0 {
+		if ex.toolTimeout > 0 {
+			methodCtx, methodCancel = context.WithTimeoutCause(ac.toolCtx, ex.methodTimeout, errToolTimeout)
+		} else {
+			methodCtx, methodCancel = context.WithTimeout(ac.toolCtx, ex.methodTimeout)
+		}
+	}
 
 	// Resolve auth only after this candidate survives every planning and
 	// preparation gate. Credentials stay in this method call's context.
@@ -449,7 +459,11 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 	}
 
 	err := ac.adapter.InstallResolved(methodCtx, runner, ac.tool, ac.method, ac.reported)
+	methodCause := context.Cause(methodCtx)
 	methodCancel()
+	if err != nil && ex.toolTimeout > 0 && errors.Is(methodCause, errToolTimeout) {
+		err = fmt.Errorf("tool timeout (%v) exceeded", ex.toolTimeout)
+	}
 
 	if err == nil {
 		return ex.finishInstalled(ac, result)
@@ -471,7 +485,7 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 			}
 		}
 		_ = ac.prepared.leaveCommitUnresolved()
-		ex.failCandidate(ac, result, fmt.Sprintf("install failed after transactional preparation: %v; commit outcome is unresolved and recovery is required", err))
+		ex.failCandidate(ac, result, fmt.Sprintf("install failed after transactional preparation: %v; %s", err, unresolvedCommitMessage))
 		ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "commit_unresolved", "error", result.Error)
 		return finishTool
 	}

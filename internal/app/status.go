@@ -107,7 +107,7 @@ func normalizeStatusFormat(statusFormat *string, statusJSON *bool) {
 }
 
 // openStatusState loads the shared state file for reading.
-func openStatusState(ctx) (*state.LockedState, error) {
+func openStatusState(ctx context.Context) (*state.LockedState, error) {
 	ls, err := state.LoadSharedContext(ctx)
 	if err != nil {
 		log.Default.Error("state lock", "error", err)

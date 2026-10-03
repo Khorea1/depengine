@@ -20,11 +20,6 @@ func newForgetCmd() *cobra.Command {
 	}
 }
 
-// runForget removes a tool from state without attempting system removal.
-// Body unchanged from the pre-Cobra version — Cobra's cobra.ExactArgs(1)
-// now enforces the argument count that the old manual length check did.
-func runForget(toolName string) error { return runForgetContext(context.Background(), toolName) }
-
 func runForgetContext(ctx context.Context, toolName string) error {
 	ls, err := state.LoadLockedContext(ctx)
 	if err != nil {

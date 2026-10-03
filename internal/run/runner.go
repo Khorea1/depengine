@@ -493,6 +493,7 @@ func commandResult(ctx context.Context, cmd *exec.Cmd, runErr error, stdout, std
 		Stderr:   stderr,
 		ExitCode: exit,
 		Err:      runErr,
+		WaitErr:  waitErr,
 	}
 }
 

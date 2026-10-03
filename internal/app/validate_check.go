@@ -157,6 +157,9 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 	} else if *validateStrict && len(result.Warnings) > 0 {
 		exitCode = 1
 	}
+	if exitCode == 0 {
+		return nil
+	}
 	return exitWithCode(exitCode)
 }
 

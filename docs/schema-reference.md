@@ -1164,6 +1164,13 @@ of the two layers.
 5. Manifest-only tools are ignored unless the manifest sets
    `[manifest] allow_new_tools = true`.
 
+An implicit platform condition added while parsing a method is a default, not an
+unconditional constraint: an explicit user `when` on that candidate may
+override it. During layer merge, the project-layer implicit guard is preserved
+only on a higher-priority candidate with matching identity; it does not constrain
+a distinct candidate. The merged configuration is independent of both inputs and
+does not alias either input.
+
 Run `depengine why <tool>` to see candidate status together with normalized
 non-secret identity fields (for example version/revision, registry/source,
 scope, environment/prefix, and architecture). Candidates that share a display

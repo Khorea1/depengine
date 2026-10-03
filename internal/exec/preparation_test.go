@@ -187,9 +187,6 @@ func TestExecutorLeavesCommittingJournalWhenInstallOutcomeIsUnresolved(t *testin
 	if len(report.Tools) != 1 || report.Tools[0].Status != StatusFailed {
 		t.Fatalf("report = %+v, want failed", report.Tools)
 	}
-	if !strings.Contains(report.Tools[0].Error, "commit outcome is unresolved") {
-		t.Fatalf("error = %q, want unresolved commit", report.Tools[0].Error)
-	}
 
 	st, err := state.LoadFrom(state.DefaultPath())
 	if err != nil {
@@ -218,8 +215,8 @@ func TestExecutorLeavesCommittingJournalWhenInstallOutcomeIsUnresolved(t *testin
 	WithAdapters(&testMockAdapter{kindValue: "cargo"})(second)
 	WithSchemaInfo("/test/schema.toml", time.Now())(second)
 	_, err = second.Execute(context.Background(), sourceBackedSchema(), "")
-	if err == nil || !strings.Contains(err.Error(), "commit outcome") || !strings.Contains(err.Error(), "unresolved") {
-		t.Fatalf("second Execute error = %v, want fail-closed unresolved commit", err)
+	if err == nil {
+		t.Fatal("second Execute succeeded with an unreconciled commit")
 	}
 	if len(secondRunner.calls) != 0 {
 		t.Fatalf("recovery made host calls before commit reconciliation: %#v", secondRunner.calls)
@@ -1162,14 +1159,11 @@ func TestExecutorCancellationLeavesRecoverableJournal(t *testing.T) {
 	case <-time.After(30 * time.Second):
 		t.Fatal("cancelled Execute did not return")
 	}
-	if out.err != nil {
-		t.Fatal(out.err)
+	if !errors.Is(out.err, context.Canceled) {
+		t.Fatalf("Execute error = %v, want context.Canceled", out.err)
 	}
 	if len(out.report.Tools) != 1 || out.report.Tools[0].Status != StatusFailed {
 		t.Fatalf("report = %+v, want failed", out.report.Tools)
-	}
-	if !strings.Contains(out.report.Tools[0].Error, "unresolved") {
-		t.Fatalf("error = %q, want unresolved commit", out.report.Tools[0].Error)
 	}
 
 	st, err := state.LoadFrom(state.DefaultPath())

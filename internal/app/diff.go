@@ -31,14 +31,6 @@ func newDiffCmd() *cobra.Command {
 	return cmd
 }
 
-// runDiff compares two state files and outputs the differences. Body
-// unchanged from the pre-Cobra version — diffArgs is now the positional
-// args Cobra already separated out, and cobra.MaximumNArgs(2) replaces the
-// old `default:` branch of the length switch below.
-func runDiff(diffArgs []string, diffOther *string, diffJSON *bool) error {
-	return runDiffContext(context.Background(), diffArgs, diffOther, diffJSON)
-}
-
 func runDiffContext(ctx context.Context, diffArgs []string, diffOther *string, diffJSON *bool) error {
 	var aPath, bPath string
 	var aState, bState *state.State
