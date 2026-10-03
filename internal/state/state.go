@@ -109,83 +109,35 @@ func Load() (*State, error) {
 // Save writes the state to DefaultPath atomically: write to a temp file,
 // fsync, then rename. This prevents corruption if the process crashes mid-write.
 func Save(s *State) error {
-	if err := validateStateSemantics(s); err != nil {
+	data, err := marshalStateForPersistence(s)
+	if err != nil {
 		return err
+	}
+	if err := atomicWritePrivateFile(DefaultPath(), data, 0o600); err != nil {
+		return fmt.Errorf("write state: %w", err)
+	}
+	return nil
+}
+
+func marshalStateForPersistence(s *State) ([]byte, error) {
+	if err := validateStateSemantics(s); err != nil {
+		return nil, err
 	}
 	if err := ValidateNoSecrets(s); err != nil {
-		return err
+		return nil, err
 	}
-	path := DefaultPath()
-	dir := filepath.Dir(path)
-	if err := ensurePrivateDir(dir); err != nil {
-		return fmt.Errorf("create private state dir: %w", err)
-	}
-	// Compute the integrity checksum over the canonical JSON of the state
-	// with the checksum field zeroed. encoding/json marshals maps with
-	// sorted keys, so re-marshalling the same state yields identical bytes
-	// and LoadFrom can reproduce the digest for verification.
 	s.Checksum = ""
 	canonical, err := json.Marshal(s)
 	if err != nil {
-		return fmt.Errorf("marshal state for checksum: %w", err)
+		return nil, fmt.Errorf("marshal state for checksum: %w", err)
 	}
 	sum := sha256.Sum256(canonical)
 	s.Checksum = hex.EncodeToString(sum[:])
-
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal state: %w", err)
+		return nil, fmt.Errorf("marshal state: %w", err)
 	}
-
-	// Write to a temp file in the same directory (ensures same-filesystem rename).
-	// The handle stays open for writing: Sync requires a writable handle
-	// because Windows FlushFileBuffers needs GENERIC_WRITE, which a
-	// read-only os.Open handle does not provide.
-	tmpPath := path + ".tmp"
-	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) // #nosec G304 -- tmpPath is derived from the generated private state path.
-	if err != nil {
-		return fmt.Errorf("write state tmp: %w", err)
-	}
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("write state tmp: %w", err)
-	}
-
-	// Sync the temp file before renaming.
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("sync state tmp: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("write state tmp: %w", err)
-	}
-
-	// Atomic rename — on Unix this is a single metadata operation; the target
-	// path is never left in a partially-written state.
-	if err := os.Rename(tmpPath, path); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("rename state: %w", err)
-	}
-
-	// Sync the directory to ensure the rename is persisted on disk.
-	// Windows cannot fsync a directory handle (FlushFileBuffers requires a
-	// file object, not a directory), and NTFS journals metadata updates, so
-	// the directory sync is Unix-only.
-	if runtime.GOOS != "windows" {
-		dirF, err := os.Open(dir) // #nosec G304 -- dir is the generated private state directory and is opened only for fsync.
-		if err != nil {
-			return fmt.Errorf("open state dir for sync: %w", err)
-		}
-		defer func() { _ = dirF.Close() }()
-		if err := dirF.Sync(); err != nil {
-			return fmt.Errorf("sync state dir: %w", err)
-		}
-	}
-
-	return nil
+	return data, nil
 }
 
 // LockedState is a State handle that proves the file lock was acquired.

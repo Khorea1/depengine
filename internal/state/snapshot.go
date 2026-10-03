@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -28,44 +29,37 @@ func snapshotDir() string {
 // in the snapshots subdirectory. If state.json does not exist, saves an
 // empty snapshot. Returns info about the saved snapshot.
 func SaveSnapshot() (*SnapshotInfo, error) {
+	return SaveSnapshotContext(context.Background())
+}
+
+func SaveSnapshotContext(ctx context.Context) (*SnapshotInfo, error) {
+	locked, err := LoadLockedContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("lock state for snapshot: %w", err)
+	}
+	defer func() { _ = locked.Close() }()
+
 	now := time.Now()
 	name := fmt.Sprintf("state-%s.json", now.Format("20060102T150405.000000000"))
 	dir := snapshotDir()
 	if err := ensurePrivateDir(dir); err != nil {
 		return nil, fmt.Errorf("create private snapshot dir: %w", err)
 	}
-
-	src := DefaultPath()
 	dst := filepath.Join(dir, name)
 
-	data, err := os.ReadFile(src) // #nosec G304 -- src is the generated state path under the operator-selected private state root.
+	snapshotState := *locked.State()
+	data, err := marshalStateForPersistence(&snapshotState)
 	if err != nil {
-		if os.IsNotExist(err) {
-			data = []byte("{}")
-		} else {
-			return nil, fmt.Errorf("read state for snapshot: %w", err)
-		}
+		return nil, fmt.Errorf("serialize snapshot: %w", err)
 	}
-
-	if err := os.WriteFile(dst, data, 0600); err != nil { // #nosec G703 -- dst uses a generated timestamp filename under the private snapshot directory.
+	if err := atomicWritePrivateFile(dst, data, 0o600); err != nil {
 		return nil, fmt.Errorf("write snapshot: %w", err)
 	}
-	// Prune old snapshots using default retention policy.
+
 	if err := PruneSnapshots(DefaultMaxSnapshots, DefaultSnapshotMaxAge); err != nil {
-		// Non-fatal; warn but don't fail the save.
 		log.Default.Warn("prune snapshots", "error", err)
 	}
-
-	// Count tools for the info.
-	var s State
-	_ = json.Unmarshal(data, &s)
-	toolCount := len(s.Tools)
-
-	return &SnapshotInfo{
-		Path:      dst,
-		Timestamp: now,
-		ToolCount: toolCount,
-	}, nil
+	return &SnapshotInfo{Path: dst, Timestamp: now, ToolCount: len(locked.State().Tools)}, nil
 }
 
 // ListSnapshots returns all snapshots sorted by timestamp (newest first).

@@ -414,7 +414,7 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	}
 
 	if !p.dryRun {
-		if _, err := state.SaveSnapshot(); err != nil {
+		if _, err := state.SaveSnapshotContext(ctx); err != nil {
 			lg.Warn("could not save pre-install snapshot", "error", err)
 		}
 	}
