@@ -36,6 +36,9 @@ while read -r local_ref local_oid remote_ref remote_oid; do
 	echo "pre-push: validating $local_ref ($commit)"
 	git worktree add --quiet --detach "$checkout" "$commit" </dev/null
 	cd "$checkout"
+	# Git exports repository-local variables to hooks; child tests must not
+	# accidentally use this repository when creating their own Git fixtures.
+	unset $(git rev-parse --local-env-vars)
 	scripts/check-gofmt.sh </dev/null
 	go build ./... </dev/null
 	go vet ./... </dev/null
