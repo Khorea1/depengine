@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ func TestExtractBzip2(t *testing.T) {
 	want := []byte("standalone bzip2 executable payload\n")
 	src := writeBzip2Fixture(t, smallBzip2Fixture)
 	dest := t.TempDir()
+	tmpDir := usePrivateBzip2TempDir(t)
 
 	if err := extractBzip2(context.Background(), src, dest, "tool", nil, false, ""); err != nil {
 		t.Fatalf("extractBzip2() error = %v", err)
@@ -37,15 +39,18 @@ func TestExtractBzip2(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0o755 {
-		t.Errorf("extracted mode = %04o, want 0755", got)
+	if runtime.GOOS != "windows" {
+		if got := info.Mode().Perm(); got != 0o755 {
+			t.Errorf("extracted mode = %04o, want 0755", got)
+		}
 	}
+	assertBzip2TempDirEmpty(t, tmpDir)
 }
 
 func TestExtractBzip2ExpansionLimit(t *testing.T) {
 	src := writeBzip2Fixture(t, bombBzip2Fixture)
 	dest := t.TempDir()
-	before := bzip2TemporaryFiles(t)
+	tmpDir := usePrivateBzip2TempDir(t)
 	budget := &archiveExpansionBudget{used: archiveExpansionLimit - 64}
 
 	err := extractBzip2WithBudget(context.Background(), src, dest, "tool", nil, false, "", budget)
@@ -55,7 +60,7 @@ func TestExtractBzip2ExpansionLimit(t *testing.T) {
 	if budget.used != archiveExpansionLimit {
 		t.Errorf("expanded bytes accounted = %d, want limit %d", budget.used, archiveExpansionLimit)
 	}
-	assertNoBzip2TemporaryFiles(t, before)
+	assertBzip2TempDirEmpty(t, tmpDir)
 	if _, err := os.Stat(filepath.Join(dest, "tool")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("binary exists after expansion rejection; stat error = %v", err)
 	}
@@ -64,13 +69,13 @@ func TestExtractBzip2ExpansionLimit(t *testing.T) {
 func TestExtractBzip2CancellationCleansTemporaryFile(t *testing.T) {
 	src := writeBzip2Fixture(t, bombBzip2Fixture)
 	dest := t.TempDir()
-	before := bzip2TemporaryFiles(t)
+	tmpDir := usePrivateBzip2TempDir(t)
 
 	err := extractBzip2WithBudget(&cancelDuringBzip2ReadContext{}, src, dest, "tool", nil, false, "", &archiveExpansionBudget{})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("extractBzip2WithBudget() error = %v, want context.Canceled", err)
 	}
-	assertNoBzip2TemporaryFiles(t, before)
+	assertBzip2TempDirEmpty(t, tmpDir)
 	if _, err := os.Stat(filepath.Join(dest, "tool")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("binary exists after cancellation; stat error = %v", err)
 	}
@@ -104,31 +109,22 @@ func writeBzip2Fixture(t *testing.T, encoded string) string {
 	return path
 }
 
-func bzip2TemporaryFiles(t *testing.T) []string {
+func usePrivateBzip2TempDir(t *testing.T) string {
 	t.Helper()
-	files, err := filepath.Glob(filepath.Join(os.TempDir(), ".depengine-bzip2-*"))
+	dir := t.TempDir()
+	for _, key := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(key, dir)
+	}
+	return dir
+}
+
+func assertBzip2TempDirEmpty(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return files
-}
-
-func assertNoBzip2TemporaryFiles(t *testing.T, before []string) {
-	t.Helper()
-	after := bzip2TemporaryFiles(t)
-	if !samePaths(before, after) {
-		t.Errorf("bzip2 temporary files changed after failure: before %v, after %v", before, after)
+	if len(entries) != 0 {
+		t.Errorf("bzip2 temporary files remain in isolated temp directory %s: %v", dir, entries)
 	}
-}
-
-func samePaths(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
