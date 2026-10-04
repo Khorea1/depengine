@@ -30,7 +30,7 @@ func TestSBOMVersionFallback(t *testing.T) {
 		{name: "unknown fallback", lockVersion: 1, want: "0.0.0"},
 		{name: "v2 projection beats stale legacy payload", lockVersion: lock.CurrentVersion, projection: "4.5.6", projectionMethod: "http", legacyVersion: "8.8.8", want: "4.5.6"},
 		{name: "v2 projection method mismatch", lockVersion: lock.CurrentVersion, projection: "5.6.7", projectionMethod: "npm", legacyVersion: "8.8.8", want: "0.0.0"},
-		{name: "malformed v2 projection remains best effort", lockVersion: lock.CurrentVersion, legacyVersion: "8.8.8", malformed: true, want: "0.0.0"},
+		{name: "malformed v2 projection fails", lockVersion: lock.CurrentVersion, legacyVersion: "8.8.8", malformed: true, want: ""},
 	}
 
 	for _, tc := range cases {
@@ -106,6 +106,12 @@ func runSBOMFixture(t *testing.T, stateVersion string, lockVersion int, projecti
 	_ = read.Close()
 	if readErr != nil {
 		t.Fatalf("read SBOM output: %v", readErr)
+	}
+	if malformed {
+		if runErr == nil {
+			t.Fatal("runSBOM succeeded with malformed lock projection")
+		}
+		return ""
 	}
 	if runErr != nil {
 		t.Fatalf("runSBOM: %v (output %s)", runErr, output)

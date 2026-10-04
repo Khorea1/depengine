@@ -45,7 +45,12 @@ func runSBOMContext(ctx context.Context, sbomFormat *string) error {
 	// Fill missing state versions from the authoritative lock format. V2
 	// projection data is decoded once and never falls back to its legacy payload.
 	if st.SchemaPath != "" {
-		if lk, lerr := lock.Load(lock.DefaultPath(st.SchemaPath)); lerr == nil && lk != nil {
+		lk, lerr := lock.Load(lock.DefaultPath(st.SchemaPath))
+		if lerr != nil {
+			log.Default.Error("load lock for SBOM", "error", lerr)
+			return exitWithCode(3)
+		}
+		if lk != nil {
 			var projection plan.LockDocument
 			hasProjection := false
 			if lk.Version == lock.CurrentVersion {

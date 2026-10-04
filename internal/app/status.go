@@ -67,7 +67,11 @@ func runStatus(ctx context.Context, statusSchema, statusManifest *string, status
 		return nil
 	}
 
-	project, lk := loadStatusSchema(schemaPath, statusManifest, statusNoManifest)
+	project, lk, err := loadStatusSchema(schemaPath, statusManifest, statusNoManifest)
+	if err != nil {
+		log.Default.Error("load lock for status", "error", err)
+		return exitWithCode(3)
+	}
 	var s *config.Schema
 	if project != nil {
 		s = project.Schema
@@ -137,9 +141,9 @@ func resolveStatusSchemaPath(st *state.State, statusSchema *string) (string, boo
 // installed-vs-pinned version comparisons (outdated detection). A missing
 // lock is fine. A schema that fails to parse (or a manifest that fails to
 // merge) degrades to state-only reporting with a warning.
-func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifest *bool) (*loadedProject, *lock.Lock) {
+func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifest *bool) (*loadedProject, *lock.Lock, error) {
 	if schemaPath == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	noManifest := *statusNoManifest
@@ -152,17 +156,23 @@ func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifes
 		}
 	}
 
-	project, err := loadProject(schemaPath, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto})
+	project, projectErr := loadProject(schemaPath, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto})
+	lockSchemaPath := schemaPath
+	if projectErr != nil {
+		log.Default.Warn("load schema for comparison", "error", projectErr)
+		project = nil
+	} else {
+		lockSchemaPath = project.SchemaPath
+		if project.ManifestCount > 0 && project.ManifestAuto {
+			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", project.ManifestPath, project.ManifestCount)
+		}
+	}
+
+	lk, err := lock.Load(lock.DefaultPath(lockSchemaPath))
 	if err != nil {
-		log.Default.Warn("load schema for comparison", "error", err)
-		lk, _ := lock.Load(lock.DefaultPath(schemaPath))
-		return nil, lk
+		return nil, nil, fmt.Errorf("load lock for status: %w", err)
 	}
-	if project.ManifestCount > 0 && project.ManifestAuto {
-		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", project.ManifestPath, project.ManifestCount)
-	}
-	lk, _ := lock.Load(lock.DefaultPath(project.SchemaPath))
-	return project, lk
+	return project, lk, nil
 }
 
 // toolStatus is one row of the status report.
