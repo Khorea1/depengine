@@ -87,6 +87,10 @@ func extract(ctx context.Context, src, dest, ext, binaryName string, rn run.Runn
 }
 
 func extractBzip2(ctx context.Context, src, dest, binaryName string, rn run.Runner, sudoRequired bool, toolName string) error {
+	return extractBzip2WithBudget(ctx, src, dest, binaryName, rn, sudoRequired, toolName, &archiveExpansionBudget{})
+}
+
+func extractBzip2WithBudget(ctx context.Context, src, dest, binaryName string, rn run.Runner, sudoRequired bool, toolName string, budget *archiveExpansionBudget) error {
 	in, err := os.Open(src) // #nosec G304 -- src is the depengine-managed downloaded archive path.
 	if err != nil {
 		return fmt.Errorf("bzip2: open %s: %w", src, err)
@@ -99,7 +103,7 @@ func extractBzip2(ctx context.Context, src, dest, binaryName string, rn run.Runn
 	}
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }()
-	if _, err := io.Copy(tmp, bzip2.NewReader(in)); err != nil {
+	if err := copyBzip2(ctx, tmp, in, budget); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("bzip2: decompress %s: %w", src, err)
 	}
@@ -107,6 +111,11 @@ func extractBzip2(ctx context.Context, src, dest, binaryName string, rn run.Runn
 		return fmt.Errorf("bzip2: close temporary file: %w", err)
 	}
 	return copyBinary(ctx, tmpName, dest, binaryName, rn, sudoRequired, toolName)
+}
+
+func copyBzip2(ctx context.Context, dst io.Writer, src io.Reader, budget *archiveExpansionBudget) error {
+	_, err := io.Copy(budget.writer(dst), contextReader{ctx: ctx, r: bzip2.NewReader(src)})
+	return err
 }
 
 func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired bool, toolName string) error {
