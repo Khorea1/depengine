@@ -30,7 +30,7 @@ func TestLockedNPMVersionIsObservedByExecutor(t *testing.T) {
 }
 
 func TestResolveLatestNPMVersionRejectsUnresolvedOutput(t *testing.T) {
-	for _, output := range []string{`null`, `"latest"`, `"^1.2.3"`, `{"latest":"1.2.3"}`, `"1.2.3 --prefix=/tmp"`} {
+	for _, output := range []string{`null`, `"latest"`, `"^1.2.3"`, `{"latest":"1.2.3"}`, `"1.2.3 --prefix=/tmp"`, `[]`, `["1.2.3", "2.3.4"]`, `[1.2]`, `[null]`} {
 		t.Run(output, func(t *testing.T) {
 			_, err := ResolveLatestNPMVersion(context.Background(), &run.FakeRunner{Stdout: output}, "pkg", "")
 			if err == nil || !strings.Contains(err.Error(), "did not resolve to a concrete version") {
@@ -50,6 +50,13 @@ func TestResolveLatestYarnVersionRejectsUnresolvedOutput(t *testing.T) {
 		})
 	}
 }
+func TestResolveLatestNPMVersionAcceptsSingleItemArray(t *testing.T) {
+	version, err := ResolveLatestNPMVersion(context.Background(), &run.FakeRunner{Stdout: `["1.2.3"]`}, "pkg", "")
+	if err != nil || version != "1.2.3" {
+		t.Fatalf("version = %q, err = %v; want 1.2.3", version, err)
+	}
+}
+
 func TestValidNPMVersionRequiresConcreteSemver(t *testing.T) {
 	for _, version := range []string{"0.0.0", "1.2.3", "1.2.3-alpha.1", "1.2.3+build.01", "1.2.3-alpha.1+build.7"} {
 		if !ValidNPMVersion(version) {

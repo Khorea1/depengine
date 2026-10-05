@@ -10,7 +10,9 @@ RUN apk update && apk add \
     go \
     curl \
     git \
-    ca-certificates
+    ca-certificates \
+    nodejs \
+    npm
 
 # WORKDIR /app
 # COPY . .

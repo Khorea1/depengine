@@ -509,7 +509,7 @@ func TestCommitElevatedPayloadNormalizesOnlyPayloadRoot(t *testing.T) {
 	if !strings.Contains(ownerCommand, "chown 0:0 -- "+dest) {
 		t.Fatalf("owner normalization command = %q", ownerCommand)
 	}
-	if !strings.Contains(modeCommand, "chmod 0755 -- "+dest) {
+	if modeCommand != "chmod 0755 "+dest {
 		t.Fatalf("mode normalization command = %q", modeCommand)
 	}
 }

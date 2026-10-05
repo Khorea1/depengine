@@ -9,7 +9,9 @@ ENV GOTOOLCHAIN=auto
 RUN dnf update -y && dnf install -y \
     golang \
     curl \
-    git
+    git \
+    nodejs \
+    npm
 
 # WORKDIR /app
 # COPY . .

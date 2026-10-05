@@ -9,7 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     golang-go \
     curl \
     git \
-    ca-certificates
+    ca-certificates \
+    nodejs \
+    npm
 
 # WORKDIR /app
 # COPY . .

@@ -94,7 +94,14 @@ func ResolveLatestNPMVersion(ctx context.Context, rn run.Runner, pkg, registry s
 		return "", err
 	}
 	var version string
-	if err := json.Unmarshal(result.Stdout, &version); err != nil || !ValidNPMVersion(version) || strings.ContainsRune(version, '\x00') {
+	if err := json.Unmarshal(result.Stdout, &version); err != nil {
+		var versions []string
+		if arrayErr := json.Unmarshal(result.Stdout, &versions); arrayErr != nil || len(versions) != 1 {
+			return "", fmt.Errorf("npm: latest dist-tag for %q did not resolve to a concrete version", pkg)
+		}
+		version = versions[0]
+	}
+	if !ValidNPMVersion(version) || strings.ContainsRune(version, '\x00') {
 		return "", fmt.Errorf("npm: latest dist-tag for %q did not resolve to a concrete version", pkg)
 	}
 	return version, nil

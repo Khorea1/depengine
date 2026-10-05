@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Normalize elevated archive payload modes with a BSD-compatible `chmod` path argument; resolve npm JSON string or single-item array responses while rejecting ambiguous values, and configure cross-platform smoke images for legacy lock resolution.
 - Drain external TAR decoder stdout after the end marker within the existing bounded, context-aware trailer policy.
 - Expand native `{arch}` and `{os}` placeholders in GitHub `repo` + `asset` configuration fields while preserving `{arch_any}` and `{os_any}` asset-match tokens.
 - Archive installs report rollback, launcher, backup, and staging cleanup failures; elevated payload roots use uid/gid 0 and mode 0755 while inner modes are preserved.

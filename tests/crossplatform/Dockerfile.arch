@@ -8,7 +8,9 @@ FROM archlinux:latest
 RUN pacman -Sy --noconfirm \
     go \
     curl \
-    git
+    git \
+    nodejs \
+    npm
 
 # WORKDIR /app
 # COPY . .

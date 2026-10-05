@@ -216,7 +216,11 @@ func commitPayload(ctx context.Context, rn run.Runner, payload, dest, backup str
 	if err := run.CheckResult(run.RunElevated(ctx, rn, "chown", "0:0", "--", dest), "archive: normalize payload owner"); err != nil {
 		return errors.Join(err, rollbackCommittedPayload(ctx, rn, dest, backup, hadPayload, true))
 	}
-	if err := run.CheckResult(run.RunElevated(ctx, rn, "chmod", "0755", "--", dest), "archive: normalize payload mode"); err != nil {
+	modePath, err := filepath.Abs(dest)
+	if err != nil {
+		return errors.Join(fmt.Errorf("archive: resolve payload mode path: %w", err), rollbackCommittedPayload(ctx, rn, dest, backup, hadPayload, true))
+	}
+	if err := run.CheckResult(run.RunElevated(ctx, rn, "chmod", "0755", modePath), "archive: normalize payload mode"); err != nil {
 		return errors.Join(err, rollbackCommittedPayload(ctx, rn, dest, backup, hadPayload, true))
 	}
 	return nil

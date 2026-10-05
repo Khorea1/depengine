@@ -37,7 +37,7 @@ ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make &&
 fasd = { git = { url = "https://github.com/clvv/fasd", build = "PREFIX=$HOME/.local make install" } }
 
 # Tool using http method
-fastfetch = { http = { url = "https://example.com/fastfetch-linux-amd64.deb", checksum = "sha256:auto" } } # Dry-run only; avoid GitHub API rate limits
+fastfetch = { apt = "fastfetch", pacman = "fastfetch", dnf = "fastfetch", apk = "fastfetch" } # Use native packages; HTTP .deb lifecycle is intentionally unsupported.
 
 # Tool requiring native package manager (e.g., for system-level dependencies)
 neofetch = { apt = "neofetch", pacman = "neofetch", dnf = "neofetch", apk = "neofetch", brew = "neofetch" }
