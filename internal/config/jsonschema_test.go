@@ -91,34 +91,6 @@ func TestMethodJSONSchemaIncludesContractCapabilities(t *testing.T) {
 	}
 }
 
-func TestMethodJSONSchemaRequiresSignerForDetachedSignature(t *testing.T) {
-	for _, kind := range []string{"http", "github"} {
-		t.Run(kind, func(t *testing.T) {
-			contract, ok := methodkind.Lookup(kind)
-			if !ok {
-				t.Fatalf("missing %s contract", kind)
-			}
-			allOf, ok := methodObjectJSONSchema(contract, "")["allOf"].([]any)
-			if !ok {
-				t.Fatal("schema missing field dependencies")
-			}
-			for _, raw := range allOf {
-				rule, ok := raw.(map[string]any)
-				if !ok {
-					continue
-				}
-				ifPart, _ := rule["if"].(map[string]any)
-				thenPart, _ := rule["then"].(map[string]any)
-				if reflect.DeepEqual(ifPart["required"], []string{"signature_url"}) &&
-					reflect.DeepEqual(thenPart["required"], []string{"signing_key"}) {
-					return
-				}
-			}
-			t.Fatal("signature_url dependency on signing_key missing")
-		})
-	}
-}
-
 func TestMethodJSONSchemaIncludesFieldDependencies(t *testing.T) {
 	contract, ok := methodkind.Lookup("cargo")
 	if !ok {

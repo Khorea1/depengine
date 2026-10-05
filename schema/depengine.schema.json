@@ -342,18 +342,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -372,6 +360,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }
@@ -713,18 +713,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -743,6 +731,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }
@@ -1041,18 +1041,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -1071,6 +1059,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }
@@ -2442,18 +2442,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -2472,6 +2460,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }
@@ -2931,18 +2931,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -2961,6 +2949,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }
@@ -3794,18 +3794,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -3824,6 +3812,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }
@@ -4160,18 +4160,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -4190,6 +4178,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }
@@ -4465,18 +4465,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -4495,6 +4483,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }
@@ -4689,18 +4689,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -4719,6 +4707,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }
@@ -7416,18 +7416,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -7446,6 +7434,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }
@@ -7702,18 +7702,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -7732,6 +7720,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }
@@ -8032,18 +8032,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -8062,6 +8050,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }
@@ -9291,18 +9291,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -9321,6 +9309,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }
@@ -9519,18 +9519,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -9549,6 +9537,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }
@@ -10394,18 +10394,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -10424,6 +10412,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }
@@ -10758,18 +10758,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -10788,6 +10776,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }
@@ -11067,18 +11067,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -11097,6 +11085,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }
@@ -11291,18 +11291,6 @@
             {
               "if": {
                 "required": [
-                  "signature_url"
-                ]
-              },
-              "then": {
-                "required": [
-                  "signing_key"
-                ]
-              }
-            },
-            {
-              "if": {
-                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -11321,6 +11309,18 @@
               "then": {
                 "required": [
                   "signature_url"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             }

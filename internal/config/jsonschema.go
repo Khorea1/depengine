@@ -222,14 +222,6 @@ func methodObjectJSONSchema(contract *methodkind.Contract, variantKind string) m
 	for _, group := range contract.MutuallyExclusive {
 		allOf = append(allOf, map[string]any{"not": map[string]any{"required": group}})
 	}
-	if _, hasSignatureURL := contract.Fields["signature_url"]; hasSignatureURL {
-		if _, hasSigningKey := contract.Fields["signing_key"]; hasSigningKey {
-			allOf = append(allOf, map[string]any{
-				"if":   map[string]any{"required": []string{"signature_url"}},
-				"then": map[string]any{"required": []string{"signing_key"}},
-			})
-		}
-	}
 	if len(contract.Requires) > 0 {
 		keys := make([]string, 0, len(contract.Requires))
 		for key := range contract.Requires {
