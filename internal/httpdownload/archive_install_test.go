@@ -536,6 +536,9 @@ func TestRollbackPayloadReportsNonElevatedRemovalAndRestoreFailures(t *testing.T
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX permission failure injection")
 	}
+	if runAsUnprivilegedTest(t) {
+		return
+	}
 	root := t.TempDir()
 	dest, backup := filepath.Join(root, "payload"), filepath.Join(root, "payload.depengine-backup")
 	locked := filepath.Join(dest, "locked")
@@ -565,6 +568,9 @@ func TestRollbackPayloadReportsNonElevatedRemovalAndRestoreFailures(t *testing.T
 func TestInstallArchiveReportsNonElevatedBackupCleanupFailure(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX backup cleanup failure injection")
+	}
+	if runAsUnprivilegedTest(t) {
+		return
 	}
 	root := t.TempDir()
 	dest := filepath.Join(root, "payload")
@@ -596,6 +602,9 @@ func TestInstallArchiveReportsElevatedBackupCleanupFailure(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX elevated backup cleanup failure")
 	}
+	if runAsUnprivilegedTest(t) {
+		return
+	}
 	root := t.TempDir()
 	archive := filepath.Join(root, "demo.tar.gz")
 	writeTestArchive(t, archive, "tar.gz", "bin/demo", []byte("new"))
@@ -613,6 +622,9 @@ func TestInstallArchiveReportsElevatedBackupCleanupFailure(t *testing.T) {
 func TestInstallArchiveJoinsElevatedLauncherRollbackAndCleanupFailures(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX elevated launcher transaction")
+	}
+	if runAsUnprivilegedTest(t) {
+		return
 	}
 	root := t.TempDir()
 	archive := filepath.Join(root, "demo.tar.gz")
