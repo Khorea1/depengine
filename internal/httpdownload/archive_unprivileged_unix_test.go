@@ -35,9 +35,6 @@ func runAsUnprivilegedTest(t *testing.T) bool {
 			t.Errorf("remove unprivileged test directory: %v", err)
 		}
 	})
-	if err := os.Chown(dir, 65534, 65534); err != nil {
-		t.Fatalf("make unprivileged test directory: %v", err)
-	}
 	sourcePath, err := os.Executable()
 	if err != nil {
 		t.Fatalf("locate test executable: %v", err)
@@ -53,7 +50,7 @@ func runAsUnprivilegedTest(t *testing.T) bool {
 	}()
 
 	childPath := filepath.Join(dir, "httpdownload.test")
-	child, err := os.OpenFile(childPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 -- childPath is in a fresh t.TempDir.
+	child, err := os.OpenFile(childPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 -- childPath is inside the newly created private temporary directory.
 	if err != nil {
 		t.Fatalf("copy test executable: %v", err)
 	}
@@ -68,8 +65,8 @@ func runAsUnprivilegedTest(t *testing.T) bool {
 	if err := os.Chmod(childPath, 0o755); err != nil { // #nosec G302 -- child test binary must be executable by its target uid.
 		t.Fatalf("make test executable runnable: %v", err)
 	}
-	if err := os.Chown(childPath, 65534, 65534); err != nil {
-		t.Fatalf("transfer test executable: %v", err)
+	if err := os.Chown(dir, 65534, 65534); err != nil {
+		t.Fatalf("transfer test directory: %v", err)
 	}
 
 	cmd := exec.Command(childPath, "-test.run", "^"+t.Name()+"$") // #nosec G204 -- childPath is the copied current test binary.
