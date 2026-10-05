@@ -30,7 +30,7 @@ func TestDefaultPathFallsBackToPrivatePerUserTempRoot(t *testing.T) {
 		t.Fatalf("state fallback path is not isolated under a per-user temp root: %q", path)
 	}
 	root := filepath.Join(os.Getenv("TMPDIR"), strings.Split(rel, string(filepath.Separator))[0])
-	info, err := os.Stat(root)
+	info, err := os.Stat(root) // #nosec G703 -- root is the expected test-owned child beneath its isolated TMPDIR.
 	if err != nil {
 		t.Fatal(err)
 	}

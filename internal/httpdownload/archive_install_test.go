@@ -460,7 +460,7 @@ func TestCommitElevatedPayloadNormalizesOnlyPayloadRoot(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(stage, "bin"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(stage, "bin", "demo"), []byte("payload"), 0o751); err != nil {
+	if err := os.WriteFile(filepath.Join(stage, "bin", "demo"), []byte("payload"), 0o751); err != nil { // #nosec G306 -- fixture preserves the archive executable mode under t.TempDir().
 		t.Fatal(err)
 	}
 	rn := &scriptedArchiveRunner{}
@@ -545,13 +545,17 @@ func TestRollbackPayloadReportsNonElevatedRemovalAndRestoreFailures(t *testing.T
 	if err := os.WriteFile(filepath.Join(locked, "keep"), []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(locked, 0o500); err != nil {
+	if err := os.Chmod(locked, 0o500); err != nil { // #nosec G302 -- locked fixture deliberately denies owner writes to test rollback behavior.
 		t.Fatal(err)
 	}
 	if err := os.Mkdir(backup, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(locked, 0o700)
+	defer func() {
+		if err := os.Chmod(locked, 0o700); err != nil {
+			t.Errorf("restore locked fixture permissions: %v", err)
+		}
+	}()
 	err := rollbackPayload(context.Background(), &scriptedArchiveRunner{}, dest, backup, false)
 	if err == nil || !strings.Contains(err.Error(), "remove owned path") || !strings.Contains(err.Error(), "restore payload") {
 		t.Fatalf("rollback error = %v, want removal and restore failures", err)
@@ -571,13 +575,13 @@ func TestInstallArchiveReportsNonElevatedBackupCleanupFailure(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(locked, "old"), []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(locked, 0o500); err != nil {
+	if err := os.Chmod(locked, 0o500); err != nil { // #nosec G302 -- locked fixture deliberately denies owner writes to test replacement cleanup.
 		t.Fatal(err)
 	}
 	backupLocked := filepath.Join(dest+".depengine-backup", "locked")
 	t.Cleanup(func() {
-		_ = os.Chmod(locked, 0o700)
-		_ = os.Chmod(backupLocked, 0o700)
+		_ = os.Chmod(locked, 0o700)       // #nosec G302 -- cleanup restores test-owned locked fixture permissions.
+		_ = os.Chmod(backupLocked, 0o700) // #nosec G302 -- cleanup restores test-owned locked fixture permissions.
 	})
 	archive := filepath.Join(root, "demo.tar.gz")
 	writeTestArchive(t, archive, "tar.gz", "bin/demo", []byte("new"))

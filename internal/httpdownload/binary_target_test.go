@@ -95,7 +95,7 @@ func TestHTTPAdapterRemoveRecordedArchivePayloadPreservesParent(t *testing.T) {
 	if _, err := os.Stat(payload); !os.IsNotExist(err) {
 		t.Fatalf("owned payload remains: %v", err)
 	}
-	if got, err := os.ReadFile(unrelated); err != nil || string(got) != "unrelated" {
+	if got, err := os.ReadFile(unrelated); err != nil || string(got) != "unrelated" { // #nosec G304 -- unrelated fixture is in the test-owned parent directory.
 		t.Fatalf("unrelated parent payload changed: %q, %v", got, err)
 	}
 }
@@ -113,7 +113,7 @@ func TestHTTPAdapterRemoveRejectsUnsafeBinary(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "binary") {
 		t.Fatalf("Remove error = %v, want unsafe binary rejection", err)
 	}
-	if got, err := os.ReadFile(outside); err != nil || string(got) != "unrelated" {
+	if got, err := os.ReadFile(outside); err != nil || string(got) != "unrelated" { // #nosec G304 -- outside fixture is in the test-owned t.TempDir.
 		t.Fatalf("unsafe remove changed outside path: %q, %v", got, err)
 	}
 }
@@ -147,7 +147,7 @@ func TestHTTPAdapterInstallRecordsArchiveOwnership(t *testing.T) {
 	if !ownsArchivePayload(mc) {
 		t.Fatal("successful archive installation did not persist payload ownership")
 	}
-	if got, err := os.ReadFile(filepath.Join(dest, "tool")); err != nil || string(got) != "payload" {
+	if got, err := os.ReadFile(filepath.Join(dest, "tool")); err != nil || string(got) != "payload" { // #nosec G304 -- dest is a test-owned t.TempDir path.
 		t.Fatalf("installed payload = %q, %v", got, err)
 	}
 }

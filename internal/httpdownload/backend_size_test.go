@@ -28,7 +28,7 @@ func TestGoDownloaderRejectsOversizedContentLengthAndPreservesExistingDestinatio
 	if err == nil || !strings.Contains(err.Error(), "8-byte") {
 		t.Fatalf("Download() error = %v, want configured size-limit error", err)
 	}
-	if got, err := os.ReadFile(dest); err != nil || string(got) != "keep existing destination" {
+	if got, err := os.ReadFile(dest); err != nil || string(got) != "keep existing destination" { // #nosec G304 -- dest is a test-owned t.TempDir path.
 		t.Fatalf("destination after rejection = %q, %v; want existing contents preserved", got, err)
 	}
 }
@@ -67,7 +67,7 @@ func TestMaxArtifactDownloadBytesDefaultsAndHonorsPositiveOverride(t *testing.T)
 func TestDownloadAndExtractSmallStandaloneBzip2(t *testing.T) {
 	t.Setenv("DEPENGINE_DOWNLOAD_MAX_BYTES", "128")
 	bzipPath := writeBzip2Fixture(t, smallBzip2Fixture)
-	compressed, err := os.ReadFile(bzipPath)
+	compressed, err := os.ReadFile(bzipPath) // #nosec G304 -- fixture path is created under t.TempDir().
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestDownloadAndExtractSmallStandaloneBzip2(t *testing.T) {
 	if err := extractBzip2(context.Background(), downloaded, dest, "tool", nil, false, ""); err != nil {
 		t.Fatalf("extract downloaded bzip2 artifact: %v", err)
 	}
-	got, err := os.ReadFile(filepath.Join(dest, "tool"))
+	got, err := os.ReadFile(filepath.Join(dest, "tool")) // #nosec G304 -- dest is a test-owned temporary extraction root.
 	if err != nil {
 		t.Fatal(err)
 	}

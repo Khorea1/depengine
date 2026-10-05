@@ -800,7 +800,7 @@ func TestHTTPAdapterRemoveBinaryPreservesDestinationDirectory(t *testing.T) {
 	if _, err := os.Stat(binPath); !os.IsNotExist(err) {
 		t.Fatalf("owned binary remains: %v", err)
 	}
-	if got, err := os.ReadFile(unrelated); err != nil || string(got) != "unrelated" {
+	if got, err := os.ReadFile(unrelated); err != nil || string(got) != "unrelated" { // #nosec G304 -- unrelated file is inside this test's t.TempDir().
 		t.Fatalf("unrelated payload changed: %q, %v", got, err)
 	}
 	if _, err := os.Stat(dir); err != nil {

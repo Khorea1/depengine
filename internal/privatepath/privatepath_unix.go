@@ -43,7 +43,7 @@ func EnsurePrivateDir(path string) error {
 		return fmt.Errorf("%s is not owned by the current user", path)
 	}
 	if info.Mode().Perm()&0o077 != 0 {
-		if err := os.Chmod(path, 0o700); err != nil {
+		if err := os.Chmod(path, 0o700); err != nil { // #nosec G302 -- private fallback root must be traversable by its owner.
 			return err
 		}
 		info, err = os.Lstat(path)

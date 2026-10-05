@@ -207,12 +207,13 @@ func TestValidateSignatureURLRequiresSignerIdentity(t *testing.T) {
 	for _, kind := range []string{"http", "github", "appimage"} {
 		t.Run(kind, func(t *testing.T) {
 			cfg := map[string]any{"signature_url": "https://example.test/tool.sig", "checksum": "sha256:auto"}
-			if kind == "github" {
+			switch kind {
+			case "github":
 				cfg["repo"] = "example/tool"
 				cfg["asset"] = "tool.tar.gz"
-			} else if kind == "appimage" {
+			case "appimage":
 				cfg["url"] = "https://example.test/tool.AppImage"
-			} else {
+			default:
 				cfg["url"] = "https://example.test/tool.tar.gz"
 			}
 			method := mc(kind, nil, cfg)

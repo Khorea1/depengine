@@ -23,16 +23,16 @@ func TestLookupRejectsInsecureCacheDirectoryAndEntry(t *testing.T) {
 	}
 
 	if runtime.GOOS != "windows" {
-		if err := os.Chmod(dir, 0o755); err != nil {
+		if err := os.Chmod(dir, 0o755); err != nil { // #nosec G302 -- fixture deliberately simulates a world-accessible cache directory.
 			t.Fatal(err)
 		}
 		if got := Lookup(url); got != "" {
 			t.Fatalf("Lookup accepted entry in group/world-accessible directory: %q", got)
 		}
-		if err := os.Chmod(dir, 0o700); err != nil {
+		if err := os.Chmod(dir, 0o700); err != nil { // #nosec G302 -- fixture deliberately restores owner-only access for the next cache check.
 			t.Fatal(err)
 		}
-		if err := os.Chmod(path, 0o644); err != nil {
+		if err := os.Chmod(path, 0o644); err != nil { // #nosec G302 -- fixture deliberately makes cached data group-readable to test rejection.
 			t.Fatal(err)
 		}
 		if got := Lookup(url); got != "" {
@@ -44,7 +44,7 @@ func TestLookupRejectsInsecureCacheDirectoryAndEntry(t *testing.T) {
 func TestStoreMakesCacheEntryOwnerOnly(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	src := filepath.Join(t.TempDir(), "download")
-	if err := os.WriteFile(src, []byte("payload"), 0o644); err != nil {
+	if err := os.WriteFile(src, []byte("payload"), 0o644); err != nil { // #nosec G306 -- source fixture is deliberately readable to verify private cache output.
 		t.Fatal(err)
 	}
 	url := "https://example.test/private-cache-store"
@@ -87,7 +87,7 @@ func TestCacheFallbackIsPerUserTempPath(t *testing.T) {
 	if len(parts) < 4 || parts[0] != "depengine-"+current.Uid || parts[1] != "cache" || parts[2] != "depengine" || parts[3] != "downloads" {
 		t.Fatalf("cache fallback path is not isolated under a per-user temp root: %q", dir)
 	}
-	info, err := os.Stat(filepath.Join(os.Getenv("TMPDIR"), parts[0]))
+	info, err := os.Stat(filepath.Join(os.Getenv("TMPDIR"), parts[0])) // #nosec G703 -- parts[0] is the test-owned stable fallback root name.
 	if err != nil {
 		t.Fatal(err)
 	}

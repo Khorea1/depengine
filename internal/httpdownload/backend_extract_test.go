@@ -63,10 +63,10 @@ func TestExtractExternalTarViaStreamingDecoder(t *testing.T) {
 func installFakeXZ(t *testing.T, script string) {
 	t.Helper()
 	binDir := filepath.Join(t.TempDir(), "bin")
-	if err := os.Mkdir(binDir, 0o755); err != nil {
+	if err := os.Mkdir(binDir, 0o755); err != nil { // #nosec G301 -- test-owned PATH directory permits execution of its fixture.
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(binDir, "xz"), []byte("#!/bin/sh\n"+script+"\n"), 0o700); err != nil {
+	if err := os.WriteFile(filepath.Join(binDir, "xz"), []byte("#!/bin/sh\n"+script+"\n"), 0o700); err != nil { // #nosec G306 -- test-owned decoder fixture must be executable.
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -99,7 +99,7 @@ func TestExternalTarDecoderDrainsPastTarEOF(t *testing.T) {
 	if err := Extract(ctx, archive, dest, ".tar.xz", run.OSExecRunner{}, false, ""); err != nil {
 		t.Fatalf("Extract() with trailing decoder output: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(dest, "tool"))
+	data, err := os.ReadFile(filepath.Join(dest, "tool")) // #nosec G304 -- dest is a test-owned temporary extraction root.
 	if err != nil {
 		t.Fatal(err)
 	}

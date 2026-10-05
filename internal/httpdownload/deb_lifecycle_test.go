@@ -29,7 +29,7 @@ func TestDebLifecycleIsRejectedBeforeFilesystemOrRunnerMutation(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "exact dpkg package identity is not persisted") {
 		t.Fatalf("Remove error = %v, want explicit unsupported lifecycle error", err)
 	}
-	got, err := os.ReadFile(marker)
+	got, err := os.ReadFile(marker) // #nosec G304 -- marker is created inside the test-owned destination.
 	if err != nil || string(got) != "keep" {
 		t.Fatalf("filesystem marker contents = %q, err = %v; want %q", got, err, "keep")
 	}
@@ -45,7 +45,7 @@ func TestDebLifecycleIsRejectedBeforeFilesystemOrRunnerMutation(t *testing.T) {
 	if _, err := adapter.Observe(context.Background(), runner, tool, mc); err == nil || !strings.Contains(err.Error(), "exact dpkg package identity is not persisted") {
 		t.Fatalf("Observe error = %v, want explicit unsupported lifecycle error", err)
 	}
-	got, err = os.ReadFile(marker)
+	got, err = os.ReadFile(marker) // #nosec G304 -- marker is created inside the test-owned destination.
 	if err != nil || string(got) != "keep" {
 		t.Fatalf("filesystem marker contents = %q, err = %v; want %q", got, err, "keep")
 	}

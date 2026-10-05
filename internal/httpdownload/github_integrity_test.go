@@ -147,7 +147,7 @@ func TestGitHubRepoAssetIntegritySurvivesResolutionAndBlocksMutation(t *testing.
 			if err != nil {
 				t.Fatalf("InstallResolved() error: %v", err)
 			}
-			installed, err := os.ReadFile(target)
+			installed, err := os.ReadFile(target) // #nosec G304 -- target is the test-owned installation directory.
 			if err != nil {
 				t.Fatalf("installed payload: %v", err)
 			}
@@ -165,7 +165,7 @@ func signChecksumFixture(t *testing.T, checksum []byte) []byte {
 		t.Fatalf("write checksum fixture: %v", err)
 	}
 	signaturePath := signFile(t, checksumPath)
-	signature, err := os.ReadFile(signaturePath)
+	signature, err := os.ReadFile(signaturePath) // #nosec G304 -- signaturePath is produced by this test's signer fixture.
 	if err != nil {
 		t.Fatalf("read signature fixture: %v", err)
 	}
