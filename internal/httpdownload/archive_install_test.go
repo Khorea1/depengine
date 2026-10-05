@@ -136,9 +136,10 @@ func TestArchiveRemoveElevatesLinkIndependently(t *testing.T) {
 	defer run.OverrideElevation("")
 	fr := &run.FakeRunner{}
 	mc := &config.MethodCandidate{Config: map[string]any{
-		"extract_to":  payload,
-		"link_dir":    links,
-		"entrypoints": map[string]any{"demo": "bin/demo"},
+		"extract_to":           payload,
+		"link_dir":             links,
+		"entrypoints":          map[string]any{"demo": "bin/demo"},
+		ownedArchivePayloadKey: true,
 	}}
 	if err := NewHTTPAdapter().Remove(context.Background(), fr, &config.Tool{Name: "demo"}, mc); err != nil {
 		t.Fatalf("Remove() error = %v", err)
@@ -182,6 +183,7 @@ func TestInstallArchiveStripEntrypointCheckRemove(t *testing.T) {
 					t.Fatalf("installed executable mode = %v, want 0755", info.Mode().Perm())
 				}
 			}
+			mc.Config[ownedArchivePayloadKey] = true // Direct installArchive invocation bypasses adapter ownership persistence.
 			adapter := NewHTTPAdapter()
 			if !adapter.Check(context.Background(), run.OSExecRunner{}, tool, mc) {
 				t.Fatal("check failed after install")

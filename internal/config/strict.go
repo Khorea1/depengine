@@ -274,6 +274,12 @@ func validateMethodValue(raw any, path, declaredKind string, errs *[]string) {
 					continue
 				}
 				validateMethodField(v[key], field, path+"."+key, errs)
+				if key == "binary" && (contract.Kind == "http" || contract.Kind == "github") {
+					name, _ := v[key].(string)
+					if name != "" && (name == "." || name == ".." || strings.ContainsAny(name, "/\\") || strings.IndexByte(name, 0) >= 0 || (len(name) >= 2 && ((name[0] >= 'a' && name[0] <= 'z') || (name[0] >= 'A' && name[0] <= 'Z')) && name[1] == ':')) {
+						*errs = append(*errs, path+".binary: must be a single filename without path separators or a drive prefix")
+					}
+				}
 			}
 		}
 		if known {

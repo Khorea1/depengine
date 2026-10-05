@@ -223,9 +223,11 @@ func TestHTTPScopeSystemRemoveElevatesPayloadDeletion(t *testing.T) {
 	defer run.OverrideElevation("")
 	fr := &run.FakeRunner{}
 	mc := &config.MethodCandidate{Config: map[string]any{
-		"scope":      "system",
-		"extract_to": payload,
-		"link_dir":   links,
+		"scope":                "system",
+		"extract_to":           payload,
+		"link_dir":             links,
+		"url":                  "https://example.test/demo.tar.gz",
+		ownedArchivePayloadKey: true,
 	}}
 	if err := NewHTTPAdapter().Remove(context.Background(), fr, &config.Tool{Name: "demo"}, mc); err != nil {
 		t.Fatalf("Remove() error = %v", err)

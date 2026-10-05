@@ -783,29 +783,28 @@ func TestHTTPAdapterCanRemove(t *testing.T) {
 	}
 }
 
-func TestHTTPAdapterRemoveSharedDirWithBinary(t *testing.T) {
+func TestHTTPAdapterRemoveBinaryPreservesDestinationDirectory(t *testing.T) {
 	dir := t.TempDir()
 	binPath := filepath.Join(dir, "mytool")
 	if err := os.WriteFile(binPath, []byte("binary"), 0600); err != nil {
 		t.Fatal(err)
 	}
-
-	adapter := NewHTTPAdapter()
-	tool := &config.Tool{Name: "mytool"}
-	// dir is not shared (it's a temp dir), but we test os.Remove directly.
-	// Use /usr/local/bin as shared in the test by setting binary and
-	// faking extract_to to the temp dir with binary.
-	mc := &config.MethodCandidate{Config: map[string]any{
-		"extract_to": dir,
-		"binary":     "mytool",
-	}}
-
-	// Temp dir is not shared, so Remove will os.RemoveAll(dir).
-	if err := adapter.Remove(context.Background(), &run.FakeRunner{}, tool, mc); err != nil {
+	unrelated := filepath.Join(dir, "other")
+	if err := os.WriteFile(unrelated, []byte("unrelated"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	mc := &config.MethodCandidate{Config: map[string]any{"extract_to": dir, "binary": "mytool"}}
+	if err := NewHTTPAdapter().Remove(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "mytool"}, mc); err != nil {
 		t.Fatalf("Remove failed: %v", err)
 	}
-	if _, err := os.Stat(dir); !os.IsNotExist(err) {
-		t.Fatalf("directory %s should be removed", dir)
+	if _, err := os.Stat(binPath); !os.IsNotExist(err) {
+		t.Fatalf("owned binary remains: %v", err)
+	}
+	if got, err := os.ReadFile(unrelated); err != nil || string(got) != "unrelated" {
+		t.Fatalf("unrelated payload changed: %q, %v", got, err)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("destination directory should remain: %v", err)
 	}
 }
 
@@ -892,33 +891,28 @@ func TestHTTPAdapterRemoveNonexistentNoError(t *testing.T) {
 	}
 }
 
-func TestHTTPAdapterRemoveToolSpecificDir(t *testing.T) {
-	// Non-shared extract_to → entire directory deleted.
+func TestHTTPAdapterRemovePreservesUnrelatedFilesInCustomDestination(t *testing.T) {
 	dir := t.TempDir()
-	toolDir := filepath.Join(dir, "mytool-dir")
-	if err := os.Mkdir(toolDir, 0700); err != nil {
+	target := filepath.Join(dir, "mytool")
+	if err := os.WriteFile(target, []byte("x"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(toolDir, "mytool"), []byte("x"), 0600); err != nil {
+	sentinel := filepath.Join(dir, "extra.txt")
+	if err := os.WriteFile(sentinel, []byte("unrelated"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(toolDir, "extra.txt"), []byte("x"), 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	adapter := NewHTTPAdapter()
-	tool := &config.Tool{Name: "mytool"}
-	mc := &config.MethodCandidate{Config: map[string]any{
-		"extract_to": " " + toolDir, // whitespace prefix to ensure not shared-suffixed
-	}}
-	// Trim is not done by adapter, so use clean path.
-	mc.Config["extract_to"] = toolDir
-
-	if err := adapter.Remove(context.Background(), &run.FakeRunner{}, tool, mc); err != nil {
+	mc := &config.MethodCandidate{Config: map[string]any{"extract_to": dir, "binary": "mytool"}}
+	if err := NewHTTPAdapter().Remove(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "mytool"}, mc); err != nil {
 		t.Fatalf("Remove failed: %v", err)
 	}
-	if _, err := os.Stat(toolDir); !os.IsNotExist(err) {
-		t.Fatalf("tool-specific directory should be deleted: %v", err)
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("owned binary should be deleted: %v", err)
+	}
+	if _, err := os.Stat(sentinel); err != nil {
+		t.Fatalf("unrelated file should remain: %v", err)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("destination parent should remain: %v", err)
 	}
 }
 

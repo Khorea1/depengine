@@ -127,9 +127,25 @@ func copyBzip2(ctx context.Context, dst io.Writer, src io.Reader, budget *archiv
 // filesystem directly.
 // `install -m 0755` also creates the destination with the right mode in one
 // step, avoiding a separate chmod call under sudo.
+func validateBinaryName(name string) error {
+	if name == "" {
+		return nil
+	}
+	if name == "." || name == ".." || strings.ContainsAny(name, "/\\") || filepath.IsAbs(name) || strings.IndexByte(name, 0) >= 0 {
+		return fmt.Errorf("binary must be a single filename, got %q", name)
+	}
+	if len(name) >= 2 && ((name[0] >= 'a' && name[0] <= 'z') || (name[0] >= 'A' && name[0] <= 'Z')) && name[1] == ':' {
+		return fmt.Errorf("binary must not be drive-qualified: %q", name)
+	}
+	return nil
+}
+
 func copyBinary(ctx context.Context, src, destDir, binaryName string, rn run.Runner, sudoRequired bool, toolName string) error {
 	if binaryName == "" {
 		binaryName = filepath.Base(src)
+	}
+	if err := validateBinaryName(binaryName); err != nil {
+		return fmt.Errorf("copy: %w", err)
 	}
 	dest := filepath.Join(destDir, binaryName)
 

@@ -134,6 +134,13 @@ func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 	}
 	extractTo = config.ExpandHomeDir(extractTo)
 	binary, _ := mc.Config["binary"].(string)
+	target := binary
+	if target == "" && tool != nil {
+		target = tool.Name
+	}
+	if validateBinaryName(target) != nil {
+		return false
+	}
 	if len(entrypoints(mc)) > 0 {
 		payload := archiveTarget(tool, mc)
 		for name, relative := range entrypoints(mc) {
@@ -215,11 +222,16 @@ func (a *HTTPAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *
 	}
 	effective := methodWithResolvedArtifact(mc, resolved.Artifacts[0])
 	err := a.installResolvedURL(ctx, rn, tool, effective, resolved.Artifacts[0].URL)
-	if mc != nil {
+	if mc != nil && err == nil {
+		if mc.Config == nil {
+			mc.Config = make(map[string]any)
+		}
+		if ownsArchivePayload(effective) {
+			mc.Config[ownedArchivePayloadKey] = true
+		} else {
+			delete(mc.Config, ownedArchivePayloadKey)
+		}
 		if checksum, ok := effective.Config["_checksum_resolved"].(string); ok && checksum != "" {
-			if mc.Config == nil {
-				mc.Config = make(map[string]any)
-			}
 			mc.Config["_checksum_resolved"] = checksum
 		}
 	}
@@ -258,9 +270,32 @@ func methodWithResolvedArtifact(mc *config.MethodCandidate, artifact plan.Artifa
 	return effective
 }
 
+const ownedArchivePayloadKey = "_http_owned_archive_payload"
+
+func ownsArchivePayload(mc *config.MethodCandidate) bool {
+	if mc == nil {
+		return false
+	}
+	owned, _ := mc.Config[ownedArchivePayloadKey].(bool)
+	return owned
+}
+
 func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolvedURL string) error {
 	if mc == nil {
 		return fmt.Errorf("http: method configuration is required")
+	}
+	if mc.Config == nil {
+		mc.Config = make(map[string]any)
+	}
+	delete(mc.Config, ownedArchivePayloadKey)
+	binary, _ := mc.Config["binary"].(string)
+	if err := validateBinaryName(binary); err != nil {
+		return fmt.Errorf("http: binary: %w", err)
+	}
+	if binary == "" && tool != nil {
+		if err := validateBinaryName(tool.Name); err != nil {
+			return fmt.Errorf("http: binary: %w", err)
+		}
 	}
 	for _, purpose := range []exec.HTTPBearerPurpose{exec.HTTPBearerArtifact, exec.HTTPBearerChecksum, exec.HTTPBearerSignature} {
 		if exec.HTTPBearerRequired(mc, purpose) {
@@ -373,9 +408,8 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 	// /usr/local/bin default, /opt, …) keeps sudo. Explicit sudo_required
 	// in the schema always wins.
 	sudoRequired := a.RequiresElevation(tool, mc)
-	binary, _ := mc.Config["binary"].(string)
 	if isArchive(ext) {
-		if err := installArchive(ctx, tmpFile, ext, tool, mc, rn); err != nil {
+		if err = installArchive(ctx, tmpFile, ext, tool, mc, rn); err != nil {
 			return fmt.Errorf("http: extract: %w", err)
 		}
 	} else {
@@ -415,6 +449,9 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 			// Cache write failure is non-fatal; the install continues.
 			log.Default.Warn("cache write failed", "error", err, "url", resolvedURL)
 		}
+	}
+	if isArchive(ext) {
+		mc.Config[ownedArchivePayloadKey] = true
 	}
 
 	return nil
@@ -671,7 +708,22 @@ func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 	if err := rejectUntrackedDebLifecycle(a.Kind(), mc, nil, ""); err != nil {
 		return err
 	}
-	if len(entrypoints(mc)) > 0 {
+	binary, _ := mc.Config["binary"].(string)
+	target := binary
+	if target == "" && tool != nil {
+		target = tool.Name
+	}
+	if err := validateBinaryName(target); err != nil {
+		return fmt.Errorf("http: binary: %w", err)
+	}
+	artifactName, _ := mc.Config["url"].(string)
+	if artifactName == "" {
+		artifactName, _ = mc.Config["asset"].(string)
+	}
+	if isArchive(fileExtension(artifactName)) || len(entrypoints(mc)) > 0 {
+		if !ownsArchivePayload(mc) {
+			return fmt.Errorf("http: refusing to remove archive payload: installation ownership state is missing; reinstall the tool to record ownership")
+		}
 		payload := archiveTarget(tool, mc)
 		payloadElevated := defaultSudoRequired(payload) && os.Geteuid() != 0
 		linkDir := linkTargetDir(mc, payload, tool)
@@ -688,11 +740,8 @@ func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 				return fmt.Errorf("http: remove launcher: %w", err)
 			}
 		}
-		if isSharedDir(payload) {
-			return fmt.Errorf("http: refusing to remove shared archive destination %s", payload)
-		}
 		if err := removeHTTPPath(ctx, rn, payload, true, payloadElevated); err != nil {
-			return fmt.Errorf("http: remove payload: %w", err)
+			return fmt.Errorf("http: remove owned payload %s: %w", payload, err)
 		}
 		return nil
 	}
@@ -704,19 +753,6 @@ func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 	if extractTo == "" {
 		extractTo = "/usr/local/bin" // Install default
 	}
-
-	binary, _ := mc.Config["binary"].(string)
-	target := binary
-	if target == "" {
-		if tool == nil {
-			return fmt.Errorf("http: remove not supported — no extract_to and no tool name")
-		}
-		target = tool.Name
-	}
-
-	// Scope installs also own the PATH link created at install time. Remove
-	// the link before the payload directory so a stale link never outlives
-	// its target.
 	if scopeConfigured(mc) {
 		placement := PlacementOrDefault(tool, mc, "/usr/local/bin", "")
 		if placement.LinkDir != "" {
@@ -733,19 +769,10 @@ func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 			}
 		}
 	}
-
 	payloadElevated := defaultSudoRequired(extractTo) && os.Geteuid() != 0
-	if isSharedDir(extractTo) {
-		path := filepath.Join(extractTo, target)
-		if err := removeHTTPPath(ctx, rn, path, false, payloadElevated); err != nil {
-			return fmt.Errorf("http: remove %s: %w", path, err)
-		}
-		return nil
-	}
-
-	// Not a shared directory — safe to delete the whole directory
-	if err := removeHTTPPath(ctx, rn, extractTo, true, payloadElevated); err != nil {
-		return fmt.Errorf("http: remove directory %s: %w", extractTo, err)
+	path := filepath.Join(extractTo, target)
+	if err := removeHTTPPath(ctx, rn, path, false, payloadElevated); err != nil {
+		return fmt.Errorf("http: remove %s: %w", path, err)
 	}
 	return nil
 }

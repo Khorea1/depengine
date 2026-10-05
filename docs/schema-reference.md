@@ -302,16 +302,22 @@ when authenticated GitHub release API resolution is required.
 | `strip_components` | no | Remove this many leading archive path components. Applies equally to tar and zip; negative or empty results are rejected. |
 | `entrypoints` | no | Map stable command names to relative files inside `extract_to`, e.g. `{ nvim = "bin/nvim" }`. |
 | `link_dir` | no | Launcher directory. Defaults to `~/.local/bin` for user payloads and `/usr/local/bin` for system payloads. |
-| `binary` | no | Installed filename for a direct asset, or payload name used by check/remove |
+| `binary` | no | Installed filename for a direct asset, or payload name used by check/remove. HTTP/GitHub values must be a single filename; absolute, drive-qualified, traversal, and separator-containing values are rejected. |
 | `scope` | no | Portable installation scope: `"user"` (default for user placement under XDG) or `"system"`. When set, supplies platform-native install and link defaults (`~/.local/share/depengine/tools/<tool>` + `~/.local/bin` for user scope, `/opt/depengine/tools/<tool>` + `/usr/local/bin` for system scope) without needing Unix paths in manifests. Explicit `extract_to`/`link_dir` override independently. |
 | `sudo_required` | no | Boolean, default is **path-derived**: `false` when `extract_to` is inside the user's home (e.g. `~/.local/share/fonts`), `true` for system paths (e.g. the `/usr/local/bin` default). Set explicitly to override. |
 Archives are extracted into private staging, validated, then committed as one
-owned payload. Elevated commits normalize the payload root to authority-owned
+owned payload root. Elevated commits normalize the payload root to authority-owned
 uid/gid 0 with mode 0755 so it is traversable by other users. This changes only
 the root's metadata; inner files and directories retain their archive-derived
-modes. `Check` verifies payload files and launchers directly; `Remove` deletes only
-declared launchers and the owned payload. `.msi`, `.exe`, `.pkg` and `.dmg` are rejected
-by `http` instead of being mistaken for binaries.
+modes. Successful HTTP/GitHub archive installs persist that root's ownership in
+depengine state. `Check` verifies payload files and launchers directly; `Remove`
+deletes declared launchers and recursively removes only a root with this recorded
+ownership; it never infers ownership from `extract_to` being outside a
+shared-directory allowlist. Legacy archive records without ownership metadata
+fail closed and leave the destination untouched. Raw-binary removal targets only
+the validated `binary` filename (or tool name) and preserves `extract_to`.
+`.msi`, `.exe`, `.pkg` and `.dmg` are rejected by `http` instead of being mistaken
+for binaries.
 
 Do not embed credentials in HTTP(S) URLs (for example,
 `https://token@example.com/file`). depengine rejects credential-bearing URLs so
