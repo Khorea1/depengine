@@ -2,12 +2,12 @@ package httpdownload
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/artifact"
@@ -20,7 +20,45 @@ import (
 // This is the exact string ghrelease sends on its GitHub API calls
 // (see ghrelease.UserAgent), so the asset-download path and the
 // {latest}-resolution path present consistently as the same client.
-const downloadUserAgent = ghrelease.UserAgent
+const (
+	downloadUserAgent             = ghrelease.UserAgent
+	defaultMaxArtifactBytes int64 = 4 << 30
+)
+
+// maxArtifactDownloadBytes is an ingress limit, independent of cache eviction.
+// Invalid, zero, or negative overrides retain the safe default.
+func maxArtifactDownloadBytes() int64 {
+	if raw := os.Getenv("DEPENGINE_DOWNLOAD_MAX_BYTES"); raw != "" {
+		if n, err := strconv.ParseInt(raw, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultMaxArtifactBytes
+}
+
+type downloadLimitWriter struct {
+	w       io.Writer
+	limit   int64
+	written int64
+}
+
+func (w *downloadLimitWriter) Write(p []byte) (int, error) {
+	remaining := w.limit - w.written
+	if remaining <= 0 {
+		return 0, fmt.Errorf("download exceeds %d-byte limit", w.limit)
+	}
+	if int64(len(p)) > remaining {
+		n, err := w.w.Write(p[:int(remaining)])
+		w.written += int64(n)
+		if err != nil {
+			return n, err
+		}
+		return n, fmt.Errorf("download exceeds %d-byte limit", w.limit)
+	}
+	n, err := w.w.Write(p)
+	w.written += int64(n)
+	return n, err
+}
 
 // Downloader abstracts the HTTP download backend.
 type Downloader interface {
@@ -69,7 +107,13 @@ func (d *GoDownloader) DownloadWithBearer(ctx context.Context, rawURL, dest, cre
 	return d.download(ctx, rawURL, dest, credential)
 }
 
-func (d *GoDownloader) download(ctx context.Context, url, dest, bearerCredential string) error {
+func (d *GoDownloader) download(ctx context.Context, url, dest, bearerCredential string) (retErr error) {
+	created := false
+	defer func() {
+		if retErr != nil && created {
+			_ = os.Remove(dest)
+		}
+	}()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("http: request: %w", run.RedactError(err))
@@ -132,14 +176,22 @@ func (d *GoDownloader) download(ctx context.Context, url, dest, bearerCredential
 			Status:     resp.Status,
 		}
 	}
+	limit := maxArtifactDownloadBytes()
+	if resp.ContentLength > limit {
+		return fmt.Errorf("http: response from %s exceeds %d-byte download limit", run.RedactSensitiveText(url), limit)
+	}
 
 	out, err := os.Create(dest) // #nosec G304 -- Downloader destinations are depengine-managed staging/install paths chosen by the caller.
 	if err != nil {
 		return fmt.Errorf("http: create %s: %w", dest, err)
 	}
-	defer func() { _ = out.Close() }()
+	created = true
+	defer func() {
+		_ = out.Close()
+	}()
 
-	written, err := io.Copy(out, resp.Body)
+	limited := &downloadLimitWriter{w: out, limit: limit}
+	written, err := io.Copy(limited, resp.Body)
 	if err != nil {
 		return fmt.Errorf("http: download %s: %w", run.RedactSensitiveText(url), run.RedactError(err))
 	}
@@ -168,92 +220,6 @@ func sameOrigin(left, right *url.URL) bool {
 		}
 	}
 	return port(left) == port(right)
-}
-
-// CurlDownloader uses `curl -fsSL -o {dest} {url}`.
-type CurlDownloader struct {
-	rn run.Runner
-}
-
-// NewCurlDownloader creates a downloader using curl.
-func NewCurlDownloader(rn run.Runner) *CurlDownloader {
-	return &CurlDownloader{rn: rn}
-}
-
-func (d *CurlDownloader) Download(ctx context.Context, url, dest string) error {
-	res := d.rn.Run(ctx, "curl", "-fsSL", "-o", dest, url)
-	return run.CheckResult(res, "curl")
-}
-
-// WgetDownloader uses `wget -q -O {dest} {url}`.
-type WgetDownloader struct {
-	rn run.Runner
-}
-
-// NewWgetDownloader creates a downloader using wget.
-func NewWgetDownloader(rn run.Runner) *WgetDownloader {
-	return &WgetDownloader{rn: rn}
-}
-
-func (d *WgetDownloader) Download(ctx context.Context, url, dest string) error {
-	res := d.rn.Run(ctx, "wget", "-q", "-O", dest, url)
-	return run.CheckResult(res, "wget")
-}
-
-// SelectDownloader returns the best available download backend when no URL-
-// specific capability is required. curl is preferred, then wget, with Go's
-// net/http as the universal fallback.
-func SelectDownloader(ctx context.Context, rn run.Runner) Downloader {
-	if run.LookPath(ctx, rn, "curl") {
-		return NewCurlDownloader(rn)
-	}
-	if run.LookPath(ctx, rn, "wget") {
-		return NewWgetDownloader(rn)
-	}
-	return NewGoDownloader(rn)
-}
-
-// SelectDownloaderForURL chooses a backend that can satisfy the security
-// requirements of a concrete URL. When a GitHub credential is available,
-// downloads from github.com must use GoDownloader because it can attach the
-// Authorization header in-process. Passing the token to curl/wget would expose
-// it in argv/process listings, while choosing curl/wget without the header can
-// silently turn an authenticated private-release request into an anonymous one.
-func SelectDownloaderForURL(ctx context.Context, rn run.Runner, rawURL string) Downloader {
-	if rn != nil && ghrelease.IsGitHubURL(rawURL) && ghrelease.GithubToken(ctx, rn) != "" {
-		return NewGoDownloader(rn)
-	}
-	return SelectDownloader(ctx, rn)
-}
-
-// SelectDownloaderForAuthenticatedURL selects the in-process backend for a
-// request that requires caller-supplied authentication. The credential itself
-// is deliberately not part of backend selection.
-func SelectDownloaderForAuthenticatedURL(rn run.Runner) Downloader {
-	return NewGoDownloader(rn)
-}
-
-// downloadErrorWithHint appends the arch_map/os_map hint to a download
-// error when it looks like a 404, for downloaders (curl, wget) that don't
-// give us a typed status code the way GoDownloader does — we only have
-// their stderr text to go on. Typed GoDownloader errors already own their
-// status-specific diagnostics; legacy preformatted errors are also left alone.
-func downloadErrorWithHint(err error) error {
-	if err == nil {
-		return nil
-	}
-	var statusErr *HTTPStatusError
-	if errors.As(err, &statusErr) {
-		return err // GoDownloader carries precise typed status and its own 404 hint.
-	}
-	msg := err.Error()
-	if strings.Contains(msg, "arch_map/os_map") {
-		return err
-	}
-	if strings.Contains(msg, "404") {
-		return fmt.Errorf("%w (hint: check this tool's arch_map/os_map — the upstream release asset may use a different spelling of arch/os than this machine's own)", err)
-	}
-	return err
 }
 
 // fileExtension returns a recognizable extension for the URL path.

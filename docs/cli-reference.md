@@ -303,6 +303,7 @@ Aliases: `explain`.
 | `DEPENGINE_DETECT_SCRIPT` | Deprecated explicit legacy host-detector override; normal detection is native Go |
 | `DEPENGINE_MANIFEST` | Override the personal manifest path |
 | `DEPENGINE_CACHE_MAX_BYTES` | Download-cache size limit; `0` disables eviction |
+| `DEPENGINE_DOWNLOAD_MAX_BYTES` | Maximum bytes accepted per HTTP artifact download (default 4 GiB; positive values override) |
 | `XDG_CONFIG_HOME` | Base directory for the personal manifest |
 | `XDG_CACHE_HOME` | Base directory for downloads |
 | `XDG_STATE_HOME` | Base directory for state |

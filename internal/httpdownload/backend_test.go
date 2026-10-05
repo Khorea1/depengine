@@ -3,7 +3,6 @@ package httpdownload
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -110,32 +109,6 @@ func TestGoDownloaderDownloadOtherStatusNoHint(t *testing.T) {
 	// with arch/os spelling and shouldn't carry a misleading suggestion.
 	if strings.Contains(err.Error(), "arch_map/os_map") {
 		t.Fatalf("403 error should not carry the arch_map/os_map hint: %v", err)
-	}
-}
-
-func TestDownloadErrorWithHint(t *testing.T) {
-	t.Parallel()
-	if got := downloadErrorWithHint(nil); got != nil {
-		t.Fatalf("nil in, expected nil out, got %v", got)
-	}
-	// curl/wget give us only stderr text, no typed status — best-effort
-	// match on "404" in that text.
-	err404 := errors.New("curl: (22) The requested URL returned error: 404")
-	got := downloadErrorWithHint(err404)
-	if !strings.Contains(got.Error(), "arch_map/os_map") {
-		t.Fatalf("expected hint appended, got: %v", got)
-	}
-	// GoDownloader's own 404 error already carries the hint text; must not
-	// be doubled up.
-	already := fmt.Errorf("http: %s returned %s (hint: check this tool's arch_map/os_map — the upstream release asset may use a different spelling of arch/os than this machine's own)", "url", "404 Not Found")
-	got2 := downloadErrorWithHint(already)
-	if n := strings.Count(got2.Error(), "arch_map/os_map"); n != 1 {
-		t.Fatalf("expected hint exactly once, got %d in: %v", n, got2)
-	}
-	// A non-404 error passes through unchanged.
-	other := errors.New("connection reset by peer")
-	if got3 := downloadErrorWithHint(other); got3.Error() != other.Error() {
-		t.Fatalf("expected unchanged error, got: %v", got3)
 	}
 }
 
@@ -265,18 +238,5 @@ func TestGoDownloaderDownloadNoTokenWithNilRunner(t *testing.T) {
 	}
 	if authHeaderSeen {
 		t.Fatal("Authorization header must not be sent when Runner is nil")
-	}
-}
-
-func TestSelectDownloaderGoDownloaderCarriesRunner(t *testing.T) {
-	t.Parallel()
-	fr := &run.FakeRunner{ExitCode: 1} // curl/wget both "not found" -> falls back to Go
-	dl := SelectDownloader(context.Background(), fr)
-	gd, ok := dl.(*GoDownloader)
-	if !ok {
-		t.Fatalf("expected GoDownloader, got %T", dl)
-	}
-	if gd.rn == nil {
-		t.Fatal("SelectDownloader must pass the Runner through to GoDownloader so it can resolve a GitHub token")
 	}
 }

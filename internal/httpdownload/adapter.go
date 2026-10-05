@@ -310,11 +310,14 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 
 	if !fromCache {
 		// Download from remote.
-		dl := selectCandidateDownloader(ctx, rn, resolvedURL, mc)
+		dl := NewGoDownloader(rn)
 		if err := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
-			return downloadPrimaryArtifact(retryCtx, dl, resolvedURL, tmpFile, bearerCredential, hasBearerCredential)
+			if hasBearerCredential {
+				return dl.DownloadWithBearer(retryCtx, resolvedURL, tmpFile, bearerCredential)
+			}
+			return dl.Download(retryCtx, resolvedURL, tmpFile)
 		}); err != nil {
-			return fmt.Errorf("http: download %s: %w", tool.Name, downloadErrorWithHint(err))
+			return fmt.Errorf("http: download %s: %w", tool.Name, err)
 		}
 	}
 
@@ -327,9 +330,12 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 				if rmErr := downloadcache.Remove(resolvedURL); rmErr != nil {
 					log.Default.Warn("failed to evict bad cache entry", "tool", tool.Name, "error", rmErr)
 				}
-				dl := selectCandidateDownloader(ctx, rn, resolvedURL, mc)
+				dl := NewGoDownloader(rn)
 				if err2 := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
-					return downloadPrimaryArtifact(retryCtx, dl, resolvedURL, tmpFile, bearerCredential, hasBearerCredential)
+					if hasBearerCredential {
+						return dl.DownloadWithBearer(retryCtx, resolvedURL, tmpFile, bearerCredential)
+					}
+					return dl.Download(retryCtx, resolvedURL, tmpFile)
 				}); err2 != nil {
 					return fmt.Errorf("http: download %s (re-download): %w", tool.Name, err2)
 				}
@@ -393,27 +399,6 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 	}
 
 	return nil
-}
-
-// selectCandidateDownloader keeps typed HTTP authentication on the Go
-// backend. secret_ref contains only a reference at this stage; the runtime
-// handoff supplies the resolved credential directly to GoDownloader.
-func selectCandidateDownloader(ctx context.Context, rn run.Runner, rawURL string, mc *config.MethodCandidate) Downloader {
-	if mc != nil && mc.SecretRef != nil {
-		return SelectDownloaderForAuthenticatedURL(rn)
-	}
-	return SelectDownloaderForURL(ctx, rn, rawURL)
-}
-
-func downloadPrimaryArtifact(ctx context.Context, downloader Downloader, rawURL, dest, credential string, authenticated bool) error {
-	if !authenticated {
-		return downloader.Download(ctx, rawURL, dest)
-	}
-	goDownloader, ok := downloader.(*GoDownloader)
-	if !ok {
-		return fmt.Errorf("http: authenticated request requires the in-process downloader")
-	}
-	return goDownloader.DownloadWithBearer(ctx, rawURL, dest, credential)
 }
 
 // resolvedFileName derives the downloaded file's name from an already-
@@ -615,15 +600,11 @@ func (a *HTTPAdapter) fetchChecksumFromURL(ctx context.Context, rn run.Runner, c
 // attached one for this sidecar purpose. It deliberately does not inspect or
 // reuse the primary artifact credential.
 func downloadSidecar(ctx context.Context, rn run.Runner, rawURL, dest, bearerCredential string) error {
+	dl := NewGoDownloader(rn)
 	if bearerCredential == "" {
-		return SelectDownloaderForURL(ctx, rn, rawURL).Download(ctx, rawURL, dest)
+		return dl.Download(ctx, rawURL, dest)
 	}
-	dl := SelectDownloaderForAuthenticatedURL(rn)
-	goDownloader, ok := dl.(*GoDownloader)
-	if !ok {
-		return fmt.Errorf("http: authenticated sidecar request requires the in-process downloader")
-	}
-	return goDownloader.DownloadWithBearer(ctx, rawURL, dest, bearerCredential)
+	return dl.DownloadWithBearer(ctx, rawURL, dest, bearerCredential)
 }
 
 // Ensure HTTPAdapter implements exec.AdapterV2.
