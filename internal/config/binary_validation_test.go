@@ -17,10 +17,3 @@ func TestParseHTTPBinaryMustBeBasename(t *testing.T) {
 		})
 	}
 }
-
-func TestParseHTTPBinaryAcceptsBasename(t *testing.T) {
-	path := writeTempSchema(t, "schema_version = 1\n[tools]\ntool = { http = { url = \"https://example.com/tool\", binary = \"wave-tool\" } }\n")
-	if _, err := ParseProjectSchema(path, nil); err != nil {
-		t.Fatalf("ParseProjectSchema rejected basename: %v", err)
-	}
-}

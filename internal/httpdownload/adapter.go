@@ -698,12 +698,10 @@ func isSharedDir(path string) bool {
 	return false
 }
 
-// Remove uninstalls an HTTP-installed tool. If extract_to is a shared
-// directory (e.g. /usr/local/bin), only the extracted binary is removed.
-// If extract_to is tool-specific, the entire directory is deleted.
-// Without extract_to, removal is not supported — the download was extracted
-// to the default /usr/local/bin, which is shared, so we remove the binary or
-// the tool name from there.
+// Remove uninstalls an HTTP-installed tool. Raw downloads remove only the
+// validated binary target. Archive payload roots are removed recursively only
+// when their ownership was recorded after installation; extract_to paths alone
+// never establish ownership, and unrecorded legacy archives fail closed.
 func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	if err := rejectUntrackedDebLifecycle(a.Kind(), mc, nil, ""); err != nil {
 		return err
