@@ -100,7 +100,9 @@ requested version, bucket, scope, architecture, removal, or revision/location
 requirement before mutation. The composition helpers allow package and source
 consumers to receive the same selected runtime instance; `exec.WithScoopRuntime`
 selects it for the built-in adapter and executor-owned source managers. Existing
-constructors retain the official runtime as the default.
+constructors retain the official runtime as the default. Application
+composition currently uses only Official, including app-owned source cleanup;
+`WithScoopRuntime` is not an application-level runtime selector.
 
 ## Configuration boundary
 

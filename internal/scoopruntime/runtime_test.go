@@ -34,12 +34,12 @@ func TestOfficialObservesInstalledPackageSemantically(t *testing.T) {
 }
 
 func TestOfficialBucketListReturnsSemanticBuckets(t *testing.T) {
-	runner := &run.FakeRunner{Stdout: "Name Source Updated\nmain https://github.com/ScoopInstaller/Main 2026-09-26\nextras https://github.com/ScoopInstaller/Extras 2026-09-26\n"}
+	runner := &run.FakeRunner{Stdout: "Name Source Updated\nmain https://github.com/ScoopInstaller/Main 2026-09-26\nlegacy\nextras https://github.com/ScoopInstaller/Extras 2026-09-26\n"}
 	got, err := NewOfficial().BucketList(context.Background(), runner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []Bucket{{Name: "main", Location: "https://github.com/ScoopInstaller/Main"}, {Name: "extras", Location: "https://github.com/ScoopInstaller/Extras"}}
+	want := []Bucket{{Name: "main", Location: "https://github.com/ScoopInstaller/Main"}, {Name: "legacy"}, {Name: "extras", Location: "https://github.com/ScoopInstaller/Extras"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("buckets = %+v, want %+v", got, want)
 	}

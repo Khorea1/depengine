@@ -32,7 +32,9 @@ Runtime choice is an internal implementation detail, not part of the user-facing
 any operation. A failed mutation is returned to the existing executor/source
 transaction path; the runtime does not retry it through another implementation.
 No alternative implementation is selected because no second runtime currently
-satisfies the full declared capability set.
+satisfies the full declared capability set. Application composition currently
+uses the official runtime only; app-owned source cleanup uses the existing
+official-default constructor and is not wired to executor runtime injection.
 
 ## Alternatives considered
 
@@ -52,5 +54,7 @@ satisfies the full declared capability set.
 - A future runtime must satisfy each exact-version, bucket-selection, scope,
   architecture, removal, and revision/location capability required by an
   individual operation before the mutation is invoked.
-- Runtime selection can be shared by the package adapter and source manager at
-  their composition point without changing manifest identities.
+- Executor-level composition can share an explicitly injected runtime between
+  the package adapter and executor-owned source managers without changing
+  manifest identities. The application currently selects only Official,
+  including its app-owned source cleanup.

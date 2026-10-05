@@ -60,7 +60,7 @@ type Runtime interface {
 // CheckInstallCapabilities rejects a resolved identity the selected runtime cannot honor.
 func CheckInstallCapabilities(caps Capabilities, target InstallTarget) error {
 	if target.Version != "" && !caps.ExactVersion {
-		return fmt.Errorf("Scoop runtime does not support exact versions")
+		return fmt.Errorf("scoop runtime does not support exact versions")
 	}
 	if target.Bucket != "" && !caps.BucketSelection {
 		return fmt.Errorf("Scoop runtime does not support bucket selection")
@@ -226,14 +226,14 @@ func (Official) BucketRepository(ctx context.Context, rn run.Runner, name string
 	}
 	prefix := strings.Trim(strings.TrimSpace(string(result.Stdout)), "\"")
 	if prefix == "" || strings.ContainsAny(prefix, "\r\n") || !filepath.IsAbs(prefix) {
-		return "", fmt.Errorf("Scoop returned a malformed core prefix")
+		return "", fmt.Errorf("scoop returned a malformed core prefix")
 	}
 	prefix = filepath.Clean(prefix)
 	scoopAppDir := filepath.Dir(prefix)
 	appsDir := filepath.Dir(scoopAppDir)
 	root := filepath.Dir(appsDir)
 	if !strings.EqualFold(filepath.Base(scoopAppDir), "scoop") || !strings.EqualFold(filepath.Base(appsDir), "apps") || root == appsDir {
-		return "", fmt.Errorf("Scoop returned an unexpected core prefix")
+		return "", fmt.Errorf("scoop returned an unexpected core prefix")
 	}
 	return filepath.Join(root, "buckets", name), nil
 }

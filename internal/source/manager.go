@@ -397,7 +397,7 @@ func (m *Manager) scoopBucketPresent(ctx context.Context, source config.Source) 
 	}
 	want := strings.TrimSpace(source.Name)
 	for _, bucket := range buckets {
-		if !strings.EqualFold(bucket.Name, want) {
+		if !strings.EqualFold(bucket.Name, want) || bucket.Location == "" {
 			continue
 		}
 		if sameSourceURL(bucket.Location, source.URL) {

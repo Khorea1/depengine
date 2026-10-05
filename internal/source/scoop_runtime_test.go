@@ -64,6 +64,20 @@ func TestScoopBucketPresenceUsesSemanticRuntimeState(t *testing.T) {
 	}
 }
 
+func TestScoopBucketWithMissingLocationFollowsAbsentAddPath(t *testing.T) {
+	const revision = "0123456789012345678901234567890123456789"
+	runtime := &sourceScoopRuntime{caps: scoopruntime.Capabilities{BucketSelection: true, BucketRevisionLocation: true}, buckets: []scoopruntime.Bucket{{Name: "vendor"}}, bucketRepo: "/tmp/vendor"}
+	runner := &scriptedRunner{outputs: []run.Result{{Stdout: []byte(revision)}}}
+	source := config.Source{Kind: "scoop-bucket", Name: "vendor", URL: "https://example.test/vendor"}
+	result, err := NewManagerWithScoopRuntime(runner, false, runtime).EnsureTracked(context.Background(), []config.Source{source})
+	if err != nil {
+		t.Fatalf("EnsureTracked() = %v, want add after incomplete source row", err)
+	}
+	if runtime.adds != 1 || len(result.Added) != 1 || result.Added[0] != source {
+		t.Fatalf("EnsureTracked() = %+v, runtime adds=%d; want one confirmed add", result, runtime.adds)
+	}
+}
+
 func TestScoopBucketMutationCapabilitiesAreCheckedBeforeRuntime(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
