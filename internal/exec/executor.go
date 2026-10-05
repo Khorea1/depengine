@@ -12,6 +12,7 @@ import (
 	"github.com/Khorea1/depengine/internal/native"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
+	"github.com/Khorea1/depengine/internal/scoopruntime"
 	"github.com/Khorea1/depengine/internal/secret"
 )
 
@@ -19,6 +20,7 @@ import (
 // Use New() to create, then configure with Option funcs.
 type Executor struct {
 	rn                 run.Runner
+	scoopRuntime       scoopruntime.Runtime
 	toolTimeout        time.Duration
 	methodTimeout      time.Duration
 	dryRun             bool
@@ -65,6 +67,17 @@ func WithRunner(rn run.Runner) Option {
 		if rn != nil {
 			e.rn = rn
 		}
+	}
+}
+
+// WithScoopRuntime injects one runtime into the built-in Scoop adapter and executor-owned source managers.
+func WithScoopRuntime(runtime scoopruntime.Runtime) Option {
+	return func(e *Executor) {
+		if runtime == nil {
+			return
+		}
+		e.scoopRuntime = runtime
+		e.adapters["scoop"] = &winAdapter{kind: "scoop", runtime: runtime}
 	}
 }
 
@@ -222,6 +235,7 @@ func WithLockDocument(document plan.LockDocument) Option {
 func New() *Executor {
 	ex := &Executor{
 		rn:                    run.OSExecRunner{},
+		scoopRuntime:          scoopruntime.NewOfficial(),
 		secretResolver:        secret.EnvResolver{},
 		toolTimeout:           5 * time.Minute,
 		methodTimeout:         2 * time.Minute,
@@ -236,6 +250,11 @@ func New() *Executor {
 	// executor. WithAdapters can override them.
 	for k, a := range defaultRegistry.snapshot() {
 		ex.adapters[k] = a
+	}
+	if adapter, ok := ex.adapters["scoop"].(*winAdapter); ok {
+		selected := *adapter
+		selected.runtime = ex.scoopRuntime
+		ex.adapters["scoop"] = &selected
 	}
 	return ex
 }

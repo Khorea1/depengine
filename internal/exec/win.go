@@ -9,19 +9,19 @@ import (
 	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
+	"github.com/Khorea1/depengine/internal/scoopruntime"
 )
 
 // WindowsAdapters returns the built-in Windows package-manager adapters.
 // Callers explicitly add them to their registry at the composition root.
 func WindowsAdapters() []AdapterV2 {
+	return WindowsAdaptersWithScoop(scoopruntime.NewOfficial())
+}
+
+// WindowsAdaptersWithScoop composes Windows adapters with the caller-selected Scoop runtime.
+func WindowsAdaptersWithScoop(runtime scoopruntime.Runtime) []AdapterV2 {
 	return []AdapterV2{
-		&winAdapter{
-			kind:       "scoop",
-			binary:     "scoop",
-			installCmd: []string{"scoop", "install", "{pkg}"},
-			checkCmd:   []string{"scoop", "list", "{pkg}"},
-			removeCmd:  []string{"scoop", "uninstall", "{pkg}"},
-		},
+		&winAdapter{kind: "scoop", runtime: runtime},
 		&winAdapter{
 			kind:       "choco",
 			binary:     "choco",
@@ -37,6 +37,7 @@ func WindowsAdapters() []AdapterV2 {
 type winAdapter struct {
 	kind, binary                    string
 	installCmd, checkCmd, removeCmd []string
+	runtime                         scoopruntime.Runtime
 }
 
 func packageName(tool *config.Tool, mc *config.MethodCandidate) string {
@@ -54,6 +55,9 @@ func packageName(tool *config.Tool, mc *config.MethodCandidate) string {
 func (w *winAdapter) Kind() string { return w.kind }
 
 func (w *winAdapter) Available(ctx context.Context, rn run.Runner) bool {
+	if w.kind == "scoop" {
+		return w.runtime.Available(ctx, rn)
+	}
 	return run.LookPath(ctx, rn, w.binary)
 }
 
@@ -78,53 +82,24 @@ func (w *winAdapter) observeInstalled(ctx context.Context, rn run.Runner, tool *
 		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "package manager probe is unavailable"}
 	}
 	pkg := packageName(tool, mc)
-	cmd := SubstitutePkg(w.checkCmd, tool, mc)
 	if w.kind == "scoop" {
-		if scope, _ := mc.Config["scope"].(string); scope == "global" {
-			cmd = append(cmd, "--global")
+		scope, _ := mc.Config["scope"].(string)
+		installed, err := w.runtime.ObserveInstalled(ctx, rn, pkg, scope)
+		if err != nil {
+			return plan.Observation{Presence: plan.PresenceUnknown, Detail: "package manager probe failed"}
 		}
-	}
-	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if w.kind == "choco" && (res.Err != nil || res.ExitCode != 0 || !hasChocoVersion(res.Stdout, packageName(tool, mc))) {
-		// Chocolatey 2.x removed --local-only. Prefer the current probe, then
-		// fall back for older Chocolatey releases that still require the flag.
-		res = rn.Run(ctx, "choco", "list", "--local-only", "--exact", "--limit-output", packageName(tool, mc))
-	}
-	if res.Err != nil || res.ExitCode != 0 {
-		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "package manager probe failed"}
-	}
-
-	observation := plan.Observation{
-		Presence:    plan.PresencePresent,
-		Identity:    plan.ObservedIdentity{Package: pkg},
-		KnownFields: []plan.IdentityField{plan.FieldPackage},
-	}
-	switch w.kind {
-	case "choco":
-		version, ok := chocoVersionFromOutput(res.Stdout, pkg)
-		if !ok {
-			if outputMentionsPackage(res.Stdout, pkg) {
-				return plan.Observation{Presence: plan.PresenceBroken, Detail: "package manager returned an invalid installed version"}
-			}
+		if !installed.Present {
 			return plan.Observation{Presence: plan.PresenceAbsent}
 		}
-		observation.Identity.Version = version
-		observation.KnownFields = append(observation.KnownFields, plan.FieldVersion)
-	case "scoop":
-		version, source, ok := scoopPackageFromOutput(res.Stdout, pkg)
-		if !ok {
-			if outputMentionsPackage(res.Stdout, pkg) {
-				return plan.Observation{Presence: plan.PresenceBroken, Detail: "package manager returned an invalid installed version"}
-			}
-			return plan.Observation{Presence: plan.PresenceAbsent}
+		if installed.Malformed {
+			return plan.Observation{Presence: plan.PresenceBroken, Detail: "package manager returned an invalid installed version"}
 		}
-		observation.Identity.Version = version
-		observation.KnownFields = append(observation.KnownFields, plan.FieldVersion)
-		if source != "" {
-			observation.Identity.Source = source
+		observation := plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg, Version: installed.Version}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion}}
+		if installed.Bucket != "" {
+			observation.Identity.Source = installed.Bucket
 			observation.KnownFields = append(observation.KnownFields, plan.FieldSource)
 		}
-		if scope, _ := mc.Config["scope"].(string); scope != "" {
+		if scope != "" {
 			if scope == "global" {
 				observation.Identity.Scope = string(plan.ScopeSystem)
 			} else {
@@ -132,8 +107,26 @@ func (w *winAdapter) observeInstalled(ctx context.Context, rn run.Runner, tool *
 			}
 			observation.KnownFields = append(observation.KnownFields, plan.FieldScope)
 		}
+		return observation
 	}
-	return observation
+	cmd := SubstitutePkg(w.checkCmd, tool, mc)
+	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	if res.Err != nil || res.ExitCode != 0 || !hasChocoVersion(res.Stdout, pkg) {
+		// Chocolatey 2.x removed --local-only. Prefer the current probe, then
+		// fall back for older Chocolatey releases that still require the flag.
+		res = rn.Run(ctx, "choco", "list", "--local-only", "--exact", "--limit-output", pkg)
+	}
+	if res.Err != nil || res.ExitCode != 0 {
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "package manager probe failed"}
+	}
+	version, ok := chocoVersionFromOutput(res.Stdout, pkg)
+	if !ok {
+		if outputMentionsPackage(res.Stdout, pkg) {
+			return plan.Observation{Presence: plan.PresenceBroken, Detail: "package manager returned an invalid installed version"}
+		}
+		return plan.Observation{Presence: plan.PresenceAbsent}
+	}
+	return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg, Version: version}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldVersion}}
 }
 
 func outputMentionsPackage(stdout []byte, pkg string) bool {
@@ -166,17 +159,6 @@ func hasChocoVersion(stdout []byte, pkg string) bool {
 	return ok
 }
 
-func scoopPackageFromOutput(stdout []byte, pkg string) (version, source string, ok bool) {
-	for _, line := range strings.Split(string(stdout), "\n") {
-		fields := strings.Fields(strings.TrimSpace(line))
-		if len(fields) < 3 || !strings.EqualFold(fields[0], pkg) {
-			continue
-		}
-		return fields[1], fields[2], fields[1] != ""
-	}
-	return "", "", false
-}
-
 func (w *winAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (string, error) {
 	if rn == nil {
 		return "", fmt.Errorf("%s: no runner", w.kind)
@@ -194,19 +176,15 @@ func (w *winAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool *
 		}
 		return version, nil
 	case "scoop":
-		args := []string{"list", pkg}
-		if scope, _ := mc.Config["scope"].(string); scope == "global" {
-			args = append(args, "--global")
-		}
-		res := rn.Run(ctx, "scoop", args...)
-		if err := run.CheckResultCompleteOutput(res, "scoop: version check"); err != nil {
+		scope, _ := mc.Config["scope"].(string)
+		installed, err := w.runtime.ObserveInstalled(ctx, rn, pkg, scope)
+		if err != nil {
 			return "", err
 		}
-		version, _, ok := scoopPackageFromOutput(res.Stdout, pkg)
-		if !ok {
-			return "", fmt.Errorf("scoop: package %q not present in version output", pkg)
+		if !installed.Present || installed.Malformed {
+			return "", fmt.Errorf("scoop: package %q not present in valid version output", pkg)
 		}
-		return version, nil
+		return installed.Version, nil
 	default:
 		return "", nil
 	}
@@ -216,23 +194,14 @@ func (w *winAdapter) Install(ctx context.Context, rn run.Runner, tool *config.To
 	if rn == nil {
 		return fmt.Errorf("%s: no runner", w.kind)
 	}
-	cmd := SubstitutePkg(w.installCmd, tool, mc)
 	if w.kind == "scoop" {
-		pkg := packageName(tool, mc)
-		if bucket, _ := mc.Config["bucket"].(string); bucket != "" {
-			pkg = bucket + "/" + pkg
-		}
-		if version, _ := mc.Config["version"].(string); version != "" {
-			pkg += "@" + version
-		}
-		cmd = []string{"scoop", "install", pkg}
-		if scope, _ := mc.Config["scope"].(string); scope == "global" {
-			cmd = append(cmd, "--global")
-		}
-		if architecture, _ := mc.Config["architecture"].(string); architecture != "" {
-			cmd = append(cmd, "--arch", architecture)
-		}
+		version, _ := mc.Config["version"].(string)
+		bucket, _ := mc.Config["bucket"].(string)
+		scope, _ := mc.Config["scope"].(string)
+		architecture, _ := mc.Config["architecture"].(string)
+		return w.runtime.InstallResolved(ctx, rn, scoopruntime.InstallTarget{Package: packageName(tool, mc), Version: version, Bucket: bucket, Scope: scope, Architecture: architecture})
 	}
+	cmd := SubstitutePkg(w.installCmd, tool, mc)
 	if w.kind == "choco" {
 		extra := make([]string, 0, 8)
 		if version, _ := mc.Config["version"].(string); version != "" {
@@ -259,22 +228,28 @@ func (w *winAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Too
 	if rn == nil {
 		return fmt.Errorf("%s: no runner", w.kind)
 	}
+	if w.kind == "scoop" {
+		bucket, _ := mc.Config["bucket"].(string)
+		scope, _ := mc.Config["scope"].(string)
+		target := scoopruntime.InstallTarget{Package: packageName(tool, mc), Bucket: bucket, Scope: scope}
+		if err := scoopruntime.CheckRemoveCapabilities(w.runtime.Capabilities(), target); err != nil {
+			return err
+		}
+		return w.runtime.RemoveResolved(ctx, rn, target)
+	}
 	if len(w.removeCmd) == 0 {
 		return fmt.Errorf("%s: no remove command configured", w.kind)
 	}
 	cmd := SubstitutePkg(w.removeCmd, tool, mc)
-	if w.kind == "scoop" {
-		if bucket, _ := mc.Config["bucket"].(string); bucket != "" {
-			cmd[len(cmd)-1] = bucket + "/" + packageName(tool, mc)
-		}
-		if scope, _ := mc.Config["scope"].(string); scope == "global" {
-			cmd = append(cmd, "--global")
-		}
-	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	return run.CheckResult(res, w.kind+": remove")
 }
-func (w *winAdapter) CanRemove() bool { return len(w.removeCmd) > 0 }
+func (w *winAdapter) CanRemove() bool {
+	if w.kind == "scoop" {
+		return w.runtime.Capabilities().Removal
+	}
+	return len(w.removeCmd) > 0
+}
 
 // ResolvePlan returns the static intent unchanged: scoop/choco installs
 // perform no dynamic resolution ({latest}, tags, assets), so the intent is
@@ -315,20 +290,17 @@ func (w *winAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *conf
 	var cmd []string
 	switch w.kind {
 	case "scoop":
-		installTarget := pkg
-		if bucket := resolvedSelectionSource(resolved); bucket != "" {
-			installTarget = bucket + "/" + installTarget
+		scope := resolved.Identity.Scope
+		if scope == string(plan.ScopeSystem) {
+			scope = "global"
+		} else if scope == string(plan.ScopeUser) {
+			scope = "user"
 		}
-		if resolved.Identity.Version != "" {
-			installTarget += "@" + resolved.Identity.Version
+		target := scoopruntime.InstallTarget{Package: pkg, Version: resolved.Identity.Version, Bucket: resolvedSelectionSource(resolved), Scope: scope, Architecture: resolved.Identity.Architecture}
+		if err := scoopruntime.CheckInstallCapabilities(w.runtime.Capabilities(), target); err != nil {
+			return err
 		}
-		cmd = []string{"scoop", "install", installTarget}
-		if resolved.Identity.Scope == string(plan.ScopeSystem) {
-			cmd = append(cmd, "--global")
-		}
-		if resolved.Identity.Architecture != "" {
-			cmd = append(cmd, "--arch", resolved.Identity.Architecture)
-		}
+		return w.runtime.InstallResolved(ctx, rn, target)
 	case "choco":
 		cmd = []string{"choco", "install", pkg}
 		if resolved.Identity.Version != "" {

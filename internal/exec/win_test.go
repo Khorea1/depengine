@@ -10,6 +10,7 @@ import (
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/planner"
 	"github.com/Khorea1/depengine/internal/run"
+	"github.com/Khorea1/depengine/internal/scoopruntime"
 )
 
 // lookupWinAdapter finds a built-in Windows adapter by kind.
@@ -97,21 +98,6 @@ func TestWinAdapterCheck(t *testing.T) {
 		}
 	})
 
-	t.Run("scoop check command uses package name", func(t *testing.T) {
-		fr := &run.FakeRunner{ExitCode: 0, Stdout: "fd 10.2.0 main 2026-01-01 10:00:00\n"}
-		a := lookupWinAdapter("scoop")
-		a.Check(ctx, fr, tool, mc)
-		if len(fr.Calls) != 1 {
-			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
-		}
-		if fr.Calls[0].Name != "scoop" {
-			t.Fatalf("expected 'scoop', got %q", fr.Calls[0].Name)
-		}
-		if len(fr.Calls[0].Args) < 2 || fr.Calls[0].Args[0] != "list" || fr.Calls[0].Args[1] != "fd" {
-			t.Fatalf("expected scoop list fd, got %v", fr.Calls[0].Args)
-		}
-	})
-
 	t.Run("choco installed", func(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 0, Stdout: "fd|1.0.0\n"}
 		a := lookupWinAdapter("choco")
@@ -133,18 +119,6 @@ func TestWinAdapterCheck(t *testing.T) {
 		}
 	})
 
-	t.Run("uses tool name when no pkg in config", func(t *testing.T) {
-		fr := &run.FakeRunner{ExitCode: 0}
-		a := lookupWinAdapter("scoop")
-		a.Check(ctx, fr, tool, &config.MethodCandidate{Config: map[string]any{}})
-		if len(fr.Calls) != 1 {
-			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
-		}
-		// pkg falls back to tool.Name ("fd")
-		if len(fr.Calls[0].Args) < 2 || fr.Calls[0].Args[1] != "fd" {
-			t.Fatalf("expected package name 'fd' (from tool.Name), got %v", fr.Calls[0].Args)
-		}
-	})
 }
 
 func TestWinAdapterObservePreservesExactVersionDrift(t *testing.T) {
@@ -223,21 +197,6 @@ func TestWinAdapterInstall(t *testing.T) {
 		}
 	})
 
-	t.Run("scoop install command uses package name", func(t *testing.T) {
-		fr := &run.FakeRunner{ExitCode: 0}
-		a := lookupWinAdapter("scoop")
-		_ = a.Install(ctx, fr, tool, mc)
-		if len(fr.Calls) != 1 {
-			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
-		}
-		if fr.Calls[0].Name != "scoop" {
-			t.Fatalf("expected 'scoop', got %q", fr.Calls[0].Name)
-		}
-		if len(fr.Calls[0].Args) < 2 || fr.Calls[0].Args[0] != "install" || fr.Calls[0].Args[1] != "fd" {
-			t.Fatalf("expected scoop install fd, got %v", fr.Calls[0].Args)
-		}
-	})
-
 	t.Run("choco install succeeds", func(t *testing.T) {
 		fr := &run.FakeRunner{ExitCode: 0}
 		a := lookupWinAdapter("choco")
@@ -283,20 +242,6 @@ func TestWinAdapterInstall(t *testing.T) {
 		}
 	})
 
-	t.Run("uses tool name when no pkg in config", func(t *testing.T) {
-		fr := &run.FakeRunner{ExitCode: 0}
-		a := lookupWinAdapter("scoop")
-		toolNoConfig := &config.Tool{Name: "neovim"}
-		if err := a.Install(ctx, fr, toolNoConfig, &config.MethodCandidate{Config: map[string]any{}}); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(fr.Calls) != 1 {
-			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
-		}
-		if len(fr.Calls[0].Args) < 2 || fr.Calls[0].Args[1] != "neovim" {
-			t.Fatalf("expected package name 'neovim' (from tool.Name), got %v", fr.Calls[0].Args)
-		}
-	})
 }
 
 func TestChocoPrereleaseArgv(t *testing.T) {
@@ -322,33 +267,6 @@ func TestWinAdapterRemove(t *testing.T) {
 		a := lookupWinAdapter("scoop")
 		if err := a.Remove(ctx, fr, tool, mc); err != nil {
 			t.Fatalf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("scoop remove command uses package name", func(t *testing.T) {
-		fr := &run.FakeRunner{ExitCode: 0}
-		a := lookupWinAdapter("scoop")
-		_ = a.Remove(ctx, fr, tool, mc)
-		if len(fr.Calls) != 1 {
-			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
-		}
-		if fr.Calls[0].Name != "scoop" {
-			t.Fatalf("expected 'scoop', got %q", fr.Calls[0].Name)
-		}
-		if len(fr.Calls[0].Args) < 2 || fr.Calls[0].Args[0] != "uninstall" || fr.Calls[0].Args[1] != "fd" {
-			t.Fatalf("expected scoop uninstall fd, got %v", fr.Calls[0].Args)
-		}
-	})
-
-	t.Run("scoop remove command uses bucket-qualified package", func(t *testing.T) {
-		fr := &run.FakeRunner{ExitCode: 0}
-		a := lookupWinAdapter("scoop")
-		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "fd", "bucket": "main"}}
-		if err := a.Remove(ctx, fr, tool, mc); err != nil {
-			t.Fatalf("Remove() error = %v", err)
-		}
-		if got := fr.Calls[0].Args; len(got) < 2 || got[0] != "uninstall" || got[1] != "main/fd" {
-			t.Fatalf("Scoop remove args = %v, want uninstall main/fd", got)
 		}
 	})
 
@@ -408,20 +326,6 @@ func TestWinAdapterInstallResolvedUsesResolvedIdentity(t *testing.T) {
 		wantArgs   []string
 	}{
 		{
-			name: "scoop",
-			kind: "scoop",
-			config: map[string]any{
-				"pkg": "neovim", "version": "0.10.4", "bucket": "extras",
-				"scope": "global", "architecture": "arm64",
-			},
-			mutate: map[string]any{
-				"pkg": "wrong", "version": "9.9.9", "bucket": "wrong-bucket",
-				"scope": "user", "architecture": "32bit",
-			},
-			wantBinary: "scoop",
-			wantArgs:   []string{"install", "extras/neovim@0.10.4", "--global", "--arch", "arm64"},
-		},
-		{
 			name: "choco",
 			kind: "choco",
 			config: map[string]any{
@@ -465,6 +369,123 @@ func TestWinAdapterInstallResolvedUsesResolvedIdentity(t *testing.T) {
 				t.Fatalf("InstallResolved() call = %s %v, want %s %v", got.Name, got.Args, tt.wantBinary, tt.wantArgs)
 			}
 		})
+	}
+}
+
+type recordingScoopRuntime struct {
+	caps      scoopruntime.Capabilities
+	installed *scoopruntime.InstallTarget
+	removed   *scoopruntime.InstallTarget
+}
+
+func (r *recordingScoopRuntime) Capabilities() scoopruntime.Capabilities  { return r.caps }
+func (*recordingScoopRuntime) Available(context.Context, run.Runner) bool { return true }
+func (*recordingScoopRuntime) ObserveInstalled(context.Context, run.Runner, string, string) (scoopruntime.InstalledPackage, error) {
+	return scoopruntime.InstalledPackage{}, nil
+}
+func (r *recordingScoopRuntime) InstallResolved(_ context.Context, _ run.Runner, target scoopruntime.InstallTarget) error {
+	r.installed = &target
+	return nil
+}
+func (r *recordingScoopRuntime) RemoveResolved(_ context.Context, _ run.Runner, target scoopruntime.InstallTarget) error {
+	r.removed = &target
+	return nil
+}
+func (*recordingScoopRuntime) BucketList(context.Context, run.Runner) ([]scoopruntime.Bucket, error) {
+	return nil, nil
+}
+func (*recordingScoopRuntime) BucketAdd(context.Context, run.Runner, string, string, map[string]string, []string) error {
+	return nil
+}
+func (*recordingScoopRuntime) BucketRemove(context.Context, run.Runner, string) error { return nil }
+func (*recordingScoopRuntime) BucketRepository(context.Context, run.Runner, string) (string, error) {
+	return "", nil
+}
+
+func TestExecutorSharesInjectedScoopRuntime(t *testing.T) {
+	runtime := &recordingScoopRuntime{caps: scoopruntime.Capabilities{ExactVersion: true, BucketSelection: true, Scope: true, Architecture: true, Removal: true, BucketRevisionLocation: true}}
+	executor := New()
+	WithScoopRuntime(runtime)(executor)
+	adapter, ok := executor.LookupAdapter("scoop").(*winAdapter)
+	if !ok || adapter.runtime != runtime || executor.scoopRuntime != runtime {
+		t.Fatal("executor did not share injected Scoop runtime with its adapter")
+	}
+}
+
+func TestScoopAdapterInstallUsesResolvedSemanticIdentity(t *testing.T) {
+	runtime := &recordingScoopRuntime{caps: scoopruntime.Capabilities{ExactVersion: true, BucketSelection: true, Scope: true, Architecture: true, Removal: true}}
+	var adapter *winAdapter
+	for _, candidate := range WindowsAdaptersWithScoop(runtime) {
+		if candidate.Kind() == "scoop" {
+			adapter = candidate.(*winAdapter)
+		}
+	}
+	tool := &config.Tool{Name: "nvim"}
+	mc := &config.MethodCandidate{Kind: "scoop", Config: map[string]any{"pkg": "neovim", "version": "0.10.4", "bucket": "extras", "scope": "global", "architecture": "arm64"}}
+	intent, err := planner.BuildCandidateIntent(tool, mc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mc.Config["pkg"], mc.Config["version"], mc.Config["bucket"], mc.Config["scope"], mc.Config["architecture"] = "wrong", "9.9.9", "wrong-bucket", "user", "x86"
+	if err := adapter.InstallResolved(context.Background(), &run.FakeRunner{}, tool, mc, resolved); err != nil {
+		t.Fatal(err)
+	}
+	want := scoopruntime.InstallTarget{Package: "neovim", Version: "0.10.4", Bucket: "extras", Scope: "global", Architecture: "arm64"}
+	if runtime.installed == nil || *runtime.installed != want {
+		t.Fatalf("selected runtime received %+v, want %+v", runtime.installed, want)
+	}
+}
+
+func TestScoopAdapterRemoveUsesSemanticIdentityAndCapabilityGate(t *testing.T) {
+	runtime := &recordingScoopRuntime{caps: scoopruntime.Capabilities{BucketSelection: true, Scope: true, Removal: true}}
+	var adapter *winAdapter
+	for _, candidate := range WindowsAdaptersWithScoop(runtime) {
+		if candidate.Kind() == "scoop" {
+			adapter = candidate.(*winAdapter)
+		}
+	}
+	tool := &config.Tool{Name: "fd"}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "fd", "bucket": "main", "scope": "global"}}
+	if err := adapter.Remove(context.Background(), &run.FakeRunner{}, tool, mc); err != nil {
+		t.Fatal(err)
+	}
+	want := scoopruntime.InstallTarget{Package: "fd", Bucket: "main", Scope: "global"}
+	if runtime.removed == nil || *runtime.removed != want {
+		t.Fatalf("selected runtime received removal %+v, want %+v", runtime.removed, want)
+	}
+	runtime.caps.Removal = false
+	runtime.removed = nil
+	if err := adapter.Remove(context.Background(), &run.FakeRunner{}, tool, mc); err == nil {
+		t.Fatal("unsupported removal accepted")
+	}
+	if runtime.removed != nil {
+		t.Fatal("runtime removal ran without removal capability")
+	}
+}
+
+func TestScoopAdapterRejectsUnsupportedCapabilitiesBeforeMutation(t *testing.T) {
+	runtime := &recordingScoopRuntime{caps: scoopruntime.Capabilities{BucketSelection: true, Scope: true, Architecture: true}}
+	var adapter *winAdapter
+	for _, candidate := range WindowsAdaptersWithScoop(runtime) {
+		if candidate.Kind() == "scoop" {
+			adapter = candidate.(*winAdapter)
+		}
+	}
+	tool := &config.Tool{Name: "neovim"}
+	mc := &config.MethodCandidate{Kind: "scoop", Config: map[string]any{"pkg": "neovim", "version": "0.10.4"}}
+	intent, err := planner.BuildCandidateIntent(tool, mc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.InstallResolved(context.Background(), &run.FakeRunner{}, tool, mc, &intent); err == nil {
+		t.Fatal("unsupported exact version was accepted")
+	}
+	if runtime.installed != nil {
+		t.Fatal("runtime mutation ran despite missing exact-version capability")
 	}
 }
 

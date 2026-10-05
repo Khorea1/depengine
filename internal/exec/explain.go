@@ -67,13 +67,13 @@ func declaredCandidateOrdinal(tool *config.Tool, method *config.MethodCandidate)
 //
 // This is the engine behind `depengine why <tool>`.
 func (ex *Executor) ExplainTool(ctx context.Context, tool *config.Tool, clan string) []MethodAttempt {
-	return ex.explainTool(ctx, tool, clan, source.NewManager(ex.rn, true))
+	return ex.explainTool(ctx, tool, clan, source.NewManagerWithScoopRuntime(ex.rn, true, ex.scoopRuntime))
 }
 
 // ExplainToolWithSourceRevisions returns attempts and credential-free Git HEAD
 // observations from this read-only explanation, without retaining them on ex.
 func (ex *Executor) ExplainToolWithSourceRevisions(ctx context.Context, tool *config.Tool, clan string) ([]MethodAttempt, []source.SourceRevision) {
-	manager := source.NewManager(ex.rn, true)
+	manager := source.NewManagerWithScoopRuntime(ex.rn, true, ex.scoopRuntime)
 	attempts := ex.explainTool(ctx, tool, clan, manager)
 	return attempts, manager.SourceRevisions()
 }

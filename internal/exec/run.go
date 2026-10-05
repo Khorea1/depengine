@@ -49,7 +49,7 @@ func (ex *Executor) newRunContext(ctx context.Context, s *config.Schema, clan st
 	}
 	return &runContext{
 		ctx:               ctx,
-		sources:           source.NewManager(ex.rn, ex.dryRun),
+		sources:           source.NewManagerWithScoopRuntime(ex.rn, ex.dryRun, ex.scoopRuntime),
 		schema:            s,
 		clan:              clan,
 		nativeManagerName: managerName,

@@ -627,7 +627,9 @@ Manager-specific options are typed instead of passed through as arbitrary
 arguments. WinGet supports `version`, `source`, `scope`, `architecture`, and an
 allow-listed `installer_type`. Scoop supports `version`, `bucket`, `scope`, and
 `architecture`. Chocolatey supports `version`, `prerelease`, `source`, and
-`architecture`. Snap supports confinement and structured channel selection.
+`architecture`. The `scoop` method expresses Scoop package semantics; runtime
+choice remains internal to depengine. Snap supports confinement and structured
+channel selection.
 
 This keeps validation and non-interactive/safety flags under depengine's
 control.

@@ -48,6 +48,7 @@ adapter registration, and the final exit code. CLI behavior lives in
 | `internal/git` | Git clone and build installs |
 | `internal/httpdownload` | Download, extraction, placement, checksum/signature checks |
 | `internal/source` | Package-source setup such as PPA, COPR, Brew taps, and Scoop buckets |
+| `internal/scoopruntime` | Scoop-specific runtime operations shared by Windows package execution and bucket source management |
 | `internal/msi` | Windows MSI install/remove lifecycle |
 | `internal/lock` | `depengine.lock` persistence and validation, with bounded legacy v1 resolution |
 | `internal/state` | Installed-tool state and cross-platform file locking |
@@ -91,7 +92,15 @@ manager binaries. The `native` method selects one default provider for that
 family. Competing managers, such as winget, Scoop, and Chocolatey, are explicit
 method candidates; their order and fallback remain visible in the plan.
 Binary variants may share a provider only when package identity and behavior
-match, as with dnf and dnf5.
+match, as with dnf and dnf5. The `scoop` method and `scoop-bucket` source
+kind share `internal/scoopruntime`: it owns official Scoop command construction,
+output decoding into semantic package/bucket records, resolved package
+operations, and bucket repository location. Runtime capability checks gate each
+requested version, bucket, scope, architecture, removal, or revision/location
+requirement before mutation. The composition helpers allow package and source
+consumers to receive the same selected runtime instance; `exec.WithScoopRuntime`
+selects it for the built-in adapter and executor-owned source managers. Existing
+constructors retain the official runtime as the default.
 
 ## Configuration boundary
 

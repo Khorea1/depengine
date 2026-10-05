@@ -69,7 +69,7 @@ func (ex *Executor) ResolveLockCandidate(ctx context.Context, tool *config.Tool,
 		return ResolvedCandidate{}, fmt.Errorf("resolve lock candidate: nil tool")
 	}
 	ctx = omitToolSecretEnvironment(ctx, tool)
-	manager := source.NewManager(ex.rn, true)
+	manager := source.NewManagerWithScoopRuntime(ex.rn, true, ex.scoopRuntime)
 	var lastErr error
 	for _, method := range ex.SelectedMethods(tool, clan) {
 		selection := ex.resolveCandidateForSelection(ctx, tool, method, clan)

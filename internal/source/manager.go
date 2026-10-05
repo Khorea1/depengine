@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,12 +16,14 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/gitobject"
 	"github.com/Khorea1/depengine/internal/run"
+	"github.com/Khorea1/depengine/internal/scoopruntime"
 )
 
 // Manager checks and adds candidate-scoped package sources.
 type Manager struct {
 	rn        run.Runner
 	mutator   run.Runner
+	scoop     scoopruntime.Runtime
 	dryRun    bool
 	mu        sync.Mutex
 	aptDirty  bool
@@ -30,11 +31,16 @@ type Manager struct {
 }
 
 func NewManager(rn run.Runner, dryRun bool) *Manager {
+	return NewManagerWithScoopRuntime(rn, dryRun, scoopruntime.NewOfficial())
+}
+
+// NewManagerWithScoopRuntime composes source management with the selected Scoop runtime.
+func NewManagerWithScoopRuntime(rn run.Runner, dryRun bool, scoop scoopruntime.Runtime) *Manager {
 	mutator := rn
 	if dryRun {
 		mutator = run.BlockedRunner{Reason: "dry-run: source mutation is disabled"}
 	}
-	return &Manager{rn: rn, mutator: mutator, dryRun: dryRun, revisions: make(map[string]SourceRevision)}
+	return &Manager{rn: rn, mutator: mutator, scoop: scoop, dryRun: dryRun, revisions: make(map[string]SourceRevision)}
 }
 
 // SourceRevision is the credential-free identity captured from a configured local Git source.
@@ -290,7 +296,16 @@ func (m *Manager) present(ctx context.Context, source config.Source) (bool, erro
 	case "dnf-copr":
 		cmd = []string{"dnf", "copr", "list", "--enabled"}
 	case "scoop-bucket":
-		cmd = []string{"scoop", "bucket", "list"}
+		buckets, err := m.scoop.BucketList(ctx, m.rn)
+		if err != nil {
+			return false, err
+		}
+		for _, bucket := range buckets {
+			if strings.EqualFold(bucket.Name, strings.TrimSpace(source.Name)) {
+				return true, nil
+			}
+		}
+		return false, nil
 	case "brew-tap":
 		cmd = []string{"brew", "tap"}
 	default:
@@ -307,8 +322,6 @@ func (m *Manager) present(ctx context.Context, source config.Source) (bool, erro
 	switch source.Kind {
 	case "brew-tap":
 		return outputHasSourceName(string(res.Stdout), want), nil
-	case "scoop-bucket":
-		return outputHasFirstField(string(res.Stdout), want), nil
 	}
 	return strings.Contains(strings.ToLower(string(res.Stdout)), strings.ToLower(want)), nil
 }
@@ -367,48 +380,27 @@ func (m *Manager) verifySourceRevision(ctx context.Context, source config.Source
 }
 
 func (m *Manager) scoopBucketRepository(ctx context.Context, name string) (string, error) {
-	if name == "" || name == "." || name == ".." || filepath.Base(name) != name || strings.ContainsAny(name, "/\\") {
-		return "", fmt.Errorf("source: verify scoop-bucket %s revision: invalid bucket name", name)
+	if !m.scoop.Capabilities().BucketRevisionLocation {
+		return "", fmt.Errorf("source: selected Scoop runtime cannot verify bucket revisions or locations")
 	}
-
-	// Ask Scoop for its own core installation prefix instead of reimplementing
-	// Scoop's root precedence (SCOOP, ROOT_PATH, portable install, user default).
-	// With NO_JUNCTION enabled the final component is a concrete version rather
-	// than "current", but the stable parent shape remains <root>/apps/scoop/*.
-	prefixResult := m.rn.Run(ctx, "scoop", "prefix", "scoop")
-	if err := run.CheckResultCompleteOutput(prefixResult, "source repository path"); err != nil {
-		return "", fmt.Errorf("source: verify scoop-bucket %s revision: locate Scoop root: %w", name, err)
+	path, err := m.scoop.BucketRepository(ctx, m.rn, name)
+	if err != nil {
+		return "", fmt.Errorf("source: verify scoop-bucket %s revision: %w", name, err)
 	}
-	prefix := strings.Trim(strings.TrimSpace(string(prefixResult.Stdout)), "\"")
-	if prefix == "" || strings.ContainsAny(prefix, "\r\n") || !filepath.IsAbs(prefix) {
-		return "", fmt.Errorf("source: verify scoop-bucket %s revision: Scoop returned a malformed core prefix", name)
-	}
-	prefix = filepath.Clean(prefix)
-	scoopAppDir := filepath.Dir(prefix)
-	appsDir := filepath.Dir(scoopAppDir)
-	root := filepath.Dir(appsDir)
-	if !strings.EqualFold(filepath.Base(scoopAppDir), "scoop") ||
-		!strings.EqualFold(filepath.Base(appsDir), "apps") ||
-		root == appsDir {
-		return "", fmt.Errorf("source: verify scoop-bucket %s revision: Scoop returned an unexpected core prefix", name)
-	}
-	return filepath.Join(root, "buckets", name), nil
+	return path, nil
 }
 
 func (m *Manager) scoopBucketPresent(ctx context.Context, source config.Source) (bool, error) {
-	res := m.rn.Run(ctx, "scoop", "bucket", "list")
-	if err := run.CheckResultCompleteOutput(res, "source check"); err != nil {
+	buckets, err := m.scoop.BucketList(ctx, m.rn)
+	if err != nil {
 		return false, err
 	}
 	want := strings.TrimSpace(source.Name)
-	found := false
-	for _, line := range strings.Split(string(res.Stdout), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 || !strings.EqualFold(fields[0], want) {
+	for _, bucket := range buckets {
+		if !strings.EqualFold(bucket.Name, want) {
 			continue
 		}
-		found = true
-		if sameSourceURL(fields[1], source.URL) {
+		if sameSourceURL(bucket.Location, source.URL) {
 			if source.Revision != "" {
 				if err := m.verifySourceRevision(ctx, source); err != nil {
 					return false, err
@@ -418,27 +410,14 @@ func (m *Manager) scoopBucketPresent(ctx context.Context, source config.Source) 
 			}
 			return true, nil
 		}
+		return false, fmt.Errorf("source: scoop-bucket %s exists with a different origin than configured", source.Name)
 	}
-	if !found {
-		return false, nil
-	}
-	return false, fmt.Errorf("source: scoop-bucket %s exists with a different origin than configured", source.Name)
+	return false, nil
 }
 
 func outputHasSourceName(output, name string) bool {
 	_, ok := outputSourceLine(output, name)
 	return ok
-}
-
-func outputHasFirstField(output, name string) bool {
-	want := strings.TrimSpace(name)
-	for _, line := range strings.Split(output, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) > 0 && strings.EqualFold(fields[0], want) {
-			return true
-		}
-	}
-	return false
 }
 
 func outputSourceLine(output, name string) (string, bool) {
@@ -501,9 +480,21 @@ func (m *Manager) addAuthenticated(ctx context.Context, source config.Source, to
 	case "dnf-copr":
 		cmd = []string{"dnf", "copr", "enable", "-y", source.Name}
 	case "scoop-bucket":
-		cmd = []string{"scoop", "bucket", "add", source.Name}
-		if source.URL != "" {
-			cmd = append(cmd, source.URL)
+		if err := scoopruntime.CheckBucketAddCapabilities(m.scoop.Capabilities(), source.URL, source.Revision != ""); err != nil {
+			return fmt.Errorf("source: %w", err)
+		}
+		var env map[string]string
+		var sensitive []string
+		if token != "" {
+			var err error
+			env, err = gitBearerEnv(source.URL, token)
+			if err != nil {
+				return err
+			}
+			sensitive = []string{token}
+		}
+		if err := m.scoop.BucketAdd(ctx, m.mutator, source.Name, source.URL, env, sensitive); err != nil {
+			return err
 		}
 	case "brew-tap":
 		cmd = []string{"brew", "tap", source.Name}
@@ -511,20 +502,22 @@ func (m *Manager) addAuthenticated(ctx context.Context, source config.Source, to
 			cmd = append(cmd, source.URL)
 		}
 	}
-	var result run.Result
-	if source.Kind == "apt-ppa" || source.Kind == "dnf-copr" {
-		result = run.RunElevated(ctx, m.mutator, cmd[0], cmd[1:]...)
-	} else if token != "" {
-		env, err := gitBearerEnv(source.URL, token)
-		if err != nil {
+	if source.Kind != "scoop-bucket" {
+		var result run.Result
+		if source.Kind == "apt-ppa" || source.Kind == "dnf-copr" {
+			result = run.RunElevated(ctx, m.mutator, cmd[0], cmd[1:]...)
+		} else if token != "" {
+			env, err := gitBearerEnv(source.URL, token)
+			if err != nil {
+				return err
+			}
+			result = run.RunWithEnv(ctx, m.mutator, env, []string{token}, cmd[0], cmd[1:]...)
+		} else {
+			result = m.mutator.Run(ctx, cmd[0], cmd[1:]...)
+		}
+		if err := run.CheckResult(result, "source add"); err != nil {
 			return err
 		}
-		result = run.RunWithEnv(ctx, m.mutator, env, []string{token}, cmd[0], cmd[1:]...)
-	} else {
-		result = m.mutator.Run(ctx, cmd[0], cmd[1:]...)
-	}
-	if err := run.CheckResult(result, "source add"); err != nil {
-		return err
 	}
 	if source.Revision != "" {
 		if err := m.verifySourceRevision(ctx, source); err != nil {
@@ -603,7 +596,10 @@ func (m *Manager) remove(ctx context.Context, source config.Source) error {
 	case "dnf-copr":
 		cmd = []string{"dnf", "copr", "remove", "-y", source.Name}
 	case "scoop-bucket":
-		cmd = []string{"scoop", "bucket", "rm", source.Name}
+		if err := scoopruntime.CheckBucketRemoveCapabilities(m.scoop.Capabilities()); err != nil {
+			return fmt.Errorf("source: %w", err)
+		}
+		return m.scoop.BucketRemove(ctx, m.mutator, source.Name)
 	case "brew-tap":
 		cmd = []string{"brew", "untap", source.Name}
 	default:
