@@ -342,6 +342,18 @@
             {
               "if": {
                 "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -701,6 +713,18 @@
             {
               "if": {
                 "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -1011,6 +1035,18 @@
                 "required": [
                   "release",
                   "branch"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             },
@@ -2406,6 +2442,18 @@
             {
               "if": {
                 "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -2877,6 +2925,18 @@
                 "required": [
                   "release",
                   "branch"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             },
@@ -3477,6 +3537,18 @@
                   "branch"
                 ]
               }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
+                ]
+              }
             }
           ],
           "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
@@ -3719,6 +3791,18 @@
         {
           "additionalProperties": false,
           "allOf": [
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
+                ]
+              }
+            },
             {
               "if": {
                 "required": [
@@ -4076,6 +4160,18 @@
             {
               "if": {
                 "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -4369,6 +4465,18 @@
             {
               "if": {
                 "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -4575,6 +4683,18 @@
                 "required": [
                   "release",
                   "branch"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             },
@@ -7296,6 +7416,18 @@
             {
               "if": {
                 "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -7567,6 +7699,18 @@
         {
           "additionalProperties": false,
           "allOf": [
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
+                ]
+              }
+            },
             {
               "if": {
                 "required": [
@@ -7882,6 +8026,18 @@
                 "required": [
                   "release",
                   "branch"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             },
@@ -9135,6 +9291,18 @@
             {
               "if": {
                 "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -9345,6 +9513,18 @@
                 "required": [
                   "release",
                   "branch"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             },
@@ -9953,6 +10133,18 @@
                   "branch"
                 ]
               }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
+                ]
+              }
             }
           ],
           "description": "Method capabilities: scope, source-mutation, check, remove, immutable-lock. immutable-lock means a pinnable identity exists; depengine.lock currently pins latest-release references, checksums, local digests, mutable Git branch/tag commits (including cargo --git sources), container tag digests, and versions of plain unversioned npm, pnpm, and Yarn Classic packages.",
@@ -10199,6 +10391,18 @@
         {
           "additionalProperties": false,
           "allOf": [
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
+                ]
+              }
+            },
             {
               "if": {
                 "required": [
@@ -10554,6 +10758,18 @@
             {
               "if": {
                 "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -10851,6 +11067,18 @@
             {
               "if": {
                 "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
                   "checksum_secret_ref"
                 ]
               },
@@ -11057,6 +11285,18 @@
                 "required": [
                   "release",
                   "branch"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "signature_url"
+                ]
+              },
+              "then": {
+                "required": [
+                  "signing_key"
                 ]
               }
             },

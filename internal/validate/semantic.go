@@ -237,32 +237,24 @@ func knownDistroFamilyList() string {
 	return strings.Join(families, ", ")
 }
 
-// validateSignatureSecurity warns when signature_url is set without signing_key.
-// Without a signing_key, GPGVerify cannot enforce signer identity, falling back
-// to the shared keyring with no identity check — a security gap.
+// validateSignatureSecurity rejects detached-signature configuration without
+// an explicit signer identity. Signature verification must never fall back to
+// an ambient GPG keyring.
 func validateSignatureSecurity(s *config.Schema) *Result {
 	r := &Result{}
-
 	for toolName, tool := range s.Tools {
 		for i, mc := range tool.Methods {
-			sigURL, hasSigURL := mc.Config["signature_url"]
-			sigURLStr, sigURLIsStr := sigURL.(string)
-			if !hasSigURL || !sigURLIsStr || sigURLStr == "" {
-				continue
-			}
-
-			sigKey, hasSigKey := mc.Config["signing_key"]
-			sigKeyStr, sigKeyIsStr := sigKey.(string)
-			if !hasSigKey || !sigKeyIsStr || sigKeyStr == "" {
+			sigURL, _ := mc.Config["signature_url"].(string)
+			signingKey, _ := mc.Config["signing_key"].(string)
+			if sigURL != "" && strings.TrimSpace(signingKey) == "" {
 				r.Add(ValidationError{
-					Code:    WarnSignatureNoKey,
+					Code:    ErrInvalidValue,
 					Field:   fieldPath(toolName, i, "signing_key"),
-					Message: "signature_url is set without signing_key; verification will not check signer identity",
+					Message: "signature_url requires signing_key to authenticate the signer",
 				})
 			}
 		}
 	}
-
 	return r
 }
 

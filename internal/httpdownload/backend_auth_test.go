@@ -250,11 +250,11 @@ func TestSignatureSidecarUsesOnlyItsOwnBearer(t *testing.T) {
 	ctx := exec.WithHTTPBearer(context.Background(), exec.HTTPBearerArtifact, artifactCredential)
 	ctx = exec.WithHTTPBearer(ctx, exec.HTTPBearerSignature, signatureCredential)
 	adapter := NewHTTPAdapter()
-	runner := &run.FakeRunner{LookPaths: map[string]bool{"curl": false, "wget": false, "gpg": false}}
+	runner := &run.FakeRunner{LookPaths: map[string]bool{"curl": false, "wget": false, "gpg": true}}
 	config := map[string]any{"signature_url": server.URL + "/signature"}
 	_, err := adapter.fetchChecksumFromURL(ctx, runner, server.URL+"/checksum", "artifact", &checksumConfig{algorithm: "sha256", format: "raw"}, config)
-	if err == nil || !strings.Contains(err.Error(), "gpg: not found") {
-		t.Fatalf("fetch checksum with unavailable gpg error = %v, want gpg unavailable", err)
+	if err == nil {
+		t.Fatal("signature verification without signing_key must fail closed")
 	}
 	if checksumAuth != "" {
 		t.Errorf("checksum Authorization = %q, want absent without checksum credential", checksumAuth)

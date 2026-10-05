@@ -59,35 +59,19 @@ func gpgPath(msys bool, p string) string {
 // nil falls back to an unauthenticated stdlib HTTP client.
 type DownloadKeyFunc func(ctx context.Context, rawURL, dest string) error
 
-// GPGVerify verifies a GPG detached signature on a checksum file.
-// Returns nil if verification succeeds. Returns error if gpg is not
-// available or signature verification fails.
-//
-// When signingKey is non-empty, the function isolates verification to a
-// dedicated temporary homedir and enforces that the signer's fingerprint
-// matches the expected signing key (identity check).
-//
-// When signingKey is empty, verification uses the default keyring with no
-// identity check (backward-compatible path).
+// GPGVerify verifies a GPG detached signature on a checksum file against the
+// explicitly configured signer identity, using an isolated temporary GPG home.
+// It returns an error when the identity is absent, GPG is unavailable, or the
+// signature does not match the configured signer.
 func GPGVerify(ctx context.Context, rn run.Runner, checksumFile, signatureFile, signingKey string, downloadKey DownloadKeyFunc) error {
-	// Check if gpg is available on the system.
+	if strings.TrimSpace(signingKey) == "" {
+		return fmt.Errorf("gpg: signing key is required for signature verification")
+	}
 	if !run.LookPath(ctx, rn, "gpg") {
 		return fmt.Errorf("gpg: not found in PATH, cannot verify signature")
 	}
 	msys := isMSYSGPG(ctx, rn)
-
-	// If a signing key is provided, use the isolated verification path with
-	// identity checking to prevent signer-confusion attacks.
-	if signingKey != "" {
-		return gpgVerifyWithIdentityCheck(ctx, rn, msys, checksumFile, signatureFile, signingKey, downloadKey)
-	}
-
-	// Backward-compatible path: verify using the shared default keyring.
-	res := rn.Run(ctx, "gpg", "--verify", "--batch", gpgPath(msys, signatureFile), gpgPath(msys, checksumFile))
-	if res.Err != nil || res.ExitCode != 0 {
-		return fmt.Errorf("gpg: signature verification failed: %s", strings.TrimSpace(string(res.Stderr)))
-	}
-	return nil
+	return gpgVerifyWithIdentityCheck(ctx, rn, msys, checksumFile, signatureFile, signingKey, downloadKey)
 }
 
 // gpgVerifyWithIdentityCheck performs GPG signature verification in an

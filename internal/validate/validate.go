@@ -40,7 +40,6 @@ const (
 	WarnUnknownDistroFamily ErrorCode = "W_UNKNOWN_DISTRO_FAMILY"
 	WarnAutoChecksum        ErrorCode = "W_AUTO_CHECKSUM"
 	WarnEnvMissing          ErrorCode = "W_ENV_MISSING"
-	WarnSignatureNoKey      ErrorCode = "W_SIGNATURE_NO_KEY"
 )
 
 // ValidationError represents a single validation finding.

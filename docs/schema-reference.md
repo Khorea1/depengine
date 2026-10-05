@@ -292,9 +292,9 @@ when authenticated GitHub release API resolution is required.
 | `checksum_url` | no | Explicit URL for the checksum file (overrides auto patterns); requires `checksum = "<algo>:auto"` |
 | `checksum_secret_ref` | no | Typed Bearer credential reference used only for the explicitly configured `checksum_url` |
 | `checksum_file_format` | no | `"sha256sum"` (default), `"bsd"`, or `"raw"`; requires `checksum = "<algo>:auto"` |
-| `signature_url` | no | GPG detached signature URL for verifying the checksum file; requires `checksum = "<algo>:auto"` |
+| `signature_url` | no | GPG detached signature URL for verifying the checksum file; requires `checksum = "<algo>:auto"` and `signing_key` |
 | `signature_secret_ref` | no | Typed Bearer credential reference used only for `signature_url` |
-| `signing_key` | no | GPG key URL or fingerprint; requires `signature_url` and `checksum = "<algo>:auto"` |
+| `signing_key` | no | Required with `signature_url`; the GPG key URL or fingerprint pins the expected signer and is checked in an isolated keyring |
 | `secret_ref` | no | Typed Bearer credential reference used only for the primary artifact request |
 | `extract_to` | no | Extraction destination (default: `/usr/local/bin`) |
 | `strip_components` | no | Remove this many leading archive path components. Applies equally to tar and zip; negative or empty results are rejected. |

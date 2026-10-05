@@ -80,6 +80,28 @@ func genGPGKey(t *testing.T, keyID string) {
 	}
 }
 
+func exportGPGKeyFile(t *testing.T, keyID string) string {
+	t.Helper()
+	cmd := exec.Command("gpg", "--armor", "--export", keyID)
+	data, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("gpg --export failed: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "pubkey.asc")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write public key: %v", err)
+	}
+	return path
+}
+
+func gpgFileURL(path string) string {
+	path = filepath.ToSlash(path)
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return "file://" + path
+}
+
 // signFile creates an armored detached signature for the given file.
 func signFile(t *testing.T, filePath string) string {
 	t.Helper()
@@ -101,132 +123,70 @@ func signFile(t *testing.T, filePath string) string {
 func TestGPGVerifyValidSignature(t *testing.T) {
 	skipIfNoGPG(t)
 	setupGPGDir(t)
-
-	// Create the checksum file to sign.
-	checksumContent := []byte("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  file.tar.gz\n")
 	checksumFile := filepath.Join(t.TempDir(), "checksum.sha256")
-	if err := os.WriteFile(checksumFile, checksumContent, 0o600); err != nil {
-		t.Fatalf("write checksum file: %v", err)
+	if err := os.WriteFile(checksumFile, []byte("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  file.tar.gz\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-
-	// Generate a GPG key and sign.
 	genGPGKey(t, "gpgtest@example.com")
+	keyFile := exportGPGKeyFile(t, "gpgtest@example.com")
 	signatureFile := signFile(t, checksumFile)
-
-	// Verify the signature via GPGVerify.
-	rn := &run.OSExecRunner{}
-	err := GPGVerify(context.Background(), rn, checksumFile, signatureFile, "")
-	if err != nil {
-		t.Fatalf("GPGVerify should succeed: %v", err)
+	if err := GPGVerify(context.Background(), &run.OSExecRunner{}, checksumFile, signatureFile, gpgFileURL(keyFile)); err != nil {
+		t.Fatalf("GPGVerify should accept the configured signer: %v", err)
 	}
 }
 
-// TestGPGVerifyTamperedFile tests that GPG verification fails when the
-// checksum file has been modified after signing.
+// TestGPGVerifyTamperedFile rejects a checksum file modified after signing.
 func TestGPGVerifyTamperedFile(t *testing.T) {
 	skipIfNoGPG(t)
 	setupGPGDir(t)
-
-	// Create checksum file.
-	checksumContent := []byte("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  file.tar.gz\n")
 	checksumFile := filepath.Join(t.TempDir(), "checksum.sha256")
-	if err := os.WriteFile(checksumFile, checksumContent, 0o600); err != nil {
-		t.Fatalf("write checksum file: %v", err)
+	if err := os.WriteFile(checksumFile, []byte("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  file.tar.gz\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-
-	// Generate key and sign.
 	genGPGKey(t, "gpgtest2@example.com")
+	keyFile := exportGPGKeyFile(t, "gpgtest2@example.com")
 	signatureFile := signFile(t, checksumFile)
-
-	// Tamper with the checksum file.
 	if err := os.WriteFile(checksumFile, []byte("tampered content\n"), 0o600); err != nil {
-		t.Fatalf("tamper checksum file: %v", err)
+		t.Fatal(err)
 	}
-
-	// Verification should now fail.
-	rn := &run.OSExecRunner{}
-	err := GPGVerify(context.Background(), rn, checksumFile, signatureFile, "")
-	if err == nil {
+	if err := GPGVerify(context.Background(), &run.OSExecRunner{}, checksumFile, signatureFile, gpgFileURL(keyFile)); err == nil {
 		t.Fatal("GPGVerify should fail on tampered file")
 	}
-	if !strings.Contains(err.Error(), "gpg:") {
-		t.Fatalf("error should mention gpg, got: %v", err)
+}
+
+// TestGPGVerifyRequiresSigningKey rejects signature checks without an
+// explicit signer identity.
+func TestGPGVerifyRequiresSigningKey(t *testing.T) {
+	fr := &run.FakeRunner{}
+	err := GPGVerify(context.Background(), fr, "/checksum", "/signature", " ")
+	if err == nil || !strings.Contains(err.Error(), "signing key is required") {
+		t.Fatalf("GPGVerify error = %v, want required signer identity", err)
+	}
+	if len(fr.Calls) != 0 {
+		t.Fatalf("GPGVerify ran commands without signer identity: %+v", fr.Calls)
 	}
 }
 
-// TestGPGVerifyMissingGPG tests that GPG verification silently passes when
-// gpg is not installed (returns nil with a warning).
-func TestGPGVerifyMissingGPG(t *testing.T) {
-	if _, err := exec.LookPath("gpg"); err != nil {
-		// gpg not available — verify the warning path returns nil.
-		fr := &run.FakeRunner{}
-		err := GPGVerify(context.Background(), fr, "/nonexistent", "/nonexistent", "")
-		if err != nil {
-			t.Fatalf("GPGVerify should return nil when gpg is missing: %v", err)
-		}
-		return
-	}
-	// gpg is available — we can't easily test the missing-gpg path
-	// without manipulating PATH. The function should not panic.
-	t.Log("gpg available, cannot test missing-gpg path")
-}
-
-// TestGPGVerifyKeyImport tests GPG verification by importing a key from a URL
-// (file:// URL simulating a remote key server).
+// TestGPGVerifyKeyImport verifies that the configured public key is imported
+// into an isolated keyring for detached-signature verification.
 func TestGPGVerifyKeyImport(t *testing.T) {
 	skipIfNoGPG(t)
-	_ = setupGPGDir(t)
-
-	// Create checksum file.
-	checksumContent := []byte("abc123  test.tar.gz\n")
+	setupGPGDir(t)
 	checksumFile := filepath.Join(t.TempDir(), "checksum.sha256")
-	if err := os.WriteFile(checksumFile, checksumContent, 0o600); err != nil {
-		t.Fatalf("write checksum file: %v", err)
+	if err := os.WriteFile(checksumFile, []byte("abc123  test.tar.gz\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-
-	// Create a key and sign.
 	keyID := "gpgtest-keyimport@example.com"
 	genGPGKey(t, keyID)
-
-	// Export the public key to a file (simulating the key URL).
-	keyFile := filepath.Join(t.TempDir(), "pubkey.asc")
-	expCmd := exec.Command("gpg", "--armor", "--export", keyID)
-	keyData, err := expCmd.Output()
-	if err != nil {
-		t.Fatalf("gpg --export failed: %v", err)
-	}
-	if err := os.WriteFile(keyFile, keyData, 0o600); err != nil {
-		t.Fatalf("write pubkey: %v", err)
-	}
-
+	keyFile := exportGPGKeyFile(t, keyID)
 	signatureFile := signFile(t, checksumFile)
-
-	// Reset GNUPGHOME to a clean one so the key is NOT in the keyring.
 	setupGPGDir(t)
-
-	// Verification should fail since the key is not in the new keyring.
-	rn := &run.OSExecRunner{}
-	err = GPGVerify(context.Background(), rn, checksumFile, signatureFile, "")
-	if err == nil {
-		t.Fatal("GPGVerify should fail when key is not in keyring")
-	}
-
-	// Import the key (simulating what GPGVerify does for a key URL).
-	importCmd := exec.Command("gpg", "--import", "--batch", keyFile) // #nosec G204 -- test intentionally launches a controlled helper/tool subprocess.
-	out, err := importCmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("gpg --import failed: %v\n%s", err, out)
-	}
-
-	// Now verification should succeed.
-	err = GPGVerify(context.Background(), rn, checksumFile, signatureFile, "")
-	if err != nil {
-		t.Fatalf("GPGVerify should succeed after importing key: %v", err)
+	if err := GPGVerify(context.Background(), &run.OSExecRunner{}, checksumFile, signatureFile, gpgFileURL(keyFile)); err != nil {
+		t.Fatalf("GPGVerify should import and accept the configured signer: %v", err)
 	}
 }
 
-// TestGPGVerifyAllExistingPass verifies that all existing tests still pass
-// by explicitly running the core verification test.
+// TestGPGVerifyAllExistingPass verifies that checksum verification still works.
 func TestGPGVerifyAllExistingPass(t *testing.T) {
 	// Just verify the package builds and checksum verification still works.
 	content := []byte("hello world")
