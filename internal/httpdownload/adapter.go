@@ -38,7 +38,14 @@ func (a *HTTPAdapter) Kind() string { return "http" }
 // downloading or mutating anything. This makes dry-run an auditable resolved
 // plan rather than only a method-selection preview.
 func (a *HTTPAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
-	return resolveDownloadPlan(ctx, rn, mc, intent)
+	resolved, err := resolveDownloadPlan(ctx, rn, mc, intent)
+	if err != nil {
+		return resolved, err
+	}
+	if err := rejectUntrackedDebLifecycle(a.Kind(), mc, resolved, ""); err != nil {
+		return resolved, err
+	}
+	return resolved, nil
 }
 
 func resolveDownloadPlan(ctx context.Context, rn run.Runner, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
@@ -115,11 +122,12 @@ func (a *HTTPAdapter) Available(ctx context.Context, rn run.Runner) bool {
 //     directory while this tool's file was never downloaded.
 //   - binary configured without extract_to → binary must be reachable on PATH.
 func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
+	if rejectUntrackedDebLifecycle(a.Kind(), mc, nil, "") != nil {
+		return false
+	}
 	extractTo, _ := mc.Config["extract_to"].(string)
 	if extractTo == "" && scopeConfigured(mc) {
-		// A scoped install targets the scope's platform-native install
-		// root, so presence is checked there — never guessed from PATH or a
-		// legacy /usr/local/bin default.
+		// A scoped install targets the scope's platform-native install root.
 		extractTo = PlacementOrDefault(tool, mc, "", "").InstallRoot
 	}
 	extractTo = config.ExpandHomeDir(extractTo)
@@ -127,16 +135,12 @@ func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 	if len(entrypoints(mc)) > 0 {
 		payload := archiveTarget(tool, mc)
 		for name, relative := range entrypoints(mc) {
-			if requirePayloadFile(payload, relative) != nil {
-				return false
-			}
-			if !launcherValid(payload, linkTargetDir(mc, payload, tool), name, relative) {
+			if requirePayloadFile(payload, relative) != nil || !launcherValid(payload, linkTargetDir(mc, payload, tool), name, relative) {
 				return false
 			}
 		}
 		return true
 	}
-
 	if extractTo != "" {
 		target := binary
 		if target == "" {
@@ -148,7 +152,6 @@ func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 		info, err := os.Stat(filepath.Join(extractTo, target))
 		return err == nil && info.Mode().IsRegular()
 	}
-
 	if binary != "" {
 		return run.LookPath(ctx, rn, binary)
 	}
@@ -165,6 +168,9 @@ func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 func (a *HTTPAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
 	if tool == nil || mc == nil {
 		return plan.Observation{}, errors.New("http: tool and method are required")
+	}
+	if err := rejectUntrackedDebLifecycle(a.Kind(), mc, nil, ""); err != nil {
+		return plan.Observation{}, err
 	}
 	if !a.Check(ctx, rn, tool, mc) {
 		return plan.Observation{Presence: plan.PresenceAbsent}, nil
@@ -184,6 +190,9 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	if err != nil {
 		return fmt.Errorf("http: resolve artifact: %w", err)
 	}
+	if err := rejectUntrackedDebLifecycle(a.Kind(), mc, nil, resolvedURL); err != nil {
+		return err
+	}
 	return a.installResolvedURL(ctx, rn, tool, mc, resolvedURL)
 }
 
@@ -193,6 +202,9 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 func (a *HTTPAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
 	if resolved == nil || len(resolved.Artifacts) == 0 || resolved.Artifacts[0].URL == "" {
 		return fmt.Errorf("http: resolved plan has no concrete artifact URL")
+	}
+	if err := rejectUntrackedDebLifecycle(a.Kind(), mc, resolved, resolved.Artifacts[0].URL); err != nil {
+		return err
 	}
 	effective := methodWithResolvedArtifact(mc, resolved.Artifacts[0])
 	err := a.installResolvedURL(ctx, rn, tool, effective, resolved.Artifacts[0].URL)
@@ -621,34 +633,10 @@ var _ exec.AdapterV2 = (*HTTPAdapter)(nil)
 // Separators are folded to "/" after Clean so Unix-style manifests and
 // Windows-style paths evaluate identically on every platform (ToSlash
 // alone is a no-op for literal backslashes on Unix).
-func isSharedDir(path string) bool {
-	p := strings.ReplaceAll(filepath.Clean(path), "\\", "/")
-	if p == "/" || p == "." {
-		return true
-	}
-	shared := []string{
-		"/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin",
-		"/opt", "/usr", "/usr/local", "/lib", "/usr/lib", "/usr/local/lib",
-		"C:/Windows", "C:/Program Files", "C:/Program Files (x86)",
-	}
-	for _, s := range shared {
-		if p == s {
-			return true
-		}
-	}
-	if strings.HasSuffix(p, "/bin") || strings.HasSuffix(p, "/sbin") {
-		return true
-	}
-	return false
-}
-
-// Remove uninstalls an HTTP-installed tool. If extract_to is a shared
-// directory (e.g. /usr/local/bin), only the extracted binary is removed.
-// If extract_to is tool-specific, the entire directory is deleted.
-// Without extract_to, removal is not supported — the download was extracted
-// to the default /usr/local/bin, which is shared, so we remove the binary or
-// the tool name from there.
 func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+	if err := rejectUntrackedDebLifecycle(a.Kind(), mc, nil, ""); err != nil {
+		return err
+	}
 	if len(entrypoints(mc)) > 0 {
 		payload := archiveTarget(tool, mc)
 		payloadElevated := defaultSudoRequired(payload) && os.Geteuid() != 0
@@ -680,9 +668,8 @@ func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 	}
 	extractTo = config.ExpandHomeDir(extractTo)
 	if extractTo == "" {
-		extractTo = "/usr/local/bin" // Install default
+		extractTo = "/usr/local/bin"
 	}
-
 	binary, _ := mc.Config["binary"].(string)
 	target := binary
 	if target == "" {
@@ -691,10 +678,6 @@ func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 		}
 		target = tool.Name
 	}
-
-	// Scope installs also own the PATH link created at install time. Remove
-	// the link before the payload directory so a stale link never outlives
-	// its target.
 	if scopeConfigured(mc) {
 		placement := PlacementOrDefault(tool, mc, "/usr/local/bin", "")
 		if placement.LinkDir != "" {
@@ -711,7 +694,6 @@ func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 			}
 		}
 	}
-
 	payloadElevated := defaultSudoRequired(extractTo) && os.Geteuid() != 0
 	if isSharedDir(extractTo) {
 		path := filepath.Join(extractTo, target)
@@ -720,13 +702,39 @@ func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 		}
 		return nil
 	}
-
-	// Not a shared directory — safe to delete the whole directory
 	if err := removeHTTPPath(ctx, rn, extractTo, true, payloadElevated); err != nil {
 		return fmt.Errorf("http: remove directory %s: %w", extractTo, err)
 	}
 	return nil
 }
+
+func isSharedDir(path string) bool {
+	p := strings.ReplaceAll(filepath.Clean(path), "\\", "/")
+	if p == "/" || p == "." {
+		return true
+	}
+	shared := []string{
+		"/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin",
+		"/opt", "/usr", "/usr/local", "/lib", "/usr/lib", "/usr/local/lib",
+		"C:/Windows", "C:/Program Files", "C:/Program Files (x86)",
+	}
+	for _, s := range shared {
+		if p == s {
+			return true
+		}
+	}
+	if strings.HasSuffix(p, "/bin") || strings.HasSuffix(p, "/sbin") {
+		return true
+	}
+	return false
+}
+
+// Remove uninstalls an HTTP-installed tool. If extract_to is a shared
+// directory (e.g. /usr/local/bin), only the extracted binary is removed.
+// If extract_to is tool-specific, the entire directory is deleted.
+// Without extract_to, removal is not supported — the download was extracted
+// to the default /usr/local/bin, which is shared, so we remove the binary or
+// the tool name from there.
 
 func removeHTTPPath(ctx context.Context, rn run.Runner, path string, recursive, elevated bool) error {
 	var err error

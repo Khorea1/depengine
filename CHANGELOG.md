@@ -8,6 +8,8 @@
 - HTTP artifact downloads now use the bounded in-process backend with a configurable 4 GiB default ingress limit before cache storage; curl/Wget selection is bypassed because their available size controls are not reliably per-file streaming limits.
 - Serialize concurrent hook and source-preparation progress output and include the owning tool name.
 - Detached GPG signatures now require an explicit `signing_key`; verification rejects missing signer identity instead of trusting any key in the ambient keyring.
+
+- Reject HTTP/GitHub `.deb` lifecycles before download or mutation: package identity is not persisted for safe observation and removal.
 - Report global tool and method timeout failures with the correct timeout scope and configured duration.
 - Replacement recovery now reconstructs the configured candidate intent and pins it to the persisted immutable plan before observing or mutating the host; retries resolve method-scoped removal credentials and use the same timeout, environment omission, and elevation safeguards.
 - Upgrade replacement now requires and clones the discovery-time tracked state, then compares it with durable state under lock before writing replacement WAL or removing the old installation. The previous method is resolved by `config.FindMethodCandidate` using its exact configured kind and label.

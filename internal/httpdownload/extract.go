@@ -64,6 +64,9 @@ func Extract(ctx context.Context, src, dest, ext string, rn run.Runner, sudoRequ
 }
 
 func extract(ctx context.Context, src, dest, ext, binaryName string, rn run.Runner, sudoRequired bool, toolName string) error {
+	if ext == ".deb" {
+		return fmt.Errorf("http: .deb package lifecycle is unsupported because exact dpkg package identity is not persisted; use a native package-manager method")
+	}
 	// Ensure destination exists.
 	if err := os.MkdirAll(dest, 0o755); err != nil { // #nosec G301 -- Extraction destinations are installed payload roots and must remain traversable.
 		return fmt.Errorf("extract: mkdir %s: %w", dest, err)
@@ -78,8 +81,6 @@ func extract(ctx context.Context, src, dest, ext, binaryName string, rn run.Runn
 		return extractNativeZip(ctx, src, dest)
 	case ".bz2":
 		return extractBzip2(ctx, src, dest, binaryName, rn, sudoRequired, toolName)
-	case ".deb":
-		return installDeb(ctx, src, rn, sudoRequired, toolName)
 	default:
 		// Treat as a plain binary — copy and chmod.
 		return copyBinary(ctx, src, dest, binaryName, rn, sudoRequired, toolName)
@@ -116,64 +117,6 @@ func extractBzip2WithBudget(ctx context.Context, src, dest, binaryName string, r
 func copyBzip2(ctx context.Context, dst io.Writer, src io.Reader, budget *archiveExpansionBudget) error {
 	_, err := io.Copy(budget.writer(dst), contextReader{ctx: ctx, r: bzip2.NewReader(src)})
 	return err
-}
-
-func installDeb(ctx context.Context, src string, rn run.Runner, sudoRequired bool, toolName string) error {
-	// Guard: dpkg must exist on the system. Host/distribution compatibility is
-	// enforced by the executor before this mutation boundary; this check remains
-	// necessary for minimal Debian-family/Termux environments where the package
-	// format is compatible but dpkg itself is unavailable.
-	if !run.LookPath(ctx, rn, "dpkg") {
-		return fmt.Errorf("cannot install .deb package: dpkg not found (a compatible dpkg-based target is required; consider adding a native method fallback)")
-	}
-	var sudoBin string
-	if sudoRequired && os.Geteuid() != 0 {
-		if err := elevationGuard(sudoRequired, toolName); err != nil {
-			return fmt.Errorf("dpkg: %w", err)
-		}
-		sudoBin = run.ElevationPrefix()[0]
-	}
-	runCmd := func(args ...string) run.Result {
-		if sudoBin != "" {
-			args = append([]string{sudoBin}, args...)
-		}
-		return rn.Run(ctx, args[0], args[1:]...)
-	}
-
-	// Try dpkg -i directly.
-	res := runCmd("dpkg", "-i", src)
-	if res.Err == nil && res.ExitCode == 0 {
-		return nil
-	}
-	// dpkg -i may fail due to missing dependencies. Run apt-get install -f
-	// to fix them, then try dpkg -i again.
-	// Check which apt variant is available (apt-get preferred, apt fallback).
-	aptCmd := "apt-get"
-	if !run.LookPath(ctx, rn, "apt-get") {
-		if !run.LookPath(ctx, rn, "apt") {
-			return fmt.Errorf("neither apt-get nor apt found to fix dependencies")
-		}
-		aptCmd = "apt"
-	}
-	fixRes := runCmd(aptCmd, "install", "-f", "-y")
-	if fixRes.Err != nil || fixRes.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(fixRes.Stderr))
-		if res.Err != nil {
-			return fmt.Errorf("dpkg: %w (apt-get -f install also failed: %s)", res.Err, stderr)
-		}
-		return fmt.Errorf("dpkg: exited %d (apt-get -f install also failed: exit %d: %s)", res.ExitCode, fixRes.ExitCode, stderr)
-	}
-
-	// Retry dpkg -i after fixing deps.
-	res2 := runCmd("dpkg", "-i", src)
-	if res2.Err != nil {
-		return fmt.Errorf("dpkg (after apt-get -f install): %w", res2.Err)
-	}
-	if res2.ExitCode != 0 {
-		stderr := strings.TrimSpace(string(res2.Stderr))
-		return fmt.Errorf("dpkg (after apt-get -f install): exited %d: %s", res2.ExitCode, stderr)
-	}
-	return nil
 }
 
 // copyBinary installs src as a single executable file inside destDir. When

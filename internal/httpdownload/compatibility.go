@@ -54,6 +54,16 @@ func candidateHasDebArtifact(mc *config.MethodCandidate, intent *plan.ResolvedIn
 	return false
 }
 
+func rejectUntrackedDebLifecycle(kind string, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan, resolvedURL string) error {
+	if kind != "http" && kind != "github" {
+		return nil
+	}
+	if !candidateHasDebArtifact(mc, intent) && fileExtension(resolvedURL) != ".deb" {
+		return nil
+	}
+	return fmt.Errorf("%s: .deb lifecycle is unsupported because exact dpkg package identity is not persisted; use a native package-manager method", kind)
+}
+
 func checkDebHostCompatibility(mc *config.MethodCandidate, facts *engine.Facts, clan string) error {
 	clan = strings.ToLower(strings.TrimSpace(clan))
 	if clan == "" && facts != nil {

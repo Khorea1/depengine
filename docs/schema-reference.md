@@ -135,6 +135,8 @@ prettier = { node = true }     # ≡ { npm = "prettier", pnpm = "prettier", bun 
 
 ## Custom sources
 
+HTTP and GitHub downloads do not support `.deb` package lifecycles. Such artifacts are rejected before download because package name, architecture, and version identity are not persisted for reliable observation or removal; use a native package-manager method instead.
+
 ### Cargo with a custom git source
 
 For forks or sources outside the official registry:

@@ -164,6 +164,8 @@ operations stop for either state.
 
 ## Package sources
 
+HTTP/GitHub `.deb` artifacts are unsupported: depengine rejects them before download or dpkg mutation because it does not persist the exact package identity needed to observe or remove the installed package. Use a native package-manager method for Debian packages.
+
 A package source, registry, remote, bucket, or channel selects where a package
 comes from. Adding a host-wide repository, PPA, COPR, Brew tap, or Scoop bucket
 is a separate machine mutation.

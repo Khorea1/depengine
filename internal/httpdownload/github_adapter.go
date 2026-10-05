@@ -56,7 +56,14 @@ func NewGitHubAdapter() *GitHubAdapter {
 func (a *GitHubAdapter) Kind() string { return "github" }
 
 func (a *GitHubAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
-	return resolveDownloadPlan(ctx, rn, mc, intent)
+	resolved, err := resolveDownloadPlan(ctx, rn, mc, intent)
+	if err != nil {
+		return resolved, err
+	}
+	if err := rejectUntrackedDebLifecycle(a.Kind(), mc, resolved, ""); err != nil {
+		return nil, err
+	}
+	return resolved, nil
 }
 
 func (a *GitHubAdapter) RequiresElevation(tool *config.Tool, mc *config.MethodCandidate) bool {
