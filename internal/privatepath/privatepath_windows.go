@@ -13,7 +13,7 @@ import (
 // permissions on that location are inherited from the user's profile ACL.
 func TempRootPath() string {
 	cacheHome, err := os.UserCacheDir()
-	if err != nil || cacheHome == "" {
+	if err != nil || cacheHome == "" || !filepath.IsAbs(cacheHome) {
 		return ""
 	}
 	return filepath.Join(cacheHome, "depengine", "temp")

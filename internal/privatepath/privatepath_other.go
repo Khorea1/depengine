@@ -11,7 +11,7 @@ import (
 
 func TempRootPath() string {
 	cacheHome, err := os.UserCacheDir()
-	if err != nil || cacheHome == "" {
+	if err != nil || cacheHome == "" || !filepath.IsAbs(cacheHome) {
 		return ""
 	}
 	return filepath.Join(cacheHome, "depengine", "temp")

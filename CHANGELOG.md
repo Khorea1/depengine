@@ -5,7 +5,7 @@
 - Expand native `{arch}` and `{os}` placeholders in GitHub `repo` + `asset` configuration fields while preserving `{arch_any}` and `{os_any}` asset-match tokens.
 - Archive installs report rollback, launcher, backup, and staging cleanup failures; elevated payload roots use uid/gid 0 and mode 0755 while inner modes are preserved.
 - Standalone `.bz2` extraction now honors the archive expanded-byte limit and context cancellation before installing decompressed output.
-- HTTP artifact downloads now use the bounded in-process backend with a configurable 4 GiB default ingress limit before cache storage; curl/Wget selection is bypassed because their available size controls are not reliably per-file streaming limits.
+- HTTP artifact downloads use the bounded in-process backend with a configurable 4 GiB default ingress limit before cache storage; the curl/Wget backends were removed because their available size controls are not reliably per-file streaming limits.
 - Serialize concurrent hook and source-preparation progress output and include the owning tool name.
 - Detached GPG signatures now require an explicit `signing_key`; verification rejects missing signer identity instead of trusting any key in the ambient keyring.
 
@@ -23,5 +23,4 @@
 - Non-frozen installs resolve legacy lock identity before execution, fail if resolution fails, and persist that same preflight identity instead of resolving mutable selectors again after installation.
 - State-tracked upgrades persist exact resource claims with replacement intent, atomically commit verified installed state and ownership while retaining the replacement WAL for hook recovery, and persist a boundary before the after-upgrade hook so uncertain hook outcomes are never blindly replayed.
 - GitHub release assets retain declared checksum and detached-signature metadata through resolution and fail verification before extraction or installation mutates the payload.
-- When the home directory is unavailable, state and download cache use a per-user private temp root instead of shared `/tmp` paths. Cache lookups reject directories or entries with untrusted ownership/permissions; stored entries are owner-only.
-- When home and XDG storage bases are unavailable, state and cache resolve a per-user fallback (private system-temp root on Unix; OS-provided cache directory on Windows and other platforms). Resolution fails closed instead of writing to shared or relative paths; fallback cache lookups require private ownership/permissions and stored entries are owner-only.
+- When the home and XDG storage bases are unavailable, state and download cache use a per-user fallback instead of shared or relative paths: a private system-temp root on Unix (owner-only directories and files, with ownership/permission checks) or the OS-provided per-user cache directory on Windows and other platforms (trusting the OS-managed user ACL). Resolution fails closed when the fallback cannot be resolved or secured.
