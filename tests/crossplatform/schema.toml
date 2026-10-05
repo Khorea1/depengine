@@ -36,7 +36,7 @@ starship = { apt = "starship", pacman = "starship", dnf = "starship", apk = "sta
 ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = "make && sudo make install" } }
 fasd = { git = { url = "https://github.com/clvv/fasd", build = "PREFIX=$HOME/.local make install" } }
 
-# Tool using http method
+# Tool using native package managers
 fastfetch = { apt = "fastfetch", pacman = "fastfetch", dnf = "fastfetch", apk = "fastfetch" } # Use native packages; HTTP .deb lifecycle is intentionally unsupported.
 
 # Tool requiring native package manager (e.g., for system-level dependencies)
