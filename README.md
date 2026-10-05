@@ -234,6 +234,12 @@ completion and validation for `schema.toml`. For Taplo in VS Code:
 | `DEPENGINE_TRACE_ID` | Trace ID passed to subprocesses |
 | `DEPENGINE_LOG_JSON` | Set to `1` for JSON logs |
 
+When the home directory is unavailable and the XDG state or cache base is not
+set, depengine uses a per-user private fallback: a checked directory below the
+system temporary directory on Unix, or the OS-provided per-user cache directory
+on Windows and other platforms. If that private location cannot be resolved or
+validated, state and cache operations fail with a filesystem error; depengine
+does not fall back to shared temporary paths or the current working directory.
 ## Documentation
 
 | Document | Use it for |

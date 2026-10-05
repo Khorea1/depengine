@@ -96,24 +96,38 @@ func pathWithin(root, path string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
-func DefaultPath() string {
+func defaultPath() (string, error) {
 	xdgState := os.Getenv("XDG_STATE_HOME")
 	if xdgState == "" {
 		home, err := os.UserHomeDir()
 		if err == nil {
 			xdgState = filepath.Join(home, ".local", "state")
 		} else {
-			root, _ := privatepath.TempRoot()
+			root, err := privatepath.TempRoot()
+			if err != nil {
+				return "", fmt.Errorf("resolve private state directory: %w", err)
+			}
 			xdgState = filepath.Join(root, "state")
 		}
 	}
-	return filepath.Join(xdgState, "depengine", "state.json")
+	return filepath.Join(xdgState, "depengine", "state.json"), nil
+}
+
+func DefaultPath() string {
+	path, err := defaultPath()
+	if err != nil {
+		return ""
+	}
+	return path
 }
 
 // Load reads the state file from DefaultPath. LoadFrom creates missing state
 // directly at the current format version and rejects unknown on-disk versions.
 func Load() (*State, error) {
-	path := DefaultPath()
+	path, err := defaultPath()
+	if err != nil {
+		return nil, err
+	}
 	if pathWithin(privatepath.TempRootPath(), path) {
 		if err := ensurePrivateDir(filepath.Dir(path)); err != nil {
 			return nil, fmt.Errorf("state private directory: %w", err)
@@ -125,11 +139,15 @@ func Load() (*State, error) {
 // Save writes the state to DefaultPath atomically: write to a temp file,
 // fsync, then rename. This prevents corruption if the process crashes mid-write.
 func Save(s *State) error {
+	path, err := defaultPath()
+	if err != nil {
+		return err
+	}
 	data, err := marshalStateForPersistence(s)
 	if err != nil {
 		return err
 	}
-	if err := atomicWritePrivateFile(DefaultPath(), data, 0o600); err != nil {
+	if err := atomicWritePrivateFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("write state: %w", err)
 	}
 	return nil
@@ -183,6 +201,9 @@ func (ls *LockedState) Close() error {
 func LoadLocked() (*LockedState, error) { return LoadLockedContext(context.Background()) }
 
 func LoadLockedContext(ctx context.Context) (*LockedState, error) {
+	if _, err := defaultPath(); err != nil {
+		return nil, err
+	}
 	lk, err := lockContext(ctx)
 	if err != nil {
 		return nil, err
@@ -202,6 +223,9 @@ func LoadLockedContext(ctx context.Context) (*LockedState, error) {
 func LoadShared() (*LockedState, error) { return LoadSharedContext(context.Background()) }
 
 func LoadSharedContext(ctx context.Context) (*LockedState, error) {
+	if _, err := defaultPath(); err != nil {
+		return nil, err
+	}
 	lk, err := lockSharedContext(ctx)
 	if err != nil {
 		return nil, err
@@ -220,6 +244,9 @@ func LoadSharedContext(ctx context.Context) (*LockedState, error) {
 func SaveLocked(st *State) error { return SaveLockedContext(context.Background(), st) }
 
 func SaveLockedContext(ctx context.Context, st *State) error {
+	if _, err := defaultPath(); err != nil {
+		return err
+	}
 	lk, err := lockContext(ctx)
 	if err != nil {
 		return err
@@ -231,6 +258,9 @@ func SaveLockedContext(ctx context.Context, st *State) error {
 // LoadFrom reads a state file from an arbitrary path (not DefaultPath).
 // If the file does not exist, it returns an empty-but-valid State ready for first use.
 func LoadFrom(path string) (*State, error) {
+	if path == "" {
+		return nil, fmt.Errorf("state path is empty")
+	}
 	data, err := os.ReadFile(path) // #nosec G304 -- LoadFrom intentionally reads an explicitly selected state file path.
 	if err != nil {
 		if os.IsNotExist(err) {

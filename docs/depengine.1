@@ -696,7 +696,9 @@ Base directory for the personal manifest. The default manifest path is
 .B XDG_CACHE_HOME
 Base directory for downloaded artifact cache entries. The cache is stored at
 \fB$XDG_CACHE_HOME/depengine/downloads\fR, falling back to
-\fB~/.cache/depengine/downloads\fR.
+\fB~/.cache/depengine/downloads\fR when the home directory is available. If
+neither location is available, depengine requires a validated per-user private
+fallback and reports a filesystem error when none can be resolved.
 .TP
 .B GITHUB_TOKEN, GH_TOKEN
 GitHub authentication token used for API resolution and private release-asset
@@ -719,7 +721,9 @@ Set to \fB1\fR to enable JSON output for the structured logger.
 .B XDG_STATE_HOME
 Base directory for the state file. The state file is stored at
 \fB$XDG_STATE_HOME/depengine/state.json\fR, falling back to
-\fB~/.local/state/depengine/state.json\fR.
+\fB~/.local/state/depengine/state.json\fR when the home directory is available.
+If neither location is available, depengine requires a validated per-user
+private fallback and reports a filesystem error when none can be resolved.
 .SH FILES
 .TP
 .B schema.toml

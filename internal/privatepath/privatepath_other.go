@@ -5,25 +5,22 @@ package privatepath
 import (
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
+	"strings"
 )
 
 func TempRootPath() string {
-	if cacheHome, err := os.UserCacheDir(); err == nil && cacheHome != "" {
-		return filepath.Join(cacheHome, "depengine", "temp")
-	}
-	current, err := user.Current()
-	if err != nil {
+	cacheHome, err := os.UserCacheDir()
+	if err != nil || cacheHome == "" {
 		return ""
 	}
-	return filepath.Join(os.TempDir(), "depengine-"+current.Uid)
+	return filepath.Join(cacheHome, "depengine", "temp")
 }
 
 func TempRoot() (string, error) {
 	path := TempRootPath()
 	if path == "" {
-		return "", fmt.Errorf("resolve current user for private temp directory")
+		return "", fmt.Errorf("resolve per-user cache directory")
 	}
 	if err := EnsurePrivateDir(path); err != nil {
 		return path, err
@@ -32,6 +29,9 @@ func TempRoot() (string, error) {
 }
 
 func EnsurePrivateDir(path string) error {
+	if path == "" {
+		return fmt.Errorf("private directory path is empty")
+	}
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		return err
 	}
@@ -47,10 +47,17 @@ func EnsurePrivateDir(path string) error {
 
 func IsPrivateDir(path string) bool {
 	info, err := os.Lstat(path)
-	return err == nil && info.IsDir()
+	root, rootErr := os.UserCacheDir()
+	return err == nil && info.IsDir() && rootErr == nil && belowRoot(root, path)
 }
 
 func IsPrivateFile(path string) bool {
 	info, err := os.Lstat(path)
-	return err == nil && info.Mode().IsRegular()
+	root, rootErr := os.UserCacheDir()
+	return err == nil && info.Mode().IsRegular() && rootErr == nil && belowRoot(root, path)
+}
+
+func belowRoot(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != "." && rel != ".." && !filepath.IsAbs(rel) && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

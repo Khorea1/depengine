@@ -101,28 +101,45 @@ func evict(dir string, maxBytes int64) int {
 }
 
 func ensurePrivateCacheDir(path string) error {
+	if path == "" {
+		return fmt.Errorf("cache directory path is empty")
+	}
 	root := privatepath.TempRootPath()
-	if rel, err := filepath.Rel(root, path); err == nil && rel != ".." && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		if _, err := privatepath.TempRoot(); err != nil {
-			return err
+	if root != "" {
+		if rel, err := filepath.Rel(root, path); err == nil && rel != ".." && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			if _, err := privatepath.TempRoot(); err != nil {
+				return err
+			}
 		}
 	}
 	return privatepath.EnsurePrivateDir(path)
 }
 
-// CacheDir returns the download cache directory, respecting XDG_CACHE_HOME.
-func CacheDir() string {
+func resolveCacheDir() (string, error) {
 	cacheHome := os.Getenv("XDG_CACHE_HOME")
 	if cacheHome == "" {
 		home, err := os.UserHomeDir()
 		if err == nil {
 			cacheHome = filepath.Join(home, ".cache")
 		} else {
-			root, _ := privatepath.TempRoot()
+			root, err := privatepath.TempRoot()
+			if err != nil {
+				return "", fmt.Errorf("resolve private download cache: %w", err)
+			}
 			cacheHome = filepath.Join(root, "cache")
 		}
 	}
-	return filepath.Join(cacheHome, "depengine", "downloads")
+	return filepath.Join(cacheHome, "depengine", "downloads"), nil
+}
+
+// CacheDir returns the download cache directory, respecting XDG_CACHE_HOME.
+// It returns an empty path if a required private fallback cannot be resolved.
+func CacheDir() string {
+	dir, err := resolveCacheDir()
+	if err != nil {
+		return ""
+	}
+	return dir
 }
 
 // key returns a hex-encoded SHA-256 hash of the URL, used as the cache filename.
@@ -131,9 +148,12 @@ func key(url string) string {
 	return fmt.Sprintf("%x", h)
 }
 
-// Path returns the full cache path for a given URL.
 func Path(url string) string {
-	return filepath.Join(CacheDir(), key(url))
+	dir := CacheDir()
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, key(url))
 }
 
 // Lookup returns the cached file path if a valid entry exists for url.
@@ -142,15 +162,21 @@ func Path(url string) string {
 // recently used.
 func Lookup(url string) string {
 	dir := CacheDir()
-	root := privatepath.TempRootPath()
-	if rel, err := filepath.Rel(root, dir); err == nil && rel != ".." && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !privatepath.IsPrivateDir(root) {
+	if dir == "" {
 		return ""
 	}
-	if !privatepath.IsPrivateDir(dir) {
-		return ""
+	root := privatepath.TempRootPath()
+	privateFallback := false
+	if root != "" {
+		if rel, err := filepath.Rel(root, dir); err == nil && rel != ".." && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			privateFallback = true
+			if !privatepath.IsPrivateDir(root) || !privatepath.IsPrivateDir(dir) {
+				return ""
+			}
+		}
 	}
 	p := filepath.Join(dir, key(url))
-	if !privatepath.IsPrivateFile(p) {
+	if privateFallback && !privatepath.IsPrivateFile(p) {
 		return ""
 	}
 	info, err := os.Lstat(p)
@@ -179,12 +205,14 @@ func isCacheEntryName(name string) bool {
 // different filesystems (cross-device rename), Store falls back to copy+remove.
 // Returns the path of the cached file.
 func Store(url, src string) (string, error) {
-	dir := CacheDir()
+	dir, err := resolveCacheDir()
+	if err != nil {
+		return "", err
+	}
 	if err := ensurePrivateCacheDir(dir); err != nil {
 		return "", fmt.Errorf("downloadcache: private cache dir: %w", err)
 	}
-
-	dst := Path(url)
+	dst := filepath.Join(dir, key(url))
 	now := time.Now()
 
 	// Try rename first (fast, atomic within the same filesystem).
@@ -250,8 +278,11 @@ func copyFileAtomic(src, dst string) error {
 // Remove deletes a single cache entry for the given URL. No error is returned
 // if the entry does not exist.
 func Remove(url string) error {
-	p := Path(url)
-	err := os.Remove(p)
+	dir, err := resolveCacheDir()
+	if err != nil {
+		return err
+	}
+	err = os.Remove(filepath.Join(dir, key(url)))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -261,7 +292,10 @@ func Remove(url string) error {
 // Clear removes all cached download files. It does not remove the directory
 // itself. Returns the number of files removed.
 func Clear() (int, error) {
-	dir := CacheDir()
+	dir, err := resolveCacheDir()
+	if err != nil {
+		return 0, err
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

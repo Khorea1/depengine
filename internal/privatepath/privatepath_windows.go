@@ -5,25 +5,24 @@ package privatepath
 import (
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
+	"strings"
 )
 
+// TempRootPath uses only the OS-provided per-user cache location. Windows
+// permissions on that location are inherited from the user's profile ACL.
 func TempRootPath() string {
-	if cacheHome, err := os.UserCacheDir(); err == nil && cacheHome != "" {
-		return filepath.Join(cacheHome, "depengine", "temp")
-	}
-	current, err := user.Current()
-	if err != nil {
+	cacheHome, err := os.UserCacheDir()
+	if err != nil || cacheHome == "" {
 		return ""
 	}
-	return filepath.Join(os.TempDir(), "depengine-"+current.Uid)
+	return filepath.Join(cacheHome, "depengine", "temp")
 }
 
 func TempRoot() (string, error) {
 	path := TempRootPath()
 	if path == "" {
-		return "", fmt.Errorf("resolve current user for private temp directory")
+		return "", fmt.Errorf("resolve per-user cache directory")
 	}
 	if err := EnsurePrivateDir(path); err != nil {
 		return path, err
@@ -45,12 +44,21 @@ func EnsurePrivateDir(path string) error {
 	return nil
 }
 
+// IsPrivateDir and IsPrivateFile trust only paths rooted in the OS-provided
+// per-user cache directory, whose ACL is managed by the user's profile.
 func IsPrivateDir(path string) bool {
 	info, err := os.Lstat(path)
-	return err == nil && info.IsDir()
+	root, rootErr := os.UserCacheDir()
+	return err == nil && info.IsDir() && rootErr == nil && belowRoot(root, path)
 }
 
 func IsPrivateFile(path string) bool {
 	info, err := os.Lstat(path)
-	return err == nil && info.Mode().IsRegular()
+	root, rootErr := os.UserCacheDir()
+	return err == nil && info.Mode().IsRegular() && rootErr == nil && belowRoot(root, path)
+}
+
+func belowRoot(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != "." && rel != ".." && !filepath.IsAbs(rel) && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

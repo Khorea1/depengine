@@ -6,13 +6,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
 // TempRootPath returns the stable per-user directory name inside the system
 // temp directory without creating it.
 func TempRootPath() string {
-	return filepath.Join(os.TempDir(), fmt.Sprintf("depengine-%d", os.Getuid()))
+	tmp := os.TempDir()
+	if tmp == "" || !filepath.IsAbs(tmp) {
+		return ""
+	}
+	return filepath.Join(tmp, fmt.Sprintf("depengine-%d", os.Getuid()))
 }
 
 // TempRoot creates and validates the stable per-user directory used when the
@@ -25,12 +30,38 @@ func TempRoot() (string, error) {
 	return path, nil
 }
 
-// EnsurePrivateDir creates a directory and enforces owner-only access, but
-// never repairs a directory owned by another user or a symlink.
+// EnsurePrivateDir creates and validates a private directory. For fallback
+// paths below TempRootPath it validates every component to reject symlinked
+// or untrusted ancestors.
 func EnsurePrivateDir(path string) error {
+	if path == "" {
+		return fmt.Errorf("private directory path is empty")
+	}
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		return err
 	}
+	root := TempRootPath()
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return ensurePrivateComponent(path)
+	}
+	current := root
+	if err := ensurePrivateComponent(current); err != nil {
+		return err
+	}
+	if rel == "." {
+		return nil
+	}
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		current = filepath.Join(current, part)
+		if err := ensurePrivateComponent(current); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensurePrivateComponent(path string) error {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return err

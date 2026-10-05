@@ -9,9 +9,14 @@ import (
 	"testing"
 )
 
-func TestLookupRejectsInsecureCacheDirectoryAndEntry(t *testing.T) {
-	cacheHome := t.TempDir()
-	t.Setenv("XDG_CACHE_HOME", cacheHome)
+func TestLookupRejectsInsecureFallbackCacheDirectoryAndEntry(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CACHE_HOME", "")
+	t.Setenv("TMPDIR", tmp)
+	if _, err := os.UserHomeDir(); err == nil {
+		t.Skip("OS resolves a home directory independently of HOME")
+	}
 	url := "https://example.test/private-cache-check"
 	path := Path(url)
 	dir := filepath.Dir(path)

@@ -316,6 +316,11 @@ For non-frozen installs using a missing or v1 lockfile, depengine resolves and v
 | `DEPENGINE_TRACE_ID` | Trace ID passed to subprocesses |
 | `DEPENGINE_LOG_JSON` | Set to `1` for JSON logs |
 
+When no home or XDG base is available, state and download-cache operations use
+a checked per-user private fallback (Unix system-temp root; OS-provided per-user
+cache location on Windows and other platforms). If that location is unavailable
+or cannot be validated, the operation reports a runtime filesystem error rather
+than writing to a shared temporary path or the current working directory.
 Secret-bearing environment variables referenced through typed `secret_ref`
 configuration are resolved only for the operation that owns them; see
 [security](security.md) for credential-scoping rules.
