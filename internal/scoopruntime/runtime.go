@@ -63,13 +63,13 @@ func CheckInstallCapabilities(caps Capabilities, target InstallTarget) error {
 		return fmt.Errorf("scoop runtime does not support exact versions")
 	}
 	if target.Bucket != "" && !caps.BucketSelection {
-		return fmt.Errorf("Scoop runtime does not support bucket selection")
+		return fmt.Errorf("scoop runtime does not support bucket selection")
 	}
 	if target.Scope != "" && !caps.Scope {
-		return fmt.Errorf("Scoop runtime does not support package scope")
+		return fmt.Errorf("scoop runtime does not support package scope")
 	}
 	if target.Architecture != "" && !caps.Architecture {
-		return fmt.Errorf("Scoop runtime does not support architecture selection")
+		return fmt.Errorf("scoop runtime does not support architecture selection")
 	}
 	return nil
 }
@@ -77,7 +77,7 @@ func CheckInstallCapabilities(caps Capabilities, target InstallTarget) error {
 // CheckRemoveCapabilities validates removal and every scoped identity selector before mutation.
 func CheckRemoveCapabilities(caps Capabilities, target InstallTarget) error {
 	if !caps.Removal {
-		return fmt.Errorf("Scoop runtime does not support removal")
+		return fmt.Errorf("scoop runtime does not support removal")
 	}
 	return CheckInstallCapabilities(caps, target)
 }
@@ -85,10 +85,10 @@ func CheckRemoveCapabilities(caps Capabilities, target InstallTarget) error {
 // CheckBucketAddCapabilities gates custom-location and revision-aware bucket mutation.
 func CheckBucketAddCapabilities(caps Capabilities, location string, revisionRequired bool) error {
 	if location != "" && !caps.BucketSelection {
-		return fmt.Errorf("Scoop runtime does not support bucket location selection")
+		return fmt.Errorf("scoop runtime does not support bucket location selection")
 	}
 	if (location != "" || revisionRequired) && !caps.BucketRevisionLocation {
-		return fmt.Errorf("Scoop runtime does not support bucket location or revision verification")
+		return fmt.Errorf("scoop runtime does not support bucket location or revision verification")
 	}
 	return nil
 }
@@ -96,7 +96,7 @@ func CheckBucketAddCapabilities(caps Capabilities, location string, revisionRequ
 // CheckBucketRemoveCapabilities validates the runtime before bucket removal.
 func CheckBucketRemoveCapabilities(caps Capabilities) error {
 	if !caps.Removal {
-		return fmt.Errorf("Scoop runtime does not support removal")
+		return fmt.Errorf("scoop runtime does not support removal")
 	}
 	return nil
 }
