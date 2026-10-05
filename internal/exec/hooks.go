@@ -79,7 +79,7 @@ func (ex *Executor) runLifecycleHooks(ctx context.Context, toolName string, reso
 	ran := false
 	for _, hook := range hooks {
 		if condition := configHookCondition(hook.When); condition != nil && !condition.Match(ex.facts) {
-			ex.outputf("    %s: skipped (when condition not met)\n", phase)
+			ex.outputf("    %s: %s: skipped (when condition not met)\n", toolName, phase)
 			ex.logDebug(ctx, phase, "tool", toolName, "hook", hook.ID, "status", "skip_when")
 			continue
 		}
@@ -88,21 +88,21 @@ func (ex *Executor) runLifecycleHooks(ctx context.Context, toolName string, reso
 		}
 		command := strings.Join(hook.Operation.Command, " ")
 		if ex.dryRun {
-			ex.outputf("    %s: would run %s\n", phase, command)
+			ex.outputf("    %s: %s: would run %s\n", toolName, phase, command)
 			ex.logDebug(ctx, phase, "tool", toolName, "hook", hook.ID, "cmd", command, "status", "would_run")
 			continue
 		}
-		ex.outputf("    %s: %s\n", phase, command)
+		ex.outputf("    %s: %s: %s\n", toolName, phase, command)
 		ex.logDebug(ctx, phase, "tool", toolName, "hook", hook.ID, "cmd", command)
 		result := ex.mutationRunner(toolName, phase).Run(ctx, hook.Operation.Command[0], hook.Operation.Command[1:]...)
 		var hookErr error
 		if result.Err != nil {
 			hookErr = result.Err
-			ex.outputf("    ⚠  %s: %s (failed)\n", phase, result.Err)
+			ex.outputf("    ⚠  %s: %s: %s (failed)\n", toolName, phase, result.Err)
 			ex.logWarn(ctx, phase, "tool", toolName, "hook", hook.ID, "error", result.Err.Error())
 		} else if result.ExitCode != 0 {
 			hookErr = fmt.Errorf("%s exited %d", phase, result.ExitCode)
-			ex.outputf("    ⚠  %s: exit %d (failed)\n", phase, result.ExitCode)
+			ex.outputf("    ⚠  %s: %s: exit %d (failed)\n", toolName, phase, result.ExitCode)
 			ex.logWarn(ctx, phase, "tool", toolName, "hook", hook.ID, "exit_code", result.ExitCode)
 		}
 		if hookErr != nil {

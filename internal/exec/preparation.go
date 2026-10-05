@@ -181,7 +181,7 @@ func (ex *Executor) prepareCandidateSources(ctx context.Context, manager *source
 	preparationPlan := *prepared.preparationPlan
 	if ex.dryRun {
 		for _, configured := range missing {
-			ex.outputf("    prepare: would add source %s %s\n", configured.Kind, configured.Name)
+			ex.outputf("    %s: prepare: would add source %s %s\n", toolName, configured.Kind, configured.Name)
 		}
 		return prepared, nil
 	}

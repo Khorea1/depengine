@@ -85,9 +85,6 @@ func TestExecutorDryRunProjectsPreparationWithoutPersistingJournal(t *testing.T)
 		t.Fatalf("commit phase = %#v, want install operation", intent.Preparation.Commit)
 	}
 	gotOutput := output.String()
-	if !strings.Contains(gotOutput, "prepare: would add source brew-tap vendor/tools") {
-		t.Fatalf("dry-run output missing prepare phase:\n%s", gotOutput)
-	}
 	if !strings.Contains(gotOutput, "commit: would install via cargo") {
 		t.Fatalf("dry-run output missing commit phase:\n%s", gotOutput)
 	}

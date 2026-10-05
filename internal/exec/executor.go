@@ -4,6 +4,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -27,8 +28,9 @@ type Executor struct {
 	adapters           map[string]AdapterV2 // per-instance adapter registry
 	logger             *slog.Logger         // structured logger; nil = no structured output
 	outWriter          io.Writer            // user-facing formatted output; defaults to os.Stderr
-	maxJobs            int                  // max concurrent tools; 0 or 1 = sequential (default)
-	allowArbitraryCode bool                 // if false, warn about dangerous methods (build scripts, etc.)
+	outputMu           sync.Mutex
+	maxJobs            int  // max concurrent tools; 0 or 1 = sequential (default)
+	allowArbitraryCode bool // if false, warn about dangerous methods (build scripts, etc.)
 
 	batchTimeout time.Duration // per-batch timeout, scaled by package count
 

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1395,6 +1397,25 @@ func TestExecutorDryRun(t *testing.T) {
 	}
 }
 
+func hasAttributedOutputLine(output, tool, phase string, details ...string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		if !strings.Contains(line, tool) || !strings.Contains(line, phase) {
+			continue
+		}
+		matched := true
+		for _, detail := range details {
+			if !strings.Contains(line, detail) {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+
 func TestExecutorDryRunHooksArePlanOnly(t *testing.T) {
 	preSentinel := filepath.Join(t.TempDir(), "pre-created")
 	postSentinel := filepath.Join(t.TempDir(), "post-created")
@@ -1430,8 +1451,8 @@ func TestExecutorDryRunHooksArePlanOnly(t *testing.T) {
 		}
 	}
 	got := output.String()
-	if !strings.Contains(got, "pre-install: would run") || !strings.Contains(got, "post-install: would run") {
-		t.Fatalf("dry-run output must render planned hooks, got:\n%s", got)
+	if !hasAttributedOutputLine(got, "tool1", "pre-install", "would run") || !hasAttributedOutputLine(got, "tool1", "post-install", "would run") {
+		t.Fatalf("dry-run output must attribute planned hooks to their tool and phase, got:\n%s", got)
 	}
 }
 
@@ -1801,6 +1822,82 @@ func TestExecutorParallelExecution(t *testing.T) {
 	}
 	if len(installed) != 3 {
 		t.Fatalf("expected 3 installs, got %d: %v", len(installed), installed)
+	}
+}
+
+type concurrentOutputProbe struct {
+	active  atomic.Int32
+	overlap atomic.Bool
+}
+
+func (p *concurrentOutputProbe) Write(data []byte) (int, error) {
+	if p.active.Add(1) != 1 {
+		p.overlap.Store(true)
+	}
+	time.Sleep(time.Millisecond)
+	p.active.Add(-1)
+	return len(data), nil
+}
+
+func TestExecutorParallelOutputIsSerializedAndAttributed(t *testing.T) {
+	var probe concurrentOutputProbe
+	ex := New()
+	WithOutput(&probe)(ex)
+
+	const writers = 24
+	start := make(chan struct{})
+	var done sync.WaitGroup
+	done.Add(writers)
+	for i := 0; i < writers; i++ {
+		go func(i int) {
+			defer done.Done()
+			<-start
+			ex.outputf("worker-%d: progress\n", i)
+		}(i)
+	}
+	close(start)
+	done.Wait()
+	if probe.overlap.Load() {
+		t.Fatal("concurrent outputf calls overlapped writes to the configured writer")
+	}
+
+	var output bytes.Buffer
+	mock := &testMockAdapter{
+		kindValue:     "native",
+		availableFunc: func() bool { return true },
+		checkFunc:     func(string) bool { return false },
+		installFunc:   func(string) error { return nil },
+	}
+	parallel := New()
+	WithRunner(&run.FakeRunner{ExitCode: 0, Delay: time.Millisecond})(parallel)
+	WithAdapters(mock)(parallel)
+	WithMaxJobs(3)(parallel)
+	WithAllowArbitraryCode()(parallel)
+	WithDryRun()(parallel)
+	WithOutput(&output)(parallel)
+	schema := mockSchema("alpha", "beta", "gamma")
+	for name, tool := range schema.Tools {
+		tool.PreInstall = []config.Hook{{Run: []string{"echo", "preparing"}}}
+		tool.Methods[0].Sources = []config.Source{{Kind: "brew-tap", Name: "controlled/" + name}}
+	}
+	report, err := parallel.Execute(context.Background(), schema, "")
+	if err != nil {
+		t.Fatalf("parallel Execute() error = %v", err)
+	}
+	if report.WouldInstall != 3 {
+		t.Fatalf("parallel planned installs = %d, want 3", report.WouldInstall)
+	}
+	got := output.String()
+	for _, name := range []string{"alpha", "beta", "gamma"} {
+		if !hasAttributedOutputLine(got, name, "pre-install", "would run") {
+			t.Errorf("parallel hook output missing tool and phase attribution for %q:\n%s", name, got)
+		}
+		if !hasAttributedOutputLine(got, name, "prepare", "brew-tap", "controlled/"+name) {
+			t.Errorf("parallel source output missing tool attribution for %q:\n%s", name, got)
+		}
+	}
+	if len(report.Tools) != 3 || report.Tools[0].Tool != "alpha" || report.Tools[1].Tool != "beta" || report.Tools[2].Tool != "gamma" {
+		t.Fatalf("final report order = %#v, want alpha, beta, gamma", report.Tools)
 	}
 }
 

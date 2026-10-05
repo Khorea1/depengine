@@ -545,6 +545,8 @@ func (ex *Executor) logWarn(ctx context.Context, msg string, attrs ...any) {
 
 // outputf formats user-facing output (status lines, sync messages, etc.).
 func (ex *Executor) outputf(format string, args ...any) {
+	ex.outputMu.Lock()
+	defer ex.outputMu.Unlock()
 	if ex.outWriter != nil {
 		_, _ = fmt.Fprintf(ex.outWriter, format, args...)
 	}
