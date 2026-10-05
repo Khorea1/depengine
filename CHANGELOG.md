@@ -23,3 +23,4 @@
 - Non-frozen installs resolve legacy lock identity before execution, fail if resolution fails, and persist that same preflight identity instead of resolving mutable selectors again after installation.
 - State-tracked upgrades persist exact resource claims with replacement intent, atomically commit verified installed state and ownership while retaining the replacement WAL for hook recovery, and persist a boundary before the after-upgrade hook so uncertain hook outcomes are never blindly replayed.
 - GitHub release assets retain declared checksum and detached-signature metadata through resolution and fail verification before extraction or installation mutates the payload.
+- When the home directory is unavailable, state and download cache use a per-user private temp root instead of shared `/tmp` paths. Cache lookups reject directories or entries with untrusted ownership/permissions; stored entries are owner-only.

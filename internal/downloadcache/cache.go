@@ -25,10 +25,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/Khorea1/depengine/internal/privatepath"
 )
 
 // defaultCacheMaxBytes is the default maximum total size of the download
@@ -99,13 +101,13 @@ func evict(dir string, maxBytes int64) int {
 }
 
 func ensurePrivateCacheDir(path string) error {
-	if err := os.MkdirAll(path, 0o700); err != nil {
-		return err
+	root := privatepath.TempRootPath()
+	if rel, err := filepath.Rel(root, path); err == nil && rel != ".." && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		if _, err := privatepath.TempRoot(); err != nil {
+			return err
+		}
 	}
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	return os.Chmod(path, 0o700) // #nosec G302 -- This is a directory permission; cached artifacts are intentionally owner-only.
+	return privatepath.EnsurePrivateDir(path)
 }
 
 // CacheDir returns the download cache directory, respecting XDG_CACHE_HOME.
@@ -113,11 +115,12 @@ func CacheDir() string {
 	cacheHome := os.Getenv("XDG_CACHE_HOME")
 	if cacheHome == "" {
 		home, err := os.UserHomeDir()
-		if err != nil {
-			// Last resort fallback — should never happen.
-			home = "/tmp"
+		if err == nil {
+			cacheHome = filepath.Join(home, ".cache")
+		} else {
+			root, _ := privatepath.TempRoot()
+			cacheHome = filepath.Join(root, "cache")
 		}
-		cacheHome = filepath.Join(home, ".cache")
 	}
 	return filepath.Join(cacheHome, "depengine", "downloads")
 }
@@ -138,7 +141,18 @@ func Path(url string) string {
 // refreshes the entry's modification time so eviction treats it as
 // recently used.
 func Lookup(url string) string {
-	p := Path(url)
+	dir := CacheDir()
+	root := privatepath.TempRootPath()
+	if rel, err := filepath.Rel(root, dir); err == nil && rel != ".." && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !privatepath.IsPrivateDir(root) {
+		return ""
+	}
+	if !privatepath.IsPrivateDir(dir) {
+		return ""
+	}
+	p := filepath.Join(dir, key(url))
+	if !privatepath.IsPrivateFile(p) {
+		return ""
+	}
 	info, err := os.Lstat(p)
 	if err != nil || !info.Mode().IsRegular() {
 		return ""
@@ -175,6 +189,10 @@ func Store(url, src string) (string, error) {
 
 	// Try rename first (fast, atomic within the same filesystem).
 	if err := os.Rename(src, dst); err == nil {
+		if err := os.Chmod(dst, 0o600); err != nil {
+			_ = os.Remove(dst)
+			return "", fmt.Errorf("downloadcache: secure cache entry: %w", err)
+		}
 		_ = os.Chtimes(dst, now, now) // best-effort: mark the fresh entry as most recently used
 		evict(dir, maxCacheBytes())
 		return dst, nil
@@ -186,6 +204,10 @@ func Store(url, src string) (string, error) {
 	// that later looks like a cache hit.
 	if err := copyFileAtomic(src, dst); err != nil {
 		return "", fmt.Errorf("downloadcache: store: %w", err)
+	}
+	if err := os.Chmod(dst, 0o600); err != nil {
+		_ = os.Remove(dst)
+		return "", fmt.Errorf("downloadcache: secure cache entry: %w", err)
 	}
 	_ = os.Remove(src)            // best-effort cleanup
 	_ = os.Chtimes(dst, now, now) // best-effort: mark the fresh entry as most recently used

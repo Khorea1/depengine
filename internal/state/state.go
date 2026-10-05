@@ -1,7 +1,8 @@
 // Package state manages the depengine state file — a JSON record of every
 // tool that has been installed (or already was present) through the engine.
-// It lives at ~/.local/state/depengine/state.json and is accessed with
-// file-level locking to prevent concurrent-install races.
+// It lives at ~/.local/state/depengine/state.json when the home directory
+// is available, otherwise under a verified per-user private temp root.
+// Access is guarded by file-level locking to prevent concurrent-install races.
 package state
 
 import (
@@ -14,10 +15,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
+	"strings"
 
 	"github.com/Khorea1/depengine/internal/formatversion"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/privatepath"
 )
 
 // CurrentVersion is the on-disk state format emitted by this build. Callers
@@ -74,28 +76,36 @@ type ToolState struct {
 	Config        map[string]any `json:"config"`
 }
 
-// DefaultPath returns the platform-appropriate state file path.
-// Uses XDG_STATE_HOME when set, falling back to ~/.local/state/depengine/state.json.
 const privateDirMode = 0o700
 
+// DefaultPath returns the platform-appropriate state file path.
+// Uses XDG_STATE_HOME when set, otherwise ~/.local/state when home is
+// available and a private per-user temp root when it is not.
 func ensurePrivateDir(path string) error {
-	if err := os.MkdirAll(path, privateDirMode); err != nil {
-		return err
+	root := privatepath.TempRootPath()
+	if pathWithin(root, path) {
+		if _, err := privatepath.TempRoot(); err != nil {
+			return err
+		}
 	}
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	return os.Chmod(path, privateDirMode) // #nosec G302 -- This is a directory permission; state directories are intentionally owner-only.
+	return privatepath.EnsurePrivateDir(path)
+}
+
+func pathWithin(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
 func DefaultPath() string {
 	xdgState := os.Getenv("XDG_STATE_HOME")
 	if xdgState == "" {
 		home, err := os.UserHomeDir()
-		if err != nil {
-			home = "/tmp"
+		if err == nil {
+			xdgState = filepath.Join(home, ".local", "state")
+		} else {
+			root, _ := privatepath.TempRoot()
+			xdgState = filepath.Join(root, "state")
 		}
-		xdgState = filepath.Join(home, ".local", "state")
 	}
 	return filepath.Join(xdgState, "depengine", "state.json")
 }
@@ -103,7 +113,13 @@ func DefaultPath() string {
 // Load reads the state file from DefaultPath. LoadFrom creates missing state
 // directly at the current format version and rejects unknown on-disk versions.
 func Load() (*State, error) {
-	return LoadFrom(DefaultPath())
+	path := DefaultPath()
+	if pathWithin(privatepath.TempRootPath(), path) {
+		if err := ensurePrivateDir(filepath.Dir(path)); err != nil {
+			return nil, fmt.Errorf("state private directory: %w", err)
+		}
+	}
+	return LoadFrom(path)
 }
 
 // Save writes the state to DefaultPath atomically: write to a temp file,
