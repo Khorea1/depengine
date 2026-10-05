@@ -431,6 +431,9 @@ Every other field (`checksum`, `checksum_url`, `checksum_file_format`,
 `strip_components`, `entrypoints`, `link_dir`) has
 the exact same meaning as on `http` — once the asset is resolved, `github`
 downloads/verifies/extracts it exactly like `http` would.
+For `repo` + `asset`, checksum and detached-signature metadata remains attached to
+the resolved asset and is verified before extraction or installation mutates the
+destination.
 For a direct asset, `binary` is the installed filename. For an archive,
 `binary` retains its existing payload-check meaning; use `entrypoints` for
 stable commands whose files live below the archive root.

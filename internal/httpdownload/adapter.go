@@ -57,7 +57,15 @@ func resolveDownloadPlan(ctx context.Context, rn run.Runner, mc *config.MethodCa
 		resolved.Identity.Version = version
 	}
 	if len(resolved.Artifacts) == 0 {
-		resolved.Artifacts = []plan.Artifact{{URL: resolvedURL}}
+		artifact := plan.Artifact{URL: resolvedURL}
+		if mc != nil {
+			artifact.Checksum = stringConfig(mc, "checksum")
+			artifact.ChecksumURL = stringConfig(mc, "checksum_url")
+			artifact.ChecksumFileFormat = stringConfig(mc, "checksum_file_format")
+			artifact.SignatureURL = stringConfig(mc, "signature_url")
+			artifact.SigningKey = stringConfig(mc, "signing_key")
+		}
+		resolved.Artifacts = []plan.Artifact{artifact}
 	} else {
 		resolved.Artifacts[0].URL = resolvedURL
 	}

@@ -11,3 +11,4 @@
 - Profiled v2 updates refresh retained entries when method or source metadata is missing or drifted, parse source keys without truncating slash-containing tool names, and build projections through `lock.NewUniversal`.
 - SBOM version selection prefers installed state, then a matching-method immutable v2 projection entry, then an explicit v1 pin. Malformed or unavailable lock data remains best-effort; unknown versions export as `0.0.0`.
 - State-tracked upgrades persist exact resource claims with replacement intent, atomically commit verified installed state and ownership while retaining the replacement WAL for hook recovery, and persist a boundary before the after-upgrade hook so uncertain hook outcomes are never blindly replayed.
+- GitHub release assets retain declared checksum and detached-signature metadata through resolution and fail verification before extraction or installation mutates the payload.
