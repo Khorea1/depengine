@@ -239,10 +239,8 @@ func TestRemoveGoTool(t *testing.T) {
 	}
 }
 
-// TestRemoveHTTPTool removes a tool installed via http: now that HTTPAdapter
-// implements Remover, the command exits 0 and removes the state entry.
-// The extract_to points to a /bin-suffixed temp dir, so Remove deletes
-// only the target binary (extract_to/<tool>), not the dir itself.
+// TestRemoveHTTPToolFailsClosedWithoutOwnership verifies that HTTP removal
+// without persisted payload ownership preserves both the binary and state entry.
 func TestRemoveHTTPToolFailsClosedWithoutOwnership(t *testing.T) {
 	stateHome := t.TempDir()
 	homeDir := t.TempDir()
@@ -265,11 +263,15 @@ func TestRemoveHTTPToolFailsClosedWithoutOwnership(t *testing.T) {
 		[]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir},
 		"httptool",
 	)
-	if code == 0 || !strings.Contains(out, "installation ownership state is missing") {
-		t.Fatalf("remove without recorded ownership = (%d, %s), want ownership error", code, out)
+	if code == 0 {
+		t.Fatalf("remove without recorded ownership succeeded: %s", out)
 	}
-	if _, err := os.Stat(binPath); err != nil {
-		t.Fatalf("unowned binary was changed or removed: %v", err)
+	got, err := os.ReadFile(binPath) // #nosec G304 -- path is a test-owned file under t.TempDir().
+	if err != nil {
+		t.Fatalf("unowned binary was removed: %v", err)
+	}
+	if string(got) != "fake" {
+		t.Fatalf("unowned binary bytes = %q, want %q", got, "fake")
 	}
 	st := loadTestState(t, stateHome)
 	if _, ok := st.Tools["httptool"]; !ok {
