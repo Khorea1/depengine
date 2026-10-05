@@ -552,7 +552,7 @@ func TestRollbackPayloadReportsNonElevatedRemovalAndRestoreFailures(t *testing.T
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := os.Chmod(locked, 0o700); err != nil {
+		if err := os.Chmod(locked, 0o700); err != nil { // #nosec G302 -- restore owner write permission only to clean up the deliberately locked test fixture.
 			t.Errorf("restore locked fixture permissions: %v", err)
 		}
 	}()
