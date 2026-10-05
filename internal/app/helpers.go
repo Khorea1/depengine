@@ -3,7 +3,6 @@ package app
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -341,28 +340,17 @@ func loadLockfile(schemaPath string, s *config.Schema, frozen bool, lg *slog.Log
 	return lk, nil
 }
 
-// saveLegacyInstallLock resolves version pins, merges with any existing lock, and persists.
-func saveLegacyInstallLock(ctx context.Context, s *config.Schema, lockPath string, oldLock *lock.Lock, lg *slog.Logger, diagnose bool, rn run.Runner) {
-	newLock, err := lock.ResolveLegacyV1(ctx, s, rn)
-	if err != nil {
-		lg.Warn("resolve lock", "error", err)
+// saveResolvedLegacyInstallLock persists the identity resolved before execution.
+func saveResolvedLegacyInstallLock(lockPath string, resolved *lock.Lock, lg *slog.Logger, diagnose bool) {
+	if resolved == nil {
 		return
 	}
-	if newLock == nil {
-		return
-	}
-	merged, err := mergeInstallLock(oldLock, newLock)
-	if err != nil {
-		lg.Warn("refusing to rewrite lock identity during install", "error", err, "hint", "run 'depengine update' to accept the change")
-		return
-	}
-	newLock = merged
-	if err := lock.Save(lockPath, newLock); err != nil {
+	if err := lock.Save(lockPath, resolved); err != nil {
 		lg.Warn("save lock", "error", err)
 		return
 	}
 	if diagnose {
-		lg.Debug("lock saved", "path", lockPath, "pinned", len(newLock.Tools))
+		lg.Debug("lock saved", "path", lockPath, "pinned", len(resolved.Tools))
 	}
 }
 

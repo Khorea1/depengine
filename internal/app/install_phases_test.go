@@ -230,7 +230,7 @@ func TestResolveInstallLockCompletesExistingGitPinBeforeExecution(t *testing.T) 
 		t.Fatalf("resolved pin = %+v, want branch:main at %s", pin, commit)
 	}
 
-	saveLegacyInstallLock(context.Background(), schema, lockPath, resolved, log.Default, false, runner)
+	saveResolvedLegacyInstallLock(lockPath, resolved, log.Default, false)
 	gitCalls := 0
 	for _, call := range runner.Calls {
 		if call.Name == "git" {
@@ -267,7 +267,7 @@ func TestSaveLockfilePreservesOmittedMethodIdentity(t *testing.T) {
 		SourceHash:  map[string]string{"omitted/http/0": "preserve-source"},
 	}
 
-	saveLegacyInstallLock(context.Background(), schema, lockPath, old, log.Default, false, nil)
+	saveResolvedLegacyInstallLock(lockPath, resolvedLegacyForSave(t, schema, old), log.Default, false)
 
 	got, err := lock.Load(lockPath)
 	if err != nil {
@@ -304,7 +304,7 @@ func TestSaveLockfileDoesNotBlessAddedSourceIdentity(t *testing.T) {
 		Kind: "brew-tap", Name: "vendor/tools", URL: "https://example.test/vendor/tools.git",
 	}}
 
-	saveLegacyInstallLock(context.Background(), schema, lockPath, old, log.Default, false, nil)
+	saveResolvedLegacyInstallLock(lockPath, resolvedLegacyForSave(t, schema, old), log.Default, false)
 
 	got, err := lock.Load(lockPath)
 	if err != nil {
@@ -341,7 +341,7 @@ func TestSaveLockfilePreservesExistingCompositePinFields(t *testing.T) {
 		MethodsHash: map[string]string{"tool": "old-hash"},
 	}
 
-	saveLegacyInstallLock(context.Background(), schema, lockPath, old, log.Default, false, nil)
+	saveResolvedLegacyInstallLock(lockPath, resolvedLegacyForSave(t, schema, old), log.Default, false)
 
 	got, err := lock.Load(lockPath)
 	if err != nil {
@@ -416,21 +416,12 @@ func buildV2InstallTestLock(t *testing.T, tools map[string]lock.ToolPin) *lock.L
 
 func TestSaveLockfilePreservesV2Projection(t *testing.T) {
 	lockPath := filepath.Join(t.TempDir(), "depengine.lock")
-	schema := &config.Schema{Tools: map[string]*config.Tool{
-		"demo": {
-			Name: "demo",
-			Methods: []*config.MethodCandidate{{
-				Kind:   "http",
-				Config: map[string]any{"url": "https://example.test/demo.tar.gz", "checksum": "sha256:" + strings.Repeat("a", 64)},
-			}},
-		},
-	}}
 	old := buildV2InstallTestLock(t, map[string]lock.ToolPin{
 		"demo/http/0": {Checksum: "sha256:" + strings.Repeat("a", 64)},
 	})
 	wantProjection := old.UniversalProjection
 
-	saveLegacyInstallLock(context.Background(), schema, lockPath, old, log.Default, false, nil)
+	saveResolvedLegacyInstallLock(lockPath, old, log.Default, false)
 
 	got, err := lock.Load(lockPath)
 	if err != nil {
@@ -449,15 +440,6 @@ func TestSaveLockfilePreservesV2ProjectionForPartialScope(t *testing.T) {
 	// Schema covers only the in-scope tool, simulating --only/--profile
 	// filtering. The pre-existing v2 projection (and its pins) for the
 	// out-of-scope tool must survive the install save.
-	schema := &config.Schema{Tools: map[string]*config.Tool{
-		"in": {
-			Name: "in",
-			Methods: []*config.MethodCandidate{{
-				Kind:   "http",
-				Config: map[string]any{"url": "https://example.test/in.tar.gz", "checksum": "sha256:" + strings.Repeat("b", 64)},
-			}},
-		},
-	}}
 	old := buildV2InstallTestLock(t, map[string]lock.ToolPin{
 		"in/http/0":  {Checksum: "sha256:" + strings.Repeat("b", 64)},
 		"out/http/0": {Latest: "v9.9.9"},
@@ -465,7 +447,7 @@ func TestSaveLockfilePreservesV2ProjectionForPartialScope(t *testing.T) {
 	old.MethodsHash["out"] = "preserve-out"
 	wantProjection := old.UniversalProjection
 
-	saveLegacyInstallLock(context.Background(), schema, lockPath, old, log.Default, false, nil)
+	saveResolvedLegacyInstallLock(lockPath, old, log.Default, false)
 
 	got, err := lock.Load(lockPath)
 	if err != nil {

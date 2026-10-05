@@ -259,20 +259,20 @@ func resolveInstallLock(ctx context.Context, p installPlan, s *config.Schema, lg
 			return nil, exitWithCode(2)
 		}
 	}
-	if !p.frozen && (hasLatestPlaceholders(s) || hasLockableMutableSelectors(s)) {
-		lg.Info("resolving missing lockable selectors")
+	if !p.frozen {
+		lg.Info("resolving legacy install lock before execution")
 		fresh, err := lock.ResolveLegacyV1(ctx, s, rn)
 		if err != nil {
-			lg.Warn("could not auto-resolve lockable selectors", "error", err, "hint", "run 'depengine update' manually")
-		} else if fresh != nil {
-			merged, mergeErr := mergeInstallLock(lk, fresh)
-			if mergeErr != nil {
-				lg.Error("lockfile identity changed; refusing unpinned install", "error", mergeErr)
-				return nil, exitWithCode(2)
-			}
-			lk = merged
-			lock.ApplyLegacyV1(s, lk)
+			lg.Error("could not resolve legacy install lock", "error", err, "hint", "run 'depengine update' manually")
+			return nil, exitWithCode(2)
 		}
+		merged, err := mergeInstallLock(lk, fresh)
+		if err != nil {
+			lg.Error("lockfile identity changed; refusing unpinned install", "error", err)
+			return nil, exitWithCode(2)
+		}
+		lk = merged
+		lock.ApplyLegacyV1(s, lk)
 	}
 	return lk, nil
 }
@@ -328,7 +328,7 @@ func installExitForReport(report *exec.ExecReport) error {
 func finishInstallRun(ctx context.Context, report *exec.ExecReport, p installPlan, s *config.Schema, lockPath string, lk *lock.Lock, lg *slog.Logger, cs *cliStyle) error {
 	if !p.dryRun {
 		if !p.frozen && (lk == nil || lk.Version != lock.CurrentVersion) {
-			saveLegacyInstallLock(ctx, s, lockPath, lk, lg, p.diagnose, run.OSExecRunner{})
+			saveResolvedLegacyInstallLock(lockPath, lk, lg, p.diagnose)
 		}
 		// Reconcile recorded versions with the lock: backfill versions the
 		// adapter could not determine (e.g. {latest} pins baked into URLs)

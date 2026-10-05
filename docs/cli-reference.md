@@ -286,6 +286,9 @@ Aliases: `explain`.
 
 <!-- END GENERATED CLI REFERENCE -->
 
+`status` and `sbom` accept a missing `depengine.lock` as normal, but fail with a runtime error when an existing lockfile cannot be read or is invalid. `status` still degrades to state-only reporting when the schema cannot be loaded, provided its lockfile is readable.
+
+For non-frozen installs using a missing or v1 lockfile, depengine resolves and validates the legacy lock before executing tools. If resolution fails, installation stops; the successful preflight identity is the one saved after execution.
 ## Exit codes
 
 | Code | Meaning |
