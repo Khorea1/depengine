@@ -185,7 +185,7 @@ func TestChecksumSidecarDoesNotReceiveArtifactBearer(t *testing.T) {
 
 	ctx := exec.WithHTTPArtifactBearer(context.Background(), credential)
 	adapter := NewHTTPAdapter()
-	runner := &run.FakeRunner{LookPaths: map[string]bool{"curl": false, "wget": false}}
+	runner := &run.FakeRunner{}
 	_, err := adapter.fetchChecksumFromURL(ctx, runner, server.URL+"/checksum", "artifact", &checksumConfig{algorithm: "sha256", format: "raw"}, map[string]any{})
 	if err != nil {
 		t.Fatalf("fetch checksum sidecar: %v", err)
@@ -208,7 +208,7 @@ func TestChecksumSidecarUsesOnlyItsOwnBearerForExplicitURL(t *testing.T) {
 	ctx := exec.WithHTTPBearer(context.Background(), exec.HTTPBearerArtifact, artifactCredential)
 	ctx = exec.WithHTTPBearer(ctx, exec.HTTPBearerChecksum, checksumCredential)
 	adapter := NewHTTPAdapter()
-	runner := &run.FakeRunner{LookPaths: map[string]bool{"curl": false, "wget": false}}
+	runner := &run.FakeRunner{}
 	checks := []struct {
 		url        string
 		configured string
@@ -250,7 +250,7 @@ func TestSignatureSidecarUsesOnlyItsOwnBearer(t *testing.T) {
 	ctx := exec.WithHTTPBearer(context.Background(), exec.HTTPBearerArtifact, artifactCredential)
 	ctx = exec.WithHTTPBearer(ctx, exec.HTTPBearerSignature, signatureCredential)
 	adapter := NewHTTPAdapter()
-	runner := &run.FakeRunner{LookPaths: map[string]bool{"curl": false, "wget": false, "gpg": true}}
+	runner := &run.FakeRunner{LookPaths: map[string]bool{"gpg": true}}
 	config := map[string]any{"signature_url": server.URL + "/signature"}
 	_, err := adapter.fetchChecksumFromURL(ctx, runner, server.URL+"/checksum", "artifact", &checksumConfig{algorithm: "sha256", format: "raw"}, config)
 	if err == nil {

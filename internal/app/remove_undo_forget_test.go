@@ -243,26 +243,21 @@ func TestRemoveGoTool(t *testing.T) {
 // implements Remover, the command exits 0 and removes the state entry.
 // The extract_to points to a /bin-suffixed temp dir, so Remove deletes
 // only the target binary (extract_to/<tool>), not the dir itself.
-func TestRemoveHTTPTool(t *testing.T) {
+func TestRemoveHTTPToolFailsClosedWithoutOwnership(t *testing.T) {
 	stateHome := t.TempDir()
 	homeDir := t.TempDir()
-
-	// Create a /bin-suffixed dir so isSharedDir returns true.
 	sharedDir := filepath.Join(t.TempDir(), "bin")
 	if err := os.MkdirAll(sharedDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	// Plant the target binary.
 	binPath := filepath.Join(sharedDir, "httptool")
 	if err := os.WriteFile(binPath, []byte("fake"), 0600); err != nil {
 		t.Fatal(err)
 	}
 
 	httpState := state.ToolState{
-		Method:      "http",
-		MethodKind:  "http",
-		InstalledAt: "2026-08-01T00:00:00Z",
-		Config:      map[string]any{"url": "https://example.invalid/tool.tar.gz", "extract_to": sharedDir},
+		Method: "http", MethodKind: "http", InstalledAt: "2026-08-01T00:00:00Z",
+		Config: map[string]any{"url": "https://example.invalid/tool.tar.gz", "extract_to": sharedDir},
 	}
 	writeTestState(t, stateHome, map[string]state.ToolState{"httptool": httpState})
 
@@ -270,21 +265,15 @@ func TestRemoveHTTPTool(t *testing.T) {
 		[]string{"XDG_STATE_HOME=" + stateHome, "HOME=" + homeDir},
 		"httptool",
 	)
-
-	if code != 0 {
-		t.Fatalf("remove httptool exit = %d, want 0 (output: %s)", code, out)
+	if code == 0 || !strings.Contains(out, "installation ownership state is missing") {
+		t.Fatalf("remove without recorded ownership = (%d, %s), want ownership error", code, out)
 	}
-	if !strings.Contains(out, "removed") {
-		t.Fatalf("output should mention removal, got: %s", out)
+	if _, err := os.Stat(binPath); err != nil {
+		t.Fatalf("unowned binary was changed or removed: %v", err)
 	}
-	// Binary should be gone from shared dir.
-	if _, err := os.Stat(binPath); !os.IsNotExist(err) {
-		t.Fatalf("binary %s should be removed (err=%v)", binPath, err)
-	}
-	// State entry should be cleaned.
 	st := loadTestState(t, stateHome)
-	if _, ok := st.Tools["httptool"]; ok {
-		t.Fatalf("state should not contain httptool after remove: %+v", st.Tools)
+	if _, ok := st.Tools["httptool"]; !ok {
+		t.Fatalf("state entry should remain after refused removal: %+v", st.Tools)
 	}
 }
 
