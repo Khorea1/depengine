@@ -1091,6 +1091,9 @@ methods remain available. Only `method_only` removes the remainder.
 Placeholders are `{name}` tokens. Platform-fact placeholders are expanded in
 string fields before installation; adapter-owned placeholders are interpreted
 later by the adapter that owns their field.
+Native `{arch}` and `{os}` facts expand in every eligible method-config string,
+including `repo` + `asset` methods and their paths or nested configuration.
+GitHub's `{arch_any}` and `{os_any}` tokens remain intact for asset matching.
 
 - **Unknown name** — a typo like `{archh}` isn't in the table below, so it's
   left untouched by `Expand` and flagged as `W_UNKNOWN_PLACEHOLDER`. This

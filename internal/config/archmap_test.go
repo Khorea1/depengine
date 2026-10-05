@@ -166,6 +166,44 @@ fastfetch = { github = { repo = "fastfetch-cli/fastfetch", asset = "fastfetch-{o
 	}
 }
 
+func TestArchMap_GithubMethodExpandsNativePlaceholders(t *testing.T) {
+	p := writeSchema(t, `
+[defaults]
+manager = "native"
+arch_map = { aarch64 = "arm64" }
+
+[tools]
+fastfetch = { github = { repo = "owner/{os}/{arch}", asset = "app-{os_any}-{arch_any}-{os}-{arch}", checksum = "sha256:auto", checksum_url = "https://checks.example/{os}/{arch}/SUMS", signature_url = "https://checks.example/{os}/{arch}/SUMS.sig", signing_key = "{os}-{arch}-release-key", extract_to = "/opt/{os}/{arch}", link_dir = "/usr/local/{os}/{arch}", entrypoints = { fastfetch = "bin/{os}/{arch}" } } }
+`)
+	s, err := ParseProjectSchema(p, aarch64Map())
+	if err != nil {
+		t.Fatalf("ParseSchema: %v", err)
+	}
+	mc := s.Tools["fastfetch"].Methods[0]
+	for key, want := range map[string]string{
+		"repo":          "owner/macos/arm64",
+		"asset":         "app-{os_any}-{arch_any}-macos-arm64",
+		"checksum_url":  "https://checks.example/macos/arm64/SUMS",
+		"signature_url": "https://checks.example/macos/arm64/SUMS.sig",
+		"signing_key":   "macos-arm64-release-key",
+		"extract_to":    "/opt/macos/arm64",
+		"link_dir":      "/usr/local/macos/arm64",
+		"_current_arch": "aarch64",
+		"_current_os":   "darwin",
+	} {
+		if got := mc.Config[key]; got != want {
+			t.Errorf("config[%q] = %v, want %q", key, got, want)
+		}
+	}
+	entrypoints, ok := mc.Config["entrypoints"].(map[string]any)
+	if !ok {
+		t.Fatalf("entrypoints = %T, want map[string]any", mc.Config["entrypoints"])
+	}
+	if got, want := entrypoints["fastfetch"], "bin/macos/arm64"; got != want {
+		t.Errorf("entrypoints.fastfetch = %v, want %q", got, want)
+	}
+}
+
 func TestArchMap_PreAndPostInstallUseRawValueNotAlias(t *testing.T) {
 	// arch_map/os_map are scoped to [defaults] and method Config blocks —
 	// PreInstall/PostInstall are tool-level command strings and always get

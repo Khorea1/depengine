@@ -195,7 +195,7 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 	// known (defaults parsed, tools/methods built with their own ArchMap/
 	// OSMap hoisted out), resolve them per-recipient:
 	//
-	//   - "github" method candidates: unchanged from before this feature.
+	//   - "github" method candidates keep raw arch/os matching metadata and
 	//     The adapter needs the machine's raw arch/os facts (uname-style
 	//     "x86_64", GOOS-style "linux"/"darwin"/...) to resolve
 	//     {arch_any}/{os_any} against the real release-asset list at
@@ -205,8 +205,11 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 	//     we stash the two raw values it needs directly on its own method
 	//     candidates here. github does its own arch/os resolution via
 	//     regex over every known synonym (ghrelease.archSynonyms/
-	//     osSynonyms), so it is deliberately excluded from the arch_map/
-	//     os_map mechanism below, which only ever picks one spelling.
+	//     osSynonyms). Keep these raw matching facts separate from native
+	//     {arch}/{os} substitutions: every eligible config field below still
+	//     expands through its effective method > defaults > builtin alias.
+	//     {arch_any}/{os_any} are absent from that expansion map and remain
+	//     literal for adapter-side matching.
 	//   - tool hooks: command arguments, not
 	//     part of any method's Config, so arch_map/os_map (scoped to
 	//     [defaults] and method blocks) doesn't apply to them — they just
@@ -237,7 +240,6 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 			if _, hasRepo := mc.Config["repo"]; hasRepo {
 				mc.Config["_current_arch"] = m["arch"]
 				mc.Config["_current_os"] = m["os"]
-				continue
 			}
 			if !hasArch && !hasOS {
 				continue
