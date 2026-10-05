@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Drain external TAR decoder stdout after the end marker within the existing bounded, context-aware trailer policy.
 - Report global tool and method timeout failures with the correct timeout scope and configured duration.
 - Replacement recovery now reconstructs the configured candidate intent and pins it to the persisted immutable plan before observing or mutating the host; retries resolve method-scoped removal credentials and use the same timeout, environment omission, and elevation safeguards.
 - Upgrade replacement now requires and clones the discovery-time tracked state, then compares it with durable state under lock before writing replacement WAL or removing the old installation. The previous method is resolved by `config.FindMethodCandidate` using its exact configured kind and label.

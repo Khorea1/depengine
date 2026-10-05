@@ -366,14 +366,20 @@ func extractExternalTar(ctx context.Context, src, dest, ext string, rn run.Runne
 		if retErr != nil {
 			_ = pipe.Abort()
 		}
-		if closeErr := pipe.Reader.Close(); retErr == nil && closeErr != nil {
-			retErr = fmt.Errorf("tar: close %s decoder stdout: %w", name, closeErr)
-		}
 	}()
 
+	// extractTarStream consumes and bounds bytes after TAR logical EOF too;
+	// only then is it safe to wait for the decoder without risking a full pipe.
 	extractErr := extractTarStream(ctx, pipe.Reader, dest)
 	if extractErr != nil {
 		_ = pipe.Abort()
+	}
+	var closeErr error
+	if extractErr == nil {
+		closeErr = pipe.Reader.Close()
+		if closeErr != nil {
+			_ = pipe.Abort()
+		}
 	}
 	result := pipe.Wait()
 	if extractErr != nil {
@@ -382,9 +388,11 @@ func extractExternalTar(ctx context.Context, src, dest, ext string, rn run.Runne
 	if err := run.CheckResult(result, name+" decoder"); err != nil {
 		return fmt.Errorf("tar: %w", err)
 	}
+	if closeErr != nil {
+		return fmt.Errorf("tar: close %s decoder stdout: %w", name, closeErr)
+	}
 	return nil
 }
-
 func extractTarStream(ctx context.Context, r io.Reader, dest string) (retErr error) {
 	m, err := openRootedArchiveMaterializer(dest)
 	if err != nil {

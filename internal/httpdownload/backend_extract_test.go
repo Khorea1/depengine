@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Khorea1/depengine/internal/run"
 )
@@ -127,6 +128,97 @@ func TestExtractExternalTarViaStreamingDecoder(t *testing.T) {
 				t.Fatalf("extracted content = %q, want binary", data)
 			}
 		})
+	}
+}
+
+// installFakeXZ installs a real child-process stand-in for the xz decoder.
+func installFakeXZ(t *testing.T, script string) {
+	t.Helper()
+	binDir := filepath.Join(t.TempDir(), "bin")
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "xz"), []byte("#!/bin/sh\n"+script+"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func fakeDecoderTar(t *testing.T, trailing int) string {
+	t.Helper()
+	payload := plainTarBytes(t, []tarEntry{{
+		header: tar.Header{Name: "tool", Typeflag: tar.TypeReg, Mode: 0o644},
+		body:   []byte("content"),
+	}})
+	output := make([]byte, len(payload)+trailing)
+	copy(output, payload)
+	path := filepath.Join(t.TempDir(), "decoder-output")
+	if err := os.WriteFile(path, output, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestExternalTarDecoderDrainsPastTarEOF(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell decoder fixture is Unix-only")
+	}
+	installFakeXZ(t, "cat \"$4\"")
+	archive := fakeDecoderTar(t, 2<<20) // Larger than typical OS pipe capacity.
+	dest := filepath.Join(t.TempDir(), "dest")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := Extract(ctx, archive, dest, ".tar.xz", run.OSExecRunner{}, false, ""); err != nil {
+		t.Fatalf("Extract() with trailing decoder output: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "tool"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "content" {
+		t.Fatalf("extracted content = %q, want content", data)
+	}
+}
+
+func TestExternalTarDecoderDrainPreservesExitError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell decoder fixture is Unix-only")
+	}
+	installFakeXZ(t, "cat \"$4\"; exit 7")
+	err := Extract(context.Background(), fakeDecoderTar(t, 0), filepath.Join(t.TempDir(), "dest"), ".tar.xz", run.OSExecRunner{}, false, "")
+	if err == nil || !strings.Contains(err.Error(), "xz decoder") {
+		t.Fatalf("Extract() error = %v, want decoder exit error", err)
+	}
+}
+
+func TestExternalTarDecoderDrainHonorsCancellation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell decoder fixture is Unix-only")
+	}
+	installFakeXZ(t, "cat \"$4\"; sleep 10")
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	err := Extract(ctx, fakeDecoderTar(t, 0), filepath.Join(t.TempDir(), "dest"), ".tar.xz", run.OSExecRunner{}, false, "")
+	if err == nil || !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Fatalf("Extract() error = %v, want cancellation error", err)
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("canceled decoder cleanup took %s, want under 3s", elapsed)
+	}
+}
+
+func TestExternalTarDecoderBoundsTrailingOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell decoder fixture is Unix-only")
+	}
+	installFakeXZ(t, "cat \"$4\"")
+	archive := fakeDecoderTar(t, int(maxTarTrailingBytes+1))
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	err := Extract(ctx, archive, filepath.Join(t.TempDir(), "dest"), ".tar.xz", run.OSExecRunner{}, false, "")
+	if err == nil || !strings.Contains(err.Error(), "trailing data exceeds") {
+		t.Fatalf("Extract() error = %v, want trailing-output limit error", err)
 	}
 }
 
