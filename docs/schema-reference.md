@@ -304,9 +304,12 @@ when authenticated GitHub release API resolution is required.
 | `scope` | no | Portable installation scope: `"user"` (default for user placement under XDG) or `"system"`. When set, supplies platform-native install and link defaults (`~/.local/share/depengine/tools/<tool>` + `~/.local/bin` for user scope, `/opt/depengine/tools/<tool>` + `/usr/local/bin` for system scope) without needing Unix paths in manifests. Explicit `extract_to`/`link_dir` override independently. |
 | `sudo_required` | no | Boolean, default is **path-derived**: `false` when `extract_to` is inside the user's home (e.g. `~/.local/share/fonts`), `true` for system paths (e.g. the `/usr/local/bin` default). Set explicitly to override. |
 Archives are extracted into private staging, validated, then committed as one
-owned payload. `Check` verifies payload files and launchers directly; `Remove`
-deletes only declared launchers and the owned payload. `.msi`, `.exe`, `.pkg`
-and `.dmg` are rejected by `http` instead of being mistaken for binaries.
+owned payload. Elevated commits normalize the payload root to authority-owned
+uid/gid 0 with mode 0755 so it is traversable by other users. This changes only
+the root's metadata; inner files and directories retain their archive-derived
+modes. `Check` verifies payload files and launchers directly; `Remove` deletes only
+declared launchers and the owned payload. `.msi`, `.exe`, `.pkg` and `.dmg` are rejected
+by `http` instead of being mistaken for binaries.
 
 Do not embed credentials in HTTP(S) URLs (for example,
 `https://token@example.com/file`). depengine rejects credential-bearing URLs so

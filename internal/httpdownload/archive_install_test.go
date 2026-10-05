@@ -16,21 +16,6 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-type recordingElevationRunner struct {
-	calls []run.FakeCall
-}
-
-func (r *recordingElevationRunner) Run(ctx context.Context, name string, args ...string) run.Result {
-	r.calls = append(r.calls, run.FakeCall{Name: name, Args: append([]string(nil), args...)})
-	if name == "sudo" {
-		if len(args) == 0 {
-			return run.Result{ExitCode: 1}
-		}
-		name, args = args[0], args[1:]
-	}
-	return (run.OSExecRunner{}).Run(ctx, name, args...)
-}
-
 func TestInstallArchiveElevatesPayloadAndLinkIndependently(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX archive and launcher assertion")
@@ -77,9 +62,25 @@ func TestInstallArchiveElevatesPayloadAndLinkIndependently(t *testing.T) {
 			}
 			run.OverrideElevation("sudo")
 			defer run.OverrideElevation("")
-			rn := &recordingElevationRunner{}
+			rn := &scriptedArchiveRunner{}
 			if err := installArchive(context.Background(), archive, ".tar.gz", &config.Tool{Name: "demo"}, mc, rn); err != nil {
 				t.Fatalf("installArchive() error = %v", err)
+			}
+			if !tc.payloadInHome {
+				info, err := os.Stat(dest)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if info.Mode().Perm() != 0o755 {
+					t.Fatalf("elevated payload root mode = %04o, want 0755", info.Mode().Perm())
+				}
+				info, err = os.Stat(filepath.Join(dest, "bin", "demo"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if info.Mode().Perm() != 0o755 {
+					t.Fatalf("elevated payload member mode = %04o, want preserved 0755", info.Mode().Perm())
+				}
 			}
 
 			gotElevatedLn := false
@@ -171,6 +172,15 @@ func TestInstallArchiveStripEntrypointCheckRemove(t *testing.T) {
 			ext := "." + format
 			if err := installArchive(context.Background(), archive, ext, tool, mc, run.OSExecRunner{}); err != nil {
 				t.Fatal(err)
+			}
+			if format == "tar.gz" {
+				info, err := os.Stat(filepath.Join(dest, "bin", "nvim"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if info.Mode().Perm() != 0o755 {
+					t.Fatalf("installed executable mode = %v, want 0755", info.Mode().Perm())
+				}
 			}
 			adapter := NewHTTPAdapter()
 			if !adapter.Check(context.Background(), run.OSExecRunner{}, tool, mc) {
@@ -403,5 +413,214 @@ func TestHTTPRejectsAllPlatformInstallerArtifacts(t *testing.T) {
 				t.Fatalf("expected %s rejection", ext)
 			}
 		})
+	}
+}
+
+type scriptedArchiveRunner struct {
+	calls []run.FakeCall
+	fail  map[string]int
+	skip  map[string]int
+}
+
+func (r *scriptedArchiveRunner) Run(ctx context.Context, name string, args ...string) run.Result {
+	r.calls = append(r.calls, run.FakeCall{Name: name, Args: append([]string(nil), args...)})
+	command, commandArgs := name, args
+	if name == "sudo" {
+		if len(args) == 0 {
+			return run.Result{ExitCode: 1, Stderr: []byte("missing elevated command")}
+		}
+		command, commandArgs = args[0], args[1:]
+	}
+	if r.skip[command] > 0 {
+		r.skip[command]--
+	} else if r.fail[command] > 0 {
+		r.fail[command]--
+		return run.Result{ExitCode: 1, Stderr: []byte("injected " + command + " failure")}
+	}
+	if command == "chown" && len(commandArgs) == 3 && commandArgs[0] == "0:0" && commandArgs[1] == "--" {
+		// Exercise ownership mutation on isolated payloads without requiring host root.
+		if err := os.Chown(commandArgs[2], os.Getuid(), os.Getgid()); err != nil {
+			return run.Result{ExitCode: 1, Err: err}
+		}
+		return run.Result{}
+	}
+	return (run.OSExecRunner{}).Run(ctx, command, commandArgs...)
+}
+
+func TestCommitElevatedPayloadNormalizesOnlyPayloadRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX elevated payload metadata")
+	}
+	ctx := context.Background()
+	root := t.TempDir()
+	dest := filepath.Join(root, "payload")
+	stage := filepath.Join(root, "stage")
+	if err := os.MkdirAll(filepath.Join(stage, "bin"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stage, "bin", "demo"), []byte("payload"), 0o751); err != nil {
+		t.Fatal(err)
+	}
+	rn := &scriptedArchiveRunner{}
+	run.OverrideElevation("sudo")
+	defer run.OverrideElevation("")
+	if err := commitPayload(ctx, rn, stage, dest, dest+".depengine-backup", true); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Fatalf("payload root mode = %04o, want 0755", info.Mode().Perm())
+	}
+	info, err = os.Stat(filepath.Join(dest, "bin", "demo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o751 {
+		t.Fatalf("payload member mode = %04o, want preserved 0751", info.Mode().Perm())
+	}
+	var commands []string
+	for _, call := range rn.calls {
+		for _, arg := range call.Args {
+			if arg == "mv" || arg == "chown" || arg == "chmod" {
+				commands = append(commands, arg)
+				break
+			}
+		}
+	}
+	want := []string{"mv", "chown", "chmod"}
+	if strings.Join(commands, ",") != strings.Join(want, ",") {
+		t.Fatalf("commit commands = %v, want %v", commands, want)
+	}
+	var ownerCommand, modeCommand string
+	for _, call := range rn.calls {
+		joined := strings.Join(call.Args, " ")
+		if strings.Contains(joined, "chown") {
+			ownerCommand = joined
+		}
+		if strings.Contains(joined, "chmod") {
+			modeCommand = joined
+		}
+	}
+	if !strings.Contains(ownerCommand, "chown 0:0 -- "+dest) {
+		t.Fatalf("owner normalization command = %q", ownerCommand)
+	}
+	if !strings.Contains(modeCommand, "chmod 0755 -- "+dest) {
+		t.Fatalf("mode normalization command = %q", modeCommand)
+	}
+}
+
+func TestRollbackPayloadReportsElevatedRemovalAndRestoreFailures(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX elevated rollback")
+	}
+	root := t.TempDir()
+	dest, backup := filepath.Join(root, "payload"), filepath.Join(root, "payload.depengine-backup")
+	if err := os.Mkdir(backup, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	rn := &scriptedArchiveRunner{fail: map[string]int{"rm": 1, "mv": 1}}
+	run.OverrideElevation("sudo")
+	defer run.OverrideElevation("")
+	err := rollbackPayload(context.Background(), rn, dest, backup, true)
+	if err == nil || !strings.Contains(err.Error(), "remove owned path") || !strings.Contains(err.Error(), "restore payload") {
+		t.Fatalf("rollback error = %v, want removal and restore failures", err)
+	}
+}
+
+func TestRollbackPayloadReportsNonElevatedRemovalAndRestoreFailures(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission failure injection")
+	}
+	root := t.TempDir()
+	dest, backup := filepath.Join(root, "payload"), filepath.Join(root, "payload.depengine-backup")
+	locked := filepath.Join(dest, "locked")
+	if err := os.MkdirAll(locked, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(locked, "keep"), []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(backup, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(locked, 0o700)
+	err := rollbackPayload(context.Background(), &scriptedArchiveRunner{}, dest, backup, false)
+	if err == nil || !strings.Contains(err.Error(), "remove owned path") || !strings.Contains(err.Error(), "restore payload") {
+		t.Fatalf("rollback error = %v, want removal and restore failures", err)
+	}
+}
+
+func TestInstallArchiveReportsNonElevatedBackupCleanupFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX backup cleanup failure injection")
+	}
+	root := t.TempDir()
+	dest := filepath.Join(root, "payload")
+	locked := filepath.Join(dest, "locked")
+	if err := os.MkdirAll(locked, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(locked, "old"), []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	backupLocked := filepath.Join(dest+".depengine-backup", "locked")
+	t.Cleanup(func() {
+		_ = os.Chmod(locked, 0o700)
+		_ = os.Chmod(backupLocked, 0o700)
+	})
+	archive := filepath.Join(root, "demo.tar.gz")
+	writeTestArchive(t, archive, "tar.gz", "bin/demo", []byte("new"))
+	mc := &config.MethodCandidate{Config: map[string]any{"extract_to": dest, "sudo_required": false}}
+	err := installArchive(context.Background(), archive, ".tar.gz", &config.Tool{Name: "demo"}, mc, &scriptedArchiveRunner{})
+	if err == nil || !strings.Contains(err.Error(), "remove backup") {
+		t.Fatalf("install error = %v, want backup cleanup failure", err)
+	}
+}
+
+func TestInstallArchiveReportsElevatedBackupCleanupFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX elevated backup cleanup failure")
+	}
+	root := t.TempDir()
+	archive := filepath.Join(root, "demo.tar.gz")
+	writeTestArchive(t, archive, "tar.gz", "bin/demo", []byte("new"))
+	dest := filepath.Join(root, "payload")
+	rn := &scriptedArchiveRunner{fail: map[string]int{"rm": 1}, skip: map[string]int{"rm": 1}}
+	run.OverrideElevation("sudo")
+	defer run.OverrideElevation("")
+	mc := &config.MethodCandidate{Config: map[string]any{"extract_to": dest, "sudo_required": true}}
+	err := installArchive(context.Background(), archive, ".tar.gz", &config.Tool{Name: "demo"}, mc, rn)
+	if err == nil || !strings.Contains(err.Error(), "remove backup") {
+		t.Fatalf("install error = %v, want elevated backup cleanup failure", err)
+	}
+}
+
+func TestInstallArchiveJoinsElevatedLauncherRollbackAndCleanupFailures(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX elevated launcher transaction")
+	}
+	root := t.TempDir()
+	archive := filepath.Join(root, "demo.tar.gz")
+	writeTestArchive(t, archive, "tar.gz", "bin/demo", []byte("new"))
+	dest := filepath.Join(root, "payload")
+	rn := &scriptedArchiveRunner{fail: map[string]int{"ln": 1, "rm": 10}, skip: map[string]int{"ln": 1, "rm": 1}}
+	run.OverrideElevation("sudo")
+	defer run.OverrideElevation("")
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"extract_to": dest, "link_dir": filepath.Join(root, "bin"), "sudo_required": true,
+		"entrypoints": map[string]any{"demo": "bin/demo", "demo2": "bin/demo"},
+	}}
+	err := installArchive(context.Background(), archive, ".tar.gz", &config.Tool{Name: "demo"}, mc, rn)
+	if err == nil || !strings.Contains(err.Error(), "create symlink") || !strings.Contains(err.Error(), "remove owned path") {
+		t.Fatalf("install error = %v, want launcher and rollback/cleanup failures", err)
 	}
 }

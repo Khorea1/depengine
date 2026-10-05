@@ -2,6 +2,7 @@ package httpdownload
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -98,10 +99,14 @@ func installArchive(ctx context.Context, src, ext string, tool *config.Tool, mc 
 	committed := false
 	defer func() {
 		if committed {
-			_ = os.RemoveAll(raw)
-			_ = os.RemoveAll(payload)
+			if err := os.RemoveAll(raw); err != nil {
+				retErr = errors.Join(retErr, fmt.Errorf("archive: remove raw staging %s: %w", raw, err))
+			}
+			if err := os.RemoveAll(payload); err != nil {
+				retErr = errors.Join(retErr, fmt.Errorf("archive: remove payload staging %s: %w", payload, err))
+			}
 		}
-		if retErr != nil {
+		if retErr != nil && !committed {
 			retErr = fmt.Errorf("%w (staging preserved at %s and %s)", retErr, raw, payload)
 		}
 	}()
@@ -145,65 +150,116 @@ func installArchive(ctx context.Context, src, ext string, tool *config.Tool, mc 
 	linkElevated := defaultSudoRequired(linkDir) && os.Geteuid() != 0
 	created, err := createLaunchers(ctx, rn, dest, linkDir, points, linkElevated)
 	if err != nil {
-		rollbackPayload(ctx, rn, dest, backup, payloadElevated)
+		errs := []error{err, rollbackPayload(ctx, rn, dest, backup, payloadElevated)}
 		for _, path := range created {
-			removeOwned(ctx, rn, path, linkElevated)
+			errs = append(errs, removeOwned(ctx, rn, path, linkElevated))
 		}
-		return err
+		return errors.Join(errs...)
 	}
-	removeOwned(ctx, rn, backup, payloadElevated)
+	committed = true
+	if err := removeOwned(ctx, rn, backup, payloadElevated); err != nil {
+		return fmt.Errorf("archive: remove backup: %w", err)
+	}
 	if len(points) > 0 && !pathContains(linkDir) {
 		fmt.Fprintf(os.Stderr, "depengine: add %s to PATH to use %s\n", linkDir, tool.Name)
 	}
-	committed = true
 	return nil
 }
 
 func commitPayload(ctx context.Context, rn run.Runner, payload, dest, backup string, elevated bool) error {
 	if !elevated {
-		_ = os.RemoveAll(backup)
+		if err := os.RemoveAll(backup); err != nil {
+			return fmt.Errorf("archive: clear backup: %w", err)
+		}
+		hadPayload := false
 		if _, err := os.Stat(dest); err == nil {
 			if err := os.Rename(dest, backup); err != nil {
 				return fmt.Errorf("archive: backup existing payload: %w", err)
 			}
+			hadPayload = true
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("archive: inspect destination: %w", err)
 		}
 		if err := os.Rename(payload, dest); err != nil {
-			_ = os.Rename(backup, dest)
-			return fmt.Errorf("archive: commit payload: %w", err)
+			primary := fmt.Errorf("archive: commit payload: %w", err)
+			if hadPayload {
+				primary = errors.Join(primary, rollbackPayload(ctx, rn, dest, backup, false))
+			}
+			return primary
 		}
 		return nil
 	}
 	if err := run.CheckResult(run.RunElevated(ctx, rn, "mkdir", "-p", filepath.Dir(dest)), "archive: create destination parent"); err != nil {
 		return err
 	}
-	_ = run.CheckResult(run.RunElevated(ctx, rn, "rm", "-rf", "--", backup), "archive: clear backup")
+	if err := run.CheckResult(run.RunElevated(ctx, rn, "rm", "-rf", "--", backup), "archive: clear backup"); err != nil {
+		return err
+	}
+	hadPayload := false
 	if _, err := os.Stat(dest); err == nil {
 		if err := run.CheckResult(run.RunElevated(ctx, rn, "mv", "--", dest, backup), "archive: backup payload"); err != nil {
 			return err
 		}
+		hadPayload = true
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("archive: inspect destination: %w", err)
 	}
 	if err := run.CheckResult(run.RunElevated(ctx, rn, "mv", "--", payload, dest), "archive: commit payload"); err != nil {
-		_ = run.CheckResult(run.RunElevated(ctx, rn, "mv", "--", backup, dest), "archive: restore payload")
-		return err
+		primary := err
+		if hadPayload {
+			primary = errors.Join(primary, rollbackPayload(ctx, rn, dest, backup, true))
+		}
+		return primary
+	}
+	// Staging roots are private and user-owned. Normalize only the payload root
+	// at the privilege boundary; archive-member modes remain untouched.
+	if err := run.CheckResult(run.RunElevated(ctx, rn, "chown", "0:0", "--", dest), "archive: normalize payload owner"); err != nil {
+		return errors.Join(err, rollbackCommittedPayload(ctx, rn, dest, backup, hadPayload, true))
+	}
+	if err := run.CheckResult(run.RunElevated(ctx, rn, "chmod", "0755", "--", dest), "archive: normalize payload mode"); err != nil {
+		return errors.Join(err, rollbackCommittedPayload(ctx, rn, dest, backup, hadPayload, true))
 	}
 	return nil
 }
 
-func rollbackPayload(ctx context.Context, rn run.Runner, dest, backup string, elevated bool) {
-	removeOwned(ctx, rn, dest, elevated)
-	if elevated {
-		_ = run.CheckResult(run.RunElevated(ctx, rn, "mv", "--", backup, dest), "archive: restore payload")
-	} else {
-		_ = os.Rename(backup, dest)
+func rollbackPayload(ctx context.Context, rn run.Runner, dest, backup string, elevated bool) error {
+	removeErr := removeOwned(ctx, rn, dest, elevated)
+	if _, err := os.Lstat(backup); errors.Is(err, os.ErrNotExist) {
+		return removeErr
+	} else if err != nil {
+		return errors.Join(removeErr, fmt.Errorf("archive: inspect backup for restore: %w", err))
 	}
+	var restoreErr error
+	if elevated {
+		restoreErr = run.CheckResult(run.RunElevated(ctx, rn, "mv", "--", backup, dest), "archive: restore payload")
+	} else if err := os.Rename(backup, dest); err != nil {
+		restoreErr = fmt.Errorf("archive: restore payload: %w", err)
+	}
+	return errors.Join(removeErr, restoreErr)
 }
 
-func removeOwned(ctx context.Context, rn run.Runner, path string, elevated bool) {
-	if elevated {
-		_ = run.CheckResult(run.RunElevated(ctx, rn, "rm", "-rf", "--", path), "archive: remove owned path")
-		return
+func rollbackCommittedPayload(ctx context.Context, rn run.Runner, dest, backup string, hadPayload, elevated bool) error {
+	removeErr := removeOwned(ctx, rn, dest, elevated)
+	if !hadPayload {
+		return removeErr
 	}
-	_ = os.RemoveAll(path)
+	var restoreErr error
+	if elevated {
+		restoreErr = run.CheckResult(run.RunElevated(ctx, rn, "mv", "--", backup, dest), "archive: restore payload")
+	} else if err := os.Rename(backup, dest); err != nil {
+		restoreErr = fmt.Errorf("archive: restore payload: %w", err)
+	}
+	return errors.Join(removeErr, restoreErr)
+}
+
+func removeOwned(ctx context.Context, rn run.Runner, path string, elevated bool) error {
+	if elevated {
+		return run.CheckResult(run.RunElevated(ctx, rn, "rm", "-rf", "--", path), "archive: remove owned path")
+	}
+	if err := os.RemoveAll(path); err != nil {
+		return fmt.Errorf("archive: remove owned path %s: %w", path, err)
+	}
+	return nil
 }
 
 func pathContains(dir string) bool {
