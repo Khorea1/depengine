@@ -229,7 +229,15 @@ func TestHTTPScopeSystemRemoveElevatesPayloadDeletion(t *testing.T) {
 		"url":                  "https://example.test/demo.tar.gz",
 		ownedArchivePayloadKey: true,
 	}}
-	if err := NewHTTPAdapter().Remove(context.Background(), fr, &config.Tool{Name: "demo"}, mc); err != nil {
+	tool := &config.Tool{Name: "demo"}
+	owner, err := expectedArchiveOwnership(tool, mc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeArchiveOwnership(payload, owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewHTTPAdapter().Remove(context.Background(), fr, tool, mc); err != nil {
 		t.Fatalf("Remove() error = %v", err)
 	}
 	if len(fr.Calls) != 1 || fr.Calls[0].Name != "sudo" || len(fr.Calls[0].Args) < 2 || fr.Calls[0].Args[0] != "rm" || fr.Calls[0].Args[1] != "-rf" {
