@@ -87,6 +87,7 @@ func (ex *Executor) replaceCandidate(ac *candidateAttempt, result *ToolResult, r
 	} else {
 		oldMethodValue.Config = nil
 	}
+	oldMethodValue.OwnsArchivePayload = expectedPrevious.ArchivePayloadOwned()
 	oldMethod := &oldMethodValue
 	oldAdapter := ex.LookupAdapter(oldKind)
 	if oldAdapter == nil || !oldAdapter.CanRemove() {
@@ -159,6 +160,7 @@ func (ex *Executor) replaceCandidate(ac *candidateAttempt, result *ToolResult, r
 	result.Config = configForResolvedTarget(ac.method, ac.resolved)
 	result.PlanIntent = ac.reported
 	result.ResourceUses = append([]plan.ResourceUse(nil), ac.resources...)
+	result.OwnsArchivePayload = ac.method.OwnsArchivePayload
 	ex.prepareStateMetadata(locked.State())
 	toolState := ex.toolStateForResult(ac.toolCtx, ac.tool, *result, previous, true, !ac.tool.DependencyOnly)
 	if ac.resolved.Identity.Version != "" {
