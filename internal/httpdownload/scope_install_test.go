@@ -222,13 +222,15 @@ func TestHTTPScopeSystemRemoveElevatesPayloadDeletion(t *testing.T) {
 	run.OverrideElevation("sudo")
 	defer run.OverrideElevation("")
 	fr := &run.FakeRunner{}
-	mc := &config.MethodCandidate{Config: map[string]any{
-		"scope":                "system",
-		"extract_to":           payload,
-		"link_dir":             links,
-		"url":                  "https://example.test/demo.tar.gz",
-		ownedArchivePayloadKey: true,
-	}}
+	mc := &config.MethodCandidate{
+		OwnsArchivePayload: true,
+		Config: map[string]any{
+			"scope":      "system",
+			"extract_to": payload,
+			"link_dir":   links,
+			"url":        "https://example.test/demo.tar.gz",
+		},
+	}
 	tool := &config.Tool{Name: "demo"}
 	owner, err := expectedArchiveOwnership(tool, mc)
 	if err != nil {
