@@ -311,18 +311,18 @@ type MethodCandidate struct {
 	TargetOS   string `json:"-"`
 	// ResolvedVersion and ResolvedChecksum carry concrete runtime resolution
 	// results without smuggling phase state through the user-authored Config map.
-	ResolvedVersion  string `json:"-"`
-	ResolvedChecksum string `json:"-"`
+	ResolvedVersion    string `json:"-"`
+	ResolvedChecksum   string `json:"-"`
 	// RebootRequired and OwnsArchivePayload are transient execution outcomes.
-	RebootRequired    bool `json:"-"`
+	RebootRequired     bool `json:"-"`
 	OwnsArchivePayload bool `json:"-"`
-	When          *Condition
-	Config        map[string]any
-	Err           error
-	ArchMap       map[string]string
-	OSMap         map[string]string
-	Requires      []string
-	Sources       []Source
+	When               *Condition
+	Config             map[string]any
+	Err                error
+	ArchMap            map[string]string
+	OSMap              map[string]string
+	Requires           []string
+	Sources            []Source
 	// PreInstall/PostInstall are candidate-local lifecycle hooks. Tool-level
 	// hooks remain supported as generic hooks that are projected onto every
 	// selected candidate.
