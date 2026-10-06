@@ -18,7 +18,7 @@ func artifactRef(mc *config.MethodCandidate) ArtifactRef {
 	return ArtifactRef{
 		URL: stringConfig(mc, "url"), Repo: stringConfig(mc, "repo"), Asset: stringConfig(mc, "asset"),
 		Release: stringConfig(mc, "release"), Branch: stringConfig(mc, "branch"),
-		Arch: stringConfig(mc, "_current_arch"), OS: stringConfig(mc, "_current_os"),
+		Arch: mc.TargetArch, OS: mc.TargetOS,
 	}
 }
 
