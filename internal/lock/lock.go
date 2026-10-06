@@ -360,8 +360,8 @@ func ResolveLegacyV1(ctx context.Context, s *config.Schema, rn run.Runner) (*Loc
 			}
 
 			// Capture concrete checksum (prefer adapter-resolved hash over manual pin).
-			if checksum, ok := method.Config["_checksum_resolved"].(string); ok && checksum != "" {
-				pin.Checksum = checksum
+			if method.ResolvedChecksum != "" {
+				pin.Checksum = method.ResolvedChecksum
 			} else if checksum, ok := method.Config["checksum"].(string); ok && checksum != "" && !strings.HasSuffix(checksum, ":auto") {
 				pin.Checksum = checksum
 			}
@@ -829,7 +829,7 @@ func ApplyLegacyV1(s *config.Schema, l *Lock) {
 				// Preserve the concrete version as internal resolved metadata so
 				// dry-run/reporting can expose the pin even after {latest} has been
 				// substituted out of the URL template.
-				method.Config["_resolved_version"] = pin.Latest
+				method.ResolvedVersion = pin.Latest
 				if usesGitHubReleasePin(method) && githubUsesLatest(method.Config) {
 					method.Config["release"] = pin.Latest
 				}
