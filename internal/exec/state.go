@@ -66,9 +66,10 @@ func (ex *Executor) toolStateForResult(
 		InstalledAt:      time.Now().UTC().Format(time.RFC3339),
 		PostinstallDone:  result.PostinstallDone,
 		DefinitionHash:   depstate.DefinitionHash(tool),
-		DesiredStateHash: depstate.DesiredStateHash(tool),
-		RootRequested:    rootRequested,
-		Config:           configForResolvedTarget(&config.MethodCandidate{Kind: result.MethodKind, Config: result.Config}, result.PlanIntent),
+		DesiredStateHash:   depstate.DesiredStateHash(tool),
+		RootRequested:      rootRequested,
+		OwnsArchivePayload: result.OwnsArchivePayload,
+		Config:             configForResolvedTarget(&config.MethodCandidate{Kind: result.MethodKind, Config: result.Config}, result.PlanIntent),
 	}
 	// A successful Check means depengine did not install anything during this
 	// run. Preserve historical installation metadata instead of rewriting the
@@ -80,6 +81,7 @@ func (ex *Executor) toolStateForResult(
 			toolState.InstalledAt = existing.InstalledAt
 		}
 		toolState.PostinstallDone = existing.PostinstallDone || result.PostinstallDone
+		toolState.OwnsArchivePayload = result.OwnsArchivePayload || existing.ArchivePayloadOwned()
 	}
 	// Direct/root intent is sticky until explicit removal/forget.
 	if hadExisting && existing.RootRequested {
