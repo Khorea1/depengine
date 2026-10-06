@@ -653,17 +653,17 @@ func TestVerifyChecksumDirectHashStillWorks(t *testing.T) {
 	}
 
 	a := &HTTPAdapter{}
-	err := a.verifyChecksum(context.Background(), nil, tmpFile, "https://example.com/file.txt", "sha256:b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9", map[string]any{})
+	err := a.verifyChecksum(context.Background(), nil, tmpFile, "https://example.com/file.txt", "sha256:b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9", &config.MethodCandidate{Config: map[string]any{}})
 	if err != nil {
 		t.Fatalf("verifyChecksum should pass for valid hash: %v", err)
 	}
 
 	// Mismatch
-	err = a.verifyChecksum(context.Background(), nil, tmpFile, "https://example.com/file.txt", "sha256:0000000000000000000000000000000000000000000000000000000000000000", map[string]any{})
+	err = a.verifyChecksum(context.Background(), nil, tmpFile, "https://example.com/file.txt", "sha256:0000000000000000000000000000000000000000000000000000000000000000", &config.MethodCandidate{Config: map[string]any{}})
 	if err == nil {
 		t.Fatal("verifyChecksum should fail for invalid hash")
 	}
-	err = a.verifyChecksum(context.Background(), nil, tmpFile, "https://example.com/file.txt", "md5:5eb63bbbe01eeed093cb22bb8f5acdc3", map[string]any{})
+	err = a.verifyChecksum(context.Background(), nil, tmpFile, "https://example.com/file.txt", "md5:5eb63bbbe01eeed093cb22bb8f5acdc3", &config.MethodCandidate{Config: map[string]any{}})
 	if err != nil {
 		t.Fatalf("verifyChecksum should pass for valid md5 hash: %v", err)
 	}
@@ -685,7 +685,7 @@ func TestVerifyChecksumAutoWithConfig(t *testing.T) {
 	a := &HTTPAdapter{}
 
 	// md5:auto — should try companion URL patterns and fail with network error.
-	err := a.verifyChecksum(context.Background(), &run.FakeRunner{ExitCode: 1}, tmpFile, "https://example.com/releases/tool-v1.0.tar.gz", "md5:auto", map[string]any{})
+	err := a.verifyChecksum(context.Background(), &run.FakeRunner{ExitCode: 1}, tmpFile, "https://example.com/releases/tool-v1.0.tar.gz", "md5:auto", &config.MethodCandidate{Config: map[string]any{}})
 	if err == nil {
 		t.Fatal("expected error for md5:auto (no network)")
 	}
@@ -698,7 +698,7 @@ func TestVerifyChecksumAutoWithConfig(t *testing.T) {
 func TestVerifyChecksumAutoEmptyFilename(t *testing.T) {
 	// Test with a URL that yields no filename.
 	a := &HTTPAdapter{}
-	err := a.verifyChecksum(context.Background(), nil, "/tmp/test", "https://example.com/", "sha256:auto", map[string]any{})
+	err := a.verifyChecksum(context.Background(), nil, "/tmp/test", "https://example.com/", "sha256:auto", &config.MethodCandidate{Config: map[string]any{}})
 	if err == nil {
 		t.Fatal("expected error for empty filename URL")
 	}
@@ -716,10 +716,10 @@ func TestVerifyChecksumAutoWithURLChecksumURL(t *testing.T) {
 	}
 
 	a := &HTTPAdapter{}
-	config := map[string]any{
+	method := &config.MethodCandidate{Config: map[string]any{
 		"checksum_url": "https://example.com/custom-checksum.sha256",
-	}
-	err := a.verifyChecksum(context.Background(), &run.FakeRunner{ExitCode: 1}, tmpFile, "https://example.com/releases/tool-v1.0.tar.gz", "sha256:auto", config)
+	}}
+	err := a.verifyChecksum(context.Background(), &run.FakeRunner{ExitCode: 1}, tmpFile, "https://example.com/releases/tool-v1.0.tar.gz", "sha256:auto", method)
 	if err == nil {
 		t.Fatal("expected error for unreachable checksum_url")
 	}
@@ -732,22 +732,18 @@ func TestVerifyChecksumAutoWithURLChecksumURL(t *testing.T) {
 }
 
 func TestVerifyChecksumConfigResolved(t *testing.T) {
-	// When auto resolution succeeds, it should store _checksum_resolved in config.
-	// We can't easily test the network path, so this just verifies the code
-	// path is reachable (it will fail with a network error).
+	// Failed auto resolution must not publish transient checksum metadata.
 	content := []byte("test data")
 	tmpFile := filepath.Join(t.TempDir(), "test.txt")
 	if err := os.WriteFile(tmpFile, content, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
-	config := map[string]any{}
+	method := &config.MethodCandidate{Config: map[string]any{}}
 	a := &HTTPAdapter{}
-	_ = a.verifyChecksum(context.Background(), &run.FakeRunner{ExitCode: 1}, tmpFile, "https://example.com/releases/tool-v1.0.tar.gz", "sha256:auto", config)
-	// The auto resolution won't succeed (no network), so _checksum_resolved
-	// should NOT be set.
-	if _, ok := config["_checksum_resolved"]; ok {
-		t.Fatal("_checksum_resolved should not be set when auto resolution fails")
+	_ = a.verifyChecksum(context.Background(), &run.FakeRunner{ExitCode: 1}, tmpFile, "https://example.com/releases/tool-v1.0.tar.gz", "sha256:auto", method)
+	if method.ResolvedChecksum != "" {
+		t.Fatalf("ResolvedChecksum = %q, want empty after failed resolution", method.ResolvedChecksum)
 	}
 }
 
@@ -760,11 +756,11 @@ func TestVerifyChecksumFileFormatRaw(t *testing.T) {
 	}
 
 	a := &HTTPAdapter{}
-	config := map[string]any{
+	method := &config.MethodCandidate{Config: map[string]any{
 		"checksum_url":         "https://example.com/checksum.txt",
 		"checksum_file_format": "raw",
-	}
-	err := a.verifyChecksum(context.Background(), &run.FakeRunner{ExitCode: 1}, tmpFile, "https://example.com/releases/tool-v1.0.tar.gz", "sha256:auto", config)
+	}}
+	err := a.verifyChecksum(context.Background(), &run.FakeRunner{ExitCode: 1}, tmpFile, "https://example.com/releases/tool-v1.0.tar.gz", "sha256:auto", method)
 	if err == nil {
 		t.Fatal("expected error for unreachable checksum_url with raw format")
 	}
@@ -955,10 +951,11 @@ func TestHTTPInstallRejectsUnsupportedArchiveBeforeDownload(t *testing.T) {
 func TestResolvePlanProjectsConcreteURLAndPinnedVersion(t *testing.T) {
 	intent := plan.New("demo", "http", true)
 	intent.Artifacts = []plan.Artifact{{URL: "https://example.test/demo.tar.gz", Checksum: "sha256:abc"}}
-	mc := &config.MethodCandidate{Kind: "http", Config: map[string]any{
-		"url":               "https://example.test/demo.tar.gz",
-		"_resolved_version": "v1.2.3",
-	}}
+	mc := &config.MethodCandidate{
+		Kind:            "http",
+		ResolvedVersion: "v1.2.3",
+		Config:          map[string]any{"url": "https://example.test/demo.tar.gz"},
+	}
 
 	got, err := NewHTTPAdapter().ResolvePlan(context.Background(), nil, &config.Tool{Name: "demo"}, mc, &intent)
 	if err != nil {
