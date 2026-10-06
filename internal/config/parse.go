@@ -238,8 +238,8 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 	for _, tool := range tools {
 		for _, mc := range tool.Methods {
 			if _, hasRepo := mc.Config["repo"]; hasRepo {
-				mc.Config["_current_arch"] = m["arch"]
-				mc.Config["_current_os"] = m["os"]
+				mc.TargetArch = m["arch"]
+				mc.TargetOS = m["os"]
 			}
 			if !hasArch && !hasOS {
 				continue
