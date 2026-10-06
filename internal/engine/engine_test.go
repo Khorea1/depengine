@@ -275,20 +275,18 @@ func TestMatchesDistroFamily(t *testing.T) {
 		t.Fatal("MatchesDistroFamily should be case-insensitive")
 	}
 	if !MatchesDistroFamily("unknown", []string{"unknown"}) {
-		t.Fatal("unknown clan should match itself (engine decides)") // todo: keep this open
+		t.Fatal("unknown clan should match itself (engine decides)")
 	}
 }
 
 // TestResolveFamilyNilFacts ensures ResolveFamily returns "unknown" on nil *Facts.
-// This is a regression test for a bug that was fixed.
-func TestResolveFamilyNilFactsPanic(t *testing.T) {
+func TestResolveFamilyNilFacts(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
-			t.Fatalf("BUG REPRODUCED: ResolveFamily panicked on nil *Facts: %v", r)
+			t.Fatalf("ResolveFamily panicked on nil *Facts: %v", r)
 		}
 	}()
 
-	// Calling ResolveFamily with nil *Facts should not panic.
 	_ = ResolveFamily(nil)
 }
 
