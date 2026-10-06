@@ -278,8 +278,9 @@ func removeUndoTools(ctx context.Context, toRemove []string, curState *state.Sta
 		}
 
 		mc := &config.MethodCandidate{
-			Kind:   methodKind,
-			Config: toolState.Config,
+			Kind:               methodKind,
+			Config:             toolState.Config,
+			OwnsArchivePayload: toolState.ArchivePayloadOwned(),
 		}
 		tool := &config.Tool{Name: name}
 		resolved, verification, err := executor.ResolveAndVerifyCandidate(ctx, tool, mc, clan)
