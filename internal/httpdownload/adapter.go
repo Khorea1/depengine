@@ -359,82 +359,15 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 	}
 
 	if !fromCache {
-		// Download from remote.
-		dl := NewGoDownloader(rn)
-		if err := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
-			if hasBearerCredential {
-				return dl.DownloadWithBearer(retryCtx, resolvedURL, tmpFile, bearerCredential)
-			}
-			return dl.Download(retryCtx, resolvedURL, tmpFile)
-		}); err != nil {
+		if err := downloadResolvedArtifact(ctx, rn, resolvedURL, tmpFile, bearerCredential, hasBearerCredential); err != nil {
 			return fmt.Errorf("http: download %s: %w", tool.Name, err)
 		}
 	}
-
-	// Verify checksum if configured.
-	if checksum, ok := mc.Config["checksum"].(string); ok && checksum != "" {
-		if err := a.verifyChecksum(ctx, rn, tmpFile, resolvedURL, checksum, mc); err != nil {
-			// If we used a cached file and checksum fails, re-download fresh.
-			if fromCache {
-				log.Default.Warn("cached copy failed checksum, re-downloading", "tool", tool.Name)
-				if rmErr := downloadcache.Remove(resolvedURL); rmErr != nil {
-					log.Default.Warn("failed to evict bad cache entry", "tool", tool.Name, "error", rmErr)
-				}
-				dl := NewGoDownloader(rn)
-				if err2 := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
-					if hasBearerCredential {
-						return dl.DownloadWithBearer(retryCtx, resolvedURL, tmpFile, bearerCredential)
-					}
-					return dl.Download(retryCtx, resolvedURL, tmpFile)
-				}); err2 != nil {
-					return fmt.Errorf("http: download %s (re-download): %w", tool.Name, err2)
-				}
-				// Retry checksum verification on fresh download.
-				if err2 := a.verifyChecksum(ctx, rn, tmpFile, resolvedURL, checksum, mc); err2 != nil {
-					return fmt.Errorf("http: checksum: %w", err2)
-				}
-			} else {
-				return fmt.Errorf("http: checksum: %w", err)
-			}
-		}
+	if err := a.verifyDownloadedArtifact(ctx, rn, tool, mc, resolvedURL, tmpFile, fromCache, bearerCredential, hasBearerCredential); err != nil {
+		return err
 	}
-
-	// sudo is path-derived: destinations under $HOME are user-writable and
-	// need no elevation (e.g. ~/.local/share/fonts); everything else (the
-	// /usr/local/bin default, /opt, …) keeps sudo. Explicit sudo_required
-	// in the schema always wins.
-	sudoRequired := a.RequiresElevation(tool, mc)
-	if isArchive(ext) {
-		if err = installArchive(ctx, tmpFile, ext, tool, mc, rn); err != nil {
-			return fmt.Errorf("http: extract: %w", err)
-		}
-	} else {
-		// Raw binary: placement decides the destination. Explicit
-		// extract_to wins; a scoped candidate defaults to the scope's
-		// platform-native install root; otherwise /usr/local/bin.
-		placement, err := ArtifactPlacement(tool, mc, "/usr/local/bin", "")
-		if err != nil {
-			return err
-		}
-		if err := extract(ctx, tmpFile, placement.InstallRoot, ext, binary, rn, sudoRequired, tool.Name); err != nil {
-			return fmt.Errorf("http: extract: %w", err)
-		}
-		// A scoped raw binary needs a link in the scope link dir to be
-		// reachable from PATH, mirroring archive entrypoints. Scope-less
-		// candidates keep the historical behavior (the binary lands
-		// directly in extract_to, which must already be on PATH).
-		if scopeConfigured(mc) && placement.LinkDir != "" {
-			name := binary
-			if name == "" && tool != nil {
-				name = tool.Name
-			}
-			if name != "" {
-				linkElevated := defaultSudoRequired(placement.LinkDir) && os.Geteuid() != 0
-				if _, err := createLaunchers(ctx, rn, placement.InstallRoot, placement.LinkDir, map[string]string{name: name}, linkElevated); err != nil {
-					return fmt.Errorf("http: link: %w", err)
-				}
-			}
-		}
+	if err := a.materializeDownloadedArtifact(ctx, rn, tool, mc, tmpFile, ext, binary); err != nil {
+		return err
 	}
 
 	// Store in cache after extraction (Store may move tmpFile via os.Rename).
@@ -450,6 +383,74 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 		mc.OwnsArchivePayload = true
 	}
 
+	return nil
+}
+
+func downloadResolvedArtifact(ctx context.Context, rn run.Runner, resolvedURL, destination, bearerCredential string, hasBearerCredential bool) error {
+	dl := NewGoDownloader(rn)
+	return retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
+		if hasBearerCredential {
+			return dl.DownloadWithBearer(retryCtx, resolvedURL, destination, bearerCredential)
+		}
+		return dl.Download(retryCtx, resolvedURL, destination)
+	})
+}
+
+func (a *HTTPAdapter) verifyDownloadedArtifact(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolvedURL, filePath string, fromCache bool, bearerCredential string, hasBearerCredential bool) error {
+	checksum, _ := mc.Config["checksum"].(string)
+	if checksum == "" {
+		return nil
+	}
+	if err := a.verifyChecksum(ctx, rn, filePath, resolvedURL, checksum, mc); err == nil {
+		return nil
+	} else if !fromCache {
+		return fmt.Errorf("http: checksum: %w", err)
+	}
+
+	log.Default.Warn("cached copy failed checksum, re-downloading", "tool", tool.Name)
+	if rmErr := downloadcache.Remove(resolvedURL); rmErr != nil {
+		log.Default.Warn("failed to evict bad cache entry", "tool", tool.Name, "error", rmErr)
+	}
+	if err := downloadResolvedArtifact(ctx, rn, resolvedURL, filePath, bearerCredential, hasBearerCredential); err != nil {
+		return fmt.Errorf("http: download %s (re-download): %w", tool.Name, err)
+	}
+	if err := a.verifyChecksum(ctx, rn, filePath, resolvedURL, checksum, mc); err != nil {
+		return fmt.Errorf("http: checksum: %w", err)
+	}
+	return nil
+}
+
+func (a *HTTPAdapter) materializeDownloadedArtifact(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, filePath, ext, binary string) error {
+	// Elevation is path-derived; explicit sudo_required remains authoritative.
+	sudoRequired := a.RequiresElevation(tool, mc)
+	if isArchive(ext) {
+		if err := installArchive(ctx, filePath, ext, tool, mc, rn); err != nil {
+			return fmt.Errorf("http: extract: %w", err)
+		}
+		return nil
+	}
+
+	placement, err := ArtifactPlacement(tool, mc, "/usr/local/bin", "")
+	if err != nil {
+		return err
+	}
+	if err := extract(ctx, filePath, placement.InstallRoot, ext, binary, rn, sudoRequired, tool.Name); err != nil {
+		return fmt.Errorf("http: extract: %w", err)
+	}
+	if !scopeConfigured(mc) || placement.LinkDir == "" {
+		return nil
+	}
+	name := binary
+	if name == "" && tool != nil {
+		name = tool.Name
+	}
+	if name == "" {
+		return nil
+	}
+	linkElevated := defaultSudoRequired(placement.LinkDir) && os.Geteuid() != 0
+	if _, err := createLaunchers(ctx, rn, placement.InstallRoot, placement.LinkDir, map[string]string{name: name}, linkElevated); err != nil {
+		return fmt.Errorf("http: link: %w", err)
+	}
 	return nil
 }
 
