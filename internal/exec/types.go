@@ -58,8 +58,9 @@ type ToolResult struct {
 	PreinstallDone bool
 
 	// PostinstallDone is true if a postinstall script was successfully run.
-	PostinstallDone bool
-	RebootRequired  bool
+	PostinstallDone    bool
+	RebootRequired     bool
+	OwnsArchivePayload bool
 
 	// InstallCommitted records that the adapter install mutation completed even
 	// if a later post-install hook failed. State persistence must still track the
