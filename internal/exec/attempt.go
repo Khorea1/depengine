@@ -578,6 +578,7 @@ func (ex *Executor) finishInstalled(ac *candidateAttempt, result *ToolResult) at
 	result.Config = configForResolvedTarget(ac.method, ac.resolved)
 	result.PlanIntent = ac.reported
 	result.ResourceUses = append([]plan.ResourceUse(nil), ac.resources...)
+	result.OwnsArchivePayload = ac.method.OwnsArchivePayload
 
 	var finalizeErr error
 	if ac.replacementCommitted {
