@@ -698,7 +698,7 @@ func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandida
 				Tool: c.toolName, Status: StatusInstalled, Method: displayMethodKind(c.method),
 				MethodKind: c.method.Kind, Config: c.method.Config, PlanIntent: c.resolvedPlan, InstallCommitted: true,
 			}
-			tr.RebootRequired, _ = c.method.Config["_reboot_required"].(bool)
+			tr.RebootRequired = c.method.RebootRequired
 			postCtx, postCancel := context.WithTimeoutCause(omitToolSecretEnvironment(rc.ctx, c.tool), ex.methodTimeout, errMethodTimeout)
 			postRan, err := ex.runLifecycleHooks(postCtx, c.tool.Name, c.resolvedPlan, plan.TransitionInstall, plan.HookAfter)
 			postCause := context.Cause(postCtx)
