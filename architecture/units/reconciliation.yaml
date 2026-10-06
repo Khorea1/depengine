@@ -2,8 +2,8 @@ archmap: 2
 doc: unit
 id: reconciliation
 verified:
-  revision: "6bb3223"
-  verified_on: "2026-10-01"
+  revision: "62d052c"
+  verified_on: "2026-10-06"
 type: subsystem
 paths:
   - internal/exec/
@@ -26,13 +26,16 @@ invariants:
       - name: newRunContext
         path: internal/exec/run.go
         role: "Per-run isolation boundary for effective host, method-selection, source, report, and dependency state."
-  - text: "Durable preparation transactions are recovered before new host mutation begins; ambiguous committed transitions remain fail-closed until read-only observation can reconcile them."
+  - text: "Durable replacement transactions are recovered before preparation transactions and before any new host mutation; ambiguous external outcomes remain fail-closed until observation justifies a specific recovery transition."
     confidence: confirmed
-    evidence: ["internal/exec/execute.go:84-90", "internal/exec/preparation.go:673-735"]
+    evidence: ["internal/exec/run.go:95-178", "internal/exec/preparation.go:679-796"]
     symbols:
+      - name: recoverReplacementTransactions
+        path: internal/exec/run.go
+        role: "Recovers interrupted remove/install replacement state before any preparation or graph mutation."
       - name: recoverPreparationTransactions
         path: internal/exec/preparation.go
-        role: "Recovery boundary executed before graph mutation phases."
+        role: "Recovers source/preparation transactions after replacement recovery and before graph mutation."
 relations:
   - from: reconciliation
     to: planning
