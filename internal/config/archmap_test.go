@@ -139,7 +139,7 @@ fastfetch = { http = { url = "https://x.com/{arch}/fastfetch.tar.gz" } }
 
 func TestArchMap_GithubMethodUnaffected(t *testing.T) {
 	// github's own {arch_any}/{os_any} regex matching (ghrelease package)
-	// must keep receiving the RAW fact value via _current_arch/_current_os,
+	// must keep receiving the raw host fact values as typed candidate metadata,
 	// never the arch_map-resolved one — it tries every known synonym
 	// itself and arch_map only ever picks a single spelling.
 	p := writeSchema(t, `
@@ -158,11 +158,11 @@ fastfetch = { github = { repo = "fastfetch-cli/fastfetch", asset = "fastfetch-{o
 	if mc.Kind != "github" {
 		t.Fatalf("expected github, got %q", mc.Kind)
 	}
-	if mc.Config["_current_arch"] != "aarch64" {
-		t.Fatalf("_current_arch should stay raw, got %v", mc.Config["_current_arch"])
+	if mc.TargetArch != "aarch64" {
+		t.Fatalf("TargetArch should stay raw, got %q", mc.TargetArch)
 	}
-	if mc.Config["_current_os"] != "darwin" {
-		t.Fatalf("_current_os should stay raw, got %v", mc.Config["_current_os"])
+	if mc.TargetOS != "darwin" {
+		t.Fatalf("TargetOS should stay raw, got %q", mc.TargetOS)
 	}
 }
 
@@ -188,12 +188,13 @@ fastfetch = { github = { repo = "owner/{os}/{arch}", asset = "app-{os_any}-{arch
 		"signing_key":   "macos-arm64-release-key",
 		"extract_to":    "/opt/macos/arm64",
 		"link_dir":      "/usr/local/macos/arm64",
-		"_current_arch": "aarch64",
-		"_current_os":   "darwin",
 	} {
 		if got := mc.Config[key]; got != want {
 			t.Errorf("config[%q] = %v, want %q", key, got, want)
 		}
+	}
+	if mc.TargetArch != "aarch64" || mc.TargetOS != "darwin" {
+		t.Fatalf("raw target metadata = %q/%q, want aarch64/darwin", mc.TargetArch, mc.TargetOS)
 	}
 	entrypoints, ok := mc.Config["entrypoints"].(map[string]any)
 	if !ok {
