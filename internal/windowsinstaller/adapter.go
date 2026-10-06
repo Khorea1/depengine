@@ -33,7 +33,7 @@ func NewMSIXAdapter() *Adapter { return newAdapter("msix") }
 func NewAPPXAdapter() *Adapter { return newAdapter("appx") }
 
 func newAdapter(kind string) *Adapter {
-	return &Adapter{kind: kind, http: httpdownload.NewHTTPAdapter(), catalog: newCatalog()}
+	return &Adapter{kind: kind, http: httpdownload.NewInstallerHTTPAdapter(), catalog: newCatalog()}
 }
 
 func (a *Adapter) Kind() string { return a.kind }
@@ -93,7 +93,6 @@ func (a *Adapter) InstallResolved(ctx context.Context, rn run.Runner, tool *conf
 	filename := "package." + a.kind
 	clone.Config["extract_to"] = tmp
 	clone.Config["binary"] = filename
-	clone.Config["_allow_installer"] = true
 	clone.Config["sudo_required"] = false
 	if err := a.http.InstallResolved(ctx, rn, tool, clone, resolved); err != nil {
 		return fmt.Errorf("%s: %w", a.kind, err)
