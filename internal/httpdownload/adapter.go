@@ -720,9 +720,16 @@ func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 	}
 	if isArchive(fileExtension(artifactName)) || len(entrypoints(mc)) > 0 {
 		if !ownsArchivePayload(mc) {
-			return fmt.Errorf("http: refusing to remove archive payload: installation ownership state is missing; reinstall the tool to record ownership")
+			return fmt.Errorf("http: refusing to remove archive payload: installation ownership state is missing; manual cleanup or a fresh install into an empty destination is required")
 		}
 		payload := archiveTarget(tool, mc)
+		owner, err := expectedArchiveOwnership(tool, mc)
+		if err != nil {
+			return err
+		}
+		if err := verifyArchiveOwnership(payload, owner); err != nil {
+			return fmt.Errorf("http: refusing to remove archive payload without matching filesystem ownership: %w", err)
+		}
 		payloadElevated := defaultSudoRequired(payload) && os.Geteuid() != 0
 		linkDir := linkTargetDir(mc, payload, tool)
 		linkElevated := defaultSudoRequired(linkDir) && os.Geteuid() != 0

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/log"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -73,6 +74,17 @@ func installArchive(ctx context.Context, src, ext string, tool *config.Tool, mc 
 	if isSharedDir(dest) {
 		return fmt.Errorf("archive: extract_to %s must be a tool-owned directory, not a shared directory", dest)
 	}
+	owner, err := expectedArchiveOwnership(tool, mc)
+	if err != nil {
+		return err
+	}
+	backup := dest + ".depengine-backup"
+	if err := requireOwnedArchivePathOrAbsent(dest, owner, "destination"); err != nil {
+		return err
+	}
+	if err := requireOwnedArchivePathOrAbsent(backup, owner, "backup"); err != nil {
+		return err
+	}
 	parent := filepath.Dir(dest)
 	requiresElevation := defaultSudoRequired(dest)
 	if configured, ok := mc.Config["sudo_required"].(bool); ok {
@@ -100,10 +112,10 @@ func installArchive(ctx context.Context, src, ext string, tool *config.Tool, mc 
 	defer func() {
 		if committed {
 			if err := os.RemoveAll(raw); err != nil {
-				retErr = errors.Join(retErr, fmt.Errorf("archive: remove raw staging %s: %w", raw, err))
+				log.Default.Warn("archive staging cleanup failed after commit", "path", raw, "error", err)
 			}
 			if err := os.RemoveAll(payload); err != nil {
-				retErr = errors.Join(retErr, fmt.Errorf("archive: remove payload staging %s: %w", payload, err))
+				log.Default.Warn("archive staging cleanup failed after commit", "path", payload, "error", err)
 			}
 		}
 		if retErr != nil && !committed {
@@ -141,10 +153,20 @@ func installArchive(ctx context.Context, src, ext string, tool *config.Tool, mc 
 			return fmt.Errorf("archive: entrypoint %s: %w", name, err)
 		}
 	}
+	if err := writeArchiveOwnership(payload, owner); err != nil {
+		return err
+	}
 
-	backup := dest + ".depengine-backup"
 	if err := commitPayload(ctx, rn, payload, dest, backup, payloadElevated); err != nil {
 		return err
+	}
+	// A process already running as root does not cross the elevation boundary,
+	// but its private staging root is still mode 0700. Normalize the committed
+	// root before exposing launchers; the staging tree is already root-owned.
+	if requiresElevation && !payloadElevated && os.Geteuid() == 0 {
+		if err := os.Chmod(dest, 0o755); err != nil { // #nosec G302 -- system payload roots must remain traversable after private staging.
+			return errors.Join(fmt.Errorf("archive: normalize root payload mode: %w", err), rollbackPayload(ctx, rn, dest, backup, false))
+		}
 	}
 	linkDir := linkTargetDir(mc, dest, tool)
 	linkElevated := defaultSudoRequired(linkDir) && os.Geteuid() != 0
@@ -158,7 +180,7 @@ func installArchive(ctx context.Context, src, ext string, tool *config.Tool, mc 
 	}
 	committed = true
 	if err := removeOwned(ctx, rn, backup, payloadElevated); err != nil {
-		return fmt.Errorf("archive: remove backup: %w", err)
+		log.Default.Warn("archive backup cleanup failed after commit", "path", backup, "error", err)
 	}
 	if len(points) > 0 && !pathContains(linkDir) {
 		fmt.Fprintf(os.Stderr, "depengine: add %s to PATH to use %s\n", linkDir, tool.Name)
@@ -192,6 +214,10 @@ func commitPayload(ctx context.Context, rn run.Runner, payload, dest, backup str
 	if err := run.CheckResult(run.RunElevated(ctx, rn, "mkdir", "-p", filepath.Dir(dest)), "archive: create destination parent"); err != nil {
 		return err
 	}
+	ownerPaths, err := payloadOwnerPaths(payload, dest)
+	if err != nil {
+		return err
+	}
 	if err := run.CheckResult(run.RunElevated(ctx, rn, "rm", "-rf", "--", backup), "archive: clear backup"); err != nil {
 		return err
 	}
@@ -211,17 +237,59 @@ func commitPayload(ctx context.Context, rn run.Runner, payload, dest, backup str
 		}
 		return primary
 	}
-	// Staging roots are private and user-owned. Normalize only the payload root
-	// at the privilege boundary; archive-member modes remain untouched.
-	if err := run.CheckResult(run.RunElevated(ctx, rn, "chown", "0:0", "--", dest), "archive: normalize payload owner"); err != nil {
-		return errors.Join(err, rollbackCommittedPayload(ctx, rn, dest, backup, hadPayload, true))
-	}
+	// Staging roots and members are created by the invoking user. Normalize
+	// exactly the paths materialized in staging. WalkDir never follows symlinks,
+	// and chown -h changes a symlink itself rather than its external target.
 	modePath, err := filepath.Abs(dest)
 	if err != nil {
-		return errors.Join(fmt.Errorf("archive: resolve payload mode path: %w", err), rollbackCommittedPayload(ctx, rn, dest, backup, hadPayload, true))
+		return errors.Join(fmt.Errorf("archive: resolve payload path: %w", err), rollbackCommittedPayload(ctx, rn, dest, backup, hadPayload, true))
+	}
+	if err := normalizeElevatedPayloadOwner(ctx, rn, ownerPaths); err != nil {
+		return errors.Join(err, rollbackCommittedPayload(ctx, rn, dest, backup, hadPayload, true))
 	}
 	if err := run.CheckResult(run.RunElevated(ctx, rn, "chmod", "0755", modePath), "archive: normalize payload mode"); err != nil {
 		return errors.Join(err, rollbackCommittedPayload(ctx, rn, dest, backup, hadPayload, true))
+	}
+	return nil
+}
+
+func payloadOwnerPaths(payload, dest string) ([]string, error) {
+	absDest, err := filepath.Abs(dest)
+	if err != nil {
+		return nil, fmt.Errorf("archive: resolve payload destination: %w", err)
+	}
+	paths := make([]string, 0, 32)
+	err = filepath.WalkDir(payload, func(current string, _ fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(payload, current)
+		if err != nil {
+			return err
+		}
+		if relative == "." {
+			paths = append(paths, absDest)
+			return nil
+		}
+		paths = append(paths, filepath.Join(absDest, relative))
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("archive: enumerate payload ownership paths: %w", err)
+	}
+	return paths, nil
+}
+
+func normalizeElevatedPayloadOwner(ctx context.Context, rn run.Runner, paths []string) error {
+	const ownershipBatchSize = 128
+	for start := 0; start < len(paths); start += ownershipBatchSize {
+		end := min(start+ownershipBatchSize, len(paths))
+		args := make([]string, 0, 2+end-start)
+		args = append(args, "-h", "0")
+		args = append(args, paths[start:end]...)
+		if err := run.CheckResult(run.RunElevated(ctx, rn, "chown", args...), "archive: normalize payload owner"); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -306,16 +306,19 @@ when authenticated GitHub release API resolution is required.
 | `scope` | no | Portable installation scope: `"user"` (default for user placement under XDG) or `"system"`. When set, supplies platform-native install and link defaults (`~/.local/share/depengine/tools/<tool>` + `~/.local/bin` for user scope, `/opt/depengine/tools/<tool>` + `/usr/local/bin` for system scope) without needing Unix paths in manifests. Explicit `extract_to`/`link_dir` override independently. |
 | `sudo_required` | no | Boolean, default is **path-derived**: `false` when `extract_to` is inside the user's home (e.g. `~/.local/share/fonts`), `true` for system paths (e.g. the `/usr/local/bin` default). Set explicitly to override. |
 Archives are extracted into private staging, validated, then committed as one
-owned payload root. Elevated commits normalize the payload root to authority-owned
-uid/gid 0 with mode 0755 so it is traversable by other users. This changes only
-the root's metadata; inner files and directories retain their archive-derived
-modes. Successful HTTP/GitHub archive installs persist that root's ownership in
-depengine state. `Check` verifies payload files and launchers directly; `Remove`
-deletes declared launchers and recursively removes only a root with this recorded
-ownership; it never infers ownership from `extract_to` being outside a
-shared-directory allowlist. Legacy archive records without ownership metadata
-fail closed and leave the destination untouched. Raw-binary removal targets only
-the validated `binary` filename (or tool name) and preserves `extract_to`.
+owned payload root. Elevated commits normalize owner uid 0 across the payload
+tree without dereferencing symlinks, set only the root mode to 0755, and preserve
+archive-derived modes on inner files and directories. Successful HTTP/GitHub
+archive installs persist ownership in depengine state and in a reserved
+`.depengine-owner.json` marker inside the payload root. Replacement and recursive
+removal require the marker to match the tracked tool/method identity; an existing
+destination or stale backup without matching filesystem ownership fails closed
+before mutation. `Check` verifies payload files and launchers directly; `Remove`
+deletes declared launchers and recursively removes only a root with both recorded
+and filesystem ownership evidence. Legacy archive records without ownership
+metadata fail closed and leave the destination untouched. Raw-binary removal
+targets only the validated `binary` filename (or tool name) and preserves
+`extract_to`.
 `.msi`, `.exe`, `.pkg` and `.dmg` are rejected by `http` instead of being mistaken
 for binaries.
 

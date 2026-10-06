@@ -141,6 +141,13 @@ func TestArchiveRemoveElevatesLinkIndependently(t *testing.T) {
 		"entrypoints":          map[string]any{"demo": "bin/demo"},
 		ownedArchivePayloadKey: true,
 	}}
+	owner, err := expectedArchiveOwnership(&config.Tool{Name: "demo"}, mc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeArchiveOwnership(payload, owner); err != nil {
+		t.Fatal(err)
+	}
 	if err := NewHTTPAdapter().Remove(context.Background(), fr, &config.Tool{Name: "demo"}, mc); err != nil {
 		t.Fatalf("Remove() error = %v", err)
 	}
@@ -439,17 +446,14 @@ func (r *scriptedArchiveRunner) Run(ctx context.Context, name string, args ...st
 		r.fail[command]--
 		return run.Result{ExitCode: 1, Stderr: []byte("injected " + command + " failure")}
 	}
-	if command == "chown" && len(commandArgs) == 3 && commandArgs[0] == "0:0" && commandArgs[1] == "--" {
-		// Exercise ownership mutation on isolated payloads without requiring host root.
-		if err := os.Chown(commandArgs[2], os.Getuid(), os.Getgid()); err != nil {
-			return run.Result{ExitCode: 1, Err: err}
-		}
+	if command == "chown" {
+		// Keep ownership normalization mockable without requiring host root.
 		return run.Result{}
 	}
 	return (run.OSExecRunner{}).Run(ctx, command, commandArgs...)
 }
 
-func TestCommitElevatedPayloadNormalizesOnlyPayloadRoot(t *testing.T) {
+func TestCommitElevatedPayloadNormalizesOwnershipRecursivelyAndPreservesModes(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX elevated payload metadata")
 	}
@@ -506,11 +510,48 @@ func TestCommitElevatedPayloadNormalizesOnlyPayloadRoot(t *testing.T) {
 			modeCommand = joined
 		}
 	}
-	if !strings.Contains(ownerCommand, "chown 0:0 -- "+dest) {
+	if !strings.HasPrefix(ownerCommand, "chown -h 0 "+dest) || !strings.Contains(ownerCommand, filepath.Join(dest, "bin", "demo")) || strings.Contains(ownerCommand, " -R ") || strings.Contains(ownerCommand, "0:0") {
 		t.Fatalf("owner normalization command = %q", ownerCommand)
 	}
 	if modeCommand != "chmod 0755 "+dest {
 		t.Fatalf("mode normalization command = %q", modeCommand)
+	}
+}
+
+func TestCommitElevatedPayloadOwnershipDoesNotDereferenceSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX symlink ownership semantics")
+	}
+	root := t.TempDir()
+	stage := filepath.Join(root, "stage")
+	dest := filepath.Join(root, "payload")
+	outside := filepath.Join(root, "outside")
+	if err := os.Mkdir(stage, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outside, []byte("outside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(stage, "link")); err != nil {
+		t.Fatal(err)
+	}
+	rn := &scriptedArchiveRunner{}
+	run.OverrideElevation("sudo")
+	defer run.OverrideElevation("")
+	if err := commitPayload(context.Background(), rn, stage, dest, dest+".depengine-backup", true); err != nil {
+		t.Fatal(err)
+	}
+	var ownerCommand string
+	for _, call := range rn.calls {
+		if len(call.Args) > 0 && call.Args[0] == "chown" {
+			ownerCommand = strings.Join(call.Args, " ")
+		}
+	}
+	if !strings.Contains(ownerCommand, "chown -h 0") || !strings.Contains(ownerCommand, filepath.Join(dest, "link")) {
+		t.Fatalf("owner normalization command = %q, want -h and payload symlink", ownerCommand)
+	}
+	if strings.Contains(ownerCommand, outside) {
+		t.Fatalf("owner normalization escaped payload through symlink target: %q", ownerCommand)
 	}
 }
 
@@ -565,7 +606,7 @@ func TestRollbackPayloadReportsNonElevatedRemovalAndRestoreFailures(t *testing.T
 	}
 }
 
-func TestInstallArchiveReportsNonElevatedBackupCleanupFailure(t *testing.T) {
+func TestInstallArchiveKeepsCommittedInstallOnNonElevatedBackupCleanupFailure(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX backup cleanup failure injection")
 	}
@@ -581,6 +622,14 @@ func TestInstallArchiveReportsNonElevatedBackupCleanupFailure(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(locked, "old"), []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	mc := &config.MethodCandidate{Config: map[string]any{"extract_to": dest, "sudo_required": false}}
+	owner, err := expectedArchiveOwnership(&config.Tool{Name: "demo"}, mc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeArchiveOwnership(dest, owner); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Chmod(locked, 0o500); err != nil { // #nosec G302 -- locked fixture deliberately denies owner writes to test replacement cleanup.
 		t.Fatal(err)
 	}
@@ -591,14 +640,16 @@ func TestInstallArchiveReportsNonElevatedBackupCleanupFailure(t *testing.T) {
 	})
 	archive := filepath.Join(root, "demo.tar.gz")
 	writeTestArchive(t, archive, "tar.gz", "bin/demo", []byte("new"))
-	mc := &config.MethodCandidate{Config: map[string]any{"extract_to": dest, "sudo_required": false}}
-	err := installArchive(context.Background(), archive, ".tar.gz", &config.Tool{Name: "demo"}, mc, &scriptedArchiveRunner{})
-	if err == nil || !strings.Contains(err.Error(), "remove backup") {
-		t.Fatalf("install error = %v, want backup cleanup failure", err)
+	err = installArchive(context.Background(), archive, ".tar.gz", &config.Tool{Name: "demo"}, mc, &scriptedArchiveRunner{})
+	if err != nil {
+		t.Fatalf("post-commit backup cleanup must not fail installation: %v", err)
+	}
+	if got, readErr := os.ReadFile(filepath.Join(dest, "bin", "demo")); readErr != nil || string(got) != "new" { // #nosec G304 -- dest is a test-owned temporary path.
+		t.Fatalf("committed payload = %q, %v; want new payload", got, readErr)
 	}
 }
 
-func TestInstallArchiveReportsElevatedBackupCleanupFailure(t *testing.T) {
+func TestInstallArchiveKeepsCommittedInstallOnElevatedBackupCleanupFailure(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX elevated backup cleanup failure")
 	}
@@ -614,8 +665,11 @@ func TestInstallArchiveReportsElevatedBackupCleanupFailure(t *testing.T) {
 	defer run.OverrideElevation("")
 	mc := &config.MethodCandidate{Config: map[string]any{"extract_to": dest, "sudo_required": true}}
 	err := installArchive(context.Background(), archive, ".tar.gz", &config.Tool{Name: "demo"}, mc, rn)
-	if err == nil || !strings.Contains(err.Error(), "remove backup") {
-		t.Fatalf("install error = %v, want elevated backup cleanup failure", err)
+	if err != nil {
+		t.Fatalf("post-commit elevated backup cleanup must not fail installation: %v", err)
+	}
+	if got, readErr := os.ReadFile(filepath.Join(dest, "bin", "demo")); readErr != nil || string(got) != "new" { // #nosec G304 -- dest is a test-owned temporary path.
+		t.Fatalf("committed payload = %q, %v; want new payload", got, readErr)
 	}
 }
 

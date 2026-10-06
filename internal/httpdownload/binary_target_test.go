@@ -89,7 +89,15 @@ func TestHTTPAdapterRemoveRecordedArchivePayloadPreservesParent(t *testing.T) {
 	mc := &config.MethodCandidate{Config: map[string]any{
 		"url": "https://example.test/tool.zip", "extract_to": payload, ownedArchivePayloadKey: true,
 	}}
-	if err := NewHTTPAdapter().Remove(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "tool"}, mc); err != nil {
+	tool := &config.Tool{Name: "tool"}
+	owner, err := expectedArchiveOwnership(tool, mc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeArchiveOwnership(payload, owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewHTTPAdapter().Remove(context.Background(), &run.FakeRunner{}, tool, mc); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
 	if _, err := os.Stat(payload); !os.IsNotExist(err) {
@@ -97,6 +105,36 @@ func TestHTTPAdapterRemoveRecordedArchivePayloadPreservesParent(t *testing.T) {
 	}
 	if got, err := os.ReadFile(unrelated); err != nil || string(got) != "unrelated" { // #nosec G304 -- unrelated fixture is in the test-owned parent directory.
 		t.Fatalf("unrelated parent payload changed: %q, %v", got, err)
+	}
+}
+
+func TestHTTPAdapterRemoveRejectsArchiveWithMismatchedFilesystemOwnership(t *testing.T) {
+	parent := t.TempDir()
+	payload := filepath.Join(parent, "tool-payload")
+	if err := os.MkdirAll(payload, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	foreignTool := &config.Tool{Name: "other-tool"}
+	mc := &config.MethodCandidate{Config: map[string]any{
+		"url": "https://example.test/tool.zip", "extract_to": payload, ownedArchivePayloadKey: true,
+	}}
+	owner, err := expectedArchiveOwnership(foreignTool, mc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeArchiveOwnership(payload, owner); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(payload, "keep")
+	if err := os.WriteFile(sentinel, []byte("foreign"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = NewHTTPAdapter().Remove(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "tool"}, mc)
+	if err == nil || !strings.Contains(err.Error(), "filesystem ownership") {
+		t.Fatalf("Remove error = %v, want filesystem ownership rejection", err)
+	}
+	if got, readErr := os.ReadFile(sentinel); readErr != nil || string(got) != "foreign" { // #nosec G304 -- sentinel is inside this test's temporary directory.
+		t.Fatalf("mismatched ownership removal changed payload: %q, %v", got, readErr)
 	}
 }
 
@@ -146,6 +184,13 @@ func TestHTTPAdapterInstallRecordsArchiveOwnership(t *testing.T) {
 	}
 	if !ownsArchivePayload(mc) {
 		t.Fatal("successful archive installation did not persist payload ownership")
+	}
+	owner, err := expectedArchiveOwnership(&config.Tool{Name: "tool"}, mc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyArchiveOwnership(dest, owner); err != nil {
+		t.Fatalf("successful archive installation did not persist filesystem ownership: %v", err)
 	}
 	if got, err := os.ReadFile(filepath.Join(dest, "tool")); err != nil || string(got) != "payload" { // #nosec G304 -- dest is a test-owned t.TempDir path.
 		t.Fatalf("installed payload = %q, %v", got, err)

@@ -4,7 +4,7 @@
 - Normalize elevated archive payload modes with a BSD-compatible `chmod` path argument; resolve npm JSON string or single-item array responses while rejecting ambiguous values, and configure cross-platform smoke images for legacy lock resolution.
 - Drain external TAR decoder stdout after the end marker within the existing bounded, context-aware trailer policy.
 - Expand native `{arch}` and `{os}` placeholders in GitHub `repo` + `asset` configuration fields while preserving `{arch_any}` and `{os_any}` asset-match tokens.
-- Archive installs report rollback, launcher, backup, and staging cleanup failures; elevated payload roots use uid/gid 0 and mode 0755 while inner modes are preserved.
+- Archive installs fail closed on rollback/launcher failures while post-commit backup/staging cleanup is warning-only; elevated payload trees normalize owner uid 0 without dereferencing symlinks, keep inner modes, and set the root mode to 0755.
 - Standalone `.bz2` extraction now honors the archive expanded-byte limit and context cancellation before installing decompressed output.
 - HTTP artifact downloads use the bounded in-process backend with a configurable 4 GiB default ingress limit before cache storage; the curl/Wget backends were removed because their available size controls are not reliably per-file streaming limits.
 - Serialize concurrent hook and source-preparation progress output and include the owning tool name.
@@ -12,7 +12,7 @@
 
 - Reject HTTP/GitHub `.deb` lifecycles before download or mutation: package identity is not persisted for safe observation and removal.
 - Reject unsafe HTTP/GitHub `binary` paths before planning or filesystem access.
-- Persist HTTP archive payload ownership and fail closed when legacy removal state cannot prove ownership; removal no longer treats arbitrary `extract_to` paths as exclusive.
+- Persist HTTP archive payload ownership in state and in a payload-local ownership marker; replacement/removal requires both durable ownership intent and matching filesystem evidence, and arbitrary `extract_to` paths are never treated as exclusive.
 - Route Scoop package lifecycle and bucket source operations through one Scoop-local semantic runtime boundary; official CLI decoding is runtime-owned and capability checks precede requested mutations, without changing manifest method identity.
 - Report global tool and method timeout failures with the correct timeout scope and configured duration.
 - Replacement recovery now reconstructs the configured candidate intent and pins it to the persisted immutable plan before observing or mutating the host; retries resolve method-scoped removal credentials and use the same timeout, environment omission, and elevation safeguards.
