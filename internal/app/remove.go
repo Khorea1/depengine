@@ -261,14 +261,14 @@ func (s *removeSession) verifyRemovalTarget(ctx context.Context, toolName string
 		methodKind = toolState.Method
 	}
 	tool := &config.Tool{Name: toolName}
-	method := &config.MethodCandidate{Kind: methodKind, Label: toolState.Method, Config: toolState.Config}
+	method := &config.MethodCandidate{Kind: methodKind, Label: toolState.Method, Config: toolState.Config, OwnsArchivePayload: toolState.ArchivePayloadOwned()}
 	if schemaTool := s.schemaTools[toolName]; schemaTool != nil {
 		tracked, err := findStateMethodCandidate(schemaTool, toolState)
 		if err != nil {
 			return verifiedRemovalTarget{}, err
 		}
 		*tool = *schemaTool
-		method = &config.MethodCandidate{Kind: tracked.Kind, Label: tracked.Label, Config: tracked.Config}
+		method = &config.MethodCandidate{Kind: tracked.Kind, Label: tracked.Label, Config: tracked.Config, OwnsArchivePayload: toolState.ArchivePayloadOwned()}
 		if toolState.Config != nil {
 			method.Config = toolState.Config
 		}
