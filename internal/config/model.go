@@ -311,8 +311,8 @@ type MethodCandidate struct {
 	TargetOS   string `json:"-"`
 	// ResolvedVersion and ResolvedChecksum carry concrete runtime resolution
 	// results without smuggling phase state through the user-authored Config map.
-	ResolvedVersion    string `json:"-"`
-	ResolvedChecksum   string `json:"-"`
+	ResolvedVersion  string `json:"-"`
+	ResolvedChecksum string `json:"-"`
 	// RebootRequired and OwnsArchivePayload are transient execution outcomes.
 	RebootRequired     bool `json:"-"`
 	OwnsArchivePayload bool `json:"-"`
