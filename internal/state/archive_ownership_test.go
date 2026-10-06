@@ -4,9 +4,9 @@ import "testing"
 
 func TestToolStateArchivePayloadOwnedSupportsTypedAndLegacyState(t *testing.T) {
 	for _, tc := range []struct {
-		name string
+		name  string
 		state ToolState
-		want bool
+		want  bool
 	}{
 		{name: "typed", state: ToolState{OwnsArchivePayload: true}, want: true},
 		{name: "legacy config", state: ToolState{Config: map[string]any{"_http_owned_archive_payload": true}}, want: true},
