@@ -29,7 +29,7 @@ type Adapter struct {
 }
 
 func NewAdapter() *Adapter {
-	return &Adapter{http: httpdownload.NewHTTPAdapter()}
+	return &Adapter{http: httpdownload.NewInstallerHTTPAdapter()}
 }
 
 func (a *Adapter) Kind() string { return "dmg" }
@@ -143,7 +143,6 @@ func stagedConfig(mc *config.MethodCandidate, tmp string) *config.MethodCandidat
 	}
 	clone.Config["extract_to"] = tmp
 	clone.Config["binary"] = "package.dmg"
-	clone.Config["_allow_installer"] = true
 	clone.Config["sudo_required"] = false
 	return &clone
 }
