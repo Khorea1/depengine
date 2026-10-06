@@ -2,8 +2,8 @@ archmap: 2
 doc: flow
 id: install
 verified:
-  revision: "6bb3223"
-  verified_on: "2026-10-01"
+  revision: "62d052c"
+  verified_on: "2026-10-06"
 trigger: "Operator runs depengine install with a schema/manifest selection."
 steps:
   - from: operator
@@ -27,9 +27,12 @@ steps:
     confidence: confirmed
   - from: reconciliation
     to: state-and-lock
-    action: "Recovers durable preparation transactions before any new host mutation and records already-reconciled commits as terminal results for the run."
-    evidence: ["internal/exec/execute.go:72-90", "internal/exec/preparation.go:673-735"]
+    action: "Recovers durable replacement transactions first, then preparation transactions, before any new host mutation; already-reconciled commits are recorded as terminal results for the run."
+    evidence: ["internal/exec/run.go:95-115", "internal/exec/run.go:124-178", "internal/exec/preparation.go:679-796"]
     symbols:
+      - name: recoverReplacementTransactions
+        path: internal/exec/run.go
+        role: "Replacement recovery runs before preparation recovery."
       - name: recoverPreparationTransactions
         path: internal/exec/preparation.go
     confidence: confirmed
