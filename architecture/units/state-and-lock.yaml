@@ -2,8 +2,8 @@ archmap: 2
 doc: unit
 id: state-and-lock
 verified:
-  revision: "6bb3223"
-  verified_on: "2026-10-01"
+  revision: "62d052c"
+  verified_on: "2026-10-06"
 type: subsystem
 paths:
   - internal/state/
@@ -15,13 +15,20 @@ invariants:
   - text: "State mutation is performed under the state lock before the executor saves reconciled tool state."
     confidence: confirmed
     evidence: ["internal/exec/state.go:90-131"]
-  - text: "Legacy method-specific pins are still refreshed by lock.ResolveAll and merged with preserved pins; they remain distinct from the adapter-neutral universal projection."
+  - text: "Legacy method-specific pins are still refreshed by lock.ResolveLegacyV1 and merged with preserved pins; they remain distinct from the adapter-neutral universal projection."
     confidence: confirmed
-    evidence: ["internal/lock/lock.go:278-330", "internal/app/update.go:92-148"]
+    evidence: ["internal/lock/lock.go:320-491", "internal/app/update.go:130-153"]
     symbols:
-      - name: ResolveAll
+      - name: ResolveLegacyV1
         path: internal/lock/lock.go
-        role: "Legacy selector-pin materialization entry point retained alongside lock v2."
+        role: "Bounded legacy selector-pin materialization retained alongside lock v2."
+  - text: "State-tracked upgrades persist a replacement write-ahead transaction before removal, carrying the prior ToolState, exact immutable target, and resource-use claims needed for fail-closed restart recovery."
+    confidence: confirmed
+    evidence: ["internal/state/replacement.go:12-77", "internal/exec/replacement.go:19-126"]
+    symbols:
+      - name: BeginReplacement
+        path: internal/state/replacement.go
+        role: "Durable replacement boundary created before destructive upgrade mutation."
   - text: "depengine.lock v2 persists a universal LockDocument projection only when exact full-install-closure coverage can be proven; missing, extra, mutable, or mismatched identities fail closed."
     confidence: confirmed
     evidence: ["internal/lock/universal.go:9-40", "internal/app/universal_lock.go:19-105", "internal/plan/lock.go:827-878", "internal/plan/lock.go:999-1015"]
@@ -37,9 +44,9 @@ relations:
     to: adapters
     kind: calls
     via: "selector-specific release/registry/Git resolver helpers, not AdapterV2"
-    evidence: ["internal/lock/lock.go:278-352"]
+    evidence: ["internal/lock/lock.go:320-491"]
     symbols:
-      - name: ResolveAll
+      - name: ResolveLegacyV1
         path: internal/lock/lock.go
         role: "Start here, then use symbol references/callees to enumerate the concrete resolver helpers involved."
     confidence: confirmed
