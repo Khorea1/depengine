@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -106,7 +106,7 @@ func (a *SteamCMDAdapter) CheckAvailable(context.Context, run.Runner, *config.To
 
 // CheckHostCompatibility imposes no host constraints beyond adapter
 // availability.
-func (a *SteamCMDAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (a *SteamCMDAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	return nil
 }
 

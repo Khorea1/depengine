@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/httpdownload"
 	"github.com/Khorea1/depengine/internal/plan"
@@ -289,7 +289,7 @@ func (a *Adapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *con
 
 // CheckHostCompatibility rejects non-macOS hosts explicitly: mounting the
 // image requires hdiutil, which only exists on macOS.
-func (a *Adapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (a *Adapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	if runtime.GOOS != "darwin" {
 		return fmt.Errorf("dmg disk images require macOS (hdiutil is unavailable on %s)", runtime.GOOS)
 	}

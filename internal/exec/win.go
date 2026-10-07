@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/scoopruntime"
@@ -347,7 +347,7 @@ func (w *winAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *
 
 // CheckHostCompatibility imposes no host constraints: these adapters only
 // run on Windows hosts by construction.
-func (w *winAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (w *winAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	return nil
 }
 

@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/httpdownload"
 	"github.com/Khorea1/depengine/internal/plan"
@@ -206,7 +206,7 @@ func (a *Adapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *con
 
 // CheckHostCompatibility rejects non-macOS hosts explicitly because the
 // installer and receipt APIs are platform-specific.
-func (a *Adapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (a *Adapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	if runtime.GOOS != "darwin" {
 		return fmt.Errorf("macOS installer packages require macOS (installer is unavailable on %s)", runtime.GOOS)
 	}

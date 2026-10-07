@@ -10,7 +10,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/container"
 	"github.com/Khorea1/depengine/internal/ecosystem"
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/git"
 	"github.com/Khorea1/depengine/internal/httpdownload"
@@ -180,7 +180,7 @@ func validateInstallSortBy(sortBy string, lg *slog.Logger) error {
 
 // printInstallHeader prints the aligned pre-run block answering "what
 // schema, what target, how many tools, is this a dry run".
-func printInstallHeader(cs *cliStyle, p installPlan, s *config.Schema, clan string, facts *engine.Facts, manifestCount int) {
+func printInstallHeader(cs *cliStyle, p installPlan, s *config.Schema, clan string, facts *platform.Facts, manifestCount int) {
 	title := "depengine install"
 	if p.dryRun {
 		title = "depengine install — dry run (planning only)"
@@ -200,7 +200,7 @@ func printInstallHeader(cs *cliStyle, p installPlan, s *config.Schema, clan stri
 
 // newInstallExecutor wires the executor: adapters, schema info, logger,
 // runner, facts, and the install plan's behavior options.
-func newInstallExecutor(p installPlan, s *config.Schema, clan string, facts *engine.Facts, schemaModTime time.Time, lg *slog.Logger) *exec.Executor {
+func newInstallExecutor(p installPlan, s *config.Schema, clan string, facts *platform.Facts, schemaModTime time.Time, lg *slog.Logger) *exec.Executor {
 	ex := exec.New()
 	exec.WithDefaultMethodOrder(s.Defaults.MethodOrder)(ex)
 	adapters := []exec.AdapterV2{
