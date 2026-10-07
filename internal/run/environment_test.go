@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -204,6 +205,104 @@ func TestRunWithEnvIsPerChildAndSuppressesSecretOutput(t *testing.T) {
 	if os.Getenv("DEPENGINE_TEST_ENV_OVERRIDE") != "parent" || os.Getenv("DEPENGINE_TEST_ENV_SECRET") != "" {
 		t.Fatal("child environment mutated the parent")
 	}
+}
+
+type synchronizedBuffer struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *synchronizedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.Write(p)
+}
+
+func (b *synchronizedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.String()
+}
+
+func TestSensitiveRunWithEnvDoesNotStream(t *testing.T) {
+	t.Setenv("DEPENGINE_TEST_ENV_CHILD", "1")
+	t.Setenv("DEPENGINE_TEST_ENV_OVERRIDE", "child")
+	t.Setenv("DEPENGINE_TEST_ENV_SECRET", "runtime-secret")
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"-test.run=^TestEnvironmentChild$"}
+	sensitive := []string{"runtime-secret"}
+	for _, tc := range []struct {
+		name string
+		run  func(*OSExecRunner, []string) Result
+	}{
+		{name: "direct runner", run: func(rn *OSExecRunner, args []string) Result {
+			return rn.RunWithEnv(context.Background(), nil, sensitive, exe, args...)
+		}},
+		{name: "helper with empty env", run: func(rn *OSExecRunner, args []string) Result {
+			return RunWithEnv(context.Background(), rn, nil, sensitive, exe, args...)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stream bytes.Buffer
+			runner := &OSExecRunner{Stream: &stream}
+			result := tc.run(runner, args)
+			if result.Err != nil || result.WaitErr != nil {
+				t.Fatalf("child failed: err=%v waitErr=%v", result.Err, result.WaitErr)
+			}
+			if len(result.Stdout) != 0 || len(result.Stderr) != 0 {
+				t.Fatalf("sensitive output was returned: stdout=%q stderr=%q", result.Stdout, result.Stderr)
+			}
+			if stream.Len() != 0 {
+				t.Fatalf("sensitive output was streamed: %q", stream.String())
+			}
+		})
+	}
+}
+
+type sensitiveUnsupportedRunner struct{ calls int }
+
+func (r *sensitiveUnsupportedRunner) Run(context.Context, string, ...string) Result {
+	r.calls++
+	return Result{Stdout: []byte("must-not-run")}
+}
+
+func TestSensitiveRunWithEnvFailsClosedWithoutEnvironmentRunner(t *testing.T) {
+	runner := &sensitiveUnsupportedRunner{}
+	result := RunWithEnv(context.Background(), runner, nil, []string{"synthetic-secret"}, "probe")
+	if result.Err == nil || runner.calls != 0 || len(result.Stdout) != 0 || len(result.Stderr) != 0 {
+		t.Fatalf("sensitive call did not fail closed: result=%+v calls=%d", result, runner.calls)
+	}
+}
+
+func TestRunWithEnvEmptySensitivePreservesOutputAndExitCode(t *testing.T) {
+	t.Setenv("DEPENGINE_TEST_ENV_EXIT_CHILD", "1")
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stream synchronizedBuffer
+	result := RunWithEnv(context.Background(), &OSExecRunner{Stream: &stream}, nil, nil, exe, "-test.run=^TestRunWithEnvExitChild$")
+	if result.Err != nil || result.WaitErr != nil || result.ExitCode != 7 {
+		t.Fatalf("result = %+v, want clean execution with exit code 7", result)
+	}
+	if !strings.Contains(string(result.Stdout), "ordinary-output") || !strings.Contains(string(result.Stderr), "ordinary-error") {
+		t.Fatalf("captured output was not preserved: stdout=%q stderr=%q", result.Stdout, result.Stderr)
+	}
+	if !strings.Contains(stream.String(), "ordinary-error") || strings.Contains(stream.String(), "runtime-secret") {
+		t.Fatalf("non-sensitive stream = %q, want ordinary stderr without secrets", stream.String())
+	}
+}
+
+func TestRunWithEnvExitChild(t *testing.T) {
+	if os.Getenv("DEPENGINE_TEST_ENV_EXIT_CHILD") != "1" {
+		return
+	}
+	_, _ = os.Stdout.WriteString("ordinary-output")
+	_, _ = os.Stderr.WriteString("ordinary-error")
+	os.Exit(7)
 }
 
 func TestLoggingRunnerValidatedOutputDoesNotLogRawSecret(t *testing.T) {
