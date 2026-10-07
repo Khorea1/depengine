@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -107,7 +108,7 @@ func TestGatherFactsParsesJSONAndLeavesFactsImmutable(t *testing.T) {
 	}
 	// ResolveFamily is pure and computed by the caller, NOT stored here.
 	// Sanity: re-resolving produces the same value, repeatedly.
-	a, b := ResolveFamily(facts), ResolveFamily(facts)
+	a, b := platform.ResolveFamily(facts), platform.ResolveFamily(facts)
 	if a != "arch" {
 		t.Fatalf("ResolveFamily = %q, want arch", a)
 	}
@@ -256,25 +257,25 @@ func TestResolveFamilyTable(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			f := &Facts{DistroID: tc.distroID, DistroIDLike: tc.distroLike, IsAndroid: tc.isAndroid}
-			if got := ResolveFamily(f); got != tc.want {
+			f := &platform.Facts{DistroID: tc.distroID, DistroIDLike: tc.distroLike, IsAndroid: tc.isAndroid}
+			if got := platform.ResolveFamily(f); got != tc.want {
 				t.Fatalf("ResolveFamily = %q, want %q", got, tc.want)
 			}
 		})
 	}
 }
 
-func TestMatchesDistroFamily(t *testing.T) {
-	if !MatchesDistroFamily("arch", []string{"debian", "arch"}) {
+func Testplatform.MatchesDistroFamily(t *testing.T) {
+	if !platform.MatchesDistroFamily("arch", []string{"debian", "arch"}) {
 		t.Fatal("arch in [debian,arch] should match")
 	}
-	if MatchesDistroFamily("arch", []string{"debian", "fedora"}) {
+	if platform.MatchesDistroFamily("arch", []string{"debian", "fedora"}) {
 		t.Fatal("arch in [debian,fedora] should not match")
 	}
-	if !MatchesDistroFamily("Arch", []string{"ARCH"}) { // case-insensitive
+	if !platform.MatchesDistroFamily("Arch", []string{"ARCH"}) { // case-insensitive
 		t.Fatal("MatchesDistroFamily should be case-insensitive")
 	}
-	if !MatchesDistroFamily("unknown", []string{"unknown"}) {
+	if !platform.MatchesDistroFamily("unknown", []string{"unknown"}) {
 		t.Fatal("unknown clan should match itself (engine decides)")
 	}
 }
@@ -287,12 +288,12 @@ func TestResolveFamilyNilFacts(t *testing.T) {
 		}
 	}()
 
-	_ = ResolveFamily(nil)
+	_ = platform.ResolveFamily(nil)
 }
 
 // TestMatchesDistroFamilyNilSlice handles edge case of nil allowed list.
 func TestMatchesDistroFamilyNilSlice(t *testing.T) {
-	if MatchesDistroFamily("arch", nil) {
+	if platform.MatchesDistroFamily("arch", nil) {
 		t.Fatal("MatchesDistroFamily should return false for nil allowed list")
 	}
 }
