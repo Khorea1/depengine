@@ -2492,7 +2492,7 @@ func TestExecutionClosureKeepsDependencyReachedByAnotherEffectiveEdge(t *testing
 	}
 }
 
-func TestCancellationStopsLaterLevelsAndPreservesPartialReport(t *testing.T) {
+func TestCancellationReportsPlannedClosureAndPreservesPartialState(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	started := make(chan string, 1)
 	blocking := &blockingMockAdapter{kindValue: "blocker", block: make(chan struct{}), started: started}
@@ -2541,10 +2541,10 @@ func TestCancellationStopsLaterLevelsAndPreservesPartialReport(t *testing.T) {
 		t.Fatalf("Execute error = %v, want context.Canceled", got.err)
 	}
 	if got.report == nil {
-		t.Fatal("expected partial report on cancellation")
+		t.Fatal("expected a report on cancellation")
 	}
-	if len(got.report.Tools) != 2 {
-		t.Fatalf("partial report tools = %+v, want done and block only", got.report.Tools)
+	if len(got.report.Tools) != 3 || got.report.Failed != 2 {
+		t.Fatalf("report = %+v, want completed and every canceled/blocked planned tool", got.report)
 	}
 	if got.report.Tools[0].Tool != "done" || got.report.Tools[0].Status != StatusInstalled {
 		t.Fatalf("first result = %+v, want completed done tool", got.report.Tools[0])
@@ -2552,10 +2552,8 @@ func TestCancellationStopsLaterLevelsAndPreservesPartialReport(t *testing.T) {
 	if got.report.Tools[1].Tool != "block" || got.report.Tools[1].Status != StatusFailed || !strings.Contains(got.report.Tools[1].Error, "execution cancelled") {
 		t.Fatalf("cancelled result = %+v, want block cancellation", got.report.Tools[1])
 	}
-	for _, tr := range got.report.Tools {
-		if tr.Tool == "later" {
-			t.Fatalf("later level was scheduled after cancellation: %+v", got.report.Tools)
-		}
+	if got.report.Tools[2].Tool != "later" || got.report.Tools[2].Status != StatusFailed || !strings.Contains(got.report.Tools[2].Error, "requires failed dependency: block (execution cancelled)") {
+		t.Fatalf("later result = %+v, want dependency-blocked cancellation", got.report.Tools[2])
 	}
 	persisted, err := state.Load()
 	if err != nil {
@@ -2613,11 +2611,108 @@ func TestParallelCancellationDoesNotStartQueuedJobs(t *testing.T) {
 	if !errors.Is(got.err, context.Canceled) {
 		t.Fatalf("Execute error = %v, want context.Canceled", got.err)
 	}
-	if got.report == nil || len(got.report.Tools) != 2 {
-		t.Fatalf("partial report = %+v, want exactly two in-flight tools", got.report)
+	if got.report == nil || len(got.report.Tools) != 4 || got.report.Failed != 4 {
+		t.Fatalf("report = %+v, want all active and queued tools reported", got.report)
+	}
+	for _, result := range got.report.Tools {
+		if result.Status != StatusFailed || result.Error != "execution cancelled" {
+			t.Fatalf("result = %+v, want cancelled", result)
+		}
 	}
 	if extra := len(started); extra != 0 {
 		t.Fatalf("%d queued jobs started after cancellation", extra)
+	}
+}
+
+type cancelAfterConcurrentStartAdapter struct {
+	*testMockAdapter
+	blockStarted  chan struct{}
+	queuedStarted chan struct{}
+	cancel        context.CancelFunc
+}
+
+func (a *cancelAfterConcurrentStartAdapter) InstallResolved(ctx context.Context, _ run.Runner, tool *config.Tool, _ *config.MethodCandidate, _ *plan.ResolvedInstallPlan) error {
+	switch tool.Name {
+	case "a-block":
+		close(a.blockStarted)
+		<-ctx.Done()
+		return ctx.Err()
+	case "b-done":
+		select {
+		case <-a.blockStarted:
+			a.cancel()
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		return nil
+	case "c-queued":
+		close(a.queuedStarted)
+	}
+	return nil
+}
+
+func TestCancellationReportsCompletedQueuedAndLaterTools(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	adapter := &cancelAfterConcurrentStartAdapter{
+		testMockAdapter: &testMockAdapter{kindValue: "controlled"},
+		blockStarted:    make(chan struct{}),
+		queuedStarted:   make(chan struct{}),
+		cancel:          cancel,
+	}
+	ex := New()
+	WithQuiet()(ex)
+	WithAdapters(adapter)(ex)
+	WithMaxJobs(2)(ex)
+	WithSchemaInfo("/tmp/midflight-cancelled-schema.toml", time.Now())(ex)
+	schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{"controlled"}}, Tools: map[string]*config.Tool{
+		"a-block":  {Name: "a-block", Methods: []*config.MethodCandidate{{Kind: "controlled"}}},
+		"b-done":   {Name: "b-done", Methods: []*config.MethodCandidate{{Kind: "controlled"}}},
+		"c-queued": {Name: "c-queued", Methods: []*config.MethodCandidate{{Kind: "controlled"}}},
+		"d-later":  {Name: "d-later", Requires: []string{"a-block"}, Methods: []*config.MethodCandidate{{Kind: "controlled"}}},
+	}}
+	type outcome struct {
+		report *ExecReport
+		err    error
+	}
+	resultCh := make(chan outcome, 1)
+	go func() {
+		report, err := ex.Execute(ctx, schema, "")
+		resultCh <- outcome{report: report, err: err}
+	}()
+	var got outcome
+	select {
+	case got = <-resultCh:
+	case <-time.After(time.Second):
+		t.Fatal("Execute did not return after controlled cancellation")
+	}
+	if !errors.Is(got.err, context.Canceled) {
+		t.Fatalf("Execute error = %v, want context.Canceled", got.err)
+	}
+	if got.report == nil || len(got.report.Tools) != 4 || got.report.Failed != 3 {
+		t.Fatalf("report = %+v, want one completed and three cancelled/blocked planned tools", got.report)
+	}
+	results := make(map[string]ToolResult, len(got.report.Tools))
+	for _, result := range got.report.Tools {
+		results[result.Tool] = result
+	}
+	if result := results["b-done"]; result.Status != StatusInstalled {
+		t.Fatalf("completed result = %+v, want installed", result)
+	}
+	if result := results["a-block"]; result.Status != StatusFailed || result.Error != "execution cancelled" {
+		t.Fatalf("active result = %+v, want canceled", result)
+	}
+	if result := results["c-queued"]; result.Status != StatusFailed || result.Error != "execution cancelled" {
+		t.Fatalf("queued result = %+v, want cancellation", result)
+	}
+	if result := results["d-later"]; result.Status != StatusFailed || !strings.Contains(result.Error, "requires failed dependency: a-block (") {
+		t.Fatalf("later result = %+v, want dependency-blocked cancellation", result)
+	}
+	select {
+	case <-adapter.queuedStarted:
+		t.Fatal("queued tool started after cancellation")
+	default:
 	}
 }
 
@@ -3190,5 +3285,54 @@ func TestRunLifecycleHooksExecutesOnlyConcreteTransition(t *testing.T) {
 	}
 	if len(runner.Calls) != 1 || runner.Calls[0].Name != "upgrade-hook" {
 		t.Fatalf("calls = %#v, want only upgrade-hook", runner.Calls)
+	}
+}
+func TestExecuteCanceledReportIncludesRemainingRootClosure(t *testing.T) {
+	ex := New()
+	WithQuiet()(ex)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	method := func() []*config.MethodCandidate {
+		return []*config.MethodCandidate{{Kind: "http"}}
+	}
+	schema := &config.Schema{Tools: map[string]*config.Tool{
+		"a-dependency":      {Name: "a-dependency", DependencyOnly: true, Methods: method()},
+		"b-independent":     {Name: "b-independent", Methods: method()},
+		"c-root":            {Name: "c-root", Requires: []string{"a-dependency"}, Methods: method()},
+		"d-when-skipped":    {Name: "d-when-skipped", Methods: []*config.MethodCandidate{{Kind: "http", When: &config.Condition{OS: []string{"__never__"}}}}},
+		"unused-dependency": {Name: "unused-dependency", DependencyOnly: true, Methods: method()},
+	}}
+
+	report, err := ex.Execute(ctx, schema, "")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Execute() error = %v, want context.Canceled", err)
+	}
+	if len(report.Tools) != 4 || report.Failed != 4 {
+		t.Fatalf("report = %+v, want every planned tool with method candidates reported after cancellation", report)
+	}
+	results := make(map[string]ToolResult, len(report.Tools))
+	for _, result := range report.Tools {
+		if _, duplicate := results[result.Tool]; duplicate {
+			t.Fatalf("duplicate result for %q: %+v", result.Tool, report.Tools)
+		}
+		results[result.Tool] = result
+	}
+	for _, name := range []string{"a-dependency", "b-independent"} {
+		result, ok := results[name]
+		if !ok || result.Status != StatusFailed || result.Error != "execution cancelled" {
+			t.Fatalf("result[%q] = %+v, want cancelled", name, result)
+		}
+	}
+	whenSkipped, ok := results["d-when-skipped"]
+	if !ok || whenSkipped.Status != StatusFailed || whenSkipped.Error != "execution cancelled" {
+		t.Fatalf("result[d-when-skipped] = %+v, want cancellation before method when gate", whenSkipped)
+	}
+	root, ok := results["c-root"]
+	if !ok || root.Status != StatusFailed || !strings.Contains(root.Error, "requires failed dependency: a-dependency (execution cancelled)") {
+		t.Fatalf("result[c-root] = %+v, want dependency-blocked cancellation", root)
+	}
+	if _, included := results["unused-dependency"]; included {
+		t.Fatalf("unused dependency-only tool was reported: %+v", results["unused-dependency"])
 	}
 }

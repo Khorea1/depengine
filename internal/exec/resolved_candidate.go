@@ -60,6 +60,12 @@ func (ex *Executor) ExecuteResolvedUpgradeCandidate(ctx context.Context, schema 
 		toolCtx, cancel = context.WithTimeoutCause(toolCtx, ex.toolTimeout, errToolTimeout)
 		defer cancel()
 	}
+	recordResult := func(result ToolResult) {
+		rc.report.mu.Lock()
+		defer rc.report.mu.Unlock()
+		rc.report.addResultLocked(result)
+	}
+
 	for _, dependency := range tool.EffectiveRequires(ex.facts) {
 		dependencyResult, dependencyErr := ex.executeDependency(toolCtx, rc, dependency)
 		if dependencyErr != nil || !dependencySucceeded(dependencyResult) {
@@ -68,7 +74,7 @@ func (ex *Executor) ExecuteResolvedUpgradeCandidate(ctx context.Context, schema 
 				reason = dependencyErr.Error()
 			}
 			result := ToolResult{Tool: tool.Name, Status: StatusFailed, Error: fmt.Sprintf("requires failed dependency: %s (%s)", dependency, reason)}
-			rc.report.Tools = append(rc.report.Tools, result)
+			recordResult(result)
 			if _, err := ex.finishRun(housekeepingCtx, schema, rc.report, start); err != nil {
 				return result, err
 			}
@@ -80,7 +86,7 @@ func (ex *Executor) ExecuteResolvedUpgradeCandidate(ctx context.Context, schema 
 	if !ex.attemptMethod(toolCtx, rc, tool, method, &result, start, seed) {
 		ex.finishExhausted(&result, method.Kind, start)
 	}
-	rc.report.Tools = append(rc.report.Tools, result)
+	recordResult(result)
 	if _, err := ex.finishRun(housekeepingCtx, schema, rc.report, start); err != nil {
 		return result, err
 	}

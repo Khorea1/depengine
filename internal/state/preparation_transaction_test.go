@@ -193,6 +193,7 @@ func TestFinalizePreparationCommitWithToolPersistsZeroRefPrerequisiteAtomically(
 		InstalledAt: "2026-09-29T00:00:00Z",
 		Config:      map[string]any{"pkg": "example.test/helper"},
 	}
+	wantToolState := cloneToolState(toolState)
 	if _, err := ls.FinalizePreparationCommitWithTool(
 		key,
 		p,
@@ -204,6 +205,10 @@ func TestFinalizePreparationCommitWithToolPersistsZeroRefPrerequisiteAtomically(
 		_ = ls.Close()
 		t.Fatal(err)
 	}
+	toolState.Config["pkg"] = "example.test/changed"
+	if err := ls.Save(); err != nil {
+		t.Fatal(err)
+	}
 	if err := ls.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -212,8 +217,8 @@ func TestFinalizePreparationCommitWithToolPersistsZeroRefPrerequisiteAtomically(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, ok := loaded.Tools["helper"]; !ok || !reflect.DeepEqual(got, toolState) {
-		t.Fatalf("tool state = %#v, want %#v", got, toolState)
+	if got, ok := loaded.Tools["helper"]; !ok || !reflect.DeepEqual(got, wantToolState) {
+		t.Fatalf("tool state = %#v, want %#v", got, wantToolState)
 	}
 	wantOwned := []plan.OwnedResourceState{{
 		Resource:  resource,

@@ -134,6 +134,9 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 			break
 		}
 	}
+	if runErr != nil {
+		ex.recordCancelledTools(rc, levels)
+	}
 
 	finished, finishErr := ex.finishRun(housekeepingCtx, s, report, start)
 	if runErr != nil {
@@ -143,6 +146,47 @@ func (ex *Executor) Execute(ctx context.Context, s *config.Schema, clan string) 
 		return finished, runErr
 	}
 	return finished, finishErr
+}
+
+func (ex *Executor) recordCancelledTools(rc *runContext, levels [][]string) {
+	rc.report.mu.Lock()
+	recorded := make(map[string]struct{}, len(rc.report.Tools))
+	for _, result := range rc.report.Tools {
+		recorded[result.Tool] = struct{}{}
+	}
+	rc.report.mu.Unlock()
+
+	for _, level := range levels {
+		for _, name := range level {
+			if _, exists := recorded[name]; exists {
+				continue
+			}
+			tool, ok := rc.schema.Tools[name]
+			if !ok {
+				continue
+			}
+			result := ToolResult{Tool: name, Status: StatusFailed, Error: "execution cancelled"}
+			for _, dependency := range tool.EffectiveRequires(ex.facts) {
+				if reason, failed := rc.failed[dependency]; failed {
+					result.Error = fmt.Sprintf("requires failed dependency: %s (%s)", dependency, reason)
+					break
+				}
+			}
+			if result.Error == "execution cancelled" {
+				if len(rc.selectedMethods(tool)) == 0 {
+					result.Status = StatusVirtual
+					result.Error = ""
+				} else if !ex.allowArbitraryCode && ex.hasDangerousMethod(rc, tool) {
+					result.Error = "requires --allow-arbitrary-code (tool has arbitrary code execution capability)"
+				}
+			}
+			if result.Status == StatusFailed {
+				rc.failed[name] = result.Error
+			}
+			recorded[name] = struct{}{}
+			ex.recordToolResult(rc.ctx, rc, &result)
+		}
+	}
 }
 
 func (ex *Executor) executeTool(ctx context.Context, rc *runContext, tool *config.Tool) ToolResult {

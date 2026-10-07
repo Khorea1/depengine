@@ -119,3 +119,20 @@ type ExecReport struct {
 	WouldInstall int
 	Duration     time.Duration
 }
+
+// addResultLocked appends and counts a result. The caller must hold r.mu.
+func (r *ExecReport) addResultLocked(result ToolResult) {
+	r.Tools = append(r.Tools, result)
+	switch result.Status {
+	case StatusInstalled:
+		r.Success++
+	case StatusAlready:
+		r.Already++
+	case StatusSkippedWhen, StatusSkippedUnavailable:
+		r.Skipped++
+	case StatusFailed:
+		r.Failed++
+	case StatusWouldInstall:
+		r.WouldInstall++
+	}
+}

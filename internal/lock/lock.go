@@ -43,11 +43,13 @@ package lock
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"unicode"
@@ -175,8 +177,20 @@ func Save(path string, l *Lock) error {
 	}
 
 	// Write to a temp file in the same directory (ensures same-filesystem rename).
-	tmpPath := path + ".tmp"
-	f, err := os.Create(tmpPath) // #nosec G304 -- tmpPath is deterministically derived beside the selected project lockfile.
+	var f *os.File
+	var tmpPath string
+	var err error
+	for range 10 {
+		var suffix [16]byte
+		if _, err := rand.Read(suffix[:]); err != nil {
+			return fmt.Errorf("lock: generate temp name: %w", err)
+		}
+		tmpPath = filepath.Join(dir, ".depengine-lock-"+hex.EncodeToString(suffix[:]))
+		f, err = os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666) // #nosec G304,G302 -- Random exclusive temp file; preserve project lockfile sharing under umask for non-secret metadata.
+		if err == nil || !os.IsExist(err) {
+			break
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("lock: create tmp: %w", err)
 	}
@@ -199,6 +213,19 @@ func Save(path string, l *Lock) error {
 	if err := os.Rename(tmpPath, path); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("lock: rename: %w", err)
+	}
+	if runtime.GOOS != "windows" {
+		d, err := os.Open(dir) // #nosec G304 -- Directory is derived from the selected project lockfile path.
+		if err != nil {
+			return fmt.Errorf("lock: open directory for sync: %w", err)
+		}
+		if err := d.Sync(); err != nil {
+			_ = d.Close()
+			return fmt.Errorf("lock: sync directory: %w", err)
+		}
+		if err := d.Close(); err != nil {
+			return fmt.Errorf("lock: close directory: %w", err)
+		}
 	}
 
 	return nil
