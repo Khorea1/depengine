@@ -2,12 +2,11 @@ archmap: 2
 doc: unit
 id: reconciliation
 verified:
-  revision: "62d052c"
-  verified_on: "2026-10-06"
+  revision: "173e26b"
+  verified_on: "2026-10-07"
 type: subsystem
 paths:
   - internal/exec/
-  - internal/engine/
   - internal/run/
   - internal/secret/
 tech: ["Go"]
