@@ -14,6 +14,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/ecosystem"
 	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
@@ -70,7 +71,7 @@ func defaultSchemaPath() string {
 
 type loadedProject struct {
 	Schema        *config.Schema
-	Facts         *engine.Facts
+	Facts         *platform.Facts
 	Clan          string
 	SchemaPath    string
 	ManifestPath  string
@@ -125,7 +126,7 @@ func loadProject(schemaPath string, opts projectLoadOptions) (*loadedProject, er
 	if err != nil {
 		return nil, err
 	}
-	clan := engine.ResolveFamily(facts)
+	clan := platform.ResolveFamily(facts)
 	factMap := config.BuildMap(facts, clan)
 
 	schema, err := config.ParseProjectSchema(resolvedSchema, factMap)
@@ -180,7 +181,7 @@ func loadProject(schemaPath string, opts projectLoadOptions) (*loadedProject, er
 
 // loadSchema preserves the older tuple API for call sites that only need a
 // schema, while delegating to the canonical project loader.
-func loadSchema(path string) (*config.Schema, string, *engine.Facts, error) {
+func loadSchema(path string) (*config.Schema, string, *platform.Facts, error) {
 	project, err := loadProject(path, projectLoadOptions{})
 	if err != nil {
 		return nil, "", nil, err
@@ -215,7 +216,7 @@ func mergeManifest(schema *config.Schema, path string, provenance bool) (*config
 
 // newProjectExecutor wires the host-specific adapters and selection policy
 // consistently for install-adjacent read-only operations.
-func newProjectExecutor(schema *config.Schema, clan string, facts *engine.Facts, rn run.Runner) *exec.Executor {
+func newProjectExecutor(schema *config.Schema, clan string, facts *platform.Facts, rn run.Runner) *exec.Executor {
 	executor := exec.New()
 	exec.WithRunner(rn)(executor)
 	exec.WithFacts(facts)(executor)

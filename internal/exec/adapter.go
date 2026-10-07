@@ -31,7 +31,7 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
@@ -74,7 +74,7 @@ type AdapterV2 interface {
 	// and deterministic for the supplied facts/plan; expensive source
 	// resolution belongs in ResolvePlan instead. Adapters without host
 	// constraints return nil.
-	CheckHostCompatibility(tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan, facts *engine.Facts, clan string) error
+	CheckHostCompatibility(tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan, facts *platform.Facts, clan string) error
 }
 
 // ElevationRequirer is an optional interface for adapters whose need for

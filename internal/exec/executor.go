@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/native"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -39,7 +39,7 @@ type Executor struct {
 	configuredMethodOrder []string // from config.Defaults.MethodOrder; default = config.DefaultMethodOrder
 
 	// system facts for when-condition evaluation
-	facts        *engine.Facts
+	facts        *platform.Facts
 	lockDocument *plan.LockDocument
 
 	// schema info for state tracking
@@ -222,7 +222,7 @@ func WithDefaultMethodOrder(order []string) Option {
 		}
 	}
 }
-func WithFacts(f *engine.Facts) Option {
+func WithFacts(f *platform.Facts) Option {
 	return func(ex *Executor) { ex.facts = f }
 }
 
