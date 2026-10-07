@@ -2,12 +2,14 @@ archmap: 2
 doc: unit
 id: configuration
 verified:
-  revision: "6bb3223"
-  verified_on: "2026-10-01"
+  revision: "173e26b"
+  verified_on: "2026-10-07"
 type: subsystem
 paths:
   - internal/config/
   - internal/validate/
+  - internal/platform/
+  - internal/engine/
   - schema/
 tech: ["Go", "TOML", "JSON Schema"]
 status: active
@@ -15,6 +17,12 @@ invariants:
   - text: "Schema validation runs after target facts are available, so downstream units receive target-aware configuration."
     confidence: confirmed
     evidence: ["internal/app/helpers.go:81-111"]
+  - text: "Host fact structure and pure family/version semantics are owned by internal/platform; internal/engine is limited to native fact gathering plus the deprecated DEPENGINE_DETECT_SCRIPT compatibility boundary."
+    confidence: confirmed
+    evidence: ["internal/platform/facts.go:1-31", "internal/platform/resolve.go:1-117", "internal/platform/version.go:1-86", "internal/engine/facts.go:1-218"]
+  - text: "Runtime-only artifact facts and resolution outcomes live in typed MethodCandidate fields rather than underscore-prefixed keys inside user-authored Config."
+    confidence: confirmed
+    evidence: ["internal/config/model.go:280-330", "internal/config/parse.go:150-210"]
 relations:
   - from: configuration
     to: planning
