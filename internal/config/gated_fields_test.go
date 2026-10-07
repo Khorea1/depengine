@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 )
 
 func writeTempSchema(t *testing.T, content string) string {
@@ -151,8 +151,8 @@ app = { native = true, requires = ["dep"], requires_when = { dep = "unix" } }
 }
 
 func TestEffectiveRequiresFiltering(t *testing.T) {
-	unix := &engine.Facts{OS: "linux", TargetFamily: "unix"}
-	windows := &engine.Facts{OS: "windows", TargetFamily: "windows"}
+	unix := &platform.Facts{OS: "linux", TargetFamily: "unix"}
+	windows := &platform.Facts{OS: "windows", TargetFamily: "windows"}
 
 	tool := &Tool{
 		Name:     "app",
@@ -179,7 +179,7 @@ func TestEffectiveRequiresFiltering(t *testing.T) {
 }
 
 func TestFilteredToolsClonesOnlyGated(t *testing.T) {
-	windows := &engine.Facts{OS: "windows", TargetFamily: "windows"}
+	windows := &platform.Facts{OS: "windows", TargetFamily: "windows"}
 	plain := &Tool{Name: "plain", Requires: []string{"x"}}
 	gated := &Tool{
 		Name:         "gated",

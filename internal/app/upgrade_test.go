@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/run"
@@ -598,7 +598,7 @@ func TestBuildUpgradeExecutorUsesSchemaAURHelper(t *testing.T) {
 			t.Fatal(err)
 		}
 		schema := &config.Schema{Defaults: config.Defaults{AurHelper: helper}}
-		ex, err := buildUpgradeExecutor(schema, "arch", &engine.Facts{}, schemaPath, upgradeOptions{}, slog.New(slog.DiscardHandler))
+		ex, err := buildUpgradeExecutor(schema, "arch", &platform.Facts{}, schemaPath, upgradeOptions{}, slog.New(slog.DiscardHandler))
 		if err != nil {
 			t.Fatalf("buildUpgradeExecutor() error = %v", err)
 		}
@@ -607,7 +607,7 @@ func TestBuildUpgradeExecutorUsesSchemaAURHelper(t *testing.T) {
 
 	before := exec.Lookup("aur")
 	installSchema := &config.Schema{Defaults: config.Defaults{AurHelper: "yay"}}
-	installExecutor := newInstallExecutor(installPlan{schema: "schema.toml"}, installSchema, "arch", &engine.Facts{}, time.Time{}, slog.New(slog.DiscardHandler))
+	installExecutor := newInstallExecutor(installPlan{schema: "schema.toml"}, installSchema, "arch", &platform.Facts{}, time.Time{}, slog.New(slog.DiscardHandler))
 	yayExecutor := build("yay")
 	paruExecutor := build("")
 	if got := exec.Lookup("aur"); got != before {
