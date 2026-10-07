@@ -41,8 +41,8 @@ adapter registration, and the final exit code. CLI behavior lives in
 | `internal/exec` | Plan execution, adapter registry, candidate fallback, install reports |
 | `internal/run` | Subprocess interface used by production code and tests |
 | `internal/term` | Terminal geometry detection for width-aware output |
-| `internal/platform` | Native host detection, host facts, and distro-family logic |
-| `internal/engine` | Compatibility façade for host-fact gathering and platform helpers |
+| `internal/platform` | Native host detection, host facts, distro-family classification, and host-version comparison |
+| `internal/engine` | Host-fact gathering boundary plus deprecated `DEPENGINE_DETECT_SCRIPT` compatibility |
 | `internal/native` | Native package-manager definitions |
 | `internal/ecosystem` | Cargo, Go, Python, Node, Flatpak, Snap, and other ecosystem adapters |
 | `internal/git` | Git clone and build installs |
