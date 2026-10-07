@@ -265,7 +265,7 @@ func TestResolveFamilyTable(t *testing.T) {
 	}
 }
 
-func Testplatform.MatchesDistroFamily(t *testing.T) {
+func TestMatchesDistroFamily(t *testing.T) {
 	if !platform.MatchesDistroFamily("arch", []string{"debian", "arch"}) {
 		t.Fatal("arch in [debian,arch] should match")
 	}
