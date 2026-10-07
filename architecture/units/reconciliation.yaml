@@ -2,7 +2,7 @@ archmap: 2
 doc: unit
 id: reconciliation
 verified:
-  revision: "5f9030cfe516079d2cec9d88b0164f9fa39b2a72"
+  revision: "b2e35cb9f3e96d65182cc53889e1f443be76173b"
   verified_on: "2026-10-07"
 type: subsystem
 paths:
