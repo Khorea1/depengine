@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"io"
@@ -56,7 +56,7 @@ func (*sessionReuseAdapter) CheckAvailable(context.Context, run.Runner, *config.
 	return true
 }
 
-func (*sessionReuseAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (*sessionReuseAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	return nil
 }
 

@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
@@ -96,7 +96,7 @@ func (*testMockAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool
 	return true
 }
 
-func (*testMockAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (*testMockAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	return nil
 }
 
@@ -179,7 +179,7 @@ func (v2TestStub) CheckAvailable(context.Context, run.Runner, *config.Tool, *con
 	return true
 }
 
-func (v2TestStub) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (v2TestStub) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	return nil
 }
 
@@ -224,7 +224,7 @@ func (*availabilityMockAdapter) Remove(context.Context, run.Runner, *config.Tool
 
 func (*availabilityMockAdapter) CanRemove() bool { return false }
 
-func (*availabilityMockAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (*availabilityMockAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	return nil
 }
 
@@ -264,7 +264,7 @@ func (m *resolvingCompatibilityMockAdapter) ResolvePlan(_ context.Context, _ run
 	return &resolved, nil
 }
 
-func (m *resolvingCompatibilityMockAdapter) CheckHostCompatibility(_ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan, _ *engine.Facts, _ string) error {
+func (m *resolvingCompatibilityMockAdapter) CheckHostCompatibility(_ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan, _ *platform.Facts, _ string) error {
 	if strings.HasSuffix(intent.Artifacts[0].URL, ".deb") {
 		return &installError{msg: "resolved .deb is incompatible with this host"}
 	}
@@ -285,7 +285,7 @@ func (*resolvingCompatibilityMockAdapter) CheckAvailable(context.Context, run.Ru
 	return true
 }
 
-func (m *compatibilityMockAdapter) CheckHostCompatibility(_ *config.Tool, _ *config.MethodCandidate, _ *plan.ResolvedInstallPlan, _ *engine.Facts, _ string) error {
+func (m *compatibilityMockAdapter) CheckHostCompatibility(_ *config.Tool, _ *config.MethodCandidate, _ *plan.ResolvedInstallPlan, _ *platform.Facts, _ string) error {
 	return m.err
 }
 
@@ -320,7 +320,7 @@ func (*elevationMockAdapter) CheckAvailable(context.Context, run.Runner, *config
 	return true
 }
 
-func (*elevationMockAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (*elevationMockAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	return nil
 }
 
@@ -547,7 +547,7 @@ func TestExecutorSkipsHostIncompatibleCandidateAndFallsBack(t *testing.T) {
 	ex := New()
 	WithAdapters(blocked, fallback)(ex)
 	WithDryRun()(ex)
-	WithFacts(&engine.Facts{DistroID: "void", OS: "linux"})(ex)
+	WithFacts(&platform.Facts{DistroID: "void", OS: "linux"})(ex)
 	report, err := ex.Execute(context.Background(), s, "void")
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -587,7 +587,7 @@ func TestExecutorChecksResolvedArtifactCompatibilityInDryRunAndInstall(t *testin
 			}
 			ex := New()
 			WithAdapters(blocked, fallback)(ex)
-			WithFacts(&engine.Facts{DistroID: "arch", OS: "linux"})(ex)
+			WithFacts(&platform.Facts{DistroID: "arch", OS: "linux"})(ex)
 			if dryRun {
 				WithDryRun()(ex)
 			}
@@ -642,7 +642,7 @@ func TestExecutorSkipsElevationForGatedNativeMethod(t *testing.T) {
 	runner := &elevationTrackingRunner{}
 	ex := New()
 	WithRunner(runner)(ex)
-	WithFacts(&engine.Facts{IsAndroid: false})(ex)
+	WithFacts(&platform.Facts{IsAndroid: false})(ex)
 
 	s := mockSchema("tool")
 	s.Tools["tool"].Methods[0].When = &config.Condition{IsAndroid: &required}
@@ -1217,7 +1217,7 @@ func TestExecutorReportsWhenAllMethodsAreGated(t *testing.T) {
 	ex := New()
 	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
 	WithAdapters(adapter)(ex)
-	WithFacts(&engine.Facts{OS: "darwin"})(ex)
+	WithFacts(&platform.Facts{OS: "darwin"})(ex)
 
 	s := &config.Schema{
 		Defaults: config.Defaults{MethodOrder: []string{"linux-only"}},
@@ -1256,7 +1256,7 @@ func TestExecutorBlocksDependentWhenRequirementIsGated(t *testing.T) {
 	ex := New()
 	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
 	WithAdapters(adapter)(ex)
-	WithFacts(&engine.Facts{OS: "darwin"})(ex)
+	WithFacts(&platform.Facts{OS: "darwin"})(ex)
 
 	s := &config.Schema{
 		Defaults: config.Defaults{MethodOrder: []string{"mock"}},
@@ -1522,7 +1522,7 @@ func TestExecutorRunsOnlyMatchingPostInstallHooks(t *testing.T) {
 	WithAllowArbitraryCode()(ex)
 	WithRunner(fr)(ex)
 	WithAdapters(mock)(ex)
-	WithFacts(&engine.Facts{OS: "windows", TargetFamily: "windows"})(ex)
+	WithFacts(&platform.Facts{OS: "windows", TargetFamily: "windows"})(ex)
 
 	s := mockSchema("tool1")
 	s.Tools["tool1"].PostInstall = []config.Hook{{
@@ -2423,7 +2423,7 @@ func TestExecutionClosureFiltersRequiresWhenBeforeDependencyOnlyTraversal(t *tes
 
 	ex := New()
 	WithAdapters(adapter)(ex)
-	WithFacts(&engine.Facts{OS: "linux"})(ex)
+	WithFacts(&platform.Facts{OS: "linux"})(ex)
 	levels, err := ex.sortExecutionLevels(context.Background(), schema)
 	if err != nil {
 		t.Fatalf("sortExecutionLevels() error = %v", err)
@@ -2441,7 +2441,7 @@ func TestExecutionClosureFiltersRequiresWhenBeforeDependencyOnlyTraversal(t *tes
 
 	ex = New()
 	WithAdapters(adapter)(ex)
-	WithFacts(&engine.Facts{OS: "windows"})(ex)
+	WithFacts(&platform.Facts{OS: "windows"})(ex)
 	levels, err = ex.sortExecutionLevels(context.Background(), schema)
 	if err != nil {
 		t.Fatalf("sortExecutionLevels() with matching gate error = %v", err)
@@ -2476,7 +2476,7 @@ func TestExecutionClosureKeepsDependencyReachedByAnotherEffectiveEdge(t *testing
 
 	ex := New()
 	WithAdapters(adapter)(ex)
-	WithFacts(&engine.Facts{OS: "linux"})(ex)
+	WithFacts(&platform.Facts{OS: "linux"})(ex)
 	report, err := ex.Execute(context.Background(), schema, "")
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
