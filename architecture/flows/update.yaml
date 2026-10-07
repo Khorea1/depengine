@@ -2,8 +2,8 @@ archmap: 2
 doc: flow
 id: update
 verified:
-  revision: "b161bd80ede490f81bee1d6e64aaa0f8a2d6553c"
-  verified_on: "2026-10-01"
+  revision: "5f9030cfe516079d2cec9d88b0164f9fa39b2a72"
+  verified_on: "2026-10-07"
 trigger: "Operator runs depengine update to refresh reproducibility pins without applying installations."
 steps:
   - from: operator
@@ -18,7 +18,7 @@ steps:
   - from: cli
     to: state-and-lock
     action: "Refreshes v2 projection entries for selected tools and retained entries whose intent metadata is missing or drifted, then builds the v2 lock with NewUniversal; v1 uses explicit legacy resolution and merge."
-    evidence: ["internal/app/update.go:91-186", "internal/app/universal_lock.go:20-151", "internal/lock/universal.go:13-74", "internal/lock/lock.go:320-344"]
+    evidence: ["internal/app/update.go:91-201", "internal/app/universal_lock.go:20-151", "internal/lock/universal.go:13-74", "internal/lock/lock.go:320-344"]
     symbols:
       - name: runUpdate
         path: internal/app/update.go

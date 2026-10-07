@@ -2,8 +2,8 @@ archmap: 2
 doc: unit
 id: planning
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "5f9030cfe516079d2cec9d88b0164f9fa39b2a72"
+  verified_on: "2026-10-07"
 type: subsystem
 paths:
   - internal/plan/
@@ -15,4 +15,4 @@ status: active
 invariants:
   - text: "A resolved install plan must preserve the static candidate intent before it can proceed to mutation."
     confidence: confirmed
-    evidence: ["internal/exec/resolution.go:12-28", "internal/exec/resolution.go:44-54"]
+    evidence: ["internal/exec/resolution.go:29-54", "internal/exec/resolution.go:55-72"]

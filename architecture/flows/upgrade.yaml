@@ -2,8 +2,8 @@ archmap: 2
 doc: flow
 id: upgrade
 verified:
-  revision: "b161bd80ede490f81bee1d6e64aaa0f8a2d6553c"
-  verified_on: "2026-10-01"
+  revision: "5f9030cfe516079d2cec9d88b0164f9fa39b2a72"
+  verified_on: "2026-10-07"
 trigger: "Operator runs depengine upgrade to reconcile tracked installations with targets recorded in depengine.lock."
 steps:
   - from: operator

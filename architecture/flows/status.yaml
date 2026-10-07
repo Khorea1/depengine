@@ -2,8 +2,8 @@ archmap: 2
 doc: flow
 id: status
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "5f9030cfe516079d2cec9d88b0164f9fa39b2a72"
+  verified_on: "2026-10-07"
 trigger: "Operator runs depengine status to compare desired, tracked, and observed host state."
 steps:
   - from: operator
@@ -23,12 +23,12 @@ steps:
   - from: cli
     to: reconciliation
     action: "Creates a read-only executor context and reconciles desired tools with observations."
-    evidence: ["internal/app/status.go:73-82"]
+    evidence: ["internal/app/status.go:89-94", "internal/app/status.go:205-225"]
     confidence: confirmed
   - from: reconciliation
     to: adapters
     action: "Observes concrete targets through the same AdapterV2 seam used by install."
-    evidence: ["internal/exec/resolution.go:57-78", "internal/exec/adapter.go:49-54"]
+    evidence: ["internal/exec/resolution.go:105-131", "internal/exec/adapter.go:49-78"]
     confidence: confirmed
 failure_modes:
   - "If host facts cannot be gathered, affected tracked tools are reported as unknown rather than assumed healthy."

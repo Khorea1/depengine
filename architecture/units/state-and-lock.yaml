@@ -2,8 +2,8 @@ archmap: 2
 doc: unit
 id: state-and-lock
 verified:
-  revision: "b161bd80ede490f81bee1d6e64aaa0f8a2d6553c"
-  verified_on: "2026-10-01"
+  revision: "5f9030cfe516079d2cec9d88b0164f9fa39b2a72"
+  verified_on: "2026-10-07"
 type: subsystem
 paths:
   - internal/state/
@@ -14,7 +14,7 @@ status: active
 invariants:
   - text: "Replacement WAL records prior/desired candidate identity and resource uses before removal; verified installed state and ownership commit while the WAL remains active through the after-upgrade hook boundary."
     confidence: confirmed
-    evidence: ["internal/state/replacement.go:36-45", "internal/state/replacement.go:111-150", "internal/state/replacement.go:179-280"]
+    evidence: ["internal/state/replacement.go:40-91", "internal/state/replacement.go:111-150", "internal/state/replacement.go:179-280"]
   - text: "A v2 universal lock stores an encoded plan projection; legacy v1 pins may remain compatibility data but do not override v2 operational identity."
     confidence: confirmed
     evidence: ["internal/lock/universal.go:13-34", "internal/lock/universal.go:47-74"]

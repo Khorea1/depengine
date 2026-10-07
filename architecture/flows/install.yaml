@@ -2,8 +2,8 @@ archmap: 2
 doc: flow
 id: install
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "5f9030cfe516079d2cec9d88b0164f9fa39b2a72"
+  verified_on: "2026-10-07"
 trigger: "Operator runs depengine install with a schema/manifest selection."
 steps:
   - from: operator
@@ -13,32 +13,32 @@ steps:
   - from: cli
     to: configuration
     action: "Loads target facts, parses the schema/manifest, and validates the effective configuration."
-    evidence: ["internal/app/install.go:339-350", "internal/app/helpers.go:80-111"]
+    evidence: ["internal/app/install.go:366-382", "internal/app/helpers.go:117-160"]
     confidence: confirmed
   - from: cli
     to: state-and-lock
     action: "Resolves lock semantics and snapshots pre-install state before mutation."
-    evidence: ["internal/app/install.go:369-386"]
+    evidence: ["internal/app/install.go:403-420"]
     confidence: confirmed
   - from: cli
     to: reconciliation
     action: "Builds/configures the executor and starts reconciliation for the selected tools."
-    evidence: ["internal/app/install.go:374-393"]
+    evidence: ["internal/app/install.go:203-233", "internal/app/install.go:427-431"]
     confidence: confirmed
   - from: reconciliation
     to: planning
     action: "Computes dependency execution order and builds/validates static candidate intent before concrete resolution or host mutation."
-    evidence: ["internal/exec/run.go:130-162", "internal/exec/capability.go:51-76", "internal/exec/attempt.go:77-95"]
+    evidence: ["internal/exec/run.go:517-548", "internal/exec/capability.go:51-76", "internal/exec/attempt.go:77-95"]
     confidence: confirmed
   - from: reconciliation
     to: adapters
     action: "Resolves candidate identity, observes the host, and executes the chosen method through AdapterV2."
-    evidence: ["internal/exec/resolution.go:29-54", "internal/exec/adapter.go:39-54"]
+    evidence: ["internal/exec/resolution.go:57-78", "internal/exec/resolution.go:105-131", "internal/exec/attempt.go:401-457", "internal/exec/adapter.go:49-78"]
     confidence: confirmed
   - from: reconciliation
     to: state-and-lock
     action: "Persists reconciled installation state under the state lock."
-    evidence: ["internal/exec/state.go:39-57", "internal/exec/state.go:109-115"]
+    evidence: ["internal/exec/state.go:96-135"]
     confidence: confirmed
 failure_modes:
   - "Schema/manifest parse or validation failure stops before executor mutation begins."

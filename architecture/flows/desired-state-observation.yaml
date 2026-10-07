@@ -2,8 +2,8 @@ archmap: 2
 doc: flow
 id: desired-state-observation
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "5f9030cfe516079d2cec9d88b0164f9fa39b2a72"
+  verified_on: "2026-10-07"
 trigger: "A consumer needs to determine whether one selected candidate satisfies desired state without mutating the host."
 steps:
   - from: reconciliation
@@ -14,12 +14,12 @@ steps:
   - from: reconciliation
     to: adapters
     action: "Resolves the static intent to a concrete executable identity and validates that resolution preserves the intent."
-    evidence: ["internal/exec/resolution.go:12-28", "internal/exec/resolution.go:44-54"]
+    evidence: ["internal/exec/resolution.go:29-54", "internal/exec/resolution.go:57-78"]
     confidence: confirmed
   - from: reconciliation
     to: adapters
     action: "Projects the resolved identity back into the candidate consumed by Observe, then probes exactly that target without performing host mutation."
-    evidence: ["internal/exec/environment_target.go:9-45", "internal/exec/resolution.go:57-78"]
+    evidence: ["internal/exec/environment_target.go:9-45", "internal/exec/resolution.go:105-131"]
     symbols:
       - name: methodForResolvedTarget
         path: internal/exec/environment_target.go

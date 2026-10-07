@@ -1,2 +1,3 @@
 2026-09-29T16:35:00-03:00 [resolved] Architecture lookup from sibling worktrees is documented; dev-notes remains the nested .dev/ worktree of the primary checkout.
 2026-10-01 [resolved] Nested dev-notes map repair verified against code commit b161bd80ede490f81bee1d6e64aaa0f8a2d6553c: upgrade/update flows and reconciliation/state-lock units now cite committed code and verified evidence; no unrelated map revisions were advanced.
+2026-10-07T00:22:09-03:00 [incorrect] .dev/architecture/index.yaml:relations[operator-to-cli].evidence — main.go:27-31 now covers interruptContext/main setup rather than command dispatch; current CLI entrypoint is main.go:41-43 (NewRootCmd, normalized args, ExecuteContext), so the old anchor misdirected validation.

@@ -2,8 +2,8 @@
 archmap: 2
 doc: index
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "5f9030cfe516079d2cec9d88b0164f9fa39b2a72"
+  verified_on: "2026-10-07"
 
 project:
   id: depengine
@@ -74,7 +74,7 @@ relations:
     to: cli
     kind: calls
     via: "command line"
-    evidence: ["main.go:27-31"]
+    evidence: ["main.go:41-43"]
     confidence: confirmed
 
 glossary:

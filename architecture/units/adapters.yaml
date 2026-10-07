@@ -2,8 +2,8 @@ archmap: 2
 doc: unit
 id: adapters
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "5f9030cfe516079d2cec9d88b0164f9fa39b2a72"
+  verified_on: "2026-10-07"
 type: subsystem
 paths:
   - internal/ecosystem/
@@ -25,7 +25,7 @@ status: active
 invariants:
   - text: "Every method backend implements one plan-aware AdapterV2 contract for resolution, observation, install, removal, availability, and compatibility."
     confidence: confirmed
-    evidence: ["internal/exec/adapter.go:39-77"]
+    evidence: ["internal/exec/adapter.go:49-78"]
 relations:
   - from: adapters
     to: host-os

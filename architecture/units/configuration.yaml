@@ -2,8 +2,8 @@ archmap: 2
 doc: unit
 id: configuration
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "5f9030cfe516079d2cec9d88b0164f9fa39b2a72"
+  verified_on: "2026-10-07"
 type: subsystem
 paths:
   - internal/config/
@@ -14,7 +14,7 @@ status: active
 invariants:
   - text: "Schema validation runs after target facts are available, so downstream units receive target-aware configuration."
     confidence: confirmed
-    evidence: ["internal/app/helpers.go:92-111"]
+    evidence: ["internal/app/helpers.go:117-160"]
 relations:
   - from: configuration
     to: planning

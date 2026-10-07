@@ -2,8 +2,8 @@ archmap: 2
 doc: unit
 id: cli
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "5f9030cfe516079d2cec9d88b0164f9fa39b2a72"
+  verified_on: "2026-10-07"
 type: cli
 paths:
   - main.go
@@ -24,19 +24,19 @@ relations:
     to: configuration
     kind: calls
     via: "in-process"
-    evidence: ["internal/app/helpers.go:80-111"]
+    evidence: ["internal/app/helpers.go:117-160"]
     confidence: confirmed
   - from: cli
     to: planning
     kind: calls
     via: "in-process graph commands"
-    evidence: ["internal/app/graph_why.go:107-120"]
+    evidence: ["internal/app/graph_why.go:142-143"]
     confidence: confirmed
   - from: cli
     to: reconciliation
     kind: calls
     via: "exec.Executor"
-    evidence: ["internal/app/install.go:374-393", "internal/app/status.go:75-81"]
+    evidence: ["internal/app/install.go:203-233", "internal/app/install.go:427-431", "internal/app/status.go:89-94"]
     confidence: confirmed
   - from: cli
     to: adapters
@@ -48,5 +48,5 @@ relations:
     to: state-and-lock
     kind: calls
     via: "lock/state APIs"
-    evidence: ["internal/app/install.go:376-384", "internal/app/update.go:89-153"]
+    evidence: ["internal/app/install.go:416-420", "internal/app/update.go:198-201"]
     confidence: confirmed
