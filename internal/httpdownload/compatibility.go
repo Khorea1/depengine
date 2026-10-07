@@ -6,8 +6,8 @@ import (
 
 	"github.com/Khorea1/depengine/internal/artifact"
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/platform"
 )
 
 var debArtifactExtensions = []string{".deb"}
