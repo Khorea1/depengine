@@ -1897,3 +1897,25 @@ func TestApplyLegacyV1IgnoresV2ToolPins(t *testing.T) {
 		t.Fatalf("v2 compatibility ToolPin changed schema URL to %v", got)
 	}
 }
+
+func TestSaveDoesNotFollowTemporaryPathSymlink(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "depengine.lock")
+	victim := filepath.Join(dir, "victim")
+	if err := os.WriteFile(victim, []byte("preserve me"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, path+".tmp"); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	if err := Save(path, &Lock{Version: 1, Tools: map[string]ToolPin{}}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if got, err := os.ReadFile(victim); err != nil || string(got) != "preserve me" { // #nosec G304 -- victim is a file created under t.TempDir.
+		t.Fatalf("temporary-path symlink target = %q, %v; want unchanged", got, err)
+	}
+	if _, err := Load(path); err != nil {
+		t.Fatalf("Load saved lock: %v", err)
+	}
+}
