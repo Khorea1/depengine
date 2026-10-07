@@ -77,25 +77,19 @@ func (ex *Executor) recordToolResult(ctx context.Context, rc *runContext, result
 	report := rc.report
 	report.mu.Lock()
 	defer report.mu.Unlock()
-	report.Tools = append(report.Tools, *result)
+	report.addResultLocked(*result)
 	switch result.Status {
 	case StatusInstalled:
-		report.Success++
 		ex.logDebug(ctx, "tool", "tool", result.Tool, "method", result.Method, "status", "installed", "duration", result.Duration)
 	case StatusAlready:
-		report.Already++
 		ex.logDebug(ctx, "tool", "tool", result.Tool, "method", result.Method, "status", "already", "duration", result.Duration)
 	case StatusSkippedWhen:
-		report.Skipped++
 		ex.logDebug(ctx, "tool", "tool", result.Tool, "status", "skipped_when")
 	case StatusSkippedUnavailable:
-		report.Skipped++
 		ex.logDebug(ctx, "tool", "tool", result.Tool, "status", "skipped_unavailable")
 	case StatusFailed:
-		report.Failed++
 		ex.logWarn(ctx, "tool", "tool", result.Tool, "status", "failed", "error", result.Error, "duration", result.Duration)
 	case StatusWouldInstall:
-		report.WouldInstall++
 		ex.logDebug(ctx, "tool", "tool", result.Tool, "method", result.Method, "status", "would_install")
 	case StatusVirtual:
 		ex.logDebug(ctx, "tool", "tool", result.Tool, "status", "virtual")

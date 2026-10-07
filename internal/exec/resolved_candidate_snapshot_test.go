@@ -1,7 +1,10 @@
 package exec
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,6 +61,8 @@ func TestResolvedUpgradeSnapshotsExpectedStateBeforePrerequisiteWork(t *testing.
 	desired.Identity.Package = name
 	desired.Identity.Version = "2.0.0"
 	ex := New()
+	var logOutput bytes.Buffer
+	WithLogger(slog.New(slog.NewJSONHandler(&logOutput, &slog.HandlerOptions{Level: slog.LevelDebug})))(ex)
 	WithRunner(&run.FakeRunner{})(ex)
 	WithAdapters(adapter)(ex)
 	WithSchemaInfo("schema.yaml", time.Time{})(ex)
@@ -70,6 +75,9 @@ func TestResolvedUpgradeSnapshotsExpectedStateBeforePrerequisiteWork(t *testing.
 	}
 	if result.Status != StatusInstalled {
 		t.Fatalf("status = %v, want installed after preserving the discovery snapshot: %+v", result.Status, result)
+	}
+	if !strings.Contains(logOutput.String(), `"success":2`) {
+		t.Fatalf("completion report did not count installed result: %s", logOutput.String())
 	}
 	if len(adapter.removed) != 1 || adapter.removed[0] != name {
 		t.Fatalf("removed tools = %v, want only %q", adapter.removed, name)

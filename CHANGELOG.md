@@ -1,7 +1,9 @@
 # Changelog
 
 ## Unreleased
+- Lock and state saves use exclusive replacement files and enforce exclusive open state handles; preparation commits snapshot caller-owned tool state. Cancellation reports include every remaining planned root/dependency outcome, and resolved-upgrade summaries count their result.
 - Normalize elevated archive payload modes with a BSD-compatible `chmod` path argument; resolve npm JSON string or single-item array responses while rejecting ambiguous values, and configure cross-platform smoke images for legacy lock resolution.
+- Redact sensitive output for direct and empty-environment subprocess calls.
 - Drain external TAR decoder stdout after the end marker within the existing bounded, context-aware trailer policy.
 - Expand native `{arch}` and `{os}` placeholders in GitHub `repo` + `asset` configuration fields while preserving `{arch_any}` and `{os_any}` asset-match tokens.
 - Archive installs fail closed on rollback/launcher failures while post-commit backup/staging cleanup is warning-only; elevated payload trees normalize owner uid 0 without dereferencing symlinks, keep inner modes, and set the root mode to 0755.
