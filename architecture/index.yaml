@@ -2,8 +2,8 @@
 archmap: 2
 doc: index
 verified:
-  revision: "6bb3223"
-  verified_on: "2026-10-01"
+  revision: "173e26b"
+  verified_on: "2026-10-07"
 
 project:
   id: depengine
@@ -35,7 +35,7 @@ units:
   cli:
     summary: "Cobra command surface and composition root; translates user intent into configuration, lock, graph, and executor operations."
   configuration:
-    summary: "Parses and validates project schema/manifest input and materializes target-aware configuration used by downstream planning."
+    summary: "Owns host fact/classification semantics plus schema/manifest parsing and validation, materializing target-aware configuration for downstream planning."
   planning:
     summary: "Represents desired/resolved plans and dependency graphs, including validation and projections used before host mutation."
   reconciliation:
@@ -43,7 +43,7 @@ units:
   adapters:
     summary: "Method-specific AdapterV2 backends for native/ecosystem packages, Git, HTTP/releases, containers, OS installer/package formats, and local artifacts."
   state-and-lock:
-    summary: "Persists installed-tool state, preparation journals, legacy selector pins, and the v2 universal LockDocument projection used for frozen reproducibility."
+    summary: "Persists installed-tool state, preparation/replacement journals, compatibility-only legacy v1 pins, and the v2 universal LockDocument projection used for frozen reproducibility."
 
 flows:
   install:
