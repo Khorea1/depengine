@@ -2,8 +2,8 @@ archmap: 2
 doc: unit
 id: adapters
 verified:
-  revision: "6bb3223"
-  verified_on: "2026-10-01"
+  revision: "173e26b"
+  verified_on: "2026-10-07"
 type: subsystem
 paths:
   - internal/ecosystem/
@@ -29,6 +29,9 @@ invariants:
   - text: "Every method backend implements one plan-aware AdapterV2 contract for resolution, observation, install, removal, availability, and compatibility."
     confidence: confirmed
     evidence: ["internal/exec/adapter.go:39-76", "internal/app/bootstrap.go:16-34"]
+  - text: "Dedicated platform-installer adapters opt into installer artifact transport through a typed HTTPAdapter construction option; installer permission is not hidden inside MethodCandidate.Config."
+    confidence: confirmed
+    evidence: ["internal/httpdownload/adapter.go:24-45", "internal/msi/adapter.go:20-33", "internal/pkg/adapter.go:24-38", "internal/dmg/adapter.go:24-38", "internal/windowsinstaller/adapter.go:25-43"]
 relations:
   - from: adapters
     to: host-os
