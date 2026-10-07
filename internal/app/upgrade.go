@@ -11,7 +11,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/ecosystem"
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
@@ -151,7 +151,7 @@ func loadUpgradeState(ctx context.Context, dryRun bool) (*state.State, *state.Lo
 
 // buildUpgradeExecutor wires the executor with the upgrade schema, host adapters,
 // resolved lock, runner, and execution gates.
-func buildUpgradeExecutor(s *config.Schema, clan string, facts *engine.Facts, schemaPath string, opts upgradeOptions, lg *slog.Logger, lockDocuments ...*plan.LockDocument) (*exec.Executor, error) {
+func buildUpgradeExecutor(s *config.Schema, clan string, facts *platform.Facts, schemaPath string, opts upgradeOptions, lg *slog.Logger, lockDocuments ...*plan.LockDocument) (*exec.Executor, error) {
 	schemaFile, err := os.Stat(schemaPath)
 	if err != nil {
 		lg.Error("stat schema", "error", err)

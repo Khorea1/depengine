@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/native"
 	"github.com/Khorea1/depengine/internal/plan"
@@ -35,7 +35,7 @@ func (a *NativeAdapter) Kind() string { return "native" }
 
 // detectClan probes known native managers to find one that exists in PATH.
 // If a clan was already supplied to NewNativeAdapter (the common case: the
-// caller resolved it from OS facts via engine.ResolveFamily), that value is
+// caller resolved it from OS facts via platform.ResolveFamily), that value is
 // authoritative and is never overwritten by probing — probing is only a
 // fallback for adapters constructed with an empty clan.
 func (a *NativeAdapter) detectClan(ctx context.Context, rn run.Runner) string {
@@ -109,7 +109,7 @@ func (a *NativeAdapter) CheckAvailable(ctx context.Context, rn run.Runner, _ *co
 
 // CheckHostCompatibility imposes no host constraints: the clan-resolved
 // manager is itself the compatibility boundary.
-func (a *NativeAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (a *NativeAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	return nil
 }
 
@@ -378,7 +378,7 @@ func (a *NativeByManagerAdapter) CheckAvailable(ctx context.Context, rn run.Runn
 
 // CheckHostCompatibility imposes no host constraints: the manager-resolved
 // clan is itself the compatibility boundary.
-func (a *NativeByManagerAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (a *NativeByManagerAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	return nil
 }
 

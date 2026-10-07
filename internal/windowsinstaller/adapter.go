@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/httpdownload"
 	"github.com/Khorea1/depengine/internal/plan"
@@ -142,7 +142,7 @@ func (a *Adapter) Remove(ctx context.Context, rn run.Runner, _ *config.Tool, mc 
 
 func (a *Adapter) CanRemove() bool { return true }
 
-func (a *Adapter) CheckHostCompatibility(_ *config.Tool, _ *config.MethodCandidate, _ *plan.ResolvedInstallPlan, _ *engine.Facts, clan string) error {
+func (a *Adapter) CheckHostCompatibility(_ *config.Tool, _ *config.MethodCandidate, _ *plan.ResolvedInstallPlan, _ *platform.Facts, clan string) error {
 	if clan != "windows" {
 		return fmt.Errorf("%s: Windows host required", a.kind)
 	}
