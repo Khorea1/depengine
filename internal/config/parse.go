@@ -201,7 +201,7 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 	//     {arch_any}/{os_any} against the real release-asset list at
 	//     install time — those two tokens are adapter-owned and were never
 	//     in m's key set to begin with, so Expand always left them
-	//     untouched. Adapters have no other way to reach engine.Facts, so
+	//     untouched. Adapters have no other way to reach platform.Facts, so
 	//     we stash the two raw values it needs directly on its own method
 	//     candidates here. github does its own arch/os resolution via
 	//     regex over every known synonym (ghrelease.archSynonyms/
