@@ -151,8 +151,8 @@ func OpenStdoutPipe(ctx context.Context, rn Runner, name string, args ...string)
 }
 
 // EnvironmentRunner accepts environment overrides for one child process.
-// Callers must use RunWithEnv so sensitive output is redacted before it escapes.
-// Implementations that launch child processes must honor WithOmittedEnv.
+// Implementations must suppress sensitive output before it escapes, including
+// live streaming, and honor WithOmittedEnv when launching child processes.
 type EnvironmentRunner interface {
 	RunWithEnv(ctx context.Context, env map[string]string, sensitive []string, name string, args ...string) Result
 }
@@ -179,11 +179,14 @@ func RunWithEnvValidated(ctx context.Context, rn Runner, env map[string]string, 
 }
 
 // RunWithEnv executes one child with per-call environment overrides. It fails
-// closed when the runner cannot provide this boundary. For sensitive calls,
-// captured output and process errors are suppressed because a child can echo
-// credentials in encodings that literal redaction cannot reliably recognize.
+// closed when the runner cannot provide the required environment boundary.
+// With no overrides and no sensitive values, it uses Runner.Run directly. If
+// sensitive values are supplied, it requires EnvironmentRunner even when env
+// is empty, so output cannot stream before redaction. Captured output and
+// process errors are suppressed because children can echo credentials in
+// encodings that literal redaction cannot reliably recognize.
 func RunWithEnv(ctx context.Context, rn Runner, env map[string]string, sensitive []string, name string, args ...string) Result {
-	if len(env) == 0 {
+	if len(env) == 0 && len(sensitive) == 0 {
 		return rn.Run(ctx, name, args...)
 	}
 	er, ok := rn.(EnvironmentRunner)
@@ -387,9 +390,9 @@ func (r OSExecRunner) RunInDir(ctx context.Context, dir, name string, args ...st
 }
 
 // RunWithEnv suppresses live streaming because child output may contain a
-// credential. The RunWithEnv helper redacts captured output on return.
-func (OSExecRunner) RunWithEnv(ctx context.Context, env map[string]string, _ []string, name string, args ...string) Result {
-	return runCommand(ctx, nil, "", env, name, args...)
+// credential. RunWithEnv redacts captured output before returning.
+func (OSExecRunner) RunWithEnv(ctx context.Context, env map[string]string, sensitive []string, name string, args ...string) Result {
+	return redactResult(runCommand(ctx, nil, "", env, name, args...), sensitive)
 }
 
 // RunWithEnvValidated keeps raw output inside the runner and returns only the

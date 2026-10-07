@@ -612,3 +612,19 @@ func TestDesiredStateHashStillDetectsNonHookDefinitionDrift(t *testing.T) {
 		t.Fatal("DesiredStateHash should change for desired package drift")
 	}
 }
+func TestLockedStateSaveRequiresOpenExclusiveLock(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	ls, err := LoadShared()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ls.Save(); err == nil {
+		t.Fatal("Save on shared state lock succeeded")
+	}
+	if err := ls.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := ls.Save(); err == nil {
+		t.Fatal("Save after releasing state lock succeeded")
+	}
+}

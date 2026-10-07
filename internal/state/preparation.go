@@ -204,7 +204,7 @@ func (ls *LockedState) FinalizePreparationCommitWithTool(
 		ls.state.Tools = make(map[string]ToolState)
 	}
 	previousTool, hadTool := ls.state.Tools[toolName]
-	ls.state.Tools[toolName] = toolState
+	ls.state.Tools[toolName] = cloneToolState(toolState)
 	if err := ls.persistPreparationCompletion(key, owned); err != nil {
 		if hadTool {
 			ls.state.Tools[toolName] = previousTool
