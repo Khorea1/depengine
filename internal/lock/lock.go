@@ -345,7 +345,7 @@ func SnapshotIntentMetadata(s *config.Schema) (map[string]string, map[string]str
 // This compatibility resolver is for lock envelope v1 only. New v2 code must
 // resolve through internal/exec AdapterV2.ResolvePlan.
 //
-// Deprecated: compatibility-only. Do not extend lock v1 with new selector classes.
+// Compatibility-only: do not extend lock v1 with new selector classes.
 func ResolveLegacyV1(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, error) {
 	methodsHash, sourceHash, err := SnapshotIntentMetadata(s)
 	if err != nil {
@@ -785,7 +785,7 @@ func requiresChecksumPin(method *config.MethodCandidate) bool {
 // unchanged. Artifact pins patch Config, while Git revisions and container
 // digests stay transient so mutable intent remains visible for drift reporting.
 //
-// Deprecated: compatibility-only. New execution paths consume the v2 LockDocument.
+// Compatibility-only: new execution paths consume the v2 LockDocument.
 func ApplyLegacyV1(s *config.Schema, l *Lock) {
 	if l == nil {
 		return
