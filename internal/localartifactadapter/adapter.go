@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/integrity"
 	"github.com/Khorea1/depengine/internal/localartifact"
@@ -335,7 +335,7 @@ func (a *Adapter) CheckAvailable(ctx context.Context, rn run.Runner, _ *config.T
 
 // CheckHostCompatibility imposes no host constraints: vendored artifacts
 // are host-independent by construction.
-func (a *Adapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (a *Adapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	return nil
 }
 
