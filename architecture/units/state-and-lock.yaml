@@ -2,8 +2,8 @@ archmap: 2
 doc: unit
 id: state-and-lock
 verified:
-  revision: "62d052c"
-  verified_on: "2026-10-06"
+  revision: "173e26b"
+  verified_on: "2026-10-07"
 type: subsystem
 paths:
   - internal/state/
@@ -22,6 +22,12 @@ invariants:
       - name: ResolveLegacyV1
         path: internal/lock/lock.go
         role: "Bounded legacy selector-pin materialization retained alongside lock v2."
+  - text: "Lock v1 is compatibility-only: new selector classes must not extend it, whole-schema update migrates readable v1 input to v2, and the legacy writer remains only for profiled updates that cannot prove complete v2 coverage."
+    confidence: confirmed
+    evidence: ["internal/lock/lock.go:330-500", "docs/support-boundary.md:20-55", "docs/roadmap.md:145-155"]
+  - text: "Archive payload ownership is persisted as a typed ToolState field; the old underscore Config key is read only as migration compatibility for existing state."
+    confidence: confirmed
+    evidence: ["internal/state/state.go:45-85", "internal/exec/state.go:90-140", "internal/app/remove.go:180-240", "internal/app/undo.go:180-245"]
   - text: "State-tracked upgrades persist a replacement write-ahead transaction before removal, carrying the prior ToolState, exact immutable target, and resource-use claims needed for fail-closed restart recovery."
     confidence: confirmed
     evidence: ["internal/state/replacement.go:12-77", "internal/exec/replacement.go:19-126"]
