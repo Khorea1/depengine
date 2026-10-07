@@ -193,8 +193,10 @@ func marshalStateForPersistence(s *State) ([]byte, error) {
 // LockedState is a State handle that proves the file lock was acquired.
 // Callers receive this from LoadLocked and must call Close when done.
 type LockedState struct {
-	state *State
-	lock  io.Closer
+	state     *State
+	lock      io.Closer
+	exclusive bool
+	closed    bool
 }
 
 // State exposes the underlying State for read access.
@@ -204,11 +206,24 @@ func (ls *LockedState) State() *State {
 
 // Save persists the state to disk. Must only be called while the lock is held.
 func (ls *LockedState) Save() error {
+	if ls == nil || ls.state == nil {
+		return errors.New("locked state is nil")
+	}
+	if ls.closed || ls.lock == nil {
+		return errors.New("state lock is closed")
+	}
+	if !ls.exclusive {
+		return errors.New("cannot save state while holding a shared lock")
+	}
 	return Save(ls.state)
 }
 
 // Close releases the lock. Must be called (typically via defer).
 func (ls *LockedState) Close() error {
+	if ls == nil || ls.lock == nil || ls.closed {
+		return nil
+	}
+	ls.closed = true
 	return ls.lock.Close()
 }
 
@@ -229,7 +244,7 @@ func LoadLockedContext(ctx context.Context) (*LockedState, error) {
 		_ = lk.Close() // best-effort release; the load error is what we report
 		return nil, err
 	}
-	return &LockedState{state: st, lock: lk}, nil
+	return &LockedState{state: st, lock: lk, exclusive: true}, nil
 }
 
 // LoadShared acquires a shared (read) lock and loads the state file.
