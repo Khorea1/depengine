@@ -71,4 +71,3 @@ func TestMatchesDistroFamilyNilSlice(t *testing.T) {
 		t.Fatal("MatchesDistroFamily should return false for nil allowed list")
 	}
 }
-
