@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Rehydrate transient target architecture and OS from current host facts when resolving state-restored candidates for removal or undo; do not persist host-specific selection metadata.
 - Lock and state saves use exclusive replacement files and enforce exclusive open state handles; preparation commits snapshot caller-owned tool state. Cancellation reports include every remaining planned root/dependency outcome, and resolved-upgrade summaries count their result.
 - Normalize elevated archive payload modes with a BSD-compatible `chmod` path argument; resolve npm JSON string or single-item array responses while rejecting ambiguous values, and configure cross-platform smoke images for legacy lock resolution.
 - Redact sensitive output for direct and empty-environment subprocess calls.

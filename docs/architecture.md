@@ -108,7 +108,10 @@ composition currently uses only Official, including app-owned source cleanup;
 
 `internal/config` parses files and validates schema structure, but it does not
 detect the current OS or import the executor. Host facts come from
-`internal/platform` and are passed where needed.
+`internal/platform` and are passed where needed. The executor fills missing transient
+target architecture and OS metadata from those facts during candidate resolution,
+so state-restored candidates can resolve host-specific artifacts without persisting
+machine-specific values.
 
 Project and personal configuration use the same grammar but different roots:
 projects declare `[tools]`; manifests declare `[packages]`. Project values win

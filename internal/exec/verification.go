@@ -92,6 +92,21 @@ func (ex *Executor) ResolveCandidatePlan(ctx context.Context, tool *config.Tool,
 	if tool == nil || method == nil {
 		return nil, fmt.Errorf("tool and method are required")
 	}
+	// State-restored candidates do not persist host-specific selection metadata.
+	// Rehydrate a local candidate copy so resolution does not mutate caller-owned state.
+	if ex.facts != nil && method.Config != nil &&
+		((method.TargetArch == "" && ex.facts.TargetArch != "") || (method.TargetOS == "" && ex.facts.OS != "")) {
+		if _, hasRepo := method.Config["repo"]; hasRepo {
+			resolvedMethod := *method
+			if resolvedMethod.TargetArch == "" {
+				resolvedMethod.TargetArch = ex.facts.TargetArch
+			}
+			if resolvedMethod.TargetOS == "" {
+				resolvedMethod.TargetOS = ex.facts.OS
+			}
+			method = &resolvedMethod
+		}
+	}
 	ctx = run.WithOmittedEnv(ctx, methodSecretEnvNames(method)...)
 	intent, mismatch := candidatePlanIntent(tool, method)
 	if mismatch != "" {
