@@ -9,10 +9,10 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/graph"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -175,7 +175,7 @@ func (m *MockAdapter) CheckAvailable(_ context.Context, _ run.Runner, tool *conf
 	}
 	return true
 }
-func (*MockAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (*MockAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	return nil
 }
 

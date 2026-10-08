@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/graph"
+	"github.com/Khorea1/depengine/internal/platform"
 )
 
 type unsupportedGraphGuard struct{}
@@ -54,7 +54,7 @@ func TestValidateGraphProjectionOptions(t *testing.T) {
 }
 
 func TestMatchGraphGuardUsesConfigConditionSemantics(t *testing.T) {
-	facts := &engine.Facts{OS: "linux", TargetFamily: "unix"}
+	facts := &platform.Facts{OS: "linux", TargetFamily: "unix"}
 	active, err := matchGraphGuard(&config.Condition{
 		OS:           []string{"linux"},
 		TargetFamily: []string{"unix"},
@@ -137,7 +137,7 @@ func TestResolvedGraphCandidatesPropagatesCanceledContext(t *testing.T) {
 			"app": {Name: "app"},
 		},
 	}
-	_, err := resolvedGraphCandidates(ctx, schema, &engine.Facts{}, map[string]struct{}{"app": {}})
+	_, err := resolvedGraphCandidates(ctx, schema, &platform.Facts{}, map[string]struct{}{"app": {}})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("resolvedGraphCandidates error = %v, want context.Canceled", err)
 	}

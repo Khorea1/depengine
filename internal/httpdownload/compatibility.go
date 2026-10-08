@@ -6,8 +6,8 @@ import (
 
 	"github.com/Khorea1/depengine/internal/artifact"
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/platform"
 )
 
 var debArtifactExtensions = []string{".deb"}
@@ -16,7 +16,7 @@ var debArtifactExtensions = []string{".deb"}
 // before they can be reported as installable on an unrelated host. HTTP as a
 // transport is universally available, but a .deb payload is not a portable
 // Linux binary merely because the CPU architecture matches.
-func (a *HTTPAdapter) CheckHostCompatibility(tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan, facts *engine.Facts, clan string) error {
+func (a *HTTPAdapter) CheckHostCompatibility(tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan, facts *platform.Facts, clan string) error {
 	return checkDownloadHostCompatibility(mc, intent, facts, clan)
 }
 
@@ -24,11 +24,11 @@ func (a *HTTPAdapter) CheckHostCompatibility(tool *config.Tool, mc *config.Metho
 // assets. GitHubAdapter ultimately delegates installation to HTTPAdapter, so
 // allowing the two methods to disagree here would make fallback/dry-run
 // results depend on which transport spelling the schema used.
-func (a *GitHubAdapter) CheckHostCompatibility(tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan, facts *engine.Facts, clan string) error {
+func (a *GitHubAdapter) CheckHostCompatibility(tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan, facts *platform.Facts, clan string) error {
 	return checkDownloadHostCompatibility(mc, intent, facts, clan)
 }
 
-func checkDownloadHostCompatibility(mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan, facts *engine.Facts, clan string) error {
+func checkDownloadHostCompatibility(mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan, facts *platform.Facts, clan string) error {
 	if !candidateHasDebArtifact(mc, intent) {
 		return nil
 	}
@@ -64,10 +64,10 @@ func rejectUntrackedDebLifecycle(kind string, mc *config.MethodCandidate, intent
 	return fmt.Errorf("%s: .deb lifecycle is unsupported because exact dpkg package identity is not persisted; use a native package-manager method", kind)
 }
 
-func checkDebHostCompatibility(mc *config.MethodCandidate, facts *engine.Facts, clan string) error {
+func checkDebHostCompatibility(mc *config.MethodCandidate, facts *platform.Facts, clan string) error {
 	clan = strings.ToLower(strings.TrimSpace(clan))
 	if clan == "" && facts != nil {
-		clan = engine.ResolveFamily(facts)
+		clan = platform.ResolveFamily(facts)
 	}
 
 	// Debian-family distributions are the natural compatibility domain for a
@@ -96,7 +96,7 @@ func checkDebHostCompatibility(mc *config.MethodCandidate, facts *engine.Facts, 
 	return fmt.Errorf(".deb artifact is incompatible with distro family %q by default; use a Debian-family target or explicitly scope a package built for this distro with when.distro_family/when.distro_id", target)
 }
 
-func explicitlyTargetsCurrentDistro(mc *config.MethodCandidate, facts *engine.Facts, clan string) bool {
+func explicitlyTargetsCurrentDistro(mc *config.MethodCandidate, facts *platform.Facts, clan string) bool {
 	if mc == nil || mc.When == nil {
 		return false
 	}

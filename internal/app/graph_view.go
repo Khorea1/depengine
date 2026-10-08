@@ -6,9 +6,9 @@ import (
 	"sort"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/graph"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -68,7 +68,7 @@ func validateGraphProjectionOptions(view graph.GraphView, includeInactive bool) 
 	return nil
 }
 
-func projectGraphView(ctx context.Context, declared graph.Graph, schema *config.Schema, facts *engine.Facts, view graph.GraphView, includeInactive bool) (graph.Graph, error) {
+func projectGraphView(ctx context.Context, declared graph.Graph, schema *config.Schema, facts *platform.Facts, view graph.GraphView, includeInactive bool) (graph.Graph, error) {
 	if view == graph.DeclaredView {
 		return declared.Project(view, graph.ProjectionContext{IncludeInactive: includeInactive})
 	}
@@ -121,7 +121,7 @@ func graphProjectionRequirements(declared graph.Graph, view graph.GraphView) (bo
 	return needsGuards, candidateTools
 }
 
-func matchGraphGuard(guard graph.Guard, facts *engine.Facts) (bool, error) {
+func matchGraphGuard(guard graph.Guard, facts *platform.Facts) (bool, error) {
 	condition, ok := guard.(*config.Condition)
 	if !ok {
 		return false, fmt.Errorf("unsupported graph guard %T", guard)
@@ -129,13 +129,13 @@ func matchGraphGuard(guard graph.Guard, facts *engine.Facts) (bool, error) {
 	return condition.Match(facts), nil
 }
 
-func resolvedGraphCandidates(ctx context.Context, schema *config.Schema, facts *engine.Facts, candidateTools map[string]struct{}) (map[string]int, error) {
+func resolvedGraphCandidates(ctx context.Context, schema *config.Schema, facts *platform.Facts, candidateTools map[string]struct{}) (map[string]int, error) {
 	selected := make(map[string]int)
 	if schema == nil || len(candidateTools) == 0 {
 		return selected, nil
 	}
 
-	clan := engine.ResolveFamily(facts)
+	clan := platform.ResolveFamily(facts)
 
 	executor := newProjectExecutor(schema, clan, facts, run.OSExecRunner{})
 

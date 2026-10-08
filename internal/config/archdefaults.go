@@ -25,7 +25,7 @@ var defaultOSMap = map[string]string{
 }
 
 // resolveAlias returns the effective spelling for raw (a canonical value
-// straight from engine.Facts, e.g. "aarch64" or "darwin"), consulting the
+// straight from platform.Facts, e.g. "aarch64" or "darwin"), consulting the
 // layered alias maps in priority order: method-level, then schema
 // [defaults]-level, then the engine builtin above. A layer with no entry
 // for raw is skipped silently — same "unknown key -> literal fallback"

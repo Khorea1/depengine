@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 )
 
 func TestExpandNoOp(t *testing.T) {
@@ -70,7 +70,7 @@ func TestExpandReusesAcrossCalls(t *testing.T) {
 }
 
 func TestBuildMapCoversAllFactsPlusClan(t *testing.T) {
-	f := &engine.Facts{
+	f := &platform.Facts{
 		TargetArch:      "x86_64",
 		DistroID:        "arch",
 		DistroName:      "Arch Linux",
@@ -210,7 +210,7 @@ func TestKnownPlaceholdersIncludesGitHubAssetTokens(t *testing.T) {
 }
 
 func TestBuildMapIncludesDistroVersion(t *testing.T) {
-	m := BuildMap(&engine.Facts{DistroVersion: "24.04"}, "debian")
+	m := BuildMap(&platform.Facts{DistroVersion: "24.04"}, "debian")
 	if got := m["distro_version"]; got != "24.04" {
 		t.Fatalf("distro_version placeholder = %q, want 24.04", got)
 	}

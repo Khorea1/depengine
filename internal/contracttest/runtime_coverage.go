@@ -1,31 +1,29 @@
 package contracttest
 
+import "github.com/Khorea1/depengine/internal/methodkind"
+
 func init() {
-	RegisterCoverage(PhaseResolveRuntime, map[string]Coverage{
+	resolveCoverage := map[string]Coverage{
 		"native.pkg_overrides": {Consumer: "TestNativePackageOverrideAcrossRuntimeBoundaries", Rationale: "clan-specific package identity is selected before adapter execution"},
 		"git.url":              {Consumer: "internal/git/adapter_test.go", Rationale: "clone source is consumed by runtime source resolution"},
-		"http.release":         {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
-		"http.branch":          {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
-		"github.release":       {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
-		"github.branch":        {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
 		"github.secret_ref":    {Consumer: "internal/exec/TestResolveCandidatePlanPassesResolvedGitHubSecretContext", Rationale: "the canonical resolver resolves the typed GitHub reference before release API access"},
-		"appimage.release":     {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
-		"appimage.branch":      {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
-		"android.release":      {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
-		"android.branch":       {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
-		"msi.release":          {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
-		"msi.branch":           {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
-		"exe.release":          {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
-		"exe.branch":           {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
-		"msix.release":         {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
-		"msix.branch":          {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
-		"appx.release":         {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
-		"appx.branch":          {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
-		"macpkg.release":       {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
-		"macpkg.branch":        {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
-		"dmg.release":          {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "release selector changes the resolved artifact URL and version"},
-		"dmg.branch":           {Consumer: "TestRuntimeReleaseAndBranchResolution", Rationale: "branch selector changes the resolved artifact URL and version"},
-	})
+	}
+	for _, contract := range methodkind.Contracts {
+		if contract.Artifact == nil {
+			continue
+		}
+		for _, field := range []string{"release", "branch"} {
+			spec, ok := contract.Fields[field]
+			if !ok || spec.Effects&methodkind.EffectResolve == 0 {
+				continue
+			}
+			resolveCoverage[contract.Kind+"."+field] = Coverage{
+				Consumer:  "TestRuntimeReleaseAndBranchResolution",
+				Rationale: field + " selector changes the resolved artifact URL and version",
+			}
+		}
+	}
+	RegisterCoverage(PhaseResolveRuntime, resolveCoverage)
 	RegisterCoverage(PhaseExecute, map[string]Coverage{
 		"github.secret_ref":             {Consumer: "internal/exec/TestInstallResolvedCandidatePassesResolvedGitHubSecretContext", Rationale: "the canonical resolved-plan installer re-resolves and transports the typed token for asset execution"},
 		"cargo.secret_ref":              {Consumer: "internal/ecosystem/TestCargoGitSecretPrefetchesAndInstallsLocalCheckout", Rationale: "Cargo execution scopes the resolved token to authenticated Git prefetch and installs from the local checkout without credential transport"},

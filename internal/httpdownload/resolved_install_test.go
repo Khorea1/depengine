@@ -145,8 +145,8 @@ func TestHTTPAdapterInstallResolvedUsesResolvedVerificationMetadata(t *testing.T
 	if err := NewHTTPAdapter().InstallResolved(context.Background(), run.OSExecRunner{}, tool, mc, &resolved); err != nil {
 		t.Fatalf("InstallResolved() error = %v", err)
 	}
-	if got, _ := mc.Config["_checksum_resolved"].(string); got != wantChecksum {
-		t.Fatalf("_checksum_resolved = %q, want %q", got, wantChecksum)
+	if got := mc.ResolvedChecksum; got != wantChecksum {
+		t.Fatalf("ResolvedChecksum = %q, want %q", got, wantChecksum)
 	}
 	// #nosec G304 -- extractTo is a test-owned temporary directory.
 	data, err := os.ReadFile(filepath.Join(extractTo, "demo"))

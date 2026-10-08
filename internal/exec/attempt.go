@@ -578,6 +578,7 @@ func (ex *Executor) finishInstalled(ac *candidateAttempt, result *ToolResult) at
 	result.Config = configForResolvedTarget(ac.method, ac.resolved)
 	result.PlanIntent = ac.reported
 	result.ResourceUses = append([]plan.ResourceUse(nil), ac.resources...)
+	result.OwnsArchivePayload = ac.method.OwnsArchivePayload
 
 	var finalizeErr error
 	if ac.replacementCommitted {
@@ -610,7 +611,7 @@ func (ex *Executor) finishInstalled(ac *candidateAttempt, result *ToolResult) at
 		return finishTool
 	}
 
-	result.RebootRequired, _ = ac.method.Config["_reboot_required"].(bool)
+	result.RebootRequired = ac.method.RebootRequired
 	ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "installed")
 	if ac.replacementCommitted {
 		hooks, err := ac.reported.HookSchedule(ac.transition, plan.HookAfter)

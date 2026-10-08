@@ -72,8 +72,24 @@ type ToolState struct {
 	// RootRequested is durable user/root intent, as opposed to a tool installed
 	// only to satisfy a dependency edge. Remove uses it to avoid garbage-
 	// collecting a zero-ref prerequisite that the user also requested directly.
-	RootRequested bool           `json:"root_requested,omitempty"`
-	Config        map[string]any `json:"config"`
+	RootRequested bool `json:"root_requested,omitempty"`
+	// OwnsArchivePayload records that depengine materialized and owns the stable
+	// archive destination. Removal must not infer this from filesystem presence.
+	OwnsArchivePayload bool           `json:"owns_archive_payload,omitempty"`
+	Config             map[string]any `json:"config"`
+}
+
+const legacyArchivePayloadOwnershipKey = "_http_owned_archive_payload"
+
+// ArchivePayloadOwned accepts the pre-typed state representation so existing
+// state files remain safely removable while the next successful state write
+// migrates ownership evidence to OwnsArchivePayload.
+func (s ToolState) ArchivePayloadOwned() bool {
+	if s.OwnsArchivePayload {
+		return true
+	}
+	owned, _ := s.Config[legacyArchivePayloadOwnershipKey].(bool)
+	return owned
 }
 
 const privateDirMode = 0o700

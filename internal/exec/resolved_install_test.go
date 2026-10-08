@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -174,7 +174,7 @@ func (m *compatRejectingMock) ResolvePlan(_ context.Context, _ run.Runner, _ *co
 	return &resolved, nil
 }
 
-func (m *compatRejectingMock) CheckHostCompatibility(_ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan, _ *engine.Facts, _ string) error {
+func (m *compatRejectingMock) CheckHostCompatibility(_ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan, _ *platform.Facts, _ string) error {
 	if len(intent.Artifacts) > 0 && strings.HasSuffix(intent.Artifacts[0].URL, ".deb") {
 		return &installError{msg: "resolved .deb is incompatible with this host"}
 	}
@@ -223,7 +223,7 @@ func TestExecutorChecksCompatibilityAfterResolution(t *testing.T) {
 	ex := New()
 	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
 	WithAdapters(primary, prereq)(ex)
-	WithFacts(&engine.Facts{OS: "linux", DistroID: "arch"})(ex)
+	WithFacts(&platform.Facts{OS: "linux", DistroID: "arch"})(ex)
 
 	tool := schema.Tools["demo"]
 	result := &ToolResult{Tool: tool.Name}

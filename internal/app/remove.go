@@ -14,6 +14,7 @@ import (
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/log"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/source"
 	"github.com/Khorea1/depengine/internal/state"
@@ -75,7 +76,7 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 	executor := exec.New()
 	exec.WithRunner(run.OSExecRunner{})(executor)
 	if facts != nil {
-		clan := engine.ResolveFamily(facts)
+		clan := platform.ResolveFamily(facts)
 		exec.WithFacts(facts)(executor)
 		exec.WithDefaultMethodOrder(config.DefaultMethodOrder)(executor)
 		exec.WithAdapters(exec.NewNativeAdapter(clan))(executor)
@@ -86,7 +87,7 @@ func runRemove(ctx context.Context, removeArgs []string, removeAll, removeDryRun
 // runRemoveWithExecutor runs the complete state-driven removal flow using the
 // supplied executor. Keeping executor construction outside this seam lets
 // in-process callers inject adapters without changing the process registry.
-func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce *bool, executor *exec.Executor, facts *engine.Facts) error {
+func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, removeDryRun *bool, removeSchema, removeOnly *string, removeForce *bool, executor *exec.Executor, facts *platform.Facts) error {
 	st, ls, err := loadRemoveState(ctx, *removeDryRun)
 	if err != nil {
 		return err
@@ -107,7 +108,7 @@ func runRemoveWithExecutor(ctx context.Context, removeArgs []string, removeAll, 
 		state:            st,
 		schemaTools:      schemaTools,
 		schemaAURHelper:  schemaAURHelper,
-		clan:             engine.ResolveFamily(facts),
+		clan:             platform.ResolveFamily(facts),
 		dryRun:           *removeDryRun,
 		requestedRemoval: collectRemovalTargets(st, removeAll, removeOnly, removeArgs),
 		removedThisRun:   make(map[string]bool),
@@ -179,7 +180,7 @@ func loadRemoveSchemaTools(schemaPath string) (map[string]*config.Tool, string, 
 // gatherRemoveFacts resolves the real distro clan from OS facts. The caller
 // applies the resulting native adapter only to its executor; on failure the
 // bootstrap adapter remains available for its existing PATH-probing fallback.
-func gatherRemoveFacts() *engine.Facts {
+func gatherRemoveFacts() *platform.Facts {
 	if facts, err := engine.GatherFacts(run.OSExecRunner{}); err == nil {
 		return facts
 	} else {
@@ -261,14 +262,14 @@ func (s *removeSession) verifyRemovalTarget(ctx context.Context, toolName string
 		methodKind = toolState.Method
 	}
 	tool := &config.Tool{Name: toolName}
-	method := &config.MethodCandidate{Kind: methodKind, Label: toolState.Method, Config: toolState.Config}
+	method := &config.MethodCandidate{Kind: methodKind, Label: toolState.Method, Config: toolState.Config, OwnsArchivePayload: toolState.ArchivePayloadOwned()}
 	if schemaTool := s.schemaTools[toolName]; schemaTool != nil {
 		tracked, err := findStateMethodCandidate(schemaTool, toolState)
 		if err != nil {
 			return verifiedRemovalTarget{}, err
 		}
 		*tool = *schemaTool
-		method = &config.MethodCandidate{Kind: tracked.Kind, Label: tracked.Label, Config: tracked.Config}
+		method = &config.MethodCandidate{Kind: tracked.Kind, Label: tracked.Label, Config: tracked.Config, OwnsArchivePayload: toolState.ArchivePayloadOwned()}
 		if toolState.Config != nil {
 			method.Config = toolState.Config
 		}

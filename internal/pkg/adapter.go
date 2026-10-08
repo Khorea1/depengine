@@ -13,10 +13,10 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/httpdownload"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -29,7 +29,7 @@ type Adapter struct {
 }
 
 func NewAdapter() *Adapter {
-	return &Adapter{http: httpdownload.NewHTTPAdapter()}
+	return &Adapter{http: httpdownload.NewInstallerHTTPAdapter()}
 }
 
 func (a *Adapter) Kind() string { return "macpkg" }
@@ -143,7 +143,6 @@ func stagedConfig(mc *config.MethodCandidate, tmp string) *config.MethodCandidat
 	}
 	clone.Config["extract_to"] = tmp
 	clone.Config["binary"] = "package.pkg"
-	clone.Config["_allow_installer"] = true
 	clone.Config["sudo_required"] = false
 	return &clone
 }
@@ -207,7 +206,7 @@ func (a *Adapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *con
 
 // CheckHostCompatibility rejects non-macOS hosts explicitly because the
 // installer and receipt APIs are platform-specific.
-func (a *Adapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (a *Adapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	if runtime.GOOS != "darwin" {
 		return fmt.Errorf("macOS installer packages require macOS (installer is unavailable on %s)", runtime.GOOS)
 	}

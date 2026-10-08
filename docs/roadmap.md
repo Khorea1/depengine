@@ -171,6 +171,12 @@ Work on the current execution model comes before adding more installer types.
 
 ## Engineering cleanup
 
+- [ ] Retire the legacy lock v1 writer once profiled updates can either produce
+  a complete v2 projection or require an explicit whole-schema migration.
+  Do not add new selector support to v1. Keep the v1 reader/application path
+  only until the format-v1 freeze policy explicitly drops pre-v2 lock input;
+  see `docs/support-boundary.md` for the compatibility gates.
+
 - [x] Evolve `depengine graph` around a typed graph IR before adding a terminal
   diagram renderer. Preserve declared/effective/resolved projections and keep
   visible dependency relations separate from scheduling constraints. See

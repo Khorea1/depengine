@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Khorea1/depengine/internal/engine"
+	"github.com/Khorea1/depengine/internal/platform"
 )
 
 // boolPtr returns a pointer to v, for populating *bool condition fields
@@ -998,16 +998,16 @@ func methodKindSet(methods []*MethodCandidate) map[string]bool {
 func TestConditionDistroVersionsAcrossPlatforms(t *testing.T) {
 	tests := []struct {
 		name  string
-		facts *engine.Facts
+		facts *platform.Facts
 		cond  *Condition
 		want  bool
 	}{
-		{"ubuntu exact", &engine.Facts{OS: "linux", DistroID: "ubuntu", DistroVersion: "24.04"}, &Condition{DistroID: []string{"ubuntu"}, DistroVersion: []string{"24.4"}}, true},
-		{"ubuntu older rejected", &engine.Facts{OS: "linux", DistroID: "ubuntu", DistroVersion: "22.04"}, &Condition{DistroVersionMin: "24.04"}, false},
-		{"fedora range", &engine.Facts{OS: "linux", DistroID: "fedora", DistroVersion: "42"}, &Condition{DistroID: []string{"fedora"}, DistroVersionMin: "41", DistroVersionMax: "43"}, true},
-		{"macos major", &engine.Facts{OS: "darwin", DistroID: "macos", DistroVersion: "15.6.1"}, &Condition{OS: []string{"darwin"}, DistroVersionMin: "15", DistroVersionMax: "15.99"}, true},
-		{"windows build range", &engine.Facts{OS: "windows", DistroID: "windows", DistroVersion: "10.0.26100.4652"}, &Condition{OS: []string{"windows"}, DistroVersionMin: "10.0.26100", DistroVersionMax: "10.0.26100.9999"}, true},
-		{"windows future build rejected", &engine.Facts{OS: "windows", DistroID: "windows", DistroVersion: "10.0.26200"}, &Condition{DistroVersionMax: "10.0.26199"}, false},
+		{"ubuntu exact", &platform.Facts{OS: "linux", DistroID: "ubuntu", DistroVersion: "24.04"}, &Condition{DistroID: []string{"ubuntu"}, DistroVersion: []string{"24.4"}}, true},
+		{"ubuntu older rejected", &platform.Facts{OS: "linux", DistroID: "ubuntu", DistroVersion: "22.04"}, &Condition{DistroVersionMin: "24.04"}, false},
+		{"fedora range", &platform.Facts{OS: "linux", DistroID: "fedora", DistroVersion: "42"}, &Condition{DistroID: []string{"fedora"}, DistroVersionMin: "41", DistroVersionMax: "43"}, true},
+		{"macos major", &platform.Facts{OS: "darwin", DistroID: "macos", DistroVersion: "15.6.1"}, &Condition{OS: []string{"darwin"}, DistroVersionMin: "15", DistroVersionMax: "15.99"}, true},
+		{"windows build range", &platform.Facts{OS: "windows", DistroID: "windows", DistroVersion: "10.0.26100.4652"}, &Condition{OS: []string{"windows"}, DistroVersionMin: "10.0.26100", DistroVersionMax: "10.0.26100.9999"}, true},
+		{"windows future build rejected", &platform.Facts{OS: "windows", DistroID: "windows", DistroVersion: "10.0.26200"}, &Condition{DistroVersionMax: "10.0.26199"}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1020,7 +1020,7 @@ func TestConditionDistroVersionsAcrossPlatforms(t *testing.T) {
 
 func TestConditionMatches(t *testing.T) {
 	// Build a baseline Facts that would match a debian system.
-	facts := &engine.Facts{
+	facts := &platform.Facts{
 		DistroID:      "ubuntu",
 		DistroVersion: "24.04",
 		DistroIDLike:  "debian",
@@ -1096,7 +1096,7 @@ func TestConditionMatches(t *testing.T) {
 	if (&Condition{DistroVersionMax: "22.04"}).Match(facts) {
 		t.Error("24.04 should not match distro_version_max 22.04")
 	}
-	if (&Condition{DistroVersionMin: "1"}).Match(&engine.Facts{DistroID: "ubuntu"}) {
+	if (&Condition{DistroVersionMin: "1"}).Match(&platform.Facts{DistroID: "ubuntu"}) {
 		t.Error("missing distro version must not satisfy a version bound")
 	}
 
@@ -1213,7 +1213,7 @@ func TestConditionMatchesNilFacts(t *testing.T) {
 
 func TestConditionMatchesPartialFacts(t *testing.T) {
 	// Facts with only DistroID set — simulate partial detection
-	facts := &engine.Facts{
+	facts := &platform.Facts{
 		DistroID:   "arch",
 		TargetArch: runtime.GOARCH,
 		OS:         runtime.GOOS,

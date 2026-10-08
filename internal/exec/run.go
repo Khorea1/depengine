@@ -165,6 +165,7 @@ func (ex *Executor) recoverReplacementTransaction(ctx context.Context, rc *runCo
 		return fmt.Errorf("old candidate: %w", err)
 	}
 	oldMethod.Config = cloneMethodConfig(tx.Previous.Config)
+	oldMethod.OwnsArchivePayload = tx.Previous.ArchivePayloadOwned()
 	oldAdapter := ex.LookupAdapter(oldMethod.Kind)
 	desiredAdapter := ex.LookupAdapter(method.Kind)
 	if oldAdapter == nil || desiredAdapter == nil {
@@ -698,7 +699,8 @@ func (ex *Executor) verifyBatchInstall(rc *runContext, candidates []batchCandida
 				Tool: c.toolName, Status: StatusInstalled, Method: displayMethodKind(c.method),
 				MethodKind: c.method.Kind, Config: c.method.Config, PlanIntent: c.resolvedPlan, InstallCommitted: true,
 			}
-			tr.RebootRequired, _ = c.method.Config["_reboot_required"].(bool)
+			tr.RebootRequired = c.method.RebootRequired
+			tr.OwnsArchivePayload = c.method.OwnsArchivePayload
 			postCtx, postCancel := context.WithTimeoutCause(omitToolSecretEnvironment(rc.ctx, c.tool), ex.methodTimeout, errMethodTimeout)
 			postRan, err := ex.runLifecycleHooks(postCtx, c.tool.Name, c.resolvedPlan, plan.TransitionInstall, plan.HookAfter)
 			postCause := context.Cause(postCtx)

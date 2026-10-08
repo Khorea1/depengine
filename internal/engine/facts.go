@@ -14,11 +14,6 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// Facts is retained as an engine-level compatibility alias while host-fact
-// ownership moves to internal/platform. Consumers can migrate to platform.Facts
-// independently of the detector implementation change.
-type Facts = platform.Facts
-
 // legacyDetectorPath returns the explicitly configured legacy detector.
 // Native Go detection is the default; the environment override remains
 // temporarily supported so operators relying on a custom detector are not
@@ -37,7 +32,7 @@ func legacyDetectorPath() (string, error) {
 
 // gatherFactsGo builds minimal runtime-only Facts for blocked execution and
 // as a fallback when an explicitly configured legacy detector cannot run.
-func gatherFactsGo(r run.Runner) *Facts {
+func gatherFactsGo(r run.Runner) *platform.Facts {
 	tf := "unknown"
 	switch runtime.GOOS {
 	case "windows":
@@ -45,7 +40,7 @@ func gatherFactsGo(r run.Runner) *Facts {
 	case "linux", "darwin":
 		tf = "unix"
 	}
-	facts := &Facts{
+	facts := &platform.Facts{
 		OS:              runtime.GOOS,
 		TargetFamily:    tf,
 		TargetArch:      runtime.GOARCH,
@@ -157,7 +152,7 @@ func validWindowsVersion(version string) bool {
 // GatherFacts returns host facts through the native Go detector. An explicitly
 // configured DEPENGINE_DETECT_SCRIPT still uses the legacy JSON contract during
 // the migration window; no bundled or PATH-discovered script is selected here.
-func GatherFacts(r run.Runner) (*Facts, error) {
+func GatherFacts(r run.Runner) (*platform.Facts, error) {
 	if !run.ExecutionAllowed(r) {
 		// Preserve the observational/dry-run contract: zero runner calls and
 		// only runtime facts when subprocess execution is intentionally blocked.
@@ -184,13 +179,13 @@ func GatherFacts(r run.Runner) (*Facts, error) {
 	return facts, nil
 }
 
-func gatherFactsFromLegacyDetector(r run.Runner, script string) (*Facts, error) {
+func gatherFactsFromLegacyDetector(r run.Runner, script string) (*platform.Facts, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	res := r.Run(ctx, script, "--json", "--no-prompt")
 
-	var facts Facts
+	var facts platform.Facts
 	if jsonErr := json.Unmarshal(res.Stdout, &facts); jsonErr != nil {
 		if len(res.Stdout) == 0 && res.Err != nil {
 			log.Default.Warn("legacy OS detection script failed, using Go runtime fallback",
@@ -214,7 +209,7 @@ func gatherFactsFromLegacyDetector(r run.Runner, script string) (*Facts, error) 
 	return &facts, nil
 }
 
-func logFacts(facts *Facts) {
+func logFacts(facts *platform.Facts) {
 	if facts == nil {
 		return
 	}

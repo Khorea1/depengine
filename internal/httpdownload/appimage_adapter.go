@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -250,7 +250,7 @@ func (a *AppImageAdapter) CheckAvailable(context.Context, run.Runner, *config.To
 
 // CheckHostCompatibility imposes no host constraints beyond the transport:
 // AppImages are portable Linux binaries with no distro-specific payload.
-func (a *AppImageAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (a *AppImageAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	return nil
 }
 

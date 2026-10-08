@@ -25,11 +25,20 @@ import (
 // HTTPAdapter implements exec.AdapterV2 for HTTP(S) downloads.
 // Supports archive extraction, checksum verification, and {latest}
 // resolution via GitHub releases API.
-type HTTPAdapter struct{}
+type HTTPAdapter struct {
+	allowInstallerArtifacts bool
+}
 
 // NewHTTPAdapter creates an HTTP download adapter.
 func NewHTTPAdapter() *HTTPAdapter {
 	return &HTTPAdapter{}
+}
+
+// NewInstallerHTTPAdapter creates the shared HTTP transport used by dedicated
+// platform-installer adapters. Those adapters own execution semantics for the
+// otherwise-forbidden installer payload after HTTP transport and verification.
+func NewInstallerHTTPAdapter() *HTTPAdapter {
+	return &HTTPAdapter{allowInstallerArtifacts: true}
 }
 
 func (a *HTTPAdapter) Kind() string { return "http" }
@@ -57,8 +66,8 @@ func resolveDownloadPlan(ctx context.Context, rn run.Runner, mc *config.MethodCa
 		return intent, err
 	}
 	resolved := intent.Clone()
-	if version == "" {
-		version, _ = mc.Config["_resolved_version"].(string)
+	if version == "" && mc != nil {
+		version = mc.ResolvedVersion
 	}
 	if version != "" && resolved.Identity.Version == "" {
 		resolved.Identity.Version = version
@@ -223,17 +232,8 @@ func (a *HTTPAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *
 	effective := methodWithResolvedArtifact(mc, resolved.Artifacts[0])
 	err := a.installResolvedURL(ctx, rn, tool, effective, resolved.Artifacts[0].URL)
 	if mc != nil && err == nil {
-		if mc.Config == nil {
-			mc.Config = make(map[string]any)
-		}
-		if ownsArchivePayload(effective) {
-			mc.Config[ownedArchivePayloadKey] = true
-		} else {
-			delete(mc.Config, ownedArchivePayloadKey)
-		}
-		if checksum, ok := effective.Config["_checksum_resolved"].(string); ok && checksum != "" {
-			mc.Config["_checksum_resolved"] = checksum
-		}
+		mc.OwnsArchivePayload = effective.OwnsArchivePayload
+		mc.ResolvedChecksum = effective.ResolvedChecksum
 	}
 	return err
 }
@@ -266,18 +266,13 @@ func methodWithResolvedArtifact(mc *config.MethodCandidate, artifact plan.Artifa
 		}
 		effective.Config[key] = value
 	}
-	delete(effective.Config, "_checksum_resolved")
+	effective.ResolvedChecksum = ""
+	effective.OwnsArchivePayload = false
 	return effective
 }
 
-const ownedArchivePayloadKey = "_http_owned_archive_payload"
-
 func ownsArchivePayload(mc *config.MethodCandidate) bool {
-	if mc == nil {
-		return false
-	}
-	owned, _ := mc.Config[ownedArchivePayloadKey].(bool)
-	return owned
+	return mc != nil && mc.OwnsArchivePayload
 }
 
 func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolvedURL string) error {
@@ -287,7 +282,8 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 	if mc.Config == nil {
 		mc.Config = make(map[string]any)
 	}
-	delete(mc.Config, ownedArchivePayloadKey)
+	mc.OwnsArchivePayload = false
+	mc.ResolvedChecksum = ""
 	binary, _ := mc.Config["binary"].(string)
 	if err := validateBinaryName(binary); err != nil {
 		return fmt.Errorf("http: binary: %w", err)
@@ -313,10 +309,10 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 	}
 
 	// Determine file extension and re-enforce the same artifact-format contract
-	// semantic validation uses. _allow_installer is reserved for dedicated
-	// adapters that intentionally delegate transport to HTTPAdapter.
+	// semantic validation uses. Dedicated installer adapters opt into transport
+	// of otherwise-forbidden installer payloads through a typed adapter option.
 	ext := fileExtension(resolvedURL)
-	allowInstaller, _ := mc.Config["_allow_installer"].(bool)
+	allowInstaller := a.allowInstallerArtifacts
 	if contract, ok := methodkind.Lookup("http"); ok && contract.Artifact != nil {
 		if err := contract.Artifact.ValidateArtifact(resolvedURL); err != nil {
 			var forbidden *artifact.ForbiddenExtensionError
@@ -363,82 +359,15 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 	}
 
 	if !fromCache {
-		// Download from remote.
-		dl := NewGoDownloader(rn)
-		if err := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
-			if hasBearerCredential {
-				return dl.DownloadWithBearer(retryCtx, resolvedURL, tmpFile, bearerCredential)
-			}
-			return dl.Download(retryCtx, resolvedURL, tmpFile)
-		}); err != nil {
+		if err := downloadResolvedArtifact(ctx, rn, resolvedURL, tmpFile, bearerCredential, hasBearerCredential); err != nil {
 			return fmt.Errorf("http: download %s: %w", tool.Name, err)
 		}
 	}
-
-	// Verify checksum if configured.
-	if checksum, ok := mc.Config["checksum"].(string); ok && checksum != "" {
-		if err := a.verifyChecksum(ctx, rn, tmpFile, resolvedURL, checksum, mc.Config); err != nil {
-			// If we used a cached file and checksum fails, re-download fresh.
-			if fromCache {
-				log.Default.Warn("cached copy failed checksum, re-downloading", "tool", tool.Name)
-				if rmErr := downloadcache.Remove(resolvedURL); rmErr != nil {
-					log.Default.Warn("failed to evict bad cache entry", "tool", tool.Name, "error", rmErr)
-				}
-				dl := NewGoDownloader(rn)
-				if err2 := retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
-					if hasBearerCredential {
-						return dl.DownloadWithBearer(retryCtx, resolvedURL, tmpFile, bearerCredential)
-					}
-					return dl.Download(retryCtx, resolvedURL, tmpFile)
-				}); err2 != nil {
-					return fmt.Errorf("http: download %s (re-download): %w", tool.Name, err2)
-				}
-				// Retry checksum verification on fresh download.
-				if err2 := a.verifyChecksum(ctx, rn, tmpFile, resolvedURL, checksum, mc.Config); err2 != nil {
-					return fmt.Errorf("http: checksum: %w", err2)
-				}
-			} else {
-				return fmt.Errorf("http: checksum: %w", err)
-			}
-		}
+	if err := a.verifyDownloadedArtifact(ctx, rn, tool, mc, resolvedURL, tmpFile, fromCache, bearerCredential, hasBearerCredential); err != nil {
+		return err
 	}
-
-	// sudo is path-derived: destinations under $HOME are user-writable and
-	// need no elevation (e.g. ~/.local/share/fonts); everything else (the
-	// /usr/local/bin default, /opt, …) keeps sudo. Explicit sudo_required
-	// in the schema always wins.
-	sudoRequired := a.RequiresElevation(tool, mc)
-	if isArchive(ext) {
-		if err = installArchive(ctx, tmpFile, ext, tool, mc, rn); err != nil {
-			return fmt.Errorf("http: extract: %w", err)
-		}
-	} else {
-		// Raw binary: placement decides the destination. Explicit
-		// extract_to wins; a scoped candidate defaults to the scope's
-		// platform-native install root; otherwise /usr/local/bin.
-		placement, err := ArtifactPlacement(tool, mc, "/usr/local/bin", "")
-		if err != nil {
-			return err
-		}
-		if err := extract(ctx, tmpFile, placement.InstallRoot, ext, binary, rn, sudoRequired, tool.Name); err != nil {
-			return fmt.Errorf("http: extract: %w", err)
-		}
-		// A scoped raw binary needs a link in the scope link dir to be
-		// reachable from PATH, mirroring archive entrypoints. Scope-less
-		// candidates keep the historical behavior (the binary lands
-		// directly in extract_to, which must already be on PATH).
-		if scopeConfigured(mc) && placement.LinkDir != "" {
-			name := binary
-			if name == "" && tool != nil {
-				name = tool.Name
-			}
-			if name != "" {
-				linkElevated := defaultSudoRequired(placement.LinkDir) && os.Geteuid() != 0
-				if _, err := createLaunchers(ctx, rn, placement.InstallRoot, placement.LinkDir, map[string]string{name: name}, linkElevated); err != nil {
-					return fmt.Errorf("http: link: %w", err)
-				}
-			}
-		}
+	if err := a.materializeDownloadedArtifact(ctx, rn, tool, mc, tmpFile, ext, binary); err != nil {
+		return err
 	}
 
 	// Store in cache after extraction (Store may move tmpFile via os.Rename).
@@ -451,9 +380,77 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 		}
 	}
 	if isArchive(ext) {
-		mc.Config[ownedArchivePayloadKey] = true
+		mc.OwnsArchivePayload = true
 	}
 
+	return nil
+}
+
+func downloadResolvedArtifact(ctx context.Context, rn run.Runner, resolvedURL, destination, bearerCredential string, hasBearerCredential bool) error {
+	dl := NewGoDownloader(rn)
+	return retryWithBackoff(ctx, 3, time.Second, 10*time.Second, func(retryCtx context.Context) error {
+		if hasBearerCredential {
+			return dl.DownloadWithBearer(retryCtx, resolvedURL, destination, bearerCredential)
+		}
+		return dl.Download(retryCtx, resolvedURL, destination)
+	})
+}
+
+func (a *HTTPAdapter) verifyDownloadedArtifact(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolvedURL, filePath string, fromCache bool, bearerCredential string, hasBearerCredential bool) error {
+	checksum, _ := mc.Config["checksum"].(string)
+	if checksum == "" {
+		return nil
+	}
+	if err := a.verifyChecksum(ctx, rn, filePath, resolvedURL, checksum, mc); err == nil {
+		return nil
+	} else if !fromCache {
+		return fmt.Errorf("http: checksum: %w", err)
+	}
+
+	log.Default.Warn("cached copy failed checksum, re-downloading", "tool", tool.Name)
+	if rmErr := downloadcache.Remove(resolvedURL); rmErr != nil {
+		log.Default.Warn("failed to evict bad cache entry", "tool", tool.Name, "error", rmErr)
+	}
+	if err := downloadResolvedArtifact(ctx, rn, resolvedURL, filePath, bearerCredential, hasBearerCredential); err != nil {
+		return fmt.Errorf("http: download %s (re-download): %w", tool.Name, err)
+	}
+	if err := a.verifyChecksum(ctx, rn, filePath, resolvedURL, checksum, mc); err != nil {
+		return fmt.Errorf("http: checksum: %w", err)
+	}
+	return nil
+}
+
+func (a *HTTPAdapter) materializeDownloadedArtifact(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, filePath, ext, binary string) error {
+	// Elevation is path-derived; explicit sudo_required remains authoritative.
+	sudoRequired := a.RequiresElevation(tool, mc)
+	if isArchive(ext) {
+		if err := installArchive(ctx, filePath, ext, tool, mc, rn); err != nil {
+			return fmt.Errorf("http: extract: %w", err)
+		}
+		return nil
+	}
+
+	placement, err := ArtifactPlacement(tool, mc, "/usr/local/bin", "")
+	if err != nil {
+		return err
+	}
+	if err := extract(ctx, filePath, placement.InstallRoot, ext, binary, rn, sudoRequired, tool.Name); err != nil {
+		return fmt.Errorf("http: extract: %w", err)
+	}
+	if !scopeConfigured(mc) || placement.LinkDir == "" {
+		return nil
+	}
+	name := binary
+	if name == "" && tool != nil {
+		name = tool.Name
+	}
+	if name == "" {
+		return nil
+	}
+	linkElevated := defaultSudoRequired(placement.LinkDir) && os.Geteuid() != 0
+	if _, err := createLaunchers(ctx, rn, placement.InstallRoot, placement.LinkDir, map[string]string{name: name}, linkElevated); err != nil {
+		return fmt.Errorf("http: link: %w", err)
+	}
 	return nil
 }
 
@@ -520,14 +517,15 @@ func detectAlgorithmFromURL(checksumURL string) string {
 // verifyChecksum resolves checksum verification. When the checksum string
 // ends with ":auto", it tries to resolve the hash from a companion checksum
 // file using config-driven URL and format options.
-func (a *HTTPAdapter) verifyChecksum(ctx context.Context, rn run.Runner, filePath, downloadURL, checksum string, config map[string]any) error {
+func (a *HTTPAdapter) verifyChecksum(ctx context.Context, rn run.Runner, filePath, downloadURL, checksum string, mc *config.MethodCandidate) error {
+	config := mc.Config
 	// Handle :auto suffix — resolve checksum from a companion file.
 	if strings.HasSuffix(checksum, ":auto") {
 		cc := extractChecksumConfig(checksum, config)
 		if cc == nil {
 			return fmt.Errorf("http: checksum: invalid checksum format: %q", checksum)
 		}
-		return a.resolveAutoChecksum(ctx, rn, filePath, downloadURL, cc, config)
+		return a.resolveAutoChecksum(ctx, rn, filePath, downloadURL, cc, mc)
 	}
 
 	// Plain checksum — verify directly.
@@ -536,7 +534,8 @@ func (a *HTTPAdapter) verifyChecksum(ctx context.Context, rn run.Runner, filePat
 
 // resolveAutoChecksum handles :auto checksum resolution by trying to fetch
 // a companion checksum file and extracting the expected hash.
-func (a *HTTPAdapter) resolveAutoChecksum(ctx context.Context, rn run.Runner, filePath, downloadURL string, cc *checksumConfig, config map[string]any) error {
+func (a *HTTPAdapter) resolveAutoChecksum(ctx context.Context, rn run.Runner, filePath, downloadURL string, cc *checksumConfig, mc *config.MethodCandidate) error {
+	config := mc.Config
 	log.Default.Warn("checksum fetched from server (TOFU)", "algorithm", cc.algorithm, "hint", "use checksum_url for a separate source, set a literal checksum in schema.toml, or pin the hash in depengine.lock")
 
 	parsedURL, err := url.Parse(downloadURL)
@@ -574,10 +573,10 @@ func (a *HTTPAdapter) resolveAutoChecksum(ctx context.Context, rn run.Runner, fi
 			lastErr = err
 			continue
 		}
-		// Store resolved checksum in config so the lockfile mechanism
-		// can capture the pinned hash later.
-		if _, ok := config["_checksum_resolved"]; !ok {
-			config["_checksum_resolved"] = cc.algorithm + ":" + resolvedHash
+		// Preserve the concrete checksum as typed transient resolution metadata
+		// so lock persistence can capture it without mutating schema Config.
+		if mc.ResolvedChecksum == "" {
+			mc.ResolvedChecksum = cc.algorithm + ":" + resolvedHash
 		}
 		return VerifyChecksum(filePath, cc.algorithm+":"+resolvedHash)
 	}

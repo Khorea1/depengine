@@ -86,9 +86,10 @@ func TestHTTPAdapterRemoveRecordedArchivePayloadPreservesParent(t *testing.T) {
 	if err := os.WriteFile(unrelated, []byte("unrelated"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	mc := &config.MethodCandidate{Config: map[string]any{
-		"url": "https://example.test/tool.zip", "extract_to": payload, ownedArchivePayloadKey: true,
-	}}
+	mc := &config.MethodCandidate{
+		OwnsArchivePayload: true,
+		Config:             map[string]any{"url": "https://example.test/tool.zip", "extract_to": payload},
+	}
 	tool := &config.Tool{Name: "tool"}
 	owner, err := expectedArchiveOwnership(tool, mc)
 	if err != nil {
@@ -115,9 +116,10 @@ func TestHTTPAdapterRemoveRejectsArchiveWithMismatchedFilesystemOwnership(t *tes
 		t.Fatal(err)
 	}
 	foreignTool := &config.Tool{Name: "other-tool"}
-	mc := &config.MethodCandidate{Config: map[string]any{
-		"url": "https://example.test/tool.zip", "extract_to": payload, ownedArchivePayloadKey: true,
-	}}
+	mc := &config.MethodCandidate{
+		OwnsArchivePayload: true,
+		Config:             map[string]any{"url": "https://example.test/tool.zip", "extract_to": payload},
+	}
 	owner, err := expectedArchiveOwnership(foreignTool, mc)
 	if err != nil {
 		t.Fatal(err)

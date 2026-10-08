@@ -8,16 +8,16 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/platform"
 )
 
 // resolveUniversalLockDocument uses the executor's read-only plan resolution
 // path. It never invokes an installer and only returns an immutable projection
 // with exact coverage of expectedTools; unsupported identities or incomplete
 // retained coverage fail closed.
-func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, clan string, facts *engine.Facts, schemaPath string, logger *slog.Logger, previous *lock.Lock, expectedTools []string, methodsHash map[string]string) (plan.LockDocument, error) {
+func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, clan string, facts *platform.Facts, schemaPath string, logger *slog.Logger, previous *lock.Lock, expectedTools []string, methodsHash map[string]string) (plan.LockDocument, error) {
 	if schema == nil {
 		return plan.LockDocument{}, fmt.Errorf("universal lock: schema is required")
 	}

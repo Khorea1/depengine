@@ -11,10 +11,10 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/httpdownload"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -33,7 +33,7 @@ func NewMSIXAdapter() *Adapter { return newAdapter("msix") }
 func NewAPPXAdapter() *Adapter { return newAdapter("appx") }
 
 func newAdapter(kind string) *Adapter {
-	return &Adapter{kind: kind, http: httpdownload.NewHTTPAdapter(), catalog: newCatalog()}
+	return &Adapter{kind: kind, http: httpdownload.NewInstallerHTTPAdapter(), catalog: newCatalog()}
 }
 
 func (a *Adapter) Kind() string { return a.kind }
@@ -93,7 +93,6 @@ func (a *Adapter) InstallResolved(ctx context.Context, rn run.Runner, tool *conf
 	filename := "package." + a.kind
 	clone.Config["extract_to"] = tmp
 	clone.Config["binary"] = filename
-	clone.Config["_allow_installer"] = true
 	clone.Config["sudo_required"] = false
 	if err := a.http.InstallResolved(ctx, rn, tool, clone, resolved); err != nil {
 		return fmt.Errorf("%s: %w", a.kind, err)
@@ -143,7 +142,7 @@ func (a *Adapter) Remove(ctx context.Context, rn run.Runner, _ *config.Tool, mc 
 
 func (a *Adapter) CanRemove() bool { return true }
 
-func (a *Adapter) CheckHostCompatibility(_ *config.Tool, _ *config.MethodCandidate, _ *plan.ResolvedInstallPlan, _ *engine.Facts, clan string) error {
+func (a *Adapter) CheckHostCompatibility(_ *config.Tool, _ *config.MethodCandidate, _ *plan.ResolvedInstallPlan, _ *platform.Facts, clan string) error {
 	if clan != "windows" {
 		return fmt.Errorf("%s: Windows host required", a.kind)
 	}

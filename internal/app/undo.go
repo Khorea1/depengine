@@ -15,6 +15,7 @@ import (
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/log"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
 	"github.com/spf13/cobra"
@@ -128,7 +129,7 @@ func runUndo(ctx context.Context, undoList *bool, undoSpecific *string) error {
 	}
 
 	facts := gatherUndoFacts()
-	clan := engine.ResolveFamily(facts)
+	clan := platform.ResolveFamily(facts)
 	executor := exec.New()
 	exec.WithRunner(run.OSExecRunner{})(executor)
 	if facts != nil {
@@ -233,7 +234,7 @@ func resolveUndoMethodKind(toolState state.ToolState) string {
 
 // gatherUndoFacts reads OS facts for the executor-local native adapter. On
 // failure, the default bootstrap adapter retains its existing PATH fallback.
-func gatherUndoFacts() *engine.Facts {
+func gatherUndoFacts() *platform.Facts {
 	if facts, err := engine.GatherFacts(run.OSExecRunner{}); err == nil {
 		return facts
 	} else {
@@ -278,8 +279,9 @@ func removeUndoTools(ctx context.Context, toRemove []string, curState *state.Sta
 		}
 
 		mc := &config.MethodCandidate{
-			Kind:   methodKind,
-			Config: toolState.Config,
+			Kind:               methodKind,
+			Config:             toolState.Config,
+			OwnsArchivePayload: toolState.ArchivePayloadOwned(),
 		}
 		tool := &config.Tool{Name: name}
 		resolved, verification, err := executor.ResolveAndVerifyCandidate(ctx, tool, mc, clan)

@@ -33,6 +33,20 @@ and identify update drift; they do not supply concrete resolved identity.
 Lock v1 continues to use its method pins through the bounded legacy
 resolver/application path and remains readable.
 
+### Legacy lock v1 lifecycle
+
+Lock v1 is compatibility-only. New capabilities must not extend its selector
+model, and a successful whole-schema `depengine update` must migrate a readable
+v1 lock to v2. The only path allowed to keep writing the v1 envelope is a
+profiled update that cannot prove a complete v2 install-closure projection.
+
+The legacy writer can be removed once profiled update either produces a complete
+v2 projection or explicitly requires a whole-schema migration instead of
+rewriting v1. The v1 reader/application path remains until the format-v1 freeze
+policy explicitly drops pre-v2 lock input. Until those gates are met,
+`ResolveLegacyV1` and `ApplyLegacyV1` are migration compatibility code, not
+extension points.
+
 Generation is all-or-nothing. If a selected manager cannot expose a stable
 version, revision, digest, checksummed artifact, or required Git-backed source
 revision, `update` fails with `immutable lock identity unavailable`; it never

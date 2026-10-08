@@ -344,6 +344,8 @@ func SnapshotIntentMetadata(s *config.Schema) (map[string]string, map[string]str
 // (no tools needing resolution) is still valid.
 // This compatibility resolver is for lock envelope v1 only. New v2 code must
 // resolve through internal/exec AdapterV2.ResolvePlan.
+//
+// Compatibility-only: do not extend lock v1 with new selector classes.
 func ResolveLegacyV1(ctx context.Context, s *config.Schema, rn run.Runner) (*Lock, error) {
 	methodsHash, sourceHash, err := SnapshotIntentMetadata(s)
 	if err != nil {
@@ -387,8 +389,8 @@ func ResolveLegacyV1(ctx context.Context, s *config.Schema, rn run.Runner) (*Loc
 			}
 
 			// Capture concrete checksum (prefer adapter-resolved hash over manual pin).
-			if checksum, ok := method.Config["_checksum_resolved"].(string); ok && checksum != "" {
-				pin.Checksum = checksum
+			if method.ResolvedChecksum != "" {
+				pin.Checksum = method.ResolvedChecksum
 			} else if checksum, ok := method.Config["checksum"].(string); ok && checksum != "" && !strings.HasSuffix(checksum, ":auto") {
 				pin.Checksum = checksum
 			}
@@ -782,6 +784,8 @@ func requiresChecksumPin(method *config.MethodCandidate) bool {
 // planning. It is a compatibility operation only; non-v1 envelopes are left
 // unchanged. Artifact pins patch Config, while Git revisions and container
 // digests stay transient so mutable intent remains visible for drift reporting.
+//
+// Compatibility-only: new execution paths consume the v2 LockDocument.
 func ApplyLegacyV1(s *config.Schema, l *Lock) {
 	if l == nil {
 		return
@@ -856,7 +860,7 @@ func ApplyLegacyV1(s *config.Schema, l *Lock) {
 				// Preserve the concrete version as internal resolved metadata so
 				// dry-run/reporting can expose the pin even after {latest} has been
 				// substituted out of the URL template.
-				method.Config["_resolved_version"] = pin.Latest
+				method.ResolvedVersion = pin.Latest
 				if usesGitHubReleasePin(method) && githubUsesLatest(method.Config) {
 					method.Config["release"] = pin.Latest
 				}

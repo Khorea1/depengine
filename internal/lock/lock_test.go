@@ -561,11 +561,11 @@ func TestResolveLegacyV1CapturesChecksumResolved(t *testing.T) {
 				Name: "tool",
 				Methods: []*config.MethodCandidate{
 					{
-						Kind: "http",
+						Kind:             "http",
+						ResolvedChecksum: "sha256:resolved123",
 						Config: map[string]any{
-							"url":                "https://example.com/tool.tar.gz",
-							"checksum":           "sha256:auto",
-							"_checksum_resolved": "sha256:resolved123",
+							"url":      "https://example.com/tool.tar.gz",
+							"checksum": "sha256:auto",
 						},
 					},
 				},
@@ -585,7 +585,7 @@ func TestResolveLegacyV1CapturesChecksumResolved(t *testing.T) {
 	if !ok {
 		t.Fatal("expected tool/http/0 to have a pin")
 	}
-	// Should prefer _checksum_resolved over checksum.
+	// Resolved runtime checksum takes precedence over the mutable :auto request.
 	if pin.Checksum != "sha256:resolved123" {
 		t.Errorf("Checksum = %q, want sha256:resolved123", pin.Checksum)
 	}
@@ -1897,6 +1897,7 @@ func TestApplyLegacyV1IgnoresV2ToolPins(t *testing.T) {
 		t.Fatalf("v2 compatibility ToolPin changed schema URL to %v", got)
 	}
 }
+
 func TestSaveDoesNotFollowTemporaryPathSymlink(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "depengine.lock")

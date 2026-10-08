@@ -135,12 +135,14 @@ func TestArchiveRemoveElevatesLinkIndependently(t *testing.T) {
 	run.OverrideElevation("sudo")
 	defer run.OverrideElevation("")
 	fr := &run.FakeRunner{}
-	mc := &config.MethodCandidate{Config: map[string]any{
-		"extract_to":           payload,
-		"link_dir":             links,
-		"entrypoints":          map[string]any{"demo": "bin/demo"},
-		ownedArchivePayloadKey: true,
-	}}
+	mc := &config.MethodCandidate{
+		OwnsArchivePayload: true,
+		Config: map[string]any{
+			"extract_to":  payload,
+			"link_dir":    links,
+			"entrypoints": map[string]any{"demo": "bin/demo"},
+		},
+	}
 	owner, err := expectedArchiveOwnership(&config.Tool{Name: "demo"}, mc)
 	if err != nil {
 		t.Fatal(err)
@@ -190,7 +192,7 @@ func TestInstallArchiveStripEntrypointCheckRemove(t *testing.T) {
 					t.Fatalf("installed executable mode = %v, want 0755", info.Mode().Perm())
 				}
 			}
-			mc.Config[ownedArchivePayloadKey] = true // Direct installArchive invocation bypasses adapter ownership persistence.
+			mc.OwnsArchivePayload = true // Direct installArchive invocation bypasses adapter ownership persistence.
 			adapter := NewHTTPAdapter()
 			if !adapter.Check(context.Background(), run.OSExecRunner{}, tool, mc) {
 				t.Fatal("check failed after install")

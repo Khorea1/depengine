@@ -9,10 +9,10 @@ import (
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/httpdownload"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -26,7 +26,7 @@ type Adapter struct {
 }
 
 func NewAdapter() *Adapter {
-	return &Adapter{http: httpdownload.NewHTTPAdapter(), products: newProductFinder()}
+	return &Adapter{http: httpdownload.NewInstallerHTTPAdapter(), products: newProductFinder()}
 }
 func (a *Adapter) Kind() string { return "msi" }
 
@@ -75,7 +75,6 @@ func (a *Adapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool,
 	}
 	clone.Config["extract_to"] = tmp
 	clone.Config["binary"] = "package.msi"
-	clone.Config["_allow_installer"] = true
 	clone.Config["sudo_required"] = false
 	if err := a.http.Install(ctx, rn, tool, &clone); err != nil {
 		return fmt.Errorf("msi: %w", err)
@@ -102,7 +101,6 @@ func (a *Adapter) InstallResolved(ctx context.Context, rn run.Runner, tool *conf
 	}
 	clone.Config["extract_to"] = tmp
 	clone.Config["binary"] = "package.msi"
-	clone.Config["_allow_installer"] = true
 	clone.Config["sudo_required"] = false
 	if err := a.http.InstallResolved(ctx, rn, tool, &clone, resolved); err != nil {
 		return fmt.Errorf("msi: %w", err)
@@ -119,7 +117,7 @@ func (a *Adapter) runMsiexec(ctx context.Context, rn run.Runner, mc *config.Meth
 		return fmt.Errorf("msi: install exited %d: %s", res.ExitCode, strings.TrimSpace(string(res.Stderr)))
 	}
 	if res.ExitCode == 1641 || res.ExitCode == 3010 {
-		mc.Config["_reboot_required"] = true
+		mc.RebootRequired = true
 	}
 	return nil
 }
@@ -157,7 +155,7 @@ func (a *Adapter) CheckAvailable(context.Context, run.Runner, *config.Tool, *con
 
 // CheckHostCompatibility imposes no host constraints beyond adapter
 // availability: the MSI payload is Windows-scoped by the method contract.
-func (a *Adapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (a *Adapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	return nil
 }
 

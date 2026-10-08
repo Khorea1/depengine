@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -79,7 +79,7 @@ func (a *executorAdapterV2Double) CheckAvailable(context.Context, run.Runner, *c
 	return true
 }
 
-func (a *executorAdapterV2Double) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *engine.Facts, string) error {
+func (a *executorAdapterV2Double) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	return nil
 }
 
