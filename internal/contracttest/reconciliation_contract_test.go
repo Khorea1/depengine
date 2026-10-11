@@ -61,6 +61,7 @@ func TestPipxObservationReconciliationSelectsSafeTransitions(t *testing.T) {
 }
 
 func TestPipxExecutorFailsClosedAndSatisfiedWithoutMutation(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	const exact = `{"pipx_spec_version":"0.1","venvs":{"demo":{"metadata":{"main_package":{"package":"demo","package_version":"1.2.3"}}}}}`
 	const unknown = `{"pipx_spec_version":"0.1","venvs":{"demo":{"metadata":{"main_package":{"package":"demo","package_version":""}}}}}`
 	tests := []struct {
@@ -101,8 +102,14 @@ func TestPipxExecutorFailsClosedAndSatisfiedWithoutMutation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("marshal external report: %v", err)
 			}
-			if tt.secret != "" && (strings.Contains(report.Tools[0].Error, tt.secret) || strings.Contains(string(encoded), tt.secret)) {
-				t.Fatalf("external result leaked Bearer secret: result=%q report=%s", report.Tools[0].Error, encoded)
+			if tt.secret != "" {
+				resultError := report.Tools[0].Error
+				if strings.Contains(resultError, tt.secret) || strings.Contains(string(encoded), tt.secret) {
+					t.Fatalf("external result leaked Bearer secret: result=%q report=%s", resultError, encoded)
+				}
+				if !strings.Contains(resultError, "Authorization:") || !strings.Contains(resultError, "***") {
+					t.Fatalf("external result did not retain a redacted authorization diagnostic: %q", resultError)
+				}
 			}
 			for _, call := range runner.Calls {
 				if call.Name == "pipx" && len(call.Args) > 0 && (call.Args[0] == "install" || call.Args[0] == "uninstall") {

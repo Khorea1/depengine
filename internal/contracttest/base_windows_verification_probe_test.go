@@ -117,6 +117,7 @@ func baseCase(kind, field, command, output, desiredA string, desiredB ...string)
 	configB := map[string]any{"pkg": "beta"}
 	if field == "version" {
 		configA["version"], configB["version"] = "1.2.0", "2.0.0"
+		configB["pkg"] = configA["pkg"]
 		if kind == "composer" {
 			configA["pkg"], configB["pkg"] = "vendor/alpha", "vendor/alpha"
 		}
@@ -136,10 +137,8 @@ func baseCase(kind, field, command, output, desiredA string, desiredB ...string)
 		responses["brew list --cask beta"] = run.Result{ExitCode: 1}
 	case "npm":
 		responses[command] = run.Result{Stdout: []byte(output)}
-		// Real `npm ls` reports a missing package with exit 1 and a
-		// problems document, not empty output.
-		if field == "version" {
-			responses["npm ls -g --depth=0 --json beta"] = run.Result{ExitCode: 1, Stdout: []byte(`{"dependencies":{"alpha":{"version":"1.2.0"}},"problems":["missing: beta, required by root"]}`)}
+		if field == "pkg" {
+			responses["npm ls -g --depth=0 --json "+valueB] = run.Result{Stdout: []byte(`{"dependencies":{}}`)}
 		}
 	default:
 		responses[command] = run.Result{Stdout: []byte(output)}
@@ -179,7 +178,11 @@ func probeAB(t *testing.T, adapter interface {
 		}
 		states[i] = plan.Reconcile(desired, observation).State
 	}
-	if states[0] != plan.StateSatisfied || states[1] == plan.StateSatisfied {
-		t.Fatalf("A/B verification states = %v; want satisfied then absent/drifted", states)
+	if _, exactVersion := configA["version"]; exactVersion {
+		if states[0] != plan.StateSatisfied || states[1] != plan.StateDrifted {
+			t.Fatalf("A/B verification states = %v; want satisfied then drifted for different exact versions", states)
+		}
+	} else if states[0] != plan.StateSatisfied || states[1] == plan.StateSatisfied {
+		t.Fatalf("A/B verification states = %v; want satisfied then absent/drifted for changed field", states)
 	}
 }
