@@ -1009,19 +1009,14 @@ func (a *BaseAdapter) gemInstalledVersion(ctx context.Context, rn run.Runner, pk
 }
 
 func gemListOutputValid(output string) bool {
-	// An exact-name query with no matches prints nothing, and the bare
-	// header reports an empty gem home. Both mean absent, not broken.
-	if output == "" {
+	// An exact-name query with no matches prints nothing (RubyGems emits a
+	// lone newline for zero matches), and the bare header reports an empty
+	// gem home. All of these mean absent, not broken.
+	trimmed := strings.TrimSpace(output)
+	if trimmed == "" || trimmed == "*** LOCAL GEMS ***" {
 		return true
 	}
-	output = strings.TrimSpace(output)
-	if output == "" {
-		return false
-	}
-	if output == "*** LOCAL GEMS ***" {
-		return true
-	}
-	for _, line := range strings.Split(output, "\n") {
+	for _, line := range strings.Split(trimmed, "\n") {
 		line = strings.TrimSpace(line)
 		name, versions, ok := strings.Cut(line, " (")
 		if !ok || name == "" || !strings.HasSuffix(versions, ")") {
@@ -1482,6 +1477,7 @@ func (a *BaseAdapter) checkYarn(ctx context.Context, rn run.Runner, tool *config
 }
 
 type npmListOutput struct {
+	Name         string `json:"name"`
 	Dependencies map[string]*struct {
 		Version string `json:"version"`
 	} `json:"dependencies"`
@@ -1489,12 +1485,16 @@ type npmListOutput struct {
 }
 
 func (a *BaseAdapter) npmInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
-	res := a.runConfiguredBinary(ctx, rn, "ls", "-g", "--depth=0", "--json", pkg)
+	// Query the complete global inventory instead of filtering by package: a
+	// filtered query for a missing package exits nonzero with a bare
+	// `{"name": ...}` document that proves nothing, while a successful full
+	// listing proves absence when it omits the package.
+	res := a.runConfiguredBinary(ctx, rn, "ls", "-g", "--depth=0", "--json")
 	if res.Err != nil {
 		return "", run.CheckResult(res, "npm: list installed version")
 	}
 	var parsed npmListOutput
-	if err := json.Unmarshal(res.Stdout, &parsed); err != nil || (parsed.Dependencies == nil && parsed.Problems == nil) {
+	if err := json.Unmarshal(res.Stdout, &parsed); err != nil || (parsed.Dependencies == nil && parsed.Problems == nil && parsed.Name == "") {
 		return "", fmt.Errorf("npm: invalid list output")
 	}
 	for _, entry := range parsed.Dependencies {
@@ -1523,10 +1523,7 @@ func (a *BaseAdapter) npmInstalledVersion(ctx context.Context, rn run.Runner, pk
 	if res.ExitCode != 0 {
 		return "", run.CheckResult(res, "npm: list installed version")
 	}
-	if parsed.Dependencies != nil {
-		return "", absentInstalledPackage("npm", pkg)
-	}
-	return "", fmt.Errorf("npm: incomplete list output")
+	return "", absentInstalledPackage("npm", pkg)
 }
 
 func (a *BaseAdapter) checkNPM(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {

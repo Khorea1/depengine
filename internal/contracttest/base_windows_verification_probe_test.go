@@ -79,8 +79,8 @@ func TestBaseAndWindowsVerificationFieldProbes(t *testing.T) {
 			baseCase("gem", "version", "gem list --local --exact alpha --all", "alpha (1.2.0, 1.1.0)\n", "version"),
 			baseCase("pipx", "pkg", "pipx list --json", `{"pipx_spec_version":"0.1","venvs":{"alpha":{"metadata":{"main_package":{"package":"alpha","package_version":"1.2.0"}}}}}`, "pkg"),
 			baseCase("pipx", "version", "pipx list --json", `{"pipx_spec_version":"0.1","venvs":{"alpha":{"metadata":{"main_package":{"package":"alpha","package_version":"1.2.0"}}}}}`, "version"),
-			baseCase("npm", "pkg", "npm ls -g --depth=0 --json alpha", `{"dependencies":{"alpha":{"version":"1.2.0"}}}`, "pkg"),
-			baseCase("npm", "version", "npm ls -g --depth=0 --json alpha", `{"dependencies":{"alpha":{"version":"1.2.0"}}}`, "version"),
+			baseCase("npm", "pkg", "npm ls -g --depth=0 --json", `{"dependencies":{"alpha":{"version":"1.2.0"}}}`, "pkg"),
+			baseCase("npm", "version", "npm ls -g --depth=0 --json", `{"dependencies":{"alpha":{"version":"1.2.0"}}}`, "version"),
 			baseCase("apm", "pkg", "apm list --installed --bare", "alpha@1.2.0\n", "pkg"),
 			baseCase("mas", "pkg", "mas list", "123456789 Alpha App (1.2)\n", "123456789"),
 			baseCase("uv", "pkg", "uv tool list", "alpha v1.2.0\n- alpha\n", "pkg"),
@@ -135,11 +135,6 @@ func baseCase(kind, field, command, output, desiredA string, desiredB ...string)
 	case "cask":
 		responses[command] = run.Result{}
 		responses["brew list --cask beta"] = run.Result{ExitCode: 1}
-	case "npm":
-		responses[command] = run.Result{Stdout: []byte(output)}
-		if field == "pkg" {
-			responses["npm ls -g --depth=0 --json "+valueB] = run.Result{Stdout: []byte(`{"dependencies":{}}`)}
-		}
 	default:
 		responses[command] = run.Result{Stdout: []byte(output)}
 	}

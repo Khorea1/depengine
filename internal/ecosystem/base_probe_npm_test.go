@@ -25,6 +25,8 @@ func TestNPMExactVersionObserve(t *testing.T) {
 		{name: "version drift is present", pkg: "demo", stdout: `{"dependencies":{"demo":{"version":"2.0.0"}}}`, want: plan.PresencePresent, wantVer: "2.0.0"},
 		{name: "version zero is not semver-rejected", pkg: "demo", stdout: `{"dependencies":{"demo":{"version":"0"}}}`, want: plan.PresencePresent, wantVer: "0"},
 		{name: "complete empty dependencies is absent", pkg: "demo", stdout: `{"dependencies":{}}`, want: plan.PresenceAbsent},
+		{name: "bare name inventory with success is absent", pkg: "demo", stdout: "{\n  \"name\": \"lib\"\n}", want: plan.PresenceAbsent},
+		{name: "bare name inventory with failure is broken", pkg: "demo", stdout: "{\n  \"name\": \"lib\"\n}", exitCode: 1, want: plan.PresenceBroken, wantError: true},
 		{name: "null other dependency invalidates full document", pkg: "demo", stdout: `{"dependencies":{"other":null}}`, want: plan.PresenceBroken, wantError: true},
 		{name: "listed package without version is unknown", pkg: "demo", stdout: `{"dependencies":{"demo":{}}}`, want: plan.PresenceUnknown},
 		{name: "nonzero version and unrelated problem is broken", pkg: "demo", stdout: `{"dependencies":{"demo":{"version":"2.0.0"}},"problems":["missing: other@1.2.3 from global"]}`, exitCode: 1, want: plan.PresenceBroken, wantError: true},
