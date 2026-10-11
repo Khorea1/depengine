@@ -25,13 +25,15 @@ func TestNPMExactVersionObserve(t *testing.T) {
 		{name: "version drift is present", pkg: "demo", stdout: `{"dependencies":{"demo":{"version":"2.0.0"}}}`, want: plan.PresencePresent, wantVer: "2.0.0"},
 		{name: "version zero is not semver-rejected", pkg: "demo", stdout: `{"dependencies":{"demo":{"version":"0"}}}`, want: plan.PresencePresent, wantVer: "0"},
 		{name: "complete empty dependencies is absent", pkg: "demo", stdout: `{"dependencies":{}}`, want: plan.PresenceAbsent},
+		{name: "null other dependency invalidates full document", pkg: "demo", stdout: `{"dependencies":{"other":null}}`, want: plan.PresenceBroken, wantError: true},
 		{name: "listed package without version is unknown", pkg: "demo", stdout: `{"dependencies":{"demo":{}}}`, want: plan.PresenceUnknown},
 		{name: "nonzero version and unrelated problem is broken", pkg: "demo", stdout: `{"dependencies":{"demo":{"version":"2.0.0"}},"problems":["missing: other@1.2.3 from global"]}`, exitCode: 1, want: plan.PresenceBroken, wantError: true},
-		{name: "entry remains non-absent on nonzero missing problem", pkg: "demo", stdout: `{"dependencies":{"demo":{"version":"1.2.3"}},"problems":["missing: demo@1.2.3 from global"]}`, exitCode: 1, want: plan.PresenceBroken, wantError: true},
-		{name: "target missing diagnostic is absent", pkg: "demo", stdout: `{"name":"lib","problems":["missing: demo@1.2.3 from global"]}`, exitCode: 1, want: plan.PresenceAbsent},
+		{name: "entry remains non-absent on nonzero missing problem", pkg: "demo", stdout: `{"dependencies":{"demo":{"version":"1.2.3"}},"problems":["missing: demo@1.2.3, required by root"]}`, exitCode: 1, want: plan.PresenceBroken, wantError: true},
+		{name: "target missing diagnostic is absent", pkg: "demo", stdout: `{"name":"lib","problems":["missing: demo@1.2.3, required by root"]}`, exitCode: 1, want: plan.PresenceAbsent},
+		{name: "incomplete target missing diagnostic is broken", pkg: "demo", stdout: `{"problems":["missing: demo@"]}`, exitCode: 1, want: plan.PresenceBroken, wantError: true},
 		{name: "unrelated nonzero problem is broken", pkg: "demo", stdout: `{"name":"lib","problems":["missing: other@1.2.3 from global"]}`, exitCode: 1, want: plan.PresenceBroken, wantError: true},
 		{name: "scoped package is present", pkg: "@scope/tool", stdout: `{"dependencies":{"@scope/tool":{"version":"3.0.0"}}}`, want: plan.PresencePresent, wantVer: "3.0.0"},
-		{name: "scoped package missing diagnostic is absent", pkg: "@scope/tool", stdout: `{"problems":["missing: @scope/tool@3.0.0 from global"]}`, exitCode: 1, want: plan.PresenceAbsent},
+		{name: "scoped package missing diagnostic is absent", pkg: "@scope/tool", stdout: `{"problems":["missing: @scope/tool@3.0.0, required by root"]}`, exitCode: 1, want: plan.PresenceAbsent},
 		{name: "empty object is broken schema", pkg: "demo", stdout: `{}`, want: plan.PresenceBroken, wantError: true},
 		{name: "null document is broken schema", pkg: "demo", stdout: `null`, want: plan.PresenceBroken, wantError: true},
 		{name: "null package entry is broken schema", pkg: "demo", stdout: `{"dependencies":{"demo":null}}`, want: plan.PresenceBroken, wantError: true},
@@ -44,7 +46,7 @@ func TestNPMExactVersionObserve(t *testing.T) {
 			adapter := NewBaseAdapter(Configs["npm"])
 			runner := &run.FakeRunner{Stdout: tt.stdout, ExitCode: tt.exitCode, Err: tt.err}
 			tool := &config.Tool{Name: tt.pkg}
-			method := &config.MethodCandidate{Kind: "npm", Config: map[string]any{"pkg": tt.pkg, "version": "1.0.0"}}
+			method := &config.MethodCandidate{Kind: "npm", Config: map[string]any{"pkg": tt.pkg, "version": "1.2.3"}}
 
 			got, err := adapter.Observe(context.Background(), runner, tool, method)
 			if (err != nil) != tt.wantError {

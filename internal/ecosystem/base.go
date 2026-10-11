@@ -1349,7 +1349,6 @@ func (a *BaseAdapter) checkYarn(ctx context.Context, rn run.Runner, tool *config
 }
 
 type npmListOutput struct {
-	Name         string `json:"name"`
 	Dependencies map[string]*struct {
 		Version string `json:"version"`
 	} `json:"dependencies"`
@@ -1365,18 +1364,26 @@ func (a *BaseAdapter) npmInstalledVersion(ctx context.Context, rn run.Runner, pk
 	if err := json.Unmarshal(res.Stdout, &parsed); err != nil || (parsed.Dependencies == nil && parsed.Problems == nil) {
 		return "", fmt.Errorf("npm: invalid list output")
 	}
-	entry, found := parsed.Dependencies[pkg]
-	if found {
+	for _, entry := range parsed.Dependencies {
 		if entry == nil {
 			return "", fmt.Errorf("npm: invalid list output")
 		}
+	}
+	entry, found := parsed.Dependencies[pkg]
+	if found {
 		if res.ExitCode != 0 {
 			return "", run.CheckResult(res, "npm: list installed version")
 		}
 		return entry.Version, nil
 	}
 	for _, problem := range parsed.Problems {
-		if strings.HasPrefix(problem, "missing: "+pkg+"@") {
+		const prefix = "missing: "
+		if !strings.HasPrefix(problem, prefix+pkg+"@") {
+			continue
+		}
+		diagnostic := strings.TrimPrefix(problem, prefix+pkg+"@")
+		const separator = ", required by "
+		if requiredBy := strings.Index(diagnostic, separator); requiredBy > 0 && strings.TrimSpace(diagnostic[:requiredBy]) != "" && strings.TrimSpace(diagnostic[requiredBy+len(separator):]) != "" {
 			return "", absentInstalledPackage("npm", pkg)
 		}
 	}
