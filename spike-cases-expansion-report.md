@@ -120,3 +120,20 @@ Decisão de escopo registrada: overlap de `when` permanece informativo (fallback
 coerente com macro transparente; a interpretação "um único asset elegível" de `dep-1n0`
 exigiria nova semântica de seleção e fica explicitamente fora — atualizar os critérios
 de aceitação de `dep-1n0` para o contrato de vários candidatos antes de implementar.
+
+---
+
+## Rodada 4 — terceira auditoria (2026-10-11, commit `7bc62bf`)
+
+Dois pontos, sem redesign:
+
+- **A (hooks de tool)**: `canonicalTool` compara `Pre/PostInstall` com comandos e
+  condições, `Requires`/`RequiresWhen`, seletores e tags — cobre `wt.post_install`
+  integralmente, não por contagem.
+- **B (entre camadas)**: `TestCrossLayerBaseOverride` prova que redeclarar
+  `[packages.br.github]` na camada superior anexa um 5º candidato em vez de atualizar
+  os 4 expandidos; semântica documentada em `spike/doc.go`. Herança base→cases entre
+  camadas não existe por desenho; overrides usam identidade `Kind+Label` convencional.
+
+Pendente (decisão de produto, fora do spike): revisar critérios de `dep-1n0` para o
+contrato de vários candidatos e avaliar o custo permanente de `cases`.
