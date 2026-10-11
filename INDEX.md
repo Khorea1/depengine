@@ -37,20 +37,42 @@ nested-worktree layout without hard-coding the location of the primary checkout.
 
 ### Beads task state
 
-The shared agent-task workspace lives only in `"$dev_notes_root/.beads/"`.
-From **any** code worktree or harness with shell/CLI access, set:
+The shared agent-task workspace lives only in this branch's `.beads/`
+(normally `.dev/.beads/` in the primary checkout). The primary checkout
+provides automatic discovery through a native `br` redirect:
+`.beads/redirect` contains the absolute path of `.dev/.beads/`, so a plain
+`br` invocation from any worktree of this repository resolves to the shared
+database — no `BEADS_DB` export, wrapper, or per-harness configuration.
+Verify with:
 
 ```sh
-export BEADS_DB="$dev_notes_root/.beads/beads.db"
 br where --json
 br ready --json
 ```
 
-Or pass the database explicitly with
-`br --db "$dev_notes_root/.beads/beads.db" ready --json`. The checked-out
-`dev-notes` worktree must exist for read/write operations; a `git show` of
-`issues.jsonl` is only a read-only fallback, not an active Beads workspace. If the worktree is absent, do not create a second `.beads/` under
-`master` or a feature worktree.
+One-time setup (already done in the primary checkout; repeat only if the
+redirect is missing or the checkout moved — note `pwd -P` is used instead
+of a `cd` subshell so shell directory hooks cannot pollute the file):
+
+```sh
+# From the primary checkout root
+mkdir -p .beads
+printf '%s\n' "$(pwd -P)/.dev/.beads" > .beads/redirect
+exclude="$(git rev-parse --git-path info/exclude)"
+grep -qxF '/.beads/redirect' "$exclude" ||
+  printf '\n/.beads/redirect\n' >> "$exclude"
+br where --json
+```
+
+The redirect path is absolute on purpose: helpers that copy ignored files
+into new worktrees (e.g. `wt step copy-ignored`) keep a valid pointer.
+`.beads/redirect` is worktree-local (kept in `info/exclude`, not
+`.gitignore`) and never committed. The checked-out `dev-notes` worktree
+must exist for read/write operations; a `git show` of `issues.jsonl` is
+only a read-only fallback, not an active Beads workspace. If the worktree
+is absent, do not create a second `.beads/` under `master` or a feature
+worktree. If a worktree already has its own `.beads/` database, inspect it
+before replacing it with a redirect.
 
 `br init --prefix dep` was run here once to bootstrap the workspace. The
 tracked files are `.beads/config.yaml`, `.beads/metadata.json`,
