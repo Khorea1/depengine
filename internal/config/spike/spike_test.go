@@ -147,6 +147,54 @@ func assertSameOrder(t *testing.T, tool string, a, c []*config.MethodCandidate) 
 	}
 }
 
+// canonicalTool flattens tool-level fields (hooks com condições, requires,
+// seletores, tags) para comparação integral — contagem de elementos não basta.
+func canonicalTool(t *config.Tool) map[string]any {
+	hook := func(h config.Hook) map[string]any {
+		when := ""
+		if h.When != nil {
+			when = h.When.String()
+		}
+		return map[string]any{"run": h.Run, "when": when}
+	}
+	pre := make([]map[string]any, 0, len(t.PreInstall))
+	for _, h := range t.PreInstall {
+		pre = append(pre, hook(h))
+	}
+	post := make([]map[string]any, 0, len(t.PostInstall))
+	for _, h := range t.PostInstall {
+		post = append(post, hook(h))
+	}
+	reqWhen := map[string]string{}
+	for k, c := range t.RequiresWhen {
+		if c == nil {
+			reqWhen[k] = ""
+		} else {
+			reqWhen[k] = c.String()
+		}
+	}
+	return map[string]any{
+		"methodOnly":     t.MethodOnly,
+		"methodPrefer":   t.MethodPrefer,
+		"requires":       t.Requires,
+		"requiresWhen":   reqWhen,
+		"preInstall":     pre,
+		"postInstall":    post,
+		"tags":           t.Tags,
+		"dependencyOnly": t.DependencyOnly,
+		"isSimple":       t.IsSimple,
+	}
+}
+
+func assertSameTool(t *testing.T, name string, a, c *config.Tool) {
+	t.Helper()
+	ja, _ := json.Marshal(canonicalTool(a))
+	jc, _ := json.Marshal(canonicalTool(c))
+	if string(ja) != string(jc) {
+		t.Fatalf("tool %s: nível de tool diverge\nA=%s\nC=%s", name, ja, jc)
+	}
+}
+
 func TestBaselineParses(t *testing.T) {
 	// [tools]-style (br) e [packages]-style real (br/omp/wt).
 	s := parseSchemaFile(t, testdata(t, "a_br.toml"))
@@ -249,14 +297,10 @@ func TestExpansionEquivalence(t *testing.T) {
 		assertSameCandidates(t, tool, a.Tools[tool].Methods, c.Tools[tool].Methods)
 		assertSameOrder(t, tool, a.Tools[tool].Methods, c.Tools[tool].Methods)
 	}
-	// Chaves de nível de tool preservadas (method_only, post_install).
-	for _, tool := range []string{"omp", "wt"} {
-		if !reflect.DeepEqual(a.Tools[tool].MethodOnly, c.Tools[tool].MethodOnly) {
-			t.Fatalf("%s: method_only diverge A=%v C=%v", tool, a.Tools[tool].MethodOnly, c.Tools[tool].MethodOnly)
-		}
-		if len(a.Tools[tool].PostInstall) != len(c.Tools[tool].PostInstall) {
-			t.Fatalf("%s: post_install diverge", tool)
-		}
+	// Chaves de nível de tool comparadas integralmente (hooks com
+	// condições, requires, seletores — não apenas contagens).
+	for _, tool := range []string{"br", "omp", "wt"} {
+		assertSameTool(t, tool, a.Tools[tool], c.Tools[tool])
 	}
 }
 
@@ -310,6 +354,55 @@ func TestMergeEquivalence(t *testing.T) {
 		if m.Config["scope"] != "system" {
 			t.Fatalf("merge não aplicou override omp: %v", m.Config["scope"])
 		}
+	}
+}
+
+func TestCrossLayerBaseOverride(t *testing.T) {
+	// Semântica documentada entre camadas: a macro é local por camada e a
+	// tabela-base é consumida na expansão. Uma camada superior que declare
+	// [packages.br.github] NÃO atualiza os 4 candidatos expandidos da
+	// inferior (identidades Kind+Label distintas): ela anexa um quinto
+	// candidato convencional. Herança base→cases entre camadas não existe
+	// por desenho; overrides usam a identidade dos candidatos expandidos.
+	schema := parseSchemaFile(t, testdata(t, "schema_real.toml"))
+	lower := parseExpanded(t, testdata(t, "c_manifest.toml"), config.ParseManifest)
+	upperDoc := []byte(`schema_version = 1
+[manifest]
+allow_new_tools = true
+[packages.br.github]
+repo = "Dicklesworthstone/beads_rust"
+asset = "br-upper-{version}.tar.gz"
+checksum = "sha256:auto"
+scope = "user"
+entrypoints = { br = "br" }
+when = { os = ["linux"] }
+`)
+	upperPath := filepath.Join(t.TempDir(), "upper.toml")
+	if err := os.WriteFile(upperPath, upperDoc, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	upper := parseManifestFile(t, upperPath)
+	merged := config.MergeLayers(schema, lower, upper)
+	got := merged.Tools["br"].Methods
+	if len(got) != 5 {
+		t.Fatalf("br merged: %d candidatos, want 4 expandidos + 1 da camada superior", len(got))
+	}
+	// Os 4 expandidos sobrevivem intactos (comparados ao merge sem a camada).
+	plain := config.MergeLayers(schema, lower)
+	assertSameCandidates(t, "br-expanded-intact", plain.Tools["br"].Methods[:4], got[:4])
+	// O quinto é o da camada superior (label vazio: a seção já é o kind).
+	// FindMethodCandidate com label vazio exige kind único, então busca direta.
+	var up *config.MethodCandidate
+	for _, m := range got {
+		if m.Kind == "github" && m.Label == "" {
+			up = m
+		}
+	}
+	if up == nil {
+		t.Fatal("candidato da camada superior ausente no merge")
+	}
+	if up.Config["asset"] != "br-upper-{version}.tar.gz" {
+		t.Fatalf("candidato superior com asset inesperado: %v", up.Config["asset"])
 	}
 }
 
