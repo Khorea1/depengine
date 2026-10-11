@@ -865,15 +865,15 @@ func buildUVCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) []s
 }
 
 func uvVersionFromList(output, pkg string) (string, bool) {
+	if !uvToolListValid(output) {
+		return "", false
+	}
 	for _, line := range strings.Split(output, "\n") {
 		fields := strings.Fields(strings.TrimSpace(line))
 		if len(fields) < 2 || fields[0] != pkg {
 			continue
 		}
-		version := strings.TrimPrefix(fields[1], "v")
-		if version != "" {
-			return version, true
-		}
+		return strings.TrimPrefix(fields[1], "v"), true
 	}
 	return "", false
 }
