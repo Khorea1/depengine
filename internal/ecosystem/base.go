@@ -865,9 +865,6 @@ func buildUVCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) []s
 }
 
 func uvVersionFromList(output, pkg string) (string, bool) {
-	if !uvToolListValid(output) {
-		return "", false
-	}
 	for _, line := range strings.Split(output, "\n") {
 		fields := strings.Fields(strings.TrimSpace(line))
 		if len(fields) < 2 || fields[0] != pkg {
@@ -884,14 +881,17 @@ func (a *BaseAdapter) uvInstalledVersion(ctx context.Context, rn run.Runner, pkg
 		return "", run.CheckResult(res, "uv: list installed version")
 	}
 	stdout := string(res.Stdout)
-	version, ok := uvVersionFromList(stdout, pkg)
-	if !ok {
-		if uvToolListValid(stdout) || (strings.TrimSpace(stdout) == "" && strings.EqualFold(strings.TrimSpace(string(res.Stderr)), "No tools installed")) {
-			return "", absentInstalledPackage("uv", pkg)
-		}
+	if strings.TrimSpace(stdout) == "" && strings.EqualFold(strings.TrimSpace(string(res.Stderr)), "No tools installed") {
+		return "", absentInstalledPackage("uv", pkg)
+	}
+	if !uvToolListValid(stdout) {
 		// uv's human-readable list format can vary. An unrecognized response
 		// does not prove absence, so leave observation uncertain.
 		return "", nil
+	}
+	version, ok := uvVersionFromList(stdout, pkg)
+	if !ok {
+		return "", absentInstalledPackage("uv", pkg)
 	}
 	return version, nil
 }
