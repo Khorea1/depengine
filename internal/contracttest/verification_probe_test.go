@@ -160,8 +160,8 @@ func TestVerificationPhaseAdapterFieldProbes(t *testing.T) {
 	t.Run("pipx scope", func(t *testing.T) {
 		adapter := ecosystem.NewBaseAdapter(ecosystem.Configs["pipx"])
 		runner := &verifyStateRunner{responses: map[string]string{
-			`pipx list --json`:          `{"venvs":{"demo":{"main_package":{"package":"demo","package_version":"1.0"}}}}`,
-			`pipx list --json --global`: `{"venvs":{}}`,
+			`pipx list --json`:          `{"pipx_spec_version":"0.1","venvs":{"demo":{"metadata":{"main_package":{"package":"demo","package_version":"1.0"}}}}}`,
+			`pipx list --json --global`: `{"pipx_spec_version":"0.1","venvs":{}}`,
 		}}
 		methods := [2]*config.MethodCandidate{{Kind: "pipx", Config: map[string]any{"pkg": "demo", "scope": "user"}}, {Kind: "pipx", Config: map[string]any{"pkg": "demo", "scope": "global"}}}
 		for i, method := range methods {
