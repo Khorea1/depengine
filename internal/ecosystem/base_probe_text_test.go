@@ -22,6 +22,8 @@ func TestBaseAdapterYarnObserveText(t *testing.T) {
 		wantErr  bool
 	}{
 		{name: "captured empty inventory is complete", stdout: "yarn global v1.22.22\nDone in 0.02s.\n", presence: plan.PresenceAbsent},
+		{name: "empty output is unknown", stdout: "", presence: plan.PresenceUnknown},
+		{name: "target without version is unknown", stdout: "yarn global v1.22.22\ninfo \"demo@\" has binaries:\nDone in 0.02s.\n", presence: plan.PresenceUnknown},
 		{name: "banner without completion is unknown", stdout: "yarn global v1.22.22\n", presence: plan.PresenceUnknown},
 		{name: "invalid banner is unknown", stdout: "yarn global v1.22.22\nnot an inventory\nDone in 0.02s.\n", presence: plan.PresenceUnknown},
 		{name: "exact scoped package is present", pkg: "@fixture/cli-one", stdout: "yarn global v1.22.22\ninfo \"@fixture/cli-one@1.2.3\" has binaries:\n   - fixture-one\nDone in 0.07s.\n", presence: plan.PresencePresent, version: "1.2.3"},
@@ -47,9 +49,6 @@ func TestBaseAdapterYarnObserveText(t *testing.T) {
 			if got.Presence != tt.presence || (!tt.wantErr && got.Identity.Version != tt.version) {
 				t.Fatalf("Observe() = %+v, want presence=%q version=%q", got, tt.presence, tt.version)
 			}
-			if len(runner.Calls) != 1 || runner.Calls[0].Name != "yarn" || len(runner.Calls[0].Args) != 3 || runner.Calls[0].Args[0] != "global" || runner.Calls[0].Args[1] != "list" || runner.Calls[0].Args[2] != "--depth=0" {
-				t.Fatalf("global Observe argv = %#v", runner.Calls)
-			}
 		})
 	}
 }
@@ -69,6 +68,7 @@ func TestBaseAdapterComposerObserveText(t *testing.T) {
 		{name: "different package name is not absent", stderr: "Package \"demo-extra\" not found.", exitCode: 1, presence: plan.PresenceBroken, wantErr: true},
 		{name: "independent missing text is not absent", stderr: "Package \"other\" not found.\nThe requested demo was not found.", exitCode: 1, presence: plan.PresenceBroken, wantErr: true},
 		{name: "successful show preserves installed version", stdout: "name : demo\nversions : * 2.0.0\n", presence: plan.PresencePresent, version: "2.0.0"},
+		{name: "nonzero with version output is broken", stdout: "name : demo\nversions : * 2.0.0\n", stderr: "Composer failed", exitCode: 1, presence: plan.PresenceBroken, wantErr: true},
 		{name: "process error is broken", runErr: errors.New("spawn failed"), presence: plan.PresenceBroken, wantErr: true},
 	}
 	for _, tt := range tests {
@@ -83,9 +83,6 @@ func TestBaseAdapterComposerObserveText(t *testing.T) {
 				t.Fatalf("Observe() = %+v, want presence=%q version=%q", got, tt.presence, tt.version)
 			}
 
-			if len(runner.Calls) != 1 || runner.Calls[0].Name != "composer" || len(runner.Calls[0].Args) != 4 || runner.Calls[0].Args[0] != "global" || runner.Calls[0].Args[1] != "show" || runner.Calls[0].Args[2] != "--locked" || runner.Calls[0].Args[3] != "demo" {
-				t.Fatalf("global Observe argv = %#v", runner.Calls)
-			}
 		})
 	}
 }

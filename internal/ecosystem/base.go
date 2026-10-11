@@ -1365,67 +1365,61 @@ func buildYarnCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) [
 	return cmd
 }
 
-type yarnListedPackage struct {
-	name    string
-	version string
-}
-
 func (a *BaseAdapter) yarnInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
 	res := a.runConfiguredBinary(ctx, rn, "global", "list", "--depth=0")
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "yarn: list installed version")
 	}
-	packages, ok := yarnGlobalList(string(res.Stdout))
-	if !ok {
+	version, found, valid := yarnGlobalList(string(res.Stdout), pkg)
+	if !valid {
 		return "", nil
 	}
-	for _, entry := range packages {
-		if entry.name == pkg {
-			return entry.version, nil
-		}
+	if !found {
+		return "", absentInstalledPackage("yarn", pkg)
 	}
-	return "", absentInstalledPackage("yarn", pkg)
+	return version, nil
 }
 
-func yarnGlobalList(output string) ([]yarnListedPackage, bool) {
+func yarnGlobalList(output, pkg string) (version string, found, valid bool) {
 	output = strings.TrimSpace(output)
 	if output == "" {
-		return nil, false
+		return "", false, false
 	}
-	lines := strings.Split(output, "\n")
-	if len(lines) < 2 {
-		return nil, false
+	header, remaining, hasNewline := strings.Cut(output, "\n")
+	headerVersion := strings.TrimPrefix(strings.TrimSpace(header), "yarn global v")
+	if !hasNewline || headerVersion == strings.TrimSpace(header) || headerVersion == "" || strings.ContainsAny(headerVersion, " \t") {
+		return "", false, false
 	}
-	header := strings.TrimSpace(lines[0])
-	version := strings.TrimPrefix(header, "yarn global v")
-	if version == header || version == "" || strings.ContainsAny(version, " \t") {
-		return nil, false
-	}
-	footer := strings.TrimSpace(lines[len(lines)-1])
-	if !yarnListFooter(footer) {
-		return nil, false
-	}
-	packages := make([]yarnListedPackage, 0, len(lines)-2)
+
 	hasPackage := false
-	for _, line := range lines[1 : len(lines)-1] {
+	for remaining != "" {
+		line, rest, hasNewline := strings.Cut(remaining, "\n")
+		remaining = rest
 		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
+		if strings.HasPrefix(line, "Done in ") {
+			if remaining != "" || !yarnListFooter(line) {
+				return "", false, false
+			}
+			return version, found, true
 		}
 		if strings.HasPrefix(line, "info ") {
-			entry, ok := yarnListEntry(line)
+			name, entryVersion, ok := yarnListEntry(line)
 			if !ok {
-				return nil, false
+				return "", false, false
 			}
-			packages = append(packages, entry)
 			hasPackage = true
-			continue
+			if name == pkg {
+				found = true
+				version = entryVersion
+			}
+		} else if !strings.HasPrefix(line, "- ") || strings.TrimSpace(strings.TrimPrefix(line, "- ")) == "" || !hasPackage {
+			return "", false, false
 		}
-		if !strings.HasPrefix(line, "- ") || strings.TrimSpace(strings.TrimPrefix(line, "- ")) == "" || !hasPackage {
-			return nil, false
+		if !hasNewline {
+			return "", false, false
 		}
 	}
-	return packages, true
+	return "", false, false
 }
 
 func yarnListFooter(line string) bool {
@@ -1437,38 +1431,35 @@ func yarnListFooter(line string) bool {
 	return err == nil && seconds >= 0
 }
 
-func yarnListEntry(line string) (yarnListedPackage, bool) {
+func yarnListEntry(line string) (name, version string, ok bool) {
 	const prefix = "info \""
 	if !strings.HasPrefix(line, prefix) {
-		return yarnListedPackage{}, false
+		return "", "", false
 	}
 	quoted := strings.TrimPrefix(line, prefix)
 	end := strings.IndexByte(quoted, '"')
 	if end < 0 || quoted[end+1:] != " has binaries:" {
-		return yarnListedPackage{}, false
+		return "", "", false
 	}
 	nameVersion := quoted[:end]
 	separator := -1
 	if strings.HasPrefix(nameVersion, "@") {
 		slash := strings.IndexByte(nameVersion, '/')
 		if slash <= 1 || slash == len(nameVersion)-1 {
-			return yarnListedPackage{}, false
+			return "", "", false
 		}
 		relative := strings.IndexByte(nameVersion[slash+1:], '@')
 		if relative < 1 {
-			return yarnListedPackage{}, false
+			return "", "", false
 		}
 		separator = slash + 1 + relative
 	} else {
 		separator = strings.IndexByte(nameVersion, '@')
 		if separator <= 0 {
-			return yarnListedPackage{}, false
+			return "", "", false
 		}
 	}
-	if separator == len(nameVersion)-1 {
-		return yarnListedPackage{}, false
-	}
-	return yarnListedPackage{name: nameVersion[:separator], version: nameVersion[separator+1:]}, true
+	return nameVersion[:separator], nameVersion[separator+1:], true
 }
 
 func (a *BaseAdapter) checkYarn(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
