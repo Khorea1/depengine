@@ -51,9 +51,9 @@ flows:
   status:
     summary: "Read-only status path comparing tracked state and desired schema with observations from the host."
   update:
-    summary: "Lock refresh path that resolves mutable selectors, merges existing pins, writes the lock, and reports version drift."
+    summary: "Lock refresh path that resolves mutable selectors into the canonical projection and preserves versioned compatibility behavior."
   upgrade:
-    summary: "Pinned-version upgrade path that discovers drift, preflights the exact tracked candidate, removes/reinstalls it, and persists updated state."
+    summary: "Lock-target upgrade path that reconciles v2 target identity (with v1 version-pin compatibility) and delegates exact replacement, WAL, recovery, and state finalization to the executor."
   desired-state-observation:
     summary: "Shared read-only path from static candidate intent through concrete resolution, host observation, and desired-state verification."
 
