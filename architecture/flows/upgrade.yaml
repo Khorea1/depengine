@@ -35,8 +35,25 @@ steps:
     confidence: confirmed
   - from: reconciliation
     to: state-and-lock
-    action: "Persists replacement identity and resource uses before removal, commits verified state/ownership while retaining the WAL through after-upgrade hooks, and recovers or blocks based on persisted phase and observations."
-    evidence: ["internal/exec/replacement.go", "internal/state/replacement.go", "internal/plan/replacement.go"]
+    action: "Before destructive mutation, replacement execution records a durable replacement transaction containing prior tracked state, exact target identity, and resource claims."
+    evidence: ["internal/exec/replacement.go:19-126", "internal/state/replacement.go:12-77"]
+    symbols:
+      - name: replaceCandidate
+        path: internal/exec/replacement.go
+        role: "Executor replacement state machine for remove/install/verify/commit."
+      - name: BeginReplacement
+        path: internal/state/replacement.go
+        role: "Durable write-ahead boundary before removal."
+    confidence: confirmed
+  - from: reconciliation
+    to: adapters
+    action: "Removal and installation happen inside the replacement state machine through the exact adapter and resolved plan; normal candidate fallback is not re-entered."
+    evidence: ["internal/exec/replacement.go:19-170", "internal/exec/resolved_candidate.go:14-48"]
+    confidence: confirmed
+  - from: reconciliation
+    to: state-and-lock
+    action: "Verified replacement state, resource ownership, and replacement-journal progress are persisted under the state lock; restart recovery observes old and desired identities before resuming."
+    evidence: ["internal/state/replacement.go:117-260", "internal/exec/run.go:95-178"]
     confidence: confirmed
   - from: cli
     to: operator
@@ -47,3 +64,5 @@ failure_modes:
   - "Missing lock data or a missing/unresolvable v2 target fails closed."
   - "Ambiguous tracked-candidate identity or a changed discovery snapshot is rejected before WAL creation or removal."
   - "Ambiguous legacy replacement records and uncertain after-hook outcomes block recovery rather than selecting a candidate or replaying a hook."
+  - "Unknown, broken, conflicting, or ambiguous replacement recovery blocks rather than guessing whether removal or installation happened."
+  - "An invalid or mismatched v2 universal projection fails closed before pinned replacement planning can proceed."

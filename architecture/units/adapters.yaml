@@ -15,6 +15,9 @@ paths:
   - internal/localartifact/
   - internal/localartifactadapter/
   - internal/msi/
+  - internal/windowsinstaller/
+  - internal/pkg/
+  - internal/dmg/
   - internal/native/
   - internal/source/
   - internal/artifact/
@@ -26,6 +29,9 @@ invariants:
   - text: "Every method backend implements one plan-aware AdapterV2 contract for resolution, observation, install, removal, availability, and compatibility."
     confidence: confirmed
     evidence: ["internal/exec/adapter.go:49-78"]
+  - text: "Dedicated platform-installer adapters opt into installer artifact transport through a typed HTTPAdapter construction option; installer permission is not hidden inside MethodCandidate.Config."
+    confidence: confirmed
+    evidence: ["internal/httpdownload/adapter.go:24-45", "internal/msi/adapter.go:20-33", "internal/pkg/adapter.go:24-38", "internal/dmg/adapter.go:24-38", "internal/windowsinstaller/adapter.go:25-43"]
 relations:
   - from: adapters
     to: host-os

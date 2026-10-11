@@ -18,7 +18,7 @@ status: active
 invariants:
   - text: "The CLI composes adapters and executor options but method-specific mutation behavior remains behind the adapter seam."
     confidence: confirmed
-    evidence: ["internal/app/bootstrap.go:13-27", "internal/app/install.go:199-233"]
+    evidence: ["internal/app/bootstrap.go:16-34", "internal/app/install.go:201-235"]
 relations:
   - from: cli
     to: configuration
@@ -42,7 +42,7 @@ relations:
     to: adapters
     kind: configures
     via: "adapter registration/composition"
-    evidence: ["internal/app/bootstrap.go:13-27", "internal/app/install.go:201-209"]
+    evidence: ["internal/app/bootstrap.go:16-34", "internal/app/install.go:201-220"]
     confidence: confirmed
   - from: cli
     to: state-and-lock

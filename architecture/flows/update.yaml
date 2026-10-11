@@ -32,6 +32,29 @@ steps:
     action: "V2 projection resolution uses the executor lock-candidate API and AdapterV2 resolution; lock-v1 retains its dedicated legacy resolver path."
     evidence: ["internal/app/universal_lock.go:20-56", "internal/exec/lock_resolution.go:64-100", "internal/lock/lock.go:320-344"]
     confidence: confirmed
+  - from: cli
+    to: reconciliation
+    action: "When projection coverage can be proven, resolves one exact immutable plan per covered tool through the executor's read-only explanation path and captures source revisions."
+    evidence: ["internal/app/update.go:150-168", "internal/app/universal_lock.go:19-89", "internal/source/manager.go:47-88"]
+    symbols:
+      - name: resolveUniversalLockDocument
+        path: internal/app/universal_lock.go
+        role: "Adapter-neutral v2 projection builder; no installer is invoked."
+    confidence: confirmed
+  - from: cli
+    to: state-and-lock
+    action: "Builds and verifies the universal LockDocument against the exact full install closure, persists it as lock v2 when safe, then writes the lock unless dry-run is active."
+    evidence: ["internal/app/universal_lock.go:82-105", "internal/plan/lock.go:827-878", "internal/plan/lock.go:999-1015", "internal/lock/universal.go:9-40", "internal/app/update.go:156-181"]
+    symbols:
+      - name: VerifyResolvedPlanAgainstLock
+        path: internal/plan/lock.go
+        role: "Exact install-closure coverage gate."
+      - name: SetProjection
+        path: internal/lock/universal.go
+        role: "Persists the validated projection and promotes the lock format to v2."
+    confidence: confirmed
 failure_modes:
   - "Resolution failure aborts refresh before writing a partial lock."
   - "Missing or drifted v2 metadata for a retained profiled tool requires its projection entry to be refreshed."
+  - "A profile update over v1 or a missing lock does not promote to v2 because full install-closure coverage cannot be proven."
+  - "Universal projection resolution, immutability, identity, or coverage failure aborts before a v2 projection is persisted."

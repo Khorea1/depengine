@@ -17,13 +17,18 @@ steps:
     confidence: confirmed
   - from: cli
     to: state-and-lock
-    action: "Resolves lock semantics and snapshots pre-install state before mutation."
-    evidence: ["internal/app/install.go:403-420"]
+    action: "Loads lock semantics, including the v2 universal projection when present, and snapshots pre-install state before mutation."
+    evidence: ["internal/app/install.go:385-420"]
     confidence: confirmed
   - from: cli
     to: reconciliation
     action: "Builds/configures the executor and starts reconciliation for the selected tools."
     evidence: ["internal/app/install.go:203-233", "internal/app/install.go:427-431"]
+    confidence: confirmed
+  - from: reconciliation
+    to: state-and-lock
+    action: "Recovers durable replacement transactions first, then preparation transactions, before any new host mutation; already-reconciled commits are recorded as terminal results for the run."
+    evidence: ["internal/exec/run.go:95-150", "internal/exec/preparation.go:674-796"]
     confidence: confirmed
   - from: reconciliation
     to: planning
@@ -44,3 +49,4 @@ failure_modes:
   - "Schema/manifest parse or validation failure stops before executor mutation begins."
   - "Candidate resolution/compatibility failure can reject one method and allow normal fallback to another candidate."
   - "State-lock or state-save failure makes persistence failure explicit instead of silently claiming success."
+  - "An unreconciled durable preparation transaction stops the run before unrelated new mutation can proceed."

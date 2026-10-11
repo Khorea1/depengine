@@ -2,8 +2,8 @@ archmap: 2
 doc: view
 id: reproducibility
 verified:
-  revision: "8d9d2cc"
-  verified_on: "2026-09-28"
+  revision: "6bb3223"
+  verified_on: "2026-10-01"
 kind: data
 elements:
   - configuration

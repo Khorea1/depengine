@@ -7,7 +7,6 @@ verified:
 type: subsystem
 paths:
   - internal/exec/
-  - internal/engine/
   - internal/run/
   - internal/secret/
 tech: ["Go"]
@@ -19,6 +18,19 @@ invariants:
   - text: "The executor depends on the AdapterV2 contract rather than importing concrete adapter packages as execution policy."
     confidence: confirmed
     evidence: ["internal/exec/adapter.go:49-78", "internal/exec/executor.go:194-201"]
+  - text: "Each Execute call owns a fresh runContext containing effective clan, native manager, method order, source manager, report/failure state, and dependency bookkeeping; run-specific host/source observations are not retained on Executor."
+    confidence: confirmed
+    evidence: ["internal/exec/run.go:25-67", "internal/exec/execute.go:72-103"]
+  - text: "Durable replacement transactions are recovered before preparation transactions and before any new host mutation; ambiguous external outcomes remain fail-closed until observation justifies a specific recovery transition."
+    confidence: confirmed
+    evidence: ["internal/exec/run.go:95-150", "internal/exec/preparation.go:674-796"]
+    symbols:
+      - name: recoverReplacementTransactions
+        path: internal/exec/run.go
+        role: "Recovers interrupted remove/install replacement state before any preparation or graph mutation."
+      - name: recoverPreparationTransactions
+        path: internal/exec/preparation.go
+        role: "Recovers source/preparation transactions after replacement recovery and before graph mutation."
 relations:
   - from: reconciliation
     to: planning

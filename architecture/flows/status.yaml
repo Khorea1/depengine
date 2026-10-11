@@ -13,12 +13,12 @@ steps:
   - from: cli
     to: state-and-lock
     action: "Loads shared tracked state and determines the schema path to compare."
-    evidence: ["internal/app/status.go:54-71", "internal/app/status.go:111-118"]
+    evidence: ["internal/app/status.go:58-71", "internal/app/status.go:111-124"]
     confidence: confirmed
   - from: cli
     to: configuration
     action: "Loads the schema and lock inputs used to classify desired tools."
-    evidence: ["internal/app/status.go:66-73"]
+    evidence: ["internal/app/status.go:71-73"]
     confidence: confirmed
   - from: cli
     to: reconciliation

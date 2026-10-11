@@ -16,3 +16,6 @@ invariants:
   - text: "A resolved install plan must preserve the static candidate intent before it can proceed to mutation."
     confidence: confirmed
     evidence: ["internal/exec/resolution.go:29-54", "internal/exec/resolution.go:55-72"]
+  - text: "A universal LockDocument is an immutable adapter-neutral projection of resolved plans; exact candidate identity and install-closure coverage are validated fail-closed before it is consumed."
+    confidence: confirmed
+    evidence: ["internal/plan/lock.go:372-479", "internal/plan/lock.go:599-620", "internal/exec/resolution.go:31-63"]

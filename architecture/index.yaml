@@ -35,15 +35,15 @@ units:
   cli:
     summary: "Cobra command surface and composition root; translates user intent into configuration, lock, graph, and executor operations."
   configuration:
-    summary: "Parses and validates project schema/manifest input and materializes target-aware configuration used by downstream planning."
+    summary: "Owns host fact/classification semantics plus schema/manifest parsing and validation, materializing target-aware configuration for downstream planning."
   planning:
     summary: "Represents desired/resolved plans and dependency graphs, including validation and projections used before host mutation."
   reconciliation:
-    summary: "Generic execution engine that resolves candidates, observes host state, performs mutations, verifies outcomes, and persists state."
+    summary: "Generic execution engine that resolves candidates, isolates per-run host/method/source state, recovers durable transactions, observes or mutates the host, verifies outcomes, and persists state."
   adapters:
-    summary: "Method-specific backends for native/ecosystem packages, Git, HTTP/releases, containers, MSI, and local artifacts."
+    summary: "Method-specific AdapterV2 backends for native/ecosystem packages, Git, HTTP/releases, containers, OS installer/package formats, and local artifacts."
   state-and-lock:
-    summary: "Persists observed installation state and reproducibility lock data, including preparation journaling and format-version policy."
+    summary: "Persists installed-tool state, preparation/replacement journals, compatibility-only legacy v1 pins, and the v2 universal LockDocument projection used for frozen reproducibility."
 
 flows:
   install:
@@ -81,3 +81,4 @@ glossary:
   candidate: "One configured installation method considered for a tool before a concrete resolved plan is selected."
   resolved-plan: "Concrete executable identity produced from a candidate before mutation; lower layers must not silently re-resolve it."
   observation: "Read-only statement of host presence and identity used to reconcile desired and actual tool state."
+  lock-projection: "Immutable adapter-neutral LockDocument persisted in depengine.lock v2; it pins one exact selected plan identity per covered tool and is consumed fail-closed."
