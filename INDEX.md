@@ -112,6 +112,7 @@ python "$tmp/architecture/tools/validate.py" --root "$tmp/architecture" --repo .
 |------|---------|
 | `cleaning.md` | Local-only cleanup procedure supplied from dotfiles; intentionally ignored by the `dev-notes` branch |
 | `TODO.md` | Unvetted/session-specific ideas; track persistent actionable work in Beads |
+| [`plan-manifest-deduplication-investigation.md`](plan-manifest-deduplication-investigation.md) | Open architectural investigation: compare static recipe expansion, host specialization, and keeping current candidates before approving a manifest refactor |
 | `.beads/` | Structured agent task state and handoffs; only JSONL and metadata are versioned |
 | `architecture/` | archmap: selective semantic architecture model with code-revision checks, symbol-navigation anchors, and derived visual views. Start at `architecture/README.md` |
 
