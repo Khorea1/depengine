@@ -1,0 +1,34 @@
+schema_version = 1
+
+[manifest]
+allow_new_tools = true
+
+# Segunda camada de manifesto (forma normal): override de checksum num
+# candidato existente + candidato novo. O merge deve dar 4+1 = 5 em br.
+[packages.br.github-linux]
+kind = "github"
+repo = "Dicklesworthstone/beads_rust"
+asset = "br-{version}-{os_any}_{arch_any}.tar.gz"
+checksum = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+scope = "user"
+entrypoints = { br = "br" }
+when = { os = ["linux"], libc = ["glibc"] }
+
+[packages.br.github-extra]
+kind = "github"
+repo = "Dicklesworthstone/beads_rust"
+asset = "br-{version}-{os_any}_{arch_any}.tar.bz2"
+checksum = "sha256:auto"
+scope = "user"
+entrypoints = { br = "br" }
+when = { os = ["freebsd"] }
+
+[packages.omp.github-musl]
+kind = "github"
+repo = "can1357/oh-my-pi"
+asset = "omp-linux-musl-{arch_any}"
+checksum = "sha256:auto"
+checksum_url = "https://github.com/can1357/oh-my-pi/releases/latest/download/SHA256SUMS.txt"
+checksum_file_format = "sha256sum"
+scope = "system"
+when = { os = ["linux"], libc = ["musl"] }

@@ -1,0 +1,17 @@
+schema_version = 1
+
+[defaults]
+manager = "native"
+aur_helper = "paru"
+# Como no depends.toml real: preferência global incluindo nix (sem slot
+# padrão no motor; ferramenta com candidato nix exige a entrada).
+method_prefer = ["native", "aur", "cargo", "go", "github", "http", "nix"]
+
+[tools]
+# Lista simples: deve sobreviver à expansão sem alterações (Achado A).
+simple = ["zsh", "bat"]
+
+# Ferramentas vazias como no depends.toml real: o conteúdo vem do manifesto.
+br = {}
+omp = {}
+wt = {}

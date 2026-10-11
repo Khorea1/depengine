@@ -25,49 +25,73 @@ type caseRef struct {
 	when  map[string]any
 }
 
-// ExpandCompact reads a compact base+cases schema (testdata/c_*.toml) and
-// returns conventional schema TOML with one [tools.<tool>.<label>] candidate
-// per case (kind="github"). It performs no host-specific filtering.
+// ExpandCompact reads a compact base+cases document (testdata/c_*.toml) and
+// returns conventional schema/manifest TOML with one
+// [tools|packages.<tool>.<label>] candidate per case (kind="github").
+// It understands both [tools] (project schemas) and [packages] (personal
+// manifests) and preserves every declaration that does not participate in
+// the expansion — including simple lists (simple = [...]) and non-github
+// candidates. Expansion is total (all cases, every host) and order-preserving.
 func ExpandCompact(data []byte) (expanded []byte, overlapNotes []string, err error) {
 	var doc map[string]any
 	if err := toml.Unmarshal(data, &doc); err != nil {
 		return nil, nil, fmt.Errorf("spike: compact TOML decode: %w", err)
 	}
-	toolsRaw, _ := doc["tools"].(map[string]any)
-	if toolsRaw == nil {
-		return nil, nil, fmt.Errorf("spike: compact schema has no [tools]")
-	}
 	out := map[string]any{}
-	for k, v := range doc {
-		if k != "tools" {
-			out[k] = v
-		}
-	}
-	outTools := map[string]any{}
-	out["tools"] = outTools
-	for _, toolName := range sortedMapKeys(toolsRaw) {
-		toolRaw, ok := toolsRaw[toolName].(map[string]any)
+	for _, section := range []string{"tools", "packages"} {
+		raw, ok := doc[section]
 		if !ok {
-			return nil, nil, fmt.Errorf("spike: tools.%s is not a table", toolName)
+			continue
 		}
-		expandedTool, notes, err := expandTool(toolName, toolRaw)
+		sectionMap, ok := raw.(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("spike: [%s] is not a table", section)
+		}
+		expandedSection, notes, err := expandSection(section, sectionMap)
 		if err != nil {
 			return nil, nil, err
 		}
 		overlapNotes = append(overlapNotes, notes...)
-		outTools[toolName] = expandedTool
+		out[section] = expandedSection
+	}
+	for k, v := range doc {
+		if k != "tools" && k != "packages" {
+			out[k] = v
+		}
 	}
 	buf, err := toml.Marshal(out)
 	if err != nil {
-		return nil, nil, fmt.Errorf("spike: marshal expanded schema: %w", err)
+		return nil, nil, fmt.Errorf("spike: marshal expanded document: %w", err)
 	}
 	return buf, overlapNotes, nil
 }
 
-// expandTool expands one tool table. Method-level keys (method_only,
-// method_prefer, requires, ...) pass through untouched; the single github
-// base table with a cases array becomes N labeled kind="github" candidates.
-func expandTool(toolName string, toolRaw map[string]any) (map[string]any, []string, error) {
+func expandSection(section string, sectionMap map[string]any) (map[string]any, []string, error) {
+	var notes []string
+	out := map[string]any{}
+	for _, toolName := range sortedMapKeys(sectionMap) {
+		toolRaw, ok := sectionMap[toolName].(map[string]any)
+		if !ok {
+			// Simple lists (simple = [...]), strings, and any other
+			// non-table declaration pass through verbatim.
+			out[toolName] = sectionMap[toolName]
+			continue
+		}
+		expandedTool, toolNotes, err := expandTool(section, toolName, toolRaw)
+		if err != nil {
+			return nil, nil, err
+		}
+		notes = append(notes, toolNotes...)
+		out[toolName] = expandedTool
+	}
+	return out, notes, nil
+}
+
+// expandTool expands one tool table. Tool-level keys (method_only,
+// method_prefer, requires, post_install, ...) pass through untouched; the
+// single github base table carrying a cases array becomes N labeled
+// kind="github" candidates. Tables without cases pass through untouched.
+func expandTool(section, toolName string, toolRaw map[string]any) (map[string]any, []string, error) {
 	var notes []string
 	out := map[string]any{}
 	var baseName string
@@ -80,7 +104,7 @@ func expandTool(toolName string, toolRaw map[string]any) (map[string]any, []stri
 		}
 		if _, hasCases := m["cases"]; hasCases {
 			if base != nil {
-				return nil, nil, fmt.Errorf("spike: tools.%s has more than one cases base (%q and %q)", toolName, baseName, k)
+				return nil, nil, fmt.Errorf("spike: [%s.%s] has more than one cases base (%q and %q)", section, toolName, baseName, k)
 			}
 			baseName, base = k, m
 			continue
@@ -90,9 +114,15 @@ func expandTool(toolName string, toolRaw map[string]any) (map[string]any, []stri
 	if base == nil {
 		return toolRaw, nil, nil // no cases here; pass through
 	}
+	// The macro is github-only: any other table carrying cases is rejected
+	// instead of being reinterpreted as a github recipe.
+	kind, _ := base["kind"].(string)
+	if baseName != "github" && kind != "github" {
+		return nil, nil, fmt.Errorf("spike: [%s.%s.%s] carries cases but is not a github method (name %q, kind %q): cases are github-only", section, toolName, baseName, baseName, kind)
+	}
 	casesRaw, ok := base["cases"].([]any)
 	if !ok || len(casesRaw) == 0 {
-		return nil, nil, fmt.Errorf("spike: tools.%s.%s cases must be a non-empty array", toolName, baseName)
+		return nil, nil, fmt.Errorf("spike: [%s.%s.%s] cases must be a non-empty array", section, toolName, baseName)
 	}
 	baseFields := map[string]any{}
 	for k, v := range base {
@@ -100,28 +130,42 @@ func expandTool(toolName string, toolRaw map[string]any) (map[string]any, []stri
 			continue
 		}
 		if k == "when" || k == "label" || k == "kind" {
-			return nil, nil, fmt.Errorf("spike: tools.%s.%s base must not carry %q", toolName, baseName, k)
+			return nil, nil, fmt.Errorf("spike: [%s.%s.%s] base must not carry %q", section, toolName, baseName, k)
 		}
 		baseFields[k] = v
 	}
-	seen := map[string]bool{}
+	// Every other declared key in this tool is reserved (explicit
+	// candidates and tool-level keys alike): a case must never silently
+	// replace an existing declaration. Case-vs-case duplicates get their
+	// own error so tests can tell the two apart.
+	declared := map[string]bool{}
+	for k := range toolRaw {
+		if k == baseName {
+			continue
+		}
+		declared[k] = true
+	}
+	seenCases := map[string]bool{}
 	var emittedCases []caseRef
 	for i, c := range casesRaw {
 		cm, ok := c.(map[string]any)
 		if !ok {
-			return nil, nil, fmt.Errorf("spike: tools.%s.%s cases[%d] must be a table", toolName, baseName, i)
+			return nil, nil, fmt.Errorf("spike: [%s.%s.%s] cases[%d] must be a table", section, toolName, baseName, i)
 		}
 		label, _ := cm["label"].(string)
 		if label == "" {
-			return nil, nil, fmt.Errorf("spike: tools.%s.%s cases[%d] missing explicit label", toolName, baseName, i)
+			return nil, nil, fmt.Errorf("spike: [%s.%s.%s] cases[%d] missing explicit label", section, toolName, baseName, i)
 		}
-		if seen[label] {
-			return nil, nil, fmt.Errorf("spike: tools.%s.%s duplicate case label %q", toolName, baseName, label)
+		if declared[label] {
+			return nil, nil, fmt.Errorf("spike: [%s.%s.%s] case label %q collides with an explicitly declared method; rename the case or the method", section, toolName, baseName, label)
 		}
-		seen[label] = true
+		if seenCases[label] {
+			return nil, nil, fmt.Errorf("spike: [%s.%s.%s] duplicate case label %q", section, toolName, baseName, label)
+		}
+		seenCases[label] = true
 		whenRaw, ok := cm["when"].(map[string]any)
 		if !ok || len(whenRaw) == 0 {
-			return nil, nil, fmt.Errorf("spike: tools.%s.%s case %q missing non-empty when table", toolName, baseName, label)
+			return nil, nil, fmt.Errorf("spike: [%s.%s.%s] case %q missing non-empty when table", section, toolName, baseName, label)
 		}
 		cand := map[string]any{"kind": "github"}
 		for k, v := range baseFields {
@@ -132,7 +176,7 @@ func expandTool(toolName string, toolRaw map[string]any) (map[string]any, []stri
 				continue
 			}
 			if !allowedCaseOverrides[k] {
-				return nil, nil, fmt.Errorf("spike: tools.%s.%s case %q forbids override %q (allowlist: asset, entrypoints, binary, strip_components, extract_to)", toolName, baseName, label, k)
+				return nil, nil, fmt.Errorf("spike: [%s.%s.%s] case %q forbids override %q (allowlist: asset, entrypoints, binary, strip_components, extract_to)", section, toolName, baseName, label, k)
 			}
 			cand[k] = deepCopy(cm[k])
 		}
@@ -140,18 +184,14 @@ func expandTool(toolName string, toolRaw map[string]any) (map[string]any, []stri
 		out[label] = cand
 		emittedCases = append(emittedCases, caseRef{label: label, when: whenRaw})
 	}
-	notes = reportOverlaps(toolName, emittedCases)
+	notes = reportOverlapList(toolName, emittedCases)
 	return out, notes, nil
 }
 
-// reportOverlaps conservatively flags case pairs whose os/arch/libc/
+// reportOverlapList conservatively flags case pairs whose os/arch/libc/
 // is_android selectors intersect. Other when dimensions are out of scope for
 // the spike check and are reported as-is; overlap here is informational —
 // the expanded candidates keep normal fallback semantics, no silent change.
-func reportOverlaps(toolName string, cases []caseRef) []string {
-	return reportOverlapList(toolName, cases)
-}
-
 func reportOverlapList(toolName string, cases []caseRef) []string {
 	var notes []string
 	sets := func(w map[string]any, key string) (map[string]bool, bool) {
@@ -213,7 +253,7 @@ func reportOverlapList(toolName string, cases []caseRef) []string {
 				if hasOtherDims(a) || hasOtherDims(b) {
 					extra = " (outras dimensões when fora do escopo do cheque; verificação conservadora)"
 				}
-				notes = append(notes, fmt.Sprintf("spike: tools.%s cases %q × %q potencialmente sobrepostos em os/arch/libc/is_android%s — fallback normal preservado, sem garantia nova de exclusividade", toolName, cases[i].label, cases[j].label, extra))
+				notes = append(notes, fmt.Sprintf("spike: %s cases %q × %q potencialmente sobrepostos em os/arch/libc/is_android%s — fallback normal preservado, sem garantia nova de exclusividade", toolName, cases[i].label, cases[j].label, extra))
 			}
 		}
 	}

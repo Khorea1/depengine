@@ -1,9 +1,44 @@
 {
   "candidates": [
     {
-      "arch": "",
       "archMap": "null",
-      "config": "{\"asset\":\"omp-{version}-{os_any}_{arch_any}.tar.gz\",\"checksum\":\"sha256:auto\",\"entrypoints\":{\"omp\":\"omp\"},\"repo\":\"can1357/oh-my-pi\",\"scope\":\"user\"}",
+      "config": "{\"pkg\":\"oh-my-pi-bin\"}",
+      "err": false,
+      "inferred": false,
+      "kind": "aur",
+      "label": "",
+      "osMap": "null",
+      "requires": null,
+      "sources": 0,
+      "when": "distro_family in [\"arch\"]"
+    },
+    {
+      "archMap": "null",
+      "config": "{\"pkg\":\"omp\",\"pkg_overrides\":{\"brew\":\"omp\"}}",
+      "err": false,
+      "inferred": false,
+      "kind": "native",
+      "label": "",
+      "osMap": "null",
+      "requires": null,
+      "sources": 1,
+      "when": "os in [\"darwin\"]"
+    },
+    {
+      "archMap": "null",
+      "config": "{\"pkg\":\"omp\",\"source\":\"github:can1357/oh-my-pi\"}",
+      "err": false,
+      "inferred": false,
+      "kind": "nix",
+      "label": "",
+      "osMap": "null",
+      "requires": null,
+      "sources": 0,
+      "when": ""
+    },
+    {
+      "archMap": "null",
+      "config": "{\"asset\":\"omp-linux-{arch_any}\",\"checksum\":\"sha256:auto\",\"checksum_file_format\":\"sha256sum\",\"checksum_url\":\"https://github.com/can1357/oh-my-pi/releases/latest/download/SHA256SUMS.txt\",\"repo\":\"can1357/oh-my-pi\",\"scope\":\"user\"}",
       "err": false,
       "inferred": false,
       "kind": "github",
@@ -11,13 +46,11 @@
       "osMap": "null",
       "requires": null,
       "sources": 0,
-      "targetOS": "",
       "when": "os in [\"linux\"] \u0026\u0026 libc in [\"glibc\"]"
     },
     {
-      "arch": "",
       "archMap": "null",
-      "config": "{\"asset\":\"omp-{version}-{os_any}_{arch_any}.tar.gz\",\"checksum\":\"sha256:auto\",\"entrypoints\":{\"omp\":\"omp\"},\"repo\":\"can1357/oh-my-pi\",\"scope\":\"user\"}",
+      "config": "{\"asset\":\"omp-darwin-{arch_any}\",\"checksum\":\"sha256:auto\",\"checksum_file_format\":\"sha256sum\",\"checksum_url\":\"https://github.com/can1357/oh-my-pi/releases/latest/download/SHA256SUMS.txt\",\"repo\":\"can1357/oh-my-pi\",\"scope\":\"user\"}",
       "err": false,
       "inferred": false,
       "kind": "github",
@@ -25,13 +58,11 @@
       "osMap": "null",
       "requires": null,
       "sources": 0,
-      "targetOS": "",
       "when": "os in [\"darwin\"]"
     },
     {
-      "arch": "",
       "archMap": "null",
-      "config": "{\"asset\":\"omp-{version}-{os_any}_musl_{arch_any}.tar.gz\",\"checksum\":\"sha256:auto\",\"entrypoints\":{\"omp\":\"omp\"},\"repo\":\"can1357/oh-my-pi\",\"scope\":\"user\"}",
+      "config": "{\"asset\":\"omp-linux-musl-{arch_any}\",\"checksum\":\"sha256:auto\",\"checksum_file_format\":\"sha256sum\",\"checksum_url\":\"https://github.com/can1357/oh-my-pi/releases/latest/download/SHA256SUMS.txt\",\"repo\":\"can1357/oh-my-pi\",\"scope\":\"user\"}",
       "err": false,
       "inferred": false,
       "kind": "github",
@@ -39,10 +70,9 @@
       "osMap": "null",
       "requires": null,
       "sources": 0,
-      "targetOS": "",
       "when": "os in [\"linux\"] \u0026\u0026 libc in [\"musl\"]"
     }
   ],
-  "methodsHash": "734ed1f07f3ecc090bc6dd1d04ae12fc6221c3a0f95eae7176fdd3153ca07d61",
+  "methodsHash": "a0caec6a2f67116bc8e9b8ff3cc371ce2413fce6e8874d410ae44d31fb7c1bf0",
   "tool": "omp"
 }

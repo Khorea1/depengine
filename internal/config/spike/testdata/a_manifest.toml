@@ -1,0 +1,134 @@
+schema_version = 1
+
+[manifest]
+allow_new_tools = true
+
+# br real ([packages], 4 github). Cf. auditoria §2 e manifesto pessoal.
+[packages.br.github-mac]
+kind = "github"
+repo = "Dicklesworthstone/beads_rust"
+asset = "br-{version}-{os_any}_{arch_any}.tar.gz"
+checksum = "sha256:auto"
+scope = "user"
+entrypoints = { br = "br" }
+when = { os = ["darwin"] }
+
+[packages.br.github-linux]
+kind = "github"
+repo = "Dicklesworthstone/beads_rust"
+asset = "br-{version}-{os_any}_{arch_any}.tar.gz"
+checksum = "sha256:auto"
+scope = "user"
+entrypoints = { br = "br" }
+when = { os = ["linux"], libc = ["glibc"] }
+
+[packages.br.github-musl]
+kind = "github"
+repo = "Dicklesworthstone/beads_rust"
+asset = "br-{version}-{os_any}_musl_{arch_any}.tar.gz"
+checksum = "sha256:auto"
+scope = "user"
+entrypoints = { br = "br" }
+when = { os = ["linux"], libc = ["musl"] }
+
+# Windows upstream release is an x86-64 ZIP with br.exe at the archive root.
+[packages.br.github-windows]
+kind = "github"
+repo = "Dicklesworthstone/beads_rust"
+asset = "br-{version}-{os_any}_{arch_any}.zip"
+checksum = "sha256:auto"
+scope = "user"
+entrypoints = { br = "br.exe" }
+when = { os = ["windows"], arch = ["x86_64"] }
+
+# omp real: binários brutos + SHA256SUMS agregado via checksum_url estável
+# (sem sidecars por asset), com fallbacks aur/native/nix.
+[packages.omp]
+method_only = ["aur", "native", "github", "nix"]
+
+[packages.omp.aur]
+pkg = "oh-my-pi-bin"
+when = { distro_family = ["arch"] }
+
+[packages.omp.native]
+pkg_overrides = { brew = "omp" }
+sources = [{ kind = "brew-tap", name = "can1357/tap", url = "https://github.com/can1357/homebrew-tap" }]
+when = { os = ["darwin"] }
+
+[packages.omp.github-linux]
+kind = "github"
+repo = "can1357/oh-my-pi"
+asset = "omp-linux-{arch_any}"
+checksum = "sha256:auto"
+checksum_url = "https://github.com/can1357/oh-my-pi/releases/latest/download/SHA256SUMS.txt"
+checksum_file_format = "sha256sum"
+scope = "user"
+when = { os = ["linux"], libc = ["glibc"] }
+
+[packages.omp.github-musl]
+kind = "github"
+repo = "can1357/oh-my-pi"
+asset = "omp-linux-musl-{arch_any}"
+checksum = "sha256:auto"
+checksum_url = "https://github.com/can1357/oh-my-pi/releases/latest/download/SHA256SUMS.txt"
+checksum_file_format = "sha256sum"
+scope = "user"
+when = { os = ["linux"], libc = ["musl"] }
+
+[packages.omp.github-mac]
+kind = "github"
+repo = "can1357/oh-my-pi"
+asset = "omp-darwin-{arch_any}"
+checksum = "sha256:auto"
+checksum_url = "https://github.com/can1357/oh-my-pi/releases/latest/download/SHA256SUMS.txt"
+checksum_file_format = "sha256sum"
+scope = "user"
+when = { os = ["darwin"] }
+
+[packages.omp.nix]
+pkg = "omp"
+source = "github:can1357/oh-my-pi"
+
+# wt real: AUR worktrunk-bin preferido no Arch; github .tar.xz com dois
+# entrypoints e strip_components; fallbacks native/aur/cargo/conda.
+[packages.wt]
+method_only = ["native", "aur", "cargo", "conda", "github"]
+post_install = [
+  { run = ["wt", "config", "shell", "install"], when = { target_family = ["unix"] } },
+  { run = ["git-wt", "config", "shell", "install"], when = { target_family = ["windows"] } },
+]
+
+[packages.wt.native]
+pkg_overrides = { brew = "worktrunk", winget = "max-sixty.worktrunk" }
+when = { os = ["darwin", "windows"] }
+
+[packages.wt.aur]
+pkg = "worktrunk-bin"
+when = { distro_family = ["arch"] }
+
+[packages.wt.cargo]
+pkg = "worktrunk"
+
+[packages.wt.conda]
+pkg = "worktrunk"
+channels = ["conda-forge"]
+
+[packages.wt.github-mac]
+kind = "github"
+repo = "max-sixty/worktrunk"
+asset = "worktrunk-{arch}-apple-darwin.tar.xz"
+checksum = "sha256:auto"
+strip_components = 1
+scope = "user"
+entrypoints = { wt = "wt", git-wt = "git-wt" }
+when = { os = ["darwin"] }
+
+[packages.wt.github-linux]
+kind = "github"
+repo = "max-sixty/worktrunk"
+asset = "worktrunk-{arch}-unknown-linux-musl.tar.xz"
+checksum = "sha256:auto"
+strip_components = 1
+scope = "user"
+entrypoints = { wt = "wt", git-wt = "git-wt" }
+when = { os = ["linux"] }

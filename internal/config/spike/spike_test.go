@@ -1,10 +1,12 @@
 package spike
 
-// Spike A-vs-C (dep-1n0.1): baseline A (candidatos explícitos) vs protótipo C
-// (base+cases expandidos via ExpandCompact + parser/merge existentes).
+// Spike A-vs-C (dep-1n0.1, rodada 2): baseline A (candidatos explícitos,
+// receitas reais de br/omp/wt em [packages]) vs protótipo C (base+cases
+// expandidos via ExpandCompact + parser/merge existentes).
 //
-// Cobre: equivalência campo a campo antes/depois do merge, MethodsHash,
-// matriz de hosts, fail-closed, determinismo e custo. Sem rede, sem install.
+// Sem rede, sem install. Projeções v2 com resolução remota ficam como
+// limitação documentada: os insumos da projeção (candidatos + intent
+// metadata) são comparados integralmente.
 
 import (
 	"encoding/json"
@@ -12,6 +14,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -35,7 +38,18 @@ func parseSchemaFile(t *testing.T, path string) *config.Schema {
 	return s
 }
 
-func parseExpanded(t *testing.T, compactPath string) *config.Schema {
+func parseManifestFile(t *testing.T, path string) *config.Schema {
+	t.Helper()
+	s, err := config.ParseManifest(path, map[string]string{})
+	if err != nil {
+		t.Fatalf("ParseManifest(%s): %v", path, err)
+	}
+	return s
+}
+
+type schemaParser func(string, map[string]string) (*config.Schema, error)
+
+func parseExpanded(t *testing.T, compactPath string, parse schemaParser) *config.Schema {
 	t.Helper()
 	raw, err := os.ReadFile(compactPath) // #nosec G304 -- fixture-controlled path; no untrusted runtime input crosses this test boundary.
 	if err != nil {
@@ -52,7 +66,11 @@ func parseExpanded(t *testing.T, compactPath string) *config.Schema {
 	if err := os.WriteFile(tmp, expanded, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return parseSchemaFile(t, tmp)
+	s, err := parse(tmp, map[string]string{})
+	if err != nil {
+		t.Fatalf("parse expanded(%s): %v", compactPath, err)
+	}
+	return s
 }
 
 // canonicalCandidate flattens a MethodCandidate into comparable JSON.
@@ -75,8 +93,6 @@ func canonicalCandidate(m *config.MethodCandidate) map[string]any {
 		"requires": m.Requires,
 		"sources":  len(m.Sources),
 		"err":      m.Err != nil,
-		"targetOS": m.TargetOS,
-		"arch":     m.TargetArch,
 	}
 }
 
@@ -105,148 +121,228 @@ func assertSameCandidates(t *testing.T, tool string, a, c []*config.MethodCandid
 	}
 }
 
+func assertSameOrder(t *testing.T, tool string, a, c []*config.MethodCandidate) {
+	t.Helper()
+	var orderA, orderC []string
+	for _, m := range a {
+		orderA = append(orderA, m.Kind+"\x00"+m.Label)
+	}
+	for _, m := range c {
+		orderC = append(orderC, m.Kind+"\x00"+m.Label)
+	}
+	if !reflect.DeepEqual(orderA, orderC) {
+		t.Fatalf("%s: ordem diverge A=%v C=%v", tool, orderA, orderC)
+	}
+}
+
 func TestBaselineParses(t *testing.T) {
-	for tool, file := range map[string]string{
-		"br":  "a_br.toml",
-		"omp": "a_omp.toml",
-		"wt":  "a_wt.toml",
+	// [tools]-style (br) e [packages]-style real (br/omp/wt).
+	s := parseSchemaFile(t, testdata(t, "a_br.toml"))
+	if len(s.Tools["br"].Methods) != 4 {
+		t.Fatalf("br: %d candidatos, want 4", len(s.Tools["br"].Methods))
+	}
+	m := parseManifestFile(t, testdata(t, "a_manifest.toml"))
+	if len(m.Tools["br"].Methods) != 4 {
+		t.Fatalf("packages.br: %d candidatos, want 4", len(m.Tools["br"].Methods))
+	}
+	omp := m.Tools["omp"]
+	if omp == nil {
+		t.Fatal("packages.omp ausente")
+	}
+	if len(omp.Methods) != 6 { // aur, native, 3 github, nix
+		t.Fatalf("packages.omp: %d candidatos, want 6", len(omp.Methods))
+	}
+	if len(omp.MethodOnly) != 4 {
+		t.Fatalf("packages.omp: method_only=%v, want 4 entradas", omp.MethodOnly)
+	}
+	wt := m.Tools["wt"]
+	if wt == nil {
+		t.Fatal("packages.wt ausente")
+	}
+	if len(wt.Methods) != 6 { // native, aur, cargo, conda, 2 github
+		t.Fatalf("packages.wt: %d candidatos, want 6", len(wt.Methods))
+	}
+	if len(wt.PostInstall) != 2 {
+		t.Fatalf("packages.wt: %d post_install, want 2", len(wt.PostInstall))
+	}
+	for _, tool := range []*config.Tool{omp, wt} {
+		for _, cand := range tool.Methods {
+			if cand.When == nil && cand.Kind == "github" {
+				t.Errorf("github sem when: kind=%s label=%s", cand.Kind, cand.Label)
+			}
+		}
+	}
+}
+
+func TestPreservesNonCases(t *testing.T) {
+	// simple = [...] gera uma tool por entrada; todas sobrevivem.
+	s := parseSchemaFile(t, testdata(t, "schema_real.toml"))
+	for _, name := range []string{"zsh", "bat"} {
+		if s.Tools[name] == nil || len(s.Tools[name].Methods) == 0 {
+			t.Fatalf("simple list não preservada: tool %q ausente", name)
+		}
+	}
+	raw, err := os.ReadFile(testdata(t, "c_manifest.toml")) // #nosec G304 -- fixture-controlled path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	expanded, _, err := ExpandCompact(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmp := filepath.Join(t.TempDir(), "expanded.toml")
+	if err := os.WriteFile(tmp, expanded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := parseManifestFile(t, tmp)
+	// aur/native/nix/cargo/conda (label vazio: a seção já é o kind) intactos.
+	for _, tc := range []struct {
+		tool, kind, label string
+	}{
+		{"omp", "aur", ""},
+		{"omp", "native", ""},
+		{"omp", "nix", ""},
+		{"wt", "aur", ""},
+		{"wt", "cargo", ""},
 	} {
-		s := parseSchemaFile(t, testdata(t, file))
-		got := s.Tools[tool]
-		if got == nil {
-			t.Fatalf("%s: tool ausente", tool)
-		}
-		want := map[string]int{"br": 4, "omp": 3, "wt": 2}[tool]
-		if len(got.Methods) != want {
-			t.Fatalf("%s: %d candidatos, want %d", tool, len(got.Methods), want)
-		}
-		for _, m := range got.Methods {
-			if m.Kind != "github" {
-				t.Errorf("%s: kind=%q, want github", tool, m.Kind)
-			}
-			if m.When == nil {
-				t.Errorf("%s/%s: when ausente", tool, m.Label)
-			}
+		if _, err := config.FindMethodCandidate(c.Tools[tc.tool], tc.kind, tc.label); err != nil {
+			t.Errorf("candidato não-github perdido: %s/%s/%s: %v", tc.tool, tc.kind, tc.label, err)
 		}
 	}
 }
 
 func TestExpansionEquivalence(t *testing.T) {
-	for tool, pair := range map[string][2]string{
-		"br":  {"a_br.toml", "c_br.toml"},
-		"omp": {"a_omp.toml", "c_omp.toml"},
-		"wt":  {"a_wt.toml", "c_wt.toml"},
-	} {
-		a := parseSchemaFile(t, testdata(t, pair[0]))
-		c := parseExpanded(t, testdata(t, pair[1]))
+	// [tools]: br. [packages]: br/omp/wt reais.
+	aTools := parseSchemaFile(t, testdata(t, "a_br.toml"))
+	cTools := parseExpanded(t, testdata(t, "c_br.toml"), config.ParseProjectSchema)
+	assertSameCandidates(t, "br[tools]", aTools.Tools["br"].Methods, cTools.Tools["br"].Methods)
+	assertSameOrder(t, "br[tools]", aTools.Tools["br"].Methods, cTools.Tools["br"].Methods)
+
+	a := parseManifestFile(t, testdata(t, "a_manifest.toml"))
+	c := parseExpanded(t, testdata(t, "c_manifest.toml"), config.ParseManifest)
+	for _, tool := range []string{"br", "omp", "wt"} {
 		assertSameCandidates(t, tool, a.Tools[tool].Methods, c.Tools[tool].Methods)
-		// Ordem do parser preservada (não só ordem do array cases).
-		var orderA, orderC []string
-		for _, m := range a.Tools[tool].Methods {
-			orderA = append(orderA, m.Kind+"\x00"+m.Label)
+		assertSameOrder(t, tool, a.Tools[tool].Methods, c.Tools[tool].Methods)
+	}
+	// Chaves de nível de tool preservadas (method_only, post_install).
+	for _, tool := range []string{"omp", "wt"} {
+		if !reflect.DeepEqual(a.Tools[tool].MethodOnly, c.Tools[tool].MethodOnly) {
+			t.Fatalf("%s: method_only diverge A=%v C=%v", tool, a.Tools[tool].MethodOnly, c.Tools[tool].MethodOnly)
 		}
-		for _, m := range c.Tools[tool].Methods {
-			orderC = append(orderC, m.Kind+"\x00"+m.Label)
-		}
-		if !reflect.DeepEqual(orderA, orderC) {
-			t.Fatalf("%s: ordem diverge A=%v C=%v", tool, orderA, orderC)
+		if len(a.Tools[tool].PostInstall) != len(c.Tools[tool].PostInstall) {
+			t.Fatalf("%s: post_install diverge", tool)
 		}
 	}
 }
 
 func TestMergeEquivalence(t *testing.T) {
-	// Mesmo manifesto normal fundido ao schema A e ao schema C expandido.
-	for _, compact := range []string{"c_br.toml"} {
-		a := parseSchemaFile(t, testdata(t, "a_br.toml"))
-		c := parseExpanded(t, testdata(t, compact))
-		manifest, err := config.ParseManifest(testdata(t, "manifest_br.toml"), map[string]string{})
+	// Caminho real: schema vazio + manifesto ([packages]), depois override.
+	schema := parseSchemaFile(t, testdata(t, "schema_real.toml"))
+	a := parseManifestFile(t, testdata(t, "a_manifest.toml"))
+	c := parseExpanded(t, testdata(t, "c_manifest.toml"), config.ParseManifest)
+	override := parseManifestFile(t, testdata(t, "manifest_override.toml"))
+
+	ma := config.MergeLayers(schema, a, override)
+	mc := config.MergeLayers(schema, c, override)
+	for _, tool := range []string{"br", "omp", "wt"} {
+		assertSameCandidates(t, tool+"-merged", ma.Tools[tool].Methods, mc.Tools[tool].Methods)
+	}
+	// br: 4 originais + 1 novo = 5 (override do github-linux é in place).
+	if len(ma.Tools["br"].Methods) != 5 {
+		t.Fatalf("br merged: %d candidatos, want 5", len(ma.Tools["br"].Methods))
+	}
+	for _, s := range []*config.Schema{ma, mc} {
+		m, err := config.FindMethodCandidate(s.Tools["br"], "github", "github-linux")
 		if err != nil {
-			t.Fatalf("ParseManifest: %v", err)
+			t.Fatal(err)
 		}
-		ma := config.MergeLayers(a, manifest)
-		mc := config.MergeLayers(c, manifest)
-		assertSameCandidates(t, "br-merged", ma.Tools["br"].Methods, mc.Tools["br"].Methods)
-		// Override parcial: checksum do github-linux substituído por inteiro.
-		for _, s := range []*config.Schema{ma, mc} {
-			m, err := config.FindMethodCandidate(s.Tools["br"], "github", "github-linux")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if m.Config["checksum"] != "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" {
-				t.Fatalf("merge não aplicou override de checksum: %v", m.Config["checksum"])
-			}
+		if m.Config["checksum"] != "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" {
+			t.Fatalf("merge não aplicou override de checksum: %v", m.Config["checksum"])
 		}
-		// Candidato novo do manifesto anexado após os existentes.
-		if len(ma.Tools["br"].Methods) != 6 { // 4 + linux-override(in place) + extra + ?
-			t.Logf("merged count A=%d C=%d", len(ma.Tools["br"].Methods), len(mc.Tools["br"].Methods))
+		m, err = config.FindMethodCandidate(s.Tools["omp"], "github", "github-musl")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m.Config["scope"] != "system" {
+			t.Fatalf("merge não aplicou override omp: %v", m.Config["scope"])
 		}
 	}
 }
 
-func TestMethodsHashEquivalence(t *testing.T) {
-	for tool, pair := range map[string][2]string{
-		"br": {"a_br.toml", "c_br.toml"},
-		"wt": {"a_wt.toml", "c_wt.toml"},
-	} {
-		a := parseSchemaFile(t, testdata(t, pair[0]))
-		c := parseExpanded(t, testdata(t, pair[1]))
-		ha, _, err := lock.SnapshotIntentMetadata(a)
-		if err != nil {
-			t.Fatal(err)
-		}
-		hc, _, err := lock.SnapshotIntentMetadata(c)
-		if err != nil {
-			t.Fatal(err)
-		}
+func TestIntentMetadataEquivalence(t *testing.T) {
+	// MethodsHash + SourceHash: insumos offline da projeção/lock.
+	a := parseManifestFile(t, testdata(t, "a_manifest.toml"))
+	c := parseExpanded(t, testdata(t, "c_manifest.toml"), config.ParseManifest)
+	ha, sa, err := lock.SnapshotIntentMetadata(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hc, sc, err := lock.SnapshotIntentMetadata(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range []string{"br", "omp", "wt"} {
 		if ha[tool] != hc[tool] {
 			t.Fatalf("%s: MethodsHash diverge A=%q C=%q", tool, ha[tool], hc[tool])
 		}
 	}
+	if !reflect.DeepEqual(sa, sc) {
+		t.Fatalf("SourceHash diverge A=%v C=%v", sa, sc)
+	}
 }
 
-func TestSourceHashEquivalence(t *testing.T) {
-	for tool, pair := range map[string][2]string{
-		"br": {"a_br.toml", "c_br.toml"},
-		"wt": {"a_wt.toml", "c_wt.toml"},
+func TestCandidateIdentityEquivalence(t *testing.T) {
+	// FindMethodCandidate (usado por upgrade/remove/why) resolve igual em A e C.
+	a := parseManifestFile(t, testdata(t, "a_manifest.toml"))
+	c := parseExpanded(t, testdata(t, "c_manifest.toml"), config.ParseManifest)
+	for _, tc := range []struct{ tool, kind, label string }{
+		{"br", "github", "github-windows"},
+		{"omp", "github", "github-musl"},
+		{"wt", "github", "github-linux"},
+		{"wt", "aur", ""},
+		{"omp", "nix", ""},
 	} {
-		a := parseSchemaFile(t, testdata(t, pair[0]))
-		c := parseExpanded(t, testdata(t, pair[1]))
-		_, sa, err := lock.SnapshotIntentMetadata(a)
+		ma, err := config.FindMethodCandidate(a.Tools[tc.tool], tc.kind, tc.label)
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, sc, err := lock.SnapshotIntentMetadata(c)
+		mc, err := config.FindMethodCandidate(c.Tools[tc.tool], tc.kind, tc.label)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !reflect.DeepEqual(sa, sc) {
-			t.Fatalf("%s: SourceHash diverge A=%v C=%v", tool, sa, sc)
+		ja, _ := json.Marshal(canonicalCandidate(ma))
+		jc, _ := json.Marshal(canonicalCandidate(mc))
+		if string(ja) != string(jc) {
+			t.Fatalf("%s/%s: identidade diverge\nA=%s\nC=%s", tc.tool, tc.label, ja, jc)
 		}
-		_ = tool
 	}
 }
 
 func TestValidateEquivalence(t *testing.T) {
-	// why/planner/adapters consomem a representação expandida normal:
-	// validação semântica deve concordar entre A e C.
+	// Exigência estrita: zero erros em A e C (não apenas contagens iguais),
+	// com os mesmos warnings. Fixture inválida reprova o spike.
 	kinds := methodkind.KnownKinds()
-	for tool, pair := range map[string][2]string{
-		"br": {"a_br.toml", "c_br.toml"},
-		"wt": {"a_wt.toml", "c_wt.toml"},
+	schema := parseSchemaFile(t, testdata(t, "schema_real.toml"))
+	a := parseManifestFile(t, testdata(t, "a_manifest.toml"))
+	c := parseExpanded(t, testdata(t, "c_manifest.toml"), config.ParseManifest)
+	// O caminho operacional real é schema+manifesto fundidos (o manifesto
+	// sozinho não carrega [defaults]; ex.: candidato nix exige a entrada
+	// correspondente na ordem, como no depends.toml real).
+	ma := config.MergeLayers(schema, a)
+	mc := config.MergeLayers(schema, c)
+	for name, s := range map[string]*config.Schema{
+		"merged-A": ma, "merged-C": mc,
 	} {
-		a := parseSchemaFile(t, testdata(t, pair[0]))
-		c := parseExpanded(t, testdata(t, pair[1]))
-		ra := validate.ValidateSchema(a, kinds)
-		rc := validate.ValidateSchema(c, kinds)
-		if ra.HasErrors() != rc.HasErrors() {
-			t.Fatalf("%s: validate errors divergem A=%v C=%v", tool, ra.HasErrors(), rc.HasErrors())
+		r := validate.ValidateSchema(s, kinds)
+		if r.HasErrors() {
+			raw, _ := json.Marshal(r.Errors)
+			t.Fatalf("%s: %d erros de validação: %s", name, len(r.Errors), raw)
 		}
-		if len(ra.Errors) != len(rc.Errors) {
-			t.Fatalf("%s: %d erros A vs %d erros C", tool, len(ra.Errors), len(rc.Errors))
-		}
-		if len(ra.Warnings) != len(rc.Warnings) {
-			t.Fatalf("%s: %d warnings A vs %d warnings C", tool, len(ra.Warnings), len(rc.Warnings))
-		}
+	}
+	ra := validate.ValidateSchema(a, kinds)
+	rc := validate.ValidateSchema(c, kinds)
+	if len(ra.Warnings) != len(rc.Warnings) {
+		t.Fatalf("%d warnings A vs %d warnings C", len(ra.Warnings), len(rc.Warnings))
 	}
 }
 
@@ -254,21 +350,18 @@ func hostMatrix() map[string]*platform.Facts {
 	return map[string]*platform.Facts{
 		"linux-glibc":         {OS: "linux", TargetArch: "x86_64", Libc: "glibc 2.35", TargetFamily: "unix"},
 		"linux-musl":          {OS: "linux", TargetArch: "x86_64", Libc: "musl 1.2.4", TargetFamily: "unix"},
-		"mac-x86_64":          {OS: "darwin", TargetArch: "x86_64", Libc: "", TargetFamily: "unix"},
-		"mac-arm64":           {OS: "darwin", TargetArch: "arm64", Libc: "", TargetFamily: "unix"},
-		"windows-x86_64":      {OS: "windows", TargetArch: "x86_64", Libc: "", TargetFamily: "windows"},
+		"mac-arm64":           {OS: "darwin", TargetArch: "arm64", TargetFamily: "unix"},
+		"windows-x86_64":      {OS: "windows", TargetArch: "x86_64", TargetFamily: "windows"},
 		"android-termux":      {OS: "linux", TargetArch: "aarch64", Libc: "bionic", IsAndroid: true, TargetFamily: "unix"},
-		"freebsd-unsupported": {OS: "freebsd", TargetArch: "x86_64", Libc: "", TargetFamily: "unix"},
+		"freebsd-unsupported": {OS: "freebsd", TargetArch: "x86_64", TargetFamily: "unix"},
 	}
 }
 
-func eligibleLabels(t *testing.T, s *config.Schema, tool string, facts *platform.Facts) []string {
-	t.Helper()
+func eligibleLabels(methods []*config.MethodCandidate, facts *platform.Facts) []string {
 	var out []string
-	for _, m := range s.Tools[tool].Methods {
-		matched := m.When == nil || m.When.Match(facts)
-		if matched {
-			out = append(out, m.Label)
+	for _, m := range methods {
+		if m.When == nil || m.When.Match(facts) {
+			out = append(out, m.Kind+"/"+m.Label)
 		}
 	}
 	sort.Strings(out)
@@ -276,40 +369,31 @@ func eligibleLabels(t *testing.T, s *config.Schema, tool string, facts *platform
 }
 
 func TestHostMatrixEquivalence(t *testing.T) {
-	a := parseSchemaFile(t, testdata(t, "a_br.toml"))
-	c := parseExpanded(t, testdata(t, "c_br.toml"))
-	want := map[string][]string{
-		"linux-glibc":         {"github-linux"},
-		"linux-musl":          {"github-musl"},
-		"mac-x86_64":          {"github-mac"},
-		"mac-arm64":           {"github-mac"},
-		"windows-x86_64":      {"github-windows"},
-		"android-termux":      {},
-		"freebsd-unsupported": {},
-	}
+	a := parseManifestFile(t, testdata(t, "a_manifest.toml"))
+	c := parseExpanded(t, testdata(t, "c_manifest.toml"), config.ParseManifest)
+	// Elegibilidade github de br/omp coincide com as receitas reais.
 	for host, facts := range hostMatrix() {
-		ea := eligibleLabels(t, a, "br", facts)
-		ec := eligibleLabels(t, c, "br", facts)
-		if !sameStrings(ea, ec) {
-			t.Fatalf("host %s: elegíveis divergem A=%v C=%v", host, ea, ec)
+		for _, tool := range []string{"br", "omp", "wt"} {
+			ea := eligibleLabels(a.Tools[tool].Methods, facts)
+			ec := eligibleLabels(c.Tools[tool].Methods, facts)
+			if !sameStrings(ea, ec) {
+				t.Fatalf("host %s tool %s: elegíveis divergem A=%v C=%v", host, tool, ea, ec)
+			}
 		}
-		if !sameStrings(ea, want[host]) {
-			t.Fatalf("host %s: elegíveis=%v, want %v", host, ea, want[host])
+	}
+	// Spot-checks contra o real: omp não tem github em windows.
+	ompWin := eligibleLabels(a.Tools["omp"].Methods, hostMatrix()["windows-x86_64"])
+	for _, e := range ompWin {
+		if strings.HasPrefix(e, "github/") {
+			t.Fatalf("omp tem github elegível em windows: %v", ompWin)
 		}
 	}
 }
 
 func TestFailClosed(t *testing.T) {
-	base := `
-schema_version = 1
-[tools.br]
-method_only = ["github"]
-  [tools.br.github]
-  repo = "o/r"
-  asset = "a.tar.gz"
-  checksum = "sha256:auto"
-  scope = "user"
-`
+	compact := func(body string) []byte {
+		return []byte("schema_version = 1\n[packages.br.github]\nrepo = \"o/r\"\nasset = \"a.tar.gz\"\nchecksum = \"sha256:auto\"\nscope = \"user\"\n" + body + "\n")
+	}
 	cases := []struct {
 		name     string
 		fragment string
@@ -323,11 +407,17 @@ method_only = ["github"]
 		{"forbidden-checksum", "cases = [{label=\"x\", when={os=[\"linux\"]}, checksum=\"sha256:abc\"}]", "forbids"},
 		{"unknown-field", "cases = [{label=\"x\", when={os=[\"linux\"]}, mirrors=[\"a\"]}]", "forbids"},
 		{"base-when", "when = {os=[\"linux\"]}\n  cases = [{label=\"x\", when={os=[\"linux\"]}}]", "must not carry"},
+		{"non-github-base", "[packages.br.cargo]\n  pkg = \"x\"\n  cases = [{label=\"y\", when={os=[\"linux\"]}}]", "github-only"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			doc := base + "  " + tc.fragment + "\n"
-			_, _, err := ExpandCompact([]byte(doc))
+			var doc []byte
+			if tc.name == "non-github-base" {
+				doc = []byte("schema_version = 1\n[packages.br]\nmethod_only = [\"cargo\"]\n" + tc.fragment + "\n")
+			} else {
+				doc = compact(tc.fragment)
+			}
+			_, _, err := ExpandCompact(doc)
 			if err == nil {
 				t.Fatalf("esperava erro contendo %q, obteve nil", tc.wantErr)
 			}
@@ -336,10 +426,33 @@ method_only = ["github"]
 			}
 		})
 	}
+	// Colisão com método explícito: caso nunca substitui declaração existente.
+	t.Run("collision-explicit", func(t *testing.T) {
+		doc := []byte(`schema_version = 1
+[packages.example.github]
+repo = "owner/project"
+asset = "base.tar.gz"
+checksum = "sha256:auto"
+scope = "user"
+cases = [{label = "github-linux", when = {os = ["linux"]}}]
+
+[packages.example.github-linux]
+kind = "github"
+repo = "outro/projeto"
+asset = "outro.tar.gz"
+checksum = "sha256:auto"
+scope = "user"
+when = {os = ["linux"]}
+`)
+		_, _, err := ExpandCompact(doc)
+		if err == nil || !containsFold(err.Error(), "collides") {
+			t.Fatalf("esperava erro de colisão, obteve %v", err)
+		}
+	})
 }
 
 func TestDeterminism(t *testing.T) {
-	raw, err := os.ReadFile(testdata(t, "c_br.toml"))
+	raw, err := os.ReadFile(testdata(t, "c_manifest.toml")) // #nosec G304 -- fixture-controlled path.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,19 +484,16 @@ func sameStrings(a, b []string) bool {
 }
 
 func TestGoldens(t *testing.T) {
-	// Goldens reproduzíveis do comportamento atual (A): candidatos
-	// canônicos + MethodsHash por tool. C deve ser byte-idêntico.
-	for tool, pair := range map[string][2]string{
-		"br":  {"a_br.toml", "c_br.toml"},
-		"omp": {"a_omp.toml", "c_omp.toml"},
-		"wt":  {"a_wt.toml", "c_wt.toml"},
-	} {
-		a := parseSchemaFile(t, testdata(t, pair[0]))
-		c := parseExpanded(t, testdata(t, pair[1]))
-		ha, _, err := lock.SnapshotIntentMetadata(a)
-		if err != nil {
-			t.Fatal(err)
-		}
+	// Goldens são obrigatórios: ausência é falha (criar só com
+	// SPIKE_WRITE_GOLDENS=1), nunca criação silenciosa.
+	write := os.Getenv("SPIKE_WRITE_GOLDENS") == "1"
+	a := parseManifestFile(t, testdata(t, "a_manifest.toml"))
+	c := parseExpanded(t, testdata(t, "c_manifest.toml"), config.ParseManifest)
+	ha, _, err := lock.SnapshotIntentMetadata(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range []string{"br", "omp", "wt"} {
 		golden := map[string]any{
 			"tool":        tool,
 			"candidates":  candidateSnapshot(a.Tools[tool].Methods),
@@ -391,24 +501,25 @@ func TestGoldens(t *testing.T) {
 		}
 		raw, _ := json.MarshalIndent(golden, "", "  ")
 		path := filepath.Join("testdata", "goldens", tool+".json")
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301 -- test golden dir under package tree; parent perms inherited from checkout.
+		if write {
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301 -- golden dir versionado; permissões herdadas do checkout.
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(path, append(raw, '\n'), 0o644); err != nil { // #nosec G306 -- versioned JSON golden must stay readable; no secret material.
+			if err := os.WriteFile(path, append(raw, '\n'), 0o644); err != nil { // #nosec G306 -- golden JSON versionado; sem segredos.
 				t.Fatal(err)
 			}
-			t.Logf("golden criado: %s", path)
-		} else {
-			want, err := os.ReadFile(path) // #nosec G304 -- golden path derived from fixed tool key; no untrusted runtime input.
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(want) != string(raw)+"\n" {
-				t.Fatalf("tool %s: golden diverge; comportamento atual mudou ou expansão quebrou", tool)
-			}
+			continue
 		}
-		// C never diverges from A (cobertura redundante e intencional).
+		want, err := os.ReadFile(path) // #nosec G304 -- golden path derivado de chave fixa.
+		if os.IsNotExist(err) {
+			t.Fatalf("golden ausente: %s (regenere com SPIKE_WRITE_GOLDENS=1)", path)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(want) != string(raw)+"\n" {
+			t.Fatalf("tool %s: golden diverge; comportamento atual mudou ou expansão quebrou", tool)
+		}
 		assertSameCandidates(t, tool, a.Tools[tool].Methods, c.Tools[tool].Methods)
 	}
 }

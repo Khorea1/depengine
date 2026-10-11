@@ -1,9 +1,56 @@
 {
   "candidates": [
     {
-      "arch": "",
       "archMap": "null",
-      "config": "{\"asset\":\"wt-{version}-{os_any}_{arch_any}.tar.gz\",\"checksum\":\"sha256:auto\",\"entrypoints\":{\"wt\":\"wt\"},\"repo\":\"example/worktrunk\",\"scope\":\"user\"}",
+      "config": "{\"pkg\":\"worktrunk-bin\"}",
+      "err": false,
+      "inferred": false,
+      "kind": "aur",
+      "label": "",
+      "osMap": "null",
+      "requires": null,
+      "sources": 0,
+      "when": "distro_family in [\"arch\"]"
+    },
+    {
+      "archMap": "null",
+      "config": "{\"pkg\":\"worktrunk\"}",
+      "err": false,
+      "inferred": false,
+      "kind": "cargo",
+      "label": "",
+      "osMap": "null",
+      "requires": null,
+      "sources": 0,
+      "when": ""
+    },
+    {
+      "archMap": "null",
+      "config": "{\"channels\":[\"conda-forge\"],\"pkg\":\"worktrunk\"}",
+      "err": false,
+      "inferred": false,
+      "kind": "conda",
+      "label": "",
+      "osMap": "null",
+      "requires": null,
+      "sources": 0,
+      "when": ""
+    },
+    {
+      "archMap": "null",
+      "config": "{\"pkg\":\"wt\",\"pkg_overrides\":{\"brew\":\"worktrunk\",\"winget\":\"max-sixty.worktrunk\"}}",
+      "err": false,
+      "inferred": false,
+      "kind": "native",
+      "label": "",
+      "osMap": "null",
+      "requires": null,
+      "sources": 0,
+      "when": "os in [\"darwin\",\"windows\"]"
+    },
+    {
+      "archMap": "null",
+      "config": "{\"asset\":\"worktrunk-{arch}-unknown-linux-musl.tar.xz\",\"checksum\":\"sha256:auto\",\"entrypoints\":{\"git-wt\":\"git-wt\",\"wt\":\"wt\"},\"repo\":\"max-sixty/worktrunk\",\"scope\":\"user\",\"strip_components\":1}",
       "err": false,
       "inferred": false,
       "kind": "github",
@@ -11,13 +58,11 @@
       "osMap": "null",
       "requires": null,
       "sources": 0,
-      "targetOS": "",
       "when": "os in [\"linux\"]"
     },
     {
-      "arch": "",
       "archMap": "null",
-      "config": "{\"asset\":\"wt-{version}-{os_any}_{arch_any}.tar.gz\",\"checksum\":\"sha256:auto\",\"entrypoints\":{\"wt\":\"wt\"},\"repo\":\"example/worktrunk\",\"scope\":\"user\"}",
+      "config": "{\"asset\":\"worktrunk-{arch}-apple-darwin.tar.xz\",\"checksum\":\"sha256:auto\",\"entrypoints\":{\"git-wt\":\"git-wt\",\"wt\":\"wt\"},\"repo\":\"max-sixty/worktrunk\",\"scope\":\"user\",\"strip_components\":1}",
       "err": false,
       "inferred": false,
       "kind": "github",
@@ -25,10 +70,9 @@
       "osMap": "null",
       "requires": null,
       "sources": 0,
-      "targetOS": "",
       "when": "os in [\"darwin\"]"
     }
   ],
-  "methodsHash": "8c09df78f7d002eda187a38af11338000218aa2232d3354c50b8ce31aaecc9f7",
+  "methodsHash": "8a06ba8136132d3052659691423a36f5b44fc1ec75afbf2f45f0598965c70865",
   "tool": "wt"
 }
