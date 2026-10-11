@@ -991,21 +991,21 @@ func (a *BaseAdapter) gemInstalledVersion(ctx context.Context, rn run.Runner, pk
 		return "", run.CheckResult(res, "gem: list installed version")
 	}
 	versions, found := gemVersionsFromList(string(res.Stdout), pkg)
-	if found && len(versions) == 0 {
-		return "", nil
+	if found {
+		if len(versions) == 0 {
+			return "", nil
+		}
+		for _, version := range versions {
+			if requested != "" && version == requested {
+				return version, nil
+			}
+		}
+		return versions[0], nil
 	}
 	if !gemListOutputValid(string(res.Stdout)) {
-		return "", fmt.Errorf("gem: invalid list output")
+		return "", nil
 	}
-	if !found {
-		return "", absentInstalledPackage("gem", pkg)
-	}
-	for _, version := range versions {
-		if requested != "" && version == requested {
-			return version, nil
-		}
-	}
-	return versions[0], nil
+	return "", absentInstalledPackage("gem", pkg)
 }
 
 func gemListOutputValid(output string) bool {

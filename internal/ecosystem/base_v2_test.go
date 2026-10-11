@@ -321,11 +321,10 @@ func TestBaseAdapterV2ExactObserveDistinguishesAbsentFromProbeFailures(t *testin
 			want:   plan.PresenceAbsent,
 		},
 		{
-			name:      "gem malformed list",
-			kind:      "gem",
-			runner:    &run.FakeRunner{Stdout: "unexpected output"},
-			want:      plan.PresenceBroken,
-			wantError: true,
+			name:   "gem malformed list is unknown",
+			kind:   "gem",
+			runner: &run.FakeRunner{Stdout: "unexpected output"},
+			want:   plan.PresenceUnknown,
 		},
 		{
 			name:   "composer reports requested package missing",

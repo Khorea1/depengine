@@ -28,9 +28,9 @@ func TestBaseAdapterGemObserveVersions(t *testing.T) {
 		{name: "empty output proves absence", requested: "1.2.3", presence: plan.PresenceAbsent},
 		{name: "bare local gems marker proves absence", stdout: "*** LOCAL GEMS ***\n", requested: "1.2.3", presence: plan.PresenceAbsent},
 		{name: "complete unrelated listing proves absence", stdout: "other (1.0.0)\n", requested: "1.2.3", presence: plan.PresenceAbsent},
-		{name: "unrelated empty version row is invalid", stdout: "other ( )\n", requested: "1.2.3", presence: plan.PresenceBroken, wantError: true},
-		{name: "whitespace-only output is not a complete document", stdout: " \t\n ", requested: "1.2.3", presence: plan.PresenceBroken, wantError: true},
-		{name: "incomplete target row is invalid", stdout: "demo (1.2.3\n", requested: "1.2.3", presence: plan.PresenceBroken, wantError: true},
+		{name: "unrelated empty version row is unknown", stdout: "other ( )\n", requested: "1.2.3", presence: plan.PresenceUnknown},
+		{name: "whitespace-only output is unknown", stdout: " \t\n ", requested: "1.2.3", presence: plan.PresenceUnknown},
+		{name: "incomplete target row is unknown", stdout: "demo (1.2.3\n", requested: "1.2.3", presence: plan.PresenceUnknown},
 		{name: "process error is broken", stdout: "demo (1.2.3)\n", requested: "1.2.3", runErr: errors.New("spawn failed"), presence: plan.PresenceBroken, wantError: true},
 		{name: "nonzero exit is broken", stdout: "demo (1.2.3)\n", requested: "1.2.3", exitCode: 1, presence: plan.PresenceBroken, wantError: true},
 	}
@@ -46,23 +46,5 @@ func TestBaseAdapterGemObserveVersions(t *testing.T) {
 				t.Fatalf("Observe() = %+v, want presence=%q version=%q", got, tt.presence, tt.version)
 			}
 		})
-	}
-}
-
-func TestGemListOutputValidRequiresContentOrExplicitEmptyMarker(t *testing.T) {
-	tests := []struct {
-		output string
-		valid  bool
-	}{
-		{output: "", valid: true},
-		{output: "*** LOCAL GEMS ***\n", valid: true},
-		{output: "other (1.0.0)\n", valid: true},
-		{output: " \t\n ", valid: false},
-		{output: "other ( )\n", valid: false},
-	}
-	for _, tt := range tests {
-		if got := gemListOutputValid(tt.output); got != tt.valid {
-			t.Errorf("gemListOutputValid(%q) = %v, want %v", tt.output, got, tt.valid)
-		}
 	}
 }
