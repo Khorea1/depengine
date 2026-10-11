@@ -77,10 +77,10 @@ func TestBaseAndWindowsVerificationFieldProbes(t *testing.T) {
 			baseCase("cask", "pkg", "brew list --cask alpha", "", "pkg"),
 			baseCase("gem", "pkg", "gem list --local --exact alpha --all", "alpha (1.2.0, 1.1.0)\n", "pkg"),
 			baseCase("gem", "version", "gem list --local --exact alpha --all", "alpha (1.2.0, 1.1.0)\n", "version"),
-			baseCase("pipx", "pkg", "pipx list --output json alpha", `{"pipx_spec_version":"0.1","venvs":{"alpha":{"main_package":{"package":"alpha","package_version":"1.2.0"}}}}`, "pkg"),
-			baseCase("pipx", "version", "pipx list --output json alpha", `{"pipx_spec_version":"0.1","venvs":{"alpha":{"main_package":{"package":"alpha","package_version":"1.2.0"}}}}`, "version"),
-			baseCase("npm", "pkg", "npm ls -g --depth=0 --json alpha", `{"dependencies":{"alpha":{"version":"1.2.0"}}}`, "pkg"),
-			baseCase("npm", "version", "npm ls -g --depth=0 --json alpha", `{"dependencies":{"alpha":{"version":"1.2.0"}}}`, "version"),
+			baseCase("pipx", "pkg", "pipx list --json", `{"pipx_spec_version":"0.1","venvs":{"alpha":{"metadata":{"main_package":{"package":"alpha","package_version":"1.2.0"}}}}}`, "pkg"),
+			baseCase("pipx", "version", "pipx list --json", `{"pipx_spec_version":"0.1","venvs":{"alpha":{"metadata":{"main_package":{"package":"alpha","package_version":"1.2.0"}}}}}`, "version"),
+			baseCase("npm", "pkg", "npm ls -g --depth=0 --json", `{"dependencies":{"alpha":{"version":"1.2.0"}}}`, "pkg"),
+			baseCase("npm", "version", "npm ls -g --depth=0 --json", `{"dependencies":{"alpha":{"version":"1.2.0"}}}`, "version"),
 			baseCase("apm", "pkg", "apm list --installed --bare", "alpha@1.2.0\n", "pkg"),
 			baseCase("mas", "pkg", "mas list", "123456789 Alpha App (1.2)\n", "123456789"),
 			baseCase("uv", "pkg", "uv tool list", "alpha v1.2.0\n- alpha\n", "pkg"),
@@ -90,8 +90,8 @@ func TestBaseAndWindowsVerificationFieldProbes(t *testing.T) {
 			baseCase("composer", "pkg", "composer global show --locked vendor/alpha", "name     : vendor/alpha\nversions : * 1.2.0\n", "vendor/alpha"),
 			baseCase("composer", "version", "composer global show --locked vendor/alpha", "name     : vendor/alpha\nversions : * 1.2.0\n", "version"),
 			baseCase("appman", "pkg", "", "", "pkg"),
-			baseCase("yarn", "pkg", "yarn global list --depth=0", "info \"alpha@1.2.0\" has binaries:\n", "pkg"),
-			baseCase("yarn", "version", "yarn global list --depth=0", "info \"alpha@1.2.0\" has binaries:\n", "version"),
+			baseCase("yarn", "pkg", "yarn global list --depth=0", "yarn global v1.22.22\ninfo \"alpha@1.2.0\" has binaries:\n   - alpha\nDone in 0.07s.\n", "pkg"),
+			baseCase("yarn", "version", "yarn global list --depth=0", "yarn global v1.22.22\ninfo \"alpha@1.2.0\" has binaries:\n   - alpha\nDone in 0.07s.\n", "version"),
 			baseCase("pnpm", "pkg", "pnpm list -g --depth=0 --json", `[{"dependencies":{"alpha":{"version":"1.2.0"}}}]`, "pkg"),
 			baseCase("pnpm", "version", "pnpm list -g --depth=0 --json", `[{"dependencies":{"alpha":{"version":"1.2.0"}}}]`, "version"),
 		} {
@@ -117,6 +117,7 @@ func baseCase(kind, field, command, output, desiredA string, desiredB ...string)
 	configB := map[string]any{"pkg": "beta"}
 	if field == "version" {
 		configA["version"], configB["version"] = "1.2.0", "2.0.0"
+		configB["pkg"] = configA["pkg"]
 		if kind == "composer" {
 			configA["pkg"], configB["pkg"] = "vendor/alpha", "vendor/alpha"
 		}
@@ -172,7 +173,11 @@ func probeAB(t *testing.T, adapter interface {
 		}
 		states[i] = plan.Reconcile(desired, observation).State
 	}
-	if states[0] != plan.StateSatisfied || states[1] == plan.StateSatisfied {
-		t.Fatalf("A/B verification states = %v; want satisfied then absent/drifted", states)
+	if _, exactVersion := configA["version"]; exactVersion {
+		if states[0] != plan.StateSatisfied || states[1] != plan.StateDrifted {
+			t.Fatalf("A/B verification states = %v; want satisfied then drifted for different exact versions", states)
+		}
+	} else if states[0] != plan.StateSatisfied || states[1] == plan.StateSatisfied {
+		t.Fatalf("A/B verification states = %v; want satisfied then absent/drifted for changed field", states)
 	}
 }

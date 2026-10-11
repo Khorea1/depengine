@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -65,6 +66,12 @@ type CheckOutputMatcher func(output, pkg string) bool
 // BaseAdapter implements exec.AdapterV2 for a BaseConfig.
 type BaseAdapter struct {
 	config BaseConfig
+}
+
+var errInstalledPackageAbsent = errors.New("installed package is absent")
+
+func absentInstalledPackage(kind, pkg string) error {
+	return fmt.Errorf("%s: package %q is not installed: %w", kind, pkg, errInstalledPackageAbsent)
 }
 
 // NewBaseAdapter creates an adapter from a static config.
@@ -227,8 +234,14 @@ func (a *BaseAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 	requestedVersion, _ := mc.Config["version"].(string)
 	if contract, ok := methodkind.Lookup(a.config.KindName); requestedVersion != "" && ok && contract.Supports(methodkind.CapabilityExactVersion) {
 		installedVersion, err := a.InstalledVersion(ctx, rn, tool, mc)
-		if err != nil || installedVersion == "" {
+		if errors.Is(err, errInstalledPackageAbsent) {
 			return absent, nil
+		}
+		if err != nil {
+			return plan.Observation{Presence: plan.PresenceBroken, Detail: err.Error()}, err
+		}
+		if installedVersion == "" {
+			return plan.Observation{Presence: plan.PresenceUnknown, Detail: a.config.KindName + ": installed version was not reported"}, nil
 		}
 		observation := plan.Observation{
 			Presence:    plan.PresencePresent,
@@ -663,6 +676,16 @@ func pipVersionFromShow(output string) (string, bool) {
 	return "", false
 }
 
+func pipShowReportsMissing(stderr, pkg string) bool {
+	for _, line := range strings.Split(stderr, "\n") {
+		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "WARNING:"))
+		if strings.EqualFold(line, "Package(s) not found: "+pkg) {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *BaseAdapter) checkPip(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	pkg := resolvedPkg(tool, mc)
 	res := a.runConfiguredBinary(ctx, rn, "show", pkg)
@@ -686,6 +709,9 @@ func (a *BaseAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool 
 	case "pip":
 		res := a.runConfiguredBinary(ctx, rn, "show", pkg)
 		if res.Err != nil || res.ExitCode != 0 {
+			if res.Err == nil && pipShowReportsMissing(string(res.Stderr), pkg) {
+				return "", absentInstalledPackage("pip", pkg)
+			}
 			return "", run.CheckResult(res, "pip: show installed version")
 		}
 		version, ok := pipVersionFromShow(string(res.Stdout))
@@ -716,11 +742,13 @@ func (a *BaseAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool 
 }
 
 type pipxListOutput struct {
-	Venvs map[string]struct {
-		MainPackage struct {
-			Package        string `json:"package"`
-			PackageVersion string `json:"package_version"`
-		} `json:"main_package"`
+	Venvs map[string]*struct {
+		Metadata *struct {
+			MainPackage *struct {
+				Package        string `json:"package"`
+				PackageVersion string `json:"package_version"`
+			} `json:"main_package"`
+		} `json:"metadata"`
 	} `json:"venvs"`
 }
 
@@ -756,39 +784,84 @@ func buildPipxCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) [
 	return cmd
 }
 
-func pipxVersionFromList(output, pkg string) (string, bool) {
-	var parsed pipxListOutput
-	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
-		return "", false
-	}
-	if env, ok := parsed.Venvs[pkg]; ok && env.MainPackage.PackageVersion != "" {
-		if env.MainPackage.Package == "" || strings.EqualFold(env.MainPackage.Package, pkg) {
-			return env.MainPackage.PackageVersion, true
-		}
-	}
-	for _, env := range parsed.Venvs {
-		if strings.EqualFold(env.MainPackage.Package, pkg) && env.MainPackage.PackageVersion != "" {
-			return env.MainPackage.PackageVersion, true
-		}
-	}
-	return "", false
-}
-
 func (a *BaseAdapter) pipxInstalledVersion(ctx context.Context, rn run.Runner, pkg string, mc *config.MethodCandidate) (string, error) {
-	args := []string{"list", "--output", "json"}
+	args := []string{"list", "--json"}
 	if scope, _ := mc.Config["scope"].(string); scope == "global" {
 		args = append(args, "--global")
 	}
-	args = append(args, pkg)
 	res := a.runConfiguredBinary(ctx, rn, args...)
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "pipx: list installed version")
 	}
-	version, ok := pipxVersionFromList(string(res.Stdout), pkg)
-	if !ok {
-		return "", fmt.Errorf("pipx: installed package %q was not present in list output", pkg)
+	var parsed pipxListOutput
+	if err := json.Unmarshal(res.Stdout, &parsed); err != nil || parsed.Venvs == nil {
+		return "", fmt.Errorf("pipx: invalid list output")
 	}
-	return version, nil
+
+	exactFound := false
+	exactVersion := ""
+	fallbackFound := false
+	fallbackVersion := ""
+	fallbackAmbiguous := false
+	want := pipxCanonicalName(pkg)
+	for key, venv := range parsed.Venvs {
+		if venv == nil || venv.Metadata == nil || venv.Metadata.MainPackage == nil {
+			return "", fmt.Errorf("pipx: invalid list output")
+		}
+		main := venv.Metadata.MainPackage
+		if pipxCanonicalName(key) == want {
+			if pipxCanonicalName(main.Package) != want {
+				// A venv named like the requested package whose metadata
+				// names a different (or no) package — e.g. a --suffix
+				// install or renamed venv — proves neither presence nor
+				// absence.
+				return "", nil
+			}
+			exactFound = true
+			exactVersion = main.PackageVersion
+		}
+		if pipxCanonicalName(main.Package) == want {
+			if !fallbackFound {
+				fallbackFound = true
+				fallbackVersion = main.PackageVersion
+			} else if fallbackVersion != main.PackageVersion {
+				fallbackAmbiguous = true
+			}
+		}
+	}
+	if exactFound {
+		return exactVersion, nil
+	}
+	if !fallbackFound {
+		return "", absentInstalledPackage("pipx", pkg)
+	}
+	if fallbackAmbiguous {
+		return "", nil
+	}
+	return fallbackVersion, nil
+}
+
+// pipxCanonicalName normalizes a Python distribution name per PEP 503:
+// runs of '-', '_' and '.' collapse to '-', and the result compares
+// case-insensitively. pipx applies the same normalization to venv directory
+// names, so demo_pkg, demo.pkg and demo-pkg identify one installation.
+func pipxCanonicalName(name string) string {
+	lower := strings.ToLower(name)
+	var b strings.Builder
+	b.Grow(len(lower))
+	dash := false
+	for i := 0; i < len(lower); i++ {
+		if c := lower[i]; c == '-' || c == '_' || c == '.' {
+			if !dash {
+				b.WriteByte('-')
+				dash = true
+			}
+			continue
+		}
+		b.WriteByte(lower[i])
+		dash = false
+	}
+	return b.String()
 }
 
 func (a *BaseAdapter) checkPipx(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
@@ -828,10 +901,7 @@ func uvVersionFromList(output, pkg string) (string, bool) {
 		if len(fields) < 2 || fields[0] != pkg {
 			continue
 		}
-		version := strings.TrimPrefix(fields[1], "v")
-		if version != "" {
-			return version, true
-		}
+		return strings.TrimPrefix(fields[1], "v"), true
 	}
 	return "", false
 }
@@ -841,16 +911,52 @@ func (a *BaseAdapter) uvInstalledVersion(ctx context.Context, rn run.Runner, pkg
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "uv: list installed version")
 	}
-	version, ok := uvVersionFromList(string(res.Stdout), pkg)
+	stdout := string(res.Stdout)
+	if strings.TrimSpace(stdout) == "" && strings.EqualFold(strings.TrimSpace(string(res.Stderr)), "No tools installed") {
+		return "", absentInstalledPackage("uv", pkg)
+	}
+	if !uvToolListValid(stdout) {
+		// uv's human-readable list format can vary. An unrecognized response
+		// does not prove absence, so leave observation uncertain.
+		return "", nil
+	}
+	version, ok := uvVersionFromList(stdout, pkg)
 	if !ok {
-		return "", fmt.Errorf("uv: installed package %q was not present in tool list output", pkg)
+		return "", absentInstalledPackage("uv", pkg)
 	}
 	return version, nil
 }
 
+func uvToolListValid(output string) bool {
+	output = strings.TrimSpace(output)
+	if strings.EqualFold(output, "No tools installed") {
+		return true
+	}
+	if output == "" {
+		return false
+	}
+	seenTool := false
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "- ") {
+			if !seenTool {
+				return false
+			}
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 || !strings.HasPrefix(fields[1], "v") || strings.TrimPrefix(fields[1], "v") == "" {
+			return false
+		}
+		seenTool = true
+	}
+	return seenTool
+}
+
 func (a *BaseAdapter) checkUV(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	version, err := a.uvInstalledVersion(ctx, rn, resolvedPkg(tool, mc))
-	if err != nil {
+	if err != nil || version == "" {
 		return false
 	}
 	want, _ := mc.Config["version"].(string)
@@ -891,7 +997,7 @@ func buildGemCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) []
 	return cmd
 }
 
-func gemVersionsFromList(output, pkg string) []string {
+func gemVersionsFromList(output, pkg string) ([]string, bool) {
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, pkg+" (") || !strings.HasSuffix(line, ")") {
@@ -899,15 +1005,15 @@ func gemVersionsFromList(output, pkg string) []string {
 		}
 		raw := strings.TrimSuffix(strings.TrimPrefix(line, pkg+" ("), ")")
 		parts := strings.Split(raw, ",")
-		out := make([]string, 0, len(parts))
+		versions := make([]string, 0, len(parts))
 		for _, part := range parts {
-			if v := strings.TrimSpace(part); v != "" {
-				out = append(out, v)
+			if version := strings.TrimSpace(part); version != "" {
+				versions = append(versions, version)
 			}
 		}
-		return out
+		return versions, true
 	}
-	return nil
+	return nil, false
 }
 
 func (a *BaseAdapter) gemInstalledVersion(ctx context.Context, rn run.Runner, pkg, requested string) (string, error) {
@@ -915,16 +1021,44 @@ func (a *BaseAdapter) gemInstalledVersion(ctx context.Context, rn run.Runner, pk
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "gem: list installed version")
 	}
-	versions := gemVersionsFromList(string(res.Stdout), pkg)
-	if len(versions) == 0 {
-		return "", fmt.Errorf("gem: installed package %q was not present in list output", pkg)
+	versions, found := gemVersionsFromList(string(res.Stdout), pkg)
+	if found {
+		if len(versions) == 0 {
+			return "", nil
+		}
+		for _, version := range versions {
+			if requested != "" && version == requested {
+				return version, nil
+			}
+		}
+		return versions[0], nil
 	}
-	for _, version := range versions {
-		if requested != "" && version == requested {
-			return version, nil
+	if !gemListOutputValid(string(res.Stdout)) {
+		return "", nil
+	}
+	return "", absentInstalledPackage("gem", pkg)
+}
+
+func gemListOutputValid(output string) bool {
+	// An exact-name query with no matches prints nothing (RubyGems emits a
+	// lone newline for zero matches), and the bare header reports an empty
+	// gem home. All of these mean absent, not broken.
+	trimmed := strings.TrimSpace(output)
+	if trimmed == "" || trimmed == "*** LOCAL GEMS ***" {
+		return true
+	}
+	for _, line := range strings.Split(trimmed, "\n") {
+		line = strings.TrimSpace(line)
+		name, versions, ok := strings.Cut(line, " (")
+		if !ok || name == "" || !strings.HasSuffix(versions, ")") {
+			return false
+		}
+		versions = strings.TrimSuffix(versions, ")")
+		if strings.TrimSpace(versions) == "" {
+			return false
 		}
 	}
-	return versions[0], nil
+	return true
 }
 
 func (a *BaseAdapter) checkGem(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
@@ -933,8 +1067,8 @@ func (a *BaseAdapter) checkGem(ctx context.Context, rn run.Runner, tool *config.
 	if res.Err != nil || res.ExitCode != 0 {
 		return false
 	}
-	versions := gemVersionsFromList(string(res.Stdout), pkg)
-	if len(versions) == 0 {
+	versions, found := gemVersionsFromList(string(res.Stdout), pkg)
+	if !found || len(versions) == 0 {
 		return false
 	}
 	want, _ := mc.Config["version"].(string)
@@ -987,14 +1121,32 @@ func composerVersionFromShow(output string) (string, bool) {
 	return "", false
 }
 
+func composerReportsMissingPackage(output, pkg string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "Package \"") || !strings.HasSuffix(line, "\" not found.") {
+			continue
+		}
+		name := strings.TrimSuffix(strings.TrimPrefix(line, "Package \""), "\" not found.")
+		if name == pkg {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *BaseAdapter) composerInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
 	res := a.runConfiguredBinary(ctx, rn, "global", "show", "--locked", pkg)
 	if res.Err != nil || res.ExitCode != 0 {
+		output := string(res.Stdout) + "\n" + string(res.Stderr)
+		if res.Err == nil && composerReportsMissingPackage(output, pkg) {
+			return "", absentInstalledPackage("composer", pkg)
+		}
 		return "", run.CheckResult(res, "composer: show installed version")
 	}
 	version, ok := composerVersionFromShow(string(res.Stdout))
 	if !ok {
-		return "", fmt.Errorf("composer: installed package %q did not report a versions field", pkg)
+		return "", fmt.Errorf("composer: invalid show output for package %q", pkg)
 	}
 	return version, nil
 }
@@ -1032,36 +1184,133 @@ func buildBunCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) []
 	return cmd
 }
 
-func bunVersionFromList(output, pkg string) (string, bool) {
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
-		line = strings.TrimLeft(line, "├└─│ ")
-		idx := strings.LastIndex(line, "@")
-		if idx <= 0 || idx == len(line)-1 {
-			continue
-		}
-		if line[:idx] == pkg {
-			return line[idx+1:], true
-		}
-	}
-	return "", false
-}
-
 func (a *BaseAdapter) bunInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
 	res := a.runConfiguredBinary(ctx, rn, "pm", "ls", "-g")
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "bun: list installed version")
 	}
-	version, ok := bunVersionFromList(string(res.Stdout), pkg)
-	if !ok {
-		return "", fmt.Errorf("bun: installed package %q was not present in global list output", pkg)
+	version, found, valid := bunGlobalList(string(res.Stdout), pkg)
+	if !valid {
+		return "", nil
+	}
+	if !found {
+		return "", absentInstalledPackage("bun", pkg)
+	}
+	if bunLocalSourceVersion(version) {
+		return "", nil
 	}
 	return version, nil
 }
 
+func bunLocalSourceVersion(version string) bool {
+	return strings.HasPrefix(version, "./") || strings.HasPrefix(version, "../") ||
+		strings.HasPrefix(version, ".\\") || strings.HasPrefix(version, "..\\") ||
+		strings.HasPrefix(version, "/") || strings.HasPrefix(version, "\\\\") ||
+		strings.HasPrefix(version, "file:")
+}
+
+func bunGlobalList(output, pkg string) (version string, found, valid bool) {
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return "", false, false
+	}
+	first, remaining, hasNewline := strings.Cut(output, "\n")
+	count, hasHeader := bunGlobalListHeader(strings.TrimSpace(first))
+	if !hasHeader {
+		remaining = output
+		count = -1
+	} else if !hasNewline {
+		remaining = ""
+	}
+
+	entries := 0
+	for remaining != "" {
+		line, rest, more := strings.Cut(remaining, "\n")
+		remaining = rest
+		if !more {
+			remaining = ""
+		}
+		line = strings.TrimSpace(line)
+		var row string
+		switch {
+		case strings.HasPrefix(line, "├──"):
+			row = strings.TrimSpace(strings.TrimPrefix(line, "├──"))
+		case strings.HasPrefix(line, "└──"):
+			row = strings.TrimSpace(strings.TrimPrefix(line, "└──"))
+		default:
+			return "", false, false
+		}
+		var separator int
+		if strings.HasPrefix(row, "@") {
+			slash := strings.IndexByte(row, '/')
+			if slash <= 1 || slash == len(row)-1 {
+				return "", false, false
+			}
+			relative := strings.IndexByte(row[slash+1:], '@')
+			if relative < 1 {
+				return "", false, false
+			}
+			separator = slash + 1 + relative
+		} else {
+			separator = strings.IndexByte(row, '@')
+			if separator <= 0 {
+				return "", false, false
+			}
+		}
+		if separator == len(row)-1 {
+			return "", false, false
+		}
+		entries++
+		if row[:separator] == pkg {
+			found = true
+			version = row[separator+1:]
+		}
+	}
+	if count >= 0 && entries != count {
+		return "", false, false
+	}
+	if !hasHeader && entries == 0 {
+		return "", false, false
+	}
+	return version, found, true
+}
+
+func bunGlobalListHeader(line string) (int, bool) {
+	if !strings.HasSuffix(line, " installed)") {
+		return 0, false
+	}
+	path, count, ok := strings.Cut(line, " (")
+	if !ok {
+		return 0, false
+	}
+	var root string
+	switch {
+	case strings.HasSuffix(path, " node_modules"):
+		root = strings.TrimSuffix(path, " node_modules")
+	case strings.HasSuffix(path, "/node_modules"):
+		root = strings.TrimSuffix(path, "/node_modules")
+	case strings.HasSuffix(path, "\\node_modules"):
+		root = strings.TrimSuffix(path, "\\node_modules")
+	default:
+		return 0, false
+	}
+	if !bunAbsolutePath(root) {
+		return 0, false
+	}
+	parsed, err := strconv.Atoi(strings.TrimSuffix(count, " installed)"))
+	return parsed, err == nil && parsed >= 0
+}
+
+func bunAbsolutePath(path string) bool {
+	if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "\\") {
+		return true
+	}
+	return len(path) >= 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/')
+}
+
 func (a *BaseAdapter) checkBun(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	version, err := a.bunInstalledVersion(ctx, rn, resolvedPkg(tool, mc))
-	if err != nil {
+	if err != nil || version == "" {
 		return false
 	}
 	want, _ := mc.Config["version"].(string)
@@ -1069,9 +1318,11 @@ func (a *BaseAdapter) checkBun(ctx context.Context, rn run.Runner, tool *config.
 }
 
 type pnpmListOutput struct {
-	Dependencies map[string]struct {
-		Version string `json:"version"`
-	} `json:"dependencies"`
+	Dependencies map[string]*pnpmListEntry `json:"dependencies"`
+}
+
+type pnpmListEntry struct {
+	Version string `json:"version"`
 }
 
 func buildPNPMCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) []string {
@@ -1091,27 +1342,35 @@ func buildPNPMCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) [
 	return cmd
 }
 
-func pnpmVersionFromList(output, pkg string) (string, bool) {
-	var parsed []pnpmListOutput
-	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
-		return "", false
-	}
-	for _, root := range parsed {
-		if dep, ok := root.Dependencies[pkg]; ok && dep.Version != "" {
-			return dep.Version, true
-		}
-	}
-	return "", false
-}
-
 func (a *BaseAdapter) pnpmInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
 	res := a.runConfiguredBinary(ctx, rn, "list", "-g", "--depth=0", "--json")
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "pnpm: list installed version")
 	}
-	version, ok := pnpmVersionFromList(string(res.Stdout), pkg)
-	if !ok {
-		return "", fmt.Errorf("pnpm: installed package %q was not present in global list output", pkg)
+	var roots []*pnpmListOutput
+	if err := json.Unmarshal(res.Stdout, &roots); err != nil || roots == nil {
+		return "", fmt.Errorf("pnpm: invalid list output")
+	}
+	found := false
+	version := ""
+	for _, root := range roots {
+		if root == nil || root.Dependencies == nil {
+			return "", fmt.Errorf("pnpm: invalid list output")
+		}
+		for name, dependency := range root.Dependencies {
+			if dependency == nil {
+				return "", fmt.Errorf("pnpm: invalid list output")
+			}
+			if name == pkg {
+				found = true
+				if dependency.Version != "" {
+					version = dependency.Version
+				}
+			}
+		}
+	}
+	if !found {
+		return "", absentInstalledPackage("pnpm", pkg)
 	}
 	return version, nil
 }
@@ -1142,35 +1401,101 @@ func buildYarnCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) [
 	return cmd
 }
 
-func yarnVersionFromList(output, pkg string) (string, bool) {
-	needle := pkg + "@"
-	for _, line := range strings.Split(output, "\n") {
-		idx := strings.Index(line, needle)
-		if idx < 0 {
-			continue
-		}
-		rest := line[idx+len(needle):]
-		end := strings.IndexAny(rest, "\"' ,()")
-		if end >= 0 {
-			rest = rest[:end]
-		}
-		if rest != "" {
-			return rest, true
-		}
-	}
-	return "", false
-}
-
 func (a *BaseAdapter) yarnInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
 	res := a.runConfiguredBinary(ctx, rn, "global", "list", "--depth=0")
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "yarn: list installed version")
 	}
-	version, ok := yarnVersionFromList(string(res.Stdout), pkg)
-	if !ok {
-		return "", fmt.Errorf("yarn: installed package %q was not present in global list output", pkg)
+	version, found, valid := yarnGlobalList(string(res.Stdout), pkg)
+	if !valid {
+		return "", nil
+	}
+	if !found {
+		return "", absentInstalledPackage("yarn", pkg)
 	}
 	return version, nil
+}
+
+func yarnGlobalList(output, pkg string) (version string, found, valid bool) {
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return "", false, false
+	}
+	header, remaining, hasNewline := strings.Cut(output, "\n")
+	headerVersion := strings.TrimPrefix(strings.TrimSpace(header), "yarn global v")
+	if !hasNewline || headerVersion == strings.TrimSpace(header) || headerVersion == "" || strings.ContainsAny(headerVersion, " \t") {
+		return "", false, false
+	}
+
+	hasPackage := false
+	for remaining != "" {
+		line, rest, hasNewline := strings.Cut(remaining, "\n")
+		remaining = rest
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Done in ") {
+			if remaining != "" || !yarnListFooter(line) {
+				return "", false, false
+			}
+			return version, found, true
+		}
+		if strings.HasPrefix(line, "info ") {
+			name, entryVersion, ok := yarnListEntry(line)
+			if !ok {
+				return "", false, false
+			}
+			hasPackage = true
+			if name == pkg {
+				found = true
+				version = entryVersion
+			}
+		} else if !strings.HasPrefix(line, "- ") || strings.TrimSpace(strings.TrimPrefix(line, "- ")) == "" || !hasPackage {
+			return "", false, false
+		}
+		if !hasNewline {
+			return "", false, false
+		}
+	}
+	return "", false, false
+}
+
+func yarnListFooter(line string) bool {
+	if !strings.HasPrefix(line, "Done in ") || !strings.HasSuffix(line, "s.") {
+		return false
+	}
+	duration := strings.TrimSuffix(strings.TrimPrefix(line, "Done in "), "s.")
+	seconds, err := strconv.ParseFloat(duration, 64)
+	return err == nil && seconds >= 0
+}
+
+func yarnListEntry(line string) (name, version string, ok bool) {
+	const prefix = "info \""
+	if !strings.HasPrefix(line, prefix) {
+		return "", "", false
+	}
+	quoted := strings.TrimPrefix(line, prefix)
+	end := strings.IndexByte(quoted, '"')
+	if end < 0 || quoted[end+1:] != " has binaries:" {
+		return "", "", false
+	}
+	nameVersion := quoted[:end]
+	var separator int
+	if strings.HasPrefix(nameVersion, "@") {
+		slash := strings.IndexByte(nameVersion, '/')
+		if slash <= 1 || slash == len(nameVersion)-1 {
+			return "", "", false
+		}
+		relative := strings.IndexByte(nameVersion[slash+1:], '@')
+		if relative < 1 {
+			return "", "", false
+		}
+		separator = slash + 1 + relative
+	} else {
+		separator = strings.IndexByte(nameVersion, '@')
+		if separator <= 0 {
+			return "", "", false
+		}
+	}
+	return nameVersion[:separator], nameVersion[separator+1:], true
 }
 
 func (a *BaseAdapter) checkYarn(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
@@ -1183,30 +1508,53 @@ func (a *BaseAdapter) checkYarn(ctx context.Context, rn run.Runner, tool *config
 }
 
 type npmListOutput struct {
-	Dependencies map[string]struct {
+	Name         string `json:"name"`
+	Dependencies map[string]*struct {
 		Version string `json:"version"`
 	} `json:"dependencies"`
-}
-
-func npmVersionFromList(output, pkg string) (string, bool) {
-	var parsed npmListOutput
-	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
-		return "", false
-	}
-	entry, ok := parsed.Dependencies[pkg]
-	return entry.Version, ok && entry.Version != ""
+	Problems []string `json:"problems"`
 }
 
 func (a *BaseAdapter) npmInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
-	res := a.runConfiguredBinary(ctx, rn, "ls", "-g", "--depth=0", "--json", pkg)
-	if res.Err != nil || res.ExitCode != 0 {
+	// Query the complete global inventory instead of filtering by package: a
+	// filtered query for a missing package exits nonzero with a bare
+	// `{"name": ...}` document that proves nothing, while a successful full
+	// listing proves absence when it omits the package.
+	res := a.runConfiguredBinary(ctx, rn, "ls", "-g", "--depth=0", "--json")
+	if res.Err != nil {
 		return "", run.CheckResult(res, "npm: list installed version")
 	}
-	version, ok := npmVersionFromList(string(res.Stdout), pkg)
-	if !ok {
-		return "", fmt.Errorf("npm: installed package %q was not present in list output", pkg)
+	var parsed npmListOutput
+	if err := json.Unmarshal(res.Stdout, &parsed); err != nil || (parsed.Dependencies == nil && parsed.Problems == nil && parsed.Name == "") {
+		return "", fmt.Errorf("npm: invalid list output")
 	}
-	return version, nil
+	for _, entry := range parsed.Dependencies {
+		if entry == nil {
+			return "", fmt.Errorf("npm: invalid list output")
+		}
+	}
+	entry, found := parsed.Dependencies[pkg]
+	if found {
+		if res.ExitCode != 0 {
+			return "", run.CheckResult(res, "npm: list installed version")
+		}
+		return entry.Version, nil
+	}
+	for _, problem := range parsed.Problems {
+		const prefix = "missing: "
+		if !strings.HasPrefix(problem, prefix+pkg+"@") {
+			continue
+		}
+		diagnostic := strings.TrimPrefix(problem, prefix+pkg+"@")
+		const separator = ", required by "
+		if requiredBy := strings.Index(diagnostic, separator); requiredBy > 0 && strings.TrimSpace(diagnostic[:requiredBy]) != "" && strings.TrimSpace(diagnostic[requiredBy+len(separator):]) != "" {
+			return "", absentInstalledPackage("npm", pkg)
+		}
+	}
+	if res.ExitCode != 0 {
+		return "", run.CheckResult(res, "npm: list installed version")
+	}
+	return "", absentInstalledPackage("npm", pkg)
 }
 
 func (a *BaseAdapter) checkNPM(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
