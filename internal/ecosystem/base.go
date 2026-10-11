@@ -966,7 +966,7 @@ func buildGemCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) []
 	return cmd
 }
 
-func gemVersionsFromList(output, pkg string) []string {
+func gemVersionsFromList(output, pkg string) ([]string, bool) {
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, pkg+" (") || !strings.HasSuffix(line, ")") {
@@ -974,15 +974,15 @@ func gemVersionsFromList(output, pkg string) []string {
 		}
 		raw := strings.TrimSuffix(strings.TrimPrefix(line, pkg+" ("), ")")
 		parts := strings.Split(raw, ",")
-		out := make([]string, 0, len(parts))
+		versions := make([]string, 0, len(parts))
 		for _, part := range parts {
-			if v := strings.TrimSpace(part); v != "" {
-				out = append(out, v)
+			if version := strings.TrimSpace(part); version != "" {
+				versions = append(versions, version)
 			}
 		}
-		return out
+		return versions, true
 	}
-	return nil
+	return nil, false
 }
 
 func (a *BaseAdapter) gemInstalledVersion(ctx context.Context, rn run.Runner, pkg, requested string) (string, error) {
@@ -990,12 +990,15 @@ func (a *BaseAdapter) gemInstalledVersion(ctx context.Context, rn run.Runner, pk
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "gem: list installed version")
 	}
-	versions := gemVersionsFromList(string(res.Stdout), pkg)
-	if len(versions) == 0 {
-		if gemListOutputValid(string(res.Stdout)) {
-			return "", absentInstalledPackage("gem", pkg)
-		}
+	versions, found := gemVersionsFromList(string(res.Stdout), pkg)
+	if found && len(versions) == 0 {
+		return "", nil
+	}
+	if !gemListOutputValid(string(res.Stdout)) {
 		return "", fmt.Errorf("gem: invalid list output")
+	}
+	if !found {
+		return "", absentInstalledPackage("gem", pkg)
 	}
 	for _, version := range versions {
 		if requested != "" && version == requested {
@@ -1006,10 +1009,16 @@ func (a *BaseAdapter) gemInstalledVersion(ctx context.Context, rn run.Runner, pk
 }
 
 func gemListOutputValid(output string) bool {
-	output = strings.TrimSpace(output)
 	// An exact-name query with no matches prints nothing, and the bare
 	// header reports an empty gem home. Both mean absent, not broken.
-	if output == "" || output == "*** LOCAL GEMS ***" {
+	if output == "" {
+		return true
+	}
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return false
+	}
+	if output == "*** LOCAL GEMS ***" {
 		return true
 	}
 	for _, line := range strings.Split(output, "\n") {
@@ -1019,7 +1028,7 @@ func gemListOutputValid(output string) bool {
 			return false
 		}
 		versions = strings.TrimSuffix(versions, ")")
-		if versions == "" {
+		if strings.TrimSpace(versions) == "" {
 			return false
 		}
 	}
@@ -1032,8 +1041,8 @@ func (a *BaseAdapter) checkGem(ctx context.Context, rn run.Runner, tool *config.
 	if res.Err != nil || res.ExitCode != 0 {
 		return false
 	}
-	versions := gemVersionsFromList(string(res.Stdout), pkg)
-	if len(versions) == 0 {
+	versions, found := gemVersionsFromList(string(res.Stdout), pkg)
+	if !found || len(versions) == 0 {
 		return false
 	}
 	want, _ := mc.Config["version"].(string)
