@@ -809,6 +809,13 @@ func (a *BaseAdapter) pipxInstalledVersion(ctx context.Context, rn run.Runner, p
 		}
 		main := venv.Metadata.MainPackage
 		if key == pkg {
+			if !strings.EqualFold(main.Package, pkg) {
+				// A venv named like the requested package whose metadata
+				// names a different (or no) package — e.g. a --suffix
+				// install or renamed venv — proves neither presence nor
+				// absence.
+				return "", nil
+			}
 			exactFound = true
 			exactVersion = main.PackageVersion
 		}
