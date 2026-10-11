@@ -798,24 +798,39 @@ func (a *BaseAdapter) pipxInstalledVersion(ctx context.Context, rn run.Runner, p
 		return "", fmt.Errorf("pipx: invalid list output")
 	}
 
-	found := false
-	version := ""
+	exactFound := false
+	exactVersion := ""
+	fallbackFound := false
+	fallbackVersion := ""
+	fallbackAmbiguous := false
 	for key, venv := range parsed.Venvs {
 		if venv == nil || venv.Metadata == nil || venv.Metadata.MainPackage == nil {
 			return "", fmt.Errorf("pipx: invalid list output")
 		}
 		main := venv.Metadata.MainPackage
-		if key == pkg || strings.EqualFold(main.Package, pkg) {
-			found = true
-			if version == "" {
-				version = main.PackageVersion
+		if key == pkg {
+			exactFound = true
+			exactVersion = main.PackageVersion
+		}
+		if strings.EqualFold(main.Package, pkg) {
+			if !fallbackFound {
+				fallbackFound = true
+				fallbackVersion = main.PackageVersion
+			} else if fallbackVersion != main.PackageVersion {
+				fallbackAmbiguous = true
 			}
 		}
 	}
-	if !found {
+	if exactFound {
+		return exactVersion, nil
+	}
+	if !fallbackFound {
 		return "", absentInstalledPackage("pipx", pkg)
 	}
-	return version, nil
+	if fallbackAmbiguous {
+		return "", nil
+	}
+	return fallbackVersion, nil
 }
 
 func (a *BaseAdapter) checkPipx(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
@@ -1253,15 +1268,11 @@ func (a *BaseAdapter) checkBun(ctx context.Context, rn run.Runner, tool *config.
 }
 
 type pnpmListOutput struct {
-	Path         *string                    `json:"path"`
-	Private      *bool                      `json:"private"`
-	Dependencies *map[string]*pnpmListEntry `json:"dependencies"`
+	Dependencies map[string]*pnpmListEntry `json:"dependencies"`
 }
 
 type pnpmListEntry struct {
-	From    string `json:"from"`
 	Version string `json:"version"`
-	Path    string `json:"path"`
 }
 
 func buildPNPMCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) []string {
@@ -1296,7 +1307,7 @@ func (a *BaseAdapter) pnpmInstalledVersion(ctx context.Context, rn run.Runner, p
 		if root == nil || root.Dependencies == nil {
 			return "", fmt.Errorf("pnpm: invalid list output")
 		}
-		for name, dependency := range *root.Dependencies {
+		for name, dependency := range root.Dependencies {
 			if dependency == nil {
 				return "", fmt.Errorf("pnpm: invalid list output")
 			}
