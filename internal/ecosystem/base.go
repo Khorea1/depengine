@@ -993,8 +993,10 @@ func (a *BaseAdapter) gemInstalledVersion(ctx context.Context, rn run.Runner, pk
 
 func gemListOutputValid(output string) bool {
 	output = strings.TrimSpace(output)
-	if output == "*** LOCAL GEMS ***" || output == "" {
-		return output != ""
+	// An exact-name query with no matches prints nothing, and the bare
+	// header reports an empty gem home. Both mean absent, not broken.
+	if output == "" || output == "*** LOCAL GEMS ***" {
+		return true
 	}
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
@@ -1171,7 +1173,7 @@ func bunGlobalListHeader(line string) bool {
 		return false
 	}
 	path, count, ok := strings.Cut(line, " (")
-	if !ok || !(strings.HasSuffix(path, "/node_modules") || strings.HasSuffix(path, `\node_modules`)) {
+	if !ok || (!strings.HasSuffix(path, "/node_modules") && !strings.HasSuffix(path, `\node_modules`)) {
 		return false
 	}
 	_, err := strconv.Atoi(strings.TrimSuffix(count, " installed)"))
@@ -1291,13 +1293,50 @@ func (a *BaseAdapter) yarnInstalledVersion(ctx context.Context, rn run.Runner, p
 	}
 	version, ok := yarnVersionFromList(string(res.Stdout), pkg)
 	if !ok {
-		output := strings.TrimSpace(string(res.Stdout))
-		if output == "" || strings.HasPrefix(output, "yarn global v") {
+		if yarnGlobalListValid(string(res.Stdout)) {
 			return "", absentInstalledPackage("yarn", pkg)
 		}
 		return "", fmt.Errorf("yarn: invalid global list output")
 	}
 	return version, nil
+}
+
+// yarnGlobalListValid reports whether output parses as a `yarn global list`
+// document. A well-formed listing without the requested package means absent;
+// anything else is a probe failure.
+func yarnGlobalListValid(output string) bool {
+	output = strings.TrimSpace(output)
+	if output == "" || strings.HasPrefix(output, "yarn global v") {
+		return true
+	}
+	for _, line := range strings.Split(output, "\n") {
+		if yarnListEntry(strings.TrimSpace(line)) {
+			return true
+		}
+	}
+	return false
+}
+
+// yarnListEntry reports whether line is a well-formed
+// `info "name@version" ...` entry of `yarn global list` output.
+func yarnListEntry(line string) bool {
+	if !strings.HasPrefix(line, "info ") {
+		return false
+	}
+	quote := strings.Index(line, `"`)
+	if quote < 0 {
+		return false
+	}
+	rest := line[quote+1:]
+	at := strings.LastIndex(rest, "@")
+	if at <= 0 || at == len(rest)-1 {
+		return false
+	}
+	version := rest[at+1:]
+	if end := strings.IndexAny(version, "\"' ,()"); end >= 0 {
+		version = version[:end]
+	}
+	return version != ""
 }
 
 func (a *BaseAdapter) checkYarn(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
@@ -1314,15 +1353,6 @@ type npmListOutput struct {
 	Dependencies map[string]struct {
 		Version string `json:"version"`
 	} `json:"dependencies"`
-}
-
-func npmVersionFromList(output, pkg string) (string, bool) {
-	var parsed npmListOutput
-	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
-		return "", false
-	}
-	entry, ok := parsed.Dependencies[pkg]
-	return entry.Version, ok && entry.Version != ""
 }
 
 func (a *BaseAdapter) npmInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {

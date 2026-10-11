@@ -1003,7 +1003,7 @@ func TestPipxCheckExactVersionAndScope(t *testing.T) {
 		t.Fatal("expected exact pipx version to be satisfied")
 	}
 	last := fr.Calls[len(fr.Calls)-1]
-	if got := strings.Join(last.Args, " "); got != "list --output json --global black" {
+	if got := strings.Join(last.Args, " "); got != "list --json --global" {
 		t.Fatalf("check argv=%q", got)
 	}
 	mc.Config["version"] = "25.0.0"
