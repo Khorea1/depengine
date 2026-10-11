@@ -44,6 +44,41 @@ func synonymGroup(table map[string][]string, value string) string {
 	return "(?:" + strings.Join(escaped, "|") + ")"
 }
 
+// CompileExplicitRegex compiles an explicit asset regex (the { regex = "..." }
+// AssetSelector form) into an anchored, case-insensitive regexp matched
+// against real release asset names. Unlike assetPatternRegexp, the expression
+// itself is regex: only the three known placeholders are substituted (with
+// the same escaped groups), and every other character passes through raw, so
+// regex operators, character classes, and quantifiers keep working. Unknown
+// {...} tokens are left untouched.
+func CompileExplicitRegex(expr, tag, arch, osName string) (*regexp.Regexp, error) {
+	versionGroup := "(?:" + regexp.QuoteMeta(tag) + "|" + regexp.QuoteMeta(strings.TrimPrefix(tag, "v")) + ")"
+	replacer := strings.NewReplacer(
+		"{version}", versionGroup,
+		"{arch_any}", synonymGroup(archSynonyms, arch),
+		"{os_any}", synonymGroup(osSynonyms, osName),
+	)
+	pattern := "^" + replacer.Replace(expr) + "$"
+
+	re, err := regexp.Compile("(?i)" + pattern)
+	if err != nil {
+		return nil, fmt.Errorf("invalid asset regex %q: %w", expr, err)
+	}
+	return re, nil
+}
+
+// MatchAssetNames returns the subset of names matched by re. Pure: no
+// network, so resolution can be tested against in-memory release catalogs.
+func MatchAssetNames(re *regexp.Regexp, names []string) []string {
+	matched := make([]string, 0, 1)
+	for _, name := range names {
+		if re.MatchString(name) {
+			matched = append(matched, name)
+		}
+	}
+	return matched
+}
+
 // assetPatternRegexp compiles assetPattern (a filename template understood
 // by ResolveAssetURL — see its doc comment for the placeholder list) into an
 // anchored, case-insensitive regexp matched against real release asset

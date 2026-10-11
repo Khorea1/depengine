@@ -104,6 +104,13 @@ func ResolveAssetURL(ctx context.Context, repo, assetPattern, targetArch, target
 	return Default.ResolveAssetURL(ctx, repo, assetPattern, targetArch, targetOS, ref, rn)
 }
 
+// ResolveRegexAssetURL resolves a "github" method's explicit asset regex
+// ({ regex = "..." } form) into a concrete download URL.
+// See (*Resolver).ResolveRegexAssetURL.
+func ResolveRegexAssetURL(ctx context.Context, repo, expr, targetArch, targetOS, ref string, rn run.Runner) (url, tag string, err error) {
+	return Default.ResolveRegexAssetURL(ctx, repo, expr, targetArch, targetOS, ref, rn)
+}
+
 // GithubToken returns a GitHub personal access token from environment,
 // falling back to `gh auth token`. See (*Resolver).GithubToken.
 func GithubToken(ctx context.Context, rn run.Runner) string {

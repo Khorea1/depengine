@@ -328,32 +328,81 @@ func (r *Resolver) ResolveAssetURL(ctx context.Context, repo, assetPattern, targ
 		return "", "", fmt.Errorf("resolve asset: %w", err)
 	}
 
-	matches := make([]asset, 0, 1)
-	for _, a := range rel.Assets {
-		if re.MatchString(a.Name) {
-			matches = append(matches, a)
-		}
-	}
-	if len(matches) == 1 {
-		return matches[0].BrowserDownloadURL, rel.TagName, nil
-	}
-	if len(matches) > 1 {
-		names := make([]string, len(matches))
-		for i, match := range matches {
-			names[i] = match.Name
-		}
-		return "", "", fmt.Errorf(
-			"resolve asset: multiple assets in release %s of %s matched pattern %q: %s",
-			rel.TagName, repo, assetPattern, strings.Join(names, ", "))
-	}
-
 	names := make([]string, len(rel.Assets))
+	byName := make(map[string]asset, len(rel.Assets))
 	for i, a := range rel.Assets {
 		names[i] = a.Name
+		byName[a.Name] = a
 	}
+	matches := MatchAssetNames(re, names)
+	if len(matches) == 1 {
+		return byName[matches[0]].BrowserDownloadURL, rel.TagName, nil
+	}
+	if len(matches) > 1 {
+		return "", "", fmt.Errorf(
+			"resolve asset: multiple assets in release %s of %s matched pattern %q: %s",
+			rel.TagName, repo, assetPattern, strings.Join(matches, ", "))
+	}
+
 	return "", "", fmt.Errorf(
 		"resolve asset: no asset in release %s of %s matched pattern %q (arch=%s, os=%s); available assets: %s",
 		rel.TagName, repo, assetPattern, targetArch, targetOS, strings.Join(names, ", "))
+}
+
+// ResolveRegexAssetURL resolves a "github" method's explicit asset regex
+// ({ regex = "..." } AssetSelector form) into a concrete download URL.
+// Placeholders ({version}, {arch_any}, {os_any}) expand to the same escaped
+// groups as literal patterns; the rest of the expression is regex.
+// Exactly one asset must match: zero or multiple matches fail without
+// heuristics, ordering, or scoring.
+func (r *Resolver) ResolveRegexAssetURL(ctx context.Context, repo, expr, targetArch, targetOS, ref string, rn run.Runner) (url, tag string, err error) {
+	owner, name, ok := splitRepo(repo)
+	if !ok {
+		return "", "", fmt.Errorf("resolve asset: %q is not an owner/repo GitHub reference", repo)
+	}
+
+	// Fail fast on invalid expressions before any network call; the tag is
+	// unknown yet, but quoting makes compilation tag-independent.
+	if _, err := CompileExplicitRegex(expr, "", targetArch, targetOS); err != nil {
+		return "", "", fmt.Errorf("resolve asset: %w", err)
+	}
+
+	var rel *release
+	if ref == "" {
+		rel, err = r.fetchLatestRelease(ctx, owner, name, rn)
+	} else {
+		rel, err = r.fetchReleaseByTag(ctx, owner, name, ref, rn)
+	}
+	if err != nil {
+		return "", "", err
+	}
+
+	// Recompile with the real tag so {version} constrains the match instead
+	// of matching any version string in the catalog.
+	re, err := CompileExplicitRegex(expr, rel.TagName, targetArch, targetOS)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve asset: %w", err)
+	}
+
+	names := make([]string, len(rel.Assets))
+	byName := make(map[string]asset, len(rel.Assets))
+	for i, a := range rel.Assets {
+		names[i] = a.Name
+		byName[a.Name] = a
+	}
+	matches := MatchAssetNames(re, names)
+	if len(matches) == 1 {
+		return byName[matches[0]].BrowserDownloadURL, rel.TagName, nil
+	}
+	if len(matches) > 1 {
+		return "", "", fmt.Errorf(
+			"resolve asset: multiple assets in release %s of %s matched regex %q: %s",
+			rel.TagName, repo, expr, strings.Join(matches, ", "))
+	}
+
+	return "", "", fmt.Errorf(
+		"resolve asset: no asset in release %s of %s matched regex %q (arch=%s, os=%s); available assets: %s",
+		rel.TagName, repo, expr, targetArch, targetOS, strings.Join(names, ", "))
 }
 
 type repositoryID struct {
