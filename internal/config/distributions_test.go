@@ -108,6 +108,39 @@ asset = "yq_{os_any}_{arch_any}"
 	}
 }
 
+func TestParseDistributionsValuesDirect(t *testing.T) {
+	// Backstop do parse (validação raw roda primeiro nos documentos; aqui
+	// exercita a função diretamente).
+	when := map[string]any{"os": []any{"linux"}}
+	valid := map[string]any{"when": when, "asset": "a.tar.gz"}
+	if _, err := parseDistributions([]any{valid}); err != nil {
+		t.Fatalf("valid: %v", err)
+	}
+	cases := []struct {
+		name    string
+		doc     map[string]any
+		wantErr string
+	}{
+		{"missing-when", map[string]any{"asset": "a.tar.gz"}, "when is required"},
+		{"when-not-table", map[string]any{"when": "linux"}, "when must be a table"},
+		{"forbidden", map[string]any{"when": when, "repo": "o/r"}, "not specializable"},
+		{"asset-int", map[string]any{"when": when, "asset": 42}, "asset must be"},
+		{"asset-empty-table", map[string]any{"when": when, "asset": map[string]any{}}, "exactly { regex"},
+		{"entrypoints-value", map[string]any{"when": when, "entrypoints": map[string]any{"b": 1}}, "must be a string"},
+		{"strip-string", map[string]any{"when": when, "strip_components": "1"}, "must be an integer"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := parseDistributions([]any{tc.doc}); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("err=%v, want containing %q", err, tc.wantErr)
+			}
+		})
+	}
+	if _, err := parseDistributions([]any{"nope"}); err == nil {
+		t.Fatal("expected table error")
+	}
+}
+
 func TestParseDistributionsShapeInvalid(t *testing.T) {
 	// Shape é rejeitada na validação raw, antes do parse.
 	const base = `[tools.x.github]` + "\n" + `repo = "o/r"` + "\n" + `asset = "base.tar.gz"` + "\n" + `checksum = "sha256:auto"` + "\n" + `scope = "user"` + "\n"
@@ -134,8 +167,8 @@ func TestParseDistributionsShapeInvalid(t *testing.T) {
 }
 
 func TestParseDistributionsValueInvalid(t *testing.T) {
-	// Valores inválidos viram mc.Err no parse e emergem via Validate,
-	// como todo erro de método individual ("pip = false" etc.).
+	// Raw strict roda primeiro e reporta com as mesmas garantias; o backstop
+	// de parse (mc.Err) está coberto em TestParseDistributionsValuesDirect.
 	const base = `[tools.x.github]` + "\n" + `repo = "o/r"` + "\n" + `asset = "base.tar.gz"` + "\n" + `checksum = "sha256:auto"` + "\n" + `scope = "user"` + "\n"
 	cases := []struct {
 		name    string
@@ -143,32 +176,64 @@ func TestParseDistributionsValueInvalid(t *testing.T) {
 		wantErr string
 	}{
 		{"missing-when", "[[tools.x.github.distributions]]\nasset = \"a.tar.gz\"", "when is required"},
-		{"when-not-table", "[[tools.x.github.distributions]]\nwhen = \"linux\"", "when must be a table"},
+		{"when-not-table", "[[tools.x.github.distributions]]\nwhen = \"linux\"", ".when: must be a table"},
 		{"forbidden-repo", "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nrepo = \"o/outro\"", "not specializable"},
 		{"forbidden-scope", "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nscope = \"system\"", "not specializable"},
-		{"asset-int", "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nasset = 42", "asset must be"},
+		{"asset-int", "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nasset = 42", "must be a string or"},
 		{"asset-no-regex", "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nasset = { glob = \"*.tar.gz\" }", "exactly { regex"},
 		{"asset-extra-keys", "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nasset = { regex = \"a\", flags = \"i\" }", "exactly { regex"},
-		{"entrypoints-not-table", "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nentrypoints = \"br\"", "entrypoints must be a table"},
+		{"entrypoints-not-table", "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nentrypoints = \"br\"", ".entrypoints: must be a table"},
 		{"entrypoints-nonstring", "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nentrypoints = { br = 42 }", "must be a string"},
 		{"strip-not-int", "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nstrip_components = \"1\"", "must be an integer"},
 		{"checksum-not-string", "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nchecksum = 42", "must be a string"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			s, err := ParseProjectSchema(writeSchema(t, base+tc.body), map[string]string{})
-			if err != nil {
-				t.Fatalf("parse must attach mc.Err, not fail: %v", err)
-			}
-			_, err = Validate(s, []string{"github"})
-			if err == nil {
-				t.Fatalf("expected Validate error containing %q, got nil", tc.wantErr)
-			}
-			if !strings.Contains(err.Error(), tc.wantErr) {
-				t.Fatalf("error %q does not contain %q", err.Error(), tc.wantErr)
+			_, err := ParseProjectSchema(writeSchema(t, base+tc.body), map[string]string{})
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("err=%v, want containing %q", err, tc.wantErr)
 			}
 		})
 	}
+}
+
+func TestStrictDistributionsSemantic(t *testing.T) {
+	const base = `[tools.x.github]` + "\n" + `repo = "o/r"` + "\n" + `asset = "base.tar.gz"` + "\n" + `checksum = "sha256:auto"` + "\n" + `scope = "user"` + "\n"
+	cases := []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{"invalid-regex", "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nasset = { regex = \"([\" }", "invalid regex"},
+		{"empty-regex", "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nasset = { regex = \"\" }", "must not be empty"},
+		{"empty-template", "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nasset = \"\"", "must not be empty"},
+		{"negative-strip", "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nstrip_components = -1", "must be non-negative"},
+		{"empty-binary", "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nbinary = \"\"", "must be a string"},
+		{"url-without-auto", "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nchecksum = \"sha256:abc\"\nchecksum_url = \"https://example.com/SHA\"", "requires checksum"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseProjectSchema(writeSchema(t, base+tc.body), map[string]string{})
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("err=%v, want containing %q", err, tc.wantErr)
+			}
+		})
+	}
+	// Método cujo contrato não lista distribuições: rejeitado.
+	t.Run("unsupported-method", func(t *testing.T) {
+		doc := "schema_version = 1\n[tools.x.cargo]\npkg = \"x\"\n[[tools.x.cargo.distributions]]\nwhen = { os = [\"linux\"] }\n"
+		_, err := ParseProjectSchema(writeSchema(t, doc), map[string]string{})
+		if err == nil || !strings.Contains(err.Error(), "does not support distributions") {
+			t.Fatalf("err=%v, want unsupported-distributions", err)
+		}
+	})
+	// checksum_url com base :auto continua válido (herança do checksum).
+	t.Run("url-with-inherited-auto", func(t *testing.T) {
+		doc := base + "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nchecksum_url = \"https://example.com/SHA\"\n"
+		if _, err := ParseProjectSchema(writeSchema(t, doc), map[string]string{}); err != nil {
+			t.Fatalf("inherited :auto must accept checksum_url: %v", err)
+		}
+	})
 }
 
 func TestMergeDistributionsAtomic(t *testing.T) {

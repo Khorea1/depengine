@@ -3592,6 +3592,77 @@
             "checksum_url": {
               "type": "string"
             },
+            "distributions": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "asset": {
+                    "oneOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "regex": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "regex"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "binary": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "checksum": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "checksum_file_format": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "checksum_url": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "entrypoints": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "extract_to": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "signature_url": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "strip_components": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "when": {
+                    "$ref": "#/definitions/condition"
+                  }
+                },
+                "required": [
+                  "when"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
             "entrypoints": {
               "additionalProperties": {
                 "type": "string"
@@ -10187,6 +10258,77 @@
             },
             "checksum_url": {
               "type": "string"
+            },
+            "distributions": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "asset": {
+                    "oneOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "regex": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "regex"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "binary": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "checksum": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "checksum_file_format": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "checksum_url": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "entrypoints": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "extract_to": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "signature_url": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "strip_components": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "when": {
+                    "$ref": "#/definitions/condition"
+                  }
+                },
+                "required": [
+                  "when"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
             },
             "entrypoints": {
               "additionalProperties": {

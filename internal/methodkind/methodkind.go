@@ -74,6 +74,12 @@ type Contract struct {
 	Artifact             *artifact.Contract
 	Checksum             *ChecksumContract
 	Package              PackageMetadata
+	// DistributableFields lists method-config keys that one host-specific
+	// distribution may specialize (see docs/specs/github-distributions.md).
+	// Empty means the method does not support distributions. The list lives
+	// here — once per method — instead of being duplicated across the
+	// parser, the validator, and the JSON Schema.
+	DistributableFields []string
 }
 
 var pkgField = map[string]Field{"pkg": {Type: String, Effects: EffectExecute | EffectVerify}}
@@ -393,7 +399,7 @@ var Contracts = finalizeContracts([]Contract{
 		"branch":     {Type: String, NonEmpty: true, Effects: EffectResolve},
 		"scope":      artifactScopeField["scope"],
 		"secret_ref": {Type: SecretRef, Effects: EffectResolve | EffectExecute},
-	}), Requires: map[string][]string{"signature_url": {"signing_key"}}, SourceAlternatives: [][]string{{"repo", "asset"}}, Artifact: githubArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true},
+	}), Requires: map[string][]string{"signature_url": {"signing_key"}}, SourceAlternatives: [][]string{{"repo", "asset"}}, Artifact: githubArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true, DistributableFields: []string{"asset", "checksum", "checksum_url", "checksum_file_format", "signature_url", "binary", "entrypoints", "strip_components", "extract_to"}},
 	{Kind: "http", DefaultOrder: 36, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(downloadFields, artifactScopeField, httpBearerSecretFields), Requires: httpDownloadRequirements, SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract, Checksum: remoteChecksumContract},
 	{Kind: "msi", DefaultOrder: 37, Fields: fields(artifactFields, httpBearerSecretFields, map[string]Field{
 		"product_name": {Type: String, Required: true, NonEmpty: true, Effects: EffectVerify | EffectExecute},

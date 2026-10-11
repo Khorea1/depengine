@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -265,9 +266,7 @@ func validateMethodValue(raw any, path, declaredKind string, errs *[]string) {
 			case "sources":
 				validateSources(v[key], path+".sources", errs)
 			case "distributions":
-				// Shape only here (array of tables); value semantics live at
-				// parse plus the methodkind follow-up noted on the shape check.
-				validateDistributionsShape(v[key], path+".distributions", errs)
+				validateDistributions(v[key], v, path+".distributions", contract, known, errs)
 			default:
 				if !known {
 					continue
@@ -449,21 +448,135 @@ func containsString(values []string, target string) bool {
 	return false
 }
 
-// validateDistributionsShape checks the distributions array shape only:
-// non-empty array of tables. Empty-string templates, negative
-// strip_components, regex validity, and per-method field policy follow with
-// the methodkind specializable-field metadata; required-when, the closed
-// field list, and value shapes are enforced at parse.
-func validateDistributionsShape(raw any, path string, errs *[]string) {
+// validateDistributions enforces the distributions contract against the
+// method's specializable-field metadata (single source in methodkind):
+// array shape, required when, closed per-method field list, value shapes,
+// regex validity, and checksum/sidecar coherence against the effective
+// (distribution or base) checksum.
+func validateDistributions(raw any, base map[string]any, path string, contract *methodkind.Contract, known bool, errs *[]string) {
 	items, ok := raw.([]any)
 	if !ok || len(items) == 0 {
 		*errs = append(*errs, path+": expected non-empty array of tables")
 		return
 	}
-	for i, item := range items {
-		if _, ok := item.(map[string]any); !ok {
-			*errs = append(*errs, fmt.Sprintf("%s[%d]: expected table, got %T", path, i, item))
+	if known && len(contract.DistributableFields) == 0 {
+		*errs = append(*errs, fmt.Sprintf("%s: method kind %q does not support distributions", path, contract.Kind))
+		return
+	}
+	allowed := map[string]bool{"when": true}
+	if known {
+		for _, key := range contract.DistributableFields {
+			allowed[key] = true
 		}
+	} else {
+		for _, key := range []string{"asset", "checksum", "checksum_url", "checksum_file_format", "signature_url", "binary", "entrypoints", "strip_components", "extract_to"} {
+			allowed[key] = true
+		}
+	}
+	baseChecksum, _ := base["checksum"].(string)
+	for i, item := range items {
+		m, ok := item.(map[string]any)
+		if !ok {
+			*errs = append(*errs, fmt.Sprintf("%s[%d]: expected table, got %T", path, i, item))
+			continue
+		}
+		p := fmt.Sprintf("%s[%d]", path, i)
+		rawWhen, ok := m["when"]
+		if !ok {
+			*errs = append(*errs, p+": when is required")
+		} else if whenMap, ok := rawWhen.(map[string]any); !ok {
+			*errs = append(*errs, p+".when: must be a table")
+		} else {
+			validateCondition(whenMap, p+".when", errs)
+		}
+		for _, key := range sortedMapKeys(m) {
+			if allowed[key] {
+				continue
+			}
+			if known {
+				*errs = append(*errs, fmt.Sprintf("%s: field %q is not specializable per distribution for method kind %q", p+"."+key, key, contract.Kind))
+			} else {
+				*errs = append(*errs, fmt.Sprintf("%s: field %q is not specializable per distribution", p+"."+key, key))
+			}
+		}
+		validateDistributionAsset(m["asset"], p+".asset", errs)
+		validateDistributionString(m, "checksum", p, errs)
+		validateDistributionString(m, "checksum_url", p, errs)
+		validateDistributionString(m, "checksum_file_format", p, errs)
+		validateDistributionString(m, "signature_url", p, errs)
+		validateDistributionString(m, "binary", p, errs)
+		validateDistributionString(m, "extract_to", p, errs)
+		if raw, ok := m["strip_components"]; ok {
+			value, ok := raw.(int64)
+			if !ok {
+				*errs = append(*errs, p+".strip_components: must be an integer")
+			} else if value < 0 {
+				*errs = append(*errs, p+".strip_components: must be non-negative")
+			}
+		}
+		if raw, ok := m["entrypoints"]; ok {
+			table, ok := raw.(map[string]any)
+			if !ok {
+				*errs = append(*errs, p+".entrypoints: must be a table")
+			} else {
+				for _, name := range sortedMapKeys(table) {
+					endpoint, ok := table[name].(string)
+					if !ok || endpoint == "" {
+						*errs = append(*errs, p+".entrypoints."+name+": must be a string")
+					}
+				}
+			}
+		}
+		effectiveChecksum := baseChecksum
+		if override, ok := m["checksum"].(string); ok {
+			effectiveChecksum = override
+		}
+		for _, key := range []string{"checksum_url", "checksum_file_format", "signature_url"} {
+			if _, configured := m[key]; !configured {
+				continue
+			}
+			if !strings.HasSuffix(effectiveChecksum, ":auto") {
+				*errs = append(*errs, p+"."+key+`: requires checksum = "<algorithm>:auto"`)
+			}
+		}
+	}
+}
+
+func validateDistributionAsset(raw any, path string, errs *[]string) {
+	if raw == nil {
+		return
+	}
+	switch asset := raw.(type) {
+	case string:
+		if asset == "" {
+			*errs = append(*errs, path+": must not be empty")
+		}
+	case map[string]any:
+		regex, ok := asset["regex"].(string)
+		if !ok || len(asset) != 1 {
+			*errs = append(*errs, path+`: asset table must be exactly { regex = "..." }`)
+			return
+		}
+		if regex == "" {
+			*errs = append(*errs, path+".regex: must not be empty")
+			return
+		}
+		if _, err := regexp.Compile(regex); err != nil {
+			*errs = append(*errs, fmt.Sprintf("%s: invalid regex %q: %v", path, regex, err))
+		}
+	default:
+		*errs = append(*errs, path+`: must be a string or { regex = "..." }`)
+	}
+}
+
+func validateDistributionString(m map[string]any, key, path string, errs *[]string) {
+	raw, ok := m[key]
+	if !ok {
+		return
+	}
+	value, ok := raw.(string)
+	if !ok || value == "" {
+		*errs = append(*errs, path+"."+key+": must be a string")
 	}
 }
 
