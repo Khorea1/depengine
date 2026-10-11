@@ -101,6 +101,23 @@ func (ex *Executor) gateStaticIntent(ac *candidateAttempt, result *ToolResult) a
 		ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "skip_when", "requires", fmt.Sprintf("%v", ac.method.When))
 		return nextMethod
 	}
+
+	// Distribution specialization runs after merge and before the first
+	// effective plan: one matching distribution materializes a conventional
+	// candidate copy; none means the method is ineligible on this host;
+	// ambiguity aborts the tool (never silent fallback).
+	specialized, specErr := config.SpecializeDistribution(ac.method, ex.facts)
+	if specErr != nil {
+		ex.failCandidate(ac, result, specErr.Error())
+		ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "failed", "reason", specErr.Error())
+		return finishTool
+	}
+	if specialized == nil {
+		ex.skipCandidate(ac, result, "skip_no_distribution", "")
+		ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "skip_no_distribution")
+		return nextMethod
+	}
+	ac.method = specialized
 	return proceed
 }
 
