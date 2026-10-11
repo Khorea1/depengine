@@ -1,7 +1,10 @@
 # Depengine: proposta de schema e plano de implementação (E: distributions)
 
-> **Estado: proposta recebida, NÃO aprovada. Requer aprovação formal da fronteira
-> antes de qualquer código.**
+> **Estado: FRONTEIRA APROVADA em 2026-10-11 pelo mantenedor — `distributions`
+> especializa a embalagem dentro do mesmo método; nunca troca método, origem ou
+> ciclo de instalação. `dep-1n0` atualizada para o contrato E; `cases` (spike C)
+> descartado como caminho (branch `spike/cases-expansion` preservada como experimento).
+> Próximo: `dep-1n0.6` (item 8.1: fechar contrato + casos de teste).**
 >
 > - Recebido em: 2026-10-11 · Origem: proposta externa (texto importado na íntegra abaixo).
 > - Escopo: `dep-1n0` (reduzir duplicação de candidatos GitHub por sistema e libc).
