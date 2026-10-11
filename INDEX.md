@@ -1,9 +1,11 @@
 # .dev/
 
 Persistent working context shared by humans and agents across sessions: quick
-notes, drafts, plans, research, decisions. It is **not** a source of truth and is
-not auto-injected into sessions. Link the specific file that matters from a task
-prompt, or from `AGENTS.md` when the reference is durable and broadly useful.
+notes, drafts, plans, research, decisions, and Beads task state. General
+notes are **not** a source of truth for project behavior, and the directory is
+not auto-injected into sessions. Beads is authoritative only for the state of
+tracked agent tasks. Link the specific file that matters from a task prompt
+or from local agent instructions.
 
 In Depengine, `.dev/` is a worktree of the orphaned `dev-notes` branch nested
 inside the primary repository checkout. The filesystem workspace may also contain
@@ -33,6 +35,38 @@ When that prints a path, read working context through
 `"$dev_notes_root/architecture/index.yaml"`). This preserves the intentional
 nested-worktree layout without hard-coding the location of the primary checkout.
 
+### Beads task state
+
+The shared agent-task workspace lives only in `"$dev_notes_root/.beads/"`.
+From **any** code worktree or harness with shell/CLI access, set:
+
+```sh
+export BEADS_DB="$dev_notes_root/.beads/beads.db"
+br where --json
+br ready --json
+```
+
+Or pass the database explicitly with
+`br --db "$dev_notes_root/.beads/beads.db" ready --json`. The checked-out
+`dev-notes` worktree must exist for read/write operations; a `git show` of
+`issues.jsonl` is only a read-only fallback, not an active Beads workspace. If the worktree is absent, do not create a second `.beads/` under
+`master` or a feature worktree.
+
+`br init --prefix dep` was run here once to bootstrap the workspace. The
+tracked files are `.beads/config.yaml`, `.beads/metadata.json`,
+`.beads/.gitignore`, and `.beads/issues.jsonl`. SQLite, lock, sync, and
+recovery files are local-only and ignored. A new checkout/worktree reconstructs
+its database from versioned JSONL on first access; if needed, explicitly run
+`br sync --import-only`.
+
+Before sharing task updates, run `br sync --flush-only`, review the changed
+JSONL, and commit it on `dev-notes` separately from implementation branches.
+`br` does not commit, push, pull, or merge Git revisions. Synchronize the
+`dev-notes` Git branch between machines before importing fresh JSONL; claims
+are atomic only for agents sharing the same SQLite database, not across
+machines. `docs/roadmap.md` stays authoritative for product work; Beads tracks
+execution and handoffs, not product specifications.
+
 If the branch exists but is not checked out as a worktree, single files remain
 available through Git itself:
 
@@ -55,14 +89,16 @@ python "$tmp/architecture/tools/validate.py" --root "$tmp/architecture" --repo .
 | File | Purpose |
 |------|---------|
 | `cleaning.md` | Local-only cleanup procedure supplied from dotfiles; intentionally ignored by the `dev-notes` branch |
-| `TODO.md` | Session-specific queue and unresolved editorial/CLI ideas |
+| `TODO.md` | Unvetted/session-specific ideas; track persistent actionable work in Beads |
+| `.beads/` | Structured agent task state and handoffs; only JSONL and metadata are versioned |
 | `architecture/` | archmap: selective semantic architecture model with code-revision checks, symbol-navigation anchors, and derived visual views. Start at `architecture/README.md` |
 
 ## Lifecycle
 
-Keep active files current. When something is finished, superseded, or no longer
+Keep active files current. When a note is finished, superseded, or no longer
 actionable, delete it, or move it to `archive/` if the history has expected future
-value. Do not let archived material look active. The local `cleaning.md` control
+value. Close completed Beads tasks rather than duplicating them in `TODO.md`.
+Do not let archived material look active. The local `cleaning.md` control
 file defines the full cleanup procedure when present in the workspace.
 
 Cached external material records its source URL or document ID, retrieval date,
