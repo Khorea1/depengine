@@ -199,7 +199,7 @@ func TestBaseAdapterExactVersionKindsObserveInstalledDrift(t *testing.T) {
 		"pnpm":     `[{"dependencies":{"demo":{"version":"2.0.0"}}}]`,
 		"bun":      "└── demo@2.0.0\n",
 		"gem":      "demo (2.0.0)\n",
-		"yarn":     "info \"demo@2.0.0\" has binaries:\n",
+		"yarn":     "yarn global v1.22.22\ninfo \"demo@2.0.0\" has binaries:\nDone in 0.02s.\n",
 		"composer": "name : demo\nversions : * 2.0.0\n",
 	}
 	for kind, baseConfig := range Configs {
@@ -386,15 +386,14 @@ func TestBaseAdapterV2ExactObserveDistinguishesAbsentFromProbeFailures(t *testin
 		{
 			name:   "yarn recognized empty global list",
 			kind:   "yarn",
-			runner: &run.FakeRunner{Stdout: "yarn global v1.22.22\n"},
+			runner: &run.FakeRunner{Stdout: "yarn global v1.22.22\nDone in 0.02s.\n"},
 			want:   plan.PresenceAbsent,
 		},
 		{
-			name:      "yarn malformed output",
-			kind:      "yarn",
-			runner:    &run.FakeRunner{Stdout: "global packages unavailable"},
-			want:      plan.PresenceBroken,
-			wantError: true,
+			name:   "yarn unrecognized output is uncertain",
+			kind:   "yarn",
+			runner: &run.FakeRunner{Stdout: "global packages unavailable"},
+			want:   plan.PresenceUnknown,
 		},
 		{
 			name:      "yarn process failure",

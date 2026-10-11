@@ -1196,7 +1196,7 @@ func TestYarnTypedExactVersion(t *testing.T) {
 }
 
 func TestYarnCheckExactVersion(t *testing.T) {
-	fr := &run.FakeRunner{Stdout: `info "typescript@5.8.2" has binaries:` + "\n"}
+	fr := &run.FakeRunner{Stdout: "yarn global v1.22.22\ninfo \"typescript@5.8.2\" has binaries:\nDone in 0.02s.\n"}
 	adapter := NewBaseAdapter(Configs["yarn"])
 	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "typescript", "version": "5.8.2"}}
 	if !adapter.Check(context.Background(), fr, &config.Tool{Name: "typescript"}, mc) {

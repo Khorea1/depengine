@@ -1085,11 +1085,25 @@ func composerVersionFromShow(output string) (string, bool) {
 	return "", false
 }
 
+func composerReportsMissingPackage(output, pkg string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "Package \"") || !strings.HasSuffix(line, "\" not found.") {
+			continue
+		}
+		name := strings.TrimSuffix(strings.TrimPrefix(line, "Package \""), "\" not found.")
+		if name == pkg {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *BaseAdapter) composerInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
 	res := a.runConfiguredBinary(ctx, rn, "global", "show", "--locked", pkg)
 	if res.Err != nil || res.ExitCode != 0 {
-		output := strings.ToLower(string(res.Stdout) + "\n" + string(res.Stderr))
-		if res.Err == nil && strings.Contains(output, strings.ToLower(pkg)) && strings.Contains(output, "not found") {
+		output := string(res.Stdout) + "\n" + string(res.Stderr)
+		if res.Err == nil && composerReportsMissingPackage(output, pkg) {
 			return "", absentInstalledPackage("composer", pkg)
 		}
 		return "", run.CheckResult(res, "composer: show installed version")
@@ -1351,23 +1365,9 @@ func buildYarnCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) [
 	return cmd
 }
 
-func yarnVersionFromList(output, pkg string) (string, bool) {
-	needle := pkg + "@"
-	for _, line := range strings.Split(output, "\n") {
-		idx := strings.Index(line, needle)
-		if idx < 0 {
-			continue
-		}
-		rest := line[idx+len(needle):]
-		end := strings.IndexAny(rest, "\"' ,()")
-		if end >= 0 {
-			rest = rest[:end]
-		}
-		if rest != "" {
-			return rest, true
-		}
-	}
-	return "", false
+type yarnListedPackage struct {
+	name    string
+	version string
 }
 
 func (a *BaseAdapter) yarnInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
@@ -1375,52 +1375,100 @@ func (a *BaseAdapter) yarnInstalledVersion(ctx context.Context, rn run.Runner, p
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "yarn: list installed version")
 	}
-	version, ok := yarnVersionFromList(string(res.Stdout), pkg)
+	packages, ok := yarnGlobalList(string(res.Stdout))
 	if !ok {
-		if yarnGlobalListValid(string(res.Stdout)) {
-			return "", absentInstalledPackage("yarn", pkg)
-		}
-		return "", fmt.Errorf("yarn: invalid global list output")
+		return "", nil
 	}
-	return version, nil
+	for _, entry := range packages {
+		if entry.name == pkg {
+			return entry.version, nil
+		}
+	}
+	return "", absentInstalledPackage("yarn", pkg)
 }
 
-// yarnGlobalListValid reports whether output parses as a `yarn global list`
-// document. A well-formed listing without the requested package means absent;
-// anything else is a probe failure.
-func yarnGlobalListValid(output string) bool {
+func yarnGlobalList(output string) ([]yarnListedPackage, bool) {
 	output = strings.TrimSpace(output)
-	if output == "" || strings.HasPrefix(output, "yarn global v") {
-		return true
+	if output == "" {
+		return nil, false
 	}
-	for _, line := range strings.Split(output, "\n") {
-		if yarnListEntry(strings.TrimSpace(line)) {
-			return true
+	lines := strings.Split(output, "\n")
+	if len(lines) < 2 {
+		return nil, false
+	}
+	header := strings.TrimSpace(lines[0])
+	version := strings.TrimPrefix(header, "yarn global v")
+	if version == header || version == "" || strings.ContainsAny(version, " \t") {
+		return nil, false
+	}
+	footer := strings.TrimSpace(lines[len(lines)-1])
+	if !yarnListFooter(footer) {
+		return nil, false
+	}
+	packages := make([]yarnListedPackage, 0, len(lines)-2)
+	hasPackage := false
+	for _, line := range lines[1 : len(lines)-1] {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "info ") {
+			entry, ok := yarnListEntry(line)
+			if !ok {
+				return nil, false
+			}
+			packages = append(packages, entry)
+			hasPackage = true
+			continue
+		}
+		if !strings.HasPrefix(line, "- ") || strings.TrimSpace(strings.TrimPrefix(line, "- ")) == "" || !hasPackage {
+			return nil, false
 		}
 	}
-	return false
+	return packages, true
 }
 
-// yarnListEntry reports whether line is a well-formed
-// `info "name@version" ...` entry of `yarn global list` output.
-func yarnListEntry(line string) bool {
-	if !strings.HasPrefix(line, "info ") {
+func yarnListFooter(line string) bool {
+	if !strings.HasPrefix(line, "Done in ") || !strings.HasSuffix(line, "s.") {
 		return false
 	}
-	quote := strings.Index(line, `"`)
-	if quote < 0 {
-		return false
+	duration := strings.TrimSuffix(strings.TrimPrefix(line, "Done in "), "s.")
+	seconds, err := strconv.ParseFloat(duration, 64)
+	return err == nil && seconds >= 0
+}
+
+func yarnListEntry(line string) (yarnListedPackage, bool) {
+	const prefix = "info \""
+	if !strings.HasPrefix(line, prefix) {
+		return yarnListedPackage{}, false
 	}
-	rest := line[quote+1:]
-	at := strings.LastIndex(rest, "@")
-	if at <= 0 || at == len(rest)-1 {
-		return false
+	quoted := strings.TrimPrefix(line, prefix)
+	end := strings.IndexByte(quoted, '"')
+	if end < 0 || quoted[end+1:] != " has binaries:" {
+		return yarnListedPackage{}, false
 	}
-	version := rest[at+1:]
-	if end := strings.IndexAny(version, "\"' ,()"); end >= 0 {
-		version = version[:end]
+	nameVersion := quoted[:end]
+	separator := -1
+	if strings.HasPrefix(nameVersion, "@") {
+		slash := strings.IndexByte(nameVersion, '/')
+		if slash <= 1 || slash == len(nameVersion)-1 {
+			return yarnListedPackage{}, false
+		}
+		relative := strings.IndexByte(nameVersion[slash+1:], '@')
+		if relative < 1 {
+			return yarnListedPackage{}, false
+		}
+		separator = slash + 1 + relative
+	} else {
+		separator = strings.IndexByte(nameVersion, '@')
+		if separator <= 0 {
+			return yarnListedPackage{}, false
+		}
 	}
-	return version != ""
+	if separator == len(nameVersion)-1 {
+		return yarnListedPackage{}, false
+	}
+	return yarnListedPackage{name: nameVersion[:separator], version: nameVersion[separator+1:]}, true
 }
 
 func (a *BaseAdapter) checkYarn(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
