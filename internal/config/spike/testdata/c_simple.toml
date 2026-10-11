@@ -1,0 +1,23 @@
+schema_version = 1
+
+[defaults]
+method_order = ["github"]
+
+[tools]
+# P3: simple e cases no mesmo documento; o expansor deve preservar a lista
+# e expandir os cases sem interferência mútua.
+simple = ["zsh", "bat"]
+
+br = {}
+
+  [tools.wt.github]
+  repo = "example/worktrunk"
+  asset = "wt-{version}-{os_any}_{arch_any}.tar.gz"
+  checksum = "sha256:auto"
+  scope = "user"
+  entrypoints = { wt = "wt" }
+
+  cases = [
+    { label = "github-linux", when = { os = ["linux"] } },
+    { label = "github-mac", when = { os = ["darwin"] } },
+  ]

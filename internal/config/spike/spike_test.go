@@ -73,7 +73,8 @@ func parseExpanded(t *testing.T, compactPath string, parse schemaParser) *config
 	return s
 }
 
-// canonicalCandidate flattens a MethodCandidate into comparable JSON.
+// canonicalCandidate flattens a MethodCandidate into comparable JSON,
+// including hooks, sources, and secret references (metadados completos).
 func canonicalCandidate(m *config.MethodCandidate) map[string]any {
 	when := ""
 	if m.When != nil {
@@ -82,17 +83,28 @@ func canonicalCandidate(m *config.MethodCandidate) map[string]any {
 	cfg, _ := json.Marshal(m.Config)
 	archMap, _ := json.Marshal(m.ArchMap)
 	osMap, _ := json.Marshal(m.OSMap)
+	pre, _ := json.Marshal(m.PreInstall)
+	post, _ := json.Marshal(m.PostInstall)
+	sources, _ := json.Marshal(m.Sources)
+	secret, _ := json.Marshal(m.SecretRef)
+	checksumSecret, _ := json.Marshal(m.ChecksumSecretRef)
+	signatureSecret, _ := json.Marshal(m.SignatureSecretRef)
 	return map[string]any{
-		"kind":     m.Kind,
-		"label":    m.Label,
-		"when":     when,
-		"config":   string(cfg),
-		"inferred": m.Inferred,
-		"archMap":  string(archMap),
-		"osMap":    string(osMap),
-		"requires": m.Requires,
-		"sources":  len(m.Sources),
-		"err":      m.Err != nil,
+		"kind":            m.Kind,
+		"label":           m.Label,
+		"when":            when,
+		"config":          string(cfg),
+		"inferred":        m.Inferred,
+		"archMap":         string(archMap),
+		"osMap":           string(osMap),
+		"requires":        m.Requires,
+		"sources":         string(sources),
+		"preInstall":      string(pre),
+		"postInstall":     string(post),
+		"secretRef":       string(secret),
+		"checksumSecret":  string(checksumSecret),
+		"signatureSecret": string(signatureSecret),
+		"err":             m.Err != nil,
 	}
 }
 
@@ -182,6 +194,19 @@ func TestPreservesNonCases(t *testing.T) {
 			t.Fatalf("simple list não preservada: tool %q ausente", name)
 		}
 	}
+	// P3: simple passa EFETIVAMENTE pelo expansor junto com cases.
+	c := parseExpanded(t, testdata(t, "c_simple.toml"), config.ParseProjectSchema)
+	for _, name := range []string{"zsh", "bat"} {
+		if c.Tools[name] == nil || len(c.Tools[name].Methods) == 0 {
+			t.Fatalf("expansor perdeu simple: tool %q ausente", name)
+		}
+	}
+	if len(c.Tools["wt"].Methods) != 2 {
+		t.Fatalf("wt expandido: %d candidatos, want 2", len(c.Tools["wt"].Methods))
+	}
+	if c.Tools["br"] == nil {
+		t.Fatal("tool vazia br perdida na expansão")
+	}
 	raw, err := os.ReadFile(testdata(t, "c_manifest.toml")) // #nosec G304 -- fixture-controlled path.
 	if err != nil {
 		t.Fatal(err)
@@ -194,7 +219,7 @@ func TestPreservesNonCases(t *testing.T) {
 	if err := os.WriteFile(tmp, expanded, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	c := parseManifestFile(t, tmp)
+	cm := parseManifestFile(t, tmp)
 	// aur/native/nix/cargo/conda (label vazio: a seção já é o kind) intactos.
 	for _, tc := range []struct {
 		tool, kind, label string
@@ -205,7 +230,7 @@ func TestPreservesNonCases(t *testing.T) {
 		{"wt", "aur", ""},
 		{"wt", "cargo", ""},
 	} {
-		if _, err := config.FindMethodCandidate(c.Tools[tc.tool], tc.kind, tc.label); err != nil {
+		if _, err := config.FindMethodCandidate(cm.Tools[tc.tool], tc.kind, tc.label); err != nil {
 			t.Errorf("candidato não-github perdido: %s/%s/%s: %v", tc.tool, tc.kind, tc.label, err)
 		}
 	}
@@ -246,6 +271,25 @@ func TestMergeEquivalence(t *testing.T) {
 	mc := config.MergeLayers(schema, c, override)
 	for _, tool := range []string{"br", "omp", "wt"} {
 		assertSameCandidates(t, tool+"-merged", ma.Tools[tool].Methods, mc.Tools[tool].Methods)
+		// P1: ordem e hashes também depois do merge (o snapshot ordenado
+		// acima não detectaria divergência de ordenação).
+		assertSameOrder(t, tool+"-merged", ma.Tools[tool].Methods, mc.Tools[tool].Methods)
+	}
+	hma, sma, err := lock.SnapshotIntentMetadata(ma)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hmc, smc, err := lock.SnapshotIntentMetadata(mc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range []string{"br", "omp", "wt"} {
+		if hma[tool] != hmc[tool] {
+			t.Fatalf("%s merged: MethodsHash diverge A=%q C=%q", tool, hma[tool], hmc[tool])
+		}
+	}
+	if !reflect.DeepEqual(sma, smc) {
+		t.Fatalf("merged SourceHash diverge A=%v C=%v", sma, smc)
 	}
 	// br: 4 originais + 1 novo = 5 (override do github-linux é in place).
 	if len(ma.Tools["br"].Methods) != 5 {
@@ -319,8 +363,9 @@ func TestCandidateIdentityEquivalence(t *testing.T) {
 }
 
 func TestValidateEquivalence(t *testing.T) {
-	// Exigência estrita: zero erros em A e C (não apenas contagens iguais),
-	// com os mesmos warnings. Fixture inválida reprova o spike.
+	// Exigência estrita: zero erros nos fundidos A e C (não apenas
+	// contagens iguais), com diagnósticos idênticos. Fixture inválida
+	// reprova o spike.
 	kinds := methodkind.KnownKinds()
 	schema := parseSchemaFile(t, testdata(t, "schema_real.toml"))
 	a := parseManifestFile(t, testdata(t, "a_manifest.toml"))
@@ -339,10 +384,13 @@ func TestValidateEquivalence(t *testing.T) {
 			t.Fatalf("%s: %d erros de validação: %s", name, len(r.Errors), raw)
 		}
 	}
-	ra := validate.ValidateSchema(a, kinds)
-	rc := validate.ValidateSchema(c, kinds)
-	if len(ra.Warnings) != len(rc.Warnings) {
-		t.Fatalf("%d warnings A vs %d warnings C", len(ra.Warnings), len(rc.Warnings))
+	ra := validate.ValidateSchema(ma, kinds)
+	rc := validate.ValidateSchema(mc, kinds)
+	// P2: diagnósticos completos, não apenas contagens.
+	ja, _ := json.Marshal(ra)
+	jc, _ := json.Marshal(rc)
+	if string(ja) != string(jc) {
+		t.Fatalf("diagnósticos divergem\nA=%s\nC=%s", ja, jc)
 	}
 }
 
