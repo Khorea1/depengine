@@ -264,6 +264,10 @@ func validateMethodValue(raw any, path, declaredKind string, errs *[]string) {
 				validateHooks(v[key], path+"."+key, errs)
 			case "sources":
 				validateSources(v[key], path+".sources", errs)
+			case "distributions":
+				// Shape only here (array of tables); per-distribution semantic
+				// rules arrive with the methodkind specializable-field metadata.
+				validateDistributionsShape(v[key], path+".distributions", errs)
 			default:
 				if !known {
 					continue
@@ -443,6 +447,23 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// validateDistributionsShape checks the distributions array shape only:
+// non-empty array of tables. Per-distribution semantic rules (required when,
+// allowlisted overrides, regex validity) are validated with the methodkind
+// specializable-field metadata in a follow-up change.
+func validateDistributionsShape(raw any, path string, errs *[]string) {
+	items, ok := raw.([]any)
+	if !ok || len(items) == 0 {
+		*errs = append(*errs, path+": expected non-empty array of tables")
+		return
+	}
+	for i, item := range items {
+		if _, ok := item.(map[string]any); !ok {
+			*errs = append(*errs, fmt.Sprintf("%s[%d]: expected table, got %T", path, i, item))
+		}
+	}
 }
 
 func validateSources(raw any, path string, errs *[]string) {

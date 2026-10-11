@@ -494,6 +494,13 @@ func mergeMethodConfigs(lower, upper *MethodCandidate, pc *provenanceCollector) 
 		result.Sources = cloneSources(upper.Sources)
 		result.presence["Sources"] = true
 	}
+	// Distributions are atomic per layer: redefining the list replaces it
+	// wholesale (no index merge, no when matching). Specialization-time
+	// overrides apply only after the merge.
+	if upper.presence["Distributions"] {
+		result.Distributions = cloneDistributions(upper.Distributions)
+		result.presence["Distributions"] = true
+	}
 	if upper.presence["PreInstall"] {
 		result.PreInstall = cloneHooks(upper.PreInstall)
 		result.presence["PreInstall"] = true
