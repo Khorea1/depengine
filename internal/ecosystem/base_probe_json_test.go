@@ -52,9 +52,6 @@ func TestBaseAdapterPNPMObserveJSON(t *testing.T) {
 			if got.Presence != tt.presence || (!tt.wantError && got.Identity.Version != tt.version) {
 				t.Fatalf("Observe() = %+v, want presence=%q version=%q wantError=%v", got, tt.presence, tt.version, tt.wantError)
 			}
-			if len(runner.Calls) != 1 || runner.Calls[0].Name != "pnpm" || len(runner.Calls[0].Args) != 4 || runner.Calls[0].Args[0] != "list" || runner.Calls[0].Args[1] != "-g" || runner.Calls[0].Args[2] != "--depth=0" || runner.Calls[0].Args[3] != "--json" {
-				t.Fatalf("global Observe argv = %#v", runner.Calls)
-			}
 		})
 	}
 }

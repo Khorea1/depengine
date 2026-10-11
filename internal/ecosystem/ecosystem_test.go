@@ -345,7 +345,7 @@ func TestRegistryChecksParseDirectCommandOutput(t *testing.T) {
 	}{
 		{"cargo", "bat", "bat v0.25.0:\n    bat\n", true},
 		{"cargo", "bat", "bat-extra v1.0.0:\n", false},
-		{"pipx", "black", `{"venvs":{"black":{"main_package":{"package":"black","package_version":"25.1.0"}}}}`, true},
+		{"pipx", "black", `{"venvs":{"black":{"metadata":{"main_package":{"package":"black","package_version":"25.1.0"}}}}}`, true},
 		{"uv", "ruff", "ruff v0.11.0\n- ruff\n", true},
 		{"bun", "typescript", "└── typescript@5.8.2\n", true},
 		{"gem", "rake", "rake (13.2.1)\n", true},
@@ -996,7 +996,7 @@ func TestPipxTypedVersionScopeAndIndex(t *testing.T) {
 }
 
 func TestPipxCheckExactVersionAndScope(t *testing.T) {
-	fr := &run.FakeRunner{Stdout: `{"pipx_spec_version":"0.1","venvs":{"black":{"main_package":{"package":"black","package_version":"24.3.0"}}}}`}
+	fr := &run.FakeRunner{Stdout: `{"pipx_spec_version":"0.1","venvs":{"black":{"metadata":{"main_package":{"package":"black","package_version":"24.3.0"}}}}}`}
 	adapter := NewBaseAdapter(Configs["pipx"])
 	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "black", "version": "24.3.0", "scope": "global"}}
 	if !adapter.Check(context.Background(), fr, &config.Tool{Name: "black"}, mc) {
@@ -1013,7 +1013,7 @@ func TestPipxCheckExactVersionAndScope(t *testing.T) {
 }
 
 func TestPipxInstalledVersion(t *testing.T) {
-	fr := &run.FakeRunner{Stdout: `{"venvs":{"black":{"main_package":{"package":"black","package_version":"24.3.0"}}}}`}
+	fr := &run.FakeRunner{Stdout: `{"venvs":{"black":{"metadata":{"main_package":{"package":"black","package_version":"24.3.0"}}}}}`}
 	adapter := NewBaseAdapter(Configs["pipx"])
 	got, err := adapter.InstalledVersion(context.Background(), fr, &config.Tool{Name: "black"}, &config.MethodCandidate{Config: map[string]any{"pkg": "black"}})
 	if err != nil {

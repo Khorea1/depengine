@@ -742,11 +742,13 @@ func (a *BaseAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool 
 }
 
 type pipxListOutput struct {
-	Venvs map[string]struct {
-		MainPackage struct {
-			Package        string `json:"package"`
-			PackageVersion string `json:"package_version"`
-		} `json:"main_package"`
+	Venvs map[string]*struct {
+		Metadata *struct {
+			MainPackage *struct {
+				Package        string `json:"package"`
+				PackageVersion string `json:"package_version"`
+			} `json:"main_package"`
+		} `json:"metadata"`
 	} `json:"venvs"`
 }
 
@@ -782,24 +784,6 @@ func buildPipxCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) [
 	return cmd
 }
 
-func pipxVersionFromList(output, pkg string) (string, bool) {
-	var parsed pipxListOutput
-	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
-		return "", false
-	}
-	if env, ok := parsed.Venvs[pkg]; ok && env.MainPackage.PackageVersion != "" {
-		if env.MainPackage.Package == "" || strings.EqualFold(env.MainPackage.Package, pkg) {
-			return env.MainPackage.PackageVersion, true
-		}
-	}
-	for _, env := range parsed.Venvs {
-		if strings.EqualFold(env.MainPackage.Package, pkg) && env.MainPackage.PackageVersion != "" {
-			return env.MainPackage.PackageVersion, true
-		}
-	}
-	return "", false
-}
-
 func (a *BaseAdapter) pipxInstalledVersion(ctx context.Context, rn run.Runner, pkg string, mc *config.MethodCandidate) (string, error) {
 	args := []string{"list", "--json"}
 	if scope, _ := mc.Config["scope"].(string); scope == "global" {
@@ -813,8 +797,22 @@ func (a *BaseAdapter) pipxInstalledVersion(ctx context.Context, rn run.Runner, p
 	if err := json.Unmarshal(res.Stdout, &parsed); err != nil || parsed.Venvs == nil {
 		return "", fmt.Errorf("pipx: invalid list output")
 	}
-	version, ok := pipxVersionFromList(string(res.Stdout), pkg)
-	if !ok {
+
+	found := false
+	version := ""
+	for key, venv := range parsed.Venvs {
+		if venv == nil || venv.Metadata == nil || venv.Metadata.MainPackage == nil {
+			return "", fmt.Errorf("pipx: invalid list output")
+		}
+		main := venv.Metadata.MainPackage
+		if key == pkg || strings.EqualFold(main.Package, pkg) {
+			found = true
+			if version == "" {
+				version = main.PackageVersion
+			}
+		}
+	}
+	if !found {
 		return "", absentInstalledPackage("pipx", pkg)
 	}
 	return version, nil

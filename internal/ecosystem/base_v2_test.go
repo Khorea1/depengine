@@ -131,7 +131,7 @@ func TestBaseAdapterV2ObserveProjectsOnlyVerifiedScopes(t *testing.T) {
 			name:      "pipx global",
 			kind:      "pipx",
 			config:    map[string]any{"pkg": "demo", "version": "1.0.0", "scope": "global"},
-			stdout:    `{"venvs":{"demo":{"main_package":{"package":"demo","package_version":"1.0.0"}}}}`,
+			stdout:    `{"venvs":{"demo":{"metadata":{"main_package":{"package":"demo","package_version":"1.0.0"}}}}}`,
 			wantScope: string(plan.ScopeSystem),
 			wantKnown: true,
 		},
@@ -193,7 +193,7 @@ func TestBaseAdapterV2ObservePreservesExactVersionDrift(t *testing.T) {
 func TestBaseAdapterExactVersionKindsObserveInstalledDrift(t *testing.T) {
 	fixtures := map[string]string{
 		"pip":      "Name: demo\nVersion: 2.0.0\n",
-		"pipx":     `{"venvs":{"demo":{"main_package":{"package":"demo","package_version":"2.0.0"}}}}`,
+		"pipx":     `{"venvs":{"demo":{"metadata":{"main_package":{"package":"demo","package_version":"2.0.0"}}}}}`,
 		"uv":       "demo v2.0.0\n- demo\n",
 		"npm":      `{"dependencies":{"demo":{"version":"2.0.0"}}}`,
 		"pnpm":     `[{"dependencies":{"demo":{"version":"2.0.0"}}}]`,
