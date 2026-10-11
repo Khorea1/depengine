@@ -1,0 +1,48 @@
+{
+  "candidates": [
+    {
+      "arch": "",
+      "archMap": "null",
+      "config": "{\"asset\":\"omp-{version}-{os_any}_{arch_any}.tar.gz\",\"checksum\":\"sha256:auto\",\"entrypoints\":{\"omp\":\"omp\"},\"repo\":\"can1357/oh-my-pi\",\"scope\":\"user\"}",
+      "err": false,
+      "inferred": false,
+      "kind": "github",
+      "label": "github-linux",
+      "osMap": "null",
+      "requires": null,
+      "sources": 0,
+      "targetOS": "",
+      "when": "os in [\"linux\"] \u0026\u0026 libc in [\"glibc\"]"
+    },
+    {
+      "arch": "",
+      "archMap": "null",
+      "config": "{\"asset\":\"omp-{version}-{os_any}_{arch_any}.tar.gz\",\"checksum\":\"sha256:auto\",\"entrypoints\":{\"omp\":\"omp\"},\"repo\":\"can1357/oh-my-pi\",\"scope\":\"user\"}",
+      "err": false,
+      "inferred": false,
+      "kind": "github",
+      "label": "github-mac",
+      "osMap": "null",
+      "requires": null,
+      "sources": 0,
+      "targetOS": "",
+      "when": "os in [\"darwin\"]"
+    },
+    {
+      "arch": "",
+      "archMap": "null",
+      "config": "{\"asset\":\"omp-{version}-{os_any}_musl_{arch_any}.tar.gz\",\"checksum\":\"sha256:auto\",\"entrypoints\":{\"omp\":\"omp\"},\"repo\":\"can1357/oh-my-pi\",\"scope\":\"user\"}",
+      "err": false,
+      "inferred": false,
+      "kind": "github",
+      "label": "github-musl",
+      "osMap": "null",
+      "requires": null,
+      "sources": 0,
+      "targetOS": "",
+      "when": "os in [\"linux\"] \u0026\u0026 libc in [\"musl\"]"
+    }
+  ],
+  "methodsHash": "734ed1f07f3ecc090bc6dd1d04ae12fc6221c3a0f95eae7176fdd3153ca07d61",
+  "tool": "omp"
+}

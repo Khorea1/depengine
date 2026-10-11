@@ -1,0 +1,62 @@
+{
+  "candidates": [
+    {
+      "arch": "",
+      "archMap": "null",
+      "config": "{\"asset\":\"br-{version}-{os_any}_{arch_any}.tar.gz\",\"checksum\":\"sha256:auto\",\"entrypoints\":{\"br\":\"br\"},\"repo\":\"Dicklesworthstone/beads_rust\",\"scope\":\"user\"}",
+      "err": false,
+      "inferred": false,
+      "kind": "github",
+      "label": "github-linux",
+      "osMap": "null",
+      "requires": null,
+      "sources": 0,
+      "targetOS": "",
+      "when": "os in [\"linux\"] \u0026\u0026 libc in [\"glibc\"]"
+    },
+    {
+      "arch": "",
+      "archMap": "null",
+      "config": "{\"asset\":\"br-{version}-{os_any}_{arch_any}.tar.gz\",\"checksum\":\"sha256:auto\",\"entrypoints\":{\"br\":\"br\"},\"repo\":\"Dicklesworthstone/beads_rust\",\"scope\":\"user\"}",
+      "err": false,
+      "inferred": false,
+      "kind": "github",
+      "label": "github-mac",
+      "osMap": "null",
+      "requires": null,
+      "sources": 0,
+      "targetOS": "",
+      "when": "os in [\"darwin\"]"
+    },
+    {
+      "arch": "",
+      "archMap": "null",
+      "config": "{\"asset\":\"br-{version}-{os_any}_musl_{arch_any}.tar.gz\",\"checksum\":\"sha256:auto\",\"entrypoints\":{\"br\":\"br\"},\"repo\":\"Dicklesworthstone/beads_rust\",\"scope\":\"user\"}",
+      "err": false,
+      "inferred": false,
+      "kind": "github",
+      "label": "github-musl",
+      "osMap": "null",
+      "requires": null,
+      "sources": 0,
+      "targetOS": "",
+      "when": "os in [\"linux\"] \u0026\u0026 libc in [\"musl\"]"
+    },
+    {
+      "arch": "",
+      "archMap": "null",
+      "config": "{\"asset\":\"br-{version}-{os_any}_{arch_any}.zip\",\"checksum\":\"sha256:auto\",\"entrypoints\":{\"br\":\"br.exe\"},\"repo\":\"Dicklesworthstone/beads_rust\",\"scope\":\"user\"}",
+      "err": false,
+      "inferred": false,
+      "kind": "github",
+      "label": "github-windows",
+      "osMap": "null",
+      "requires": null,
+      "sources": 0,
+      "targetOS": "",
+      "when": "arch in [\"x86_64\"] \u0026\u0026 os in [\"windows\"]"
+    }
+  ],
+  "methodsHash": "c44045d83e0f776478113b63afce1d6e14f19c48a48ed0cdbc1bce56fff13f29",
+  "tool": "br"
+}

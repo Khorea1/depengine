@@ -1,0 +1,34 @@
+{
+  "candidates": [
+    {
+      "arch": "",
+      "archMap": "null",
+      "config": "{\"asset\":\"wt-{version}-{os_any}_{arch_any}.tar.gz\",\"checksum\":\"sha256:auto\",\"entrypoints\":{\"wt\":\"wt\"},\"repo\":\"example/worktrunk\",\"scope\":\"user\"}",
+      "err": false,
+      "inferred": false,
+      "kind": "github",
+      "label": "github-linux",
+      "osMap": "null",
+      "requires": null,
+      "sources": 0,
+      "targetOS": "",
+      "when": "os in [\"linux\"]"
+    },
+    {
+      "arch": "",
+      "archMap": "null",
+      "config": "{\"asset\":\"wt-{version}-{os_any}_{arch_any}.tar.gz\",\"checksum\":\"sha256:auto\",\"entrypoints\":{\"wt\":\"wt\"},\"repo\":\"example/worktrunk\",\"scope\":\"user\"}",
+      "err": false,
+      "inferred": false,
+      "kind": "github",
+      "label": "github-mac",
+      "osMap": "null",
+      "requires": null,
+      "sources": 0,
+      "targetOS": "",
+      "when": "os in [\"darwin\"]"
+    }
+  ],
+  "methodsHash": "8c09df78f7d002eda187a38af11338000218aa2232d3354c50b8ce31aaecc9f7",
+  "tool": "wt"
+}

@@ -1,0 +1,27 @@
+schema_version = 1
+
+[defaults]
+method_order = ["aur", "native", "github"]
+
+# Baseline A: wt com 2 candidatos github explícitos + preferência AUR legítima
+# (worktrunk-bin antes de native no Arch; não normalizar).
+[tools.wt]
+method_prefer = ["aur"]
+
+  [tools.wt.github-linux]
+  kind = "github"
+  repo = "example/worktrunk"
+  asset = "wt-{version}-{os_any}_{arch_any}.tar.gz"
+  checksum = "sha256:auto"
+  scope = "user"
+  entrypoints = { wt = "wt" }
+  when = { os = ["linux"] }
+
+  [tools.wt.github-mac]
+  kind = "github"
+  repo = "example/worktrunk"
+  asset = "wt-{version}-{os_any}_{arch_any}.tar.gz"
+  checksum = "sha256:auto"
+  scope = "user"
+  entrypoints = { wt = "wt" }
+  when = { os = ["darwin"] }

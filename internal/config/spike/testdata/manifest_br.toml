@@ -1,0 +1,25 @@
+schema_version = 1
+
+[manifest]
+allow_new_tools = true
+
+# Camada manifesto (forma normal, sem cases): sobrescreve checksum do
+# github-linux e adiciona candidato extra. Usada contra schema A e contra
+# schema C expandido; o merge deve produzir o mesmo resultado.
+[packages.br.github-linux]
+kind = "github"
+repo = "Dicklesworthstone/beads_rust"
+asset = "br-{version}-{os_any}_{arch_any}.tar.gz"
+checksum = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+scope = "user"
+entrypoints = { br = "br" }
+when = { os = ["linux"], libc = ["glibc"] }
+
+[packages.br.github-extra]
+kind = "github"
+repo = "Dicklesworthstone/beads_rust"
+asset = "br-{version}-freebsd_{arch_any}.tar.gz"
+checksum = "sha256:auto"
+scope = "user"
+entrypoints = { br = "br" }
+when = { os = ["freebsd"] }

@@ -1,0 +1,20 @@
+schema_version = 1
+
+[defaults]
+method_order = ["aur", "native", "github"]
+
+# Protótipo C para wt: mesmos 2 candidatos de a_wt.toml.
+[tools.wt]
+method_prefer = ["aur"]
+
+  [tools.wt.github]
+  repo = "example/worktrunk"
+  asset = "wt-{version}-{os_any}_{arch_any}.tar.gz"
+  checksum = "sha256:auto"
+  scope = "user"
+  entrypoints = { wt = "wt" }
+
+  cases = [
+    { label = "github-linux", when = { os = ["linux"] } },
+    { label = "github-mac", when = { os = ["darwin"] } },
+  ]

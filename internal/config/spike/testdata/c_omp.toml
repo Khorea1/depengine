@@ -1,0 +1,21 @@
+schema_version = 1
+
+[defaults]
+method_order = ["github"]
+
+# Protótipo C para omp: mesmos 3 candidatos de a_omp.toml.
+[tools.omp]
+method_only = ["github"]
+
+  [tools.omp.github]
+  repo = "can1357/oh-my-pi"
+  asset = "omp-{version}-{os_any}_{arch_any}.tar.gz"
+  checksum = "sha256:auto"
+  scope = "user"
+  entrypoints = { omp = "omp" }
+
+  cases = [
+    { label = "github-linux", when = { os = ["linux"], libc = ["glibc"] } },
+    { label = "github-musl", when = { os = ["linux"], libc = ["musl"] }, asset = "omp-{version}-{os_any}_musl_{arch_any}.tar.gz" },
+    { label = "github-mac", when = { os = ["darwin"] } },
+  ]

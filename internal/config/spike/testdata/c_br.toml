@@ -1,0 +1,23 @@
+schema_version = 1
+
+[defaults]
+method_order = ["github"]
+
+# Protótipo C (sintaxe experimental; NUNCA alimentar ao parser de produção
+# diretamente): mesmos 4 candidatos de a_br.toml via base + cases.
+[tools.br]
+method_only = ["github"]
+
+  [tools.br.github]
+  repo = "Dicklesworthstone/beads_rust"
+  asset = "br-{version}-{os_any}_{arch_any}.tar.gz"
+  checksum = "sha256:auto"
+  scope = "user"
+  entrypoints = { br = "br" }
+
+  cases = [
+    { label = "github-mac", when = { os = ["darwin"] } },
+    { label = "github-linux", when = { os = ["linux"], libc = ["glibc"] } },
+    { label = "github-musl", when = { os = ["linux"], libc = ["musl"] }, asset = "br-{version}-{os_any}_musl_{arch_any}.tar.gz" },
+    { label = "github-windows", when = { os = ["windows"], arch = ["x86_64"] }, asset = "br-{version}-{os_any}_{arch_any}.zip", entrypoints = { br = "br.exe" } },
+  ]

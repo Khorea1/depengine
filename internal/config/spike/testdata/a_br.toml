@@ -1,0 +1,44 @@
+schema_version = 1
+
+[defaults]
+method_order = ["github"]
+
+# Baseline A: br com 4 candidatos github explícitos (receita atual).
+[tools.br]
+method_only = ["github"]
+
+  [tools.br.github-mac]
+  kind = "github"
+  repo = "Dicklesworthstone/beads_rust"
+  asset = "br-{version}-{os_any}_{arch_any}.tar.gz"
+  checksum = "sha256:auto"
+  scope = "user"
+  entrypoints = { br = "br" }
+  when = { os = ["darwin"] }
+
+  [tools.br.github-linux]
+  kind = "github"
+  repo = "Dicklesworthstone/beads_rust"
+  asset = "br-{version}-{os_any}_{arch_any}.tar.gz"
+  checksum = "sha256:auto"
+  scope = "user"
+  entrypoints = { br = "br" }
+  when = { os = ["linux"], libc = ["glibc"] }
+
+  [tools.br.github-musl]
+  kind = "github"
+  repo = "Dicklesworthstone/beads_rust"
+  asset = "br-{version}-{os_any}_musl_{arch_any}.tar.gz"
+  checksum = "sha256:auto"
+  scope = "user"
+  entrypoints = { br = "br" }
+  when = { os = ["linux"], libc = ["musl"] }
+
+  [tools.br.github-windows]
+  kind = "github"
+  repo = "Dicklesworthstone/beads_rust"
+  asset = "br-{version}-{os_any}_{arch_any}.zip"
+  checksum = "sha256:auto"
+  scope = "user"
+  entrypoints = { br = "br.exe" }
+  when = { os = ["windows"], arch = ["x86_64"] }
