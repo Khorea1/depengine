@@ -883,9 +883,10 @@ func (a *BaseAdapter) uvInstalledVersion(ctx context.Context, rn run.Runner, pkg
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "uv: list installed version")
 	}
-	version, ok := uvVersionFromList(string(res.Stdout), pkg)
+	stdout := string(res.Stdout)
+	version, ok := uvVersionFromList(stdout, pkg)
 	if !ok {
-		if uvToolListValid(string(res.Stdout)) {
+		if uvToolListValid(stdout) || (strings.TrimSpace(stdout) == "" && strings.EqualFold(strings.TrimSpace(string(res.Stderr)), "No tools installed")) {
 			return "", absentInstalledPackage("uv", pkg)
 		}
 		// uv's human-readable list format can vary. An unrecognized response
@@ -914,7 +915,7 @@ func uvToolListValid(output string) bool {
 			continue
 		}
 		fields := strings.Fields(line)
-		if len(fields) < 2 || !strings.HasPrefix(fields[1], "v") {
+		if len(fields) < 2 || !strings.HasPrefix(fields[1], "v") || strings.TrimPrefix(fields[1], "v") == "" {
 			return false
 		}
 		seenTool = true
