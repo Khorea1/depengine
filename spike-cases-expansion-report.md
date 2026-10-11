@@ -62,3 +62,40 @@ Sem isso, permanece A.
 
 Protótipo isolado + testes + goldens em `spike/cases-expansion` (não promovido a `master`).
 Próximo: tarefa de implementação só após aprovação explícita do relatório.
+
+---
+
+## Rodada 2 — correções da auditoria (2026-10-11, commit `dfa021c`)
+
+Auditoria independente encontrou 6 lacunas (ver seção 1–5 do relatório de auditoria);
+todas corrigidas sem tocar produção:
+
+- **Achado A ([packages] + simple)**: `ExpandCompact` agora processa `[tools]` e `[packages]`,
+  preserva listas simples (`simple = [...]` gera uma tool por entrada — verificado) e
+  candidatos não-github (aur/native/nix/cargo/conda) intactos. Fixtures reais vivem em
+  `[packages]`, como no manifesto pessoal; `br` em `[tools]` mantém cobertura da outra seção.
+- **Achado B (colisões)**: label de case colidindo com qualquer chave declarada da tool
+  (candidato explícito ou chave de nível de tool) é erro; duplicata entre cases tem erro
+  próprio (`duplicate` vs `collides`); base com `cases` fora de github é rejeitada
+  (`github-only`). Teste inclui o exemplo exato da auditoria (`github-linux` explícito).
+- **Achado C (fixtures fiéis)**: `omp` com binários brutos, `checksum_url` + `sha256sum`,
+  fallbacks aur/native/nix e `method_only`; `wt` com `.tar.xz`, `strip_components = 1`,
+  dois entrypoints, `method_only` + `post_install` + fallbacks. `method_prefer = ["aur"]`
+  inválido foi removido (a fixture agora declara o candidato `aur`).
+- **Merge (br 4+1=5)**: caminho real schema vazio + manifesto + camada de override, com
+  overrides nas duas tools (`br` checksum, `omp` scope); `omp` incluído nos hashes.
+- **Validação estrita**: fundidos `merged-A`/`merged-C` exigem **zero erros** (não apenas
+  contagens iguais); warnings comparados. Capturou de verdade um erro de fixture
+  (`nix` fora da ordem sem `method_prefer` — igual ao `depends.toml` real).
+- **Contratos persistidos**: `MethodsHash` + `SourceHash` para br/omp/wt; identidade via
+  `FindMethodCandidate` (o que `upgrade`/`remove`/`why` usam); goldens obrigatórios —
+  ausência falha, criação só com `SPIKE_WRITE_GOLDENS=1`.
+- **Limite restante (assumido)**: projeções v2 com resolução remota exigem rede/e2e;
+  os insumos da projeção são integralmente comparados. Contratos `dep-1n0` sobre
+  exclusividade mútua ficam como decisão explícita (fallback preservado, sem garantia nova).
+
+Veredito revisto: equivalência demonstrada nas receitas reais, no caminho real
+`[packages]`→merge, com validação fail-closed. Confiança em C sobe de "hipótese viável"
+para "macro correta nas condições testadas"; implementação segue dependendo de e2e com
+rede + decisão de contrato sobre exclusividade (atualizar critérios de `dep-1n0` para o
+contrato "vários candidatos convencionais", não "método único com variantes exclusivas").
