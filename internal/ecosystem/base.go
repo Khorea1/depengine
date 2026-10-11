@@ -1121,30 +1121,22 @@ func buildBunCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) []
 	return cmd
 }
 
-type bunGlobalEntry struct {
-	name    string
-	version string
-}
-
 func (a *BaseAdapter) bunInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
 	res := a.runConfiguredBinary(ctx, rn, "pm", "ls", "-g")
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "bun: list installed version")
 	}
-	entries, ok := bunGlobalList(string(res.Stdout))
-	if !ok {
+	version, found, valid := bunGlobalList(string(res.Stdout), pkg)
+	if !valid {
 		return "", nil
 	}
-	for _, entry := range entries {
-		if entry.name != pkg {
-			continue
-		}
-		if bunLocalSourceVersion(entry.version) {
-			return "", nil
-		}
-		return entry.version, nil
+	if !found {
+		return "", absentInstalledPackage("bun", pkg)
 	}
-	return "", absentInstalledPackage("bun", pkg)
+	if bunLocalSourceVersion(version) {
+		return "", nil
+	}
+	return version, nil
 }
 
 func bunLocalSourceVersion(version string) bool {
@@ -1154,54 +1146,70 @@ func bunLocalSourceVersion(version string) bool {
 		strings.HasPrefix(version, "file:")
 }
 
-func bunGlobalList(output string) ([]bunGlobalEntry, bool) {
+func bunGlobalList(output, pkg string) (version string, found, valid bool) {
 	output = strings.TrimSpace(output)
 	if output == "" {
-		return nil, false
+		return "", false, false
 	}
-	lines := strings.Split(output, "\n")
-	count := -1
-	if parsed, ok := bunGlobalListHeader(strings.TrimSpace(lines[0])); ok {
-		count = parsed
-		lines = lines[1:]
+	first, remaining, hasNewline := strings.Cut(output, "\n")
+	count, hasHeader := bunGlobalListHeader(strings.TrimSpace(first))
+	if !hasHeader {
+		remaining = output
+		count = -1
+	} else if !hasNewline {
+		remaining = ""
 	}
-	entries := make([]bunGlobalEntry, 0, len(lines))
-	for _, line := range lines {
-		line = strings.TrimLeft(strings.TrimSpace(line), "├└─│ ")
-		entry, ok := bunGlobalListEntry(line)
-		if !ok {
-			return nil, false
-		}
-		entries = append(entries, entry)
-	}
-	if count < 0 {
-		return entries, len(entries) > 0
-	}
-	return entries, len(entries) == count
-}
 
-func bunGlobalListEntry(line string) (bunGlobalEntry, bool) {
-	separator := -1
-	if strings.HasPrefix(line, "@") {
-		slash := strings.IndexByte(line, '/')
-		if slash <= 1 || slash == len(line)-1 {
-			return bunGlobalEntry{}, false
+	entries := 0
+	for remaining != "" {
+		line, rest, more := strings.Cut(remaining, "\n")
+		remaining = rest
+		if !more {
+			remaining = ""
 		}
-		relative := strings.IndexByte(line[slash+1:], '@')
-		if relative < 1 {
-			return bunGlobalEntry{}, false
+		line = strings.TrimSpace(line)
+		var row string
+		switch {
+		case strings.HasPrefix(line, "├──"):
+			row = strings.TrimSpace(strings.TrimPrefix(line, "├──"))
+		case strings.HasPrefix(line, "└──"):
+			row = strings.TrimSpace(strings.TrimPrefix(line, "└──"))
+		default:
+			return "", false, false
 		}
-		separator = slash + 1 + relative
-	} else {
-		separator = strings.IndexByte(line, '@')
-		if separator <= 0 {
-			return bunGlobalEntry{}, false
+		separator := -1
+		if strings.HasPrefix(row, "@") {
+			slash := strings.IndexByte(row, '/')
+			if slash <= 1 || slash == len(row)-1 {
+				return "", false, false
+			}
+			relative := strings.IndexByte(row[slash+1:], '@')
+			if relative < 1 {
+				return "", false, false
+			}
+			separator = slash + 1 + relative
+		} else {
+			separator = strings.IndexByte(row, '@')
+			if separator <= 0 {
+				return "", false, false
+			}
+		}
+		if separator == len(row)-1 {
+			return "", false, false
+		}
+		entries++
+		if row[:separator] == pkg {
+			found = true
+			version = row[separator+1:]
 		}
 	}
-	if separator == len(line)-1 {
-		return bunGlobalEntry{}, false
+	if count >= 0 && entries != count {
+		return "", false, false
 	}
-	return bunGlobalEntry{name: line[:separator], version: line[separator+1:]}, true
+	if !hasHeader && entries == 0 {
+		return "", false, false
+	}
+	return version, found, true
 }
 
 func bunGlobalListHeader(line string) (int, bool) {
