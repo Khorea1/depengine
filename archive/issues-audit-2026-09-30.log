@@ -1,0 +1,751 @@
+# depengine — bug & architecture audit (read-mode)
+
+Date: 2026-09-30
+Mode: READ-ONLY audit. No source files were modified; this log is the only write.
+Method: 6 parallel subsystem audits (config / exec / graph+validate / state+run /
+download+archive / CLI+native) with coordinator spot-verification of every
+high-severity claim against the cited lines.
+
+Verification markers:
+  [V] coordinator re-read the cited lines and confirmed the mechanism
+  [S] sub-audit report with exact file:lines + quoted code; not re-read by coordinator
+Contract refs: AGENTS.md, docs/architecture.md, docs/schema-reference.md,
+docs/support-boundary.md, docs/security.md, docs/cli-reference.md.
+
+==============================================================================
+SECURITY
+==============================================================================
+
+S1 [V] bug — repo+asset methods silently skip declared checksum/signature
+  Evidence:
+    internal/planner/artifact.go:66-76 — when `url == ""` (repo+asset form) the
+      planner appends a read-only `resolve-artifact` op and returns without
+      populating `p.Artifacts`.
+    internal/httpdownload/adapter.go:59-63 — empty artifact list is replaced by
+      `[]plan.Artifact{{URL: resolvedURL}}` (all verification fields zero).
+    internal/httpdownload/adapter.go:217-229 — `methodWithResolvedArtifact`
+      does `if value == "" { delete(effective.Config, key); continue }` for
+      checksum/checksum_url/checksum_file_format/signature_url/signing_key,
+      i.e. it *deletes* the user's declared checksum from the effective config.
+    internal/httpdownload/adapter.go:314 — verification only runs when
+      `mc.Config["checksum"]` is non-empty.
+  Impact: `http/github/appimage/msi = { repo=…, asset=…, checksum="sha256:…" }`
+    installs with NO checksum and NO GPG check. Contract:
+    docs/security.md ("checksums are verified before installation when
+    declared"); internal/methodkind/methodkind.go:41-44 (github fields share
+    http semantics). `repo+asset` + checksum is explicitly allowed
+    (methodkind/methodkind_test.go:121-125).
+  Coverage gap: httpdownload/resolved_install_test.go:107 drives only the
+    `url`-form intent; no test runs repo+asset + declared checksum end-to-end.
+  Fix: in resolveDownloadPlan copy checksum/signature fields from mc.Config into
+    the synthesized artifact; never delete keys the plan does not know about.
+
+S2 [V] bug — Remove recursively deletes a whole non-system extract_to
+  Evidence:
+    internal/httpdownload/adapter.go:735-737 — "// Not a shared directory —
+      safe to delete the whole directory" → `removeHTTPPath(..., recursive=true)`
+      → `os.RemoveAll(extractTo)` (adapter.go:742-762, elevated `rm -rf` when
+      sudo_required).
+    internal/httpdownload/adapter.go:636-653 — `isSharedDir` is an exact-match
+      system list (`/bin`, `/usr/local/bin`, …) + `/bin|/sbin` suffix. Parent
+      dirs such as `~/.local/share` or `~/.local/opt` are NOT shared.
+  Impact: two tools extracting into the same parent (`~/.local/opt`, the
+    documented `~/.local/share/fonts` in schema-reference.md:305) → removing one
+    `rm -rf`s the parent and destroys the other tool's payload. Direct
+    violation of AGENTS.md ("Removal must not delete shared parent directories")
+    and docs/schema-reference.md:306-308 (remove deletes only the owned
+    payload). Contrast the `local` adapter, which owns only `install_dir/<tool>`.
+  Coverage gap: adapter_test.go:895-923 asserts whole-dir deletion as desired;
+    adapter_test.go:937 pins `{"/home/user/.local/share", false}`. No shared-
+    parent test exists.
+  Fix: require ownership evidence (recorded child list / marker file) before any
+    recursive removal, mirroring internal/localartifact.
+
+S3 [V] bug — `binary` is joined unvalidated into extract_to (install and remove)
+  Evidence:
+    internal/httpdownload/extract.go:182 — `dest := filepath.Join(destDir, binaryName)`
+      with `binaryName` straight from `mc.Config["binary"]` (adapter.go:343,356),
+      no `safeJoin`/`filepath.Base`; under sudo this is `sudo install … <destDir>/../..`.
+    internal/httpdownload/adapter.go:697-704 — Remove reuses the same value:
+      `target := binary` → `filepath.Join(extractTo, target)` → `os.Remove` /
+      `sudo rm -f`.
+  Impact: arbitrary file write (as root) and arbitrary file delete from a schema
+    field. The codebase validates the sibling fields the opposite way:
+    archive_install.go:132-134 requires `filepath.Base(name) == name`, payload
+    paths go through `safeJoin` (archive_install.go:219-234),
+    dmg/target.go:52-74 revalidates on removal.
+  Coverage gap: no test anywhere with `binary` containing `../`.
+  Fix: apply the same Base/safeJoin validation on both paths.
+
+S4 [V] bug — `signature_url` without `signing_key` verifies against the user's
+     default keyring with no signer identity check
+  Evidence:
+    internal/integrity/gpg.go:79-91 — keyed path exists precisely "to prevent
+      signer-confusion attacks"; the fallback runs plain `gpg --verify` with no
+      fingerprint comparison.
+    internal/methodkind/methodkind.go:157-160 — http/github `Requires` is only
+      `httpBearerSecretRequirements` (signature_secret_ref → signature_url);
+      unlike `local` (methodkind.go:384-386) there is no
+      signature_url ↔ signing_key requirement, so the weak path is reachable.
+  Impact: any signature from ANY key in the operator's default keyring is
+    accepted, presented by docs/security.md:29-35 as signature verification.
+  Coverage: httpdownload/gpg_test.go:118 passes an empty signingKey and asserts
+    success (weak path tested as intended); wrong-signer test covers only the
+    keyed path (gpg_test.go:247).
+  Fix: require `signing_key` whenever `signature_url` is declared (mirror the
+    `local` Requires pair), or fail closed.
+
+S5 [V] risk — state lock has no timeout/context and is held across full installs
+  Evidence:
+    internal/state/lock_unix.go:39-64 — `lockWithMode(mode, desc)` takes no ctx;
+      the `flock` loop retries EINTR forever. Callers: state.go:210 LoadLocked.
+    Lock is held while adapter install runs: exec/preparation.go:226
+      `depstate.LoadLocked()` → tx open through attempt.go:425 InstallResolved;
+      also held by app/remove.go:73-79, upgrade.go:556-562, undo.go:111-116 and
+      as a shared lock for the whole `status` probe run (status.go:58-62).
+  Impact: a second `depengine status`/`install` started during a long native
+    install hangs indefinitely with no output and no cancellation path (see S6).
+  Coverage: state_test.go:352/:383 only prove blocking semantics; no
+    timeout/cancellation/hold-duration test.
+  Fix: LOCK_NB + deadline/ctx ("another depengine is running (pid …)"), and
+    narrow the lock scope to journal write boundaries instead of the whole
+    adapter call.
+
+S6 [V] risk — second Ctrl-C/SIGTERM cannot terminate the process
+  Evidence: main.go:28-36 — `signal.NotifyContext(...)` + `defer stop()`, but
+    the error path calls `os.Exit(exitErr.Code)` (skips `stop()`), and while a
+    run is in flight the first signal only cancels ctx: `signal.Notify` keeps
+    capturing subsequent signals into a channel nobody drains. Combined with
+    S5's unconditional EINTR retry in `flock`, a wedged run is only killable
+    with SIGKILL. Contradicts main.go:24-27 ("cancel in-flight work instead of
+    killing the process mid-mutation").
+  Coverage: no signal test (main_test.go:18-26 covers typed exit errors only).
+  Fix: on ctx.Done(), call `stop()` so later signals restore default behavior;
+    give the lock a bounded wait.
+
+S7 [V] risk — secret-env omission does not apply to state-write version probes
+  Evidence: internal/exec/execute.go:75 builds
+    `housekeepingCtx := run.WithOmittedEnv(ctx, schemaSecretEnvNames(s)...)`,
+    but execute.go:104 `return ex.finishRun(ctx, s, report, start)` passes the
+    RAW ctx → run.go:397 writeState(ctx) → state.go:83/30-32 installedVersion
+    probeCtx → adapter subprocesses.
+  Contract: internal/exec/secret_environment.go:22-24 — omission applies "to
+    child processes, including hooks, probes, preparation, and adapter commands".
+  Coverage: secret_environment_test.go:34 (hooks), :90 (InstallResolvedCandidate)
+    only.
+  Fix: pass housekeepingCtx (or omit per-tool inside installedVersion).
+
+S8 [V] risk — `OSExecRunner.RunWithEnv` ignores its `sensitive` argument
+  Evidence: internal/run/runner.go:382 —
+    `func (OSExecRunner) RunWithEnv(ctx, env, _ []string, name string, …)`;
+    redaction exists only in the package helper (runner.go:187
+    `redactResult(er.RunWithEnv(…), sensitive)`).
+  Impact: `EnvironmentRunner` is a documented public interface (runner.go:148-149);
+    any direct/type-asserted caller gets unredacted credential-bearing child
+    output. docs/security.md:154-156 calls the helper "a fallback, not a safe way".
+  Coverage: environment_test.go:119 calls the method with `sensitive == nil`.
+  Fix: apply `redactResult` inside the method (keep the helper as a second layer).
+
+S9 [V] bug — standalone `.bz2` decompression has no expansion budget
+  Evidence: internal/httpdownload/extract.go:96-102 — `io.Copy(tmp,
+    bzip2.NewReader(in))` into `os.CreateTemp("")` unbounded, while tar/zip are
+    capped by `archiveExpansionLimit` (archive_native.go:19-24, 55-71).
+  Reachable: `.bz2` ∈ SupportedArchiveExtensions (artifact/contract.go:36-38) →
+    `installArchive` → `extractBzip2`. A small .bz2 fills /tmp (often tmpfs →
+    RAM) before any cache eviction runs.
+  Coverage: backend_extract_test.go:204-213 is a happy-path roundtrip.
+  Fix: wrap in the same `archiveExpansionBudget` writer used by tar/zip.
+
+S10 [S] risk — elevated archive payload root committed 0700 / user-owned
+  Evidence: internal/httpdownload/archive_install.go:88-94 — payload created via
+    `os.MkdirTemp(stageParent, ".depengine-payload-*")` (0700, invoking user,
+    `stageParent == ""` → /tmp when elevated); commitPayload renames it verbatim
+    (archive_install.go:170,185); `grep -n Chmod internal/httpdownload/archive_install.go`
+    returns nothing — only archive-recorded sub-dirs get modes
+    (archive_native.go:247-266). Sibling package documents and fixes exactly
+    this: localartifact/install.go:275-282 chmods the stage to 0755 before the
+    rename.
+  Impact: system-scope installs (`/opt/depengine/tools/<tool>`) end up 0700
+    user-owned — other users get "permission denied" from /usr/local/bin links,
+    and a user-writable dir sits inside a root-owned tree.
+  Fix: chmod the payload root to 0755 (or archive-declared root mode) before commit.
+
+S11 [S] risk — world-writable /tmp fallbacks for state and download cache
+  Evidence: internal/state/state.go:86-94 — `os.UserHomeDir()` error →
+    `home = "/tmp"` → state.json/lock/snapshots under /tmp/depengine (then
+    `ensurePrivateDir` MkdirAll+Chmod 0700 on a dir an attacker may pre-own).
+    internal/downloadcache/cache.go:115-120 — same fallback →
+    /tmp/.cache/depengine/downloads; Lookup (cache.go:140-149) does only
+    Lstat + IsRegular (no ownership check) and the key is predictable
+    `sha256(url)` (cache.go:126-134); private-dir chmod only runs in Store
+    (cache.go:101-109).
+  Impact: with HOME unset (cron/systemd-minimal), another local user can serve
+    poisoned cache content that is installed when the schema declares no
+    checksum (docs/support-boundary.md:75 explicitly allows unpinned installs),
+    or manipulate/lock the authoritative install state (AGENTS.md "Local state").
+  Coverage: no test covers either fallback.
+  Fix: refuse a state/cache dir not owned by the current user; drop the /tmp
+    fallback (return an explicit error instead).
+
+S12 [S] risk — unbounded HTTP response body; cache budget applies only after write
+  Evidence: internal/httpdownload/backend.go:142 `io.Copy(out, resp.Body)` with
+    no Content-Length/total cap (curl/wget paths likewise, backend.go:184);
+    downloadcache evicts only after Store (cache.go:179,192) against a 1 GiB
+    budget (cache.go:36).
+  Fix: enforce a max response size; reject oversized Content-Length.
+
+==============================================================================
+CORRECTNESS / CONTRACT
+==============================================================================
+
+C1 [V] bug — `when.distro_version_min` / `_max` are silently dropped by the parser
+  Evidence:
+    internal/config/condition.go:19-20 — `DistroVersionMin string \`cfg:"distro_version_min"\``
+      (and Max) are the ONLY string fields in Condition.
+    internal/config/decode.go:36-41 — the sole decoder switches only
+      `case []string:` / `case *bool:`; decode.go:34 marks the key consumed
+      before the switch, so it is neither assigned nor reported as leftover.
+    internal/config/condition.go:206-208 — `if cond.IsZero() { return nil }`,
+      so a schema using only min/max gets NO gate at all.
+    internal/config/decode.go:11-13 — doc comment admits unrecognized shapes
+      "leave the field at its zero value".
+  Impact: `x = { when = { distro_version_min = "24.04" }, … }` never gates, while
+    strict.go:593/:605-607 validates it as meaningful and Match implements it
+    (condition.go:122). Contract: docs/schema-reference.md:956,
+    schema/depengine.schema.json:121.
+  Coverage: schema_test.go:1090-1099 builds Condition struct literals — nothing
+    parses these keys from TOML. Same gap for hook `when` (parse.go:790-791) and
+    bucket config (parse.go:662).
+  Fix: add `case string:` to the decoder + a TOML round-trip test.
+
+C2 [V] bug — manifest pre/post_install inheritance is nested inside the
+     `sources` check
+  Evidence: internal/config/manifest.go:379-387 (verbatim, note indentation):
+      if len(upper.Sources) == 0 {
+          result.Sources = cloneSources(lower.Sources)
+      if len(upper.PreInstall) == 0 {          // one tab — inside the Sources block
+          result.PreInstall = cloneHooks(lower.PreInstall)
+      }
+      if len(upper.PostInstall) == 0 {
+          result.PostInstall = cloneHooks(lower.PostInstall)
+      }
+      }                                       // closes Sources
+  Proof of neglect: `gofmt -l internal/` lists internal/config/manifest.go (plus
+    12 other files) — CI has no formatter gate (.golangci.yml enables only
+    govet/ineffassign/errcheck/staticcheck/unused/gosec/errorlint).
+  Impact: manifest hook is dropped whenever the schema sets `sources` for the
+    same method. Contract: docs/schema-reference.md:1161-1163, :930-934.
+  Coverage: no test calls mergeMethodConfigs (grep across *_test.go).
+  Fix: close the Sources block after its single statement; run gofmt; add a
+    formatter linter/CI step.
+
+C3 [V] bug — a personal manifest's `[defaults]` is always discarded
+  Evidence: internal/config/manifest.go:131-137 —
+      `Defaults: layers[len(layers)-1].Defaults` (wholesale copy of the last
+      layer = the project schema; app/helpers.go:163-165 passes
+      MergeLayers(manifest, schema)). extractDefaults always fills engine
+      defaults (parse.go:281-289), so the schema layer always "has" them.
+  Impact: manifest `aur_helper`/`manager`/`method_prefer`/`arch_map` never
+    survive; a defaults-only manifest returns the untouched schema
+    (helpers.go:158-161). Yet `defaults` is an allowed manifest root
+    (strict.go:33,45) and README.md:94-96 promises manifest machine defaults
+    with project-wins-per-FIELD.
+  Coverage: resolve_test.go:116-145 covers only schema-has-defaults.
+  Fix: field-wise merge (schema wins per field), or reject `defaults` in
+    `packages` documents with a clear error.
+
+C4 [S] bug — manifest layer is never fact-expanded
+  Evidence: app/helpers.go:147 `config.ParseManifest(path, nil)` vs helpers.go:98
+    `ParseProjectSchema(path, config.BuildMap(facts, clan))`; ExpandAll has only
+    two call sites, both inside parseDocument (parse.go:164, :252), gated on
+    hasArch||hasOS (parse.go:217-233); no post-merge pass exists.
+  Impact: manifest `url = "…/{os}/{arch}/…"` or hooks with `{distro_family}`
+    ship literal braces to adapters/`sh -c`, with no warning (`{arch}` is a
+    known placeholder so W_UNKNOWN_PLACEHOLDER never fires). Contract:
+    parse.go:117-120, docs/schema-reference.md:1127.
+  Coverage: every ParseManifest call in tests passes nil.
+  Fix: thread BuildMap into ParseManifest/mergeManifest.
+
+C5 [V] bug — merging a method present in both layers drops the lower `when`
+  Evidence: internal/config/manifest.go:373-407 — `result := cloneMethod(upper)`
+    with fallbacks only for Requires/Sources/PreInstall/PostInstall/SecretRefs +
+    Config keys; `when` is hoisted OUT of Config at parse.go:517-519
+    (`mc.When = parseCondition(rawWhen); delete(t, "when")`), so the Config
+    inheritance cannot recover it and MethodCandidate.When has no fallback.
+  Impact: manifest `when = { arch = ["aarch64"] }` + schema bare method →
+    platform gate lost, tool installs everywhere. Same structural gap for
+    `Inferred` (feeds planner/intent.go:50 CandidateIdentity.Explicit),
+    ArchMap, OSMap. Contract: README.md:96 (project wins only "when both files
+    set the same field").
+  Coverage: zero tests exercise mergeMethodConfigs.
+  Fix: nil-fallback for When/Inferred/ArchMap/OSMap alongside the existing ones.
+
+C6 [V] bug — requires_when-gated `dependency_only` tools are still installed
+  Evidence:
+    internal/exec/run.go:139 — `toolsForGraph := config.FilteredTools(rootTools(s.Tools), ex.facts)`;
+      rootTools (execute.go:276-298) expands the seed set with RAW
+      `queue = append(queue, tool.Requires...)` (execute.go:295) before any
+      facts filtering; FilteredTools (config/model.go:67-80) NEVER removes map
+      entries — it only rewrites `Requires`; runLevel (run.go:170-188) gates
+      only `recoveredCommits`, there is no DependencyOnly check.
+  Impact: `[tools.fontconfig] dependency_only = true` + a requires_when that
+    does not match this host → fontconfig is installed anyway. Contract:
+    docs/schema-reference.md:810-811 ("on Windows the edge disappears…"),
+    :880-881 ("dependency_only tools are not normal roots").
+  Coverage: no test combines requires_when with dependency_only anywhere
+    (exec, config, graph, tests/integration).
+  Fix: filter facts before rootTools expansion (or walk EffectiveRequires), and
+    gate DependencyOnly in runLevel as defense in depth.
+
+C7 [V] bug — `install` maps every Execute failure to exit code 2
+  Evidence: app/install.go:418-422 —
+      report, err := ex.Execute(ctx, s, clan)
+      if err != nil { lg.Error("execute failed", …); return exitWithCode(2) }
+    Execute errors are runtime failures (exec/run.go:396-399 persists state
+    errors; preparation/adapter errors). docs/cli-reference.md:291-296 defines
+    2 = schema error, 3 = runtime error; app/helpers.go:168-177 already
+    implements the correct mapping in exitCodeForError.
+  Related [S]: the same "schema file not found" yields 1 (install.go:358-361,
+    upgrade.go:536-539), 2 (validate_check.go:71-75, graph_why.go:98) or 3
+    (check path via helpers.go:84-87 default) depending on the command;
+    graph_why.go:326-329 hard-codes 1 for a parse failure.
+  Coverage: install_phases_test.go:59,132,171 covers other errors only.
+  Fix: `exitWithCode(exitCodeForError(err))`; drop the IsNotExist → 1 special case.
+
+C8 [V] bug — `status`/`graph`/`why` parse the schema with a nil placeholder map
+     and bypass the shared validation pipeline
+  Evidence:
+    app/status.go:151 — `config.ParseProjectSchema(schemaPath, nil)` vs install's
+      helpers.go:98 `BuildMap(facts, clan)`; nil means "skip placeholder
+      expansion" (parse.go:119-126). Unexpanded strings are hashed
+      (state/hash.go:94 writeMapCanonical(h, e.config)) and compared at
+      status.go:198 and :218 (definitionDrift) → permanent false "drift" for any
+      schema using {arch}/{os}/{distro_family}, and `statusToolOutdated`
+      (status.go:197-200) marks the tool outdated.
+    app/graph_why.go:95 (graph) — parses with nil, NO validation at all;
+      graph_why.go:326 (why) parses with nil and only thin
+      `config.Validate` (graph_why.go:361), never validate.ValidateSchema
+      (helpers.go:102) → cycles, dangling refs, unknown distro_family,
+      placeholders unchecked. `why` also never calls WithDefaultMethodOrder
+      (graph_why.go:376-379), unlike install.go:205 / check:230 / graph_view.go:148.
+  Contract: docs/architecture.md requires one Parse layer feeding every consumer.
+  Coverage: status_phases_test.go uses placeholder-free tools.
+  Fix: route all three through loadSchemaWithManifest (facts + manifest +
+    validate.ValidateSchema + schema default method order).
+
+C9 [V] bug — `status` reconciles its first row before the native manager name
+     is initialized (nondeterministic degraded row)
+  Evidence: app/status.go:219 reads `ex.NativeManagerName()` in
+    findTrackedMethodCandidate, but `ex.SetHostContext(clan)` — the call that
+    populates it (exec/explain.go:347-352) — is at status.go:226, INSIDE the
+    same loop after the read. With an empty name, method-order expansion is a
+    no-op (config/method_order.go:66-69,127-140), so with e.g.
+    `method_only = ["apt"]` the first processed row is forced to `unknown`.
+    Rows iterate a Go map (status.go:268), so WHICH tool degrades varies per run.
+  Coverage: status_phases_test.go:35,56 passes clan "unknown" for all rows →
+    ordering bug invisible.
+  Fix: `ex.SetHostContext(clan)` once before the loop.
+
+C10 [V] bug — a security-blocked tool is counted as both skipped and failed
+  Evidence: exec/presentation.go:110-119 — recordBlockedTool records
+    StatusSkippedUnavailable (→ presentation.go:90-92 `report.Skipped++`) and
+    then manually does `report.Failed++`. One tool ⇒ Summary "1 failed, 1
+    skipped" with a single report.Tools row; report.go:202 only emits the
+    reason for StatusFailed, so `--quiet` shows "unavailable" with no
+    "requires --allow-arbitrary-code" text — yet installExitForReport
+    (install.go:308) depends on that hidden Failed. The sibling gate already
+    does it right (execute.go:136-137 sets StatusFailed, comment at :130-134).
+  Coverage: executor_test.go:1947-1976 and conformance_test.go:284-296 never
+    assert Skipped/Failed counters.
+  Fix: use StatusFailed, drop the manual Failed++.
+
+C11 [V] bug — Ctrl-C is reported as a fabricated "tool timeout", and the level
+     loop never checks cancellation
+  Evidence: exec/execute.go:100-102 `for _, level := range levels { ex.runLevel(rc, level) }`
+    — no `ctx.Done()` check; execute.go:173-179 maps ANY toolCtx cancellation to
+    `result.Error = fmt.Sprintf("tool timeout (%v) exceeded", ex.toolTimeout)`.
+  Impact: after one SIGINT every remaining tool is recorded StatusFailed with
+    "tool timeout (5m0s) exceeded" even though it was never attempted; the run
+    does not fast-fail. main.go:24-27 promises signals cancel in-flight work.
+  Coverage: no cancellation test in internal/exec.
+  Fix: bail out of the level loop on ctx.Err(); distinguish parent cancellation
+    from toolTimeout in the message.
+
+C12 [V] bug — `exec.ErrWaitDelay` turns a successful install/hook into a failure
+  Evidence: run/runner.go:455-471 — commandResult only normalizes
+    `*exec.ExitError`; exec.ErrWaitDelay is not an ExitError, so an exit-0 child
+    with a grandchild holding the pipe past `killGracePeriod` (runner.go:321,349)
+    yields `Result{ExitCode:0, Err:ErrWaitDelay}` → CheckResult (runner.go:548)
+    reports failure. The package's own test pins both halves:
+    lifecycle_test.go:54-58 asserts `errors.Is(res.Err, exec.ErrWaitDelay)` with
+    an exit-0 child; :42-45 documents that the SIGTERM-ignoring grandchild
+    simply survives.
+  Impact: a `post_install` hook that daemonizes (`foo &`, `systemctl --no-block`)
+    makes a SUCCESSFUL install report failed / exit non-zero, while the orphan
+    keeps mutating the host unsupervised.
+  Fix: on exit 0 + ErrWaitDelay, clear Err (record a warning); escalate to
+    SIGKILL for the process group when the grace period expires.
+
+C13 [V] bug — dangling references are double-reported, one copy mis-coded E_CYCLE
+  Evidence: validate/semantic.go:29-35 — the non-CycleError branch of
+    validateCycles sets `Code: ErrCycle` with `Message: err.Error()`; the error
+    comes from graph/sort.go:84 ("requires %q, which is not in schema").
+    ValidateSchema then ALSO runs validateDanglingReferences (validate.go:268-269)
+    for the same pair.
+  Impact: `a = { requires = ["missing"] }` emits both `E_CYCLE` and
+    `E_DANGLING_REF`; JSON consumers (validate_check.go:115-125) see a
+    nonexistent cycle; E_CYCLE counts inflate.
+  Coverage: structural_test.go:893-921 uses a fixture that has BOTH a real
+    cycle and a dangling ref, so the mis-coding passes; no dedicated test.
+  Fix: type-check a dedicated missing-node error (or skip pairs already
+    reported as dangling) instead of defaulting to ErrCycle.
+
+C14 [V] risk — lock auto-resolve failure fails open, then persists a possibly
+     different pin after execution
+  Evidence: app/install.go:252-266 — `lock.ResolveAll` error →
+    `lg.Warn("could not auto-resolve lockable selectors", …)` and execution
+    continues with the old/absent lock. lock/lock.go:303-307 makes ResolveAll
+    all-or-nothing. The post-run `saveLockfile` (helpers.go:272-294,
+    install.go:321) re-runs ResolveAll — a second, later resolution — and
+    syncInstalledVersions (install.go:464-475) may backfill that pin into state.
+  Impact: rate-limited plan-time resolve + successful save-time resolve ⇒
+    lock/state claim v1.1.0 while v1.0.0 was installed; next
+    `--frozen-lockfile` run diverges from what was tested. Contradicts
+    install.go:238-240 and docs/support-boundary.md:121-123 ("persist that same
+    resolved value after execution"). validateInstallPackageLockIdentity
+    (helpers.go:299-328) only guards npm/pnpm/yarn package selectors.
+  Coverage: install_phases_test.go:152-224 covers frozen-reject + success only.
+  Fix: fail (exit 2) or require an explicit opt-out instead of warning.
+
+C15 [S] bug — `when.distro_family` validation whitelist omits `android` and is
+     case-sensitive
+  Evidence: validate/validate.go:144-151 builds the set from native.AllClans()
+    (native/registry.go:409-416 = keys of clanToManagerKey, 15 entries) +
+    "unknown"; validate/semantic.go:221 exact-map lookup. But
+    platform/resolve.go:92-93 returns "android" for IsAndroid (detect.go:111-112),
+    and docs/schema-reference.md:953 specifies case-insensitive matching which
+    resolve.go:110 implements with EqualFold.
+  Impact: `when = { distro_family = ["android"] }` warns on every host although
+    it matches at runtime; `["Debian"]` matches at runtime but warns at validate.
+  Coverage: semantic_test.go:292-345 never uses android or mixed case.
+  Fix: seed from every value platform.ResolveFamily can return; compare
+    EqualFold.
+
+C16 [S] risk — status/SBOM silently discard lockfile load errors
+  Evidence: app/status.go:145 `lk, _ = lock.Load(...)` (only caller in the tree
+    that drops the error); app/sbom.go:45 `if lk, lerr := …; lerr == nil && lk != nil`
+    silently no-ops. helpers.go:246-253 warns on the same condition.
+  Impact: corrupt/unsupported lock ⇒ status loses outdated detection, sbom
+    emits 0.0.0, with no warning.
+  Fix: mirror the helpers.go warning in both paths.
+
+C17 [S] risk — snapshots are written non-atomically and without the lock
+  Evidence: state/snapshot.go:50 `os.WriteFile(dst, data, 0600)` — no temp+rename,
+    no fsync, unlike state.json (state.go:138-180 write→sync→rename→dir-sync);
+    SaveSnapshot reads state.json unlocked (snapshot.go:41); call-site failure
+    only warns (install.go:408-410).
+  Impact: a crash during snapshot write tears the one file `undo`
+    (undo.go:105 LoadSnapshot) depends on; pruning may then prefer the torn one.
+  Fix: temp + rename, take the shared lock for the source read.
+
+C18 [S] bug — `.deb` installs via `dpkg -i` as root, but Check/Remove use
+     file-path semantics
+  Evidence: httpdownload/extract.go:81-82,135,149 (dpkg -i + apt-get install -f
+    elevated) vs adapter.go:132-147 (Check false for a .deb tool without
+    extract_to/binary ⇒ re-install every run) and adapter.go:727-732 (Remove
+    targets extractTo default `/usr/local/bin` while the package lives in
+    `/usr/bin`) ⇒ `depengine remove` reports success, package stays.
+  Contract: docs/support-boundary.md:12-14, schema-reference.md:306-308.
+  Coverage: compatibility_test.go:17-79 only; no lifecycle test.
+  Fix: dedicated dpkg ownership (dpkg -s/-r) or refuse removal with an explicit
+    error (as android does, android_adapter.go:185-190).
+
+C19 [V] risk — `{arch}`/`{os}` never substituted in any method whose Config
+     contains `repo`
+  Evidence: config/parse.go:237-241 — `if _, hasRepo := mc.Config["repo"]; hasRepo { …
+    continue }` skips the whole per-method ExpandAll at parse.go:252, not just
+    the alias layering the comment describes; the GitHub replacer only knows
+    {version}/{arch_any}/{os_any} (ghrelease/assetmatch.go:59-63).
+  Impact: `github = { repo=…, extract_to = "/opt/{arch}" }` creates a literal
+    `{arch}` directory; `{arch}` in `asset` makes the pattern match braces →
+    "no asset matched". Contract: schema-reference.md:1107-1108, :1127.
+  Coverage: archmap_test.go:140-167 only asserts `_current_arch` stays raw.
+  Fix: still ExpandAll with raw arch/os for repo methods.
+
+C20 [S] risk — precedence is presence-by-zero-test, so a manifest beats an
+     explicit schema zero
+  Evidence: config/manifest.go:288-295 MergeOverwrite uses fieldIsSet
+    (manifest.go:218-231 → false for bool false, "", empty slice/map);
+    parse.go:395 stores an explicit `dependency_only = false` identically to an
+    absent key.
+  Impact: schema `dependency_only = false` + manifest `dependency_only = true`
+    ⇒ merged true (README.md:96 says project wins when both set the field).
+    Same for `method_prefer = []` (parse.go:463-467 only assigns when non-empty).
+  Coverage: resolve_test.go:349-356 tests only non-zero upper values.
+  Fix: track declared keys during parse; consult presence, not zero-ness.
+
+C21 [S] risk — `requires_when` maps are whole-map replaced (violates the
+     documented map-merge rule)
+  Evidence: config/model.go:48 `RequiresWhen … merge:"overwrite"` →
+    manifest.go:290 replaces the entire map; docs/schema-reference.md:1157-1159
+    says maps merge per key with schema winning on duplicates. Structural: the
+    merge tag vocabulary (manifest.go:196-208, switch at :287-323) has no
+    map-merge case, so tagging the field would silently no-op.
+  Fix: add a map strategy case (already exists for method Config at :409-427).
+
+C22 [S] risk — `method_prefer`/`method_only` bucket expansion errors unless
+     EVERY bucket member is declared
+  Evidence: config/parse.go:976-995 — for each selector from ExpandBuckets
+    (method_order.go:117-119; methodkind.go:577-592, e.g. "python" →
+    pip,pipx,uv) an unmatched member becomes a hardError → ParseSchemaError.
+  Impact: `method_prefer = ["python"]` + only `pip` declared is REJECTED, though
+    the declared candidate matches. Contract: schema-reference.md:1057-1060,
+    :1073-1074, :1082 ("priority prefixes; unlisted methods remain available").
+  Coverage: schema_test.go:1411-1435 declares all three members precisely so no
+    error fires; partial declaration untested.
+  Fix: intersect expanded selectors with declared methods; error only when
+    nothing matches.
+
+C23 [V] risk — relative schema path persisted into the global state file
+  Evidence: exec/state.go:43 `current.SchemaPath = ex.schemaPath` set from the
+    raw flag (install.go:212 WithSchemaInfo), usually the relative default
+    `schema.toml`; consumers resolve it against their own CWD
+    (status.go:124-136; sbom.go:44-45 → lock.DefaultPath = filepath.Dir(schemaPath)
+    + "depengine.lock", lock/lock.go:115-118).
+  Impact: running `status`/`sbom` from another directory silently reads another
+    project's lock or degrades to state-only output (schema load failure is only
+    a warning at status.go:152-155).
+  Fix: filepath.Abs before WithSchemaInfo.
+
+==============================================================================
+ARCHITECTURE
+==============================================================================
+
+A1 [V] evidence — `internal/config/manifest.go` is not gofmt-formatted (see C2),
+     and 12 more files are not either: `gofmt -l internal/` →
+     app/graph_why_ambiguity_test.go, config/manifest.go, config/model.go,
+     config/strict.go, exec/lazy_dependency_test.go,
+     httpdownload/archive_compressed_test.go, httpdownload/tar_reader.go,
+     integrity/gpg.go, localartifact/archive_budget_test.go,
+     localartifactadapter/adapter_v2_test.go, methodkind/package_metadata.go,
+     planner/artifact_test.go, platform/detect_test.go.
+     .golangci.yml enables no formatter linter (no gofmt/goimports/formatters),
+     so neither CI nor the hooks catch it. AGENTS.md's canonical commands
+     (build/test/vet/lint) cannot catch a brace/indentation defect like C2 —
+     only gofmt would surface it.
+     Fix: add `formatters: [gofmt, goimports]` to .golangci.yml (or a CI
+     `test -z "$(gofmt -l .)"`) and reformat.
+
+A2 [S] architecture — two authorities for the native clan (facts vs PATH probe)
+  Evidence: app/bootstrap.go:17 registers `exec.NewNativeAdapter("")` →
+    native_adapter.go:41-58 picks "the first known manager binary found in
+    PATH"; install.go:210, upgrade.go:165, remove.go:177, undo.go:243 override
+    with `NewNativeAdapter(engine.ResolveFamily(facts))` (rationale at
+    remove.go:169-174), but status.go:77-81, validate_check.go:227-231,
+    graph_why.go:376-379, graph_view.go:145-162 do NOT (SetHostContext sets
+    only ex.clan, explain.go:347-353). native/registry.go:400 sorts clans
+    alphabetically, so `freebsd` (registry.go:184, `pkg`) is probed before
+    `termux` (registry.go:167, `dpkg -s`).
+  Impact: status/check/why/graph can reconcile against the wrong package when
+    ResolveFamily ≠ first-LookPath clan — violates docs/architecture.md:71-72.
+  Coverage: native_adapter_test.go:289-292 asserts the result is
+    `"termux" or "freebsd"` — i.e. the wrong answer is acceptable to the test.
+  Fix: bind NewNativeAdapter(clan) in all read-only commands (one helper).
+
+A3 [S] architecture — `defaults.aur_helper` applied by some commands, ignored by
+     others
+  Evidence: applied in install.go:366, upgrade.go:547, update.go:73,
+    graph_why.go:357, graph_view.go:141; absent from status.go, validate_check.go
+    (runCheck), remove.go, undo.go (grep confirms). ecosystem/registry.go:230-234
+    documents ReconfigureAUR as overriding the init-time default `paru`
+    (bootstrap.go:19).
+  Impact: with `defaults.aur_helper = "yay"`, install uses yay while
+    check/status/remove use paru ⇒ false failures or a different fallback method.
+  Coverage: upgrade_test.go:849-852 covers upgrade only.
+  Fix: one "apply schema defaults" helper called by every command that builds an
+    executor.
+
+A4 [S] architecture — remove/undo bypass schema `defaults.method_order` and
+     mutate the process-global adapter registry
+  Evidence: app/remove.go:91 `WithDefaultMethodOrder(config.DefaultMethodOrder)`
+    (hard-coded) though remove.go:161 loads the project schema; undo.go:129-133
+    builds the executor with only Runner+Facts (falls back to executor.go:234);
+    remove.go:177 and undo.go:243 call `exec.Replace(...)` on the global registry
+    (registry.go:121-127 documents Replace as a runtime-reconfiguration shim).
+  Impact: removal can select a different fallback method than install did;
+    per-command wiring diverges from the composition-root rule in
+    docs/architecture.md.
+  Fix: build remove/undo executors through the same wiring used by install.
+
+A5 [S] architecture — `internal/engine` duplicates platform detection instead of
+     delegating
+  Evidence: engine/facts.go:81-105 (:81-105 detectDarwinVersion/detectWindowsVersion)
+    and :111-155 (parseWindowsVersion/validWindowsVersion) are byte-identical
+    copies of platform/detect.go:353-379 / :381-397; gatherFactsGo (facts.go:40-79)
+    duplicates the darwin/windows branches of platform detect. Reachable in
+    production: GatherFacts falls back to gatherFactsGo (facts.go:198, :211)
+    whenever DEPENGINE_DETECT_SCRIPT fails/returns non-JSON.
+  Impact: a fix to the Windows/darwin parser lands in platform only; the
+    fallback keeps the old behavior ⇒ `when = { distro_version_min = … }`
+    evaluates differently depending on which detector ran. Both copies are
+    tested independently, so neither suite catches drift.
+  Contract: docs/architecture.md:44-45 (engine = "Compatibility façade").
+  Fix: export the platform parsers / delegate gatherFactsGo; delete the copies.
+
+A6 [S] idiom — `--check-env`'s hardcoded binary list drifts from internal/native
+  Evidence: validate/envcheck.go:37-70 hardcodes the "native" group; it omits
+    `winget` (native/registry.go:247) and `pkgin` (native/registry.go:204),
+    both returned by native.ManagerNames()/KnownClans(), while probing apt/
+    pacman/dnf on that same host. validate already imports native.
+  Coverage: envcheck_test.go never asserts coverage against ManagerNames();
+    TestCheckEnv_Deduplicates (:86-123) passes vacuously (no duplicates in the
+    literal — its rationale comment is stale).
+  Fix: derive the native group from native.ManagerNames(); add an inclusion test.
+
+A7 [V] idiom — GitHub API paths interpolate owner/repo unescaped
+  Evidence: ghrelease/resolver.go:123,175
+    `fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)`
+    while :227 escapes only the tag; splitRepo (resolver.go:361-385) enforces
+    two non-empty `/`-free components but no character class (`a?b/c` → query
+    injection; `../..` components pass).
+  Impact: bounded to api.github.com (token is dropped cross-host on redirect),
+    but resolution can be silently pointed at arbitrary API paths; the
+    asymmetry with PathEscape(tag) is clearly unintentional.
+  Fix: url.PathEscape both components (or validate [A-Za-z0-9._-]).
+
+A8 [S] idiom — nondeterministic map iteration in user-facing diagnostics
+  Evidence: config/parse.go:907-918 picks the first prefix hint in map order
+    ("msixx" can match "msi" or "msix" depending on run — the message is a hard
+    error, :919-928); decode.go:44-48 returns `leftover` unsorted (logged at
+    condition.go:204); parse.go:431,440,453 assign `tool.Ecosystem` from a map
+    bucket loop (field is written 3×, read 0× repo-wide — dead + nondeterministic).
+  Fix: sort hints (longest match then lexicographic), sort leftover, delete or
+    define Ecosystem.
+
+A9 [S] idiom — the "multiple schema files found" warning prints once per command
+     constructor (up to 7× per invocation, including `depengine version`)
+  Evidence: app/helpers.go:61-77 writes to stderr unconditionally, and
+    `defaultSchemaPath()` is evaluated eagerly as a flag default at
+    install.go:58, upgrade.go:58, update.go:41, validate_check.go:44 and :183,
+    graph_why.go:48 and :208; cli.go:72-88 builds ALL commands for every run.
+  Fix: compute once (lazily in PersistentPreRun or sync.Once).
+
+A10 [S] risk — unregistered method kind with no hooks ⇒ nil plan ⇒
+      already-installed gate silently skipped
+  Evidence: exec/capability.go:61-70 returns `nil, nil` for an unregistered kind
+    when no lifecycle hooks exist → resolution.go:37-39 `if intent == nil { return nil, nil }`
+    → attempt.go:146-148 `if ac.resolved == nil { return proceed }`.
+  Impact: custom/programmatic adapters whose kind is absent from
+    methodkind.Lookup get NO observation ⇒ pre/post hooks replay every run and
+    `InstallResolved(..., nil)` is passed a nil plan (built-ins nil-check; a
+    custom adapter can panic). Fails open vs docs/architecture.md:111-112.
+  Fix: treat nil resolution as unsupported/failed (skip with reason).
+
+A11 [S] idiom — two read-only probes bypass probeRunner (routine "failures" log
+      at WARN)
+  Evidence: exec/explain.go:133 `adapter.Available(...)` and exec/state.go:32
+    `versioner.InstalledVersion(...)` vs the documented contract at
+    executor.go:260-271 (probes must be tagged Probe:true → DEBUG). Every other
+    probe site complies (attempt.go:108,221,259; batch.go:52,110;
+    explain.go:217,294).
+  Impact: `depengine why` on a machine lacking the binary emits WARN noise;
+    version probes during writeState log WARN.
+  Fix: use ex.probeRunner(tool, displayKind) at both sites.
+
+A12 [S] idiom — hook/preparation output lines carry no tool name and are written
+      outside report.mu (ambiguous under --jobs > 1)
+  Evidence: exec/hooks.go:95 `ex.outputf("    %s: %s\n", phase, command)` and
+    preparation.go:182 (`prepare: would add source …`) vs recordToolResult
+    which holds report.mu (presentation.go:77-78,102-103); outputf is a bare
+    fmt.Fprintf (execute.go:465-469); parallel workers run these phases
+    concurrently (execute.go:433-447).
+  Fix: prefix with toolName and/or route through report.mu.
+
+A13 [S] risk — archive rollback/backup failures are swallowed
+  Evidence: httpdownload/archive_install.go:201-207 `removeOwned` discards both
+    the elevated rm and os.RemoveAll results; rollbackPayload (:192-198)
+    discards the restore rename/mv result; installArchive returns only the
+    original error (:146-153).
+  Impact: if the elevated restore fails, the previous payload stays stranded at
+    `<dest>.depengine-backup` with no diagnostic — defeats the transactional
+    story in schema-reference.md:306-307 and is the "cleanup error swallowed"
+    class AGENTS.md warns about.
+  Fix: errors.Join rollback/restore errors into the returned error.
+
+A14 [S] risk — external decoder wait can stall until the method timeout
+  Evidence: httpdownload/archive_native.go:374-378 — extractTarStream returns at
+    tar EOF (:405-407) without draining the pipe; if the decoder has >64 KiB
+    pending, the child blocks writing and `pipe.Wait()` cannot return until the
+    enclosing methodTimeout (attempt.go:386); no drain goroutine, no Abort on
+    the success path.
+  Fix: drain to EOF (bounded, ctx-aware) before Wait, or Abort after tar EOF.
+
+A15 [S] risk — exported `state.Save` does no locking and uses a fixed temp path
+  Evidence: state/state.go:105 (no lock) and :138 `tmpPath := path + ".tmp"` —
+    two unlocked concurrent writers interleave the same temp file then
+    last-writer-wins rename (lost install-state update). SaveLocked (:242) shows
+    the intended pattern but nothing enforces it; tests call the unsafe entry
+    point (exec/executor_test.go:2226, lazy_dependency_test.go:199).
+  Fix: self-lock (or unexport), O_EXCL + random suffix.
+
+A16 [S] idiom — Windows lock file created 0644 while docs record 0600
+  Evidence: state/lock_windows.go:78 `os.OpenFile(path, …, 0644)` vs
+    lock_unix.go:45-52 (0600 + Chmod); docs/gosec-triage.md:49 records the
+    tightening as a completed security action; state_test.go:65 is
+    Unix-gated.
+  Fix: 0600 for symmetry + document the ACL caveat.
+
+A17 [S] latent — `Schema.AllowNewTools` is lost by the merge
+  Evidence: config/model.go:15 (json:"-") vs manifest.go:131-137 which copies
+    only Version/Defaults/Tools/Provenance/ProjectRoot ⇒ false after merge.
+    Today the only reader FilterManifestTools (manifest.go:45) always runs
+    pre-merge (helpers.go:151), so behavior is correct BY ACCIDENT; any future
+    post-merge re-filter silently drops manifest-admitted tools
+    (README.md:97-99, schema-reference.md:1164-1165).
+  Fix: copy AllowNewTools into the result; audit other Schema-level flags.
+
+==============================================================================
+CHECKED AND FOUND CLEAN (do not re-litigate)
+==============================================================================
+- Archive extraction proper: os.Root-confined writes with O_CREATE|O_EXCL
+  (archive_native.go:213), lexical ..//absolute/drive/backslash rejection
+  (:89-143), symlink+hardlink target validation, 4 GiB / 100k-entry / depth
+  limits, 16 MiB trailer bound (tar_reader.go:63); traversal is well covered
+  (backend_extract_test.go:404-699, archive_native_test.go:30,124-291,
+  localartifact/archive_fuzz_test.go).
+- state.json writes are atomic with file+dir fsync (state.go:143-180); the lock
+  is always acquired before read in LoadLocked/LoadShared (no TOCTOU); load
+  errors release the lock (state.go:216,233).
+- Cycle detection/topological determinism: single Kahn pass with sorted
+  children/edges (graph/sort.go:91-96, ir.go:115-148); unknown deps are
+  rejected, not dropped (sort.go:80-85).
+- Package layering: internal/graph production files import only stdlib;
+  internal/config does not import exec/native/platform; no exec.Command in
+  production outside internal/run; no os.Exit/panic in library code outside
+  main.go and startup registration.
+- Arbitrary-code gate covers every install-triggering command (install
+  install.go:72→run.go:231-239 + defensive execute.go:125-141; upgrade
+  upgrade.go:66,687-689 incl. tool-level hooks; remove/undo only call
+  RemoveResolvedCandidate, which runs no hooks).
+- Adapter registration covers every kind (bootstrap.go:16-36), cross-checked by
+  validate against exec.RegisteredKinds() (helpers.go:102, validate.go:239-244).
+- No sudo password in argv/env (EnsureSudo uses a real TTY, session.go:99-103);
+  git/cargo/container tokens travel via child env with redaction + leak tests
+  (internal/git/adapter_test.go:78-82,252-257); internal/secret errors return
+  only the variable NAME (resolver.go:47-51).
+- Lock coverage matches the v1 table in docs/support-boundary.md; frozen
+  validation runs after filterTools (install.go:386-394).
+- HTTP: no InsecureSkipVerify; authenticated redirects validate scheme and drop
+  Authorization cross-origin (backend.go:105-119, docs/security.md:101-152);
+  cache keys are SHA-256 (collision-safe) and Store is rename-atomic.
+
+==============================================================================
+SUGGESTED TRIAGE ORDER
+==============================================================================
+1. Security/verification: S1 (checksum skipped), S3 (path traversal), S4 (GPG),
+   S2 (shared-parent rm -rf).
+2. Silent-wrong-behavior: C1 (dropped condition), C6 (gated dep installed),
+   C8 (false drift), C2/C5 (manifest merge), C12 (exit-0 reported failed).
+3. Contract/UX: C7 (exit codes), C11 (Ctrl-C message), C13 (E_CYCLE), C14 (lock).
+4. Hardening: S5/S6 (lock+signals), S7/S8 (secret env), S9/S11 (limits/tmp).
+5. Architecture cleanup: A1 (gofmt gate — catches C2-class bugs in CI), A2-A5.
