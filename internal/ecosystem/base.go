@@ -1255,9 +1255,15 @@ func (a *BaseAdapter) checkBun(ctx context.Context, rn run.Runner, tool *config.
 }
 
 type pnpmListOutput struct {
-	Dependencies map[string]struct {
-		Version string `json:"version"`
-	} `json:"dependencies"`
+	Path         *string                    `json:"path"`
+	Private      *bool                      `json:"private"`
+	Dependencies *map[string]*pnpmListEntry `json:"dependencies"`
+}
+
+type pnpmListEntry struct {
+	From    string `json:"from"`
+	Version string `json:"version"`
+	Path    string `json:"path"`
 }
 
 func buildPNPMCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) []string {
@@ -1277,30 +1283,34 @@ func buildPNPMCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) [
 	return cmd
 }
 
-func pnpmVersionFromList(output, pkg string) (string, bool) {
-	var parsed []pnpmListOutput
-	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
-		return "", false
-	}
-	for _, root := range parsed {
-		if dep, ok := root.Dependencies[pkg]; ok && dep.Version != "" {
-			return dep.Version, true
-		}
-	}
-	return "", false
-}
-
 func (a *BaseAdapter) pnpmInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
 	res := a.runConfiguredBinary(ctx, rn, "list", "-g", "--depth=0", "--json")
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "pnpm: list installed version")
 	}
-	var parsed []pnpmListOutput
-	if err := json.Unmarshal(res.Stdout, &parsed); err != nil || parsed == nil {
+	var roots []*pnpmListOutput
+	if err := json.Unmarshal(res.Stdout, &roots); err != nil || roots == nil {
 		return "", fmt.Errorf("pnpm: invalid list output")
 	}
-	version, ok := pnpmVersionFromList(string(res.Stdout), pkg)
-	if !ok {
+	found := false
+	version := ""
+	for _, root := range roots {
+		if root == nil || root.Dependencies == nil {
+			return "", fmt.Errorf("pnpm: invalid list output")
+		}
+		for name, dependency := range *root.Dependencies {
+			if dependency == nil {
+				return "", fmt.Errorf("pnpm: invalid list output")
+			}
+			if name == pkg {
+				found = true
+				if dependency.Version != "" {
+					version = dependency.Version
+				}
+			}
+		}
+	}
+	if !found {
 		return "", absentInstalledPackage("pnpm", pkg)
 	}
 	return version, nil
