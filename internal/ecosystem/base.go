@@ -1121,22 +1121,30 @@ func buildBunCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) []
 	return cmd
 }
 
-func bunVersionFromList(output, pkg string) (string, bool) {
-	if !bunGlobalListValid(output) {
-		return "", false
+type bunGlobalEntry struct {
+	name    string
+	version string
+}
+
+func (a *BaseAdapter) bunInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
+	res := a.runConfiguredBinary(ctx, rn, "pm", "ls", "-g")
+	if res.Err != nil || res.ExitCode != 0 {
+		return "", run.CheckResult(res, "bun: list installed version")
 	}
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) > 0 && bunGlobalListHeader(strings.TrimSpace(lines[0])) {
-		lines = lines[1:]
+	entries, ok := bunGlobalList(string(res.Stdout))
+	if !ok {
+		return "", nil
 	}
-	for _, line := range lines {
-		line = strings.TrimLeft(strings.TrimSpace(line), "├└─│ ")
-		idx := strings.LastIndex(line, "@")
-		if idx > 0 && idx < len(line)-1 && line[:idx] == pkg {
-			return line[idx+1:], true
+	for _, entry := range entries {
+		if entry.name != pkg {
+			continue
 		}
+		if bunLocalSourceVersion(entry.version) {
+			return "", nil
+		}
+		return entry.version, nil
 	}
-	return "", false
+	return "", absentInstalledPackage("bun", pkg)
 }
 
 func bunLocalSourceVersion(version string) bool {
@@ -1146,65 +1154,87 @@ func bunLocalSourceVersion(version string) bool {
 		strings.HasPrefix(version, "file:")
 }
 
-func (a *BaseAdapter) bunInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
-	res := a.runConfiguredBinary(ctx, rn, "pm", "ls", "-g")
-	if res.Err != nil || res.ExitCode != 0 {
-		return "", run.CheckResult(res, "bun: list installed version")
+func bunGlobalList(output string) ([]bunGlobalEntry, bool) {
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return nil, false
 	}
-	output := strings.TrimSpace(string(res.Stdout))
-	if !bunGlobalListValid(output) {
-		return "", nil
-	}
-	if version, ok := bunVersionFromList(output, pkg); ok {
-		if bunLocalSourceVersion(version) {
-			return "", nil
-		}
-		return version, nil
-	}
-	return "", absentInstalledPackage("bun", pkg)
-}
-
-func bunGlobalListValid(output string) bool {
-	if strings.TrimSpace(output) == "" {
-		return false
-	}
-	lines := strings.Split(strings.TrimSpace(output), "\n")
+	lines := strings.Split(output, "\n")
 	count := -1
-	if bunGlobalListHeader(strings.TrimSpace(lines[0])) {
-		header := strings.TrimSpace(lines[0])
-		_, countText, _ := strings.Cut(header, " (")
-		parsed, err := strconv.Atoi(strings.TrimSuffix(countText, " installed)"))
-		if err != nil || parsed < 0 {
-			return false
-		}
+	if parsed, ok := bunGlobalListHeader(strings.TrimSpace(lines[0])); ok {
 		count = parsed
 		lines = lines[1:]
 	}
-	entries := 0
+	entries := make([]bunGlobalEntry, 0, len(lines))
 	for _, line := range lines {
 		line = strings.TrimLeft(strings.TrimSpace(line), "├└─│ ")
-		idx := strings.LastIndex(line, "@")
-		if idx <= 0 || idx == len(line)-1 {
-			return false
+		entry, ok := bunGlobalListEntry(line)
+		if !ok {
+			return nil, false
 		}
-		entries++
+		entries = append(entries, entry)
 	}
 	if count < 0 {
-		return entries > 0
+		return entries, len(entries) > 0
 	}
-	return entries == count
+	return entries, len(entries) == count
 }
 
-func bunGlobalListHeader(line string) bool {
+func bunGlobalListEntry(line string) (bunGlobalEntry, bool) {
+	separator := -1
+	if strings.HasPrefix(line, "@") {
+		slash := strings.IndexByte(line, '/')
+		if slash <= 1 || slash == len(line)-1 {
+			return bunGlobalEntry{}, false
+		}
+		relative := strings.IndexByte(line[slash+1:], '@')
+		if relative < 1 {
+			return bunGlobalEntry{}, false
+		}
+		separator = slash + 1 + relative
+	} else {
+		separator = strings.IndexByte(line, '@')
+		if separator <= 0 {
+			return bunGlobalEntry{}, false
+		}
+	}
+	if separator == len(line)-1 {
+		return bunGlobalEntry{}, false
+	}
+	return bunGlobalEntry{name: line[:separator], version: line[separator+1:]}, true
+}
+
+func bunGlobalListHeader(line string) (int, bool) {
 	if !strings.HasSuffix(line, " installed)") {
-		return false
+		return 0, false
 	}
 	path, count, ok := strings.Cut(line, " (")
-	if !ok || (!strings.HasSuffix(path, "/node_modules") && !strings.HasSuffix(path, "\\node_modules")) {
-		return false
+	if !ok {
+		return 0, false
+	}
+	var root string
+	switch {
+	case strings.HasSuffix(path, " node_modules"):
+		root = strings.TrimSuffix(path, " node_modules")
+	case strings.HasSuffix(path, "/node_modules"):
+		root = strings.TrimSuffix(path, "/node_modules")
+	case strings.HasSuffix(path, "\\node_modules"):
+		root = strings.TrimSuffix(path, "\\node_modules")
+	default:
+		return 0, false
+	}
+	if !bunAbsolutePath(root) {
+		return 0, false
 	}
 	parsed, err := strconv.Atoi(strings.TrimSuffix(count, " installed)"))
-	return err == nil && parsed >= 0
+	return parsed, err == nil && parsed >= 0
+}
+
+func bunAbsolutePath(path string) bool {
+	if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "\\") {
+		return true
+	}
+	return len(path) >= 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/')
 }
 
 func (a *BaseAdapter) checkBun(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
