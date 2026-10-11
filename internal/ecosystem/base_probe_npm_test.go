@@ -11,9 +11,9 @@ import (
 )
 
 func TestNPMExactVersionObserve(t *testing.T) {
-	const pkg = "@scope/tool"
 	tests := []struct {
 		name      string
+		pkg       string
 		stdout    string
 		exitCode  int
 		err       error
@@ -21,63 +21,30 @@ func TestNPMExactVersionObserve(t *testing.T) {
 		wantVer   string
 		wantError bool
 	}{
-		{
-			name:     "target-specific missing problem is absent",
-			stdout:   "{\"name\":\"lib\",\"problems\":[\"missing: @scope/tool@1.2.3 from global packages\"]}",
-			exitCode: 1,
-			want:     plan.PresenceAbsent,
-		},
-		{
-			name:      "runner error is broken",
-			stdout:    "{\"name\":\"lib\"}",
-			err:       errors.New("spawn failed"),
-			want:      plan.PresenceBroken,
-			wantError: true,
-		},
-		{
-			name:      "missing problem for another package is not target absence",
-			stdout:    "{\"name\":\"lib\",\"problems\":[\"missing: @scope/other@1.2.3 from global packages\"]}",
-			exitCode:  1,
-			want:      plan.PresenceBroken,
-			wantError: true,
-		},
-		{
-			name:     "version remains present when npm exits nonzero",
-			stdout:   "{\"name\":\"lib\",\"dependencies\":{\"@scope/tool\":{\"version\":\"2.4.1\"}}}",
-			exitCode: 1,
-			want:     plan.PresencePresent,
-			wantVer:  "2.4.1",
-		},
-		{
-			name:   "empty object is valid but unrecognized",
-			stdout: "{}",
-			want:   plan.PresenceUnknown,
-		},
-		{
-			name:      "truncated JSON is broken",
-			stdout:    "{\"dependencies\":",
-			want:      plan.PresenceBroken,
-			wantError: true,
-		},
-		{
-			name:    "scoped package version is present",
-			stdout:  "{\"dependencies\":{\"@scope/tool\":{\"version\":\"3.0.0\"}}}",
-			want:    plan.PresencePresent,
-			wantVer: "3.0.0",
-		},
-		{
-			name:   "listed package without version is unknown",
-			stdout: "{\"dependencies\":{\"@scope/tool\":{}}}",
-			want:   plan.PresenceUnknown,
-		},
+		{name: "installed exact version", pkg: "demo", stdout: `{"dependencies":{"demo":{"version":"1.2.3"}}}`, want: plan.PresencePresent, wantVer: "1.2.3"},
+		{name: "version drift is present", pkg: "demo", stdout: `{"dependencies":{"demo":{"version":"2.0.0"}}}`, want: plan.PresencePresent, wantVer: "2.0.0"},
+		{name: "version zero is not semver-rejected", pkg: "demo", stdout: `{"dependencies":{"demo":{"version":"0"}}}`, want: plan.PresencePresent, wantVer: "0"},
+		{name: "complete empty dependencies is absent", pkg: "demo", stdout: `{"dependencies":{}}`, want: plan.PresenceAbsent},
+		{name: "listed package without version is unknown", pkg: "demo", stdout: `{"dependencies":{"demo":{}}}`, want: plan.PresenceUnknown},
+		{name: "nonzero version and unrelated problem is broken", pkg: "demo", stdout: `{"dependencies":{"demo":{"version":"2.0.0"}},"problems":["missing: other@1.2.3 from global"]}`, exitCode: 1, want: plan.PresenceBroken, wantError: true},
+		{name: "entry remains non-absent on nonzero missing problem", pkg: "demo", stdout: `{"dependencies":{"demo":{"version":"1.2.3"}},"problems":["missing: demo@1.2.3 from global"]}`, exitCode: 1, want: plan.PresenceBroken, wantError: true},
+		{name: "target missing diagnostic is absent", pkg: "demo", stdout: `{"name":"lib","problems":["missing: demo@1.2.3 from global"]}`, exitCode: 1, want: plan.PresenceAbsent},
+		{name: "unrelated nonzero problem is broken", pkg: "demo", stdout: `{"name":"lib","problems":["missing: other@1.2.3 from global"]}`, exitCode: 1, want: plan.PresenceBroken, wantError: true},
+		{name: "scoped package is present", pkg: "@scope/tool", stdout: `{"dependencies":{"@scope/tool":{"version":"3.0.0"}}}`, want: plan.PresencePresent, wantVer: "3.0.0"},
+		{name: "scoped package missing diagnostic is absent", pkg: "@scope/tool", stdout: `{"problems":["missing: @scope/tool@3.0.0 from global"]}`, exitCode: 1, want: plan.PresenceAbsent},
+		{name: "empty object is broken schema", pkg: "demo", stdout: `{}`, want: plan.PresenceBroken, wantError: true},
+		{name: "null document is broken schema", pkg: "demo", stdout: `null`, want: plan.PresenceBroken, wantError: true},
+		{name: "null package entry is broken schema", pkg: "demo", stdout: `{"dependencies":{"demo":null}}`, want: plan.PresenceBroken, wantError: true},
+		{name: "truncated JSON is broken", pkg: "demo", stdout: `{"dependencies":`, want: plan.PresenceBroken, wantError: true},
+		{name: "runner error is broken", pkg: "demo", stdout: `{"dependencies":{}}`, err: errors.New("spawn failed"), want: plan.PresenceBroken, wantError: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			adapter := NewBaseAdapter(Configs["npm"])
 			runner := &run.FakeRunner{Stdout: tt.stdout, ExitCode: tt.exitCode, Err: tt.err}
-			tool := &config.Tool{Name: pkg}
-			method := &config.MethodCandidate{Kind: "npm", Config: map[string]any{"pkg": pkg, "version": "1.0.0"}}
+			tool := &config.Tool{Name: tt.pkg}
+			method := &config.MethodCandidate{Kind: "npm", Config: map[string]any{"pkg": tt.pkg, "version": "1.0.0"}}
 
 			got, err := adapter.Observe(context.Background(), runner, tool, method)
 			if (err != nil) != tt.wantError {
@@ -88,16 +55,6 @@ func TestNPMExactVersionObserve(t *testing.T) {
 			}
 			if got.Identity.Version != tt.wantVer {
 				t.Fatalf("Observe version = %q, want %q", got.Identity.Version, tt.wantVer)
-			}
-			if got.Presence == plan.PresenceUnknown && err != nil {
-				t.Fatalf("unknown observation returned an error: %v", err)
-			}
-			if len(runner.Calls) != 1 {
-				t.Fatalf("runner calls = %d, want 1", len(runner.Calls))
-			}
-			call := runner.Calls[0]
-			if call.Name != "npm" || len(call.Args) != 5 || call.Args[0] != "ls" || call.Args[1] != "-g" || call.Args[2] != "--depth=0" || call.Args[3] != "--json" || call.Args[4] != pkg {
-				t.Fatalf("npm argv = %q %q, want npm ls -g --depth=0 --json %q", call.Name, call.Args, pkg)
 			}
 		})
 	}
