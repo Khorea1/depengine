@@ -815,9 +815,10 @@ func parseSources(rawSources []any) []Source {
 }
 
 // parseDistributions decodes a distributions array into typed overrides.
-// Structure only: when is required here, unknown keys are rejected, and value
-// shapes are checked. Semantic rules (empty list, forbidden combinations,
-// regex validity) belong to strict validation.
+// Value shapes are checked here (required when, closed field list, string/
+// table kinds); array/table/empty shape is checked by strict validation, and
+// regex validity, negativity, and per-method field policy follow with the
+// methodkind specializable-field metadata.
 func parseDistributions(rawDistributions []any) ([]Distribution, error) {
 	distributions := make([]Distribution, 0, len(rawDistributions))
 	for i, raw := range rawDistributions {

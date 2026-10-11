@@ -265,8 +265,8 @@ func validateMethodValue(raw any, path, declaredKind string, errs *[]string) {
 			case "sources":
 				validateSources(v[key], path+".sources", errs)
 			case "distributions":
-				// Shape only here (array of tables); per-distribution semantic
-				// rules arrive with the methodkind specializable-field metadata.
+				// Shape only here (array of tables); value semantics live at
+				// parse plus the methodkind follow-up noted on the shape check.
 				validateDistributionsShape(v[key], path+".distributions", errs)
 			default:
 				if !known {
@@ -450,9 +450,10 @@ func containsString(values []string, target string) bool {
 }
 
 // validateDistributionsShape checks the distributions array shape only:
-// non-empty array of tables. Per-distribution semantic rules (required when,
-// allowlisted overrides, regex validity) are validated with the methodkind
-// specializable-field metadata in a follow-up change.
+// non-empty array of tables. Empty-string templates, negative
+// strip_components, regex validity, and per-method field policy follow with
+// the methodkind specializable-field metadata; required-when, the closed
+// field list, and value shapes are enforced at parse.
 func validateDistributionsShape(raw any, path string, errs *[]string) {
 	items, ok := raw.([]any)
 	if !ok || len(items) == 0 {
