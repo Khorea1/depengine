@@ -2,6 +2,7 @@ package ecosystem
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"slices"
 	"strings"
@@ -256,6 +257,192 @@ func TestBaseAdapterV2GemObserveSelectsRequestedInstalledVersion(t *testing.T) {
 	}
 	if installed != "1.2.3" {
 		t.Fatalf("InstalledVersion() = %q, want requested installed version 1.2.3", installed)
+	}
+}
+
+func TestBaseAdapterV2ExactObserveDistinguishesAbsentFromProbeFailures(t *testing.T) {
+	tests := []struct {
+		name      string
+		kind      string
+		runner    *run.FakeRunner
+		want      plan.PresenceState
+		wantError bool
+	}{
+		{
+			name:   "pip reports missing package",
+			kind:   "pip",
+			runner: &run.FakeRunner{ExitCode: 1, Stderr: "WARNING: Package(s) not found: demo"},
+			want:   plan.PresenceAbsent,
+		},
+		{
+			name:      "pip process failure",
+			kind:      "pip",
+			runner:    &run.FakeRunner{Err: errors.New("spawn failed")},
+			want:      plan.PresenceBroken,
+			wantError: true,
+		},
+		{
+			name:      "pip invalid output",
+			kind:      "pip",
+			runner:    &run.FakeRunner{Stdout: "unexpected output"},
+			want:      plan.PresenceBroken,
+			wantError: true,
+		},
+		{
+			name:   "pnpm valid list without package",
+			kind:   "pnpm",
+			runner: &run.FakeRunner{Stdout: "[]"},
+			want:   plan.PresenceAbsent,
+		},
+		{
+			name:      "pnpm invalid output",
+			kind:      "pnpm",
+			runner:    &run.FakeRunner{Stdout: "not-json"},
+			want:      plan.PresenceBroken,
+			wantError: true,
+		},
+		{
+			name:   "pipx valid json without package",
+			kind:   "pipx",
+			runner: &run.FakeRunner{Stdout: `{"venvs":{}}`},
+			want:   plan.PresenceAbsent,
+		},
+		{
+			name:      "pipx malformed json",
+			kind:      "pipx",
+			runner:    &run.FakeRunner{Stdout: `{"venvs":`},
+			want:      plan.PresenceBroken,
+			wantError: true,
+		},
+		{
+			name:   "gem valid list without package",
+			kind:   "gem",
+			runner: &run.FakeRunner{Stdout: "*** LOCAL GEMS ***\n"},
+			want:   plan.PresenceAbsent,
+		},
+		{
+			name:      "gem malformed list",
+			kind:      "gem",
+			runner:    &run.FakeRunner{Stdout: "unexpected output"},
+			want:      plan.PresenceBroken,
+			wantError: true,
+		},
+		{
+			name:   "composer reports requested package missing",
+			kind:   "composer",
+			runner: &run.FakeRunner{ExitCode: 1, Stderr: `Package "demo" not found.`},
+			want:   plan.PresenceAbsent,
+		},
+		{
+			name:      "composer malformed successful output",
+			kind:      "composer",
+			runner:    &run.FakeRunner{Stdout: "unexpected output"},
+			want:      plan.PresenceBroken,
+			wantError: true,
+		},
+		{
+			name:   "npm valid json without package",
+			kind:   "npm",
+			runner: &run.FakeRunner{Stdout: `{"dependencies":{}}`},
+			want:   plan.PresenceAbsent,
+		},
+		{
+			name:      "npm malformed json",
+			kind:      "npm",
+			runner:    &run.FakeRunner{Stdout: `{"dependencies":`},
+			want:      plan.PresenceBroken,
+			wantError: true,
+		},
+		{
+			name:   "uv recognized list without package",
+			kind:   "uv",
+			runner: &run.FakeRunner{Stdout: "alpha v1.2.0\n- alpha\n"},
+			want:   plan.PresenceAbsent,
+		},
+		{
+			name:   "uv unrecognized human-readable output",
+			kind:   "uv",
+			runner: &run.FakeRunner{Stdout: "tools are managed elsewhere"},
+			want:   plan.PresenceUnknown,
+		},
+		{
+			name:   "bun recognized list without package",
+			kind:   "bun",
+			runner: &run.FakeRunner{Stdout: "├── alpha@1.2.0\n"},
+			want:   plan.PresenceAbsent,
+		},
+		{
+			name:   "bun empty output is uncertain",
+			kind:   "bun",
+			runner: &run.FakeRunner{},
+			want:   plan.PresenceUnknown,
+		},
+		{
+			name:   "bun unrecognized output is uncertain",
+			kind:   "bun",
+			runner: &run.FakeRunner{Stdout: "tools are managed elsewhere"},
+			want:   plan.PresenceUnknown,
+		},
+		{
+			name:   "yarn recognized empty global list",
+			kind:   "yarn",
+			runner: &run.FakeRunner{Stdout: "yarn global v1.22.22\n"},
+			want:   plan.PresenceAbsent,
+		},
+		{
+			name:      "yarn malformed output",
+			kind:      "yarn",
+			runner:    &run.FakeRunner{Stdout: "global packages unavailable"},
+			want:      plan.PresenceBroken,
+			wantError: true,
+		},
+		{
+			name:      "yarn process failure",
+			kind:      "yarn",
+			runner:    &run.FakeRunner{Err: errors.New("spawn failed")},
+			want:      plan.PresenceBroken,
+			wantError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			adapter := NewBaseAdapter(Configs[tt.kind])
+			tool := &config.Tool{Name: "demo"}
+			method := &config.MethodCandidate{Kind: tt.kind, Config: map[string]any{"pkg": "demo", "version": "1.2.3"}}
+			observation, err := adapter.Observe(context.Background(), tt.runner, tool, method)
+			if observation.Presence != tt.want {
+				t.Fatalf("Observe() presence = %q, want %q (observation=%+v, error=%v)", observation.Presence, tt.want, observation, err)
+			}
+			if (err != nil) != tt.wantError {
+				t.Fatalf("Observe() error = %v, wantError %v", err, tt.wantError)
+			}
+			if tt.want == plan.PresenceAbsent {
+				verification := plan.Reconcile(plan.ResolvedIdentity{Package: "demo", Version: "1.2.3"}, observation)
+				decision, err := plan.TransitionForVerification(verification)
+				if err != nil || !decision.Required || decision.Transition != plan.TransitionInstall {
+					t.Fatalf("missing package transition = %+v, %v; want install", decision, err)
+				}
+			}
+		})
+	}
+}
+
+func TestBaseAdapterV2ExactObserveProcessFailuresAreBrokenAndRedacted(t *testing.T) {
+	for _, kind := range []string{"pip", "pipx", "uv", "gem", "composer", "bun", "pnpm", "yarn", "npm"} {
+		t.Run(kind, func(t *testing.T) {
+			adapter := NewBaseAdapter(Configs[kind])
+			tool := &config.Tool{Name: "demo"}
+			method := &config.MethodCandidate{Kind: kind, Config: map[string]any{"pkg": "demo", "version": "1.2.3"}}
+			runner := &run.FakeRunner{ExitCode: 1, Stderr: "Authorization: Bearer secret-value"}
+			observation, err := adapter.Observe(context.Background(), runner, tool, method)
+			if observation.Presence != plan.PresenceBroken || err == nil {
+				t.Fatalf("Observe() = %+v, %v; want broken observation and error", observation, err)
+			}
+			if strings.Contains(err.Error(), "secret-value") || strings.Contains(observation.Detail, "secret-value") {
+				t.Fatalf("Observe leaked stderr secret: observation=%+v error=%v", observation, err)
+			}
+		})
 	}
 }
 

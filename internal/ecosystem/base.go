@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -65,6 +66,12 @@ type CheckOutputMatcher func(output, pkg string) bool
 // BaseAdapter implements exec.AdapterV2 for a BaseConfig.
 type BaseAdapter struct {
 	config BaseConfig
+}
+
+var errInstalledPackageAbsent = errors.New("installed package is absent")
+
+func absentInstalledPackage(kind, pkg string) error {
+	return fmt.Errorf("%s: package %q is not installed: %w", kind, pkg, errInstalledPackageAbsent)
 }
 
 // NewBaseAdapter creates an adapter from a static config.
@@ -227,8 +234,14 @@ func (a *BaseAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 	requestedVersion, _ := mc.Config["version"].(string)
 	if contract, ok := methodkind.Lookup(a.config.KindName); requestedVersion != "" && ok && contract.Supports(methodkind.CapabilityExactVersion) {
 		installedVersion, err := a.InstalledVersion(ctx, rn, tool, mc)
-		if err != nil || installedVersion == "" {
+		if errors.Is(err, errInstalledPackageAbsent) {
 			return absent, nil
+		}
+		if err != nil {
+			return plan.Observation{Presence: plan.PresenceBroken, Detail: err.Error()}, err
+		}
+		if installedVersion == "" {
+			return plan.Observation{Presence: plan.PresenceUnknown, Detail: a.config.KindName + ": installed version was not reported"}, nil
 		}
 		observation := plan.Observation{
 			Presence:    plan.PresencePresent,
@@ -663,6 +676,16 @@ func pipVersionFromShow(output string) (string, bool) {
 	return "", false
 }
 
+func pipShowReportsMissing(stderr, pkg string) bool {
+	for _, line := range strings.Split(stderr, "\n") {
+		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "WARNING:"))
+		if strings.EqualFold(line, "Package(s) not found: "+pkg) {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *BaseAdapter) checkPip(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	pkg := resolvedPkg(tool, mc)
 	res := a.runConfiguredBinary(ctx, rn, "show", pkg)
@@ -686,6 +709,9 @@ func (a *BaseAdapter) InstalledVersion(ctx context.Context, rn run.Runner, tool 
 	case "pip":
 		res := a.runConfiguredBinary(ctx, rn, "show", pkg)
 		if res.Err != nil || res.ExitCode != 0 {
+			if res.Err == nil && pipShowReportsMissing(string(res.Stderr), pkg) {
+				return "", absentInstalledPackage("pip", pkg)
+			}
 			return "", run.CheckResult(res, "pip: show installed version")
 		}
 		version, ok := pipVersionFromShow(string(res.Stdout))
@@ -775,18 +801,21 @@ func pipxVersionFromList(output, pkg string) (string, bool) {
 }
 
 func (a *BaseAdapter) pipxInstalledVersion(ctx context.Context, rn run.Runner, pkg string, mc *config.MethodCandidate) (string, error) {
-	args := []string{"list", "--output", "json"}
+	args := []string{"list", "--json"}
 	if scope, _ := mc.Config["scope"].(string); scope == "global" {
 		args = append(args, "--global")
 	}
-	args = append(args, pkg)
 	res := a.runConfiguredBinary(ctx, rn, args...)
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "pipx: list installed version")
 	}
+	var parsed pipxListOutput
+	if err := json.Unmarshal(res.Stdout, &parsed); err != nil || parsed.Venvs == nil {
+		return "", fmt.Errorf("pipx: invalid list output")
+	}
 	version, ok := pipxVersionFromList(string(res.Stdout), pkg)
 	if !ok {
-		return "", fmt.Errorf("pipx: installed package %q was not present in list output", pkg)
+		return "", absentInstalledPackage("pipx", pkg)
 	}
 	return version, nil
 }
@@ -843,14 +872,46 @@ func (a *BaseAdapter) uvInstalledVersion(ctx context.Context, rn run.Runner, pkg
 	}
 	version, ok := uvVersionFromList(string(res.Stdout), pkg)
 	if !ok {
-		return "", fmt.Errorf("uv: installed package %q was not present in tool list output", pkg)
+		if uvToolListValid(string(res.Stdout)) {
+			return "", absentInstalledPackage("uv", pkg)
+		}
+		// uv's human-readable list format can vary. An unrecognized response
+		// does not prove absence, so leave observation uncertain.
+		return "", nil
 	}
 	return version, nil
 }
 
+func uvToolListValid(output string) bool {
+	output = strings.TrimSpace(output)
+	if strings.EqualFold(output, "No tools installed") {
+		return true
+	}
+	if output == "" {
+		return false
+	}
+	seenTool := false
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "- ") {
+			if !seenTool {
+				return false
+			}
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 || !strings.HasPrefix(fields[1], "v") {
+			return false
+		}
+		seenTool = true
+	}
+	return seenTool
+}
+
 func (a *BaseAdapter) checkUV(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	version, err := a.uvInstalledVersion(ctx, rn, resolvedPkg(tool, mc))
-	if err != nil {
+	if err != nil || version == "" {
 		return false
 	}
 	want, _ := mc.Config["version"].(string)
@@ -917,7 +978,10 @@ func (a *BaseAdapter) gemInstalledVersion(ctx context.Context, rn run.Runner, pk
 	}
 	versions := gemVersionsFromList(string(res.Stdout), pkg)
 	if len(versions) == 0 {
-		return "", fmt.Errorf("gem: installed package %q was not present in list output", pkg)
+		if gemListOutputValid(string(res.Stdout)) {
+			return "", absentInstalledPackage("gem", pkg)
+		}
+		return "", fmt.Errorf("gem: invalid list output")
 	}
 	for _, version := range versions {
 		if requested != "" && version == requested {
@@ -925,6 +989,25 @@ func (a *BaseAdapter) gemInstalledVersion(ctx context.Context, rn run.Runner, pk
 		}
 	}
 	return versions[0], nil
+}
+
+func gemListOutputValid(output string) bool {
+	output = strings.TrimSpace(output)
+	if output == "*** LOCAL GEMS ***" || output == "" {
+		return output != ""
+	}
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		name, versions, ok := strings.Cut(line, " (")
+		if !ok || name == "" || !strings.HasSuffix(versions, ")") {
+			return false
+		}
+		versions = strings.TrimSuffix(versions, ")")
+		if versions == "" {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *BaseAdapter) checkGem(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
@@ -990,11 +1073,15 @@ func composerVersionFromShow(output string) (string, bool) {
 func (a *BaseAdapter) composerInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
 	res := a.runConfiguredBinary(ctx, rn, "global", "show", "--locked", pkg)
 	if res.Err != nil || res.ExitCode != 0 {
+		output := strings.ToLower(string(res.Stdout) + "\n" + string(res.Stderr))
+		if res.Err == nil && strings.Contains(output, strings.ToLower(pkg)) && strings.Contains(output, "not found") {
+			return "", absentInstalledPackage("composer", pkg)
+		}
 		return "", run.CheckResult(res, "composer: show installed version")
 	}
 	version, ok := composerVersionFromShow(string(res.Stdout))
 	if !ok {
-		return "", fmt.Errorf("composer: installed package %q did not report a versions field", pkg)
+		return "", fmt.Errorf("composer: invalid show output for package %q", pkg)
 	}
 	return version, nil
 }
@@ -1054,14 +1141,46 @@ func (a *BaseAdapter) bunInstalledVersion(ctx context.Context, rn run.Runner, pk
 	}
 	version, ok := bunVersionFromList(string(res.Stdout), pkg)
 	if !ok {
-		return "", fmt.Errorf("bun: installed package %q was not present in global list output", pkg)
+		output := strings.TrimSpace(string(res.Stdout))
+		if output != "" && bunGlobalListValid(output) {
+			return "", absentInstalledPackage("bun", pkg)
+		}
+		// An empty or unfamiliar human-readable listing is not authoritative.
+		return "", nil
 	}
 	return version, nil
 }
 
+func bunGlobalListValid(output string) bool {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) == 1 && bunGlobalListHeader(lines[0]) {
+		return true
+	}
+	for _, line := range lines {
+		line = strings.TrimLeft(strings.TrimSpace(line), "├└─│ ")
+		idx := strings.LastIndex(line, "@")
+		if idx <= 0 || idx == len(line)-1 {
+			return false
+		}
+	}
+	return output != ""
+}
+
+func bunGlobalListHeader(line string) bool {
+	if !strings.HasSuffix(line, " installed)") {
+		return false
+	}
+	path, count, ok := strings.Cut(line, " (")
+	if !ok || !(strings.HasSuffix(path, "/node_modules") || strings.HasSuffix(path, `\node_modules`)) {
+		return false
+	}
+	_, err := strconv.Atoi(strings.TrimSuffix(count, " installed)"))
+	return err == nil
+}
+
 func (a *BaseAdapter) checkBun(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
 	version, err := a.bunInstalledVersion(ctx, rn, resolvedPkg(tool, mc))
-	if err != nil {
+	if err != nil || version == "" {
 		return false
 	}
 	want, _ := mc.Config["version"].(string)
@@ -1109,9 +1228,13 @@ func (a *BaseAdapter) pnpmInstalledVersion(ctx context.Context, rn run.Runner, p
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "pnpm: list installed version")
 	}
+	var parsed []pnpmListOutput
+	if err := json.Unmarshal(res.Stdout, &parsed); err != nil || parsed == nil {
+		return "", fmt.Errorf("pnpm: invalid list output")
+	}
 	version, ok := pnpmVersionFromList(string(res.Stdout), pkg)
 	if !ok {
-		return "", fmt.Errorf("pnpm: installed package %q was not present in global list output", pkg)
+		return "", absentInstalledPackage("pnpm", pkg)
 	}
 	return version, nil
 }
@@ -1168,7 +1291,11 @@ func (a *BaseAdapter) yarnInstalledVersion(ctx context.Context, rn run.Runner, p
 	}
 	version, ok := yarnVersionFromList(string(res.Stdout), pkg)
 	if !ok {
-		return "", fmt.Errorf("yarn: installed package %q was not present in global list output", pkg)
+		output := strings.TrimSpace(string(res.Stdout))
+		if output == "" || strings.HasPrefix(output, "yarn global v") {
+			return "", absentInstalledPackage("yarn", pkg)
+		}
+		return "", fmt.Errorf("yarn: invalid global list output")
 	}
 	return version, nil
 }
@@ -1183,6 +1310,7 @@ func (a *BaseAdapter) checkYarn(ctx context.Context, rn run.Runner, tool *config
 }
 
 type npmListOutput struct {
+	Name         string `json:"name"`
 	Dependencies map[string]struct {
 		Version string `json:"version"`
 	} `json:"dependencies"`
@@ -1199,14 +1327,20 @@ func npmVersionFromList(output, pkg string) (string, bool) {
 
 func (a *BaseAdapter) npmInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
 	res := a.runConfiguredBinary(ctx, rn, "ls", "-g", "--depth=0", "--json", pkg)
-	if res.Err != nil || res.ExitCode != 0 {
+	if res.Err != nil {
 		return "", run.CheckResult(res, "npm: list installed version")
 	}
-	version, ok := npmVersionFromList(string(res.Stdout), pkg)
-	if !ok {
-		return "", fmt.Errorf("npm: installed package %q was not present in list output", pkg)
+	var parsed npmListOutput
+	if err := json.Unmarshal(res.Stdout, &parsed); err != nil || (parsed.Dependencies == nil && parsed.Name == "") {
+		return "", fmt.Errorf("npm: invalid list output")
 	}
-	return version, nil
+	if entry, ok := parsed.Dependencies[pkg]; ok && entry.Version != "" {
+		return entry.Version, nil
+	}
+	if res.ExitCode == 0 || parsed.Name != "" || strings.Contains(string(res.Stdout), "missing:") {
+		return "", absentInstalledPackage("npm", pkg)
+	}
+	return "", run.CheckResult(res, "npm: list installed version")
 }
 
 func (a *BaseAdapter) checkNPM(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
