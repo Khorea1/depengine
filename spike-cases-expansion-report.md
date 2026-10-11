@@ -99,3 +99,24 @@ Veredito revisto: equivalência demonstrada nas receitas reais, no caminho real
 para "macro correta nas condições testadas"; implementação segue dependendo de e2e com
 rede + decisão de contrato sobre exclusividade (atualizar critérios de `dep-1n0` para o
 contrato "vários candidatos convencionais", não "método único com variantes exclusivas").
+
+---
+
+## Rodada 3 — lacunas da segunda auditoria (2026-10-11, commit `febcf18`)
+
+Quatro lacunas, nenhuma exigindo redesign — todas fechadas:
+
+- **P1 (pós-merge)**: `TestMergeEquivalence` agora compara ordem (`assertSameOrder`) e
+  `MethodsHash`/`SourceHash` via `SnapshotIntentMetadata(ma)` vs `(mc)` nos schemas
+  fundidos, fechando a brecha de compatibilidade do lock v1.
+- **P2 (metadados)**: `canonicalCandidate` inclui `preInstall`, `postInstall`, `sources`
+  (conteúdo) e as três secret refs — cobre `wt.post_install` e `omp` brew-tap/nix.
+- **P2 (diagnósticos)**: validação compara o `Result` completo (erros + warnings) dos
+  fundidos, não contagens.
+- **P3 (simple pelo expansor)**: `c_simple.toml` (`simple` + `cases` no mesmo documento);
+  o teste prova `zsh`/`bat` sobrevivendo ao `ExpandCompact` junto à expansão de `wt`.
+
+Decisão de escopo registrada: overlap de `when` permanece informativo (fallback normal),
+coerente com macro transparente; a interpretação "um único asset elegível" de `dep-1n0`
+exigiria nova semântica de seleção e fica explicitamente fora — atualizar os critérios
+de aceitação de `dep-1n0` para o contrato de vários candidatos antes de implementar.
