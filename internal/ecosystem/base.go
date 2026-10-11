@@ -1214,7 +1214,7 @@ func bunGlobalList(output, pkg string) (version string, found, valid bool) {
 		default:
 			return "", false, false
 		}
-		separator := -1
+		var separator int
 		if strings.HasPrefix(row, "@") {
 			slash := strings.IndexByte(row, '/')
 			if slash <= 1 || slash == len(row)-1 {
@@ -1452,7 +1452,7 @@ func yarnListEntry(line string) (name, version string, ok bool) {
 		return "", "", false
 	}
 	nameVersion := quoted[:end]
-	separator := -1
+	var separator int
 	if strings.HasPrefix(nameVersion, "@") {
 		slash := strings.IndexByte(nameVersion, '/')
 		if slash <= 1 || slash == len(nameVersion)-1 {
