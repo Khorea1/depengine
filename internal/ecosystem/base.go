@@ -803,13 +803,14 @@ func (a *BaseAdapter) pipxInstalledVersion(ctx context.Context, rn run.Runner, p
 	fallbackFound := false
 	fallbackVersion := ""
 	fallbackAmbiguous := false
+	want := pipxCanonicalName(pkg)
 	for key, venv := range parsed.Venvs {
 		if venv == nil || venv.Metadata == nil || venv.Metadata.MainPackage == nil {
 			return "", fmt.Errorf("pipx: invalid list output")
 		}
 		main := venv.Metadata.MainPackage
-		if key == pkg {
-			if !strings.EqualFold(main.Package, pkg) {
+		if pipxCanonicalName(key) == want {
+			if pipxCanonicalName(main.Package) != want {
 				// A venv named like the requested package whose metadata
 				// names a different (or no) package — e.g. a --suffix
 				// install or renamed venv — proves neither presence nor
@@ -819,7 +820,7 @@ func (a *BaseAdapter) pipxInstalledVersion(ctx context.Context, rn run.Runner, p
 			exactFound = true
 			exactVersion = main.PackageVersion
 		}
-		if strings.EqualFold(main.Package, pkg) {
+		if pipxCanonicalName(main.Package) == want {
 			if !fallbackFound {
 				fallbackFound = true
 				fallbackVersion = main.PackageVersion
@@ -838,6 +839,29 @@ func (a *BaseAdapter) pipxInstalledVersion(ctx context.Context, rn run.Runner, p
 		return "", nil
 	}
 	return fallbackVersion, nil
+}
+
+// pipxCanonicalName normalizes a Python distribution name per PEP 503:
+// runs of '-', '_' and '.' collapse to '-', and the result compares
+// case-insensitively. pipx applies the same normalization to venv directory
+// names, so demo_pkg, demo.pkg and demo-pkg identify one installation.
+func pipxCanonicalName(name string) string {
+	lower := strings.ToLower(name)
+	var b strings.Builder
+	b.Grow(len(lower))
+	dash := false
+	for i := 0; i < len(lower); i++ {
+		if c := lower[i]; c == '-' || c == '_' || c == '.' {
+			if !dash {
+				b.WriteByte('-')
+				dash = true
+			}
+			continue
+		}
+		b.WriteByte(lower[i])
+		dash = false
+	}
+	return b.String()
 }
 
 func (a *BaseAdapter) checkPipx(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
