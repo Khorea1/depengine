@@ -108,6 +108,18 @@ func (ex *Executor) ResolveCandidatePlan(ctx context.Context, tool *config.Tool,
 		}
 	}
 	ctx = run.WithOmittedEnv(ctx, methodSecretEnvNames(method)...)
+	// Canonical distribution gate: status, upgrade, remove, and undo resolve
+	// through here. Specialize before the first effective plan so every
+	// consumer resolves the same payload; ineligibility fails here (callers
+	// iterate methods themselves) and ambiguity aborts loudly.
+	specialized, skipStatus, specErr := ex.specializeMethodForHost(method)
+	if specErr != nil {
+		return nil, specErr
+	}
+	if skipStatus != "" {
+		return nil, fmt.Errorf("candidate %q has no distribution matching this host", method.Kind)
+	}
+	method = specialized
 	intent, mismatch := candidatePlanIntent(tool, method)
 	if mismatch != "" {
 		return nil, fmt.Errorf("%s", mismatch)

@@ -202,6 +202,53 @@ func TestExplainToolShowsEffectiveCandidate(t *testing.T) {
 	}
 }
 
+func TestResolveCandidatePlanSpecializesDistributions(t *testing.T) {
+	tool := githubDistributionsTool()
+	ex := New()
+	WithAdapters(&testMockAdapter{kindValue: "github"}, &testMockAdapter{kindValue: "fallback"})(ex)
+	WithFacts(&platform.Facts{OS: "linux", TargetArch: "x86_64", TargetFamily: "unix"})(ex)
+	// Canonical resolver (status/upgrade/remove/undo path) resolves the
+	// effective payload, not the base template.
+	resolved, err := ex.ResolveCandidatePlan(context.Background(), tool, tool.Methods[0], "")
+	if err != nil {
+		t.Fatalf("ResolveCandidatePlan: %v", err)
+	}
+	found := false
+	for _, op := range resolved.Operations {
+		if op.Kind == "resolve-artifact" && strings.Contains(op.Description, "linux-only.tar.gz") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("resolved operations = %+v, want specialized asset", resolved.Operations)
+	}
+	// Ineligible on this host: explicit error for the iterating caller.
+	exWindows := New()
+	WithAdapters(&testMockAdapter{kindValue: "github"})(exWindows)
+	WithFacts(&platform.Facts{OS: "windows", TargetArch: "x86_64", TargetFamily: "windows"})(exWindows)
+	if _, err := exWindows.ResolveCandidatePlan(context.Background(), tool, tool.Methods[0], ""); err == nil {
+		t.Fatal("expected ineligibility error")
+	}
+	// Ambiguity stays typed through the canonical resolver.
+	ambiguous := &config.MethodCandidate{
+		Kind:   "github",
+		Config: map[string]any{"repo": "owner/repo", "asset": "base.tar.gz"},
+		Distributions: []config.Distribution{
+			{When: &config.Condition{OS: []string{"linux"}}},
+			{When: &config.Condition{Arch: []string{"x86_64"}}},
+		},
+	}
+	ambiguousTool := &config.Tool{Name: "tool", Methods: []*config.MethodCandidate{ambiguous}}
+	if _, err := ex.ResolveCandidatePlan(context.Background(), ambiguousTool, ambiguous, ""); err == nil {
+		t.Fatal("expected ambiguity error")
+	} else {
+		var ambiguousErr *config.AmbiguousDistributionsError
+		if !errors.As(err, &ambiguousErr) {
+			t.Fatalf("err = %v, want typed ambiguity", err)
+		}
+	}
+}
+
 func TestCheckDesiredStateRecordsAmbiguityBroken(t *testing.T) {
 	ambiguous := &config.MethodCandidate{
 		Kind:   "github",
