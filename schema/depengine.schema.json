@@ -3568,8 +3568,25 @@
               "type": "object"
             },
             "asset": {
-              "minLength": 1,
-              "type": "string"
+              "oneOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "regex": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "regex"
+                  ],
+                  "type": "object"
+                }
+              ]
             },
             "binary": {
               "type": "string"
@@ -10235,8 +10252,25 @@
               "type": "object"
             },
             "asset": {
-              "minLength": 1,
-              "type": "string"
+              "oneOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "regex": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "regex"
+                  ],
+                  "type": "object"
+                }
+              ]
             },
             "binary": {
               "type": "string"

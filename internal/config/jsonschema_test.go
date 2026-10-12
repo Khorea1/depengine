@@ -163,3 +163,49 @@ func TestMethodJSONSchemaIncludesFieldDependencies(t *testing.T) {
 		t.Fatalf("cargo schema does not encode rev -> git dependency: %#v", allOf)
 	}
 }
+
+func TestMethodJSONSchemaPrincipalAssetSelectorFollowsDistributions(t *testing.T) {
+	data, err := GenerateJSONSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]any
+	if err := json.Unmarshal(data, &root); err != nil {
+		t.Fatal(err)
+	}
+	definitions := root["definitions"].(map[string]any)
+	methodProps := func(kind string) map[string]any {
+		options := definitions[methodDefinition(kind)].(map[string]any)["oneOf"].([]any)
+		for _, raw := range options {
+			option := raw.(map[string]any)
+			if option["type"] == "object" {
+				return option["properties"].(map[string]any)
+			}
+		}
+		t.Fatalf("%s schema has no object option", kind)
+		return nil
+	}
+	githubAsset, ok := methodProps("github")["asset"].(map[string]any)
+	if !ok {
+		t.Fatal("github schema must declare asset")
+	}
+	distributions := methodProps("github")["distributions"].(map[string]any)
+	distAsset := distributions["items"].(map[string]any)["properties"].(map[string]any)["asset"]
+	if !reflect.DeepEqual(githubAsset, distAsset) {
+		t.Error("github principal asset schema must reuse the distribution selector definition")
+	}
+	if _, ok := githubAsset["oneOf"]; !ok {
+		t.Error("github principal asset must accept string or { regex }")
+	}
+	// The extension is github-only: http keeps the string-only asset.
+	httpAsset, ok := methodProps("http")["asset"].(map[string]any)
+	if !ok {
+		t.Fatal("http schema must declare asset")
+	}
+	if _, ok := httpAsset["oneOf"]; ok {
+		t.Error("http principal asset must stay string-only")
+	}
+	if httpAsset["type"] != "string" {
+		t.Errorf("http principal asset type=%v, want string", httpAsset["type"])
+	}
+}

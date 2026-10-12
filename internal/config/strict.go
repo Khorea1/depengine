@@ -276,6 +276,14 @@ func validateMethodValue(raw any, path, declaredKind string, errs *[]string) {
 					*errs = append(*errs, path+"."+key+": field is not supported by method kind "+contract.Kind)
 					continue
 				}
+				if key == "asset" && contract.Kind == "github" {
+					// The principal github asset accepts the same selector
+					// shapes as distribution overrides: a literal template
+					// or { regex = "..." }. Every other method kind keeps
+					// the contract's string-only asset.
+					validateAssetSelector(v[key], path+"."+key, errs)
+					continue
+				}
 				validateMethodField(v[key], field, path+"."+key, errs)
 				if key == "binary" && (contract.Kind == "http" || contract.Kind == "github") {
 					name, _ := v[key].(string)
@@ -499,7 +507,7 @@ func validateDistributions(raw any, base map[string]any, path string, contract *
 				*errs = append(*errs, fmt.Sprintf("%s: field %q is not specializable per distribution", p+"."+key, key))
 			}
 		}
-		validateDistributionAsset(m["asset"], p+".asset", errs)
+		validateAssetSelector(m["asset"], p+".asset", errs)
 		validateDistributionString(m, "checksum", p, errs)
 		validateDistributionString(m, "checksum_url", p, errs)
 		validateDistributionString(m, "checksum_file_format", p, errs)
@@ -542,7 +550,12 @@ func validateDistributions(raw any, base map[string]any, path string, contract *
 	}
 }
 
-func validateDistributionAsset(raw any, path string, errs *[]string) {
+// validateAssetSelector enforces the shared asset-selector shape used both
+// by the principal github asset field and by distribution asset overrides:
+// a non-empty literal template string, or exactly { regex = "..." } with a
+// compilable expression. The resolver accepts exactly these two forms, so
+// validation must not admit anything else.
+func validateAssetSelector(raw any, path string, errs *[]string) {
 	if raw == nil {
 		return
 	}

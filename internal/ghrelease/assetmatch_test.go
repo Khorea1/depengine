@@ -205,3 +205,37 @@ func TestLiteralPatternUnchanged(t *testing.T) {
 		t.Fatalf("matched=%v", matched)
 	}
 }
+
+func TestCompileExplicitRegexTopLevelAlternationStaysAnchored(t *testing.T) {
+	// A top-level `a|b` must compile as ^(?:a|b)$: without the group the
+	// branches escape the anchors (^a|b$ matches "xa" and "bx").
+	re, err := CompileExplicitRegex(`tool-win\.zip|tool-windows\.zip`, "v1.0.0", "x86_64", "windows")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"tool-win.zip", "tool-windows.zip"} {
+		if !re.MatchString(name) {
+			t.Errorf("must match exact name %q", name)
+		}
+	}
+	for _, name := range []string{"tool-win.zip.evil", "evil-tool-windows.zip", "xxtool-win.zip", "tool-windows.zipxx"} {
+		if re.MatchString(name) {
+			t.Errorf("must not partially match %q", name)
+		}
+	}
+}
+
+func TestLiteralPatternPipeStaysLiteral(t *testing.T) {
+	// The literal template path escapes everything first, so `|` never
+	// becomes an alternation there; the anchoring fix must not change that.
+	re, err := CompileLiteralPattern("tool-a|b.tar.gz", "v1.0.0", "x86_64", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !re.MatchString("tool-a|b.tar.gz") {
+		t.Error("literal pipe must match literally")
+	}
+	if re.MatchString("tool-a") || re.MatchString("b.tar.gz") {
+		t.Error("literal pipe must not act as alternation")
+	}
+}

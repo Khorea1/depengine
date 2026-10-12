@@ -196,6 +196,12 @@ func methodObjectJSONSchema(contract *methodkind.Contract, variantKind string) m
 	for _, key := range keys {
 		field := contract.Fields[key]
 		properties[key] = methodFieldJSONSchema(field)
+		if key == "asset" && contract.Kind == "github" {
+			// The principal github asset accepts the same selector
+			// shapes as distribution overrides. Every other method
+			// kind keeps the contract's string-only asset.
+			properties[key] = assetSelectorJSONSchema()
+		}
 		if field.Required {
 			required = append(required, key)
 		}
@@ -264,6 +270,15 @@ func methodObjectJSONSchema(contract *methodkind.Contract, variantKind string) m
 	return schema
 }
 
+// assetSelectorJSONSchema describes the shared asset-selector shape used
+// both by the principal github asset field and by distribution asset
+// overrides: a non-empty literal template string, or exactly
+// { regex = "..." }. Keep this as the single definition of the selector
+// format so the schema, strict validation, and the resolver agree.
+func assetSelectorJSONSchema() map[string]any {
+	return map[string]any{"oneOf": []any{map[string]any{"type": "string", "minLength": 1}, map[string]any{"type": "object", "required": []string{"regex"}, "properties": map[string]any{"regex": map[string]any{"type": "string", "minLength": 1}}, "additionalProperties": false}}}
+}
+
 // distributionsJSONSchema describes the per-method distributions array. The
 // allowed override keys come from the method contract's DistributableFields
 // (single source); when is always required.
@@ -274,7 +289,7 @@ func distributionsJSONSchema(distributable []string) map[string]any {
 	}
 	properties := map[string]any{
 		"when":                 map[string]any{"$ref": "#/definitions/condition"},
-		"asset":                map[string]any{"oneOf": []any{map[string]any{"type": "string", "minLength": 1}, map[string]any{"type": "object", "required": []string{"regex"}, "properties": map[string]any{"regex": map[string]any{"type": "string", "minLength": 1}}, "additionalProperties": false}}},
+		"asset":                assetSelectorJSONSchema(),
 		"checksum":             map[string]any{"type": "string", "minLength": 1},
 		"checksum_url":         map[string]any{"type": "string", "minLength": 1},
 		"checksum_file_format": map[string]any{"type": "string", "minLength": 1},

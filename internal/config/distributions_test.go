@@ -301,3 +301,52 @@ entrypoints = { br = "br-linux" }
 		t.Fatal("clone must preserve distributions")
 	}
 }
+
+func TestStrictPrincipalAssetSelector(t *testing.T) {
+	const header = "schema_version = 1\n"
+	// The principal github asset accepts the same selector shapes as
+	// distribution overrides: a literal template or { regex = "..." }.
+	t.Run("github-principal-regex-valid", func(t *testing.T) {
+		doc := header + "[tools.x.github]\nrepo = \"o/r\"\nasset = { regex = 'tool-(win|windows)\\.zip' }\nchecksum = \"sha256:auto\"\nscope = \"user\"\n"
+		s, err := ParseProjectSchema(writeSchema(t, doc), map[string]string{})
+		if err != nil {
+			t.Fatalf("principal regex asset must validate: %v", err)
+		}
+		selector, ok := s.Tools["x"].Methods[0].Config["asset"].(map[string]any)
+		if !ok || selector["regex"] != `tool-(win|windows)\.zip` {
+			t.Fatalf("principal regex asset must survive parsing as a map, got %#v", s.Tools["x"].Methods[0].Config["asset"])
+		}
+	})
+	t.Run("github-principal-literal-valid", func(t *testing.T) {
+		doc := header + "[tools.x.github]\nrepo = \"o/r\"\nasset = \"tool.tar.gz\"\nchecksum = \"sha256:auto\"\nscope = \"user\"\n"
+		if _, err := ParseProjectSchema(writeSchema(t, doc), map[string]string{}); err != nil {
+			t.Fatalf("principal literal asset must validate: %v", err)
+		}
+	})
+	for _, tc := range []struct {
+		name    string
+		asset   string
+		wantErr string
+	}{
+		{"github-principal-regex-invalid", `asset = { regex = "([" }`, "invalid regex"},
+		{"github-principal-regex-empty", `asset = { regex = "" }`, "must not be empty"},
+		{"github-principal-asset-wrong-shape", `asset = { glob = "tool-*" }`, "exactly { regex = "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := header + "[tools.x.github]\nrepo = \"o/r\"\n" + tc.asset + "\nchecksum = \"sha256:auto\"\nscope = \"user\"\n"
+			_, err := ParseProjectSchema(writeSchema(t, doc), map[string]string{})
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("err=%v, want containing %q", err, tc.wantErr)
+			}
+		})
+	}
+	// Other method kinds keep the string-only asset: the map form that the
+	// github resolver accepts must not silently widen the http contract.
+	t.Run("http-principal-regex-rejected", func(t *testing.T) {
+		doc := header + "[tools.x.http]\nrepo = \"o/r\"\nasset = { regex = 'tool\\.zip' }\nchecksum = \"sha256:auto\"\nscope = \"user\"\n"
+		_, err := ParseProjectSchema(writeSchema(t, doc), map[string]string{})
+		if err == nil || !strings.Contains(err.Error(), "expected string") {
+			t.Fatalf("err=%v, want string-only rejection", err)
+		}
+	})
+}

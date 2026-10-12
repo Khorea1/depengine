@@ -496,8 +496,9 @@ method-level `when`, when present, constrains every distribution further.
   `signature_url`, `binary`, `entrypoints`, `strip_components`, and
   `extract_to` may be specialized per distribution.
 
-`asset` also accepts an explicit regex, `asset = { regex = '...' }`, matched
-with RE2, case-insensitively and anchored by depengine. `{version}`,
+`asset` also accepts an explicit regex, `asset = { regex = '...' }`, both as
+the principal method field and inside distribution overrides, matched
+with RE2, case-insensitively and anchored by depengine as `^(?:...)`. `{version}`,
 `{arch_any}`, and `{os_any}` expand to the same escaped groups as in literal
 patterns; everything else is regex. Invalid expressions, zero matches, and
 multiple matches are all errors — never heuristics, ordering, or scoring.

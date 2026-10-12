@@ -59,6 +59,11 @@ func CompileLiteralPattern(assetPattern, tag, arch, osName string) (*regexp.Rege
 // the same escaped groups), and every other character passes through raw, so
 // regex operators, character classes, and quantifiers keep working. Unknown
 // {...} tokens are left untouched.
+//
+// Anchoring wraps the whole expression in a non-capturing group:
+// ^(?:EXPR)$. A bare "^" + expr + "$" would let a top-level alternation
+// escape the anchors (^a|b$ matches "xa" via the second branch and "bx"
+// via the first), silently turning an exact selector into a partial match.
 func CompileExplicitRegex(expr, tag, arch, osName string) (*regexp.Regexp, error) {
 	versionGroup := "(?:" + regexp.QuoteMeta(tag) + "|" + regexp.QuoteMeta(strings.TrimPrefix(tag, "v")) + ")"
 	replacer := strings.NewReplacer(
@@ -66,7 +71,7 @@ func CompileExplicitRegex(expr, tag, arch, osName string) (*regexp.Regexp, error
 		"{arch_any}", synonymGroup(archSynonyms, arch),
 		"{os_any}", synonymGroup(osSynonyms, osName),
 	)
-	pattern := "^" + replacer.Replace(expr) + "$"
+	pattern := "^(?:" + replacer.Replace(expr) + ")$"
 
 	re, err := regexp.Compile("(?i)" + pattern)
 	if err != nil {
