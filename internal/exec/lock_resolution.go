@@ -2,7 +2,6 @@ package exec
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -94,10 +93,12 @@ func (ex *Executor) ResolveLockCandidate(ctx context.Context, tool *config.Tool,
 	for _, method := range ex.SelectedMethods(tool, clan) {
 		selection := ex.resolveCandidateForSelection(ctx, tool, method, clan)
 		if selection.err != nil {
-			// Ambiguous distributions abort the lock resolution: falling
-			// through to the next method would hide a broken manifest.
-			var ambiguous *config.AmbiguousDistributionsError
-			if errors.As(selection.err, &ambiguous) {
+			// Terminal failures abort the lock resolution: falling through
+			// to the next method would hide a broken manifest (ambiguous
+			// distributions, asset mismatch, invalid selector) behind a
+			// silent source switch. Recoverable failures keep historic
+			// fallback. Classified centrally, never by error text.
+			if IsTerminalMethodError(selection.err) {
 				return ResolvedCandidate{}, selection.err
 			}
 			if selection.status == "failed" || lastErr == nil {

@@ -99,6 +99,13 @@ func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan str
 		attempts = append(attempts, attempt)
 	}
 
+	// blockedByTerminal records the first terminal method failure in install
+	// order. Later candidates can never execute once an earlier one aborts
+	// the tool, so a fallback that looks runnable must instead be reported
+	// as blocked. Factual states (already installed, skips, failures) are
+	// still reported as observed.
+	var blockedByTerminal string
+
 	for _, method := range methods {
 		displayKind := method.Kind
 		if method.Label != "" {
@@ -116,6 +123,9 @@ func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan str
 		if selection.err != nil {
 			attempt.Status = selection.status
 			attempt.Error = selection.err.Error()
+			if blockedByTerminal == "" && IsTerminalMethodError(selection.err) {
+				blockedByTerminal = fmt.Sprintf("%s: %s", displayKind, selection.err.Error())
+			}
 			appendAttempt(attempt, method)
 			continue
 		}
@@ -198,6 +208,15 @@ func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan str
 		}
 
 		// Method is ready and would be attempted.
+		if blockedByTerminal != "" {
+			// The serial executor aborts at the earlier terminal failure
+			// before ever reaching this candidate: report it as blocked,
+			// never as runnable.
+			attempt.Status = "failed"
+			attempt.Error = fmt.Sprintf("blocked by terminal error in earlier method: %s", blockedByTerminal)
+			appendAttempt(attempt, method)
+			continue
+		}
 		attempt.Status = "would_install"
 		var prerequisites []string
 		if len(method.Requires) > 0 {
@@ -258,17 +277,17 @@ func (ex *Executor) CheckDesiredState(ctx context.Context, tool *config.Tool, cl
 		}
 		specialized, skipStatus, specErr := ex.specializeMethodForHost(method)
 		if specErr != nil {
-			checked := CheckResult{
+			// Terminal: a later satisfied method must not hide an earlier
+			// ambiguity or invalid configuration. The serial executor
+			// aborts the tool here, so check reports the breakage
+			// immediately instead of probing further candidates.
+			return CheckResult{
 				Method: method.Kind,
 				Verification: plan.VerificationResult{
 					State:  plan.StateBroken,
 					Detail: specErr.Error(),
 				},
-			}
-			if !haveFirst || first.Verification.State == plan.StateAbsent {
-				first, haveFirst = checked, true
-			}
-			continue
+			}, nil
 		}
 		if skipStatus != "" {
 			continue
@@ -291,6 +310,19 @@ func (ex *Executor) CheckDesiredState(ctx context.Context, tool *config.Tool, cl
 		intent = ex.hostResolvedPlanIntent(method, intent, clan)
 		resolved, err := ex.resolveCandidatePlan(ctx, tool, method, adapter, intent, method.Kind)
 		if err != nil {
+			// Terminal resolution failures (asset mismatch, invalid
+			// selector) break the check exactly as they break install and
+			// lock. Recoverable availability failures keep falling through
+			// to the next method.
+			if IsTerminalMethodError(err) {
+				return CheckResult{
+					Method: method.Kind,
+					Verification: plan.VerificationResult{
+						State:  plan.StateBroken,
+						Detail: err.Error(),
+					},
+				}, nil
+			}
 			continue
 		}
 		verification, err := ex.VerifyResolvedCandidate(ctx, tool, method, resolved)
