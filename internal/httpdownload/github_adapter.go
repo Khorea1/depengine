@@ -94,9 +94,29 @@ func (a *GitHubAdapter) Observe(ctx context.Context, rn run.Runner, tool *config
 // extract to HTTPAdapter.Install with "url" filled in.
 func (a *GitHubAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	asset, _ := mc.Config["asset"].(string)
+	if asset == "" && assetSelectorIsRegex(mc) {
+		// A regex selector's text carries no format signal. Resolve the
+		// concrete asset URL first so an archive payload is not mistaken
+		// for a raw binary (which would inject a binary name that archive
+		// installs must not receive).
+		resolvedURL, err := ResolveArtifact(ctx, mc, rn)
+		if err != nil {
+			return fmt.Errorf("github: resolve artifact: %w", err)
+		}
+		if binary, _ := mc.Config["binary"].(string); binary != "" || isArchive(fileExtension(resolvedURL)) {
+			return a.http.Install(ctx, rn, tool, mc)
+		}
+		return a.installRawBinaryWithToolName(ctx, rn, tool, mc)
+	}
 	if binary, _ := mc.Config["binary"].(string); binary != "" || isArchive(fileExtension(asset)) {
 		return a.http.Install(ctx, rn, tool, mc)
 	}
+	return a.installRawBinaryWithToolName(ctx, rn, tool, mc)
+}
+
+// installRawBinaryWithToolName preserves the historical raw-binary default:
+// an unnamed payload installs under the tool name.
+func (a *GitHubAdapter) installRawBinaryWithToolName(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	clone := *mc
 	clone.Config = make(map[string]any, len(mc.Config)+1)
 	for key, value := range mc.Config {
