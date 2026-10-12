@@ -13,17 +13,23 @@ Package-manager and ecosystem adapters use their native concepts. File and
 archive adapters track concrete paths, checksums, and entrypoints so depengine
 can tell what it owns and remove it safely.
 
+The npm, pnpm, Bun, and Yarn adapters accept scoped registry package names. They
+also accept npm alias specs such as `omp@npm:@oh-my-pi/pi-coding-agent`; install
+keeps the alias spec, while presence and exact-version checks match the local
+alias name (`omp`) reported by the package manager.
+
 Hooks, build commands, opaque vendor installers, and similar escape hatches are
 less observable. depengine cannot infer complete ownership, rollback behavior,
 or desired state from an arbitrary command.
 
 ## Reproducibility
 
-Current `depengine.lock` files use format v2. When producing a v2 lock,
-`depengine update` resolves selected install candidates through the executor's
-read-only `AdapterV2` plan resolution, then projects credential-free immutable
-identities into an adapter-neutral `LockDocument`. Generation requires complete
-supported coverage. A profiled update over v1 remains on the bounded v1 path.
+New `depengine.lock` files use format v2; existing v1 locks remain readable.
+When producing a v2 lock, `depengine update` resolves selected install candidates
+through the executor's read-only `AdapterV2` plan resolution, then projects
+credential-free immutable identities into an adapter-neutral `LockDocument`.
+Generation requires complete supported coverage. A profiled update over v1
+remains on the bounded v1 path.
 The document is persisted alongside method-specific pins retained as
 compatibility/migration payload. In a v2 lock, `LockDocument` is the sole
 operational resolved-identity authority for install, status, and upgrade;
@@ -45,9 +51,10 @@ alone; retained checkouts continue to compare their actual HEAD.
 ### Legacy lock v1 lifecycle
 
 Lock v1 is compatibility-only. New capabilities must not extend its selector
-model, and a successful whole-schema `depengine update` must migrate a readable
-v1 lock to v2. The only path allowed to keep writing the v1 envelope is a
-profiled update that cannot prove a complete v2 install-closure projection.
+model. A whole-schema update migrates a readable v1 lock only when it can prove
+complete v2 install-closure coverage. If any selected tool lacks an immutable identity, the
+update fails closed and preserves the existing lock; a profiled update may
+preserve v1 when it cannot prove a complete projection.
 
 The legacy writer/preservation path can be removed once every profiled update
 either produces a complete v2 projection or fails and requires a whole-schema
@@ -60,13 +67,17 @@ compatibility code, not extension points. Ordinary reads and frozen validation
 do not migrate. A whole-schema `depengine update` is an explicit resolution
 operation; any future format-only migration must be representation-only.
 
-Generation is all-or-nothing. If a selected manager cannot expose a stable
-version, revision, digest, checksummed artifact, or required Git-backed source
-revision, `update` fails with `immutable lock identity unavailable`; it never
-writes a partial v2 projection. This closes silent mutable re-resolution without
-pretending unsupported managers are reproducible. Lock v1 remains readable and
-keeps the method-specific behavior documented below; the next successful
-whole-schema update migrates it to v2.
+Generation is all-or-nothing. A whole-schema `update` writes v2 only when every
+non-virtual tool has an immutable resolved identity. If a manager cannot expose a
+stable version, revision, digest, checksummed artifact, or required Git-backed
+source revision, `update` fails with `immutable lock identity unavailable` and
+writes no partial v2 projection; an existing v1 lock remains unchanged. Plain
+native package names and package-presence checks do not provide an immutable
+version. Native packages are v2-lockable only when a manager-specific resolver
+can return a concrete identity that its install path can replay. This closes
+silent mutable re-resolution without pretending unsupported managers are
+reproducible. Lock v1 remains readable with its method-specific behavior; a
+whole-schema update migrates it only when complete v2 coverage can be proven.
 
 An exact package version constrains one package. A fully locked package graph
 also needs immutable identities for its dependencies.

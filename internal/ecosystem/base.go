@@ -1210,6 +1210,7 @@ func bunLocalSourceVersion(version string) bool {
 }
 
 func bunGlobalList(output, pkg string) (version string, found, valid bool) {
+	pkg = registryInventoryName(pkg)
 	output = strings.TrimSpace(output)
 	if output == "" {
 		return "", false, false
@@ -1343,6 +1344,7 @@ func buildPNPMCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) [
 }
 
 func (a *BaseAdapter) pnpmInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
+	pkg = registryInventoryName(pkg)
 	res := a.runConfiguredBinary(ctx, rn, "list", "-g", "--depth=0", "--json")
 	if res.Err != nil || res.ExitCode != 0 {
 		return "", run.CheckResult(res, "pnpm: list installed version")
@@ -1417,6 +1419,7 @@ func (a *BaseAdapter) yarnInstalledVersion(ctx context.Context, rn run.Runner, p
 }
 
 func yarnGlobalList(output, pkg string) (version string, found, valid bool) {
+	pkg = registryInventoryName(pkg)
 	output = strings.TrimSpace(output)
 	if output == "" {
 		return "", false, false
@@ -1516,6 +1519,7 @@ type npmListOutput struct {
 }
 
 func (a *BaseAdapter) npmInstalledVersion(ctx context.Context, rn run.Runner, pkg string) (string, error) {
+	pkg = registryInventoryName(pkg)
 	// Query the complete global inventory instead of filtering by package: a
 	// filtered query for a missing package exits nonzero with a bare
 	// `{"name": ...}` document that proves nothing, while a successful full
@@ -1565,6 +1569,13 @@ func (a *BaseAdapter) checkNPM(ctx context.Context, rn run.Runner, tool *config.
 	}
 	want, _ := mc.Config["version"].(string)
 	return want == "" || version == want
+}
+
+func registryInventoryName(pkg string) string {
+	if alias, _, ok := strings.Cut(pkg, "@npm:"); ok {
+		return alias
+	}
+	return pkg
 }
 
 func resolvedPkg(tool *config.Tool, mc *config.MethodCandidate) string {

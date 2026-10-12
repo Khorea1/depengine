@@ -3,12 +3,35 @@ package ecosystem
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
+
+func TestRegistryAliasInstallSpecsKeepAliasAndTarget(t *testing.T) {
+	const pkg = "omp@npm:@oh-my-pi/pi-coding-agent"
+	tool := &config.Tool{Name: "omp"}
+	method := &config.MethodCandidate{Config: map[string]any{"pkg": pkg, "version": "18.8.9"}}
+	tests := []struct {
+		name string
+		got  []string
+		want []string
+	}{
+		{name: "bun", got: buildBunCmd([]string{"bun", "add", "{pkg}"}, tool, method), want: []string{"bun", "add", "-g", "omp@npm:@oh-my-pi/pi-coding-agent@18.8.9"}},
+		{name: "pnpm", got: buildPNPMCmd([]string{"pnpm", "add", "{pkg}"}, tool, method), want: []string{"pnpm", "add", "-g", "omp@npm:@oh-my-pi/pi-coding-agent@18.8.9"}},
+		{name: "yarn", got: buildYarnCmd([]string{"yarn", "global", "add", "{pkg}"}, tool, method), want: []string{"yarn", "global", "add", "omp@npm:@oh-my-pi/pi-coding-agent@18.8.9"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if !reflect.DeepEqual(tt.got, tt.want) {
+				t.Fatalf("install command = %#v, want %#v", tt.got, tt.want)
+			}
+		})
+	}
+}
 
 func TestBaseAdapterBunObserveInventory(t *testing.T) {
 	tests := []struct {
@@ -25,6 +48,7 @@ func TestBaseAdapterBunObserveInventory(t *testing.T) {
 		{name: "real two-package document proves absent target", pkg: "@fixture/missing", stdout: "/tmp/depengine-pr147-fixture-run-05/bun/global node_modules (2 installed)\n├── @fixture/cli-one@../../js/@fixture/cli-one\n└── @fixture/cli-two@../../js/@fixture/cli-two\n", presence: plan.PresenceAbsent},
 		{name: "real registry package version is present", pkg: "luna-bun-fixture", stdout: "/tmp/depengine-pr147-bun-sandbox/global-registry node_modules (1 installed)\n└── luna-bun-fixture@0.1.0\n", presence: plan.PresencePresent, version: "0.1.0"},
 		{name: "scoped target preserves reported version", pkg: "@scope/demo", stdout: "/home/user/.bun/install/global/node_modules (2 installed)\n├── other@1.0.0\n└── @scope/demo@2.0.0\n", presence: plan.PresencePresent, version: "2.0.0"},
+		{name: "npm alias inventory reports alias version", pkg: "omp@npm:@oh-my-pi/pi-coding-agent", stdout: "/home/user/.bun/install/global/node_modules (1 installed)\n└── omp@18.8.9\n", presence: plan.PresencePresent, version: "18.8.9"},
 		{name: "zero count header schema fixture proves absence", stdout: "/tmp/bun/global node_modules (0 installed)\n", presence: plan.PresenceAbsent},
 		{name: "count mismatch is not complete", stdout: "/tmp/bun/global/node_modules (2 installed)\n└── other@1.0.0\n", presence: plan.PresenceUnknown},
 		{name: "legacy tree target", stdout: "├── other@1.0.0\n└── demo@1.2.3\n", presence: plan.PresencePresent, version: "1.2.3"},
