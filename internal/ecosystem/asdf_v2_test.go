@@ -55,16 +55,26 @@ func TestAsdfAdapterMiseBackendLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolved.Identity.Package != "github:can1357/oh-my-pi" {
-		t.Fatalf("resolved package = %q", resolved.Identity.Package)
+	if resolved.Identity.Package != "can1357/oh-my-pi" || resolved.Identity.Source != "github" {
+		t.Fatalf("resolved identity = %+v; wanted declared package plus backend source", resolved.Identity)
+	}
+	if err := plan.ValidateResolution(intent, *resolved); err != nil {
+		t.Fatalf("ValidateResolution: %v", err)
 	}
 	runner := &miseBackendRunner{}
 	if err := a.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
 		t.Fatal(err)
 	}
 	obs, err := a.Observe(context.Background(), runner, tool, mc)
-	if err != nil || obs.Presence != plan.PresencePresent || obs.Identity.Version != "1.2.3" {
+	if err != nil || obs.Presence != plan.PresencePresent || obs.Identity.Package != "can1357/oh-my-pi" || obs.Identity.Source != "github" || obs.Identity.Version != "1.2.3" {
 		t.Fatalf("Observe = %+v, %v", obs, err)
+	}
+	sourceKnown := false
+	for _, field := range obs.KnownFields {
+		sourceKnown = sourceKnown || field == plan.FieldSource
+	}
+	if !sourceKnown {
+		t.Fatalf("Observation fields = %v; missing source", obs.KnownFields)
 	}
 	if !a.Check(context.Background(), runner, tool, mc) {
 		t.Fatal("Check did not find configured backend")

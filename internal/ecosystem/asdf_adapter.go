@@ -33,7 +33,7 @@ func (a *AsdfAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Too
 	if len(pkg) == 0 || pkg[0] == "" {
 		return false
 	}
-	installed, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, misePackage(mc, pkg[0]))
+	installed, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, misePackage(miseBackend(mc), pkg[0]))
 	if err != nil || !foundBackend || len(installed.Versions) == 0 {
 		return false
 	}
@@ -54,7 +54,7 @@ func (a *AsdfAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	if len(pkg) == 0 || pkg[0] == "" {
 		return fmt.Errorf("asdf: no package name")
 	}
-	return installAsdfOrMise(ctx, rn, misePackage(mc, pkg[0]), asdfVersion(mc))
+	return installAsdfOrMise(ctx, rn, misePackage(miseBackend(mc), pkg[0]), asdfVersion(mc))
 }
 
 func installAsdfOrMise(ctx context.Context, rn run.Runner, pkg, version string) error {
@@ -76,12 +76,28 @@ func installAsdfOrMise(ctx context.Context, rn run.Runner, pkg, version string) 
 	return errors.New("asdf: neither asdf nor mise found")
 }
 
-func misePackage(mc *config.MethodCandidate, pkg string) string {
-	backend, _ := mc.Config["backend"].(string)
+func misePackage(backend, pkg string) string {
 	if backend == "" {
 		return pkg
 	}
 	return backend + ":" + pkg
+}
+
+func miseBackend(mc *config.MethodCandidate) string {
+	if mc == nil {
+		return ""
+	}
+	backend, _ := mc.Config["backend"].(string)
+	return backend
+}
+
+func isSupportedMiseBackend(backend string) bool {
+	switch backend {
+	case "aqua", "cargo", "github", "go", "npm", "pipx":
+		return true
+	default:
+		return false
+	}
 }
 
 func isMiseBackendPackage(pkg string) bool {
@@ -240,7 +256,15 @@ func (a *AsdfAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.
 	if resolved.Identity.Package == "" {
 		return nil, errors.New("asdf: no package name in plan intent")
 	}
-	resolved.Identity.Package = misePackage(mc, pkg[0])
+	if backend := miseBackend(mc); backend != "" {
+		if !isSupportedMiseBackend(backend) {
+			return nil, fmt.Errorf("asdf: unsupported mise backend %q", backend)
+		}
+		if resolved.Identity.Source != "" && resolved.Identity.Source != backend {
+			return nil, fmt.Errorf("asdf: resolved source %q conflicts with mise backend %q", resolved.Identity.Source, backend)
+		}
+		resolved.Identity.Source = backend
+	}
 	return &resolved, nil
 }
 
@@ -249,7 +273,7 @@ func (a *AsdfAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 	if len(pkg) == 0 || pkg[0] == "" {
 		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "asdf: no package name"}, nil
 	}
-	installed, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, misePackage(mc, pkg[0]))
+	installed, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, misePackage(miseBackend(mc), pkg[0]))
 	if err != nil {
 		return plan.Observation{Presence: plan.PresenceBroken, Detail: err.Error()}, err
 	}
@@ -258,8 +282,12 @@ func (a *AsdfAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 	}
 	observation := plan.Observation{
 		Presence:    plan.PresencePresent,
-		Identity:    plan.ObservedIdentity{Package: misePackage(mc, pkg[0])},
+		Identity:    plan.ObservedIdentity{Package: pkg[0]},
 		KnownFields: []plan.IdentityField{plan.FieldPackage},
+	}
+	if backend := miseBackend(mc); backend != "" {
+		observation.Identity.Source = backend
+		observation.KnownFields = append(observation.KnownFields, plan.FieldSource)
 	}
 	desired := asdfVersion(mc)
 	if desired == "latest" {
@@ -310,6 +338,12 @@ func (a *AsdfAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *con
 	if pkg == "" {
 		return errors.New("asdf: no package name in resolved plan")
 	}
+	if resolved.Identity.Source != "" {
+		if !isSupportedMiseBackend(resolved.Identity.Source) {
+			return fmt.Errorf("asdf: unsupported resolved mise backend %q", resolved.Identity.Source)
+		}
+		pkg = misePackage(resolved.Identity.Source, pkg)
+	}
 	if version == "" {
 		version = "latest"
 	}
@@ -335,7 +369,7 @@ func (a *AsdfAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 	}
 	version := asdfVersion(mc)
 	if version == "latest" {
-		installed, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, misePackage(mc, pkg[0]))
+		installed, foundBackend, err := asdfOrMiseInstalledVersions(ctx, rn, misePackage(miseBackend(mc), pkg[0]))
 		if err != nil {
 			return fmt.Errorf("asdf: resolve installed version for removal: %w", err)
 		}
@@ -350,15 +384,15 @@ func (a *AsdfAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 				pkg[0], strings.Join(installed.Versions, ", "))
 		}
 		version = installed.Versions[0]
-		return removeAsdfVersion(ctx, rn, installed.Backend, misePackage(mc, pkg[0]), version)
+		return removeAsdfVersion(ctx, rn, installed.Backend, misePackage(miseBackend(mc), pkg[0]), version)
 	}
 	backends := []string{"asdf", "mise"}
-	if isMiseBackendPackage(misePackage(mc, pkg[0])) {
+	if isMiseBackendPackage(misePackage(miseBackend(mc), pkg[0])) {
 		backends = []string{"mise"}
 	}
 	for _, backend := range backends {
 		if run.LookPath(ctx, rn, backend) {
-			return removeAsdfVersion(ctx, rn, backend, misePackage(mc, pkg[0]), version)
+			return removeAsdfVersion(ctx, rn, backend, misePackage(miseBackend(mc), pkg[0]), version)
 		}
 	}
 	return fmt.Errorf("asdf: neither asdf nor mise found")
