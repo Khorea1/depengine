@@ -503,16 +503,25 @@ func (a *BaseAdapter) buildCmd(tmpl []string, tool *config.Tool, mc *config.Meth
 	if a.config.KindName == "yarn" {
 		cmd = buildYarnCmd(cmd, tool, mc)
 	}
-	if a.config.KindName == "npm" && len(tmpl) > 1 && tmpl[1] == "install" {
-		if version, _ := mc.Config["version"].(string); version != "" {
-			for i := range cmd {
-				if cmd[i] == pkg {
-					cmd[i] = pkg + "@" + version
+	if a.config.KindName == "npm" && len(tmpl) > 1 {
+		switch tmpl[1] {
+		case "install":
+			if version, _ := mc.Config["version"].(string); version != "" {
+				for i := range cmd {
+					if cmd[i] == pkg {
+						cmd[i] = pkg + "@" + version
+					}
 				}
 			}
-		}
-		if registry, _ := mc.Config["registry"].(string); registry != "" {
-			cmd = append(cmd, "--registry", registry)
+			if registry, _ := mc.Config["registry"].(string); registry != "" {
+				cmd = append(cmd, "--registry", registry)
+			}
+		case "uninstall":
+			for i := range cmd {
+				if cmd[i] == pkg {
+					cmd[i] = registryInventoryName(pkg)
+				}
+			}
 		}
 	}
 	bin := goBinaryName(pkg)
@@ -1179,7 +1188,7 @@ func buildBunCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) []
 		}
 		return append(out, pkg)
 	case "remove":
-		return []string{"bun", "remove", "-g", pkg}
+		return []string{"bun", "remove", "-g", registryInventoryName(pkg)}
 	}
 	return cmd
 }
@@ -1338,7 +1347,7 @@ func buildPNPMCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) [
 	case "add":
 		return []string{"pnpm", "add", "-g", pkg}
 	case "remove":
-		return []string{"pnpm", "remove", "-g", resolvedPkg(tool, mc)}
+		return []string{"pnpm", "remove", "-g", registryInventoryName(resolvedPkg(tool, mc))}
 	}
 	return cmd
 }
@@ -1398,7 +1407,7 @@ func buildYarnCmd(cmd []string, tool *config.Tool, mc *config.MethodCandidate) [
 		}
 		return []string{"yarn", "global", "add", pkg}
 	case "remove":
-		return []string{"yarn", "global", "remove", pkg}
+		return []string{"yarn", "global", "remove", registryInventoryName(pkg)}
 	}
 	return cmd
 }

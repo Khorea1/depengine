@@ -1220,6 +1220,7 @@ func TestValidatePackageNamesScopedAndAliasPackages(t *testing.T) {
 		{name: "npm alias", kind: "bun", pkg: "omp@npm:@oh-my-pi/pi-coding-agent"},
 		{name: "alias rejected for native", kind: "native", pkg: "omp@npm:@oh-my-pi/pi-coding-agent", wantErr: true},
 		{name: "malformed scoped package", kind: "bun", pkg: "@oh-my-pi/", wantErr: true},
+		{name: "invalid scoped character", kind: "bun", pkg: "@oh-my-pi/pkg+name", wantErr: true},
 		{name: "malformed alias", kind: "bun", pkg: "@npm:@oh-my-pi/pi-coding-agent", wantErr: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

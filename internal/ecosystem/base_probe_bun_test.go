@@ -11,23 +11,42 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-func TestRegistryAliasInstallSpecsKeepAliasAndTarget(t *testing.T) {
+func TestRegistryAliasLifecycleUsesAliasForObserveAndRemoval(t *testing.T) {
 	const pkg = "omp@npm:@oh-my-pi/pi-coding-agent"
-	tool := &config.Tool{Name: "omp"}
-	method := &config.MethodCandidate{Config: map[string]any{"pkg": pkg, "version": "18.8.9"}}
-	tests := []struct {
-		name string
-		got  []string
-		want []string
+	const installSpec = pkg + "@18.8.9"
+	for _, tc := range []struct {
+		kind      string
+		inventory string
+		install   []string
+		remove    []string
 	}{
-		{name: "bun", got: buildBunCmd([]string{"bun", "add", "{pkg}"}, tool, method), want: []string{"bun", "add", "-g", "omp@npm:@oh-my-pi/pi-coding-agent@18.8.9"}},
-		{name: "pnpm", got: buildPNPMCmd([]string{"pnpm", "add", "{pkg}"}, tool, method), want: []string{"pnpm", "add", "-g", "omp@npm:@oh-my-pi/pi-coding-agent@18.8.9"}},
-		{name: "yarn", got: buildYarnCmd([]string{"yarn", "global", "add", "{pkg}"}, tool, method), want: []string{"yarn", "global", "add", "omp@npm:@oh-my-pi/pi-coding-agent@18.8.9"}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if !reflect.DeepEqual(tt.got, tt.want) {
-				t.Fatalf("install command = %#v, want %#v", tt.got, tt.want)
+		{kind: "bun", inventory: "/tmp/bun/global/node_modules (1 installed)\n└── omp@18.8.9\n", install: []string{"add", "-g", installSpec}, remove: []string{"remove", "-g", "omp"}},
+		{kind: "npm", inventory: "{\"dependencies\":{\"omp\":{\"version\":\"18.8.9\"}}}", install: []string{"install", "-g", installSpec}, remove: []string{"uninstall", "-g", "omp"}},
+		{kind: "pnpm", inventory: "[{\"dependencies\":{\"omp\":{\"version\":\"18.8.9\"}}}]", install: []string{"add", "-g", installSpec}, remove: []string{"remove", "-g", "omp"}},
+		{kind: "yarn", inventory: "yarn global v1.22.22\ninfo \"omp@18.8.9\" has binaries:\nDone in 0.1s.\n", install: []string{"global", "add", installSpec}, remove: []string{"global", "remove", "omp"}},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			adapter := NewBaseAdapter(Configs[tc.kind])
+			runner := &run.FakeRunner{LookPaths: map[string]bool{tc.kind: true}, Stdout: tc.inventory}
+			tool := &config.Tool{Name: "omp"}
+			method := &config.MethodCandidate{Kind: tc.kind, Config: map[string]any{"pkg": pkg, "version": "18.8.9"}}
+			if err := adapter.Install(context.Background(), runner, tool, method); err != nil {
+				t.Fatalf("Install() error = %v", err)
+			}
+			if !adapter.Check(context.Background(), runner, tool, method) {
+				t.Fatal("Check() did not observe installed alias/version")
+			}
+			if err := adapter.Remove(context.Background(), runner, tool, method); err != nil {
+				t.Fatalf("Remove() error = %v", err)
+			}
+			if len(runner.Calls) != 5 {
+				t.Fatalf("calls = %#v, want availability/install, availability/observe, remove", runner.Calls)
+			}
+			if runner.Calls[1].Name != tc.kind || !reflect.DeepEqual(runner.Calls[1].Args, tc.install) {
+				t.Errorf("install call = %#v, want %s %#v", runner.Calls[1], tc.kind, tc.install)
+			}
+			if runner.Calls[4].Name != tc.kind || !reflect.DeepEqual(runner.Calls[4].Args, tc.remove) {
+				t.Errorf("remove call = %#v, want %s %#v", runner.Calls[4], tc.kind, tc.remove)
 			}
 		})
 	}

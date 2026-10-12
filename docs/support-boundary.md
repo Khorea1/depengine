@@ -15,8 +15,8 @@ can tell what it owns and remove it safely.
 
 The npm, pnpm, Bun, and Yarn adapters accept scoped registry package names. They
 also accept npm alias specs such as `omp@npm:@oh-my-pi/pi-coding-agent`; install
-keeps the alias spec, while presence and exact-version checks match the local
-alias name (`omp`) reported by the package manager.
+keeps the alias spec, while presence, exact-version checks, and removal use the
+local alias name (`omp`) reported by the package manager.
 
 Hooks, build commands, opaque vendor installers, and similar escape hatches are
 less observable. depengine cannot infer complete ownership, rollback behavior,

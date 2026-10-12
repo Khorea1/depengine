@@ -222,7 +222,7 @@ func validNPMInstallSpec(name string) bool {
 	return validNPMPackageName(name)
 }
 
-var npmNamePart = regexp.MustCompile("^[a-zA-Z0-9][a-zA-Z0-9._+-]*$")
+var npmNamePart = regexp.MustCompile("^[a-z0-9][a-z0-9._-]*$")
 
 func validNPMPackageName(name string) bool {
 	if strings.HasPrefix(name, "@") {
