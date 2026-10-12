@@ -350,7 +350,10 @@ var Contracts = finalizeContracts([]Contract{
 	{Kind: "nix", Capabilities: CapabilitySourceSelection, Fields: fields(pkgField, map[string]Field{
 		"source": {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute | EffectVerify},
 	}), AllowString: true, AllowTrue: true, CanRemove: true},
-	{Kind: "asdf", DefaultOrder: 29, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify}}), AllowString: true, AllowTrue: true, CanRemove: true},
+	{Kind: "asdf", DefaultOrder: 29, Capabilities: CapabilityExactVersion, Fields: fields(pkgField, map[string]Field{
+		"version": {Type: String, NonEmpty: true, Effects: EffectExecute | EffectVerify},
+		"backend": {Type: String, NonEmpty: true, Enum: []string{"aqua", "cargo", "github", "go", "npm", "pipx"}, Effects: EffectResolve | EffectExecute | EffectVerify},
+	}), AllowString: true, AllowTrue: true, CanRemove: true},
 	{Kind: "container", DefaultOrder: 30, Package: PackageMetadata{PURLType: "oci"}, Capabilities: CapabilityImmutableIdentity | CapabilityMutableTag | CapabilityArchitecture | CapabilitySourceSelection | CapabilityAuth, Fields: map[string]Field{
 		"manager":       {Type: String, Required: true, NonEmpty: true, Enum: []string{"docker", "podman"}, Effects: EffectExecute | EffectVerify},
 		"source":        {Type: String, Required: true, NonEmpty: true, Effects: EffectExecute | EffectVerify},

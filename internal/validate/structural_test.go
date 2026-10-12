@@ -57,6 +57,27 @@ func TestValidateRequiredFields_Valid(t *testing.T) {
 		t.Errorf("expected no findings, got %d errors, %d warnings", len(r.Errors), len(r.Warnings))
 	}
 }
+func TestAsdfBackendRejectsUnknownMiseBackend(t *testing.T) {
+	s := &cfg.Schema{Tools: map[string]*cfg.Tool{
+		"oh-my-pi": tool("oh-my-pi", []*cfg.MethodCandidate{
+			mc("asdf", nil, map[string]any{"pkg": "can1357/oh-my-pi", "backend": "unknown"}),
+		}, nil),
+	}}
+	r := validateRequiredFields(s)
+	if !r.HasErrors() {
+		t.Fatal("expected unsupported mise backend to be rejected")
+	}
+	found := false
+	for _, issue := range r.Errors {
+		if issue.Code == ErrInvalidValue && issue.Field == "tools.oh-my-pi.methods[0].backend" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected backend enum error, got: %+v", r.Errors)
+	}
+}
 
 func TestValidateRequiredFields_GitMissingURL(t *testing.T) {
 	s := &cfg.Schema{

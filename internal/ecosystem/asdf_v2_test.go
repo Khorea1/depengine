@@ -26,6 +26,58 @@ func (r *asdfFallbackRunner) LookPath(_ context.Context, name string) bool {
 	return ok
 }
 
+type miseBackendRunner struct {
+	calls [][]string
+}
+
+func (r *miseBackendRunner) Run(_ context.Context, name string, args ...string) run.Result {
+	r.calls = append(r.calls, append([]string{name}, args...))
+	if name == "mise" && len(args) > 0 && args[0] == "ls" {
+		return run.Result{ExitCode: 0, Stdout: []byte(`[{"version":"1.2.3","installed":true}]`)}
+	}
+	return run.Result{ExitCode: 0}
+}
+
+func (r *miseBackendRunner) LookPath(_ context.Context, name string) bool {
+	return name == "mise"
+}
+
+func TestAsdfAdapterMiseBackendLifecycle(t *testing.T) {
+	tool, mc := asdfTool("oh-my-pi", "can1357/oh-my-pi")
+	mc.Config["backend"] = "github"
+	mc.Config["version"] = "1.2.3"
+	intent := plan.New(tool.Name, mc.Kind, true)
+	intent.Identity.Package = "can1357/oh-my-pi"
+	intent.Identity.Version = "1.2.3"
+	intent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
+	a := NewAsdfAdapter()
+	resolved, err := a.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Identity.Package != "github:can1357/oh-my-pi" {
+		t.Fatalf("resolved package = %q", resolved.Identity.Package)
+	}
+	runner := &miseBackendRunner{}
+	if err := a.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
+		t.Fatal(err)
+	}
+	obs, err := a.Observe(context.Background(), runner, tool, mc)
+	if err != nil || obs.Presence != plan.PresencePresent || obs.Identity.Version != "1.2.3" {
+		t.Fatalf("Observe = %+v, %v", obs, err)
+	}
+	if !a.Check(context.Background(), runner, tool, mc) {
+		t.Fatal("Check did not find configured backend")
+	}
+	if err := a.Remove(context.Background(), runner, tool, mc); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{"mise", "install", "github:can1357/oh-my-pi@1.2.3"}, {"mise", "use", "-g", "github:can1357/oh-my-pi@1.2.3"}, {"mise", "ls", "github:can1357/oh-my-pi", "--installed", "--json"}, {"mise", "ls", "github:can1357/oh-my-pi", "--installed", "--json"}, {"mise", "uninstall", "github:can1357/oh-my-pi@1.2.3"}}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("mise calls = %#v, want %#v", runner.calls, want)
+	}
+}
+
 func TestAsdfAdapterV2ResolvesAndInstallsAsdf(t *testing.T) {
 	tool, mc := asdfTool("node", "nodejs")
 	mc.Config["version"] = "20.1.0"
