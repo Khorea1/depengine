@@ -74,6 +74,19 @@ func TestSpecializeSelectsOne(t *testing.T) {
 	if got == mc {
 		t.Fatal("specialized candidate must be a copy")
 	}
+	if got.Distributions != nil {
+		t.Fatal("specialized copy must not carry Distributions (conventional candidate)")
+	}
+	// Re-specialization is a no-op returning an equal candidate.
+	again, err := SpecializeDistribution(got, linuxGlibc())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ja, _ := json.Marshal(got.Config)
+	jb, _ := json.Marshal(again.Config)
+	if string(ja) != string(jb) {
+		t.Fatal("re-specialization must be stable")
+	}
 	if got.Config["asset"] != "br-{version}-{os_any}_{arch_any}.tar.gz" {
 		t.Fatalf("linux glibc inherits base asset, got %v", got.Config["asset"])
 	}

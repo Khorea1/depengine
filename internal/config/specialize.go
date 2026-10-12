@@ -58,8 +58,12 @@ func SpecializeDistribution(method *MethodCandidate, facts *platform.Facts) (*Me
 
 // applyDistribution returns a copy of method with one distribution's
 // overrides materialized into Config. Absent fields inherit the base.
+// The copy carries no Distributions: downstream sees exactly what a
+// hand-written conventional candidate looks like, and re-specialization
+// stays a no-op (nothing left to select).
 func applyDistribution(method *MethodCandidate, d *Distribution) *MethodCandidate {
 	out := cloneMethod(method)
+	out.Distributions = nil
 	set := func(key string, value any) {
 		if out.Config == nil {
 			out.Config = map[string]any{}
