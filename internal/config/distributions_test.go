@@ -6,6 +6,7 @@ package config
 // structure, hoisting, and fail-closed shapes.
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -349,4 +350,217 @@ func TestStrictPrincipalAssetSelector(t *testing.T) {
 			t.Fatalf("err=%v, want string-only rejection", err)
 		}
 	})
+}
+
+// Distribution binary overrides reuse the base-field basename rule
+// (separators, reserved names, drive prefixes): the same executable name
+// that is rejected on the base must be rejected per distribution.
+func TestStrictDistributionBinaryBasename(t *testing.T) {
+	const base = `[tools.x.github]` + "\n" + `repo = "o/r"` + "\n" + `asset = "base.tar.gz"` + "\n" + `checksum = "sha256:auto"` + "\n" + `scope = "user"` + "\n"
+	for _, name := range []string{"bin/tool", "../escape", "..", ".", `C:\tool`, `dir\tool`} {
+		t.Run(name, func(t *testing.T) {
+			doc := base + "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\n" +
+				fmt.Sprintf("binary = %q\n", name)
+			_, err := ParseProjectSchema(writeSchema(t, doc), map[string]string{})
+			if err == nil || !strings.Contains(err.Error(), "binary") {
+				t.Fatalf("binary %q: err=%v, want basename rejection", name, err)
+			}
+		})
+	}
+	for _, name := range []string{"br", "tool.exe"} {
+		t.Run("valid-"+name, func(t *testing.T) {
+			doc := base + "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\n" +
+				fmt.Sprintf("binary = %q\n", name)
+			if _, err := ParseProjectSchema(writeSchema(t, doc), map[string]string{}); err != nil {
+				t.Fatalf("binary %q must validate: %v", name, err)
+			}
+		})
+	}
+}
+
+// Distribution integrity is validated against EFFECTIVE values (base
+// inherited + override), not just declared fields: pinning checksum away
+// from :auto while inheriting a sidecar, or adding a sidecar the effective
+// checksum cannot resolve, is rejected on every host before execution.
+func TestStrictDistributionEffectiveChecksum(t *testing.T) {
+	const base = `[tools.x.github]` + "\n" + `repo = "o/r"` + "\n" + `asset = "base.tar.gz"` + "\n" + `scope = "user"` + "\n"
+	const fixed = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	cases := []struct {
+		name    string
+		base    string
+		body    string
+		wantErr string
+	}{
+		{
+			// Distribution pins a fixed checksum while inheriting the
+			// base sidecar: the effective config cannot resolve it.
+			name:    "pinned-checksum-inherits-sidecar",
+			base:    base + "checksum = \"sha256:auto\"\nchecksum_url = \"https://example.com/SHA256SUMS\"\n",
+			body:    "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nchecksum = \"" + fixed + "\"\n",
+			wantErr: "distributions[0].checksum_url",
+		},
+		{
+			// Distribution adds a signature sidecar the base checksum
+			// cannot resolve, with no signing key to pair it.
+			name:    "signature-url-without-key",
+			base:    base + "checksum = \"sha256:auto\"\n",
+			body:    "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nsignature_url = \"https://example.com/tool.sig\"\n",
+			wantErr: "requires signing_key",
+		},
+		{
+			// Base carries a full signature pair; the distribution pins
+			// a fixed checksum, orphaning both inherited sidecars.
+			name:    "pinned-checksum-inherits-signature-pair",
+			base:    base + "checksum = \"sha256:auto\"\nsignature_url = \"https://example.com/tool.sig\"\nsigning_key = \"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"\n",
+			body:    "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nchecksum = \"" + fixed + "\"\n",
+			wantErr: "requires checksum",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseProjectSchema(writeSchema(t, tc.base+tc.body), map[string]string{})
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("err=%v, want containing %q", err, tc.wantErr)
+			}
+		})
+	}
+	// A fixed checksum with no sidecars anywhere stays valid: the rule
+	// only fires when a sidecar is effectively present.
+	t.Run("pinned-checksum-without-sidecars-valid", func(t *testing.T) {
+		doc := base + "checksum = \"sha256:auto\"\n" +
+			"[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nchecksum = \"" + fixed + "\"\n"
+		if _, err := ParseProjectSchema(writeSchema(t, doc), map[string]string{}); err != nil {
+			t.Fatalf("sidecar-free pin must validate: %v", err)
+		}
+	})
+}
+
+// Merged schemas (schema+manifest layering) are validated over their
+// EFFECTIVE combinations on every distribution, including ones that match
+// no current host. Each layer below parses valid on its own; only the merge
+// introduces the fault.
+func TestValidateEffectiveIntegrityMerge(t *testing.T) {
+	const fixed = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	lower, err := ParseProjectSchema(writeSchema(t, `
+[tools.x.github]
+repo = "o/r"
+asset = "base.tar.gz"
+checksum = "sha256:auto"
+checksum_url = "https://example.com/SHA256SUMS"
+scope = "user"
+
+[[tools.x.github.distributions]]
+when = { os = ["linux"] }
+
+[[tools.x.github.distributions]]
+when = { os = ["windows"] }
+`), map[string]string{})
+	if err != nil {
+		t.Fatalf("lower layer must parse valid: %v", err)
+	}
+	upper, err := ParseProjectSchema(writeSchema(t, `
+[tools.x.github]
+repo = "o/r"
+asset = "base.tar.gz"
+checksum = "`+fixed+`"
+scope = "user"
+`), map[string]string{})
+	if err != nil {
+		t.Fatalf("upper layer must parse valid: %v", err)
+	}
+	merged := MergeLayers(lower, upper)
+	mc := merged.Tools["x"].Methods[0]
+	if mc.Config["checksum"] != fixed {
+		t.Fatalf("probe setup wrong: merged checksum=%v", mc.Config["checksum"])
+	}
+	// The validator is host-independent: the windows-only distribution is
+	// flagged even though no check below runs on a windows host.
+	err = ValidateEffectiveIntegrity(merged)
+	if err == nil {
+		t.Fatal("merged fixed checksum + inherited sidecar must be rejected")
+	}
+	for _, want := range []string{"requires checksum", "distributions[0]", "distributions[1]"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not contain %q", err.Error(), want)
+		}
+	}
+	// The matched host is rejected before execution too.
+	if _, err := SpecializeDistribution(mc, linuxGlibc()); err == nil || !strings.Contains(err.Error(), "requires checksum") {
+		t.Fatalf("specialize must reject the invalid effective config, got %v", err)
+	}
+	// A merge that only overrides an unrelated field stays valid, and the
+	// matched distribution still specializes.
+	upperOK, err := ParseProjectSchema(writeSchema(t, `
+[tools.x.github]
+repo = "o/r"
+asset = "patched.tar.gz"
+checksum = "sha256:auto"
+checksum_url = "https://example.com/SHA256SUMS"
+scope = "user"
+`), map[string]string{})
+	if err != nil {
+		t.Fatalf("upper layer must parse valid: %v", err)
+	}
+	mergedOK := MergeLayers(lower, upperOK)
+	if err := ValidateEffectiveIntegrity(mergedOK); err != nil {
+		t.Fatalf("valid merge must pass: %v", err)
+	}
+	got, err := SpecializeDistribution(mergedOK.Tools["x"].Methods[0], linuxGlibc())
+	if err != nil || got == nil || got.Config["asset"] != "patched.tar.gz" {
+		t.Fatalf("valid merge must specialize, got %v, %v", got, err)
+	}
+}
+
+// Real layering priority (manifest lower, schema upper): the manifest adds
+// sidecar material and distributions that are valid under its own base, but
+// the schema pins a fixed checksum, so every effective combination breaks.
+func TestValidateEffectiveIntegrityManifestMerge(t *testing.T) {
+	const fixed = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	schema, err := ParseProjectSchema(writeSchema(t, `
+[tools.x.github]
+repo = "o/r"
+asset = "base.tar.gz"
+checksum = "`+fixed+`"
+scope = "user"
+`), map[string]string{})
+	if err != nil {
+		t.Fatalf("schema must parse valid: %v", err)
+	}
+	manifest, err := ParseManifest(writeManifest(t, `
+[packages.x.github]
+repo = "o/r"
+asset = "base.tar.gz"
+checksum = "sha256:auto"
+checksum_url = "https://example.com/SHA256SUMS"
+scope = "user"
+
+[[packages.x.github.distributions]]
+when = { os = ["linux"] }
+`), map[string]string{})
+	if err != nil {
+		t.Fatalf("manifest must parse valid: %v", err)
+	}
+	merged := MergeLayers(manifest, schema)
+	if err := ValidateEffectiveIntegrity(merged); err == nil || !strings.Contains(err.Error(), "requires checksum") {
+		t.Fatalf("merge-introduced sidecar under fixed checksum must be rejected, got %v", err)
+	}
+}
+
+// Specialization fails closed when the materialized candidate's effective
+// integrity is incoherent (e.g. a merged schema that was never re-validated
+// reaches execution): the fault is reported instead of installing unverified.
+func TestSpecializeRejectsInvalidEffectiveIntegrity(t *testing.T) {
+	mc := &MethodCandidate{
+		Kind: "github",
+		Config: map[string]any{
+			"repo":         "o/r",
+			"asset":        "a.tar.gz",
+			"checksum":     "sha256:fixed",
+			"checksum_url": "https://example.com/SHA256SUMS",
+		},
+		Distributions: []Distribution{{When: &Condition{OS: []string{"linux"}}}},
+	}
+	if _, err := SpecializeDistribution(mc, linuxGlibc()); err == nil || !strings.Contains(err.Error(), "requires checksum") {
+		t.Fatalf("specialize must reject incoherent effective integrity, got %v", err)
+	}
 }
