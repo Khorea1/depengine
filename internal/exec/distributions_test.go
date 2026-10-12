@@ -224,6 +224,41 @@ func TestCheckDesiredStateRecordsAmbiguityBroken(t *testing.T) {
 	}
 }
 
+type assetCapturingAdapter struct {
+	testMockAdapter
+	installed []map[string]any
+}
+
+func (a *assetCapturingAdapter) InstallResolved(_ context.Context, _ run.Runner, _ *config.Tool, mc *config.MethodCandidate, _ *plan.ResolvedInstallPlan) error {
+	a.installed = append(a.installed, mc.Config)
+	return nil
+}
+
+func TestExecutorInstallReceivesSpecializedCandidate(t *testing.T) {
+	github := &assetCapturingAdapter{testMockAdapter: testMockAdapter{kindValue: "github"}}
+	ex := New()
+	WithAdapters(github, &testMockAdapter{kindValue: "fallback"})(ex)
+	WithFacts(&platform.Facts{OS: "linux", TargetArch: "x86_64", TargetFamily: "unix"})(ex)
+	tool := githubDistributionsTool()
+	schema := &config.Schema{
+		Defaults: config.Defaults{MethodOrder: []string{"github", "fallback"}},
+		Tools:    map[string]*config.Tool{"tool": tool},
+	}
+	report, err := ex.Execute(context.Background(), schema, "linux")
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if report.Tools[0].Method != "github" {
+		t.Fatalf("result = %+v, want github install", report.Tools[0])
+	}
+	if len(github.installed) != 1 || github.installed[0]["asset"] != "linux-only.tar.gz" {
+		t.Fatalf("installed Config = %v, want specialized asset", github.installed)
+	}
+	if tool.Methods[0].Config["asset"] != "base.tar.gz" {
+		t.Fatalf("declared candidate mutated: %v", tool.Methods[0].Config["asset"])
+	}
+}
+
 func TestExecutorInstallsSpecializedCandidate(t *testing.T) {
 	schema := &config.Schema{
 		Defaults: config.Defaults{MethodOrder: []string{"github", "fallback"}},

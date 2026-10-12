@@ -4,8 +4,44 @@ package ghrelease
 // in-memory matcher. No network: catalogs are plain string slices.
 
 import (
+	"math/rand"
 	"testing"
 )
+
+func newDeterministicRNG(seed int64) *rand.Rand {
+	// #nosec G404 -- deterministic shuffle is the test's subject (order
+	// independence); cryptographic randomness would defeat the purpose.
+	return rand.New(rand.NewSource(seed))
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func sameSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := map[string]int{}
+	for _, s := range a {
+		seen[s]++
+	}
+	for _, s := range b {
+		if seen[s] == 0 {
+			return false
+		}
+		seen[s]--
+	}
+	return true
+}
 
 func TestCompileExplicitRegexExpandsPlaceholders(t *testing.T) {
 	re, err := CompileExplicitRegex(`atlas-{version}-(?:linux|gnu-linux)-{arch_any}\.tar\.gz`, "v1.2.3", "x86_64", "linux")
@@ -74,6 +110,85 @@ func TestMatchAssetNames(t *testing.T) {
 	}
 	if got := MatchAssetNames(re, nil); len(got) != 0 {
 		t.Fatalf("empty catalog must match nothing, got %v", got)
+	}
+}
+
+func TestMatchAssetNamesOrderIndependent(t *testing.T) {
+	// A ordem do catálogo nunca decide: embaralhar não muda o resultado.
+	catalog := []string{"checksums.txt", "tool-linux-amd64.tar.gz", "tool-darwin-arm64.tar.gz", "tool-linux-arm64.tar.gz"}
+	re, err := CompileLiteralPattern("tool-{os_any}-{arch_any}.tar.gz", "v1.0.0", "x86_64", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := MatchAssetNames(re, catalog)
+	if len(want) != 1 || want[0] != "tool-linux-amd64.tar.gz" {
+		t.Fatalf("matched=%v", want)
+	}
+	for seed := int64(0); seed < 5; seed++ {
+		shuffled := append([]string(nil), catalog...)
+		rng := newDeterministicRNG(seed)
+		for i := len(shuffled) - 1; i > 0; i-- {
+			j := rng.Intn(i + 1)
+			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+		}
+		if got := MatchAssetNames(re, shuffled); !equalStrings(got, want) {
+			t.Fatalf("seed %d: matched=%v, want %v", seed, got, want)
+		}
+	}
+	// Ambiguidade também é estável sob permutação: mesmo conjunto.
+	amb, err := CompileExplicitRegex(`tool-{os_any}-{arch_any}`, "v1.0.0", "x86_64", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	multi := []string{"tool-linux-amd64", "tool-linux-x86_64", "tool-darwin-amd64"}
+	first := MatchAssetNames(amb, multi)
+	if len(first) != 2 {
+		t.Fatalf("matched=%v, want 2", first)
+	}
+	for seed := int64(0); seed < 5; seed++ {
+		shuffled := append([]string(nil), multi...)
+		rng := newDeterministicRNG(seed)
+		for i := len(shuffled) - 1; i > 0; i-- {
+			j := rng.Intn(i + 1)
+			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+		}
+		if got := MatchAssetNames(amb, shuffled); !sameSet(got, first) {
+			t.Fatalf("seed %d: matched=%v, want same set %v", seed, got, first)
+		}
+	}
+}
+
+func TestSynonymCoverage(t *testing.T) {
+	// Toda grafia conhecida das tabelas resolve pelo placeholder.
+	for arch, syns := range archSynonyms {
+		re, err := CompileLiteralPattern("tool-{arch_any}.tar.gz", "v1.0.0", arch, "linux")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, syn := range syns {
+			if got := MatchAssetNames(re, []string{"tool-" + syn + ".tar.gz"}); len(got) != 1 {
+				t.Fatalf("arch %q spelling %q unmatched", arch, syn)
+			}
+		}
+	}
+	for os, syns := range osSynonyms {
+		re, err := CompileLiteralPattern("tool-{os_any}.tar.gz", "v1.0.0", "x86_64", os)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, syn := range syns {
+			if got := MatchAssetNames(re, []string{"tool-" + syn + ".tar.gz"}); len(got) != 1 {
+				t.Fatalf("os %q spelling %q unmatched", os, syn)
+			}
+		}
+	}
+	// Host desconhecido ainda casa literalmente (fallback, sem falhar).
+	re, err := CompileLiteralPattern("tool-{arch_any}.tar.gz", "v1.0.0", "riscv64", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := MatchAssetNames(re, []string{"tool-riscv64.tar.gz"}); len(got) != 1 {
+		t.Fatalf("unknown arch must match literally, got %v", got)
 	}
 }
 

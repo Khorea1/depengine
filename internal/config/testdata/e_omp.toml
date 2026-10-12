@@ -1,0 +1,20 @@
+schema_version = 1
+
+# omp em E (plano §3.2): binários brutos + SHA256SUMS agregado, exceção musl.
+[tools.omp.github]
+repo = "can1357/oh-my-pi"
+asset = "omp-{os_any}-{arch_any}"
+checksum = "sha256:auto"
+checksum_url = "https://github.com/can1357/oh-my-pi/releases/latest/download/SHA256SUMS.txt"
+checksum_file_format = "sha256sum"
+scope = "user"
+
+[[tools.omp.github.distributions]]
+when = { os = ["darwin"] }
+
+[[tools.omp.github.distributions]]
+when = { os = ["linux"], libc = ["glibc"], is_android = false }
+
+[[tools.omp.github.distributions]]
+when = { os = ["linux"], libc = ["musl"], is_android = false }
+asset = "omp-linux-musl-{arch_any}"

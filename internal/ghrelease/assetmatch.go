@@ -44,6 +44,14 @@ func synonymGroup(table map[string][]string, value string) string {
 	return "(?:" + strings.Join(escaped, "|") + ")"
 }
 
+// CompileLiteralPattern compiles a filename template (the plain string
+// AssetSelector form) into an anchored, case-insensitive regexp. Exported
+// alongside CompileExplicitRegex so resolution can be tested against
+// in-memory release catalogs without GitHub API access.
+func CompileLiteralPattern(assetPattern, tag, arch, osName string) (*regexp.Regexp, error) {
+	return assetPatternRegexp(assetPattern, tag, arch, osName)
+}
+
 // CompileExplicitRegex compiles an explicit asset regex (the { regex = "..." }
 // AssetSelector form) into an anchored, case-insensitive regexp matched
 // against real release asset names. Unlike assetPatternRegexp, the expression
