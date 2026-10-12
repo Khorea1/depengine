@@ -129,6 +129,14 @@ func validateSourceLikeURLs(toolName string, methodIdx int, mc *config.MethodCan
 }
 
 func validateArtifactContract(toolName string, methodIdx int, mc *config.MethodCandidate, contract *artifact.Contract, r *Result) {
+	allowedForbiddenExtensions := []string(nil)
+	if portableExecutableEnabled(mc) {
+		if !validPortableExecutableConfig(mc, contract.ArtifactFields) {
+			r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, methodIdx, "portable_executable"), Message: "portable_executable requires a .exe artifact, binary ending in .exe, and when.os = [\"windows\"]"})
+		} else {
+			allowedForbiddenExtensions = []string{".exe"}
+		}
+	}
 	validateAuthenticatedArtifactURLs(toolName, methodIdx, mc, r)
 	for _, field := range contract.URLFields {
 		raw, _ := mc.Config[field].(string)
@@ -156,7 +164,7 @@ func validateArtifactContract(toolName string, methodIdx int, mc *config.MethodC
 		if raw == "" {
 			continue
 		}
-		if err := contract.ValidateArtifact(raw); err != nil {
+		if err := contract.ValidateArtifactAllowing(raw, allowedForbiddenExtensions); err != nil {
 			message := fmt.Sprintf("%s: %v", mc.Kind, err)
 			var forbidden *artifact.ForbiddenExtensionError
 			if errors.As(err, &forbidden) {
@@ -170,6 +178,34 @@ func validateArtifactContract(toolName string, methodIdx int, mc *config.MethodC
 			r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, methodIdx, field), Message: message})
 		}
 	}
+}
+func portableExecutableEnabled(mc *config.MethodCandidate) bool {
+	value, _ := mc.Config["portable_executable"].(bool)
+	return value
+}
+
+func validPortableExecutableConfig(mc *config.MethodCandidate, artifactFields []string) bool {
+	if mc == nil || mc.When == nil || len(mc.When.OS) != 1 || !strings.EqualFold(mc.When.OS[0], "windows") {
+		return false
+	}
+	binary, _ := mc.Config["binary"].(string)
+	if !strings.HasSuffix(strings.ToLower(binary), ".exe") {
+		return false
+	}
+	for _, field := range artifactFields {
+		switch value := mc.Config[field].(type) {
+		case string:
+			if artifact.Extension(value, []string{".exe"}) == ".exe" {
+				return true
+			}
+		case map[string]any:
+			regex, _ := value["regex"].(string)
+			if strings.Contains(strings.ToLower(regex), ".exe") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func validateAuthenticatedArtifactURLs(toolName string, methodIdx int, mc *config.MethodCandidate, r *Result) {

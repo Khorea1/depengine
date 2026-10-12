@@ -316,6 +316,15 @@ func ownsArchivePayload(mc *config.MethodCandidate) bool {
 	return mc != nil && mc.OwnsArchivePayload
 }
 
+func portableExecutableArtifactAllowed(mc *config.MethodCandidate, resolvedURL string) bool {
+	if mc == nil {
+		return false
+	}
+	enabled, _ := mc.Config["portable_executable"].(bool)
+	binary, _ := mc.Config["binary"].(string)
+	return enabled && mc.When != nil && len(mc.When.OS) == 1 && strings.EqualFold(mc.When.OS[0], "windows") && strings.HasSuffix(strings.ToLower(binary), ".exe") && artifact.Extension(resolvedURL, []string{".exe"}) == ".exe"
+}
+
 func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolvedURL string) error {
 	if mc == nil {
 		return fmt.Errorf("http: method configuration is required")
@@ -355,7 +364,11 @@ func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, too
 	ext := fileExtension(resolvedURL)
 	allowInstaller := a.allowInstallerArtifacts
 	if contract, ok := methodkind.Lookup("http"); ok && contract.Artifact != nil {
-		if err := contract.Artifact.ValidateArtifact(resolvedURL); err != nil {
+		allowedForbiddenExtensions := []string(nil)
+		if portableExecutableArtifactAllowed(mc, resolvedURL) {
+			allowedForbiddenExtensions = []string{".exe"}
+		}
+		if err := contract.Artifact.ValidateArtifactAllowing(resolvedURL, allowedForbiddenExtensions); err != nil {
 			var forbidden *artifact.ForbiddenExtensionError
 			switch {
 			case !errors.As(err, &forbidden):

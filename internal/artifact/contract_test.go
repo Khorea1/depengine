@@ -141,3 +141,18 @@ func TestContractValidateArtifact(t *testing.T) {
 		})
 	}
 }
+
+func TestContractValidateArtifactAllowingOnlyNamedInstallerExtension(t *testing.T) {
+	contract := &Contract{ForbiddenExtensions: PlatformInstallerExtensions}
+	if err := contract.ValidateArtifactAllowing("cli.exe", []string{".exe"}); err != nil {
+		t.Fatalf("explicit .exe allowance: %v", err)
+	}
+	for _, raw := range []string{"setup.msi", "setup.pkg", "setup.dmg"} {
+		if err := contract.ValidateArtifactAllowing(raw, []string{".exe"}); err == nil {
+			t.Errorf("ValidateArtifactAllowing(%q) = nil, want installer rejection", raw)
+		}
+	}
+	if err := contract.ValidateArtifact("cli.exe"); err == nil {
+		t.Fatal("default contract unexpectedly allowed .exe")
+	}
+}

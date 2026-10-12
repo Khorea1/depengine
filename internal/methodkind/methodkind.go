@@ -147,12 +147,13 @@ var artifactFields = map[string]Field{
 }
 
 var downloadFields = fields(artifactFields, map[string]Field{
-	"extract_to":       {Type: String, Effects: EffectExecute | EffectVerify},
-	"binary":           {Type: String, Effects: EffectExecute | EffectVerify},
-	"sudo_required":    {Type: Boolean, Effects: EffectExecute},
-	"strip_components": {Type: Integer, Effects: EffectValidate | EffectExecute},
-	"entrypoints":      {Type: StringStringMap, Effects: EffectExecute | EffectVerify},
-	"link_dir":         {Type: String, Effects: EffectExecute | EffectVerify},
+	"extract_to":          {Type: String, Effects: EffectExecute | EffectVerify},
+	"binary":              {Type: String, Effects: EffectExecute | EffectVerify},
+	"portable_executable": {Type: Boolean, Effects: EffectValidate | EffectExecute | EffectVerify},
+	"sudo_required":       {Type: Boolean, Effects: EffectExecute},
+	"strip_components":    {Type: Integer, Effects: EffectValidate | EffectExecute},
+	"entrypoints":         {Type: StringStringMap, Effects: EffectExecute | EffectVerify},
+	"link_dir":            {Type: String, Effects: EffectExecute | EffectVerify},
 })
 
 var httpBearerSecretFields = map[string]Field{
