@@ -60,9 +60,13 @@ func (ex *Executor) needsElevation(rc *runContext) bool {
 					return true
 				}
 			}
-			adapter := ex.LookupAdapter(mc.Kind)
+			effective, err := config.SpecializeDistribution(mc, ex.facts)
+			if err != nil || effective == nil {
+				continue
+			}
+			adapter := ex.LookupAdapter(effective.Kind)
 			requirer, ok := adapter.(ElevationRequirer)
-			if ok && requirer.RequiresElevation(tool, mc) {
+			if ok && requirer.RequiresElevation(tool, effective) {
 				return true
 			}
 		}

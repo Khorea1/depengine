@@ -19,8 +19,113 @@ import (
 	"github.com/Khorea1/depengine/internal/exectest"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/planner"
+	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 )
+
+func TestHTTPRequiresElevationUsesEffectiveDistributionPlacement(t *testing.T) {
+	home := t.TempDir()
+	exectest.SetHome(t, home)
+	tool := &config.Tool{Name: "demo"}
+	adapter := NewHTTPAdapter()
+	facts := &platform.Facts{OS: "linux", TargetArch: "x86_64"}
+
+	tests := []struct {
+		name          string
+		scope         string
+		baseExtractTo string
+		effectiveTo   string
+		linkDir       string
+		want          bool
+	}{
+		{
+			name:          "user scoped payload and launchers stay under home",
+			scope:         "user",
+			baseExtractTo: "/usr/local/share/base",
+			effectiveTo:   "~/.local/share/demo",
+			linkDir:       "~/.local/bin",
+		},
+		{
+			name:          "system payload selected by distribution",
+			scope:         "system",
+			baseExtractTo: "~/base",
+			effectiveTo:   "/usr/local/lib/depengine/demo",
+			linkDir:       "/usr/local/bin",
+			want:          true,
+		},
+		{
+			name:          "distribution entrypoint adds system launcher",
+			scope:         "user",
+			baseExtractTo: "~/.local/share/base",
+			effectiveTo:   "~/.local/share/demo",
+			linkDir:       "/usr/local/bin",
+			want:          true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			method := &config.MethodCandidate{
+				Kind: "http",
+				Config: map[string]any{
+					"asset":      "demo.zip",
+					"scope":      tc.scope,
+					"extract_to": tc.baseExtractTo,
+					"link_dir":   tc.linkDir,
+				},
+				Distributions: []config.Distribution{{
+					When:         &config.Condition{OS: []string{"linux"}},
+					ExtractTo:    tc.effectiveTo,
+					HasExtractTo: true,
+					Entrypoints:  map[string]string{"demo": "bin/demo"},
+				}},
+			}
+			effective, err := config.SpecializeDistribution(method, facts)
+			if err != nil {
+				t.Fatalf("SpecializeDistribution() error = %v", err)
+			}
+			if effective == nil {
+				t.Fatal("SpecializeDistribution() = nil, want matching distribution")
+			}
+			got := adapter.RequiresElevation(tool, effective)
+			if got != tc.want {
+				t.Fatalf("RequiresElevation(effective distribution) = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestHTTPRequiresElevationRegexDistributionUsesEffectiveTargets(t *testing.T) {
+	home := t.TempDir()
+	exectest.SetHome(t, home)
+	method := &config.MethodCandidate{
+		Kind: "http",
+		Config: map[string]any{
+			"asset":      "unused.zip",
+			"scope":      "user",
+			"extract_to": "/usr/local/share/base",
+			"link_dir":   "~/.local/bin",
+		},
+		Distributions: []config.Distribution{{
+			When:         &config.Condition{OS: []string{"linux"}},
+			Asset:        config.AssetSelector{Regex: "(?i)^demo.*\\.zip$"},
+			HasAsset:     true,
+			ExtractTo:    "~/.local/share/demo",
+			HasExtractTo: true,
+			Entrypoints:  map[string]string{"demo": "bin/demo"},
+		}},
+	}
+	effective, err := config.SpecializeDistribution(method, &platform.Facts{OS: "linux", TargetArch: "x86_64"})
+	if err != nil {
+		t.Fatalf("SpecializeDistribution() error = %v", err)
+	}
+	if effective == nil {
+		t.Fatal("SpecializeDistribution() = nil, want matching distribution")
+	}
+	if NewHTTPAdapter().RequiresElevation(&config.Tool{Name: "demo"}, effective) {
+		t.Fatal("user-scoped regex archive with user payload and launcher paths must not request elevation")
+	}
+}
 
 // TestHTTPScopeUserRawBinaryInstallCheckRemoveRoundTrip drives the full
 // install → check/observe → remove cycle for a user-scoped raw binary with no
