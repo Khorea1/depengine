@@ -549,3 +549,32 @@ requires = []
 #   checksum_file_format, signature_url, signing_key, extract_to, artifact,
 #   binary, managed_paths, pkg, git
 # ==============================================================================
+
+# --- GitHub distributions: one method, host-selected payloads ---
+# When one upstream publishes different artifacts per platform, a single
+# github method lists common fields once plus one [[distributions]] table per
+# supported host. Exactly one distribution must match (zero = ineligible,
+# several = manifest error before any GitHub call); overrides replace the
+# base value, entrypoints replaces the whole map. See
+# docs/specs/github-distributions.md.
+[tools.br.github]
+repo = "Dicklesworthstone/beads_rust"
+asset = "br-{version}-{os_any}_{arch_any}.tar.gz"
+checksum = "sha256:auto"
+scope = "user"
+entrypoints = { br = "br" }
+
+[[tools.br.github.distributions]]
+when = { os = ["darwin"] }
+
+[[tools.br.github.distributions]]
+when = { os = ["linux"], libc = ["glibc"], is_android = false }
+
+[[tools.br.github.distributions]]
+when = { os = ["linux"], libc = ["musl"], is_android = false }
+asset = "br-{version}-{os_any}_musl_{arch_any}.tar.gz"
+
+[[tools.br.github.distributions]]
+when = { os = ["windows"], arch = ["x86_64"] }
+asset = "br-{version}-{os_any}_{arch_any}.zip"
+entrypoints = { br = "br.exe" }

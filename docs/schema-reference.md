@@ -477,6 +477,32 @@ If no asset in the release matches the pattern, `depengine install` fails
 with an error listing the assets found in that release. Adjust `asset` to a
 matching pattern; depengine does not silently select a non-matching file.
 
+### GitHub distributions
+
+When one upstream publishes different artifacts per platform, a single
+`github` method lists the common fields once plus one
+`[[...github.distributions]]` table per supported host (see the
+[`br` example](../schema.example.toml)). The list is exhaustive: with
+`distributions` present there is no implicit base distribution. The
+method-level `when`, when present, constrains every distribution further.
+
+- Zero matching distributions → the method is ineligible on this host and the
+  next method is tried.
+- More than one matching distribution → manifest error before any GitHub call.
+- An absent field inherits the base value; a declared scalar replaces it;
+  `entrypoints` replaces the whole map.
+- `distributions` is atomic across layers: redefining it replaces the whole
+  list. Only `asset`, `checksum`, `checksum_url`, `checksum_file_format`,
+  `signature_url`, `binary`, `entrypoints`, `strip_components`, and
+  `extract_to` may be specialized per distribution.
+
+`asset` also accepts an explicit regex, `asset = { regex = '...' }`, matched
+with RE2, case-insensitively and anchored by depengine. `{version}`,
+`{arch_any}`, and `{os_any}` expand to the same escaped groups as in literal
+patterns; everything else is regex. Invalid expressions, zero matches, and
+multiple matches are all errors — never heuristics, ordering, or scoring.
+The full contract lives in [`github-distributions`](specs/github-distributions.md).
+
 ---
 
 ### Container: pull an image via docker/podman

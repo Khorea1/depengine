@@ -123,11 +123,14 @@ For each tool, in dependency order, the executor:
 
 1. builds the candidate list;
 2. skips candidates whose `when` condition does not match;
-3. checks whether the adapter is available;
-4. resolves lazy method dependencies and package sources only when that
+3. specializes a candidate carrying `distributions` into its single
+   host-compatible effective form (no match: skip like `when`; several
+   matches: abort the tool);
+4. checks whether the adapter is available;
+5. resolves lazy method dependencies and package sources only when that
    candidate is reached;
-5. installs with the first candidate that succeeds;
-6. records the resulting state and report data.
+6. installs with the first candidate that succeeds;
+7. records the resulting state and report data.
 
 `method_prefer` changes candidate priority but keeps fallbacks. `method_only`
 restricts the candidate list.
