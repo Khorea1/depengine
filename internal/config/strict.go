@@ -285,11 +285,9 @@ func validateMethodValue(raw any, path, declaredKind string, errs *[]string) {
 					continue
 				}
 				validateMethodField(v[key], field, path+"."+key, errs)
-				if key == "binary" && (contract.Kind == "http" || contract.Kind == "github") {
+				if key == "binary" && binaryRuleApplies(contract, known) {
 					name, _ := v[key].(string)
-					if name != "" && (name == "." || name == ".." || strings.ContainsAny(name, "/\\") || strings.IndexByte(name, 0) >= 0 || (len(name) >= 2 && ((name[0] >= 'a' && name[0] <= 'z') || (name[0] >= 'A' && name[0] <= 'Z')) && name[1] == ':')) {
-						*errs = append(*errs, path+".binary: must be a single filename without path separators or a drive prefix")
-					}
+					validateBinaryNameValue(name, path+".binary", errs)
 				}
 			}
 		}
@@ -456,6 +454,84 @@ func containsString(values []string, target string) bool {
 	return false
 }
 
+// binaryRuleApplies reports whether the shared single-filename binary rule
+// covers a method kind. It mirrors the scope of the base-field check so
+// distribution overrides inherit exactly the same policy (http/github only;
+// unknown kinds stay untouched, like their base fields).
+func binaryRuleApplies(contract *methodkind.Contract, known bool) bool {
+	return known && contract != nil && (contract.Kind == "http" || contract.Kind == "github")
+}
+
+// validateBinaryNameValue enforces the shared single-filename rule for
+// executable names: no path separators, no reserved names (".", ".."), no
+// drive prefixes ("C:"), no NUL bytes. It is the single source for both base
+// method fields and distribution binary overrides. config must not depend on
+// execution packages, so this duplicates neither a second table nor the
+// runtime guard in internal/httpdownload — it states the same rule once,
+// here, for authoring-time validation.
+func validateBinaryNameValue(name, path string, errs *[]string) {
+	if name == "" {
+		return
+	}
+	if name == "." || name == ".." || strings.ContainsAny(name, "/\\") || strings.IndexByte(name, 0) >= 0 || (len(name) >= 2 && ((name[0] >= 'a' && name[0] <= 'z') || (name[0] >= 'A' && name[0] <= 'Z')) && name[1] == ':') {
+		*errs = append(*errs, path+": must be a single filename without path separators or a drive prefix")
+	}
+}
+
+// checkEffectiveRequires enforces a contract's Requires pairs against an
+// integrity view (base fields overlaid with distribution overrides). The base
+// table path already enforces these pairs for hand-written candidates via
+// the generic Requires loop; effective distribution configs need the same
+// verdict (e.g. a distribution adding signature_url to a base without
+// signing_key), so the rule stays sourced from the contract, not copied.
+func checkEffectiveRequires(view map[string]any, contract *methodkind.Contract, path string, errs *[]string) {
+	keys := make([]string, 0, len(contract.Requires))
+	for key := range contract.Requires {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if _, configured := view[key]; !configured {
+			continue
+		}
+		for _, dependency := range contract.Requires[key] {
+			if _, ok := view[dependency]; !ok {
+				*errs = append(*errs, path+"."+key+": requires "+dependency)
+			}
+		}
+	}
+}
+
+// validateEffectiveDistributionIntegrity enforces the shared
+// checksum/sidecar coherence rules against the EFFECTIVE values for one
+// distribution — base fields overlaid with the distribution's overrides —
+// not just the fields the distribution declares. A distribution that
+// inherits a sidecar (checksum_url, checksum_file_format, signature_url,
+// signing_key) while pinning checksum away from ":auto", or that adds a
+// sidecar the effective checksum cannot resolve, is rejected here on every
+// host, before execution. The rule set is reused from
+// validateArtifactIntegrityOptions (single-sourced, no second table); empty
+// values are left out of the view because they are already reported at
+// their declaration site (base rules or validateDistributionString),
+// leaving this check to report only genuinely new combination faults.
+func validateEffectiveDistributionIntegrity(base, override map[string]any, path string, contract *methodkind.Contract, known bool, errs *[]string) {
+	view := make(map[string]any, 5)
+	for _, key := range []string{"checksum", "checksum_url", "checksum_file_format", "signature_url", "signing_key"} {
+		if raw, ok := base[key].(string); ok && raw != "" {
+			view[key] = raw
+		}
+	}
+	for _, key := range []string{"checksum", "checksum_url", "checksum_file_format", "signature_url"} {
+		if raw, ok := override[key].(string); ok && raw != "" {
+			view[key] = raw
+		}
+	}
+	validateArtifactIntegrityOptions(view, path, errs)
+	if known && contract != nil {
+		checkEffectiveRequires(view, contract, path, errs)
+	}
+}
+
 // validateDistributions enforces the distributions contract against the
 // method's specializable-field metadata (single source in methodkind):
 // array shape, required when, closed per-method field list, value shapes,
@@ -481,7 +557,6 @@ func validateDistributions(raw any, base map[string]any, path string, contract *
 			allowed[key] = true
 		}
 	}
-	baseChecksum, _ := base["checksum"].(string)
 	for i, item := range items {
 		m, ok := item.(map[string]any)
 		if !ok {
@@ -513,6 +588,14 @@ func validateDistributions(raw any, base map[string]any, path string, contract *
 		validateDistributionString(m, "checksum_file_format", p, errs)
 		validateDistributionString(m, "signature_url", p, errs)
 		validateDistributionString(m, "binary", p, errs)
+		if binaryRuleApplies(contract, known) {
+			// Reuse the base-field basename rule (separators, reserved
+			// names, drive prefixes); a non-string override is already
+			// reported as "must be a string" above.
+			if name, ok := m["binary"].(string); ok {
+				validateBinaryNameValue(name, p+".binary", errs)
+			}
+		}
 		validateDistributionString(m, "extract_to", p, errs)
 		if raw, ok := m["strip_components"]; ok {
 			value, ok := raw.(int64)
@@ -535,18 +618,7 @@ func validateDistributions(raw any, base map[string]any, path string, contract *
 				}
 			}
 		}
-		effectiveChecksum := baseChecksum
-		if override, ok := m["checksum"].(string); ok {
-			effectiveChecksum = override
-		}
-		for _, key := range []string{"checksum_url", "checksum_file_format", "signature_url"} {
-			if _, configured := m[key]; !configured {
-				continue
-			}
-			if !strings.HasSuffix(effectiveChecksum, ":auto") {
-				*errs = append(*errs, p+"."+key+`: requires checksum = "<algorithm>:auto"`)
-			}
-		}
+		validateEffectiveDistributionIntegrity(base, m, p, contract, known, errs)
 	}
 }
 

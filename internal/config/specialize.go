@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
+	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/platform"
 )
 
@@ -58,7 +60,18 @@ func SpecializeDistribution(method *MethodCandidate, facts *platform.Facts) (*Me
 	case 0:
 		return nil, nil
 	case 1:
-		return applyDistribution(method, &method.Distributions[matched[0]]), nil
+		out := applyDistribution(method, &method.Distributions[matched[0]])
+		// Fail closed before execution: layering (schema+manifest) can pin
+		// a fixed checksum under an inherited sidecar, or add a sidecar
+		// under a fixed checksum, after every layer validated clean on its
+		// own. The host-wide ValidateEffectiveIntegrity pass covers all
+		// distributions; this guards the matched one even when callers
+		// specialize a merged schema they never re-validated.
+		if errs := effectiveIntegrityErrors(out); len(errs) > 0 {
+			return nil, fmt.Errorf("specialize: invalid effective configuration for method kind %q: %s",
+				method.Kind, strings.Join(errs, "; "))
+		}
+		return out, nil
 	default:
 		conditions := make([]string, 0, len(matched))
 		for _, i := range matched {
@@ -118,4 +131,115 @@ func applyDistribution(method *MethodCandidate, d *Distribution) *MethodCandidat
 		set("entrypoints", replaced)
 	}
 	return out
+}
+
+// integrityKeys lists the Config keys whose combination must stay coherent
+// across base inheritance, distribution overrides, and layer merges.
+var integrityKeys = []string{"checksum", "checksum_url", "checksum_file_format", "signature_url", "signing_key"}
+
+// integrityView projects the integrity keys of a materialized Config into
+// the raw-map shape validateArtifactIntegrityOptions enforces, so merged
+// schemas and specialized candidates reuse the exact authoring-time rule
+// set instead of restating it.
+func integrityView(config map[string]any) map[string]any {
+	view := make(map[string]any, len(integrityKeys))
+	for _, key := range integrityKeys {
+		if raw, ok := config[key]; ok {
+			view[key] = raw
+		}
+	}
+	return view
+}
+
+// effectiveIntegrityErrors reports the integrity combination faults of one
+// materialized candidate Config (already base+override merged). It returns
+// nil when the combination is coherent.
+func effectiveIntegrityErrors(mc *MethodCandidate) []string {
+	if mc == nil {
+		return nil
+	}
+	var errs []string
+	view := integrityView(mc.Config)
+	validateArtifactIntegrityOptions(view, "candidate", &errs)
+	if contract, known := methodkind.Lookup(mc.Kind); known {
+		checkEffectiveRequires(view, contract, "candidate", &errs)
+	}
+	return errs
+}
+
+// ValidateEffectiveIntegrity reports invalid checksum/sidecar combinations
+// and distribution binary names on an already-merged schema. Each layer
+// validates clean on its own; only the merge can pin a fixed checksum under
+// an inherited sidecar (upper layer) or add a sidecar under a fixed checksum
+// (lower layer). It runs host-independently over ALL distributions —
+// including ones that match no current host — so any invalid effective
+// configuration is rejected during validation, before execution. Pure: no
+// network, no mutation.
+func ValidateEffectiveIntegrity(s *Schema) error {
+	if s == nil {
+		return nil
+	}
+	names := make([]string, 0, len(s.Tools))
+	for name := range s.Tools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var errs []string
+	for _, name := range names {
+		tool := s.Tools[name]
+		for _, mc := range tool.Methods {
+			validateMergedMethodIntegrity(name, mc, &errs)
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("invalid effective configuration:\n%s", strings.Join(errs, "\n"))
+	}
+	return nil
+}
+
+// validateMergedMethodIntegrity checks one merged method's base combination
+// plus every distribution's effective combination (base overlaid with that
+// distribution's overrides), reusing the authoring-time helpers.
+func validateMergedMethodIntegrity(toolName string, mc *MethodCandidate, errs *[]string) {
+	if mc == nil {
+		return
+	}
+	base := toolName + "." + mc.Kind
+	if mc.Label != "" {
+		base = toolName + "." + mc.Label
+	}
+	baseView := integrityView(mc.Config)
+	validateArtifactIntegrityOptions(baseView, base, errs)
+	contract, known := methodkind.Lookup(mc.Kind)
+	if known {
+		checkEffectiveRequires(baseView, contract, base, errs)
+	}
+	for i := range mc.Distributions {
+		d := &mc.Distributions[i]
+		path := fmt.Sprintf("%s.distributions[%d]", base, i)
+		if d.HasBinary && binaryRuleApplies(contract, known) {
+			validateBinaryNameValue(d.Binary, path+".binary", errs)
+		}
+		effective := make(map[string]any, len(integrityKeys))
+		for key, raw := range baseView {
+			effective[key] = raw
+		}
+		if d.HasChecksum {
+			effective["checksum"] = d.Checksum
+		}
+		if d.HasChecksumURL {
+			effective["checksum_url"] = d.ChecksumURL
+		}
+		if d.HasChecksumFileFormat {
+			effective["checksum_file_format"] = d.ChecksumFileFormat
+		}
+		if d.HasSignatureURL {
+			effective["signature_url"] = d.SignatureURL
+		}
+		// signing_key is never distributable: the base value always stands.
+		validateArtifactIntegrityOptions(effective, path, errs)
+		if known {
+			checkEffectiveRequires(effective, contract, path, errs)
+		}
+	}
 }
