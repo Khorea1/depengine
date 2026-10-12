@@ -1460,3 +1460,41 @@ func TestValidateRequiredFields_GitDepthMustBeNonNegativeInteger(t *testing.T) {
 		})
 	}
 }
+
+func TestAutoChecksumAuthenticationClassification(t *testing.T) {
+	valid := "sha256:auto"
+	cases := []struct {
+		name        string
+		config      map[string]any
+		wantWarning bool
+	}{
+		{name: "inferred sidecar", config: map[string]any{"checksum": valid}, wantWarning: true},
+		{name: "configured unauthenticated sidecar", config: map[string]any{"checksum": valid, "checksum_url": "https://example.test/SHA256SUMS"}, wantWarning: true},
+		{name: "signed sidecar", config: map[string]any{"checksum": valid, "checksum_url": "https://example.test/SHA256SUMS", "signature_url": "https://example.test/SHA256SUMS.sig", "signing_key": "0123456789ABCDEF"}},
+		{name: "literal checksum", config: map[string]any{"checksum": "sha256:6ca13d52ca70c883e0f0bb101e425a89e8624de51db2d2392593af6a84118090"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			methodConfig := map[string]any{"url": "https://example.test/app.tar.gz", "checksum": tc.config["checksum"]}
+			for _, key := range []string{"checksum_url", "signature_url", "signing_key"} {
+				if value, ok := tc.config[key]; ok {
+					methodConfig[key] = value
+				}
+			}
+			s := &cfg.Schema{Tools: map[string]*cfg.Tool{"app": tool("app", []*cfg.MethodCandidate{mc("http", nil, methodConfig)}, nil)}}
+			r := validateRequiredFields(s)
+			if r.HasErrors() {
+				t.Fatalf("validation errors = %v", r.Errors)
+			}
+			found := false
+			for _, warning := range r.Warnings {
+				if warning.Code == WarnAutoChecksum {
+					found = true
+				}
+			}
+			if found != tc.wantWarning {
+				t.Fatalf("auto checksum warning = %t, want %t; warnings=%v", found, tc.wantWarning, r.Warnings)
+			}
+		})
+	}
+}

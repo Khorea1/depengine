@@ -266,12 +266,13 @@ when authenticated GitHub release API resolution is required.
 
 > `checksum` accepts a literal hash (`sha256:...`) or `:auto` (automatic
 > resolution). `:auto` verifies artifact integrity against the fetched checksum,
-> but the checksum source is Trust On First Use unless independently authenticated.
+> the artifact is integrity-checked against the fetched hash, but an unsigned
+> checksum sidecar is Trust On First Use and does not authenticate the hash source.
 > Without `checksum_url`, depengine may infer a sidecar from the artifact URL;
-> that same-host hash does not independently establish authenticity. Prefer a
-> literal hash or authenticate the checksum file with `signature_url` and
-> `signing_key`. Use `sudo_required = false` if root isn't needed, and
-> `signing_key`/`signature_url` for GPG verification.
+> that same-host hash has the same limitation. A valid detached GPG signature
+> checked with the configured `signing_key` authenticates the checksum file to
+> that trusted key. A literal checksum avoids mutable sidecar lookup. Use
+> `sudo_required = false` if root isn't needed.
 >
 > **If `checksum` is omitted entirely, the file is installed with no
 > integrity check at all.** Treat that the same as any other

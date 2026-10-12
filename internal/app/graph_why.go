@@ -340,7 +340,7 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 			manifestAuto = true
 		}
 	}
-	project, err := loadProject(*whySchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: *whyFields})
+	project, err := loadProject(*whySchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: *whyFields, WarningTool: toolName})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return exitWithCode(exitCodeForError(err))
