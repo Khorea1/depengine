@@ -14,6 +14,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/Khorea1/depengine/internal/exec"
 )
 
 // ErrChecksumMismatch identifies checksum verification failures where the
@@ -33,9 +35,13 @@ func (e *ChecksumMismatchError) Error() string {
 	return fmt.Sprintf("%s: expected %s, got %s", ErrChecksumMismatch, e.Expected, e.Actual)
 }
 
-// Unwrap makes checksum mismatches classifiable without parsing diagnostics.
-func (e *ChecksumMismatchError) Unwrap() error {
-	return ErrChecksumMismatch
+// Unwrap exposes both the adapter-level mismatch and the executor-level
+// integrity classification without parsing diagnostics. A checksum mismatch
+// is an integrity failure, terminal per the method contract: it must abort
+// the tool instead of silently switching source. The diagnostic message is
+// unchanged; only machine-readable classification gains the extra branch.
+func (e *ChecksumMismatchError) Unwrap() []error {
+	return []error{ErrChecksumMismatch, exec.ErrIntegrityMismatch}
 }
 
 // Checksum prefix constants for known algorithms.
