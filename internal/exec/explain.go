@@ -119,6 +119,10 @@ func (ex *Executor) explainTool(ctx context.Context, tool *config.Tool, clan str
 			appendAttempt(attempt, method)
 			continue
 		}
+		// From here on the effective (specialized) candidate drives
+		// verification, sources, and display; Kind/Label/ordinal stay those
+		// of the declared candidate captured above.
+		method = selection.method
 		adapter := selection.adapter
 		resolvedPlan := selection.resolved
 		attempt.PlanIntent = resolvedPlan
@@ -251,6 +255,26 @@ func (ex *Executor) CheckDesiredState(ctx context.Context, tool *config.Tool, cl
 	for _, method := range ex.SelectedMethods(tool, clan) {
 		if method.When != nil && !method.When.Match(ex.facts) {
 			continue
+		}
+		specialized, skipStatus, specErr := ex.specializeMethodForHost(method)
+		if specErr != nil {
+			checked := CheckResult{
+				Method: method.Kind,
+				Verification: plan.VerificationResult{
+					State:  plan.StateBroken,
+					Detail: specErr.Error(),
+				},
+			}
+			if !haveFirst || first.Verification.State == plan.StateAbsent {
+				first, haveFirst = checked, true
+			}
+			continue
+		}
+		if skipStatus != "" {
+			continue
+		}
+		if specialized != method {
+			method = specialized
 		}
 		adapter := ex.LookupAdapter(method.Kind)
 		if adapter == nil {

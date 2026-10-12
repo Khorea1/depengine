@@ -105,20 +105,49 @@ func (ex *Executor) gateStaticIntent(ac *candidateAttempt, result *ToolResult) a
 	// Distribution specialization runs after merge and before the first
 	// effective plan: one matching distribution materializes a conventional
 	// candidate copy; none means the method is ineligible on this host;
-	// ambiguity aborts the tool (never silent fallback).
-	specialized, specErr := config.SpecializeDistribution(ac.method, ex.facts)
+	// ambiguity aborts the tool (never silent fallback). The intent is
+	// rebuilt from the specialized candidate so plan and method can never
+	// describe different payloads (same kind, so the capability outcome
+	// cannot change). Methods without distributions keep the exact
+	// pre-existing flow: passthrough returns the same pointer.
+	original := ac.method
+	specialized, skipStatus, specErr := ex.specializeMethodForHost(original)
 	if specErr != nil {
 		ex.failCandidate(ac, result, specErr.Error())
 		ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "failed", "reason", specErr.Error())
 		return finishTool
 	}
-	if specialized == nil {
-		ex.skipCandidate(ac, result, "skip_no_distribution", "")
-		ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "skip_no_distribution")
+	if skipStatus != "" {
+		ex.skipCandidate(ac, result, skipStatus, "")
+		ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", skipStatus)
 		return nextMethod
 	}
-	ac.method = specialized
+	if specialized != original {
+		ac.method = specialized
+		planIntent, mismatch = candidatePlanIntent(ac.tool, ac.method)
+		ac.planIntent = ex.hostResolvedPlanIntent(ac.method, planIntent, ac.run.clan)
+		ac.attempt.PlanIntent = ac.planIntent
+		if mismatch != "" {
+			ex.skipCandidate(ac, result, "skip_capability", mismatch)
+			ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "skip_capability", "reason", mismatch)
+			return nextMethod
+		}
+	}
 	return proceed
+}
+
+// specializeMethodForHost applies distribution specialization to one method
+// candidate. It returns the effective candidate and "" to proceed, a skip
+// status to try the next method, or a terminal error (ambiguous manifest).
+func (ex *Executor) specializeMethodForHost(method *config.MethodCandidate) (*config.MethodCandidate, string, error) {
+	specialized, err := config.SpecializeDistribution(method, ex.facts)
+	if err != nil {
+		return nil, "", err
+	}
+	if specialized == nil {
+		return nil, "skip_no_distribution", nil
+	}
+	return specialized, "", nil
 }
 
 // gateAdapterAvailable resolves the adapter and checks its runtime exists.

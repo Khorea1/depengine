@@ -7,6 +7,19 @@ import (
 	"github.com/Khorea1/depengine/internal/platform"
 )
 
+// AmbiguousDistributionsError reports that more than one distribution of a
+// method matches the host. It is terminal: callers must abort the tool
+// instead of falling back silently. Use errors.As to detect it.
+type AmbiguousDistributionsError struct {
+	Kind       string
+	Conditions []string
+}
+
+func (e *AmbiguousDistributionsError) Error() string {
+	return fmt.Sprintf("specialize: %d distributions match this host for method kind %q, want exactly one: %s",
+		len(e.Conditions), e.Kind, strings.Join(e.Conditions, "; "))
+}
+
 // SpecializeDistribution selects the single host-compatible distribution of
 // a method candidate and materializes its effective fields (see
 // docs/specs/github-distributions.md).
@@ -51,8 +64,7 @@ func SpecializeDistribution(method *MethodCandidate, facts *platform.Facts) (*Me
 		for _, i := range matched {
 			conditions = append(conditions, fmt.Sprintf("distributions[%d] (%s)", i, method.Distributions[i].When))
 		}
-		return nil, fmt.Errorf("specialize: %d distributions match this host for method kind %q, want exactly one: %s",
-			len(matched), method.Kind, strings.Join(conditions, "; "))
+		return nil, &AmbiguousDistributionsError{Kind: method.Kind, Conditions: conditions}
 	}
 }
 
