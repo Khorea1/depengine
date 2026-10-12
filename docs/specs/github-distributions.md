@@ -66,10 +66,14 @@ parser, validator, and JSON Schema.
    merge, before the first effective plan (`BuildCandidateIntent`). Downstream
    (planner, adapters, `why`, state, lock) only ever sees the specialized
    conventional candidate.
-5. Layer merge: `distributions` is atomic — a layer redefining it replaces the
+5. Effective checksum/sidecar combinations are validated across every merged
+   distribution before command workflows proceed, including variants that do not
+   match the current host. Elevation preflight likewise specializes first, then
+   considers only the selected candidate and its effective destinations.
+6. Layer merge: `distributions` is atomic — a layer redefining it replaces the
    whole list (no index merge, no `when` matching). Common fields keep normal
    merge rules; distribution overrides apply only after the merge.
-6. Failure classes: ineligibility (no distribution, unsupported host) allows
+7. Failure classes: ineligibility (no distribution, unsupported host) allows
    fallback; ambiguity, invalid regex, or resolution mismatch (zero/multiple
    assets, forbidden format, bad checksum) is an explicit error, never silent
    fallback to another method.

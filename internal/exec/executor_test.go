@@ -666,6 +666,7 @@ func TestExecutorElevationPreflightUsesEffectiveDistribution(t *testing.T) {
 		name             string
 		methodWhen       *config.Condition
 		distributionWhen *config.Condition
+		sources          []config.Source
 		scope            string
 		extractTo        string
 		want             bool
@@ -683,6 +684,12 @@ func TestExecutorElevationPreflightUsesEffectiveDistribution(t *testing.T) {
 			distributionWhen: &config.Condition{OS: []string{"windows"}},
 			scope:            "system",
 			extractTo:        "/usr/local/lib/demo",
+		},
+		{
+			name:             "ineligible distribution ignores privileged source",
+			distributionWhen: &config.Condition{OS: []string{"windows"}},
+			sources:          []config.Source{{Kind: "apt-ppa"}},
+			scope:            "user",
 		},
 		{
 			name:             "user method sees effective overrides",
@@ -745,6 +752,7 @@ func TestExecutorElevationPreflightUsesEffectiveDistribution(t *testing.T) {
 						"extract_to": "/base/payload",
 						"asset":      "release.tar.gz",
 					},
+					Sources:       tc.sources,
 					Distributions: distributions,
 				}},
 			}

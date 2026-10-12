@@ -55,14 +55,14 @@ func (ex *Executor) needsElevation(rc *runContext) bool {
 			if mc.When != nil && !mc.When.Match(ex.facts) {
 				continue
 			}
-			for _, configuredSource := range mc.Sources {
-				if configuredSource.Kind == "apt-ppa" || configuredSource.Kind == "dnf-copr" {
-					return true
-				}
-			}
 			effective, err := config.SpecializeDistribution(mc, ex.facts)
 			if err != nil || effective == nil {
 				continue
+			}
+			for _, configuredSource := range effective.Sources {
+				if configuredSource.Kind == "apt-ppa" || configuredSource.Kind == "dnf-copr" {
+					return true
+				}
 			}
 			adapter := ex.LookupAdapter(effective.Kind)
 			requirer, ok := adapter.(ElevationRequirer)

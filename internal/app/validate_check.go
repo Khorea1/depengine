@@ -95,6 +95,10 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
 		}
 	}
+	if err := config.ValidateEffectiveIntegrity(s); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return exitWithCode(2)
+	}
 
 	knownKinds := exec.RegisteredKinds()
 	result := validate.ValidateSchema(s, knownKinds)

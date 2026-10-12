@@ -408,10 +408,10 @@ func TestRequiresElevationRegexSelectorSeesLauncherDir(t *testing.T) {
 		t.Fatal("RequiresElevation() = false, want true for a system launcher directory")
 	}
 
-	// Explicit sudo_required stays authoritative over the conservative
-	// unknown-format answer.
+	// An explicit sudo_required=false overrides payload placement defaults, but
+	// a privileged launcher directory remains an independent elevation need.
 	mc.Config["sudo_required"] = false
-	if NewHTTPAdapter().RequiresElevation(tool, mc) {
-		t.Fatal("RequiresElevation() = true with sudo_required=false, want explicit override")
+	if !NewHTTPAdapter().RequiresElevation(tool, mc) {
+		t.Fatal("RequiresElevation() = false with sudo_required=false, want privileged launcher requirement")
 	}
 }

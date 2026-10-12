@@ -2,6 +2,7 @@ package httpdownload
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Khorea1/depengine/internal/integrity"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -149,8 +151,12 @@ func TestGPGVerifyTamperedFile(t *testing.T) {
 	if err := os.WriteFile(checksumFile, []byte("tampered content\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := GPGVerify(context.Background(), &run.OSExecRunner{}, checksumFile, signatureFile, gpgFileURL(keyFile)); err == nil {
+	err := GPGVerify(context.Background(), &run.OSExecRunner{}, checksumFile, signatureFile, gpgFileURL(keyFile))
+	if err == nil {
 		t.Fatal("GPGVerify should fail on tampered file")
+	}
+	if !errors.Is(err, integrity.ErrSignatureVerification) {
+		t.Fatalf("tampered signature must carry terminal verification classification, got %v", err)
 	}
 }
 

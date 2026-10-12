@@ -16,6 +16,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/downloadcache"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/integrity"
 	"github.com/Khorea1/depengine/internal/log"
 	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/plan"
@@ -140,17 +141,18 @@ func (a *HTTPAdapter) RequiresElevation(tool *config.Tool, mc *config.MethodCand
 // artifact whose format is unknowable without release-API resolution (which
 // this probe must not trigger). It requires elevation when either the
 // archive destination or the raw-binary placement would need it, plus the
-// launcher directory when entrypoints are declared. Explicit sudo_required
-// remains authoritative, as in RequiresElevation.
+// launcher directory when entrypoints are declared. An explicit sudo_required
+// value overrides payload placement defaults; a privileged launcher directory
+// remains an independent elevation requirement, matching known archives.
 func requiresElevationForUnknownArtifact(tool *config.Tool, mc *config.MethodCandidate) bool {
 	archiveRoot := config.ExpandHomeDir(archiveTarget(tool, mc))
 	rawRoot := config.ExpandHomeDir(PlacementOrDefault(tool, mc, "/usr/local/bin", "").InstallRoot)
 	required := defaultSudoRequired(archiveRoot) || defaultSudoRequired(rawRoot)
-	if len(entrypoints(mc)) > 0 {
-		required = required || defaultSudoRequired(linkTargetDir(mc, archiveRoot, tool))
-	}
 	if configured, ok := mc.Config["sudo_required"].(bool); ok {
 		required = configured
+	}
+	if len(entrypoints(mc)) > 0 {
+		required = required || defaultSudoRequired(linkTargetDir(mc, archiveRoot, tool))
 	}
 	return required
 }
@@ -440,10 +442,15 @@ func (a *HTTPAdapter) verifyDownloadedArtifact(ctx context.Context, rn run.Runne
 	if checksum == "" {
 		return nil
 	}
-	if err := a.verifyChecksum(ctx, rn, filePath, resolvedURL, checksum, mc); err == nil {
+	if err := a.verifyChecksum(ctx, rn, filePath, resolvedURL, checksum, mc); err != nil {
+		if errors.Is(err, integrity.ErrSignatureVerification) {
+			return &exec.IntegrityError{Method: mc.Kind, Reason: "gpg signature verification failed", Err: err}
+		}
+		if !fromCache {
+			return fmt.Errorf("http: checksum: %w", err)
+		}
+	} else {
 		return nil
-	} else if !fromCache {
-		return fmt.Errorf("http: checksum: %w", err)
 	}
 
 	log.Default.Warn("cached copy failed checksum, re-downloading", "tool", tool.Name)
