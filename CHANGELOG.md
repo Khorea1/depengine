@@ -1,7 +1,7 @@
 # Changelog
 
 ## Unreleased
-- Validate effective GitHub distribution integrity after schema/manifest merge; classify detached-signature verification failures as terminal, and compute preflight elevation only from host-compatible methods and their effective privileged targets.
+- Validate effective GitHub distribution integrity after schema/manifest merge while preserving `validate --format json`; classify detached-signature verification failures as terminal, compute preflight elevation only from host-compatible methods and their effective privileged targets, and exercise tracked GitHub binary/entrypoint selection through status and dry-run upgrade consumers.
 - Package-manager Observe probes for npm, Bun, pipx, pnpm, Yarn, Composer, uv, and Gem distinguish confirmed presence or absence from unknown or broken CLI output, preserving reported installed versions on drift.
 - Pin golangci-lint v2.14.0 in CI for Go 1.27 export-data compatibility, verified against Go 1.27.2.
 - Rehydrate transient target architecture and OS from current host facts when resolving state-restored candidates for removal or undo; do not persist host-specific selection metadata.
