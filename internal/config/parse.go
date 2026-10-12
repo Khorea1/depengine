@@ -252,6 +252,14 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 				localMap["os"] = resolveAlias(rawOS, mc.OSMap, defaults.OSMap, defaultOSMap)
 			}
 			mc.Config = ExpandAll(mc.Config, localMap).(map[string]any)
+			// Distribution overrides carry the same placeholders as Config
+			// ({arch}/{os} resolve per method here; every other placeholder
+			// was already expanded in the whole-tree pass). Regex bodies get
+			// the same treatment: bare {arch}/{os} expand now, while
+			// {arch_any}/{os_any}/{version} stay literal for match time.
+			for i := range mc.Distributions {
+				expandDistributionPlaceholders(&mc.Distributions[i], localMap)
+			}
 		}
 	}
 
@@ -923,6 +931,22 @@ func parseDistribution(index int, m map[string]any) (Distribution, error) {
 		}
 	}
 	return d, nil
+}
+
+// expandDistributionPlaceholders applies the method-effective {arch}/{os}
+// map to one distribution's string fields, mirroring Config expansion.
+func expandDistributionPlaceholders(d *Distribution, localMap map[string]string) {
+	d.Asset.Template = Expand(d.Asset.Template, localMap)
+	d.Asset.Regex = Expand(d.Asset.Regex, localMap)
+	d.Checksum = Expand(d.Checksum, localMap)
+	d.ChecksumURL = Expand(d.ChecksumURL, localMap)
+	d.ChecksumFileFormat = Expand(d.ChecksumFileFormat, localMap)
+	d.SignatureURL = Expand(d.SignatureURL, localMap)
+	d.Binary = Expand(d.Binary, localMap)
+	d.ExtractTo = Expand(d.ExtractTo, localMap)
+	for name, target := range d.Entrypoints {
+		d.Entrypoints[name] = Expand(target, localMap)
+	}
 }
 
 func parseSecretReference(raw map[string]any) *SecretReference {
