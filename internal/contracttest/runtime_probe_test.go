@@ -133,7 +133,7 @@ func TestRuntimeReleaseAndBranchResolution(t *testing.T) {
 }
 
 func TestRuntimeArtifactAndGitEffectFieldsHaveEvidence(t *testing.T) {
-	owned := map[string]bool{"http": true, "github": true, "appimage": true, "android": true, "msi": true, "git": true}
+	owned := map[string]bool{"http": true, "github": true, "appimage": true, "android": true, "msi": true, "git": true, "deb": true}
 	for _, contract := range methodkind.Contracts {
 		if !owned[contract.Kind] {
 			continue

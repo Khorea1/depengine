@@ -28,6 +28,7 @@ import (
 // resolution via GitHub releases API.
 type HTTPAdapter struct {
 	allowInstallerArtifacts bool
+	allowDebArtifacts       bool
 }
 
 // NewHTTPAdapter creates an HTTP download adapter.
@@ -52,7 +53,7 @@ func (a *HTTPAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *conf
 	if err != nil {
 		return resolved, err
 	}
-	if err := rejectUntrackedDebLifecycle(a.Kind(), mc, resolved, ""); err != nil {
+	if err := a.rejectUntrackedDebLifecycle(mc, resolved, ""); err != nil {
 		return resolved, err
 	}
 	return resolved, nil
@@ -172,7 +173,7 @@ func (a *HTTPAdapter) Available(ctx context.Context, rn run.Runner) bool {
 //     directory while this tool's file was never downloaded.
 //   - binary configured without extract_to → binary must be reachable on PATH.
 func (a *HTTPAdapter) Check(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) bool {
-	if rejectUntrackedDebLifecycle(a.Kind(), mc, nil, "") != nil {
+	if a.rejectUntrackedDebLifecycle(mc, nil, "") != nil {
 		return false
 	}
 	extractTo, _ := mc.Config["extract_to"].(string)
@@ -233,7 +234,7 @@ func (a *HTTPAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.T
 	if tool == nil || mc == nil {
 		return plan.Observation{}, errors.New("http: tool and method are required")
 	}
-	if err := rejectUntrackedDebLifecycle(a.Kind(), mc, nil, ""); err != nil {
+	if err := a.rejectUntrackedDebLifecycle(mc, nil, ""); err != nil {
 		return plan.Observation{}, err
 	}
 	if !a.Check(ctx, rn, tool, mc) {
@@ -254,7 +255,7 @@ func (a *HTTPAdapter) Install(ctx context.Context, rn run.Runner, tool *config.T
 	if err != nil {
 		return fmt.Errorf("http: resolve artifact: %w", err)
 	}
-	if err := rejectUntrackedDebLifecycle(a.Kind(), mc, nil, resolvedURL); err != nil {
+	if err := a.rejectUntrackedDebLifecycle(mc, nil, resolvedURL); err != nil {
 		return err
 	}
 	return a.installResolvedURL(ctx, rn, tool, mc, resolvedURL)
@@ -267,7 +268,7 @@ func (a *HTTPAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *
 	if resolved == nil || len(resolved.Artifacts) == 0 || resolved.Artifacts[0].URL == "" {
 		return fmt.Errorf("http: resolved plan has no concrete artifact URL")
 	}
-	if err := rejectUntrackedDebLifecycle(a.Kind(), mc, resolved, resolved.Artifacts[0].URL); err != nil {
+	if err := a.rejectUntrackedDebLifecycle(mc, resolved, resolved.Artifacts[0].URL); err != nil {
 		return err
 	}
 	effective := methodWithResolvedArtifact(mc, resolved.Artifacts[0])
@@ -495,6 +496,9 @@ func (a *HTTPAdapter) materializeDownloadedArtifact(ctx context.Context, rn run.
 	placement, err := ArtifactPlacement(tool, mc, "/usr/local/bin", "")
 	if err != nil {
 		return err
+	}
+	if ext == ".deb" && a.allowDebArtifacts {
+		return copyBinary(ctx, filePath, placement.InstallRoot, binary, rn, sudoRequired, tool.Name)
 	}
 	if err := extract(ctx, filePath, placement.InstallRoot, ext, binary, rn, sudoRequired, tool.Name); err != nil {
 		return fmt.Errorf("http: extract: %w", err)
@@ -764,7 +768,7 @@ func isSharedDir(path string) bool {
 // when their ownership was recorded after installation; extract_to paths alone
 // never establish ownership, and unrecorded legacy archives fail closed.
 func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
-	if err := rejectUntrackedDebLifecycle(a.Kind(), mc, nil, ""); err != nil {
+	if err := a.rejectUntrackedDebLifecycle(mc, nil, ""); err != nil {
 		return err
 	}
 	binary, _ := mc.Config["binary"].(string)

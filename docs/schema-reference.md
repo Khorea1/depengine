@@ -792,6 +792,7 @@ are described above or alongside their examples.
 | `local` | Install a project-vendored raw file or stdlib-supported archive without network access | `mytool = { local = { local_path = "vendor/mytool", checksum = "sha256:..." } }` |
 | `github` | Recommended for GitHub Releases; matches an asset *pattern* against the real asset list (see above) | `yq = { github = { repo = "mikefarah/yq", asset = "yq_{os_any}_{arch_any}" } }` |
 | `http` | Download + extract + checksum (see field table above) | `fastfetch = { http = { url = "...", checksum = "sha256:auto" } }` |
+| `deb` | Download a Debian package and track its exact dpkg package identity for observe/remove | `delta = { deb = { url = "https://example.test/git-delta_0.20.1_amd64.deb", pkg = "git-delta" } }` |
 
 ### Ecosystem desired-state coverage
 

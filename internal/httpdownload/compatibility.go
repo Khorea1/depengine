@@ -64,6 +64,18 @@ func rejectUntrackedDebLifecycle(kind string, mc *config.MethodCandidate, intent
 	return fmt.Errorf("%s: .deb lifecycle is unsupported because exact dpkg package identity is not persisted; use a native package-manager method", kind)
 }
 
+func (a *HTTPAdapter) rejectUntrackedDebLifecycle(mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan, resolvedURL string) error {
+	if a.allowDebArtifacts {
+		return nil
+	}
+	return rejectUntrackedDebLifecycle(a.Kind(), mc, intent, resolvedURL)
+}
+
+// CheckDebHostCompatibility applies the distro-family rule to the dedicated dpkg adapter.
+func CheckDebHostCompatibility(mc *config.MethodCandidate, facts *platform.Facts, clan string) error {
+	return checkDebHostCompatibility(mc, facts, clan)
+}
+
 func checkDebHostCompatibility(mc *config.MethodCandidate, facts *platform.Facts, clan string) error {
 	clan = strings.ToLower(strings.TrimSpace(clan))
 	if clan == "" && facts != nil {

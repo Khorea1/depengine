@@ -232,6 +232,13 @@ var dmgArtifactContract = &artifact.Contract{
 	RequiredExtensions: []string{".dmg"},
 }
 
+var debArtifactContract = &artifact.Contract{
+	URLFields:          []string{"url", "checksum_url", "signature_url"},
+	AllowedSchemes:     []string{"http", "https"},
+	ArtifactFields:     []string{"url", "asset"},
+	RequiredExtensions: []string{".deb"},
+}
+
 // Contracts is the single source of truth for method kinds, ordering and
 // adapter-facing schema fields. Keep entries in default preference order;
 // kinds with DefaultOrder zero are valid but never injected as blind fallbacks.
@@ -406,6 +413,7 @@ var Contracts = finalizeContracts([]Contract{
 		"secret_ref": {Type: SecretRef, Effects: EffectResolve | EffectExecute},
 	}), Requires: map[string][]string{"signature_url": {"signing_key"}}, SourceAlternatives: [][]string{{"repo", "asset"}}, Artifact: githubArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true, DistributableFields: []string{"asset", "checksum", "checksum_url", "checksum_file_format", "signature_url", "binary", "entrypoints", "strip_components", "extract_to"}},
 	{Kind: "http", DefaultOrder: 36, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(downloadFields, artifactScopeField, httpBearerSecretFields), Requires: httpDownloadRequirements, SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract, Checksum: remoteChecksumContract},
+	{Kind: "deb", Capabilities: CapabilityArbitraryCode | CapabilityExactVersion | CapabilityArchitecture, Fields: fields(artifactFields, pkgField, httpBearerSecretFields, map[string]Field{"version": {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute | EffectVerify}, "architecture": {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute | EffectVerify}}), Requires: httpDownloadRequirements, SourceAlternatives: artifactSourceAlternatives, Artifact: debArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, CanRemove: true},
 	{Kind: "msi", DefaultOrder: 37, Fields: fields(artifactFields, httpBearerSecretFields, map[string]Field{
 		"product_name": {Type: String, Required: true, NonEmpty: true, Effects: EffectVerify | EffectExecute},
 		"publisher":    {Type: String, Effects: EffectVerify | EffectExecute},

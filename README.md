@@ -133,7 +133,7 @@ depengine currently supports:
 | Native | `native`, plus package-manager aliases such as `apt`, `pacman`, `dnf`, `brew`, `port`, `winget`, `scoop`, `choco` |
 | Languages | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `pnpm`, `bun`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
 | Desktop | `flatpak`, `snap`, `vscode`, `vscodium`, `cask`, `mas`, `appman` |
-| Specialized | `sdkman`, `pacstall`, `aur`, `conda`, `asdf`, `nix`, `container`, `appimage`, `android`, `msi`, `exe`, `msix`, `appx`, `macpkg`, `dmg` |
+| Specialized | `sdkman`, `pacstall`, `aur`, `conda`, `asdf`, `nix`, `container`, `appimage`, `android`, `deb`, `msi`, `exe`, `msix`, `appx`, `macpkg`, `dmg` |
 | Artifacts/builds | `git`, `local`, `github`, `http` |
 `steamcmd` remains accepted by schema validation, but ordinary `depengine install` currently fails closed before installation because its observer cannot verify an installed server identity.
 
@@ -143,6 +143,8 @@ differ by distro. The shared pkg executable is not a global method alias;
 use it only as a clan-scoped pkg_overrides key. On macOS, `native` defaults
 to Homebrew; MacPorts is an explicit alternative with examples in the
 [schema reference](docs/schema-reference.md).
+
+`deb` installs a downloaded package through dpkg, records its package/version/architecture identity, and removes only that recorded package after confirming the identity still matches. It requires an explicit package-compatible distro target outside the Debian family.
 
 ## Lockfile and dry run
 

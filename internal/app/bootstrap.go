@@ -2,6 +2,7 @@ package app
 
 import (
 	"github.com/Khorea1/depengine/internal/container"
+	"github.com/Khorea1/depengine/internal/deb"
 	"github.com/Khorea1/depengine/internal/dmg"
 	"github.com/Khorea1/depengine/internal/ecosystem"
 	"github.com/Khorea1/depengine/internal/exec"
@@ -20,6 +21,7 @@ func InitAdapters() {
 	exec.Register(gitadapter.NewGitAdapter())
 	exec.Register(localartifactadapter.NewAdapter())
 	exec.Register(httpdownload.NewHTTPAdapter())
+	exec.Register(deb.NewAdapter())
 	exec.Register(httpdownload.NewGitHubAdapter())
 	exec.Register(httpdownload.NewAppImageAdapter())
 	exec.Register(httpdownload.NewAndroidAdapter())

@@ -245,6 +245,14 @@ when = { os = ["linux"], libc = ["musl"] }
 # on Void instead of reporting the tool as skipped when the .deb below
 # does not apply.
 
+# A .deb candidate uses exact dpkg package metadata for install and lifecycle checks.
+[tools.deb-example.deb]
+url = "https://example.com/deb-example_1.0_amd64.deb"
+pkg = "deb-example"
+version = "1.0"
+architecture = "amd64"
+when = { distro_family = ["debian"] }
+
 [tools.fastfetch.github]
 repo = "fastfetch-cli/fastfetch"
 asset = "fastfetch-linux-{arch_any}.deb"
