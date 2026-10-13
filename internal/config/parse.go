@@ -704,7 +704,7 @@ func buildMethods(name string, valMap map[string]any) []*MethodCandidate {
 				continue
 			}
 		}
-		if _, isStr := valMap[k].(string); isStr && methodkind.IsNativeKind(k) {
+		if _, isStr := valMap[k].(string); isStr && methodkind.IsNativeKind(k) && k != "port" {
 			nativeOverrides[k] = valMap[k]
 		} else {
 			nonNativeKeys = append(nonNativeKeys, k)
@@ -1229,7 +1229,7 @@ func selectorMatchesDeclaredMethod(selector string, methods []*MethodCandidate) 
 		selectors = bucket
 	}
 	for _, candidateSelector := range selectors {
-		if methodkind.IsNativeKind(candidateSelector) {
+		if methodkind.IsNativeKind(candidateSelector) && candidateSelector != "port" {
 			candidateSelector = "native"
 		}
 		for _, method := range methods {

@@ -92,6 +92,8 @@ fd   = { apt = "fd-find" }                 # "fd" on all others
 nvim = { pacman = "neovim", apt = "neovim" }
 ```
 
+Native manager aliases are explicit candidates, not operating-system clans. On macOS, `brew` remains the default `native` provider; selecting MacPorts uses an explicit `port` method, for example `delta = { port = "git-delta", method_prefer = ["port"] }`. Use `method_only = ["port"]` for MacPorts without a Homebrew fallback, or `method_only = ["native"]` for the platform default. MacPorts does not change the host `macos` clan.
+
 ### Language ecosystem managers
 
 ```toml

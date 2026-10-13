@@ -673,3 +673,139 @@ func hasDrift(result plan.VerificationResult, field plan.IdentityField) bool {
 	}
 	return false
 }
+
+func TestMacPortsInventoryFailsClosed(t *testing.T) {
+	cases := []struct {
+		name, output   string
+		present, known bool
+	}{
+		{"installed", "The following ports are currently installed:\n  textproc/git-delta @0.20.1_0 (active)\n", true, true},
+		{"inactive", "The following ports are currently installed:\n  textproc/git-delta @0.20.0_0\n", false, true},
+		{"inactive and active", "The following ports are currently installed:\n  textproc/git-delta @0.20.0_0\n  textproc/git-delta @0.20.1_0 (active)\n", true, true},
+		{"explicitly empty inventory", "No ports are installed.\n", false, true},
+		{"requested port absent", "None of the specified ports are installed.\n", false, true},
+		{"other installed port", "The following ports are currently installed:\n  devel/cmake @3.30.0_0 (active)\n", false, false},
+		{"version missing", "The following ports are currently installed:\n  textproc/git-delta @ (active)\n", false, false},
+		{"malformed", "The following ports are currently installed:\n  textproc/git-delta installed\n", false, false},
+		{"empty heading", "The following ports are currently installed:\n", false, false},
+		{"unrecognized", "unexpected output\n", false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			present, known := macPortsInstalled([]byte(tc.output), "textproc/git-delta")
+			if present != tc.present || known != tc.known {
+				t.Fatalf("macPortsInstalled() = (%v, %v), want (%v, %v)", present, known, tc.present, tc.known)
+			}
+		})
+	}
+}
+
+func TestMacPortsCompatibilityRequiresMacOSClan(t *testing.T) {
+	adapter := &NativeByManagerAdapter{managerName: "port"}
+	for _, tc := range []struct {
+		clan    string
+		wantErr bool
+	}{
+		{clan: "macos"},
+		{clan: "debian", wantErr: true},
+		{clan: "", wantErr: true},
+	} {
+		err := adapter.CheckHostCompatibility(nil, nil, nil, nil, tc.clan)
+		if (err != nil) != tc.wantErr {
+			t.Fatalf("CheckHostCompatibility(%q) = %v; want error = %v", tc.clan, err, tc.wantErr)
+		}
+	}
+}
+
+func TestMacPortsInstallFailsWhenPostconditionIsMissing(t *testing.T) {
+	tool := &config.Tool{Name: "git-delta"}
+	method := &config.MethodCandidate{Kind: "port", Config: map[string]any{"pkg": "git-delta"}}
+	runner := &run.FakeRunner{
+		ExitCode:  0,
+		Stdout:    "None of the specified ports are installed.\n",
+		LookPaths: map[string]bool{"port": false, "/opt/local/bin/port": true},
+	}
+	adapter := &NativeByManagerAdapter{managerName: "port"}
+	resolved := canonicalInstallPlan("git-delta", "port")
+	if err := adapter.InstallResolved(context.Background(), runner, tool, method, resolved); err == nil || !strings.Contains(err.Error(), "did not confirm") {
+		t.Fatalf("InstallResolved() error = %v; want failed MacPorts postcondition", err)
+	}
+	var installed, verified bool
+	for _, call := range runner.Calls {
+		if call.Name == "sudo" && strings.Join(call.Args, " ") == "/opt/local/bin/port install git-delta" {
+			installed = true
+		}
+		if call.Name == "/opt/local/bin/port" && strings.Join(call.Args, " ") == "installed git-delta and active" {
+			verified = true
+		}
+	}
+	if !installed || !verified {
+		t.Fatalf("InstallResolved() calls = %+v; want MacPorts install and postcondition check", runner.Calls)
+	}
+}
+
+func TestMacPortsRemoveUsesExplicitManager(t *testing.T) {
+	tool := &config.Tool{Name: "git-delta"}
+	method := &config.MethodCandidate{Kind: "port", Config: map[string]any{"pkg": "git-delta"}}
+	runner := &run.FakeRunner{
+		ExitCode:  0,
+		LookPaths: map[string]bool{"port": false, "/opt/local/bin/port": true},
+	}
+	adapter := &NativeByManagerAdapter{managerName: "port"}
+	if err := adapter.Remove(context.Background(), runner, tool, method); err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+	var removed bool
+	for _, call := range runner.Calls {
+		if call.Name == "sudo" && strings.Join(call.Args, " ") == "/opt/local/bin/port uninstall git-delta" {
+			removed = true
+		}
+		if call.Name == "brew" {
+			t.Fatalf("Remove() called Homebrew: %+v", runner.Calls)
+		}
+	}
+	if !removed {
+		t.Fatalf("Remove() calls = %+v; want MacPorts removal", runner.Calls)
+	}
+}
+
+func TestMacPortsRemoveRejectsMissingPackage(t *testing.T) {
+	runner := &run.FakeRunner{LookPaths: map[string]bool{"port": true}}
+	adapter := &NativeByManagerAdapter{managerName: "port"}
+	err := adapter.Remove(context.Background(), runner, nil, &config.MethodCandidate{Kind: "port"})
+	if err == nil || !strings.Contains(err.Error(), "no package name") {
+		t.Fatalf("Remove() error = %v, want missing package error", err)
+	}
+	if len(runner.Calls) > 0 {
+		t.Fatalf("Remove() invoked a process without a package: %+v", runner.Calls)
+	}
+}
+
+func TestMacPortsAdapterObservesInventoryFailClosed(t *testing.T) {
+	tool := &config.Tool{Name: "git-delta"}
+	mc := &config.MethodCandidate{Kind: "port", Config: map[string]any{"pkg": "textproc/git-delta"}}
+	adapter := &NativeByManagerAdapter{managerName: "port"}
+	for _, tc := range []struct {
+		output   string
+		exitCode int
+		want     plan.PresenceState
+	}{
+		{"The following ports are currently installed:\n  textproc/git-delta @0.20.1_0 (active)\n", 0, plan.PresencePresent},
+		{"No ports are installed.\n", 0, plan.PresenceAbsent},
+		{"unrecognized output\n", 0, plan.PresenceUnknown},
+		{"None of the specified ports are installed.\n", 1, plan.PresenceUnknown},
+		{"The following ports are currently installed:\n  devel/cmake @3.30.0_0 (active)\n", 0, plan.PresenceUnknown},
+	} {
+		rn := &run.FakeRunner{ExitCode: tc.exitCode, Stdout: tc.output}
+		got, err := adapter.Observe(context.Background(), rn, tool, mc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Presence != tc.want {
+			t.Fatalf("Observe() presence = %q, want %q", got.Presence, tc.want)
+		}
+		if len(rn.Calls) == 0 || rn.Calls[len(rn.Calls)-1].Name != "port" || !contains(rn.Calls[len(rn.Calls)-1].Args, "installed") {
+			t.Fatalf("Observe() did not query MacPorts inventory: %+v", rn.Calls)
+		}
+	}
+}

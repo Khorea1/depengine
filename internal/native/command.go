@@ -53,6 +53,43 @@ func BuildRemoveCmd(clan, pkg string) []string {
 	return withSudo(substitutePkg(nm.RemoveCmd, pkg), nm.SudoRequired)
 }
 
+// BuildManagerInstallCmd builds an explicitly selected manager command, without
+// changing the clan default selected by Lookup.
+func BuildManagerInstallCmd(managerName, pkg string) []string {
+	m, ok := LookupManager(managerName)
+	if !ok {
+		return nil
+	}
+	return withSudo(substitutePkg(m.InstallCmd, pkg), m.SudoRequired)
+}
+
+// BuildManagerCheckCmd builds an explicitly selected manager check command.
+func BuildManagerCheckCmd(managerName, pkg string) []string {
+	m, ok := LookupManager(managerName)
+	if !ok {
+		return nil
+	}
+	return substitutePkg(m.CheckCmd, pkg)
+}
+
+// BuildManagerSearchCmd builds an explicitly selected manager search command.
+func BuildManagerSearchCmd(managerName, pkg string) []string {
+	m, ok := LookupManager(managerName)
+	if !ok || len(m.SearchCmd) == 0 {
+		return nil
+	}
+	return substitutePkg(m.SearchCmd, pkg)
+}
+
+// BuildManagerRemoveCmd builds an explicitly selected manager removal command.
+func BuildManagerRemoveCmd(managerName, pkg string) []string {
+	m, ok := LookupManager(managerName)
+	if !ok {
+		return nil
+	}
+	return withSudo(substitutePkg(m.RemoveCmd, pkg), m.SudoRequired)
+}
+
 // BuildSyncCmd returns the index-sync command, if the manager requires one.
 // The engine runs this at most once per execution, never per package.
 func BuildSyncCmd(clan string) []string {

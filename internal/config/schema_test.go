@@ -845,6 +845,59 @@ myapp = { method_only = ["cargo"], cargo = true }
 	}
 }
 
+func TestMacPortsShorthandIsSeparateFromDefaultNativeManager(t *testing.T) {
+	p := writeSchema(t, `
+[tools]
+delta = { port = "git-delta", method_prefer = ["port"] }
+brewonly = { native = { pkg = "brew-pkg", pkg_overrides = { port = "port-pkg" } }, method_only = ["native"] }
+`)
+	s, err := ParseProjectSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseProjectSchema: %v", err)
+	}
+	delta := s.Tools["delta"]
+	if len(delta.Methods) != 2 {
+		t.Fatalf("delta methods = %+v; want port and inferred native", delta.Methods)
+	}
+	var port, fallback *MethodCandidate
+	for _, method := range delta.Methods {
+		switch method.Kind {
+		case "port":
+			port = method
+		case "native":
+			fallback = method
+		}
+	}
+	if port == nil || port.Config["pkg"] != "git-delta" || fallback == nil || !fallback.Inferred {
+		t.Fatalf("delta methods = %+v; want explicit port package and inferred native fallback", delta.Methods)
+	}
+	selected := SelectMethods(delta, []string{"native"}, "brew")
+	if len(selected) != 2 || selected[0].Kind != "port" || selected[1].Kind != "native" {
+		t.Fatalf("selected delta methods = %+v; want port before native fallback", selected)
+	}
+	brewonly := s.Tools["brewonly"]
+	if len(brewonly.Methods) != 1 || brewonly.Methods[0].Kind != "native" {
+		t.Fatalf("brewonly methods = %+v; want one native method", brewonly.Methods)
+	}
+	if selected := SelectMethods(brewonly, []string{"native"}, "brew"); len(selected) != 1 || selected[0].Kind != "native" {
+		t.Fatalf("brewonly selected = %+v; want default native manager", selected)
+	}
+}
+
+func TestMacPortsMethodOnlyRequiresDeclaredPortCandidate(t *testing.T) {
+	p := writeSchema(t, `
+[tools]
+brewonly = { native = { pkg = "brew-pkg" }, method_only = ["port"] }
+`)
+	s, err := ParseProjectSchema(p, fixedMap())
+	if err != nil {
+		t.Fatalf("ParseProjectSchema: %v", err)
+	}
+	if _, err := Validate(s, []string{"native", "port"}); err == nil || !strings.Contains(err.Error(), `method_only entry "port" does not match`) {
+		t.Fatalf("Validate() error = %v; want undeclared port selector", err)
+	}
+}
+
 func TestToolPerToolMethodOrderRejected(t *testing.T) {
 	p := writeSchema(t, `
 [defaults]

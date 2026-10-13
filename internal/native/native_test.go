@@ -336,3 +336,34 @@ func TestManagerNamesForClanDeterministicPrimaryThenAliases(t *testing.T) {
 		}
 	}
 }
+
+func TestMacPortsIsExplicitManagerOnMacOSClan(t *testing.T) {
+	if _, ok := LookupManager("pkg"); ok {
+		t.Fatal("ambiguous pkg manager cannot be selected without a clan")
+	}
+	brew, ok := Lookup("macos")
+	if !ok || brew.Name != "brew" {
+		t.Fatalf("macos default manager = %#v, %v; want brew", brew, ok)
+	}
+	if contains(KnownClans(), "macports") {
+		t.Fatal("MacPorts must not be an operating-system clan")
+	}
+	if clan, ok := ManagerNameToClan("port"); !ok || clan != "macos" {
+		t.Fatalf("port maps to %q, %v; want macos", clan, ok)
+	}
+	if got := ManagerNamesForClan("macos"); !reflect.DeepEqual(got, []string{"brew"}) {
+		t.Fatalf("ManagerNamesForClan(macos) = %v, want [brew]", got)
+	}
+	if got := join(BuildManagerInstallCmd("port", "textproc/git-delta")); got != "sudo port install textproc/git-delta" {
+		t.Fatalf("install = %q", got)
+	}
+	if got := join(BuildManagerCheckCmd("port", "textproc/git-delta")); got != "port installed textproc/git-delta and active" {
+		t.Fatalf("check = %q", got)
+	}
+	if got := join(BuildManagerSearchCmd("port", "textproc/git-delta")); got != "port info textproc/git-delta" {
+		t.Fatalf("search = %q", got)
+	}
+	if got := join(BuildManagerRemoveCmd("port", "textproc/git-delta")); got != "sudo port uninstall textproc/git-delta" {
+		t.Fatalf("remove = %q", got)
+	}
+}

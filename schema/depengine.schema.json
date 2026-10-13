@@ -6126,6 +6126,93 @@
               "type": "object"
             },
             "kind": {
+              "const": "port"
+            },
+            "os_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "pkg": {
+              "type": "string"
+            },
+            "pkg_overrides": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "post_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "pre_install": {
+              "$ref": "#/definitions/hook"
+            },
+            "requires": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "sources": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "apt-ppa",
+                      "dnf-copr",
+                      "scoop-bucket",
+                      "brew-tap"
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "revision": {
+                    "description": "Full lowercase Git commit object ID; supported only with an explicit brew-tap or scoop-bucket URL.",
+                    "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+                    "type": "string"
+                  },
+                  "secret_ref": {
+                    "$ref": "#/definitions/secretReference"
+                  },
+                  "url": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "when": {
+              "$ref": "#/definitions/condition"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Method capabilities: source-selection, source-mutation, check, remove.",
+          "properties": {
+            "arch_map": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
               "const": "portage"
             },
             "os_map": {
@@ -13517,6 +13604,9 @@
         },
         "pnpm": {
           "$ref": "#/definitions/method_pnpm"
+        },
+        "port": {
+          "$ref": "#/definitions/method_native"
         },
         "portage": {
           "$ref": "#/definitions/method_native"

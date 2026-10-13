@@ -348,12 +348,9 @@ func runNativeInstallPackageResolved(ctx context.Context, rn run.Runner, prefix,
 	if pkg == "" {
 		return fmt.Errorf("%s: no package name", prefix)
 	}
-	cmd := native.BuildInstallCmd(clan, pkg)
+	cmd := nativeManagerCommand(ctx, rn, managerName, clan, "install", pkg)
 	if cmd == nil {
 		return fmt.Errorf("%s: no install command for clan %q", prefix, clan)
-	}
-	if managerName != "" {
-		cmd = replaceManagerBinary(cmd, managerName, clan)
 	}
 	var res run.Result
 	if managerName == "brew" && resolvedHasPinnedBrewTap(resolved) {
@@ -400,16 +397,19 @@ func verifyNativeInstall(ctx context.Context, rn run.Runner, prefix, clan, pkg, 
 		}
 		return nil
 	}
-	cmd := native.BuildCheckCmd(clan, pkg)
+	cmd := nativeManagerCommand(ctx, rn, managerName, clan, "check", pkg)
 	if cmd == nil {
 		return fmt.Errorf("%s: install reported success but clan %q has no verification command", prefix, clan)
-	}
-	if managerName != "" {
-		cmd = replaceManagerBinary(cmd, managerName, clan)
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	if err := run.CheckResult(res, prefix+": verify install"); err != nil {
 		return fmt.Errorf("%s: install reported success but package %q could not be verified: %w", prefix, pkg, err)
+	}
+	if managerName == "port" {
+		present, known := macPortsInstalled(res.Stdout, pkg)
+		if !known || !present {
+			return fmt.Errorf("%s: install reported success but MacPorts inventory did not confirm %q", prefix, pkg)
+		}
 	}
 	return nil
 }
@@ -453,6 +453,9 @@ type NativeByManagerAdapter struct {
 func (a *NativeByManagerAdapter) Kind() string { return a.managerName }
 
 func (a *NativeByManagerAdapter) Available(ctx context.Context, rn run.Runner) bool {
+	if a.managerName == "port" {
+		return macPortsAvailable(ctx, rn)
+	}
 	return run.LookPath(ctx, rn, a.managerName)
 }
 
@@ -473,12 +476,10 @@ func (a *NativeByManagerAdapter) Check(ctx context.Context, rn run.Runner, tool 
 		state, _, err := observeRpm(ctx, rn, pkg)
 		return err == nil && state == native.RpmPresent
 	}
-	cmd := native.BuildCheckCmd(clan, pkg)
+	cmd := nativeManagerCommand(ctx, rn, a.managerName, clan, "check", pkg)
 	if cmd == nil {
 		return false
 	}
-	// Use the actual manager binary name (e.g. "dnf5" instead of "dnf").
-	cmd = replaceManagerBinary(cmd, a.managerName, clan)
 	if a.managerName == "winget" {
 		if source, _ := mc.Config["source"].(string); source != "" {
 			cmd = append(cmd, "--source", source)
@@ -487,6 +488,10 @@ func (a *NativeByManagerAdapter) Check(ctx context.Context, rn run.Runner, tool 
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	if res.Err != nil || res.ExitCode != 0 {
 		return false
+	}
+	if a.managerName == "port" {
+		present, known := macPortsInstalled(res.Stdout, pkg)
+		return known && present
 	}
 	if a.managerName != "winget" {
 		return true
@@ -514,11 +519,10 @@ func (a *NativeByManagerAdapter) CheckAvailable(ctx context.Context, rn run.Runn
 	if pkg == "" {
 		return true
 	}
-	cmd := native.BuildSearchCmd(clan, pkg)
+	cmd := nativeManagerCommand(ctx, rn, a.managerName, clan, "search", pkg)
 	if cmd == nil {
 		return true
 	}
-	cmd = replaceManagerBinary(cmd, a.managerName, clan)
 	if a.managerName == "winget" {
 		cmd = append(cmd, wingetSelectionArgs(mc, true)...)
 	}
@@ -526,9 +530,12 @@ func (a *NativeByManagerAdapter) CheckAvailable(ctx context.Context, rn run.Runn
 	return res.Err == nil && res.ExitCode == 0
 }
 
-// CheckHostCompatibility imposes no host constraints: the manager-resolved
-// clan is itself the compatibility boundary.
-func (a *NativeByManagerAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
+// CheckHostCompatibility restricts MacPorts to its macOS clan. Other manager
+// aliases retain their existing compatibility behavior.
+func (a *NativeByManagerAdapter) CheckHostCompatibility(_ *config.Tool, _ *config.MethodCandidate, _ *plan.ResolvedInstallPlan, _ *platform.Facts, clan string) error {
+	if a.managerName == "port" && clan != "macos" {
+		return fmt.Errorf("native(port): requires macos clan, got %q", clan)
+	}
 	return nil
 }
 
@@ -541,12 +548,10 @@ func (a *NativeByManagerAdapter) Install(ctx context.Context, rn run.Runner, too
 	if pkg == "" {
 		return fmt.Errorf("native(%s): no package name", a.managerName)
 	}
-	cmd := native.BuildInstallCmd(clan, pkg)
+	cmd := nativeManagerCommand(ctx, rn, a.managerName, clan, "install", pkg)
 	if cmd == nil {
 		return fmt.Errorf("native(%s): no install command for clan %q", a.managerName, clan)
 	}
-	// Use the actual manager binary name (e.g. "dnf5" instead of "dnf").
-	cmd = replaceManagerBinary(cmd, a.managerName, clan)
 	if a.managerName == "winget" {
 		cmd = append(cmd, wingetSelectionArgs(mc, true)...)
 	}
@@ -605,12 +610,10 @@ func (a *NativeByManagerAdapter) Observe(ctx context.Context, rn run.Runner, too
 	if native.IsRpmClan(clan) {
 		return observeRpmPlan(ctx, rn, pkg)
 	}
-	cmd := native.BuildCheckCmd(clan, pkg)
+	cmd := nativeManagerCommand(ctx, rn, a.managerName, clan, "check", pkg)
 	if cmd == nil {
 		return plan.Observation{Presence: plan.PresenceAbsent}, nil
 	}
-	// Use the actual manager binary name (e.g. "dnf5" instead of "dnf").
-	cmd = replaceManagerBinary(cmd, a.managerName, clan)
 	if a.managerName == "winget" {
 		if source, _ := mc.Config["source"].(string); source != "" {
 			cmd = append(cmd, "--source", source)
@@ -621,7 +624,20 @@ func (a *NativeByManagerAdapter) Observe(ctx context.Context, rn run.Runner, too
 		return plan.Observation{Presence: plan.PresenceBroken, Detail: res.Err.Error()}, res.Err
 	}
 	if res.ExitCode != 0 {
+		if a.managerName == "port" {
+			return plan.Observation{Presence: plan.PresenceUnknown, Detail: fmt.Sprintf("MacPorts inventory query exited with code %d", res.ExitCode)}, nil
+		}
 		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	if a.managerName == "port" {
+		present, known := macPortsInstalled(res.Stdout, pkg)
+		if !known {
+			return plan.Observation{Presence: plan.PresenceUnknown, Detail: "MacPorts inventory output was not recognized"}, nil
+		}
+		if !present {
+			return plan.Observation{Presence: plan.PresenceAbsent}, nil
+		}
+		return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
 	}
 	if a.managerName != "winget" {
 		return plan.Observation{
@@ -718,6 +734,21 @@ func (a *NativeByManagerAdapter) Remove(ctx context.Context, rn run.Runner, tool
 	clan := findClanByManager(a.managerName)
 	if clan == "" {
 		return fmt.Errorf("native(%s): no clan found for manager", a.managerName)
+	}
+	if a.managerName == "port" {
+		pkg := pkgFromConfig(mc, clan)
+		if pkg == "" && tool != nil {
+			pkg = tool.Name
+		}
+		if pkg == "" {
+			return fmt.Errorf("native(port): no package name for removal")
+		}
+		cmd := nativeManagerCommand(ctx, rn, a.managerName, clan, "remove", pkg)
+		if cmd == nil {
+			return fmt.Errorf("native(port): no remove command")
+		}
+		res := rn.Run(ctx, cmd[0], cmd[1:]...)
+		return run.CheckResult(res, "native(port): remove")
 	}
 	if a.managerName != "winget" {
 		nativeAdapter := NewNativeAdapter(clan)
@@ -822,6 +853,87 @@ func findClanByManager(name string) string {
 		}
 	}
 	return ""
+}
+
+func nativeManagerCommand(ctx context.Context, rn run.Runner, managerName, clan, action, pkg string) []string {
+	if managerName == "" {
+		switch action {
+		case "install":
+			return native.BuildInstallCmd(clan, pkg)
+		case "check":
+			return native.BuildCheckCmd(clan, pkg)
+		case "search":
+			return native.BuildSearchCmd(clan, pkg)
+		case "remove":
+			return native.BuildRemoveCmd(clan, pkg)
+		}
+		return nil
+	}
+	var cmd []string
+	if managerName == "port" {
+		switch action {
+		case "install":
+			cmd = native.BuildManagerInstallCmd(managerName, pkg)
+		case "check":
+			cmd = native.BuildManagerCheckCmd(managerName, pkg)
+		case "search":
+			cmd = native.BuildManagerSearchCmd(managerName, pkg)
+		case "remove":
+			cmd = native.BuildManagerRemoveCmd(managerName, pkg)
+		}
+	} else {
+		switch action {
+		case "install":
+			cmd = native.BuildInstallCmd(clan, pkg)
+		case "check":
+			cmd = native.BuildCheckCmd(clan, pkg)
+		case "search":
+			cmd = native.BuildSearchCmd(clan, pkg)
+		case "remove":
+			cmd = native.BuildRemoveCmd(clan, pkg)
+		}
+		cmd = replaceManagerBinary(cmd, managerName, clan)
+	}
+	if managerName == "port" && !run.LookPath(ctx, rn, "port") && run.LookPath(ctx, rn, "/opt/local/bin/port") {
+		for i, arg := range cmd {
+			if arg == "port" {
+				cmd[i] = "/opt/local/bin/port"
+				break
+			}
+		}
+	}
+	return cmd
+}
+
+func macPortsAvailable(ctx context.Context, rn run.Runner) bool {
+	return run.LookPath(ctx, rn, "port") || run.LookPath(ctx, rn, "/opt/local/bin/port")
+}
+
+// macPortsInstalled parses `port installed <name>`. MacPorts can return exit
+// status zero when no ports are installed, so only explicit inventory output
+// is evidence of presence or absence.
+func macPortsInstalled(stdout []byte, pkg string) (present, known bool) {
+	text := strings.TrimSpace(string(stdout))
+	if text == "No ports are installed." || text == "None of the specified ports are installed." {
+		return false, true
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) < 2 || lines[0] != "The following ports are currently installed:" {
+		return false, false
+	}
+	for _, line := range lines[1:] {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || len(fields) > 3 || fields[0] != pkg || len(fields[1]) < 2 || fields[1][0] != '@' {
+			return false, false
+		}
+		if len(fields) == 3 && fields[2] != "(active)" && fields[2] != "(inactive)" {
+			return false, false
+		}
+		if len(fields) == 3 && fields[2] == "(active)" {
+			present = true
+		}
+	}
+	return present, true
 }
 
 // validateNativeResolvedInstallOperation fail-closes on non-canonical

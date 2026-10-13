@@ -326,6 +326,15 @@ func TestNativeInstallRequiresPostcondition(t *testing.T) {
 }
 
 func TestPkgFromConfigResolvesClanOverrides(t *testing.T) {
+	t.Run("MacPorts override cannot change default brew package", func(t *testing.T) {
+		mc := &config.MethodCandidate{Config: map[string]any{
+			"pkg":           "brew-package",
+			"pkg_overrides": map[string]any{"port": "macports-package"},
+		}}
+		if got := pkgFromConfig(mc, "macos"); got != "brew-package" {
+			t.Fatalf("pkgFromConfig(macos) = %q, want brew-package", got)
+		}
+	})
 	t.Run("uses override for matching clan", func(t *testing.T) {
 		mc := &config.MethodCandidate{
 			Config: map[string]any{

@@ -3,6 +3,8 @@ package exec
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -107,6 +109,163 @@ func v2ExecutorAttempt(t *testing.T, adapter AdapterV2) ToolResult {
 	rc := ex.newRunContext(ctx, nil, "")
 	ex.tryMethods(ctx, rc, tool, &result, time.Now())
 	return result
+}
+
+type macPortsSequenceRunner struct {
+	*run.FakeRunner
+	initiallyInstalled bool
+	initialInventory   string
+	initialExitCode    int
+	inventoryQueries   int
+}
+
+func (r *macPortsSequenceRunner) Run(ctx context.Context, name string, args ...string) run.Result {
+	result := r.FakeRunner.Run(ctx, name, args...)
+	if name != "/opt/local/bin/port" || len(args) == 0 || args[0] != "installed" {
+		return result
+	}
+	r.inventoryQueries++
+	if r.inventoryQueries == 1 && (r.initialInventory != "" || r.initialExitCode != 0) {
+		result.Stdout = []byte(r.initialInventory)
+		result.ExitCode = r.initialExitCode
+		return result
+	}
+	if r.initiallyInstalled || r.inventoryQueries > 1 {
+		result.Stdout = []byte("The following ports are currently installed:\n  git-delta @0.20.1_0 (active)\n")
+	} else {
+		result.Stdout = []byte("None of the specified ports are installed.\n")
+	}
+	return result
+}
+
+func TestExecutorMacPortsV2Lifecycle(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		initiallyInstalled bool
+		initialInventory   string
+		initialExitCode    int
+		wantStatus         StatusEnum
+		wantInventoryCalls int
+	}{
+		{name: "installed inventory", initiallyInstalled: true, wantStatus: StatusAlready, wantInventoryCalls: 1},
+		// The executor verifies the installed target after the adapter's own
+		// post-install verification, so this path queries inventory three times.
+		{name: "absent inventory then install", wantStatus: StatusInstalled, wantInventoryCalls: 3},
+		{name: "unexpected inventory", initialInventory: "unrecognized output\n", wantStatus: StatusFailed, wantInventoryCalls: 1},
+		{name: "unrelated package", initialInventory: "The following ports are currently installed:\n  cmake @3.30.0_0 (active)\n", wantStatus: StatusFailed, wantInventoryCalls: 1},
+		{name: "failed inventory query", initialInventory: "None of the specified ports are installed.\n", initialExitCode: 1, wantStatus: StatusFailed, wantInventoryCalls: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &macPortsSequenceRunner{
+				FakeRunner: &run.FakeRunner{
+					ExitCode:  0,
+					LookPaths: map[string]bool{"port": false, "/opt/local/bin/port": true},
+				},
+				initiallyInstalled: tc.initiallyInstalled,
+				initialInventory:   tc.initialInventory,
+				initialExitCode:    tc.initialExitCode,
+			}
+			ex := New()
+			WithRunner(runner)(ex)
+			WithAdapters(&NativeByManagerAdapter{managerName: "port"})(ex)
+			schema := &config.Schema{
+				Defaults: config.Defaults{MethodOrder: []string{"port"}},
+				Tools: map[string]*config.Tool{
+					"git-delta": {
+						Name:       "git-delta",
+						MethodOnly: []string{"port"},
+						Methods: []*config.MethodCandidate{{
+							Kind:   "port",
+							Config: map[string]any{"pkg": "git-delta"},
+						}},
+					},
+				},
+			}
+			report, err := ex.Execute(context.Background(), schema, "macos")
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if len(report.Tools) != 1 || report.Tools[0].Status != tc.wantStatus {
+				t.Fatalf("Execute() tools = %+v, want status %v", report.Tools, tc.wantStatus)
+			}
+			result := report.Tools[0]
+			if result.PlanIntent == nil || result.PlanIntent.Identity.Package != "git-delta" {
+				t.Fatalf("PlanIntent = %+v, want effective package git-delta", result.PlanIntent)
+			}
+			if runner.inventoryQueries != tc.wantInventoryCalls {
+				t.Fatalf("MacPorts inventory queries = %d, want %d", runner.inventoryQueries, tc.wantInventoryCalls)
+			}
+
+			var installCalls int
+			for _, call := range runner.Calls {
+				if call.Name != "sudo" {
+					continue
+				}
+				installCalls++
+				want := []string{"/opt/local/bin/port", "install", "git-delta"}
+				if len(call.Args) != len(want) || strings.Join(call.Args, "\x00") != strings.Join(want, "\x00") {
+					t.Fatalf("MacPorts install args = %q, want %q", call.Args, want)
+				}
+			}
+			wantInstalls := 0
+			if tc.wantStatus == StatusInstalled {
+				wantInstalls = 1
+			}
+			if installCalls != wantInstalls {
+				t.Fatalf("MacPorts candidate ran %d install commands, want %d", installCalls, wantInstalls)
+			}
+		})
+	}
+}
+
+func TestExecutorMacPortsSchemaShorthand(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "schema.toml")
+	if err := os.WriteFile(path, []byte("schema_version = 1\n[tools]\ngit-delta = { port = \"git-delta\", method_only = [\"port\"] }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	schema, err := config.ParseProjectSchema(path, nil)
+	if err != nil {
+		t.Fatalf("ParseProjectSchema: %v", err)
+	}
+	if _, err := config.Validate(schema, []string{"native", "port"}); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	runner := &macPortsSequenceRunner{
+		FakeRunner:         &run.FakeRunner{LookPaths: map[string]bool{"port": false, "/opt/local/bin/port": true}},
+		initiallyInstalled: true,
+	}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(&NativeByManagerAdapter{managerName: "port"})(ex)
+	report, err := ex.Execute(context.Background(), schema, "macos")
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusAlready || report.Tools[0].MethodKind != "port" {
+		t.Fatalf("Execute: tools = %+v; want installed port candidate", report.Tools)
+	}
+}
+
+func TestExecutorMacPortsDoesNotProbeOrInstallOnLinux(t *testing.T) {
+	runner := &run.FakeRunner{LookPaths: map[string]bool{"port": true}}
+	ex := New()
+	WithRunner(runner)(ex)
+	WithAdapters(&NativeByManagerAdapter{managerName: "port"})(ex)
+	schema := &config.Schema{Tools: map[string]*config.Tool{
+		"git-delta": {
+			Name:       "git-delta",
+			MethodOnly: []string{"port"},
+			Methods:    []*config.MethodCandidate{{Kind: "port", Config: map[string]any{"pkg": "git-delta"}}},
+		},
+	}}
+	if _, err := ex.Execute(context.Background(), schema, "debian"); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	for _, call := range runner.Calls {
+		if call.Name == "port" || call.Name == "sudo" {
+			t.Fatalf("MacPorts command ran outside macOS: %+v", runner.Calls)
+		}
+	}
 }
 
 func TestExecutorAdapterV2PresenceStates(t *testing.T) {
