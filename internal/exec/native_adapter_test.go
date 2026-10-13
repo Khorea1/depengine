@@ -347,6 +347,18 @@ func TestPkgFromConfigResolvesClanOverrides(t *testing.T) {
 		}
 	})
 
+	t.Run("pkg overrides remain scoped to Termux and FreeBSD", func(t *testing.T) {
+		mc := &config.MethodCandidate{Config: map[string]any{
+			"pkg":           "default-pkg",
+			"pkg_overrides": map[string]any{"pkg": "clan-pkg"},
+		}}
+		for _, clan := range []string{"termux", "freebsd"} {
+			if got := pkgFromConfig(mc, clan); got != "clan-pkg" {
+				t.Errorf("pkgFromConfig(%q) = %q, want clan-pkg", clan, got)
+			}
+		}
+	})
+
 	t.Run("falls back to default pkg for non-matching clan", func(t *testing.T) {
 		mc := &config.MethodCandidate{
 			Config: map[string]any{

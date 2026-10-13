@@ -680,6 +680,7 @@ func TestMacPortsInventoryFailsClosed(t *testing.T) {
 		present, known bool
 	}{
 		{"installed", "The following ports are currently installed:\n  textproc/git-delta @0.20.1_0 (active)\n", true, true},
+		{"bare inventory name for category-qualified request", "The following ports are currently installed:\n  git-delta @0.20.1_0 (active)\n", true, true},
 		{"inactive", "The following ports are currently installed:\n  textproc/git-delta @0.20.0_0\n", false, true},
 		{"inactive and active", "The following ports are currently installed:\n  textproc/git-delta @0.20.0_0\n  textproc/git-delta @0.20.1_0 (active)\n", true, true},
 		{"explicitly empty inventory", "No ports are installed.\n", false, true},
@@ -791,6 +792,7 @@ func TestMacPortsAdapterObservesInventoryFailClosed(t *testing.T) {
 		want     plan.PresenceState
 	}{
 		{"The following ports are currently installed:\n  textproc/git-delta @0.20.1_0 (active)\n", 0, plan.PresencePresent},
+		{"The following ports are currently installed:\n  git-delta @0.20.1_0 (active)\n", 0, plan.PresencePresent},
 		{"No ports are installed.\n", 0, plan.PresenceAbsent},
 		{"unrecognized output\n", 0, plan.PresenceUnknown},
 		{"None of the specified ports are installed.\n", 1, plan.PresenceUnknown},
@@ -807,5 +809,22 @@ func TestMacPortsAdapterObservesInventoryFailClosed(t *testing.T) {
 		if len(rn.Calls) == 0 || rn.Calls[len(rn.Calls)-1].Name != "port" || !contains(rn.Calls[len(rn.Calls)-1].Args, "installed") {
 			t.Fatalf("Observe() did not query MacPorts inventory: %+v", rn.Calls)
 		}
+	}
+
+	partial := &run.FakeRunner{ExitCode: 0, Stdout: "The following ports are currently installed:\n  git-delta @0.20.1_0 (active)\n", WaitErr: errors.New("pipe wait failed")}
+	got, err := adapter.Observe(context.Background(), partial, tool, mc)
+	if err != nil || got.Presence != plan.PresenceUnknown {
+		t.Fatalf("Observe() with incomplete output = (%#v, %v), want unknown without error", got, err)
+	}
+	if adapter.Check(context.Background(), &run.FakeRunner{ExitCode: 0, Stdout: partial.Stdout, WaitErr: partial.WaitErr}, tool, mc) {
+		t.Fatal("Check() accepted incomplete MacPorts inventory output")
+	}
+	if err := verifyNativeInstall(context.Background(), &run.FakeRunner{ExitCode: 0, Stdout: partial.Stdout, WaitErr: partial.WaitErr}, "native(port)", "macos", "textproc/git-delta", "port"); err == nil {
+		t.Fatal("verifyNativeInstall() accepted incomplete MacPorts inventory output")
+	}
+	spawnErr := errors.New("MacPorts process could not be started")
+	broken, err := adapter.Observe(context.Background(), &run.FakeRunner{Err: spawnErr}, tool, mc)
+	if !errors.Is(err, spawnErr) || broken.Presence != plan.PresenceBroken {
+		t.Fatalf("Observe() spawn failure = (%#v, %v), want broken and original error", broken, err)
 	}
 }

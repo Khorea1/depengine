@@ -86,6 +86,18 @@ func TestKnownKindsIncludesNativeManagers(t *testing.T) {
 	}
 }
 
+func TestAmbiguousPkgIsNotGlobalKindButAptRemainsDisambiguated(t *testing.T) {
+	if methodkind.IsKnownKind("pkg") || methodkind.IsNativeKind("pkg") {
+		t.Fatal("ambiguous pkg must not be recognized as a global method kind")
+	}
+	if _, ok := methodkind.Lookup("pkg"); ok {
+		t.Fatal("Lookup(pkg) unexpectedly recognized an ambiguous manager")
+	}
+	if !methodkind.IsKnownKind("apt") || !methodkind.IsNativeKind("apt") {
+		t.Fatal("explicitly disambiguated apt must remain a native method kind")
+	}
+}
+
 func TestContractsDefineUniqueKindsAndDefaultOrder(t *testing.T) {
 	seenKinds := map[string]bool{}
 	seenOrder := map[int]bool{}

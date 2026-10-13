@@ -341,6 +341,18 @@ func TestMacPortsIsExplicitManagerOnMacOSClan(t *testing.T) {
 	if _, ok := LookupManager("pkg"); ok {
 		t.Fatal("ambiguous pkg manager cannot be selected without a clan")
 	}
+	if IsNativeManagerName("pkg") || contains(ManagerNames(), "pkg") {
+		t.Fatal("ambiguous pkg must not be a global native manager kind")
+	}
+	for _, clan := range []string{"termux", "freebsd"} {
+		if got := ManagerNamesForClan(clan); !contains(got, "pkg") {
+			t.Errorf("ManagerNamesForClan(%q) = %v, want clan-local pkg", clan, got)
+		}
+	}
+	apt, ok := LookupManager("apt")
+	if !ok || apt.Name != "apt" || !IsNativeManagerName("apt") {
+		t.Fatalf("explicitly disambiguated apt = %#v, %v; want recognized apt", apt, ok)
+	}
 	brew, ok := Lookup("macos")
 	if !ok || brew.Name != "brew" {
 		t.Fatalf("macos default manager = %#v, %v; want brew", brew, ok)

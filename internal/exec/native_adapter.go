@@ -402,8 +402,12 @@ func verifyNativeInstall(ctx context.Context, rn run.Runner, prefix, clan, pkg, 
 		return fmt.Errorf("%s: install reported success but clan %q has no verification command", prefix, clan)
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	if err := run.CheckResult(res, prefix+": verify install"); err != nil {
-		return fmt.Errorf("%s: install reported success but package %q could not be verified: %w", prefix, pkg, err)
+	verifyErr := run.CheckResult(res, prefix+": verify install")
+	if managerName == "port" {
+		verifyErr = run.CheckResultCompleteOutput(res, prefix+": verify install")
+	}
+	if verifyErr != nil {
+		return fmt.Errorf("%s: install reported success but package %q could not be verified: %w", prefix, pkg, verifyErr)
 	}
 	if managerName == "port" {
 		present, known := macPortsInstalled(res.Stdout, pkg)
@@ -487,6 +491,9 @@ func (a *NativeByManagerAdapter) Check(ctx context.Context, rn run.Runner, tool 
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	if res.Err != nil || res.ExitCode != 0 {
+		return false
+	}
+	if a.managerName == "port" && res.WaitErr != nil {
 		return false
 	}
 	if a.managerName == "port" {
@@ -622,6 +629,9 @@ func (a *NativeByManagerAdapter) Observe(ctx context.Context, rn run.Runner, too
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	if res.Err != nil {
 		return plan.Observation{Presence: plan.PresenceBroken, Detail: res.Err.Error()}, res.Err
+	}
+	if a.managerName == "port" && res.WaitErr != nil {
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: "MacPorts inventory output incomplete"}, nil
 	}
 	if res.ExitCode != 0 {
 		if a.managerName == "port" {
@@ -917,13 +927,17 @@ func macPortsInstalled(stdout []byte, pkg string) (present, known bool) {
 	if text == "No ports are installed." || text == "None of the specified ports are installed." {
 		return false, true
 	}
+	portName := pkg
+	if slash := strings.LastIndexByte(portName, '/'); slash >= 0 {
+		portName = portName[slash+1:]
+	}
 	lines := strings.Split(text, "\n")
 	if len(lines) < 2 || lines[0] != "The following ports are currently installed:" {
 		return false, false
 	}
 	for _, line := range lines[1:] {
 		fields := strings.Fields(line)
-		if len(fields) < 2 || len(fields) > 3 || fields[0] != pkg || len(fields[1]) < 2 || fields[1][0] != '@' {
+		if len(fields) < 2 || len(fields) > 3 || (fields[0] != pkg && fields[0] != portName) || len(fields[1]) < 2 || fields[1][0] != '@' {
 			return false, false
 		}
 		if len(fields) == 3 && fields[2] != "(active)" && fields[2] != "(inactive)" {

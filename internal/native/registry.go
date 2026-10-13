@@ -416,22 +416,28 @@ func Lookup(clan string) (Manager, bool) {
 	return m, true
 }
 
-// LookupManager returns a manager selected by its explicit binary name.
-// Ambiguous names shared by multiple clans are rejected. Alternative managers
-// do not change OS ancestry or the default provider selected by Lookup(clan).
+// LookupManager resolves an explicit manager name. Duplicate names require a
+// canonical mapping in managerNameToClan; otherwise the name is ambiguous.
+// Alternative managers do not change the provider selected by Lookup(clan).
 func LookupManager(name string) (Manager, bool) {
 	var match Manager
-	found := false
+	matches := 0
 	for _, manager := range managers {
 		if manager.Name == name {
-			if found {
-				// Binary names such as pkg can belong to more than one clan.
-				return Manager{}, false
-			}
-			match, found = manager, true
+			match = manager
+			matches++
 		}
 	}
-	return match, found
+	if matches == 1 {
+		return match, true
+	}
+	if clan, ok := managerNameToClan[name]; ok {
+		manager, ok := Lookup(clan)
+		if ok && manager.Name == name {
+			return manager, true
+		}
+	}
+	return Manager{}, false
 }
 
 // ManagerNames returns the set of unique manager binary names across all
@@ -440,17 +446,15 @@ func LookupManager(name string) (Manager, bool) {
 // like `apt = "fd-find"` are resolved correctly.
 func ManagerNames() []string {
 	seen := map[string]bool{}
-	for _, m := range managers {
-		seen[m.Name] = true
+	for _, manager := range managers {
+		seen[manager.Name] = true
 	}
 	out := make([]string, 0, len(seen))
 	for name := range seen {
-		out = append(out, name)
+		if _, ok := LookupManager(name); ok {
+			out = append(out, name)
+		}
 	}
-	// Deterministic order: map iteration is randomized per-process, and
-	// callers (e.g. RegisterNativeManagerAliases) use this order to decide
-	// registration/probing precedence. Without sorting, behavior for
-	// ambiguous cases could vary between runs on the same machine.
 	sort.Strings(out)
 	return out
 }
@@ -489,16 +493,17 @@ func AllClans() []string {
 	return out
 }
 
-// nativeManagerNames holds every Manager.Name value, precomputed once so
-// IsNativeManagerName doesn't rescan the managers map on every call (it's
-// invoked once per method kind during schema validation). Mirrors the
-// knownKindSet pattern in internal/methodkind for the same kind of lookup.
+// nativeManagerNames holds globally addressable manager names and curated
+// binary aliases, precomputed so method-kind lookups do not rescan the registry.
 var nativeManagerNames = buildNativeManagerNames()
 
 func buildNativeManagerNames() map[string]bool {
-	set := make(map[string]bool, len(managers))
-	for _, m := range managers {
-		set[m.Name] = true
+	set := make(map[string]bool, len(managers)+len(managerNameToClan))
+	for _, name := range ManagerNames() {
+		set[name] = true
+	}
+	for _, name := range ManagerBinaryNames() {
+		set[name] = true
 	}
 	return set
 }
