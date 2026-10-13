@@ -105,6 +105,41 @@ func TestInstallIntegrityFailureAbortsWithoutFallback(t *testing.T) {
 	}
 }
 
+func TestGPGRefetchIntegrityFailureAbortsWithoutFallback(t *testing.T) {
+	http := &terminalResolveAdapter{
+		testMockAdapter: testMockAdapter{
+			kindValue: "http",
+			installFunc: func(string) error {
+				return fmt.Errorf("http: cached checksum refetch: %w", &IntegrityError{
+					Method: "http", Reason: "gpg signature verification failed", Err: errors.New("signature verification failed after cached checksum refetch"),
+				})
+			},
+		},
+	}
+	fallback := &terminalResolveAdapter{testMockAdapter: testMockAdapter{kindValue: "fallback"}}
+	ex := New()
+	WithRunner(&run.FakeRunner{})(ex)
+	WithAdapters(http, fallback)(ex)
+	WithFacts(&platform.Facts{OS: "linux", TargetArch: "x86_64", TargetFamily: "unix"})(ex)
+
+	schema := terminalTwoMethodSchema("http", "fallback")
+	schema.Tools["tool"].Methods[0].Config = map[string]any{"url": "https://example.test/tool.tar.gz"}
+	report, err := ex.Execute(context.Background(), schema, "linux")
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	got := report.Tools[0]
+	if got.Status != StatusFailed {
+		t.Fatalf("result = %+v, want terminal GPG failure", got)
+	}
+	if len(got.Methods) != 1 {
+		t.Fatalf("attempts = %+v, want no second method after GPG failure", got.Methods)
+	}
+	if fallback.installs != 0 {
+		t.Fatalf("fallback installs = %d, want 0 while cached checksum refetch still lacks a valid signature", fallback.installs)
+	}
+}
+
 func TestInstallAvailabilityFailureKeepsFallback(t *testing.T) {
 	github := &terminalResolveAdapter{
 		testMockAdapter: testMockAdapter{

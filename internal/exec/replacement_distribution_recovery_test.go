@@ -50,7 +50,30 @@ func effectiveDistributionConfigMatches(got map[string]any) bool {
 		return false
 	}
 }
+
+func previousDistributionConfigMatches(got map[string]any) bool {
+	if got["repo"] != "owner/repo" || got["asset"] != "previous-linux.tar.gz" || got["binary"] != "previous-bin" || got["extract_to"] != "/opt/demo-previous" {
+		return false
+	}
+	switch entrypoints := got["entrypoints"].(type) {
+	case map[string]string:
+		return entrypoints["demo"] == "bin/previous"
+	case map[string]any:
+		return entrypoints["demo"] == "bin/previous"
+	default:
+		return false
+	}
+}
+
 func TestReplacementRecoveryUsesEffectiveGitHubDistribution(t *testing.T) {
+	for _, phase := range []plan.ReplacementPhase{plan.ReplacementRemoved, plan.ReplacementInstalling} {
+		t.Run(string(phase), func(t *testing.T) {
+			testReplacementRecoveryUsesEffectiveGitHubDistribution(t, phase)
+		})
+	}
+}
+
+func testReplacementRecoveryUsesEffectiveGitHubDistribution(t *testing.T, phase plan.ReplacementPhase) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	const name = "tool"
 	const specializedExtractTo = "/opt/demo-linux"
@@ -93,9 +116,14 @@ func TestReplacementRecoveryUsesEffectiveGitHubDistribution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	previousConfig := cloneMethodConfig(effective.Config)
+	previousConfig["asset"] = "previous-linux.tar.gz"
+	previousConfig["binary"] = "previous-bin"
+	previousConfig["extract_to"] = "/opt/demo-previous"
+	previousConfig["entrypoints"] = map[string]string{"demo": "bin/previous"}
 	previous := state.ToolState{
 		Method: "github", MethodKind: "github", Version: "1.0.0",
-		Config: cloneMethodConfig(effective.Config),
+		Config: previousConfig,
 	}
 	setup, err := state.LoadLocked()
 	if err != nil {
@@ -114,6 +142,12 @@ func TestReplacementRecoveryUsesEffectiveGitHubDistribution(t *testing.T) {
 	if err := setup.RecordReplacementRemoved(name); err != nil {
 		_ = setup.Close()
 		t.Fatal(err)
+	}
+	if phase == plan.ReplacementInstalling {
+		if err := setup.PlanReplacementInstall(name); err != nil {
+			_ = setup.Close()
+			t.Fatal(err)
+		}
 	}
 	if err := setup.Close(); err != nil {
 		t.Fatal(err)
@@ -137,6 +171,9 @@ func TestReplacementRecoveryUsesEffectiveGitHubDistribution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if tx.Journal.Phase != phase {
+		t.Fatalf("journal phase = %q, want %q", tx.Journal.Phase, phase)
+	}
 	if err := ex.recoverReplacementTransaction(context.Background(), rc, locked, name); err != nil {
 		t.Fatalf("recover replacement: %v", err)
 	}
@@ -152,8 +189,12 @@ func TestReplacementRecoveryUsesEffectiveGitHubDistribution(t *testing.T) {
 		t.Fatalf("observations = %d, want old and desired candidate before and after install", len(adapter.observedConfigs))
 	}
 	for i, observed := range adapter.observedConfigs {
-		if !effectiveDistributionConfigMatches(observed) {
-			t.Fatalf("observation %d config = %v, want effective distribution %v", i, observed, want)
+		if i%2 == 0 {
+			if !previousDistributionConfigMatches(observed) {
+				t.Fatalf("old observation %d config = %v, want tracked previous distribution %v", i, observed, previousConfig)
+			}
+		} else if !effectiveDistributionConfigMatches(observed) {
+			t.Fatalf("desired observation %d config = %v, want effective distribution %v", i, observed, want)
 		}
 	}
 	if !effectiveDistributionConfigMatches(adapter.installedConfig) {
