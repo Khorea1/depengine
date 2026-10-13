@@ -228,6 +228,44 @@ func TestStrictDistributionsSemantic(t *testing.T) {
 			t.Fatalf("err=%v, want unsupported-distributions", err)
 		}
 	})
+	// Custom adapters may be registered for Validate without having a
+	// methodkind distribution contract; that registration must not grant
+	// distribution support.
+	t.Run("uncontracted-custom-adapter", func(t *testing.T) {
+		valid, err := ParseProjectSchema(writeSchema(t, "schema_version = 1\n[tools.x.custom-label]\nkind = \"custom-adapter\"\n"), map[string]string{})
+		if err != nil {
+			t.Fatalf("ParseProjectSchema without distributions: %v", err)
+		}
+		if _, err := Validate(valid, []string{"custom-adapter"}); err != nil {
+			t.Fatalf("Validate registered custom adapter: %v", err)
+		}
+
+		cases := []struct {
+			name  string
+			parse func(string) (*Schema, error)
+			doc   string
+		}{
+			{
+				name:  "project-schema",
+				parse: func(path string) (*Schema, error) { return ParseProjectSchema(path, map[string]string{}) },
+				doc:   "schema_version = 1\n[tools.x.custom-label]\nkind = \"custom-adapter\"\n[[tools.x.custom-label.distributions]]\nwhen = { os = [\"linux\"] }\n",
+			},
+			{
+				name:  "manifest",
+				parse: func(path string) (*Schema, error) { return ParseManifest(path, nil) },
+				doc:   "schema_version = 1\n[packages.x.custom-label]\nkind = \"custom-adapter\"\n[[packages.x.custom-label.distributions]]\nwhen = { os = [\"linux\"] }\n",
+			},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				path := writeSchema(t, tc.doc)
+				_, err := tc.parse(path)
+				if err == nil || !strings.Contains(err.Error(), "no distribution contract") {
+					t.Fatalf("err=%v, want missing distribution contract", err)
+				}
+			})
+		}
+	})
 	// checksum_url com base :auto continua válido (herança do checksum).
 	t.Run("url-with-inherited-auto", func(t *testing.T) {
 		doc := base + "[[tools.x.github.distributions]]\nwhen = { os = [\"linux\"] }\nchecksum_url = \"https://example.com/SHA\"\n"

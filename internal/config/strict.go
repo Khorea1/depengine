@@ -543,19 +543,17 @@ func validateDistributions(raw any, base map[string]any, path string, contract *
 		*errs = append(*errs, path+": expected non-empty array of tables")
 		return
 	}
-	if known && len(contract.DistributableFields) == 0 {
+	if !known || contract == nil {
+		*errs = append(*errs, path+": method kind has no distribution contract")
+		return
+	}
+	if len(contract.DistributableFields) == 0 {
 		*errs = append(*errs, fmt.Sprintf("%s: method kind %q does not support distributions", path, contract.Kind))
 		return
 	}
 	allowed := map[string]bool{"when": true}
-	if known {
-		for _, key := range contract.DistributableFields {
-			allowed[key] = true
-		}
-	} else {
-		for _, key := range []string{"asset", "checksum", "checksum_url", "checksum_file_format", "signature_url", "binary", "entrypoints", "strip_components", "extract_to"} {
-			allowed[key] = true
-		}
+	for _, key := range contract.DistributableFields {
+		allowed[key] = true
 	}
 	for i, item := range items {
 		m, ok := item.(map[string]any)
@@ -576,11 +574,7 @@ func validateDistributions(raw any, base map[string]any, path string, contract *
 			if allowed[key] {
 				continue
 			}
-			if known {
-				*errs = append(*errs, fmt.Sprintf("%s: field %q is not specializable per distribution for method kind %q", p+"."+key, key, contract.Kind))
-			} else {
-				*errs = append(*errs, fmt.Sprintf("%s: field %q is not specializable per distribution", p+"."+key, key))
-			}
+			*errs = append(*errs, fmt.Sprintf("%s: field %q is not specializable per distribution for method kind %q", p+"."+key, key, contract.Kind))
 		}
 		validateAssetSelector(m["asset"], p+".asset", errs)
 		validateDistributionString(m, "checksum", p, errs)
