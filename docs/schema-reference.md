@@ -137,7 +137,9 @@ prettier = { node = true }     # ≡ { npm = "prettier", pnpm = "prettier", bun 
 
 ## Custom sources
 
-HTTP and GitHub downloads do not support `.deb` package lifecycles. Such artifacts are rejected before download because package name, architecture, and version identity are not persisted for reliable observation or removal; use a native package-manager method instead.
+Generic `http` and `github` methods reject `.deb` artifacts because they do not
+own dpkg package identity, observation, or removal. Use the dedicated `deb`
+method below for Debian package lifecycles.
 
 ### Cargo with a custom git source
 
@@ -210,11 +212,47 @@ placeholder is resolved before execution without access to the runtime secret.
 Without `secret_ref`, Git keeps its existing credential-helper and ambient
 credential behavior.
 
-### HTTP: download an artifact (deb, zip, binary)
+### Debian packages: install and track a `.deb`
+
+Use the dedicated `deb` method so depengine can inspect package metadata,
+verify configured identity, and persist the exact package/version/architecture
+for observation and removal:
+
+```toml
+fastfetch = { deb = {
+  url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb",
+  pkg = "fastfetch",
+  architecture = "amd64",
+  checksum = "sha256:auto",
+  when = { distro_family = ["debian", "mint"], arch = ["x86_64"] }
+} }
+```
+
+`pkg`, `version`, and `architecture` are optional expected values; when supplied,
+each must match package metadata before dpkg is invoked. Metadata is recorded
+after installation and used to refuse removal if the installed identity has
+changed. The adapter requires `dpkg`, `dpkg-deb`, and `dpkg-query`.
+
+`.deb` is a distribution-specific package format, not a portable Linux
+binary. The `deb` method accepts a generic `.deb` automatically on Debian-family
+targets (including the separate `mint` clan). On native Termux, a `.deb` built
+specifically for Termux must be scoped explicitly with
+`when = { distro_family = ["termux"] }` or `distro_id = ["termux"]` so a
+Debian/Ubuntu package is not mistaken for a Termux package merely because both
+environments provide `apt`/`dpkg`. A `proot-distro` Debian/Ubuntu guest is
+detected as that guest distro and follows the normal Debian-family rule. Other
+non-Debian targets reject `.deb` by default; an exact
+`distro_family`/`distro_id` condition acts as an explicit author override for a
+package known to be built for that target. CPU architecture remains a separate
+compatibility requirement; hard-coded `amd64`/`arm64` artifacts should also be
+gated with `when.arch` (or expressed through the appropriate architecture
+mapping/placeholders).
+
+### HTTP: download and extract an artifact (archive or binary)
 
 ```toml
 fastfetch = { http = {
-  url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.deb",
+  url = "https://github.com/fastfetch-cli/fastfetch/releases/download/{latest}/fastfetch-linux-amd64.tar.gz",
   checksum = "sha256:auto",
   when = { distro_family = ["debian", "mint"], arch = ["x86_64"] }
 } }
@@ -278,20 +316,7 @@ when authenticated GitHub release API resolution is required.
 > integrity check at all.** Treat that the same as any other
 > arbitrary-code-execution risk in the schema.
 >
-> `.deb` is a distribution-specific package format, not a portable Linux
-> binary. depengine accepts a generic `.deb` automatically on Debian-family
-> targets (including the separate `mint` clan). On native Termux, a `.deb`
-> built specifically for Termux is valid, but must be scoped explicitly with
-> `when = { distro_family = ["termux"] }` or `distro_id = ["termux"]` so a
-> Debian/Ubuntu package is not mistaken for a Termux package merely because
-> both environments provide `apt`/`dpkg`. A `proot-distro` Debian/Ubuntu guest
-> is detected as that guest distro and follows the normal Debian-family rule.
-> Other non-Debian targets reject `.deb` by default; an exact
-> `distro_family`/`distro_id` condition acts as an explicit author override for
-> a package known to be built for that target. CPU architecture remains a
-> separate compatibility requirement; hard-coded `amd64`/`arm64` artifacts
-> should also be gated with `when.arch` (or expressed through the appropriate
-> architecture mapping/placeholders).
+For Debian package compatibility and target rules, see the dedicated [`deb` method](#debian-packages-install-and-track-a-deb). Generic HTTP downloads do not install or remove `.deb` packages.
 
 | Field | Required | Description |
 |-------|----------|--------------|
