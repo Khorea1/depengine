@@ -11,15 +11,21 @@ import (
 
 // ArtifactRef identifies exactly one downloadable artifact.
 type ArtifactRef struct {
-	URL, Repo, Asset, Release, Branch, Arch, OS string
+	URL, Repo, Asset, AssetRegex, Release, Branch, Arch, OS string
 }
 
 func artifactRef(mc *config.MethodCandidate) ArtifactRef {
-	return ArtifactRef{
+	ref := ArtifactRef{
 		URL: stringConfig(mc, "url"), Repo: stringConfig(mc, "repo"), Asset: stringConfig(mc, "asset"),
 		Release: stringConfig(mc, "release"), Branch: stringConfig(mc, "branch"),
 		Arch: mc.TargetArch, OS: mc.TargetOS,
 	}
+	// Specialized regex assets materialize as { regex = "..." } maps, which
+	// string readers safely skip until this branch.
+	if form, ok := mc.Config["asset"].(map[string]any); ok {
+		ref.AssetRegex, _ = form["regex"].(string)
+	}
+	return ref
 }
 
 func stringConfig(mc *config.MethodCandidate, key string) string {
@@ -38,13 +44,13 @@ func ResolveArtifact(ctx context.Context, mc *config.MethodCandidate, rn run.Run
 func ResolveArtifactDetails(ctx context.Context, mc *config.MethodCandidate, rn run.Runner) (string, string, error) {
 	ref := artifactRef(mc)
 	if ref.URL != "" {
-		if ref.Repo != "" || ref.Asset != "" {
+		if ref.Repo != "" || ref.Asset != "" || ref.AssetRegex != "" {
 			return "", "", fmt.Errorf("artifact: url and repo+asset are mutually exclusive")
 		}
 		resolved, err := ResolveLatest(ctx, ref.URL, rn)
 		return resolved, "", err
 	}
-	if ref.Repo == "" || ref.Asset == "" {
+	if ref.Repo == "" || (ref.Asset == "" && ref.AssetRegex == "") {
 		return "", "", fmt.Errorf("artifact: no url or complete repo+asset configured")
 	}
 	release := ref.Release
@@ -53,6 +59,13 @@ func ResolveArtifactDetails(ctx context.Context, mc *config.MethodCandidate, rn 
 	}
 	if release == "latest" {
 		release = ""
+	}
+	if ref.AssetRegex != "" {
+		url, tag, err := ghrelease.ResolveRegexAssetURL(ctx, ref.Repo, ref.AssetRegex, ref.Arch, ref.OS, release, rn)
+		if err != nil {
+			return "", "", fmt.Errorf("artifact: %w", err)
+		}
+		return url, tag, nil
 	}
 	url, tag, err := ghrelease.ResolveAssetURL(ctx, ref.Repo, ref.Asset, ref.Arch, ref.OS, release, rn)
 	if err != nil {

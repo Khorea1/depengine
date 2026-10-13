@@ -196,9 +196,18 @@ func methodObjectJSONSchema(contract *methodkind.Contract, variantKind string) m
 	for _, key := range keys {
 		field := contract.Fields[key]
 		properties[key] = methodFieldJSONSchema(field)
+		if key == "asset" && contract.Kind == "github" {
+			// The principal github asset accepts the same selector
+			// shapes as distribution overrides. Every other method
+			// kind keeps the contract's string-only asset.
+			properties[key] = assetSelectorJSONSchema()
+		}
 		if field.Required {
 			required = append(required, key)
 		}
+	}
+	if len(contract.DistributableFields) > 0 {
+		properties["distributions"] = distributionsJSONSchema(contract.DistributableFields)
 	}
 	schema := map[string]any{
 		"type":                 "object",
@@ -259,6 +268,56 @@ func methodObjectJSONSchema(contract *methodkind.Contract, variantKind string) m
 		schema["oneOf"] = oneOf
 	}
 	return schema
+}
+
+// assetSelectorJSONSchema describes the shared asset-selector shape used
+// both by the principal github asset field and by distribution asset
+// overrides: a non-empty literal template string, or exactly
+// { regex = "..." }. Keep this as the single definition of the selector
+// format so the schema, strict validation, and the resolver agree.
+func assetSelectorJSONSchema() map[string]any {
+	return map[string]any{"oneOf": []any{map[string]any{"type": "string", "minLength": 1}, map[string]any{"type": "object", "required": []string{"regex"}, "properties": map[string]any{"regex": map[string]any{"type": "string", "minLength": 1}}, "additionalProperties": false}}}
+}
+
+// distributionsJSONSchema describes the per-method distributions array. The
+// allowed override keys come from the method contract's DistributableFields
+// (single source); when is always required.
+func distributionsJSONSchema(distributable []string) map[string]any {
+	allowed := map[string]bool{"when": true}
+	for _, key := range distributable {
+		allowed[key] = true
+	}
+	properties := map[string]any{
+		"when":                 map[string]any{"$ref": "#/definitions/condition"},
+		"asset":                assetSelectorJSONSchema(),
+		"checksum":             map[string]any{"type": "string", "minLength": 1},
+		"checksum_url":         map[string]any{"type": "string", "minLength": 1},
+		"checksum_file_format": map[string]any{"type": "string", "minLength": 1},
+		"signature_url":        map[string]any{"type": "string", "minLength": 1},
+		"binary":               map[string]any{"type": "string", "minLength": 1},
+		"extract_to":           map[string]any{"type": "string", "minLength": 1},
+		"strip_components":     map[string]any{"type": "integer", "minimum": 0},
+		"entrypoints":          stringMapJSONSchema(),
+	}
+	names := make([]string, 0, len(properties))
+	for key := range properties {
+		if allowed[key] {
+			names = append(names, key)
+		}
+	}
+	sort.Strings(names)
+	filtered := make(map[string]any, len(names))
+	for _, key := range names {
+		filtered[key] = properties[key]
+	}
+	return map[string]any{
+		"type": "array", "minItems": 1,
+		"items": map[string]any{
+			"type": "object", "required": []string{"when"},
+			"properties":           filtered,
+			"additionalProperties": false,
+		},
+	}
 }
 
 func secretReferenceJSONSchema() map[string]any {

@@ -182,6 +182,7 @@ func cloneMethod(method *MethodCandidate) *MethodCandidate {
 	out.PreInstall = cloneHooks(method.PreInstall)
 	out.PostInstall = cloneHooks(method.PostInstall)
 	out.Sources = cloneSources(method.Sources)
+	out.Distributions = cloneDistributions(method.Distributions)
 	out.ArchMap = cloneStringMap(method.ArchMap)
 	out.OSMap = cloneStringMap(method.OSMap)
 	if method.SecretRef != nil {
@@ -284,6 +285,60 @@ func cloneSources(sources []Source) []Source {
 	return out
 }
 
+// cloneDistributions deep-copies distribution overrides including their
+// conditions and entrypoint maps.
+func cloneDistributions(in []Distribution) []Distribution {
+	if in == nil {
+		return nil
+	}
+	out := make([]Distribution, len(in))
+	for i, d := range in {
+		out[i] = d
+		if d.When != nil {
+			out[i].When = cloneCondition(d.When)
+		}
+		out[i].Entrypoints = cloneStringMap(d.Entrypoints)
+	}
+	return out
+}
+
+// AssetSelector identifies one file inside a release: either the existing
+// literal template (placeholders such as {version}, {arch_any}, {os_any})
+// or an explicit regex. Exactly one form may be set; both empty means the
+// distribution inherits the base asset.
+type AssetSelector struct {
+	Template string
+	Regex    string
+}
+
+// Distribution is one host-compatible packaging of a method that needs it
+// (see docs/specs/github-distributions.md). A distribution never creates
+// another method and never changes method, origin, or install cycle: it only
+// narrows artifact selection/materialization fields for matching hosts.
+// Every scalar override uses an explicit Has flag so "absent" (inherit base)
+// stays distinct from a zero value; Entrypoints uses nil for absent and
+// replaces the whole map when present (no deep merge).
+type Distribution struct {
+	When                  *Condition
+	Asset                 AssetSelector
+	HasAsset              bool
+	Checksum              string
+	HasChecksum           bool
+	ChecksumURL           string
+	HasChecksumURL        bool
+	ChecksumFileFormat    string
+	HasChecksumFileFormat bool
+	SignatureURL          string
+	HasSignatureURL       bool
+	Binary                string
+	HasBinary             bool
+	ExtractTo             string
+	HasExtractTo          bool
+	StripComponents       int64
+	HasStripComponents    bool
+	Entrypoints           map[string]string
+}
+
 // MethodCandidate is one way to install the parent Tool.
 type MethodCandidate struct {
 	Kind     string
@@ -323,6 +378,10 @@ type MethodCandidate struct {
 	OSMap              map[string]string
 	Requires           []string
 	Sources            []Source
+	// Distributions holds optional per-host payload variants for methods
+	// whose upstream publishes different artifacts per platform (see
+	// docs/specs/github-distributions.md). Nil means no specialization.
+	Distributions []Distribution
 	// PreInstall/PostInstall are candidate-local lifecycle hooks. Tool-level
 	// hooks remain supported as generic hooks that are projected onto every
 	// selected candidate.

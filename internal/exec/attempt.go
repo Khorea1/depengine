@@ -101,7 +101,58 @@ func (ex *Executor) gateStaticIntent(ac *candidateAttempt, result *ToolResult) a
 		ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "skip_when", "requires", fmt.Sprintf("%v", ac.method.When))
 		return nextMethod
 	}
+
+	// Distribution specialization runs after merge and before the first
+	// effective plan: one matching distribution materializes a conventional
+	// candidate copy; none means the method is ineligible on this host;
+	// ambiguity aborts the tool (never silent fallback). The intent is
+	// rebuilt from the specialized candidate so plan and method can never
+	// describe different payloads (same kind, so the capability outcome
+	// cannot change). Methods without distributions keep the exact
+	// pre-existing flow: passthrough returns the same pointer.
+	original := ac.method
+	specialized, skipStatus, specErr := ex.specializeMethodForHost(original)
+	if specErr != nil {
+		ex.failCandidate(ac, result, specErr.Error())
+		ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "failed", "reason", specErr.Error())
+		return finishTool
+	}
+	if skipStatus != "" {
+		ex.skipCandidate(ac, result, skipStatus, "")
+		ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", skipStatus)
+		return nextMethod
+	}
+	if specialized != original {
+		ac.method = specialized
+		planIntent, mismatch = candidatePlanIntent(ac.tool, ac.method)
+		ac.planIntent = ex.hostResolvedPlanIntent(ac.method, planIntent, ac.run.clan)
+		ac.attempt.PlanIntent = ac.planIntent
+		if mismatch != "" {
+			ex.skipCandidate(ac, result, "skip_capability", mismatch)
+			ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "skip_capability", "reason", mismatch)
+			return nextMethod
+		}
+	}
 	return proceed
+}
+
+// specializeMethodForHost applies distribution specialization to one method
+// candidate. It returns the effective candidate and "" to proceed, a skip
+// status to try the next method, or a terminal error (ambiguous manifest).
+// Specialization failures are terminal by construction (wrapped in
+// terminalError, still matchable via errors.As): zero matches is reported
+// as a skip status, never as an error, so any error here describes a broken
+// manifest — ambiguous selection or an invalid effective configuration —
+// that a fallback method must not hide.
+func (ex *Executor) specializeMethodForHost(method *config.MethodCandidate) (*config.MethodCandidate, string, error) {
+	specialized, err := config.SpecializeDistribution(method, ex.facts)
+	if err != nil {
+		return nil, "", &terminalError{err: err}
+	}
+	if specialized == nil {
+		return nil, "skip_no_distribution", nil
+	}
+	return specialized, "", nil
 }
 
 // gateAdapterAvailable resolves the adapter and checks its runtime exists.
@@ -124,7 +175,10 @@ func (ex *Executor) gateAdapterAvailable(ac *candidateAttempt, result *ToolResul
 
 // resolveConcretePlan runs the single read-only resolution point and checks
 // host compatibility against the concrete plan. Resolution failures happen
-// before any mutation.
+// before any mutation. Terminal resolution failures (ambiguous or invalid
+// asset selection, integrity-class errors) abort the tool via failCandidate;
+// every other resolution failure stays recoverable and falls through to the
+// next method, preserving historic availability fallback.
 func (ex *Executor) resolveConcretePlan(ac *candidateAttempt, result *ToolResult) attemptOutcome {
 	var resolved *plan.ResolvedInstallPlan
 	var resolveErr error
@@ -135,6 +189,11 @@ func (ex *Executor) resolveConcretePlan(ac *candidateAttempt, result *ToolResult
 		resolved, resolveErr = ex.resolveCandidatePlan(ac.toolCtx, ac.tool, ac.method, ac.adapter, ac.planIntent, ac.displayKind)
 	}
 	if resolveErr != nil {
+		if IsTerminalMethodError(resolveErr) {
+			ex.failCandidate(ac, result, resolveErr.Error())
+			ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "failed", "reason", resolveErr.Error())
+			return finishTool
+		}
 		ex.skipCandidate(ac, result, "failed", resolveErr.Error())
 		return nextMethod
 	}
@@ -464,6 +523,29 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 	}
 	if err == nil {
 		return ex.finishInstalled(ac, result)
+	}
+
+	if IsTerminalMethodError(err) {
+		// Terminal install failures (integrity mismatches and other
+		// contract-terminal errors) must not silently switch source to the
+		// next method. With an active preparation transaction the commit
+		// boundary stays explicitly unresolved, exactly as for any other
+		// post-commit install failure; without one, roll back preparation
+		// and fail the tool.
+		if ac.prepared.tx != nil {
+			_ = ac.prepared.leaveCommitUnresolved()
+			ex.failCandidate(ac, result, fmt.Sprintf("install failed after transactional preparation: %v; %s", err, unresolvedCommitMessage))
+			ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "commit_unresolved", "error", result.Error)
+			return finishTool
+		}
+		if rollbackErr := ac.prepared.rollback(ac.toolCtx); rollbackErr != nil {
+			ex.failCandidate(ac, result, fmt.Sprintf("install failed: %v; source rollback failed: %v", err, rollbackErr))
+			ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "rollback_failed", "error", result.Error)
+			return finishTool
+		}
+		ex.failCandidate(ac, result, err.Error())
+		ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "failed", "error", err.Error())
+		return finishTool
 	}
 
 	if ac.prepared.tx != nil {

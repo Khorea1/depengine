@@ -252,6 +252,14 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 				localMap["os"] = resolveAlias(rawOS, mc.OSMap, defaults.OSMap, defaultOSMap)
 			}
 			mc.Config = ExpandAll(mc.Config, localMap).(map[string]any)
+			// Distribution overrides carry the same placeholders as Config
+			// ({arch}/{os} resolve per method here; every other placeholder
+			// was already expanded in the whole-tree pass). Regex bodies get
+			// the same treatment: bare {arch}/{os} expand now, while
+			// {arch_any}/{os_any}/{version} stay literal for match time.
+			for i := range mc.Distributions {
+				expandDistributionPlaceholders(&mc.Distributions[i], localMap)
+			}
 		}
 	}
 
@@ -594,6 +602,17 @@ func parseMethod(kind string, val any) (*MethodCandidate, error) {
 			mc.Sources = parseSources(rawSources)
 			delete(t, "sources")
 		}
+		if _, ok := t["distributions"]; ok {
+			mc.presence["Distributions"] = true
+		}
+		if rawDistributions, ok := t["distributions"].([]any); ok {
+			distributions, err := parseDistributions(rawDistributions)
+			if err != nil {
+				return nil, err
+			}
+			mc.Distributions = distributions
+			delete(t, "distributions")
+		}
 		if rawSecretRef, ok := t["secret_ref"]; ok {
 			mc.presence["SecretRef"] = true
 			if ref, ok := rawSecretRef.(map[string]any); ok {
@@ -801,6 +820,133 @@ func parseSources(rawSources []any) []Source {
 		sources = append(sources, source)
 	}
 	return sources
+}
+
+// parseDistributions decodes a distributions array into typed overrides.
+// Value shapes are checked here as a backstop (required when, closed field
+// list, string/table kinds); raw strict validation runs first and enforces
+// the same contract plus regex validity, negativity, and per-method field
+// policy from the methodkind metadata.
+func parseDistributions(rawDistributions []any) ([]Distribution, error) {
+	distributions := make([]Distribution, 0, len(rawDistributions))
+	for i, raw := range rawDistributions {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("distributions[%d]: must be a table", i)
+		}
+		distribution, err := parseDistribution(i, m)
+		if err != nil {
+			return nil, err
+		}
+		distributions = append(distributions, distribution)
+	}
+	return distributions, nil
+}
+
+func parseDistribution(index int, m map[string]any) (Distribution, error) {
+	var d Distribution
+	rawWhen, ok := m["when"]
+	if !ok {
+		return d, fmt.Errorf("distributions[%d]: when is required", index)
+	}
+	whenMap, ok := rawWhen.(map[string]any)
+	if !ok {
+		return d, fmt.Errorf("distributions[%d]: when must be a table", index)
+	}
+	d.When = parseCondition(whenMap)
+	setString := func(key string, target *string, has *bool) error {
+		raw, ok := m[key]
+		if !ok {
+			return nil
+		}
+		value, ok := raw.(string)
+		if !ok {
+			return fmt.Errorf("distributions[%d]: %s must be a string", index, key)
+		}
+		*target = value
+		*has = true
+		return nil
+	}
+	for _, field := range []struct {
+		key    string
+		target *string
+		has    *bool
+	}{
+		{"checksum", &d.Checksum, &d.HasChecksum},
+		{"checksum_url", &d.ChecksumURL, &d.HasChecksumURL},
+		{"checksum_file_format", &d.ChecksumFileFormat, &d.HasChecksumFileFormat},
+		{"signature_url", &d.SignatureURL, &d.HasSignatureURL},
+		{"binary", &d.Binary, &d.HasBinary},
+		{"extract_to", &d.ExtractTo, &d.HasExtractTo},
+	} {
+		if err := setString(field.key, field.target, field.has); err != nil {
+			return d, err
+		}
+	}
+	if raw, ok := m["strip_components"]; ok {
+		value, ok := raw.(int64)
+		if !ok {
+			return d, fmt.Errorf("distributions[%d]: strip_components must be an integer", index)
+		}
+		d.StripComponents = value
+		d.HasStripComponents = true
+	}
+	if raw, ok := m["asset"]; ok {
+		switch asset := raw.(type) {
+		case string:
+			d.Asset.Template = asset
+			d.HasAsset = true
+		case map[string]any:
+			regex, ok := asset["regex"].(string)
+			if !ok || len(asset) != 1 {
+				return d, fmt.Errorf("distributions[%d]: asset table must be exactly { regex = \"...\" }", index)
+			}
+			d.Asset.Regex = regex
+			d.HasAsset = true
+		default:
+			return d, fmt.Errorf("distributions[%d]: asset must be a string or { regex = \"...\" }", index)
+		}
+	}
+	if raw, ok := m["entrypoints"]; ok {
+		table, ok := raw.(map[string]any)
+		if !ok {
+			return d, fmt.Errorf("distributions[%d]: entrypoints must be a table", index)
+		}
+		entrypoints := make(map[string]string, len(table))
+		for name, target := range table {
+			endpoint, ok := target.(string)
+			if !ok {
+				return d, fmt.Errorf("distributions[%d]: entrypoints.%s must be a string", index, name)
+			}
+			entrypoints[name] = endpoint
+		}
+		d.Entrypoints = entrypoints
+	}
+	for key := range m {
+		switch key {
+		case "when", "asset", "checksum", "checksum_url", "checksum_file_format",
+			"signature_url", "binary", "extract_to", "strip_components", "entrypoints":
+		default:
+			return d, fmt.Errorf("distributions[%d]: field %q is not specializable per distribution", index, key)
+		}
+	}
+	return d, nil
+}
+
+// expandDistributionPlaceholders applies the method-effective {arch}/{os}
+// map to one distribution's string fields, mirroring Config expansion.
+func expandDistributionPlaceholders(d *Distribution, localMap map[string]string) {
+	d.Asset.Template = Expand(d.Asset.Template, localMap)
+	d.Asset.Regex = Expand(d.Asset.Regex, localMap)
+	d.Checksum = Expand(d.Checksum, localMap)
+	d.ChecksumURL = Expand(d.ChecksumURL, localMap)
+	d.ChecksumFileFormat = Expand(d.ChecksumFileFormat, localMap)
+	d.SignatureURL = Expand(d.SignatureURL, localMap)
+	d.Binary = Expand(d.Binary, localMap)
+	d.ExtractTo = Expand(d.ExtractTo, localMap)
+	for name, target := range d.Entrypoints {
+		d.Entrypoints[name] = Expand(target, localMap)
+	}
 }
 
 func parseSecretReference(raw map[string]any) *SecretReference {

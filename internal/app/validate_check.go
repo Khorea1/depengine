@@ -95,6 +95,26 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
 		}
 	}
+	if err := config.ValidateEffectiveIntegrity(s); err != nil {
+		if *validateFormat == "json" {
+			out := jsonOutput{
+				Errors: []validate.ValidationError{{
+					Code:    validate.ErrInvalidChecksum,
+					Field:   "tools",
+					Message: err.Error(),
+				}},
+			}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(out); err != nil {
+				fmt.Fprintf(os.Stderr, "error encoding JSON: %v\n", err)
+				return exitWithCode(3)
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		}
+		return exitWithCode(2)
+	}
 
 	knownKinds := exec.RegisteredKinds()
 	result := validate.ValidateSchema(s, knownKinds)

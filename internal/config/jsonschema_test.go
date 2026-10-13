@@ -64,6 +64,51 @@ func TestExamplesMatchRuntimeGrammar(t *testing.T) {
 	}
 }
 
+func TestMethodJSONSchemaDistributionsFollowsContract(t *testing.T) {
+	data, err := GenerateJSONSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]any
+	if err := json.Unmarshal(data, &root); err != nil {
+		t.Fatal(err)
+	}
+	definitions := root["definitions"].(map[string]any)
+	methodProps := func(kind string) map[string]any {
+		options := definitions[methodDefinition(kind)].(map[string]any)["oneOf"].([]any)
+		for _, raw := range options {
+			option := raw.(map[string]any)
+			if option["type"] == "object" {
+				return option["properties"].(map[string]any)
+			}
+		}
+		t.Fatalf("%s schema has no object option", kind)
+		return nil
+	}
+	github := methodProps("github")
+	raw, ok := github["distributions"]
+	if !ok {
+		t.Fatal("github schema must declare distributions")
+	}
+	items := raw.(map[string]any)["items"].(map[string]any)
+	required, _ := items["required"].([]any)
+	if len(required) != 1 || required[0] != "when" {
+		t.Fatalf("distributions items required=%v, want [when]", required)
+	}
+	itemProps := items["properties"].(map[string]any)
+	for _, key := range []string{"when", "asset", "checksum", "checksum_url", "checksum_file_format", "signature_url", "binary", "entrypoints", "strip_components", "extract_to"} {
+		if _, ok := itemProps[key]; !ok {
+			t.Errorf("distributions item missing property %q", key)
+		}
+	}
+	if _, ok := itemProps["repo"]; ok {
+		t.Error("distributions item must not accept repo")
+	}
+	if _, ok := methodProps("cargo")["distributions"]; ok {
+		t.Error("cargo schema must not declare distributions")
+	}
+}
+
 func TestMethodJSONSchemaIncludesContractCapabilities(t *testing.T) {
 	data, err := GenerateJSONSchema()
 	if err != nil {
@@ -116,5 +161,51 @@ func TestMethodJSONSchemaIncludesFieldDependencies(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("cargo schema does not encode rev -> git dependency: %#v", allOf)
+	}
+}
+
+func TestMethodJSONSchemaPrincipalAssetSelectorFollowsDistributions(t *testing.T) {
+	data, err := GenerateJSONSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]any
+	if err := json.Unmarshal(data, &root); err != nil {
+		t.Fatal(err)
+	}
+	definitions := root["definitions"].(map[string]any)
+	methodProps := func(kind string) map[string]any {
+		options := definitions[methodDefinition(kind)].(map[string]any)["oneOf"].([]any)
+		for _, raw := range options {
+			option := raw.(map[string]any)
+			if option["type"] == "object" {
+				return option["properties"].(map[string]any)
+			}
+		}
+		t.Fatalf("%s schema has no object option", kind)
+		return nil
+	}
+	githubAsset, ok := methodProps("github")["asset"].(map[string]any)
+	if !ok {
+		t.Fatal("github schema must declare asset")
+	}
+	distributions := methodProps("github")["distributions"].(map[string]any)
+	distAsset := distributions["items"].(map[string]any)["properties"].(map[string]any)["asset"]
+	if !reflect.DeepEqual(githubAsset, distAsset) {
+		t.Error("github principal asset schema must reuse the distribution selector definition")
+	}
+	if _, ok := githubAsset["oneOf"]; !ok {
+		t.Error("github principal asset must accept string or { regex }")
+	}
+	// The extension is github-only: http keeps the string-only asset.
+	httpAsset, ok := methodProps("http")["asset"].(map[string]any)
+	if !ok {
+		t.Fatal("http schema must declare asset")
+	}
+	if _, ok := httpAsset["oneOf"]; ok {
+		t.Error("http principal asset must stay string-only")
+	}
+	if httpAsset["type"] != "string" {
+		t.Errorf("http principal asset type=%v, want string", httpAsset["type"])
 	}
 }

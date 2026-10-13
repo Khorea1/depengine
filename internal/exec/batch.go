@@ -40,6 +40,16 @@ func (ex *Executor) identifyBatchCandidates(ctx context.Context, rc *runContext,
 			if method.When != nil && !method.When.Match(ex.facts) {
 				continue
 			}
+			specialized, skipStatus, specErr := ex.specializeMethodForHost(method)
+			if specErr != nil {
+				// Like capability mismatches below: defer to the serial
+				// path, which records the terminal ambiguity failure.
+				break
+			}
+			if skipStatus != "" {
+				continue
+			}
+			method = specialized
 			planIntent, mismatch := candidatePlanIntent(tool, method)
 			planIntent = ex.hostResolvedPlanIntent(method, planIntent, rc.clan)
 			if mismatch != "" {

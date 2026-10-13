@@ -10,8 +10,9 @@ import (
 )
 
 // ResolvedCandidate identifies the exact configured method selected for a
-// canonical resolved plan. Method is the original candidate pointer, including
-// its label when multiple candidates share a kind.
+// canonical resolved plan. Method is the effective candidate pointer
+// (specialized when distributions apply), including its label when multiple
+// candidates share a kind.
 type ResolvedCandidate struct {
 	Method *config.MethodCandidate
 	Plan   plan.ResolvedInstallPlan
@@ -21,6 +22,7 @@ type candidateSelection struct {
 	intent   *plan.ResolvedInstallPlan
 	resolved *plan.ResolvedInstallPlan
 	adapter  AdapterV2
+	method   *config.MethodCandidate
 	status   string
 	err      error
 }
@@ -28,14 +30,31 @@ type candidateSelection struct {
 // resolveCandidateForSelection contains the static and plan-resolution gates
 // shared by lock resolution and ExplainTool. Skippable candidate failures are
 // returned as a status/error pair so each caller can project its own contract.
+// The returned method is the specialized effective candidate; ambiguity is a
+// terminal manifest error, never a silent fallback.
 func (ex *Executor) resolveCandidateForSelection(ctx context.Context, tool *config.Tool, method *config.MethodCandidate, clan string) candidateSelection {
 	intent, mismatch := candidatePlanIntent(tool, method)
 	intent = ex.hostResolvedPlanIntent(method, intent, clan)
 	if mismatch != "" {
-		return candidateSelection{intent: intent, status: "skip_capability", err: fmt.Errorf("%s", mismatch)}
+		return candidateSelection{intent: intent, method: method, status: "skip_capability", err: fmt.Errorf("%s", mismatch)}
 	}
 	if method.When != nil && !method.When.Match(ex.facts) {
-		return candidateSelection{intent: intent, status: "skip_when", err: fmt.Errorf("when condition not met: %+v", method.When)}
+		return candidateSelection{intent: intent, method: method, status: "skip_when", err: fmt.Errorf("when condition not met: %+v", method.When)}
+	}
+	specialized, skipStatus, specErr := ex.specializeMethodForHost(method)
+	if specErr != nil {
+		return candidateSelection{intent: intent, method: method, status: "failed", err: specErr}
+	}
+	if skipStatus != "" {
+		return candidateSelection{intent: intent, method: method, status: skipStatus, err: fmt.Errorf("no distribution matches this host")}
+	}
+	if specialized != method {
+		method = specialized
+		intent, mismatch = candidatePlanIntent(tool, method)
+		intent = ex.hostResolvedPlanIntent(method, intent, clan)
+		if mismatch != "" {
+			return candidateSelection{intent: intent, method: method, status: "skip_capability", err: fmt.Errorf("%s", mismatch)}
+		}
 	}
 	displayKind := method.Kind
 	if method.Label != "" {
@@ -43,22 +62,22 @@ func (ex *Executor) resolveCandidateForSelection(ctx context.Context, tool *conf
 	}
 	adapter := ex.LookupAdapter(method.Kind)
 	if adapter == nil {
-		return candidateSelection{intent: intent, status: "skip_unavailable", err: fmt.Errorf("no adapter registered for kind %q", displayKind)}
+		return candidateSelection{intent: intent, method: method, status: "skip_unavailable", err: fmt.Errorf("no adapter registered for kind %q", displayKind)}
 	}
 	if !adapter.Available(ctx, ex.probeRunner(tool.Name, displayKind)) {
-		return candidateSelection{intent: intent, adapter: adapter, status: "skip_unavailable", err: fmt.Errorf("adapter %q not available (binary not on PATH)", displayKind)}
+		return candidateSelection{intent: intent, adapter: adapter, method: method, status: "skip_unavailable", err: fmt.Errorf("adapter %q not available (binary not on PATH)", displayKind)}
 	}
 	resolved, err := ex.resolveCandidatePlan(ctx, tool, method, adapter, intent, displayKind)
 	if err != nil {
-		return candidateSelection{intent: intent, adapter: adapter, status: "failed", err: err}
+		return candidateSelection{intent: intent, adapter: adapter, method: method, status: "failed", err: err}
 	}
 	if resolved == nil {
-		return candidateSelection{intent: intent, adapter: adapter, status: "failed", err: fmt.Errorf("%s: resolver returned no plan", displayKind)}
+		return candidateSelection{intent: intent, adapter: adapter, method: method, status: "failed", err: fmt.Errorf("%s: resolver returned no plan", displayKind)}
 	}
 	if err := adapter.CheckHostCompatibility(tool, method, resolved, ex.facts, clan); err != nil {
-		return candidateSelection{intent: intent, resolved: resolved, adapter: adapter, status: "skip_unavailable", err: err}
+		return candidateSelection{intent: intent, resolved: resolved, adapter: adapter, method: method, status: "skip_unavailable", err: err}
 	}
-	return candidateSelection{intent: intent, resolved: resolved, adapter: adapter}
+	return candidateSelection{intent: intent, resolved: resolved, adapter: adapter, method: method}
 }
 
 // ResolveLockCandidate resolves the first candidate suitable for the v2 lock
@@ -74,11 +93,20 @@ func (ex *Executor) ResolveLockCandidate(ctx context.Context, tool *config.Tool,
 	for _, method := range ex.SelectedMethods(tool, clan) {
 		selection := ex.resolveCandidateForSelection(ctx, tool, method, clan)
 		if selection.err != nil {
+			// Terminal failures abort the lock resolution: falling through
+			// to the next method would hide a broken manifest (ambiguous
+			// distributions, asset mismatch, invalid selector) behind a
+			// silent source switch. Recoverable failures keep historic
+			// fallback. Classified centrally, never by error text.
+			if IsTerminalMethodError(selection.err) {
+				return ResolvedCandidate{}, selection.err
+			}
 			if selection.status == "failed" || lastErr == nil {
 				lastErr = selection.err
 			}
 			continue
 		}
+		method = selection.method
 		resolved := selection.resolved
 		configuredSources, err := sourcesForResolvedPlan(method.Sources, resolved)
 		if err != nil {

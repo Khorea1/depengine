@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Validate effective GitHub distribution integrity after schema/manifest merge while preserving `validate --format json`; classify detached-signature verification failures as terminal, compute preflight elevation only from host-compatible methods and their effective privileged targets.
 - Package-manager Observe probes for npm, Bun, pipx, pnpm, Yarn, Composer, uv, and Gem distinguish confirmed presence or absence from unknown or broken CLI output, preserving reported installed versions on drift.
 - Pin golangci-lint v2.14.0 in CI for Go 1.27 export-data compatibility, verified against Go 1.27.2.
 - Rehydrate transient target architecture and OS from current host facts when resolving state-restored candidates for removal or undo; do not persist host-specific selection metadata.
@@ -20,7 +21,7 @@
 - Persist HTTP archive payload ownership in state and in a payload-local ownership marker; replacement/removal requires both durable ownership intent and matching filesystem evidence, and arbitrary `extract_to` paths are never treated as exclusive.
 - Route Scoop package lifecycle and bucket source operations through one Scoop-local semantic runtime boundary; official CLI decoding is runtime-owned and capability checks precede requested mutations, without changing manifest method identity.
 - Report global tool and method timeout failures with the correct timeout scope and configured duration.
-- Replacement recovery now reconstructs the configured candidate intent and pins it to the persisted immutable plan before observing or mutating the host; retries resolve method-scoped removal credentials and use the same timeout, environment omission, and elevation safeguards.
+- Replacement recovery now reconstructs host-specialized candidate intent and pins it to the persisted immutable plan before observing or mutating the host; retries resolve method-scoped removal credentials and use the same timeout, environment omission, and elevation safeguards.
 - Upgrade replacement now requires and clones the discovery-time tracked state, then compares it with durable state under lock before writing replacement WAL or removing the old installation. The previous method is resolved by `config.FindMethodCandidate` using its exact configured kind and label.
 - Lock migration no longer treats matching `MethodsHash` values as proof that a historical v1 checksum belongs to a newly resolved artifact. Checksum carry-forward is limited to an exact artifact match in a prior v2 projection.
 - Profiled v2 updates refresh retained entries when method or source metadata is missing or drifted, parse source keys without truncating slash-containing tool names, and build projections through `lock.NewUniversal`.
@@ -28,5 +29,5 @@
 - Status and SBOM now surface malformed, unsupported, and unreadable lockfile errors instead of silently treating them as absent. A missing lock remains optional.
 - Non-frozen installs resolve legacy lock identity before execution, fail if resolution fails, and persist that same preflight identity instead of resolving mutable selectors again after installation.
 - State-tracked upgrades persist exact resource claims with replacement intent, atomically commit verified installed state and ownership while retaining the replacement WAL for hook recovery, and persist a boundary before the after-upgrade hook so uncertain hook outcomes are never blindly replayed.
-- GitHub release assets retain declared checksum and detached-signature metadata through resolution and fail verification before extraction or installation mutates the payload.
+- GitHub release assets retain declared checksum and detached-signature metadata through resolution and fail verification before extraction or installation mutates the payload, including after a checksum-triggered cache refetch.
 - When the home and XDG storage bases are unavailable, state and download cache use a per-user fallback instead of shared or relative paths: a private system-temp root on Unix (owner-only directories and files, with ownership/permission checks) or the OS-provided per-user cache directory on Windows and other platforms (trusting the OS-managed user ACL). Resolution fails closed when the fallback cannot be resolved or secured.

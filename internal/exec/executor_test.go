@@ -291,7 +291,8 @@ func (m *compatibilityMockAdapter) CheckHostCompatibility(_ *config.Tool, _ *con
 
 type elevationMockAdapter struct {
 	testMockAdapter
-	required bool
+	required     bool
+	requiredFunc func(*config.Tool, *config.MethodCandidate) bool
 }
 
 func (m *elevationMockAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
@@ -324,7 +325,10 @@ func (*elevationMockAdapter) CheckHostCompatibility(*config.Tool, *config.Method
 	return nil
 }
 
-func (m *elevationMockAdapter) RequiresElevation(*config.Tool, *config.MethodCandidate) bool {
+func (m *elevationMockAdapter) RequiresElevation(tool *config.Tool, mc *config.MethodCandidate) bool {
+	if m.requiredFunc != nil {
+		return m.requiredFunc(tool, mc)
+	}
 	return m.required
 }
 
@@ -652,6 +656,114 @@ func TestExecutorSkipsElevationForGatedNativeMethod(t *testing.T) {
 	}
 	if runner.starts != 0 || runner.stops != 0 {
 		t.Fatalf("elevation session starts/stops = %d/%d, want 0/0", runner.starts, runner.stops)
+	}
+}
+
+func TestExecutorElevationPreflightUsesEffectiveDistribution(t *testing.T) {
+	facts := &platform.Facts{OS: "linux", TargetArch: "x86_64"}
+	effectiveEntrypoints := map[string]any{"demo": "bin/demo"}
+	tests := []struct {
+		name             string
+		methodWhen       *config.Condition
+		distributionWhen *config.Condition
+		sources          []config.Source
+		scope            string
+		extractTo        string
+		want             bool
+		wantAdapterCall  bool
+	}{
+		{
+			name:             "method when excludes host",
+			methodWhen:       &config.Condition{OS: []string{"windows"}},
+			distributionWhen: &config.Condition{OS: []string{"linux"}},
+			scope:            "system",
+			extractTo:        "/usr/local/lib/demo",
+		},
+		{
+			name:             "distribution excludes host",
+			distributionWhen: &config.Condition{OS: []string{"windows"}},
+			scope:            "system",
+			extractTo:        "/usr/local/lib/demo",
+		},
+		{
+			name:             "ineligible distribution ignores privileged source",
+			distributionWhen: &config.Condition{OS: []string{"windows"}},
+			sources:          []config.Source{{Kind: "apt-ppa"}},
+			scope:            "user",
+		},
+		{
+			name:             "user method sees effective overrides",
+			distributionWhen: &config.Condition{OS: []string{"linux"}},
+			scope:            "user",
+			extractTo:        "~/.local/share/demo",
+			wantAdapterCall:  true,
+		},
+		{
+			name:             "system method remains elevated",
+			distributionWhen: &config.Condition{OS: []string{"linux"}},
+			scope:            "system",
+			extractTo:        "/usr/local/lib/demo",
+			want:             true,
+			wantAdapterCall:  true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var seen *config.MethodCandidate
+			adapter := &elevationMockAdapter{
+				testMockAdapter: testMockAdapter{kindValue: "elevated"},
+				requiredFunc: func(_ *config.Tool, method *config.MethodCandidate) bool {
+					seen = method
+					if method.Config["scope"] != tc.scope {
+						t.Errorf("effective scope = %v, want %q", method.Config["scope"], tc.scope)
+					}
+					if tc.extractTo != "" {
+						if got := method.Config["extract_to"]; got != tc.extractTo {
+							t.Errorf("effective extract_to = %v, want %q", got, tc.extractTo)
+						}
+						if got := method.Config["entrypoints"]; !reflect.DeepEqual(got, effectiveEntrypoints) {
+							t.Errorf("effective entrypoints = %#v, want %#v", got, effectiveEntrypoints)
+						}
+					}
+					return method.Config["scope"] == "system"
+				},
+			}
+			ex := New()
+			WithFacts(facts)(ex)
+			WithAdapters(adapter)(ex)
+			distributions := []config.Distribution(nil)
+			if tc.distributionWhen != nil {
+				distributions = []config.Distribution{{
+					When:         tc.distributionWhen,
+					ExtractTo:    tc.extractTo,
+					HasExtractTo: true,
+					Entrypoints:  map[string]string{"demo": "bin/demo"},
+				}}
+			}
+			tool := &config.Tool{
+				Name:       "demo",
+				MethodOnly: []string{"elevated"},
+				Methods: []*config.MethodCandidate{{
+					Kind: "elevated",
+					When: tc.methodWhen,
+					Config: map[string]any{
+						"scope":      tc.scope,
+						"extract_to": "/base/payload",
+						"asset":      "release.tar.gz",
+					},
+					Sources:       tc.sources,
+					Distributions: distributions,
+				}},
+			}
+			rc := ex.newRunContext(context.Background(), &config.Schema{Tools: map[string]*config.Tool{"demo": tool}}, "unknown")
+			if got := ex.needsElevation(rc); got != tc.want {
+				t.Fatalf("needsElevation() = %v, want %v", got, tc.want)
+			}
+			if (seen != nil) != tc.wantAdapterCall {
+				t.Fatalf("RequiresElevation called = %v, want %v", seen != nil, tc.wantAdapterCall)
+			}
+		})
 	}
 }
 

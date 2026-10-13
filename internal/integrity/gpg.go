@@ -3,6 +3,7 @@ package integrity
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,10 @@ import (
 	"github.com/Khorea1/depengine/internal/artifact"
 	"github.com/Khorea1/depengine/internal/run"
 )
+
+// ErrSignatureVerification marks an actual detached-signature or signer-identity failure.
+// Key lookup, download, and GPG availability errors remain recoverable.
+var ErrSignatureVerification = errors.New("gpg signature verification failed")
 
 // DefaultKeyServer is the GPG keyserver used to receive signing keys by fingerprint.
 // Override this for air-gapped environments or custom keyservers.
@@ -97,18 +102,21 @@ func gpgVerifyWithIdentityCheck(ctx context.Context, rn run.Runner, msys bool, c
 	// Run verification with status output for fingerprint extraction.
 	res := rn.Run(ctx, "gpg", "--homedir", gpgPath(msys, homedir), "--verify", "--batch", "--status-fd=1", gpgPath(msys, signatureFile), gpgPath(msys, checksumFile))
 	if err := run.CheckResultCompleteOutput(res, "gpg: signature verification failed"); err != nil {
-		return err
+		if res.Err != nil || res.WaitErr != nil || res.ExitCode == 0 {
+			return err
+		}
+		return fmt.Errorf("gpg: %w: %w", ErrSignatureVerification, err)
 	}
 
 	// Extract the actual signer's primary fingerprint from the status output.
 	actualFPR, ok := parseVALIDSIGPrimaryFingerprint(res.Stdout)
 	if !ok {
-		return fmt.Errorf("gpg: unable to determine signer fingerprint from status output")
+		return fmt.Errorf("gpg: %w: unable to determine signer fingerprint from status output", ErrSignatureVerification)
 	}
 
 	// Enforce identity match.
 	if normalizeFingerprint(actualFPR) != normalizeFingerprint(expectedFPR) {
-		return fmt.Errorf("gpg: signature was made by %s, expected %s", actualFPR, expectedFPR)
+		return fmt.Errorf("gpg: %w: signature was made by %s, expected %s", ErrSignatureVerification, actualFPR, expectedFPR)
 	}
 
 	return nil

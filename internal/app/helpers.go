@@ -157,6 +157,10 @@ func loadProject(schemaPath string, opts projectLoadOptions) (*loadedProject, er
 		}
 	}
 
+	if err := config.ValidateEffectiveIntegrity(schema); err != nil {
+		return nil, err
+	}
+
 	vr := validate.ValidateSchema(schema, exec.RegisteredKinds())
 	if vr.HasErrors() {
 		for _, validationErr := range vr.Errors {

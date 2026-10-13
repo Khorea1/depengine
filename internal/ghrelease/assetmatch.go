@@ -44,6 +44,54 @@ func synonymGroup(table map[string][]string, value string) string {
 	return "(?:" + strings.Join(escaped, "|") + ")"
 }
 
+// CompileLiteralPattern compiles a filename template (the plain string
+// AssetSelector form) into an anchored, case-insensitive regexp. Exported
+// alongside CompileExplicitRegex so resolution can be tested against
+// in-memory release catalogs without GitHub API access.
+func CompileLiteralPattern(assetPattern, tag, arch, osName string) (*regexp.Regexp, error) {
+	return assetPatternRegexp(assetPattern, tag, arch, osName)
+}
+
+// CompileExplicitRegex compiles an explicit asset regex (the { regex = "..." }
+// AssetSelector form) into an anchored, case-insensitive regexp matched
+// against real release asset names. Unlike assetPatternRegexp, the expression
+// itself is regex: only the three known placeholders are substituted (with
+// the same escaped groups), and every other character passes through raw, so
+// regex operators, character classes, and quantifiers keep working. Unknown
+// {...} tokens are left untouched.
+//
+// Anchoring wraps the whole expression in a non-capturing group:
+// ^(?:EXPR)$. A bare "^" + expr + "$" would let a top-level alternation
+// escape the anchors (^a|b$ matches "xa" via the second branch and "bx"
+// via the first), silently turning an exact selector into a partial match.
+func CompileExplicitRegex(expr, tag, arch, osName string) (*regexp.Regexp, error) {
+	versionGroup := "(?:" + regexp.QuoteMeta(tag) + "|" + regexp.QuoteMeta(strings.TrimPrefix(tag, "v")) + ")"
+	replacer := strings.NewReplacer(
+		"{version}", versionGroup,
+		"{arch_any}", synonymGroup(archSynonyms, arch),
+		"{os_any}", synonymGroup(osSynonyms, osName),
+	)
+	pattern := "^(?:" + replacer.Replace(expr) + ")$"
+
+	re, err := regexp.Compile("(?i)" + pattern)
+	if err != nil {
+		return nil, fmt.Errorf("invalid asset regex %q: %w", expr, err)
+	}
+	return re, nil
+}
+
+// MatchAssetNames returns the subset of names matched by re. Pure: no
+// network, so resolution can be tested against in-memory release catalogs.
+func MatchAssetNames(re *regexp.Regexp, names []string) []string {
+	matched := make([]string, 0, 1)
+	for _, name := range names {
+		if re.MatchString(name) {
+			matched = append(matched, name)
+		}
+	}
+	return matched
+}
+
 // assetPatternRegexp compiles assetPattern (a filename template understood
 // by ResolveAssetURL — see its doc comment for the placeholder list) into an
 // anchored, case-insensitive regexp matched against real release asset

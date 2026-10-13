@@ -240,6 +240,62 @@ func TestResolveAssetURLRejectsMultipleMatches(t *testing.T) {
 	}
 }
 
+func TestResolveRegexAssetURLMatchesSingleAsset(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/regex-owner/regex-repo/releases/latest" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tag_name": "v1.2.3", "assets": [{"name": "atlas-1.2.3-gnu-linux-x86_64.tar.gz", "browser_download_url": "https://example.com/atlas.tar.gz"}, {"name": "atlas-1.2.3-darwin-arm64.tar.gz", "browser_download_url": "https://example.com/mac.tar.gz"}]}`))
+	}))
+	t.Cleanup(ts.Close)
+	r := newTestResolver(ts.URL)
+
+	url, tag, err := r.ResolveRegexAssetURL(context.Background(), "regex-owner/regex-repo", `atlas-{version}-(?:linux|gnu-linux)-{arch_any}\.tar\.gz`, "x86_64", "linux", "", run.OSExecRunner{})
+	if err != nil {
+		t.Fatalf("ResolveRegexAssetURL: %v", err)
+	}
+	if tag != "v1.2.3" || url != "https://example.com/atlas.tar.gz" {
+		t.Fatalf("got (%q, %q)", url, tag)
+	}
+}
+
+func TestResolveRegexAssetURLRejectsAmbiguity(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tag_name":"v1.0.0","assets":[{"name":"tool-linux-x86_64","browser_download_url":"https://example.com/a"},{"name":"tool-linux-amd64","browser_download_url":"https://example.com/b"}]}`))
+	}))
+	t.Cleanup(ts.Close)
+	r := newTestResolver(ts.URL)
+
+	_, _, err := r.ResolveRegexAssetURL(context.Background(), "amb-owner/amb-repo", `tool-{os_any}-{arch_any}`, "x86_64", "linux", "", run.OSExecRunner{})
+	if err == nil || !strings.Contains(err.Error(), "multiple assets") {
+		t.Fatalf("err=%v, want ambiguity without heuristics", err)
+	}
+}
+
+func TestResolveRegexAssetURLNoMatchListsAvailable(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tag_name":"v1.0.0","assets":[{"name":"checksums.txt"},{"name":"tool-darwin-arm64"}]}`))
+	}))
+	t.Cleanup(ts.Close)
+	r := newTestResolver(ts.URL)
+
+	_, _, err := r.ResolveRegexAssetURL(context.Background(), "zero-owner/zero-repo", `tool-{os_any}-{arch_any}`, "x86_64", "linux", "", run.OSExecRunner{})
+	if err == nil || !strings.Contains(err.Error(), "available assets: checksums.txt, tool-darwin-arm64") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestResolveRegexAssetURLRejectsInvalidRegex(t *testing.T) {
+	r := newTestResolver("http://127.0.0.1:9")
+	_, _, err := r.ResolveRegexAssetURL(context.Background(), "bad-owner/bad-repo", `tool-([`, "x86_64", "linux", "", run.OSExecRunner{})
+	if err == nil || !strings.Contains(err.Error(), "invalid asset regex") {
+		t.Fatalf("err=%v, want compile failure before any fetch", err)
+	}
+}
+
 func TestResolveAssetURLWithSlashInRefEscapesTagPath(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wantEscaped := "/repos/slash-owner/slash-repo/releases/tags/release%2Fv1"

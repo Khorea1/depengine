@@ -16,6 +16,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/downloadcache"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/integrity"
 	"github.com/Khorea1/depengine/internal/log"
 	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/plan"
@@ -88,16 +89,36 @@ func resolveDownloadPlan(ctx context.Context, rn run.Runner, mc *config.MethodCa
 	return &resolved, nil
 }
 
+// assetSelectorIsRegex reports whether the candidate selects its GitHub
+// asset with an explicit { regex = "..." } map instead of a filename. The
+// selector text carries no format signal: only the resolved concrete URL
+// (or persisted install state) can say whether the payload is an archive.
+func assetSelectorIsRegex(mc *config.MethodCandidate) bool {
+	if mc == nil {
+		return false
+	}
+	_, ok := mc.Config["asset"].(map[string]any)
+	return ok
+}
+
 // RequiresElevation applies the same path-derived default and explicit
 // sudo_required override used by Install.
 func (a *HTTPAdapter) RequiresElevation(tool *config.Tool, mc *config.MethodCandidate) bool {
-	extractTo := "/usr/local/bin"
-	if configured, ok := mc.Config["extract_to"].(string); ok && configured != "" {
-		extractTo = configured
-	}
 	artifactName := stringConfig(mc, "url")
 	if artifactName == "" {
 		artifactName = stringConfig(mc, "asset")
+	}
+	if artifactName == "" && assetSelectorIsRegex(mc) {
+		// The selector format is unknowable without release-API resolution,
+		// which this probe must not trigger. Require elevation when either
+		// the archive destination or the raw-binary placement would need
+		// it; the exact gate is re-enforced at install time once the
+		// concrete URL is known.
+		return requiresElevationForUnknownArtifact(tool, mc)
+	}
+	extractTo := "/usr/local/bin"
+	if configured, ok := mc.Config["extract_to"].(string); ok && configured != "" {
+		extractTo = configured
 	}
 	if isArchive(fileExtension(artifactName)) {
 		extractTo = archiveTarget(tool, mc)
@@ -112,6 +133,26 @@ func (a *HTTPAdapter) RequiresElevation(tool *config.Tool, mc *config.MethodCand
 	if isArchive(fileExtension(artifactName)) && len(entrypoints(mc)) > 0 {
 		linkDir := linkTargetDir(mc, extractTo, tool)
 		required = required || defaultSudoRequired(linkDir)
+	}
+	return required
+}
+
+// requiresElevationForUnknownArtifact answers elevation for a regex-selected
+// artifact whose format is unknowable without release-API resolution (which
+// this probe must not trigger). It requires elevation when either the
+// archive destination or the raw-binary placement would need it, plus the
+// launcher directory when entrypoints are declared. An explicit sudo_required
+// value overrides payload placement defaults; a privileged launcher directory
+// remains an independent elevation requirement, matching known archives.
+func requiresElevationForUnknownArtifact(tool *config.Tool, mc *config.MethodCandidate) bool {
+	archiveRoot := config.ExpandHomeDir(archiveTarget(tool, mc))
+	rawRoot := config.ExpandHomeDir(PlacementOrDefault(tool, mc, "/usr/local/bin", "").InstallRoot)
+	required := defaultSudoRequired(archiveRoot) || defaultSudoRequired(rawRoot)
+	if configured, ok := mc.Config["sudo_required"].(bool); ok {
+		required = configured
+	}
+	if len(entrypoints(mc)) > 0 {
+		required = required || defaultSudoRequired(linkTargetDir(mc, archiveRoot, tool))
 	}
 	return required
 }
@@ -401,10 +442,15 @@ func (a *HTTPAdapter) verifyDownloadedArtifact(ctx context.Context, rn run.Runne
 	if checksum == "" {
 		return nil
 	}
-	if err := a.verifyChecksum(ctx, rn, filePath, resolvedURL, checksum, mc); err == nil {
+	if err := a.verifyChecksum(ctx, rn, filePath, resolvedURL, checksum, mc); err != nil {
+		if errors.Is(err, integrity.ErrSignatureVerification) {
+			return &exec.IntegrityError{Method: mc.Kind, Reason: "gpg signature verification failed", Err: err}
+		}
+		if !fromCache {
+			return fmt.Errorf("http: checksum: %w", err)
+		}
+	} else {
 		return nil
-	} else if !fromCache {
-		return fmt.Errorf("http: checksum: %w", err)
 	}
 
 	log.Default.Warn("cached copy failed checksum, re-downloading", "tool", tool.Name)
@@ -415,6 +461,9 @@ func (a *HTTPAdapter) verifyDownloadedArtifact(ctx context.Context, rn run.Runne
 		return fmt.Errorf("http: download %s (re-download): %w", tool.Name, err)
 	}
 	if err := a.verifyChecksum(ctx, rn, filePath, resolvedURL, checksum, mc); err != nil {
+		if errors.Is(err, integrity.ErrSignatureVerification) {
+			return &exec.IntegrityError{Method: mc.Kind, Reason: "gpg signature verification failed", Err: err}
+		}
 		return fmt.Errorf("http: checksum: %w", err)
 	}
 	return nil
@@ -717,7 +766,12 @@ func (a *HTTPAdapter) Remove(ctx context.Context, rn run.Runner, tool *config.To
 	if artifactName == "" {
 		artifactName, _ = mc.Config["asset"].(string)
 	}
-	if isArchive(fileExtension(artifactName)) || len(entrypoints(mc)) > 0 {
+	// Persisted install state is authoritative for the payload shape. A
+	// regex selector's text carries no format signal, so a regex-installed
+	// archive without entrypoints still takes the archive path via
+	// OwnsArchivePayload; the filesystem ownership marker below verifies
+	// it, and unrecorded legacy payloads keep failing closed.
+	if isArchive(fileExtension(artifactName)) || len(entrypoints(mc)) > 0 || ownsArchivePayload(mc) {
 		if !ownsArchivePayload(mc) {
 			return fmt.Errorf("http: refusing to remove archive payload: installation ownership state is missing; manual cleanup or a fresh install into an empty destination is required")
 		}

@@ -82,7 +82,7 @@ type ToolResult struct {
 type MethodAttempt struct {
 	Kind       string
 	Label      string                    // custom candidate label ("", when unlabeled)
-	Status     string                    // "skip_when" | "skip_unavailable" | "skip_policy" | "skip_capability" | "skip_already" | "success" | "failed" | "virtual"
+	Status     string                    // "skip_when" | "skip_unavailable" | "skip_policy" | "skip_capability" | "skip_no_distribution" | "skip_already" | "success" | "failed" | "virtual"
 	Error      string                    // explanation/reason for explain and failures
 	Intent     map[string]string         // normalized, non-secret identity fields for explain/why
 	PlanIntent *plan.ResolvedInstallPlan // latest candidate plan at the planning/execution boundary reached by this attempt
