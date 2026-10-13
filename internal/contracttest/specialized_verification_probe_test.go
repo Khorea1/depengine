@@ -82,6 +82,7 @@ func TestSpecializedVerificationFieldProbes(t *testing.T) {
 		}{
 			{"pkg", map[string]any{"pkg": "nodejs"}, map[string]any{"pkg": "ruby"}, plan.ResolvedIdentity{Package: "nodejs"}, plan.ResolvedIdentity{Package: "ruby"}, map[string]string{"asdf list nodejs": "20.1.0\n", "asdf list ruby": ""}},
 			{"version", map[string]any{"pkg": "nodejs", "version": "20.1.0"}, map[string]any{"pkg": "nodejs", "version": "22.0.0"}, plan.ResolvedIdentity{Package: "nodejs", Version: "20.1.0"}, plan.ResolvedIdentity{Package: "nodejs", Version: "22.0.0"}, map[string]string{"asdf list nodejs": "20.1.0\n"}},
+			{"backend", map[string]any{"pkg": "can1357/oh-my-pi", "backend": "github"}, map[string]any{"pkg": "can1357/oh-my-pi", "backend": "cargo"}, plan.ResolvedIdentity{Package: "can1357/oh-my-pi", Source: "github"}, plan.ResolvedIdentity{Package: "can1357/oh-my-pi", Source: "cargo"}, map[string]string{"mise ls github:can1357/oh-my-pi --installed --json": `[{"version":"1.2.3","installed":true}]`, "mise ls cargo:can1357/oh-my-pi --installed --json": `[]`}},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				runner := &verifyStateRunner{responses: tc.responses}

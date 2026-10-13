@@ -6,6 +6,7 @@ func init() {
 		"sdkman.version": {Consumer: "SDKManAdapter.Observe", Rationale: "Exact SDKMAN version verification checks the requested version directory rather than the current symlink."},
 		"asdf.pkg":       {Consumer: "AsdfAdapter.Observe", Rationale: "The asdf list query is scoped to the configured plugin name."},
 		"asdf.version":   {Consumer: "AsdfAdapter.Observe", Rationale: "The listed version must match the exact configured asdf version."},
+		"asdf.backend":   {Consumer: "AsdfAdapter.Observe", Rationale: "The configured mise backend scopes the installed-package observation to that backend namespace."},
 		"aur.pkg":        {Consumer: "AURAdapter.Observe", Rationale: "The helper's installed query selects the configured package name."},
 		"pacstall.pkg":   {Consumer: "PacstallAdapter.Observe", Rationale: "The Pacstall inspection command selects the configured package name."},
 		"yarn-berry.pkg": {Consumer: "YarnBerryAdapter.Observe", Rationale: "Local module resolution is queried for the configured package name."},

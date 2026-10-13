@@ -88,6 +88,31 @@ func TestAsdfAdapterMiseBackendLifecycle(t *testing.T) {
 	}
 }
 
+func TestAsdfAdapterMiseBackendResolveIdentity(t *testing.T) {
+	adapter := NewAsdfAdapter()
+	tool, defaultMethod := asdfTool("demo", "can1357/oh-my-pi")
+	backendMethod := *defaultMethod
+	backendMethod.Config = map[string]any{"pkg": "can1357/oh-my-pi", "backend": "github"}
+	intent := plan.New(tool.Name, "asdf", true)
+	intent.Identity.Package = "can1357/oh-my-pi"
+	intent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
+
+	defaultResolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, defaultMethod, &intent)
+	if err != nil {
+		t.Fatalf("ResolvePlan(default) error: %v", err)
+	}
+	backendResolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, &backendMethod, &intent)
+	if err != nil {
+		t.Fatalf("ResolvePlan(github) error: %v", err)
+	}
+	if defaultResolved.Identity.Source != "" || backendResolved.Identity.Source != "github" {
+		t.Fatalf("resolved source A/B = %q / %q; want empty / github", defaultResolved.Identity.Source, backendResolved.Identity.Source)
+	}
+	if intent.Identity.Source != "" {
+		t.Fatalf("ResolvePlan mutated input source: %q", intent.Identity.Source)
+	}
+}
+
 func TestAsdfAdapterV2ResolvesAndInstallsAsdf(t *testing.T) {
 	tool, mc := asdfTool("node", "nodejs")
 	mc.Config["version"] = "20.1.0"
