@@ -17,6 +17,9 @@ var debArtifactExtensions = []string{".deb"}
 // transport is universally available, but a .deb payload is not a portable
 // Linux binary merely because the CPU architecture matches.
 func (a *HTTPAdapter) CheckHostCompatibility(tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan, facts *platform.Facts, clan string) error {
+	if err := checkPortableExecutableHostCompatibility(mc, intent, facts); err != nil {
+		return err
+	}
 	return checkDownloadHostCompatibility(mc, intent, facts, clan)
 }
 
@@ -25,7 +28,37 @@ func (a *HTTPAdapter) CheckHostCompatibility(tool *config.Tool, mc *config.Metho
 // allowing the two methods to disagree here would make fallback/dry-run
 // results depend on which transport spelling the schema used.
 func (a *GitHubAdapter) CheckHostCompatibility(tool *config.Tool, mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan, facts *platform.Facts, clan string) error {
+	if err := checkPortableExecutableHostCompatibility(mc, intent, facts); err != nil {
+		return err
+	}
 	return checkDownloadHostCompatibility(mc, intent, facts, clan)
+}
+
+func checkPortableExecutableHostCompatibility(mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan, facts *platform.Facts) error {
+	if mc == nil || mc.Config == nil {
+		return nil
+	}
+	enabled, _ := mc.Config["portable_executable"].(bool)
+	if !enabled {
+		return nil
+	}
+	if facts == nil || !strings.EqualFold(facts.OS, "windows") {
+		return fmt.Errorf("portable_executable requires Windows host facts")
+	}
+	resolvedURL := ""
+	if intent != nil && len(intent.Artifacts) == 1 {
+		resolvedURL = intent.Artifacts[0].URL
+	}
+	if resolvedURL == "" {
+		resolvedURL, _ = mc.Config["url"].(string)
+	}
+	if resolvedURL == "" {
+		resolvedURL, _ = mc.Config["asset"].(string)
+	}
+	if artifact.Extension(resolvedURL, []string{".exe"}) != ".exe" {
+		return fmt.Errorf("portable_executable requires a resolved .exe artifact")
+	}
+	return nil
 }
 
 func checkDownloadHostCompatibility(mc *config.MethodCandidate, intent *plan.ResolvedInstallPlan, facts *platform.Facts, clan string) error {

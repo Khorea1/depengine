@@ -37,7 +37,7 @@ func TestPortableWindowsExecutableInstallsObservesAndRemovesAsRawPayload(t *test
 		t.Fatalf("Install() = %v", err)
 	}
 	path := filepath.Join(root, "cli.exe")
-	got, err := os.ReadFile(path)
+	got, err := os.ReadFile(path) // #nosec G304 -- path is below this test's t.TempDir().
 	if err != nil {
 		t.Fatalf("installed payload: %v", err)
 	}

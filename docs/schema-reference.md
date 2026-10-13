@@ -336,7 +336,7 @@ For Debian package compatibility and target rules, see the dedicated [`deb` meth
 | `entrypoints` | no | Map stable command names to relative files inside `extract_to`, e.g. `{ nvim = "bin/nvim" }`. |
 | `link_dir` | no | Launcher directory. Defaults to `~/.local/bin` for user payloads and `/usr/local/bin` for system payloads. |
 | `binary` | no | Installed filename for a direct asset, or payload name used by check/remove. HTTP/GitHub values must be a single filename; absolute, drive-qualified, traversal, and separator-containing values are rejected. |
-| `portable_executable` | no | Explicit opt-in for a raw Windows `.exe` release binary; requires `when = { os = ["windows"] }` and a `.exe` `binary` name. The file is copied, observed, and removed as a payload and is never run as an installer. |
+| `portable_executable` | no | Explicit opt-in for a raw Windows `.exe` release binary. A standalone candidate requires `when = { os = ["windows"] }`; a shared GitHub candidate may instead select a Windows-only distribution whose asset and `binary` are both `.exe`. The file is copied, observed, and removed as a payload and is never run as an installer. |
 | `scope` | no | Portable installation scope: `"user"` (default for user placement under XDG) or `"system"`. When set, supplies platform-native install and link defaults (`~/.local/share/depengine/tools/<tool>` + `~/.local/bin` for user scope, `/opt/depengine/tools/<tool>` + `/usr/local/bin` for system scope) without needing Unix paths in manifests. Explicit `extract_to`/`link_dir` override independently. |
 | `sudo_required` | no | Boolean, default is **path-derived**: `false` when `extract_to` is inside the user's home (e.g. `~/.local/share/fonts`), `true` for system paths (e.g. the `/usr/local/bin` default). Set explicitly to override. |
 Archives are extracted into private staging, validated, then committed as one
@@ -353,11 +353,13 @@ and filesystem ownership evidence. Legacy archive records without ownership
 metadata fail closed and leave the destination untouched. Raw-binary removal
 targets only the validated `binary` filename (or tool name) and preserves
 `extract_to`.
-`.msi`, `.pkg`, and `.dmg` remain rejected by `http`. A `.exe` is accepted only with
-`portable_executable = true`, an explicit `when = { os = ["windows"] }`, and a
-`.exe` `binary` name. This opt-in copies the executable as a raw payload; it
-does not launch it or accept installer arguments. An `.exe` without this opt-in
-continues to fail closed.
+`.msi`, `.pkg`, and `.dmg` remain rejected by `http`. A `.exe` is accepted only
+with `portable_executable = true` and a `.exe` `binary` name. A standalone
+candidate must declare `when = { os = ["windows"] }`; a shared GitHub candidate
+may instead select a Windows-only distribution with a `.exe` asset and `.exe`
+`binary`. This opt-in copies the executable as a raw payload; it does not launch
+it or accept installer arguments. An `.exe` without this opt-in continues to
+fail closed.
 
 Do not embed credentials in HTTP(S) URLs (for example,
 `https://token@example.com/file`). depengine rejects credential-bearing URLs so

@@ -323,7 +323,9 @@ func portableExecutableArtifactAllowed(mc *config.MethodCandidate, resolvedURL s
 	}
 	enabled, _ := mc.Config["portable_executable"].(bool)
 	binary, _ := mc.Config["binary"].(string)
-	return enabled && mc.When != nil && len(mc.When.OS) == 1 && strings.EqualFold(mc.When.OS[0], "windows") && strings.HasSuffix(strings.ToLower(binary), ".exe") && artifact.Extension(resolvedURL, []string{".exe"}) == ".exe"
+	methodTargetsWindows := mc.When != nil && len(mc.When.OS) == 1 && strings.EqualFold(mc.When.OS[0], "windows")
+	distributionTargetsWindows := mc.Kind == "github" && mc.SelectedDistributionWhen != nil && len(mc.SelectedDistributionWhen.OS) == 1 && strings.EqualFold(mc.SelectedDistributionWhen.OS[0], "windows")
+	return enabled && (methodTargetsWindows || distributionTargetsWindows) && strings.HasSuffix(strings.ToLower(binary), ".exe") && artifact.Extension(resolvedURL, []string{".exe"}) == ".exe"
 }
 
 func (a *HTTPAdapter) installResolvedURL(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, resolvedURL string) error {

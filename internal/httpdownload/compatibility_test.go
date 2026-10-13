@@ -70,6 +70,31 @@ func TestDebHostCompatibilityAllowsExplicitNonDebianOverride(t *testing.T) {
 	}
 }
 
+func TestPortableExecutableHostCompatibilityRequiresWindowsAndResolvedExe(t *testing.T) {
+	mc := &config.MethodCandidate{Kind: "http", Config: map[string]any{"portable_executable": true, "url": "https://example.test/cli.exe"}}
+	for _, tc := range []struct {
+		name     string
+		facts    *platform.Facts
+		resolved string
+		wantErr  bool
+	}{
+		{name: "Windows .exe", facts: &platform.Facts{OS: "windows"}, resolved: "https://example.test/cli.exe"},
+		{name: "non-Windows", facts: &platform.Facts{OS: "linux"}, resolved: "https://example.test/cli.exe", wantErr: true},
+		{name: "installer MSI", facts: &platform.Facts{OS: "windows"}, resolved: "https://example.test/setup.msi", wantErr: true},
+		{name: "package PKG", facts: &platform.Facts{OS: "windows"}, resolved: "https://example.test/setup.pkg", wantErr: true},
+		{name: "disk image DMG", facts: &platform.Facts{OS: "windows"}, resolved: "https://example.test/setup.dmg", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := plan.New("cli", "http", true)
+			p.Artifacts = []plan.Artifact{{URL: tc.resolved}}
+			err := checkPortableExecutableHostCompatibility(mc, &p, tc.facts)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("compatibility error = %v, wantErr=%v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestDownloadCompatibilityUsesResolvedPlanArtifact(t *testing.T) {
 	mc := &config.MethodCandidate{Kind: "github", Config: map[string]any{"repo": "owner/repo", "asset": "tool"}}
 	p := plan.New("tool", "github", true)

@@ -43,6 +43,7 @@ pkg = "demo"`,
 		"local.checksum":       `checksum = 42`,
 		"local.signature_path": `signature_path = ""`,
 		"local.signing_key":    `signing_key = 42`,
+		"portable_executable":  `portable_executable = "true"`,
 	}
 	used := make(map[string]bool, len(probes))
 	for _, contract := range methodkind.Contracts {
