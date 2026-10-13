@@ -461,6 +461,9 @@ func (a *HTTPAdapter) verifyDownloadedArtifact(ctx context.Context, rn run.Runne
 		return fmt.Errorf("http: download %s (re-download): %w", tool.Name, err)
 	}
 	if err := a.verifyChecksum(ctx, rn, filePath, resolvedURL, checksum, mc); err != nil {
+		if errors.Is(err, integrity.ErrSignatureVerification) {
+			return &exec.IntegrityError{Method: mc.Kind, Reason: "gpg signature verification failed", Err: err}
+		}
 		return fmt.Errorf("http: checksum: %w", err)
 	}
 	return nil

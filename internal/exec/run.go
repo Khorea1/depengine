@@ -164,6 +164,20 @@ func (ex *Executor) recoverReplacementTransaction(ctx context.Context, rc *runCo
 	if err != nil {
 		return fmt.Errorf("old candidate: %w", err)
 	}
+	method, skipStatus, err := ex.specializeMethodForHost(method)
+	if err != nil {
+		return fmt.Errorf("specialize desired replacement candidate: %w", err)
+	}
+	if method == nil {
+		return fmt.Errorf("specialize desired replacement candidate: %s", skipStatus)
+	}
+	oldMethod, skipStatus, err = ex.specializeMethodForHost(oldMethod)
+	if err != nil {
+		return fmt.Errorf("specialize old replacement candidate: %w", err)
+	}
+	if oldMethod == nil {
+		return fmt.Errorf("specialize old replacement candidate: %s", skipStatus)
+	}
 	oldMethod.Config = cloneMethodConfig(tx.Previous.Config)
 	oldMethod.OwnsArchivePayload = tx.Previous.ArchivePayloadOwned()
 	oldAdapter := ex.LookupAdapter(oldMethod.Kind)
