@@ -364,10 +364,7 @@ var clanToManagerKey = map[string]string{
 	"opkg":    "opkg",
 }
 
-// Lookup returns the Manager for a resolved clan and whether the clan has
-// a known native manager. Unknown clans return the zero Manager and
-// false; the caller then falls through to the next entry in
-// method_order (cargo/go/pip/...).
+// IsDpkgClan reports whether this clan uses dpkg structured status queries.
 func IsDpkgClan(clan string) bool {
 	switch clan {
 	case "debian", "mint", "termux":
@@ -377,6 +374,10 @@ func IsDpkgClan(clan string) bool {
 	}
 }
 
+// Lookup returns the Manager for a resolved clan and whether the clan has
+// a known native manager. Unknown clans return the zero Manager and
+// false; the caller then falls through to the next entry in
+// method_order (cargo/go/pip/...).
 func Lookup(clan string) (Manager, bool) {
 	key, ok := clanToManagerKey[clan]
 	if !ok {

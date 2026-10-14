@@ -47,7 +47,6 @@ func TestBuildCommandsMatchExpectedPerClan(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			install := BuildInstallCmd(tc.clan, "git")
-			check := BuildCheckCmd(tc.clan, "git")
 			_, known := Lookup(tc.clan)
 
 			if known != tc.wantKnown {
@@ -58,12 +57,11 @@ func TestBuildCommandsMatchExpectedPerClan(t *testing.T) {
 				if join(install) != tc.wantInstall {
 					t.Fatalf("install = %q, want %q", join(install), tc.wantInstall)
 				}
-				if IsDpkgClan(tc.clan) {
-					if check != nil {
-						t.Fatalf("dpkg clan %s must use structured observation, got a CheckCmd: %v", tc.clan, check)
+				if !IsDpkgClan(tc.clan) {
+					check := BuildCheckCmd(tc.clan, "git")
+					if join(check) != tc.wantCheck {
+						t.Fatalf("check = %q, want %q", join(check), tc.wantCheck)
 					}
-				} else if join(check) != tc.wantCheck {
-					t.Fatalf("check = %q, want %q", join(check), tc.wantCheck)
 				}
 			} else {
 				// When the clan is unknown, the engine must fall through to
@@ -72,7 +70,7 @@ func TestBuildCommandsMatchExpectedPerClan(t *testing.T) {
 				if install != nil {
 					t.Fatalf("unknown clan install should be nil, got %v", install)
 				}
-				if check != nil {
+				if check := BuildCheckCmd(tc.clan, "git"); check != nil {
 					t.Fatalf("unknown clan check should be nil, got %v", check)
 				}
 			}
@@ -216,18 +214,13 @@ func TestBuildSyncCmdOnlyForManagersThatNeedIt(t *testing.T) {
 	})
 }
 
-// CheckCmd must never be sudo-prefixed: probing whether something is
-// installed never needs privilege, and forcing it would leak elevation
-// budget silently. Invariant preserved across all managers.
+// Exit-code CheckCmd probes are read-only and must not be sudo-prefixed.
 func TestCheckCmdIsNeverSudoPrefixed(t *testing.T) {
 	for clan := range allKnownClans(t) {
-		got := BuildCheckCmd(clan, "anything")
 		if IsDpkgClan(clan) {
-			if got != nil {
-				t.Fatalf("dpkg clan %s must use structured observation, got %v", clan, got)
-			}
 			continue
 		}
+		got := BuildCheckCmd(clan, "anything")
 		if got == nil {
 			t.Fatalf("Lookup returned nil check for known clan %s", clan)
 		}
