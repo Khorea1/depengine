@@ -102,7 +102,9 @@ var managers = map[string]Manager{
 		Name:         "dnf",
 		SudoRequired: true,
 		InstallCmd:   []string{"dnf", "install", "-y", "{pkg}"},
-		CheckCmd:     []string{"rpm", "-q", "{pkg}"},
+		// CheckCmd: installed state uses the shared structured rpm-query
+		// observation protocol (see rpm_observe.go); an exit-code-only
+		// `rpm -q` cannot distinguish absent from unreadable database.
 		// dnf list exits non-zero ("Error: No matching Packages to
 		// list.") when the package isn't in any enabled repo.
 		SearchCmd:   []string{"dnf", "list", "{pkg}"},
@@ -113,9 +115,10 @@ var managers = map[string]Manager{
 		Name:         "zypper",
 		SudoRequired: true,
 		InstallCmd:   []string{"zypper", "--non-interactive", "install", "{pkg}"},
-		CheckCmd:     []string{"rpm", "-q", "{pkg}"},
-		RemoveCmd:    []string{"zypper", "--non-interactive", "remove", "{pkg}"},
-		AtomicBatch:  true,
+		// CheckCmd: see fedora; installed state uses the rpm observation
+		// protocol, not exit-code checks.
+		RemoveCmd:   []string{"zypper", "--non-interactive", "remove", "{pkg}"},
+		AtomicBatch: true,
 	},
 	"alpine": {
 		Name:         "apk",
@@ -368,6 +371,16 @@ var clanToManagerKey = map[string]string{
 func IsDpkgClan(clan string) bool {
 	switch clan {
 	case "debian", "mint", "termux":
+		return true
+	default:
+		return false
+	}
+}
+
+// IsRpmClan reports whether this clan uses rpm structured database queries.
+func IsRpmClan(clan string) bool {
+	switch clan {
+	case "fedora", "suse":
 		return true
 	default:
 		return false

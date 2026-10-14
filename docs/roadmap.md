@@ -154,8 +154,12 @@ Work on the current execution model comes before adding more installer types.
   establish for Cargo roots, Conda environments/prefixes, and verified
   BaseAdapter scopes. Debian and official Termux dpkg-backed native observation
   now uses structured package status guarded by the dpkg sentinel; unknown or
-  malformed inventory cannot authorize install or batch selection. Remaining
-  per-provider lifecycle coverage and real Termux-emulator validation stay open.
+  malformed inventory cannot authorize install or batch selection. Fedora and
+  SUSE RPM-backed native observation uses strict C-locale query rows guarded by
+  an installed `filesystem` sentinel; unknown state remains fail-closed across
+  lifecycle operations. Fedora and openSUSE container probes cover installed,
+  absent, damaged-database, status, and remove behavior. Wider RPM-version and
+  provider coverage still requires conformance evidence.
 - [~] Add planner fuzz/property tests and lifecycle/state invariant tests,
   including command-bearing fields, secret/redaction boundaries, source/URL
   normalization, and lock identity invariants. Plan-level properties now cover

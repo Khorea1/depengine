@@ -139,7 +139,6 @@ func (r *nativeSequenceRunner) Run(_ context.Context, name string, args ...strin
 	r.results = r.results[1:]
 	return result
 }
-
 func TestNativeInstallRequiresPostcondition(t *testing.T) {
 	t.Run("generic native rejects false-success install", func(t *testing.T) {
 		rn := &nativeSequenceRunner{results: []run.Result{
@@ -171,9 +170,10 @@ func TestNativeInstallRequiresPostcondition(t *testing.T) {
 	})
 
 	t.Run("manager alias preserves independent verification binary", func(t *testing.T) {
-		rn := &nativeSequenceRunner{results: []run.Result{
+		rn := &rpmSequenceRunner{results: []run.Result{
 			{ExitCode: 0},
-			{ExitCode: 0},
+			rpmQueryResult("git", "x86_64"),
+			rpmQueryResult("filesystem", "x86_64"),
 		}}
 		adapter := &NativeByManagerAdapter{managerName: "dnf5"}
 		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}

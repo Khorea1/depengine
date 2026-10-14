@@ -89,6 +89,35 @@ func observeDpkg(ctx context.Context, rn run.Runner, pkg string) (native.DpkgPre
 	return state, detail, nil
 }
 
+var rpmQueryEnvironment = map[string]string{"LC_ALL": "C"}
+
+func observeRpm(ctx context.Context, rn run.Runner, pkg string) (native.RpmPresence, string, error) {
+	cmd := native.BuildRpmObserveCmd(pkg)
+	if cmd == nil {
+		return native.RpmUnknown, "invalid rpm package identity", nil
+	}
+	targetResult := run.RunWithEnv(ctx, rn, rpmQueryEnvironment, nil, cmd[0], cmd[1:]...)
+	sentinelResult := targetResult
+	if pkg != "filesystem" && targetResult.Err == nil && targetResult.WaitErr == nil && (targetResult.ExitCode == 0 || targetResult.ExitCode == 1) {
+		sentinelCmd := native.BuildRpmSentinelCmd()
+		sentinelResult = run.RunWithEnv(ctx, rn, rpmQueryEnvironment, nil, sentinelCmd[0], sentinelCmd[1:]...)
+	}
+	state, detail := native.ObserveRpmResults(pkg, targetResult, sentinelResult)
+	if targetResult.Err != nil {
+		return state, detail, targetResult.Err
+	}
+	if targetResult.WaitErr != nil {
+		return state, detail, targetResult.WaitErr
+	}
+	if sentinelResult.Err != nil {
+		return state, detail, sentinelResult.Err
+	}
+	if sentinelResult.WaitErr != nil {
+		return state, detail, sentinelResult.WaitErr
+	}
+	return state, detail, nil
+}
+
 // Check reports only a positively observed installed package.
 func (a *NativeAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) bool {
 	clan := a.detectClan(ctx, rn)
@@ -99,6 +128,10 @@ func (a *NativeAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool
 	if native.IsDpkgClan(clan) {
 		state, _, err := observeDpkg(ctx, rn, pkg)
 		return err == nil && state == native.DpkgPresent
+	}
+	if native.IsRpmClan(clan) {
+		state, _, err := observeRpm(ctx, rn, pkg)
+		return err == nil && state == native.RpmPresent
 	}
 	if pkg == "" {
 		return false
@@ -192,6 +225,9 @@ func (a *NativeAdapter) Observe(ctx context.Context, rn run.Runner, tool *config
 	if native.IsDpkgClan(clan) {
 		return observeDpkgPlan(ctx, rn, pkg)
 	}
+	if native.IsRpmClan(clan) {
+		return observeRpmPlan(ctx, rn, pkg)
+	}
 	cmd := native.BuildCheckCmd(clan, pkg)
 	if cmd == nil {
 		return plan.Observation{Presence: plan.PresenceAbsent}, nil
@@ -218,6 +254,20 @@ func observeDpkgPlan(ctx context.Context, rn run.Runner, pkg string) (plan.Obser
 		return plan.Observation{Presence: plan.PresenceUnknown, Detail: detail}, nil
 	}
 	if state == native.DpkgAbsent {
+		return plan.Observation{Presence: plan.PresenceAbsent, Detail: detail}, nil
+	}
+	return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
+}
+
+func observeRpmPlan(ctx context.Context, rn run.Runner, pkg string) (plan.Observation, error) {
+	state, detail, err := observeRpm(ctx, rn, pkg)
+	if err != nil {
+		return plan.Observation{Presence: plan.PresenceBroken, Detail: detail}, err
+	}
+	if state == native.RpmUnknown {
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: detail}, nil
+	}
+	if state == native.RpmAbsent {
 		return plan.Observation{Presence: plan.PresenceAbsent, Detail: detail}, nil
 	}
 	return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
@@ -312,6 +362,16 @@ func verifyNativeInstall(ctx context.Context, rn run.Runner, prefix, clan, pkg, 
 		}
 		return nil
 	}
+	if native.IsRpmClan(clan) {
+		state, detail, err := observeRpm(ctx, rn, pkg)
+		if err != nil {
+			return fmt.Errorf("%s: install reported success but package %q could not be verified: %w", prefix, pkg, err)
+		}
+		if state != native.RpmPresent {
+			return fmt.Errorf("%s: install reported success but package %q is not authoritatively installed: %s", prefix, pkg, detail)
+		}
+		return nil
+	}
 	cmd := native.BuildCheckCmd(clan, pkg)
 	if cmd == nil {
 		return fmt.Errorf("%s: install reported success but clan %q has no verification command", prefix, clan)
@@ -380,6 +440,10 @@ func (a *NativeByManagerAdapter) Check(ctx context.Context, rn run.Runner, tool 
 	if native.IsDpkgClan(clan) {
 		state, _, err := observeDpkg(ctx, rn, pkg)
 		return err == nil && state == native.DpkgPresent
+	}
+	if native.IsRpmClan(clan) {
+		state, _, err := observeRpm(ctx, rn, pkg)
+		return err == nil && state == native.RpmPresent
 	}
 	cmd := native.BuildCheckCmd(clan, pkg)
 	if cmd == nil {
@@ -509,6 +573,9 @@ func (a *NativeByManagerAdapter) Observe(ctx context.Context, rn run.Runner, too
 	}
 	if native.IsDpkgClan(clan) {
 		return observeDpkgPlan(ctx, rn, pkg)
+	}
+	if native.IsRpmClan(clan) {
+		return observeRpmPlan(ctx, rn, pkg)
 	}
 	cmd := native.BuildCheckCmd(clan, pkg)
 	if cmd == nil {
