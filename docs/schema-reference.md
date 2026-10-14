@@ -196,6 +196,8 @@ ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = [{ run =
 | `binary` | no | Binary name for check/remove; required for removal from shared directories |
 | `managed_paths` | no | Absolute paths owned by the recipe; all must exist for `Check`, and removal deletes only these exact targets |
 
+Revision-aware verification is available when extract_to retains the clone root (the default or root artifact) and managed_paths is not active: depengine observes the checkout's actual HEAD commit. If that declared checkout exists but its Git metadata or HEAD cannot be verified, observation is broken rather than silently treated as absence. Non-root artifacts, managed-path outputs, and binary-only installs remain presence-only; depengine cannot claim their installed revision.
+
 For example, set `secret_ref = { provider = "env", name = "PRIVATE_GIT_TOKEN" }`
 on a Git method that clones a private HTTPS repository. depengine passes the
 token only through the Git child process environment. It is absent from argv,

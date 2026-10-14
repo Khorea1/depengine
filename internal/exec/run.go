@@ -198,11 +198,11 @@ func (ex *Executor) recoverReplacementTransaction(ctx context.Context, rc *runCo
 
 	oldObservation := ex.observeRecoveryCandidate(ctx, tool, oldMethod, &oldPlan, ex.LookupAdapter(oldMethod.Kind))
 	desiredObservation := ex.observeRecoveryCandidate(ctx, tool, method, desiredPlan, ex.LookupAdapter(method.Kind))
-	oldVerification := plan.Reconcile(projectVerificationIdentity(oldMethod.Kind, oldPlan.Identity), oldObservation)
+	oldVerification := plan.Reconcile(projectVerificationIdentity(oldMethod, oldPlan.Identity), oldObservation)
 	if tx.Previous.Version == "" && oldVerification.State == plan.StateSatisfied {
 		oldVerification = plan.VerificationResult{State: plan.StateUnknown, Detail: "tracked old candidate has no persisted concrete version"}
 	}
-	desiredVerification := plan.Reconcile(projectVerificationIdentity(method.Kind, desiredPlan.Identity), desiredObservation)
+	desiredVerification := plan.Reconcile(projectVerificationIdentity(method, desiredPlan.Identity), desiredObservation)
 	if err := oldVerification.Validate(); err != nil {
 		return fmt.Errorf("old candidate observation: %w", err)
 	}
@@ -354,8 +354,8 @@ func replacementRecoveryDesiredPlan(tool *config.Tool, method *config.MethodCand
 func (ex *Executor) observeReplacementPair(ctx context.Context, tool *config.Tool, oldMethod, desiredMethod *config.MethodCandidate, oldPlan, desiredPlan *plan.ResolvedInstallPlan) (plan.VerificationResult, plan.VerificationResult, error) {
 	oldObservation := ex.observeRecoveryCandidate(ctx, tool, oldMethod, oldPlan, ex.LookupAdapter(oldMethod.Kind))
 	desiredObservation := ex.observeRecoveryCandidate(ctx, tool, desiredMethod, desiredPlan, ex.LookupAdapter(desiredMethod.Kind))
-	oldVerification := plan.Reconcile(projectVerificationIdentity(oldMethod.Kind, oldPlan.Identity), oldObservation)
-	desiredVerification := plan.Reconcile(projectVerificationIdentity(desiredMethod.Kind, desiredPlan.Identity), desiredObservation)
+	oldVerification := plan.Reconcile(projectVerificationIdentity(oldMethod, oldPlan.Identity), oldObservation)
+	desiredVerification := plan.Reconcile(projectVerificationIdentity(desiredMethod, desiredPlan.Identity), desiredObservation)
 	if err := oldVerification.Validate(); err != nil {
 		return oldVerification, desiredVerification, err
 	}

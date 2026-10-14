@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- For Git recipes that retain the clone root, observe the checked-out commit itself and use it for revision drift/recovery; keep opaque artifacts and managed-path outputs presence-only.
 - Schedule the existing adversarial validation CLI replay on macOS, Windows Git Bash, FreeBSD, OpenBSD, and NetBSD CI jobs; target-platform execution is reported by those runs.
 - After a successful adapter install, verify its exact resolved target before recording state or running post-install hooks; non-satisfied observations fail terminally and leave preparation WAL unresolved rather than retrying or rolling back. Preserve only observed/resolved release versions in durable state.
 - Validate effective GitHub distribution integrity after schema/manifest merge while preserving `validate --format json`; classify detached-signature verification failures as terminal, compute preflight elevation only from host-compatible methods and their effective privileged targets.

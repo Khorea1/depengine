@@ -441,7 +441,7 @@ func (ex *Executor) reconcileFailedOwnerCommit(ac *candidateAttempt) (committed,
 		return false, false, errors.New("owner commit recovery context is incomplete")
 	}
 	observation := ex.observeRecoveryCandidate(ac.toolCtx, ac.tool, ac.method, ac.planIntent, ac.adapter)
-	desired := projectVerificationIdentity(ac.method.Kind, ac.planIntent.Identity)
+	desired := projectVerificationIdentity(ac.method, ac.planIntent.Identity)
 	decision, err := ac.prepared.tx.locked.PreparationRecovery(ac.prepared.tx.key, ac.prepared.tx.plan, &desired, &observation)
 	if err != nil {
 		return false, false, err
