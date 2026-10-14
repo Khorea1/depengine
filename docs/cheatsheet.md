@@ -139,7 +139,7 @@ Language:    cargo, go, pip, pipx, uv, npm, pnpm, bun, gem, yarn,
              yarn-berry, composer, apm
 Desktop:     flatpak, snap, vscode, vscodium, cask, mas, appman
 Windows:     winget, scoop, choco, msi, exe, msix, appx
-Specialized: sdkman, steamcmd, pacstall, aur, conda, asdf, nix, container,
+Specialized: sdkman, pacstall, aur, conda, asdf, nix, container,
              appimage, android, macpkg, dmg
 Other:       git, github, http, local
 ```

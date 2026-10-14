@@ -37,7 +37,7 @@ func TestSecretResolutionFailureFallsBackBeforeSourceMutation(t *testing.T) {
 	ex := New()
 	WithRunner(runner)(ex)
 	WithSecretResolver(resolver)(ex)
-	WithAdapters(&testMockAdapter{kindValue: "cargo"}, &testMockAdapter{kindValue: "http"})(ex)
+	WithAdapters(&testMockAdapter{kindValue: "cargo"}, statefulMockAdapter("http"))(ex)
 	schema := &config.Schema{
 		Defaults: config.Defaults{MethodOrder: []string{"cargo", "http"}},
 		Tools: map[string]*config.Tool{"demo": {
@@ -67,7 +67,7 @@ func TestSecretResolverIsNotCalledForUnreachedCandidate(t *testing.T) {
 	ex := New()
 	WithRunner(&sequenceRunner{})(ex)
 	WithSecretResolver(resolver)(ex)
-	WithAdapters(&testMockAdapter{kindValue: "http"}, &testMockAdapter{kindValue: "cargo"})(ex)
+	WithAdapters(statefulMockAdapter("http"), &testMockAdapter{kindValue: "cargo"})(ex)
 	schema := &config.Schema{
 		Defaults: config.Defaults{MethodOrder: []string{"http", "cargo"}},
 		Tools: map[string]*config.Tool{"demo": {

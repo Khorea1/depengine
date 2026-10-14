@@ -196,6 +196,8 @@ ctpv = { git = { url = "https://github.com/NikitaIvanovV/ctpv", build = [{ run =
 | `binary` | no | Binary name for check/remove; required for removal from shared directories |
 | `managed_paths` | no | Absolute paths owned by the recipe; all must exist for `Check`, and removal deletes only these exact targets |
 
+Revision-aware verification is available when extract_to retains the clone root (the default or root artifact) and managed_paths is not active: depengine observes the checkout's actual HEAD commit. If that declared checkout exists but its Git metadata or HEAD cannot be verified, observation is broken rather than silently treated as absence. Non-root artifacts, managed-path outputs, and binary-only installs remain presence-only; depengine cannot claim their installed revision.
+
 For example, set `secret_ref = { provider = "env", name = "PRIVATE_GIT_TOKEN" }`
 on a Git method that clones a private HTTPS repository. depengine passes the
 token only through the Git child process environment. It is absent from argv,
@@ -742,7 +744,7 @@ are described above or alongside their examples.
 | `macpkg` | Install a signed macOS Installer package by receipt `package_id`; removal is manual | `nvim = { macpkg = { url = "https://…/nvim.pkg", package_id = "com.neovim.Nvim" } }` |
 | `dmg` | Install one declared `.app` bundle from a read-only disk image into the scope Applications directory; removal targets exactly that bundle | `nvim = { dmg = { url = "https://…/nvim.dmg", app = "Neovim.app", scope = "user" } }` |
 | `sdkman` | SDKMAN! JVM SDKs | `java17 = { sdkman = "java" }` |
-| `steamcmd` | SteamCMD game server tools | `cs2 = { steamcmd = "730" }` |
+| `steamcmd` | Schema syntax accepted; ordinary install fails closed before mutation because installed server identity cannot be verified | `cs2 = { steamcmd = "730" }` |
 | `pacstall` | Pacstall packages (Debian-based AUR-like) | `neofetch = { pacstall = "neofetch" }` |
 | `aur` | Arch User Repository (via configured `aur_helper`) | `google-chrome = { aur = "google-chrome" }` |
 | `winget` | Windows Package Manager; typed `version`, `source`, `scope`, `architecture`, and `installer_type` | `git = { winget = { pkg = "Git.Git", version = "2.53.0", source = "winget", scope = "machine" } }` |

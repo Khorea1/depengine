@@ -46,6 +46,10 @@ This is an order of authority, not a requirement that every command materialize 
 
 A missing known field is not an empty value: `KnownFields` determines which reported values are authoritative. The support boundary describes command-specific behavior; notably, remove and upgrade stop on `unknown`/`broken`, while proven absence can release tracked ownership without invoking a remover.
 
+## Adapter verification after install
+
+After `InstallResolved` succeeds, the executor verifies the same effective resolved target with the method's existing `EffectVerify` observation projection before it finalizes installed state or runs post-install hooks. Only `satisfied` completes the install. `absent`, `drifted`, `unknown`, `broken`, or an observation error fails the candidate terminally: no fallback, retry, rollback, further post-install hooks, or state adoption. If a preparation WAL is active, it remains unresolved in `Committing`; absence after a successful command is not proof that mutation did not occur. Without a transaction, the failure report may note that external effects remain. Adapter-error reconciliation is a separate path and is unchanged. Android cached-APK verification limitations and immutable-native replay remain unchanged.
+
 ## Authority and precedence
 
 1. The merged schema and manifest define requested intent; explicit project values win field conflicts under the configuration contract. Parser-added platform defaults are not unconditional constraints and are preserved across layers only for matching candidates.

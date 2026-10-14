@@ -25,8 +25,8 @@ func TestExecutorFailureDomainPreservesIndependentSibling(t *testing.T) {
 			var mu sync.Mutex
 			installCalls := make(map[string]int)
 			adapter := &testMockAdapter{
-				kindValue: "failure-domain",
-				checkFunc: func(string) bool { return false },
+				kindValue: "cargo",
+				stateful:  true,
 				installFunc: func(name string) error {
 					mu.Lock()
 					installCalls[name]++
@@ -44,20 +44,20 @@ func TestExecutorFailureDomainPreservesIndependentSibling(t *testing.T) {
 			WithMaxJobs(tc.maxJobs)(ex)
 
 			schema := &config.Schema{
-				Defaults: config.Defaults{MethodOrder: []string{"failure-domain"}},
+				Defaults: config.Defaults{MethodOrder: []string{"cargo"}},
 				Tools: map[string]*config.Tool{
 					"root-fail": {
 						Name:    "root-fail",
-						Methods: []*config.MethodCandidate{{Kind: "failure-domain"}},
+						Methods: []*config.MethodCandidate{{Kind: "cargo", Config: map[string]any{"pkg": "root-fail"}}},
 					},
 					"child": {
 						Name:     "child",
 						Requires: []string{"root-fail"},
-						Methods:  []*config.MethodCandidate{{Kind: "failure-domain"}},
+						Methods:  []*config.MethodCandidate{{Kind: "cargo", Config: map[string]any{"pkg": "child"}}},
 					},
 					"sibling-ok": {
 						Name:    "sibling-ok",
-						Methods: []*config.MethodCandidate{{Kind: "failure-domain"}},
+						Methods: []*config.MethodCandidate{{Kind: "cargo", Config: map[string]any{"pkg": "sibling-ok"}}},
 					},
 				},
 			}

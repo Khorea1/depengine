@@ -142,10 +142,11 @@ Work on the current execution model comes before adding more installer types.
   The Debian/Arch/Fedora/Alpine CLI matrix replays canonical cycle,
   dangling-reference, malformed-URL, duplicate-tool, and unknown-placeholder
   fixtures plus an unsafe package-name injection fixture, asserting stable
-  JSON diagnostic codes and strict-mode exit behavior. macOS, FreeBSD, OpenBSD,
-  NetBSD, Windows, and the real-emulator Termux runner also require a missing
-  native package to remain absent from live observation and persisted removal
-  state after an attempted install.
+  JSON diagnostic codes and strict-mode exit behavior. CI now schedules this
+  validation-only replay on macOS, Windows, FreeBSD, OpenBSD, and NetBSD using
+  target-built binaries; those platform results remain pending CI execution. The
+  native lifecycle jobs on these systems still require a missing package to remain
+  absent from live observation and persisted removal state after an install attempt.
 - [~] Cover each method contract across validation, identity, dry-run, version,
   source, scope, environment, lock, lifecycle, idempotency, errors, and secret
   redaction. Runtime reconciliation now projects resolved identity through each
@@ -154,8 +155,12 @@ Work on the current execution model comes before adding more installer types.
   establish for Cargo roots, Conda environments/prefixes, and verified
   BaseAdapter scopes. Debian and official Termux dpkg-backed native observation
   now uses structured package status guarded by the dpkg sentinel; unknown or
-  malformed inventory cannot authorize install or batch selection. Remaining
-  per-provider lifecycle coverage and real Termux-emulator validation stay open.
+  malformed inventory cannot authorize install or batch selection. Fedora and
+  SUSE RPM-backed native observation uses strict C-locale query rows guarded by
+  an installed `filesystem` sentinel; unknown state remains fail-closed across
+  lifecycle operations. Fedora and openSUSE container probes cover installed,
+  absent, damaged-database, status, and remove behavior. Wider RPM-version and
+  provider coverage still requires conformance evidence.
 - [~] Add planner fuzz/property tests and lifecycle/state invariant tests,
   including command-bearing fields, secret/redaction boundaries, source/URL
   normalization, and lock identity invariants. Plan-level properties now cover

@@ -37,7 +37,7 @@ func (ex *Executor) verifyResolvedCandidate(ctx context.Context, tool *config.To
 	}
 	displayKind := displayMethodKind(method)
 	observation := ex.observeResolvedCandidate(ctx, tool, method, adapter, resolved, displayKind)
-	desired := projectVerificationIdentity(method.Kind, resolved.Identity)
+	desired := projectVerificationIdentity(method, resolved.Identity)
 	verification := plan.Reconcile(desired, observation)
 	if err := verification.Validate(); err != nil {
 		return plan.VerificationResult{}, plan.Observation{}, fmt.Errorf("%s: invalid verification result: %w", displayKind, err)

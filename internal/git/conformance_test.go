@@ -2,9 +2,11 @@ package git
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -25,124 +27,93 @@ func TestImportDoesNotRegisterAdapter(t *testing.T) {
 	}
 }
 
-// TestObserveAgreesWithCheck pins the V2 strangler invariant: Observe must
-// reach the same installed/not-installed verdict as the legacy Check on
-// every detection strategy, so migration never changes skip behavior.
-func TestObserveAgreesWithCheck(t *testing.T) {
+func TestObserveReportsActualCheckoutHead(t *testing.T) {
 	ctx := context.Background()
-	adapter := NewGitAdapter()
-
-	managedDir := t.TempDir()
-	managedFile := filepath.Join(managedDir, "owned")
-	if err := os.WriteFile(managedFile, []byte("x"), 0o600); err != nil {
+	if !(run.OSExecRunner{}).LookPath(ctx, "git") {
+		t.Skip("git is required for checkout observation")
+	}
+	checkout := t.TempDir()
+	gitTestCommand(t, "-C", checkout, "init", "--quiet")
+	gitTestCommand(t, "-C", checkout, "config", "user.name", "depengine test")
+	gitTestCommand(t, "-C", checkout, "config", "user.email", "depengine@example.test")
+	if err := os.WriteFile(filepath.Join(checkout, "payload"), []byte("commit"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	gitTestCommand(t, "-C", checkout, "add", "payload")
+	gitTestCommand(t, "-C", checkout, "commit", "--quiet", "-m", "initial")
+	head := strings.TrimSpace(gitTestCommand(t, "-C", checkout, "rev-parse", "HEAD"))
+
+	method := &config.MethodCandidate{Kind: "git", Config: map[string]any{"extract_to": checkout, "rev": "refs/heads/depengine-no-such-local-branch"}}
+	got, err := NewGitAdapter().Observe(ctx, run.OSExecRunner{}, &config.Tool{Name: "demo"}, method)
+	if err != nil {
+		t.Fatalf("Observe(): %v", err)
+	}
+	want := plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Revision: head}, KnownFields: []plan.IdentityField{plan.FieldRevision}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Observe() = %#v, want actual HEAD %s", got, head)
+	}
+}
+
+func TestObserveBreaksOnUnverifiableRetainedCheckout(t *testing.T) {
+	ctx := context.Background()
 	checkout := t.TempDir()
 	if err := os.Mkdir(filepath.Join(checkout, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-
-	tests := []struct {
-		name        string
-		mc          *config.MethodCandidate
-		runner      *run.FakeRunner
-		wantPresent bool
+	method := &config.MethodCandidate{Kind: "git", Config: map[string]any{"extract_to": checkout, "rev": "main"}}
+	for _, tc := range []struct {
+		name   string
+		result run.Result
 	}{
-		{
-			name:        "managed paths all exist",
-			mc:          &config.MethodCandidate{Kind: "git", Config: map[string]any{"managed_paths": []any{managedFile}}},
-			runner:      &run.FakeRunner{},
-			wantPresent: true,
-		},
-		{
-			name:        "managed path missing",
-			mc:          &config.MethodCandidate{Kind: "git", Config: map[string]any{"managed_paths": []any{managedFile, filepath.Join(managedDir, "absent")}}},
-			runner:      &run.FakeRunner{},
-			wantPresent: false,
-		},
-		{
-			name:        "checkout without revision",
-			mc:          &config.MethodCandidate{Kind: "git", Config: map[string]any{"extract_to": checkout}},
-			runner:      &run.FakeRunner{},
-			wantPresent: true,
-		},
-		{
-			name:        "checkout revision matches",
-			mc:          &config.MethodCandidate{Kind: "git", Config: map[string]any{"extract_to": checkout, "rev": "abc123"}},
-			runner:      &run.FakeRunner{Stdout: "abc123\nabc123\n"},
-			wantPresent: true,
-		},
-		{
-			name:        "checkout revision drifted",
-			mc:          &config.MethodCandidate{Kind: "git", Config: map[string]any{"extract_to": checkout, "rev": "abc123"}},
-			runner:      &run.FakeRunner{Stdout: "abc123\ndef456\n"},
-			wantPresent: false,
-		},
-		{
-			name:        "checkout revision unverifiable",
-			mc:          &config.MethodCandidate{Kind: "git", Config: map[string]any{"extract_to": checkout, "rev": "abc123"}},
-			runner:      &run.FakeRunner{ExitCode: 128},
-			wantPresent: false,
-		},
-		{
-			name:        "no checkout",
-			mc:          &config.MethodCandidate{Kind: "git", Config: map[string]any{"extract_to": filepath.Join(t.TempDir(), "absent")}},
-			runner:      &run.FakeRunner{},
-			wantPresent: false,
-		},
-		{
-			name:        "binary on PATH",
-			mc:          &config.MethodCandidate{Kind: "git", Config: map[string]any{"binary": "demo-tool"}},
-			runner:      &run.FakeRunner{LookPaths: map[string]bool{"demo-tool": true}},
-			wantPresent: true,
-		},
-		{
-			name:        "binary missing",
-			mc:          &config.MethodCandidate{Kind: "git", Config: map[string]any{"binary": "demo-tool"}},
-			runner:      &run.FakeRunner{LookPaths: map[string]bool{"demo-tool": false}},
-			wantPresent: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tool := &config.Tool{Name: "demo"}
-			checkRunner := &run.FakeRunner{Stdout: tt.runner.Stdout, Stderr: tt.runner.Stderr, ExitCode: tt.runner.ExitCode, Err: tt.runner.Err, LookPaths: tt.runner.LookPaths}
-			if got := adapter.Check(ctx, checkRunner, tool, tt.mc); got != tt.wantPresent {
-				t.Fatalf("Check() = %v, want %v", got, tt.wantPresent)
-			}
-			observation, err := adapter.Observe(ctx, tt.runner, tool, tt.mc)
+		{name: "probe error", result: run.Result{Err: errors.New("probe failed"), ExitCode: 128}},
+		{name: "malformed output", result: run.Result{Stdout: []byte("deadbeef\n"), ExitCode: 0}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NewGitAdapter().Observe(ctx, gitProbeRunner{result: tc.result}, &config.Tool{Name: "demo"}, method)
 			if err != nil {
-				t.Fatalf("Observe() error = %v", err)
+				t.Fatalf("Observe(): %v", err)
 			}
-			wantPresence := plan.PresenceAbsent
-			if tt.wantPresent {
-				wantPresence = plan.PresencePresent
-			}
-			if observation.Presence != wantPresence {
-				t.Fatalf("Observe() presence = %q, want %q", observation.Presence, wantPresence)
+			if got.Presence != plan.PresenceBroken || len(got.KnownFields) != 0 {
+				t.Fatalf("Observe() = %#v, want broken without known identity", got)
 			}
 		})
 	}
 }
 
-func TestObserveCarriesPinnedRevision(t *testing.T) {
-	ctx := context.Background()
+func TestObserveBreaksWhenRetainedCheckoutMetadataIsMissing(t *testing.T) {
+	checkout := t.TempDir()
+	method := &config.MethodCandidate{Kind: "git", Config: map[string]any{"extract_to": checkout, "rev": "main"}}
+	got, err := NewGitAdapter().Observe(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "demo"}, method)
+	if err != nil {
+		t.Fatalf("Observe(): %v", err)
+	}
+	if got.Presence != plan.PresenceBroken || len(got.KnownFields) != 0 {
+		t.Fatalf("Observe() = %#v, want broken without known identity", got)
+	}
+}
+
+func TestIsFullCommitIDAcceptsSHA1AndSHA256(t *testing.T) {
+	for _, length := range []int{40, 64} {
+		if !isFullCommitID(strings.Repeat("a", length)) {
+			t.Errorf("isFullCommitID length %d = false, want true", length)
+		}
+	}
+	for _, value := range []string{"", strings.Repeat("a", 39), strings.Repeat("a", 41), strings.Repeat("a", 63), strings.Repeat("a", 65), strings.Repeat("g", 40)} {
+		if isFullCommitID(value) {
+			t.Errorf("isFullCommitID(%q) = true, want false", value)
+		}
+	}
+}
+
+func TestObserveKeepsOpaqueGitInstallPresenceOnly(t *testing.T) {
 	checkout := t.TempDir()
 	if err := os.Mkdir(filepath.Join(checkout, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	mc := &config.MethodCandidate{Kind: "git", Config: map[string]any{"extract_to": checkout, "rev": "abc123"}}
-	observation, err := NewGitAdapter().Observe(ctx, &run.FakeRunner{Stdout: "abc123\nabc123\n"}, &config.Tool{Name: "demo"}, mc)
-	if err != nil {
-		t.Fatalf("Observe() error = %v", err)
-	}
-	want := plan.Observation{
-		Presence:    plan.PresencePresent,
-		Identity:    plan.ObservedIdentity{Revision: "abc123"},
-		KnownFields: []plan.IdentityField{plan.FieldRevision},
-	}
-	if !reflect.DeepEqual(observation, want) {
-		t.Fatalf("Observe() = %#v, want %#v", observation, want)
+	method := &config.MethodCandidate{Kind: "git", Config: map[string]any{"extract_to": checkout, "artifact": "build/output", "rev": "main"}}
+	got, err := NewGitAdapter().Observe(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "demo"}, method)
+	if err != nil || got.Presence != plan.PresencePresent || len(got.KnownFields) != 0 {
+		t.Fatalf("Observe() = %#v, err %v; want presence-only", got, err)
 	}
 }
 
@@ -156,6 +127,27 @@ func TestObserveRequiresToolAndMethod(t *testing.T) {
 	if _, err := adapter.Observe(ctx, &run.FakeRunner{}, &config.Tool{Name: "demo"}, nil); err == nil {
 		t.Fatal("Observe() with nil method succeeded, want error")
 	}
+}
+
+type gitProbeRunner struct {
+	run.OSExecRunner
+	result run.Result
+}
+
+func (r gitProbeRunner) Run(ctx context.Context, name string, args ...string) run.Result {
+	if name == "git" && len(args) > 0 && args[len(args)-1] == "HEAD^{commit}" {
+		return r.result
+	}
+	return r.OSExecRunner.Run(ctx, name, args...)
+}
+
+func gitTestCommand(t *testing.T, args ...string) string {
+	t.Helper()
+	result := (run.OSExecRunner{}).Run(context.Background(), "git", args...)
+	if result.Err != nil || result.ExitCode != 0 {
+		t.Fatalf("git %v failed: exit=%d err=%v stderr=%s", args, result.ExitCode, result.Err, result.Stderr)
+	}
+	return string(result.Stdout)
 }
 
 // TestV2ResolveObserveInstallRevision exercises the full V2 path for a

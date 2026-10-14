@@ -252,6 +252,7 @@ func TestBatchFallbackReusesResolvedPlan(t *testing.T) {
 	adapter := &executorAdapterV2Double{
 		testMockAdapter: testMockAdapter{kindValue: "native"},
 		presence:        plan.PresenceAbsent,
+		postInstall:     &plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: "demo"}, KnownFields: []plan.IdentityField{plan.FieldPackage}},
 	}
 	ex := batchProbeExecutor(adapter)
 	tool := batchProbeTool()

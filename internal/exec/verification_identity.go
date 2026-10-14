@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/plan"
 )
@@ -11,8 +12,11 @@ import (
 // example cargo.git or npm.registry); treating those dimensions as mandatory
 // verification evidence turns a successful install into StateUnknown on the
 // next run.
-func projectVerificationIdentity(kind string, identity plan.ResolvedIdentity) plan.ResolvedIdentity {
-	contract, ok := methodkind.Lookup(kind)
+func projectVerificationIdentity(method *config.MethodCandidate, identity plan.ResolvedIdentity) plan.ResolvedIdentity {
+	if method == nil {
+		return identity
+	}
+	contract, ok := methodkind.Lookup(method.Kind)
 	if !ok {
 		return identity
 	}
@@ -28,7 +32,7 @@ func projectVerificationIdentity(kind string, identity plan.ResolvedIdentity) pl
 			out.RequestedVersion = &requested
 		}
 	}
-	if contractVerifiesAnyField(contract, "rev", "branch", "build") {
+	if contractVerifiesAnyField(contract, "rev", "branch", "build") || methodkind.GitRetainsCheckout(method.Kind, method.Config) {
 		out.Revision = identity.Revision
 	}
 	if contractVerifiesField(contract, "digest") {

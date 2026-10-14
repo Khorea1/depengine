@@ -24,8 +24,8 @@ func TestBuildCommandsMatchExpectedPerClan(t *testing.T) {
 	}{
 		{"debian apt-get + sudo", "debian", true, "sudo apt-get install -y git", ""},
 		{"arch pacman + sudo", "arch", true, "sudo pacman -S --noconfirm --needed git", "pacman -Qi git"},
-		{"fedora dnf + sudo", "fedora", true, "sudo dnf install -y git", "rpm -q git"},
-		{"suse zypper + sudo", "suse", true, "sudo zypper --non-interactive install git", "rpm -q git"},
+		{"fedora dnf + sudo", "fedora", true, "sudo dnf install -y git", ""},
+		{"suse zypper + sudo", "suse", true, "sudo zypper --non-interactive install git", ""},
 		{"alpine apk + sudo", "alpine", true, "sudo apk add git", "apk info -e git"},
 		{"macos brew no sudo", "macos", true, "brew install git", "brew list git"},
 		{"termux pkg no sudo", "termux", true, "pkg install -y git", ""},
@@ -57,7 +57,7 @@ func TestBuildCommandsMatchExpectedPerClan(t *testing.T) {
 				if join(install) != tc.wantInstall {
 					t.Fatalf("install = %q, want %q", join(install), tc.wantInstall)
 				}
-				if !IsDpkgClan(tc.clan) {
+				if !IsDpkgClan(tc.clan) && !IsRpmClan(tc.clan) {
 					check := BuildCheckCmd(tc.clan, "git")
 					if join(check) != tc.wantCheck {
 						t.Fatalf("check = %q, want %q", join(check), tc.wantCheck)
@@ -217,7 +217,7 @@ func TestBuildSyncCmdOnlyForManagersThatNeedIt(t *testing.T) {
 // Exit-code CheckCmd probes are read-only and must not be sudo-prefixed.
 func TestCheckCmdIsNeverSudoPrefixed(t *testing.T) {
 	for clan := range allKnownClans(t) {
-		if IsDpkgClan(clan) {
+		if IsDpkgClan(clan) || IsRpmClan(clan) {
 			continue
 		}
 		got := BuildCheckCmd(clan, "anything")

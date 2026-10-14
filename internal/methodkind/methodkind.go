@@ -2,6 +2,7 @@
 package methodkind
 
 import (
+	"path/filepath"
 	"sort"
 
 	"github.com/Khorea1/depengine/internal/artifact"
@@ -566,6 +567,37 @@ func Lookup(kind string) (*Contract, bool) {
 		return contractByKind["native"], true
 	}
 	return nil, false
+}
+
+// GitRetainsCheckout reports whether Git installation config retains the cloned
+// checkout at extract_to, allowing Observe to verify its actual HEAD. The
+// condition matches installResolvedSource copy behavior: root artifact only,
+// with managed_paths taking precedence over extract_to.
+func GitRetainsCheckout(kind string, cfg map[string]any) bool {
+	if kind != "git" || cfg == nil {
+		return false
+	}
+	extractTo, ok := cfg["extract_to"].(string)
+	if !ok || extractTo == "" {
+		return false
+	}
+	switch paths := cfg["managed_paths"].(type) {
+	case []any:
+		if len(paths) != 0 {
+			return false
+		}
+	case []string:
+		if len(paths) != 0 {
+			return false
+		}
+	}
+	artifact, _ := cfg["artifact"].(string)
+	if artifact == "" {
+		artifact = string(filepath.Separator)
+	}
+	const cloneRoot = "depengine-git-checkout"
+	rel, err := filepath.Rel(cloneRoot, filepath.Join(cloneRoot, artifact))
+	return err == nil && rel == "."
 }
 
 // KnownKinds returns all adapter kinds and native manager aliases.

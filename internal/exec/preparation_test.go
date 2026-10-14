@@ -99,10 +99,11 @@ func TestExecutorDryRunProjectsPreparationWithoutPersistingJournal(t *testing.T)
 func TestExecutorFinalizesDurableSourcePreparation(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	runner := &sequenceRunner{results: []run.Result{{}, {}}}
+	installed := false
 	adapter := &testMockAdapter{
 		kindValue:   "cargo",
-		checkFunc:   func(string) bool { return false },
-		installFunc: func(string) error { return nil },
+		checkFunc:   func(string) bool { return installed },
+		installFunc: func(string) error { installed = true; return nil },
 	}
 	ex := New()
 	WithRunner(runner)(ex)
@@ -141,7 +142,7 @@ func TestExecutorInstallResolvedReceivesReportedPreparationPlan(t *testing.T) {
 	runner := &sequenceRunner{results: []run.Result{{}, {}}}
 	adapter := &preparationPlanCapturingAdapter{testMockAdapter: &testMockAdapter{
 		kindValue:   "cargo",
-		checkFunc:   func(string) bool { return false },
+		stateful:    true,
 		installFunc: func(string) error { return nil },
 	}}
 	ex := New()
@@ -161,6 +162,78 @@ func TestExecutorInstallResolvedReceivesReportedPreparationPlan(t *testing.T) {
 	}
 	if report.Tools[0].PlanIntent != adapter.installed {
 		t.Fatalf("reported plan = %p, InstallResolved plan = %p; want exact same plan", report.Tools[0].PlanIntent, adapter.installed)
+	}
+}
+
+type postInstallObservationAdapter struct {
+	*testMockAdapter
+	installed  bool
+	post       plan.Observation
+	observeErr error
+}
+
+func (a *postInstallObservationAdapter) Observe(ctx context.Context, runner run.Runner, tool *config.Tool, method *config.MethodCandidate) (plan.Observation, error) {
+	if a.installed {
+		return a.post, a.observeErr
+	}
+	return plan.Observation{Presence: plan.PresenceAbsent}, nil
+}
+
+func (a *postInstallObservationAdapter) InstallResolved(context.Context, run.Runner, *config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan) error {
+	a.installed = true
+	return nil
+}
+
+func TestPostInstallVerificationFailureLeavesCommittingJournal(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		observation plan.Observation
+		observeErr  error
+	}{
+		{name: "absence remains unresolved", observation: plan.Observation{Presence: plan.PresenceAbsent}},
+		{name: "drifted identity", observation: plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: "different"}, KnownFields: []plan.IdentityField{plan.FieldPackage}}},
+		{name: "unknown state", observation: plan.Observation{Presence: plan.PresenceUnknown, Detail: "inventory version unavailable"}},
+		{name: "broken state", observation: plan.Observation{Presence: plan.PresenceBroken, Detail: "malformed inventory"}},
+		{name: "observation error", observeErr: errors.New("inventory probe failed")},
+		{name: "observation deadline", observeErr: context.DeadlineExceeded},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("XDG_STATE_HOME", t.TempDir())
+			runner := &sequenceRunner{results: []run.Result{{}, {}}}
+			adapter := &postInstallObservationAdapter{
+				testMockAdapter: &testMockAdapter{kindValue: "cargo"},
+				post:            tt.observation, observeErr: tt.observeErr,
+			}
+			ex := New()
+			WithRunner(runner)(ex)
+			WithAdapters(adapter)(ex)
+			WithSchemaInfo("/test/schema.toml", time.Now())(ex)
+			report, err := ex.Execute(context.Background(), sourceBackedSchema(), "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(report.Tools) != 1 || report.Tools[0].Status != StatusFailed || report.Tools[0].InstallCommitted {
+				t.Fatalf("report = %+v, want failed and uncommitted", report.Tools)
+			}
+			st, err := state.LoadFrom(state.DefaultPath())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(st.PreparationJournals) != 1 || len(st.PreparationPlans) != 1 {
+				t.Fatalf("unresolved WAL = plans=%v journals=%v", st.PreparationPlans, st.PreparationJournals)
+			}
+			for key, journal := range st.PreparationJournals {
+				if journal.Status != plan.PreparationCommitting {
+					t.Fatalf("journal %q status = %q, want committing", key, journal.Status)
+				}
+				if _, ok := st.PreparationPlans[key]; !ok {
+					t.Fatalf("committing journal %q has no corresponding plan", key)
+				}
+			}
+			if len(st.Tools) != 0 || len(st.OwnedResources) != 0 {
+				t.Fatalf("unverified target adopted: tools=%v owned=%v", st.Tools, st.OwnedResources)
+			}
+		})
 	}
 }
 
@@ -971,6 +1044,7 @@ func TestRecoveredDependencyOnlyCommitWithoutSourcesIsRecordedAndNotReplayedLazi
 	helperChecks := 0
 	helperInstalls := 0
 	ownerInstalls := 0
+	installed := map[string]bool{}
 	secondRunner := &sequenceRunner{}
 	second := New()
 	WithRunner(secondRunner)(second)
@@ -983,7 +1057,7 @@ func TestRecoveredDependencyOnlyCommitWithoutSourcesIsRecordedAndNotReplayedLazi
 				// later probe would be transiently false and must not cause replay.
 				return helperChecks == 1
 			}
-			return false
+			return installed[name]
 		},
 		installFunc: func(name string) error {
 			switch name {
@@ -992,6 +1066,7 @@ func TestRecoveredDependencyOnlyCommitWithoutSourcesIsRecordedAndNotReplayedLazi
 			case "owner":
 				ownerInstalls++
 			}
+			installed[name] = true
 			return nil
 		},
 	})(second)
@@ -1055,7 +1130,7 @@ func TestExecutorRollsBackDurableSourceWhenPostPrepareAvailabilityFails(t *testi
 	}
 	fallback := &testMockAdapter{
 		kindValue:   "http",
-		checkFunc:   func(string) bool { return false },
+		stateful:    true,
 		installFunc: func(string) error { return nil },
 	}
 	schema := &config.Schema{

@@ -8,6 +8,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/secret"
 	"github.com/Khorea1/depengine/internal/state"
 )
@@ -440,7 +441,7 @@ func (ex *Executor) reconcileFailedOwnerCommit(ac *candidateAttempt) (committed,
 		return false, false, errors.New("owner commit recovery context is incomplete")
 	}
 	observation := ex.observeRecoveryCandidate(ac.toolCtx, ac.tool, ac.method, ac.planIntent, ac.adapter)
-	desired := projectVerificationIdentity(ac.method.Kind, ac.planIntent.Identity)
+	desired := projectVerificationIdentity(ac.method, ac.planIntent.Identity)
 	decision, err := ac.prepared.tx.locked.PreparationRecovery(ac.prepared.tx.key, ac.prepared.tx.plan, &desired, &observation)
 	if err != nil {
 		return false, false, err
@@ -455,6 +456,21 @@ func (ex *Executor) reconcileFailedOwnerCommit(ac *candidateAttempt) (committed,
 		return false, false, err
 	}
 	return false, true, nil
+}
+
+func (ex *Executor) failPostInstallVerification(ac *candidateAttempt, result *ToolResult, err error) attemptOutcome {
+	detail := "post-install verification failed: " + run.RedactSensitiveText(err.Error())
+	if ac.prepared.tx != nil {
+		if leaveErr := ac.prepared.leaveCommitUnresolved(); leaveErr != nil {
+			detail += "; preserve unresolved preparation journal: " + run.RedactSensitiveText(leaveErr.Error())
+		}
+		detail += "; " + unresolvedCommitMessage
+	} else {
+		detail += "; install command succeeded, but external effects may remain"
+	}
+	ex.failCandidate(ac, result, detail)
+	ex.logWarn(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "post_install_verification_failed", "error", result.Error)
+	return finishTool
 }
 
 func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) attemptOutcome {
@@ -514,15 +530,25 @@ func (ex *Executor) installCandidate(ac *candidateAttempt, result *ToolResult) a
 	}
 
 	err := ac.adapter.InstallResolved(methodCtx, runner, ac.tool, ac.method, ac.reported)
+	if err == nil {
+		verification, verifyErr := ex.VerifyResolvedCandidate(methodCtx, ac.tool, ac.method, ac.resolved)
+		methodCause := context.Cause(methodCtx)
+		methodCancel()
+		verifyErr = methodTimeoutError(methodCause, ex.toolTimeout, ex.methodTimeout, verifyErr)
+		if verifyErr == nil && verification.State != plan.StateSatisfied {
+			verifyErr = fmt.Errorf("resolved target is %s: %s", verification.State, run.RedactSensitiveText(verificationDetail(verification)))
+		}
+		if verifyErr != nil {
+			return ex.failPostInstallVerification(ac, result, verifyErr)
+		}
+		return ex.finishInstalled(ac, result)
+	}
 	methodCause := context.Cause(methodCtx)
 	methodCancel()
-	if err != nil && errors.Is(methodCause, errToolTimeout) {
+	if errors.Is(methodCause, errToolTimeout) {
 		err = fmt.Errorf("tool timeout (%v) exceeded", ex.toolTimeout)
-	} else if err != nil && errors.Is(methodCause, errMethodTimeout) {
+	} else if errors.Is(methodCause, errMethodTimeout) {
 		err = fmt.Errorf("method timeout (%v) exceeded", ex.methodTimeout)
-	}
-	if err == nil {
-		return ex.finishInstalled(ac, result)
 	}
 
 	if IsTerminalMethodError(err) {

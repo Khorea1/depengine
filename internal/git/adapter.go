@@ -18,6 +18,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/ghrelease"
+	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
@@ -73,12 +74,9 @@ func (a *GitAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, m
 	return false
 }
 
-// Observe reports whether the tool is already installed via git, using the
-// same three strategies as Check: managed paths on disk, an extract_to
-// checkout (with HEAD pinned against the configured revision when one is
-// set), and a binary on PATH. A revision match additionally carries the
-// pinned revision as known identity; the other strategies establish
-// presence only.
+// Observe reports actual Git checkout identity only when the configured copy
+// preserves the checkout metadata. Other output modes retain presence-only
+// behavior because they cannot authoritatively identify the installed commit.
 func (a *GitAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
 	if tool == nil || mc == nil {
 		return plan.Observation{}, errors.New("git: tool and method are required")
@@ -93,22 +91,34 @@ func (a *GitAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.To
 	}
 	if extractTo, ok := mc.Config["extract_to"].(string); ok && extractTo != "" {
 		extractTo = config.ExpandHomeDir(extractTo)
-		if info, err := os.Stat(filepath.Join(extractTo, ".git")); err == nil && info.IsDir() {
-			if ref := configuredRevision(mc); ref != "" {
-				res := rn.Run(ctx, "git", "-C", extractTo, "rev-parse", "HEAD", ref)
-				if res.Err != nil || res.ExitCode != 0 {
-					return plan.Observation{Presence: plan.PresenceAbsent}, nil
-				}
-				lines := nonEmptyLines(string(res.Stdout))
-				if len(lines) < 2 || lines[0] != lines[1] {
-					return plan.Observation{Presence: plan.PresenceAbsent}, nil
-				}
-				return plan.Observation{
-					Presence:    plan.PresencePresent,
-					Identity:    plan.ObservedIdentity{Revision: ref},
-					KnownFields: []plan.IdentityField{plan.FieldRevision},
-				}, nil
+		gitDir := filepath.Join(extractTo, ".git")
+		if methodkind.GitRetainsCheckout(mc.Kind, mc.Config) {
+			root, err := os.Stat(extractTo)
+			if errors.Is(err, os.ErrNotExist) {
+				return plan.Observation{Presence: plan.PresenceAbsent}, nil
 			}
+			if err != nil || !root.IsDir() {
+				return plan.Observation{Presence: plan.PresenceBroken, Detail: "git: checkout directory cannot be inspected"}, nil
+			}
+			info, err := os.Stat(gitDir)
+			if err != nil || !info.IsDir() {
+				return plan.Observation{Presence: plan.PresenceBroken, Detail: "git: retained checkout metadata is unavailable"}, nil
+			}
+			res := rn.Run(ctx, "git", "-C", extractTo, "rev-parse", "--verify", "HEAD^{commit}")
+			if res.Err != nil || res.ExitCode != 0 {
+				return plan.Observation{Presence: plan.PresenceBroken, Detail: "git: checkout HEAD probe failed"}, nil
+			}
+			head := strings.TrimSpace(string(res.Stdout))
+			if !isFullCommitID(head) {
+				return plan.Observation{Presence: plan.PresenceBroken, Detail: "git: checkout HEAD probe returned an invalid commit id"}, nil
+			}
+			return plan.Observation{
+				Presence:    plan.PresencePresent,
+				Identity:    plan.ObservedIdentity{Revision: head},
+				KnownFields: []plan.IdentityField{plan.FieldRevision},
+			}, nil
+		}
+		if info, err := os.Stat(gitDir); err == nil && info.IsDir() {
 			return plan.Observation{Presence: plan.PresencePresent}, nil
 		}
 	}
@@ -118,6 +128,10 @@ func (a *GitAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.To
 		}
 	}
 	return plan.Observation{Presence: plan.PresenceAbsent}, nil
+}
+
+func isFullCommitID(value string) bool {
+	return (len(value) == 40 || len(value) == 64) && isHexSHA(value)
 }
 
 // InstalledVersion reports the version the git method pinned the tool to:

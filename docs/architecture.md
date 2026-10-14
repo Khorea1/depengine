@@ -231,9 +231,39 @@ successful empty inventory. A combined target-plus-sentinel query was also
 rejected: when the target is missing, dpkg-query may return exit 1 without
 printing even the sentinel row. The independent sentinel query supplies the
 needed database-health proof without parsing locale-dependent diagnostics or
-adding a cache. Other managers keep their existing provider-specific protocol;
-each needs its own evidence and conformance gate before this behavior is
-generalized.
+adding a cache.
+
+Native RPM-backed observation (Fedora via dnf and SUSE via zypper) runs a target
+`rpm -q --qf '%{NAME}\t%{ARCH}\n'` query and, for targets other than
+`filesystem`, an independent 'filesystem' sentinel query when the target
+completed without transport/Wait errors and exited 0 or 1. The target itself is
+the sentinel when querying 'filesystem'; transport/Wait errors and other exit
+codes skip the follow-up query. Thus observation runs at most two indexed
+package queries, without a full database scan or cache. `LC_ALL=C` is forced
+for each query. RPM uses exit 1 for both
+an absent target and query/database failures, so absence is accepted only when
+the target exits 1 with exactly `package <name> is not installed\n`, stderr is
+empty, and the sentinel returns exactly one `filesystem` row with exit 0 and no
+stderr. Target exit 0 instead requires one well-formed matching row; exit codes
+other than 0/1, different text, empty output, any stderr, malformed or ambiguous
+rows, failed sentinel, and execution/pipe errors are unknown/broken. The accepted
+diagnostic is locale-stable only under the forced C locale. This is deliberately
+fail-closed if an RPM version changes its diagnostic or can emit it for a query
+error.
+Container probes on the documented Fedora and openSUSE RPM versions confirmed
+that an unavailable database returns the exact absence-looking message for
+both target and sentinel, while a malformed query returns exit 0 with an error
+on stderr. Thus target exit status or message alone is insufficient; stdout,
+stderr, exit status, and the healthy sentinel are all part of the contract.
+A full `rpm -qa` scan was rejected because it
+copies and parses unrelated package records and may succeed with empty output
+against an unavailable database; per-run caching was rejected because installs
+and removals make an inventory stale unless every mutation path invalidates it.
+The conformance probes cover Fedora RPM 6.0.2 with SQLite and openSUSE Leap 15.6
+RPM 4.14.3 with NDB; wider RPM/provider versions require the same evidence.
+Observation reports installed package identity only: no version, arch selector,
+or immutable lock identity is inferred. Other managers retain their provider-
+specific protocol and need their own evidence and conformance gate.
 
 Desired-state verification uses the normative [state model](design/state-model.md) for
 reconciliation states, authority boundaries, lock coverage, preparation journals, and

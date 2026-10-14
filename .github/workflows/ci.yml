@@ -159,6 +159,11 @@ jobs:
     - name: Run tests
       run: go test -race ./...
 
+    - name: Build and replay adversarial validation
+      run: |
+        go build -o ./depengine .
+        DEPENGINE_BIN=./depengine tests/crossplatform/validation-adversarial.sh
+
     - name: Run native Homebrew lifecycle smoke test
       env:
         HOMEBREW_NO_AUTO_UPDATE: "1"
@@ -192,6 +197,8 @@ jobs:
           git -C "$GITHUB_WORKSPACE" status --porcelain=v1 >/dev/null
           go version
           go test ./...
+          go build -o ./depengine .
+          DEPENGINE_BIN=./depengine tests/crossplatform/validation-adversarial.sh
           tests/platform/native-lifecycle.sh tests/platform/fixtures/native-hello.toml depengine-native-smoke
           tests/platform/native-failure.sh tests/platform/fixtures/native-missing.toml depengine-native-missing
 
@@ -219,6 +226,8 @@ jobs:
           git -C "$GITHUB_WORKSPACE" status --porcelain=v1 >/dev/null
           go version
           go test ./...
+          go build -o ./depengine .
+          DEPENGINE_BIN=./depengine tests/crossplatform/validation-adversarial.sh
           tests/platform/native-lifecycle.sh tests/platform/fixtures/openbsd-pkgadd.toml depengine-openbsd-smoke
           tests/platform/native-failure.sh tests/platform/fixtures/native-missing.toml depengine-native-missing
 
@@ -264,6 +273,8 @@ jobs:
           git -C "$GITHUB_WORKSPACE" status --porcelain=v1 >/dev/null
           go version
           go test ./...
+          go build -o ./depengine .
+          DEPENGINE_BIN=./depengine tests/crossplatform/validation-adversarial.sh
           tests/platform/native-lifecycle.sh tests/platform/fixtures/netbsd-pkgin.toml depengine-netbsd-smoke
           tests/platform/native-failure.sh tests/platform/fixtures/native-missing.toml depengine-native-missing
 
@@ -315,6 +326,14 @@ jobs:
 
     - name: Run tests
       run: go test -race ./...
+
+    - name: Build and replay adversarial validation
+      shell: bash
+      env:
+        DEPENGINE_BIN: ./depengine.exe
+      run: |
+        go build -o "$DEPENGINE_BIN" .
+        tests/crossplatform/validation-adversarial.sh
 
     - name: Run native Chocolatey lifecycle smoke test
       shell: bash

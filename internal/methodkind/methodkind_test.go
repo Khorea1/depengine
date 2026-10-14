@@ -15,6 +15,33 @@ import (
 	"github.com/Khorea1/depengine/internal/planner"
 )
 
+func TestGitRetainsCheckoutMatchesGitCopyConfiguration(t *testing.T) {
+	tests := []struct {
+		name   string
+		kind   string
+		config map[string]any
+		want   bool
+	}{
+		{name: "default artifact retains checkout", kind: "git", config: map[string]any{"extract_to": "/opt/tool"}, want: true},
+		{name: "empty artifact uses default", kind: "git", config: map[string]any{"extract_to": "/opt/tool", "artifact": ""}, want: true},
+		{name: "root artifact retains checkout", kind: "git", config: map[string]any{"extract_to": "/opt/tool", "artifact": "/"}, want: true},
+		{name: "dot artifact retains checkout", kind: "git", config: map[string]any{"extract_to": "/opt/tool", "artifact": "./"}, want: true},
+		{name: "nested artifact does not retain checkout", kind: "git", config: map[string]any{"extract_to": "/opt/tool", "artifact": "build/output"}},
+		{name: "managed paths take precedence", kind: "git", config: map[string]any{"extract_to": "/opt/tool", "managed_paths": []any{"bin/tool"}}},
+		{name: "string managed paths take precedence", kind: "git", config: map[string]any{"extract_to": "/opt/tool", "managed_paths": []string{"bin/tool"}}},
+		{name: "extract_to required", kind: "git", config: map[string]any{"artifact": "/"}},
+		{name: "method kind required", kind: "http", config: map[string]any{"extract_to": "/opt/tool"}},
+		{name: "config required", kind: "git"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := methodkind.GitRetainsCheckout(tt.kind, tt.config); got != tt.want {
+				t.Fatalf("GitRetainsCheckout(%q, %#v) = %t, want %t", tt.kind, tt.config, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestKnownKindsIncludesNativeManagers verifies that every native manager
 // name (Manager.Name) and binary alias (managerNameToClan key) appears in
 // knownKinds, so that config.Validate can cross-check method kinds against

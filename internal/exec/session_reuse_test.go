@@ -18,19 +18,37 @@ type sessionReuseAdapter struct {
 	failTools map[string]bool
 	installs  map[string]int
 	packages  map[string][]string
+	installed map[string]string
+	observed  map[string][]string
 }
 
-func (a *sessionReuseAdapter) Kind() string { return "session-reuse" }
+func (a *sessionReuseAdapter) Kind() string { return "cargo" }
 
 func (*sessionReuseAdapter) Available(context.Context, run.Runner) bool { return true }
 
-func (*sessionReuseAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
-	resolved := intent.Clone()
+func (*sessionReuseAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, method *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent != nil {
+		resolved := intent.Clone()
+		return &resolved, nil
+	}
+	resolved := plan.New(tool.Name, method.Kind, false)
 	return &resolved, nil
 }
 
-func (*sessionReuseAdapter) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
-	return plan.Observation{Presence: plan.PresenceAbsent}, nil
+func (a *sessionReuseAdapter) Observe(_ context.Context, _ run.Runner, tool *config.Tool, method *config.MethodCandidate) (plan.Observation, error) {
+	a.mu.Lock()
+	pkg, installed := a.installed[tool.Name]
+	if installed {
+		if a.observed == nil {
+			a.observed = make(map[string][]string)
+		}
+		a.observed[tool.Name] = append(a.observed[tool.Name], pkg)
+	}
+	a.mu.Unlock()
+	if !installed {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
 }
 
 func (a *sessionReuseAdapter) InstallResolved(_ context.Context, _ run.Runner, tool *config.Tool, method *config.MethodCandidate, _ *plan.ResolvedInstallPlan) error {
@@ -43,6 +61,10 @@ func (a *sessionReuseAdapter) InstallResolved(_ context.Context, _ run.Runner, t
 	if a.failTools[tool.Name] {
 		return errors.New("configured test failure")
 	}
+	if a.installed == nil {
+		a.installed = make(map[string]string)
+	}
+	a.installed[tool.Name], _ = method.Config["pkg"].(string)
 	return nil
 }
 
@@ -76,9 +98,15 @@ func (a *sessionReuseAdapter) packageInstalls(tool string) []string {
 	return append([]string(nil), a.packages[tool]...)
 }
 
+func (a *sessionReuseAdapter) observedPackages(tool string) []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.observed[tool]...)
+}
+
 func sessionReuseSchema(tools map[string]*config.Tool) *config.Schema {
 	return &config.Schema{
-		Defaults: config.Defaults{MethodOrder: []string{"session-reuse"}},
+		Defaults: config.Defaults{MethodOrder: []string{"cargo"}},
 		Tools:    tools,
 	}
 }
@@ -87,7 +115,7 @@ func sessionReuseTool(name, pkg string, requires ...string) *config.Tool {
 	return &config.Tool{
 		Name: name,
 		Methods: []*config.MethodCandidate{{
-			Kind:     "session-reuse",
+			Kind:     "cargo",
 			Config:   map[string]any{"pkg": pkg},
 			Requires: requires,
 		}},
@@ -138,7 +166,8 @@ func TestExecuteSequentialSchemasDoNotShareRunState(t *testing.T) {
 	}
 }
 
-func TestExecuteReinstallsNamedLazyDependencyForNewSchemaIdentity(t *testing.T) {
+func TestExecuteRejectsChangedLazyDependencyWithoutTrackedReplacementState(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	adapter := &sessionReuseAdapter{
 		failTools: make(map[string]bool),
 		installs:  make(map[string]int),
@@ -146,13 +175,13 @@ func TestExecuteReinstallsNamedLazyDependencyForNewSchemaIdentity(t *testing.T) 
 	}
 	executor := newSessionReuseExecutor(adapter)
 
-	for _, pkg := range []string{"dependency-from-schema-a", "dependency-from-schema-b"} {
+	for i, pkg := range []string{"dependency-from-schema-a", "dependency-from-schema-b"} {
 		schema := sessionReuseSchema(map[string]*config.Tool{
 			"shared-helper": {
 				Name:           "shared-helper",
 				DependencyOnly: true,
 				Methods: []*config.MethodCandidate{{
-					Kind:   "session-reuse",
+					Kind:   "cargo",
 					Config: map[string]any{"pkg": pkg},
 				}},
 			},
@@ -162,16 +191,46 @@ func TestExecuteReinstallsNamedLazyDependencyForNewSchemaIdentity(t *testing.T) 
 		if err != nil {
 			t.Fatalf("Execute() for %q error = %v", pkg, err)
 		}
-		if report.Failed != 0 || report.Success != 2 {
-			t.Fatalf("report for %q = %+v, want helper and consumer installed", pkg, report)
+		if i == 0 {
+			if report.Failed != 0 || report.Success != 2 {
+				t.Fatalf("first report = %+v, want helper and consumer installed", report)
+			}
+			continue
+		}
+		if report.Failed != 2 || report.Success != 0 || len(report.Tools) != 2 {
+			t.Fatalf("changed-identity report = %+v, want both dependency and consumer blocked", report)
+		}
+		var helper, consumer *ToolResult
+		for i := range report.Tools {
+			switch report.Tools[i].Tool {
+			case "shared-helper":
+				helper = &report.Tools[i]
+			case "consumer":
+				consumer = &report.Tools[i]
+			}
+		}
+		if helper == nil || helper.Status != StatusFailed {
+			t.Fatalf("changed-identity helper = %+v, want fail-closed replacement without discovery snapshot", helper)
+		}
+		if consumer == nil || consumer.Status != StatusFailed {
+			t.Fatalf("dependent consumer = %+v, want blocked after helper replacement rejection", consumer)
 		}
 	}
 
-	if got := adapter.packageInstalls("shared-helper"); len(got) != 2 || got[0] != "dependency-from-schema-a" || got[1] != "dependency-from-schema-b" {
-		t.Fatalf("shared-helper package installs = %v, want both schema identities in call order", got)
+	if got := adapter.packageInstalls("shared-helper"); len(got) != 1 || got[0] != "dependency-from-schema-a" {
+		t.Fatalf("shared-helper package installs = %v, want only schema A; schema B must not be adopted or installed", got)
 	}
-	if got := adapter.installCounts(); got["shared-helper"] != 2 {
-		t.Fatalf("shared-helper installs = %d, want one for each Execute()", got["shared-helper"])
+	if got := adapter.installCounts(); got["shared-helper"] != 1 || got["consumer"] != 1 {
+		t.Fatalf("installs = %v, want only the initial helper and consumer commits", got)
+	}
+	if got := adapter.observedPackages("shared-helper"); len(got) == 0 {
+		t.Fatal("shared-helper was never observed")
+	} else {
+		for _, pkg := range got {
+			if pkg != "dependency-from-schema-a" {
+				t.Fatalf("observed shared-helper identities = %v, want only schema A", got)
+			}
+		}
 	}
 }
 func TestExecuteUsesSchemaMethodOrderThenConfiguredFallback(t *testing.T) {

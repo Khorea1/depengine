@@ -29,7 +29,7 @@ type gitSecretTestAdapter struct {
 }
 
 func newGitSecretTestAdapter() *gitSecretTestAdapter {
-	return &gitSecretTestAdapter{testMockAdapter: testMockAdapter{kindValue: "git"}}
+	return &gitSecretTestAdapter{testMockAdapter: testMockAdapter{kindValue: "git", stateful: true}}
 }
 
 type cargoSecretTestAdapter struct {
@@ -39,7 +39,7 @@ type cargoSecretTestAdapter struct {
 }
 
 func newCargoSecretTestAdapter() *cargoSecretTestAdapter {
-	return &cargoSecretTestAdapter{testMockAdapter: testMockAdapter{kindValue: "cargo"}}
+	return &cargoSecretTestAdapter{testMockAdapter: testMockAdapter{kindValue: "cargo", stateful: true}}
 }
 
 func (a *cargoSecretTestAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, method *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
@@ -52,8 +52,8 @@ func (a *gitSecretTestAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *c
 	return &resolved, nil
 }
 
-func (a *gitSecretTestAdapter) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
-	return plan.Observation{Presence: plan.PresenceAbsent}, nil
+func (a *gitSecretTestAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, method *config.MethodCandidate) (plan.Observation, error) {
+	return a.testMockAdapter.Observe(ctx, rn, tool, method)
 }
 
 func (a *gitSecretTestAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, method *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {

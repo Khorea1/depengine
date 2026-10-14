@@ -99,12 +99,23 @@ Legacy lock v1 covers each selector class as follows:
 | Candidate host package sources (`sources = [...]`) | Declaration identity plus Git-backed source revision preflight | Lock v1 hashes source `kind`/`name`/credential-free `url` and an optional Brew/Scoop `revision`; frozen validation rejects declaration drift. A declared revision is compared with the local source HEAD at preflight. Homebrew may auto-update a tap during install; PPA/COPR publication state and signing-key trust remain unpinned. |
 
 For Debian, Mint, and Termux native installs, package observation proves only
-installed presence from the host dpkg status database. It does not resolve a
-package version and does not add any native package identity to lock v2; the
-existing all-or-nothing immutable-lock boundary remains unchanged. If dpkg state
-cannot be proven, status is unknown/broken and destructive lifecycle operations
-fail closed rather than treating the package as absent. Other package managers
-retain their own observation contracts until independently evidenced.
+installed presence from the host dpkg status database. For Fedora and SUSE
+native installs (dnf, dnf5, yum, zypper), observation makes up to two indexed
+RPM queries per package: one target query, plus the `filesystem` sentinel when
+applicable. A `filesystem` target reuses the target query; transport/Wait errors
+and target exit codes outside 0/1 skip the follow-up. `LC_ALL=C` is forced; it
+reports absence only for RPM's
+exact `package <name> is not installed` diagnostic with empty stderr and a
+separately verified installed `filesystem` sentinel. This bounded protocol uses
+no full inventory or cache. Container probes cover Fedora RPM 6.0.2/SQLite and
+openSUSE Leap 15.6 RPM 4.14.3/NDB. Empty output, query diagnostics, malformed or
+unavailable databases, and process errors remain unknown/broken; other RPM
+versions and providers require conformance evidence before support is widened.
+Neither protocol resolves package version or adds native package identity to
+lock v2; the existing all-or-nothing immutable-lock boundary remains unchanged.
+If dpkg or RPM state cannot be proven, destructive lifecycle operations fail
+closed rather than treating the package as absent. Other package managers retain
+their own observation contracts until independently evidenced.
 
 For the legacy lock v1 subset, `depengine install --frozen-lockfile` fails
 closed when the lockfile is missing, unreadable, or written for an unsupported

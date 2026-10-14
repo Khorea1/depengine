@@ -25,6 +25,7 @@ type executorAdapterV2Double struct {
 	resolveCall   int
 	installCall   int
 	installed     *plan.ResolvedInstallPlan
+	postInstall   *plan.Observation
 }
 
 func (a *executorAdapterV2Double) Check(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
@@ -34,6 +35,9 @@ func (a *executorAdapterV2Double) Check(context.Context, run.Runner, *config.Too
 
 func (a *executorAdapterV2Double) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
 	a.observeCall++
+	if a.installCall > 0 && a.postInstall != nil {
+		return *a.postInstall, nil
+	}
 	if a.observeErr != nil {
 		return plan.Observation{}, a.observeErr
 	}
@@ -123,12 +127,16 @@ func TestExecutorAdapterV2PresenceStates(t *testing.T) {
 				testMockAdapter: testMockAdapter{kindValue: "cargo"},
 				presence:        tt.presence,
 			}
+			if tt.presence == plan.PresenceAbsent {
+				adapter.postInstall = &plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: "demo"}, KnownFields: []plan.IdentityField{plan.FieldPackage}}
+			}
 			result := v2ExecutorAttempt(t, adapter)
 			if result.Status != tt.wantStatus {
 				t.Fatalf("status = %v, want %v; result = %+v", result.Status, tt.wantStatus, result)
 			}
-			if adapter.observeCall != 1 {
-				t.Fatalf("Observe() calls = %d, want 1", adapter.observeCall)
+			wantObserveCalls := 1 + tt.wantInstall
+			if adapter.observeCall != wantObserveCalls {
+				t.Fatalf("Observe() calls = %d, want %d", adapter.observeCall, wantObserveCalls)
 			}
 			if adapter.resolveCall != 1 {
 				t.Fatalf("ResolvePlan() calls = %d, want 1", adapter.resolveCall)

@@ -89,6 +89,10 @@ func (ex *Executor) toolStateForResult(
 	}
 	if version := ex.installedVersion(ctx, tool, result); version != "" {
 		toolState.Version = version
+	} else if result.Status == StatusInstalled && result.PlanIntent != nil && result.PlanIntent.Identity.Version != "" {
+		// Persist only the concrete version selected by resolution. Requested
+		// selectors in the schema are not a substitute for resolved identity.
+		toolState.Version = result.PlanIntent.Identity.Version
 	} else if hadExisting {
 		toolState.Version = existing.Version
 	}

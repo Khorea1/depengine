@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- For Git recipes that retain the clone root, observe the checked-out commit itself and use it for revision drift/recovery; keep opaque artifacts and managed-path outputs presence-only.
+- Schedule the existing adversarial validation CLI replay on macOS, Windows Git Bash, FreeBSD, OpenBSD, and NetBSD CI jobs; target-platform execution is reported by those runs.
+- After a successful adapter install, verify its exact resolved target before recording state or running post-install hooks; non-satisfied observations fail terminally and leave preparation WAL unresolved rather than retrying or rolling back. Preserve only observed/resolved release versions in durable state.
 - Validate effective GitHub distribution integrity after schema/manifest merge while preserving `validate --format json`; classify detached-signature verification failures as terminal, compute preflight elevation only from host-compatible methods and their effective privileged targets.
 - Package-manager Observe probes for npm, Bun, pipx, pnpm, Yarn, Composer, uv, and Gem distinguish confirmed presence or absence from unknown or broken CLI output, preserving reported installed versions on drift.
 - Pin golangci-lint v2.14.0 in CI for Go 1.27 export-data compatibility, verified against Go 1.27.2.
@@ -32,3 +35,4 @@
 - GitHub release assets retain declared checksum and detached-signature metadata through resolution and fail verification before extraction or installation mutates the payload, including after a checksum-triggered cache refetch.
 - When the home and XDG storage bases are unavailable, state and download cache use a per-user fallback instead of shared or relative paths: a private system-temp root on Unix (owner-only directories and files, with ownership/permission checks) or the OS-provided per-user cache directory on Windows and other platforms (trusting the OS-managed user ACL). Resolution fails closed when the fallback cannot be resolved or secured.
 - Debian/Termux dpkg-backed native package checks now use structured status records and a healthy `dpkg` sentinel. Unknown, malformed, or ambiguous inventory fails closed without authorizing install or batch selection; this proves package presence only and does not infer an immutable package version.
+- Fedora/SUSE RPM-backed lifecycle observation now uses strict C-locale query output plus an installed `filesystem` sentinel; ambiguous absence, diagnostics, malformed or unavailable databases, and process errors remain unknown/broken. No package version or lock-v2 identity is inferred.
