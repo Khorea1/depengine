@@ -742,7 +742,7 @@ are described above or alongside their examples.
 | `macpkg` | Install a signed macOS Installer package by receipt `package_id`; removal is manual | `nvim = { macpkg = { url = "https://…/nvim.pkg", package_id = "com.neovim.Nvim" } }` |
 | `dmg` | Install one declared `.app` bundle from a read-only disk image into the scope Applications directory; removal targets exactly that bundle | `nvim = { dmg = { url = "https://…/nvim.dmg", app = "Neovim.app", scope = "user" } }` |
 | `sdkman` | SDKMAN! JVM SDKs | `java17 = { sdkman = "java" }` |
-| `steamcmd` | SteamCMD game server tools | `cs2 = { steamcmd = "730" }` |
+| `steamcmd` | Schema syntax accepted; ordinary install fails closed before mutation because installed server identity cannot be verified | `cs2 = { steamcmd = "730" }` |
 | `pacstall` | Pacstall packages (Debian-based AUR-like) | `neofetch = { pacstall = "neofetch" }` |
 | `aur` | Arch User Repository (via configured `aur_helper`) | `google-chrome = { aur = "google-chrome" }` |
 | `winget` | Windows Package Manager; typed `version`, `source`, `scope`, `architecture`, and `installer_type` | `git = { winget = { pkg = "Git.Git", version = "2.53.0", source = "winget", scope = "machine" } }` |
