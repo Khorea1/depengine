@@ -165,19 +165,20 @@ func TestNativeInstallRequiresPostcondition(t *testing.T) {
 		rn := &nativeSequenceRunner{results: []run.Result{
 			{ExitCode: 0},
 			{ExitCode: 1, Stderr: []byte("package not installed")},
+			dpkgQueryResult("dpkg", "install ok installed"),
 		}}
 		adapter := &NativeByManagerAdapter{managerName: "apt"}
 		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "missing-package"}}
 
 		err := adapter.Install(context.Background(), rn, &config.Tool{Name: "demo"}, mc)
-		if err == nil || !strings.Contains(err.Error(), "could not be verified") {
+		if err == nil || !strings.Contains(err.Error(), "not authoritatively installed") {
 			t.Fatalf("Install() error = %v, want post-install verification failure", err)
 		}
-		if len(rn.calls) != 2 {
-			t.Fatalf("calls = %#v, want install + verification", rn.calls)
+		if len(rn.calls) != 3 {
+			t.Fatalf("calls = %#v, want install + target + sentinel verification", rn.calls)
 		}
-		if rn.calls[1].Name != "dpkg" {
-			t.Fatalf("verification command = %#v, want dpkg", rn.calls[1])
+		if rn.calls[1].Name != "dpkg-query" || rn.calls[2].Name != "dpkg-query" {
+			t.Fatalf("verification commands = %#v, want dpkg-query target and sentinel", rn.calls[1:])
 		}
 	})
 
@@ -408,81 +409,58 @@ func TestNativeByManagerAdapterRemoveDelegates(t *testing.T) {
 }
 func TestNativeByManagerAdapterCheck(t *testing.T) {
 	t.Run("installed", func(t *testing.T) {
-		fr := &run.FakeRunner{ExitCode: 0}
+		fr := &dpkgSequenceRunner{results: []run.Result{dpkgQueryResult("git", "install ok installed"), dpkgQueryResult("dpkg", "install ok installed")}}
 		a := &NativeByManagerAdapter{managerName: "apt"}
 		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}
 		tool := &config.Tool{Name: "git"}
-
-		got := a.Check(context.Background(), fr, tool, mc)
-		if !got {
+		if !a.Check(context.Background(), fr, tool, mc) {
 			t.Fatal("expected true for installed package")
 		}
-		if len(fr.Calls) != 1 {
-			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
+		if len(fr.calls) != 2 {
+			t.Fatalf("expected target and sentinel calls, got %#v", fr.calls)
 		}
-		if fr.Calls[0].Name != "dpkg" {
-			t.Fatalf("expected 'dpkg', got %q", fr.Calls[0].Name)
+		if fr.calls[0].Name != "dpkg-query" || fr.calls[1].Name != "dpkg-query" {
+			t.Fatalf("expected dpkg-query calls, got %#v", fr.calls)
 		}
-		wantArgs := []string{"-s", "git"}
-		if len(fr.Calls[0].Args) != len(wantArgs) {
-			t.Fatalf("expected args %v, got %v", wantArgs, fr.Calls[0].Args)
-		}
-		for i, arg := range wantArgs {
-			if fr.Calls[0].Args[i] != arg {
-				t.Fatalf("arg %d: expected %q, got %q", i, arg, fr.Calls[0].Args[i])
-			}
+		if len(fr.calls[0].Args) != 3 || fr.calls[0].Args[2] != "git" || fr.calls[1].Args[2] != "dpkg" {
+			t.Fatalf("unexpected target/sentinel args: %#v", fr.calls)
 		}
 	})
-
 	t.Run("not installed", func(t *testing.T) {
-		fr := &run.FakeRunner{ExitCode: 1}
+		fr := &dpkgSequenceRunner{results: []run.Result{{ExitCode: 1}, dpkgQueryResult("dpkg", "install ok installed")}}
 		a := &NativeByManagerAdapter{managerName: "apt"}
 		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}
-		tool := &config.Tool{Name: "git"}
-
-		got := a.Check(context.Background(), fr, tool, mc)
-		if got {
+		if a.Check(context.Background(), fr, &config.Tool{Name: "git"}, mc) {
 			t.Fatal("expected false for uninstalled package")
 		}
-		if len(fr.Calls) != 1 {
-			t.Fatalf("expected 1 call, got %d", len(fr.Calls))
-		}
 	})
-
 	t.Run("empty pkg returns false", func(t *testing.T) {
-		fr := &run.FakeRunner{}
+		fr := &dpkgSequenceRunner{}
 		a := &NativeByManagerAdapter{managerName: "apt"}
 		mc := &config.MethodCandidate{Config: map[string]any{}}
-		tool := &config.Tool{Name: "git"}
-
-		got := a.Check(context.Background(), fr, tool, mc)
-		if got {
+		if a.Check(context.Background(), fr, &config.Tool{Name: "git"}, mc) {
 			t.Fatal("expected false when pkg is empty")
 		}
-		if len(fr.Calls) != 0 {
-			t.Fatalf("expected 0 calls when pkg is empty, got %d", len(fr.Calls))
+		if len(fr.calls) != 0 {
+			t.Fatalf("expected 0 calls when pkg is empty, got %d", len(fr.calls))
 		}
 	})
-
 	t.Run("unknown manager returns false", func(t *testing.T) {
-		fr := &run.FakeRunner{}
+		fr := &dpkgSequenceRunner{}
 		a := &NativeByManagerAdapter{managerName: "nonexistent"}
 		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}
-		tool := &config.Tool{Name: "git"}
-
-		got := a.Check(context.Background(), fr, tool, mc)
-		if got {
+		if a.Check(context.Background(), fr, &config.Tool{Name: "git"}, mc) {
 			t.Fatal("expected false for unknown manager")
 		}
-		if len(fr.Calls) != 0 {
-			t.Fatalf("expected 0 calls, got %d", len(fr.Calls))
+		if len(fr.calls) != 0 {
+			t.Fatalf("expected 0 calls, got %d", len(fr.calls))
 		}
 	})
 }
 
 func TestNativeByManagerAdapterInstall(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
-		fr := &run.FakeRunner{ExitCode: 0}
+		fr := &dpkgSequenceRunner{results: []run.Result{{}, dpkgQueryResult("git", "install ok installed"), dpkgQueryResult("dpkg", "install ok installed")}}
 		a := &NativeByManagerAdapter{managerName: "apt"}
 		mc := &config.MethodCandidate{Config: map[string]any{"pkg": "git"}}
 		tool := &config.Tool{Name: "git"}
@@ -491,22 +469,22 @@ func TestNativeByManagerAdapterInstall(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if len(fr.Calls) != 2 {
-			t.Fatalf("expected install + verification calls, got %d: %v", len(fr.Calls), fr.Calls)
+		if len(fr.calls) != 3 || fr.calls[1].Name != "dpkg-query" || fr.calls[2].Name != "dpkg-query" {
+			t.Fatalf("expected install + target + sentinel calls, got %#v", fr.calls)
 		}
 		// apt uses clan "debian" which has Name "apt" and sudo=true.
 		// InstallCmd = ["apt-get", "install", "-y", "{pkg}"] → with sudo → ["sudo", "apt-get", "install", "-y", "git"]
 		// replaceManagerBinary sees managerName "apt" == nm.Name "apt", so no change.
-		if fr.Calls[0].Name != "sudo" {
-			t.Fatalf("expected 'sudo', got %q", fr.Calls[0].Name)
+		if fr.calls[0].Name != "sudo" {
+			t.Fatalf("expected 'sudo', got %q", fr.calls[0].Name)
 		}
 		wantArgs := []string{"apt-get", "install", "-y", "git"}
-		if len(fr.Calls[0].Args) != len(wantArgs) {
-			t.Fatalf("expected args %v, got %v", wantArgs, fr.Calls[0].Args)
+		if len(fr.calls[0].Args) != len(wantArgs) {
+			t.Fatalf("expected args %v, got %v", wantArgs, fr.calls[0].Args)
 		}
 		for i, arg := range wantArgs {
-			if fr.Calls[0].Args[i] != arg {
-				t.Fatalf("arg %d: expected %q, got %q", i, arg, fr.Calls[0].Args[i])
+			if fr.calls[0].Args[i] != arg {
+				t.Fatalf("arg %d: expected %q, got %q", i, arg, fr.calls[0].Args[i])
 			}
 		}
 	})
@@ -592,11 +570,11 @@ func TestNativeDeclaredFieldsGovernRuntimeCommands(t *testing.T) {
 		}
 	}
 
-	checkRunner := &run.FakeRunner{ExitCode: 0}
+	checkRunner := &dpkgSequenceRunner{results: []run.Result{dpkgQueryResult("fd-find", "install ok installed"), dpkgQueryResult("dpkg", "install ok installed")}}
 	if !adapter.Check(context.Background(), checkRunner, tool, mc) {
-		t.Fatal("Check should succeed with fake runner")
+		t.Fatal("Check should succeed with authoritative dpkg results")
 	}
-	assertUsesOverride(t, checkRunner.Calls)
+	assertUsesOverride(t, checkRunner.calls)
 
 	availableRunner := &run.FakeRunner{ExitCode: 0}
 	if !adapter.CheckAvailable(context.Background(), availableRunner, tool, mc) {
@@ -604,11 +582,11 @@ func TestNativeDeclaredFieldsGovernRuntimeCommands(t *testing.T) {
 	}
 	assertUsesOverride(t, availableRunner.Calls)
 
-	installRunner := &run.FakeRunner{ExitCode: 0}
+	installRunner := &dpkgSequenceRunner{results: []run.Result{{}, dpkgQueryResult("fd-find", "install ok installed"), dpkgQueryResult("dpkg", "install ok installed")}}
 	if err := adapter.Install(context.Background(), installRunner, tool, mc); err != nil {
 		t.Fatalf("Install returned error: %v", err)
 	}
-	assertUsesOverride(t, installRunner.Calls)
+	assertUsesOverride(t, installRunner.calls)
 
 	removeRunner := &run.FakeRunner{ExitCode: 0}
 	if err := adapter.Remove(context.Background(), removeRunner, tool, mc); err != nil {

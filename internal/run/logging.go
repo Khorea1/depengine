@@ -15,7 +15,7 @@ type Context struct {
 	Method string
 
 	// Probe marks this run as an availability/version/already-installed
-	// check (e.g. "which cargo", "dpkg -s foo") rather than an actual
+	// check (e.g. "which cargo", "dpkg-query -W foo") rather than an actual
 	// install attempt. A non-zero exit from a probe is the EXPECTED way
 	// the executor learns "not available" / "not installed yet" — it is
 	// not a failure the user needs to see scroll by. Probe results are

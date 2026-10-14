@@ -100,27 +100,39 @@ func TestNativeAdapterV2Observe(t *testing.T) {
 	mc := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "git"}}
 	adapter := NewNativeAdapter("debian")
 
-	present, err := adapter.Observe(context.Background(), &run.FakeRunner{ExitCode: 0}, tool, mc)
+	presentRunner := &dpkgSequenceRunner{results: []run.Result{dpkgQueryResult("git", "install ok installed"), dpkgQueryResult("dpkg", "install ok installed")}}
+	present, err := adapter.Observe(context.Background(), presentRunner, tool, mc)
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)
 	}
 	if present.Presence != plan.PresencePresent || present.Identity.Package != "git" {
 		t.Fatalf("Observe() = %#v, want present git", present)
 	}
+	if len(presentRunner.calls) != 2 || presentRunner.calls[0].Args[2] != "git" || presentRunner.calls[1].Args[2] != "dpkg" {
+		t.Fatalf("dpkg calls = %#v, want target then sentinel", presentRunner.calls)
+	}
 
-	absent, err := adapter.Observe(context.Background(), &run.FakeRunner{ExitCode: 1}, tool, mc)
+	absentRunner := &dpkgSequenceRunner{results: []run.Result{{ExitCode: 1}, dpkgQueryResult("dpkg", "install ok installed")}}
+	absent, err := adapter.Observe(context.Background(), absentRunner, tool, mc)
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)
 	}
-	if absent.Presence != plan.PresenceAbsent {
-		t.Fatalf("Observe() presence = %q, want absent", absent.Presence)
+	if absent.Presence != plan.PresenceAbsent || len(absent.KnownFields) != 0 {
+		t.Fatalf("Observe() = %#v, want absent without identity", absent)
 	}
-	if len(absent.KnownFields) != 0 {
-		t.Fatalf("absent observation must not carry authoritative identity: %#v", absent)
+
+	unknownRunner := &dpkgSequenceRunner{results: []run.Result{{}, dpkgQueryResult("dpkg", "install ok installed")}}
+	unknown, err := adapter.Observe(context.Background(), unknownRunner, tool, mc)
+	if err != nil {
+		t.Fatalf("Observe() error = %v", err)
+	}
+	if unknown.Presence != plan.PresenceUnknown {
+		t.Fatalf("Observe() presence = %q, want unknown for empty target output", unknown.Presence)
 	}
 
 	boom := errors.New("spawn failed")
-	broken, err := adapter.Observe(context.Background(), &run.FakeRunner{Err: boom}, tool, mc)
+	brokenRunner := &dpkgSequenceRunner{results: []run.Result{{Err: boom}}}
+	broken, err := adapter.Observe(context.Background(), brokenRunner, tool, mc)
 	if !errors.Is(err, boom) {
 		t.Fatalf("Observe() error = %v, want spawn failure", err)
 	}
@@ -128,12 +140,13 @@ func TestNativeAdapterV2Observe(t *testing.T) {
 		t.Fatalf("Observe() presence = %q, want broken", broken.Presence)
 	}
 
-	empty, err := adapter.Observe(context.Background(), &run.FakeRunner{}, tool, &config.MethodCandidate{Kind: "native", Config: map[string]any{}})
+	emptyRunner := &dpkgSequenceRunner{}
+	empty, err := adapter.Observe(context.Background(), emptyRunner, tool, &config.MethodCandidate{Kind: "native", Config: map[string]any{}})
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)
 	}
-	if empty.Presence != plan.PresenceAbsent {
-		t.Fatalf("Observe() presence = %q, want absent for empty pkg", empty.Presence)
+	if empty.Presence != plan.PresenceAbsent || len(emptyRunner.calls) != 0 {
+		t.Fatalf("Observe() = %#v, want absent for empty pkg without probe", empty)
 	}
 
 	if _, err := adapter.Observe(context.Background(), &run.FakeRunner{}, nil, mc); err == nil {
@@ -144,28 +157,53 @@ func TestNativeAdapterV2Observe(t *testing.T) {
 	}
 }
 
+func TestDpkgProviderAliasesUseAuthoritativeObservation(t *testing.T) {
+	tool := &config.Tool{Name: "git"}
+	method := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "git"}}
+	adapters := []struct {
+		name    string
+		adapter AdapterV2
+	}{
+		{name: "termux native provider", adapter: NewNativeAdapter("termux")},
+		{name: "explicit apt manager alias", adapter: &NativeByManagerAdapter{managerName: "apt"}},
+	}
+	for _, tc := range adapters {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := &dpkgSequenceRunner{results: []run.Result{
+				dpkgQueryResult("git", "hold ok installed"),
+				dpkgQueryResult("dpkg", "install ok installed"),
+			}}
+			observation, err := tc.adapter.Observe(context.Background(), runner, tool, method)
+			if err != nil {
+				t.Fatalf("Observe() error = %v", err)
+			}
+			if observation.Presence != plan.PresencePresent || observation.Identity.Package != "git" {
+				t.Fatalf("Observe() = %#v, want present git", observation)
+			}
+		})
+	}
+}
+
 func TestNativeAdapterV2InstallResolved(t *testing.T) {
 	tool := &config.Tool{Name: "git"}
 	mc := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "git"}}
 	adapter := NewNativeAdapter("debian")
-
-	runner := &run.FakeRunner{ExitCode: 0}
+	runner := &dpkgSequenceRunner{results: []run.Result{{}, dpkgQueryResult("git", "install ok installed"), dpkgQueryResult("dpkg", "install ok installed")}}
 	if err := adapter.InstallResolved(context.Background(), runner, tool, mc, canonicalInstallPlan("git", "native")); err != nil {
 		t.Fatalf("InstallResolved() error = %v", err)
 	}
-	if len(runner.Calls) != 2 || runner.Calls[0].Name != "sudo" || runner.Calls[1].Name != "dpkg" {
-		t.Fatalf("InstallResolved() calls = %#v, want elevated apt-get install + dpkg verification", runner.Calls)
+	if len(runner.calls) != 3 || runner.calls[0].Name != "sudo" || runner.calls[1].Name != "dpkg-query" || runner.calls[2].Name != "dpkg-query" {
+		t.Fatalf("InstallResolved() calls = %#v, want install + target + sentinel verification", runner.calls)
 	}
 	found := false
-	for _, arg := range runner.Calls[0].Args {
+	for _, arg := range runner.calls[0].Args {
 		if arg == "git" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("InstallResolved() args = %v, want package git", runner.Calls[0].Args)
+		t.Fatalf("InstallResolved() args = %v, want package git", runner.calls[0].Args)
 	}
-
 	if err := adapter.InstallResolved(context.Background(), &run.FakeRunner{}, tool, mc, nil); err == nil {
 		t.Fatal("InstallResolved(nil plan) should fail")
 	}
@@ -173,40 +211,30 @@ func TestNativeAdapterV2InstallResolved(t *testing.T) {
 
 func TestNativeAdapterV2InstallResolvedUsesResolvedPackage(t *testing.T) {
 	tool := &config.Tool{Name: "fd"}
-	mc := &config.MethodCandidate{Kind: "native", Config: map[string]any{
-		"pkg":           "fd",
-		"pkg_overrides": map[string]any{"apt": "fd-find"},
-	}}
+	mc := &config.MethodCandidate{Kind: "native", Config: map[string]any{"pkg": "fd", "pkg_overrides": map[string]any{"apt": "fd-find"}}}
 	adapter := NewNativeAdapter("debian")
 	resolved := canonicalInstallPlan("fd", "native")
 	resolved.Identity.Package = "fd-find"
-
-	// The resolved plan is authoritative after resolution. Later changes to
-	// method config must not alter the executable package identity.
 	mc.Config["pkg"] = "wrong-package"
 	mc.Config["pkg_overrides"] = map[string]any{"apt": "also-wrong"}
 
-	runner := &run.FakeRunner{ExitCode: 0}
+	runner := &dpkgSequenceRunner{results: []run.Result{{}, dpkgQueryResult("fd-find", "install ok installed"), dpkgQueryResult("dpkg", "install ok installed")}}
 	if err := adapter.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
 		t.Fatalf("InstallResolved() error = %v", err)
 	}
-	for _, call := range runner.Calls {
+	found := false
+	for _, call := range runner.calls {
 		for _, arg := range call.Args {
 			if arg == "wrong-package" || arg == "also-wrong" || arg == "fd" {
-				t.Fatalf("InstallResolved() used method config instead of resolved package: %#v", runner.Calls)
+				t.Fatalf("InstallResolved() used method config instead of resolved package: %#v", runner.calls)
 			}
-		}
-	}
-	found := false
-	for _, call := range runner.Calls {
-		for _, arg := range call.Args {
 			if arg == "fd-find" {
 				found = true
 			}
 		}
 	}
 	if !found {
-		t.Fatalf("InstallResolved() did not use resolved package identity: %#v", runner.Calls)
+		t.Fatalf("InstallResolved() did not use resolved package identity: %#v", runner.calls)
 	}
 }
 
@@ -256,7 +284,6 @@ func TestNativeByManagerAdapterV2ResolveObserveInstall(t *testing.T) {
 	tool := &config.Tool{Name: "git"}
 	mc := &config.MethodCandidate{Kind: "apt", Config: map[string]any{"pkg": "git"}}
 	adapter := &NativeByManagerAdapter{managerName: "apt"}
-
 	intent, err := planner.BuildCandidateIntent(tool, mc)
 	if err != nil {
 		t.Fatal(err)
@@ -269,14 +296,16 @@ func TestNativeByManagerAdapterV2ResolveObserveInstall(t *testing.T) {
 		t.Fatalf("ValidateResolution() error = %v", err)
 	}
 
-	observation, err := adapter.Observe(context.Background(), &run.FakeRunner{ExitCode: 0}, tool, mc)
+	observeRunner := &dpkgSequenceRunner{results: []run.Result{dpkgQueryResult("git", "install ok installed"), dpkgQueryResult("dpkg", "install ok installed")}}
+	observation, err := adapter.Observe(context.Background(), observeRunner, tool, mc)
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)
 	}
 	if observation.Presence != plan.PresencePresent || observation.Identity.Package != "git" {
 		t.Fatalf("Observe() = %#v, want present git", observation)
 	}
-	absent, err := adapter.Observe(context.Background(), &run.FakeRunner{ExitCode: 1}, tool, mc)
+	absentRunner := &dpkgSequenceRunner{results: []run.Result{{ExitCode: 1}, dpkgQueryResult("dpkg", "install ok installed")}}
+	absent, err := adapter.Observe(context.Background(), absentRunner, tool, mc)
 	if err != nil {
 		t.Fatalf("Observe() error = %v", err)
 	}
@@ -285,24 +314,17 @@ func TestNativeByManagerAdapterV2ResolveObserveInstall(t *testing.T) {
 	}
 
 	mc.Config["pkg"] = "wrong-package"
-	installRunner := &run.FakeRunner{ExitCode: 0}
+	installRunner := &dpkgSequenceRunner{results: []run.Result{{}, dpkgQueryResult("git", "install ok installed"), dpkgQueryResult("dpkg", "install ok installed")}}
 	if err := adapter.InstallResolved(context.Background(), installRunner, tool, mc, resolved); err != nil {
 		t.Fatalf("InstallResolved() error = %v", err)
 	}
-	if len(installRunner.Calls) != 2 || installRunner.Calls[0].Name != "sudo" || installRunner.Calls[1].Name != "dpkg" {
-		t.Fatalf("InstallResolved() calls = %#v, want elevated apt-get install + dpkg verification", installRunner.Calls)
+	if len(installRunner.calls) != 3 || installRunner.calls[0].Name != "sudo" || installRunner.calls[1].Name != "dpkg-query" || installRunner.calls[2].Name != "dpkg-query" {
+		t.Fatalf("InstallResolved() calls = %#v, want install + target + sentinel verification", installRunner.calls)
 	}
-	foundResolvedPkg := false
-	for _, arg := range installRunner.Calls[0].Args {
+	for _, arg := range installRunner.calls[0].Args {
 		if arg == "wrong-package" {
-			t.Fatalf("InstallResolved() used mutated method package: %#v", installRunner.Calls)
+			t.Fatalf("InstallResolved() used mutated method package: %#v", installRunner.calls)
 		}
-		if arg == "git" {
-			foundResolvedPkg = true
-		}
-	}
-	if !foundResolvedPkg {
-		t.Fatalf("InstallResolved() args = %v, want resolved package git", installRunner.Calls[0].Args)
 	}
 
 	unknown := &NativeByManagerAdapter{managerName: "nonexistent"}
@@ -574,16 +596,16 @@ func TestNativeAdapterV2PackageFieldChangesExecuteAndVerify(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		runner := &run.FakeRunner{}
+		runner := &dpkgSequenceRunner{results: []run.Result{{}, dpkgQueryResult(resolved.Identity.Package, "install ok installed"), dpkgQueryResult("dpkg", "install ok installed")}}
 		if err := adapter.InstallResolved(context.Background(), runner, tool, method, resolved); err != nil {
 			t.Fatal(err)
 		}
-		for _, call := range runner.Calls {
+		for _, call := range runner.calls {
 			if call.Name == "sudo" {
 				return call
 			}
 		}
-		t.Fatalf("InstallResolved() calls = %#v, want apt-get", runner.Calls)
+		t.Fatalf("InstallResolved() calls = %#v, want apt-get", runner.calls)
 		return run.FakeCall{}
 	}
 	callA, callB := install(methodA), install(methodB)
@@ -593,15 +615,15 @@ func TestNativeAdapterV2PackageFieldChangesExecuteAndVerify(t *testing.T) {
 
 	observe := func(method *config.MethodCandidate) (plan.Observation, run.FakeCall) {
 		t.Helper()
-		runner := &run.FakeRunner{}
+		runner := &dpkgSequenceRunner{results: []run.Result{dpkgQueryResult(method.Config["pkg"].(string), "install ok installed"), dpkgQueryResult("dpkg", "install ok installed")}}
 		observation, err := adapter.Observe(context.Background(), runner, tool, method)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(runner.Calls) != 1 {
-			t.Fatalf("Observe() calls = %#v, want one package query", runner.Calls)
+		if len(runner.calls) != 2 {
+			t.Fatalf("Observe() calls = %#v, want target and sentinel", runner.calls)
 		}
-		return observation, runner.Calls[0]
+		return observation, runner.calls[0]
 	}
 	observationA, queryA := observe(methodA)
 	observationB, queryB := observe(methodB)

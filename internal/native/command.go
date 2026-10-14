@@ -17,11 +17,13 @@ func BuildInstallCmd(clan, pkg string) []string {
 	return withSudo(substitutePkg(nm.InstallCmd, pkg), nm.SudoRequired)
 }
 
-// BuildCheckCmd substitutes "{pkg}" in the check command. Never adds sudo
-// — checking whether something is installed should never need privilege.
+// BuildCheckCmd substitutes "{pkg}" for providers whose installed-state
+// check is an exit-code command. It returns nil for providers such as dpkg
+// that require structured observation via their dedicated protocol. Never adds
+// sudo — checking whether something is installed should never need privilege.
 func BuildCheckCmd(clan, pkg string) []string {
 	nm, ok := Lookup(clan)
-	if !ok {
+	if !ok || len(nm.CheckCmd) == 0 {
 		return nil
 	}
 	return substitutePkg(nm.CheckCmd, pkg)

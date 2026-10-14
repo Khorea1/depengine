@@ -62,13 +62,44 @@ func (a *NativeAdapter) Available(ctx context.Context, rn run.Runner) bool {
 	return a.detectClan(ctx, rn) != ""
 }
 
-// Check runs the native manager's check command.
+func observeDpkg(ctx context.Context, rn run.Runner, pkg string) (native.DpkgPresence, string, error) {
+	cmd := native.BuildDpkgObserveCmd(pkg)
+	if cmd == nil {
+		return native.DpkgUnknown, "invalid dpkg package identity", nil
+	}
+	targetResult := rn.Run(ctx, cmd[0], cmd[1:]...)
+	sentinelResult := targetResult
+	if pkg != "dpkg" && targetResult.Err == nil && targetResult.WaitErr == nil && (targetResult.ExitCode == 0 || targetResult.ExitCode == 1) {
+		sentinelCmd := native.BuildDpkgSentinelCmd()
+		sentinelResult = rn.Run(ctx, sentinelCmd[0], sentinelCmd[1:]...)
+	}
+	state, detail := native.ObserveDpkgResults(pkg, targetResult, sentinelResult)
+	if targetResult.Err != nil {
+		return state, detail, targetResult.Err
+	}
+	if targetResult.WaitErr != nil {
+		return state, detail, targetResult.WaitErr
+	}
+	if sentinelResult.Err != nil {
+		return state, detail, sentinelResult.Err
+	}
+	if sentinelResult.WaitErr != nil {
+		return state, detail, sentinelResult.WaitErr
+	}
+	return state, detail, nil
+}
+
+// Check reports only a positively observed installed package.
 func (a *NativeAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool, mc *config.MethodCandidate) bool {
 	clan := a.detectClan(ctx, rn)
 	if clan == "" {
 		return false
 	}
 	pkg := pkgFromConfig(mc, clan)
+	if native.IsDpkgClan(clan) {
+		state, _, err := observeDpkg(ctx, rn, pkg)
+		return err == nil && state == native.DpkgPresent
+	}
 	if pkg == "" {
 		return false
 	}
@@ -77,7 +108,7 @@ func (a *NativeAdapter) Check(ctx context.Context, rn run.Runner, _ *config.Tool
 		return false
 	}
 	res := rn.Run(ctx, cmd[0], cmd[1:]...)
-	return res.Err == nil && res.ExitCode == 0
+	return res.Err == nil && res.WaitErr == nil && res.ExitCode == 0
 }
 
 // CheckAvailable reports whether mc's package exists in the detected
@@ -145,10 +176,7 @@ func (a *NativeAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *co
 	return &resolved, nil
 }
 
-// Observe probes the native manager's check command and reports
-// VerificationResult-compatible presence. Native check commands are
-// exit-code-only, so a present package carries package identity alone;
-// version/source dimensions stay unknown for the reconciler.
+// Observe reports package presence without inferring version or source identity.
 func (a *NativeAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
 	if tool == nil || mc == nil {
 		return plan.Observation{}, errors.New("native: tool and method are required")
@@ -161,6 +189,9 @@ func (a *NativeAdapter) Observe(ctx context.Context, rn run.Runner, tool *config
 	if pkg == "" {
 		return plan.Observation{Presence: plan.PresenceAbsent}, nil
 	}
+	if native.IsDpkgClan(clan) {
+		return observeDpkgPlan(ctx, rn, pkg)
+	}
 	cmd := native.BuildCheckCmd(clan, pkg)
 	if cmd == nil {
 		return plan.Observation{Presence: plan.PresenceAbsent}, nil
@@ -169,14 +200,27 @@ func (a *NativeAdapter) Observe(ctx context.Context, rn run.Runner, tool *config
 	if res.Err != nil {
 		return plan.Observation{Presence: plan.PresenceBroken, Detail: res.Err.Error()}, res.Err
 	}
+	if res.WaitErr != nil {
+		return plan.Observation{Presence: plan.PresenceBroken, Detail: res.WaitErr.Error()}, res.WaitErr
+	}
 	if res.ExitCode != 0 {
 		return plan.Observation{Presence: plan.PresenceAbsent}, nil
 	}
-	return plan.Observation{
-		Presence:    plan.PresencePresent,
-		Identity:    plan.ObservedIdentity{Package: pkg},
-		KnownFields: []plan.IdentityField{plan.FieldPackage},
-	}, nil
+	return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
+}
+
+func observeDpkgPlan(ctx context.Context, rn run.Runner, pkg string) (plan.Observation, error) {
+	state, detail, err := observeDpkg(ctx, rn, pkg)
+	if err != nil {
+		return plan.Observation{Presence: plan.PresenceBroken, Detail: detail}, err
+	}
+	if state == native.DpkgUnknown {
+		return plan.Observation{Presence: plan.PresenceUnknown, Detail: detail}, nil
+	}
+	if state == native.DpkgAbsent {
+		return plan.Observation{Presence: plan.PresenceAbsent, Detail: detail}, nil
+	}
+	return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
 }
 
 // InstallResolved executes the resolved plan. The operation shape is
@@ -258,6 +302,16 @@ func runNativeInstallPackage(ctx context.Context, rn run.Runner, prefix, clan, p
 }
 
 func verifyNativeInstall(ctx context.Context, rn run.Runner, prefix, clan, pkg, managerName string) error {
+	if native.IsDpkgClan(clan) {
+		state, detail, err := observeDpkg(ctx, rn, pkg)
+		if err != nil {
+			return fmt.Errorf("%s: install reported success but package %q could not be verified: %w", prefix, pkg, err)
+		}
+		if state != native.DpkgPresent {
+			return fmt.Errorf("%s: install reported success but package %q is not authoritatively installed: %s", prefix, pkg, detail)
+		}
+		return nil
+	}
 	cmd := native.BuildCheckCmd(clan, pkg)
 	if cmd == nil {
 		return fmt.Errorf("%s: install reported success but clan %q has no verification command", prefix, clan)
@@ -322,6 +376,10 @@ func (a *NativeByManagerAdapter) Check(ctx context.Context, rn run.Runner, tool 
 	pkg := pkgFromConfig(mc, clan)
 	if pkg == "" {
 		return false
+	}
+	if native.IsDpkgClan(clan) {
+		state, _, err := observeDpkg(ctx, rn, pkg)
+		return err == nil && state == native.DpkgPresent
 	}
 	cmd := native.BuildCheckCmd(clan, pkg)
 	if cmd == nil {
@@ -433,11 +491,10 @@ func (a *NativeByManagerAdapter) ResolvePlan(_ context.Context, _ run.Runner, to
 	return &resolved, nil
 }
 
-// Observe probes the manager's check command and reports
-// VerificationResult-compatible presence. Non-winget managers are
-// exit-code-only (package identity alone); winget additionally reports the
-// observed version and source parsed from list output so the reconciler can
-// distinguish satisfied from drifted instead of collapsing drift to absent.
+// Observe reports installed-state presence through the provider's observation
+// protocol. Non-winget managers report package identity alone; dpkg-backed
+// clans use structured dpkg status records. Winget also reports version and
+// source so the reconciler can distinguish satisfied from drifted.
 func (a *NativeByManagerAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
 	if tool == nil || mc == nil {
 		return plan.Observation{}, fmt.Errorf("native(%s): tool and method are required", a.managerName)
@@ -449,6 +506,9 @@ func (a *NativeByManagerAdapter) Observe(ctx context.Context, rn run.Runner, too
 	pkg := pkgFromConfig(mc, clan)
 	if pkg == "" {
 		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	if native.IsDpkgClan(clan) {
+		return observeDpkgPlan(ctx, rn, pkg)
 	}
 	cmd := native.BuildCheckCmd(clan, pkg)
 	if cmd == nil {
