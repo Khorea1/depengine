@@ -1,5 +1,11 @@
 # Native platform smoke tests
 
+The target-platform CI jobs also run `tests/crossplatform/validation-adversarial.sh`
+against a binary built for that OS. This validation-only replay reuses the canonical
+fixtures and checks CLI diagnostics and exit behavior; it does not invoke a package
+manager. The existing Linux Docker matrix continues to run the same script through
+`tests/crossplatform/test.sh`.
+
 `native-lifecycle.sh` is a POSIX `sh` harness that exercises the same minimal
 lifecycle contract against a real package manager on an ephemeral native
 runner:

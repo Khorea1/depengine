@@ -142,10 +142,11 @@ Work on the current execution model comes before adding more installer types.
   The Debian/Arch/Fedora/Alpine CLI matrix replays canonical cycle,
   dangling-reference, malformed-URL, duplicate-tool, and unknown-placeholder
   fixtures plus an unsafe package-name injection fixture, asserting stable
-  JSON diagnostic codes and strict-mode exit behavior. macOS, FreeBSD, OpenBSD,
-  NetBSD, Windows, and the real-emulator Termux runner also require a missing
-  native package to remain absent from live observation and persisted removal
-  state after an attempted install.
+  JSON diagnostic codes and strict-mode exit behavior. CI now schedules this
+  validation-only replay on macOS, Windows, FreeBSD, OpenBSD, and NetBSD using
+  target-built binaries; those platform results remain pending CI execution. The
+  native lifecycle jobs on these systems still require a missing package to remain
+  absent from live observation and persisted removal state after an install attempt.
 - [~] Cover each method contract across validation, identity, dry-run, version,
   source, scope, environment, lock, lifecycle, idempotency, errors, and secret
   redaction. Runtime reconciliation now projects resolved identity through each
