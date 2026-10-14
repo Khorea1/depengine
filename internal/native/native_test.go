@@ -22,18 +22,18 @@ func TestBuildCommandsMatchExpectedPerClan(t *testing.T) {
 		wantInstall string
 		wantCheck   string
 	}{
-		{"debian apt-get + sudo", "debian", true, "sudo apt-get install -y git", "dpkg -s git"},
+		{"debian apt-get + sudo", "debian", true, "sudo apt-get install -y git", ""},
 		{"arch pacman + sudo", "arch", true, "sudo pacman -S --noconfirm --needed git", "pacman -Qi git"},
 		{"fedora dnf + sudo", "fedora", true, "sudo dnf install -y git", "rpm -q git"},
 		{"suse zypper + sudo", "suse", true, "sudo zypper --non-interactive install git", "rpm -q git"},
 		{"alpine apk + sudo", "alpine", true, "sudo apk add git", "apk info -e git"},
 		{"macos brew no sudo", "macos", true, "brew install git", "brew list git"},
-		{"termux pkg no sudo", "termux", true, "pkg install -y git", "dpkg -s git"},
+		{"termux pkg no sudo", "termux", true, "pkg install -y git", ""},
 		{"freebsd pkg + sudo", "freebsd", true, "sudo pkg install -y git", "pkg info -e git"},
 		{"openbsd pkg_add + sudo", "openbsd", true, "sudo pkg_add git", "pkg_info -e git-*"},
 		{"netbsd pkgin + sudo", "netbsd", true, "sudo pkgin -y install git", "pkg_info -e git"},
 		{"gentoo emerge + sudo", "gentoo", true, "sudo emerge --quiet git", "equery list git"},
-		{"mint apt + sudo", "mint", true, "sudo apt-get install -y git", "dpkg -s git"},
+		{"mint apt + sudo", "mint", true, "sudo apt-get install -y git", ""},
 		{"opkg + sudo", "opkg", true, "sudo opkg install git", "opkg status git"},
 		{
 			"windows winget no sudo", "windows", true,
@@ -47,7 +47,6 @@ func TestBuildCommandsMatchExpectedPerClan(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			install := BuildInstallCmd(tc.clan, "git")
-			check := BuildCheckCmd(tc.clan, "git")
 			_, known := Lookup(tc.clan)
 
 			if known != tc.wantKnown {
@@ -58,8 +57,11 @@ func TestBuildCommandsMatchExpectedPerClan(t *testing.T) {
 				if join(install) != tc.wantInstall {
 					t.Fatalf("install = %q, want %q", join(install), tc.wantInstall)
 				}
-				if join(check) != tc.wantCheck {
-					t.Fatalf("check = %q, want %q", join(check), tc.wantCheck)
+				if !IsDpkgClan(tc.clan) {
+					check := BuildCheckCmd(tc.clan, "git")
+					if join(check) != tc.wantCheck {
+						t.Fatalf("check = %q, want %q", join(check), tc.wantCheck)
+					}
 				}
 			} else {
 				// When the clan is unknown, the engine must fall through to
@@ -68,7 +70,7 @@ func TestBuildCommandsMatchExpectedPerClan(t *testing.T) {
 				if install != nil {
 					t.Fatalf("unknown clan install should be nil, got %v", install)
 				}
-				if check != nil {
+				if check := BuildCheckCmd(tc.clan, "git"); check != nil {
 					t.Fatalf("unknown clan check should be nil, got %v", check)
 				}
 			}
@@ -212,11 +214,12 @@ func TestBuildSyncCmdOnlyForManagersThatNeedIt(t *testing.T) {
 	})
 }
 
-// CheckCmd must never be sudo-prefixed: probing whether something is
-// installed never needs privilege, and forcing it would leak elevation
-// budget silently. Invariant preserved across all managers.
+// Exit-code CheckCmd probes are read-only and must not be sudo-prefixed.
 func TestCheckCmdIsNeverSudoPrefixed(t *testing.T) {
 	for clan := range allKnownClans(t) {
+		if IsDpkgClan(clan) {
+			continue
+		}
 		got := BuildCheckCmd(clan, "anything")
 		if got == nil {
 			t.Fatalf("Lookup returned nil check for known clan %s", clan)

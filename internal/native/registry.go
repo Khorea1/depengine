@@ -1,6 +1,6 @@
-// Package native describes — purely declaratively — how the engine talks
-// to a distro's package manager. Adding support for a new distro clan is
-// a data edit in this file, never a new function.
+// Package native describes package-manager commands and installed-state
+// protocols used by native adapters. Manager command data lives in this file;
+// structured observation logic lives alongside the command builders.
 //
 // Two-tier keying (addresses a friction the README itself flags):
 //
@@ -23,8 +23,9 @@ package native
 
 import "sort"
 
-// Manager describes one native package manager. All fields are data: no
-// code lives here.
+// Manager describes one native package manager. Its command fields are
+// declarative inputs to the command builders; structured observation protocols
+// are implemented separately when exit-code checks cannot prove installed state.
 type Manager struct {
 	Name string // display/log name: "apt", "pacman", "dnf"...
 
@@ -39,7 +40,8 @@ type Manager struct {
 	// InstallCmd contains "{pkg}" as a placeholder for the package name.
 	InstallCmd []string
 
-	// CheckCmd uses "{pkg}" as well; exit code 0 means already installed.
+	// CheckCmd is an exit-code check using "{pkg}". It is empty for dpkg-backed
+	// clans, whose installed state is observed through structured dpkg-query.
 	CheckCmd []string
 
 	// SearchCmd uses "{pkg}" as well; exit code 0 means the package exists
@@ -79,7 +81,6 @@ var managers = map[string]Manager{
 		NeedsSync:    true,
 		SyncCmd:      []string{"apt-get", "update"},
 		InstallCmd:   []string{"apt-get", "install", "-y", "{pkg}"},
-		CheckCmd:     []string{"dpkg", "-s", "{pkg}"},
 		// apt-cache show exits non-zero (100) when no package by this
 		// exact name exists in any configured source.
 		SearchCmd:   []string{"apt-cache", "show", "{pkg}"},
@@ -170,10 +171,7 @@ var managers = map[string]Manager{
 		NeedsSync:    true,
 		SyncCmd:      []string{"pkg", "update", "-y"},
 		InstallCmd:   []string{"pkg", "install", "-y", "{pkg}"},
-		// CheckCmd: dpkg -s {pkg} — Termux's pkg is a wrapper around apt, which sits on dpkg.
-		// dpkg -s is the only clean exit-0/exit-1 test for "is this package installed?"
-		// (Termux's pkg has no direct equivalent). This mirrors the debian clan.
-		CheckCmd: []string{"dpkg", "-s", "{pkg}"},
+		// Installed state uses the shared structured dpkg-query protocol.
 		// Termux's pkg wraps apt, so apt-cache show works the same way
 		// as on debian: non-zero exit when the package isn't in any
 		// configured Termux repo (catches AUR-equivalent/cargo-only tools).
@@ -271,7 +269,6 @@ var managers = map[string]Manager{
 		NeedsSync:    true,
 		SyncCmd:      []string{"apt-get", "update"},
 		InstallCmd:   []string{"apt-get", "install", "-y", "{pkg}"},
-		CheckCmd:     []string{"dpkg", "-s", "{pkg}"},
 		// Mint sits on the same apt/dpkg base as debian; apt-cache show
 		// exits non-zero when no package by this exact name exists in
 		// any configured source.
@@ -365,6 +362,16 @@ var clanToManagerKey = map[string]string{
 	"windows": "windows-winget",
 	"mint":    "mint",
 	"opkg":    "opkg",
+}
+
+// IsDpkgClan reports whether this clan uses dpkg structured status queries.
+func IsDpkgClan(clan string) bool {
+	switch clan {
+	case "debian", "mint", "termux":
+		return true
+	default:
+		return false
+	}
 }
 
 // Lookup returns the Manager for a resolved clan and whether the clan has

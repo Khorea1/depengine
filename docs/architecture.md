@@ -201,6 +201,40 @@ distinct; `unknown` means the adapter cannot prove the desired identity, while
 fail closed for unknown/broken targets. Remove accepts drift, and a proven
 absent target releases state and ownership without invoking the remover.
 
+Native dpkg-backed observation (Debian, Mint, and Termux) is owned by
+`internal/native`, with process execution retained in `internal/run.Runner` and
+classification applied by the native adapter. It performs one structured
+`dpkg-query -W` for the requested package and, unless the target itself is
+`dpkg`, one structured query for the `dpkg` package sentinel. Each query is
+limited to one package name; no package inventory is copied and no cached
+result is reused. It relies on dpkg-query’s platform default database
+directory rather than a Debian-specific path. The sentinel is a supported-host
+invariant established by official Debian/Termux package sets, not a guarantee
+for arbitrary forks.
+
+Only a successful sentinel row plus an exact, parseable target result proves
+state. Missing target is absent only when `dpkg-query` returns its documented
+“package not found” exit status and the sentinel proves the database is healthy.
+Malformed output, process/pipe errors, other exit codes, missing or unhealthy
+sentinel, transitional/reinstreq states, and unqualified multiarch ambiguity are
+unknown/broken; consumers must not mutate tracked state or fall back to apt
+installation based on those results. Dpkg’s three-part Status field is read as
+desired/error/actual: `error=ok` and `actual=installed` is present regardless of
+desired `hold`, `deinstall`, or `purge`; `not-installed` and `config-files` are
+absent; other actual states are unknown. A single architecture-qualified row
+for an unqualified request proves presence while retaining the requested package
+identity. This observation reports no version, source, or immutable lock identity.
+
+A full installed-package inventory was rejected because it copies and parses
+unrelated package records and an empty/missing database can still produce a
+successful empty inventory. A combined target-plus-sentinel query was also
+rejected: when the target is missing, dpkg-query may return exit 1 without
+printing even the sentinel row. The independent sentinel query supplies the
+needed database-health proof without parsing locale-dependent diagnostics or
+adding a cache. Other managers keep their existing provider-specific protocol;
+each needs its own evidence and conformance gate before this behavior is
+generalized.
+
 Desired-state verification uses the normative [state model](design/state-model.md) for
 reconciliation states, authority boundaries, lock coverage, preparation journals, and
 ownership invariants.

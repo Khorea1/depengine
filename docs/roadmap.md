@@ -152,7 +152,10 @@ Work on the current execution model comes before adding more installer types.
   field's `EffectVerify` contract instead of requiring execute-only identity to
   be observable. Scoped probes also report the target evidence they actually
   establish for Cargo roots, Conda environments/prefixes, and verified
-  BaseAdapter scopes. Broader per-method lifecycle coverage remains open.
+  BaseAdapter scopes. Debian and official Termux dpkg-backed native observation
+  now uses structured package status guarded by the dpkg sentinel; unknown or
+  malformed inventory cannot authorize install or batch selection. Remaining
+  per-provider lifecycle coverage and real Termux-emulator validation stay open.
 - [~] Add planner fuzz/property tests and lifecycle/state invariant tests,
   including command-bearing fields, secret/redaction boundaries, source/URL
   normalization, and lock identity invariants. Plan-level properties now cover
