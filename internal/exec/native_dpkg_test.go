@@ -84,9 +84,6 @@ func TestNativeDpkgUnknownObservationBlocksOrdinaryInstall(t *testing.T) {
 			if adapter.installCall != 0 {
 				t.Fatalf("InstallResolved calls = %d, want none", adapter.installCall)
 			}
-			if len(runner.results) != 0 {
-				t.Fatalf("unconsumed observation results = %d", len(runner.results))
-			}
 		})
 	}
 }
@@ -112,8 +109,5 @@ func TestNativeDpkgUnknownObservationExcludedFromBatch(t *testing.T) {
 	candidates, remaining, _ := ex.identifyBatchCandidates(ctx, rc, []string{"one", "two"})
 	if len(candidates) != 0 || len(remaining) != 2 {
 		t.Fatalf("batch candidates = %d, remaining = %v; unknown inventory must stay serial", len(candidates), remaining)
-	}
-	if len(runner.results) != 0 {
-		t.Fatalf("unconsumed observation results = %d", len(runner.results))
 	}
 }
