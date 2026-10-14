@@ -60,7 +60,7 @@ func TestExecutorOmitsTypedSecretSourceFromPreAndPostHooks(t *testing.T) {
 	ex := New()
 	WithAllowArbitraryCode()(ex)
 	WithRunner(run.OSExecRunner{})(ex)
-	WithAdapters(&testMockAdapter{kindValue: "http"})(ex)
+	WithAdapters(statefulMockAdapter("http"))(ex)
 	report, err := ex.Execute(context.Background(), schema, "")
 	if err != nil {
 		t.Fatal(err)

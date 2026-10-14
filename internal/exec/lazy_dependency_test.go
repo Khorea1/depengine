@@ -16,25 +16,35 @@ import (
 
 type countingAdapter struct {
 	v2TestStub
-	mu     sync.Mutex
-	checks map[string]int
+	mu        sync.Mutex
+	checks    map[string]int
+	installed map[string]bool
 }
 
 type plannedCountingAdapter struct{ *countingAdapter }
 
 func (*plannedCountingAdapter) Kind() string { return "go" }
 
-func (a *countingAdapter) Kind() string                               { return "counting" }
+func (a *countingAdapter) Kind() string                               { return "go" }
 func (a *countingAdapter) Available(context.Context, run.Runner) bool { return true }
+func (a *countingAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, method *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent != nil {
+		resolved := intent.Clone()
+		return &resolved, nil
+	}
+	resolved := plan.New(tool.Name, method.Kind, false)
+	return &resolved, nil
+}
+
 func (a *countingAdapter) Check(_ context.Context, _ run.Runner, tool *config.Tool, _ *config.MethodCandidate) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.checks[tool.Name]++
-	return false
+	return a.installed[tool.Name]
 }
 func (a *countingAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
 	if a.Check(ctx, rn, tool, mc) {
-		return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: "x"}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
+		return plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{Package: packageName(tool, mc)}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, nil
 	}
 	return plan.Observation{Presence: plan.PresenceAbsent}, nil
 }
@@ -42,7 +52,13 @@ func (a *countingAdapter) InstallResolved(ctx context.Context, rn run.Runner, to
 	return a.Install(ctx, rn, tool, mc)
 }
 
-func (a *countingAdapter) Install(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {
+func (a *countingAdapter) Install(_ context.Context, _ run.Runner, tool *config.Tool, _ *config.MethodCandidate) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.installed == nil {
+		a.installed = make(map[string]bool)
+	}
+	a.installed[tool.Name] = true
 	return nil
 }
 
@@ -111,7 +127,7 @@ func TestFailedCandidateRetainsLazyDependencyExplicitlyInReportAndState(t *testi
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	primary := &testMockAdapter{
 		kindValue: "go",
-		checkFunc: func(string) bool { return false },
+		stateful:  true,
 		installFunc: func(name string) error {
 			if name == "owner" {
 				return errors.New("primary install failed")
@@ -121,7 +137,7 @@ func TestFailedCandidateRetainsLazyDependencyExplicitlyInReportAndState(t *testi
 	}
 	fallback := &testMockAdapter{
 		kindValue:   "http",
-		checkFunc:   func(string) bool { return false },
+		stateful:    true,
 		installFunc: func(string) error { return nil },
 	}
 	schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{"go", "http"}}, Tools: map[string]*config.Tool{
@@ -217,12 +233,15 @@ func TestRetryClaimsPersistedZeroRefPrerequisiteWithoutExternalReclassification(
 		t.Fatal(err)
 	}
 
+	installed := map[string]bool{"helper": true}
 	adapter := &testMockAdapter{
 		kindValue: "go",
-		checkFunc: func(name string) bool {
-			return name == "helper"
+		stateful:  true,
+		checkFunc: func(name string) bool { return installed[name] },
+		installFunc: func(name string) error {
+			installed[name] = true
+			return nil
 		},
-		installFunc: func(string) error { return nil },
 	}
 	method := func(pkg string, requires ...string) []*config.MethodCandidate {
 		return []*config.MethodCandidate{{Kind: "go", Config: map[string]any{"pkg": pkg}, Requires: requires}}
@@ -258,9 +277,9 @@ func TestSuccessfulMethodRequiresClaimsSharedPrerequisiteOwnership(t *testing.T)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	adapter := &countingAdapter{checks: map[string]int{}}
 	method := func(requires ...string) []*config.MethodCandidate {
-		return []*config.MethodCandidate{{Kind: "counting", Config: map[string]any{"pkg": "x"}, Requires: requires}}
+		return []*config.MethodCandidate{{Kind: "go", Config: map[string]any{"pkg": "x"}, Requires: requires}}
 	}
-	schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{"counting"}}, Tools: map[string]*config.Tool{
+	schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{"go"}}, Tools: map[string]*config.Tool{
 		"helper": {Name: "helper", DependencyOnly: true, Methods: method()},
 		"a":      {Name: "a", Methods: method("helper")},
 		"b":      {Name: "b", Methods: method("helper")},
@@ -298,10 +317,15 @@ func TestSuccessfulMethodRequiresClaimsSharedPrerequisiteOwnership(t *testing.T)
 
 func TestPreexistingMethodPrerequisiteIsTrackedAsExternal(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	installed := map[string]bool{"helper": true}
 	adapter := &testMockAdapter{
-		kindValue:   "go",
-		checkFunc:   func(name string) bool { return name == "helper" },
-		installFunc: func(string) error { return nil },
+		kindValue: "go",
+		stateful:  true,
+		checkFunc: func(name string) bool { return installed[name] },
+		installFunc: func(name string) error {
+			installed[name] = true
+			return nil
+		},
 	}
 	method := func(pkg string, requires ...string) []*config.MethodCandidate {
 		return []*config.MethodCandidate{{Kind: "go", Config: map[string]any{"pkg": pkg}, Requires: requires}}
@@ -333,9 +357,9 @@ func TestStaticRequiresClaimsPrerequisiteAndPersistsRootIntent(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	adapter := &countingAdapter{checks: map[string]int{}}
 	method := func() []*config.MethodCandidate {
-		return []*config.MethodCandidate{{Kind: "counting", Config: map[string]any{"pkg": "x"}}}
+		return []*config.MethodCandidate{{Kind: "go", Config: map[string]any{"pkg": "x"}}}
 	}
-	schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{"counting"}}, Tools: map[string]*config.Tool{
+	schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{"go"}}, Tools: map[string]*config.Tool{
 		"helper": {Name: "helper", DependencyOnly: true, Methods: method()},
 		"owner":  {Name: "owner", Requires: []string{"helper"}, Methods: method()},
 	}}
@@ -376,19 +400,19 @@ func TestRootRequestedIntentIsStickyWhenToolLaterBecomesDependencyOnly(t *testin
 	stateHome := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateHome)
 	adapter := &testMockAdapter{
-		kindValue:   "counting",
+		kindValue:   "go",
 		checkFunc:   func(string) bool { return true },
 		installFunc: func(string) error { return nil },
 	}
 	method := func() []*config.MethodCandidate {
-		return []*config.MethodCandidate{{Kind: "counting", Config: map[string]any{"pkg": "x"}}}
+		return []*config.MethodCandidate{{Kind: "go", Config: map[string]any{"pkg": "x"}}}
 	}
 	if err := state.Save(&state.State{
 		Version: state.CurrentVersion,
 		Tools: map[string]state.ToolState{
 			"helper": {
-				Method:         "counting",
-				MethodKind:     "counting",
+				Method:         "go",
+				MethodKind:     "go",
 				InstalledAt:    time.Now().UTC().Format(time.RFC3339),
 				DefinitionHash: "previous",
 				RootRequested:  true,
@@ -401,7 +425,7 @@ func TestRootRequestedIntentIsStickyWhenToolLaterBecomesDependencyOnly(t *testin
 		t.Fatal(err)
 	}
 
-	schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{"counting"}}, Tools: map[string]*config.Tool{
+	schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{"go"}}, Tools: map[string]*config.Tool{
 		"helper": {Name: "helper", DependencyOnly: true, Methods: method()},
 		"owner":  {Name: "owner", Requires: []string{"helper"}, Methods: method()},
 	}}

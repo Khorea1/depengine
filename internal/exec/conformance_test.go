@@ -10,37 +10,68 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
-// perToolNativeAdapter is a mock adapter registered as "native" that
-// returns different Install results per tool name. Used to test that
-// batch failure does not consume the native method attempt.
-type perToolNativeAdapter struct {
-	testMockAdapter
+type batchInventoryRunner struct {
+	installed map[string]bool
+	exitCode  int
 }
 
-func (a *perToolNativeAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
+func (r *batchInventoryRunner) Run(_ context.Context, _ string, args ...string) run.Result {
+	if r.exitCode == 0 {
+		for _, arg := range args {
+			if arg == "fd" || arg == "bat" {
+				r.installed[arg] = true
+			}
+		}
+	}
+	return run.Result{ExitCode: r.exitCode}
+}
+
+// perToolNativeAdapter models per-tool native inventory, including failed installs.
+type perToolNativeAdapter struct {
+	testMockAdapter
+	installed map[string]bool
+}
+
+func (a *perToolNativeAdapter) Check(_ context.Context, _ run.Runner, tool *config.Tool, _ *config.MethodCandidate) bool {
+	return a.installed[tool.Name]
+}
+
+func (a *perToolNativeAdapter) Observe(_ context.Context, _ run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
+	if !a.installed[tool.Name] {
+		return plan.Observation{Presence: plan.PresenceAbsent}, nil
+	}
+	pkg := packageName(tool, mc)
+	return plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Package: pkg},
+		KnownFields: []plan.IdentityField{plan.FieldPackage},
+	}, nil
+}
+
+func (a *perToolNativeAdapter) Install(_ context.Context, _ run.Runner, tool *config.Tool, _ *config.MethodCandidate) error {
 	if tool.Name == "fd" {
 		return &installError{"fd native install failed"}
 	}
-	return nil // bat succeeds
+	a.installed[tool.Name] = true
+	return nil
 }
 
 func (a *perToolNativeAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate, _ *plan.ResolvedInstallPlan) error {
 	return a.Install(ctx, rn, tool, mc)
 }
-
 func TestBatchDoesNotChangeMethodSelection(t *testing.T) {
 	// Two tools: fd (native fails -> falls back to git), bat (native succeeds).
 	// Batch should attempt a combined native install, fail, then transparently
 	// fall back per-tool. The method selection must be identical to serial.
-	nativeAdp := &perToolNativeAdapter{}
+	installed := make(map[string]bool)
+	nativeAdp := &perToolNativeAdapter{installed: installed}
 	nativeAdp.kindValue = "native"
 	nativeAdp.availableFunc = func() bool { return true }
-	nativeAdp.checkFunc = func(string) bool { return false }
 
 	gitMock := &testMockAdapter{kindValue: "git"}
-	gitMock.installFunc = func(string) error { return nil }
+	gitMock.installFunc = func(name string) error { installed[name] = true; return nil }
 	gitMock.availableFunc = func() bool { return true }
-	gitMock.checkFunc = func(string) bool { return false }
+	gitMock.checkFunc = func(name string) bool { return installed[name] }
 
 	ex := New()
 	WithRunner(&run.FakeRunner{ExitCode: 1})(ex) // batch fails
@@ -110,13 +141,14 @@ func TestBatchDoesNotChangeMethodSelection(t *testing.T) {
 func TestBatchHappyPath(t *testing.T) {
 	// Two tools both with native-only methods. Batch succeeds and both are
 	// installed in a single elevated command.
+	installed := make(map[string]bool)
 	nativeAdp := &testMockAdapter{kindValue: "native"}
 	nativeAdp.installFunc = func(string) error { return nil }
 	nativeAdp.availableFunc = func() bool { return true }
-	nativeAdp.checkFunc = func(string) bool { return false }
+	nativeAdp.checkFunc = func(name string) bool { return installed[name] }
 
 	ex := New()
-	WithRunner(&run.FakeRunner{})(ex) // ExitCode 0, batch succeeds
+	WithRunner(&batchInventoryRunner{installed: installed})(ex)
 	WithAdapters(nativeAdp)(ex)
 
 	s := &config.Schema{

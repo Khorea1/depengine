@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
 	executor "github.com/Khorea1/depengine/internal/exec"
@@ -23,6 +25,7 @@ import (
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/planner"
 	"github.com/Khorea1/depengine/internal/run"
+	"github.com/Khorea1/depengine/internal/state"
 )
 
 type releaseProbeTransport struct{}
@@ -301,4 +304,180 @@ func batchCallsContain(calls []run.FakeCall, command, operation, packageName str
 		}
 	}
 	return false
+}
+func TestHTTPExecutorPersistsOnlyIntegrityVerifiedPinnedArtifact(t *testing.T) {
+	payload := []byte("verified runtime artifact\n")
+	digest := sha256.Sum256(payload)
+	pinnedChecksum := "sha256:" + hex.EncodeToString(digest[:])
+	for _, tc := range []struct {
+		name        string
+		checksum    string
+		wantStatus  executor.StatusEnum
+		wantFailure bool
+	}{
+		{name: "pinned artifact installs and persists", checksum: pinnedChecksum, wantStatus: executor.StatusInstalled},
+		{name: "bad integrity is not tracked", checksum: "sha256:" + strings.Repeat("0", sha256.Size*2), wantStatus: executor.StatusFailed, wantFailure: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("XDG_CACHE_HOME", t.TempDir())
+			stateHome := t.TempDir()
+			t.Setenv("XDG_STATE_HOME", stateHome)
+			destination := t.TempDir()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/artifact.bin" {
+					http.NotFound(w, r)
+					return
+				}
+				_, _ = w.Write(payload)
+			}))
+			defer server.Close()
+
+			tool := &config.Tool{
+				Name:       "probe",
+				MethodOnly: []string{"http"},
+				Methods: []*config.MethodCandidate{{Kind: "http", Config: map[string]any{
+					"url":           server.URL + "/artifact.bin",
+					"checksum":      tc.checksum,
+					"extract_to":    destination,
+					"binary":        "probe",
+					"sudo_required": false,
+				}}},
+			}
+			schema := &config.Schema{
+				Defaults: config.Defaults{Manager: "http", MethodOrder: []string{"http"}},
+				Tools:    map[string]*config.Tool{"probe": tool},
+			}
+			runner := &runtimeGPGRunner{}
+			ex := executor.New()
+			executor.WithRunner(runner)(ex)
+			executor.WithAdapters(httpdownload.NewHTTPAdapter())(ex)
+			executor.WithOutput(io.Discard)(ex)
+			executor.WithSchemaInfo(filepath.Join(t.TempDir(), "schema.toml"), time.Now())(ex)
+
+			report, err := ex.Execute(context.Background(), schema, "linux")
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if report == nil || len(report.Tools) != 1 || report.Tools[0].Status != tc.wantStatus {
+				t.Fatalf("Execute() report = %+v, want status %v", report, tc.wantStatus)
+			}
+			artifactPath := filepath.Join(destination, "probe")
+			if tc.wantFailure {
+				if !strings.Contains(strings.ToLower(report.Tools[0].Error), "checksum") {
+					t.Fatalf("failure report error = %q, want integrity diagnostic", report.Tools[0].Error)
+				}
+				if _, err := os.Stat(artifactPath); !os.IsNotExist(err) {
+					t.Fatalf("failed integrity check left installed payload: stat err=%v", err)
+				}
+				tracked, err := state.Load()
+				if err != nil {
+					t.Fatalf("load state after integrity failure: %v", err)
+				}
+				if len(tracked.Tools) != 0 || len(tracked.OwnedResources) != 0 {
+					t.Fatalf("integrity failure committed tool state or ownership: %+v", tracked)
+				}
+			} else {
+				// #nosec G304 -- artifactPath is under this test's isolated temporary home.
+				installed, err := os.ReadFile(artifactPath)
+				if err != nil || string(installed) != string(payload) {
+					t.Fatalf("installed payload = %q, err=%v", installed, err)
+				}
+				if len(report.Tools[0].PlanIntent.Artifacts) != 1 || report.Tools[0].PlanIntent.Artifacts[0].URL != server.URL+"/artifact.bin" || report.Tools[0].PlanIntent.Artifacts[0].Checksum != pinnedChecksum {
+					t.Fatalf("consumer plan artifact = %+v, want pinned URL and checksum", report.Tools[0].PlanIntent.Artifacts)
+				}
+				tracked, err := state.Load()
+				if err != nil {
+					t.Fatalf("load committed state: %v", err)
+				}
+				toolState, ok := tracked.Tools["probe"]
+				if !ok || toolState.MethodKind != "http" {
+					t.Fatalf("tracked tool state = %+v (present=%v), want http", toolState, ok)
+				}
+			}
+		})
+	}
+}
+
+type releaseEndpointTransport struct{ artifactURL string }
+
+func (t releaseEndpointTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	body := fmt.Sprintf("{\"tag_name\":\"v1.2.3\",\"assets\":[{\"name\":\"probe.bin\",\"browser_download_url\":%q}]}", t.artifactURL)
+	return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: ioNopCloser{strings.NewReader(body)}, Request: req}, nil
+}
+
+type releaseResolverSwitchAdapter struct {
+	*httpdownload.GitHubAdapter
+	afterResolve func()
+}
+
+func (a *releaseResolverSwitchAdapter) ResolvePlan(ctx context.Context, rn run.Runner, tool *config.Tool, method *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	resolved, err := a.GitHubAdapter.ResolvePlan(ctx, rn, tool, method, intent)
+	a.afterResolve()
+	return resolved, err
+}
+
+func TestGitHubExecutorInstallsResolvedReleaseWithoutRediscovery(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	payloadA := []byte("release A payload\n")
+	payloadB := []byte("release B payload\n")
+	digest := sha256.Sum256(payloadA)
+	pinnedChecksum := "sha256:" + hex.EncodeToString(digest[:])
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/a":
+			_, _ = w.Write(payloadA)
+		case "/b":
+			_, _ = w.Write(payloadB)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	saved := ghrelease.Default
+	resolverA := ghrelease.NewResolver()
+	resolverA.SetHTTPClient(&http.Client{Transport: releaseEndpointTransport{artifactURL: server.URL + "/a"}})
+	resolverB := ghrelease.NewResolver()
+	resolverB.SetHTTPClient(&http.Client{Transport: releaseEndpointTransport{artifactURL: server.URL + "/b"}})
+	ghrelease.Default = resolverA
+	t.Cleanup(func() { ghrelease.Default = saved })
+
+	destination := t.TempDir()
+	tool := &config.Tool{Name: "probe", MethodOnly: []string{"github"}, Methods: []*config.MethodCandidate{{Kind: "github", Config: map[string]any{
+		"repo": "conformance-owner/release-a-switch", "asset": "probe.bin", "checksum": pinnedChecksum,
+		"extract_to": destination, "sudo_required": false,
+	}}}}
+	schema := &config.Schema{Defaults: config.Defaults{Manager: "github", MethodOrder: []string{"github"}}, Tools: map[string]*config.Tool{"probe": tool}}
+	adapter := &releaseResolverSwitchAdapter{GitHubAdapter: httpdownload.NewGitHubAdapter(), afterResolve: func() { ghrelease.Default = resolverB }}
+	ex := executor.New()
+	executor.WithRunner(&runtimeGPGRunner{})(ex)
+	executor.WithAdapters(adapter)(ex)
+	executor.WithOutput(io.Discard)(ex)
+	executor.WithSchemaInfo(filepath.Join(t.TempDir(), "schema.toml"), time.Now())(ex)
+
+	report, err := ex.Execute(context.Background(), schema, "linux")
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if report == nil || len(report.Tools) != 1 || report.Tools[0].Status != executor.StatusInstalled {
+		t.Fatalf("Execute() report = %+v, want installed from pinned release A", report)
+	}
+	// #nosec G304 -- destination is created by t.TempDir for this test.
+	installed, err := os.ReadFile(filepath.Join(destination, "probe"))
+	if err != nil || string(installed) != string(payloadA) {
+		t.Fatalf("installed payload = %q, err=%v; want release A bytes", installed, err)
+	}
+	resolved := report.Tools[0].PlanIntent
+	if resolved == nil || len(resolved.Artifacts) != 1 || resolved.Artifacts[0].URL != server.URL+"/a" || resolved.Artifacts[0].Checksum != pinnedChecksum || resolved.Identity.Version != "v1.2.3" {
+		t.Fatalf("reported resolved artifact/identity = %+v; want A URL/checksum and v1.2.3", resolved)
+	}
+	tracked, err := state.Load()
+	if err != nil {
+		t.Fatalf("load committed state: %v", err)
+	}
+	toolState, ok := tracked.Tools["probe"]
+	if !ok || toolState.Version != "v1.2.3" || toolState.MethodKind != "github" {
+		t.Fatalf("tracked tool state = %+v (present=%v), want github/v1.2.3", toolState, ok)
+	}
 }

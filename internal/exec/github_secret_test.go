@@ -53,7 +53,7 @@ type githubSecretTestAdapter struct {
 }
 
 func newGithubSecretTestAdapter() *githubSecretTestAdapter {
-	return &githubSecretTestAdapter{testMockAdapter: testMockAdapter{kindValue: "github"}}
+	return &githubSecretTestAdapter{testMockAdapter: *statefulMockAdapter("github")}
 }
 
 func (a *githubSecretTestAdapter) ResolvePlan(ctx context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
@@ -62,8 +62,8 @@ func (a *githubSecretTestAdapter) ResolvePlan(ctx context.Context, _ run.Runner,
 	return &resolved, nil
 }
 
-func (a *githubSecretTestAdapter) Observe(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) (plan.Observation, error) {
-	return plan.Observation{Presence: plan.PresenceAbsent}, nil
+func (a *githubSecretTestAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, method *config.MethodCandidate) (plan.Observation, error) {
+	return a.testMockAdapter.Observe(ctx, rn, tool, method)
 }
 
 func (a *githubSecretTestAdapter) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, method *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
@@ -242,7 +242,7 @@ func TestGitHubSecretResolutionFailureAndEmptyFailClosedWithFallback(t *testing.
 			t.Setenv("GITHUB_TOKEN", "ambient-token-must-not-be-used")
 			resolver := &githubSecretTestResolver{results: append([]githubSecretResult(nil), tt.results...)}
 			githubAdapter := newGithubSecretTestAdapter()
-			fallbackAdapter := &testMockAdapter{kindValue: "cargo"}
+			fallbackAdapter := statefulMockAdapter("cargo")
 			ex := New()
 			WithRunner(&run.FakeRunner{})(ex)
 			WithSecretResolver(resolver)(ex)

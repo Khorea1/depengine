@@ -127,7 +127,7 @@ func TestHTTPSecretResolutionFailuresFallBack(t *testing.T) {
 			ex := New()
 			WithRunner(&sequenceRunner{})(ex)
 			WithSecretResolver(resolver)(ex)
-			WithAdapters(&testMockAdapter{kindValue: "http"}, &testMockAdapter{kindValue: "cargo"})(ex)
+			WithAdapters(&testMockAdapter{kindValue: "http"}, statefulMockAdapter("cargo"))(ex)
 			report, err := ex.Execute(context.Background(), httpSecretSchema(), "")
 			if err != nil {
 				t.Fatal(err)
@@ -326,7 +326,7 @@ func TestHTTPSidecarSecretFailureFallsBackWithSanitizedDiagnostic(t *testing.T) 
 	ex := New()
 	WithRunner(&sequenceRunner{})(ex)
 	WithSecretResolver(resolver)(ex)
-	WithAdapters(&testMockAdapter{kindValue: "http"}, &testMockAdapter{kindValue: "cargo"})(ex)
+	WithAdapters(&testMockAdapter{kindValue: "http"}, statefulMockAdapter("cargo"))(ex)
 	schema := httpSecretSchema()
 	if !setHTTPSecretRef(t, schema.Tools["demo"].Methods[0], "ChecksumSecretRef", &config.SecretReference{Provider: "env", Name: "CHECKSUM_TOKEN"}) {
 		t.Skip("sidecar reference fields are not present in config.MethodCandidate yet")
@@ -417,7 +417,7 @@ func TestHTTPSecretIsNotResolvedForDryRunOrUnreachedCandidate(t *testing.T) {
 			ex := New()
 			WithRunner(&sequenceRunner{})(ex)
 			WithSecretResolver(resolver)(ex)
-			WithAdapters(&testMockAdapter{kindValue: "http"}, &testMockAdapter{kindValue: "cargo"})(ex)
+			WithAdapters(&testMockAdapter{kindValue: "http"}, statefulMockAdapter("cargo"))(ex)
 			if dryRun {
 				WithDryRun()(ex)
 			}

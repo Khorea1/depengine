@@ -43,6 +43,9 @@ type testMockAdapter struct {
 	availableFunc func() bool
 	checkFunc     func(string) bool
 	installFunc   func(string) error
+	stateful      bool
+	installedMu   sync.Mutex
+	installed     map[string]bool
 }
 
 func (m *testMockAdapter) Kind() string { return m.kindValue }
@@ -56,17 +59,37 @@ func (m *testMockAdapter) Check(ctx context.Context, rn run.Runner, tool *config
 	if m.checkFunc != nil {
 		return m.checkFunc(tool.Name)
 	}
-	return false
+	m.installedMu.Lock()
+	installed := m.installed[tool.Name]
+	m.installedMu.Unlock()
+	return installed
 }
 func (m *testMockAdapter) Install(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) error {
 	if m.installFunc != nil {
-		return m.installFunc(tool.Name)
+		if err := m.installFunc(tool.Name); err != nil {
+			return err
+		}
+	}
+	if m.stateful {
+		m.installedMu.Lock()
+		if m.installed == nil {
+			m.installed = make(map[string]bool)
+		}
+		m.installed[tool.Name] = true
+		m.installedMu.Unlock()
 	}
 	return nil
 }
 
-func (m *testMockAdapter) ResolvePlan(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
-	resolved := intent.Clone()
+func (m *testMockAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, method *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent != nil {
+		resolved := intent.Clone()
+		return &resolved, nil
+	}
+	if tool == nil || method == nil {
+		return nil, errors.New("test adapter requires tool and method intent")
+	}
+	resolved := plan.New(tool.Name, method.Kind, false)
 	return &resolved, nil
 }
 
@@ -98,6 +121,10 @@ func (*testMockAdapter) CheckAvailable(context.Context, run.Runner, *config.Tool
 
 func (*testMockAdapter) CheckHostCompatibility(*config.Tool, *config.MethodCandidate, *plan.ResolvedInstallPlan, *platform.Facts, string) error {
 	return nil
+}
+
+func statefulMockAdapter(kind string) *testMockAdapter {
+	return &testMockAdapter{kindValue: kind, stateful: true}
 }
 
 var _ AdapterV2 = (*testMockAdapter)(nil)
@@ -209,7 +236,12 @@ func (m *availabilityMockAdapter) ResolvePlan(_ context.Context, _ run.Runner, _
 
 func (m *availabilityMockAdapter) Observe(ctx context.Context, rn run.Runner, tool *config.Tool, mc *config.MethodCandidate) (plan.Observation, error) {
 	if m.Check(ctx, rn, tool, mc) {
-		return plan.Observation{Presence: plan.PresencePresent}, nil
+		observation := plan.Observation{Presence: plan.PresencePresent}
+		if pkg := packageName(tool, mc); pkg != "" {
+			observation.Identity.Package = pkg
+			observation.KnownFields = []plan.IdentityField{plan.FieldPackage}
+		}
+		return observation, nil
 	}
 	return plan.Observation{Presence: plan.PresenceAbsent}, nil
 }
@@ -373,8 +405,8 @@ func mockSchema(tools ...string) *config.Schema {
 }
 
 func TestExecutorFallback(t *testing.T) {
-	methodA := &testMockAdapter{kindValue: "failer"}
-	methodB := &testMockAdapter{kindValue: "succeeder"}
+	methodA := &testMockAdapter{kindValue: "cargo"}
+	methodB := statefulMockAdapter("pipx")
 
 	methodA.installFunc = func(string) error { return &installError{msg: "methodA failed"} }
 	methodA.availableFunc = func() bool { return true }
@@ -382,20 +414,19 @@ func TestExecutorFallback(t *testing.T) {
 
 	methodB.installFunc = func(string) error { return nil }
 	methodB.availableFunc = func() bool { return true }
-	methodB.checkFunc = func(string) bool { return false }
 
 	ex := New()
 	WithRunner(&run.FakeRunner{ExitCode: 0})(ex)
 	WithAdapters(methodA, methodB)(ex)
 
 	s := &config.Schema{
-		Defaults: config.Defaults{Manager: "native", MethodOrder: []string{"failer", "succeeder"}},
+		Defaults: config.Defaults{Manager: "native", MethodOrder: []string{"cargo", "pipx"}},
 		Tools: map[string]*config.Tool{
 			"tool1": {
 				Name: "tool1",
 				Methods: []*config.MethodCandidate{
-					{Kind: "failer", Config: map[string]any{"pkg": "tool1"}},
-					{Kind: "succeeder", Config: map[string]any{"pkg": "tool1"}},
+					{Kind: "cargo", Config: map[string]any{"pkg": "tool1"}},
+					{Kind: "pipx", Config: map[string]any{"pkg": "tool1"}},
 				},
 			},
 		},
@@ -407,22 +438,19 @@ func TestExecutorFallback(t *testing.T) {
 	if report.Success != 1 {
 		t.Fatalf("expected 1 success (fallback), got %d. Tools: %+v", report.Success, report.Tools)
 	}
-	if report.Tools[0].Method != "succeeder" {
-		t.Fatalf("expected fallback to succeeder, got %s", report.Tools[0].Method)
+	if report.Tools[0].Method != "pipx" {
+		t.Fatalf("expected fallback to pipx, got %s", report.Tools[0].Method)
 	}
 }
 
 func TestExecutorRunsPreinstallPerCandidateFallback(t *testing.T) {
 	primary := &testMockAdapter{
-		kindValue:   "primary",
+		kindValue:   "cargo",
 		checkFunc:   func(string) bool { return false },
 		installFunc: func(string) error { return &installError{msg: "primary failed"} },
 	}
-	fallback := &testMockAdapter{
-		kindValue:   "fallback",
-		checkFunc:   func(string) bool { return false },
-		installFunc: func(string) error { return nil },
-	}
+	fallback := statefulMockAdapter("pipx")
+	fallback.installFunc = func(string) error { return nil }
 	runner := &run.FakeRunner{}
 	ex := New()
 	WithRunner(runner)(ex)
@@ -430,14 +458,14 @@ func TestExecutorRunsPreinstallPerCandidateFallback(t *testing.T) {
 	WithAllowArbitraryCode()(ex)
 
 	schema := &config.Schema{
-		Defaults: config.Defaults{MethodOrder: []string{"primary", "fallback"}},
+		Defaults: config.Defaults{MethodOrder: []string{"cargo", "pipx"}},
 		Tools: map[string]*config.Tool{
 			"demo": {
 				Name:       "demo",
 				PreInstall: []config.Hook{{Run: []string{"prehook"}}},
 				Methods: []*config.MethodCandidate{
-					{Kind: "primary", Config: map[string]any{"pkg": "demo"}},
-					{Kind: "fallback", Config: map[string]any{"pkg": "demo"}},
+					{Kind: "cargo", Config: map[string]any{"pkg": "demo"}},
+					{Kind: "pipx", Config: map[string]any{"pkg": "demo"}},
 				},
 			},
 		},
@@ -447,7 +475,7 @@ func TestExecutorRunsPreinstallPerCandidateFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if len(report.Tools) != 1 || report.Tools[0].Status != StatusInstalled || report.Tools[0].MethodKind != "fallback" {
+	if len(report.Tools) != 1 || report.Tools[0].Status != StatusInstalled || report.Tools[0].MethodKind != "pipx" {
 		t.Fatalf("result = %+v, want successful fallback install", report.Tools)
 	}
 	preHooks := 0
@@ -879,7 +907,7 @@ func TestExecutorRechecksAvailabilityAfterMissingSourcePreparation(t *testing.T)
 	adapter := &availabilityMockAdapter{
 		testMockAdapter: testMockAdapter{
 			kindValue: "cargo",
-			checkFunc: func(string) bool { return false },
+			stateful:  true,
 			installFunc: func(string) error {
 				installs++
 				return nil
@@ -943,7 +971,7 @@ func TestExecutorRollsBackMissingSourceWhenPostPrepareAvailabilityFails(t *testi
 	}
 	fallback := &testMockAdapter{
 		kindValue: "http",
-		checkFunc: func(string) bool { return false },
+		stateful:  true,
 		installFunc: func(string) error {
 			fallbackInstalls++
 			return nil
@@ -997,7 +1025,7 @@ func TestExecutorRollsBackAddedSourcesBeforeFallback(t *testing.T) {
 	}
 	fallback := &testMockAdapter{
 		kindValue:   "http",
-		checkFunc:   func(string) bool { return false },
+		stateful:    true,
 		installFunc: func(string) error { return nil },
 	}
 	ex := New()
@@ -1041,7 +1069,7 @@ func TestExecutorStopsFallbackWhenSourceAddOutcomeIsAmbiguous(t *testing.T) {
 	primary := &testMockAdapter{kindValue: "cargo", checkFunc: func(string) bool { return false }}
 	fallback := &testMockAdapter{
 		kindValue: "http",
-		checkFunc: func(string) bool { return false },
+		stateful:  true,
 		installFunc: func(string) error {
 			fallbackInstalls++
 			return nil
@@ -1144,13 +1172,13 @@ func TestExecutorSyncFailureDoesNotAbortUnrelatedTools(t *testing.T) {
 	native := &testMockAdapter{
 		kindValue:     "native",
 		availableFunc: func() bool { return true },
-		checkFunc:     func(string) bool { return false },
+		stateful:      true,
 		installFunc:   func(string) error { return nil },
 	}
 	httpAdapter := &testMockAdapter{
 		kindValue:     "http",
 		availableFunc: func() bool { return true },
-		checkFunc:     func(string) bool { return false },
+		stateful:      true,
 		installFunc:   func(string) error { return nil },
 	}
 
@@ -1245,7 +1273,7 @@ func TestExecutorFallsBackWhenNativeUnavailable(t *testing.T) {
 	}
 	cargo := &testMockAdapter{
 		kindValue:   "cargo",
-		checkFunc:   func(string) bool { return false },
+		stateful:    true,
 		installFunc: func(string) error { return nil },
 	}
 
@@ -1284,9 +1312,8 @@ func TestExecutorSkipsWhenCondition(t *testing.T) {
 	mockA.installFunc = func(string) error { return nil }
 
 	// Also register a fallback that works on arch.
-	mockB := &testMockAdapter{kindValue: "any-distro"}
+	mockB := &testMockAdapter{kindValue: "cargo", stateful: true}
 	mockB.availableFunc = func() bool { return true }
-	mockB.checkFunc = func(string) bool { return false }
 	mockB.installFunc = func(string) error { return nil }
 
 	ex := New()
@@ -1294,13 +1321,13 @@ func TestExecutorSkipsWhenCondition(t *testing.T) {
 	WithAdapters(mockA, mockB)(ex)
 
 	s := &config.Schema{
-		Defaults: config.Defaults{Manager: "native", MethodOrder: []string{"debian-only", "any-distro"}},
+		Defaults: config.Defaults{Manager: "native", MethodOrder: []string{"debian-only", "cargo"}},
 		Tools: map[string]*config.Tool{
 			"tool1": {
 				Name: "tool1",
 				Methods: []*config.MethodCandidate{
 					{Kind: "debian-only", When: &config.Condition{DistroFamily: []string{"debian"}}},
-					{Kind: "any-distro"},
+					{Kind: "cargo", Config: map[string]any{"pkg": "tool1"}},
 				},
 			},
 		},
@@ -1596,7 +1623,7 @@ func TestExecutorPostInstall(t *testing.T) {
 	mock := &testMockAdapter{
 		kindValue:     "native",
 		availableFunc: func() bool { return true },
-		checkFunc:     func(string) bool { return false },
+		stateful:      true,
 		installFunc:   func(string) error { return nil },
 	}
 
@@ -1626,7 +1653,7 @@ func TestExecutorRunsOnlyMatchingPostInstallHooks(t *testing.T) {
 	mock := &testMockAdapter{
 		kindValue:     "native",
 		availableFunc: func() bool { return true },
-		checkFunc:     func(string) bool { return false },
+		stateful:      true,
 		installFunc:   func(string) error { return nil },
 	}
 	fr := &run.FakeRunner{ExitCode: 0}
@@ -1667,7 +1694,7 @@ func TestExecutorTopologicalOrder(t *testing.T) {
 	mock := &testMockAdapter{
 		kindValue:     "native",
 		availableFunc: func() bool { return true },
-		checkFunc:     func(string) bool { return false },
+		stateful:      true,
 		installFunc:   func(string) error { return nil },
 	}
 
@@ -1851,7 +1878,7 @@ func TestExecutorSortByPipeline(t *testing.T) {
 	mock := &testMockAdapter{
 		kindValue:     "native",
 		availableFunc: func() bool { return true },
-		checkFunc:     func(string) bool { return false },
+		stateful:      true,
 		installFunc:   func(string) error { return nil },
 	}
 
@@ -1906,7 +1933,7 @@ func TestExecutorParallelExecution(t *testing.T) {
 	mock := &testMockAdapter{
 		kindValue:     "native",
 		availableFunc: func() bool { return true },
-		checkFunc:     func(string) bool { return false },
+		stateful:      true,
 		installFunc: func(name string) error {
 			installCh <- name
 			return nil
@@ -1977,7 +2004,7 @@ func TestExecutorParallelOutputIsSerializedAndAttributed(t *testing.T) {
 	mock := &testMockAdapter{
 		kindValue:     "native",
 		availableFunc: func() bool { return true },
-		checkFunc:     func(string) bool { return false },
+		stateful:      true,
 		installFunc:   func(string) error { return nil },
 	}
 	parallel := New()
@@ -2018,7 +2045,7 @@ func TestExecutorParallelSequentialDefault(t *testing.T) {
 	mock := &testMockAdapter{
 		kindValue:     "native",
 		availableFunc: func() bool { return true },
-		checkFunc:     func(string) bool { return false },
+		stateful:      true,
 	}
 
 	ex := New()
@@ -2040,7 +2067,7 @@ func TestExecutorPreInstallSuccess(t *testing.T) {
 	mock := &testMockAdapter{
 		kindValue:     "native",
 		availableFunc: func() bool { return true },
-		checkFunc:     func(string) bool { return false },
+		stateful:      true,
 		installFunc:   func(string) error { return nil },
 	}
 
@@ -2131,7 +2158,7 @@ func TestExecutorPreInstallFailure(t *testing.T) {
 	mock := &testMockAdapter{
 		kindValue:     "native",
 		availableFunc: func() bool { return true },
-		checkFunc:     func(string) bool { return false },
+		stateful:      true,
 		installFunc:   func(string) error { return nil },
 	}
 
@@ -2163,7 +2190,7 @@ func TestExecutorBlocksDangerous(t *testing.T) {
 	mock := &testMockAdapter{
 		kindValue:     "native",
 		availableFunc: func() bool { return true },
-		checkFunc:     func(string) bool { return false },
+		stateful:      true,
 		installFunc:   func(string) error { return nil },
 	}
 
@@ -2329,7 +2356,7 @@ func TestExecutorPreAndPostInstall(t *testing.T) {
 	mock := &testMockAdapter{
 		kindValue:     "native",
 		availableFunc: func() bool { return true },
-		checkFunc:     func(string) bool { return false },
+		stateful:      true,
 		installFunc:   func(string) error { return nil },
 	}
 
@@ -2379,7 +2406,7 @@ func TestWriteState(t *testing.T) {
 	mock := &testMockAdapter{
 		kindValue:     "native",
 		availableFunc: func() bool { return true },
-		checkFunc:     func(string) bool { return false },
+		stateful:      true,
 		installFunc:   func(string) error { return nil },
 	}
 
@@ -2607,14 +2634,14 @@ func TestExecutionClosureKeepsDependencyReachedByAnotherEffectiveEdge(t *testing
 func TestCancellationReportsPlannedClosureAndPreservesPartialState(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	started := make(chan string, 1)
-	blocking := &blockingMockAdapter{kindValue: "blocker", block: make(chan struct{}), started: started}
-	fast := &testMockAdapter{kindValue: "fast"}
+	blocking := &blockingMockAdapter{kindValue: "cargo", block: make(chan struct{}), started: started}
+	fast := statefulMockAdapter("go")
 	schema := &config.Schema{
-		Defaults: config.Defaults{MethodOrder: []string{"fast", "blocker"}},
+		Defaults: config.Defaults{MethodOrder: []string{"go", "cargo"}},
 		Tools: map[string]*config.Tool{
-			"done":  {Name: "done", Methods: []*config.MethodCandidate{{Kind: "fast"}}},
-			"block": {Name: "block", Requires: []string{"done"}, Methods: []*config.MethodCandidate{{Kind: "blocker"}}},
-			"later": {Name: "later", Requires: []string{"block"}, Methods: []*config.MethodCandidate{{Kind: "fast"}}},
+			"done":  {Name: "done", Methods: []*config.MethodCandidate{{Kind: "go", Config: map[string]any{"pkg": "done"}}}},
+			"block": {Name: "block", Requires: []string{"done"}, Methods: []*config.MethodCandidate{{Kind: "cargo", Config: map[string]any{"pkg": "block"}}}},
+			"later": {Name: "later", Requires: []string{"block"}, Methods: []*config.MethodCandidate{{Kind: "go", Config: map[string]any{"pkg": "later"}}}},
 		},
 	}
 
@@ -2743,6 +2770,15 @@ type cancelAfterConcurrentStartAdapter struct {
 	cancel        context.CancelFunc
 }
 
+func (a *cancelAfterConcurrentStartAdapter) ResolvePlan(_ context.Context, _ run.Runner, tool *config.Tool, method *config.MethodCandidate, intent *plan.ResolvedInstallPlan) (*plan.ResolvedInstallPlan, error) {
+	if intent != nil {
+		resolved := intent.Clone()
+		return &resolved, nil
+	}
+	resolved := plan.New(tool.Name, method.Kind, false)
+	return &resolved, nil
+}
+
 func (a *cancelAfterConcurrentStartAdapter) InstallResolved(ctx context.Context, _ run.Runner, tool *config.Tool, _ *config.MethodCandidate, _ *plan.ResolvedInstallPlan) error {
 	switch tool.Name {
 	case "a-block":
@@ -2756,6 +2792,12 @@ func (a *cancelAfterConcurrentStartAdapter) InstallResolved(ctx context.Context,
 		case <-ctx.Done():
 			return ctx.Err()
 		}
+		a.installedMu.Lock()
+		if a.installed == nil {
+			a.installed = make(map[string]bool)
+		}
+		a.installed[tool.Name] = true
+		a.installedMu.Unlock()
 		return nil
 	case "c-queued":
 		close(a.queuedStarted)
@@ -2768,7 +2810,7 @@ func TestCancellationReportsCompletedQueuedAndLaterTools(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	adapter := &cancelAfterConcurrentStartAdapter{
-		testMockAdapter: &testMockAdapter{kindValue: "controlled"},
+		testMockAdapter: statefulMockAdapter("cargo"),
 		blockStarted:    make(chan struct{}),
 		queuedStarted:   make(chan struct{}),
 		cancel:          cancel,
@@ -2778,11 +2820,11 @@ func TestCancellationReportsCompletedQueuedAndLaterTools(t *testing.T) {
 	WithAdapters(adapter)(ex)
 	WithMaxJobs(2)(ex)
 	WithSchemaInfo("/tmp/midflight-cancelled-schema.toml", time.Now())(ex)
-	schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{"controlled"}}, Tools: map[string]*config.Tool{
-		"a-block":  {Name: "a-block", Methods: []*config.MethodCandidate{{Kind: "controlled"}}},
-		"b-done":   {Name: "b-done", Methods: []*config.MethodCandidate{{Kind: "controlled"}}},
-		"c-queued": {Name: "c-queued", Methods: []*config.MethodCandidate{{Kind: "controlled"}}},
-		"d-later":  {Name: "d-later", Requires: []string{"a-block"}, Methods: []*config.MethodCandidate{{Kind: "controlled"}}},
+	schema := &config.Schema{Defaults: config.Defaults{MethodOrder: []string{"cargo"}}, Tools: map[string]*config.Tool{
+		"a-block":  {Name: "a-block", Methods: []*config.MethodCandidate{{Kind: "cargo", Config: map[string]any{"pkg": "a-block"}}}},
+		"b-done":   {Name: "b-done", Methods: []*config.MethodCandidate{{Kind: "cargo", Config: map[string]any{"pkg": "b-done"}}}},
+		"c-queued": {Name: "c-queued", Methods: []*config.MethodCandidate{{Kind: "cargo", Config: map[string]any{"pkg": "c-queued"}}}},
+		"d-later":  {Name: "d-later", Requires: []string{"a-block"}, Methods: []*config.MethodCandidate{{Kind: "cargo", Config: map[string]any{"pkg": "d-later"}}}},
 	}}
 	type outcome struct {
 		report *ExecReport
@@ -3157,7 +3199,7 @@ func TestWriteStateTracksSharedSourceOwnershipAndRefcounts(t *testing.T) {
 	}}
 	adapter := &testMockAdapter{
 		kindValue:   "cargo",
-		checkFunc:   func(string) bool { return false },
+		stateful:    true,
 		installFunc: func(string) error { return nil },
 	}
 	ex := New()
@@ -3210,7 +3252,7 @@ func TestWriteStateMarksPreexistingSourceExternal(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", dir)
 
 	runner := &sequenceRunner{results: []run.Result{{Stdout: []byte("vendor/tools\n")}}}
-	adapter := &testMockAdapter{kindValue: "cargo", checkFunc: func(string) bool { return false }, installFunc: func(string) error { return nil }}
+	adapter := &testMockAdapter{kindValue: "cargo", stateful: true, installFunc: func(string) error { return nil }}
 	ex := New()
 	WithRunner(runner)(ex)
 	WithAdapters(adapter)(ex)
@@ -3248,7 +3290,7 @@ func TestExecutorRetainsCommittedSourcesWhenPostInstallFails(t *testing.T) {
 		{},
 		{ExitCode: 1, Stderr: []byte("hook failed")},
 	}}
-	adapter := &testMockAdapter{kindValue: "cargo", checkFunc: func(string) bool { return false }, installFunc: func(string) error { return nil }}
+	adapter := &testMockAdapter{kindValue: "cargo", stateful: true, installFunc: func(string) error { return nil }}
 	ex := New()
 	WithAllowArbitraryCode()(ex)
 	WithRunner(runner)(ex)
@@ -3312,7 +3354,7 @@ func TestExecutorCandidateLocalHookDoesNotRunForUnavailableCandidate(t *testing.
 	}
 	fallback := &testMockAdapter{
 		kindValue:   "cargo",
-		checkFunc:   func(string) bool { return false },
+		stateful:    true,
 		installFunc: func(string) error { return nil },
 	}
 	runner := &run.FakeRunner{}

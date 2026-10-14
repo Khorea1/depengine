@@ -26,7 +26,7 @@ type resolvingMock struct {
 }
 
 func newResolvingMock(kind, urlA, urlB string) *resolvingMock {
-	m := &resolvingMock{urlA: urlA, urlB: urlB}
+	m := &resolvingMock{testMockAdapter: testMockAdapter{stateful: true}, urlA: urlA, urlB: urlB}
 	m.kindValue = kind
 	return m
 }
@@ -46,11 +46,11 @@ func (m *resolvingMock) ResolvePlan(_ context.Context, _ run.Runner, _ *config.T
 	return &resolved, nil
 }
 
-func (m *resolvingMock) InstallResolved(_ context.Context, _ run.Runner, _ *config.Tool, _ *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
+func (m *resolvingMock) InstallResolved(ctx context.Context, rn run.Runner, tool *config.Tool, method *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {
 	if len(resolved.Artifacts) > 0 {
 		m.gotURL = resolved.Artifacts[0].URL
 	}
-	return nil
+	return m.testMockAdapter.InstallResolved(ctx, rn, tool, method, resolved)
 }
 
 func (m *resolvingMock) Install(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) error {

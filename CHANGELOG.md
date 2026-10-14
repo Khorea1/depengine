@@ -2,6 +2,7 @@
 
 ## Unreleased
 - Schedule the existing adversarial validation CLI replay on macOS, Windows Git Bash, FreeBSD, OpenBSD, and NetBSD CI jobs; target-platform execution is reported by those runs.
+- After a successful adapter install, verify its exact resolved target before recording state or running post-install hooks; non-satisfied observations fail terminally and leave preparation WAL unresolved rather than retrying or rolling back. Preserve only observed/resolved release versions in durable state.
 - Validate effective GitHub distribution integrity after schema/manifest merge while preserving `validate --format json`; classify detached-signature verification failures as terminal, compute preflight elevation only from host-compatible methods and their effective privileged targets.
 - Package-manager Observe probes for npm, Bun, pipx, pnpm, Yarn, Composer, uv, and Gem distinguish confirmed presence or absence from unknown or broken CLI output, preserving reported installed versions on drift.
 - Pin golangci-lint v2.14.0 in CI for Go 1.27 export-data compatibility, verified against Go 1.27.2.
