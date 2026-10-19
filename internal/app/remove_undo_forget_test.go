@@ -89,6 +89,8 @@ func TestCommandHelperSubprocess(t *testing.T) {
 		args = strings.Split(encoded, "\x1f")
 	}
 	switch cmd := os.Getenv("DEPENGINE_TEST_HELPER_CMD"); cmd {
+	case "install":
+		runViaCobra(newInstallCmd(), args)
 	case "remove":
 		runViaCobra(newRemoveCmd(), args)
 	case "undo":
