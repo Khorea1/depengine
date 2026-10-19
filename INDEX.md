@@ -114,6 +114,10 @@ python "$tmp/architecture/tools/validate.py" --root "$tmp/architecture" --repo .
 | `TODO.md` | Unvetted/session-specific ideas; track persistent actionable work in Beads |
 | [`plan-manifest-deduplication-investigation.md`](plan-manifest-deduplication-investigation.md) | Open architectural investigation: compare static recipe expansion, host specialization, and keeping current candidates before approving a manifest refactor |
 | [`plan-github-distributions.md`](plan-github-distributions.md) | Proposta E APROVADA (fronteira): `distributions` dentro do método, especialização antes do plano, `AssetSelector` literal/regex; substitui `cases` (spike C arquivado) |
+| [`report-scalability-planning.md`](report-scalability-planning.md) | Relatório preliminar (2026-10-16): custo de parse/planejamento por candidato, CPU vs I/O, achado do portão de código arbitrário sobre candidatos inelegíveis e veredito de trabalho para catálogo/import; não é ADR |
+| [`report-spike-catalog-identity.md`](report-spike-catalog-identity.md) | Relatório preliminar (2026-10-17): identidade de candidato sob especialização por host (spike `pyx`), medição dos forks do gate e desfecho das decisões do mantenedor; não é ADR |
+| [`report-spike-pyx-catalog-cost.md`](report-spike-pyx-catalog-cost.md) | Relatório preliminar (2026-10-18): custo do manifest × tamanho do catálogo (eager quadrático por go-toml vs lookup plano), inventário dos caminhos de carga (D2) e identidade do lookup (spike `pyx`, rodada 2); não é ADR |
+| [`plan-adr-008-catalog-layer.md`](plan-adr-008-catalog-layer.md) | Esboço superado pelo rascunho `docs/design/adr-008-catalog-layer.md` (Proposed); registra T1–T5 e as correções de 2026-10-18; apagar quando o ADR for aceito |
 | `.beads/` | Structured agent task state and handoffs; only JSONL and metadata are versioned |
 | `architecture/` | archmap: selective semantic architecture model with code-revision checks, symbol-navigation anchors, and derived visual views. Start at `architecture/README.md` |
 
