@@ -106,28 +106,42 @@ git archive dev-notes architecture | tar -x -C "$tmp"
 python "$tmp/architecture/tools/validate.py" --root "$tmp/architecture" --repo .
 ```
 
-## File map
+## Layout contract
 
-| File | Purpose |
-|------|---------|
-| `cleaning.md` | Local-only cleanup procedure supplied from dotfiles; intentionally ignored by the `dev-notes` branch |
-| `TODO.md` | Unvetted/session-specific ideas; track persistent actionable work in Beads |
-| [`plan-manifest-deduplication-investigation.md`](plan-manifest-deduplication-investigation.md) | Open architectural investigation: compare static recipe expansion, host specialization, and keeping current candidates before approving a manifest refactor |
-| [`plan-github-distributions.md`](plan-github-distributions.md) | Proposta E APROVADA (fronteira): `distributions` dentro do método, especialização antes do plano, `AssetSelector` literal/regex; substitui `cases` (spike C arquivado) |
-| [`report-scalability-planning.md`](report-scalability-planning.md) | Relatório preliminar (2026-10-16): custo de parse/planejamento por candidato, CPU vs I/O, achado do portão de código arbitrário sobre candidatos inelegíveis e veredito de trabalho para catálogo/import; não é ADR |
-| [`report-spike-catalog-identity.md`](report-spike-catalog-identity.md) | Relatório preliminar (2026-10-17): identidade de candidato sob especialização por host (spike `pyx`), medição dos forks do gate e desfecho das decisões do mantenedor; não é ADR |
-| [`report-spike-pyx-catalog-cost.md`](report-spike-pyx-catalog-cost.md) | Relatório preliminar (2026-10-18): custo do manifest × tamanho do catálogo (eager quadrático por go-toml vs lookup plano), inventário dos caminhos de carga (D2) e identidade do lookup (spike `pyx`, rodada 2); não é ADR |
-| [`plan-adr-008-catalog-layer.md`](plan-adr-008-catalog-layer.md) | Esboço superado pelo rascunho `docs/design/adr-008-catalog-layer.md` (Proposed); registra T1–T5 e as correções de 2026-10-18; apagar quando o ADR for aceito |
-| `.beads/` | Structured agent task state and handoffs; only JSONL and metadata are versioned |
-| `architecture/` | archmap: selective semantic architecture model with code-revision checks, symbol-navigation anchors, and derived visual views. Start at `architecture/README.md` |
+One note per concern, in the directory for its kind. The root holds only control
+files and long-lived aggregators; no other note belongs there. This is the
+contract enforced by `Templates/tools/check-dev-layout.sh` from my dotfiles.
+
+| Path | Kind it holds | Naming |
+|------|---------------|--------|
+| `plans/` | Implementation plans, one per non-trivial change | `plan-<slug>.md` |
+| `reports/` | Audits, reviews, verification records, spikes, council/investigation output | `<kind>-<slug>-<YYYY-MM-DD>.<ext>` with `kind` in `report` `audit` `verification` `spike` `council` `investigation` |
+| `references/` | Cached external material, research notes, derived captures, fixtures | `<origin>-<topic>[-<YYYY-MM-DD>].<ext>` with `origin` in `retrieved` `research` `capture` `fixture` |
+| `assets/` | Local-only binary fixtures, ignored by `.gitignore` | — |
+| `archive/` | Finished or superseded material, mirroring the kind directories | `archive/<kind>/<YYYY-MM-DD>_<original-name>` |
+| `architecture/` | archmap: selective semantic architecture model with code-revision checks, symbol-navigation anchors, and derived visual views. Start at `architecture/README.md` | — |
+| `.beads/` | Structured agent task state and handoffs; only JSONL and metadata are versioned | — |
+
+Control files (never treated as notes): `INDEX.md` (this file), `cleaning.md`
+(local-only, intentionally absent from `dev-notes`), `archmap.log`.
+
+Aggregators allowed at the root: `TODO.md` (open follow-ups; persistent
+actionable work belongs in Beads). The convention also allows `ideas.md`,
+`decisions.md`, and optionally `specs.md` and `not-planned.md`.
+
+`INDEX.md` describes categories, not files. When a kind directory grows past a
+few entries, file-level drift stays local in its own index. The active files and
+their purpose live in [`plans/README.md`](plans/README.md) and
+[`reports/README.md`](reports/README.md).
 
 ## Lifecycle
 
 Keep active files current. When a note is finished, superseded, or no longer
-actionable, delete it, or move it to `archive/` if the history has expected future
-value. Close completed Beads tasks rather than duplicating them in `TODO.md`.
-Do not let archived material look active. The local `cleaning.md` control
-file defines the full cleanup procedure when present in the workspace.
+actionable, delete it, or move it under `archive/<kind>/` with a date-first name
+(`git mv` when it is tracked) if the history has expected future value. Close
+completed Beads tasks rather than duplicating them in `TODO.md`. Do not let
+archived material look active. The local `cleaning.md` control file defines the
+full cleanup procedure when present in the workspace.
 
 Cached external material records its source URL or document ID, retrieval date,
 and relevant product/API/version. Refresh it before relying on it for freshness-
@@ -135,8 +149,9 @@ sensitive decisions.
 
 ## Conventions
 
-- Use descriptive lowercase kebab-case names, prefixed by kind (`plan-`,
-  `retrieved-`) where relevant.
+- Use lowercase kebab-case names, kind-prefixed (`plan-`, `report-`,
+  `retrieved-`). An active dated artifact is kind-first with the date last; an
+  archived file is date-first and does not repeat the original date suffix.
 - Put current state at the top of long-lived files, not buried in chronology.
 - Do not promote `.dev/` content to `AGENTS.md` automatically. Only verified,
   durable, repo-specific facts qualify; the local `cleaning.md` control file

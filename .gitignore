@@ -1,3 +1,11 @@
+# .dev/ — local-only noise. Canonical baseline; extend per project.
+# Instantiate as `.dev/.gitignore` (tracked on the notes branch when one exists).
 __pycache__/
 .pytest_cache/
 .venv/
+*~
+.DS_Store
+
+# Local-only binary fixtures live in assets/. Narrow this to what the project
+# actually drops there instead of ignoring the whole directory.
+# /assets/*.sqlite3
