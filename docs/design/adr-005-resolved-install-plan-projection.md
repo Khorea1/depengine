@@ -12,9 +12,12 @@ observations and mutations must use that resolved target.
 ## Decision
 
 Each selected candidate starts with a validated, host-independent plan intent
-projected from the merged schema and manifest. Candidate ordering and method
-capability checks determine which intent can be reached. Dependency scheduling
-and lockfile constraints remain separate inputs to execution.
+projected from the merged schema and manifest. The candidate sequence of a tool
+is itself host-independent (ADR-007); a candidate may carry facts-keyed
+variants, and selecting one specializes a copy without changing the candidate's
+identity. Candidate ordering and method capability checks determine which
+intent can be reached. Dependency scheduling and lockfile constraints remain
+separate inputs to execution.
 
 The adapter resolves that intent once when the candidate is reached. The
 executor validates the resolution and uses the concrete plan for observation,
