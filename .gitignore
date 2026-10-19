@@ -9,3 +9,9 @@ __pycache__/
 # Local-only binary fixtures live in assets/. Narrow this to what the project
 # actually drops there instead of ignoring the whole directory.
 # /assets/*.sqlite3
+
+# Derived architecture renders live next to their model: views/<id>.yaml stays
+# the source (architecture/README.md) and stays tracked; local renders are not.
+/architecture/views/*.mmd
+/architecture/views/*.dot
+/architecture/views/*.svg
