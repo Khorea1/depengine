@@ -785,7 +785,7 @@ mechanism rather than credentials embedded in URLs.
 
 ```toml
 [tools.myenv]
-pre_install = "curl -fsSL https://setup.example.com | sh"
+pre_install = { run = ["myenv-prereq", "--check"] }
 
   [tools.myenv.native]
   pkg = "my-env"
@@ -796,6 +796,16 @@ candidate is actually selected. It runs only when that candidate requires a
 real install/upgrade transition; an already-satisfied or unavailable candidate
 does not consume the hook. If it fails, the transition stops. Hooks require
 `--allow-arbitrary-code`.
+
+Hooks are transition callbacks, not managed installation methods. Running an
+upstream installer such as `curl ... | sh` or `irm ... | iex` from a hook does
+not tell depengine which files the script installed, how to observe them, or
+how to remove or roll them back. Likewise, `http` and `github` methods download
+artifacts; supplying an installer-script URL downloads the script without
+executing it. For a tool distributed this way, declare a supported native
+package or the underlying managed HTTP/GitHub binary or archive with explicit
+paths and checksum verification where available. See
+[Support boundaries](support-boundary.md).
 
 When a hook belongs to one install method, put it inside that method table. It
 then cannot leak to a fallback candidate:
