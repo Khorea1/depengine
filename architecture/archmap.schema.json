@@ -95,7 +95,7 @@
           "minLength": 1,
           "maxLength": 160,
           "pattern": "^[^\\n\\r]+$",
-          "description": "Selective declaration/name-path query for a symbol-aware navigator such as Serena. This is a starting point, not an exhaustive symbol inventory."
+          "description": "Selective declaration/name-path query for a symbol-aware navigator. This is a starting point, not an exhaustive symbol inventory."
         },
         "path": { "$ref": "#/$defs/path" },
         "role": { "$ref": "#/$defs/line" }
