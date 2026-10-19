@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Slim the arbitrary-code gate for registered method kinds: it reads the arbitrary-code operation bit of the validated candidate plan directly instead of re-running the adapter capability check and a second capability derivation per candidate (~58-61% of the gate's marginal planning cost on enumerated schemas, no behavior change). A permanent characterization matrix pins equivalence with the previous gate, including unregistered kinds and requirement-failing candidates.
 - For Git recipes that retain the clone root, observe the checked-out commit itself and use it for revision drift/recovery; keep opaque artifacts and managed-path outputs presence-only.
 - Schedule the existing adversarial validation CLI replay on macOS, Windows Git Bash, FreeBSD, OpenBSD, and NetBSD CI jobs; target-platform execution is reported by those runs.
 - After a successful adapter install, verify its exact resolved target before recording state or running post-install hooks; non-satisfied observations fail terminally and leave preparation WAL unresolved rather than retrying or rolling back. Preserve only observed/resolved release versions in durable state.

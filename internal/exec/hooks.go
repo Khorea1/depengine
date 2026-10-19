@@ -8,6 +8,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/planner"
 )
 
 // hasDangerousMethod reports whether any selected method contains a field whose
@@ -24,10 +25,6 @@ func (ex *Executor) hasDangerousMethod(rc *runContext, tool *config.Tool) bool {
 	return false
 }
 
-// methodRunsArbitraryCode derives the arbitrary-code gate from the shared
-// plan. If static planning rejects the candidate (malformed programmatic
-// input) it fails closed to the schema-level command predicate, so an
-// invalid extra field cannot bypass the security gate.
 // CandidateRunsArbitraryCode reports whether executing one selected method
 // crosses the arbitrary-code capability boundary. Composition-root commands
 // that execute adapters directly must use the same gate as Executor.Execute.
@@ -35,12 +32,46 @@ func CandidateRunsArbitraryCode(tool *config.Tool, method *config.MethodCandidat
 	return methodRunsArbitraryCode(tool, method)
 }
 
+// methodRunsArbitraryCode derives the arbitrary-code gate from the shared
+// plan. If static planning rejects the candidate (malformed programmatic
+// input) it fails closed to the schema-level command predicate, so an
+// invalid extra field cannot bypass the security gate.
+//
+// The gate consumes exactly one bit of the plan: whether any operation is
+// marked as arbitrary code. For registered method kinds it therefore builds
+// the validated intent once (planner.BuildCandidateIntent) and reads that bit
+// directly. It deliberately skips the adapter capability check and the second
+// PlanCapabilities pass the generic planning boundary performs, because
+// neither can change the bit: a plan that passes Validate cannot make
+// PlanCapabilities fail, and CheckRequirements only reports capability
+// mismatches, never alters the plan. A candidate whose requirements fail still
+// gets its plan's answer, exactly as before. The equivalence with the
+// pre-optimization gate is pinned by TestMethodRunsArbitraryCodeMatchesLegacyGate.
+//
+// Kinds without a registered contract keep the generic path: it carries the
+// executor-owned lifecycle hooks (including tool-level hooks) in a minimal
+// plan, which BuildCandidateIntent does not build for unknown kinds.
 func methodRunsArbitraryCode(tool *config.Tool, method *config.MethodCandidate) bool {
+	if method != nil {
+		if _, registered := methodkind.Lookup(method.Kind); registered {
+			intent, err := planner.BuildCandidateIntent(tool, method)
+			if err != nil {
+				return staticMethodRunsArbitraryCode(method)
+			}
+			return methodkind.PlanRequiresArbitraryCode(intent)
+		}
+	}
 	if intent, _ := candidatePlanIntent(tool, method); intent != nil {
 		if capabilities, err := methodkind.PlanCapabilities(*intent); err == nil {
 			return capabilities&methodkind.CapabilityArbitraryCode != 0
 		}
 	}
+	return staticMethodRunsArbitraryCode(method)
+}
+
+// staticMethodRunsArbitraryCode is the fail-closed fallback used when no plan
+// can answer: method-level hooks or any configured command-typed field.
+func staticMethodRunsArbitraryCode(method *config.MethodCandidate) bool {
 	return len(method.PreInstall) > 0 || len(method.PostInstall) > 0 || configuredCommand(method)
 }
 

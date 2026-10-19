@@ -25,10 +25,24 @@ func PlanCapabilities(p plan.ResolvedInstallPlan) (Capability, error) {
 	if len(p.Secrets) > 0 {
 		required |= CapabilityAuth
 	}
-	if operationsHaveArbitraryCode(planOperations(p)) {
+	if PlanRequiresArbitraryCode(p) {
 		required |= CapabilityArbitraryCode
 	}
 	return required, nil
+}
+
+// PlanRequiresArbitraryCode reports whether any operation the plan would
+// execute (source mutations, method operations, preparation, lifecycle hooks,
+// ensure checks and applies) is marked as arbitrary code. It is the single
+// definition of the bit PlanCapabilities reports as CapabilityArbitraryCode.
+//
+// Unlike PlanCapabilities it neither validates the plan nor derives the
+// identity, artifact, source or auth capabilities, so it is cheap enough for
+// per-candidate gating. The caller must pass a plan that already went through
+// Validate (planner.BuildCandidateIntent does); on an unvalidated plan the
+// answer only describes the operations present, not their well-formedness.
+func PlanRequiresArbitraryCode(p plan.ResolvedInstallPlan) bool {
+	return operationsHaveArbitraryCode(planOperations(p))
 }
 
 // MissingPlanCapabilities reports capabilities required by an already-resolved
