@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -201,6 +202,20 @@ func loadUpgradeLock(schemaPath string, lg *slog.Logger) (*lock.Lock, error) {
 	return lk, nil
 }
 
+// lockedRevisionUnobservable reports whether reconciliation accepted an opaque
+// Git target pinned to a concrete revision without authoritative observation of
+// that revision. Git output modes that discard the checkout metadata cannot
+// identify the installed commit, so presence alone must not make a
+// revision-pinned target look up to date. Other methods keep their declared
+// presence-only idempotency.
+func lockedRevisionUnobservable(method *config.MethodCandidate, resolved *plan.ResolvedInstallPlan, verification plan.VerificationResult) bool {
+	return method != nil &&
+		method.Kind == "git" &&
+		resolved != nil &&
+		resolved.Identity.Revision != "" &&
+		!slices.Contains(verification.KnownFields, plan.FieldRevision)
+}
+
 // collectOutdatedTools compares host reconciliation with the locked target for
 // v2 and recorded versions with legacy pins for v1. Each state entry must map
 // to its exact selected candidate; unresolved locked targets are terminal
@@ -251,7 +266,11 @@ func collectOutdatedTools(ctx context.Context, st *state.State, s *config.Schema
 					err = fmt.Errorf("locked target is absent; run install before upgrade")
 				}
 				if err == nil && decision.Transition != plan.TransitionUpgrade {
-					continue
+					if lockedRevisionUnobservable(method, resolved, verification) {
+						err = fmt.Errorf("locked revision %s cannot be observed for this installation; refusing to classify it as up to date", resolved.Identity.Revision)
+					} else {
+						continue
+					}
 				}
 			}
 			if err != nil {

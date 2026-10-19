@@ -33,6 +33,15 @@ and identify update drift; they do not supply concrete resolved identity.
 Lock v1 continues to use its method pins through the bounded legacy
 resolver/application path and remains readable.
 
+A Git revision in a v2 lock is exactly comparable only when the installation
+retains its checkout: `extract_to` points at the clone root (the default or
+root artifact) and `managed_paths` is not active. Non-root artifacts,
+managed-path outputs, and binary-only installs remain presence-only because
+they cannot identify the installed commit. During v2 upgrade discovery, a
+locked Git target with a concrete revision that cannot be observed is reported
+as a terminal failure instead of being classified as up to date from presence
+alone; retained checkouts continue to compare their actual HEAD.
+
 ### Legacy lock v1 lifecycle
 
 Lock v1 is compatibility-only. New capabilities must not extend its selector

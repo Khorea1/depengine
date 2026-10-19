@@ -12,6 +12,7 @@ import (
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/plan"
+	"github.com/Khorea1/depengine/internal/planner"
 	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/state"
@@ -19,11 +20,17 @@ import (
 
 // phaseTestAdapter is a self-contained probe adapter shared by app phase tests.
 type phaseTestAdapter struct {
+	kind        string
 	available   bool
 	observation *plan.Observation
 }
 
-func (*phaseTestAdapter) Kind() string                                 { return "go" }
+func (a *phaseTestAdapter) Kind() string {
+	if a.kind != "" {
+		return a.kind
+	}
+	return "go"
+}
 func (a *phaseTestAdapter) Available(context.Context, run.Runner) bool { return a.available }
 func (*phaseTestAdapter) Check(context.Context, run.Runner, *config.Tool, *config.MethodCandidate) bool {
 	return false
@@ -244,6 +251,121 @@ func TestCollectOutdatedToolsUsesV2ReconciliationInsteadOfRecordedVersion(t *tes
 	}
 	if len(outdated) != 1 || outdated[0].resolved == nil || outdated[0].pinnedVer != "1.0.0" {
 		t.Fatalf("outdated = %+v, want the drifted locked target despite absent recorded version and equal version string", outdated)
+	}
+}
+
+func TestLockedRevisionUnobservableScopesToOpaqueGit(t *testing.T) {
+	rev := strings.Repeat("c", 40)
+	resolved := &plan.ResolvedInstallPlan{Identity: plan.ResolvedIdentity{Revision: rev}}
+	cases := []struct {
+		name         string
+		method       *config.MethodCandidate
+		resolved     *plan.ResolvedInstallPlan
+		knownFields  []plan.IdentityField
+		unobservable bool
+	}{
+		{name: "opaque git", method: &config.MethodCandidate{Kind: "git"}, resolved: resolved, unobservable: true},
+		{name: "retained checkout", method: &config.MethodCandidate{Kind: "git"}, resolved: resolved, knownFields: []plan.IdentityField{plan.FieldRevision}},
+		{name: "other method keeps presence idempotency", method: &config.MethodCandidate{Kind: "cargo"}, resolved: resolved},
+		{name: "no locked revision", method: &config.MethodCandidate{Kind: "git"}, resolved: &plan.ResolvedInstallPlan{}},
+		{name: "nil resolved plan", method: &config.MethodCandidate{Kind: "git"}},
+		{name: "nil method", resolved: resolved},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			verification := plan.VerificationResult{State: plan.StateSatisfied, KnownFields: tc.knownFields}
+			if got := lockedRevisionUnobservable(tc.method, tc.resolved, verification); got != tc.unobservable {
+				t.Fatalf("lockedRevisionUnobservable() = %v, want %v", got, tc.unobservable)
+			}
+		})
+	}
+}
+
+func TestCollectOutdatedToolsFailsClosedWhenLockedGitRevisionIsUnobservable(t *testing.T) {
+	rev := strings.Repeat("a", 40)
+	method := &config.MethodCandidate{Kind: "git", Config: map[string]any{
+		"url":        "https://example.test/repo.git",
+		"rev":        rev,
+		"extract_to": t.TempDir(),
+		"artifact":   "build/output",
+	}}
+	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"demo": tool}}
+
+	desired, err := planner.BuildCandidateIntent(tool, method)
+	if err != nil {
+		t.Fatal(err)
+	}
+	desired.Identity.Revision = rev
+	document, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{desired})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lk, err := lock.NewUniversal(document, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// An opaque output mode observes presence but cannot identify the checkout's
+	// actual commit. Treating that as Satisfied would silently skip an upgrade.
+	observation := plan.Observation{Presence: plan.PresencePresent}
+	ex := exec.New()
+	exec.WithAdapters(&phaseTestAdapter{kind: "git", available: true, observation: &observation})(ex)
+	exec.WithDefaultMethodOrder([]string{"git"})(ex)
+	exec.WithLockDocument(document)(ex)
+	st := &state.State{Tools: map[string]state.ToolState{
+		"demo": {Method: "git", MethodKind: "git", Version: "old"},
+	}}
+
+	outdated, failures := collectOutdatedTools(context.Background(), st, schema, lk, "", ex, "")
+	if len(outdated) != 0 || len(failures) != 1 || failures[0].Status != "failed" {
+		t.Fatalf("outdated = %+v, failures = %+v, want a terminal unobservable-revision failure", outdated, failures)
+	}
+	if !strings.Contains(failures[0].Error, "locked revision") {
+		t.Fatalf("failure = %+v, want locked-revision diagnostics", failures[0])
+	}
+}
+
+func TestCollectOutdatedToolsAcceptsObservedRetainedGitRevision(t *testing.T) {
+	rev := strings.Repeat("b", 40)
+	method := &config.MethodCandidate{Kind: "git", Config: map[string]any{
+		"url":        "https://example.test/repo.git",
+		"rev":        rev,
+		"extract_to": t.TempDir(),
+	}}
+	tool := &config.Tool{Name: "demo", Methods: []*config.MethodCandidate{method}}
+	schema := &config.Schema{Tools: map[string]*config.Tool{"demo": tool}}
+
+	desired, err := planner.BuildCandidateIntent(tool, method)
+	if err != nil {
+		t.Fatal(err)
+	}
+	desired.Identity.Revision = rev
+	document, err := plan.BuildLockDocument([]plan.ResolvedInstallPlan{desired})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lk, err := lock.NewUniversal(document, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	observation := plan.Observation{
+		Presence:    plan.PresencePresent,
+		Identity:    plan.ObservedIdentity{Revision: rev},
+		KnownFields: []plan.IdentityField{plan.FieldRevision},
+	}
+	ex := exec.New()
+	exec.WithAdapters(&phaseTestAdapter{kind: "git", available: true, observation: &observation})(ex)
+	exec.WithDefaultMethodOrder([]string{"git"})(ex)
+	exec.WithLockDocument(document)(ex)
+	st := &state.State{Tools: map[string]state.ToolState{
+		"demo": {Method: "git", MethodKind: "git", Version: "old"},
+	}}
+
+	outdated, failures := collectOutdatedTools(context.Background(), st, schema, lk, "", ex, "")
+	if len(outdated) != 0 || len(failures) != 0 {
+		t.Fatalf("outdated = %+v, failures = %+v, want an exactly verified retained checkout", outdated, failures)
 	}
 }
 
