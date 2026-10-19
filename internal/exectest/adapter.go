@@ -11,6 +11,7 @@ import (
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/graph"
+	"github.com/Khorea1/depengine/internal/methodkind"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
@@ -236,13 +237,37 @@ func TestAdapterConformance(t *testing.T, a exec.AdapterV2) {
 		_ = a.Available(ctx, fr)
 	})
 
+	t.Run("Kind_declared", func(t *testing.T) {
+		if kind := a.Kind(); !methodkind.IsKnownKind(kind) {
+			t.Errorf("Kind() = %q is not declared by methodkind", kind)
+		}
+	})
+
+	t.Run("CanRemove_stable", func(t *testing.T) {
+		first := a.CanRemove()
+		if second := a.CanRemove(); first != second {
+			t.Errorf("CanRemove() changed between calls: %t -> %t", first, second)
+		}
+		if contract, ok := methodkind.Lookup(a.Kind()); ok && contract.CanRemove != first {
+			t.Errorf("CanRemove() = %t, contract declares %t", first, contract.CanRemove)
+		}
+	})
+
 	t.Run("Observe_valid_presence", func(t *testing.T) {
 		observation, err := a.Observe(context.Background(), &run.FakeRunner{}, &config.Tool{Name: "conformance"}, &config.MethodCandidate{Kind: a.Kind(), Config: map[string]any{}})
 		if err != nil {
-			t.Errorf("Observe(): %v", err)
+			t.Fatalf("Observe(): %v", err)
 		}
-		if observation.Presence != plan.PresencePresent && observation.Presence != plan.PresenceAbsent && observation.Presence != plan.PresenceUnknown && observation.Presence != plan.PresenceBroken {
-			t.Errorf("invalid presence %q", observation.Presence)
+		switch observation.Presence {
+		case plan.PresencePresent, plan.PresenceAbsent, plan.PresenceUnknown, plan.PresenceBroken:
+		default:
+			t.Fatalf("invalid presence %q", observation.Presence)
+		}
+		if observation.Presence == plan.PresenceBroken {
+			return
+		}
+		if got := plan.Reconcile(plan.ResolvedIdentity{}, observation); got.State == plan.StateBroken {
+			t.Fatalf("Reconcile() rejected observation: %s", got.Detail)
 		}
 	})
 }
