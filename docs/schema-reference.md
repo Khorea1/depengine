@@ -1088,11 +1088,12 @@ Version conditions compare numeric and textual runs rather than applying SemVer 
 ```
 
 ```toml
-# Kernel-specific DKMS package
+# Kernel-specific DKMS package. `kernel` is matched exactly
+# (case-insensitive) against the value reported by `uname -r`.
 [tools.v4l2loopback]
   [tools.v4l2loopback.aur]
   pkg  = "v4l2loopback-dkms"
-  when = { distro_family = ["arch"], kernel = ["6.7", "6.8", "6.9"] }
+  when = { distro_family = ["arch"], kernel = ["6.7.0-arch1-1", "6.8.0-arch1-1", "6.9.0-arch1-1"] }
 ```
 
 > Run `depengine why <tool>` to inspect which method applies on the
