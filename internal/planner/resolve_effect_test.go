@@ -47,6 +47,7 @@ var resolveEffectExclusions = map[string]resolveEffectExclusion{
 	"android.branch":       {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
 	"git.url":              {"consumed by the git adapter at clone time", "internal/git/adapter.go"},
 	"native.pkg_overrides": {"resolved from host clan by the native adapter", "internal/exec/native_adapter.go"},
+	"asdf.backend":         {"resolved at runtime into the immutable source identity", "internal/ecosystem/TestAsdfAdapterMiseBackendResolveIdentity"},
 }
 
 func TestResolveEffectFieldsMoveStaticIntent(t *testing.T) {

@@ -5,6 +5,7 @@ import "github.com/Khorea1/depengine/internal/methodkind"
 func init() {
 	resolveCoverage := map[string]Coverage{
 		"native.pkg_overrides": {Consumer: "TestNativePackageOverrideAcrossRuntimeBoundaries", Rationale: "clan-specific package identity is selected before adapter execution"},
+		"asdf.backend":         {Consumer: "internal/ecosystem/TestAsdfAdapterMiseBackendResolveIdentity", Rationale: "AsdfAdapter.ResolvePlan writes the configured mise backend into resolved identity source; the A/B test distinguishes absent and github source"},
 		"git.url":              {Consumer: "internal/git/adapter_test.go", Rationale: "clone source is consumed by runtime source resolution"},
 		"github.secret_ref":    {Consumer: "internal/exec/TestResolveCandidatePlanPassesResolvedGitHubSecretContext", Rationale: "the canonical resolver resolves the typed GitHub reference before release API access"},
 	}

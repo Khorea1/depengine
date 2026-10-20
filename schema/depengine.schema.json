@@ -1348,6 +1348,18 @@
               },
               "type": "object"
             },
+            "backend": {
+              "enum": [
+                "aqua",
+                "cargo",
+                "github",
+                "go",
+                "npm",
+                "pipx"
+              ],
+              "minLength": 1,
+              "type": "string"
+            },
             "kind": {
               "const": "asdf"
             },
@@ -8345,6 +8357,18 @@
                 "type": "string"
               },
               "type": "object"
+            },
+            "backend": {
+              "enum": [
+                "aqua",
+                "cargo",
+                "github",
+                "go",
+                "npm",
+                "pipx"
+              ],
+              "minLength": 1,
+              "type": "string"
             },
             "os_map": {
               "additionalProperties": {

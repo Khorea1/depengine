@@ -26,6 +26,93 @@ func (r *asdfFallbackRunner) LookPath(_ context.Context, name string) bool {
 	return ok
 }
 
+type miseBackendRunner struct {
+	calls [][]string
+}
+
+func (r *miseBackendRunner) Run(_ context.Context, name string, args ...string) run.Result {
+	r.calls = append(r.calls, append([]string{name}, args...))
+	if name == "mise" && len(args) > 0 && args[0] == "ls" {
+		return run.Result{ExitCode: 0, Stdout: []byte(`[{"version":"1.2.3","installed":true}]`)}
+	}
+	return run.Result{ExitCode: 0}
+}
+
+func (r *miseBackendRunner) LookPath(_ context.Context, name string) bool {
+	return name == "mise"
+}
+
+func TestAsdfAdapterMiseBackendLifecycle(t *testing.T) {
+	tool, mc := asdfTool("oh-my-pi", "can1357/oh-my-pi")
+	mc.Config["backend"] = "github"
+	mc.Config["version"] = "1.2.3"
+	intent := plan.New(tool.Name, mc.Kind, true)
+	intent.Identity.Package = "can1357/oh-my-pi"
+	intent.Identity.Version = "1.2.3"
+	intent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
+	a := NewAsdfAdapter()
+	resolved, err := a.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, mc, &intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Identity.Package != "can1357/oh-my-pi" || resolved.Identity.Source != "github" {
+		t.Fatalf("resolved identity = %+v; wanted declared package plus backend source", resolved.Identity)
+	}
+	if err := plan.ValidateResolution(intent, *resolved); err != nil {
+		t.Fatalf("ValidateResolution: %v", err)
+	}
+	runner := &miseBackendRunner{}
+	if err := a.InstallResolved(context.Background(), runner, tool, mc, resolved); err != nil {
+		t.Fatal(err)
+	}
+	obs, err := a.Observe(context.Background(), runner, tool, mc)
+	if err != nil || obs.Presence != plan.PresencePresent || obs.Identity.Package != "can1357/oh-my-pi" || obs.Identity.Source != "github" || obs.Identity.Version != "1.2.3" {
+		t.Fatalf("Observe = %+v, %v", obs, err)
+	}
+	sourceKnown := false
+	for _, field := range obs.KnownFields {
+		sourceKnown = sourceKnown || field == plan.FieldSource
+	}
+	if !sourceKnown {
+		t.Fatalf("Observation fields = %v; missing source", obs.KnownFields)
+	}
+	if !a.Check(context.Background(), runner, tool, mc) {
+		t.Fatal("Check did not find configured backend")
+	}
+	if err := a.Remove(context.Background(), runner, tool, mc); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{"mise", "install", "github:can1357/oh-my-pi@1.2.3"}, {"mise", "use", "-g", "github:can1357/oh-my-pi@1.2.3"}, {"mise", "ls", "github:can1357/oh-my-pi", "--installed", "--json"}, {"mise", "ls", "github:can1357/oh-my-pi", "--installed", "--json"}, {"mise", "uninstall", "github:can1357/oh-my-pi@1.2.3"}}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("mise calls = %#v, want %#v", runner.calls, want)
+	}
+}
+
+func TestAsdfAdapterMiseBackendResolveIdentity(t *testing.T) {
+	adapter := NewAsdfAdapter()
+	tool, defaultMethod := asdfTool("demo", "can1357/oh-my-pi")
+	backendMethod := *defaultMethod
+	backendMethod.Config = map[string]any{"pkg": "can1357/oh-my-pi", "backend": "github"}
+	intent := plan.New(tool.Name, "asdf", true)
+	intent.Identity.Package = "can1357/oh-my-pi"
+	intent.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
+
+	defaultResolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, defaultMethod, &intent)
+	if err != nil {
+		t.Fatalf("ResolvePlan(default) error: %v", err)
+	}
+	backendResolved, err := adapter.ResolvePlan(context.Background(), &run.FakeRunner{}, tool, &backendMethod, &intent)
+	if err != nil {
+		t.Fatalf("ResolvePlan(github) error: %v", err)
+	}
+	if defaultResolved.Identity.Source != "" || backendResolved.Identity.Source != "github" {
+		t.Fatalf("resolved source A/B = %q / %q; want empty / github", defaultResolved.Identity.Source, backendResolved.Identity.Source)
+	}
+	if intent.Identity.Source != "" {
+		t.Fatalf("ResolvePlan mutated input source: %q", intent.Identity.Source)
+	}
+}
+
 func TestAsdfAdapterV2ResolvesAndInstallsAsdf(t *testing.T) {
 	tool, mc := asdfTool("node", "nodejs")
 	mc.Config["version"] = "20.1.0"
