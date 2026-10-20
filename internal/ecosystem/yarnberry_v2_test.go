@@ -62,6 +62,18 @@ func TestYarnBerryAdapterV2ObservePresent(t *testing.T) {
 	}
 }
 
+func TestYarnBerryAdapterChecksAliasName(t *testing.T) {
+	adapter := NewYarnBerryAdapter()
+	runner := &run.FakeRunner{}
+	mc := &config.MethodCandidate{Config: map[string]any{"pkg": "omp@npm:@oh-my-pi/pi-coding-agent"}}
+	if !adapter.Check(context.Background(), runner, &config.Tool{Name: "omp"}, mc) {
+		t.Fatal("Check() rejected an installed npm alias")
+	}
+	if len(runner.Calls) != 1 || runner.Calls[0].Args[len(runner.Calls[0].Args)-1] != "omp" {
+		t.Fatalf("Check() args = %#v, want alias package name omp", runner.Calls)
+	}
+}
+
 func TestYarnBerryAdapterV2RejectsUnsupportedOperations(t *testing.T) {
 	adapter := NewYarnBerryAdapter()
 	resolved := plan.New("eslint", adapter.Kind(), true)

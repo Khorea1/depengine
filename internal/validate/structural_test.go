@@ -1209,6 +1209,32 @@ func TestValidatePackageName_ComplexValid(t *testing.T) {
 	}
 }
 
+func TestValidatePackageNamesScopedAndAliasPackages(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		kind    string
+		pkg     string
+		wantErr bool
+	}{
+		{name: "scoped bun package", kind: "bun", pkg: "@oh-my-pi/pi-coding-agent"},
+		{name: "npm alias", kind: "bun", pkg: "omp@npm:@oh-my-pi/pi-coding-agent"},
+		{name: "alias rejected for native", kind: "native", pkg: "omp@npm:@oh-my-pi/pi-coding-agent", wantErr: true},
+		{name: "malformed scoped package", kind: "bun", pkg: "@oh-my-pi/", wantErr: true},
+		{name: "invalid scoped character", kind: "bun", pkg: "@oh-my-pi/pkg+name", wantErr: true},
+		{name: "malformed alias", kind: "bun", pkg: "@npm:@oh-my-pi/pi-coding-agent", wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &cfg.Schema{Tools: map[string]*cfg.Tool{
+				"tool": tool("tool", []*cfg.MethodCandidate{mc(tt.kind, nil, map[string]any{"pkg": tt.pkg})}, nil),
+			}}
+			r := validatePackageNames(s)
+			if r.HasErrors() != tt.wantErr {
+				t.Fatalf("validatePackageNames(%q, %q) errors = %v, wantErr %t", tt.kind, tt.pkg, r.Errors, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidatePackageName_WithSpace(t *testing.T) {
 	s := &cfg.Schema{
 		Tools: map[string]*cfg.Tool{

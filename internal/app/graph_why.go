@@ -307,6 +307,23 @@ func formatWhyIntent(intent map[string]string) string {
 	return strings.Join(parts, ", ")
 }
 
+func formatWhyAttemptIntent(attempt exec.MethodAttempt) string {
+	intent := formatWhyIntent(attempt.Intent)
+	if attempt.Kind != "native" || attempt.PlanIntent == nil {
+		return intent
+	}
+	declaredPackage := attempt.Intent["pkg"]
+	effectivePackage := attempt.PlanIntent.Identity.Package
+	if effectivePackage == "" || effectivePackage == declaredPackage {
+		return intent
+	}
+	effectivePackage = run.RedactSensitiveText(effectivePackage)
+	if intent == "" {
+		return "effective package=" + effectivePackage
+	}
+	return intent + ", effective package=" + effectivePackage
+}
+
 // runWhy shows why a tool would be installed via each candidate method,
 // without actually installing anything. Useful for debugging complex
 // schemas. Body unchanged from the pre-Cobra version — Cobra's
@@ -380,7 +397,7 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 		if reason == "" {
 			reason = "ready to install"
 		}
-		if intent := formatWhyIntent(a.Intent); intent != "" {
+		if intent := formatWhyAttemptIntent(a); intent != "" {
 			reason += " [" + intent + "]"
 		}
 		kind := padRight(names[i], kindW)

@@ -3,12 +3,54 @@ package ecosystem
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
+
+func TestRegistryAliasLifecycleUsesAliasForObserveAndRemoval(t *testing.T) {
+	const pkg = "omp@npm:@oh-my-pi/pi-coding-agent"
+	const installSpec = pkg + "@18.8.9"
+	for _, tc := range []struct {
+		kind      string
+		inventory string
+		install   []string
+		remove    []string
+	}{
+		{kind: "bun", inventory: "/tmp/bun/global/node_modules (1 installed)\n└── omp@18.8.9\n", install: []string{"add", "-g", installSpec}, remove: []string{"remove", "-g", "omp"}},
+		{kind: "npm", inventory: "{\"dependencies\":{\"omp\":{\"version\":\"18.8.9\"}}}", install: []string{"install", "-g", installSpec}, remove: []string{"uninstall", "-g", "omp"}},
+		{kind: "pnpm", inventory: "[{\"dependencies\":{\"omp\":{\"version\":\"18.8.9\"}}}]", install: []string{"add", "-g", installSpec}, remove: []string{"remove", "-g", "omp"}},
+		{kind: "yarn", inventory: "yarn global v1.22.22\ninfo \"omp@18.8.9\" has binaries:\nDone in 0.1s.\n", install: []string{"global", "add", installSpec}, remove: []string{"global", "remove", "omp"}},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			adapter := NewBaseAdapter(Configs[tc.kind])
+			runner := &run.FakeRunner{LookPaths: map[string]bool{tc.kind: true}, Stdout: tc.inventory}
+			tool := &config.Tool{Name: "omp"}
+			method := &config.MethodCandidate{Kind: tc.kind, Config: map[string]any{"pkg": pkg, "version": "18.8.9"}}
+			if err := adapter.Install(context.Background(), runner, tool, method); err != nil {
+				t.Fatalf("Install() error = %v", err)
+			}
+			if !adapter.Check(context.Background(), runner, tool, method) {
+				t.Fatal("Check() did not observe installed alias/version")
+			}
+			if err := adapter.Remove(context.Background(), runner, tool, method); err != nil {
+				t.Fatalf("Remove() error = %v", err)
+			}
+			if len(runner.Calls) != 5 {
+				t.Fatalf("calls = %#v, want availability/install, availability/observe, remove", runner.Calls)
+			}
+			if runner.Calls[1].Name != tc.kind || !reflect.DeepEqual(runner.Calls[1].Args, tc.install) {
+				t.Errorf("install call = %#v, want %s %#v", runner.Calls[1], tc.kind, tc.install)
+			}
+			if runner.Calls[4].Name != tc.kind || !reflect.DeepEqual(runner.Calls[4].Args, tc.remove) {
+				t.Errorf("remove call = %#v, want %s %#v", runner.Calls[4], tc.kind, tc.remove)
+			}
+		})
+	}
+}
 
 func TestBaseAdapterBunObserveInventory(t *testing.T) {
 	tests := []struct {
@@ -25,6 +67,7 @@ func TestBaseAdapterBunObserveInventory(t *testing.T) {
 		{name: "real two-package document proves absent target", pkg: "@fixture/missing", stdout: "/tmp/depengine-pr147-fixture-run-05/bun/global node_modules (2 installed)\n├── @fixture/cli-one@../../js/@fixture/cli-one\n└── @fixture/cli-two@../../js/@fixture/cli-two\n", presence: plan.PresenceAbsent},
 		{name: "real registry package version is present", pkg: "luna-bun-fixture", stdout: "/tmp/depengine-pr147-bun-sandbox/global-registry node_modules (1 installed)\n└── luna-bun-fixture@0.1.0\n", presence: plan.PresencePresent, version: "0.1.0"},
 		{name: "scoped target preserves reported version", pkg: "@scope/demo", stdout: "/home/user/.bun/install/global/node_modules (2 installed)\n├── other@1.0.0\n└── @scope/demo@2.0.0\n", presence: plan.PresencePresent, version: "2.0.0"},
+		{name: "npm alias inventory reports alias version", pkg: "omp@npm:@oh-my-pi/pi-coding-agent", stdout: "/home/user/.bun/install/global/node_modules (1 installed)\n└── omp@18.8.9\n", presence: plan.PresencePresent, version: "18.8.9"},
 		{name: "zero count header schema fixture proves absence", stdout: "/tmp/bun/global node_modules (0 installed)\n", presence: plan.PresenceAbsent},
 		{name: "count mismatch is not complete", stdout: "/tmp/bun/global/node_modules (2 installed)\n└── other@1.0.0\n", presence: plan.PresenceUnknown},
 		{name: "legacy tree target", stdout: "├── other@1.0.0\n└── demo@1.2.3\n", presence: plan.PresencePresent, version: "1.2.3"},

@@ -199,6 +199,43 @@ func validatePackageName(name string) *ValidationError {
 	return nil
 }
 
+// validateMethodPackageName additionally accepts npm-style scoped packages and
+// aliases for registry-backed JavaScript package managers.
+func validateMethodPackageName(name, kind string) *ValidationError {
+	npmMethod := kind == "npm" || kind == "pnpm" || kind == "bun" || kind == "yarn" || kind == "yarn-berry"
+	if strings.Contains(name, "@npm:") {
+		if npmMethod && validNPMInstallSpec(name) {
+			return nil
+		}
+		return &ValidationError{Code: ErrUnsafePackageName, Field: "pkg", Message: fmt.Sprintf("unsafe package name %q", truncateStr(name, 80))}
+	}
+	if npmMethod && validNPMInstallSpec(name) {
+		return nil
+	}
+	return validatePackageName(name)
+}
+
+func validNPMInstallSpec(name string) bool {
+	if alias, target, ok := strings.Cut(name, "@npm:"); ok {
+		return validNPMNamePart(alias) && validNPMPackageName(target)
+	}
+	return validNPMPackageName(name)
+}
+
+var npmNamePart = regexp.MustCompile("^[a-z0-9][a-z0-9._-]*$")
+
+func validNPMPackageName(name string) bool {
+	if strings.HasPrefix(name, "@") {
+		scope, packageName, ok := strings.Cut(strings.TrimPrefix(name, "@"), "/")
+		return ok && !strings.Contains(packageName, "/") && validNPMNamePart(scope) && validNPMNamePart(packageName)
+	}
+	return validNPMNamePart(name)
+}
+
+func validNPMNamePart(name string) bool {
+	return npmNamePart.MatchString(name)
+}
+
 // validatePackageNames checks every method candidate's pkg and pkg_overrides
 // fields for safe package naming.
 func validatePackageNames(s *config.Schema) *Result {
@@ -207,7 +244,7 @@ func validatePackageNames(s *config.Schema) *Result {
 		for i, method := range tool.Methods {
 			if pkg, ok := method.Config["pkg"]; ok {
 				if pkgStr, ok := pkg.(string); ok {
-					if verr := validatePackageName(pkgStr); verr != nil {
+					if verr := validateMethodPackageName(pkgStr, method.Kind); verr != nil {
 						verr.Field = fieldPath(toolName, i, "pkg")
 						r.Add(*verr)
 					}
@@ -218,7 +255,7 @@ func validatePackageNames(s *config.Schema) *Result {
 				if overrideMap, ok := overrides.(map[string]any); ok {
 					for manager, pkg := range overrideMap {
 						if pkgStr, ok := pkg.(string); ok {
-							if verr := validatePackageName(pkgStr); verr != nil {
+							if verr := validateMethodPackageName(pkgStr, manager); verr != nil {
 								verr.Field = fieldPath(toolName, i, "pkg_overrides."+manager)
 								r.Add(*verr)
 							}

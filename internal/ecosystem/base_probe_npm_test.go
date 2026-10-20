@@ -10,6 +10,30 @@ import (
 	"github.com/Khorea1/depengine/internal/run"
 )
 
+func TestRegistryAliasesResolveInstalledVersionByAliasName(t *testing.T) {
+	const pkg = "omp@npm:@oh-my-pi/pi-coding-agent"
+	for _, tc := range []struct {
+		kind   string
+		stdout string
+	}{
+		{kind: "bun", stdout: "/home/user/.bun/install/global/node_modules (1 installed)\n└── omp@18.8.9\n"},
+		{kind: "pnpm", stdout: "[{\"dependencies\":{\"omp\":{\"version\":\"18.8.9\"}}}]"},
+		{kind: "yarn", stdout: "yarn global v1.22.22\ninfo \"omp@18.8.9\" has binaries:\nDone in 0.1s.\n"},
+		{kind: "npm", stdout: "{\"dependencies\":{\"omp\":{\"version\":\"18.8.9\"}}}"},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			adapter := NewBaseAdapter(Configs[tc.kind])
+			runner := &run.FakeRunner{Stdout: tc.stdout}
+			tool := &config.Tool{Name: "omp"}
+			method := &config.MethodCandidate{Kind: tc.kind, Config: map[string]any{"pkg": pkg}}
+			got, err := adapter.InstalledVersion(context.Background(), runner, tool, method)
+			if err != nil || got != "18.8.9" {
+				t.Fatalf("InstalledVersion() = %q, %v; want 18.8.9", got, err)
+			}
+		})
+	}
+}
+
 func TestNPMExactVersionObserve(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -35,6 +59,7 @@ func TestNPMExactVersionObserve(t *testing.T) {
 		{name: "incomplete target missing diagnostic is broken", pkg: "demo", stdout: `{"problems":["missing: demo@"]}`, exitCode: 1, want: plan.PresenceBroken, wantError: true},
 		{name: "unrelated nonzero problem is broken", pkg: "demo", stdout: `{"name":"lib","problems":["missing: other@1.2.3 from global"]}`, exitCode: 1, want: plan.PresenceBroken, wantError: true},
 		{name: "scoped package is present", pkg: "@scope/tool", stdout: `{"dependencies":{"@scope/tool":{"version":"3.0.0"}}}`, want: plan.PresencePresent, wantVer: "3.0.0"},
+		{name: "npm alias inventory reports alias version", pkg: "omp@npm:@oh-my-pi/pi-coding-agent", stdout: `{"dependencies":{"omp":{"version":"18.8.9"}}}`, want: plan.PresencePresent, wantVer: "18.8.9"},
 		{name: "scoped package missing diagnostic is absent", pkg: "@scope/tool", stdout: `{"problems":["missing: @scope/tool@3.0.0, required by root"]}`, exitCode: 1, want: plan.PresenceAbsent},
 		{name: "empty object is broken schema", pkg: "demo", stdout: `{}`, want: plan.PresenceBroken, wantError: true},
 		{name: "null document is broken schema", pkg: "demo", stdout: `null`, want: plan.PresenceBroken, wantError: true},
