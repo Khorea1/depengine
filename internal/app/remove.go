@@ -10,7 +10,6 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/ecosystem"
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/log"
 	"github.com/Khorea1/depengine/internal/plan"
@@ -181,7 +180,7 @@ func loadRemoveSchemaTools(schemaPath string) (map[string]*config.Tool, string, 
 // applies the resulting native adapter only to its executor; on failure the
 // bootstrap adapter remains available for its existing PATH-probing fallback.
 func gatherRemoveFacts() *platform.Facts {
-	if facts, err := engine.GatherFacts(run.OSExecRunner{}); err == nil {
+	if facts, err := platform.GatherFacts(run.OSExecRunner{}); err == nil {
 		return facts
 	} else {
 		log.Default.Warn("could not gather OS facts; falling back to PATH-probing for native manager detection", "error", err)

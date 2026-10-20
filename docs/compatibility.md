@@ -65,6 +65,24 @@ it read.
 A future lock migration must convert representation without re-resolving
 mutable dependencies. Re-resolution is an update, not a format migration.
 
+#### Legacy v1 retirement gate
+
+A format-v1 freeze review does not by itself retire lock v1. `ResolveLegacyV1`,
+`ApplyLegacyV1`, and v1 frozen validation remain supported until the project
+explicitly adopts a compatibility policy that drops v1 lock inputs for a
+designated incompatible release and documents a deprecation window; removal is
+permitted only after that window ends. Until then, lock v1 retains its existing
+method-specific read, application, and frozen-validation behavior.
+
+The legacy writer/preservation path has a separate gate: profiled updates may
+continue emitting v1 only while they cannot prove a complete v2 projection. Retire
+that path once each such update either writes a complete v2 projection or fails
+and requires a whole-schema `depengine update`. Do not extend v1 selector
+coverage. Ordinary reads, frozen validation, install, and status do not migrate a
+lock. Any future format-only migration must be representation-only; the current
+whole-schema `depengine update` is an explicit resolution operation, not a silent
+format migration. See [the lock v1 lifecycle](support-boundary.md#legacy-lock-v1-lifecycle).
+
 ### State
 
 State compatibility is also independent. Unknown state must not be treated as
@@ -73,6 +91,16 @@ empty state because lifecycle operations depend on recorded ownership.
 Automatic state migration is only safe when it is deterministic,
 transactional, and preserves the original data on failure. Otherwise migration
 should be explicit.
+
+## Legacy host-detector override retirement gate
+
+`DEPENGINE_DETECT_SCRIPT` remains supported by `internal/platform` as a compatibility shell around native Go detection. Do not remove the variable or its behavior until all of these conditions hold:
+
+- a maintainer explicitly decides to include the incompatible removal in a release;
+- that release's deprecation window is documented before removal; and
+- automated tests prove default native detection and dry-run zero-execution behavior with `DEPENGINE_DETECT_SCRIPT` unset.
+
+Until then, keep the explicit override and native default unchanged. This gate does not schedule a release or authorize removal by itself.
 
 ## Freeze gate
 

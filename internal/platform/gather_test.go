@@ -1,4 +1,4 @@
-package engine
+package platform
 
 import (
 	"context"
@@ -8,13 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
 // fakeRunner records the last call and returns canned stdout, with a
 // definable exit code. Distinct from internal/run's FakeRunner because this
-// one lives in the engine package and proves GatherFacts' handling of the
+// one lives in the platform package and proves GatherFacts' handling of the
 // explicit legacy detector contract specifically.
 type call struct {
 	name string
@@ -108,7 +107,7 @@ func TestGatherFactsParsesJSONAndLeavesFactsImmutable(t *testing.T) {
 	}
 	// ResolveFamily is pure and computed by the caller, NOT stored here.
 	// Sanity: re-resolving produces the same value, repeatedly.
-	a, b := platform.ResolveFamily(facts), platform.ResolveFamily(facts)
+	a, b := ResolveFamily(facts), ResolveFamily(facts)
 	if a != "arch" {
 		t.Fatalf("ResolveFamily = %q, want arch", a)
 	}
@@ -300,6 +299,7 @@ func TestGatherFactsRejectsValidJSONFromKilledDetector(t *testing.T) {
 }
 
 func TestGatherFactsBlockedRunnerAvoidsDetectorExecution(t *testing.T) {
+	t.Setenv("DEPENGINE_DETECT_SCRIPT", "")
 	facts, err := GatherFacts(run.BlockedRunner{Reason: "dry-run"})
 	if err != nil {
 		t.Fatal(err)

@@ -49,12 +49,16 @@ model, and a successful whole-schema `depengine update` must migrate a readable
 v1 lock to v2. The only path allowed to keep writing the v1 envelope is a
 profiled update that cannot prove a complete v2 install-closure projection.
 
-The legacy writer can be removed once profiled update either produces a complete
-v2 projection or explicitly requires a whole-schema migration instead of
-rewriting v1. The v1 reader/application path remains until the format-v1 freeze
-policy explicitly drops pre-v2 lock input. Until those gates are met,
-`ResolveLegacyV1` and `ApplyLegacyV1` are migration compatibility code, not
-extension points.
+The legacy writer/preservation path can be removed once every profiled update
+either produces a complete v2 projection or fails and requires a whole-schema
+`depengine update` instead of rewriting v1. The v1 reader/application path and v1
+frozen validation remain supported until the compatibility policy explicitly
+drops v1 lock inputs for a designated incompatible release and its documented
+deprecation window has ended; freeze review completion alone is not that decision.
+Until those gates are met, `ResolveLegacyV1` and `ApplyLegacyV1` are migration
+compatibility code, not extension points. Ordinary reads and frozen validation
+do not migrate. A whole-schema `depengine update` is an explicit resolution
+operation; any future format-only migration must be representation-only.
 
 Generation is all-or-nothing. If a selected manager cannot expose a stable
 version, revision, digest, checksummed artifact, or required Git-backed source
