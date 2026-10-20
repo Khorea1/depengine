@@ -104,3 +104,30 @@ basta fechá-los após conferir os critérios.
   `dep-ua4`, `dep-ua4.1`, `dep-ua4.2`, `dep-mhp` (blocked), `dep-wbg` (blocked),
   `dep-docs-kernel-exact-example-smk`, `dep-rwx`,
   `dep-bench-round2-update-why-graph-h8c`.
+
+## Follow-up da higiene (2026-10-19, `master @ 452ed48`)
+
+As quatro branches do Bloco A que ainda tinham worktree foram integradas e
+removidas:
+
+| Branch | PR | Merge em `master` |
+|--------|----|-------------------|
+| `fix/ua4.2-opaque-git-lock` | #155 | `e065a13` |
+| `fix/docs-kernel-exact-example` | #156 | `bae3519` |
+| `fix/ua4.1-git-upgrade-cli` | #157 | `265afc0` |
+| `fix/android-termux-sources` | #159 | `ff77068` |
+
+Também foram removidos: a worktree temporária detached
+`/tmp/opencode/depengine-4207205`, a branch órfã `feat/macports-explicit`
+(ancestral de `fix/macports-observation-hardening`) e os refs remotos das três
+branches squash-merged que ainda existiam no `origin`.
+
+Trabalho real mantido: `fix/brew-tap-locked-install` (PR #154 aberto),
+`fix/beads-front-b`, `fix/front-a-artifacts` (5 alterações locais preservadas) e
+`fix/macports-observation-hardening`. `spike/cases-expansion` continua
+preservada deliberadamente como experimento, conforme o
+`plan-github-distributions` arquivado.
+
+Beads abertos após esta rodada: `dep-mhp` (blocked; a fronteira documental foi
+integrada em `f673b32`/#153, mas o contrato de ciclo de vida continua ausente),
+`dep-wbg` (blocked) e `dep-bench-round2-update-why-graph-h8c` (P4 opcional).
