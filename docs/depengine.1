@@ -677,7 +677,9 @@ depengine completion fish | source
 Deprecated explicit legacy host-detector override. The executable must accept
 .B --json --no-prompt
 and emit the historical host-facts JSON contract. Normal host detection is
-implemented natively in Go and does not require this variable.
+implemented natively in Go and does not require this variable. Removal of this
+override is governed by a documented retirement gate in the compatibility
+documentation.
 .TP
 .B DEPENGINE_MANIFEST
 Path to the personal manifest file, overriding the default XDG discovery

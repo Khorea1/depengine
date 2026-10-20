@@ -13,7 +13,6 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/ecosystem"
-	"github.com/Khorea1/depengine/internal/engine"
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/lock"
 	"github.com/Khorea1/depengine/internal/log"
@@ -122,7 +121,7 @@ func loadProject(schemaPath string, opts projectLoadOptions) (*loadedProject, er
 	}
 	log.Default.Debug("loading schema", "path", resolvedSchema)
 
-	facts, err := engine.GatherFacts(run.OSExecRunner{})
+	facts, err := platform.GatherFacts(run.OSExecRunner{})
 	if err != nil {
 		return nil, err
 	}

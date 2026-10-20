@@ -60,9 +60,18 @@ The lockfile is the immutable-resolution projection of `ResolvedInstallPlan`:
   `update` constructs v2 locks with `lock.NewUniversal`, which validates the
   projection while carrying optional v1 compatibility payloads without making
   those payloads authoritative.
-- Lock v1 remains readable for compatibility and is migrated by the next
-  successful whole-schema update. It retains only its documented
-  method-specific guarantees.
+- Lock v1 remains readable for compatibility and retains only its documented
+  method-specific guarantees. A successful whole-schema `update` is the explicit
+  resolution operation that migrates a readable v1 lock to v2; ordinary reads,
+  install, status, and frozen validation do not silently migrate it. Any future
+  format-only conversion must be representation-only.
+- A format-v1 freeze review alone does not retire the lock v1 reader/application
+  path (`ResolveLegacyV1`, `ApplyLegacyV1`, or v1 frozen validation). Removal is
+  permitted only after the compatibility policy explicitly drops v1 inputs for a
+  designated incompatible release and its documented deprecation window has
+  ended. The separate writer/preservation gate is reached when profiled updates
+  can either produce a complete v2 projection or fail and require a whole-schema
+  update; do not extend v1 selector coverage.
 
 ## Operational boundary
 

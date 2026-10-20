@@ -1,4 +1,4 @@
-package engine
+package platform
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/Khorea1/depengine/internal/log"
-	"github.com/Khorea1/depengine/internal/platform"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -32,7 +31,7 @@ func legacyDetectorPath() (string, error) {
 
 // gatherFactsGo builds minimal runtime-only Facts for blocked execution and
 // as a fallback when an explicitly configured legacy detector cannot run.
-func gatherFactsGo(r run.Runner) *platform.Facts {
+func gatherFactsGo(r run.Runner) *Facts {
 	tf := "unknown"
 	switch runtime.GOOS {
 	case "windows":
@@ -40,7 +39,7 @@ func gatherFactsGo(r run.Runner) *platform.Facts {
 	case "linux", "darwin":
 		tf = "unix"
 	}
-	facts := &platform.Facts{
+	facts := &Facts{
 		OS:              runtime.GOOS,
 		TargetFamily:    tf,
 		TargetArch:      runtime.GOARCH,
@@ -99,60 +98,10 @@ func detectWindowsVersion(r run.Runner) string {
 	return parseWindowsVersion(string(res.Stdout))
 }
 
-// parseWindowsVersion extracts the numeric NT version/build tuple from the
-// output of cmd.exe's built-in `ver` command. The surrounding text is
-// localized on some Windows installations, so only the dotted numeric token
-// is relied upon (for example 10.0.26100.4652).
-func parseWindowsVersion(output string) string {
-	for i := 0; i < len(output); i++ {
-		if output[i] < '0' || output[i] > '9' {
-			continue
-		}
-		start := i
-		dots := 0
-		for i < len(output) {
-			c := output[i]
-			if c >= '0' && c <= '9' {
-				i++
-				continue
-			}
-			if c == '.' {
-				dots++
-				i++
-				continue
-			}
-			break
-		}
-		candidate := strings.TrimSuffix(output[start:i], ".")
-		if dots >= 2 && validWindowsVersion(candidate) {
-			return candidate
-		}
-	}
-	return ""
-}
-
-func validWindowsVersion(version string) bool {
-	parts := strings.Split(version, ".")
-	if len(parts) < 3 {
-		return false
-	}
-	for _, part := range parts {
-		if part == "" {
-			return false
-		}
-		for i := 0; i < len(part); i++ {
-			if part[i] < '0' || part[i] > '9' {
-				return false
-			}
-		}
-	}
-	return true
-}
-
 // GatherFacts returns host facts through the native Go detector. An explicitly
 // configured DEPENGINE_DETECT_SCRIPT still uses the legacy JSON contract during
 // the migration window; no bundled or PATH-discovered script is selected here.
-func GatherFacts(r run.Runner) (*platform.Facts, error) {
+func GatherFacts(r run.Runner) (*Facts, error) {
 	if !run.ExecutionAllowed(r) {
 		// Preserve the observational/dry-run contract: zero runner calls and
 		// only runtime facts when subprocess execution is intentionally blocked.
@@ -174,18 +123,18 @@ func GatherFacts(r run.Runner) (*platform.Facts, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	facts := platform.Detect(ctx, r)
+	facts := Detect(ctx, r)
 	logFacts(facts)
 	return facts, nil
 }
 
-func gatherFactsFromLegacyDetector(r run.Runner, script string) (*platform.Facts, error) {
+func gatherFactsFromLegacyDetector(r run.Runner, script string) (*Facts, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	res := r.Run(ctx, script, "--json", "--no-prompt")
 
-	var facts platform.Facts
+	var facts Facts
 	if jsonErr := json.Unmarshal(res.Stdout, &facts); jsonErr != nil {
 		if len(res.Stdout) == 0 && res.Err != nil {
 			log.Default.Warn("legacy OS detection script failed, using Go runtime fallback",
@@ -209,7 +158,7 @@ func gatherFactsFromLegacyDetector(r run.Runner, script string) (*platform.Facts
 	return &facts, nil
 }
 
-func logFacts(facts *platform.Facts) {
+func logFacts(facts *Facts) {
 	if facts == nil {
 		return
 	}
