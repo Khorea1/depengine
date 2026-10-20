@@ -92,6 +92,8 @@ fd   = { apt = "fd-find" }                 # "fd" on all others
 nvim = { pacman = "neovim", apt = "neovim" }
 ```
 
+Native manager aliases are explicit candidates, not operating-system clans. Only uniquely identifying or explicitly disambiguated manager names are global method aliases. The shared `pkg` executable is not a global alias; `pkg_overrides = { pkg = "..." }` remains valid inside `native` for clans such as Termux and FreeBSD. On macOS, `brew` remains the default `native` provider; selecting MacPorts uses an explicit `port` method, for example `delta = { port = "git-delta", method_prefer = ["port"] }`. Use `method_only = ["port"]` for MacPorts without a Homebrew fallback, or `method_only = ["native"]` for the platform default. MacPorts does not change the host `macos` clan.
+
 ### Language ecosystem managers
 
 ```toml

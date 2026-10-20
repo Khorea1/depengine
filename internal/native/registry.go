@@ -168,6 +168,18 @@ var managers = map[string]Manager{
 		RemoveCmd:   []string{"brew", "uninstall", "{pkg}"},
 		AtomicBatch: false,
 	},
+	// MacPorts is an explicit alternative manager on macOS, not an OS clan.
+	// Its installed query is parsed by the native executor because port
+	// installed may exit 0 even when the requested port is absent.
+	"macports": {
+		Name:         "port",
+		SudoRequired: true,
+		InstallCmd:   []string{"port", "install", "{pkg}"},
+		CheckCmd:     []string{"port", "installed", "{pkg}", "and", "active"},
+		SearchCmd:    []string{"port", "info", "{pkg}"},
+		RemoveCmd:    []string{"port", "uninstall", "{pkg}"},
+		AtomicBatch:  false,
+	},
 	"termux": {
 		Name:         "pkg",
 		SudoRequired: false,
@@ -302,6 +314,7 @@ var managerNameToClan = map[string]string{
 	"portage": "gentoo", // backward compat for schema entries using "portage"
 	"yum":     "fedora", // yum is a symlink to dnf on modern systems
 	"dnf5":    "fedora", // dnf5 is the new default in Fedora 41+
+	"port":    "macos",  // explicit MacPorts manager on the macos clan
 }
 
 // ManagerNameToClan returns an explicit alias or disambiguation for a manager
@@ -403,23 +416,45 @@ func Lookup(clan string) (Manager, bool) {
 	return m, true
 }
 
+// LookupManager resolves an explicit manager name. Duplicate names require a
+// canonical mapping in managerNameToClan; otherwise the name is ambiguous.
+// Alternative managers do not change the provider selected by Lookup(clan).
+func LookupManager(name string) (Manager, bool) {
+	var match Manager
+	matches := 0
+	for _, manager := range managers {
+		if manager.Name == name {
+			match = manager
+			matches++
+		}
+	}
+	if matches == 1 {
+		return match, true
+	}
+	if clan, ok := managerNameToClan[name]; ok {
+		manager, ok := Lookup(clan)
+		if ok && manager.Name == name {
+			return manager, true
+		}
+	}
+	return Manager{}, false
+}
+
 // ManagerNames returns the set of unique manager binary names across all
 // known clans (e.g., "apt", "pacman", "dnf", "brew"). Used by the executor
 // to register manager-specific adapter aliases so that schema method kinds
 // like `apt = "fd-find"` are resolved correctly.
 func ManagerNames() []string {
 	seen := map[string]bool{}
-	for _, m := range managers {
-		seen[m.Name] = true
+	for _, manager := range managers {
+		seen[manager.Name] = true
 	}
 	out := make([]string, 0, len(seen))
 	for name := range seen {
-		out = append(out, name)
+		if _, ok := LookupManager(name); ok {
+			out = append(out, name)
+		}
 	}
-	// Deterministic order: map iteration is randomized per-process, and
-	// callers (e.g. RegisterNativeManagerAliases) use this order to decide
-	// registration/probing precedence. Without sorting, behavior for
-	// ambiguous cases could vary between runs on the same machine.
 	sort.Strings(out)
 	return out
 }
@@ -458,16 +493,17 @@ func AllClans() []string {
 	return out
 }
 
-// nativeManagerNames holds every Manager.Name value, precomputed once so
-// IsNativeManagerName doesn't rescan the managers map on every call (it's
-// invoked once per method kind during schema validation). Mirrors the
-// knownKindSet pattern in internal/methodkind for the same kind of lookup.
+// nativeManagerNames holds globally addressable manager names and curated
+// binary aliases, precomputed so method-kind lookups do not rescan the registry.
 var nativeManagerNames = buildNativeManagerNames()
 
 func buildNativeManagerNames() map[string]bool {
-	set := make(map[string]bool, len(managers))
-	for _, m := range managers {
-		set[m.Name] = true
+	set := make(map[string]bool, len(managers)+len(managerNameToClan))
+	for _, name := range ManagerNames() {
+		set[name] = true
+	}
+	for _, name := range ManagerBinaryNames() {
+		set[name] = true
 	}
 	return set
 }
@@ -495,7 +531,8 @@ func IsNativeManagerName(name string) bool {
 func ManagerNamesForClan(clan string) []string {
 	var names []string
 	seen := map[string]bool{}
-	if mgr, ok := Lookup(clan); ok && mgr.Name != "" {
+	mgr, ok := Lookup(clan)
+	if ok && mgr.Name != "" {
 		names = append(names, mgr.Name)
 		seen[mgr.Name] = true
 	}
@@ -507,6 +544,11 @@ func ManagerNamesForClan(clan string) []string {
 	var aliases []string
 	for binName, c := range managerNameToClan {
 		if c == clan && !seen[binName] {
+			// Explicit alternative managers do not override the clan's
+			// default provider (e.g. MacPorts must not change brew's pkg).
+			if alternative, ok := LookupManager(binName); ok && alternative.Name != mgr.Name {
+				continue
+			}
 			aliases = append(aliases, binName)
 		}
 	}

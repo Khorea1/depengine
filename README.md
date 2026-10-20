@@ -130,15 +130,19 @@ depengine currently supports:
 
 | Group | Methods |
 |---|---|
-| Native | `native`, plus package-manager aliases such as `apt`, `pacman`, `dnf`, `brew`, `winget`, `scoop`, `choco` |
+| Native | `native`, plus package-manager aliases such as `apt`, `pacman`, `dnf`, `brew`, `port`, `winget`, `scoop`, `choco` |
 | Languages | `cargo`, `go`, `pip`, `pipx`, `uv`, `npm`, `pnpm`, `bun`, `gem`, `yarn`, `yarn-berry`, `composer`, `apm` |
 | Desktop | `flatpak`, `snap`, `vscode`, `vscodium`, `cask`, `mas`, `appman` |
 | Specialized | `sdkman`, `pacstall`, `aur`, `conda`, `asdf`, `nix`, `container`, `appimage`, `android`, `msi`, `exe`, `msix`, `appx`, `macpkg`, `dmg` |
 | Artifacts/builds | `git`, `local`, `github`, `http` |
 `steamcmd` remains accepted by schema validation, but ordinary `depengine install` currently fails closed before installation because its observer cannot verify an installed server identity.
 
-`native` detects the host package manager. A tool can also name a manager
-directly when package names differ by distro.
+`native` detects the host package manager. A tool can also name a uniquely
+identifying or explicitly disambiguated manager directly when package names
+differ by distro. The shared pkg executable is not a global method alias;
+use it only as a clan-scoped pkg_overrides key. On macOS, `native` defaults
+to Homebrew; MacPorts is an explicit alternative with examples in the
+[schema reference](docs/schema-reference.md).
 
 ## Lockfile and dry run
 

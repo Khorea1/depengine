@@ -326,6 +326,15 @@ func TestNativeInstallRequiresPostcondition(t *testing.T) {
 }
 
 func TestPkgFromConfigResolvesClanOverrides(t *testing.T) {
+	t.Run("MacPorts override cannot change default brew package", func(t *testing.T) {
+		mc := &config.MethodCandidate{Config: map[string]any{
+			"pkg":           "brew-package",
+			"pkg_overrides": map[string]any{"port": "macports-package"},
+		}}
+		if got := pkgFromConfig(mc, "macos"); got != "brew-package" {
+			t.Fatalf("pkgFromConfig(macos) = %q, want brew-package", got)
+		}
+	})
 	t.Run("uses override for matching clan", func(t *testing.T) {
 		mc := &config.MethodCandidate{
 			Config: map[string]any{
@@ -335,6 +344,18 @@ func TestPkgFromConfigResolvesClanOverrides(t *testing.T) {
 		}
 		if got := pkgFromConfig(mc, "debian"); got != "fd-find" {
 			t.Fatalf("on debian expected fd-find, got %q", got)
+		}
+	})
+
+	t.Run("pkg overrides remain scoped to Termux and FreeBSD", func(t *testing.T) {
+		mc := &config.MethodCandidate{Config: map[string]any{
+			"pkg":           "default-pkg",
+			"pkg_overrides": map[string]any{"pkg": "clan-pkg"},
+		}}
+		for _, clan := range []string{"termux", "freebsd"} {
+			if got := pkgFromConfig(mc, clan); got != "clan-pkg" {
+				t.Errorf("pkgFromConfig(%q) = %q, want clan-pkg", clan, got)
+			}
 		}
 	})
 
