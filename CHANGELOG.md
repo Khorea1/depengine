@@ -9,6 +9,7 @@
 - Reject ambiguous `pkg` as a global native method alias while preserving clan-scoped `pkg_overrides` and explicitly disambiguated manager names; normalize MacPorts category-qualified requests against bare inventory entries and fail closed on incomplete observation output.
 - Track the configured asdf mise backend in resolved source identity and verify observations within that backend namespace.
 - Move the complete host-fact gathering boundary, including the deprecated `DEPENGINE_DETECT_SCRIPT` override, into `internal/platform`; document explicit retirement gates for that override and for legacy lock v1 compatibility.
+- Clarify trust warnings for automatic checksums: unsigned sidecars verify artifact integrity but do not authenticate the hash source; GPG-authenticated sidecars are classified separately. `why` filters schema warnings to its selected tool; other project commands retain relevant diagnostics.
 - Validate effective GitHub distribution integrity after schema/manifest merge while preserving `validate --format json`; classify detached-signature verification failures as terminal, compute preflight elevation only from host-compatible methods and their effective privileged targets.
 - Package-manager Observe probes for npm, Bun, pipx, pnpm, Yarn, Composer, uv, and Gem distinguish confirmed presence or absence from unknown or broken CLI output, preserving reported installed versions on drift.
 - Pin golangci-lint v2.14.0 in CI for Go 1.27 export-data compatibility, verified against Go 1.27.2.

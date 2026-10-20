@@ -82,6 +82,7 @@ type projectLoadOptions struct {
 	ManifestPath string
 	ManifestAuto bool
 	Provenance   bool
+	WarningTool  string
 }
 
 // resolveSchemaFilePath resolves the exact schema file consumed by project
@@ -168,6 +169,9 @@ func loadProject(schemaPath string, opts projectLoadOptions) (*loadedProject, er
 		return nil, &config.ParseSchemaError{Err: errors.New("schema validation failed")}
 	}
 	for _, warning := range vr.Warnings {
+		if opts.WarningTool != "" && !strings.HasPrefix(warning.Field, "tools."+opts.WarningTool+".") {
+			continue
+		}
 		log.Default.Warn(warning.Error())
 	}
 

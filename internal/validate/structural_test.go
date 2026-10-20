@@ -1460,3 +1460,49 @@ func TestValidateRequiredFields_GitDepthMustBeNonNegativeInteger(t *testing.T) {
 		})
 	}
 }
+
+func TestAutoChecksumAuthenticationClassification(t *testing.T) {
+	valid := "sha256:auto"
+	cases := []struct {
+		name        string
+		config      map[string]any
+		wantWarning bool
+		wantSource  string
+	}{
+		{name: "inferred sidecar", config: map[string]any{"checksum": valid}, wantWarning: true, wantSource: "inferred sidecar"},
+		{name: "configured unauthenticated sidecar", config: map[string]any{"checksum": valid, "checksum_url": "https://example.test/SHA256SUMS"}, wantWarning: true, wantSource: "configured sidecar"},
+		{name: "signed sidecar", config: map[string]any{"checksum": valid, "checksum_url": "https://example.test/SHA256SUMS", "signature_url": "https://example.test/SHA256SUMS.sig", "signing_key": "0123456789ABCDEF"}},
+		{name: "literal checksum", config: map[string]any{"checksum": "sha256:6ca13d52ca70c883e0f0bb101e425a89e8624de51db2d2392593af6a84118090"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			methodConfig := map[string]any{"url": "https://example.test/app.tar.gz", "checksum": tc.config["checksum"]}
+			for _, key := range []string{"checksum_url", "signature_url", "signing_key"} {
+				if value, ok := tc.config[key]; ok {
+					methodConfig[key] = value
+				}
+			}
+			s := &cfg.Schema{Tools: map[string]*cfg.Tool{"app": tool("app", []*cfg.MethodCandidate{mc("http", nil, methodConfig)}, nil)}}
+			r := validateRequiredFields(s)
+			if r.HasErrors() {
+				t.Fatalf("validation errors = %v", r.Errors)
+			}
+			var warning *ValidationError
+			for i := range r.Warnings {
+				if r.Warnings[i].Code == WarnAutoChecksum {
+					warning = &r.Warnings[i]
+					break
+				}
+			}
+			if (warning != nil) != tc.wantWarning {
+				t.Fatalf("auto checksum warning present = %t, want %t; warnings=%v", warning != nil, tc.wantWarning, r.Warnings)
+			}
+			if warning != nil {
+				message := warning.Message
+				if !strings.Contains(message, tc.wantSource) || !strings.Contains(message, "checks artifact integrity but does not independently authenticate the hash source") || strings.Contains(message, "NOT verified") {
+					t.Fatalf("warning message = %q, want accurate source and trust-model details", message)
+				}
+			}
+		})
+	}
+}

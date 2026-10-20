@@ -311,7 +311,17 @@ func validateChecksum(toolName string, methodIdx int, method *config.MethodCandi
 		return
 	}
 	if strings.HasSuffix(checksum, ":auto") {
-		r.Add(ValidationError{Code: WarnAutoChecksum, Field: fieldPath(toolName, methodIdx, "checksum"), Message: fmt.Sprintf("checksum %q uses :auto — TOFU (Trust On First Use) applies, hash is NOT verified", checksum)})
+		if signatureURL, _ := method.Config["signature_url"].(string); signatureURL != "" {
+			if signingKey, _ := method.Config["signing_key"].(string); signingKey != "" {
+				return // The checksum sidecar is authenticated by its configured signature.
+			}
+		}
+		source := "an inferred sidecar"
+		if sidecar, ok := method.Config["checksum_url"].(string); ok && sidecar != "" {
+			source = "the configured sidecar"
+		}
+		message := fmt.Sprintf("checksum %q resolves from %s at install time; this checks artifact integrity but does not independently authenticate the hash source", checksum, source)
+		r.Add(ValidationError{Code: WarnAutoChecksum, Field: fieldPath(toolName, methodIdx, "checksum"), Message: message})
 	}
 }
 
