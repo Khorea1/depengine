@@ -287,7 +287,11 @@ func (a *NativeAdapter) InstallResolved(ctx context.Context, rn run.Runner, _ *c
 	if clan == "" {
 		return errors.New("native: no native manager found")
 	}
-	return runNativeInstallPackage(ctx, rn, "native", clan, resolved.Identity.Package)
+	managerName := ""
+	if clan == "macos" {
+		managerName = "brew"
+	}
+	return runNativeInstallPackageResolved(ctx, rn, "native", clan, resolved.Identity.Package, resolved, managerName)
 }
 
 // Remove uninstalls a package via the native package manager.
@@ -337,6 +341,10 @@ func runNativeInstall(ctx context.Context, rn run.Runner, prefix, clan string, m
 }
 
 func runNativeInstallPackage(ctx context.Context, rn run.Runner, prefix, clan, pkg string) error {
+	return runNativeInstallPackageResolved(ctx, rn, prefix, clan, pkg, nil, "")
+}
+
+func runNativeInstallPackageResolved(ctx context.Context, rn run.Runner, prefix, clan, pkg string, resolved *plan.ResolvedInstallPlan, managerName string) error {
 	if pkg == "" {
 		return fmt.Errorf("%s: no package name", prefix)
 	}
@@ -344,11 +352,31 @@ func runNativeInstallPackage(ctx context.Context, rn run.Runner, prefix, clan, p
 	if cmd == nil {
 		return fmt.Errorf("%s: no install command for clan %q", prefix, clan)
 	}
-	res := rn.Run(ctx, cmd[0], cmd[1:]...)
+	if managerName != "" {
+		cmd = replaceManagerBinary(cmd, managerName, clan)
+	}
+	var res run.Result
+	if managerName == "brew" && resolvedHasPinnedBrewTap(resolved) {
+		res = run.RunWithEnv(ctx, rn, map[string]string{"HOMEBREW_NO_AUTO_UPDATE": "1"}, nil, cmd[0], cmd[1:]...)
+	} else {
+		res = rn.Run(ctx, cmd[0], cmd[1:]...)
+	}
 	if err := run.CheckResult(res, prefix+": install"); err != nil {
 		return err
 	}
-	return verifyNativeInstall(ctx, rn, prefix, clan, pkg, "")
+	return verifyNativeInstall(ctx, rn, prefix, clan, pkg, managerName)
+}
+
+func resolvedHasPinnedBrewTap(resolved *plan.ResolvedInstallPlan) bool {
+	if resolved == nil {
+		return false
+	}
+	for _, source := range resolved.Sources {
+		if strings.EqualFold(source.Kind, "brew-tap") && source.Revision != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func verifyNativeInstall(ctx context.Context, rn run.Runner, prefix, clan, pkg, managerName string) error {
@@ -641,17 +669,8 @@ func (a *NativeByManagerAdapter) InstallResolved(ctx context.Context, rn run.Run
 	if clan == "" {
 		return fmt.Errorf("native(%s): no clan found for manager", a.managerName)
 	}
-	cmd := native.BuildInstallCmd(clan, pkg)
-	if cmd == nil {
-		return fmt.Errorf("native(%s): no install command for clan %q", a.managerName, clan)
-	}
-	cmd = replaceManagerBinary(cmd, a.managerName, clan)
-	res := rn.Run(ctx, cmd[0], cmd[1:]...)
 	prefix := "native(" + a.managerName + ")"
-	if err := run.CheckResult(res, prefix+": install"); err != nil {
-		return err
-	}
-	return verifyNativeInstall(ctx, rn, prefix, clan, pkg, a.managerName)
+	return runNativeInstallPackageResolved(ctx, rn, prefix, clan, pkg, resolved, a.managerName)
 }
 
 func (a *NativeByManagerAdapter) installWingetResolved(ctx context.Context, rn run.Runner, mc *config.MethodCandidate, resolved *plan.ResolvedInstallPlan) error {

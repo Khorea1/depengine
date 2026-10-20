@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Khorea1/depengine/internal/config"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 )
 
@@ -139,6 +140,146 @@ func (r *nativeSequenceRunner) Run(_ context.Context, name string, args ...strin
 	r.results = r.results[1:]
 	return result
 }
+
+type envRecordingRunner struct {
+	calls   []run.FakeCall
+	envs    []map[string]string
+	results []run.Result
+}
+
+func (r *envRecordingRunner) next() run.Result {
+	if len(r.results) == 0 {
+		return run.Result{}
+	}
+	result := r.results[0]
+	r.results = r.results[1:]
+	return result
+}
+
+func (r *envRecordingRunner) Run(_ context.Context, name string, args ...string) run.Result {
+	r.calls = append(r.calls, run.FakeCall{Name: name, Args: append([]string(nil), args...)})
+	r.envs = append(r.envs, nil)
+	return r.next()
+}
+
+func (r *envRecordingRunner) RunWithEnv(_ context.Context, env map[string]string, _ []string, name string, args ...string) run.Result {
+	copyEnv := make(map[string]string, len(env))
+	for key, value := range env {
+		copyEnv[key] = value
+	}
+	r.calls = append(r.calls, run.FakeCall{Name: name, Args: append([]string(nil), args...)})
+	r.envs = append(r.envs, copyEnv)
+	return r.next()
+}
+
+func TestNativeResolvedBrewInstallDisablesAutoUpdateOnlyForPinnedTap(t *testing.T) {
+	type adapterCase struct {
+		name    string
+		install func(run.Runner, *plan.ResolvedInstallPlan) error
+	}
+	adapters := []adapterCase{
+		{
+			name: "native macOS route",
+			install: func(rn run.Runner, resolved *plan.ResolvedInstallPlan) error {
+				return NewNativeAdapter("macos").InstallResolved(context.Background(), rn, &config.Tool{Name: "demo"}, nil, resolved)
+			},
+		},
+		{
+			name: "explicit brew manager route",
+			install: func(rn run.Runner, resolved *plan.ResolvedInstallPlan) error {
+				return (&NativeByManagerAdapter{managerName: "brew"}).InstallResolved(context.Background(), rn, &config.Tool{Name: "demo"}, nil, resolved)
+			},
+		},
+	}
+	sources := []struct {
+		name    string
+		sources []plan.SourceReference
+		wantEnv bool
+	}{
+		{name: "pinned tap", sources: []plan.SourceReference{{Kind: "brew-tap", Name: "vendor/tools", Revision: "0123456789abcdef"}}, wantEnv: true},
+		{name: "unpinned tap", sources: []plan.SourceReference{{Kind: "brew-tap", Name: "vendor/tools"}}},
+		{name: "no source"},
+	}
+	for _, adapter := range adapters {
+		for _, source := range sources {
+			t.Run(adapter.name+"/"+source.name, func(t *testing.T) {
+				resolved := plan.New("demo", "native", true)
+				resolved.Identity.Package = "locked/tool"
+				resolved.Sources = source.sources
+				resolved.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
+				rn := &envRecordingRunner{}
+				if err := adapter.install(rn, &resolved); err != nil {
+					t.Fatalf("InstallResolved() error = %v", err)
+				}
+				if len(rn.calls) != 2 {
+					t.Fatalf("calls = %#v, want install and post-install verification", rn.calls)
+				}
+				if rn.calls[0].Name != "brew" || !slices.Equal(rn.calls[0].Args, []string{"install", "locked/tool"}) {
+					t.Fatalf("install call = %#v, want brew install locked/tool", rn.calls[0])
+				}
+				if rn.calls[1].Name != "brew" || !slices.Equal(rn.calls[1].Args, []string{"list", "locked/tool"}) {
+					t.Fatalf("verification call = %#v, want brew list locked/tool", rn.calls[1])
+				}
+				want := map[string]string(nil)
+				if source.wantEnv {
+					want = map[string]string{"HOMEBREW_NO_AUTO_UPDATE": "1"}
+				}
+				if !equalStringMap(rn.envs[0], want) {
+					t.Fatalf("install environment = %#v, want %#v", rn.envs[0], want)
+				}
+				if rn.envs[1] != nil {
+					t.Fatalf("verification environment = %#v, want no override", rn.envs[1])
+				}
+			})
+		}
+	}
+
+	t.Run("non-Brew manager has no Homebrew override", func(t *testing.T) {
+		resolved := plan.New("demo", "apt", true)
+		resolved.Identity.Package = "demo-package"
+		resolved.Sources = []plan.SourceReference{{Kind: "brew-tap", Name: "vendor/tools", Revision: "0123456789abcdef"}}
+		resolved.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
+		rn := &envRecordingRunner{results: []run.Result{
+			{},
+			dpkgQueryResult("demo-package", "install ok installed"),
+			dpkgQueryResult("dpkg", "install ok installed"),
+		}}
+		if err := (&NativeByManagerAdapter{managerName: "apt"}).InstallResolved(context.Background(), rn, &config.Tool{Name: "demo"}, nil, &resolved); err != nil {
+			t.Fatalf("InstallResolved() error = %v", err)
+		}
+		if len(rn.calls) != 3 || rn.envs[0] != nil || rn.envs[1] != nil || rn.envs[2] != nil {
+			t.Fatalf("calls/environments = %#v / %#v, want install and dpkg verification without overrides", rn.calls, rn.envs)
+		}
+	})
+
+	t.Run("pinned tap fails closed without EnvironmentRunner", func(t *testing.T) {
+		resolved := plan.New("demo", "native", true)
+		resolved.Identity.Package = "locked/tool"
+		resolved.Sources = []plan.SourceReference{{Kind: "brew-tap", Revision: "0123456789abcdef"}}
+		resolved.Operations = []plan.Operation{{Kind: "install", Effect: plan.EffectMutation}}
+		rn := &nativeSequenceRunner{}
+		err := NewNativeAdapter("macos").InstallResolved(context.Background(), rn, &config.Tool{Name: "demo"}, nil, &resolved)
+		if err == nil || !strings.Contains(err.Error(), "does not support per-call environment") {
+			t.Fatalf("InstallResolved() error = %v, want fail-closed per-call environment error", err)
+		}
+		if len(rn.calls) != 0 {
+			t.Fatalf("calls = %#v, want no command without EnvironmentRunner", rn.calls)
+		}
+	})
+}
+
+func equalStringMap(got, want map[string]string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for key, value := range want {
+		if got[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
 func TestNativeInstallRequiresPostcondition(t *testing.T) {
 	t.Run("generic native rejects false-success install", func(t *testing.T) {
 		rn := &nativeSequenceRunner{results: []run.Result{
