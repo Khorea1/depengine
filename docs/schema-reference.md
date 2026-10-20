@@ -266,8 +266,8 @@ when authenticated GitHub release API resolution is required.
 
 > `checksum` accepts a literal hash (`sha256:...`) or `:auto` (automatic
 > resolution). `:auto` verifies artifact integrity against the fetched checksum,
-> the artifact is integrity-checked against the fetched hash, but an unsigned
-> checksum sidecar is Trust On First Use and does not authenticate the hash source.
+> but an unsigned checksum sidecar is Trust On First Use and does not authenticate
+> the hash source.
 > Without `checksum_url`, depengine may infer a sidecar from the artifact URL;
 > that same-host hash has the same limitation. A valid detached GPG signature
 > checked with the configured `signing_key` authenticates the checksum file to

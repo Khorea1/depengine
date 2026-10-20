@@ -1467,9 +1467,10 @@ func TestAutoChecksumAuthenticationClassification(t *testing.T) {
 		name        string
 		config      map[string]any
 		wantWarning bool
+		wantSource  string
 	}{
-		{name: "inferred sidecar", config: map[string]any{"checksum": valid}, wantWarning: true},
-		{name: "configured unauthenticated sidecar", config: map[string]any{"checksum": valid, "checksum_url": "https://example.test/SHA256SUMS"}, wantWarning: true},
+		{name: "inferred sidecar", config: map[string]any{"checksum": valid}, wantWarning: true, wantSource: "inferred sidecar"},
+		{name: "configured unauthenticated sidecar", config: map[string]any{"checksum": valid, "checksum_url": "https://example.test/SHA256SUMS"}, wantWarning: true, wantSource: "configured sidecar"},
 		{name: "signed sidecar", config: map[string]any{"checksum": valid, "checksum_url": "https://example.test/SHA256SUMS", "signature_url": "https://example.test/SHA256SUMS.sig", "signing_key": "0123456789ABCDEF"}},
 		{name: "literal checksum", config: map[string]any{"checksum": "sha256:6ca13d52ca70c883e0f0bb101e425a89e8624de51db2d2392593af6a84118090"}},
 	}
@@ -1486,14 +1487,21 @@ func TestAutoChecksumAuthenticationClassification(t *testing.T) {
 			if r.HasErrors() {
 				t.Fatalf("validation errors = %v", r.Errors)
 			}
-			found := false
-			for _, warning := range r.Warnings {
-				if warning.Code == WarnAutoChecksum {
-					found = true
+			var warning *ValidationError
+			for i := range r.Warnings {
+				if r.Warnings[i].Code == WarnAutoChecksum {
+					warning = &r.Warnings[i]
+					break
 				}
 			}
-			if found != tc.wantWarning {
-				t.Fatalf("auto checksum warning = %t, want %t; warnings=%v", found, tc.wantWarning, r.Warnings)
+			if (warning != nil) != tc.wantWarning {
+				t.Fatalf("auto checksum warning present = %t, want %t; warnings=%v", warning != nil, tc.wantWarning, r.Warnings)
+			}
+			if warning != nil {
+				message := warning.Message
+				if !strings.Contains(message, tc.wantSource) || !strings.Contains(message, "checks artifact integrity but does not independently authenticate the hash source") || strings.Contains(message, "NOT verified") {
+					t.Fatalf("warning message = %q, want accurate source and trust-model details", message)
+				}
 			}
 		})
 	}
