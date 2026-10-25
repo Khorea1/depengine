@@ -30,7 +30,7 @@ func newUpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "update",
 		Aliases: []string{"lock"},
-		Short:   ifPT("Resolver referências mutáveis e fixá-las no depengine.lock", "Resolve mutable references and pin them in depengine.lock"),
+		Short:   ifPT("Resolver referências mutáveis e gravar v2 somente com identidade imutável para cada ferramenta", "Resolve mutable references and write v2 only when every tool has an immutable resolved identity"),
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -142,7 +142,10 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		newLock, err = lock.NewUniversal(document, methodsHash, sourceHash, legacyTools)
 		if err != nil {
 			done("FAIL")
-			lg.Error("build universal lock", "error", err)
+			lg.Error(
+				"build universal lock", "error", err, "hint",
+				"depengine update needs an immutable identity for every selected tool; native package names alone are not version pins, so no partial v2 lock was written",
+			)
 			return exitWithCode(2)
 		}
 	} else {

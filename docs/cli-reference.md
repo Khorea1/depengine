@@ -210,7 +210,7 @@ Aliases: `rollback`.
 
 ## `depengine update [flags]`
 
-Resolve mutable references and pin them in depengine.lock
+Resolve mutable references and write v2 only when every tool has an immutable resolved identity
 
 Aliases: `lock`.
 
