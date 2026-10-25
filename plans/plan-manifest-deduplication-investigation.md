@@ -119,8 +119,24 @@ A semântica diferente entre atalhos escalares e tabelas explícitas constitui i
 
 ## Status e próxima decisão
 
-**Decisão atual: nenhuma refatoração aprovada.** A expansão estática é uma hipótese com boas propriedades potenciais, mas não há prova de que preserve merge, identidade, locks e comportamento. A alternativa correta pode ser conservar as receitas atuais.
+**Decisão atual: nenhuma refatoração aprovada; A (receitas atuais) segue como padrão.**
+Os experimentos 0 e 1 (baseline + expansão estática) foram executados no spike
+`spike/cases-expansion` — protótipo isolado em `internal/config/spike/`, quatro
+rodadas de auditoria, `go test -race`/`vet`/`golangci-lint` limpos — e registrados em
+[`2026-10-19_spike-cases-expansion.md`](../archive/reports/2026-10-19_spike-cases-expansion.md).
+Veredito: C é uma macro correta nas condições testadas (equivalência campo a campo em
+9 candidatos, merge schema+manifesto, `MethodsHash`/`SourceHash`, validação fail-closed,
+matriz de 7 hosts, determinismo), mas a economia (~40% de TOML em 3 tools) não justifica
+sozinha regra permanente. O protótipo está preservado em `origin/spike/cases-expansion`.
 
-Próximo passo, *somente quando a investigação for retomada*: executar os experimentos, anexar os resultados comparativos e então aceitar ou rejeitar uma proposta pequena e delimitada. Não criar uma ADR de aprovação com base apenas nesta nota.
+Experimento 2 (especialização por host) e Experimento 3 (tabela lado a lado) **não foram
+executados**. Antes de qualquer implementação são exigidos: e2e com rede (projeções v2 e
+`ResolveLegacyV1` fora do alcance offline), a revisão dos critérios de `dep-1n0` para o
+contrato de "vários candidatos convencionais" em vez de "método único com variantes
+exclusivas", e a avaliação do custo permanente de `cases`.
+
+Próximo passo, *somente quando a investigação for retomada*: executar os experimentos
+restantes, anexar os resultados comparativos e então aceitar ou rejeitar uma proposta
+pequena e delimitada. Não criar uma ADR de aprovação com base apenas nesta nota.
 
 *Contexto de origem: auditoria do manifesto pessoal de 2026-10-11 e revisão crítica sucessiva das propostas `asset_variants`, `variants`, especialização por host e expansão estática.*

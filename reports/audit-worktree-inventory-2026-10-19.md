@@ -201,6 +201,11 @@ Worktrees `.worktrees/fix-front-a-artifacts` e `.worktrees/fix-beads-front-b`
 removidas; branches locais `fix/front-a-artifacts`, `fix/front-a-rebased`,
 `fix/lock-docs-immutable-identity` e `fix/beads-front-b` apagadas; refs remotos
 dos dois PRs removidos após o merge. `master` local está árvore-idêntico ao tip
-testeado (`9ef287f`). Estado final: `master`, `dev-notes` (commits ainda não empurrados) e
-`spike/cases-expansion` (experimento deliberado) — única worktree restante de
-trabalho pendente.
+testeado (`9ef287f`). Estado final: `master` e `dev-notes` sincronizados com `origin` (os commits de
+`dev-notes` e do spike foram empurrados nesta rodada); `spike/cases-expansion`
+também encerrado — protótipo preservado em `origin/spike/cases-expansion`
+(4 commits, `internal/config/spike/` isolado, testes verdes), worktree e branch
+local removidas, e o veredito da investigação (A segue como padrão; C aprovada
+só para planejamento; faltam Exp. 2/3, e2e com rede e a decisão de contrato de
+`dep-1n0`) anotado em `plan-manifest-deduplication-investigation.md`. Não restam
+worktrees de trabalho pendente.
