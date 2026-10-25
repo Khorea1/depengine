@@ -59,7 +59,7 @@ func TestLegacyNativeLockFallbackOnlyAcceptsNativeUnpinnableTools(t *testing.T) 
 	}
 }
 
-func writeExecutableFixture(t *testing.T, path, content string) {
+func writeExecutableFixture(t testing.TB, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
