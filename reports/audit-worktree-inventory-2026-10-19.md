@@ -131,3 +131,44 @@ preservada deliberadamente como experimento, conforme o
 Beads abertos após esta rodada: `dep-mhp` (blocked; a fronteira documental foi
 integrada em `f673b32`/#153, mas o contrato de ciclo de vida continua ausente),
 `dep-wbg` (blocked) e `dep-bench-round2-update-why-graph-h8c` (P4 opcional).
+
+## Follow-up da higiene (2026-10-25, `master @ 0620968`)
+
+`git fetch --prune` removeu seis refs remotos já integrados. Rodada executada:
+plano de issues arquivado (`plans/plan-open-issues-fix.md` →
+`archive/plans/2026-10-25_...`, único item aberto era `#117`, fechado em
+2026-10-03 e coberto por `internal/run`), WIP de `fix/front-a-artifacts`
+commitado (`83d3b26`) e worktree/ramo `fix/portable-windows-exe` removidos
+(espelho obsoleto de `efb32a4`/`424b12f`; arquivos de teste idênticos).
+
+### `fix/beads-front-b` está superseded, não apenas divergente
+
+A medição antiga (26% de linhas "ausentes em master") superestimava trabalho
+pendente porque `master` reescreveu os mesmos trechos: a branch é a variante
+**mais antiga**. Evidências, arquivo por arquivo:
+
+- `internal/native/command.go`: a branch reintroduz `CheckCmd` para dpkg/RPM,
+  removido de propósito quando a observação estruturada (`dpkg_observe.go`,
+  `rpm_observe.go`) virou autoridade.
+- `719b275` (MacPorts lifecycle, 446 linhas) foi substituído por `f985f67`/#161
+  com implementação maior (`native_adapter.go` 998 linhas contra 864).
+- `2d8867a` documentava o gate de `DEPENGINE_DETECT_SCRIPT` em
+  `internal/engine`, pacote retirado por `dfce852`/#160; o texto sobrevive em
+  `docs/compatibility.md` atualizado para `internal/platform`.
+- `a543a9c` reescrevia trechos de `docs/support-boundary.md` hoje mais novos
+  (auto-update de brew em #154, protocolo RPM em #150).
+- `4dc1cc3`, `c61b551`, `fa49b3e`, `5bd32d3`, `8f3c050`, `9259f42` já estão
+  100% contidos em `master`.
+
+Único conteúdo real ainda ausente foi portado para `master` em `205f76d`:
+(i) a descrição de `depengine update` e o hint de falha dizendo que v2 exige
+identidade imutável por ferramenta, com README, `docs/compatibility.md`,
+`docs/cli-reference.md`, página man e roadmap alinhados; (ii) testes para
+`formatWhyAttemptIntent` (formatação de pacote nativo efetivo, sem cobertura
+antes) e para a estabilidade de lock de plano nativo. Rebase direto da branch
+teria **regredido** `master` nos pontos acima; o ramo pode ser descartado.
+
+Estado após a rodada: `fix/front-a-artifacts` (trabalho real: `internal/deb`,
+executáveis portáteis Windows, erros de assinatura), `fix/beads-front-b`
+(superseded, aguardando remoção), `spike/cases-expansion` (experimento) e
+`dev-notes`. Beads abertos: apenas `dep-bench-round2-update-why-graph-h8c` (P4).
