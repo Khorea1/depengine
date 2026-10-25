@@ -19,7 +19,11 @@ import (
 // path. It never invokes an installer and only returns an immutable projection
 // with exact coverage of expectedTools; unsupported identities or incomplete
 // retained coverage fail closed.
-func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, clan string, facts *platform.Facts, schemaPath string, logger *slog.Logger, previous *lock.Lock, expectedTools []string, methodsHash map[string]string) (plan.LockDocument, error) {
+//
+// previousDocument is the already-decoded projection of previous. Callers that
+// hold a readable v2 lock decode it once and pass it here, so the same document
+// is not decoded again for retention and checksum carry-forward.
+func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, clan string, facts *platform.Facts, schemaPath string, logger *slog.Logger, previous *lock.Lock, previousDocument plan.LockDocument, expectedTools []string, methodsHash map[string]string) (plan.LockDocument, error) {
 	if schema == nil {
 		return plan.LockDocument{}, fmt.Errorf("universal lock: schema is required")
 	}
@@ -34,14 +38,6 @@ func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, cl
 	expectedNames := make(map[string]struct{}, len(expectedTools))
 	for _, name := range expectedTools {
 		expectedNames[name] = struct{}{}
-	}
-	var previousDocument plan.LockDocument
-	if previous != nil && previous.Version == lock.CurrentVersion {
-		var err error
-		previousDocument, err = previous.ProjectionDocument()
-		if err != nil {
-			return plan.LockDocument{}, err
-		}
 	}
 	for _, name := range names {
 		tool := schema.Tools[name]

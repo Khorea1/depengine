@@ -84,7 +84,7 @@ esac
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	document, err := resolveUniversalLockDocument(context.Background(), schema, "macos", nil, schemaPath, logger, nil, universalLockCoverageNames(schema.Tools), nil)
+	document, err := resolveUniversalLockDocument(context.Background(), schema, "macos", nil, schemaPath, logger, nil, plan.LockDocument{}, universalLockCoverageNames(schema.Tools), nil)
 	if err != nil {
 		resolver := newInstallExecutor(installPlan{schema: schemaPath, dryRun: true}, schema, "macos", nil, time.Time{}, logger)
 		t.Fatalf("%v; alpha attempts: %+v", err, resolver.ExplainTool(context.Background(), schema.Tools["alpha"], "macos"))

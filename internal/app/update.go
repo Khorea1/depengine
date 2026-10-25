@@ -112,6 +112,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	var newLock *lock.Lock
 	legacy := !canPersistProjection(oldLock, *updateProfile)
 	var nativeFallback []string
+	var universalDocument *plan.LockDocument
 	if !legacy {
 		projectionSchema := fullSchema
 		projectionSchema.Tools = make(map[string]*config.Tool, len(fullInstallTools))
@@ -130,7 +131,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 				projectionSchema.Tools[name] = tool
 			}
 		}
-		document, resolveErr := resolveUniversalLockDocument(ctx, &projectionSchema, clan, facts, *updateSchema, lg, oldLock, projectionCoverage, methodsHash)
+		document, resolveErr := resolveUniversalLockDocument(ctx, &projectionSchema, clan, facts, *updateSchema, lg, oldLock, previousDocument, projectionCoverage, methodsHash)
 		if resolveErr != nil {
 			if names, ok := legacyNativeLockFallback(oldLock, resolveErr); ok {
 				legacy = true
@@ -142,6 +143,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 			}
 		}
 		if !legacy {
+			universalDocument = &document
 			legacyTools := make(map[string]lock.ToolPin)
 			if oldLock != nil {
 				for key, pin := range oldLock.Tools {
@@ -192,13 +194,12 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	pinned := len(newLock.Tools)
 	var projection *plan.LockDocument
 	if newLock.Version == lock.CurrentVersion {
-		document, err := newLock.ProjectionDocument()
-		if err != nil {
+		if universalDocument == nil {
 			done("FAIL")
-			return fmt.Errorf("decode update projection: %w", err)
+			return fmt.Errorf("decode update projection: universal projection is unavailable")
 		}
-		projection = &document
-		pinned = len(document.Entries)
+		projection = universalDocument
+		pinned = len(projection.Entries)
 	}
 	if *updateDryRun {
 		done(c.cyan("dry-run"))
