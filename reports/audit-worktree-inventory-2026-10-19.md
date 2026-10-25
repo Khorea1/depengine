@@ -172,3 +172,22 @@ Estado após a rodada: `fix/front-a-artifacts` (trabalho real: `internal/deb`,
 executáveis portáteis Windows, erros de assinatura), `fix/beads-front-b`
 (superseded, aguardando remoção), `spike/cases-expansion` (experimento) e
 `dev-notes`. Beads abertos: apenas `dep-bench-round2-update-why-graph-h8c` (P4).
+
+### `fix/front-a-artifacts` reescrita e enviada como PR #165
+
+A branch foi reconstruída sobre `205f76d` em vez de rebasada inteira: só os
+quatro commits com trabalho real foram cherry-pickados (`portable_executable`
+opt-in, docs do `.deb`, `internal/deb` + `deb_transport`, executáveis portáteis
+GitHub). Ficaram de fora, por já estarem em `master`, `7f28851`/`6d23b68`
+(distribuições GitHub → #148/#150), `910f095` (refetch GPG terminal →
+`gpg_refetch_terminal_test.go`) e `92f6e4e`/`8b8988d` (checksum warnings →
+#164), além do commit WIP. O cherry-pick arrastou uma linha de CHANGELOG sobre
+mise que pertence a #163; ela foi removida por `rebase -i` e o restante da
+árvore ficou idêntico ao da branch antiga.
+
+CI do PR apontou um defeito real de teste, corrigido em `9ef287f`: a asserção do
+install de `.deb` exigia prefixo `sudo`, que `run.RunElevated` só aplica onde a
+plataforma precisa, então FreeBSD/NetBSD/OpenBSD/Windows falhavam com o adapter
+correto. O teste agora compara o argv efetivo. Estado: `fix/front-a-rebased`
+enviada ao `origin`, PR #165 com CI verde (exceto o runner NetBSD, lento).
+Falta apenas mesclar o PR e então remover a worktree e as duas branches locais.
