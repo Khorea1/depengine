@@ -17,10 +17,14 @@ change to one format does not require the others to change.
 ## Current status
 
 All three formats are still pre-freeze. The schema/manifest uses version `1`,
-installed state uses version `4`, and `depengine.lock` is written as version
-`1` or `2` (a whole-schema `depengine update` promotes it to `2`). None of
-these numbers is yet a promise that every future depengine release will read
-every file written today.
+installed state uses version `4`, and lock readers accept envelope versions `1`
+and `2`. A whole-schema `depengine update` writes v2 only when every
+non-virtual tool in the install closure has an immutable resolved identity;
+otherwise it fails closed and leaves any existing lock unchanged, so a
+native-only schema whose manager exposes only a package name cannot promote the
+lock. A profiled update without an existing v2 lock keeps the legacy v1 path.
+None of these numbers is yet a promise that every future depengine release will
+read every file written today.
 
 Until the [v1 freeze gate](specs/format-v1-freeze.md) is complete:
 

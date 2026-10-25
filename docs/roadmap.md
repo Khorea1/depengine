@@ -72,8 +72,10 @@ Work on the current execution model comes before adding more installer types.
   or required source revision return `LockUnavailable` and no partial v2 lock is
   written. Persisted v2 projections are checked for exact coverage of every
   non-virtual tool in the current whole-schema install closure, including after
-  profiled updates; legacy
-  v1 remains readable and is migrated by a successful whole-schema update.
+  profiled updates. Legacy v1 remains readable; a whole-schema update migrates
+  it only when every tool has a stable resolved identity. Native package names
+  alone do not satisfy that requirement, so such an update can fail without
+  writing a partial v2 lock.
   Exact package pins still do not lock transitive dependency graphs. See
   [`design/adr-001-universal-lock-projection.md`](design/adr-001-universal-lock-projection.md)
   and [`support-boundary.md`](support-boundary.md).

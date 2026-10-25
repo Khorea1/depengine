@@ -67,6 +67,34 @@ func TestProjectLockMutableContainerTagRequiresDigest(t *testing.T) {
 	}
 }
 
+func TestProjectLockNativePackageNameIsNotAVersionPin(t *testing.T) {
+	p := plan.New("delta", "native", true)
+	p.Identity.Package = "git-delta"
+
+	got, err := plan.ProjectLock(p)
+	if err != nil {
+		t.Fatalf("ProjectLock() error: %v", err)
+	}
+	if got.Stability != plan.LockUnavailable {
+		t.Fatalf("Stability = %q, want unavailable for a presence-only native pin (%s)", got.Stability, got.Reason)
+	}
+	if !strings.Contains(got.Reason, "stable resolved identity") {
+		t.Fatalf("Reason = %q, want stable-identity explanation", got.Reason)
+	}
+	if err := got.RequireImmutable(); !errors.Is(err, plan.ErrLockUnavailable) {
+		t.Fatalf("RequireImmutable() = %v, want ErrLockUnavailable", err)
+	}
+
+	p.Identity.Version = "0.18.2"
+	got, err = plan.ProjectLock(p)
+	if err != nil {
+		t.Fatalf("ProjectLock() with version error: %v", err)
+	}
+	if got.Stability != plan.LockImmutable {
+		t.Fatalf("Stability = %q, want immutable once the manager exposes a version (%s)", got.Stability, got.Reason)
+	}
+}
+
 func TestProjectLockArtifactRequiresChecksum(t *testing.T) {
 	p := plan.New("tool", "http", true)
 	p.Identity.Version = "1.0.0"

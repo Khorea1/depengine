@@ -6,6 +6,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
+	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/state"
 )
 
@@ -98,5 +99,56 @@ func TestAmbiguousWhyWarningFlagsDuplicateLabels(t *testing.T) {
 	warning := ambiguousWhyWarning("demo", attempts)
 	if !strings.Contains(warning, "duplicate label") || !strings.Contains(warning, `"mirror"`) {
 		t.Fatalf("warning = %q, want duplicate-label guidance", warning)
+	}
+}
+
+func TestFormatWhyAttemptIntentShowsEffectiveNativePackage(t *testing.T) {
+	tests := []struct {
+		name        string
+		packageName string
+	}{
+		{name: "apt override", packageName: "git-delta"},
+		{name: "pacman override", packageName: "git-delta-arch"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolved := plan.New("delta", "native", true)
+			resolved.Identity.Package = tt.packageName
+			attempt := exec.MethodAttempt{
+				Kind: "native", Intent: map[string]string{"pkg": "delta"}, PlanIntent: &resolved,
+			}
+			if got, want := formatWhyAttemptIntent(attempt), "pkg=delta, effective package="+tt.packageName; got != want {
+				t.Fatalf("formatWhyAttemptIntent() = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestFormatWhyAttemptIntentKeepsDeclaredIntentWithoutOverride(t *testing.T) {
+	resolved := plan.New("delta", "native", true)
+	resolved.Identity.Package = "delta"
+	tests := []struct {
+		name    string
+		attempt exec.MethodAttempt
+	}{
+		{
+			name:    "effective package equals declared package",
+			attempt: exec.MethodAttempt{Kind: "native", Intent: map[string]string{"pkg": "delta"}, PlanIntent: &resolved},
+		},
+		{
+			name:    "non-native method ignores plan intent",
+			attempt: exec.MethodAttempt{Kind: "http", Intent: map[string]string{"pkg": "delta"}, PlanIntent: &resolved},
+		},
+		{
+			name:    "native method without resolved plan",
+			attempt: exec.MethodAttempt{Kind: "native", Intent: map[string]string{"pkg": "delta"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got, want := formatWhyAttemptIntent(tt.attempt), "pkg=delta"; got != want {
+				t.Fatalf("formatWhyAttemptIntent() = %q, want %q", got, want)
+			}
+		})
 	}
 }
