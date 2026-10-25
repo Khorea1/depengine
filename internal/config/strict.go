@@ -31,6 +31,61 @@ var conditionFields = map[string]string{
 	"is_android":         "bool",
 }
 
+// validateOrderSelectorsBeforeExpansion rejects host placeholders in method
+// order selectors before the whole document is expanded. Order selectors name
+// candidate kinds or labels; expanding a host fact there makes the candidate
+// sequence (and therefore v1 pin keys and MethodsHash) depend on the machine
+// that parsed the schema. ADR-007 requires a host-independent sequence, so the
+// selector must be literal and candidates should be selected with when
+// conditions instead.
+func validateOrderSelectorsBeforeExpansion(raw map[string]any, section string) error {
+	var errs []string
+	if defaults, ok := raw["defaults"].(map[string]any); ok {
+		for _, field := range []string{"method_prefer", "method_order"} {
+			validateNoPlaceholderSelectors(defaults[field], "defaults."+field, &errs)
+		}
+	}
+	if tools, ok := raw[section].(map[string]any); ok {
+		for _, name := range sortedMapKeys(tools) {
+			tool, ok := tools[name].(map[string]any)
+			if !ok {
+				continue
+			}
+			for _, field := range []string{"method_prefer", "method_only"} {
+				validateNoPlaceholderSelectors(tool[field], section+"."+name+"."+field, &errs)
+			}
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("invalid schema:\n%s", strings.Join(errs, "\n"))
+	}
+	return nil
+}
+
+func validateNoPlaceholderSelectors(raw any, path string, errs *[]string) {
+	var values []string
+	switch list := raw.(type) {
+	case []any:
+		for _, item := range list {
+			if value, ok := item.(string); ok {
+				values = append(values, value)
+			}
+		}
+	case []string:
+		values = list
+	default:
+		return
+	}
+	for _, value := range values {
+		if strings.ContainsAny(value, "{}") {
+			*errs = append(*errs, fmt.Sprintf(
+				"%s: selector %q contains placeholder syntax; method order must be host-independent (list literal selectors and use when conditions on candidates)",
+				path, value,
+			))
+		}
+	}
+}
+
 func validateRawSchema(raw map[string]any, section string) error {
 	allowedRoot := map[string]bool{"schema_version": true, "defaults": true, section: true}
 	if section == "packages" {

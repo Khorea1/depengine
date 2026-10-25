@@ -172,12 +172,15 @@ Resolved by evidence: **D2** (placement: decision 3) and **D6** (decision 6).
 
 ## Prerequisite
 
-ADR-007 decision 1 does not hold today for schemas that put host placeholders in
-`[defaults].method_order`: candidate order, pin keys and `MethodsHash` follow the
-host, and `validate` loads with an empty map and sees yet another order
-(`TestKnownViolationMethodOrderPlaceholderReordersCandidates`). A catalog layer
-returns candidates that are then ordered by that code, so this must be resolved
-first.
+Resolved on 2026-10-25 by rejecting host placeholders in method order selectors
+before expansion (`defaults.method_prefer`, the `defaults.method_order`
+compatibility alias, and tool-level `method_prefer`/`method_only`). Previously,
+ADR-007 decision 1 did not hold for schemas that put host placeholders in
+`[defaults].method_order`: candidate order, pin keys and `MethodsHash` followed
+the host, and `validate` loaded with an empty map and saw yet another order.
+Selectors are now literal; per-host selection belongs in candidate `when`
+conditions, so a catalog layer receives candidates that are ordered
+host-independently.
 
 ## Verification
 

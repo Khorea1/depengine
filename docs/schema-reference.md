@@ -1183,6 +1183,11 @@ candidate label. TOML declaration order is never an order control, and
 `[defaults].method_prefer` plus per-tool `method_prefer` are prefixes: unlisted default
 methods remain available. Only `method_only` removes the remainder.
 
+Selectors are literal. Host placeholders such as `{distro_family}` are rejected
+before expansion because they would make candidate order, v1 pin keys, and
+`MethodsHash` depend on the parsing host. Express per-host selection with
+`when` conditions on candidates and keep the order list stable across hosts.
+
 ---
 
 ## Placeholders

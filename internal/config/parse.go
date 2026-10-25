@@ -141,6 +141,13 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 		return nil, &ParseSchemaError{Err: fmt.Errorf("parse TOML %s: %w", path, err)}
 	}
 
+	// Order selectors must be literal before any host fact is substituted:
+	// expanding a placeholder there would make the candidate sequence depend
+	// on the parsing host (ADR-007).
+	if err := validateOrderSelectorsBeforeExpansion(raw, sectionName); err != nil {
+		return nil, &ParseSchemaError{Err: fmt.Errorf("%s: %w", path, err)}
+	}
+
 	// {arch}/{os} are deliberately withheld from this first, whole-tree
 	// expansion pass and resolved afterwards, once per method (see the
 	// arch_map/os_map resolution loop below): arch_map/os_map layering

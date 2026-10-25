@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- Reject host placeholders in method order selectors (`defaults.method_prefer`,
+  the `defaults.method_order` compatibility alias, and tool-level
+  `method_prefer`/`method_only`) before schema expansion. Expanding a host fact
+  there made candidate order, v1 pin keys, and `MethodsHash` depend on the
+  parsing host, violating the host-independent candidate sequence contract.
+  Selectors must be literal; use candidate `when` conditions for host
+  selection. This also resolves the ADR-008 catalog prerequisite.
 - Whole-schema `depengine update` now keeps or refreshes the legacy v1 lock when
   the only unpinnable tools are native methods, and warns which tools blocked
   v2. It still never writes a partial v2 projection and never downgrades an

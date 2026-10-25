@@ -175,31 +175,6 @@ scope = "user"
 entrypoints = { foo = "foo" }
 `
 
-// known violation: [defaults].method_order is expanded before candidates are
-// ordered, and the labels below are named after distro families, so the
-// candidate order follows the host. ADR-007 decision 1 forbids exactly this.
-const invarianceMethodOrderPlaceholder = `schema_version = 1
-
-[defaults]
-method_order = ["{distro_family}", "github-fallback"]
-
-[tools.foo.debian]
-kind = "apt"
-pkg = "foo"
-
-[tools.foo.arch]
-kind = "pacman"
-pkg = "foo"
-
-[tools.foo.github-fallback]
-kind = "github"
-repo = "o/foo"
-asset = "foo-{version}.tar.gz"
-checksum = "sha256:auto"
-scope = "user"
-entrypoints = { foo = "foo" }
-`
-
 type invarianceHost struct {
 	name  string
 	facts *platform.Facts
@@ -686,40 +661,4 @@ func TestHostSlicedCandidateListViolatesInvariance(t *testing.T) {
 	if found, err := config.FindMethodCandidate(musl, "github", "github-linux-musl"); err == nil && found != nil {
 		t.Error("expected the musl candidate to be missing from the glibc-sliced list")
 	}
-}
-
-// Known violation of ADR-007 decision 1, pinned as a strict expected failure.
-//
-// [defaults].method_order is expanded with the host map before candidates are
-// ordered (internal/config/parse.go: ExpandAll on the document, then
-// OrderMethods(..., defaults.MethodOrder)). With labels named after distro
-// families, the candidate order, the pin keys and MethodsHash follow the host.
-// A lock written on one host then reports drift on another.
-//
-// This test PASSES while the violation exists and FAILS when it is fixed. When
-// it fails, the fix landed: delete this test and add the fixture to the strict
-// table in TestCandidateSequenceIsHostIndependent. Do not "fix" it by loosening
-// the assertion.
-func TestKnownViolationMethodOrderPlaceholderReordersCandidates(t *testing.T) {
-	fixture := newInvarianceFixture(t, invarianceMethodOrderPlaceholder)
-	var views []invarianceView
-	for _, host := range invarianceHosts() {
-		view, _ := applyHost(t, host, fixture.load(t, host.facts), fixture.load(t, host.facts))
-		views = append(views, view)
-	}
-	violations := invarianceViolations(views, false)
-	if len(violations) == 0 {
-		t.Fatal("candidate order no longer depends on host facts: the ADR-007 violation through " +
-			"[defaults].method_order placeholders is fixed. Move this fixture into the strict table of " +
-			"TestCandidateSequenceIsHostIndependent and delete this test.")
-	}
-	var order, hash bool
-	for _, v := range violations {
-		order = order || strings.Contains(v, "order/kind/label differs")
-		hash = hash || strings.Contains(v, "MethodsHash differs")
-	}
-	if !order || !hash {
-		t.Errorf("expected both candidate order and MethodsHash to diverge, got: %v", violations)
-	}
-	t.Logf("known violation reproduced: %d divergences across %d hosts, e.g. %s", len(violations), len(views), violations[0])
 }
