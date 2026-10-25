@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- Whole-schema `depengine update` now keeps or refreshes the legacy v1 lock when
+  the only unpinnable tools are native methods, and warns which tools blocked
+  v2. It still never writes a partial v2 projection and never downgrades an
+  existing v2 lock; any non-native unpinnable method remains a hard failure.
+- `http` and `github` reject installer-script payloads (`.sh`, `.bash`,
+  `.zsh`, `.ksh`, `.ps1`, `.psm1`, `.bat`, `.cmd`) with an actionable
+  diagnostic instead of downloading the script text as a tool binary. The
+  documented re-expression boundary remains the supported path.
 - Slim the arbitrary-code gate for registered method kinds: it reads the arbitrary-code operation bit of the validated candidate plan directly instead of re-running the adapter capability check and a second capability derivation per candidate (~58-61% of the gate's marginal planning cost on enumerated schemas, no behavior change). A permanent characterization matrix pins equivalence with the previous gate, including unregistered kinds and requirement-failing candidates.
 - For Git recipes that retain the clone root, observe the checked-out commit itself and use it for revision drift/recovery; keep opaque artifacts and managed-path outputs presence-only.
 - Schedule the existing adversarial validation CLI replay on macOS, Windows Git Bash, FreeBSD, OpenBSD, and NetBSD CI jobs; target-platform execution is reported by those runs.
@@ -9,7 +17,7 @@
 - Reject ambiguous `pkg` as a global native method alias while preserving clan-scoped `pkg_overrides` and explicitly disambiguated manager names; normalize MacPorts category-qualified requests against bare inventory entries and fail closed on incomplete observation output.
 - Track the configured asdf mise backend in resolved source identity and verify observations within that backend namespace.
 - Move the complete host-fact gathering boundary, including the deprecated `DEPENGINE_DETECT_SCRIPT` override, into `internal/platform`; document explicit retirement gates for that override and for legacy lock v1 compatibility.
-- Clarify that `depengine update` writes v2 only when every tool has an immutable resolved identity: the command description, the failure hint, README, compatibility status, man page, and roadmap now state that a native package name plus presence-only check is not a version pin, so native-only schemas can fail without writing a partial lock; cover `why`'s effective native package formatting with tests.
+- Clarify that `depengine update` writes v2 only when every tool has an immutable resolved identity: the command description, the failure hint, README, compatibility status, man page, and roadmap now state that a native package name plus presence-only check is not a version pin, so native-only schemas use the documented v1 fallback rather than writing a partial lock; cover `why`'s effective native package formatting with tests.
 - Clarify trust warnings for automatic checksums: unsigned sidecars verify artifact integrity but do not authenticate the hash source; GPG-authenticated sidecars are classified separately. `why` filters schema warnings to its selected tool; other project commands retain relevant diagnostics.
 - Validate effective GitHub distribution integrity after schema/manifest merge while preserving `validate --format json`; classify detached-signature verification failures as terminal, compute preflight elevation only from host-compatible methods and their effective privileged targets.
 - Allow explicitly opted-in Windows `.exe` GitHub/HTTP assets as raw payloads only; installer execution remains fail-closed.

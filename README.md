@@ -150,9 +150,11 @@ to Homebrew; MacPorts is an explicit alternative with examples in the
 
 `depengine.lock` v2 stores the immutable projection of each selected resolved
 install plan. `depengine update` fails instead of writing a partial lock when a
-manager cannot expose a concrete version, revision, digest, checksummed artifact,
-or required Git-backed source revision. A native package name and presence-only
-check are not a version pin, so native-only schemas may also fail this update.
+non-native manager cannot expose a concrete version, revision, digest,
+checksummed artifact, or required Git-backed source revision. A native package
+name and presence-only check are not a version pin, so when native methods are
+the only unpinnable tools the update keeps or refreshes the legacy v1 lock and
+warns which tools blocked v2; it never downgrades an existing v2 lock.
 `install --frozen-lockfile` and
 `upgrade` replay that pinned plan and reject schema intent or resolved identity
 drift; they do not re-resolve mutable selectors to fill gaps. For tracked tools

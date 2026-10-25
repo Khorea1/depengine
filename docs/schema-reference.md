@@ -746,7 +746,9 @@ methods.
 
 One-line syntax for every supported method. All accept `when` (see
 [Platform targeting](#platform-targeting)); methods with richer configuration
-are described above or alongside their examples.
+are described above or alongside their examples. `http` and `github` reject
+installer-script payloads (`.sh`, `.bash`, `.zsh`, `.ksh`, `.ps1`, `.psm1`,
+`.bat`, `.cmd`); declare the underlying artifact or a native package instead.
 
 | Method | What it installs | Example |
 |--------|-------------------|---------|
@@ -839,11 +841,11 @@ Hooks are transition callbacks, not managed installation methods. Running an
 upstream installer such as `curl ... | sh` or `irm ... | iex` from a hook does
 not tell depengine which files the script installed, how to observe them, or
 how to remove or roll them back. Likewise, `http` and `github` methods download
-artifacts; supplying an installer-script URL downloads the script without
-executing it. For a tool distributed this way, declare a supported native
-package or the underlying managed HTTP/GitHub binary or archive with explicit
-paths and checksum verification where available. See
-[Support boundaries](support-boundary.md).
+artifacts but never execute them; an installer-script URL is rejected during
+validation instead of installing the script text as the tool payload. For a
+tool distributed this way, declare a supported native package or the underlying
+managed HTTP/GitHub binary or archive with explicit paths and checksum
+verification where available. See [Support boundaries](support-boundary.md).
 
 When a hook belongs to one install method, put it inside that method table. It
 then cannot leak to a fallback candidate:

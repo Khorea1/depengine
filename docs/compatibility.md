@@ -19,10 +19,12 @@ change to one format does not require the others to change.
 All three formats are still pre-freeze. The schema/manifest uses version `1`,
 installed state uses version `4`, and lock readers accept envelope versions `1`
 and `2`. A whole-schema `depengine update` writes v2 only when every
-non-virtual tool in the install closure has an immutable resolved identity;
-otherwise it fails closed and leaves any existing lock unchanged, so a
-native-only schema whose manager exposes only a package name cannot promote the
-lock. A profiled update without an existing v2 lock keeps the legacy v1 path.
+non-virtual tool in the install closure has an immutable resolved identity. If
+the only unpinnable tools are native methods, the update keeps or refreshes the
+legacy v1 lock and warns which tools blocked v2; any other unpinnable tool
+fails closed and leaves any existing lock unchanged. An existing v2 lock is
+never downgraded. A profiled update without an existing v2 lock keeps the
+legacy v1 path.
 None of these numbers is yet a promise that every future depengine release will
 read every file written today.
 
@@ -62,9 +64,9 @@ resolved identities, so an unknown lock version must be rejected before entries
 are consumed.
 
 Reading a lock never rewrites it. `depengine update` is the only operation
-that promotes a version `1` lock to version `2`, and only a run that resolves
-the whole schema does so; an install that rewrites the lock keeps the version
-it read.
+that promotes a version `1` lock to version `2`, and only a whole-schema run
+with complete immutable coverage does so; native-only schemas may remain on v1.
+An install that rewrites the lock keeps the version it read.
 
 A future lock migration must convert representation without re-resolving
 mutable dependencies. Re-resolution is an update, not a format migration.

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/lock"
+	"github.com/Khorea1/depengine/internal/native"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/platform"
 )
@@ -192,6 +194,59 @@ func canPersistProjection(previous *lock.Lock, profile string) bool {
 		return true
 	}
 	return profile == ""
+}
+
+// legacyNativeLockFallback reports whether a failed universal projection may
+// fall back to the legacy v1 lock. The fallback is intentionally narrow:
+//
+//   - the previous lock must not already be v2, because downgrading a v2 lock
+//     would discard immutable entries the v2 consumer requires; and
+//   - every unpinnable tool must be a native method, because native package
+//     names are the one identity class this project deliberately does not
+//     pretend to pin. Any other unpinnable method remains a hard failure.
+//
+// The returned names are sorted for stable diagnostics.
+func legacyNativeLockFallback(previous *lock.Lock, err error) ([]string, bool) {
+	if previous != nil && previous.Version == lock.CurrentVersion {
+		return nil, false
+	}
+	var unavailable *plan.LockUnavailableToolsError
+	if !errors.As(err, &unavailable) || len(unavailable.Tools) == 0 {
+		return nil, false
+	}
+	names := make([]string, 0, len(unavailable.Tools))
+	for _, tool := range unavailable.Tools {
+		if !isNativeLockMethod(tool.Method) {
+			return nil, false
+		}
+		names = append(names, tool.Tool)
+	}
+	sort.Strings(names)
+	return names, true
+}
+
+// isNativeLockMethod reports whether a selected method is backed by the native
+// adapter family. Dedicated adapters with their own version-pinning contracts
+// are excluded even when a native manager shares their name.
+func isNativeLockMethod(method string) bool {
+	if method == "native" {
+		return true
+	}
+	switch method {
+	case "winget", "scoop", "choco", "cask", "mas", "aur", "steamcmd":
+		return false
+	}
+	for _, name := range native.ManagerNames() {
+		if name == method {
+			return true
+		}
+	}
+	for _, name := range native.ManagerBinaryNames() {
+		if name == method {
+			return true
+		}
+	}
+	return false
 }
 
 func lockedArtifacts(entries []plan.LockedArtifact) []plan.Artifact {

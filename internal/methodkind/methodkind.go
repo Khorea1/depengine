@@ -183,6 +183,7 @@ var downloadArtifactContract = &artifact.Contract{
 	ArtifactFields:               []string{"url", "asset"},
 	ForbiddenExtensions:          artifact.PlatformInstallerExtensions,
 	UnsupportedArchiveExtensions: artifact.UnsupportedArchiveExtensions,
+	RejectInstallerScripts:       true,
 }
 
 var githubArtifactContract = &artifact.Contract{
@@ -191,6 +192,7 @@ var githubArtifactContract = &artifact.Contract{
 	ArtifactFields:               []string{"asset"},
 	ForbiddenExtensions:          artifact.PlatformInstallerExtensions,
 	UnsupportedArchiveExtensions: artifact.UnsupportedArchiveExtensions,
+	RejectInstallerScripts:       true,
 }
 
 var appImageArtifactContract = &artifact.Contract{

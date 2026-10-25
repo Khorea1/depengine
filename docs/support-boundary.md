@@ -22,6 +22,13 @@ Hooks, build commands, opaque vendor installers, and similar escape hatches are
 less observable. depengine cannot infer complete ownership, rollback behavior,
 or desired state from an arbitrary command.
 
+Installer scripts are outside the managed method model. `http` and `github`
+download payloads but never execute them, so a `.sh`, `.ps1`, `.bat`, or
+similar installer-script URL is rejected before planning. Declare a native
+package or the underlying managed artifact instead. Running such a script from
+a hook remains possible only with the explicit arbitrary-code authorization,
+but it provides no observation or removal semantics.
+
 ## Reproducibility
 
 New `depengine.lock` files use format v2; existing v1 locks remain readable.
@@ -52,9 +59,12 @@ alone; retained checkouts continue to compare their actual HEAD.
 
 Lock v1 is compatibility-only. New capabilities must not extend its selector
 model. A whole-schema update migrates a readable v1 lock only when it can prove
-complete v2 install-closure coverage. If any selected tool lacks an immutable identity, the
-update fails closed and preserves the existing lock; a profiled update may
-preserve v1 when it cannot prove a complete projection.
+complete v2 install-closure coverage. When the only tools that lack an immutable
+identity are native methods, the update refreshes and keeps the v1 lock and
+warns which tools blocked v2; it never writes a partial v2 projection. Any
+other unpinnable method, or an existing v2 lock that would have to be
+downgraded, remains a hard failure. A profiled update may preserve v1 when it
+cannot prove a complete projection.
 
 The legacy writer/preservation path can be removed once every profiled update
 either produces a complete v2 projection or fails and requires a whole-schema
@@ -68,16 +78,20 @@ do not migrate. A whole-schema `depengine update` is an explicit resolution
 operation; any future format-only migration must be representation-only.
 
 Generation is all-or-nothing. A whole-schema `update` writes v2 only when every
-non-virtual tool has an immutable resolved identity. If a manager cannot expose a
-stable version, revision, digest, checksummed artifact, or required Git-backed
-source revision, `update` fails with `immutable lock identity unavailable` and
-writes no partial v2 projection; an existing v1 lock remains unchanged. Plain
-native package names and package-presence checks do not provide an immutable
-version. Native packages are v2-lockable only when a manager-specific resolver
-can return a concrete identity that its install path can replay. This closes
-silent mutable re-resolution without pretending unsupported managers are
-reproducible. Lock v1 remains readable with its method-specific behavior; a
-whole-schema update migrates it only when complete v2 coverage can be proven.
+non-virtual tool has an immutable resolved identity. If a non-native manager
+cannot expose a stable version, revision, digest, checksummed artifact, or
+required Git-backed source revision, `update` fails with `immutable lock
+identity unavailable` and writes no partial v2 projection. If the only
+unpinnable tools are native methods, `update` falls back to the legacy v1
+format, reports which tools blocked v2, and leaves the v2 projection absent; it
+never downgrades an existing v2 lock. Plain native package names and
+package-presence checks do not provide an immutable version. Native packages
+are v2-lockable only when a manager-specific resolver can return a concrete
+identity that its install path can replay. This closes silent mutable
+re-resolution without pretending unsupported managers are reproducible, while
+keeping `update` usable for native-only schemas. Lock v1 remains readable with
+its method-specific behavior; a whole-schema update migrates it only when
+complete v2 coverage can be proven.
 
 An exact package version constrains one package. A fully locked package graph
 also needs immutable identities for its dependencies.

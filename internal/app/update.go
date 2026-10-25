@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -30,7 +31,7 @@ func newUpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "update",
 		Aliases: []string{"lock"},
-		Short:   ifPT("Resolver referências mutáveis e gravar v2 somente com identidade imutável para cada ferramenta", "Resolve mutable references and write v2 only when every tool has an immutable resolved identity"),
+		Short:   ifPT("Resolver referências mutáveis e gravar v2 quando toda ferramenta tem identidade imutável; manter v1 para schemas só nativos", "Resolve mutable references and write v2 when every tool has an immutable identity; keep v1 for native-only schemas"),
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -109,7 +110,9 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	}
 	done := spinner(ctx, "Resolving lockable selectors")
 	var newLock *lock.Lock
-	if canPersistProjection(oldLock, *updateProfile) {
+	legacy := !canPersistProjection(oldLock, *updateProfile)
+	var nativeFallback []string
+	if !legacy {
 		projectionSchema := fullSchema
 		projectionSchema.Tools = make(map[string]*config.Tool, len(fullInstallTools))
 		var previousDocument plan.LockDocument
@@ -129,26 +132,34 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		}
 		document, resolveErr := resolveUniversalLockDocument(ctx, &projectionSchema, clan, facts, *updateSchema, lg, oldLock, projectionCoverage, methodsHash)
 		if resolveErr != nil {
-			done("FAIL")
-			lg.Error("resolve universal lock", "error", resolveErr)
-			return exitWithCode(2)
-		}
-		legacyTools := make(map[string]lock.ToolPin)
-		if oldLock != nil {
-			for key, pin := range oldLock.Tools {
-				legacyTools[key] = pin
+			if names, ok := legacyNativeLockFallback(oldLock, resolveErr); ok {
+				legacy = true
+				nativeFallback = names
+			} else {
+				done("FAIL")
+				lg.Error("resolve universal lock", "error", resolveErr)
+				return exitWithCode(2)
 			}
 		}
-		newLock, err = lock.NewUniversal(document, methodsHash, sourceHash, legacyTools)
-		if err != nil {
-			done("FAIL")
-			lg.Error(
-				"build universal lock", "error", err, "hint",
-				"depengine update needs an immutable identity for every selected tool; native package names alone are not version pins, so no partial v2 lock was written",
-			)
-			return exitWithCode(2)
+		if !legacy {
+			legacyTools := make(map[string]lock.ToolPin)
+			if oldLock != nil {
+				for key, pin := range oldLock.Tools {
+					legacyTools[key] = pin
+				}
+			}
+			newLock, err = lock.NewUniversal(document, methodsHash, sourceHash, legacyTools)
+			if err != nil {
+				done("FAIL")
+				lg.Error(
+					"build universal lock", "error", err, "hint",
+					"depengine update needs an immutable identity for every selected tool; native package names alone are not version pins, so no partial v2 lock was written",
+				)
+				return exitWithCode(2)
+			}
 		}
-	} else {
+	}
+	if legacy {
 		newLock, err = lock.ResolveLegacyV1(ctx, s, run.OSExecRunner{})
 		if err != nil {
 			done("FAIL")
@@ -204,6 +215,13 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 			return exitWithCode(1)
 		}
 		done(fmt.Sprintf("(%d pinned)", pinned))
+	}
+	if len(nativeFallback) > 0 {
+		lg.Warn(
+			"universal lock unavailable for native-only tools; using legacy v1 lock",
+			"tools", strings.Join(nativeFallback, ", "),
+			"hint", "native package names are not version pins; add an immutable method or a manager that exposes one to migrate this schema to v2",
+		)
 	}
 
 	// Warn about installed tools whose versions no longer match the pins

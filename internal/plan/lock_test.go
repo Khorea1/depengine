@@ -232,6 +232,39 @@ func TestBuildLockDocumentIsDeterministicAndAllOrNothing(t *testing.T) {
 	}
 }
 
+func TestBuildLockDocumentReportsEveryUnavailableTool(t *testing.T) {
+	plans := []plan.ResolvedInstallPlan{
+		plan.New("zsh", "native", true),
+		plan.New("fish", "pacman", true),
+		githubArtifactPlan(),
+	}
+	_, err := plan.BuildLockDocument(plans)
+	if !errors.Is(err, plan.ErrLockUnavailable) {
+		t.Fatalf("BuildLockDocument() error = %v, want ErrLockUnavailable", err)
+	}
+	var unavailable *plan.LockUnavailableToolsError
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("BuildLockDocument() error = %T, want *LockUnavailableToolsError", err)
+	}
+	if len(unavailable.Tools) != 2 {
+		t.Fatalf("unavailable tools = %#v, want 2", unavailable.Tools)
+	}
+	if unavailable.Tools[0].Tool != "fish" || unavailable.Tools[0].Method != "pacman" {
+		t.Fatalf("unavailable[0] = %#v, want fish/pacman", unavailable.Tools[0])
+	}
+	if unavailable.Tools[1].Tool != "zsh" || unavailable.Tools[1].Method != "native" {
+		t.Fatalf("unavailable[1] = %#v, want zsh/native", unavailable.Tools[1])
+	}
+	for _, tool := range unavailable.Tools {
+		if tool.Reason == "" {
+			t.Fatalf("unavailable tool %#v has no reason", tool)
+		}
+	}
+	if !strings.Contains(err.Error(), "fish/pacman") || !strings.Contains(err.Error(), "zsh/native") {
+		t.Fatalf("BuildLockDocument() error = %q, want both tools", err)
+	}
+}
+
 func TestLockDocumentEntryForToolReturnsCloneAndMissingResult(t *testing.T) {
 	p := githubArtifactPlan()
 	p.Sources = []plan.SourceReference{{

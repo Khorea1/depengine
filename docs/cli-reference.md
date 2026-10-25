@@ -210,7 +210,7 @@ Aliases: `rollback`.
 
 ## `depengine update [flags]`
 
-Resolve mutable references and write v2 only when every tool has an immutable resolved identity
+Resolve mutable references and write v2 when every tool has an immutable identity; keep v1 for native-only schemas
 
 Aliases: `lock`.
 
