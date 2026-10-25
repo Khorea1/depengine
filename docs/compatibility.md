@@ -25,6 +25,10 @@ legacy v1 lock and warns which tools blocked v2; any other unpinnable tool
 fails closed and leaves any existing lock unchanged. An existing v2 lock is
 never downgraded. A profiled update without an existing v2 lock keeps the
 legacy v1 path.
+ADR-008 (accepted 2026-10-25) adds a catalog layer that supplies recipes by
+name. It is not implemented yet. When it lands, catalog content identity is
+persisted only in lock v2; a v1 lock combined with catalog-sourced tools fails
+closed and requires a whole-schema `update`.
 None of these numbers is yet a promise that every future depengine release will
 read every file written today.
 

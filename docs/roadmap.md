@@ -112,6 +112,12 @@ Work on the current execution model comes before adding more installer types.
   execution) or native-manager knowledge; schema/docs metadata no longer
   depends on those branches.
 
+- [ ] Implement the accepted catalog layer: project schema as intent,
+  `Lookup(name)` recipes, recipe content identity, provenance, and the
+  host-independent candidate sequence. See
+  [`design/adr-008-catalog-layer.md`](design/adr-008-catalog-layer.md) and the
+  `dep-ixd` epic.
+
 ## P2: installer coverage
 
 - [x] Reject installer-script payloads in download-backed methods. `http` and

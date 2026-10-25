@@ -116,6 +116,12 @@ Project and personal configuration use the same grammar but different roots:
 projects declare `[tools]`; manifests declare `[packages]`. Project values win
 when the two layers conflict.
 
+ADR-008 accepts a catalog layer below the personal manifest: recipes are looked
+up by name and merged catalog → manifest → project, so the project schema still
+wins conflicting fields and a catalog cannot enable `allow_new_tools`. The
+catalog is not implemented yet; the contract, identity model and open decisions
+are recorded in [`design/adr-008-catalog-layer.md`](design/adr-008-catalog-layer.md).
+
 ## Install flow
 
 For each tool, in dependency order, the executor:

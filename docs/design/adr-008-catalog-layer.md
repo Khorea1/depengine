@@ -1,11 +1,12 @@
 # ADR-008: A catalog layer supplies recipes by name
 
-Status: Proposed
+Status: Accepted (2026-10-25). Implementation follows the phased issues under `dep-ixd`.
 
 Every decision below carries its origin. **Maintainer** means stated by the
 maintainer in session.
 **Evidence** means supported by a measurement or by code reading cited in
-Context. **Proposal** means this draft recommends it and it needs a decision.
+Context. **Proposal** means the draft recommended it; the 2026-10-25 decision
+accepts it or marks it deferred in the status table.
 Nothing here defines syntax, a binary format, or a directory layout.
 
 ## Context
@@ -71,11 +72,15 @@ recipe that omits `checksum` installs with no integrity check
 
 ## Decision
 
-1. **Ownership and precedence.** *(Maintainer, T1, T4, T5.)* The user owns the
-   catalog. Derived sources, for example Repology, are not the only way to
-   declare recipes. Precedence is user layer over (manifest plus derived
-   sources), as the merge already does. Within the lower layer, an ordered list
-   of sources applies and the first wins, with no third precedence level.
+1. **Ownership and precedence.** *(Maintainer, T1, T4, T5; clarified
+   2026-10-25.)* The user owns the catalog. Derived sources, for example
+   Repology, are not the only way to declare recipes. Precedence, highest to
+   lowest, is: project schema, personal manifest, user catalog, derived sources.
+   The project schema wins conflicting fields (the repository contract), the
+   manifest overrides catalog defaults, and within the catalog an ordered list
+   of sources applies with the first match winning. Merge order is therefore
+   catalog, manifest, project schema, before identity is computed. No catalog or
+   derived layer sets `allow_new_tools`; that remains a manifest-only switch.
 
 2. **Lookup contract.** *(Evidence.)* `Lookup(name)` returns the complete
    recipe for a name, or not found. It takes no host facts and filters nothing
@@ -84,22 +89,32 @@ recipe that omits `checksum` installs with no integrity check
    with the file system as the index. The spike showed this stays flat from
    1 000 to 100 000 recipes and returns candidates, `MethodsHash` and
    `SourceHash` equal to the eager path for the same tools at three scales.
+   A recipe is host-independent: lookup returns every declared candidate in
+   declared order and never filters or reorders by host. `when` conditions are
+   evaluated at candidate selection, not at lookup, so a lock written on one
+   host keeps the same candidate identity on another.
 
-3. **One resolution point.** *(Evidence, Proposal for the exact semantics.)*
+3. **One resolution point.** *(Evidence; accepted 2026-10-25 for the exact
+   semantics.)*
    Lookup is invoked from a single function used by both `loadProject` and the
    `validate` path. Otherwise `validate` checks less than commands execute. The
    names requested are the tools the project schema declares, which is the
    current pull semantic. Catalog, manifest and schema merge in that order,
-   before identity is computed.
+   before identity is computed. The shared function is also the parity boundary
+   between `validate` and execution: both parse, resolve and order the same
+   recipe set; only the host facts available for `when` evaluation differ. A
+   schema parsed with no host facts must still produce the same candidate
+   sequence as one parsed with host facts (see Verification).
 
-4. **Declarative-only import.** *(Maintainer, T2; Proposal for the mechanical
-   definition.)* A recipe entering from a catalog or import is rejected if any
-   of its candidates sets a lifecycle hook, sets a command-typed field, or whose
+4. **Declarative-only import.** *(Maintainer, T2; accepted 2026-10-25 for the
+   mechanical definition.)* A recipe entering from a catalog or import is
+   rejected if any of its candidates sets a lifecycle hook, sets a
+   command-typed field, or whose
    plan reports arbitrary code (`methodkind.PlanRequiresArbitraryCode`, the
    same predicate the executor gate uses). Defining "declarative" by the gate's
    own predicate keeps the import validator and the executor from drifting.
 
-5. **Identity pin.** *(Proposal; open decision D1.)* For every tool in the
+5. **Identity pin.** *(Accepted 2026-10-25; D1 resolved.)* For every tool in the
    install closure that came from a catalog, the v2 lock records a content
    digest of the recipe. Frozen validation fails on mismatch. The digest is
    computed over the canonical recipe before host placeholders are expanded,
@@ -115,14 +130,32 @@ recipe that omits `checksum` installs with no integrity check
    to the v1 index-keyed scheme, which is compatibility data and retires under
    the `dep-41b` gate.
 
-7. **Candidate budget at entry.** *(Direction from ADR-007 Consequences;
-   Proposal for the value; open decision D3.)* A per-tool candidate limit is
-   applied where recipes enter, to avoid rebuilding the flat matrix in
-   distributed form. It warns first and does not block. See open decisions for
-   the value.
+7. **Candidate budget at entry.** *(Accepted 2026-10-25; D3 resolved: warn
+   only, provisional threshold 8, revisit with the corpus in dep-ixd.13.)* A
+   per-tool candidate limit is applied where recipes enter, to avoid rebuilding
+   the flat matrix in distributed form. It warns first and does not block.
 
-8. **Provenance.** *(Proposal.)* `why --fields` shows the layer a tool's
-   recipe came from: catalog, import, manifest or schema.
+8. **Provenance.** *(Accepted 2026-10-25; central contract, not optional
+   diagnostics.)* `why --fields` shows the layer a tool's recipe came from:
+   catalog, import, manifest or schema, together with inherited and overridden
+   fields, candidates considered and excluded, the chosen adapter, and the
+   recipe identity.
+
+## Layer contract
+
+| Layer | Supplies | May set `allow_new_tools` | Precedence |
+|---|---|---|---|
+| Project schema | Intent: tools, profiles, project constraints, explicit overrides | No (field is manifest-only) | Highest |
+| Personal manifest | Operator-local installation knowledge and overrides | Yes | Above catalog |
+| User catalog | Reusable recipes consulted by name | Never | Above derived sources |
+| Derived sources | Generated hints, for example Repology | Never | Lowest |
+
+The project schema declares the top-level tools. A catalog recipe's `requires`
+is part of its dependency intent: the resolver includes those names in the
+closure and resolves each one through the catalog or a local definition. A name
+in the closure that resolves nowhere is a hard validation error, never a silent
+skip. This does not let a catalog widen the project: top-level names are still
+only those the project schema declares.
 
 ## Alternatives considered
 
@@ -147,28 +180,34 @@ recipe that omits `checksum` installs with no integrity check
 - `validate` and the install commands share one lookup path.
 - Imports cannot carry hooks or commands in v1. A declarative recipe can still
   direct an install at a repository and asset of its choosing, which the
-  arbitrary-code gate does not see (open decision D5).
+  arbitrary-code gate does not see; D5's integrity floor (no checksum rejected,
+  `:auto` flagged) is the compensating control.
+- A catalog layer cannot widen the project: top-level names remain
+  project-declared, and transitive `requires` must resolve or validation fails.
 
 ## Non-goals
 
 - No import syntax, binary format or directory layout.
 - No new language for recipes (T3, cancelled by the maintainer; reopens only if a
   real, documented manifest cannot be expressed in TOML).
-- No decision on `distributions` beyond `github` (D4).
+- No support for `distributions` beyond `github` until D4 is decided with a
+  real corpus (`dep-ixd.13`).
 - No change to `MethodsHash` or `SourceHash` semantics.
 - No change to the arbitrary-code gate.
 
-## Open decisions
+## Decision status
 
-| # | Question | Recommendation | Evidence and gaps |
+| # | Question | Decision (2026-10-25) | Evidence and gaps |
 |---|---|---|---|
-| D1 | Pin unit | Per-recipe digest over the whole recipe to verify, catalog revision only to retrieve | A whole-catalog pin is noisy at scale. The `update` behavior was verified (see Context): the lock does not cover recipe content, so `MethodsHash` and the resolved plan cannot stand in for a digest. Not measured: how many distinct recipe fields stay invisible to the plan across kinds; the field `Effects` flags are not a reliable proxy (they list `pkg` and `checksum`, which do reach the plan). |
-| D3 | Candidate budget | Warn only; provisional threshold of 8 | Planning costs about 16–20 µs per candidate with the slimmed arbitrary-code gate, on the measured machine, so cost does not bind below dozens of candidates; the limit is governance. The largest hand-written tool in the repository has 8 candidates (`neovim` in `schema.example.toml`; a research matrix has 10). 38 parseable TOML files, mostly synthetic or test fixtures: not a corpus. |
-| D4 | `distributions` beyond `github` | Undecided | No corpus. |
-| D5 | Trust root for imports | Digest pinned by the importer (decision 5) plus an integrity floor: reject recipes that omit `checksum`, flag `:auto` | `:auto` is Trust On First Use and no checksum means no integrity check. Signature support and the position once v2 allows hooks are not decided. |
-| D7 | Catalog layers and `allow_new_tools`; transitive `requires` | A catalog layer never sets `allow_new_tools`; names are only those the project declares | With `allow_new_tools` the manifest keeps every tool, which has no pull-by-name meaning. Not verified: how `requires` of a catalog tool not declared in the schema is treated. |
+| D1 | Pin unit | **Resolved:** per-recipe digest over the whole recipe to verify; catalog revision only to retrieve | A whole-catalog pin is noisy at scale. The `update` behavior was verified (see Context): the lock does not cover recipe content, so `MethodsHash` and the resolved plan cannot stand in for a digest. How many distinct recipe fields stay invisible to the plan across kinds is still unmeasured; the field `Effects` flags are not a reliable proxy. |
+| D3 | Candidate budget | **Resolved:** warn only; provisional threshold of 8, revisit with the corpus in `dep-ixd.13` | Planning costs about 16–20 µs per candidate with the slimmed arbitrary-code gate, so cost does not bind below dozens of candidates; the limit is governance. The largest hand-written tool in the repository has 8 candidates. 38 parseable TOML files, mostly synthetic or test fixtures: not a corpus. |
+| D4 | `distributions` beyond `github` | **Deferred:** no support until a real corpus (`dep-ixd.13`) justifies a decision | No corpus. A schema using another value remains out of contract. |
+| D5 | Trust root for imports | **Resolved:** digest pinned by the importer (decision 5) plus an integrity floor: reject recipes that omit `checksum`, flag `:auto` | `:auto` is Trust On First Use and no checksum means no integrity check. Signature support and the position once v2 allows hooks remain deferred. |
+| D7 | Catalog layers and `allow_new_tools`; transitive `requires` | **Resolved:** a catalog layer never sets `allow_new_tools`; top-level names are only those the project declares; transitive `requires` resolve through the catalog and fail closed when unresolvable | With `allow_new_tools` the manifest keeps every tool, which has no pull-by-name meaning. The closure rule is stated in the layer contract above. |
 
 Resolved by evidence: **D2** (placement: decision 3) and **D6** (decision 6).
+Resolved by decision: **D1**, **D3**, **D5**, **D7**.
+Deferred: **D4** (blocked on a real recipe corpus).
 
 ## Prerequisite
 
@@ -192,3 +231,10 @@ host-independently.
 - A frozen install fails when a catalog recipe's digest differs from the lock.
 - A recipe with a hook, a command-typed field or an arbitrary-code plan is
   rejected at import, with a fixture for each.
+- A schema parsed with no host facts and with host facts yields the same
+  candidate sequence (config-level parity test).
+- A host placeholder in an order selector is rejected before expansion
+  (`internal/config/order_selector_placeholder_test.go`), closing the ADR-007
+  prerequisite.
+- Catalog, manifest and project schema merge in that order; the project schema
+  wins conflicting fields and `allow_new_tools` (contract test).
