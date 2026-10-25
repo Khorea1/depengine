@@ -201,6 +201,7 @@ func cloneMethod(method *MethodCandidate) *MethodCandidate {
 	if method.When != nil {
 		out.When = cloneCondition(method.When)
 	}
+	out.SelectedDistributionWhen = cloneCondition(method.SelectedDistributionWhen)
 	return &out
 }
 
@@ -372,12 +373,16 @@ type MethodCandidate struct {
 	RebootRequired     bool `json:"-"`
 	OwnsArchivePayload bool `json:"-"`
 	When               *Condition
-	Config             map[string]any
-	Err                error
-	ArchMap            map[string]string
-	OSMap              map[string]string
-	Requires           []string
-	Sources            []Source
+	// SelectedDistributionWhen preserves the selected distribution condition separately
+	// from method-level When for downstream runtime policy checks. It is transient
+	// selection metadata and is never serialized or stored in Config.
+	SelectedDistributionWhen *Condition `json:"-"`
+	Config                   map[string]any
+	Err                      error
+	ArchMap                  map[string]string
+	OSMap                    map[string]string
+	Requires                 []string
+	Sources                  []Source
 	// Distributions holds optional per-host payload variants for methods
 	// whose upstream publishes different artifacts per platform (see
 	// docs/specs/github-distributions.md). Nil means no specialization.

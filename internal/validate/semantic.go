@@ -129,6 +129,14 @@ func validateSourceLikeURLs(toolName string, methodIdx int, mc *config.MethodCan
 }
 
 func validateArtifactContract(toolName string, methodIdx int, mc *config.MethodCandidate, contract *artifact.Contract, r *Result) {
+	allowedForbiddenExtensions := []string(nil)
+	if portableExecutableEnabled(mc) {
+		if !validPortableExecutableConfig(mc, contract.ArtifactFields) {
+			r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, methodIdx, "portable_executable"), Message: "portable_executable requires a .exe artifact, binary ending in .exe, and when.os = [\"windows\"]"})
+		} else {
+			allowedForbiddenExtensions = []string{".exe"}
+		}
+	}
 	validateAuthenticatedArtifactURLs(toolName, methodIdx, mc, r)
 	for _, field := range contract.URLFields {
 		raw, _ := mc.Config[field].(string)
@@ -156,7 +164,7 @@ func validateArtifactContract(toolName string, methodIdx int, mc *config.MethodC
 		if raw == "" {
 			continue
 		}
-		if err := contract.ValidateArtifact(raw); err != nil {
+		if err := contract.ValidateArtifactAllowing(raw, allowedForbiddenExtensions); err != nil {
 			message := fmt.Sprintf("%s: %v", mc.Kind, err)
 			var forbidden *artifact.ForbiddenExtensionError
 			if errors.As(err, &forbidden) {
@@ -170,6 +178,74 @@ func validateArtifactContract(toolName string, methodIdx int, mc *config.MethodC
 			r.Add(ValidationError{Code: ErrInvalidValue, Field: fieldPath(toolName, methodIdx, field), Message: message})
 		}
 	}
+}
+func portableExecutableEnabled(mc *config.MethodCandidate) bool {
+	value, _ := mc.Config["portable_executable"].(bool)
+	return value
+}
+
+func validPortableExecutableConfig(mc *config.MethodCandidate, artifactFields []string) bool {
+	if mc == nil || mc.Config == nil {
+		return false
+	}
+	binary, _ := mc.Config["binary"].(string)
+	if len(mc.Distributions) == 0 {
+		return conditionTargetsOnlyWindows(mc.When) && strings.HasSuffix(strings.ToLower(binary), ".exe") && configArtifactIsExe(mc.Config, artifactFields)
+	}
+	// A shared GitHub method can provide a Windows-only executable distribution
+	// alongside archive distributions for other hosts. Validate the effective
+	// Windows selector (including inherited base fields), not the common selector.
+	windowsDistribution := false
+	for i := range mc.Distributions {
+		d := &mc.Distributions[i]
+		if !conditionTargetsOnlyWindows(d.When) {
+			continue
+		}
+		windowsDistribution = true
+		effectiveBinary := binary
+		if d.HasBinary {
+			effectiveBinary = d.Binary
+		}
+		if !strings.HasSuffix(strings.ToLower(effectiveBinary), ".exe") {
+			return false
+		}
+		effective := make(map[string]any, len(mc.Config))
+		for key, value := range mc.Config {
+			effective[key] = value
+		}
+		if d.HasAsset {
+			if d.Asset.Regex != "" {
+				effective["asset"] = map[string]any{"regex": d.Asset.Regex}
+			} else {
+				effective["asset"] = d.Asset.Template
+			}
+		}
+		if !configArtifactIsExe(effective, artifactFields) {
+			return false
+		}
+	}
+	return windowsDistribution
+}
+
+func conditionTargetsOnlyWindows(when *config.Condition) bool {
+	return when != nil && len(when.OS) == 1 && strings.EqualFold(when.OS[0], "windows")
+}
+
+func configArtifactIsExe(values map[string]any, artifactFields []string) bool {
+	for _, field := range artifactFields {
+		switch value := values[field].(type) {
+		case string:
+			if artifact.Extension(value, []string{".exe"}) == ".exe" {
+				return true
+			}
+		case map[string]any:
+			regex, _ := value["regex"].(string)
+			if strings.HasSuffix(strings.ToLower(regex), `\.exe$`) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func validateAuthenticatedArtifactURLs(toolName string, methodIdx int, mc *config.MethodCandidate, r *Result) {

@@ -12,6 +12,7 @@
 - Clarify that `depengine update` writes v2 only when every tool has an immutable resolved identity: the command description, the failure hint, README, compatibility status, man page, and roadmap now state that a native package name plus presence-only check is not a version pin, so native-only schemas can fail without writing a partial lock; cover `why`'s effective native package formatting with tests.
 - Clarify trust warnings for automatic checksums: unsigned sidecars verify artifact integrity but do not authenticate the hash source; GPG-authenticated sidecars are classified separately. `why` filters schema warnings to its selected tool; other project commands retain relevant diagnostics.
 - Validate effective GitHub distribution integrity after schema/manifest merge while preserving `validate --format json`; classify detached-signature verification failures as terminal, compute preflight elevation only from host-compatible methods and their effective privileged targets.
+- Allow explicitly opted-in Windows `.exe` GitHub/HTTP assets as raw payloads only; installer execution remains fail-closed.
 - Package-manager Observe probes for npm, Bun, pipx, pnpm, Yarn, Composer, uv, and Gem distinguish confirmed presence or absence from unknown or broken CLI output, preserving reported installed versions on drift.
 - Pin golangci-lint v2.14.0 in CI for Go 1.27 export-data compatibility, verified against Go 1.27.2.
 - Rehydrate transient target architecture and OS from current host facts when resolving state-restored candidates for removal or undo; do not persist host-specific selection metadata.
@@ -26,7 +27,9 @@
 - Serialize concurrent hook and source-preparation progress output and include the owning tool name.
 - Detached GPG signatures now require an explicit `signing_key`; verification rejects missing signer identity instead of trusting any key in the ambient keyring.
 
-- Reject HTTP/GitHub `.deb` lifecycles before download or mutation: package identity is not persisted for safe observation and removal.
+- Add dedicated `deb` method for verified package download and dpkg install/query/removal using recorded package, version, and architecture identity.
+- Keep generic HTTP/GitHub `.deb` install lifecycles rejected; only dedicated `deb` owns package identity and removal.
+- Parse labeled `dpkg-deb` metadata without losing epoch versions, and refuse removal without a recorded package version.
 - Reject unsafe HTTP/GitHub `binary` paths before planning or filesystem access.
 - Persist HTTP archive payload ownership in state and in a payload-local ownership marker; replacement/removal requires both durable ownership intent and matching filesystem evidence, and arbitrary `extract_to` paths are never treated as exclusive.
 - Route Scoop package lifecycle and bucket source operations through one Scoop-local semantic runtime boundary; official CLI decoding is runtime-owned and capability checks precede requested mutations, without changing manifest method identity.

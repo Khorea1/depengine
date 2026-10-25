@@ -26,5 +26,9 @@ func applyMethodOperations(p *plan.ResolvedInstallPlan, method *config.MethodCan
 			})
 		}
 	}
-	p.Operations = append(p.Operations, plan.Operation{Kind: "install", Effect: plan.EffectMutation})
+	install := plan.Operation{Kind: "install", Effect: plan.EffectMutation}
+	if method.Kind == "deb" {
+		install.ArbitraryCode = true
+	}
+	p.Operations = append(p.Operations, install)
 }

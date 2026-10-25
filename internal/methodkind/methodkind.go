@@ -147,8 +147,9 @@ var artifactFields = map[string]Field{
 }
 
 var downloadFields = fields(artifactFields, map[string]Field{
-	"extract_to":       {Type: String, Effects: EffectExecute | EffectVerify},
-	"binary":           {Type: String, Effects: EffectExecute | EffectVerify},
+	"extract_to": {Type: String, Effects: EffectExecute | EffectVerify},
+	"binary":     {Type: String, Effects: EffectExecute | EffectVerify},
+
 	"sudo_required":    {Type: Boolean, Effects: EffectExecute},
 	"strip_components": {Type: Integer, Effects: EffectValidate | EffectExecute},
 	"entrypoints":      {Type: StringStringMap, Effects: EffectExecute | EffectVerify},
@@ -229,6 +230,13 @@ var dmgArtifactContract = &artifact.Contract{
 	AllowedSchemes:     []string{"http", "https"},
 	ArtifactFields:     []string{"url", "asset"},
 	RequiredExtensions: []string{".dmg"},
+}
+
+var debArtifactContract = &artifact.Contract{
+	URLFields:          []string{"url", "checksum_url", "signature_url"},
+	AllowedSchemes:     []string{"http", "https"},
+	ArtifactFields:     []string{"url", "asset"},
+	RequiredExtensions: []string{".deb"},
 }
 
 // Contracts is the single source of truth for method kinds, ordering and
@@ -397,14 +405,16 @@ var Contracts = finalizeContracts([]Contract{
 		"signing_key":    {"signature_path"},
 	}, CanRemove: true, Checksum: localChecksumContract},
 	{Kind: "github", DefaultOrder: 35, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(withoutField(downloadFields, "url"), map[string]Field{
-		"repo":       {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
-		"asset":      {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
-		"release":    {Type: String, Effects: EffectResolve},
-		"branch":     {Type: String, NonEmpty: true, Effects: EffectResolve},
-		"scope":      artifactScopeField["scope"],
-		"secret_ref": {Type: SecretRef, Effects: EffectResolve | EffectExecute},
+		"portable_executable": {Type: Boolean, Effects: EffectValidate | EffectExecute | EffectVerify},
+		"repo":                {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"asset":               {Type: String, Required: true, NonEmpty: true, Effects: EffectResolve | EffectExecute},
+		"release":             {Type: String, Effects: EffectResolve},
+		"branch":              {Type: String, NonEmpty: true, Effects: EffectResolve},
+		"scope":               artifactScopeField["scope"],
+		"secret_ref":          {Type: SecretRef, Effects: EffectResolve | EffectExecute},
 	}), Requires: map[string][]string{"signature_url": {"signing_key"}}, SourceAlternatives: [][]string{{"repo", "asset"}}, Artifact: githubArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"release", "branch"}}, CanRemove: true, DistributableFields: []string{"asset", "checksum", "checksum_url", "checksum_file_format", "signature_url", "binary", "entrypoints", "strip_components", "extract_to"}},
-	{Kind: "http", DefaultOrder: 36, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(downloadFields, artifactScopeField, httpBearerSecretFields), Requires: httpDownloadRequirements, SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract, Checksum: remoteChecksumContract},
+	{Kind: "http", DefaultOrder: 36, Capabilities: CapabilityScope, Scopes: artifactScopeContract, Fields: fields(downloadFields, map[string]Field{"portable_executable": {Type: Boolean, Effects: EffectValidate | EffectExecute | EffectVerify}}, artifactScopeField, httpBearerSecretFields), Requires: httpDownloadRequirements, SourceAlternatives: artifactSourceAlternatives, CanRemove: true, Artifact: downloadArtifactContract, Checksum: remoteChecksumContract},
+	{Kind: "deb", Capabilities: CapabilityArbitraryCode | CapabilityExactVersion | CapabilityArchitecture, Fields: fields(artifactFields, pkgField, httpBearerSecretFields, map[string]Field{"version": {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute | EffectVerify}, "architecture": {Type: String, NonEmpty: true, Effects: EffectResolve | EffectExecute | EffectVerify}}), Requires: httpDownloadRequirements, SourceAlternatives: artifactSourceAlternatives, Artifact: debArtifactContract, Checksum: remoteChecksumContract, MutuallyExclusive: [][]string{{"url", "repo"}, {"release", "branch"}}, CanRemove: true},
 	{Kind: "msi", DefaultOrder: 37, Fields: fields(artifactFields, httpBearerSecretFields, map[string]Field{
 		"product_name": {Type: String, Required: true, NonEmpty: true, Effects: EffectVerify | EffectExecute},
 		"publisher":    {Type: String, Effects: EffectVerify | EffectExecute},

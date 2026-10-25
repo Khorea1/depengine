@@ -89,6 +89,7 @@ func SpecializeDistribution(method *MethodCandidate, facts *platform.Facts) (*Me
 func applyDistribution(method *MethodCandidate, d *Distribution) *MethodCandidate {
 	out := cloneMethod(method)
 	out.Distributions = nil
+	out.SelectedDistributionWhen = cloneCondition(d.When)
 	set := func(key string, value any) {
 		if out.Config == nil {
 			out.Config = map[string]any{}

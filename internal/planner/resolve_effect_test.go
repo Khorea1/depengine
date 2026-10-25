@@ -26,6 +26,8 @@ type resolveEffectExclusion struct {
 
 var resolveEffectExclusions = map[string]resolveEffectExclusion{
 	"github.release":       {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
+	"deb.release":          {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
+	"deb.branch":           {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
 	"http.release":         {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
 	"msi.release":          {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
 	"exe.release":          {"resolved by the runtime download selector", "internal/httpdownload/resolver.go"},
@@ -83,7 +85,7 @@ func TestResolveEffectFieldsMoveStaticIntent(t *testing.T) {
 
 			build := func(value any) (any, error) {
 				cfg, _ := contracttest.BaseConfig(contract.Kind, name)
-				if (contract.Kind == "http" || contract.Kind == "appimage" || contract.Kind == "android" || contract.Kind == "msi" || contract.Kind == "exe" || contract.Kind == "msix" || contract.Kind == "appx" || contract.Kind == "macpkg" || contract.Kind == "dmg") && (name == "secret_ref" || name == "checksum_secret_ref" || name == "signature_secret_ref") || (contract.Kind == "github" || contract.Kind == "git" || contract.Kind == "cargo" || contract.Kind == "container") && name == "secret_ref" {
+				if (contract.Kind == "http" || contract.Kind == "deb" || contract.Kind == "appimage" || contract.Kind == "android" || contract.Kind == "msi" || contract.Kind == "exe" || contract.Kind == "msix" || contract.Kind == "appx" || contract.Kind == "macpkg" || contract.Kind == "dmg") && (name == "secret_ref" || name == "checksum_secret_ref" || name == "signature_secret_ref") || (contract.Kind == "github" || contract.Kind == "git" || contract.Kind == "cargo" || contract.Kind == "container") && name == "secret_ref" {
 					ref := value.(map[string]any)
 					method := &config.MethodCandidate{
 						Kind:   contract.Kind,

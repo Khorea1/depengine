@@ -14,7 +14,9 @@ import (
 // silently acquire validation semantics without a concrete parser probe.
 func TestValidateEffectFieldsHaveBehaviorProbes(t *testing.T) {
 	bases := map[string]string{
-		"http":      `url = "https://example.test/demo.tar.gz"`,
+		"http": `url = "https://example.test/demo.tar.gz"`,
+		"deb": `url = "https://example.test/demo.deb"
+pkg = "demo"`,
 		"github":    "repo = \"example/demo\"\nasset = \"demo.tar.gz\"",
 		"appimage":  `url = "https://example.test/demo.AppImage"`,
 		"android":   `url = "https://example.test/demo.apk"`,
@@ -41,6 +43,7 @@ func TestValidateEffectFieldsHaveBehaviorProbes(t *testing.T) {
 		"local.checksum":       `checksum = 42`,
 		"local.signature_path": `signature_path = ""`,
 		"local.signing_key":    `signing_key = 42`,
+		"portable_executable":  `portable_executable = "true"`,
 	}
 	used := make(map[string]bool, len(probes))
 	for _, contract := range methodkind.Contracts {

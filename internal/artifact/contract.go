@@ -156,11 +156,26 @@ func (e *RequiredExtensionError) Error() string {
 // It is representation-agnostic: callers may pass a URL or an asset filename;
 // query strings and fragments are ignored by Extension.
 func (c *Contract) ValidateArtifact(raw string) error {
+	return c.ValidateArtifactAllowing(raw, nil)
+}
+
+// ValidateArtifactAllowing enforces the contract while permitting a caller-
+// authorized subset of otherwise-forbidden installer extensions.
+func (c *Contract) ValidateArtifactAllowing(raw string, allowedForbiddenExtensions []string) error {
 	if c == nil || raw == "" {
 		return nil
 	}
 	if ext := Extension(raw, c.ForbiddenExtensions); ext != "" {
-		return &ForbiddenExtensionError{Extension: ext}
+		allowed := false
+		for _, candidate := range allowedForbiddenExtensions {
+			if strings.EqualFold(candidate, ext) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return &ForbiddenExtensionError{Extension: ext}
+		}
 	}
 	if Extension(raw, SupportedArchiveExtensions) == "" {
 		if ext := Extension(raw, c.UnsupportedArchiveExtensions); ext != "" {
