@@ -188,6 +188,19 @@ mise que pertence a #163; ela foi removida por `rebase -i` e o restante da
 CI do PR apontou um defeito real de teste, corrigido em `9ef287f`: a asserção do
 install de `.deb` exigia prefixo `sudo`, que `run.RunElevated` só aplica onde a
 plataforma precisa, então FreeBSD/NetBSD/OpenBSD/Windows falhavam com o adapter
-correto. O teste agora compara o argv efetivo. Estado: `fix/front-a-rebased`
-enviada ao `origin`, PR #165 com CI verde (exceto o runner NetBSD, lento).
-Falta apenas mesclar o PR e então remover a worktree e as duas branches locais.
+correto. O teste agora compara o argv efetivo.
+
+### Resultado final da rodada
+
+O push direto para `master` é bloqueado por regra do repositório, então o commit
+de docs entrou pelo PR #166 (`59cf393`) e as features pelo PR #165 (`102c408`,
+squash), com CI verde em 10 jobs (Linux, macOS, Android, FreeBSD, OpenBSD,
+NetBSD, Windows, integração, crossplatform). `master` local foi rebasado sobre
+`origin/master` (o commit local redundante foi descartado pelo próprio git).
+Worktrees `.worktrees/fix-front-a-artifacts` e `.worktrees/fix-beads-front-b`
+removidas; branches locais `fix/front-a-artifacts`, `fix/front-a-rebased`,
+`fix/lock-docs-immutable-identity` e `fix/beads-front-b` apagadas; refs remotos
+dos dois PRs removidos após o merge. `master` local está árvore-idêntico ao tip
+testeado (`9ef287f`). Estado final: `master`, `dev-notes` (commits ainda não empurrados) e
+`spike/cases-expansion` (experimento deliberado) — única worktree restante de
+trabalho pendente.
