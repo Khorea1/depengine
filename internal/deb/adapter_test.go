@@ -220,12 +220,31 @@ func TestInstallResolvedInstallsMatchingArtifactAndPersistsIdentity(t *testing.T
 	if method.Config["pkg"] != "delta" || method.Config["version"] != "1:0.18.2-1" || method.Config["architecture"] != "amd64" {
 		t.Fatalf("persisted method identity = %#v", method.Config)
 	}
-	if len(runner.Calls) != 2 || runner.Calls[0].Name != "dpkg-deb" || runner.Calls[1].Name != "sudo" {
+	if len(runner.Calls) != 2 || runner.Calls[0].Name != "dpkg-deb" {
 		t.Fatalf("calls = %#v; want metadata inspection followed by install", runner.Calls)
 	}
-	if strings.Join(runner.Calls[0].Args, " ") == "" || runner.Calls[1].Args[0] != "dpkg" || runner.Calls[1].Args[1] != "--install" || runner.Calls[1].Args[2] != "--" {
+	stagedRead := false
+	for _, arg := range runner.Calls[0].Args {
+		if strings.HasSuffix(arg, "package.deb") {
+			stagedRead = true
+		}
+	}
+	if !stagedRead {
+		t.Fatalf("metadata inspection did not read the staged package: %#v", runner.Calls[0])
+	}
+	install := effectiveArgv(runner.Calls[1])
+	if len(install) != 4 || install[0] != "dpkg" || install[1] != "--install" || install[2] != "--" || !strings.HasSuffix(install[3], "package.deb") {
 		t.Fatalf("unexpected dpkg invocation: %#v", runner.Calls[1])
 	}
+}
+
+// effectiveArgv returns the command actually executed, dropping the elevation
+// prefix that RunElevated adds only where the platform needs it.
+func effectiveArgv(call run.FakeCall) []string {
+	if call.Name == "sudo" {
+		return call.Args
+	}
+	return append([]string{call.Name}, call.Args...)
 }
 
 func TestInstallResolvedRejectsArtifactIdentityMismatchBeforeDpkg(t *testing.T) {
