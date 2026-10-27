@@ -292,9 +292,9 @@ Aliases: `explain`.
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
-| `--fields` | local | `false` | show field-level provenance |
+| `--fields` | local | `false` | show the full audit: recipe identity, field provenance, selected candidate and catalog-update impact |
 | `-h, --help` | local | `false` | help for why |
-| `--json` | local | `false` | JSON output |
+| `--json` | local | `false` | JSON audit report: tool, recipe identity, field provenance, candidates and catalog-update impact |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
 | `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
@@ -305,6 +305,44 @@ Aliases: `explain`.
 `status` and `sbom` accept a missing `depengine.lock` as normal, but fail with a runtime error when an existing lockfile cannot be read or is invalid. `status` still degrades to state-only reporting when the schema cannot be loaded, provided its lockfile is readable.
 
 For non-frozen installs using a missing or v1 lockfile, depengine resolves and validates the legacy lock before executing tools. If resolution fails, installation stops; the successful preflight identity is the one saved after execution.
+
+## `why` audit output
+
+`why --fields` and `why --json` render the same audit report. The text view
+prints it after the candidate list; the JSON view is the only stdout payload.
+The report answers, for one tool:
+
+- which catalog recipe supplied it (winning root index, root path, recipe path,
+  content digest) or `none` when the tool is project-only;
+- which layer supplies each field (`catalog`, `manifest`, `schema` or `both`
+  when every declaring layer still contributes), the effective value, and which
+declared layers were overridden;
+- every candidate considered, in executor order, with its status and a stable
+  `reason_code`;
+- the candidate that would be selected and why;
+- what a catalog update would still change, and which fields are shielded by a
+  more specific layer.
+
+`why --json` emits one object with these stable keys:
+
+| Key | Type | Meaning |
+|---|---|---|
+| `tool` | string | Requested tool name |
+| `recipe` | object or absent | `name`, `layer`, `root_index`, `root`, `path`, `digest` |
+| `field_provenance` | array | `field`, `origin`, `effective`, `layers`, `overridden` |
+| `catalog_update` | object or absent | `affects_tool`, `fields`, `overridden_fields` |
+| `candidates` | array | `kind`, `label`, `candidate`, `candidate_known`, `status`, `reason_code`, `detail`, `intent`, `plan_intent` |
+| `selected` | object or absent | `kind`, `label`, `candidate`, `status`, `reason` |
+
+`reason_code` is the machine-readable class of a candidate outcome and is never
+derived from `detail` text: `when_not_matched`, `no_distribution`,
+`capability_mismatch`, `no_adapter`, `adapter_unavailable`, `package_not_found`,
+`host_incompatible`, `plan_resolution_failed`, `specialization_failed`,
+`verify_failed`, `state_unresolved`, `source_resolution_failed`,
+`source_probe_failed`, `blocked_by_terminal_error`, `method_only` and `virtual`.
+Secret references are reported as `<secret reference>` and credential-bearing
+values stay redacted.
+
 ## Exit codes
 
 | Code | Meaning |

@@ -39,13 +39,30 @@ var MethodConfigFieldStrategy = map[string]MergeStrategy{
 	"binary":        MergeOverwrite,
 }
 
-// FieldSource describes which layer contributed to a field's value.
+// Provenance layer names. The project schema has the highest precedence, the
+// personal manifest sits above the catalog, and the catalog is the lowest
+// declarative layer. CombinedSource marks a field whose effective value is the
+// merge of every declaring layer rather than the value of a single layer.
+const (
+	LayerSchema    = "schema"
+	LayerManifest  = "manifest"
+	LayerCatalog   = "catalog"
+	CombinedSource = "both"
+)
+
+// FieldSource describes which layer contributed to a field's value. Source is
+// the effective origin at the point this entry was recorded; because entries
+// accumulate across merges, the last entry for a field carries the final
+// origin. Values keeps the value every declaring layer contributed and
+// Overridden lists declared layers whose value the effective value replaced.
 type FieldSource struct {
-	Field    string `json:"field"`
-	Source   string `json:"source"` // "schema", "manifest", "both"
-	Schema   any    `json:"schema,omitempty"`
-	Manifest any    `json:"manifest,omitempty"`
-	Merged   any    `json:"merged"`
+	Field      string         `json:"field"`
+	Source     string         `json:"source"` // "schema", "manifest", "catalog" or "both"
+	Schema     any            `json:"schema,omitempty"`
+	Manifest   any            `json:"manifest,omitempty"`
+	Merged     any            `json:"merged"`
+	Values     map[string]any `json:"values,omitempty"`
+	Overridden []string       `json:"overridden,omitempty"`
 }
 
 // provenanceCollector accumulates FieldSource entries during a merge.
@@ -54,16 +71,18 @@ type provenanceCollector struct {
 	sources  []FieldSource
 }
 
-func (pc *provenanceCollector) record(field, source string, schemaVal, manifestVal, mergedVal any) {
+func (pc *provenanceCollector) record(field, source string, schemaVal, manifestVal, mergedVal any, values map[string]any, overridden []string) {
 	if pc == nil {
 		return
 	}
 	pc.sources = append(pc.sources, FieldSource{
-		Field:    field,
-		Source:   source,
-		Schema:   schemaVal,
-		Manifest: manifestVal,
-		Merged:   mergedVal,
+		Field:      field,
+		Source:     source,
+		Schema:     schemaVal,
+		Manifest:   manifestVal,
+		Merged:     mergedVal,
+		Values:     values,
+		Overridden: overridden,
 	})
 }
 

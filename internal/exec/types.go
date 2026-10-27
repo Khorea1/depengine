@@ -83,7 +83,8 @@ type MethodAttempt struct {
 	Kind       string
 	Label      string                    // custom candidate label ("", when unlabeled)
 	Status     string                    // "skip_when" | "skip_unavailable" | "skip_policy" | "skip_capability" | "skip_no_distribution" | "skip_already" | "success" | "failed" | "virtual"
-	Error      string                    // explanation/reason for explain and failures
+	ReasonCode string                    // stable machine-readable class of this outcome; see Reason* constants
+	Error      string                    // human explanation for explain and failures
 	Intent     map[string]string         // normalized, non-secret identity fields for explain/why
 	PlanIntent *plan.ResolvedInstallPlan // latest candidate plan at the planning/execution boundary reached by this attempt
 
@@ -94,6 +95,27 @@ type MethodAttempt struct {
 	Candidate      int  `json:"-"`
 	CandidateKnown bool `json:"-"`
 }
+
+// Stable reason codes attached to MethodAttempt. Consumers classify an attempt
+// by ReasonCode, never by parsing Error text.
+const (
+	ReasonVirtual              = "virtual"
+	ReasonCapabilityMismatch   = "capability_mismatch"
+	ReasonWhenNotMatched       = "when_not_matched"
+	ReasonNoDistribution       = "no_distribution"
+	ReasonSpecializationFailed = "specialization_failed"
+	ReasonNoAdapter            = "no_adapter"
+	ReasonAdapterUnavailable   = "adapter_unavailable"
+	ReasonPlanFailed           = "plan_resolution_failed"
+	ReasonHostIncompatible     = "host_incompatible"
+	ReasonVerifyFailed         = "verify_failed"
+	ReasonStateUnresolved      = "state_unresolved"
+	ReasonSourceFailed         = "source_resolution_failed"
+	ReasonSourceProbeFailed    = "source_probe_failed"
+	ReasonPackageNotFound      = "package_not_found"
+	ReasonBlockedByTerminal    = "blocked_by_terminal_error"
+	ReasonMethodOnly           = "method_only"
+)
 
 // DisplayName returns the human-facing candidate name: the custom label when
 // present, otherwise the resolved method kind. Kind always carries the

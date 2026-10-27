@@ -12,7 +12,6 @@ import (
 	"github.com/Khorea1/depengine/internal/exec"
 	"github.com/Khorea1/depengine/internal/graph"
 	"github.com/Khorea1/depengine/internal/log"
-	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/run"
 	"github.com/Khorea1/depengine/internal/term"
 	"github.com/spf13/cobra"
@@ -218,8 +217,8 @@ func newWhyCmd() *cobra.Command {
 	f.StringVar(whyManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(whyNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
 	addCatalogFlags(cmd, whyCatalog, whyNoCatalog)
-	f.BoolVar(whyJSON, "json", false, "JSON output")
-	f.BoolVar(whyFields, "fields", false, "show field-level provenance")
+	f.BoolVar(whyJSON, "json", false, "JSON audit report: tool, recipe identity, field provenance, candidates and catalog-update impact")
+	f.BoolVar(whyFields, "fields", false, "show the full audit: recipe identity, field provenance, selected candidate and catalog-update impact")
 	return cmd
 }
 
@@ -359,7 +358,7 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 			manifestAuto = true
 		}
 	}
-	project, err := loadProject(*whySchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: *whyFields, WarningTool: toolName, Catalog: catalog})
+	project, err := loadProject(*whySchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: *whyFields || *whyJSON, WarningTool: toolName, Catalog: catalog})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return exitWithCode(exitCodeForError(err))
@@ -378,24 +377,11 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 
 	ex := newProjectExecutor(s, clan, facts, run.OSExecRunner{})
 	attempts := ex.ExplainTool(ctx, tool, clan)
+	report := buildWhyReport(toolName, tool, s.Provenance[toolName], attempts)
 	if *whyJSON {
-		type jsonAttempt struct {
-			Kind           string                    `json:"kind"`
-			Label          string                    `json:"label,omitempty"`
-			Candidate      int                       `json:"candidate"`
-			CandidateKnown bool                      `json:"candidate_known"`
-			Status         string                    `json:"status"`
-			Reason         string                    `json:"reason,omitempty"`
-			Intent         map[string]string         `json:"intent,omitempty"`
-			PlanIntent     *plan.ResolvedInstallPlan `json:"plan_intent,omitempty"`
-		}
-		out := make([]jsonAttempt, 0, len(attempts))
-		for _, a := range attempts {
-			out = append(out, jsonAttempt{Kind: a.Kind, Label: a.Label, Candidate: a.Candidate, CandidateKnown: a.CandidateKnown, Status: a.Status, Reason: a.Error, Intent: a.Intent, PlanIntent: a.PlanIntent})
-		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(out); err != nil {
+		if err := enc.Encode(report); err != nil {
 			log.Default.Error("JSON encode", "error", err)
 			return exitWithCode(3)
 		}
@@ -420,23 +406,27 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 			reason += " [" + intent + "]"
 		}
 		kind := padRight(names[i], kindW)
+		code := ""
+		if a.ReasonCode != "" {
+			code = " [" + a.ReasonCode + "]"
+		}
 		switch a.Status {
 		case "would_install":
 			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.green("✓"), kind, c.dim("→ "+reason))
 		case "already_installed":
 			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.green("✓"), kind, c.dim("already installed: "+reason))
 		case "skip_when":
-			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("skipped: "+reason))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("skipped"+code+": "+reason))
 		case "skip_no_distribution":
-			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("skipped: no distribution matches this host"))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("skipped"+code+": no distribution matches this host"))
 		case "skip_unavailable":
-			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.red("✗"), c.dim(kind), c.dim("unavailable: "+reason))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.red("✗"), c.dim(kind), c.dim("unavailable"+code+": "+reason))
 		case "skip_policy":
-			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("disallowed: "+reason))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("disallowed"+code+": "+reason))
 		case "skip_capability":
-			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("capability mismatch: "+reason))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.yellow("–"), c.dim(kind), c.dim("capability mismatch"+code+": "+reason))
 		default:
-			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.dim("?"), kind, c.dim(reason))
+			_, _ = fmt.Fprintf(c.w, "  %s %s  %s\n", c.dim("?"), kind, c.dim(reason+code))
 		}
 	}
 	_, _ = fmt.Fprintln(c.w)
@@ -445,25 +435,7 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 	}
 
 	if *whyFields {
-		if provenance, ok := s.Provenance[toolName]; ok && len(provenance) > 0 {
-			fmt.Println("\nField provenance:")
-			for _, fs := range provenance {
-				var mergedStr string
-				switch v := fs.Merged.(type) {
-				case string:
-					mergedStr = v
-				case []string:
-					mergedStr = fmt.Sprintf("%v", v)
-				case []*config.MethodCandidate:
-					mergedStr = fmt.Sprintf("[%d methods]", len(v))
-				case bool:
-					mergedStr = fmt.Sprintf("%v", v)
-				default:
-					mergedStr = fmt.Sprintf("%v", v)
-				}
-				fmt.Printf("  %s: source=%s merged=%v\n", fs.Field, fs.Source, mergedStr)
-			}
-		}
+		renderWhyAudit(c.w, report)
 	}
 	return nil
 }

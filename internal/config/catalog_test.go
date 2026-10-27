@@ -435,7 +435,7 @@ func TestResolveLayersAttachesRecipeDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := res.Schema.Tools["foo"].RecipeDigest; got != recipe.Digest {
-		t.Fatalf("merged recipe digest = %q, want %q", got, recipe.Digest)
+	if got := res.Schema.Tools["foo"].Recipe; got == nil || got.Digest != recipe.Digest {
+		t.Fatalf("merged recipe origin = %+v, want digest %q", got, recipe.Digest)
 	}
 }

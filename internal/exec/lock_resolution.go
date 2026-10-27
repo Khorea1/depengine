@@ -24,7 +24,9 @@ type candidateSelection struct {
 	adapter  AdapterV2
 	method   *config.MethodCandidate
 	status   string
-	err      error
+	// reason is the stable ReasonCode class of err, independent of its text.
+	reason string
+	err    error
 }
 
 // resolveCandidateForSelection contains the static and plan-resolution gates
@@ -36,24 +38,24 @@ func (ex *Executor) resolveCandidateForSelection(ctx context.Context, tool *conf
 	intent, mismatch := candidatePlanIntent(tool, method)
 	intent = ex.hostResolvedPlanIntent(method, intent, clan)
 	if mismatch != "" {
-		return candidateSelection{intent: intent, method: method, status: "skip_capability", err: fmt.Errorf("%s", mismatch)}
+		return candidateSelection{intent: intent, method: method, status: "skip_capability", reason: ReasonCapabilityMismatch, err: fmt.Errorf("%s", mismatch)}
 	}
 	if method.When != nil && !method.When.Match(ex.facts) {
-		return candidateSelection{intent: intent, method: method, status: "skip_when", err: fmt.Errorf("when condition not met: %s", method.When.Mismatch(ex.facts))}
+		return candidateSelection{intent: intent, method: method, status: "skip_when", reason: ReasonWhenNotMatched, err: fmt.Errorf("when condition not met: %s", method.When.Mismatch(ex.facts))}
 	}
 	specialized, skipStatus, specErr := ex.specializeMethodForHost(method)
 	if specErr != nil {
-		return candidateSelection{intent: intent, method: method, status: "failed", err: specErr}
+		return candidateSelection{intent: intent, method: method, status: "failed", reason: ReasonSpecializationFailed, err: specErr}
 	}
 	if skipStatus != "" {
-		return candidateSelection{intent: intent, method: method, status: skipStatus, err: fmt.Errorf("no distribution matches this host")}
+		return candidateSelection{intent: intent, method: method, status: skipStatus, reason: ReasonNoDistribution, err: fmt.Errorf("no distribution matches this host")}
 	}
 	if specialized != method {
 		method = specialized
 		intent, mismatch = candidatePlanIntent(tool, method)
 		intent = ex.hostResolvedPlanIntent(method, intent, clan)
 		if mismatch != "" {
-			return candidateSelection{intent: intent, method: method, status: "skip_capability", err: fmt.Errorf("%s", mismatch)}
+			return candidateSelection{intent: intent, method: method, status: "skip_capability", reason: ReasonCapabilityMismatch, err: fmt.Errorf("%s", mismatch)}
 		}
 	}
 	displayKind := method.Kind
@@ -62,20 +64,20 @@ func (ex *Executor) resolveCandidateForSelection(ctx context.Context, tool *conf
 	}
 	adapter := ex.LookupAdapter(method.Kind)
 	if adapter == nil {
-		return candidateSelection{intent: intent, method: method, status: "skip_unavailable", err: fmt.Errorf("no adapter registered for kind %q", displayKind)}
+		return candidateSelection{intent: intent, method: method, status: "skip_unavailable", reason: ReasonNoAdapter, err: fmt.Errorf("no adapter registered for kind %q", displayKind)}
 	}
 	if !adapter.Available(ctx, ex.probeRunner(tool.Name, displayKind)) {
-		return candidateSelection{intent: intent, adapter: adapter, method: method, status: "skip_unavailable", err: fmt.Errorf("adapter %q not available (binary not on PATH)", displayKind)}
+		return candidateSelection{intent: intent, adapter: adapter, method: method, status: "skip_unavailable", reason: ReasonAdapterUnavailable, err: fmt.Errorf("adapter %q not available (binary not on PATH)", displayKind)}
 	}
 	resolved, err := ex.resolveCandidatePlan(ctx, tool, method, adapter, intent, displayKind)
 	if err != nil {
-		return candidateSelection{intent: intent, adapter: adapter, method: method, status: "failed", err: err}
+		return candidateSelection{intent: intent, adapter: adapter, method: method, status: "failed", reason: ReasonPlanFailed, err: err}
 	}
 	if resolved == nil {
-		return candidateSelection{intent: intent, adapter: adapter, method: method, status: "failed", err: fmt.Errorf("%s: resolver returned no plan", displayKind)}
+		return candidateSelection{intent: intent, adapter: adapter, method: method, status: "failed", reason: ReasonPlanFailed, err: fmt.Errorf("%s: resolver returned no plan", displayKind)}
 	}
 	if err := adapter.CheckHostCompatibility(tool, method, resolved, ex.facts, clan); err != nil {
-		return candidateSelection{intent: intent, resolved: resolved, adapter: adapter, method: method, status: "skip_unavailable", err: err}
+		return candidateSelection{intent: intent, resolved: resolved, adapter: adapter, method: method, status: "skip_unavailable", reason: ReasonHostIncompatible, err: err}
 	}
 	return candidateSelection{intent: intent, resolved: resolved, adapter: adapter, method: method}
 }

@@ -1,6 +1,18 @@
 # Changelog
 
 ## Unreleased
+- Make provenance a catalog-layer contract instead of optional diagnostics:
+  `why --fields` now reports the winning catalog recipe (root index, root path,
+  recipe path, content digest), every field's effective origin (`catalog`,
+  `manifest`, `schema` or `both`), the values each layer declared and which
+  layers were overridden, the selected candidate, and what a catalog update
+  would still change. Origins survive multi-layer merges, so a field inherited
+  from the catalog is no longer relabelled after passing through a later layer.
+- `why --json` emits the documented audit object (`tool`, `recipe`,
+  `field_provenance`, `catalog_update`, `candidates`, `selected`) instead of a
+  bare attempt array. Candidates carry a stable `reason_code`
+  (`when_not_matched`, `no_adapter`, `package_not_found`, ...) so consumers stop
+  parsing human text; secret references stay redacted.
 - Reject host placeholders in method order selectors (`defaults.method_prefer`,
   the `defaults.method_order` compatibility alias, and tool-level
   `method_prefer`/`method_only`) before schema expansion. Expanding a host fact

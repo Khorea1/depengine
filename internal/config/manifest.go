@@ -149,22 +149,39 @@ func MergeLayersWithOpts(opts *mergeConfig, layers ...*Schema) *Schema {
 		ProjectRoot:   mostSpecific.ProjectRoot,
 	}
 
-	for _, layer := range layers {
+	collect := opts != nil && opts.collectProvenance
+	createdIn := make(map[string]string)
+	states := make(map[string]*provenanceState)
+	for index, layer := range layers {
 		if layer == nil {
 			continue
 		}
+		label := layerProvenanceLabel(layer, index, len(layers))
 		mergeDefaultsInto(result, layer)
 		for name, tool := range layer.Tools {
 			existing, exists := result.Tools[name]
 			if !exists {
 				result.Tools[name] = cloneTool(tool)
+				createdIn[name] = label
+				if collect {
+					pc := &provenanceCollector{toolName: name}
+					recordInitialProvenance(pc, tool, label)
+					result.Provenance[name] = append(result.Provenance[name], pc.sources...)
+					states[name] = newProvenanceState(tool, label)
+				}
 				continue
 			}
 			var pc *provenanceCollector
-			if opts != nil && opts.collectProvenance {
+			var st *provenanceState
+			if collect {
 				pc = &provenanceCollector{toolName: name}
+				st = states[name]
+				if st == nil {
+					st = newProvenanceState(existing, createdIn[name])
+					states[name] = st
+				}
 			}
-			result.Tools[name] = mergeTools(existing, tool, pc)
+			result.Tools[name] = mergeTools(existing, tool, pc, st, label)
 			if pc != nil {
 				result.Provenance[name] = append(result.Provenance[name], pc.sources...)
 			}
@@ -259,6 +276,173 @@ func fieldDeclared(tool *Tool, name string) bool {
 	return tool != nil && tool.presence != nil && tool.presence[name]
 }
 
+// provenanceExcludedFields are derived or bookkeeping fields that every parsed
+// tool carries; reporting them would bury the user-authorable fields that
+// provenance exists to explain.
+var provenanceExcludedFields = map[string]bool{
+	"Name":     true,
+	"IsSimple": true,
+}
+
+// provenanceTracks reports whether a tool field belongs in provenance. Methods
+// has no declaration metadata of its own, so a non-empty candidate list is its
+// declaration.
+func provenanceTracks(tool *Tool, field string) bool {
+	if provenanceExcludedFields[field] {
+		return false
+	}
+	if field == "Methods" {
+		return len(tool.Methods) > 0
+	}
+	return fieldDeclared(tool, field)
+}
+
+// layerProvenanceLabel names the layer a merge is processing. ResolveLayers
+// labels its real layers; a caller merging schemas directly falls back to the
+// documented precedence positions (catalog, manifest, schema).
+func layerProvenanceLabel(layer *Schema, index, total int) string {
+	if layer != nil && layer.layer != "" {
+		return layer.layer
+	}
+	switch index {
+	case total - 1:
+		return LayerSchema
+	case 0:
+		return LayerManifest
+	default:
+		return LayerCatalog
+	}
+}
+
+// provenanceState tracks, per tool field, the layer that currently supplies the
+// effective value and the value every layer declared. Origins survive further
+// merges, so a field inherited from the catalog is never relabelled as a
+// manifest field just because a later merge passed it through.
+type provenanceState struct {
+	order  []string                  // layer labels in merge order
+	origin map[string]string         // field -> effective origin layer
+	values map[string]map[string]any // field -> layer -> declared value
+}
+
+func newProvenanceState(tool *Tool, layer string) *provenanceState {
+	st := &provenanceState{
+		origin: make(map[string]string),
+		values: make(map[string]map[string]any),
+	}
+	st.order = append(st.order, layer)
+	if tool == nil {
+		return st
+	}
+	rv := reflect.ValueOf(tool).Elem()
+	for _, tf := range toolMergeFields {
+		if !provenanceTracks(tool, tf.name) {
+			continue
+		}
+		st.origin[tf.name] = layer
+		st.values[tf.name] = map[string]any{layer: rv.Field(tf.index).Interface()}
+	}
+	return st
+}
+
+func (st *provenanceState) noteLayer(layer string) {
+	if st == nil || layer == "" {
+		return
+	}
+	for _, existing := range st.order {
+		if existing == layer {
+			return
+		}
+	}
+	st.order = append(st.order, layer)
+}
+
+func (st *provenanceState) declare(field, layer string, value any) {
+	if st == nil {
+		return
+	}
+	st.noteLayer(layer)
+	if st.values[field] == nil {
+		st.values[field] = make(map[string]any)
+	}
+	st.values[field][layer] = value
+}
+
+func (st *provenanceState) setOrigin(field, layer string) {
+	if st == nil {
+		return
+	}
+	st.origin[field] = layer
+}
+
+func (st *provenanceState) originOf(field string) string {
+	if st == nil {
+		return ""
+	}
+	return st.origin[field]
+}
+
+func (st *provenanceState) hasField(field string) bool {
+	return st != nil && len(st.values[field]) > 0
+}
+
+// declaredLayers lists the layers that declared a field, in merge order.
+func (st *provenanceState) declaredLayers(field string) []string {
+	if st == nil {
+		return nil
+	}
+	declared := make([]string, 0, len(st.values[field]))
+	for _, layer := range st.order {
+		if _, ok := st.values[field][layer]; ok {
+			declared = append(declared, layer)
+		}
+	}
+	return declared
+}
+
+// valuesCopy snapshots the per-layer declared values for a provenance entry.
+func (st *provenanceState) valuesCopy(field string) map[string]any {
+	if st == nil || len(st.values[field]) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(st.values[field]))
+	for layer, value := range st.values[field] {
+		out[layer] = value
+	}
+	return out
+}
+
+// overriddenFor lists declared layers whose value source replaced. A combined
+// field keeps every declared value, so nothing is overridden there.
+func (st *provenanceState) overriddenFor(field, source string) []string {
+	if st == nil || source == "" || source == CombinedSource {
+		return nil
+	}
+	var overridden []string
+	for _, layer := range st.declaredLayers(field) {
+		if layer != source {
+			overridden = append(overridden, layer)
+		}
+	}
+	return overridden
+}
+
+// recordInitialProvenance records the fields a tool declared in the first layer
+// that introduced it, so a tool present in a single layer still reports where
+// its fields came from.
+func recordInitialProvenance(pc *provenanceCollector, tool *Tool, layer string) {
+	if pc == nil || tool == nil {
+		return
+	}
+	rv := reflect.ValueOf(tool).Elem()
+	for _, tf := range toolMergeFields {
+		if !provenanceTracks(tool, tf.name) {
+			continue
+		}
+		value := rv.Field(tf.index).Interface()
+		pc.record(tf.name, layer, nil, nil, value, map[string]any{layer: value}, nil)
+	}
+}
+
 // assignField copies src into dst. String-slice fields are copied
 // element-by-element (matching the defensive copies the old setField made
 // for Requires/MethodPrefer/MethodOnly/Tags); every other kind is assigned
@@ -311,7 +495,7 @@ func unionStringSlice(dst, upper reflect.Value) {
 // each field's `merge` struct tag (see toolMergeFields). lower is the
 // lower-priority (less specific) layer, upper is the higher-priority one.
 // The result is a new *Tool (cloned).
-func mergeTools(lower, upper *Tool, pc *provenanceCollector) *Tool {
+func mergeTools(lower, upper *Tool, pc *provenanceCollector, st *provenanceState, upperLayer string) *Tool {
 	result := cloneTool(lower)
 	if result.presence == nil {
 		result.presence = fieldPresence{}
@@ -326,35 +510,49 @@ func mergeTools(lower, upper *Tool, pc *provenanceCollector) *Tool {
 		upperField := uv.Field(tf.index)
 		lowerField := lv.Field(tf.index)
 		schemaVal, manifestVal := upperField.Interface(), lowerField.Interface()
+		tracked := provenanceTracks(upper, tf.name) || provenanceTracks(lower, tf.name)
 		upperDeclared := fieldDeclared(upper, tf.name)
 		lowerDeclared := fieldDeclared(lower, tf.name)
+		if tf.name == "Methods" {
+			upperDeclared = len(upper.Methods) > 0
+			lowerDeclared = len(lower.Methods) > 0
+		}
 
 		switch tf.strategy {
-		case MergeOverwrite:
-			if upperDeclared {
+		case MergeOverwrite, MergeLocalOnly:
+			source := st.originOf(tf.name)
+			switch {
+			case upperDeclared:
 				assignField(dstField, upperField)
 				result.presence[tf.name] = true
-				pc.record(tf.name, "schema", schemaVal, manifestVal, dstField.Interface())
-			} else {
-				pc.record(tf.name, "manifest", schemaVal, manifestVal, lowerField.Interface())
-			}
-
-		case MergeLocalOnly:
-			if upperDeclared {
-				assignField(dstField, upperField)
-				result.presence[tf.name] = true
-				pc.record(tf.name, "schema", schemaVal, manifestVal, dstField.Interface())
-			} else if lowerDeclared {
+				if tracked {
+					st.declare(tf.name, upperLayer, schemaVal)
+					st.setOrigin(tf.name, upperLayer)
+				}
+				source = upperLayer
+			case tf.strategy == MergeLocalOnly && lowerDeclared:
+				// A local-only field cannot survive below the layer that owns it.
 				dstField.Set(reflect.Zero(dstField.Type()))
 				delete(result.presence, tf.name)
-				pc.record(tf.name, "schema", schemaVal, manifestVal, nil)
+				st.setOrigin(tf.name, upperLayer)
+				source = upperLayer
+			}
+			if tracked && (upperDeclared || lowerDeclared || st.hasField(tf.name)) {
+				pc.record(tf.name, source, schemaVal, manifestVal, dstField.Interface(), st.valuesCopy(tf.name), st.overriddenFor(tf.name, source))
 			}
 
 		case MergeUnionSlice:
 			if lowerDeclared || upperDeclared {
 				unionStringSlice(dstField, upperField)
 				result.presence[tf.name] = true
-				pc.record(tf.name, "both", schemaVal, manifestVal, dstField.Interface())
+				if upperDeclared {
+					st.declare(tf.name, upperLayer, schemaVal)
+				}
+				source := combinedSource(st, tf.name, upperLayer)
+				st.setOrigin(tf.name, source)
+				if tracked {
+					pc.record(tf.name, source, schemaVal, manifestVal, dstField.Interface(), st.valuesCopy(tf.name), st.overriddenFor(tf.name, source))
+				}
 			}
 
 		case MergeMapMerge:
@@ -372,25 +570,46 @@ func mergeTools(lower, upper *Tool, pc *provenanceCollector) *Tool {
 				}
 				result.RequiresWhen = merged
 				result.presence[tf.name] = true
+				st.declare(tf.name, upperLayer, schemaVal)
 			}
 			if lowerDeclared || upperDeclared {
-				source := "both"
-				if upperDeclared && !lowerDeclared {
-					source = "schema"
-				} else if lowerDeclared && !upperDeclared {
-					source = "manifest"
+				source := combinedSource(st, tf.name, upperLayer)
+				st.setOrigin(tf.name, source)
+				if tracked {
+					pc.record(tf.name, source, schemaVal, manifestVal, result.RequiresWhen, st.valuesCopy(tf.name), st.overriddenFor(tf.name, source))
 				}
-				pc.record(tf.name, source, schemaVal, manifestVal, result.RequiresWhen)
 			}
 
 		case MergeMethods:
-			merged := mergeMethodSlices(lower.Methods, upper.Methods, pc)
-			result.Methods = merged
-			pc.record("Methods", "both", upper.Methods, lower.Methods, merged)
+			result.Methods = mergeMethodSlices(lower.Methods, upper.Methods, pc)
+			if upperDeclared {
+				st.declare(tf.name, upperLayer, schemaVal)
+			}
+			if lowerDeclared || upperDeclared {
+				source := combinedSource(st, tf.name, upperLayer)
+				st.setOrigin(tf.name, source)
+				if tracked {
+					pc.record(tf.name, source, schemaVal, manifestVal, result.Methods, st.valuesCopy(tf.name), st.overriddenFor(tf.name, source))
+				}
+			}
 		}
 	}
 
 	return result
+}
+
+// combinedSource names the origin of a field that every declaring layer
+// contributes to, or the single declaring layer when there is only one.
+func combinedSource(st *provenanceState, field, fallback string) string {
+	declared := st.declaredLayers(field)
+	switch len(declared) {
+	case 0:
+		return fallback
+	case 1:
+		return declared[0]
+	default:
+		return CombinedSource
+	}
 }
 
 func cloneConditionMap(in map[string]*Condition) map[string]*Condition {

@@ -304,6 +304,16 @@ func ResolveLayers(schema, manifest *Schema, cat *Catalog, facts map[string]stri
 		return nil, err
 	}
 
+	// Name the real layers so provenance reports where a field came from
+	// instead of inferring it from the merge position.
+	schema.layer = LayerSchema
+	if manifest != nil {
+		manifest.layer = LayerManifest
+	}
+	if catalogSchema != nil {
+		catalogSchema.layer = LayerCatalog
+	}
+
 	layers := make([]*Schema, 0, 3)
 	if catalogSchema != nil {
 		layers = append(layers, catalogSchema)
@@ -424,7 +434,13 @@ func resolveCatalogLayer(schema, manifest *Schema, cat *Catalog, facts map[strin
 				tool = cloneTool(tool)
 				tool.DependencyOnly = true
 			}
-			tool.RecipeDigest = recipe.Digest
+			tool.Recipe = &RecipeOrigin{
+				Name:      name,
+				Root:      catalogRoot(cat, recipe.RootIndex),
+				RootIndex: recipe.RootIndex,
+				Path:      recipe.Path,
+				Digest:    recipe.Digest,
+			}
 			recipes[name] = tool
 		}
 
@@ -434,7 +450,7 @@ func resolveCatalogLayer(schema, manifest *Schema, cat *Catalog, facts map[strin
 
 		// Walk the effective merged tools, not the raw catalog recipes: a
 		// schema or manifest value can override the catalog's requires.
-		catalogSchema := &Schema{Version: schema.Version, Tools: recipes, ProjectRoot: schema.ProjectRoot}
+		catalogSchema := &Schema{Version: schema.Version, Tools: recipes, ProjectRoot: schema.ProjectRoot, layer: LayerCatalog}
 		layers := []*Schema{catalogSchema}
 		if manifest != nil && len(manifest.Tools) > 0 {
 			layers = append(layers, manifest)
@@ -456,7 +472,20 @@ func resolveCatalogLayer(schema, manifest *Schema, cat *Catalog, facts map[strin
 	if len(recipes) == 0 {
 		return nil, 0, nil
 	}
-	return &Schema{Version: schema.Version, Tools: recipes, ProjectRoot: schema.ProjectRoot}, len(recipes), nil
+	return &Schema{Version: schema.Version, Tools: recipes, ProjectRoot: schema.ProjectRoot, layer: LayerCatalog}, len(recipes), nil
+}
+
+// catalogRoot names the winning root of a recipe lookup. The index is the
+// recipe's position in the ordered root list.
+func catalogRoot(cat *Catalog, index int) string {
+	if cat == nil {
+		return ""
+	}
+	roots := cat.Roots()
+	if index < 0 || index >= len(roots) {
+		return ""
+	}
+	return roots[index]
 }
 
 // canonicalRecipeDigest hashes a stable JSON projection of the TOML document.

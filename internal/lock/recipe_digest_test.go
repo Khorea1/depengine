@@ -17,7 +17,7 @@ func recipeDigestSchema(digest string) *config.Schema {
 				Kind:   "http",
 				Config: map[string]any{"url": "https://example.test/tool.tar.gz"},
 			}},
-			RecipeDigest: digest,
+			Recipe: &config.RecipeOrigin{Digest: digest},
 		},
 	}}
 }
@@ -45,7 +45,7 @@ func TestValidateFrozenV2ChecksRecipeDigest(t *testing.T) {
 		}
 		// A URL, checksum or plan-invisible field change all produce a new
 		// digest because the digest covers the whole recipe document.
-		schema.Tools["tool"].RecipeDigest = digestB
+		schema.Tools["tool"].Recipe = &config.RecipeOrigin{Digest: digestB}
 		err := ValidateFrozen(schema, frozen)
 		if err == nil || !strings.Contains(err.Error(), "recipe content changed for tool \"tool\"") {
 			t.Fatalf("ValidateFrozen() error = %v, want recipe content mismatch", err)
@@ -67,7 +67,7 @@ func TestValidateFrozenV2ChecksRecipeDigest(t *testing.T) {
 		if err := frozen.SetRecipeDigests(map[string]string{"tool": digestA}); err != nil {
 			t.Fatal(err)
 		}
-		schema.Tools["tool"].RecipeDigest = ""
+		schema.Tools["tool"].Recipe = nil
 		err := ValidateFrozen(schema, frozen)
 		if err == nil || !strings.Contains(err.Error(), "no longer sourced from a catalog recipe") {
 			t.Fatalf("ValidateFrozen() error = %v, want provenance change", err)
@@ -80,9 +80,9 @@ func TestValidateFrozenV2ChecksVirtualRecipeDigest(t *testing.T) {
 	digestB := "sha256:" + strings.Repeat("b", 64)
 	schema := recipeDigestSchema(digestA)
 	schema.Tools["group"] = &config.Tool{
-		Name:         "group",
-		Requires:     []string{"tool"},
-		RecipeDigest: digestA,
+		Name:     "group",
+		Requires: []string{"tool"},
+		Recipe:   &config.RecipeOrigin{Digest: digestA},
 	}
 	frozen := frozenV2TestLock(t, schema, "tool")
 	if err := frozen.SetRecipeDigests(map[string]string{"tool": digestA, "group": digestA}); err != nil {
@@ -91,7 +91,7 @@ func TestValidateFrozenV2ChecksVirtualRecipeDigest(t *testing.T) {
 	if err := ValidateFrozen(schema, frozen); err != nil {
 		t.Fatalf("ValidateFrozen() rejected matching virtual recipe digest: %v", err)
 	}
-	schema.Tools["group"].RecipeDigest = digestB
+	schema.Tools["group"].Recipe = &config.RecipeOrigin{Digest: digestB}
 	err := ValidateFrozen(schema, frozen)
 	if err == nil || !strings.Contains(err.Error(), "recipe content changed for tool \"group\"") {
 		t.Fatalf("ValidateFrozen() error = %v, want virtual recipe mismatch", err)
@@ -167,7 +167,7 @@ func TestSnapshotRecipeDigests(t *testing.T) {
 	if names := CatalogToolNames(schema); len(names) != 1 || names[0] != "tool" {
 		t.Fatalf("CatalogToolNames() = %v, want [tool]", names)
 	}
-	schema.Tools["tool"].RecipeDigest = "sha256:xyz"
+	schema.Tools["tool"].Recipe = &config.RecipeOrigin{Digest: "sha256:xyz"}
 	if _, err := SnapshotRecipeDigests(schema); err == nil {
 		t.Fatal("SnapshotRecipeDigests accepted a malformed digest")
 	}

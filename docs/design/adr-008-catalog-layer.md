@@ -146,10 +146,14 @@ recipe that omits `checksum` installs with no integrity check
    the flat matrix in distributed form. It warns first and does not block.
 
 8. **Provenance.** *(Accepted 2026-10-25; central contract, not optional
-   diagnostics.)* `why --fields` shows the layer a tool's recipe came from:
-   catalog, import, manifest or schema, together with inherited and overridden
-   fields, candidates considered and excluded, the chosen adapter, and the
-   recipe identity.
+   diagnostics. Implemented 2026-10-27.)* `why --fields` shows the layer a
+   tool's recipe came from: catalog, import, manifest or schema, together with
+   inherited and overridden fields, candidates considered and excluded, the
+   chosen adapter, and the recipe identity. The same report is emitted by
+   `why --json`; candidate outcomes carry a stable `reason_code` that is never
+   derived from human text. Field origins survive multi-layer merges, so a
+   value inherited from the catalog keeps that origin after passing through a
+   later layer.
 
 ## Layer contract
 

@@ -332,18 +332,28 @@ func SnapshotRecipeDigests(s *config.Schema) (map[string]string, error) {
 		if tool == nil {
 			return nil, fmt.Errorf("lock: recipe digest requires valid tool %q", name)
 		}
-		if tool.RecipeDigest == "" {
+		digest := toolRecipeDigest(tool)
+		if digest == "" {
 			continue
 		}
-		if err := validateRecipeDigest(tool.RecipeDigest); err != nil {
+		if err := validateRecipeDigest(digest); err != nil {
 			return nil, fmt.Errorf("lock: recipe digest for tool %q: %w", name, err)
 		}
-		digests[name] = tool.RecipeDigest
+		digests[name] = digest
 	}
 	if len(digests) == 0 {
 		return nil, nil
 	}
 	return digests, nil
+}
+
+// toolRecipeDigest returns the catalog content digest attached to a tool, or an
+// empty string when the tool was not supplied by a catalog recipe.
+func toolRecipeDigest(tool *config.Tool) string {
+	if tool == nil || tool.Recipe == nil {
+		return ""
+	}
+	return tool.Recipe.Digest
 }
 
 // CatalogToolNames returns the sorted names of tools whose current resolution
@@ -354,7 +364,7 @@ func CatalogToolNames(s *config.Schema) []string {
 	}
 	names := make([]string, 0)
 	for name, tool := range s.Tools {
-		if tool != nil && tool.RecipeDigest != "" {
+		if toolRecipeDigest(tool) != "" {
 			names = append(names, name)
 		}
 	}
