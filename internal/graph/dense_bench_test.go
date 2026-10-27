@@ -52,36 +52,40 @@ func BenchmarkDenseGraphBuild(b *testing.B) {
 }
 
 func BenchmarkDenseGraphSort(b *testing.B) {
-	for _, fanIn := range []int{5, 20} {
-		b.Run(fmt.Sprintf("nodes=5000/fanin=%d", fanIn), func(b *testing.B) {
-			g := BuildDeclaredGraph(denseTools(5000, fanIn))
-			b.ReportAllocs()
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				levels, err := SortGraph(g)
-				if err != nil {
-					b.Fatal(err)
+	for _, nodes := range []int{1000, 5000} {
+		for _, fanIn := range []int{5, 20} {
+			b.Run(fmt.Sprintf("nodes=%d/fanin=%d", nodes, fanIn), func(b *testing.B) {
+				g := BuildDeclaredGraph(denseTools(nodes, fanIn))
+				b.ReportAllocs()
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					levels, err := SortGraph(g)
+					if err != nil {
+						b.Fatal(err)
+					}
+					if len(levels) == 0 {
+						b.Fatal("empty levels")
+					}
 				}
-				if len(levels) == 0 {
-					b.Fatal("empty levels")
-				}
-			}
-		})
+			})
+		}
 	}
 }
 
 func BenchmarkDenseGraphAnalyze(b *testing.B) {
-	for _, fanIn := range []int{5, 20} {
-		b.Run(fmt.Sprintf("nodes=5000/fanin=%d", fanIn), func(b *testing.B) {
-			g := BuildDeclaredGraph(denseTools(5000, fanIn))
-			b.ReportAllocs()
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				if _, err := Analyze(g); err != nil {
-					b.Fatal(err)
+	for _, nodes := range []int{1000, 5000} {
+		for _, fanIn := range []int{5, 20} {
+			b.Run(fmt.Sprintf("nodes=%d/fanin=%d", nodes, fanIn), func(b *testing.B) {
+				g := BuildDeclaredGraph(denseTools(nodes, fanIn))
+				b.ReportAllocs()
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					if _, err := Analyze(g); err != nil {
+						b.Fatal(err)
+					}
 				}
-			}
-		})
+			})
+		}
 	}
 }
 

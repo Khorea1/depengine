@@ -95,36 +95,54 @@ func SortGraph(graph Graph, opts ...SortOption) ([][]string, error) {
 		sort.Strings(dependencies[name])
 	}
 
-	remaining := make(map[string]bool, len(scheduling.Nodes))
+	// ready holds the nodes whose prerequisites are all scheduled. Draining one
+	// frontier per level keeps the cost linear in nodes and edges; rescanning
+	// every remaining node per level made deep graphs pay O(nodes × depth) map
+	// lookups. The level sets are identical: at the start of an iteration a node
+	// is in ready exactly when it has no unscheduled prerequisite.
+	ready := make([]string, 0, len(scheduling.Nodes))
 	for name := range scheduling.Nodes {
-		remaining[name] = true
+		if inDegree[name] == 0 {
+			ready = append(ready, name)
+		}
 	}
+	sort.Strings(ready)
 
 	levels := [][]string{}
-	for len(remaining) > 0 {
-		level := []string{}
-		for name := range remaining {
-			if inDegree[name] == 0 {
-				level = append(level, name)
-			}
-		}
-
+	scheduled := 0
+	for len(ready) > 0 {
+		level := ready
+		ready = make([]string, 0, len(level))
 		sort.Strings(level)
-		if len(level) == 0 {
-			cycle := extractCycle(remaining, dependencies)
-			return nil, &CycleError{Cycle: cycle}
-		}
+		scheduled += len(level)
 
 		for _, name := range level {
-			delete(remaining, name)
 			for _, child := range children[name] {
 				inDegree[child]--
+				if inDegree[child] == 0 {
+					ready = append(ready, child)
+				}
 			}
 		}
 		if cfg.logger != nil {
 			cfg.logger.Debug("graph", "level", len(levels), "tools", strings.Join(level, ", "))
 		}
 		levels = append(levels, level)
+	}
+
+	if scheduled < len(scheduling.Nodes) {
+		// Only reached on a cycle: rebuild the unscheduled set so the reported
+		// cycle stays identical to the previous scan-based implementation.
+		remaining := make(map[string]bool, len(scheduling.Nodes))
+		for name := range scheduling.Nodes {
+			remaining[name] = true
+		}
+		for _, level := range levels {
+			for _, name := range level {
+				delete(remaining, name)
+			}
+		}
+		return nil, &CycleError{Cycle: extractCycle(remaining, dependencies)}
 	}
 
 	return levels, nil

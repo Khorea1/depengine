@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Replace `SortGraph`'s per-level full scan of remaining nodes with a zero
+  in-degree frontier. Deep graphs no longer pay O(nodes × depth) map lookups:
+  scheduling drops 2.7×–23.7× and `Analyze` 1.7×–11.2× on the 1,000/5,000-node,
+  fan-in 5/20 benchmarks, with an oracle test proving identical levels and
+  cycle reports. Output formats and exit codes are unchanged.
 - Make provenance a catalog-layer contract instead of optional diagnostics:
   `why --fields` now reports the winning catalog recipe (root index, root path,
   recipe path, content digest), every field's effective origin (`catalog`,
