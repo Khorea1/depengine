@@ -1057,13 +1057,35 @@ engine evaluates all non-empty fields against the detected system facts:
 | `os` | `string[]` | Exact (case-insensitive) | `linux`, `darwin`, `windows`, `freebsd`, `openbsd`, `netbsd` |
 | `target_family` | `string[]` | Exact (case-insensitive) | `unix` (linux, darwin, BSDs, termux), `windows` |
 | `kernel` | `string[]` | Exact (case-insensitive) | `6.7.0-arch`, `5.15.0-generic`... |
-| `libc` | `string[]` | **Prefix** match | `glibc` matches `glibc 2.35`; `musl` for Alpine |
+| `kernel_min` | `string` | Inclusive minimum | `6.6` |
+| `kernel_max` | `string` | Inclusive maximum | `6.8` |
+| `libc` | `string[]` | Family-token prefix, trimmed and case-insensitive | `glibc` matches `glibc`; `musl` for Alpine. Detection emits no version, so `glibc 2.35` never matches. |
 | `init_system` | `string[]` | Exact (case-insensitive) | `systemd`, `openrc`, `runit`, `sysvinit` |
-| `is_wsl` | `bool` | Three-state | Detected via `/proc/version` or `WSL_DISTRO_NAME` |
-| `is_container` | `bool` | Three-state | Detected via `.dockerenv`, cgroup, etc. |
+| `is_wsl` | `bool` | Three-state | `true` needs a positive detection; `false` needs a conclusive negative; an inconclusive probe matches neither |
+| `is_container` | `bool` | Three-state | Same rule as `is_wsl` |
 | `is_android` | `bool` | Three-state | Detected via Termux env vars. Needed because `os` reports `linux` on Termux — `os = ["android"]` never matches there |
 
-Version conditions compare numeric and textual runs rather than applying SemVer rules, because OS release identifiers are not uniformly SemVer. Numeric runs ignore leading zeroes (`24.04` equals `24.4`); minimum and maximum bounds are inclusive. A host with no detected distro version does not satisfy a version condition.
+Version conditions compare numeric and textual runs rather than applying SemVer
+rules, because OS release identifiers are not uniformly SemVer. Numeric runs
+ignore leading zeroes (`24.04` equals `24.4`); minimum and maximum bounds are
+inclusive. A host with no detected distro version does not satisfy a version
+condition.
+
+`kernel` is exact and is not a range: `kernel = ["6.7"]` does not match
+`6.7.0-arch1-1`. Use `kernel_min`/`kernel_max` for an inclusive range. Wildcard
+or comparison-operator syntax in `kernel` or `distro_version` is reported by
+`depengine validate` as `W_AMBIGUOUS_CONDITION`, as is a libc value that carries
+a version or an inverted min/max pair.
+
+`is_wsl` and `is_container` are three-state. A positive detection sets the fact
+to `true`; a conclusive probe that found nothing sets it to `false`; a probe
+that could not run leaves it unknown. `true` matches only a positive detection,
+`false` matches only a conclusive negative, and unknown matches neither. This is
+fail-closed: an unreadable `/proc/version` or cgroup file is not silently
+treated as "not WSL" or "not a container". The `{is_wsl}` and `{is_container}`
+placeholders expand to `true`, `false`, or `unknown`. The full detection and
+matching contract is in
+[the environment conditions spec](specs/environment-conditions.md).
 
 ```toml
 # AUR only on Arch, HTTP fallback everywhere else
@@ -1128,12 +1150,12 @@ Version conditions compare numeric and textual runs rather than applying SemVer 
 ```
 
 ```toml
-# Kernel-specific DKMS package. `kernel` is matched exactly
-# (case-insensitive) against the value reported by `uname -r`.
+# Kernel-specific DKMS package. Use an inclusive range, not a list of exact
+# `uname -r` values: exact equality would stop matching after a kernel update.
 [tools.v4l2loopback]
   [tools.v4l2loopback.aur]
   pkg  = "v4l2loopback-dkms"
-  when = { distro_family = ["arch"], kernel = ["6.7.0-arch1-1", "6.8.0-arch1-1", "6.9.0-arch1-1"] }
+  when = { distro_family = ["arch"], kernel_min = "6.7", kernel_max = "6.99" }
 ```
 
 > Run `depengine why <tool>` to inspect which method applies on the
@@ -1224,7 +1246,8 @@ GitHub's `{arch_any}` and `{os_any}` tokens remain intact for asset matching.
 | `{init_system}` | Native host facts | any method | `systemd`, `openrc` |
 | `{detection}` | Native host facts | any method | `os-release` |
 | `{confidence}` | Native host facts | any method | `high`, `medium` |
-| `{is_wsl}` / `{is_container}` / `{is_android}` | Native host facts | any method | `true`, `false` |
+| `{is_wsl}` / `{is_container}` | Native host facts | any method | `true`, `false`, `unknown` |
+| `{is_android}` | Native host facts | any method | `true`, `false` |
 | `{pkg}` | Adapter-owned — substituted at install time | **`native` only** (or a manager name used directly as `kind`, e.g. `kind = "apt"`) | package name |
 | `{latest}` | Adapter-owned — resolved via GitHub API | Literal `url` in `git`, `http`, `appimage`, `android`, or `msi` | `v1.2.3` |
 | `{version}` | Adapter-owned — matched against a resolved GitHub release tag | `asset` in `github`, `http`, `appimage`, `android`, or `msi` when using `repo` + `asset` | matches `v1.2.3` or `1.2.3` |

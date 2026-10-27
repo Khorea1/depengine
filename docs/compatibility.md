@@ -16,9 +16,9 @@ change to one format does not require the others to change.
 
 ## Current status
 
-All three formats are still pre-freeze. The schema/manifest uses version `1`,
-installed state uses version `4`, and lock readers accept envelope versions `1`
-and `2`. A whole-schema `depengine update` writes v2 only when every
+All formats are still pre-freeze. The schema/manifest uses version `1`, catalog
+recipes use `recipe_version = 1`, installed state uses version `4`, and lock
+readers accept envelope versions `1` and `2`. A whole-schema `depengine update` writes v2 only when every
 non-virtual tool in the install closure has an immutable resolved identity. If
 the only unpinnable tools are native methods, the update keeps or refreshes the
 legacy v1 lock and warns which tools blocked v2; any other unpinnable tool
@@ -26,9 +26,23 @@ fails closed and leaves any existing lock unchanged. An existing v2 lock is
 never downgraded. A profiled update without an existing v2 lock keeps the
 legacy v1 path.
 ADR-008 (accepted 2026-10-25) adds a catalog layer that supplies recipes by
-name. It is not implemented yet. When it lands, catalog content identity is
-persisted only in lock v2; a v1 lock combined with catalog-sourced tools fails
-closed and requires a whole-schema `update`.
+name. The lookup backend, CLI flags and lock v2 recipe content digests are
+implemented. A catalog-sourced tool pins a canonical digest of the recipe
+document; frozen validation fails closed on a missing or changed digest, and a
+catalog-sourced tool combined with a v1 lock is rejected until a whole-schema
+update writes the v2 projection. ADR-009 fixes the storage layout: one TOML recipe per name
+under the platform config directory, with `--catalog`/`DEPENGINE_CATALOG`
+overrides and `--no-catalog`. With no catalog root present, existing schemas
+behave exactly as before.
+
+Condition semantics are part of the schema contract even before the v1 freeze
+([environment conditions spec](specs/environment-conditions.md)). `kernel_min`
+and `kernel_max` are additive; `kernel` remains exact. The three-state
+`is_wsl`/`is_container` change is intentionally fail-closed: on a Linux host
+where detection is inconclusive, `is_wsl = false` and `is_container = false`
+no longer match. `{is_wsl}` and `{is_container}` placeholders expand to
+`unknown` in that case.
+
 None of these numbers is yet a promise that every future depengine release will
 read every file written today.
 

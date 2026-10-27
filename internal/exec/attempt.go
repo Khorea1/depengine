@@ -98,8 +98,9 @@ func (ex *Executor) gateStaticIntent(ac *candidateAttempt, result *ToolResult) a
 	}
 
 	if ac.method.When != nil && !ac.method.When.Match(ex.facts) {
-		ex.skipCandidate(ac, result, "skip_when", "")
-		ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "skip_when", "requires", fmt.Sprintf("%v", ac.method.When))
+		reason := ac.method.When.Mismatch(ex.facts)
+		ex.skipCandidate(ac, result, "skip_when", reason)
+		ex.logDebug(ac.toolCtx, "tool", "tool", ac.tool.Name, "method", ac.displayKind, "status", "skip_when", "requires", fmt.Sprintf("%v", ac.method.When), "reason", reason)
 		return nextMethod
 	}
 

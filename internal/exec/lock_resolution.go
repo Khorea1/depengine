@@ -39,7 +39,7 @@ func (ex *Executor) resolveCandidateForSelection(ctx context.Context, tool *conf
 		return candidateSelection{intent: intent, method: method, status: "skip_capability", err: fmt.Errorf("%s", mismatch)}
 	}
 	if method.When != nil && !method.When.Match(ex.facts) {
-		return candidateSelection{intent: intent, method: method, status: "skip_when", err: fmt.Errorf("when condition not met: %+v", method.When)}
+		return candidateSelection{intent: intent, method: method, status: "skip_when", err: fmt.Errorf("when condition not met: %s", method.When.Mismatch(ex.facts))}
 	}
 	specialized, skipStatus, specErr := ex.specializeMethodForHost(method)
 	if specErr != nil {

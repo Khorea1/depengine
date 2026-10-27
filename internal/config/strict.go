@@ -24,6 +24,8 @@ var conditionFields = map[string]string{
 	"arch":               "strings",
 	"os":                 "strings",
 	"kernel":             "strings",
+	"kernel_min":         "string",
+	"kernel_max":         "string",
 	"libc":               "strings",
 	"init_system":        "strings",
 	"is_wsl":             "bool",

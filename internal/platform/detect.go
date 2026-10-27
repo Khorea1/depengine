@@ -175,24 +175,55 @@ func runtimeKernelName(goos string) string {
 	}
 }
 
+// detectEnvironmentFlags separates a conclusive negative from an inconclusive
+// probe. WSL only exists on Linux; container markers are only meaningful on
+// Linux. A positive signal is always conclusive. A negative is conclusive when
+// the relevant probe completed: /proc/version for WSL, /proc/self/cgroup for
+// containers, or a non-Linux host where neither concept applies.
 func (d hostDetector) detectEnvironmentFlags(facts *Facts) {
-	facts.IsContainer = d.exists("/.dockerenv") || d.exists("/run/.containerenv") || d.getenv("container") != ""
-	if !facts.IsContainer {
+	containerPositive := d.exists("/.dockerenv") || d.exists("/run/.containerenv") || d.getenv("container") != ""
+	cgroupReadable := false
+	if !containerPositive {
 		for _, path := range []string{"/proc/1/cgroup", "/proc/self/cgroup"} {
-			if data, err := d.readFile(path); err == nil {
-				text := strings.ToLower(string(data))
-				if strings.Contains(text, "docker") || strings.Contains(text, "containerd") || strings.Contains(text, "lxc") {
-					facts.IsContainer = true
-					break
-				}
+			data, err := d.readFile(path)
+			if err != nil {
+				continue
+			}
+			cgroupReadable = true
+			text := strings.ToLower(string(data))
+			if strings.Contains(text, "docker") || strings.Contains(text, "containerd") || strings.Contains(text, "lxc") {
+				containerPositive = true
+				break
 			}
 		}
 	}
-	if data, err := d.readFile("/proc/version"); err == nil && strings.Contains(strings.ToLower(string(data)), "microsoft") {
-		facts.IsWSL = true
+	facts.IsContainer = containerPositive
+	switch {
+	case containerPositive:
+		facts.IsContainerUnknown = false
+	case facts.OS != "linux":
+		facts.IsContainerUnknown = false
+	default:
+		facts.IsContainerUnknown = !cgroupReadable
 	}
-	if d.getenv("WSL_DISTRO_NAME") != "" || d.getenv("WSL_INTEROP") != "" {
-		facts.IsWSL = true
+
+	wslPositive := strings.Contains(strings.ToLower(facts.Kernel), "microsoft") ||
+		d.getenv("WSL_DISTRO_NAME") != "" || d.getenv("WSL_INTEROP") != ""
+	versionReadable := false
+	if data, err := d.readFile("/proc/version"); err == nil {
+		versionReadable = true
+		if strings.Contains(strings.ToLower(string(data)), "microsoft") {
+			wslPositive = true
+		}
+	}
+	facts.IsWSL = wslPositive
+	switch {
+	case wslPositive:
+		facts.IsWSLUnknown = false
+	case facts.OS != "linux":
+		facts.IsWSLUnknown = false
+	default:
+		facts.IsWSLUnknown = !versionReadable
 	}
 }
 

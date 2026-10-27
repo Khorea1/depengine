@@ -7,9 +7,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/methodkind"
+	"github.com/Khorea1/depengine/internal/platform"
 )
 
 // validateRequiredFields applies the central methodkind contracts to each
@@ -344,11 +346,50 @@ func validateWhenDirectives(s *config.Schema) *Result {
 					Field:   fieldPath(toolName, i, "when"),
 					Message: fmt.Sprintf("tool %q has an empty when clause — possible unrecognized key(s)", toolName),
 				})
+				continue
+			}
+			if message := ambiguousConditionMessage(mc.When); message != "" {
+				r.Add(ValidationError{
+					Code:    WarnAmbiguousCondition,
+					Field:   fieldPath(toolName, i, "when"),
+					Message: message,
+				})
 			}
 		}
 	}
 
 	return r
+}
+
+// ambiguousConditionMessage flags conditions that cannot mean what they look
+// like: exact matches written as ranges, libc values carrying a version, and
+// inverted min/max pairs.
+func ambiguousConditionMessage(c *config.Condition) string {
+	if c == nil {
+		return ""
+	}
+	for _, kernel := range c.Kernel {
+		if strings.ContainsAny(kernel, "*<>=~") {
+			return fmt.Sprintf("kernel %q is matched exactly; use kernel_min/kernel_max for a range", kernel)
+		}
+	}
+	for _, libc := range c.Libc {
+		if strings.IndexFunc(libc, func(r rune) bool { return unicode.IsDigit(r) || unicode.IsSpace(r) }) >= 0 {
+			return fmt.Sprintf("libc %q includes a version; detection reports only the family token (for example \"glibc\"), so this never matches", libc)
+		}
+	}
+	for _, version := range c.DistroVersion {
+		if strings.ContainsAny(version, "*<>=~") {
+			return fmt.Sprintf("distro_version %q is matched exactly; use distro_version_min/distro_version_max for a range", version)
+		}
+	}
+	if c.KernelMin != "" && c.KernelMax != "" && platform.CompareVersion(c.KernelMin, c.KernelMax) > 0 {
+		return fmt.Sprintf("kernel_min %q is greater than kernel_max %q", c.KernelMin, c.KernelMax)
+	}
+	if c.DistroVersionMin != "" && c.DistroVersionMax != "" && platform.CompareVersion(c.DistroVersionMin, c.DistroVersionMax) > 0 {
+		return fmt.Sprintf("distro_version_min %q is greater than distro_version_max %q", c.DistroVersionMin, c.DistroVersionMax)
+	}
+	return ""
 }
 
 // validatePlaceholders scans every string leaf in the schema (tool names,
