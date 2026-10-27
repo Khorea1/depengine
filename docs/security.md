@@ -26,6 +26,20 @@ Prefer immutable identities when available: checksums, container digests, and
 Git commits are easier to replay and audit than branches, tags, channels, or
 mutable URLs.
 
+## Catalog imports
+
+A catalog recipe is declarative, not automatically safe. `depengine import`
+rejects lifecycle hooks, command-typed fields and plans that require arbitrary
+code (using the same predicate as the execution gate). It also requires a
+checksum, or a `checksum_secret_ref`, for every candidate that downloads an
+artifact, and warns when `checksum = "<algo>:auto"` makes verification
+trust-on-first-use (TOFU).
+
+Import does not verify where a recipe or its artifacts come from: depengine does
+not sign or allowlist recipe sources. The preview names the external origin so
+the operator can review it. The recipe is written atomically as authored, and
+the previewed canonical digest is the identity a v2 lock pins.
+
 ## Checksums and signatures
 
 Artifact checksums are verified before installation when declared. Signature

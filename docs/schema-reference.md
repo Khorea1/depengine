@@ -1344,6 +1344,17 @@ end with a dot or be a Windows reserved device name (`CON`, `PRN`, `COM1`, ...).
 A recipe may not declare `[defaults]` or `[manifest]`, and lifecycle hooks,
 command-typed fields and arbitrary-code plans are rejected.
 
+`depengine import <recipe.toml>` applies that check before writing, and adds an
+integrity floor: a candidate that downloads an artifact must declare
+`checksum` or `checksum_secret_ref`. `checksum = "<algo>:auto"` is accepted but
+warned as trust-on-first-use (TOFU) because the checksum is fetched with the
+artifact. Import also warns when a candidate resolves to an external origin,
+because depengine does not verify recipe or artifact origins. The preview
+prints the canonical digest that lock v2 pins; the recipe is written
+atomically as authored, so the digest matches the reviewed bytes. Use
+`--dry-run` to preview without writing and `--force` to replace an existing
+recipe with the same name.
+
 The project schema then declares only its intent; the recipe supplies the
 methods, sources and conditions the project did not override:
 

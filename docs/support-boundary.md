@@ -118,6 +118,11 @@ update re-resolves a retained entry when its recipe digest changed, so new
 content is adopted explicitly instead of being silently retained. Lock v1 is
 unchanged and carries no `recipe_digest` field.
 
+`depengine import` previews that same canonical digest and writes the recipe
+as authored, so the identity shown before writing is the identity the v2 lock
+pins. Import also enforces the integrity floor for downloaded artifacts; the
+lock's frozen validation still fails closed on a changed recipe.
+
 An exact package version constrains one package. A fully locked package graph
 also needs immutable identities for its dependencies.
 

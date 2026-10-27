@@ -112,6 +112,12 @@ layer. Lock v2 pins each catalog recipe's content digest, so
 `--frozen-lockfile` fails when a recipe changes; catalog-sourced tools require
 a v2 lock, written by a whole-schema `depengine update`.
 
+`depengine import <recipe.toml>` validates a recipe before writing it into the
+first catalog root. It rejects hooks, command-typed fields and plans that
+require arbitrary code, requires a checksum for downloaded artifacts, and flags
+`sha256:auto` as trust-on-first-use. The preview shows the recipe digest that a
+v2 lock will pin. Import does not verify the recipe's origin.
+
 See [manifest merge rules](docs/schema-reference.md#manifest-merge-rules) and
 [catalog recipes](docs/schema-reference.md#catalog-recipes) for the field-level
 behavior.
@@ -121,6 +127,7 @@ behavior.
 | Command | Purpose |
 |---|---|
 | `depengine init` | Create `schema.toml` |
+| `depengine import <recipe.toml>` | Validate and add a recipe to the catalog |
 | `depengine validate` | Validate configuration without installing |
 | `depengine install` | Install declared tools |
 | `depengine check <tool>` | Check one tool |

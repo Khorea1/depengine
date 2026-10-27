@@ -52,6 +52,9 @@ Show the dependency graph
 .B "depengine help [command] [flags]"
 Help about any command
 .TP
+.B "depengine import <recipe.toml> [flags]"
+Validate a recipe before writing it to the catalog: preview origin, integrity, candidates and executable fields, reject hooks and arbitrary code, require a checksum and flag 'sha256:auto' as TOFU.
+.TP
 .B "depengine init [flags]"
 Initialize a schema.toml for a new project
 .TP
@@ -227,6 +230,19 @@ help for help Scope: local. Default: false.
 .TP
 .B "\-\-man"
 Show the man page Scope: local. Default: false.
+.SS "depengine import flags"
+.TP
+.B "\-\-catalog <stringArray>"
+destination catalog root (repeatable; the first root wins) Scope: local. Default: [].
+.TP
+.B "\-\-dry\-run"
+preview the import without writing the recipe Scope: local. Default: false.
+.TP
+.B "\-\-force"
+replace an existing recipe with the same tool name Scope: local. Default: false.
+.TP
+.B "\-h, \-\-help"
+help for import Scope: local. Default: false.
 .SS "depengine init flags"
 .TP
 .B "\-\-add <string>"

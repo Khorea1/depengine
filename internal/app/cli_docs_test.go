@@ -47,7 +47,7 @@ func TestCLIDocsCoverCommandTree(t *testing.T) {
 	for _, path := range []string{
 		"depengine", "depengine check", "depengine completion",
 		"depengine diff", "depengine forget", "depengine graph", "depengine help",
-		"depengine init", "depengine install", "depengine remove", "depengine sbom",
+		"depengine import", "depengine init", "depengine install", "depengine remove", "depengine sbom",
 		"depengine status", "depengine undo", "depengine update", "depengine upgrade",
 		"depengine validate", "depengine version", "depengine why",
 	} {

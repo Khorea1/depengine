@@ -16,6 +16,8 @@ depengine install --json --skip "bat,lsd"  # JSON output, skip tools
 depengine install --jobs 4                 # concurrent workers
 depengine install --profile=desktop        # only tools tagged "desktop"
 
+depengine import ./fd.toml --dry-run      # validate a catalog recipe
+
 depengine validate --check-env --format json
 depengine validate --strict                # warnings → exit code 1
 

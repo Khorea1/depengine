@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- Add `depengine import <recipe.toml>`: preview and validate a recipe before
+  writing it into the first catalog root. Import rejects lifecycle hooks,
+  command-typed fields and plans that require arbitrary code, requires a
+  checksum or `checksum_secret_ref` for downloaded artifacts, flags
+  `sha256:auto` as trust-on-first-use, and warns about unverified origins. The
+  preview prints the canonical digest lock v2 will pin, and the recipe is
+  written atomically as authored.
 - Replace `SortGraph`'s per-level full scan of remaining nodes with a zero
   in-degree frontier. Deep graphs no longer pay O(nodes × depth) map lookups:
   scheduling drops 2.7×–23.7× and `Analyze` 1.7×–11.2× on the 1,000/5,000-node,

@@ -123,6 +123,17 @@ Help about any command
 | `-h, --help` | local | `false` | help for help |
 | `--man` | local | `false` | Show the man page |
 
+## `depengine import <recipe.toml> [flags]`
+
+Validate a recipe before writing it to the catalog: preview origin, integrity, candidates and executable fields, reject hooks and arbitrary code, require a checksum and flag 'sha256:auto' as TOFU.
+
+| Flag | Scope | Default | Description |
+|---|---|---|---|
+| `--catalog <stringArray>` | local | `[]` | destination catalog root (repeatable; the first root wins) |
+| `--dry-run` | local | `false` | preview the import without writing the recipe |
+| `--force` | local | `false` | replace an existing recipe with the same tool name |
+| `-h, --help` | local | `false` | help for import |
+
 ## `depengine init [flags]`
 
 Initialize a schema.toml for a new project

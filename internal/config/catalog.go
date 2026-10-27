@@ -488,6 +488,14 @@ func catalogRoot(cat *Catalog, index int) string {
 	return roots[index]
 }
 
+// CanonicalRecipeDigest returns the same content digest the lock records for a
+// recipe: a stable JSON projection of the TOML document, independent of
+// comments, whitespace, key order and host placeholders. Import uses it to show
+// the identity a frozen lock will pin.
+func CanonicalRecipeDigest(raw []byte) (string, error) {
+	return canonicalRecipeDigest(raw)
+}
+
 // canonicalRecipeDigest hashes a stable JSON projection of the TOML document.
 // encoding/json sorts map keys, and the TOML decoder drops comments and
 // whitespace, so the same recipe hashes identically on every host. Placeholders
