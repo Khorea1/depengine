@@ -8,6 +8,11 @@
   `sha256:auto` as trust-on-first-use, and warns about unverified origins. The
   preview prints the canonical digest lock v2 will pin, and the recipe is
   written atomically as authored.
+- Enforce the declarative-only recipe rule at catalog lookup, not only at
+  import: a recipe with a lifecycle hook, a command-typed field or a plan that
+  requires arbitrary code fails closed when resolved, using the same
+  `PlanRequiresArbitraryCode` predicate as the execution gate. Manually placing
+  a recipe in a catalog root can no longer bypass the import validator.
 - Replace `SortGraph`'s per-level full scan of remaining nodes with a zero
   in-degree frontier. Deep graphs no longer pay O(nodes × depth) map lookups:
   scheduling drops 2.7×–23.7× and `Analyze` 1.7×–11.2× on the 1,000/5,000-node,

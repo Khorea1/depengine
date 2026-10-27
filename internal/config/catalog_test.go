@@ -439,3 +439,42 @@ func TestResolveLayersAttachesRecipeDigest(t *testing.T) {
 		t.Fatalf("merged recipe origin = %+v, want digest %q", got, recipe.Digest)
 	}
 }
+
+func TestCatalogLookupRunsRecipeValidator(t *testing.T) {
+	root := t.TempDir()
+	writeRecipe(t, root, "foo", "[packages.foo]\nnative = \"foo\"\n")
+	rejected := errors.New("recipe rejected")
+	calls := 0
+	catalog := NewCatalog([]string{root}, func(*Schema) error {
+		calls++
+		return rejected
+	})
+
+	if _, err := catalog.Lookup("foo"); !errors.Is(err, rejected) {
+		t.Fatalf("Lookup() error = %v, want the validator error", err)
+	}
+	if calls != 1 {
+		t.Fatalf("validator calls = %d, want 1", calls)
+	}
+}
+
+func TestCatalogSpecializeRunsRecipeValidator(t *testing.T) {
+	root := t.TempDir()
+	writeRecipe(t, root, "foo", "[packages.foo]\nnative = \"foo\"\n")
+	reject := false
+	catalog := NewCatalog([]string{root}, func(*Schema) error {
+		if reject {
+			return errors.New("recipe changed after lookup")
+		}
+		return nil
+	})
+
+	recipe, err := catalog.Lookup("foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reject = true
+	if _, err := recipe.Specialize(nil); err == nil || !strings.Contains(err.Error(), "recipe changed after lookup") {
+		t.Fatalf("Specialize() error = %v, want the validator error", err)
+	}
+}

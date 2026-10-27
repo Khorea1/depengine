@@ -202,12 +202,7 @@ func inspectImportRecipe(source, name string, tool *config.Tool, raw []byte) (*i
 			len(tool.Methods), importCandidateBudget))
 	}
 
-	if len(tool.PreInstall) > 0 {
-		report.Executable = append(report.Executable, "tool pre_install lifecycle hook")
-	}
-	if len(tool.PostInstall) > 0 {
-		report.Executable = append(report.Executable, "tool post_install lifecycle hook")
-	}
+	report.Executable = append(report.Executable, planner.ToolDeclarativeFindings(tool)...)
 
 	externalOrigins := make(map[string]bool)
 	for _, method := range tool.Methods {
@@ -218,31 +213,16 @@ func inspectImportRecipe(source, name string, tool *config.Tool, raw []byte) (*i
 		candidate := importCandidate{Kind: method.Kind, Label: method.Label}
 		display := candidate.displayName()
 
-		if len(method.PreInstall) > 0 {
-			report.Executable = append(report.Executable, display+" pre_install lifecycle hook")
-		}
-		if len(method.PostInstall) > 0 {
-			report.Executable = append(report.Executable, display+" post_install lifecycle hook")
-		}
-
 		contract, known := methodkind.Lookup(method.Kind)
 		if !known {
 			report.Errors = append(report.Errors, fmt.Sprintf("candidate %s uses unknown method kind %q", display, method.Kind))
 			continue
 		}
-		for _, key := range sortedConfigKeys(method.Config) {
-			if contract.Fields[key].Type == methodkind.Command {
-				report.Executable = append(report.Executable, fmt.Sprintf("%s config %q is a command field", display, key))
-			}
-		}
-
-		intent, planErr := planner.BuildCandidateIntent(tool, method)
+		findings, planErr := planner.InspectDeclarative(tool, method)
+		report.Executable = append(report.Executable, findings...)
 		if planErr != nil {
-			report.Errors = append(report.Errors, fmt.Sprintf("candidate %s: %v", display, planErr))
+			report.Errors = append(report.Errors, planErr.Error())
 			continue
-		}
-		if methodkind.PlanRequiresArbitraryCode(intent) {
-			report.Executable = append(report.Executable, display+" plan requires arbitrary code")
 		}
 
 		candidate.Origin = importCandidateOrigin(method)
@@ -340,15 +320,6 @@ func urlOrigin(raw string) string {
 func configString(config map[string]any, key string) string {
 	value, _ := config[key].(string)
 	return value
-}
-
-func sortedConfigKeys(config map[string]any) []string {
-	keys := make([]string, 0, len(config))
-	for key := range config {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func uniqueSortedStrings(values []string) []string {

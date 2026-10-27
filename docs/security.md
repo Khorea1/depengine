@@ -35,6 +35,10 @@ checksum, or a `checksum_secret_ref`, for every candidate that downloads an
 artifact, and warns when `checksum = "<algo>:auto"` makes verification
 trust-on-first-use (TOFU).
 
+The same rule applies when a recipe is read from the catalog, so placing a file
+in a catalog root manually cannot bypass import. Lookup fails closed before the
+recipe is merged or executed.
+
 Import does not verify where a recipe or its artifacts come from: depengine does
 not sign or allowlist recipe sources. The preview names the external origin so
 the operator can review it. The recipe is written atomically as authored, and

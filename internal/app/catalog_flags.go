@@ -29,5 +29,5 @@ func catalogFromCommand(cmd *cobra.Command) (*config.Catalog, error) {
 	if err != nil {
 		return nil, err
 	}
-	return config.NewCatalog(resolved), nil
+	return config.NewCatalog(resolved, validateCatalogRecipe), nil
 }

@@ -102,7 +102,7 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 			return exitWithCode(2)
 		}
 	}
-	resolution, err := config.ResolveLayers(s, manifest, config.NewCatalog(roots), nil, false)
+	resolution, err := config.ResolveLayers(s, manifest, config.NewCatalog(roots, validateCatalogRecipe), nil, false)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error loading configuration: %v\n", err)
 		return exitWithCode(2)

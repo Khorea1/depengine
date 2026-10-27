@@ -72,16 +72,29 @@ func ValidateCatalogName(name string) error {
 	return nil
 }
 
+// RecipeValidator checks a parsed recipe before the catalog returns or
+// specializes it. It lets the catalog enforce the declarative-only entry rule
+// (ADR-008 decision 4) without making config depend on the planner, which
+// imports config to build candidate plans.
+type RecipeValidator func(*Schema) error
+
 // Catalog is an ordered set of recipe roots. The first root containing a name
 // wins; roots are not field-merged.
 type Catalog struct {
-	roots []string
+	roots    []string
+	validate RecipeValidator
 }
 
 // NewCatalog returns a catalog over roots. A nil or empty catalog is valid and
-// contributes no recipes.
-func NewCatalog(roots []string) *Catalog {
-	return &Catalog{roots: append([]string(nil), roots...)}
+// contributes no recipes. The optional validator runs on every recipe the
+// catalog reads; pass the shared declarative validator to enforce the entry
+// rule.
+func NewCatalog(roots []string, validator ...RecipeValidator) *Catalog {
+	c := &Catalog{roots: append([]string(nil), roots...)}
+	if len(validator) > 0 {
+		c.validate = validator[0]
+	}
+	return c
 }
 
 // Roots returns a copy of the ordered roots.
@@ -103,6 +116,8 @@ type Recipe struct {
 	// Digest is the canonical content digest of the recipe as written, before
 	// host placeholder expansion. It verifies; a catalog revision only retrieves.
 	Digest string
+
+	validate RecipeValidator
 }
 
 // Specialize parses the recipe again with host facts. The recipe file is
@@ -118,6 +133,11 @@ func (r *Recipe) Specialize(facts map[string]string) (*Schema, error) {
 	}
 	if _, ok := s.Tools[r.Name]; !ok {
 		return nil, &CatalogError{Err: fmt.Errorf("recipe %s no longer declares %q", r.Path, r.Name)}
+	}
+	if r.validate != nil {
+		if err := r.validate(s); err != nil {
+			return nil, &CatalogError{Err: fmt.Errorf("recipe %s: %w", r.Path, err)}
+		}
 	}
 	return s, nil
 }
@@ -160,11 +180,16 @@ func (c *Catalog) Lookup(name string) (*Recipe, error) {
 				i, root, path, singleToolName(s), name,
 			)}
 		}
+		if c.validate != nil {
+			if err := c.validate(s); err != nil {
+				return nil, &CatalogError{Err: fmt.Errorf("root %d (%s): recipe %s: %w", i, root, path, err)}
+			}
+		}
 		digest, err := canonicalRecipeDigest(raw)
 		if err != nil {
 			return nil, &CatalogError{Err: fmt.Errorf("root %d (%s): %w", i, root, err)}
 		}
-		return &Recipe{Name: name, Path: path, RootIndex: i, Schema: s, Digest: digest}, nil
+		return &Recipe{Name: name, Path: path, RootIndex: i, Schema: s, Digest: digest, validate: c.validate}, nil
 	}
 	return nil, &CatalogError{Err: fmt.Errorf("%w: %q (roots: %s)", ErrRecipeNotFound, name, strings.Join(c.roots, string(os.PathListSeparator)))}
 }
