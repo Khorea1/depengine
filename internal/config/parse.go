@@ -103,12 +103,26 @@ func (e *SchemaCodeError) Error() string {
 
 // ParseProjectSchema loads and normalizes a project schema.toml.
 func ParseProjectSchema(path string, m map[string]string) (*Schema, error) {
-	return parseDocument(path, m, "tools")
+	return parseDocument(path, m, "tools", "schema_version", false)
 }
 
 // ParseManifest loads and normalizes a personal manifest.toml.
 func ParseManifest(path string, m map[string]string) (*Schema, error) {
-	return parseDocument(path, m, "packages")
+	return parseDocument(path, m, "packages", "schema_version", false)
+}
+
+// ParseRecipe loads and normalizes a single-recipe catalog file. A recipe uses
+// the manifest grammar (one entry under [packages]) with recipe_version instead
+// of schema_version, and must contain exactly one package. The package name is
+// validated against the file name by Catalog.Lookup.
+func ParseRecipe(path string, m map[string]string) (*Schema, error) {
+	return parseDocument(path, m, "packages", "recipe_version", true)
+}
+
+// ParseRecipeBytes is ParseRecipe over already-read bytes, used by catalog
+// lookup so the file is read once for both parsing and content identity.
+func ParseRecipeBytes(path string, raw []byte, m map[string]string) (*Schema, error) {
+	return parseDocumentBytes(path, raw, m, "packages", "recipe_version", true)
 }
 
 // parseDocument loads, decodes and normalizes a depengine TOML document. It produces a
@@ -127,13 +141,17 @@ func ParseManifest(path string, m map[string]string) (*Schema, error) {
 //     responsible for flagging them, not the parser.
 //   - the `simple` list is processed first; an inline table redeclaring a
 //     simple tool is an error (SchemaCodeError with Code "E_DUPE_TOOL").
-func parseDocument(path string, m map[string]string, sectionName string) (*Schema, error) {
-	if m == nil {
-		m = map[string]string{}
-	}
+func parseDocument(path string, m map[string]string, sectionName, versionField string, recipe bool) (*Schema, error) {
 	rawBytes, err := os.ReadFile(path) // #nosec G304 -- Parsing an explicitly selected schema/manifest path is this package's contract.
 	if err != nil {
 		return nil, &ParseSchemaError{Err: fmt.Errorf("reading schema %s: %w", path, err)}
+	}
+	return parseDocumentBytes(path, rawBytes, m, sectionName, versionField, recipe)
+}
+
+func parseDocumentBytes(path string, rawBytes []byte, m map[string]string, sectionName, versionField string, recipe bool) (*Schema, error) {
+	if m == nil {
+		m = map[string]string{}
 	}
 
 	var raw map[string]any
@@ -170,7 +188,7 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 	}
 	raw = ExpandAll(raw, mWithoutArchOS).(map[string]any)
 
-	if err := validateRawSchema(raw, sectionName); err != nil {
+	if err := validateRawSchema(raw, sectionName, versionField, recipe); err != nil {
 		return nil, &ParseSchemaError{Err: fmt.Errorf("%s: %w", path, err)}
 	}
 
@@ -188,7 +206,7 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 	}
 
 	allowNewTools := false
-	if sectionName == "packages" {
+	if sectionName == "packages" && !recipe {
 		if manifestRaw, ok := raw["manifest"]; ok {
 			if manifestMap, ok := manifestRaw.(map[string]any); ok {
 				if allow, ok := manifestMap["allow_new_tools"]; ok {
@@ -274,6 +292,10 @@ func parseDocument(path string, m map[string]string, sectionName string) (*Schem
 	if err != nil {
 		return nil, &ParseSchemaError{Err: fmt.Errorf("resolve schema path %s: %w", path, err)}
 	}
+	if recipe && len(tools) != 1 {
+		return nil, &ParseSchemaError{Err: fmt.Errorf("%s: a recipe must declare exactly one package, got %d", path, len(tools))}
+	}
+
 	projectRoot := filepath.Dir(absPath)
 	bindProjectRoot(tools, projectRoot)
 

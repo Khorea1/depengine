@@ -32,6 +32,8 @@ func newGraphCmd() *cobra.Command {
 	graphSkip := new(string)
 	graphDirection := new(string)
 	graphDepth := new(int)
+	graphCatalog := new([]string)
+	graphNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
 		Use:     "graph",
@@ -39,13 +41,19 @@ func newGraphCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runGraphView(cmd.Context(), graphSchema, graphManifest, graphNoManifest, graphFormat, graphWidth, graphView, graphShowInactive, graphProfile, graphOnly, graphSkip, graphDirection, graphDepth)
+			catalog, err := catalogFromCommand(cmd)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runGraphView(cmd.Context(), graphSchema, graphManifest, graphNoManifest, graphFormat, graphWidth, graphView, graphShowInactive, graphProfile, graphOnly, graphSkip, graphDirection, graphDepth, catalog)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(graphSchema, "schema", defaultSchemaPath(), "path to schema.toml")
 	f.StringVar(graphManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(graphNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	addCatalogFlags(cmd, graphCatalog, graphNoCatalog)
 	f.StringVar(graphFormat, "format", "text", "output format: mermaid, dot, text, graph")
 	f.IntVar(graphWidth, "width", 0, "terminal width for --format graph (0 = detect terminal width)")
 	f.StringVar(graphView, "view", "declared", "graph projection: declared, effective, resolved")
@@ -58,7 +66,7 @@ func newGraphCmd() *cobra.Command {
 	return cmd
 }
 
-func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graphNoManifest *bool, graphFormat *string, graphWidth *int, graphView *string, graphShowInactive *bool, graphProfile, graphOnly, graphSkip, graphDirection *string, graphDepth *int) error {
+func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graphNoManifest *bool, graphFormat *string, graphWidth *int, graphView *string, graphShowInactive *bool, graphProfile, graphOnly, graphSkip, graphDirection *string, graphDepth *int, catalog *config.Catalog) error {
 	switch *graphFormat {
 	case "mermaid", "dot", "text", "graph":
 	default:
@@ -99,7 +107,7 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 			manifestAuto = true
 		}
 	}
-	project, err := loadProject(*graphSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto})
+	project, err := loadProject(*graphSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Catalog: catalog})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return exitWithCode(exitCodeForError(err))
@@ -108,6 +116,9 @@ func runGraphView(ctx context.Context, graphSchema, graphManifest *string, graph
 	s := project.Schema
 	if project.ManifestCount > 0 && project.ManifestAuto {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", project.ManifestPath, project.ManifestCount)
+	}
+	if project.CatalogCount > 0 {
+		fmt.Fprintf(os.Stderr, "  catalog: %s (%d recipes)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), project.CatalogCount)
 	}
 	// The historical `--only` closure keeps its schema-level filtering. Any
 	// other direction or depth slices the complete typed IR instead, because
@@ -184,6 +195,8 @@ func newWhyCmd() *cobra.Command {
 	whyNoManifest := new(bool)
 	whyJSON := new(bool)
 	whyFields := new(bool)
+	whyCatalog := new([]string)
+	whyNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
 		Use:     "why <tool>",
@@ -192,13 +205,19 @@ func newWhyCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runWhy(cmd.Context(), args[0], whySchema, whyManifest, whyNoManifest, whyJSON, whyFields)
+			catalog, err := catalogFromCommand(cmd)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runWhy(cmd.Context(), args[0], whySchema, whyManifest, whyNoManifest, whyJSON, whyFields, catalog)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(whySchema, "schema", defaultSchemaPath(), "path to schema.toml")
 	f.StringVar(whyManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(whyNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	addCatalogFlags(cmd, whyCatalog, whyNoCatalog)
 	f.BoolVar(whyJSON, "json", false, "JSON output")
 	f.BoolVar(whyFields, "fields", false, "show field-level provenance")
 	return cmd
@@ -330,7 +349,7 @@ func formatWhyAttemptIntent(attempt exec.MethodAttempt) string {
 // cobra.ExactArgs(1) now enforces the argument count that the old manual
 // length check did, and toolName arrives as a plain argument instead of
 // remain[0].
-func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string, whyNoManifest, whyJSON, whyFields *bool) error {
+func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string, whyNoManifest, whyJSON, whyFields *bool, catalog *config.Catalog) error {
 	noManifest := *whyNoManifest
 	manifestPath := *whyManifest
 	manifestAuto := false
@@ -340,7 +359,7 @@ func runWhy(ctx context.Context, toolName string, whySchema, whyManifest *string
 			manifestAuto = true
 		}
 	}
-	project, err := loadProject(*whySchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: *whyFields, WarningTool: toolName})
+	project, err := loadProject(*whySchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: *whyFields, WarningTool: toolName, Catalog: catalog})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return exitWithCode(exitCodeForError(err))

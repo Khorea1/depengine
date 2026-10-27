@@ -28,6 +28,8 @@ func newStatusCmd() *cobra.Command {
 	statusFormat := new(string)
 	statusJSON := new(bool)
 	statusOrphans := new(bool)
+	statusCatalog := new([]string)
+	statusNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
 		Use:     "status",
@@ -37,13 +39,19 @@ func newStatusCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStatus(cmd.Context(), statusSchema, statusManifest, statusNoManifest, statusFormat, statusJSON, statusOrphans)
+			catalog, err := catalogFromCommand(cmd)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runStatus(cmd.Context(), statusSchema, statusManifest, statusNoManifest, statusFormat, statusJSON, statusOrphans, catalog)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(statusSchema, "schema", "", "override schema path")
 	f.StringVar(statusManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(statusNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	addCatalogFlags(cmd, statusCatalog, statusNoCatalog)
 	f.StringVar(statusFormat, "format", "text", "output format: text or json")
 	f.BoolVar(statusJSON, "json", false, "JSON output (shorthand for --format=json)")
 	f.BoolVar(statusOrphans, "orphans", false, "show only orphaned tools")
@@ -51,7 +59,7 @@ func newStatusCmd() *cobra.Command {
 }
 
 // runStatus compares tracked and observed host state with the current schema.
-func runStatus(ctx context.Context, statusSchema, statusManifest *string, statusNoManifest *bool, statusFormat *string, statusJSON, statusOrphans *bool) error {
+func runStatus(ctx context.Context, statusSchema, statusManifest *string, statusNoManifest *bool, statusFormat *string, statusJSON, statusOrphans *bool, catalog *config.Catalog) error {
 	normalizeStatusFormat(statusFormat, statusJSON)
 
 	ls, err := openStatusState(ctx)
@@ -67,7 +75,7 @@ func runStatus(ctx context.Context, statusSchema, statusManifest *string, status
 		return nil
 	}
 
-	project, lk, err := loadStatusSchema(schemaPath, statusManifest, statusNoManifest)
+	project, lk, err := loadStatusSchema(schemaPath, statusManifest, statusNoManifest, catalog)
 	if err != nil {
 		log.Default.Error("load lock for status", "error", err)
 		return exitWithCode(3)
@@ -141,7 +149,7 @@ func resolveStatusSchemaPath(st *state.State, statusSchema *string) (string, boo
 // installed-vs-pinned version comparisons (outdated detection). A missing
 // lock is fine. A schema that fails to parse (or a manifest that fails to
 // merge) degrades to state-only reporting with a warning.
-func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifest *bool) (*loadedProject, *lock.Lock, error) {
+func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifest *bool, catalog *config.Catalog) (*loadedProject, *lock.Lock, error) {
 	if schemaPath == "" {
 		return nil, nil, nil
 	}
@@ -156,7 +164,7 @@ func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifes
 		}
 	}
 
-	project, projectErr := loadProject(schemaPath, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto})
+	project, projectErr := loadProject(schemaPath, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Catalog: catalog})
 	lockSchemaPath := schemaPath
 	if projectErr != nil {
 		log.Default.Warn("load schema for comparison", "error", projectErr)
@@ -165,6 +173,9 @@ func loadStatusSchema(schemaPath string, statusManifest *string, statusNoManifes
 		lockSchemaPath = project.SchemaPath
 		if project.ManifestCount > 0 && project.ManifestAuto {
 			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", project.ManifestPath, project.ManifestCount)
+		}
+		if project.CatalogCount > 0 {
+			fmt.Fprintf(os.Stderr, "  catalog: %s (%d recipes)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), project.CatalogCount)
 		}
 	}
 

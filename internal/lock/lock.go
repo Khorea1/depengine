@@ -84,6 +84,10 @@ type Lock struct {
 	Tools       map[string]ToolPin `toml:"tools"`
 	MethodsHash map[string]string  `toml:"methods_hash,omitempty" json:"methods_hash,omitempty"`
 	SourceHash  map[string]string  `toml:"source_hash,omitempty" json:"source_hash,omitempty"`
+	// RecipeDigest pins the canonical content digest of the catalog recipe that
+	// supplied each tool. Keys are tool names. It is present in v2 lockfiles
+	// only: lock v1 has no catalog identity and remains byte-compatible.
+	RecipeDigest map[string]string `toml:"recipe_digest,omitempty" json:"recipe_digest,omitempty"`
 	// UniversalProjection is the adapter-neutral plan.LockDocument encoded as JSON.
 	// It is present in v2 lockfiles; v1 remains readable for migration.
 	UniversalProjection string `toml:"universal_projection,omitempty"`
@@ -142,9 +146,20 @@ func Load(path string) (*Lock, error) {
 	if l.Version == 1 && l.UniversalProjection != "" {
 		return nil, fmt.Errorf("lock: version 1 cannot contain a universal projection")
 	}
+	if l.Version == 1 && len(l.RecipeDigest) > 0 {
+		return nil, fmt.Errorf("lock: version 1 cannot contain recipe digests")
+	}
 	if l.Version == CurrentVersion {
 		if _, err := l.ProjectionDocument(); err != nil {
 			return nil, err
+		}
+		for name, digest := range l.RecipeDigest {
+			if strings.TrimSpace(name) != name || name == "" || strings.ContainsRune(name, '\x00') {
+				return nil, fmt.Errorf("lock: invalid recipe digest tool name %q", name)
+			}
+			if err := validateRecipeDigest(digest); err != nil {
+				return nil, fmt.Errorf("lock: invalid recipe digest for tool %q: %w", name, err)
+			}
 		}
 	}
 	for key, pin := range l.Tools {
@@ -301,6 +316,90 @@ func computeSourceHash(method *config.MethodCandidate) string {
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// SnapshotRecipeDigests captures the canonical content digest of every tool
+// that was supplied by a catalog recipe. Tools defined only by the project
+// schema or the personal manifest have no digest and are omitted. The digest is
+// computed from the recipe document before host placeholders are expanded, so
+// it is identical on every host for the same recipe.
+func SnapshotRecipeDigests(s *config.Schema) (map[string]string, error) {
+	if s == nil {
+		return nil, fmt.Errorf("lock: recipe digest requires schema")
+	}
+	digests := make(map[string]string)
+	for name, tool := range s.Tools {
+		if tool == nil {
+			return nil, fmt.Errorf("lock: recipe digest requires valid tool %q", name)
+		}
+		if tool.RecipeDigest == "" {
+			continue
+		}
+		if err := validateRecipeDigest(tool.RecipeDigest); err != nil {
+			return nil, fmt.Errorf("lock: recipe digest for tool %q: %w", name, err)
+		}
+		digests[name] = tool.RecipeDigest
+	}
+	if len(digests) == 0 {
+		return nil, nil
+	}
+	return digests, nil
+}
+
+// CatalogToolNames returns the sorted names of tools whose current resolution
+// came from a catalog recipe.
+func CatalogToolNames(s *config.Schema) []string {
+	if s == nil {
+		return nil
+	}
+	names := make([]string, 0)
+	for name, tool := range s.Tools {
+		if tool != nil && tool.RecipeDigest != "" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// ValidateCatalogLockVersion enforces that catalog-sourced identity is only
+// persisted in lock v2. A catalog layer combined with a missing or v1 lock
+// fails closed: recipe content cannot be pinned by the legacy index-keyed
+// format, so accepting it would silently drop the verification.
+func ValidateCatalogLockVersion(s *config.Schema, l *Lock) error {
+	names := CatalogToolNames(s)
+	if len(names) == 0 {
+		return nil
+	}
+	if l != nil && l.Version == CurrentVersion {
+		return nil
+	}
+	version := "missing"
+	if l != nil {
+		version = fmt.Sprintf("v%d", l.Version)
+	}
+	return fmt.Errorf(
+		"lock: catalog-sourced tools require lock v%d (found %s): %s; run 'depengine update' without --profile to write a complete v2 projection",
+		CurrentVersion, version, strings.Join(names, ", "),
+	)
+}
+
+func validateRecipeDigest(value string) error {
+	const prefix = "sha256:"
+	if !strings.HasPrefix(value, prefix) {
+		return fmt.Errorf("must use %s<hex> syntax", prefix)
+	}
+	decoded, err := hex.DecodeString(strings.TrimPrefix(value, prefix))
+	if err != nil {
+		return fmt.Errorf("value must be hexadecimal: %w", err)
+	}
+	if len(decoded) != sha256.Size {
+		return fmt.Errorf("sha256 digest must contain %d bytes", sha256.Size)
+	}
+	if strings.ToLower(value) != value {
+		return fmt.Errorf("digest must be lowercase")
+	}
+	return nil
 }
 
 // SnapshotIntentMetadata derives requested method/source identity hashes without
@@ -577,6 +676,12 @@ func Merge(existing, fresh *Lock) *Lock {
 		fresh.Version = CurrentVersion
 		fresh.UniversalProjection = existing.UniversalProjection
 	}
+	// Recipe digests belong to the v2 projection. Install never re-resolves
+	// catalog content, so the existing map is preserved verbatim; update
+	// supplies a fresh map and wins.
+	if existing.Version == CurrentVersion && len(existing.RecipeDigest) > 0 && len(fresh.RecipeDigest) == 0 {
+		fresh.RecipeDigest = cloneStringMap(existing.RecipeDigest)
+	}
 	return fresh
 }
 
@@ -598,6 +703,9 @@ func ValidateFrozen(s *config.Schema, l *Lock) error {
 		return fmt.Errorf("lock: unsupported version %d (supported: 1, %d)", l.Version, CurrentVersion)
 	}
 	if l.Version == 1 {
+		if err := ValidateCatalogLockVersion(s, l); err != nil {
+			return err
+		}
 		return validateFrozenV1(s, l)
 	}
 	return validateFrozenV2(s, l)
@@ -709,6 +817,10 @@ func validateFrozenV2(s *config.Schema, l *Lock) error {
 	if err != nil {
 		return err
 	}
+	currentDigests, err := SnapshotRecipeDigests(s)
+	if err != nil {
+		return err
+	}
 
 	projected := make(map[string]struct{}, len(doc.Entries))
 	for _, entry := range doc.Entries {
@@ -722,6 +834,16 @@ func validateFrozenV2(s *config.Schema, l *Lock) error {
 
 	for _, name := range names {
 		tool := s.Tools[name]
+		currentDigest := currentDigests[name]
+		storedDigest := l.RecipeDigest[name]
+		switch {
+		case currentDigest != "" && storedDigest == "":
+			return fmt.Errorf("lock: frozen lock needs update: missing recipe digest for tool %q", name)
+		case currentDigest != "" && storedDigest != currentDigest:
+			return fmt.Errorf("lock: frozen lock needs update: recipe content changed for tool %q", name)
+		case currentDigest == "" && storedDigest != "":
+			return fmt.Errorf("lock: frozen lock needs update: tool %q is no longer sourced from a catalog recipe", name)
+		}
 		if len(tool.Methods) == 0 {
 			continue
 		}

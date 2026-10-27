@@ -1287,3 +1287,70 @@ unlabeled candidate or a duplicated label. Multiple same-kind candidates with
 unique labels are already unambiguous for upgrade, remove, and lock state. Add `--fields` to see exactly
 which layer contributed each field for a given tool; `--json` exposes identity
 metadata under `intent` plus `candidate`/`candidate_known` ordinals.
+
+## Catalog recipes
+
+A catalog is an optional, user-owned layer of reusable recipes below the
+personal manifest. Each recipe is one file at `<catalog-root>/<name>.toml`; the
+file system is the index, so a lookup never scans the directory.
+
+Default root:
+
+- Linux/Unix: `$XDG_CONFIG_HOME/depengine/catalog`, falling back to
+  `~/.config/depengine/catalog` when `XDG_CONFIG_HOME` is unset or relative.
+- macOS: `~/Library/Application Support/depengine/catalog`.
+- Windows: `%AppData%\depengine\catalog`.
+
+`--catalog <dir>` (repeatable) and `DEPENGINE_CATALOG` (a path list) replace the
+default roots; `--no-catalog` disables the layer. The first root containing a
+name wins; roots are not field-merged.
+
+A recipe uses the personal-manifest grammar with `recipe_version` instead of
+`schema_version` and exactly one entry under `[packages]`:
+
+```toml
+recipe_version = 1
+
+[packages.fd]
+github = { repo = "sharkdp/fd", asset = "fd-v{version}-{arch}-unknown-linux-musl.tar.gz", checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+```
+
+The package name must match the file name (`fd.toml` declares `[packages.fd]`).
+Names are ASCII and must match `[A-Za-z0-9][A-Za-z0-9._+-]{0,127}`; they may not
+end with a dot or be a Windows reserved device name (`CON`, `PRN`, `COM1`, ...).
+A recipe may not declare `[defaults]` or `[manifest]`, and lifecycle hooks,
+command-typed fields and arbitrary-code plans are rejected.
+
+The project schema then declares only its intent; the recipe supplies the
+methods, sources and conditions the project did not override:
+
+```toml
+[tools.fd]
+tags = ["cli"]          # project-specific; everything else comes from fd.toml
+```
+
+A field declared in the project schema wins over the recipe field by field. A
+project-declared tool that resolves to no methods and no `requires` is reported
+by `depengine validate` as `W_INERT_TOOL`, with a hint to add a method, a
+`requires`, or a recipe. An explicit `requires = []` is a deliberate marker for
+a non-installable tool and does not warn.
+
+Precedence is project schema, personal manifest, catalog roots in order, then
+derived sources. The catalog is consulted only for tools declared by the project
+schema and for their transitive `requires` closure. A tool admitted only by
+`[manifest] allow_new_tools = true` is never resolved from the catalog. A
+missing default root is not an error; an explicitly named root that is missing,
+unreadable or not a directory is. Invalid TOML, an unreadable recipe, a symlink
+recipe, or a file name that does not match the declared package name fails
+closed.
+
+Catalog content identity is pinned in lock v2 as a canonical digest of the
+recipe document. Frozen validation fails closed when the digest is missing or
+changed, and a catalog-sourced tool combined with a v1 lock is rejected; run a
+whole-schema `depengine update` to write the v2 projection.
+The digest covers the whole recipe, including fields that never reach the
+resolved plan (`extract_to`, `link_dir`, `entrypoints`), and is computed before
+host placeholders are expanded.
+
+See [`design/adr-009-catalog-layout.md`](design/adr-009-catalog-layout.md) for
+the full layout and lookup contract.

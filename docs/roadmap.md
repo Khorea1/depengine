@@ -115,8 +115,9 @@ Work on the current execution model comes before adding more installer types.
 - [ ] Implement the accepted catalog layer: project schema as intent,
   `Lookup(name)` recipes, recipe content identity, provenance, and the
   host-independent candidate sequence. See
-  [`design/adr-008-catalog-layer.md`](design/adr-008-catalog-layer.md) and the
-  `dep-ixd` epic.
+  [`design/adr-008-catalog-layer.md`](design/adr-008-catalog-layer.md),
+  [`design/adr-009-catalog-layout.md`](design/adr-009-catalog-layout.md) and
+  the `dep-ixd` epic.
 
 ## P2: installer coverage
 

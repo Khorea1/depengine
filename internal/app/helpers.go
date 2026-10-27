@@ -76,6 +76,8 @@ type loadedProject struct {
 	ManifestPath  string
 	ManifestCount int
 	ManifestAuto  bool
+	CatalogRoots  []string
+	CatalogCount  int
 }
 
 type projectLoadOptions struct {
@@ -83,6 +85,7 @@ type projectLoadOptions struct {
 	ManifestAuto bool
 	Provenance   bool
 	WarningTool  string
+	Catalog      *config.Catalog
 }
 
 // resolveSchemaFilePath resolves the exact schema file consumed by project
@@ -134,28 +137,19 @@ func loadProject(schemaPath string, opts projectLoadOptions) (*loadedProject, er
 		return nil, err
 	}
 
-	count := 0
+	var manifest *config.Schema
 	if opts.ManifestPath != "" {
-		manifest, err := config.ParseManifest(opts.ManifestPath, factMap)
+		manifest, err = config.ParseManifest(opts.ManifestPath, factMap)
 		if err != nil {
 			return nil, err
 		}
-		config.FilterManifestTools(schema, manifest)
-		if err := config.ValidateManifestLayer(manifest); err != nil {
-			return nil, err
-		}
-		if err := config.ValidateManifestNewTools(schema, manifest); err != nil {
-			return nil, err
-		}
-		count = len(manifest.Tools)
-		if count > 0 {
-			if opts.Provenance {
-				schema = config.MergeLayersWithProvenance(manifest, schema)
-			} else {
-				schema = config.MergeLayers(manifest, schema)
-			}
-		}
 	}
+
+	resolution, err := config.ResolveLayers(schema, manifest, opts.Catalog, factMap, opts.Provenance)
+	if err != nil {
+		return nil, err
+	}
+	schema = resolution.Schema
 
 	if err := config.ValidateEffectiveIntegrity(schema); err != nil {
 		return nil, err
@@ -181,8 +175,10 @@ func loadProject(schemaPath string, opts projectLoadOptions) (*loadedProject, er
 		Clan:          clan,
 		SchemaPath:    resolvedSchema,
 		ManifestPath:  opts.ManifestPath,
-		ManifestCount: count,
+		ManifestCount: resolution.ManifestCount,
 		ManifestAuto:  opts.ManifestAuto,
+		CatalogRoots:  opts.Catalog.Roots(),
+		CatalogCount:  resolution.CatalogCount,
 	}, nil
 }
 
@@ -194,31 +190,6 @@ func loadSchema(path string) (*config.Schema, string, *platform.Facts, error) {
 		return nil, "", nil, err
 	}
 	return project.Schema, project.Clan, project.Facts, nil
-}
-
-// mergeManifest remains for the syntax-only validate command. Host-aware
-// commands use loadProject so project and manifest never receive different
-// placeholder maps.
-func mergeManifest(schema *config.Schema, path string, provenance bool) (*config.Schema, int, error) {
-	manifest, err := config.ParseManifest(path, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-	config.FilterManifestTools(schema, manifest)
-	if err := config.ValidateManifestLayer(manifest); err != nil {
-		return nil, 0, err
-	}
-	if err := config.ValidateManifestNewTools(schema, manifest); err != nil {
-		return nil, 0, err
-	}
-	count := len(manifest.Tools)
-	if count == 0 {
-		return schema, 0, nil
-	}
-	if provenance {
-		return config.MergeLayersWithProvenance(manifest, schema), count, nil
-	}
-	return config.MergeLayers(manifest, schema), count, nil
 }
 
 // newProjectExecutor wires the host-specific adapters and selection policy
@@ -247,6 +218,10 @@ func exitCodeForError(err error) int {
 	}
 	var schemaErr *config.ParseSchemaError
 	if errors.As(err, &schemaErr) {
+		return 2
+	}
+	var catalogErr *config.CatalogError
+	if errors.As(err, &catalogErr) {
 		return 2
 	}
 	return 3
@@ -329,6 +304,12 @@ func loadLockfile(schemaPath string, s *config.Schema, frozen bool, lg *slog.Log
 	if frozen && lk == nil {
 		lg.Error("--frozen-lockfile requires lockfile — run 'depengine update' first", "path", lockPath)
 		return nil, exitWithCode(2)
+	}
+	if lk != nil {
+		if err := lock.ValidateCatalogLockVersion(s, lk); err != nil {
+			lg.Error("lockfile cannot pin catalog recipes", "error", err)
+			return nil, exitWithCode(2)
+		}
 	}
 	if frozen {
 		if err := lock.ValidateFrozen(s, lk); err != nil {

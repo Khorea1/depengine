@@ -531,9 +531,31 @@ requires = []
 requires = []
 
 
+# ------------------------------------------------------------------------
+# CASE 12 — Recipe-backed tool (recommended for shared projects).
+# Declare the project's intent only; the catalog supplies the rest.
+# The recipe lives at <catalog-root>/<name>.toml and uses recipe_version = 1.
+# ------------------------------------------------------------------------
+# fd = {}
+#   → resolves fd.toml from the catalog. A field declared here (for example
+#     method_prefer or a narrower when) wins over the recipe.
+#
+# Equivalent recipe at ~/.config/depengine/catalog/fd.toml:
+#   recipe_version = 1
+#   [packages.fd]
+#   github = { repo = "sharkdp/fd", asset = "fd-v{version}-{arch}-unknown-linux-musl.tar.gz", checksum = "sha256:..." }
+#
+# Keep the enumerated forms above when the project needs a local exception or
+# when the tool is not shared. A tool that resolves to no methods and no
+# requires is reported by `depengine validate` as W_INERT_TOOL.
+
+
 # ==============================================================================
 # CHECKLIST — which format to use for a new tool?
 # ==============================================================================
+# 0. Is the tool shared across projects, or does a recipe already exist?
+#       → declare intent only: name = {} and keep the recipe in the catalog.
+#
 # 1. Is the package name always the same, with no special conditions?
 #       → add to the `simple` list.
 #

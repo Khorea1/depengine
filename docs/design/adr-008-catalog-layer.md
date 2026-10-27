@@ -1,13 +1,16 @@
 # ADR-008: A catalog layer supplies recipes by name
 
 Status: Accepted (2026-10-25). Implementation follows the phased issues under `dep-ixd`.
+Storage layout and path resolution are decided in
+[ADR-009](adr-009-catalog-layout.md).
 
 Every decision below carries its origin. **Maintainer** means stated by the
 maintainer in session.
 **Evidence** means supported by a measurement or by code reading cited in
 Context. **Proposal** means the draft recommended it; the 2026-10-25 decision
 accepts it or marks it deferred in the status table.
-Nothing here defines syntax, a binary format, or a directory layout.
+Nothing here defines syntax or a binary format. The directory layout and
+path resolution are decided in [ADR-009](adr-009-catalog-layout.md).
 
 ## Context
 
@@ -86,7 +89,8 @@ recipe that omits `checksum` installs with no integrity check
    recipe for a name, or not found. It takes no host facts and filters nothing
    (ADR-007 decision 4). It returns candidates in declared order. Storage is
    hidden behind the contract. The first backend is one TOML file per package,
-   with the file system as the index. The spike showed this stays flat from
+   with the file system as the index; its layout and path resolution are
+   decided in [ADR-009](adr-009-catalog-layout.md). The spike showed this stays flat from
    1 000 to 100 000 recipes and returns candidates, `MethodsHash` and
    `SourceHash` equal to the eager path for the same tools at three scales.
    A recipe is host-independent: lookup returns every declared candidate in
@@ -123,6 +127,12 @@ recipe that omits `checksum` installs with no integrity check
    `link_dir` and `entrypoints` do not reach the resolved plan. A catalog revision may
    be recorded as a hint for retrieving the same recipe, never as the
    verification. The digest verifies; the revision retrieves.
+   **Implementation (2026-10-25):** the canonical form is the TOML document
+   decoded into a map, encoded as JSON with sorted keys, and hashed with
+   SHA-256 (`sha256:<hex>`). It is persisted as `recipe_digest` in lock v2,
+   keyed by tool name; every field is included, while comments, whitespace and
+   key order are not. Lock v1 carries no such field and rejects a catalog-sourced
+   tool until a whole-schema update writes v2.
 
 6. **Lock version.** *(Evidence, from ADR-001 and `dep-41b`.)* Catalog identity
    is persisted only in lock v2. Using a catalog layer against a v1 lock fails
@@ -187,7 +197,8 @@ only those the project schema declares.
 
 ## Non-goals
 
-- No import syntax, binary format or directory layout.
+- No import syntax or binary format. Directory layout and path resolution
+  are ADR-009, not this ADR.
 - No new language for recipes (T3, cancelled by the maintainer; reopens only if a
   real, documented manifest cannot be expressed in TOML).
 - No support for `distributions` beyond `github` until D4 is decided with a

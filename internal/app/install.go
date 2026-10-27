@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -43,6 +44,8 @@ func newInstallCmd() *cobra.Command {
 	installJobs := new(int)
 	installAllowArbitrary := new(bool)
 	installQuiet := new(bool)
+	installCatalog := new([]string)
+	installNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
 		Use:     "install",
@@ -58,6 +61,7 @@ func newInstallCmd() *cobra.Command {
 	f.StringVar(installSchema, "schema", defaultSchemaPath(), "path to schema.toml")
 	f.StringVar(installManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(installNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	addCatalogFlags(cmd, installCatalog, installNoCatalog)
 	f.BoolVar(installDryRun, "dry-run", false, "show what would be installed")
 	f.BoolVar(installVerbose, "verbose", false, "deprecated compatibility flag; detailed output is already the default")
 	f.BoolVar(installJSON, "json", false, "JSON output")
@@ -328,7 +332,15 @@ func installExitForReport(report *exec.ExecReport) error {
 func finishInstallRun(ctx context.Context, report *exec.ExecReport, p installPlan, s *config.Schema, lockPath string, lk *lock.Lock, lg *slog.Logger, cs *cliStyle) error {
 	if !p.dryRun {
 		if !p.frozen && (lk == nil || lk.Version != lock.CurrentVersion) {
-			saveResolvedLegacyInstallLock(lockPath, lk, lg, p.diagnose)
+			if names := lock.CatalogToolNames(s); len(names) > 0 {
+				lg.Warn(
+					"not writing lock v1 for catalog-sourced tools",
+					"tools", strings.Join(names, ", "),
+					"hint", "run 'depengine update' without --profile to write a complete v2 projection",
+				)
+			} else {
+				saveResolvedLegacyInstallLock(lockPath, lk, lg, p.diagnose)
+			}
 		}
 		// Reconcile recorded versions with the lock: backfill versions the
 		// adapter could not determine (e.g. {latest} pins baked into URLs)
@@ -363,7 +375,13 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 		return err
 	}
 
-	project, err := loadProject(p.schema, projectLoadOptions{ManifestPath: p.manifestPath, Provenance: true})
+	catalog, err := catalogFromCommand(cmd)
+	if err != nil {
+		lg.Error("resolve catalog", "error", err)
+		return exitWithCode(2)
+	}
+
+	project, err := loadProject(p.schema, projectLoadOptions{ManifestPath: p.manifestPath, Provenance: true, Catalog: catalog})
 	if err != nil {
 		if os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "error: %s not found\n", p.schema)
@@ -385,6 +403,9 @@ func runInstall(cmd *cobra.Command, installSchema, installManifest *string, inst
 	// is this a dry run" before any per-tool output starts scrolling by.
 	cs := newCLIStyle(os.Stderr)
 	printInstallHeader(cs, p, s, clan, facts, manifestCount)
+	if project.CatalogCount > 0 {
+		fmt.Fprintf(os.Stderr, "  catalog: %s (%d recipes)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), project.CatalogCount)
+	}
 
 	schemaFile, err := os.Stat(p.schema)
 	if err != nil {

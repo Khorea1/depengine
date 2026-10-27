@@ -86,9 +86,12 @@ func validateNoPlaceholderSelectors(raw any, path string, errs *[]string) {
 	}
 }
 
-func validateRawSchema(raw map[string]any, section string) error {
-	allowedRoot := map[string]bool{"schema_version": true, "defaults": true, section: true}
-	if section == "packages" {
+func validateRawSchema(raw map[string]any, section, versionField string, recipe bool) error {
+	allowedRoot := map[string]bool{versionField: true, section: true}
+	if !recipe {
+		allowedRoot["defaults"] = true
+	}
+	if section == "packages" && !recipe {
 		allowedRoot["manifest"] = true
 	}
 
@@ -98,14 +101,16 @@ func validateRawSchema(raw map[string]any, section string) error {
 			errs = append(errs, fmt.Sprintf("%s: unknown root field", key))
 		}
 	}
-	validateSchemaVersion(raw["schema_version"], &errs)
-	validateDefaults(raw["defaults"], &errs)
+	validateDocumentVersion(raw[versionField], versionField, &errs)
+	if !recipe {
+		validateDefaults(raw["defaults"], &errs)
+	}
 	if _, ok := raw[section]; !ok {
 		errs = append(errs, section+": required table")
 	} else {
 		validateToolSection(raw[section], section, &errs)
 	}
-	if section == "packages" {
+	if section == "packages" && !recipe {
 		validateManifest(raw["manifest"], &errs)
 	}
 	if len(errs) > 0 {
@@ -114,18 +119,18 @@ func validateRawSchema(raw map[string]any, section string) error {
 	return nil
 }
 
-func validateSchemaVersion(raw any, errs *[]string) {
+func validateDocumentVersion(raw any, field string, errs *[]string) {
 	if raw == nil {
-		*errs = append(*errs, "schema_version: required field")
+		*errs = append(*errs, field+": required field")
 		return
 	}
 	version, ok := raw.(int64)
 	if !ok {
-		*errs = append(*errs, fmt.Sprintf("schema_version: expected integer, got %T", raw))
+		*errs = append(*errs, fmt.Sprintf("%s: expected integer, got %T", field, raw))
 		return
 	}
 	if version != int64(formatversion.CurrentManifestVersion) {
-		*errs = append(*errs, fmt.Sprintf("schema_version: unsupported version %d (supported: %d)", version, formatversion.CurrentManifestVersion))
+		*errs = append(*errs, fmt.Sprintf("%s: unsupported version %d (supported: %d)", field, version, formatversion.CurrentManifestVersion))
 	}
 }
 

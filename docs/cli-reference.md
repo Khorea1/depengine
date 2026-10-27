@@ -20,11 +20,13 @@ Reconciles observed host identity with the resolved plan. Only 'satisfied' exits
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
+| `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
 | `--format <string>` | local | `` | output format (json) |
 | `-h, --help` | local | `false` | help for check |
 | `--json` | local | `false` | JSON output |
 | `--live` | local | `false` | check via adapter (may run subprocesses) |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
+| `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
 | `--schema <string>` | local | `schema.toml` | path to schema.toml |
 
@@ -96,11 +98,13 @@ Show the dependency graph
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
+| `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
 | `--depth <int>` | local | `-1` | with --only: maximum traversal depth in edges (-1 = unbounded, 0 = only the tool itself) |
 | `--direction <string>` | local | `deps` | with --only: traversal direction: deps, dependents, both |
 | `--format <string>` | local | `text` | output format: mermaid, dot, text, graph |
 | `-h, --help` | local | `false` | help for graph |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
+| `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
 | `--only <string>` | local | `` | only show subgraph for specific tool |
 | `--profile <string>` | local | `` | only show tools with matching tag |
@@ -139,6 +143,7 @@ Aliases: `i`.
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `--allow-arbitrary-code` | local | `false` | permit hooks, build scripts, and other arbitrary code execution |
+| `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
 | `--diagnose` | local | `false` | diagnostic mode: DEBUG + dry-run + detailed report |
 | `--dry-run` | local | `false` | show what would be installed |
 | `--frozen-lockfile` | local | `false` | fail if depengine.lock is missing, detectably stale, or lacks a supported required pin |
@@ -147,6 +152,7 @@ Aliases: `i`.
 | `--json` | local | `false` | JSON output |
 | `--log-level <string>` | local | `` | log level: debug, info, warn, error |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
+| `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
 | `--only <string>` | local | `` | only install specific tool |
 | `--profile <string>` | local | `` | only install tools with matching tag (e.g. minimal,desktop,server) |
@@ -188,10 +194,12 @@ Aliases: `st`.
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
+| `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
 | `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for status |
 | `--json` | local | `false` | JSON output (shorthand for --format=json) |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
+| `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
 | `--orphans` | local | `false` | show only orphaned tools |
 | `--schema <string>` | local | `` | override schema path |
@@ -216,11 +224,13 @@ Aliases: `lock`.
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
+| `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
 | `--dry-run` | local | `false` | show what would be updated without writing lock |
 | `--frozen-lockfile` | local | `false` | abort if depengine.lock does not exist |
 | `-h, --help` | local | `false` | help for update |
 | `--lock <string>` | local | `` | path to depengine.lock (default: alongside schema.toml) |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
+| `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
 | `--profile <string>` | local | `` | only re-resolve tools with matching tag; other pins from a readable lock are preserved |
 | `--schema <string>` | local | `schema.toml` | path to schema.toml |
@@ -233,11 +243,13 @@ Upgrade installed tools to the targets pinned in depengine.lock
 | Flag | Scope | Default | Description |
 |---|---|---|---|
 | `--allow-arbitrary-code` | local | `false` | permit hooks, build scripts, and other arbitrary code execution |
+| `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
 | `--dry-run` | local | `false` | show what would be upgraded without making changes |
 | `--force` | local | `false` | skip confirmation prompt |
 | `-h, --help` | local | `false` | help for upgrade |
 | `--json` | local | `false` | JSON output |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
+| `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
 | `--only <string>` | local | `` | only upgrade specific tool |
 | `--quiet` | local | `false` | suppress per-tool status lines |
@@ -251,10 +263,12 @@ Aliases: `lint`.
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
+| `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
 | `--check-env` | local | `false` | check system environment for required tools |
 | `--format <string>` | local | `text` | output format: text or json |
 | `-h, --help` | local | `false` | help for validate |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
+| `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
 | `--schema <string>` | local | `schema.toml` | path to schema.toml |
 | `--strict` | local | `false` | treat warnings as errors |
@@ -277,10 +291,12 @@ Aliases: `explain`.
 
 | Flag | Scope | Default | Description |
 |---|---|---|---|
+| `--catalog <stringArray>` | local | `[]` | path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) |
 | `--fields` | local | `false` | show field-level provenance |
 | `-h, --help` | local | `false` | help for why |
 | `--json` | local | `false` | JSON output |
 | `--manifest <string>` | local | `` | path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) |
+| `--no-catalog` | local | `false` | disable the recipe catalog (default: auto-detect) |
 | `--no-manifest` | local | `false` | disable personal manifest (default: auto-detect) |
 | `--schema <string>` | local | `schema.toml` | path to schema.toml |
 
@@ -305,9 +321,10 @@ For non-frozen installs using a missing or v1 lockfile, depengine resolves and v
 |---|---|
 | `DEPENGINE_DETECT_SCRIPT` | Deprecated explicit legacy host-detector override; normal detection is native Go |
 | `DEPENGINE_MANIFEST` | Override the personal manifest path |
+| `DEPENGINE_CATALOG` | Override catalog roots (path list; `--catalog` wins) |
 | `DEPENGINE_CACHE_MAX_BYTES` | Download-cache size limit; `0` disables eviction |
 | `DEPENGINE_DOWNLOAD_MAX_BYTES` | Maximum bytes accepted per HTTP artifact download (default 4 GiB; positive values override) |
-| `XDG_CONFIG_HOME` | Base directory for the personal manifest |
+| `XDG_CONFIG_HOME` | Base directory for the personal manifest and catalog |
 | `XDG_CACHE_HOME` | Base directory for downloads |
 | `XDG_STATE_HOME` | Base directory for state |
 | `XDG_DATA_HOME` | Unix base directory for user-scope tool placement |

@@ -27,6 +27,8 @@ func newUpdateCmd() *cobra.Command {
 	updateFrozen := new(bool)
 	updateDryRun := new(bool)
 	updateVerbose := new(bool)
+	updateCatalog := new([]string)
+	updateNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
 		Use:     "update",
@@ -35,13 +37,19 @@ func newUpdateCmd() *cobra.Command {
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUpdate(cmd.Context(), updateSchema, updateManifest, updateNoManifest, updateLock, updateProfile, updateFrozen, updateDryRun, updateVerbose)
+			catalog, err := catalogFromCommand(cmd)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runUpdate(cmd.Context(), updateSchema, updateManifest, updateNoManifest, updateLock, updateProfile, updateFrozen, updateDryRun, updateVerbose, catalog)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(updateSchema, "schema", defaultSchemaPath(), "path to schema.toml")
 	f.StringVar(updateManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(updateNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	addCatalogFlags(cmd, updateCatalog, updateNoCatalog)
 	f.StringVar(updateLock, "lock", "", "path to depengine.lock (default: alongside schema.toml)")
 	f.StringVar(updateProfile, "profile", "", ifPT("resolver apenas ferramentas com tag correspondente; os demais pins de um lock legível são preservados", "only re-resolve tools with matching tag; other pins from a readable lock are preserved"))
 	f.BoolVar(updateFrozen, "frozen-lockfile", false, "abort if depengine.lock does not exist")
@@ -50,7 +58,7 @@ func newUpdateCmd() *cobra.Command {
 	return cmd
 }
 
-func runUpdate(ctx context.Context, updateSchema, updateManifest *string, updateNoManifest *bool, updateLock, updateProfile *string, updateFrozen, updateDryRun, updateVerbose *bool) error {
+func runUpdate(ctx context.Context, updateSchema, updateManifest *string, updateNoManifest *bool, updateLock, updateProfile *string, updateFrozen, updateDryRun, updateVerbose *bool, catalog *config.Catalog) error {
 	lg := log.Default
 
 	noManifest := *updateNoManifest
@@ -63,7 +71,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		}
 	}
 
-	project, err := loadProject(*updateSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true})
+	project, err := loadProject(*updateSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true, Catalog: catalog})
 	if err != nil {
 		log.Default.Error("load schema", "error", err)
 		return exitWithCode(exitCodeForError(err))
@@ -73,12 +81,19 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	if manifestAuto && manifestCount > 0 {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
 	}
+	if project.CatalogCount > 0 {
+		fmt.Fprintf(os.Stderr, "  catalog: %s (%d recipes)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), project.CatalogCount)
+	}
 
 	// Keep requested metadata for the complete effective schema before filtering.
 	fullSchema := *s
 	fullInstallTools := filterTools(s.Tools, "", "", "")
 	projectionCoverage := universalLockCoverageNames(fullInstallTools)
 	methodsHash, sourceHash, err := lock.SnapshotIntentMetadata(&fullSchema)
+	if err != nil {
+		return exitWithCode(1)
+	}
+	recipeDigests, err := lock.SnapshotRecipeDigests(&fullSchema)
 	if err != nil {
 		return exitWithCode(1)
 	}
@@ -127,7 +142,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		}
 		for name, tool := range fullInstallTools {
 			_, selected := s.Tools[name]
-			if selected || universalLockIntentDrifted(oldLock, previousDocument, name, methodsHash, sourceHash) {
+			if selected || universalLockIntentDrifted(oldLock, previousDocument, name, methodsHash, sourceHash, recipeDigests) {
 				projectionSchema.Tools[name] = tool
 			}
 		}
@@ -151,6 +166,9 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 				}
 			}
 			newLock, err = lock.NewUniversal(document, methodsHash, sourceHash, legacyTools)
+			if err == nil {
+				err = newLock.SetRecipeDigests(recipeDigests)
+			}
 			if err != nil {
 				done("FAIL")
 				lg.Error(
@@ -162,6 +180,11 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		}
 	}
 	if legacy {
+		if err := lock.ValidateCatalogLockVersion(&fullSchema, oldLock); err != nil {
+			done("FAIL")
+			lg.Error("legacy lock cannot pin catalog recipes", "error", err, "hint", "run 'depengine update' without --profile")
+			return exitWithCode(2)
+		}
 		newLock, err = lock.ResolveLegacyV1(ctx, s, run.OSExecRunner{})
 		if err != nil {
 			done("FAIL")

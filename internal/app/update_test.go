@@ -30,7 +30,7 @@ func runTestUpdateResult(t *testing.T, schemaPath, profile string) error {
 	t.Helper()
 	noManifest, frozen, dryRun, verbose := true, false, false, false
 	manifest, lockFlag := "", ""
-	return runUpdate(context.Background(), &schemaPath, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose)
+	return runUpdate(context.Background(), &schemaPath, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose, nil)
 }
 
 func runTestUpdate(t *testing.T, schemaPath, profile string) {
@@ -111,7 +111,7 @@ func TestRunUpdateDryRunPreviewsUniversalProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Stderr = writer
-	runErr := runUpdate(context.Background(), &schemaPath, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose)
+	runErr := runUpdate(context.Background(), &schemaPath, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose, nil)
 	_ = writer.Close()
 	os.Stderr = oldStderr
 	output, readErr := io.ReadAll(reader)

@@ -96,7 +96,7 @@ func BenchmarkUpdateCommand(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				_ = os.Remove(lock.DefaultPath(schemaPath))
 				path := schemaPath
-				if err := runUpdate(context.Background(), &path, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose); err != nil {
+				if err := runUpdate(context.Background(), &path, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose, nil); err != nil {
 					b.Fatalf("runUpdate: %v", err)
 				}
 			}
@@ -112,14 +112,14 @@ func BenchmarkUpdateCommand(b *testing.B) {
 			manifest, lockFlag, profile := "", "", ""
 			noManifest, frozen, dryRun, verbose := true, false, false, false
 			path := schemaPath
-			if err := runUpdate(context.Background(), &path, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose); err != nil {
+			if err := runUpdate(context.Background(), &path, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose, nil); err != nil {
 				b.Fatalf("warm-up runUpdate: %v", err)
 			}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				path := schemaPath
-				if err := runUpdate(context.Background(), &path, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose); err != nil {
+				if err := runUpdate(context.Background(), &path, &manifest, &noManifest, &lockFlag, &profile, &frozen, &dryRun, &verbose, nil); err != nil {
 					b.Fatalf("runUpdate: %v", err)
 				}
 			}
@@ -142,7 +142,7 @@ func BenchmarkWhyCommand(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				path := schemaPath
-				if err := runWhy(context.Background(), "tool00000", &path, &manifest, &noManifest, &asJSON, &fields); err != nil {
+				if err := runWhy(context.Background(), "tool00000", &path, &manifest, &noManifest, &asJSON, &fields, nil); err != nil {
 					b.Fatalf("runWhy: %v", err)
 				}
 			}
@@ -170,7 +170,7 @@ func BenchmarkGraphCommand(b *testing.B) {
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					path := schemaPath
-					if err := runGraphView(context.Background(), &path, &manifest, &noManifest, &format, &width, &view, &showInactive, &profile, &only, &skip, &direction, &depth); err != nil {
+					if err := runGraphView(context.Background(), &path, &manifest, &noManifest, &format, &width, &view, &showInactive, &profile, &only, &skip, &direction, &depth, nil); err != nil {
 						b.Fatalf("runGraphView: %v", err)
 					}
 				}

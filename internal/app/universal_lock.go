@@ -126,7 +126,7 @@ func carryForwardArtifactIntegrity(current *plan.ResolvedInstallPlan, previous *
 
 // universalLockIntentDrifted requires refreshed metadata for retained entries.
 // A tool absent from the projection is left to the caller's coverage check.
-func universalLockIntentDrifted(previous *lock.Lock, previousDocument plan.LockDocument, name string, methodsHash, sourceHash map[string]string) bool {
+func universalLockIntentDrifted(previous *lock.Lock, previousDocument plan.LockDocument, name string, methodsHash, sourceHash, recipeDigest map[string]string) bool {
 	if previous == nil {
 		return false
 	}
@@ -135,6 +135,12 @@ func universalLockIntentDrifted(previous *lock.Lock, previousDocument plan.LockD
 	}
 	previousMethods, exists := previous.MethodsHash[name]
 	if !exists || previousMethods != methodsHash[name] {
+		return true
+	}
+	// Recipe content is part of the pinned intent: a retained entry must be
+	// re-resolved when the recipe that supplied the tool changed, even if the
+	// resolved method/source identity did not.
+	if previous.RecipeDigest[name] != recipeDigest[name] {
 		return true
 	}
 	for key, current := range sourceHash {

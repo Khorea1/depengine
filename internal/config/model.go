@@ -73,6 +73,12 @@ type Tool struct {
 	Tags           []string              `merge:"union"`
 	DependencyOnly bool                  `merge:"overwrite"`
 
+	// RecipeDigest is the canonical content digest of the catalog recipe that
+	// supplied this tool. It is transient metadata: never serialized into schema
+	// output, plans or state. Layer merge keeps the value cloned from the
+	// catalog (lowest) layer.
+	RecipeDigest string `merge:"overwrite" json:"-"`
+
 	// presence records fields explicitly declared by this layer. It keeps
 	// layering semantics distinct from Go zero values (false, "", [] and {}).
 	presence fieldPresence

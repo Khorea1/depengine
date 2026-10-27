@@ -40,6 +40,8 @@ const (
 	WarnUnknownDistroFamily ErrorCode = "W_UNKNOWN_DISTRO_FAMILY"
 	WarnAutoChecksum        ErrorCode = "W_AUTO_CHECKSUM"
 	WarnEnvMissing          ErrorCode = "W_ENV_MISSING"
+	WarnInertTool           ErrorCode = "W_INERT_TOOL"
+	WarnAmbiguousCondition  ErrorCode = "W_AMBIGUOUS_CONDITION"
 )
 
 // ValidationError represents a single validation finding.

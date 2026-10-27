@@ -93,6 +93,31 @@ keeping `update` usable for native-only schemas. Lock v1 remains readable with
 its method-specific behavior; a whole-schema update migrates it only when
 complete v2 coverage can be proven.
 
+### Catalog recipe content identity (lock v2)
+
+A tool whose recipe comes from the catalog (including a virtual
+dependency-group recipe with no methods) also pins the recipe's canonical
+content digest in the v2 lock (`recipe_digest`, keyed by tool name). The digest
+is computed from the recipe TOML document before host placeholders are
+expanded: the document is decoded into a map, encoded as JSON with sorted keys,
+and hashed with SHA-256. Comments, whitespace and key order do not affect it,
+and the same recipe yields the same digest on every host. Every field is
+covered, including fields that never reach the resolved plan (`extract_to`,
+`link_dir`, `entrypoints`), so a changed URL, checksum or layout is detected even
+when the method sequence and source identity are unchanged.
+
+Frozen validation fails closed when a catalog-sourced tool has no stored digest,
+when the stored digest differs from the current recipe, or when a tool the lock
+pinned as catalog-sourced no longer resolves from a catalog. A catalog revision
+may be recorded as a retrieval hint, but it is never the verification: the
+digest verifies, the revision retrieves. Catalog-sourced tools are rejected
+against a v1 lock, and an install with no lock does not write a v1 lock for
+them; run a whole-schema `depengine update` without `--profile` to write the v2
+projection. On an existing v2 lock, a `--profile`
+update re-resolves a retained entry when its recipe digest changed, so new
+content is adopted explicitly instead of being silently retained. Lock v1 is
+unchanged and carries no `recipe_digest` field.
+
 An exact package version constrains one package. A fully locked package graph
 also needs immutable identities for its dependencies.
 
