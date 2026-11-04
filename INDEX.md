@@ -50,19 +50,16 @@ br where --json
 br ready --json
 ```
 
-One-time setup (already done in the primary checkout; repeat only if the
-redirect is missing or the checkout moved — note `pwd -P` is used instead
-of a `cd` subshell so shell directory hooks cannot pollute the file):
+Setup is a global `just` recipe, not a per-repository file. Run it from the
+repository root after cloning or after moving the checkout:
 
 ```sh
-# From the primary checkout root
-mkdir -p .beads
-printf '%s\n' "$(pwd -P)/.dev/.beads" > .beads/redirect
-exclude="$(git rev-parse --git-path info/exclude)"
-grep -qxF '/.beads/redirect' "$exclude" ||
-  printf '\n/.beads/redirect\n' >> "$exclude"
-br where --json
+just -g beads-setup
 ```
+
+It is idempotent: it creates the `dev-notes` worktree when it is missing
+(tracking `origin/dev-notes`), writes `.beads/redirect` with the absolute
+path, excludes the redirect from Git status, and prints `br where --json`.
 
 The redirect path is absolute on purpose: helpers that copy ignored files
 into new worktrees (e.g. `wt step copy-ignored`) keep a valid pointer.
