@@ -84,7 +84,7 @@ esac
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	document, err := resolveUniversalLockDocument(context.Background(), schema, "macos", nil, schemaPath, logger, nil, universalLockCoverageNames(schema.Tools), nil)
+	document, err := resolveUniversalLockDocument(context.Background(), schema, "macos", nil, schemaPath, logger, nil, plan.LockDocument{}, universalLockCoverageNames(schema.Tools), nil)
 	if err != nil {
 		resolver := newInstallExecutor(installPlan{schema: schemaPath, dryRun: true}, schema, "macos", nil, time.Time{}, logger)
 		t.Fatalf("%v; alpha attempts: %+v", err, resolver.ExplainTool(context.Background(), schema.Tools["alpha"], "macos"))
@@ -283,7 +283,7 @@ func TestUniversalLockIntentDriftRequiresRetainedMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !universalLockIntentDrifted(missingMethods, document, "demo", methods, nil) {
+	if !universalLockIntentDrifted(missingMethods, document, "demo", methods, nil, nil) {
 		t.Fatal("retained projection with missing methods_hash did not require refresh")
 	}
 
@@ -292,19 +292,19 @@ func TestUniversalLockIntentDriftRequiresRetainedMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	currentSource := map[string]string{"demo/native/0": "current-source"}
-	if !universalLockIntentDrifted(withMethods, document, "demo", methods, currentSource) {
+	if !universalLockIntentDrifted(withMethods, document, "demo", methods, currentSource, nil) {
 		t.Fatal("retained projection with missing source_hash did not require refresh")
 	}
 	withMethods.SourceHash = map[string]string{"demo/native/0": "old-source"}
-	if !universalLockIntentDrifted(withMethods, document, "demo", methods, currentSource) {
+	if !universalLockIntentDrifted(withMethods, document, "demo", methods, currentSource, nil) {
 		t.Fatal("changed source_hash did not require refresh")
 	}
-	if !universalLockIntentDrifted(withMethods, document, "demo", methods, nil) {
+	if !universalLockIntentDrifted(withMethods, document, "demo", methods, nil, nil) {
 		t.Fatal("removed source identity did not require refresh")
 	}
 
 	withMethods.SourceHash = map[string]string{"demo-extra/native/0": "unrelated"}
-	if universalLockIntentDrifted(withMethods, document, "demo", methods, nil) {
+	if universalLockIntentDrifted(withMethods, document, "demo", methods, nil, nil) {
 		t.Fatal("similar-prefix tool source hash triggered refresh")
 	}
 
@@ -313,11 +313,20 @@ func TestUniversalLockIntentDriftRequiresRetainedMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !universalLockIntentDrifted(slashLock, slashDocument, "group/demo", map[string]string{"group/demo": "current"}, map[string]string{"group/demo/native/0": "new"}) {
+	if !universalLockIntentDrifted(slashLock, slashDocument, "group/demo", map[string]string{"group/demo": "current"}, map[string]string{"group/demo/native/0": "new"}, nil) {
 		t.Fatal("source identity for slash-containing tool name did not trigger refresh")
 	}
 
-	if universalLockIntentDrifted(withMethods, makeDocument("other"), "demo", methods, nil) {
+	withMethods.RecipeDigest = map[string]string{"demo": "sha256:" + strings.Repeat("a", 64)}
+	if universalLockIntentDrifted(withMethods, document, "demo", methods, nil, map[string]string{"demo": "sha256:" + strings.Repeat("a", 64)}) {
+		t.Fatal("unchanged recipe digest triggered refresh")
+	}
+	if !universalLockIntentDrifted(withMethods, document, "demo", methods, nil, map[string]string{"demo": "sha256:" + strings.Repeat("b", 64)}) {
+		t.Fatal("changed recipe digest did not require refresh")
+	}
+	withMethods.RecipeDigest = nil
+
+	if universalLockIntentDrifted(withMethods, makeDocument("other"), "demo", methods, nil, nil) {
 		t.Fatal("tool absent from previous projection was conflated with missing retained metadata")
 	}
 }

@@ -43,6 +43,8 @@ func newUpgradeCmd() *cobra.Command {
 	upgradeJSON := new(bool)
 	upgradeQuiet := new(bool)
 	upgradeAllowArbitrary := new(bool)
+	upgradeCatalog := new([]string)
+	upgradeNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
 		Use:     "upgrade",
@@ -50,13 +52,19 @@ func newUpgradeCmd() *cobra.Command {
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUpgrade(cmd.Context(), upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary)
+			catalog, err := catalogFromCommand(cmd)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runUpgrade(cmd.Context(), upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary, catalog)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(upgradeSchema, "schema", defaultSchemaPath(), "path to schema.toml")
 	f.StringVar(upgradeManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(upgradeNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	addCatalogFlags(cmd, upgradeCatalog, upgradeNoCatalog)
 	f.BoolVar(upgradeDryRun, "dry-run", false, "show what would be upgraded without making changes")
 	f.StringVar(upgradeOnly, "only", "", "only upgrade specific tool")
 	f.BoolVar(upgradeForce, "force", false, "skip confirmation prompt")
@@ -91,6 +99,7 @@ type upgradeOptions struct {
 	jsonOut        bool
 	quiet          bool
 	allowArbitrary bool
+	catalog        *config.Catalog
 }
 
 // upgradeCounts tallies per-tool outcomes for the final report.
@@ -102,7 +111,7 @@ type upgradeCounts struct {
 }
 
 // newUpgradeOptions dereferences the CLI flag pointers into one value.
-func newUpgradeOptions(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool) upgradeOptions {
+func newUpgradeOptions(upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool, catalog *config.Catalog) upgradeOptions {
 	return upgradeOptions{
 		schema:         *upgradeSchema,
 		manifest:       *upgradeManifest,
@@ -113,6 +122,7 @@ func newUpgradeOptions(upgradeSchema, upgradeManifest *string, upgradeNoManifest
 		jsonOut:        *upgradeJSON,
 		quiet:          *upgradeQuiet,
 		allowArbitrary: *upgradeAllowArbitrary,
+		catalog:        catalog,
 	}
 }
 
@@ -477,13 +487,13 @@ func writeUpgradeReport(jsonOut, dryRun bool, counts upgradeCounts, results []up
 // runUpgrade reconciles installed tools against depengine.lock, then executes
 // exact targets for drifted candidates. It orchestrates schema/lock loading,
 // executor wiring, discovery, confirmation, execution, and reporting.
-func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool) error {
+func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upgradeNoManifest, upgradeDryRun *bool, upgradeOnly *string, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary *bool, catalog *config.Catalog) error {
 	lg := log.Default
-	opts := newUpgradeOptions(upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary)
+	opts := newUpgradeOptions(upgradeSchema, upgradeManifest, upgradeNoManifest, upgradeDryRun, upgradeOnly, upgradeForce, upgradeJSON, upgradeQuiet, upgradeAllowArbitrary, catalog)
 
 	manifestPath, manifestAuto := resolveUpgradeManifestPath(opts.noManifest, opts.manifest)
 
-	project, err := loadProject(opts.schema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true})
+	project, err := loadProject(opts.schema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true, Catalog: opts.catalog})
 	if err != nil {
 		if os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "error: %s not found\n", opts.schema)
@@ -498,10 +508,17 @@ func runUpgrade(ctx context.Context, upgradeSchema, upgradeManifest *string, upg
 	if manifestAuto && manifestCount > 0 {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
 	}
+	if project.CatalogCount > 0 {
+		fmt.Fprintf(os.Stderr, "  catalog: %s (%d recipes)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), project.CatalogCount)
+	}
 
 	lk, err := loadUpgradeLock(opts.schema, lg)
 	if err != nil {
 		return err
+	}
+	if err := lock.ValidateCatalogLockVersion(project.Schema, lk); err != nil {
+		lg.Error("lockfile cannot pin catalog recipes", "error", err)
+		return exitWithCode(2)
 	}
 
 	st, ls, err := loadUpgradeState(ctx, opts.dryRun)

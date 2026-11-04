@@ -39,7 +39,7 @@ func TestLoadStatusSchemaLockLoadErrors(t *testing.T) {
 			}
 
 			manifest, noManifest := "", true
-			_, _, err := loadStatusSchema(schemaPath, &manifest, &noManifest)
+			_, _, err := loadStatusSchema(schemaPath, &manifest, &noManifest, nil)
 			if err == nil || !strings.Contains(err.Error(), "load lock for status") {
 				t.Fatalf("loadStatusSchema error = %v, want lock-load error", err)
 			}
@@ -62,7 +62,7 @@ func TestStatusCommandSurfacesLockLoadError(t *testing.T) {
 
 	manifest, noManifest, format := "", true, "text"
 	jsonFlag, orphans := false, false
-	err := runStatus(context.Background(), &schemaPath, &manifest, &noManifest, &format, &jsonFlag, &orphans)
+	err := runStatus(context.Background(), &schemaPath, &manifest, &noManifest, &format, &jsonFlag, &orphans, nil)
 	if err == nil {
 		t.Fatal("runStatus succeeded with an invalid lock; want runtime error")
 	}
@@ -77,7 +77,7 @@ func TestLoadStatusSchemaValidLockLoads(t *testing.T) {
 		t.Fatal(err)
 	}
 	manifest, noManifest := "", true
-	_, lk, err := loadStatusSchema(schemaPath, &manifest, &noManifest)
+	_, lk, err := loadStatusSchema(schemaPath, &manifest, &noManifest, nil)
 	if err != nil || lk == nil || lk.Version != 1 {
 		t.Fatalf("loadStatusSchema lock = (%v, %v), want valid v1 lock without error", lk, err)
 	}
@@ -89,7 +89,7 @@ func TestLoadStatusSchemaMissingLockRemainsOptional(t *testing.T) {
 		t.Fatal(err)
 	}
 	manifest, noManifest := "", true
-	project, lk, err := loadStatusSchema(schemaPath, &manifest, &noManifest)
+	project, lk, err := loadStatusSchema(schemaPath, &manifest, &noManifest, nil)
 	if err != nil || project != nil || lk != nil {
 		t.Fatalf("loadStatusSchema = (%v, %v, %v), want nil project and lock without error", project, lk, err)
 	}

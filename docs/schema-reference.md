@@ -746,7 +746,9 @@ methods.
 
 One-line syntax for every supported method. All accept `when` (see
 [Platform targeting](#platform-targeting)); methods with richer configuration
-are described above or alongside their examples.
+are described above or alongside their examples. `http` and `github` reject
+installer-script payloads (`.sh`, `.bash`, `.zsh`, `.ksh`, `.ps1`, `.psm1`,
+`.bat`, `.cmd`); declare the underlying artifact or a native package instead.
 
 | Method | What it installs | Example |
 |--------|-------------------|---------|
@@ -839,11 +841,11 @@ Hooks are transition callbacks, not managed installation methods. Running an
 upstream installer such as `curl ... | sh` or `irm ... | iex` from a hook does
 not tell depengine which files the script installed, how to observe them, or
 how to remove or roll them back. Likewise, `http` and `github` methods download
-artifacts; supplying an installer-script URL downloads the script without
-executing it. For a tool distributed this way, declare a supported native
-package or the underlying managed HTTP/GitHub binary or archive with explicit
-paths and checksum verification where available. See
-[Support boundaries](support-boundary.md).
+artifacts but never execute them; an installer-script URL is rejected during
+validation instead of installing the script text as the tool payload. For a
+tool distributed this way, declare a supported native package or the underlying
+managed HTTP/GitHub binary or archive with explicit paths and checksum
+verification where available. See [Support boundaries](support-boundary.md).
 
 When a hook belongs to one install method, put it inside that method table. It
 then cannot leak to a fallback candidate:
@@ -1055,13 +1057,35 @@ engine evaluates all non-empty fields against the detected system facts:
 | `os` | `string[]` | Exact (case-insensitive) | `linux`, `darwin`, `windows`, `freebsd`, `openbsd`, `netbsd` |
 | `target_family` | `string[]` | Exact (case-insensitive) | `unix` (linux, darwin, BSDs, termux), `windows` |
 | `kernel` | `string[]` | Exact (case-insensitive) | `6.7.0-arch`, `5.15.0-generic`... |
-| `libc` | `string[]` | **Prefix** match | `glibc` matches `glibc 2.35`; `musl` for Alpine |
+| `kernel_min` | `string` | Inclusive minimum | `6.6` |
+| `kernel_max` | `string` | Inclusive maximum | `6.8` |
+| `libc` | `string[]` | Family-token prefix, trimmed and case-insensitive | `glibc` matches `glibc`; `musl` for Alpine. Detection emits no version, so `glibc 2.35` never matches. |
 | `init_system` | `string[]` | Exact (case-insensitive) | `systemd`, `openrc`, `runit`, `sysvinit` |
-| `is_wsl` | `bool` | Three-state | Detected via `/proc/version` or `WSL_DISTRO_NAME` |
-| `is_container` | `bool` | Three-state | Detected via `.dockerenv`, cgroup, etc. |
+| `is_wsl` | `bool` | Three-state | `true` needs a positive detection; `false` needs a conclusive negative; an inconclusive probe matches neither |
+| `is_container` | `bool` | Three-state | Same rule as `is_wsl` |
 | `is_android` | `bool` | Three-state | Detected via Termux env vars. Needed because `os` reports `linux` on Termux — `os = ["android"]` never matches there |
 
-Version conditions compare numeric and textual runs rather than applying SemVer rules, because OS release identifiers are not uniformly SemVer. Numeric runs ignore leading zeroes (`24.04` equals `24.4`); minimum and maximum bounds are inclusive. A host with no detected distro version does not satisfy a version condition.
+Version conditions compare numeric and textual runs rather than applying SemVer
+rules, because OS release identifiers are not uniformly SemVer. Numeric runs
+ignore leading zeroes (`24.04` equals `24.4`); minimum and maximum bounds are
+inclusive. A host with no detected distro version does not satisfy a version
+condition.
+
+`kernel` is exact and is not a range: `kernel = ["6.7"]` does not match
+`6.7.0-arch1-1`. Use `kernel_min`/`kernel_max` for an inclusive range. Wildcard
+or comparison-operator syntax in `kernel` or `distro_version` is reported by
+`depengine validate` as `W_AMBIGUOUS_CONDITION`, as is a libc value that carries
+a version or an inverted min/max pair.
+
+`is_wsl` and `is_container` are three-state. A positive detection sets the fact
+to `true`; a conclusive probe that found nothing sets it to `false`; a probe
+that could not run leaves it unknown. `true` matches only a positive detection,
+`false` matches only a conclusive negative, and unknown matches neither. This is
+fail-closed: an unreadable `/proc/version` or cgroup file is not silently
+treated as "not WSL" or "not a container". The `{is_wsl}` and `{is_container}`
+placeholders expand to `true`, `false`, or `unknown`. The full detection and
+matching contract is in
+[the environment conditions spec](specs/environment-conditions.md).
 
 ```toml
 # AUR only on Arch, HTTP fallback everywhere else
@@ -1126,12 +1150,12 @@ Version conditions compare numeric and textual runs rather than applying SemVer 
 ```
 
 ```toml
-# Kernel-specific DKMS package. `kernel` is matched exactly
-# (case-insensitive) against the value reported by `uname -r`.
+# Kernel-specific DKMS package. Use an inclusive range, not a list of exact
+# `uname -r` values: exact equality would stop matching after a kernel update.
 [tools.v4l2loopback]
   [tools.v4l2loopback.aur]
   pkg  = "v4l2loopback-dkms"
-  when = { distro_family = ["arch"], kernel = ["6.7.0-arch1-1", "6.8.0-arch1-1", "6.9.0-arch1-1"] }
+  when = { distro_family = ["arch"], kernel_min = "6.7", kernel_max = "6.99" }
 ```
 
 > Run `depengine why <tool>` to inspect which method applies on the
@@ -1181,6 +1205,11 @@ candidate label. TOML declaration order is never an order control, and
 `[defaults].method_prefer` plus per-tool `method_prefer` are prefixes: unlisted default
 methods remain available. Only `method_only` removes the remainder.
 
+Selectors are literal. Host placeholders such as `{distro_family}` are rejected
+before expansion because they would make candidate order, v1 pin keys, and
+`MethodsHash` depend on the parsing host. Express per-host selection with
+`when` conditions on candidates and keep the order list stable across hosts.
+
 ---
 
 ## Placeholders
@@ -1217,7 +1246,8 @@ GitHub's `{arch_any}` and `{os_any}` tokens remain intact for asset matching.
 | `{init_system}` | Native host facts | any method | `systemd`, `openrc` |
 | `{detection}` | Native host facts | any method | `os-release` |
 | `{confidence}` | Native host facts | any method | `high`, `medium` |
-| `{is_wsl}` / `{is_container}` / `{is_android}` | Native host facts | any method | `true`, `false` |
+| `{is_wsl}` / `{is_container}` | Native host facts | any method | `true`, `false`, `unknown` |
+| `{is_android}` | Native host facts | any method | `true`, `false` |
 | `{pkg}` | Adapter-owned — substituted at install time | **`native` only** (or a manager name used directly as `kind`, e.g. `kind = "apt"`) | package name |
 | `{latest}` | Adapter-owned — resolved via GitHub API | Literal `url` in `git`, `http`, `appimage`, `android`, or `msi` | `v1.2.3` |
 | `{version}` | Adapter-owned — matched against a resolved GitHub release tag | `asset` in `github`, `http`, `appimage`, `android`, or `msi` when using `repo` + `asset` | matches `v1.2.3` or `1.2.3` |
@@ -1280,3 +1310,81 @@ unlabeled candidate or a duplicated label. Multiple same-kind candidates with
 unique labels are already unambiguous for upgrade, remove, and lock state. Add `--fields` to see exactly
 which layer contributed each field for a given tool; `--json` exposes identity
 metadata under `intent` plus `candidate`/`candidate_known` ordinals.
+
+## Catalog recipes
+
+A catalog is an optional, user-owned layer of reusable recipes below the
+personal manifest. Each recipe is one file at `<catalog-root>/<name>.toml`; the
+file system is the index, so a lookup never scans the directory.
+
+Default root:
+
+- Linux/Unix: `$XDG_CONFIG_HOME/depengine/catalog`, falling back to
+  `~/.config/depengine/catalog` when `XDG_CONFIG_HOME` is unset or relative.
+- macOS: `~/Library/Application Support/depengine/catalog`.
+- Windows: `%AppData%\depengine\catalog`.
+
+`--catalog <dir>` (repeatable) and `DEPENGINE_CATALOG` (a path list) replace the
+default roots; `--no-catalog` disables the layer. The first root containing a
+name wins; roots are not field-merged.
+
+A recipe uses the personal-manifest grammar with `recipe_version` instead of
+`schema_version` and exactly one entry under `[packages]`:
+
+```toml
+recipe_version = 1
+
+[packages.fd]
+github = { repo = "sharkdp/fd", asset = "fd-v{version}-{arch}-unknown-linux-musl.tar.gz", checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
+```
+
+The package name must match the file name (`fd.toml` declares `[packages.fd]`).
+Names are ASCII and must match `[A-Za-z0-9][A-Za-z0-9._+-]{0,127}`; they may not
+end with a dot or be a Windows reserved device name (`CON`, `PRN`, `COM1`, ...).
+A recipe may not declare `[defaults]` or `[manifest]`, and lifecycle hooks,
+command-typed fields and arbitrary-code plans are rejected.
+
+`depengine import <recipe.toml>` applies that check before writing, and adds an
+integrity floor: a candidate that downloads an artifact must declare
+`checksum` or `checksum_secret_ref`. `checksum = "<algo>:auto"` is accepted but
+warned as trust-on-first-use (TOFU) because the checksum is fetched with the
+artifact. Import also warns when a candidate resolves to an external origin,
+because depengine does not verify recipe or artifact origins. The preview
+prints the canonical digest that lock v2 pins; the recipe is written
+atomically as authored, so the digest matches the reviewed bytes. Use
+`--dry-run` to preview without writing and `--force` to replace an existing
+recipe with the same name.
+
+The project schema then declares only its intent; the recipe supplies the
+methods, sources and conditions the project did not override:
+
+```toml
+[tools.fd]
+tags = ["cli"]          # project-specific; everything else comes from fd.toml
+```
+
+A field declared in the project schema wins over the recipe field by field. A
+project-declared tool that resolves to no methods and no `requires` is reported
+by `depengine validate` as `W_INERT_TOOL`, with a hint to add a method, a
+`requires`, or a recipe. An explicit `requires = []` is a deliberate marker for
+a non-installable tool and does not warn.
+
+Precedence is project schema, personal manifest, catalog roots in order, then
+derived sources. The catalog is consulted only for tools declared by the project
+schema and for their transitive `requires` closure. A tool admitted only by
+`[manifest] allow_new_tools = true` is never resolved from the catalog. A
+missing default root is not an error; an explicitly named root that is missing,
+unreadable or not a directory is. Invalid TOML, an unreadable recipe, a symlink
+recipe, or a file name that does not match the declared package name fails
+closed.
+
+Catalog content identity is pinned in lock v2 as a canonical digest of the
+recipe document. Frozen validation fails closed when the digest is missing or
+changed, and a catalog-sourced tool combined with a v1 lock is rejected; run a
+whole-schema `depengine update` to write the v2 projection.
+The digest covers the whole recipe, including fields that never reach the
+resolved plan (`extract_to`, `link_dir`, `entrypoints`), and is computed before
+host placeholders are expanded.
+
+See [`design/adr-009-catalog-layout.md`](design/adr-009-catalog-layout.md) for
+the full layout and lookup contract.

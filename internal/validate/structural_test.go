@@ -1106,6 +1106,39 @@ func TestValidateWhenDirectives_NoTools(t *testing.T) {
 	}
 }
 
+func TestValidateWhenDirectives_AmbiguousConditions(t *testing.T) {
+	s := &cfg.Schema{Tools: map[string]*cfg.Tool{
+		"kernel-wildcard": tool("kernel-wildcard", []*cfg.MethodCandidate{{
+			Kind: "native",
+			When: &cfg.Condition{Kernel: []string{"6.7.*"}},
+		}}, nil),
+		"libc-version": tool("libc-version", []*cfg.MethodCandidate{{
+			Kind: "native",
+			When: &cfg.Condition{Libc: []string{"glibc 2.35"}},
+		}}, nil),
+		"inverted-range": tool("inverted-range", []*cfg.MethodCandidate{{
+			Kind: "native",
+			When: &cfg.Condition{KernelMin: "6.8", KernelMax: "6.6"},
+		}}, nil),
+		"valid-range": tool("valid-range", []*cfg.MethodCandidate{{
+			Kind: "native",
+			When: &cfg.Condition{KernelMin: "6.6", KernelMax: "6.8"},
+		}}, nil),
+	}}
+	r := validateWhenDirectives(s)
+	if len(r.Warnings) != 3 {
+		t.Fatalf("warnings = %+v, want 3 ambiguous-condition warnings", r.Warnings)
+	}
+	for _, warning := range r.Warnings {
+		if warning.Code != WarnAmbiguousCondition {
+			t.Fatalf("warning code = %s, want %s (%+v)", warning.Code, WarnAmbiguousCondition, warning)
+		}
+		if warning.Field == "tools.valid-range.methods[0].when" {
+			t.Fatalf("valid kernel range was flagged: %+v", warning)
+		}
+	}
+}
+
 func TestValidateFromFile_ValidEdgeCases(t *testing.T) {
 	s := parseTestdata(t, "valid_edge_cases.toml")
 	r := ValidateSchema(s, nil)

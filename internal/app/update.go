@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Khorea1/depengine/internal/config"
@@ -26,21 +27,29 @@ func newUpdateCmd() *cobra.Command {
 	updateFrozen := new(bool)
 	updateDryRun := new(bool)
 	updateVerbose := new(bool)
+	updateCatalog := new([]string)
+	updateNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
 		Use:     "update",
 		Aliases: []string{"lock"},
-		Short:   ifPT("Resolver referências mutáveis e gravar v2 somente com identidade imutável para cada ferramenta", "Resolve mutable references and write v2 only when every tool has an immutable resolved identity"),
+		Short:   ifPT("Resolver referências mutáveis e gravar v2 quando toda ferramenta tem identidade imutável; manter v1 para schemas só nativos", "Resolve mutable references and write v2 when every tool has an immutable identity; keep v1 for native-only schemas"),
 		GroupID: groupManage,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUpdate(cmd.Context(), updateSchema, updateManifest, updateNoManifest, updateLock, updateProfile, updateFrozen, updateDryRun, updateVerbose)
+			catalog, err := catalogFromCommand(cmd)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runUpdate(cmd.Context(), updateSchema, updateManifest, updateNoManifest, updateLock, updateProfile, updateFrozen, updateDryRun, updateVerbose, catalog)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(updateSchema, "schema", defaultSchemaPath(), "path to schema.toml")
 	f.StringVar(updateManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(updateNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	addCatalogFlags(cmd, updateCatalog, updateNoCatalog)
 	f.StringVar(updateLock, "lock", "", "path to depengine.lock (default: alongside schema.toml)")
 	f.StringVar(updateProfile, "profile", "", ifPT("resolver apenas ferramentas com tag correspondente; os demais pins de um lock legível são preservados", "only re-resolve tools with matching tag; other pins from a readable lock are preserved"))
 	f.BoolVar(updateFrozen, "frozen-lockfile", false, "abort if depengine.lock does not exist")
@@ -49,7 +58,7 @@ func newUpdateCmd() *cobra.Command {
 	return cmd
 }
 
-func runUpdate(ctx context.Context, updateSchema, updateManifest *string, updateNoManifest *bool, updateLock, updateProfile *string, updateFrozen, updateDryRun, updateVerbose *bool) error {
+func runUpdate(ctx context.Context, updateSchema, updateManifest *string, updateNoManifest *bool, updateLock, updateProfile *string, updateFrozen, updateDryRun, updateVerbose *bool, catalog *config.Catalog) error {
 	lg := log.Default
 
 	noManifest := *updateNoManifest
@@ -62,7 +71,7 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		}
 	}
 
-	project, err := loadProject(*updateSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true})
+	project, err := loadProject(*updateSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true, Catalog: catalog})
 	if err != nil {
 		log.Default.Error("load schema", "error", err)
 		return exitWithCode(exitCodeForError(err))
@@ -72,12 +81,19 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	if manifestAuto && manifestCount > 0 {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
 	}
+	if project.CatalogCount > 0 {
+		fmt.Fprintf(os.Stderr, "  catalog: %s (%d recipes)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), project.CatalogCount)
+	}
 
 	// Keep requested metadata for the complete effective schema before filtering.
 	fullSchema := *s
 	fullInstallTools := filterTools(s.Tools, "", "", "")
 	projectionCoverage := universalLockCoverageNames(fullInstallTools)
 	methodsHash, sourceHash, err := lock.SnapshotIntentMetadata(&fullSchema)
+	if err != nil {
+		return exitWithCode(1)
+	}
+	recipeDigests, err := lock.SnapshotRecipeDigests(&fullSchema)
 	if err != nil {
 		return exitWithCode(1)
 	}
@@ -109,7 +125,10 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	}
 	done := spinner(ctx, "Resolving lockable selectors")
 	var newLock *lock.Lock
-	if canPersistProjection(oldLock, *updateProfile) {
+	legacy := !canPersistProjection(oldLock, *updateProfile)
+	var nativeFallback []string
+	var universalDocument *plan.LockDocument
+	if !legacy {
 		projectionSchema := fullSchema
 		projectionSchema.Tools = make(map[string]*config.Tool, len(fullInstallTools))
 		var previousDocument plan.LockDocument
@@ -123,32 +142,49 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 		}
 		for name, tool := range fullInstallTools {
 			_, selected := s.Tools[name]
-			if selected || universalLockIntentDrifted(oldLock, previousDocument, name, methodsHash, sourceHash) {
+			if selected || universalLockIntentDrifted(oldLock, previousDocument, name, methodsHash, sourceHash, recipeDigests) {
 				projectionSchema.Tools[name] = tool
 			}
 		}
-		document, resolveErr := resolveUniversalLockDocument(ctx, &projectionSchema, clan, facts, *updateSchema, lg, oldLock, projectionCoverage, methodsHash)
+		document, resolveErr := resolveUniversalLockDocument(ctx, &projectionSchema, clan, facts, *updateSchema, lg, oldLock, previousDocument, projectionCoverage, methodsHash)
 		if resolveErr != nil {
-			done("FAIL")
-			lg.Error("resolve universal lock", "error", resolveErr)
-			return exitWithCode(2)
-		}
-		legacyTools := make(map[string]lock.ToolPin)
-		if oldLock != nil {
-			for key, pin := range oldLock.Tools {
-				legacyTools[key] = pin
+			if names, ok := legacyNativeLockFallback(oldLock, resolveErr); ok {
+				legacy = true
+				nativeFallback = names
+			} else {
+				done("FAIL")
+				lg.Error("resolve universal lock", "error", resolveErr)
+				return exitWithCode(2)
 			}
 		}
-		newLock, err = lock.NewUniversal(document, methodsHash, sourceHash, legacyTools)
-		if err != nil {
+		if !legacy {
+			universalDocument = &document
+			legacyTools := make(map[string]lock.ToolPin)
+			if oldLock != nil {
+				for key, pin := range oldLock.Tools {
+					legacyTools[key] = pin
+				}
+			}
+			newLock, err = lock.NewUniversal(document, methodsHash, sourceHash, legacyTools)
+			if err == nil {
+				err = newLock.SetRecipeDigests(recipeDigests)
+			}
+			if err != nil {
+				done("FAIL")
+				lg.Error(
+					"build universal lock", "error", err, "hint",
+					"depengine update needs an immutable identity for every selected tool; native package names alone are not version pins, so no partial v2 lock was written",
+				)
+				return exitWithCode(2)
+			}
+		}
+	}
+	if legacy {
+		if err := lock.ValidateCatalogLockVersion(&fullSchema, oldLock); err != nil {
 			done("FAIL")
-			lg.Error(
-				"build universal lock", "error", err, "hint",
-				"depengine update needs an immutable identity for every selected tool; native package names alone are not version pins, so no partial v2 lock was written",
-			)
+			lg.Error("legacy lock cannot pin catalog recipes", "error", err, "hint", "run 'depengine update' without --profile")
 			return exitWithCode(2)
 		}
-	} else {
 		newLock, err = lock.ResolveLegacyV1(ctx, s, run.OSExecRunner{})
 		if err != nil {
 			done("FAIL")
@@ -181,13 +217,12 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 	pinned := len(newLock.Tools)
 	var projection *plan.LockDocument
 	if newLock.Version == lock.CurrentVersion {
-		document, err := newLock.ProjectionDocument()
-		if err != nil {
+		if universalDocument == nil {
 			done("FAIL")
-			return fmt.Errorf("decode update projection: %w", err)
+			return fmt.Errorf("decode update projection: universal projection is unavailable")
 		}
-		projection = &document
-		pinned = len(document.Entries)
+		projection = universalDocument
+		pinned = len(projection.Entries)
 	}
 	if *updateDryRun {
 		done(c.cyan("dry-run"))
@@ -204,6 +239,13 @@ func runUpdate(ctx context.Context, updateSchema, updateManifest *string, update
 			return exitWithCode(1)
 		}
 		done(fmt.Sprintf("(%d pinned)", pinned))
+	}
+	if len(nativeFallback) > 0 {
+		lg.Warn(
+			"universal lock unavailable for native-only tools; using legacy v1 lock",
+			"tools", strings.Join(nativeFallback, ", "),
+			"hint", "native package names are not version pins; add an immutable method or a manager that exposes one to migrate this schema to v2",
+		)
 	}
 
 	// Warn about installed tools whose versions no longer match the pins

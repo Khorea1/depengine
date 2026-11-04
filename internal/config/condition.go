@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,6 +22,8 @@ type Condition struct {
 	Arch             []string `cfg:"arch"`
 	OS               []string `cfg:"os"`
 	Kernel           []string `cfg:"kernel"`
+	KernelMin        string   `cfg:"kernel_min"`
+	KernelMax        string   `cfg:"kernel_max"`
 	Libc             []string `cfg:"libc"`
 	InitSystem       []string `cfg:"init_system"`
 	IsWSL            *bool    `cfg:"is_wsl"`
@@ -40,6 +43,8 @@ func (c *Condition) IsZero() bool {
 		len(c.Arch) == 0 &&
 		len(c.OS) == 0 &&
 		len(c.Kernel) == 0 &&
+		c.KernelMin == "" &&
+		c.KernelMax == "" &&
 		len(c.Libc) == 0 &&
 		len(c.InitSystem) == 0 &&
 		c.IsWSL == nil &&
@@ -88,6 +93,12 @@ func (c *Condition) String() string {
 	appendList("arch", c.Arch)
 	appendList("os", c.OS)
 	appendList("kernel", c.Kernel)
+	if c.KernelMin != "" {
+		parts = append(parts, "kernel >= "+strconv.Quote(c.KernelMin))
+	}
+	if c.KernelMax != "" {
+		parts = append(parts, "kernel <= "+strconv.Quote(c.KernelMax))
+	}
 	appendList("libc", c.Libc)
 	appendList("init_system", c.InitSystem)
 	appendBool("is_wsl", c.IsWSL)
@@ -137,22 +148,99 @@ func (c *Condition) Match(facts *platform.Facts) bool {
 	if len(c.Kernel) > 0 && !matchExact(c.Kernel, facts.Kernel) {
 		return false
 	}
+	if c.KernelMin != "" && (facts.Kernel == "" || platform.CompareVersion(facts.Kernel, c.KernelMin) < 0) {
+		return false
+	}
+	if c.KernelMax != "" && (facts.Kernel == "" || platform.CompareVersion(facts.Kernel, c.KernelMax) > 0) {
+		return false
+	}
 	if len(c.InitSystem) > 0 && !matchExact(c.InitSystem, facts.InitSystem) {
 		return false
 	}
-	if len(c.Libc) > 0 && !matchPrefix(c.Libc, facts.Libc) {
+	if len(c.Libc) > 0 && !matchLibc(c.Libc, facts.Libc) {
 		return false
 	}
-	if c.IsWSL != nil && *c.IsWSL != facts.IsWSL {
+	if c.IsWSL != nil && !matchTrait(*c.IsWSL, facts.IsWSL, facts.IsWSLUnknown) {
 		return false
 	}
-	if c.IsContainer != nil && *c.IsContainer != facts.IsContainer {
+	if c.IsContainer != nil && !matchTrait(*c.IsContainer, facts.IsContainer, facts.IsContainerUnknown) {
 		return false
 	}
 	if c.IsAndroid != nil && *c.IsAndroid != facts.IsAndroid {
 		return false
 	}
 	return true
+}
+
+// Mismatch explains the first dimension that rejected the host. It returns an
+// empty string when the condition matches. Diagnostic callers use it only after
+// Match fails, so the fast path stays allocation-free.
+func (c *Condition) Mismatch(facts *platform.Facts) string {
+	if c == nil || c.Match(facts) {
+		return ""
+	}
+	if facts == nil {
+		return "no host facts were detected"
+	}
+	if len(c.DistroFamily) > 0 {
+		clan := platform.ResolveFamily(facts)
+		if !platform.MatchesDistroFamily(clan, c.DistroFamily) {
+			return fmt.Sprintf("distro family %q is not in %v", clan, c.DistroFamily)
+		}
+	}
+	if len(c.DistroID) > 0 && !matchExact(c.DistroID, facts.DistroID) {
+		return fmt.Sprintf("distro id %q is not in %v", facts.DistroID, c.DistroID)
+	}
+	if len(c.DistroVersion) > 0 && !matchVersion(c.DistroVersion, facts.DistroVersion) {
+		return fmt.Sprintf("distro version %q is not in %v", facts.DistroVersion, c.DistroVersion)
+	}
+	if c.DistroVersionMin != "" && (facts.DistroVersion == "" || platform.CompareVersion(facts.DistroVersion, c.DistroVersionMin) < 0) {
+		return fmt.Sprintf("distro version %q is below the inclusive minimum %q", facts.DistroVersion, c.DistroVersionMin)
+	}
+	if c.DistroVersionMax != "" && (facts.DistroVersion == "" || platform.CompareVersion(facts.DistroVersion, c.DistroVersionMax) > 0) {
+		return fmt.Sprintf("distro version %q is above the inclusive maximum %q", facts.DistroVersion, c.DistroVersionMax)
+	}
+	if len(c.TargetFamily) > 0 && !matchExact(c.TargetFamily, facts.TargetFamily) {
+		return fmt.Sprintf("target family %q is not in %v", facts.TargetFamily, c.TargetFamily)
+	}
+	if len(c.Arch) > 0 && !matchExact(c.Arch, facts.TargetArch) {
+		return fmt.Sprintf("architecture %q is not in %v", facts.TargetArch, c.Arch)
+	}
+	if len(c.OS) > 0 && !matchExact(c.OS, facts.OS) {
+		return fmt.Sprintf("os %q is not in %v", facts.OS, c.OS)
+	}
+	if len(c.Kernel) > 0 && !matchExact(c.Kernel, facts.Kernel) {
+		return fmt.Sprintf("kernel %q is not an exact match for %v", facts.Kernel, c.Kernel)
+	}
+	if c.KernelMin != "" && (facts.Kernel == "" || platform.CompareVersion(facts.Kernel, c.KernelMin) < 0) {
+		return fmt.Sprintf("kernel %q is below the inclusive minimum %q", facts.Kernel, c.KernelMin)
+	}
+	if c.KernelMax != "" && (facts.Kernel == "" || platform.CompareVersion(facts.Kernel, c.KernelMax) > 0) {
+		return fmt.Sprintf("kernel %q is above the inclusive maximum %q", facts.Kernel, c.KernelMax)
+	}
+	if len(c.InitSystem) > 0 && !matchExact(c.InitSystem, facts.InitSystem) {
+		return fmt.Sprintf("init system %q is not in %v", facts.InitSystem, c.InitSystem)
+	}
+	if len(c.Libc) > 0 && !matchLibc(c.Libc, facts.Libc) {
+		return fmt.Sprintf("libc %q does not match %v", facts.Libc, c.Libc)
+	}
+	if c.IsWSL != nil && !matchTrait(*c.IsWSL, facts.IsWSL, facts.IsWSLUnknown) {
+		return traitMismatch("is_wsl", *c.IsWSL, facts.IsWSL, facts.IsWSLUnknown)
+	}
+	if c.IsContainer != nil && !matchTrait(*c.IsContainer, facts.IsContainer, facts.IsContainerUnknown) {
+		return traitMismatch("is_container", *c.IsContainer, facts.IsContainer, facts.IsContainerUnknown)
+	}
+	if c.IsAndroid != nil && *c.IsAndroid != facts.IsAndroid {
+		return fmt.Sprintf("is_android is %v, want %v", facts.IsAndroid, *c.IsAndroid)
+	}
+	return "condition did not match the host"
+}
+
+func traitMismatch(name string, want, actual, unknown bool) string {
+	if unknown && !want {
+		return fmt.Sprintf("%s is %v but detection is inconclusive; use is_%s = true or omit the condition", name, want, strings.TrimPrefix(name, "is_"))
+	}
+	return fmt.Sprintf("%s is %v, want %v", name, actual, want)
 }
 
 func matchExact(allowed []string, actual string) bool {
@@ -176,14 +264,31 @@ func matchVersion(allowed []string, actual string) bool {
 	return false
 }
 
-func matchPrefix(allowed []string, actual string) bool {
-	actual = strings.ToLower(actual)
+// matchLibc compares the detected libc family token by prefix. Detection emits
+// a family token (glibc, musl, uClibc, freebsd-libc) without a version, so
+// "glibc" matches and "glibc 2.35" cannot. Values are trimmed and compared
+// case-insensitively.
+func matchLibc(allowed []string, actual string) bool {
+	actual = strings.ToLower(strings.TrimSpace(actual))
+	if actual == "" {
+		return false
+	}
 	for _, value := range allowed {
-		if strings.HasPrefix(actual, strings.ToLower(value)) {
+		if strings.HasPrefix(actual, strings.ToLower(strings.TrimSpace(value))) {
 			return true
 		}
 	}
 	return false
+}
+
+// matchTrait implements the three-state boolean contract: true requires a
+// positive detection, false requires a conclusive negative, and an inconclusive
+// probe matches neither.
+func matchTrait(want, actual, unknown bool) bool {
+	if want {
+		return actual
+	}
+	return !actual && !unknown
 }
 
 func parseBoolPtr(v any) *bool {

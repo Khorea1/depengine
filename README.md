@@ -84,30 +84,50 @@ set, using the methods available on their machine.
 For conditions, hooks, dependencies, archives, GitHub assets, checksums, and
 every supported method, see the [`schema.toml` reference](docs/schema-reference.md).
 
-## Schema and personal manifest
+## Schema, manifest, and catalog
 
-depengine can merge two files:
+depengine can merge three layers:
 
-| File | Purpose | Commit it? |
+| Layer | Purpose | Commit it? |
 |---|---|---|
 | `schema.toml` | Project dependencies and project-owned install rules | Yes |
 | `~/.config/depengine/manifest.toml` | Personal recipes and machine defaults | No |
+| `<config dir>/depengine/catalog/<name>.toml` | Reusable user-owned recipes, looked up by name | No |
 
-Project values win when both files set the same field. By default, tools that
-exist only in the personal manifest are ignored. Set
-`[manifest] allow_new_tools = true` in the manifest if you want them added to a
-project run.
+Project values win when layers set the same field; the personal manifest
+overrides catalog recipes. By default, tools that exist only in the personal
+manifest are ignored. Set `[manifest] allow_new_tools = true` in the manifest
+if you want them added to a project run.
 
-Project schemas use `[tools]`; personal manifests use `[packages]`.
+Project schemas use `[tools]`; personal manifests and catalog recipes use
+`[packages]` (a catalog recipe declares exactly one package and uses
+`recipe_version = 1`). Catalog recipes are consulted only for tools the project
+schema declares and for their transitive `requires`.
 
-See [manifest merge rules](docs/schema-reference.md#manifest-merge-rules) for the
-field-level behavior.
+The catalog defaults to `$XDG_CONFIG_HOME/depengine/catalog` on Linux,
+`~/Library/Application Support/depengine/catalog` on macOS, and
+`%AppData%\depengine\catalog` on Windows. Use `--catalog` (repeatable) or
+`DEPENGINE_CATALOG` to replace the roots, and `--no-catalog` to disable the
+layer. Lock v2 pins each catalog recipe's content digest, so
+`--frozen-lockfile` fails when a recipe changes; catalog-sourced tools require
+a v2 lock, written by a whole-schema `depengine update`.
+
+`depengine import <recipe.toml>` validates a recipe before writing it into the
+first catalog root. It rejects hooks, command-typed fields and plans that
+require arbitrary code, requires a checksum for downloaded artifacts, and flags
+`sha256:auto` as trust-on-first-use. The preview shows the recipe digest that a
+v2 lock will pin. Import does not verify the recipe's origin.
+
+See [manifest merge rules](docs/schema-reference.md#manifest-merge-rules) and
+[catalog recipes](docs/schema-reference.md#catalog-recipes) for the field-level
+behavior.
 
 ## Common commands
 
 | Command | Purpose |
 |---|---|
 | `depengine init` | Create `schema.toml` |
+| `depengine import <recipe.toml>` | Validate and add a recipe to the catalog |
 | `depengine validate` | Validate configuration without installing |
 | `depengine install` | Install declared tools |
 | `depengine check <tool>` | Check one tool |
@@ -150,9 +170,11 @@ to Homebrew; MacPorts is an explicit alternative with examples in the
 
 `depengine.lock` v2 stores the immutable projection of each selected resolved
 install plan. `depengine update` fails instead of writing a partial lock when a
-manager cannot expose a concrete version, revision, digest, checksummed artifact,
-or required Git-backed source revision. A native package name and presence-only
-check are not a version pin, so native-only schemas may also fail this update.
+non-native manager cannot expose a concrete version, revision, digest,
+checksummed artifact, or required Git-backed source revision. A native package
+name and presence-only check are not a version pin, so when native methods are
+the only unpinnable tools the update keeps or refreshes the legacy v1 lock and
+warns which tools blocked v2; it never downgrades an existing v2 lock.
 `install --frozen-lockfile` and
 `upgrade` replay that pinned plan and reject schema intent or resolved identity
 drift; they do not re-resolve mutable selectors to fill gaps. For tracked tools
@@ -232,9 +254,10 @@ completion and validation for `schema.toml`. For Taplo in VS Code:
 |---|---|
 | `DEPENGINE_DETECT_SCRIPT` | Deprecated explicit legacy host-detector override; normal detection is native Go |
 | `DEPENGINE_MANIFEST` | Override the personal manifest path |
+| `DEPENGINE_CATALOG` | Override catalog roots (path list; `--catalog` wins) |
 | `DEPENGINE_CACHE_MAX_BYTES` | Download-cache size limit; `0` disables eviction |
 | `DEPENGINE_DOWNLOAD_MAX_BYTES` | Maximum bytes accepted per HTTP artifact download (default 4 GiB; positive values override) |
-| `XDG_CONFIG_HOME` | Base directory for the personal manifest |
+| `XDG_CONFIG_HOME` | Base directory for the personal manifest and catalog |
 | `XDG_CACHE_HOME` | Base directory for downloads |
 | `XDG_STATE_HOME` | Base directory for state |
 | `XDG_DATA_HOME` | Unix base directory for user-scope tool placement |

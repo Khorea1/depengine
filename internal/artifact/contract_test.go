@@ -95,6 +95,29 @@ func TestInstallerExtension(t *testing.T) {
 	}
 }
 
+func TestContractRejectsInstallerScripts(t *testing.T) {
+	contract := &Contract{RejectInstallerScripts: true}
+	for _, raw := range []string{
+		"https://example.com/install.sh",
+		"https://example.com/bootstrap.bash?download=1",
+		"https://example.com/install.ps1",
+		"install.cmd",
+		"https://example.com/setup.BAT#asset",
+	} {
+		err := contract.ValidateArtifact(raw)
+		var scriptErr *InstallerScriptError
+		if !errors.As(err, &scriptErr) {
+			t.Fatalf("ValidateArtifact(%q) error = %v, want InstallerScriptError", raw, err)
+		}
+		if !strings.Contains(err.Error(), "never executes installer scripts") {
+			t.Fatalf("ValidateArtifact(%q) error = %q, want actionable message", raw, err)
+		}
+	}
+	if err := contract.ValidateArtifact("https://example.com/tool.tar.gz"); err != nil {
+		t.Fatalf("archive payload rejected: %v", err)
+	}
+}
+
 func TestContractValidateArtifact(t *testing.T) {
 	tests := []struct {
 		name     string

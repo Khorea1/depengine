@@ -1,6 +1,6 @@
 # Roadmap
 
-Long-lived unfinished work. Last reviewed: 2026-09-29.
+Long-lived unfinished work. Last reviewed: 2026-10-25.
 
 Work on the current execution model comes before adding more installer types.
 
@@ -112,8 +112,29 @@ Work on the current execution model comes before adding more installer types.
   execution) or native-manager knowledge; schema/docs metadata no longer
   depends on those branches.
 
+- [ ] Implement the accepted catalog layer: project schema as intent,
+  `Lookup(name)` recipes, recipe content identity, provenance, and the
+  host-independent candidate sequence. See
+  [`design/adr-008-catalog-layer.md`](design/adr-008-catalog-layer.md),
+  [`design/adr-009-catalog-layout.md`](design/adr-009-catalog-layout.md) and
+  the `dep-ixd` epic.
+
 ## P2: installer coverage
 
+- [x] Reject installer-script payloads in download-backed methods. `http` and
+  `github` download artifacts but never execute them, so `.sh`, `.ps1`, `.bat`,
+  and similar installer-script targets are rejected with an actionable
+  diagnostic. The supported path remains re-expressing the tool as a native
+  package or the underlying managed artifact. A dedicated `script` method is
+  not planned until it can declare an interpreter, a pinned script checksum,
+  owned paths, and observe/remove semantics.
+- [ ] Native package version pinning for v2 locks. Whole-schema `update` now
+  keeps or refreshes the legacy v1 lock when native methods are the only
+  unpinnable tools, so native-heavy schemas are no longer blocked from
+  updating. Migrating them to v2 still requires a manager-specific resolver
+  that exposes a concrete version, revision, or digest and whose install path
+  can replay it; rolling managers that cannot replay an older package version
+  may remain v1 indefinitely. This is tracked future capability, not a blocker.
 - [x] Add typed macOS PKG/DMG and Windows EXE/MSIX/AppX installers.
 - [ ] Finish lifecycle/version/source behavior for Chocolatey, Homebrew, Cargo,
   Go, Python/Node/Ruby/PHP, Conda, version managers, Snap, Flatpak, Git,
@@ -183,11 +204,13 @@ Work on the current execution model comes before adding more installer types.
 
 - [ ] Retire legacy lock v1 writing/preservation once a profiled update can
   either produce a complete v2 projection or fail and require whole-schema
-  `depengine update`; do not extend v1 selector coverage. A successful format-v1
-  freeze review alone does not retire the v1 reader/application path. Keep it
-  until the compatibility policy explicitly drops v1 inputs for a designated
-  incompatible release and its documented deprecation window has ended. See
-  `docs/compatibility.md` and `docs/support-boundary.md` for the gates.
+  `depengine update`, and once native-only schemas have an explicit disposition
+  (native version pinning or a documented permanent-v1 boundary); do not extend
+  v1 selector coverage. A successful format-v1 freeze review alone does not
+  retire the v1 reader/application path. Keep it until the compatibility policy
+  explicitly drops v1 inputs for a designated incompatible release and its
+  documented deprecation window has ended. See `docs/compatibility.md` and
+  `docs/support-boundary.md` for the gates.
 
 - [x] Evolve `depengine graph` around a typed graph IR before adding a terminal
   diagram renderer. Preserve declared/effective/resolved projections and keep

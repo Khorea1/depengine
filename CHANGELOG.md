@@ -1,6 +1,50 @@
 # Changelog
 
 ## Unreleased
+- Add `depengine import <recipe.toml>`: preview and validate a recipe before
+  writing it into the first catalog root. Import rejects lifecycle hooks,
+  command-typed fields and plans that require arbitrary code, requires a
+  checksum or `checksum_secret_ref` for downloaded artifacts, flags
+  `sha256:auto` as trust-on-first-use, and warns about unverified origins. The
+  preview prints the canonical digest lock v2 will pin, and the recipe is
+  written atomically as authored.
+- Enforce the declarative-only recipe rule at catalog lookup, not only at
+  import: a recipe with a lifecycle hook, a command-typed field or a plan that
+  requires arbitrary code fails closed when resolved, using the same
+  `PlanRequiresArbitraryCode` predicate as the execution gate. Manually placing
+  a recipe in a catalog root can no longer bypass the import validator.
+- Replace `SortGraph`'s per-level full scan of remaining nodes with a zero
+  in-degree frontier. Deep graphs no longer pay O(nodes × depth) map lookups:
+  scheduling drops 2.7×–23.7× and `Analyze` 1.7×–11.2× on the 1,000/5,000-node,
+  fan-in 5/20 benchmarks, with an oracle test proving identical levels and
+  cycle reports. Output formats and exit codes are unchanged.
+- Make provenance a catalog-layer contract instead of optional diagnostics:
+  `why --fields` now reports the winning catalog recipe (root index, root path,
+  recipe path, content digest), every field's effective origin (`catalog`,
+  `manifest`, `schema` or `both`), the values each layer declared and which
+  layers were overridden, the selected candidate, and what a catalog update
+  would still change. Origins survive multi-layer merges, so a field inherited
+  from the catalog is no longer relabelled after passing through a later layer.
+- `why --json` emits the documented audit object (`tool`, `recipe`,
+  `field_provenance`, `catalog_update`, `candidates`, `selected`) instead of a
+  bare attempt array. Candidates carry a stable `reason_code`
+  (`when_not_matched`, `no_adapter`, `package_not_found`, ...) so consumers stop
+  parsing human text; secret references stay redacted.
+- Reject host placeholders in method order selectors (`defaults.method_prefer`,
+  the `defaults.method_order` compatibility alias, and tool-level
+  `method_prefer`/`method_only`) before schema expansion. Expanding a host fact
+  there made candidate order, v1 pin keys, and `MethodsHash` depend on the
+  parsing host, violating the host-independent candidate sequence contract.
+  Selectors must be literal; use candidate `when` conditions for host
+  selection. This also resolves the ADR-008 catalog prerequisite.
+- Whole-schema `depengine update` now keeps or refreshes the legacy v1 lock when
+  the only unpinnable tools are native methods, and warns which tools blocked
+  v2. It still never writes a partial v2 projection and never downgrades an
+  existing v2 lock; any non-native unpinnable method remains a hard failure.
+- `http` and `github` reject installer-script payloads (`.sh`, `.bash`,
+  `.zsh`, `.ksh`, `.ps1`, `.psm1`, `.bat`, `.cmd`) with an actionable
+  diagnostic instead of downloading the script text as a tool binary. The
+  documented re-expression boundary remains the supported path.
 - Slim the arbitrary-code gate for registered method kinds: it reads the arbitrary-code operation bit of the validated candidate plan directly instead of re-running the adapter capability check and a second capability derivation per candidate (~58-61% of the gate's marginal planning cost on enumerated schemas, no behavior change). A permanent characterization matrix pins equivalence with the previous gate, including unregistered kinds and requirement-failing candidates.
 - For Git recipes that retain the clone root, observe the checked-out commit itself and use it for revision drift/recovery; keep opaque artifacts and managed-path outputs presence-only.
 - Schedule the existing adversarial validation CLI replay on macOS, Windows Git Bash, FreeBSD, OpenBSD, and NetBSD CI jobs; target-platform execution is reported by those runs.
@@ -9,7 +53,7 @@
 - Reject ambiguous `pkg` as a global native method alias while preserving clan-scoped `pkg_overrides` and explicitly disambiguated manager names; normalize MacPorts category-qualified requests against bare inventory entries and fail closed on incomplete observation output.
 - Track the configured asdf mise backend in resolved source identity and verify observations within that backend namespace.
 - Move the complete host-fact gathering boundary, including the deprecated `DEPENGINE_DETECT_SCRIPT` override, into `internal/platform`; document explicit retirement gates for that override and for legacy lock v1 compatibility.
-- Clarify that `depengine update` writes v2 only when every tool has an immutable resolved identity: the command description, the failure hint, README, compatibility status, man page, and roadmap now state that a native package name plus presence-only check is not a version pin, so native-only schemas can fail without writing a partial lock; cover `why`'s effective native package formatting with tests.
+- Clarify that `depengine update` writes v2 only when every tool has an immutable resolved identity: the command description, the failure hint, README, compatibility status, man page, and roadmap now state that a native package name plus presence-only check is not a version pin, so native-only schemas use the documented v1 fallback rather than writing a partial lock; cover `why`'s effective native package formatting with tests.
 - Clarify trust warnings for automatic checksums: unsigned sidecars verify artifact integrity but do not authenticate the hash source; GPG-authenticated sidecars are classified separately. `why` filters schema warnings to its selected tool; other project commands retain relevant diagnostics.
 - Validate effective GitHub distribution integrity after schema/manifest merge while preserving `validate --format json`; classify detached-signature verification failures as terminal, compute preflight elevation only from host-compatible methods and their effective privileged targets.
 - Allow explicitly opted-in Windows `.exe` GitHub/HTTP assets as raw payloads only; installer execution remains fail-closed.
@@ -46,3 +90,5 @@
 - When the home and XDG storage bases are unavailable, state and download cache use a per-user fallback instead of shared or relative paths: a private system-temp root on Unix (owner-only directories and files, with ownership/permission checks) or the OS-provided per-user cache directory on Windows and other platforms (trusting the OS-managed user ACL). Resolution fails closed when the fallback cannot be resolved or secured.
 - Debian/Termux dpkg-backed native package checks now use structured status records and a healthy `dpkg` sentinel. Unknown, malformed, or ambiguous inventory fails closed without authorizing install or batch selection; this proves package presence only and does not infer an immutable package version.
 - Fedora/SUSE RPM-backed lifecycle observation now uses strict C-locale query output plus an installed `filesystem` sentinel; ambiguous absence, diagnostics, malformed or unavailable databases, and process errors remain unknown/broken. No package version or lock-v2 identity is inferred.
+- Add the ADR-008/ADR-009 recipe catalog: a project tool declared as `name = {}` resolves methods from `<catalog-root>/<name>.toml`, merged catalog → manifest → project. One file per name keeps lookup independent of catalog size; `--catalog`/`DEPENGINE_CATALOG` replace the default platform config root and `--no-catalog` disables the layer. Catalog-sourced tools pin a canonical recipe digest in lock v2, frozen validation fails closed on a missing or changed digest, a catalog tool is rejected against a v1 lock, and a project tool that resolves to no methods and no `requires` reports `W_INERT_TOOL`.
+- Make `when` condition semantics explicit: `kernel_min`/`kernel_max` are inclusive bounds while `kernel` stays exact, `libc` compares the detected family token rather than a version, and `is_wsl`/`is_container` distinguish a conclusive negative from an inconclusive probe. `is_wsl = false` and `is_container = false` no longer match a host whose detection failed, `{is_wsl}`/`{is_container}` expand to `unknown` there, `why` reports the first rejecting dimension, and `validate` warns with `W_AMBIGUOUS_CONDITION` for ranges written as exact values, versioned libc values and inverted min/max pairs. `schema_version` stays 1 with no parser alias.

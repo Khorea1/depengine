@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/exec"
@@ -29,6 +30,8 @@ func newValidateCmd() *cobra.Command {
 	validateCheckEnv := new(bool)
 	validateFormat := new(string)
 	validateStrict := new(bool)
+	validateCatalog := new([]string)
+	validateNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
 		Use:     "validate",
@@ -37,20 +40,22 @@ func newValidateCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runValidate(cmd.Context(), validateSchema, validateManifest, validateNoManifest, validateCheckEnv, validateFormat, validateStrict)
+			return runValidate(cmd.Context(), validateSchema, validateManifest, validateNoManifest, validateCheckEnv, validateFormat, validateStrict, validateCatalog, validateNoCatalog)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(validateSchema, "schema", defaultSchemaPath(), "path to schema.toml")
 	f.StringVar(validateManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(validateNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	f.StringArrayVar(validateCatalog, "catalog", nil, "path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog)")
+	f.BoolVar(validateNoCatalog, "no-catalog", false, "disable the recipe catalog (default: auto-detect)")
 	f.BoolVar(validateCheckEnv, "check-env", false, "check system environment for required tools")
 	f.StringVar(validateFormat, "format", "text", "output format: text or json")
 	f.BoolVar(validateStrict, "strict", false, "treat warnings as errors")
 	return cmd
 }
 
-func runValidate(ctx context.Context, validateSchema, validateManifest *string, validateNoManifest, validateCheckEnv *bool, validateFormat *string, validateStrict *bool) error {
+func runValidate(ctx context.Context, validateSchema, validateManifest *string, validateNoManifest, validateCheckEnv *bool, validateFormat *string, validateStrict *bool, validateCatalog *[]string, validateNoCatalog *bool) error {
 	s, err := config.ParseProjectSchema(*validateSchema, map[string]string{})
 	if err != nil {
 		var sce *config.SchemaCodeError
@@ -84,16 +89,30 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 			manifestAuto = true
 		}
 	}
+	roots, err := config.ResolveCatalogRoots(*validateCatalog, *validateNoCatalog)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return exitWithCode(2)
+	}
+	var manifest *config.Schema
 	if manifestPath != "" {
-		var count int
-		s, count, err = mergeManifest(s, manifestPath, false)
+		manifest, err = config.ParseManifest(manifestPath, nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error loading manifest: %v\n", err)
 			return exitWithCode(2)
 		}
-		if count > 0 && manifestAuto {
-			fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, count)
-		}
+	}
+	resolution, err := config.ResolveLayers(s, manifest, config.NewCatalog(roots, validateCatalogRecipe), nil, false)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error loading configuration: %v\n", err)
+		return exitWithCode(2)
+	}
+	s = resolution.Schema
+	if resolution.ManifestCount > 0 && manifestAuto {
+		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, resolution.ManifestCount)
+	}
+	if resolution.CatalogCount > 0 {
+		fmt.Fprintf(os.Stderr, "  catalog: %s (%d recipes)\n", strings.Join(roots, string(os.PathListSeparator)), resolution.CatalogCount)
 	}
 	if err := config.ValidateEffectiveIntegrity(s); err != nil {
 		if *validateFormat == "json" {
@@ -118,6 +137,13 @@ func runValidate(ctx context.Context, validateSchema, validateManifest *string, 
 
 	knownKinds := exec.RegisteredKinds()
 	result := validate.ValidateSchema(s, knownKinds)
+	for _, warning := range resolution.Warnings {
+		result.Add(validate.ValidationError{
+			Code:    validate.WarnInertTool,
+			Field:   "tools." + warning.Tool,
+			Message: warning.Message,
+		})
+	}
 
 	if *validateCheckEnv {
 		envResult := validate.CheckEnv(ctx, run.OSExecRunner{})
@@ -191,6 +217,8 @@ func newCheckCmd() *cobra.Command {
 	checkJSON := new(bool)
 	checkFormat := new(string)
 	checkLive := new(bool)
+	checkCatalog := new([]string)
+	checkNoCatalog := new(bool)
 
 	cmd := &cobra.Command{
 		Use:     "check <tool>",
@@ -199,13 +227,19 @@ func newCheckCmd() *cobra.Command {
 		GroupID: groupInspect,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCheck(cmd.Context(), args[0], checkSchema, checkManifest, checkNoManifest, checkJSON, checkFormat, checkLive)
+			catalog, err := catalogFromCommand(cmd)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return exitWithCode(2)
+			}
+			return runCheck(cmd.Context(), args[0], checkSchema, checkManifest, checkNoManifest, checkJSON, checkFormat, checkLive, catalog)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(checkSchema, "schema", defaultSchemaPath(), "path to schema.toml")
 	f.StringVar(checkManifest, "manifest", "", "path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml)")
 	f.BoolVar(checkNoManifest, "no-manifest", false, "disable personal manifest (default: auto-detect)")
+	addCatalogFlags(cmd, checkCatalog, checkNoCatalog)
 	f.BoolVar(checkJSON, "json", false, "JSON output")
 	f.StringVar(checkFormat, "format", "", "output format (json)")
 	f.BoolVar(checkLive, "live", false, "check via adapter (may run subprocesses)")
@@ -220,7 +254,7 @@ type checkOutput struct {
 }
 
 // runCheck reports whether a single tool satisfies its resolved desired state.
-func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *string, checkNoManifest, checkJSON *bool, checkFormat *string, checkLive *bool) error {
+func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *string, checkNoManifest, checkJSON *bool, checkFormat *string, checkLive *bool, catalog *config.Catalog) error {
 	noManifest := *checkNoManifest
 	manifestPath := *checkManifest
 	manifestAuto := false
@@ -231,7 +265,7 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 		}
 	}
 
-	project, err := loadProject(*checkSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true})
+	project, err := loadProject(*checkSchema, projectLoadOptions{ManifestPath: manifestPath, ManifestAuto: manifestAuto, Provenance: true, Catalog: catalog})
 	if err != nil {
 		log.Default.Error("load schema", "error", err)
 		return exitWithCode(exitCodeForError(err))
@@ -240,6 +274,9 @@ func runCheck(ctx context.Context, toolName string, checkSchema, checkManifest *
 	s, clan, facts, manifestCount := project.Schema, project.Clan, project.Facts, project.ManifestCount
 	if manifestAuto && manifestCount > 0 {
 		fmt.Fprintf(os.Stderr, "  manifest: %s (%d tools merged)\n", manifestPath, manifestCount)
+	}
+	if project.CatalogCount > 0 {
+		fmt.Fprintf(os.Stderr, "  catalog: %s (%d recipes)\n", strings.Join(project.CatalogRoots, string(os.PathListSeparator)), project.CatalogCount)
 	}
 
 	tool, ok := s.Tools[toolName]

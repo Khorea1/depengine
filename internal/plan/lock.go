@@ -34,6 +34,39 @@ const (
 // selected manager/resolver could not provide one.
 var ErrLockUnavailable = errors.New("immutable lock identity unavailable")
 
+// LockUnavailableTool identifies one resolved plan that could not be projected
+// into an immutable lock entry.
+type LockUnavailableTool struct {
+	Tool   string
+	Method string
+	Reason string
+}
+
+// LockUnavailableToolsError reports every plan that prevented an all-or-nothing
+// lock document from being built. It unwraps to ErrLockUnavailable so callers
+// that only need the sentinel keep working, while callers that need to explain
+// the limitation can inspect the complete set of offending tools.
+type LockUnavailableToolsError struct {
+	Tools []LockUnavailableTool
+}
+
+func (e *LockUnavailableToolsError) Error() string {
+	if e == nil || len(e.Tools) == 0 {
+		return "lock document: " + ErrLockUnavailable.Error()
+	}
+	parts := make([]string, 0, len(e.Tools))
+	for _, tool := range e.Tools {
+		label := tool.Tool + "/" + tool.Method
+		if tool.Reason != "" {
+			label += ": " + tool.Reason
+		}
+		parts = append(parts, label)
+	}
+	return fmt.Sprintf("lock document: %s for %d tool(s): %s", ErrLockUnavailable, len(e.Tools), strings.Join(parts, "; "))
+}
+
+func (e *LockUnavailableToolsError) Unwrap() error { return ErrLockUnavailable }
+
 // ErrLockMismatch is returned when a newly resolved plan does not reproduce an
 // immutable lock identity. Callers must require an explicit lock update rather
 // than silently accepting the new mutable resolution.
@@ -829,6 +862,7 @@ func EncodeLockDocument(document LockDocument) ([]byte, error) {
 // be pinned, no partial document is returned.
 func BuildLockDocument(plans []ResolvedInstallPlan) (LockDocument, error) {
 	entries := make([]LockProjection, 0, len(plans))
+	unavailable := make([]LockUnavailableTool, 0)
 	seen := make(map[string]struct{}, len(plans))
 	for _, resolved := range plans {
 		if _, exists := seen[resolved.Tool.Name]; exists {
@@ -841,9 +875,27 @@ func BuildLockDocument(plans []ResolvedInstallPlan) (LockDocument, error) {
 			return LockDocument{}, err
 		}
 		if err := entry.RequireImmutable(); err != nil {
-			return LockDocument{}, fmt.Errorf("lock document: %s/%s: %w", entry.Tool.Name, entry.Candidate.Method, err)
+			reason := entry.Reason
+			if reason == "" {
+				reason = err.Error()
+			}
+			unavailable = append(unavailable, LockUnavailableTool{
+				Tool:   entry.Tool.Name,
+				Method: entry.Candidate.Method,
+				Reason: reason,
+			})
+			continue
 		}
 		entries = append(entries, entry)
+	}
+	if len(unavailable) > 0 {
+		slices.SortFunc(unavailable, func(a, b LockUnavailableTool) int {
+			if cmp := strings.Compare(a.Tool, b.Tool); cmp != 0 {
+				return cmp
+			}
+			return strings.Compare(a.Method, b.Method)
+		})
+		return LockDocument{}, &LockUnavailableToolsError{Tools: unavailable}
 	}
 	slices.SortFunc(entries, func(a, b LockProjection) int {
 		if cmp := strings.Compare(a.Tool.Name, b.Tool.Name); cmp != 0 {

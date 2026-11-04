@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/Khorea1/depengine/internal/config"
 	"github.com/Khorea1/depengine/internal/lock"
+	"github.com/Khorea1/depengine/internal/native"
 	"github.com/Khorea1/depengine/internal/plan"
 	"github.com/Khorea1/depengine/internal/platform"
 )
@@ -17,7 +19,11 @@ import (
 // path. It never invokes an installer and only returns an immutable projection
 // with exact coverage of expectedTools; unsupported identities or incomplete
 // retained coverage fail closed.
-func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, clan string, facts *platform.Facts, schemaPath string, logger *slog.Logger, previous *lock.Lock, expectedTools []string, methodsHash map[string]string) (plan.LockDocument, error) {
+//
+// previousDocument is the already-decoded projection of previous. Callers that
+// hold a readable v2 lock decode it once and pass it here, so the same document
+// is not decoded again for retention and checksum carry-forward.
+func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, clan string, facts *platform.Facts, schemaPath string, logger *slog.Logger, previous *lock.Lock, previousDocument plan.LockDocument, expectedTools []string, methodsHash map[string]string) (plan.LockDocument, error) {
 	if schema == nil {
 		return plan.LockDocument{}, fmt.Errorf("universal lock: schema is required")
 	}
@@ -32,14 +38,6 @@ func resolveUniversalLockDocument(ctx context.Context, schema *config.Schema, cl
 	expectedNames := make(map[string]struct{}, len(expectedTools))
 	for _, name := range expectedTools {
 		expectedNames[name] = struct{}{}
-	}
-	var previousDocument plan.LockDocument
-	if previous != nil && previous.Version == lock.CurrentVersion {
-		var err error
-		previousDocument, err = previous.ProjectionDocument()
-		if err != nil {
-			return plan.LockDocument{}, err
-		}
 	}
 	for _, name := range names {
 		tool := schema.Tools[name]
@@ -128,7 +126,7 @@ func carryForwardArtifactIntegrity(current *plan.ResolvedInstallPlan, previous *
 
 // universalLockIntentDrifted requires refreshed metadata for retained entries.
 // A tool absent from the projection is left to the caller's coverage check.
-func universalLockIntentDrifted(previous *lock.Lock, previousDocument plan.LockDocument, name string, methodsHash, sourceHash map[string]string) bool {
+func universalLockIntentDrifted(previous *lock.Lock, previousDocument plan.LockDocument, name string, methodsHash, sourceHash, recipeDigest map[string]string) bool {
 	if previous == nil {
 		return false
 	}
@@ -137,6 +135,12 @@ func universalLockIntentDrifted(previous *lock.Lock, previousDocument plan.LockD
 	}
 	previousMethods, exists := previous.MethodsHash[name]
 	if !exists || previousMethods != methodsHash[name] {
+		return true
+	}
+	// Recipe content is part of the pinned intent: a retained entry must be
+	// re-resolved when the recipe that supplied the tool changed, even if the
+	// resolved method/source identity did not.
+	if previous.RecipeDigest[name] != recipeDigest[name] {
 		return true
 	}
 	for key, current := range sourceHash {
@@ -192,6 +196,59 @@ func canPersistProjection(previous *lock.Lock, profile string) bool {
 		return true
 	}
 	return profile == ""
+}
+
+// legacyNativeLockFallback reports whether a failed universal projection may
+// fall back to the legacy v1 lock. The fallback is intentionally narrow:
+//
+//   - the previous lock must not already be v2, because downgrading a v2 lock
+//     would discard immutable entries the v2 consumer requires; and
+//   - every unpinnable tool must be a native method, because native package
+//     names are the one identity class this project deliberately does not
+//     pretend to pin. Any other unpinnable method remains a hard failure.
+//
+// The returned names are sorted for stable diagnostics.
+func legacyNativeLockFallback(previous *lock.Lock, err error) ([]string, bool) {
+	if previous != nil && previous.Version == lock.CurrentVersion {
+		return nil, false
+	}
+	var unavailable *plan.LockUnavailableToolsError
+	if !errors.As(err, &unavailable) || len(unavailable.Tools) == 0 {
+		return nil, false
+	}
+	names := make([]string, 0, len(unavailable.Tools))
+	for _, tool := range unavailable.Tools {
+		if !isNativeLockMethod(tool.Method) {
+			return nil, false
+		}
+		names = append(names, tool.Tool)
+	}
+	sort.Strings(names)
+	return names, true
+}
+
+// isNativeLockMethod reports whether a selected method is backed by the native
+// adapter family. Dedicated adapters with their own version-pinning contracts
+// are excluded even when a native manager shares their name.
+func isNativeLockMethod(method string) bool {
+	if method == "native" {
+		return true
+	}
+	switch method {
+	case "winget", "scoop", "choco", "cask", "mas", "aur", "steamcmd":
+		return false
+	}
+	for _, name := range native.ManagerNames() {
+		if name == method {
+			return true
+		}
+	}
+	for _, name := range native.ManagerBinaryNames() {
+		if name == method {
+			return true
+		}
+	}
+	return false
 }
 
 func lockedArtifacts(entries []plan.LockedArtifact) []plan.Artifact {

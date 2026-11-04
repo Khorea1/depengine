@@ -116,6 +116,23 @@ Project and personal configuration use the same grammar but different roots:
 projects declare `[tools]`; manifests declare `[packages]`. Project values win
 when the two layers conflict.
 
+ADR-008 accepts a catalog layer below the personal manifest: recipes are looked
+up by name and merged catalog → manifest → project, so the project schema still
+wins conflicting fields and a catalog cannot enable `allow_new_tools`. The
+lookup backend, CLI flags and v2 recipe content digests are implemented. The
+layer contract and identity model are in
+[`design/adr-008-catalog-layer.md`](design/adr-008-catalog-layer.md); the
+storage layout and path resolution are in
+[`design/adr-009-catalog-layout.md`](design/adr-009-catalog-layout.md).
+
+Catalog storage is one TOML recipe per name, `<root>/<name>.toml`, with the file
+system as the index. The default root is the platform config directory under
+`depengine/catalog`; `--catalog` (repeatable) and `DEPENGINE_CATALOG` replace
+it, and `--no-catalog` disables lookup. The first root containing a name wins;
+catalog recipes participate only for project-declared names and their
+transitive `requires` closure. Lookup never scans the catalog, and a missing
+default root means no catalog rather than an error.
+
 ## Install flow
 
 For each tool, in dependency order, the executor:

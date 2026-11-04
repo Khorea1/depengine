@@ -143,6 +143,14 @@
           },
           "type": "array"
         },
+        "kernel_max": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "kernel_min": {
+          "minLength": 1,
+          "type": "string"
+        },
         "libc": {
           "items": {
             "type": "string"

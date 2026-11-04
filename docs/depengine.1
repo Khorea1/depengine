@@ -52,6 +52,9 @@ Show the dependency graph
 .B "depengine help [command] [flags]"
 Help about any command
 .TP
+.B "depengine import <recipe.toml> [flags]"
+Validate a recipe before writing it to the catalog: preview origin, integrity, candidates and executable fields, reject hooks and arbitrary code, require a checksum and flag 'sha256:auto' as TOFU.
+.TP
 .B "depengine init [flags]"
 Initialize a schema.toml for a new project
 .TP
@@ -75,7 +78,7 @@ Revert to a previous state snapshot
 Aliases: rollback.
 .TP
 .B "depengine update [flags]"
-Resolve mutable references and write v2 only when every tool has an immutable resolved identity
+Resolve mutable references and write v2 when every tool has an immutable identity; keep v1 for native\-only schemas
 Aliases: lock.
 .TP
 .B "depengine upgrade [flags]"
@@ -102,6 +105,9 @@ help for depengine Scope: local. Default: false.
 Show version Scope: local. Default: false.
 .SS "depengine check flags"
 .TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
+.TP
 .B "\-\-format <string>"
 output format (json) Scope: local. Default: .
 .TP
@@ -116,6 +122,9 @@ check via adapter (may run subprocesses) Scope: local. Default: false.
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-no\-manifest"
 disable personal manifest (default: auto\-detect) Scope: local. Default: false.
@@ -170,6 +179,9 @@ path to other state file (used when no args) Scope: local. Default: .
 help for forget Scope: local. Default: false.
 .SS "depengine graph flags"
 .TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
+.TP
 .B "\-\-depth <int>"
 with \-\-only: maximum traversal depth in edges (\-1 = unbounded, 0 = only the tool itself) Scope: local. Default: \-1.
 .TP
@@ -184,6 +196,9 @@ help for graph Scope: local. Default: false.
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-no\-manifest"
 disable personal manifest (default: auto\-detect) Scope: local. Default: false.
@@ -215,6 +230,19 @@ help for help Scope: local. Default: false.
 .TP
 .B "\-\-man"
 Show the man page Scope: local. Default: false.
+.SS "depengine import flags"
+.TP
+.B "\-\-catalog <stringArray>"
+destination catalog root (repeatable; the first root wins) Scope: local. Default: [].
+.TP
+.B "\-\-dry\-run"
+preview the import without writing the recipe Scope: local. Default: false.
+.TP
+.B "\-\-force"
+replace an existing recipe with the same tool name Scope: local. Default: false.
+.TP
+.B "\-h, \-\-help"
+help for import Scope: local. Default: false.
 .SS "depengine init flags"
 .TP
 .B "\-\-add <string>"
@@ -232,6 +260,9 @@ path to write (default: schema.toml) Scope: local. Default: .
 .TP
 .B "\-\-allow\-arbitrary\-code"
 permit hooks, build scripts, and other arbitrary code execution Scope: local. Default: false.
+.TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
 .TP
 .B "\-\-diagnose"
 diagnostic mode: DEBUG + dry\-run + detailed report Scope: local. Default: false.
@@ -256,6 +287,9 @@ log level: debug, info, warn, error Scope: local. Default: .
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-no\-manifest"
 disable personal manifest (default: auto\-detect) Scope: local. Default: false.
@@ -308,6 +342,9 @@ output format: cyclonedx or spdx Scope: local. Default: cyclonedx.
 help for sbom Scope: local. Default: false.
 .SS "depengine status flags"
 .TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
+.TP
 .B "\-\-format <string>"
 output format: text or json Scope: local. Default: text.
 .TP
@@ -319,6 +356,9 @@ JSON output (shorthand for \-\-format=json) Scope: local. Default: false.
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-no\-manifest"
 disable personal manifest (default: auto\-detect) Scope: local. Default: false.
@@ -340,6 +380,9 @@ list available snapshots Scope: local. Default: false.
 revert to specific snapshot file path Scope: local. Default: .
 .SS "depengine update flags"
 .TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
+.TP
 .B "\-\-dry\-run"
 show what would be updated without writing lock Scope: local. Default: false.
 .TP
@@ -354,6 +397,9 @@ path to depengine.lock (default: alongside schema.toml) Scope: local. Default: .
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-no\-manifest"
 disable personal manifest (default: auto\-detect) Scope: local. Default: false.
@@ -371,6 +417,9 @@ detailed output Scope: local. Default: false.
 .B "\-\-allow\-arbitrary\-code"
 permit hooks, build scripts, and other arbitrary code execution Scope: local. Default: false.
 .TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
+.TP
 .B "\-\-dry\-run"
 show what would be upgraded without making changes Scope: local. Default: false.
 .TP
@@ -386,6 +435,9 @@ JSON output Scope: local. Default: false.
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
 .TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
+.TP
 .B "\-\-no\-manifest"
 disable personal manifest (default: auto\-detect) Scope: local. Default: false.
 .TP
@@ -399,6 +451,9 @@ suppress per\-tool status lines Scope: local. Default: false.
 path to schema.toml Scope: local. Default: schema.toml.
 .SS "depengine validate flags"
 .TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
+.TP
 .B "\-\-check\-env"
 check system environment for required tools Scope: local. Default: false.
 .TP
@@ -410,6 +465,9 @@ help for validate Scope: local. Default: false.
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-no\-manifest"
 disable personal manifest (default: auto\-detect) Scope: local. Default: false.
@@ -425,17 +483,23 @@ treat warnings as errors Scope: local. Default: false.
 help for version Scope: local. Default: false.
 .SS "depengine why flags"
 .TP
+.B "\-\-catalog <stringArray>"
+path to a recipe catalog root (repeatable; default: platform config dir/depengine/catalog) Scope: local. Default: [].
+.TP
 .B "\-\-fields"
-show field\-level provenance Scope: local. Default: false.
+show the full audit: recipe identity, field provenance, selected candidate and catalog\-update impact Scope: local. Default: false.
 .TP
 .B "\-h, \-\-help"
 help for why Scope: local. Default: false.
 .TP
 .B "\-\-json"
-JSON output Scope: local. Default: false.
+JSON audit report: tool, recipe identity, field provenance, candidates and catalog\-update impact Scope: local. Default: false.
 .TP
 .B "\-\-manifest <string>"
 path to personal manifest (default: $XDG_CONFIG_HOME/depengine/manifest.toml) Scope: local. Default: .
+.TP
+.B "\-\-no\-catalog"
+disable the recipe catalog (default: auto\-detect) Scope: local. Default: false.
 .TP
 .B "\-\-no\-manifest"
 disable personal manifest (default: auto\-detect) Scope: local. Default: false.

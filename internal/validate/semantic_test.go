@@ -536,6 +536,32 @@ func TestValidateArtifactContractsRejectHTTPPlatformInstallers(t *testing.T) {
 	}
 }
 
+func TestValidateArtifactContractsRejectInstallerScripts(t *testing.T) {
+	tests := []struct {
+		name   string
+		method *config.MethodCandidate
+	}{
+		{name: "http", method: mc("http", nil, map[string]any{"url": "https://example.com/install.sh"})},
+		{name: "github", method: mc("github", nil, map[string]any{
+			"repo": "owner/repo", "asset": "install-{os}.ps1",
+		})},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &config.Schema{Tools: map[string]*config.Tool{
+				"app": tool("app", []*config.MethodCandidate{tt.method}, nil),
+			}}
+			r := validateMalformedURLs(s)
+			if !r.HasErrors() {
+				t.Fatalf("expected %s installer script to be rejected", tt.name)
+			}
+			if !strings.Contains(r.Errors[0].Message, "never executes installer scripts") {
+				t.Fatalf("%s diagnostic = %q, want installer-script boundary", tt.name, r.Errors[0].Message)
+			}
+		})
+	}
+}
+
 func TestValidateArtifactContractsRejectGitHubInstallerAsset(t *testing.T) {
 	s := &config.Schema{Tools: map[string]*config.Tool{
 		"app": tool("app", []*config.MethodCandidate{mc("github", nil, map[string]any{

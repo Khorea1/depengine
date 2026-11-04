@@ -24,6 +24,8 @@ var conditionFields = map[string]string{
 	"arch":               "strings",
 	"os":                 "strings",
 	"kernel":             "strings",
+	"kernel_min":         "string",
+	"kernel_max":         "string",
 	"libc":               "strings",
 	"init_system":        "strings",
 	"is_wsl":             "bool",
@@ -31,9 +33,67 @@ var conditionFields = map[string]string{
 	"is_android":         "bool",
 }
 
-func validateRawSchema(raw map[string]any, section string) error {
-	allowedRoot := map[string]bool{"schema_version": true, "defaults": true, section: true}
-	if section == "packages" {
+// validateOrderSelectorsBeforeExpansion rejects host placeholders in method
+// order selectors before the whole document is expanded. Order selectors name
+// candidate kinds or labels; expanding a host fact there makes the candidate
+// sequence (and therefore v1 pin keys and MethodsHash) depend on the machine
+// that parsed the schema. ADR-007 requires a host-independent sequence, so the
+// selector must be literal and candidates should be selected with when
+// conditions instead.
+func validateOrderSelectorsBeforeExpansion(raw map[string]any, section string) error {
+	var errs []string
+	if defaults, ok := raw["defaults"].(map[string]any); ok {
+		for _, field := range []string{"method_prefer", "method_order"} {
+			validateNoPlaceholderSelectors(defaults[field], "defaults."+field, &errs)
+		}
+	}
+	if tools, ok := raw[section].(map[string]any); ok {
+		for _, name := range sortedMapKeys(tools) {
+			tool, ok := tools[name].(map[string]any)
+			if !ok {
+				continue
+			}
+			for _, field := range []string{"method_prefer", "method_only"} {
+				validateNoPlaceholderSelectors(tool[field], section+"."+name+"."+field, &errs)
+			}
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("invalid schema:\n%s", strings.Join(errs, "\n"))
+	}
+	return nil
+}
+
+func validateNoPlaceholderSelectors(raw any, path string, errs *[]string) {
+	var values []string
+	switch list := raw.(type) {
+	case []any:
+		for _, item := range list {
+			if value, ok := item.(string); ok {
+				values = append(values, value)
+			}
+		}
+	case []string:
+		values = list
+	default:
+		return
+	}
+	for _, value := range values {
+		if strings.ContainsAny(value, "{}") {
+			*errs = append(*errs, fmt.Sprintf(
+				"%s: selector %q contains placeholder syntax; method order must be host-independent (list literal selectors and use when conditions on candidates)",
+				path, value,
+			))
+		}
+	}
+}
+
+func validateRawSchema(raw map[string]any, section, versionField string, recipe bool) error {
+	allowedRoot := map[string]bool{versionField: true, section: true}
+	if !recipe {
+		allowedRoot["defaults"] = true
+	}
+	if section == "packages" && !recipe {
 		allowedRoot["manifest"] = true
 	}
 
@@ -43,14 +103,16 @@ func validateRawSchema(raw map[string]any, section string) error {
 			errs = append(errs, fmt.Sprintf("%s: unknown root field", key))
 		}
 	}
-	validateSchemaVersion(raw["schema_version"], &errs)
-	validateDefaults(raw["defaults"], &errs)
+	validateDocumentVersion(raw[versionField], versionField, &errs)
+	if !recipe {
+		validateDefaults(raw["defaults"], &errs)
+	}
 	if _, ok := raw[section]; !ok {
 		errs = append(errs, section+": required table")
 	} else {
 		validateToolSection(raw[section], section, &errs)
 	}
-	if section == "packages" {
+	if section == "packages" && !recipe {
 		validateManifest(raw["manifest"], &errs)
 	}
 	if len(errs) > 0 {
@@ -59,18 +121,18 @@ func validateRawSchema(raw map[string]any, section string) error {
 	return nil
 }
 
-func validateSchemaVersion(raw any, errs *[]string) {
+func validateDocumentVersion(raw any, field string, errs *[]string) {
 	if raw == nil {
-		*errs = append(*errs, "schema_version: required field")
+		*errs = append(*errs, field+": required field")
 		return
 	}
 	version, ok := raw.(int64)
 	if !ok {
-		*errs = append(*errs, fmt.Sprintf("schema_version: expected integer, got %T", raw))
+		*errs = append(*errs, fmt.Sprintf("%s: expected integer, got %T", field, raw))
 		return
 	}
 	if version != int64(formatversion.CurrentManifestVersion) {
-		*errs = append(*errs, fmt.Sprintf("schema_version: unsupported version %d (supported: %d)", version, formatversion.CurrentManifestVersion))
+		*errs = append(*errs, fmt.Sprintf("%s: unsupported version %d (supported: %d)", field, version, formatversion.CurrentManifestVersion))
 	}
 }
 

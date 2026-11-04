@@ -22,6 +22,13 @@ Hooks, build commands, opaque vendor installers, and similar escape hatches are
 less observable. depengine cannot infer complete ownership, rollback behavior,
 or desired state from an arbitrary command.
 
+Installer scripts are outside the managed method model. `http` and `github`
+download payloads but never execute them, so a `.sh`, `.ps1`, `.bat`, or
+similar installer-script URL is rejected before planning. Declare a native
+package or the underlying managed artifact instead. Running such a script from
+a hook remains possible only with the explicit arbitrary-code authorization,
+but it provides no observation or removal semantics.
+
 ## Reproducibility
 
 New `depengine.lock` files use format v2; existing v1 locks remain readable.
@@ -52,9 +59,12 @@ alone; retained checkouts continue to compare their actual HEAD.
 
 Lock v1 is compatibility-only. New capabilities must not extend its selector
 model. A whole-schema update migrates a readable v1 lock only when it can prove
-complete v2 install-closure coverage. If any selected tool lacks an immutable identity, the
-update fails closed and preserves the existing lock; a profiled update may
-preserve v1 when it cannot prove a complete projection.
+complete v2 install-closure coverage. When the only tools that lack an immutable
+identity are native methods, the update refreshes and keeps the v1 lock and
+warns which tools blocked v2; it never writes a partial v2 projection. Any
+other unpinnable method, or an existing v2 lock that would have to be
+downgraded, remains a hard failure. A profiled update may preserve v1 when it
+cannot prove a complete projection.
 
 The legacy writer/preservation path can be removed once every profiled update
 either produces a complete v2 projection or fails and requires a whole-schema
@@ -68,16 +78,50 @@ do not migrate. A whole-schema `depengine update` is an explicit resolution
 operation; any future format-only migration must be representation-only.
 
 Generation is all-or-nothing. A whole-schema `update` writes v2 only when every
-non-virtual tool has an immutable resolved identity. If a manager cannot expose a
-stable version, revision, digest, checksummed artifact, or required Git-backed
-source revision, `update` fails with `immutable lock identity unavailable` and
-writes no partial v2 projection; an existing v1 lock remains unchanged. Plain
-native package names and package-presence checks do not provide an immutable
-version. Native packages are v2-lockable only when a manager-specific resolver
-can return a concrete identity that its install path can replay. This closes
-silent mutable re-resolution without pretending unsupported managers are
-reproducible. Lock v1 remains readable with its method-specific behavior; a
-whole-schema update migrates it only when complete v2 coverage can be proven.
+non-virtual tool has an immutable resolved identity. If a non-native manager
+cannot expose a stable version, revision, digest, checksummed artifact, or
+required Git-backed source revision, `update` fails with `immutable lock
+identity unavailable` and writes no partial v2 projection. If the only
+unpinnable tools are native methods, `update` falls back to the legacy v1
+format, reports which tools blocked v2, and leaves the v2 projection absent; it
+never downgrades an existing v2 lock. Plain native package names and
+package-presence checks do not provide an immutable version. Native packages
+are v2-lockable only when a manager-specific resolver can return a concrete
+identity that its install path can replay. This closes silent mutable
+re-resolution without pretending unsupported managers are reproducible, while
+keeping `update` usable for native-only schemas. Lock v1 remains readable with
+its method-specific behavior; a whole-schema update migrates it only when
+complete v2 coverage can be proven.
+
+### Catalog recipe content identity (lock v2)
+
+A tool whose recipe comes from the catalog (including a virtual
+dependency-group recipe with no methods) also pins the recipe's canonical
+content digest in the v2 lock (`recipe_digest`, keyed by tool name). The digest
+is computed from the recipe TOML document before host placeholders are
+expanded: the document is decoded into a map, encoded as JSON with sorted keys,
+and hashed with SHA-256. Comments, whitespace and key order do not affect it,
+and the same recipe yields the same digest on every host. Every field is
+covered, including fields that never reach the resolved plan (`extract_to`,
+`link_dir`, `entrypoints`), so a changed URL, checksum or layout is detected even
+when the method sequence and source identity are unchanged.
+
+Frozen validation fails closed when a catalog-sourced tool has no stored digest,
+when the stored digest differs from the current recipe, or when a tool the lock
+pinned as catalog-sourced no longer resolves from a catalog. A catalog revision
+may be recorded as a retrieval hint, but it is never the verification: the
+digest verifies, the revision retrieves. Catalog-sourced tools are rejected
+against a v1 lock, and an install with no lock does not write a v1 lock for
+them; run a whole-schema `depengine update` without `--profile` to write the v2
+projection. On an existing v2 lock, a `--profile`
+update re-resolves a retained entry when its recipe digest changed, so new
+content is adopted explicitly instead of being silently retained. Lock v1 is
+unchanged and carries no `recipe_digest` field.
+
+`depengine import` previews that same canonical digest and writes the recipe
+as authored, so the identity shown before writing is the identity the v2 lock
+pins. Import also enforces the integrity floor for downloaded artifacts; the
+lock's frozen validation still fails closed on a changed recipe.
 
 An exact package version constrains one package. A fully locked package graph
 also needs immutable identities for its dependencies.

@@ -28,6 +28,10 @@ type Schema struct {
 	Tools         map[string]*Tool
 	AllowNewTools bool                     `json:"-"`
 	Provenance    map[string][]FieldSource `json:"-"`
+	// layer names the provenance layer this schema was resolved as. It is
+	// transient merge metadata set by ResolveLayers so provenance can name the
+	// real layer instead of guessing from position.
+	layer string
 	// ProjectRoot is the absolute directory containing the project schema.
 	// It is runtime-only metadata used to resolve project-relative inputs such
 	// as vendored/local artifacts; it is never serialized into plans or state.
@@ -73,9 +77,27 @@ type Tool struct {
 	Tags           []string              `merge:"union"`
 	DependencyOnly bool                  `merge:"overwrite"`
 
+	// Recipe is the catalog recipe that supplied this tool: winning root,
+	// canonical file path and content digest. It is transient metadata: never
+	// serialized into schema output, plans or state. Layer merge keeps the value
+	// cloned from the catalog (lowest) layer.
+	Recipe *RecipeOrigin `merge:"overwrite" json:"-"`
+
 	// presence records fields explicitly declared by this layer. It keeps
 	// layering semantics distinct from Go zero values (false, "", [] and {}).
 	presence fieldPresence
+}
+
+// RecipeOrigin identifies the catalog recipe a tool was resolved from. Root is
+// the catalog root directory, RootIndex its position in the ordered root list
+// (the first root containing the name wins), Path the canonical recipe file and
+// Digest its canonical content digest.
+type RecipeOrigin struct {
+	Name      string
+	Root      string
+	RootIndex int
+	Path      string
+	Digest    string
 }
 
 // Hook is an explicitly tokenized command. Run[0] is the executable and the
@@ -126,6 +148,10 @@ func cloneTool(tool *Tool) *Tool {
 	}
 	out := *tool
 	out.presence = clonePresence(tool.presence)
+	if tool.Recipe != nil {
+		recipe := *tool.Recipe
+		out.Recipe = &recipe
+	}
 	out.PreInstall = cloneHooks(tool.PreInstall)
 	out.PostInstall = cloneHooks(tool.PostInstall)
 	out.Requires = append([]string(nil), tool.Requires...)

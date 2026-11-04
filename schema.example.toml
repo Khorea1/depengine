@@ -403,11 +403,13 @@ when = { os = ["darwin"] }
 
 
 # --- Kernel-specific DKMS package ---
-# `kernel` is matched exactly (case-insensitive) against `uname -r`.
+# `kernel` is exact and is not a range: use kernel_min/kernel_max for an
+# inclusive range. Listing exact `uname -r` values stops matching on the next
+# kernel update.
 [tools.v4l2loopback]
 [tools.v4l2loopback.aur]
 pkg = "v4l2loopback-dkms"
-when = { distro_family = ["arch"], kernel = ["6.7.0-arch1-1", "6.8.0-arch1-1", "6.9.0-arch1-1"] }
+when = { distro_family = ["arch"], kernel_min = "6.7", kernel_max = "6.99" }
 
 
 # --- macOS vs Linux: completely different platform ---
@@ -531,9 +533,31 @@ requires = []
 requires = []
 
 
+# ------------------------------------------------------------------------
+# CASE 12 — Recipe-backed tool (recommended for shared projects).
+# Declare the project's intent only; the catalog supplies the rest.
+# The recipe lives at <catalog-root>/<name>.toml and uses recipe_version = 1.
+# ------------------------------------------------------------------------
+# fd = {}
+#   → resolves fd.toml from the catalog. A field declared here (for example
+#     method_prefer or a narrower when) wins over the recipe.
+#
+# Equivalent recipe at ~/.config/depengine/catalog/fd.toml:
+#   recipe_version = 1
+#   [packages.fd]
+#   github = { repo = "sharkdp/fd", asset = "fd-v{version}-{arch}-unknown-linux-musl.tar.gz", checksum = "sha256:..." }
+#
+# Keep the enumerated forms above when the project needs a local exception or
+# when the tool is not shared. A tool that resolves to no methods and no
+# requires is reported by `depengine validate` as W_INERT_TOOL.
+
+
 # ==============================================================================
 # CHECKLIST — which format to use for a new tool?
 # ==============================================================================
+# 0. Is the tool shared across projects, or does a recipe already exist?
+#       → declare intent only: name = {} and keep the recipe in the catalog.
+#
 # 1. Is the package name always the same, with no special conditions?
 #       → add to the `simple` list.
 #
