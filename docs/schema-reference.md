@@ -1386,5 +1386,13 @@ The digest covers the whole recipe, including fields that never reach the
 resolved plan (`extract_to`, `link_dir`, `entrypoints`), and is computed before
 host placeholders are expanded.
 
+The pinned real-recipe corpus and its deterministic authoring tool live under
+`testdata/recipe-corpus/dep-ixd-13/`. Run `go run ./scripts -write` to regenerate
+the canonical projections and verify the source/license hashes; run
+`go run ./scripts` to verify without writing. The corpus report records the
+upstream revisions, projection metrics and sample limits. This tool is corpus
+research tooling, not a general recipe import format or a change to project
+schema behavior.
+
 See [`design/adr-009-catalog-layout.md`](design/adr-009-catalog-layout.md) for
 the full layout and lookup contract.
