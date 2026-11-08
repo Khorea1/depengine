@@ -154,7 +154,7 @@ func TestValidate_AllValidEdgeCases(t *testing.T) {
 // ============ Invalid schemas ============
 
 func TestValidate_InvalidDanglingRef(t *testing.T) {
-	output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath("invalid_dangling_ref.toml"))
+	output, code := runDepengine("validate", "--no-manifest", "--no-catalog", "--schema", validatePath("invalid_dangling_ref.toml"))
 	if code != 2 {
 		t.Fatalf("expected exit 2, got %d; output:\n%s", code, output)
 	}
@@ -174,7 +174,7 @@ func TestValidate_Cycle(t *testing.T) {
 }
 
 func TestValidate_MultipleErrors(t *testing.T) {
-	output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath("invalid_multiple_errors.toml"))
+	output, code := runDepengine("validate", "--no-manifest", "--no-catalog", "--schema", validatePath("invalid_multiple_errors.toml"))
 	if code != 2 {
 		t.Fatalf("expected exit 2, got %d; output:\n%s", code, output)
 	}
@@ -306,7 +306,7 @@ func TestValidate_StrictFlag(t *testing.T) {
 }
 
 func TestValidate_JSONFormat(t *testing.T) {
-	output, code := runDepengine("validate", "--no-manifest", "--schema", validatePath("invalid_multiple_errors.toml"), "--format=json")
+	output, code := runDepengine("validate", "--no-manifest", "--no-catalog", "--schema", validatePath("invalid_multiple_errors.toml"), "--format=json")
 	if code != 2 {
 		t.Fatalf("expected exit 2, got %d; output:\n%s", code, output)
 	}
