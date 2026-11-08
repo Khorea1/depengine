@@ -321,7 +321,8 @@ func (a *BaseAdapter) observeSpecializedInventory(ctx context.Context, rn run.Ru
 		requestedRemote, _ := mc.Config["remote"].(string)
 		requestedBranch, _ := mc.Config["branch"].(string)
 		requestedScope, _ := mc.Config["scope"].(string)
-		var selected, observed *plan.Observation
+		var selected, observed plan.ObservedIdentity
+		var hasSelected bool
 		matches, exactMatches := 0, 0
 		for line := range strings.Lines(string(res.Stdout)) {
 			line = strings.TrimSpace(line)
@@ -349,29 +350,31 @@ func (a *BaseAdapter) observeSpecializedInventory(ctx context.Context, rn run.Ru
 				continue
 			}
 			matches++
-			observation := plan.Observation{Presence: plan.PresencePresent, Identity: plan.ObservedIdentity{
+			identity := plan.ObservedIdentity{
 				Package: pkg, Source: fields[1], Architecture: fields[3], Revision: fields[4], Scope: rowScope,
-			}, KnownFields: []plan.IdentityField{plan.FieldPackage, plan.FieldSource, plan.FieldArchitecture, plan.FieldRevision, plan.FieldScope}}
+			}
 			if (requestedRemote == "" || requestedRemote == fields[1]) &&
 				(requestedBranch == "" || requestedBranch == fields[4]) {
 				exactMatches++
-				selected = &observation
+				selected = identity
+				hasSelected = true
 			}
-			observed = &observation
+			observed = identity
 		}
 		if exactMatches > 1 {
 			return plan.Observation{Presence: plan.PresenceBroken, Detail: "flatpak: ambiguous installed application identity"}, true
 		}
-		if selected != nil {
-			return *selected, true
-		}
-		if matches == 1 {
-			return *observed, true
-		}
-		if matches > 1 {
+		if hasSelected {
+			observed = selected
+		} else if matches > 1 {
 			return plan.Observation{Presence: plan.PresenceBroken, Detail: "flatpak: ambiguous installed application identity"}, true
 		}
-		return plan.Observation{Presence: plan.PresenceAbsent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, true
+		if matches == 0 {
+			return plan.Observation{Presence: plan.PresenceAbsent, Identity: plan.ObservedIdentity{Package: pkg}, KnownFields: []plan.IdentityField{plan.FieldPackage}}, true
+		}
+		return plan.Observation{Presence: plan.PresencePresent, Identity: observed, KnownFields: []plan.IdentityField{
+			plan.FieldPackage, plan.FieldSource, plan.FieldArchitecture, plan.FieldRevision, plan.FieldScope,
+		}}, true
 	default:
 		return plan.Observation{}, false
 	}

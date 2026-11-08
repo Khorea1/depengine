@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -61,8 +62,25 @@ type variant struct {
 
 var scoopVariants = []variant{{"64bit", "x86_64"}, {"32bit", "x86"}, {"arm64", "aarch64"}}
 
+func readCorpusFile(root, name string) ([]byte, error) {
+	if !filepath.IsLocal(name) {
+		return nil, fmt.Errorf("corpus path %q must be relative and local", name)
+	}
+	dir, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+	file, err := dir.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return io.ReadAll(file)
+}
+
 func loadCorpusSources(root string) (corpusSources, error) {
-	data, err := os.ReadFile(filepath.Join(root, "sources.json"))
+	data, err := readCorpusFile(root, "sources.json")
 	if err != nil {
 		return corpusSources{}, err
 	}
@@ -129,7 +147,7 @@ func verifyCorpusSources(root string, print bool) (recipeFiles, recipeLines, lic
 }
 
 func verifyCorpusFile(root, name, digest string) (int, error) {
-	data, err := os.ReadFile(filepath.Join(root, name))
+	data, err := readCorpusFile(root, name)
 	if err != nil {
 		return 0, err
 	}
@@ -155,7 +173,7 @@ func generateCorpusRecipes(root string, writeFiles bool) error {
 			continue
 		}
 		name := strings.TrimSuffix(filepath.Base(source.Path), filepath.Ext(source.Path))
-		raw, err := os.ReadFile(filepath.Join(root, source.LocalPath))
+		raw, err := readCorpusFile(root, source.LocalPath)
 		if err != nil {
 			return err
 		}
@@ -204,11 +222,11 @@ func generateCorpusRecipes(root string, writeFiles bool) error {
 		}
 		catalog[name] = []byte(recipeTOML.String())
 	}
-	if err := putCanonical(filepath.Join(root, "enumerated.toml"), []byte(enumerated.String()), writeFiles); err != nil {
+	if err := putCanonical(root, "enumerated.toml", []byte(enumerated.String()), writeFiles); err != nil {
 		return err
 	}
 	for _, name := range names {
-		if err := putCanonical(filepath.Join(root, "catalog", name+".toml"), catalog[name], writeFiles); err != nil {
+		if err := putCanonical(root, filepath.Join("catalog", name+".toml"), catalog[name], writeFiles); err != nil {
 			return err
 		}
 	}
@@ -309,7 +327,7 @@ func validateCorpusSchema(schema *config.Schema) error {
 	}
 	result := validate.ValidateSchema(schema, exec.RegisteredKinds())
 	if result.HasErrors() {
-		return fmt.Errorf("%s", result.Errors[0])
+		return result.Errors[0]
 	}
 	return nil
 }
@@ -372,11 +390,28 @@ func knownScoopVariant(key string) bool {
 	return false
 }
 
-func putCanonical(path string, want []byte, writeFiles bool) error {
+func putCanonical(root, name string, want []byte, writeFiles bool) error {
+	path := filepath.Join(root, name)
 	if writeFiles {
-		return os.WriteFile(path, want, 0o644)
+		if !filepath.IsLocal(name) {
+			return fmt.Errorf("generated corpus path %q must be relative and local", name)
+		}
+		dir, err := os.OpenRoot(root)
+		if err != nil {
+			return err
+		}
+		defer dir.Close()
+		file, err := dir.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+		if err != nil {
+			return err
+		}
+		if _, err := file.Write(want); err != nil {
+			_ = file.Close()
+			return err
+		}
+		return file.Close()
 	}
-	got, err := os.ReadFile(path)
+	got, err := readCorpusFile(root, name)
 	if err != nil {
 		return err
 	}

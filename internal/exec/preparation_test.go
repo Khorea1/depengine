@@ -1311,7 +1311,7 @@ func TestExecutorInstallCrashSubprocessRecoveryDoesNotReplayInstall(t *testing.T
 			testMockAdapter: &testMockAdapter{
 				kindValue: "cargo",
 				checkFunc: func(string) bool {
-					_, err := os.Stat(effectPath)
+					_, err := os.Stat(effectPath) // #nosec G703 G304 -- the path is created under t.TempDir and passed only to this subprocess test.
 					return err == nil
 				},
 				installFunc: func(string) error {
@@ -1319,7 +1319,7 @@ func TestExecutorInstallCrashSubprocessRecoveryDoesNotReplayInstall(t *testing.T
 					if mode == "restart" {
 						value = "replay\n"
 					}
-					f, err := os.OpenFile(effectPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+					f, err := os.OpenFile(effectPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G703 G304 -- the path is created under t.TempDir and passed only to this subprocess test.
 					if err != nil {
 						return err
 					}
@@ -1390,7 +1390,7 @@ func TestExecutorInstallCrashSubprocessRecoveryDoesNotReplayInstall(t *testing.T
 	}
 
 	runChild("interrupt")
-	if got, err := os.ReadFile(effectPath); err != nil || string(got) != "demo\n" {
+	if got, err := os.ReadFile(effectPath); err != nil || string(got) != "demo\n" { // #nosec G703 G304 -- the path is created under t.TempDir and passed only to this subprocess test.
 		t.Fatalf("install effect after interrupted process = %q, err=%v", got, err)
 	}
 	beforeRestart, err := state.LoadFrom(state.DefaultPath())
@@ -1406,7 +1406,7 @@ func TestExecutorInstallCrashSubprocessRecoveryDoesNotReplayInstall(t *testing.T
 		}
 	}
 	runChild("restart")
-	if got, err := os.ReadFile(effectPath); err != nil || string(got) != "demo\n" {
+	if got, err := os.ReadFile(effectPath); err != nil || string(got) != "demo\n" { // #nosec G703 G304 -- the path is created under t.TempDir and passed only to this subprocess test.
 		t.Fatalf("install effect after executor recovery = %q, err=%v; want no replay", got, err)
 	}
 	afterRestart, err := state.LoadFrom(state.DefaultPath())

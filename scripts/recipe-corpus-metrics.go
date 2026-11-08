@@ -25,7 +25,7 @@ func main() {
 	}
 	fmt.Printf("corpus recipe_files=%d recipe_lines=%d separate_license_files=%d license_lines=%d\n", recipeFiles, recipeLines, licenseFiles, licenseLines)
 	for _, name := range []string{"enumerated.toml", "intent.toml"} {
-		data, err := os.ReadFile(filepath.Join(*root, name))
+		data, err := readCorpusFile(*root, name)
 		if err != nil {
 			fail(err)
 		}
@@ -57,7 +57,7 @@ func main() {
 		fmt.Printf("projection %-20s lines=%d tools=%d candidates=%d when=%d\n", name, strings.Count(string(data), "\n"), len(resolved.Schema.Tools), methods, conditions)
 	}
 	for _, name := range []string{"intent.toml", "enumerated.toml", "catalog/fd.toml", "catalog/ripgrep.toml"} {
-		data, err := os.ReadFile(filepath.Join(*root, name))
+		data, err := readCorpusFile(*root, name)
 		if err != nil {
 			fail(err)
 		}
