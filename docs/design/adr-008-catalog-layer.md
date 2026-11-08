@@ -140,12 +140,12 @@ recipe that omits `checksum` installs with no integrity check
    to the v1 index-keyed scheme, which is compatibility data and retires under
    the `dep-41b` gate.
 
-7. **Candidate budget at entry.** *(Accepted 2026-10-25; D3 reviewed against
-   the small public corpus in dep-ixd.13: retain warn-only threshold 8 as
-   provisional; evidence is insufficient to calibrate or promote a hard cap.)*
-   A per-tool candidate limit is applied where recipes enter, to avoid
-   rebuilding the flat matrix in distributed form. It warns first and does
-   not block.
+7. **Candidate budget at entry.** *(Accepted 2026-10-25; reviewed against
+   dep-ixd.13's public sample on 2026-11-08: retain warn-only threshold 8 as
+   provisional. Six generated candidates across two tools do not calibrate a
+   hard cap.)* A per-tool candidate limit is applied where recipes enter, to
+   avoid rebuilding the flat matrix in distributed form. It warns first and
+   does not block.
 
 8. **Provenance.** *(Accepted 2026-10-25; central contract, not optional
    diagnostics. Implemented 2026-10-27.)* `why --fields` shows the layer a
@@ -217,8 +217,8 @@ only those the project schema declares.
 | # | Question | Decision (2026-10-25) | Evidence and gaps |
 |---|---|---|---|
 | D1 | Pin unit | **Resolved:** per-recipe digest over the whole recipe to verify; catalog revision only to retrieve | A whole-catalog pin is noisy at scale. The `update` behavior was verified (see Context): the lock does not cover recipe content, so `MethodsHash` and the resolved plan cannot stand in for a digest. How many distinct recipe fields stay invisible to the plan across kinds is still unmeasured; the field `Effects` flags are not a reliable proxy. |
-| D3 | Candidate budget | **Retained provisionally:** warn-only threshold 8; the one-tool, one-candidate public corpus is insufficient to calibrate it or justify a hard cap | The corpus projection measures 1 candidate and shows no authorship reduction for one recipe (enumerated 8 lines vs intent+catalog 9). This does not measure candidate distributions at scale; the warning remains governance policy, not a data-derived optimum. |
-| D4 | `distributions` beyond `github` | **Deferred:** no support until a broader real corpus justifies a decision | Current public corpus is one package in three repositories; no cross-tool/ecosystem evidence supports new schema values. A schema using another value remains out of contract. |
+| D3 | Candidate budget | **Retained provisionally:** warn-only threshold 8; the small public corpus cannot calibrate it or justify a hard cap | The corpus generates 6 candidates (3 architectures each for two real tools) in both projections. Enumerated TOML is 55 lines; project intent plus catalog recipes totals 66 lines, so this sample does not reduce total content. `0.03s` measures the scripted generation+verification operation, not human authorship, and no comparable pre-catalog authoring-time baseline exists. See `.dev/reports/report-recipe-corpus-metrics-2026-11-08.md`; do not interpret the sample as a distribution at scale. |
+| D4 | `distributions` beyond `github` | **Deferred:** no support until a broader real corpus justifies a decision | The pinned raw sources span two tools and Homebrew/Scoop/WinGet, but only the Scoop Windows archive variants are projected with comparable semantics. They provide no cross-tool/ecosystem evidence for new `distributions` values. A schema using another value remains out of contract. |
 | D5 | Trust root for imports | **Resolved:** digest pinned by the importer (decision 5) plus an integrity floor: reject recipes that omit `checksum`, flag `:auto` | `:auto` is Trust On First Use and no checksum means no integrity check. Signature support and the position once v2 allows hooks remain deferred. |
 | D7 | Catalog layers and `allow_new_tools`; transitive `requires` | **Resolved:** a catalog layer never sets `allow_new_tools`; top-level names are only those the project declares; transitive `requires` resolve through the catalog and fail closed when unresolvable | With `allow_new_tools` the manifest keeps every tool, which has no pull-by-name meaning. The closure rule is stated in the layer contract above. |
 
